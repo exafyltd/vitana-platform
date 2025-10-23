@@ -1,0 +1,12 @@
+name: contracts
+on:
+  pull_request: { paths: ['openapi/**'] }
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: 'pnpm' }
+      - run: npm i -g @redocly/cli
+      - run: redocly lint openapi/*.yml

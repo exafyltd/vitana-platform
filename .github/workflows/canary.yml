@@ -1,0 +1,7 @@
+name: canary
+on: pull_request
+jobs:
+  placeholder:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "canary job will spin up infra later"

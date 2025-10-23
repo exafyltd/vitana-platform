@@ -1,0 +1,11 @@
+# global fallback
+* @exafy/ctotech
+
+# finer grain (adjust usernames when teams exist)
+/apps/**                  @exafy/product @exafy/frontend
+/services/agents/**       @exafy/ai @exafy/backend
+/platform/**              @exafy/ctotech @exafy/ai
+/openapi/**               @exafy/arch @exafy/backend
+/infra/**                 @exafy/devops
+/tests/**                 @exafy/qa
+/.github/**               @exafy/devops
