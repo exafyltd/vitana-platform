@@ -1,23 +1,18 @@
 # Vitana Platform - Live Status
 
-**Last Updated:** 2025-10-23 12:30 UTC
+**Updated:** 2025-10-23T17:12:23.665259Z
 
 ## Service Health
 
 | Service | Status |
 |---------|--------|
-| oasis | ✅ Live |
-| planner-core | ✅ Live |
-| worker-core | ✅ Live |
-| validator-core | ✅ Live |
-| memory-indexer | ✅ Live |
+| oasis | ❌ Down |
+| planner-core | ❌ Down |
+| worker-core | ❌ Down |
+| validator-core | ❌ Down |
+| memory-indexer | ❌ Down |
 
-## Layer 1: CI/CD Autopilot ✅ LIVE
 
-Every code commit is automatically tested and approved by AI agents.
+See full details at docs/STATUS.md
 
-## Layer 2: Dev Autopilot 🚧 IN PROGRESS
-
-Agents deployed in stub mode. Ready for real API keys.
-
-This file is automatically updated daily at 08:00 UTC.
+This file auto-updates daily at 08:00 UTC.
