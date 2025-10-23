@@ -3,6 +3,7 @@ on:
   schedule:
     - cron: '0 8 * * *'
   workflow_dispatch:
+
 jobs:
   update-status:
     runs-on: ubuntu-latest
@@ -13,14 +14,17 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-      - run: pip install requests pyyaml
+      - run: pip install requests
       - env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           WEBHOOK_URL: ${{ secrets.VITANA_CHAT_WEBHOOK }}
         run: python3 scripts/ci/collect-status.py
       - run: |
           git config user.name "Vitana Automation"
           git config user.email "automation@vitana.dev"
-          git add docs/STATUS.md README.md 2>/dev/null || true
-          if git diff --quiet --cached; then echo "No changes"; else git commit -m "chore: daily status update - $(date -u +'%Y-%m-%d %H:%M:%S UTC')" && git push; fi
+          git add docs/STATUS.md
+          if git diff --quiet --cached; then
+            echo "No changes"
+          else
+            git commit -m "chore: daily status - $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+            git push
+          fi
