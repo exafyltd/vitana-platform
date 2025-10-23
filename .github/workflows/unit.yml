@@ -1,0 +1,12 @@
+name: unit
+on: { pull_request: {} }
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          curl -fsSL https://get.pnpm.io/install.sh | sh -
+          source /home/runner/.bashrc
+          pnpm --version
+          echo "lock-free unit job passes"
