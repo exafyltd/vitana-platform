@@ -6,8 +6,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: 'npm' }
+        with: { node-version: 20, cache: 'pnpm' }
       - run: npm i -g pnpm@9
-      - run: pnpm --version
-      - run: pnpm install                       # allow missing lock on first run
+      - run: pnpm install
       - run: pnpm run check
