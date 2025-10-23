@@ -1,0 +1,12 @@
+# --- Web Framework ---
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+
+# --- Core typing & validation ---
+pydantic>=2.8.0
+
+# --- Vertex AI / Gemini ---
+google-cloud-aiplatform>=1.68.0
+
+# --- Crew Orchestration ---
+crewai
