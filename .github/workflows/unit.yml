@@ -9,5 +9,5 @@ jobs:
         with: { node-version: 20, cache: 'npm' }
       - run: npm i -g pnpm@9
       - run: pnpm --version
-      - run: pnpm install --frozen-lockfile || pnpm install
+      - run: pnpm install                       # allow missing lock on first run
       - run: pnpm run check
