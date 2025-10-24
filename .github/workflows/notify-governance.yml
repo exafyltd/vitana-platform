@@ -1,0 +1,38 @@
+name: 📢 Notify DevOps - Governance Updates
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, labeled, ready_for_review]
+  push:
+    branches:
+      - feature/governance-agents-*
+      - main
+
+jobs:
+  notify-devops:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 💬 Send to Google Chat
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const https = require('https');
+            const webhook = process.env.GCHAT_WEBHOOK;
+            if (!webhook) {
+              console.log('⚠️  GCHAT_WEBHOOK secret not configured');
+              return;
+            }
+            const message = {
+              "text": "🚀 Vitana Governance Update: ${{ github.event.pull_request.title || github.ref_name }}"
+            };
+            const data = JSON.stringify(message);
+            const options = new URL(webhook);
+            options.method = 'POST';
+            options.headers = {'Content-Type': 'application/json'};
+            const req = https.request(options, (res) => res.on('data', () => {}));
+            req.write(data);
+            req.end();
+        env:
+          GCHAT_WEBHOOK: ${{ secrets.GCHAT_WEBHOOK }}
+
