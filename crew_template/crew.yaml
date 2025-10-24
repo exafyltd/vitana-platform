@@ -1,0 +1,45 @@
+version: "1.2"
+crew:
+  name: "__CREW_ID__"
+  mission: "Deliver {OUTCOME} for {TENANT} with measurable quality/cost."
+  tenants: ["maxina","earthlings","alkalma"]
+  policy_profile: "default"
+
+condition_frame:
+  doctrine: "Write to Memory, Read from CIL — never the reverse."
+  no_raw_memory: true
+  lfce_predicates:
+    min_confidence_for_FAST: 0.75
+    require_citations_threshold: 0.90
+  plan_deviation_policy: "strict"
+  plan_deviation_escape_hatch:
+    enabled: true
+    requires_reason: true
+    audit_logged: true
+  slice_efficiency_targets:
+    good_range: [0.6, 1.0]
+    alert_below: 0.5
+  freshness_policy:
+    cil_stale_seconds_warning: 30
+    cil_stale_seconds_fail: 120
+  latency_policy:
+    planner_p95_ms: 2500
+    worker_p95_ms: 3500
+    validator_p95_ms: 2500
+    e2e_p95_ms: 6000
+  execution_paths:
+    FAST:     { context_tokens_kb: 4,  max_latency_ms: 2000 }
+    STANDARD: { context_tokens_kb: 16, max_latency_ms: 3500 }
+    DEEP:     { context_tokens_kb: 32, max_latency_ms: 6000 }
+
+roles:
+  planner_core:
+    purpose: "Decompose tasks; choose path; request CIL slice."
+    primary_model: "gemini-2.5-flash-pro"
+  worker_core:
+    purpose: "Execute declared steps; enforce budgets."
+    primary_model: "gpt-5"
+  validator_core:
+    purpose: "Deterministic verification & governance."
+    primary_model: "gpt-5"
+    temperature: 0.0
