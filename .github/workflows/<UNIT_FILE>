@@ -1,0 +1,6 @@
+on:
+  pull_request:
+    paths-ignore:
+      - 'phase_2b/**'
+      - '.github/workflows/phase-2b-doc-gate.yml'
+
