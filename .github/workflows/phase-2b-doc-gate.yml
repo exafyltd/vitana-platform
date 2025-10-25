@@ -1,0 +1,39 @@
+name: Phase 2B Documentation Gate
+
+on:
+  pull_request:
+    branches: [ main, trunk, develop, release/** ]
+
+jobs:
+  check-phase-2b-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify required Phase 2B files exist (00–20)
+        run: |
+          set -e
+          missing=0
+          for i in $(seq -w 00 20); do
+            count=$(ls phase_2b/${i}_*.md 2>/dev/null | wc -l | tr -d ' ')
+            if [ "$count" -eq 0 ]; then
+              echo "ERROR: Missing required file for index ${i} (phase_2b/${i}_*.md)"
+              missing=1
+            fi
+          done
+          # 21_GLOSSARY_TERMS.md is optional; warn if absent
+          if ! ls phase_2b/21_*.md >/dev/null 2>&1; then
+            echo "WARNING: Optional glossary (21_*.md) not found. Recommended to add."
+          fi
+          exit $missing
+
+      - name: Lint structure (basic headings & required sections)
+        run: |
+          set -e
+          for f in phase_2b/*.md; do
+            echo "::group::Checking $f"
+            grep -q "^# " "$f" || { echo "ERROR: No H1 heading in $f"; exit 1; }
+            for sec in "## Purpose" "## Audience" "## Inputs" "## Outputs" "## Procedures" "## Validation" "## Links"; do
+              grep -q "$sec" "$f" || echo "WARNING: Missing section '$sec' in $f"
+            done
+            echo "::endgroup::"
