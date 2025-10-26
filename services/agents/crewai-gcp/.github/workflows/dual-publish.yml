@@ -1,0 +1,14 @@
+name: Dual Publish Gate
+on:
+  pull_request:
+    paths:
+      - "services/**"
+jobs:
+  require-artifact:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check release artifact checksum
+        run: |
+          test -f DEPLOYMENT_SUMMARY.md || { echo "Missing DEPLOYMENT_SUMMARY.md"; exit 1; }
+          grep -E 'SHA-256:' DEPLOYMENT_SUMMARY.md || { echo "Missing SHA-256 in DEPLOYMENT_SUMMARY.md"; exit 1; }
