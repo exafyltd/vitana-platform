@@ -1,0 +1,27 @@
+name: Contract Guard
+on:
+  pull_request:
+    paths:
+      - "services/**/schemas/*.json"
+      - "crew_template/schemas/*.json"
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: |
+          set -e
+          for s in plan result validation; do
+            python - <<'PY' "$s"
+import json,sys,os
+s=sys.argv[1]
+t=json.load(open(os.path.join("crew_template","schemas",s+".json")))
+w=json.load(open(os.path.join("services","agents","worker-core","schemas",s+".json")))
+missing=set(t.get("required",[]))-set(w.get("required",[]))
+if missing:
+  print(f"Breaking change in {s}.json; missing required: {sorted(missing)}")
+  sys.exit(2)
+PY
+          done

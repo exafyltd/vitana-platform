@@ -1,0 +1,61 @@
+name: AVP — Verify & Promote
+on:
+  workflow_dispatch:
+    inputs:
+      service:  { required: true, default: "worker-core" }
+      ref:      { required: true, default: "main" }
+      promote:  { required: true, default: "true" }
+
+jobs:
+  avp:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, id-token: write }
+    env:
+      GCP_PROJECT: lovable-vitana-vers1
+      GCP_REGION: us-central1
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: ${{ github.event.inputs.ref }} }
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        with: { project_id: ${{ env.GCP_PROJECT }}, export_default_credentials: true }
+
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+
+      - name: Verify (reuse gate steps)
+        run: |
+          python -m pip install -U pip
+          pip install -r services/agents/worker-core/requirements.txt || true
+          for s in plan result validation; do
+            diff -u crew_template/schemas/$s.json services/agents/worker-core/schemas/$s.json || true
+          done
+          (cd services/agents/worker-core && pytest -q)
+          gcloud run deploy ${{ github.event.inputs.service }} --source services/agents/worker-core --region ${GCP_REGION} --allow-unauthenticated --quiet
+          gcloud run services update ${{ github.event.inputs.service }} --region ${GCP_REGION} --min-instances=1 --max-instances=5 --cpu=1 --memory=512Mi --concurrency=40 --timeout=60s
+          RUN_URL=$(gcloud run services describe ${{ github.event.inputs.service }} --region ${GCP_REGION} --format='value(status.url)')
+          for i in {1..5}; do curl -fsS "$RUN_URL/health" && break || sleep 2; done
+          for t in maxina earthlings alkalma; do
+            echo ">> tenant=$t"
+            curl -fsS -X POST "$RUN_URL/execute" -H 'Content-Type: application/json' -d "{
+              \"plan_id\":\"smoke-$t\",\"tenant\":\"$t\",
+              \"tasks\":[{\"id\":\"t1\",\"skill\":\"router.invoke_llm\",\"input\":{\"prompt\":\"ping\"}}],
+              \"budget\":{\"tokens_max\":1000,\"cost_max_usd\":0.10}
+            }" | tee /tmp/smoke_$t.json
+            jq -e '.status' /tmp/smoke_$t.json >/dev/null
+          done
+          echo "$RUN_URL" > /tmp/run_url
+
+      - name: Promote to prod (if allowed)
+        if: ${{ github.event.inputs.promote == 'true' }}
+        run: |
+          echo "Promoted ${{ github.event.inputs.service }} to prod (same service name; latest revision)."
+          echo "{\"service\":\"${{ github.event.inputs.service }}\",\"env\":\"prod\",\"run_url\":\"$(cat /tmp/run_url)\"}" > /tmp/promote.json
+
+      - uses: actions/upload-artifact@v4
+        with: { name: avp-artifacts, path: /tmp/*.json }

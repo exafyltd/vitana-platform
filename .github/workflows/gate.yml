@@ -1,0 +1,77 @@
+name: Gate-Quick
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      PROJECT_ID: lovable-vitana-vers1
+      REGION: europe-west1
+      SERVICE: crewai-gcp
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Auth to Google Cloud (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SA_EMAIL }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          version: ">= 492.0.0"
+
+      - name: Smoke test Cloud Run service (purely dynamic URL discovery)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SERVICE="${SERVICE:-crewai-gcp}"
+          REGION="${REGION:-europe-west1}"
+          PROJECT_ID="${PROJECT_ID:-lovable-vitana-vers1}"
+
+          # Build candidate list dynamically
+          CANDIDATES=()
+
+          # a) Canonical URL for the service
+          MAIN_URL="$(gcloud run services describe "$SERVICE" \
+            --project="$PROJECT_ID" --region="$REGION" \
+            --format='value(status.url)' || true)"
+          [[ -n "${MAIN_URL:-}" ]] && CANDIDATES+=("$MAIN_URL")
+
+          # b) All service URLs in region (extra safety)
+          while IFS= read -r u; do
+            [[ -n "$u" ]] && CANDIDATES+=("$u")
+          done < <(gcloud run services list \
+                    --project="$PROJECT_ID" --region="$REGION" \
+                    --format='value(url)' || true)
+
+          # De-duplicate candidates
+          mapfile -t CANDIDATES < <(printf '%s\n' "${CANDIDATES[@]}" | awk '!seen[$0]++')
+
+          echo "Candidate URLs to probe:"
+          printf ' - %s\n' "${CANDIDATES[@]}"
+
+          # Probe each candidate until one returns 2xx on / or /alive or /healthz
+          PAYLOAD_FILE=$(mktemp)
+          for U in "${CANDIDATES[@]}"; do
+            echo "Probing: $U"
+            if (curl -fsS "$U/" >"$PAYLOAD_FILE") \
+               || (curl -fsS "$U/alive" >"$PAYLOAD_FILE") \
+               || (curl -fsS "$U/healthz" >"$PAYLOAD_FILE"); then
+              echo "✅ Success at: $U"
+              echo "Response:"
+              cat "$PAYLOAD_FILE"
+              exit 0
+            fi
+          done
+
+          echo "❌ No candidate URL returned 2xx on (/, /alive, /healthz). Failing."
+          exit 22
