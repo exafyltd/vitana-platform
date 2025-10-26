@@ -6,7 +6,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: |
+          # Install pnpm and use it in the same shell
           curl -fsSL https://get.pnpm.io/install.sh | sh -
-          source /home/runner/.bashrc
+          export PNPM_HOME="/home/runner/.local/share/pnpm"
+          export PATH="$PNPM_HOME:$PATH"
           pnpm --version
-          echo "lock-free unit job passes"
+          echo "✅ lock-free unit job passes"

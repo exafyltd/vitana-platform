@@ -1,0 +1,46 @@
+name: Reusable Gateway Notification
+
+on:
+  workflow_call:
+    inputs:
+      event_type:
+        required: true
+        type: string
+      service_name:
+        required: true
+        type: string
+      status:
+        required: true
+        type: string
+      notes:
+        required: false
+        type: string
+        default: ''
+    secrets:
+      GATEWAY_URL:
+        required: false
+      GATEWAY_TOKEN:
+        required: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send notification
+        env:
+          GATEWAY_URL: ${{ secrets.GATEWAY_URL || 'https://vitana-gateway-86804897789.us-central1.run.app' }}
+        run: |
+          curl -fsS -X POST "$GATEWAY_URL/new-request-with-notification" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "service": "${{ inputs.service_name }}",
+              "event": "${{ inputs.event_type }}",
+              "tenant": "system",
+              "data": {
+                "rid": "${{ github.run_id }}",
+                "status": "${{ inputs.status }}",
+                "notes": "${{ inputs.notes }}",
+                "workflow": "${{ github.workflow }}",
+                "sha": "${{ github.sha }}"
+              }
+            }'
