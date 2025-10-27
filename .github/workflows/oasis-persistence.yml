@@ -1,0 +1,61 @@
+name: OASIS Persistence CI
+
+on:
+  pull_request:
+    paths:
+      - 'prisma/**'
+      - 'database/**'
+      - 'services/gateway/**'
+      - 'scripts/report.sh'
+      - '.github/workflows/oasis-persistence.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'prisma/**'
+      - 'database/**'
+      - 'services/gateway/**'
+      - 'scripts/report.sh'
+
+jobs:
+  prisma-check:
+    name: Prisma Schema Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 8
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm prisma generate
+      - run: pnpm prisma format --check
+
+  gateway-test:
+    name: Gateway Service Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - working-directory: ./services/gateway
+        run: npm install
+      - working-directory: ./services/gateway
+        run: npm run typecheck
+      - working-directory: ./services/gateway
+        run: npm test
+        env:
+          NODE_ENV: test
+      - working-directory: ./services/gateway
+        run: npm run build
+
+  reporter-test:
+    name: Reporter Script Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash -n scripts/report.sh
+      - run: echo "✅ Script syntax valid"
