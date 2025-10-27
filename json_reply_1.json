@@ -1,0 +1,37 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "role": "model",
+        "parts": [
+          {
+            "text": "{\n  \"ok\": true,\n  \"advice\": \"Hydrate well before. Small sips during if needed. Rehydrate after your run.\"\n}"
+          }
+        ]
+      },
+      "finishReason": "STOP",
+      "avgLogprobs": -0.079274170538958383
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 35,
+    "candidatesTokenCount": 34,
+    "totalTokenCount": 69,
+    "trafficType": "ON_DEMAND",
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 35
+      }
+    ],
+    "candidatesTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 34
+      }
+    ]
+  },
+  "modelVersion": "gemini-2.0-flash-001",
+  "createTime": "2025-10-27T10:11:53.635230Z",
+  "responseId": "aUX_aN7iJuOtgLUP-euqiAM"
+}
