@@ -1,0 +1,21 @@
+{
+  "apiVersion": "run.googleapis.com/v1",
+  "kind": "Job",
+  "metadata": { "name": "prisma-migrate-1761571350" },
+  "spec": {
+    "template": {
+      "spec": {
+        "serviceAccountName": "-compute@developer.gserviceaccount.com",
+        "containers": [{
+          "image": "gcr.io//prisma-migrate:latest",
+          "env": [{
+            "name": "DATABASE_URL",
+            "valueFrom": { "secretKeyRef": { "name": "SUPABASE_DB_URL", "key": "latest" } }
+          }],
+          "command": ["sh", "-c", "pnpm install && pnpm prisma migrate deploy && psql 1883DATABASE_URL -f database/policies/002_oasis_events.sql"]
+        }],
+        "restartPolicy": "Never"
+      }
+    }
+  }
+}

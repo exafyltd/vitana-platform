@@ -2,6 +2,13 @@
   "name": "vitana-platform",
   "private": true,
   "packageManager": "pnpm@9.0.0",
-  "scripts": { "check": "echo ok" },
-  "devDependencies": {}
+  "scripts": {
+    "check": "echo ok"
+  },
+  "devDependencies": {
+    "prisma": "^6.18.0"
+  },
+  "dependencies": {
+    "@prisma/client": "6.18.0"
+  }
 }
