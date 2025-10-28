@@ -1,3 +1,4 @@
 fastapi
-uvicorn
-gunicorn
+anthropic
+google-cloud-aiplatform
+requests
