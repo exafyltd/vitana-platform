@@ -1,6 +1,5 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
-import fetch from "node-fetch";
 
 const OasisEventSchema = z.object({
   service: z.string().min(1, "Service name required"),
@@ -134,7 +133,7 @@ router.get("/events", async (req: Request, res: Response) => {
       });
     }
 
-    const data = await resp.json();
+    const data = (await resp.json()) as any[];
     console.log(`✅ Retrieved ${data.length} events`);
 
     return res.status(200).json(data);
