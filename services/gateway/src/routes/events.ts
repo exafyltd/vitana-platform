@@ -153,3 +153,5 @@ router.get("/events/health", (_req: Request, res: Response) => {
     timestamp: new Date().toISOString(),
   });
 });
+
+// CI Verification Test - 2025-10-28
