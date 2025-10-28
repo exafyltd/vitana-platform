@@ -3,6 +3,8 @@ import cors from "cors";
 import helmet from "helmet";
 import { router as eventsRouter } from "./routes/events";
 import { router as vtidRouter } from "./routes/vtid";
+import { router as executeRouter } from "./routes/execute";
+import { requireVTID, VTIDRequest } from "./middleware/requireVTID";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -22,6 +24,7 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
 
 app.use("/", eventsRouter);
 app.use("/", vtidRouter);
+app.use("/", executeRouter);
 
 app.get("/", (_req: Request, res: Response) => {
   res.status(200).json({
@@ -35,6 +38,29 @@ app.get("/", (_req: Request, res: Response) => {
 app.post("/new-request-with-notification", (req: Request, res: Response) => {
   console.log("📬 Legacy notification received:", req.body);
   res.status(200).json({ ok: true, message: "Notification received" });
+});
+
+app.post("/act", requireVTID, (req: VTIDRequest, res: Response) => {
+  const { op, params } = req.body;
+  const vtid = req.context?.vtid;
+
+  console.log(`🎬 Action requested: ${op} via ${vtid?.vtid}`);
+
+  if (!op) {
+    return res.status(400).json({
+      error: "Operation required",
+      detail: "Provide 'op' field in body",
+    });
+  }
+
+  res.status(200).json({
+    ok: true,
+    message: `Operation '${op}' executed`,
+    vtid: vtid?.vtid,
+    taskFamily: vtid?.task_family,
+    params: params || {},
+    timestamp: new Date().toISOString(),
+  });
 });
 
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
@@ -56,7 +82,8 @@ if (require.main === module) {
     console.log(`🚀 Gateway listening on port ${PORT}`);
     console.log(`📊 OASIS Events: POST /events/ingest`);
     console.log(`🔢 VTID Ledger: POST /vtid/create, GET /vtid/:vtid`);
-    console.log(`💚 Health: GET /events/health, GET /vtid/health`);
+    console.log(`⚡ Execution: POST /execute/ping, POST /execute/workflow`);
+    console.log(`💚 Health: GET /events/health, GET /vtid/health, GET /execute/health`);
   });
 }
 
