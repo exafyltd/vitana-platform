@@ -153,3 +153,5 @@ router.get("/events/health", (_req: Request, res: Response) => {
     timestamp: new Date().toISOString(),
   });
 });
+
+// Final CI verification - pnpm conflict resolved
