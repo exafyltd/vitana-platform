@@ -1,5 +1,4 @@
 import type { Request, Response, NextFunction } from "express";
-import fetch from "node-fetch";
 
 const VTID_FORMAT = /^VTID-\d{4}-\d{4,}$/;
 
@@ -86,7 +85,7 @@ async function lookupVTID(vtid: string): Promise<any | null> {
     throw new Error(`Supabase query failed: ${resp.status} - ${text}`);
   }
 
-  const data: any[] = await resp.json();
+  const data = (await resp.json()) as any[];
   return data.length > 0 ? data[0] : null;
 }
 

@@ -1,6 +1,5 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
-import fetch from "node-fetch";
 
 const VtidCreateSchema = z.object({
   taskFamily: z.string().min(1, "Task family required"),
@@ -43,7 +42,7 @@ async function generateVtid(supabaseUrl: string, svcKey: string): Promise<string
     throw new Error(`Failed to query latest VTID: ${resp.statusText}`);
   }
 
-  const data: any[] = await resp.json();
+  const data = (await resp.json()) as any[];
 
   let nextNumber = 1;
   if (data.length > 0) {
@@ -106,7 +105,7 @@ router.get("/vtid/list", async (req: Request, res: Response) => {
       });
     }
 
-    const data = await resp.json();
+    const data = (await resp.json()) as any[];
 
     return res.status(200).json({
       ok: true,
@@ -236,7 +235,7 @@ router.get("/vtid/:vtid([A-Z0-9-]+)", async (req: Request, res: Response) => {
       });
     }
 
-    const data: any[] = await resp.json();
+    const data = (await resp.json()) as any[];
 
     if (data.length === 0) {
       return res.status(404).json({
