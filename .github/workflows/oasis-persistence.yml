@@ -24,11 +24,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        # Let pnpm read version from package.json packageManager field
+        with:
           node-version: '20'
       - uses: pnpm/action-setup@v4
-        # Let pnpm read version from package.json packageManager field
-
+        with:
+          version: 9
       - run: pnpm install --frozen-lockfile
       - run: pnpm prisma generate
       - run: pnpm prisma format --check
@@ -39,7 +39,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        # Let pnpm read version from package.json packageManager field
+        with:
           node-version: '20'
       - working-directory: ./services/gateway
         run: npm install
