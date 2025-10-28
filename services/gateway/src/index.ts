@@ -2,6 +2,7 @@ import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import { router as eventsRouter } from "./routes/events";
+import { router as vtidRouter } from "./routes/vtid";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -20,6 +21,7 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
 });
 
 app.use("/", eventsRouter);
+app.use("/", vtidRouter);
 
 app.get("/", (_req: Request, res: Response) => {
   res.status(200).json({
@@ -53,7 +55,8 @@ if (require.main === module) {
   app.listen(PORT, () => {
     console.log(`🚀 Gateway listening on port ${PORT}`);
     console.log(`📊 OASIS Events: POST /events/ingest`);
-    console.log(`💚 Health: GET /events/health`);
+    console.log(`🔢 VTID Ledger: POST /vtid/create, GET /vtid/:vtid`);
+    console.log(`💚 Health: GET /events/health, GET /vtid/health`);
   });
 }
 

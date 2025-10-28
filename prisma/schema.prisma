@@ -27,3 +27,24 @@ model OasisEvent {
   @@index([tenant, createdAt], map: "idx_oasis_events_tenant_created")
   @@index([status, createdAt], map: "idx_oasis_events_status_created")
 }
+
+model VtidLedger {
+  id           String   @id @default(cuid())
+  vtid         String   @unique // VTID-YYYY-NNNN format
+  taskFamily   String   @map("task_family")   // e.g., "governance", "deployment", "analysis"
+  taskType     String   @map("task_type")     // e.g., "migration", "test", "review"
+  description  String   @db.Text
+  status       String   // "pending" | "active" | "complete" | "blocked" | "cancelled"
+  assignedTo   String?  @map("assigned_to")   // Optional: who/what is executing
+  tenant       String   // "system" | "maxina" | "earthlings" | etc.
+  metadata     Json?    // Additional task-specific metadata
+  parentVtid   String?  @map("parent_vtid")   // For subtasks
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([createdAt], map: "idx_vtid_created_at")
+  @@index([taskFamily, createdAt], map: "idx_vtid_family_created")
+  @@index([status, createdAt], map: "idx_vtid_status_created")
+  @@index([tenant, createdAt], map: "idx_vtid_tenant_created")
+  @@index([vtid], map: "idx_vtid_lookup")
+}
