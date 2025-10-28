@@ -24,15 +24,10 @@ type VtidUpdateInput = z.infer<typeof VtidUpdateSchema>;
 
 export const router = Router();
 
-/**
- * Generate next VTID number for the current year
- * Format: VTID-YYYY-NNNN (e.g., VTID-2025-0001)
- */
 async function generateVtid(supabaseUrl: string, svcKey: string): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `VTID-${year}-`;
 
-  // Query for the latest VTID of this year
   const resp = await fetch(
     `${supabaseUrl}/rest/v1/VtidLedger?select=vtid&vtid=like.${prefix}*&order=vtid.desc&limit=1`,
     {
@@ -57,14 +52,76 @@ async function generateVtid(supabaseUrl: string, svcKey: string): Promise<string
     nextNumber = lastNumber + 1;
   }
 
-  // Format as VTID-YYYY-NNNN with zero padding
   return `${prefix}${String(nextNumber).padStart(4, "0")}`;
 }
 
-/**
- * POST /vtid/create
- * Create a new VTID and task record
- */
+// CRITICAL: Static routes MUST come before parameterized routes
+router.get("/vtid/health", (_req: Request, res: Response) => {
+  res.status(200).json({
+    ok: true,
+    service: "vtid-ledger",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+router.get("/vtid/list", async (req: Request, res: Response) => {
+  try {
+    const { taskFamily, status, tenant, limit = "50" } = req.query;
+
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+
+    if (!svcKey || !supabaseUrl) {
+      return res.status(500).json({
+        error: "Gateway misconfigured",
+      });
+    }
+
+    let queryUrl = `${supabaseUrl}/rest/v1/VtidLedger?order=created_at.desc&limit=${limit}`;
+
+    if (taskFamily) {
+      queryUrl += `&task_family=eq.${taskFamily}`;
+    }
+    if (status) {
+      queryUrl += `&status=eq.${status}`;
+    }
+    if (tenant) {
+      queryUrl += `&tenant=eq.${tenant}`;
+    }
+
+    const resp = await fetch(queryUrl, {
+      method: "GET",
+      headers: {
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+      },
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.error(`❌ Supabase query failed: ${resp.status} - ${text}`);
+      return res.status(502).json({
+        error: "Failed to list VTIDs",
+        detail: text,
+      });
+    }
+
+    const data = await resp.json();
+
+    return res.status(200).json({
+      ok: true,
+      count: data.length,
+      data,
+    });
+  } catch (e: any) {
+    console.error("❌ Unexpected error:", e);
+    return res.status(500).json({
+      error: "Internal server error",
+      detail: e.message,
+    });
+  }
+});
+
 router.post("/vtid/create", async (req: Request, res: Response) => {
   try {
     const body = VtidCreateSchema.parse(req.body);
@@ -80,7 +137,6 @@ router.post("/vtid/create", async (req: Request, res: Response) => {
       });
     }
 
-    // Generate unique VTID
     const vtid = await generateVtid(supabaseUrl, svcKey);
 
     const payload = {
@@ -142,11 +198,8 @@ router.post("/vtid/create", async (req: Request, res: Response) => {
   }
 });
 
-/**
- * GET /vtid/:vtid
- * Get details of a specific VTID
- */
-router.get("/vtid/:vtid", async (req: Request, res: Response) => {
+// Parameterized routes MUST come AFTER static routes
+router.get("/vtid/:vtid([A-Z0-9-]+)", async (req: Request, res: Response) => {
   try {
     const { vtid } = req.params;
 
@@ -205,11 +258,7 @@ router.get("/vtid/:vtid", async (req: Request, res: Response) => {
   }
 });
 
-/**
- * PATCH /vtid/:vtid
- * Update status or metadata of an existing VTID
- */
-router.patch("/vtid/:vtid", async (req: Request, res: Response) => {
+router.patch("/vtid/:vtid([A-Z0-9-]+)", async (req: Request, res: Response) => {
   try {
     const { vtid } = req.params;
     const body = VtidUpdateSchema.parse(req.body);
@@ -276,78 +325,4 @@ router.patch("/vtid/:vtid", async (req: Request, res: Response) => {
       detail: e.message,
     });
   }
-});
-
-/**
- * GET /vtid/list
- * List VTIDs with optional filters
- */
-router.get("/vtid/list", async (req: Request, res: Response) => {
-  try {
-    const { taskFamily, status, tenant, limit = "50" } = req.query;
-
-    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
-    const supabaseUrl = process.env.SUPABASE_URL;
-
-    if (!svcKey || !supabaseUrl) {
-      return res.status(500).json({
-        error: "Gateway misconfigured",
-      });
-    }
-
-    let queryUrl = `${supabaseUrl}/rest/v1/VtidLedger?order=created_at.desc&limit=${limit}`;
-
-    if (taskFamily) {
-      queryUrl += `&task_family=eq.${taskFamily}`;
-    }
-    if (status) {
-      queryUrl += `&status=eq.${status}`;
-    }
-    if (tenant) {
-      queryUrl += `&tenant=eq.${tenant}`;
-    }
-
-    const resp = await fetch(queryUrl, {
-      method: "GET",
-      headers: {
-        apikey: svcKey,
-        Authorization: `Bearer ${svcKey}`,
-      },
-    });
-
-    if (!resp.ok) {
-      const text = await resp.text();
-      console.error(`❌ Supabase query failed: ${resp.status} - ${text}`);
-      return res.status(502).json({
-        error: "Failed to list VTIDs",
-        detail: text,
-      });
-    }
-
-    const data = await resp.json();
-
-    return res.status(200).json({
-      ok: true,
-      count: data.length,
-      data,
-    });
-  } catch (e: any) {
-    console.error("❌ Unexpected error:", e);
-    return res.status(500).json({
-      error: "Internal server error",
-      detail: e.message,
-    });
-  }
-});
-
-/**
- * GET /vtid/health
- * Health check for VTID service
- */
-router.get("/vtid/health", (_req: Request, res: Response) => {
-  res.status(200).json({
-    ok: true,
-    service: "vtid-ledger",
-    timestamp: new Date().toISOString(),
-  });
 });
