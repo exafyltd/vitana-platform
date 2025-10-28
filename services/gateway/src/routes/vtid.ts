@@ -172,13 +172,13 @@ router.post("/vtid/create", async (req: Request, res: Response) => {
       });
     }
 
-    const data = await resp.json();
+    const data = await resp.json() as any[];
     console.log(`✅ VTID created: ${vtid} - ${body.taskFamily}/${body.taskType}`);
 
     return res.status(200).json({
       ok: true,
       vtid,
-      data,
+      data: data[0], // Extract first element from Supabase array
     });
   } catch (e: any) {
     if (e instanceof z.ZodError) {
@@ -302,13 +302,13 @@ router.patch("/vtid/:vtid([A-Z0-9-]+)", async (req: Request, res: Response) => {
       });
     }
 
-    const data = await resp.json();
+    const data = await resp.json() as any[];
     console.log(`✅ VTID updated: ${vtid}`);
 
     return res.status(200).json({
       ok: true,
       vtid,
-      data,
+      data: data[0], // Extract first element from Supabase array
     });
   } catch (e: any) {
     if (e instanceof z.ZodError) {
