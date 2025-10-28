@@ -89,6 +89,64 @@ router.post("/events/ingest", async (req: Request, res: Response) => {
   }
 });
 
+router.get("/events", async (req: Request, res: Response) => {
+  try {
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+
+    if (!svcKey || !supabaseUrl) {
+      console.error("❌ Gateway misconfigured: Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE");
+      return res.status(500).json({
+        error: "Gateway misconfigured",
+        detail: "Missing Supabase environment variables",
+      });
+    }
+
+    // Parse query parameters
+    const limit = parseInt(req.query.limit as string) || 10;
+    const offset = parseInt(req.query.offset as string) || 0;
+    const service = req.query.service as string;
+    const topic = req.query.topic as string;
+    const status = req.query.status as string;
+
+    // Build query string
+    let queryParams = `limit=${limit}&offset=${offset}&order=created_at.desc`;
+    if (service) queryParams += `&service=eq.${service}`;
+    if (topic) queryParams += `&topic=eq.${topic}`;
+    if (status) queryParams += `&status=eq.${status}`;
+
+    const resp = await fetch(`${supabaseUrl}/rest/v1/oasis_events?${queryParams}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+      },
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.error(`❌ Supabase query failed: ${resp.status} - ${text}`);
+      return res.status(502).json({
+        error: "Supabase query failed",
+        detail: text,
+        status: resp.status,
+      });
+    }
+
+    const data = await resp.json();
+    console.log(`✅ Retrieved ${data.length} events`);
+
+    return res.status(200).json(data);
+  } catch (e: any) {
+    console.error("❌ Unexpected error:", e);
+    return res.status(500).json({
+      error: "Internal server error",
+      detail: e.message,
+    });
+  }
+});
+
 router.get("/events/health", (_req: Request, res: Response) => {
   res.status(200).json({
     ok: true,
