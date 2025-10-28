@@ -28,7 +28,7 @@ jobs:
           node-version: '20'
       - uses: pnpm/action-setup@v4
         with:
-          version: 8
+          version: 9
       - run: pnpm install --frozen-lockfile
       - run: pnpm prisma generate
       - run: pnpm prisma format --check
@@ -49,6 +49,8 @@ jobs:
         run: npm test
         env:
           NODE_ENV: test
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
       - working-directory: ./services/gateway
         run: npm run build
 
