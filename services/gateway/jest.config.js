@@ -3,6 +3,7 @@ module.exports = {
   testEnvironment: 'node',
   roots: ['<rootDir>/test'],
   testMatch: ['**/*.test.ts'],
+  setupFilesAfterEnv: ['<rootDir>/test/__mocks__/setupTests.ts'],
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/**/*.d.ts',
@@ -12,4 +13,9 @@ module.exports = {
   transformIgnorePatterns: [
     'node_modules/(?!(node-fetch|data-uri-to-buffer|fetch-blob|formdata-polyfill)/)',
   ],
+  globals: {
+    'ts-jest': {
+      isolatedModules: true,
+    },
+  },
 };

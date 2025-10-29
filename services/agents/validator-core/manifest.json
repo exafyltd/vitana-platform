@@ -1,0 +1,25 @@
+{
+  "name": "AGENT-VALIDATOR-CORE",
+  "vt_layer": "AGTL",
+  "vt_module": "VALIDATOR",
+  "version": "1.0.0",
+  "description": "Core validation agent for Vitana Platform",
+  "provider_policy": {
+    "validator": "claude-sonnet-4",
+    "fallback": "gemini-flash"
+  },
+  "telemetry": {
+    "emit_ready": true,
+    "emit_heartbeat": true,
+    "heartbeat_interval_seconds": 60
+  },
+  "runtime": {
+    "type": "cloud-run",
+    "min_instances": 0,
+    "max_instances": 10
+  },
+  "dependencies": {
+    "gateway": "https://vitana-gateway-86804897789.us-central1.run.app",
+    "oasis": "https://vitana-gateway-86804897789.us-central1.run.app/api/v1/oasis"
+  }
+}

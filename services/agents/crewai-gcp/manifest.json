@@ -1,0 +1,26 @@
+{
+  "name": "AGENT-CREWAI-GCP",
+  "vt_layer": "AGTL",
+  "vt_module": "CREW",
+  "version": "1.0.0",
+  "description": "CrewAI-based agent system for GCP deployment",
+  "provider_policy": {
+    "planner": "gemini-pro",
+    "worker": "gemini-flash",
+    "validator": "claude-sonnet-4"
+  },
+  "telemetry": {
+    "emit_ready": true,
+    "emit_heartbeat": true,
+    "heartbeat_interval_seconds": 60
+  },
+  "runtime": {
+    "type": "cloud-run",
+    "min_instances": 0,
+    "max_instances": 100
+  },
+  "dependencies": {
+    "gateway": "https://vitana-gateway-86804897789.us-central1.run.app",
+    "oasis": "https://vitana-gateway-86804897789.us-central1.run.app/api/v1/oasis"
+  }
+}
