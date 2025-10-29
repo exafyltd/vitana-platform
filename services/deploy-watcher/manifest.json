@@ -1,0 +1,42 @@
+{
+  "name": "deploy-watcher",
+  "vtid": "CICDL-DEPLOYWATCHER-001",
+  "version": "1.0.0",
+  "description": "Watches and reports on Cloud Run deployment events",
+  "layer": "CICDL",
+  "module": "DEPLOYWATCHER",
+  "type": "service",
+  "runtime": "python",
+  "port": 8080,
+  "healthcheck": {
+    "path": "/health",
+    "interval": "30s",
+    "timeout": "5s",
+    "retries": 3
+  },
+  "dependencies": [
+    "google-cloud-run",
+    "fastapi",
+    "uvicorn"
+  ],
+  "environment": {
+    "required": [
+      "GCP_PROJECT_ID",
+      "GATEWAY_URL"
+    ],
+    "optional": [
+      "PORT",
+      "LOG_LEVEL",
+      "POLL_INTERVAL"
+    ]
+  },
+  "resources": {
+    "cpu": "0.5",
+    "memory": "256Mi"
+  },
+  "labels": {
+    "app": "deploy-watcher",
+    "component": "monitoring",
+    "managed-by": "vitana-platform"
+  }
+}
