@@ -1,0 +1,36 @@
+name: Exec Deploy (VTID Bridge)
+on:
+  workflow_dispatch:
+    inputs:
+      vtid:
+        description: 'VTID'
+        required: true
+      service:
+        description: 'Service name'
+        required: true
+        default: 'vitana-gateway'
+      image:
+        description: 'Container image'
+        required: true
+      health_path:
+        description: 'Health path'
+        required: true
+        default: '/alive'
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+          project_id: lovable-vitana-vers1
+      - uses: google-github-actions/setup-gcloud@v2
+      - run: |
+          gcloud run deploy "${{ github.event.inputs.service }}" --image="${{ github.event.inputs.image }}" --region=us-central1 --project=lovable-vitana-vers1 --allow-unauthenticated
+          URL=$(gcloud run services describe ${{ github.event.inputs.service }} --region=us-central1 --format='value(status.url)')
+          curl -fsS "$URL${{ github.event.inputs.health_path }}" -H "X-VTID: ${{ github.event.inputs.vtid }}"
