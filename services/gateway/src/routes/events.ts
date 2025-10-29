@@ -153,3 +153,72 @@ router.get("/events/health", (_req: Request, res: Response) => {
     timestamp: new Date().toISOString(),
   });
 });
+
+// VTID-aware events query endpoint
+router.get("/api/v1/oasis/events", async (req: Request, res: Response) => {
+  try {
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+
+    if (!svcKey || !supabaseUrl) {
+      console.error("❌ Gateway misconfigured");
+      return res.status(500).json({
+        error: "Gateway misconfigured",
+        detail: "Missing Supabase environment variables",
+      });
+    }
+
+    // Parse query parameters
+    const vtid = req.query.vtid as string;
+    const limit = parseInt(req.query.limit as string) || 200;
+    const offset = parseInt(req.query.offset as string) || 0;
+    const source = req.query.source as string;
+    const kind = req.query.kind as string;
+    const status = req.query.status as string;
+    const layer = req.query.layer as string;
+
+    // Build query string
+    let queryParams = `limit=${limit}&offset=${offset}&order=created_at.desc`;
+    if (vtid) queryParams += `&vtid=eq.${vtid}`;
+    if (source) queryParams += `&source=eq.${source}`;
+    if (kind) queryParams += `&kind=eq.${kind}`;
+    if (status) queryParams += `&status=eq.${status}`;
+    if (layer) queryParams += `&layer=eq.${layer}`;
+
+    const resp = await fetch(`${supabaseUrl}/rest/v1/oasis_events?${queryParams}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+      },
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.error(`❌ OASIS query failed: ${resp.status} - ${text}`);
+      return res.status(502).json({
+        error: "OASIS query failed",
+        detail: text,
+        status: resp.status,
+      });
+    }
+
+    const data = (await resp.json()) as any[];
+    
+    // Echo X-VTID header if vtid was queried
+    if (vtid) {
+      res.setHeader("X-VTID", vtid);
+    }
+    
+    console.log(`✅ OASIS query: ${data.length} events (vtid=${vtid || 'all'})`);
+
+    return res.status(200).json(data);
+  } catch (e: any) {
+    console.error("❌ Unexpected error:", e);
+    return res.status(500).json({
+      error: "Internal server error",
+      detail: e.message,
+    });
+  }
+});
