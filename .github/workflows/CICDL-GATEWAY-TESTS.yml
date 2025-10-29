@@ -50,8 +50,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: services/gateway/package-lock.json
 
       - name: Set CI Environment Variables
         run: |
@@ -118,14 +116,23 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const report = fs.readFileSync('ci-report.md', 'utf8');
+            let report = '';
+            try {
+              report = fs.readFileSync('ci-report.md', 'utf8');
+            } catch (e) {
+              report = '# Gateway CI Report\\n\\nReport generation failed';
+            }
             
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: report + '\n\n---\n\n✅ CI pipeline is now self-sufficient. No external checks required for merge.\n\n**External CI Note:** Vercel/Cloud Build checks are informational only and do not block PR merge.'
-            });
+            try {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: report + '\\n\\n---\\n\\n✅ CI pipeline is now self-sufficient. No external checks required for merge.\\n\\n**External CI Note:** Vercel/Cloud Build checks are informational only and do not block PR merge.'
+              });
+            } catch (e) {
+              console.log('Could not post comment:', e.message);
+            }
 
   summary:
     name: CI Summary
