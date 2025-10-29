@@ -69,13 +69,22 @@ jobs:
         run: |
           echo "📦 Installing Gateway dependencies..."
           cd services/gateway
-          npm install
+          npm ci || npm install
+          echo "✅ Dependencies installed"
+          echo "📋 Checking test files..."
+          ls -la test/
+          echo "📋 Checking __mocks__..."
+          ls -la test/__mocks__/ || echo "⚠️  No __mocks__ directory"
       
       - name: Run Gateway tests
         run: |
           echo "🧪 Running Gateway service tests..."
           cd services/gateway
-          npm test
+          echo "Environment:"
+          echo "  DATABASE_URL: $DATABASE_URL"
+          echo "  SUPABASE_URL: $SUPABASE_URL"
+          echo "  NODE_ENV: $NODE_ENV"
+          npm test -- --verbose
       
       - name: Summary
         if: always()
@@ -94,6 +103,21 @@ jobs:
   prisma-check:
     name: Prisma Schema Check
     runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: vitana_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
     
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/vitana_test?schema=public
