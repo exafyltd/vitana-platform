@@ -549,3 +549,5 @@ Phase 2C adds infrastructure but **does not break existing code**:
 
 
 <!-- CI fixes applied: workflow updated, manifests added -->
+
+<!-- Naming check updated to allow subdirectory conventions -->
