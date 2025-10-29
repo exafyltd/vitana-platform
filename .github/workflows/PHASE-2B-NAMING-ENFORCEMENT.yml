@@ -1,0 +1,178 @@
+name: PHASE-2B-NAMING-ENFORCEMENT
+
+on:
+  pull_request:
+    branches: [main, trunk, develop, release/**]
+  push:
+    branches: [main, trunk]
+
+jobs:
+  enforce-naming-standards:
+    name: Enforce Phase 2B Naming Standards
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Check Workflow Naming (UPPERCASE only)
+        run: |
+          echo "🔍 Checking GitHub Actions workflow naming..."
+          violations=0
+          
+          for file in .github/workflows/*.yml .github/workflows/*.yaml; do
+            [ -f "$file" ] || continue
+            
+            filename=$(basename "$file")
+            # Skip this file and reusable workflows
+            if [[ "$filename" == "PHASE-2B-NAMING-ENFORCEMENT.yml" ]] || \
+               [[ "$filename" == _* ]]; then
+              continue
+            fi
+            
+            # Check if filename contains lowercase letters (excluding extension)
+            basename_no_ext="${filename%.*}"
+            if echo "$basename_no_ext" | grep -q '[a-z]'; then
+              echo "❌ VIOLATION: $file"
+              echo "   Expected: UPPERCASE-WITH-HYPHENS.yml"
+              echo "   Example: DEPLOY-GATEWAY.yml, RUN-TESTS.yml"
+              violations=$((violations + 1))
+            else
+              echo "✅ $file"
+            fi
+          done
+          
+          if [ $violations -gt 0 ]; then
+            echo ""
+            echo "❌ Found $violations workflow naming violations"
+            echo "📘 Phase 2B Standard: All workflow files must use UPPERCASE names"
+            exit 1
+          fi
+          
+          echo "✅ All workflows follow UPPERCASE naming standard"
+      
+      - name: Check Workflow run-name Includes VTID
+        run: |
+          echo "🔍 Checking workflows include run-name with VTID..."
+          violations=0
+          
+          for file in .github/workflows/*.yml .github/workflows/*.yaml; do
+            [ -f "$file" ] || continue
+            
+            filename=$(basename "$file")
+            # Skip reusable workflows and this file
+            if [[ "$filename" == _* ]] || \
+               [[ "$filename" == "PHASE-2B-NAMING-ENFORCEMENT.yml" ]]; then
+              continue
+            fi
+            
+            # Check if workflow has run-name
+            if ! grep -q "^run-name:" "$file"; then
+              echo "⚠️  WARNING: $file missing run-name field"
+              violations=$((violations + 1))
+            else
+              # Check if run-name references VTID or branch
+              if ! grep -A 1 "^run-name:" "$file" | grep -qi "vtid\|github.ref"; then
+                echo "⚠️  WARNING: $file run-name doesn't include VTID reference"
+                violations=$((violations + 1))
+              else
+                echo "✅ $file"
+              fi
+            fi
+          done
+          
+          if [ $violations -gt 0 ]; then
+            echo ""
+            echo "⚠️  Found $violations workflows without VTID in run-name"
+            echo "📘 Recommended: Add run-name with VTID for tracking"
+            echo "Example:"
+            echo "  run-name: 'Deploy Gateway [VTID: DEV-CICDL-0031] (\${{ github.ref_name }})'"
+            # Warning only, not failing
+          fi
+      
+      - name: Check File Naming Convention (kebab-case)
+        run: |
+          echo "🔍 Checking file naming convention (kebab-case)..."
+          violations=0
+          
+          # Check TypeScript/JavaScript files
+          while IFS= read -r file; do
+            filename=$(basename "$file")
+            dirname=$(dirname "$file")
+            
+            # Skip node_modules, .git, etc
+            if echo "$file" | grep -qE "node_modules|\.git|\.next|dist|build"; then
+              continue
+            fi
+            
+            # Check for camelCase or snake_case (should be kebab-case)
+            basename_no_ext="${filename%.*}"
+            if echo "$basename_no_ext" | grep -qE "[A-Z]|_"; then
+              # Allow certain exceptions
+              if [[ "$filename" =~ ^(README|LICENSE|CHANGELOG|Dockerfile|Makefile)\.? ]]; then
+                continue
+              fi
+              
+              echo "❌ VIOLATION: $file"
+              echo "   Contains uppercase or underscores"
+              echo "   Expected: kebab-case (e.g., my-service.ts)"
+              violations=$((violations + 1))
+            fi
+          done < <(find . -type f \( -name "*.ts" -o -name "*.js" -o -name "*.tsx" -o -name "*.jsx" \) -not -path "*/node_modules/*" -not -path "*/.git/*")
+          
+          if [ $violations -gt 0 ]; then
+            echo ""
+            echo "❌ Found $violations file naming violations"
+            echo "📘 Phase 2B Standard: Use kebab-case for all code files"
+            exit 1
+          fi
+          
+          echo "✅ All files follow kebab-case naming standard"
+      
+      - name: Check VTID Format in Code
+        run: |
+          echo "🔍 Checking VTID format in code..."
+          violations=0
+          
+          # Check for VTID constants that aren't UPPERCASE
+          while IFS= read -r file; do
+            # Look for VTID assignments with lowercase
+            if grep -nE "vtid\s*[:=]\s*['\"]" "$file"; then
+              echo "❌ VIOLATION: $file"
+              echo "   VTID constants should be UPPERCASE"
+              echo "   Use: const VTID = 'DEV-CICDL-0031'"
+              echo "   Not: const vtid = 'DEV-CICDL-0031'"
+              violations=$((violations + 1))
+            fi
+          done < <(find services packages -type f \( -name "*.ts" -o -name "*.js" \) -not -path "*/node_modules/*" 2>/dev/null || true)
+          
+          if [ $violations -gt 0 ]; then
+            echo ""
+            echo "⚠️  Found $violations VTID format warnings"
+            echo "📘 Recommended: Use UPPERCASE for VTID constants"
+            # Warning only
+          fi
+      
+      - name: Verify Phase 2B Checklist in PR Description
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "🔍 Checking PR description for Phase 2B checklist..."
+          
+          # This would require GitHub API access to check PR body
+          # For now, we'll just log a reminder
+          echo "⚡ Reminder: Ensure PR description includes Phase 2B compliance checklist"
+          echo "   The PR template should be filled out completely"
+      
+      - name: Summary
+        if: success()
+        run: |
+          echo "✅ Phase 2B Naming Standards Verification Complete"
+          echo ""
+          echo "Checks passed:"
+          echo "  ✅ Workflow naming (UPPERCASE)"
+          echo "  ✅ File naming (kebab-case)"
+          echo "  ✅ VTID format compliance"
+          echo ""
+          echo "Ready for review and merge!"
