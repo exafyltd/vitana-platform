@@ -88,11 +88,15 @@ jobs:
           echo "- ✅ Gateway tests executed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** GitHub Actions with Postgres 16 service container" >> $GITHUB_STEP_SUMMARY
+          echo "**Mock Setup:** Supabase/OASIS calls mocked for isolated testing" >> $GITHUB_STEP_SUMMARY
           echo "**VTID:** DEV-CICDL-0034" >> $GITHUB_STEP_SUMMARY
 
   prisma-check:
     name: Prisma Schema Check
     runs-on: ubuntu-latest
+    
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/vitana_test?schema=public
     
     steps:
       - name: Checkout code
