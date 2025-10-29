@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
+import { randomUUID } from "crypto";
 
 export const router = Router();
 
@@ -40,7 +41,7 @@ router.post("/api/v1/telemetry/event", async (req: Request, res: Response) => {
 
     // Prepare event payload for OASIS
     const timestamp = body.ts || new Date().toISOString();
-    const eventId = crypto.randomUUID();
+    const eventId = randomUUID();
     
     const payload = {
       id: eventId,
@@ -156,7 +157,7 @@ router.post("/api/v1/telemetry/batch", async (req: Request, res: Response) => {
     // Prepare payloads
     const timestamp = new Date().toISOString();
     const payloads = events.map((event: TelemetryEvent) => ({
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       created_at: event.ts || timestamp,
       vtid: event.vtid,
       layer: event.layer,
