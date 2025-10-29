@@ -2,12 +2,36 @@ import { Router, Request, Response } from "express";
 
 export const router = Router();
 
+// Type definitions
+interface TickerEvent {
+  ts: string;
+  vtid: string;
+  layer: string;
+  module: string;
+  source: string;
+  kind: string;
+  status: string;
+  title: string;
+  ref: string;
+  link: string | null;
+}
+
+interface DatabaseEvent {
+  created_at: string;
+  vtid?: string;
+  topic?: string;
+  service?: string;
+  status: string;
+  message: string;
+  link?: string;
+}
+
 // In-memory cache for last 20 events (for instant replay on connection)
-let eventCache: any[] = [];
+let eventCache: TickerEvent[] = [];
 const CACHE_SIZE = 20;
 
 // Helper to update cache
-function updateCache(event: any) {
+function updateCache(event: TickerEvent) {
   eventCache.unshift(event);
   if (eventCache.length > CACHE_SIZE) {
     eventCache = eventCache.slice(0, CACHE_SIZE);
@@ -15,16 +39,13 @@ function updateCache(event: any) {
 }
 
 // Helper to transform DB event to ticker format
-function transformEventToTicker(dbEvent: any): any {
-  // Extract layer and module from VTID (e.g., "DEV-CICDL-0031" -> layer: "CICDL")
+function transformEventToTicker(dbEvent: DatabaseEvent): TickerEvent {
   const vtid = dbEvent.vtid || "DEV-UNKNOWN-0000";
   const vtidParts = vtid.split("-");
   const layer = vtidParts[1] || "UNKNOWN";
   
-  // Determine module from service or topic
   const module = (dbEvent.service || "CORE").toUpperCase();
   
-  // Map database status to ticker status
   const statusMap: Record<string, string> = {
     success: "success",
     error: "failure",
@@ -34,7 +55,6 @@ function transformEventToTicker(dbEvent: any): any {
   
   const status = statusMap[dbEvent.status] || "info";
   
-  // Determine source from service
   const sourceMap: Record<string, string> = {
     gateway: "oasis.events",
     github: "github.actions",
@@ -42,16 +62,10 @@ function transformEventToTicker(dbEvent: any): any {
     agent: "agent.ping",
   };
   
-  const source = sourceMap[dbEvent.service] || "oasis.events";
-  
-  // Determine kind from topic
+  const source = sourceMap[dbEvent.service || ""] || "oasis.events";
   const kind = dbEvent.topic || "event";
-  
-  // Create title in UPPERCASE format: LAYER-MODULE-ACTION
   const action = (dbEvent.topic || "EVENT").toUpperCase().replace(/\./g, "-");
   const title = `${layer}-${module}-${action}`;
-  
-  // Create ref from VTID
   const ref = `vt/${vtid}-${kind.replace(/\./g, "-")}`;
   
   return {
@@ -69,9 +83,9 @@ function transformEventToTicker(dbEvent: any): any {
 }
 
 // Helper to generate mock event for testing
-function generateMockEvent(): any {
+function generateMockEvent(): TickerEvent {
   const now = new Date().toISOString();
-  const mockEvents = [
+  const mockEvents: TickerEvent[] = [
     {
       ts: now,
       vtid: "DEV-CICDL-0031",
@@ -129,13 +143,11 @@ function generateMockEvent(): any {
 router.get("/api/v1/devhub/feed", async (req: Request, res: Response) => {
   console.log("🎯 SSE client connected to /api/v1/devhub/feed");
   
-  // Set SSE headers
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
-  res.setHeader("X-Accel-Buffering", "no"); // Disable nginx buffering
+  res.setHeader("X-Accel-Buffering", "no");
   
-  // Send immediate connection success
   res.write(`data: ${JSON.stringify({ type: "connected", ts: new Date().toISOString() })}\n\n`);
   
   const svcKey = process.env.SUPABASE_SERVICE_ROLE;
@@ -148,8 +160,7 @@ router.get("/api/v1/devhub/feed", async (req: Request, res: Response) => {
     return;
   }
   
-  // Function to send event to client
-  const sendEvent = (event: any) => {
+  const sendEvent = (event: TickerEvent | { type: string; ts: string }) => {
     try {
       res.write(`data: ${JSON.stringify(event)}\n\n`);
     } catch (err) {
@@ -157,13 +168,11 @@ router.get("/api/v1/devhub/feed", async (req: Request, res: Response) => {
     }
   };
   
-  // Step 1: Replay last 20 events from cache OR fetch from database
   try {
     if (eventCache.length > 0) {
       console.log(`📤 SSE: Replaying ${eventCache.length} cached events`);
       eventCache.slice().reverse().forEach(event => sendEvent(event));
     } else {
-      // Fetch last 20 events from database
       console.log("📥 SSE: Fetching last 20 events from database");
       const resp = await fetch(
         `${supabaseUrl}/rest/v1/oasis_events?order=created_at.desc&limit=20`,
@@ -177,21 +186,18 @@ router.get("/api/v1/devhub/feed", async (req: Request, res: Response) => {
       );
       
       if (resp.ok) {
-        const dbEvents = await resp.json();
+        const dbEvents = await resp.json() as DatabaseEvent[];
         console.log(`✅ SSE: Retrieved ${dbEvents.length} events from database`);
         
         if (dbEvents.length > 0) {
-          // Transform and cache events
-          const tickerEvents = dbEvents.reverse().map((dbEvent: any) => {
+          const tickerEvents = dbEvents.reverse().map((dbEvent: DatabaseEvent) => {
             const tickerEvent = transformEventToTicker(dbEvent);
             updateCache(tickerEvent);
             return tickerEvent;
           });
           
-          // Replay to client
-          tickerEvents.forEach(event => sendEvent(event));
+          tickerEvents.forEach((event: TickerEvent) => sendEvent(event));
         } else {
-          // No events in database - send mock events
           console.log("⚠️ SSE: No events in database, sending mock events");
           for (let i = 0; i < 5; i++) {
             const mockEvent = generateMockEvent();
@@ -201,7 +207,6 @@ router.get("/api/v1/devhub/feed", async (req: Request, res: Response) => {
         }
       } else {
         console.error(`❌ SSE: Database query failed: ${resp.status}`);
-        // Send mock events on error
         for (let i = 0; i < 5; i++) {
           const mockEvent = generateMockEvent();
           updateCache(mockEvent);
@@ -213,7 +218,6 @@ router.get("/api/v1/devhub/feed", async (req: Request, res: Response) => {
     console.error("❌ SSE: Error during initial replay:", err);
   }
   
-  // Step 2: Set up polling for new events (every 2 seconds)
   let lastEventTime = new Date();
   
   const pollInterval = setInterval(async () => {
@@ -230,10 +234,10 @@ router.get("/api/v1/devhub/feed", async (req: Request, res: Response) => {
       );
       
       if (resp.ok) {
-        const newEvents = await resp.json();
+        const newEvents = await resp.json() as DatabaseEvent[];
         if (newEvents.length > 0) {
           console.log(`📨 SSE: ${newEvents.length} new event(s) detected`);
-          newEvents.forEach((dbEvent: any) => {
+          newEvents.forEach((dbEvent: DatabaseEvent) => {
             const tickerEvent = transformEventToTicker(dbEvent);
             updateCache(tickerEvent);
             sendEvent(tickerEvent);
@@ -246,7 +250,6 @@ router.get("/api/v1/devhub/feed", async (req: Request, res: Response) => {
     }
   }, 2000);
   
-  // Step 3: Heartbeat every 15 seconds
   const heartbeatInterval = setInterval(() => {
     try {
       sendEvent({
@@ -258,7 +261,6 @@ router.get("/api/v1/devhub/feed", async (req: Request, res: Response) => {
     }
   }, 15000);
   
-  // Step 4: Handle client disconnect
   req.on("close", () => {
     console.log("👋 SSE client disconnected");
     clearInterval(pollInterval);
@@ -267,7 +269,6 @@ router.get("/api/v1/devhub/feed", async (req: Request, res: Response) => {
   });
 });
 
-// Health endpoint for SSE feed
 router.get("/api/v1/devhub/health", (_req: Request, res: Response) => {
   res.status(200).json({
     ok: true,
