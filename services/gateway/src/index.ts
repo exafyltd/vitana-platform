@@ -4,6 +4,7 @@ import helmet from "helmet";
 import { router as eventsRouter } from "./routes/events";
 import { router as vtidRouter } from "./routes/vtid";
 import { router as executeRouter } from "./routes/execute";
+import { router as devhubRouter } from "./routes/devhub";
 import { requireVTID, VTIDRequest } from "./middleware/requireVTID";
 import dotenv from "dotenv";
 
@@ -25,6 +26,7 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
 app.use("/", eventsRouter);
 app.use("/", vtidRouter);
 app.use("/", executeRouter);
+app.use("/", devhubRouter);
 
 app.get("/", (_req: Request, res: Response) => {
   res.status(200).json({
@@ -83,7 +85,8 @@ if (require.main === module) {
     console.log(`📊 OASIS Events: POST /events/ingest`);
     console.log(`🔢 VTID Ledger: POST /vtid/create, GET /vtid/:vtid`);
     console.log(`⚡ Execution: POST /execute/ping, POST /execute/workflow`);
-    console.log(`💚 Health: GET /events/health, GET /vtid/health, GET /execute/health`);
+    console.log(`📡 DevHub Feed: GET /api/v1/devhub/feed (SSE)`);
+    console.log(`💚 Health: GET /events/health, GET /vtid/health, GET /execute/health, GET /api/v1/devhub/health`);
   });
 }
 
