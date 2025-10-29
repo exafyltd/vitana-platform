@@ -1,0 +1,279 @@
+name: CICDL-CORE-LINT-SERVICES
+
+on:
+  pull_request:
+    branches: [main, trunk, develop, release/**]
+    paths:
+      - 'services/**'
+  push:
+    branches: [main, trunk]
+    paths:
+      - 'services/**'
+
+run-name: 'Services Lint [VTID: DEV-CICDL-0033] (${{ github.ref_name }})'
+
+jobs:
+  lint-services:
+    name: Validate Services Structure
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Check services directory structure
+        run: |
+          echo "🔍 Validating services directory structure..."
+          
+          # Expected structure:
+          # /services/
+          #   agents/<crew>/{planner,worker,validator}/
+          #   mcp/<domain-purpose>/
+          #   gateway/
+          #   oasis/
+          #   deploy-watcher/
+          
+          violations=0
+          
+          # Check if services directory exists
+          if [ ! -d "services" ]; then
+            echo "❌ ERROR: /services directory not found"
+            exit 1
+          fi
+          
+          echo "✅ /services directory exists"
+          echo ""
+          
+          # List all service directories
+          echo "📋 Found services:"
+          find services -mindepth 1 -maxdepth 2 -type d | sort
+          echo ""
+      
+      - name: Validate manifest.json presence
+        run: |
+          echo "🔍 Checking for manifest.json in each service..."
+          echo ""
+          
+          violations=0
+          services_checked=0
+          
+          # Check agents
+          for crew_dir in services/agents/*/; do
+            if [ -d "$crew_dir" ]; then
+              crew_name=$(basename "$crew_dir")
+              
+              for role_dir in "$crew_dir"*/; do
+                if [ -d "$role_dir" ]; then
+                  services_checked=$((services_checked + 1))
+                  role_name=$(basename "$role_dir")
+                  service_path="$role_dir"
+                  
+                  if [ -f "${service_path}manifest.json" ]; then
+                    echo "✅ $service_path"
+                  else
+                    echo "❌ Missing: ${service_path}manifest.json"
+                    violations=$((violations + 1))
+                  fi
+                fi
+              done
+            fi
+          done
+          
+          # Check MCP services
+          for mcp_dir in services/mcp/*/; do
+            if [ -d "$mcp_dir" ]; then
+              services_checked=$((services_checked + 1))
+              
+              if [ -f "${mcp_dir}manifest.json" ]; then
+                echo "✅ $mcp_dir"
+              else
+                echo "❌ Missing: ${mcp_dir}manifest.json"
+                violations=$((violations + 1))
+              fi
+            fi
+          done
+          
+          # Check gateway
+          if [ -d "services/gateway" ]; then
+            services_checked=$((services_checked + 1))
+            
+            if [ -f "services/gateway/manifest.json" ]; then
+              echo "✅ services/gateway/"
+            else
+              echo "⚠️  Warning: services/gateway/manifest.json not found (optional for gateway)"
+            fi
+          fi
+          
+          # Check deploy-watcher
+          if [ -d "services/deploy-watcher" ]; then
+            services_checked=$((services_checked + 1))
+            
+            if [ -f "services/deploy-watcher/manifest.json" ]; then
+              echo "✅ services/deploy-watcher/"
+            else
+              echo "⚠️  Warning: services/deploy-watcher/manifest.json not found (optional)"
+            fi
+          fi
+          
+          echo ""
+          echo "Services checked: $services_checked"
+          echo "Violations: $violations"
+          
+          if [ $violations -gt 0 ]; then
+            echo ""
+            echo "❌ FAILURE: $violations service(s) missing manifest.json"
+            echo ""
+            echo "📘 Each agent/MCP service must have a manifest.json file"
+            echo "   Example location: services/agents/crew-name/planner/manifest.json"
+            echo ""
+            echo "   Example manifest.json:"
+            echo "   {"
+            echo "     \"name\": \"AGENT-PLANNER-CORE\","
+            echo "     \"vt_layer\": \"AGTL\","
+            echo "     \"vt_module\": \"PLANNER\","
+            echo "     \"provider_policy\": {"
+            echo "       \"planner\": \"gemini-pro\","
+            echo "       \"worker\": \"gemini-flash\""
+            echo "     },"
+            echo "     \"telemetry\": {"
+            echo "       \"emit_ready\": true,"
+            echo "       \"emit_heartbeat\": true"
+            echo "     }"
+            echo "   }"
+            exit 1
+          fi
+          
+          echo "✅ All services have manifest.json files"
+      
+      - name: Validate manifest.json schema
+        run: |
+          echo "🔍 Validating manifest.json schema..."
+          echo ""
+          
+          violations=0
+          
+          # Find all manifest.json files
+          manifests=$(find services -name "manifest.json" -type f)
+          
+          if [ -z "$manifests" ]; then
+            echo "⚠️  No manifest.json files found"
+            exit 0
+          fi
+          
+          for manifest in $manifests; do
+            echo "Checking: $manifest"
+            
+            # Validate JSON syntax
+            if ! jq empty "$manifest" 2>/dev/null; then
+              echo "  ❌ Invalid JSON syntax"
+              violations=$((violations + 1))
+              continue
+            fi
+            
+            # Check required fields
+            name=$(jq -r '.name // empty' "$manifest")
+            vt_layer=$(jq -r '.vt_layer // empty' "$manifest")
+            vt_module=$(jq -r '.vt_module // empty' "$manifest")
+            
+            if [ -z "$name" ]; then
+              echo "  ❌ Missing required field: name"
+              violations=$((violations + 1))
+            fi
+            
+            if [ -z "$vt_layer" ]; then
+              echo "  ❌ Missing required field: vt_layer"
+              violations=$((violations + 1))
+            fi
+            
+            if [ -z "$vt_module" ]; then
+              echo "  ❌ Missing required field: vt_module"
+              violations=$((violations + 1))
+            fi
+            
+            # Check that name is UPPERCASE
+            if [ -n "$name" ] && echo "$name" | grep -q '[a-z]'; then
+              echo "  ❌ 'name' must be UPPERCASE: $name"
+              violations=$((violations + 1))
+            fi
+            
+            # Check that vt_layer is UPPERCASE
+            if [ -n "$vt_layer" ] && echo "$vt_layer" | grep -q '[a-z]'; then
+              echo "  ❌ 'vt_layer' must be UPPERCASE: $vt_layer"
+              violations=$((violations + 1))
+            fi
+            
+            # Check that vt_module is UPPERCASE
+            if [ -n "$vt_module" ] && echo "$vt_module" | grep -q '[a-z]'; then
+              echo "  ❌ 'vt_module' must be UPPERCASE: $vt_module"
+              violations=$((violations + 1))
+            fi
+            
+            if [ $violations -eq 0 ]; then
+              echo "  ✅ Valid: $name ($vt_layer/$vt_module)"
+            fi
+          done
+          
+          echo ""
+          
+          if [ $violations -gt 0 ]; then
+            echo "❌ FAILURE: $violations manifest validation error(s)"
+            echo ""
+            echo "📘 Required manifest.json schema:"
+            echo "   {"
+            echo "     \"name\": \"<UPPERCASE-NAME>\","
+            echo "     \"vt_layer\": \"<UPPERCASE-LAYER>\","
+            echo "     \"vt_module\": \"<UPPERCASE-MODULE>\","
+            echo "     \"provider_policy\": { ... },"
+            echo "     \"telemetry\": { ... }"
+            echo "   }"
+            exit 1
+          fi
+          
+          echo "✅ All manifests are valid"
+      
+      - name: Check naming conventions
+        run: |
+          echo "🔍 Checking service naming conventions..."
+          echo ""
+          
+          violations=0
+          
+          # Check for non-kebab-case directory names in services
+          while IFS= read -r dir; do
+            dirname=$(basename "$dir")
+            
+            # Skip if starts with . or is node_modules
+            if [[ "$dirname" == .* ]] || [[ "$dirname" == "node_modules" ]]; then
+              continue
+            fi
+            
+            # Check for violations (uppercase or underscore)
+            if echo "$dirname" | grep -qE '[A-Z]|_'; then
+              echo "❌ Non-kebab-case directory: $dir"
+              echo "   Expected: kebab-case (e.g., my-service)"
+              violations=$((violations + 1))
+            fi
+          done < <(find services -mindepth 1 -type d -not -path "*/node_modules/*")
+          
+          if [ $violations -gt 0 ]; then
+            echo ""
+            echo "❌ FAILURE: $violations naming convention violation(s)"
+            echo ""
+            echo "📘 Phase 2B Standard: All service directories must use kebab-case"
+            exit 1
+          fi
+          
+          echo "✅ All service directories follow kebab-case convention"
+      
+      - name: Summary
+        if: success()
+        run: |
+          echo "✅ Services Lint Checks Complete"
+          echo ""
+          echo "Checks passed:"
+          echo "  ✅ Services directory structure valid"
+          echo "  ✅ All services have manifest.json"
+          echo "  ✅ All manifests have valid schema"
+          echo "  ✅ Naming conventions followed"
+          echo ""
+          echo "Ready for review and merge!"
