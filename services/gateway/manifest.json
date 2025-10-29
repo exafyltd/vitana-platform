@@ -1,0 +1,41 @@
+{
+  "name": "gateway",
+  "vtid": "CORE-GATEWAY-001",
+  "version": "1.0.0",
+  "description": "Vitana API Gateway with OASIS database integration",
+  "layer": "CORE",
+  "module": "GATEWAY",
+  "type": "service",
+  "runtime": "nodejs",
+  "port": 8080,
+  "healthcheck": {
+    "path": "/health",
+    "interval": "30s",
+    "timeout": "5s",
+    "retries": 3
+  },
+  "dependencies": [
+    "@prisma/client",
+    "express",
+    "typescript"
+  ],
+  "environment": {
+    "required": [
+      "DATABASE_URL",
+      "NODE_ENV"
+    ],
+    "optional": [
+      "PORT",
+      "LOG_LEVEL"
+    ]
+  },
+  "resources": {
+    "cpu": "1",
+    "memory": "512Mi"
+  },
+  "labels": {
+    "app": "vitana-gateway",
+    "component": "api",
+    "managed-by": "vitana-platform"
+  }
+}
