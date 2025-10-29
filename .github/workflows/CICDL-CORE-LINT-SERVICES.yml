@@ -166,31 +166,39 @@ jobs:
       
       - name: Check naming conventions
         run: |
-          echo "🔍 Checking service naming conventions..."
+          echo "🔍 Checking top-level service naming conventions..."
           echo ""
           
           violations=0
           
+          # Only check top-level service directories (maxdepth 2)
+          # Internal subdirectories can follow language conventions (e.g., Python snake_case)
           while IFS= read -r dir; do
             dirname=$(basename "$dir")
             
+            # Skip hidden directories and node_modules
             if [[ "$dirname" == .* ]] || [[ "$dirname" == "node_modules" ]]; then
               continue
             fi
             
+            # Check for uppercase or underscore
             if echo "$dirname" | grep -qE '[A-Z]|_'; then
               echo "❌ Non-kebab-case directory: $dir"
+              echo "   Top-level service directories must use kebab-case"
               violations=$((violations + 1))
             fi
-          done < <(find services -mindepth 1 -maxdepth 3 -type d -not -path "*/node_modules/*")
+          done < <(find services -mindepth 1 -maxdepth 2 -type d -not -path "*/node_modules/*")
           
           if [ $violations -gt 0 ]; then
             echo ""
             echo "❌ FAILURE: $violations naming convention violation(s)"
+            echo ""
+            echo "📘 Phase 2B Standard: Top-level service directories must use kebab-case"
+            echo "   Internal subdirectories may follow language conventions"
             exit 1
           fi
           
-          echo "✅ All service directories follow kebab-case convention"
+          echo "✅ All top-level service directories follow kebab-case convention"
       
       - name: Summary
         if: success()
