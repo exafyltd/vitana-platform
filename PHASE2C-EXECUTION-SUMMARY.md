@@ -546,3 +546,6 @@ Phase 2C adds infrastructure but **does not break existing code**:
 **Phase:** 2C - Runtime Fabric Enforcement  
 **Status:** ✅ CODE COMPLETE - READY FOR DEPLOYMENT  
 **Date:** 2025-10-29
+
+
+<!-- CI fixes applied: workflow updated, manifests added -->
