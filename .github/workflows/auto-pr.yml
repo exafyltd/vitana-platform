@@ -1,0 +1,43 @@
+name: Auto PR Creation
+on:
+  workflow_dispatch:
+    inputs:
+      vtid:
+        description: 'VTID for this PR'
+        required: true
+      title:
+        description: 'PR title'
+        required: true
+      branch:
+        description: 'Source branch'
+        required: true
+      base:
+        description: 'Target branch'
+        required: false
+        default: 'main'
+
+jobs:
+  create-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+      
+      - name: Create Pull Request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_PAT }}
+        run: |
+          gh pr create \
+            --title "[${{ github.event.inputs.vtid }}] ${{ github.event.inputs.title }}" \
+            --body "**VTID:** ${{ github.event.inputs.vtid }}" \
+            --base ${{ github.event.inputs.base }} \
+            --head ${{ github.event.inputs.branch }}
+      
+      - name: Emit OASIS Event
+        run: |
+          PR_URL=$(gh pr view --json url -q .url)
+          echo "PR created: ${PR_URL}"
