@@ -31,7 +31,7 @@ let eventCache: TickerEvent[] = [];
 const CACHE_SIZE = 20;
 
 // Helper to update cache
-function updateCache(event: TickerEvent) {
+export function broadcastEvent(event: TickerEvent) {
   eventCache.unshift(event);
   if (eventCache.length > CACHE_SIZE) {
     eventCache = eventCache.slice(0, CACHE_SIZE);
@@ -192,7 +192,7 @@ router.get("/api/v1/devhub/feed", async (req: Request, res: Response) => {
         if (dbEvents.length > 0) {
           const tickerEvents = dbEvents.reverse().map((dbEvent: DatabaseEvent) => {
             const tickerEvent = transformEventToTicker(dbEvent);
-            updateCache(tickerEvent);
+            broadcastEvent(tickerEvent);
             return tickerEvent;
           });
           
@@ -201,7 +201,7 @@ router.get("/api/v1/devhub/feed", async (req: Request, res: Response) => {
           console.log("⚠️ SSE: No events in database, sending mock events");
           for (let i = 0; i < 5; i++) {
             const mockEvent = generateMockEvent();
-            updateCache(mockEvent);
+            broadcastEvent(mockEvent);
             sendEvent(mockEvent);
           }
         }
@@ -209,7 +209,7 @@ router.get("/api/v1/devhub/feed", async (req: Request, res: Response) => {
         console.error(`❌ SSE: Database query failed: ${resp.status}`);
         for (let i = 0; i < 5; i++) {
           const mockEvent = generateMockEvent();
-          updateCache(mockEvent);
+          broadcastEvent(mockEvent);
           sendEvent(mockEvent);
         }
       }
@@ -239,7 +239,7 @@ router.get("/api/v1/devhub/feed", async (req: Request, res: Response) => {
           console.log(`📨 SSE: ${newEvents.length} new event(s) detected`);
           newEvents.forEach((dbEvent: DatabaseEvent) => {
             const tickerEvent = transformEventToTicker(dbEvent);
-            updateCache(tickerEvent);
+            broadcastEvent(tickerEvent);
             sendEvent(tickerEvent);
             lastEventTime = new Date(dbEvent.created_at);
           });
@@ -277,3 +277,4 @@ router.get("/api/v1/devhub/health", (_req: Request, res: Response) => {
     timestamp: new Date().toISOString(),
   });
 });
+
