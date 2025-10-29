@@ -54,33 +54,27 @@ jobs:
         run: npm install -g prisma
       
       - name: Generate Prisma Client
-        working-directory: prisma
         run: |
           echo "🔧 Generating Prisma client..."
+          cd prisma
           prisma generate
       
       - name: Run Prisma migrations
-        working-directory: prisma
         run: |
           echo "🗄️  Running Prisma migrations..."
+          cd prisma
           prisma migrate deploy || prisma db push --skip-generate
       
-      - name: Validate Prisma schema
-        working-directory: prisma
-        run: |
-          echo "✅ Validating Prisma schema..."
-          prisma validate
-      
       - name: Install Gateway dependencies
-        working-directory: services/gateway
         run: |
           echo "📦 Installing Gateway dependencies..."
-          npm ci
+          cd services/gateway
+          npm install
       
       - name: Run Gateway tests
-        working-directory: services/gateway
         run: |
           echo "🧪 Running Gateway service tests..."
+          cd services/gateway
           npm test
       
       - name: Summary
@@ -90,7 +84,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ Prisma client generated" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ Database migrations applied" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Schema validated" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Gateway dependencies installed" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ Gateway tests executed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** GitHub Actions with Postgres 16 service container" >> $GITHUB_STEP_SUMMARY
@@ -112,22 +106,22 @@ jobs:
       - name: Install Prisma CLI
         run: npm install -g prisma
       
-      - name: Generate Prisma client (required for validation)
-        working-directory: prisma
-        run: |
-          echo "🔧 Generating Prisma client..."
-          prisma generate
-      
       - name: Validate Prisma schema
-        working-directory: prisma
         run: |
           echo "✅ Validating Prisma schema..."
+          cd prisma
           prisma validate
       
+      - name: Generate Prisma client (verification)
+        run: |
+          echo "🔧 Generating Prisma client to verify schema..."
+          cd prisma
+          prisma generate
+      
       - name: Format check
-        working-directory: prisma
         run: |
           echo "📝 Checking Prisma format..."
+          cd prisma
           prisma format --check || echo "⚠️ Format check skipped (non-critical)"
       
       - name: Summary
@@ -135,7 +129,7 @@ jobs:
         run: |
           echo "## Prisma Schema Check Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Prisma client generated" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ Schema validation passed" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Client generation verified" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**VTID:** DEV-CICDL-0034" >> $GITHUB_STEP_SUMMARY
