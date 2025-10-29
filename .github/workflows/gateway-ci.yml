@@ -47,11 +47,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9.0.0
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+          cache: 'pnpm'
 
       - name: Set Environment
         run: |
@@ -61,24 +66,20 @@ jobs:
           echo "NODE_ENV=test" >> $GITHUB_ENV
 
       - name: Install Dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Prisma Generate
-        run: npx prisma generate
+        run: pnpm exec prisma generate
 
       - name: Prisma Migrate
-        run: npx prisma migrate deploy || npx prisma db push --skip-generate
+        run: pnpm exec prisma migrate deploy || pnpm exec prisma db push --skip-generate
 
       - name: Prisma Validate
-        run: npx prisma validate
-
-      - name: Build Gateway
-        working-directory: services/gateway
-        run: npm run build || echo "Build not required for tests"
+        run: pnpm exec prisma validate
 
       - name: Test Gateway
         working-directory: services/gateway
-        run: npm test
+        run: pnpm test
 
       - name: Report Success
         if: success() && github.event_name == 'pull_request'
@@ -89,5 +90,5 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '✅ **DEV-CICDL-0034 Gateway CI**: All checks passed!\n\n- ✅ Postgres service: healthy\n- ✅ Prisma: generated, migrated, validated\n- ✅ Gateway tests: passed\n\nNo external dependencies required.'
+              body: '✅ **DEV-CICDL-0034 Gateway CI**: All checks passed!\n\n- ✅ Postgres service: healthy\n- ✅ Prisma: generated, migrated, validated\n- ✅ Gateway tests: passed\n\nSelf-contained CI with pnpm + local Postgres.'
             });
