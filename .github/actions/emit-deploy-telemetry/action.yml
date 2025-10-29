@@ -1,0 +1,91 @@
+name: 'Emit Deploy Telemetry'
+description: 'Emits deploy.started, deploy.success, or deploy.failed events to OASIS'
+
+inputs:
+  event:
+    description: 'Event type: started, success, or failed'
+    required: true
+  vtid:
+    description: 'VTID for this deployment'
+    required: true
+  layer:
+    description: 'Layer (e.g., CICDL, AGTL, APIL)'
+    required: true
+  module:
+    description: 'Module name (e.g., GATEWAY, WORKER)'
+    required: true
+  service:
+    description: 'Service name being deployed'
+    required: true
+  revision_url:
+    description: 'Cloud Run revision URL (optional)'
+    required: false
+    default: ''
+  commit_sha:
+    description: 'Git commit SHA'
+    required: false
+    default: ${{ github.sha }}
+  gateway_url:
+    description: 'Gateway URL for OASIS ingestion'
+    required: false
+    default: 'https://vitana-gateway-86804897789.us-central1.run.app'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Emit ${{ inputs.event }} event
+      shell: bash
+      run: |
+        EVENT_KIND="deploy.${{ inputs.event }}"
+        EVENT_STATUS="info"
+        
+        case "${{ inputs.event }}" in
+          started)
+            EVENT_STATUS="in_progress"
+            ;;
+          success)
+            EVENT_STATUS="success"
+            ;;
+          failed)
+            EVENT_STATUS="failure"
+            ;;
+        esac
+        
+        TITLE="${{ inputs.layer }}-${{ inputs.module }}-DEPLOY-$(echo '${{ inputs.event }}' | tr '[:lower:]' '[:upper:]')"
+        
+        META_JSON=$(cat <<EOF
+        {
+          "service": "${{ inputs.service }}",
+          "commit_sha": "${{ inputs.commit_sha }}",
+          "revision_url": "${{ inputs.revision_url }}",
+          "workflow_run": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+          "actor": "${{ github.actor }}",
+          "ref": "${{ github.ref }}"
+        }
+        EOF
+        )
+        
+        PAYLOAD=$(cat <<EOF
+        {
+          "vtid": "${{ inputs.vtid }}",
+          "source": "gcp.deploy",
+          "kind": "$EVENT_KIND",
+          "status": "$EVENT_STATUS",
+          "title": "$TITLE",
+          "ref": "${{ github.ref_name }}",
+          "link": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+          "meta": $META_JSON
+        }
+        EOF
+        )
+        
+        echo "📡 Emitting event to OASIS..."
+        echo "   Event: $EVENT_KIND"
+        echo "   Status: $EVENT_STATUS"
+        echo "   VTID: ${{ inputs.vtid }}"
+        
+        curl -sS -X POST "${{ inputs.gateway_url }}/api/v1/oasis/events/ingest" \
+          -H "Content-Type: application/json" \
+          -d "$PAYLOAD" || echo "⚠️  Failed to emit event (non-blocking)"
+        
+        echo "✅ Event emitted"
