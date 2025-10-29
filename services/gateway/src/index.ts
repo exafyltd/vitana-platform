@@ -6,6 +6,7 @@ import { router as vtidRouter } from "./routes/vtid";
 import { router as executeRouter } from "./routes/execute";
 import { router as devhubRouter } from "./routes/devhub";
 import { router as webhooksRouter } from "./routes/webhooks";
+import { router as telemetryRouter } from "./routes/telemetry";
 import { requireVTID, VTIDRequest } from "./middleware/requireVTID";
 import dotenv from "dotenv";
 
@@ -29,6 +30,7 @@ app.use("/", vtidRouter);
 app.use("/", executeRouter);
 app.use("/", devhubRouter);
 app.use("/", webhooksRouter);
+app.use("/", telemetryRouter);
 
 app.get("/", (_req: Request, res: Response) => {
   res.status(200).json({
@@ -88,9 +90,11 @@ if (require.main === module) {
     console.log(`🔢 VTID Ledger: POST /vtid/create, GET /vtid/:vtid`);
     console.log(`⚡ Execution: POST /execute/ping, POST /execute/workflow`);
     console.log(`📡 DevHub Feed: GET /api/v1/devhub/feed (SSE)`);
+    console.log(`📊 Telemetry: POST /api/v1/telemetry/event, POST /api/v1/telemetry/batch`);
     console.log(`🔗 Webhooks: POST /webhooks/github`);
-    console.log(`💚 Health: GET /events/health, GET /vtid/health, GET /execute/health, GET /api/v1/devhub/health, GET /webhooks/health`);
+    console.log(`💚 Health: GET /api/v1/health, GET /api/v1/telemetry/health`);
   });
 }
 
 export default app;
+
