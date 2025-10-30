@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
@@ -13,6 +14,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="OASIS Operator", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class ChatRequest(BaseModel):
     user_id: str
@@ -81,7 +90,7 @@ async def get_thread(vtid: str):
             if response.status_code == 200:
                 events = response.json()
                 items = [{"role": "user" if e["event_type"] == "chat.message.in" else "operator", "ts": e["timestamp"], "text": e["metadata"].get("message" if e["event_type"] == "chat.message.in" else "reply", "")} for e in events]
-                return {"vtid": vtid, "items": items}
+                return {"items": items, "next_cursor": None}
             else:
                 raise HTTPException(status_code=500, detail="Failed to fetch thread")
     except Exception as e:
