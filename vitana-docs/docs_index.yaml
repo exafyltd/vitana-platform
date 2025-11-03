@@ -1,0 +1,40 @@
+families:
+  "00":
+    name: "Foundation"
+    dir: "00-foundation"
+    docs:
+      - doc_id: "DOC-00-0001"
+        title: "Vitana Vision & Strategy – Health, Longevity & Community Ecosystem"
+        file: "DOC-00-0001_vitana-vision-strategy-ecosystem.md"
+        template: "concept"
+        status: "canonical"
+      - doc_id: "DOC-00-0002"
+        title: "Vitana Glossary"
+        file: "DOC-00-0002_vitana-glossary.md"
+        template: "concept"
+        status: "draft"
+      - doc_id: "DOC-00-0003"
+        title: "Vitana Core Principles & Process Rules"
+        file: "DOC-00-0003_vitana-core-principles-process-rules.md"
+        template: "concept"
+        status: "draft"
+
+  "30":
+    name: "Platform & Architecture"
+    dir: "30-platform-architecture"
+    docs:
+      - doc_id: "DOC-30-0300"
+        title: "Vitana DevOps, OASIS & Autonomous Infrastructure Strategy"
+        file: "DOC-30-0300_vitana-devops-oasis-strategy.md"
+        template: "concept"
+        status: "canonical"
+
+  "95":
+    name: "Playbooks & Autopilot"
+    dir: "95-playbooks-autopilot"
+    docs:
+      - doc_id: "DOC-95-9500"
+        title: "Autopilot Modes Overview"
+        file: "DOC-95-9500_autopilot-modes-overview.md"
+        template: "playbook"
+        status: "draft"
