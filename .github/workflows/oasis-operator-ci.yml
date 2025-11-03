@@ -1,0 +1,63 @@
+name: OASIS Operator CI/CD
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/oasis-operator/**'
+  pull_request:
+    paths:
+      - 'services/oasis-operator/**'
+  workflow_dispatch:
+    inputs:
+      vtid:
+        description: 'VTID'
+        required: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+          project_id: lovable-vitana-vers1
+      
+      - uses: google-github-actions/setup-gcloud@v2
+      
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy oasis-operator \
+            --source services/oasis-operator \
+            --region us-central1 \
+            --allow-unauthenticated \
+            --set-secrets SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest \
+            --set-env-vars CONDUCTOR_URL=https://conductor-86804897789.us-central1.run.app \
+            --update-labels vtid=${{ github.event.inputs.vtid || 'auto' }}
+      
+      - name: Health Check
+        run: |
+          sleep 10
+          curl -f https://oasis-operator-86804897789.us-central1.run.app/health
+      
+      - name: Emit Success Event
+        run: |
+          curl -X POST "https://jkwkmqtkbygwdqgegxsi.supabase.co/rest/v1/events" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE }}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"event_type\": \"cd.deployment_completed\",
+              \"vtid\": \"${{ github.event.inputs.vtid || 'AUTO' }}\",
+              \"source_service\": \"github-actions\",
+              \"actor\": \"ci\",
+              \"environment\": \"prod\",
+              \"metadata\": {
+                \"service\": \"oasis-operator\",
+                \"status\": \"success\"
+              }
+            }"

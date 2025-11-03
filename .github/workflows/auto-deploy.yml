@@ -1,0 +1,105 @@
+name: Auto Deploy with OASIS
+on:
+  workflow_dispatch:
+    inputs:
+      vtid:
+        description: 'VTID'
+        required: true
+      service:
+        description: 'Service name'
+        required: true
+      image:
+        description: 'Container image'
+        required: true
+      environment:
+        description: 'Environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+          project_id: lovable-vitana-vers1
+      
+      - uses: google-github-actions/setup-gcloud@v2
+      
+      - name: Get Previous Revision
+        id: prev
+        run: |
+          PREV=$(gcloud run revisions list \
+            --service=${{ github.event.inputs.service }} \
+            --region=us-central1 \
+            --format='value(metadata.name)' \
+            --limit=1)
+          echo "revision=${PREV}" >> $GITHUB_OUTPUT
+      
+      - name: Deploy to Cloud Run
+        id: deploy
+        run: |
+          gcloud run deploy "${{ github.event.inputs.service }}" \
+            --image="${{ github.event.inputs.image }}" \
+            --region=us-central1 \
+            --project=lovable-vitana-vers1 \
+            --allow-unauthenticated \
+            --update-labels=vtid=${{ github.event.inputs.vtid }},environment=${{ github.event.inputs.environment }}
+          
+          URL=$(gcloud run services describe ${{ github.event.inputs.service }} \
+            --region=us-central1 \
+            --format='value(status.url)')
+          echo "url=${URL}" >> $GITHUB_OUTPUT
+      
+      - name: Health Check
+        id: health
+        run: |
+          URL=${{ steps.deploy.outputs.url }}
+          for i in {1..10}; do
+            if curl -f -m 10 "${URL}/health"; then
+              echo "status=healthy" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "status=failed" >> $GITHUB_OUTPUT
+          exit 1
+      
+      - name: Emit Success Event
+        if: steps.health.outputs.status == 'healthy'
+        run: |
+          curl -X POST "https://jkwkmqtkbygwdqgegxsi.supabase.co/rest/v1/events" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE }}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"event_type\": \"cd.deployment_completed\",
+              \"vtid\": \"${{ github.event.inputs.vtid }}\",
+              \"source_service\": \"github-actions\",
+              \"actor\": \"auto-deploy\",
+              \"environment\": \"${{ github.event.inputs.environment }}\",
+              \"metadata\": {
+                \"service\": \"${{ github.event.inputs.service }}\",
+                \"image\": \"${{ github.event.inputs.image }}\",
+                \"url\": \"${{ steps.deploy.outputs.url }}\",
+                \"status\": \"success\"
+              }
+            }"
+      
+      - name: Rollback on Failure
+        if: failure() && steps.prev.outputs.revision != ''
+        run: |
+          echo "Health check failed, rolling back..."
+          gcloud run services update-traffic ${{ github.event.inputs.service }} \
+            --to-revisions=${{ steps.prev.outputs.revi
