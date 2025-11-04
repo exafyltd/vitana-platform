@@ -2,3 +2,9 @@ fastapi
 anthropic
 google-cloud-aiplatform
 requests
+
+# KB Client dependencies
+requests>=2.31.0
+
+# KB Client dependencies
+requests>=2.31.0

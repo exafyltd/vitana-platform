@@ -1,0 +1,144 @@
+# Vitana Knowledge Base Skills
+# These skills enable agents to access Vitana specification documents
+
+skills:
+  - id: vitana.kb.get_index
+    name: Get KB Index
+    description: |
+      Fetch the Vitana Knowledge Base index to discover available documents.
+      Use this to explore what documentation is available before fetching specific documents.
+    category: knowledge_base
+    roles:
+      - planner
+      - worker
+      - validator
+      - research
+    parameters:
+      - name: family_id
+        type: string
+        required: false
+        description: Filter by document family (e.g., "foundation", "platform-architecture", "playbooks-autopilot")
+      - name: status
+        type: string
+        required: false
+        description: Filter by status ("canonical", "draft")
+      - name: tag
+        type: string
+        required: false
+        description: Filter by tag
+    returns:
+      type: object
+      properties:
+        total_docs: 
+          type: integer
+          description: Total number of documents
+        docs:
+          type: array
+          description: List of document metadata
+        families:
+          type: object
+          description: Document families summary
+    examples:
+      - input: { "family_id": "foundation" }
+        output: { "total_docs": 3, "docs": [...] }
+    oasis_event: kb.index_accessed
+
+  - id: vitana.kb.get_doc
+    name: Get KB Document
+    description: |
+      Fetch a complete Vitana specification document with all sections.
+      Use this when you need full context on a specific topic.
+      Warning: Large documents may exceed token limits - consider using get_bundle instead.
+    category: knowledge_base
+    roles:
+      - planner
+      - worker
+      - research
+    parameters:
+      - name: doc_id
+        type: string
+        required: true
+        description: Document ID (e.g., "00-foundation-doc-00-0001_vitana-vision-strategy-ecosystem")
+    returns:
+      type: object
+      properties:
+        doc_id: string
+        title: string
+        family_id: string
+        word_count: integer
+        sections: 
+          type: array
+          description: All document sections with content
+    examples:
+      - input: { "doc_id": "00-foundation-doc-00-0001_vitana-vision-strategy-ecosystem" }
+        output: { "doc_id": "...", "title": "Vitana Vision & Strategy", "word_count": 2943 }
+    oasis_event: kb.doc_accessed
+    cost_estimate: medium
+
+  - id: vitana.kb.get_bundle
+    name: Get KB Bundle
+    description: |
+      Create a custom bundle of document sections with word limits.
+      Use this to efficiently fetch relevant context without exceeding token budgets.
+      Recommended for most use cases where you need specific information.
+    category: knowledge_base
+    roles:
+      - planner
+      - worker
+      - research
+    parameters:
+      - name: docs
+        type: array
+        required: true
+        description: |
+          List of document requests. Each entry should have:
+          - doc_id: string (required)
+          - section_ids: array of strings (optional, fetch all if omitted)
+        example: [{"doc_id": "00-foundation-doc-00-0001_vitana-vision-strategy-ecosystem", "section_ids": ["executive-summary"]}]
+      - name: max_total_words
+        type: integer
+        required: false
+        description: Maximum total words across all documents (recommended: 500-1000 for planning, 2000-3000 for implementation)
+    returns:
+      type: object
+      properties:
+        docs: 
+          type: array
+          description: Selected document sections
+        total_words: integer
+        truncated: boolean
+    examples:
+      - input: 
+          docs: [{"doc_id": "00-foundation-doc-00-0001_vitana-vision-strategy-ecosystem"}]
+          max_total_words: 500
+        output: { "total_words": 489, "truncated": true, "docs": [...] }
+    oasis_event: kb.bundle_created
+    cost_estimate: low
+
+metadata:
+  version: "1.0.0"
+  last_updated: "2025-11-04"
+  owner: "devops-team"
+  category: "knowledge_base"
+  
+usage_guidelines:
+  - "Always use get_index first to discover available documents"
+  - "Prefer get_bundle over get_doc to control token usage"
+  - "Use max_total_words to stay within model context limits"
+  - "Foundation docs are best for understanding product vision"
+  - "Platform architecture docs explain technical implementation"
+  - "Playbook/autopilot docs describe agent behavior patterns"
+  
+best_practices:
+  planner:
+    - "Use get_bundle with 500-1000 words for planning context"
+    - "Fetch foundation docs when planning product features"
+    - "Include doc_ids used in plan metadata"
+  worker:
+    - "Use get_bundle with 2000-3000 words for implementation details"
+    - "Reference specific sections when implementing features"
+    - "Log which KB docs influenced implementation decisions"
+  research:
+    - "Start with get_index to map available knowledge"
+    - "Use targeted bundles to answer specific questions"
+    - "Synthesize information from multiple families"
