@@ -9,6 +9,7 @@ import { router as devhubRouter } from "./routes/devhub";
 import { router as webhooksRouter } from "./routes/webhooks";
 import { router as telemetryRouter } from "./routes/telemetry";
 import { requireVTID, VTIDRequest } from "./middleware/requireVTID";
+import { AutoLoggerService } from "../services/auto_logger";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -95,6 +96,13 @@ if (require.main === module) {
     console.log(`📊 Telemetry: POST /api/v1/telemetry/event, POST /api/v1/telemetry/batch`);
     console.log(`🔗 Webhooks: POST /webhooks/github`);
     console.log(`💚 Health: GET /api/v1/health, GET /api/v1/telemetry/health`);
+    
+    // Start Auto-Logger
+    if (process.env.ENABLE_AUTO_LOGGER === "true") {
+      const autoLogger = new AutoLoggerService();
+      autoLogger.start().catch(err => console.error("Auto-Logger failed:", err));
+      console.log("✅ Auto-Logger started and listening to OASIS events");
+    }
   });
 }
 
