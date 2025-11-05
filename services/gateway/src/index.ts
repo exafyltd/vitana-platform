@@ -1,22 +1,49 @@
 import express, { Request, Response, NextFunction } from "express";
-import cors from "cors";
+import { autoLoggerMetrics } from './services/AutoLoggerMetrics';
+import autoLoggerHealthRoute from './routes/autoLoggerHealthRoute';
+import { AutoLoggerService } from "./services/AutoLoggerService";
 import helmet from "helmet";
+import cors from "cors";
 import { router as eventsRouter } from "./routes/events";
 import { router as vtidRouter } from "./routes/vtid";
 import { router as executeRouter } from "./routes/execute";
 import { router as devhubRouter } from "./routes/devhub";
 import { router as webhooksRouter } from "./routes/webhooks";
 import { router as telemetryRouter } from "./routes/telemetry";
+import kbRouter from "./kb/kbRouter";
 import { requireVTID, VTIDRequest } from "./middleware/requireVTID";
 import dotenv from "dotenv";
 
 dotenv.config();
 
+// Initialize Auto-Logger AFTER env vars are loaded
+export let autoLoggerService: AutoLoggerService | null = null;
+
+try {
+  console.log("[Auto-Logger] ENABLE_AUTO_LOGGER =", process.env.ENABLE_AUTO_LOGGER);
+  console.log("[Auto-Logger] DEVOPS_CHAT_WEBHOOK set =", !!process.env.DEVOPS_CHAT_WEBHOOK);
+  
+  if (process.env.ENABLE_AUTO_LOGGER === "true" && process.env.DEVOPS_CHAT_WEBHOOK) {
+  autoLoggerMetrics.startTelemetryScheduler({
+    intervalMinutes: 60,
+    emitEvent: async (payload) => {
+      await fetch(`${process.env.OASIS_INGEST_URL}/events/ingest`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+      });
+    }
+  });
+  console.log('[Gateway] Auto-Logger telemetry started');
+    autoLoggerService = new AutoLoggerService();
+    console.log("[Auto-Logger] initialized");
+  } else {
+    console.log("[Auto-Logger] not initialized (flag or webhook missing)");
+  }
+} catch (err) {
+  console.error("[Auto-Logger] init failed:", err);
+}
+
 const app = express();
 const PORT = process.env.PORT || 8080;
-
-app.use(helmet());
-app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -31,6 +58,7 @@ app.use("/", executeRouter);
 app.use("/", devhubRouter);
 app.use("/", webhooksRouter);
 app.use("/", telemetryRouter);
+app.use("/api/kb", kbRouter);
 
 app.get("/", (_req: Request, res: Response) => {
   res.status(200).json({
@@ -48,17 +76,16 @@ app.post("/new-request-with-notification", (req: Request, res: Response) => {
 
 app.post("/act", requireVTID, (req: VTIDRequest, res: Response) => {
   const { op, params } = req.body;
-  const vtid = req.context?.vtid;
-
+  const vtid = (req as any).context?.vtid;
   console.log(`🎬 Action requested: ${op} via ${vtid?.vtid}`);
-
+  
   if (!op) {
     return res.status(400).json({
       error: "Operation required",
       detail: "Provide 'op' field in body",
     });
   }
-
+  
   res.status(200).json({
     ok: true,
     message: `Operation '${op}' executed`,
@@ -93,8 +120,8 @@ if (require.main === module) {
     console.log(`📊 Telemetry: POST /api/v1/telemetry/event, POST /api/v1/telemetry/batch`);
     console.log(`🔗 Webhooks: POST /webhooks/github`);
     console.log(`💚 Health: GET /api/v1/health, GET /api/v1/telemetry/health`);
+    console.log(`📚 Knowledge Base: GET /api/kb/index, POST /api/kb/bundle`);
   });
 }
 
 export default app;
-
