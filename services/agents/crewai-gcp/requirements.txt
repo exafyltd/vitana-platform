@@ -2,3 +2,7 @@ fastapi
 anthropic
 google-cloud-aiplatform
 requests
+
+httpx>=0.24.0  # For async HTTP requests to Gateway (KB executor)
+pytest>=7.4.0  # For KB executor tests
+pytest-asyncio>=0.21.0  # For async test support
