@@ -12,6 +12,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install --production
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/config ./config
 ENV NODE_ENV=production
 ENV PORT=8080
 EXPOSE 8080
