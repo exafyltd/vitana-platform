@@ -12,7 +12,7 @@ export class AutoLoggerService {
   private eventSource: any = null;
 
   constructor() {
-    const config: any = yaml.load(fs.readFileSync(__dirname + '/../config/auto_logger_templates.yaml', 'utf8'));
+    const config: any = yaml.load(fs.readFileSync('/app/config/auto_logger_templates.yaml', 'utf8'));
     this.templates = config.templates;
     console.log(`Loaded ${Object.keys(this.templates).length} templates`);
   }
