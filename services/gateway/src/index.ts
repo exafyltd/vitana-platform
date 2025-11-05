@@ -9,7 +9,7 @@ import { router as devhubRouter } from "./routes/devhub";
 import { router as webhooksRouter } from "./routes/webhooks";
 import { router as telemetryRouter } from "./routes/telemetry";
 import { requireVTID, VTIDRequest } from "./middleware/requireVTID";
-import { AutoLoggerService } from "../services/auto_logger";
+import { AutoLoggerService } from "./services/AutoLoggerService";
 import dotenv from "dotenv";
 
 dotenv.config();
