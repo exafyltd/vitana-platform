@@ -40,3 +40,35 @@ provider_policy:
     - research -> perplexity_mcp -> gemini
   reporting:
     required_fields: [rid, task_type, assignee_ai, status, notes, git_sha?]
+
+# KB Skills Integration (VTID: DEV-AICOR-0025)
+skills:
+  # Knowledge Base skills for accessing Vitana documentation
+  kb:
+    vitana.kb.get_index:
+      enabled: true
+      roles: [planner, worker]
+      primary_role: planner
+      description: Retrieve KB index to discover available Vitana documentation
+      
+    vitana.kb.get_doc:
+      enabled: true
+      roles: [planner, worker]
+      primary_role: planner
+      description: Fetch specific Vitana document by ID with section filtering
+      
+    vitana.kb.get_bundle:
+      enabled: true
+      roles: [worker]
+      primary_role: worker
+      description: Create custom documentation bundle for task execution context
+
+  # KB Configuration
+  kb_config:
+    base_url_env: KB_AGENT_BASE_URL
+    oasis_telemetry: true
+    timeout_ms: 10000
+    retry_policy:
+      max_attempts: 3
+      backoff_ms: 1000
+    fallback_mode: continue_without_kb
