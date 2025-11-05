@@ -1,4 +1,4 @@
-import EventSource from 'eventsource';
+import * as EventSource from 'eventsource';
 import * as yaml from 'js-yaml';
 import * as fs from 'fs';
 
@@ -20,7 +20,7 @@ export class AutoLoggerService {
   public async start(): Promise<void> {
     const url = `${CONFIG.OASIS_API_URL}/events/stream`;
     console.log(`Connecting to: ${url}`);
-    this.eventSource = new (EventSource as any)(url);
+    this.eventSource = new (EventSource as any).default(url);
     this.eventSource.onopen = () => console.log('✅ Connected to OASIS');
     this.eventSource.onmessage = (e: any) => this.handleEvent(JSON.parse(e.data));
     this.eventSource.onerror = (err: any) => console.error('SSE error:', err);
