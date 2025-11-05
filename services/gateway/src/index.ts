@@ -48,7 +48,7 @@ app.post("/new-request-with-notification", (req: Request, res: Response) => {
 
 app.post("/act", requireVTID, (req: VTIDRequest, res: Response) => {
   const { op, params } = req.body;
-  const vtid = req.context?.vtid;
+  const vtid = (req as any).context?.vtid || (req as any).vtid;
 
   console.log(`🎬 Action requested: ${op} via ${vtid?.vtid}`);
 
