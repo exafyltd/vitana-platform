@@ -1,6 +1,7 @@
-import * as EventSource from 'eventsource';
 import * as yaml from 'js-yaml';
 import * as fs from 'fs';
+
+const EventSource = require('eventsource');
 
 const CONFIG = {
   OASIS_API_URL: process.env.OASIS_API_URL || 'https://oasis-api.vitana.app',
@@ -20,7 +21,7 @@ export class AutoLoggerService {
   public async start(): Promise<void> {
     const url = `${CONFIG.OASIS_API_URL}/events/stream`;
     console.log(`Connecting to: ${url}`);
-    this.eventSource = new (EventSource as any).default(url);
+    this.eventSource = new EventSource(url);
     this.eventSource.onopen = () => console.log('✅ Connected to OASIS');
     this.eventSource.onmessage = (e: any) => this.handleEvent(JSON.parse(e.data));
     this.eventSource.onerror = (err: any) => console.error('SSE error:', err);
@@ -40,20 +41,6 @@ export class AutoLoggerService {
       .replace(/{actor}/g, event.actor)
       .replace(/{environment}/g, event.environment)
       .replace(/{metadata\.(\w+)}/g, (_: string, k: string) => event.metadata?.[k] || '');
-    
-    // Post to OASIS
-    fetch(`${CONFIG.OASIS_API_URL}/events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        event_type: 'vtid.update',
-        vtid: event.vtid,
-        source_service: 'auto-logger',
-        actor: 'auto-logger',
-        environment: event.environment,
-        metadata: { summary: message },
-      }),
-    }).catch(e => console.error('OASIS post failed:', e));
     
     // Post to Google Chat (Command HUB)
     if (CONFIG.DEVOPS_CHAT_WEBHOOK) {
