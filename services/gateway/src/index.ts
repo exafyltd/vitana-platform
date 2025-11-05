@@ -98,10 +98,20 @@ if (require.main === module) {
     console.log(`💚 Health: GET /api/v1/health, GET /api/v1/telemetry/health`);
     
     // Start Auto-Logger
+    console.log("DEBUG: ENABLE_AUTO_LOGGER =", process.env.ENABLE_AUTO_LOGGER);
+    console.log("DEBUG: ENABLE_AUTO_LOGGER =", process.env.ENABLE_AUTO_LOGGER);
     if (process.env.ENABLE_AUTO_LOGGER === "true") {
-      const autoLogger = new AutoLoggerService();
-      autoLogger.start().catch(err => console.error("Auto-Logger failed:", err));
-      console.log("✅ Auto-Logger started and listening to OASIS events");
+      try {
+        console.log("DEBUG: About to import AutoLoggerService");
+        const autoLogger = new AutoLoggerService();
+        console.log("DEBUG: AutoLoggerService created");
+        autoLogger.start().catch(err => console.error("Auto-Logger failed:", err));
+        console.log("✅ Auto-Logger started and listening to OASIS events");
+      } catch (err) {
+        console.error("DEBUG: Auto-Logger initialization error:", err);
+      }
+    } else {
+      console.log("DEBUG: Auto-Logger disabled (ENABLE_AUTO_LOGGER not true)");
     }
   });
 }
