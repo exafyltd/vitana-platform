@@ -2,11 +2,17 @@ import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import { router as eventsRouter } from "./routes/events";
+import autoLoggerHealthRoute from "./routes/autoLoggerHealthRoute";
 import { router as vtidRouter } from "./routes/vtid";
+import autoLoggerHealthRoute from "./routes/autoLoggerHealthRoute";
 import { router as executeRouter } from "./routes/execute";
+import autoLoggerHealthRoute from "./routes/autoLoggerHealthRoute";
 import { router as devhubRouter } from "./routes/devhub";
+import autoLoggerHealthRoute from "./routes/autoLoggerHealthRoute";
 import { router as webhooksRouter } from "./routes/webhooks";
+import autoLoggerHealthRoute from "./routes/autoLoggerHealthRoute";
 import { router as telemetryRouter } from "./routes/telemetry";
+import autoLoggerHealthRoute from "./routes/autoLoggerHealthRoute";
 import { requireVTID, VTIDRequest } from "./middleware/requireVTID";
 import dotenv from "dotenv";
 
@@ -31,6 +37,7 @@ app.use("/", executeRouter);
 app.use("/", devhubRouter);
 app.use("/", webhooksRouter);
 app.use("/", telemetryRouter);
+app.use("/health/auto-logger", autoLoggerHealthRoute);
 
 app.get("/", (_req: Request, res: Response) => {
   res.status(200).json({
