@@ -1,0 +1,397 @@
+# Auto-Logger Message Templates
+# VTID: DEV-CICDL-0040
+#
+# Templates for automatically generating human-readable summaries
+# from OASIS events and posting to Command Hub (DevOps Chat).
+#
+# Variables available:
+#   {vtid} - VTID identifier
+#   {title} - Event title
+#   {status} - Event status
+#   {layer} - VTID layer (CICDL, API, etc.)
+#   {module} - Module name
+#   {source} - Event source
+#   {kind} - Event kind
+#   {timestamp} - Event timestamp
+#   {link} - Optional link
+#   {count} - Event count (for batches)
+#   {details} - Additional details
+
+templates:
+  # VTID Lifecycle Events
+  vtid.created:
+    title: "📋 New Task Created"
+    message: |
+      **VTID:** {vtid}
+      **Status:** Created
+      **Layer:** {layer}
+      **Time:** {timestamp}
+      
+      New task has been registered in OASIS. Ready for execution.
+    
+  vtid.state_changed:
+    title: "🔄 VTID State Change"
+    message: |
+      **VTID:** {vtid}
+      **State:** {from_state} → {to_state}
+      **Updated:** {timestamp}
+      
+      Task progressing through workflow.
+      {details}
+    
+  vtid.phase_started:
+    title: "🚀 Phase Started"
+    message: |
+      **VTID:** {vtid}
+      **Phase:** {phase_name}
+      **Started:** {timestamp}
+      
+      Beginning execution of {phase_name}.
+    
+  vtid.phase_completed:
+    title: "✅ Phase Complete"
+    message: |
+      **VTID:** {vtid}
+      **Phase:** {phase_name}
+      **Duration:** {duration}
+      **Status:** {status}
+      
+      {phase_name} completed successfully.
+      
+      **Key Metrics:**
+      {metrics}
+      
+      **Next Steps:**
+      {next_steps}
+  
+  # GitHub Events
+  pr.opened:
+    title: "🔀 Pull Request Opened"
+    message: |
+      **VTID:** {vtid}
+      **PR:** #{pr_number} - {pr_title}
+      **Branch:** {branch}
+      **Author:** {author}
+      **Link:** {link}
+      
+      Pull request ready for review.
+      
+      **Changes:**
+      - {files_changed} files changed
+      - +{additions} / -{deletions} lines
+      
+      **CI Status:** {ci_status}
+    
+  pr.merged:
+    title: "✅ Pull Request Merged"
+    message: |
+      **VTID:** {vtid}
+      **PR:** #{pr_number} - {pr_title}
+      **Merged:** {timestamp}
+      **Merged by:** {merged_by}
+      **Target:** {base_branch}
+      
+      Changes successfully merged to {base_branch}.
+      
+      **Auto-deploy:** {auto_deploy_status}
+      {deployment_link}
+    
+  pr.closed:
+    title: "❌ Pull Request Closed"
+    message: |
+      **VTID:** {vtid}
+      **PR:** #{pr_number} - {pr_title}
+      **Closed:** {timestamp}
+      **Reason:** {close_reason}
+      
+      Pull request closed without merge.
+  
+  # CI/CD Events
+  ci.workflow_started:
+    title: "⚙️ CI Workflow Started"
+    message: |
+      **VTID:** {vtid}
+      **Workflow:** {workflow_name}
+      **Branch:** {branch}
+      **Commit:** {commit_sha}
+      **Link:** {link}
+      
+      Running {workflow_name} checks...
+    
+  ci.workflow_completed:
+    title: "✅ CI Workflow Complete"
+    message: |
+      **VTID:** {vtid}
+      **Workflow:** {workflow_name}
+      **Status:** {status}
+      **Duration:** {duration}
+      **Link:** {link}
+      
+      {status_icon} All checks passed.
+      
+      **Jobs:**
+      {job_summary}
+    
+  ci.workflow_failed:
+    title: "❌ CI Workflow Failed"
+    message: |
+      **VTID:** {vtid}
+      **Workflow:** {workflow_name}
+      **Status:** Failed
+      **Failed Job:** {failed_job}
+      **Link:** {link}
+      
+      CI checks failed. Review logs and fix issues.
+      
+      **Error:**
+      ```
+      {error_message}
+      ```
+  
+  # Deployment Events
+  deploy.started:
+    title: "🚀 Deployment Started"
+    message: |
+      **VTID:** {vtid}
+      **Service:** {service_name}
+      **Environment:** {environment}
+      **Version:** {version}
+      **Started:** {timestamp}
+      
+      Deploying {service_name} to {environment}...
+    
+  deploy.completed:
+    title: "✅ Deployment Complete"
+    message: |
+      **VTID:** {vtid}
+      **Service:** {service_name}
+      **Environment:** {environment}
+      **Version:** {version}
+      **Duration:** {duration}
+      **URL:** {service_url}
+      
+      Deployment successful. Service is live.
+      
+      **Health Check:** ✅ Passed
+      **Status:** Running
+    
+  deploy.failed:
+    title: "❌ Deployment Failed"
+    message: |
+      **VTID:** {vtid}
+      **Service:** {service_name}
+      **Environment:** {environment}
+      **Failed:** {timestamp}
+      
+      Deployment failed. Rolling back...
+      
+      **Error:**
+      ```
+      {error_message}
+      ```
+      
+      **Action Required:** Review logs and redeploy.
+    
+  deploy.rollback:
+    title: "⏮️ Deployment Rollback"
+    message: |
+      **VTID:** {vtid}
+      **Service:** {service_name}
+      **Environment:** {environment}
+      **Rolled back to:** {previous_version}
+      **Reason:** {rollback_reason}
+      
+      Service reverted to previous stable version.
+  
+  # Agent Telemetry Events
+  agent.telemetry_batch:
+    title: "📊 Agent Activity Summary"
+    message: |
+      **VTID:** {vtid}
+      **Agent:** {agent_role}
+      **Period:** {period}
+      **Events:** {event_count}
+      
+      **Activity Breakdown:**
+      {activity_summary}
+      
+      **Performance:**
+      - Average execution time: {avg_execution_time}ms
+      - Success rate: {success_rate}%
+      - Cache hit rate: {cache_hit_rate}%
+      
+      **Top Skills Used:**
+      {top_skills}
+    
+  kb.skills_summary:
+    title: "📚 KB Access Summary"
+    message: |
+      **VTID:** {vtid}
+      **Agent:** {agent_role}
+      **Period:** Last {period}
+      
+      **KB Access Stats:**
+      - Total queries: {total_queries}
+      - Documents accessed: {docs_accessed}
+      - Bundles loaded: {bundles_loaded}
+      - Cache hit rate: {cache_hit_rate}%
+      - Avg response time: {avg_response_time}ms
+      
+      **Most Accessed Docs:**
+      {top_docs}
+      
+      **Performance:** {performance_status}
+  
+  # Task Completion
+  task.completed:
+    title: "🎉 Task Complete"
+    message: |
+      **VTID:** {vtid}
+      **Completed:** {timestamp}
+      **Duration:** {total_duration}
+      
+      Task successfully completed!
+      
+      **Summary:**
+      {task_summary}
+      
+      **Deliverables:**
+      {deliverables}
+      
+      **Metrics:**
+      - Total events: {total_events}
+      - PRs merged: {prs_merged}
+      - Deployments: {deployments}
+      - Tests passed: {tests_passed}
+      
+      **Status:** ✅ Verified and closed
+  
+  # Error/Warning Events
+  error.escalation:
+    title: "🚨 Escalation Required"
+    message: |
+      **VTID:** {vtid}
+      **Severity:** {severity}
+      **Component:** {component}
+      **Time:** {timestamp}
+      
+      **Issue:**
+      {error_description}
+      
+      **Context:**
+      {error_context}
+      
+      **Attempted Recovery:**
+      {recovery_attempts}
+      
+      **Action Required:** Manual intervention needed
+      
+      @cto @ceo
+    
+  warning.threshold:
+    title: "⚠️ Threshold Warning"
+    message: |
+      **VTID:** {vtid}
+      **Metric:** {metric_name}
+      **Value:** {current_value}
+      **Threshold:** {threshold_value}
+      **Time:** {timestamp}
+      
+      {metric_name} has exceeded threshold.
+      
+      **Monitoring:** Active
+      **Auto-recovery:** {auto_recovery_status}
+
+# Special Templates for Milestone Events
+milestones:
+  phase_a_complete:
+    title: "🎯 Phase A Complete"
+    message: |
+      **VTID:** {vtid}
+      **Phase:** Phase A - {phase_description}
+      **Completed:** {timestamp}
+      
+      ✅ All Phase A deliverables complete:
+      {deliverables_list}
+      
+      **Key Achievements:**
+      {achievements}
+      
+      **Next:** Phase B - {next_phase_description}
+    
+  phase_b_complete:
+    title: "🚀 Phase B Complete"
+    message: |
+      **VTID:** {vtid}
+      **Phase:** Phase B - {phase_description}
+      **Completed:** {timestamp}
+      **Total Duration:** {total_duration}
+      
+      ✅ Phase B complete with all requirements met:
+      {deliverables_list}
+      
+      **Metrics:**
+      {metrics_summary}
+      
+      **Testing:**
+      - Unit tests: {unit_tests} passed
+      - Integration tests: {integration_tests} passed
+      - Performance: {performance_status}
+      
+      **Status:** Ready for deployment
+      
+      **PR:** {pr_link}
+    
+  project_complete:
+    title: "🎉 Project Complete"
+    message: |
+      **VTID:** {vtid}
+      **Project:** {project_name}
+      **Completed:** {timestamp}
+      **Total Duration:** {total_duration}
+      
+      🎊 Project successfully completed!
+      
+      **Phases Completed:**
+      {phases_summary}
+      
+      **Overall Metrics:**
+      - Total commits: {total_commits}
+      - PRs merged: {total_prs}
+      - Tests: {total_tests} passed
+      - Deployments: {total_deployments}
+      - OASIS events: {total_events}
+      
+      **Documentation:**
+      {documentation_links}
+      
+      **Status:** ✅ Production ready
+
+# Configuration
+config:
+  # Batch similar events within this window (seconds)
+  batch_window: 300
+  
+  # Minimum events to trigger a batch summary
+  batch_threshold: 5
+  
+  # Events to exclude from auto-logging (too noisy)
+  excluded_events:
+    - "heartbeat"
+    - "health_check"
+    - "ping"
+  
+  # Events that require immediate notification (no batching)
+  priority_events:
+    - "error.escalation"
+    - "deploy.failed"
+    - "ci.workflow_failed"
+    - "pr.merged"
+  
+  # Default emoji mapping for status
+  status_icons:
+    success: "✅"
+    failure: "❌"
+    in_progress: "⏳"
+    info: "ℹ️"
+    warning: "⚠️"
