@@ -9,7 +9,10 @@
     "start": "node dist/index.js",
     "test": "jest",
     "lint": "eslint src/**/*.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "auto-logger": "tsx services/auto_logger_cli.ts start",
+    "auto-logger:report": "tsx services/auto_logger_cli.ts report",
+    "auto-logger:demo": "tsx services/demo_auto_logger.ts"
   },
   "dependencies": {
     "express": "^4.18.2",
@@ -17,12 +20,15 @@
     "node-fetch": "^3.3.2",
     "cors": "^2.8.5",
     "helmet": "^7.1.0",
-    "dotenv": "^16.3.1"
+    "dotenv": "^16.3.1",
+    "eventsource": "^2.0.2",
+    "yaml": "^2.3.4"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/cors": "^2.8.17",
     "@types/node": "^20.10.5",
+    "@types/eventsource": "^1.1.15",
     "typescript": "^5.3.3",
     "tsx": "^4.7.0",
     "jest": "^29.7.0",
