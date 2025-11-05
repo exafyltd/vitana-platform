@@ -10,6 +10,7 @@ import { router as webhooksRouter } from "./routes/webhooks";
 import { router as telemetryRouter } from "./routes/telemetry";
 import { requireVTID, VTIDRequest } from "./middleware/requireVTID";
 import { AutoLoggerService } from "./services/AutoLoggerService";
+import { autoLoggerMetrics } from "./services/AutoLoggerMetrics";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -21,6 +22,15 @@ let autoLoggerInstance: any = null;
 export function getAutoLogger() {
   return autoLoggerInstance;
 }
+
+async function sendTelemetryToOasis(payload: any): Promise<void> {
+  const url = (process.env.GATEWAY_URL || "http://localhost:8080") + "/events/ingest";
+  try {
+    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    if (!r.ok) console.error("[Telemetry] Failed:", r.status);
+  } catch (e) { console.error("[Telemetry] Error:", e); }
+}
+
 const PORT = process.env.PORT || 8080;
 
 app.use(helmet());
@@ -108,6 +118,8 @@ if (require.main === module) {
       try {
         autoLoggerInstance = new AutoLoggerService();
         console.log("✅ Auto-Logger initialized");
+        autoLoggerMetrics.startTelemetryScheduler({ intervalMinutes: 60, emitEvent: sendTelemetryToOasis });
+        console.log("✅ Telemetry started (60min)");
         // Note: processEvent() will be called from events route
       } catch (err) {
         console.error("❌ Auto-Logger initialization error:", err);
@@ -119,4 +131,3 @@ if (require.main === module) {
 }
 
 export default app;
-
