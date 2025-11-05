@@ -66,6 +66,12 @@ router.post("/events/ingest", async (req: Request, res: Response) => {
 
     const data = await resp.json();
     console.log(`✅ Event persisted: ${payload.rid} - ${payload.service}/${payload.event}`);
+    // Send to Auto-Logger
+    const { getAutoLogger } = await import("../index");
+    const autoLogger = getAutoLogger();
+    if (autoLogger) {
+      await autoLogger.processEvent(payload).catch((e: any) => console.error("Auto-Logger error:", e));
+    }
 
     return res.status(200).json({
       ok: true,
