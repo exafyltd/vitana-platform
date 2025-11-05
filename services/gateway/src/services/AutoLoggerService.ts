@@ -92,12 +92,12 @@ export class AutoLoggerService {
     return msg;
   }
 
+
   private async postToChat(message: string): Promise<void> {
     if (!this.webhookUrl) {
       console.log("[Auto-Logger] postToChat skipped – no webhookUrl");
       return;
     }
-
     try {
       console.log("[Auto-Logger] posting to Google Chat, message length =", message.length);
       const resp = await fetch(this.webhookUrl, {
@@ -105,11 +105,12 @@ export class AutoLoggerService {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: message }),
       });
-
       const body = await resp.text();
       console.log("[Auto-Logger] chat response status =", resp.status, "body =", body);
-
-      if (!resp.ok) {
+      if (resp.ok) {
+        autoLoggerMetrics.incrementSent();
+      } else {
+        autoLoggerMetrics.incrementFailed();
         console.error('[Auto-Logger] chat post failed');
       }
     } catch (error) {
@@ -117,7 +118,6 @@ export class AutoLoggerService {
       console.error('[Auto-Logger] chat post error:', error);
     }
   }
-
   private async postVtidUpdate(event: OasisEvent, summary: string): Promise<void> {
     try {
       const supabaseUrl = process.env.SUPABASE_URL;
