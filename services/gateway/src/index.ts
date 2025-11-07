@@ -8,6 +8,7 @@ import { router as executeRouter } from "./routes/execute";
 import { router as devhubRouter } from "./routes/devhub";
 import { router as webhooksRouter } from "./routes/webhooks";
 import { router as telemetryRouter } from "./routes/telemetry";
+import contextRouter from "./routes/context";
 import commandHubRouter from "./routes/commandHub";
 import { requireVTID, VTIDRequest } from "./middleware/requireVTID";
 import { AutoLoggerService } from "./services/AutoLoggerService";
@@ -44,6 +45,7 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
   next();
 });
 
+app.use("/context", contextRouter);
 app.use("/", eventsRouter);
 app.use("/", vtidRouter);
 app.use("/", executeRouter);
