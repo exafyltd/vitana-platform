@@ -57,7 +57,7 @@ class LinearMcpConnector {
       throw new Error(`Linear API error: ${response.status} - ${error}`);
     }
 
-    const data = await response.json();
+    const data: any = await response.json();
     if (data.errors) {
       throw new Error(`Linear GraphQL error: ${JSON.stringify(data.errors)}`);
     }
@@ -98,7 +98,7 @@ class LinearMcpConnector {
       first: params.limit || 50,
     };
 
-    const data = await this.query(query, variables);
+    const data: any = await this.query(query, variables);
     return data.issues.nodes;
   }
 
@@ -129,7 +129,7 @@ class LinearMcpConnector {
       }
     `;
 
-    const data = await this.query(query, {
+    const data: any = await this.query(query, {
       id: params.id || params.identifier,
     });
 
@@ -161,7 +161,7 @@ class LinearMcpConnector {
       }
     `;
 
-    const data = await this.query(mutation, {
+    const data: any = await this.query(mutation, {
       issueId: params.issueId,
       stateId: params.stateId,
     });
@@ -200,7 +200,7 @@ class LinearMcpConnector {
       }
     `;
 
-    const data = await this.query(mutation, params);
+    const data: any = await this.query(mutation, params);
     return data.issueCreate;
   }
 }

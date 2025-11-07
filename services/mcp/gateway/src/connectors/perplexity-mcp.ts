@@ -62,7 +62,7 @@ class PerplexityMcpConnector {
       throw new Error(`Perplexity API error: ${response.status} - ${error}`);
     }
 
-    const data = await response.json();
+    const data: any = await response.json();
     return {
       answer: data.choices[0]?.message?.content || '',
       citations: data.citations || [],
