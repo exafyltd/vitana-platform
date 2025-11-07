@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, develop]
     paths:
-      - 'services/mcp-gateway/**'
+      - 'services/mcp/gateway/**'
   workflow_dispatch:
 
 jobs:
@@ -20,11 +20,11 @@ jobs:
           node-version: '18'
       
       - name: Install dependencies
-        working-directory: services/mcp-gateway
+        working-directory: services/mcp/gateway
         run: npm ci
       
       - name: Build TypeScript
-        working-directory: services/mcp-gateway
+        working-directory: services/mcp/gateway
         run: npm run build
       
       - name: Authenticate to Google Cloud
@@ -36,7 +36,7 @@ jobs:
         uses: google-github-actions/setup-gcloud@v1
       
       - name: Deploy to Cloud Run
-        working-directory: services/mcp-gateway
+        working-directory: services/mcp/gateway
         run: |
           gcloud run deploy mcp-gateway \
             --source . \
