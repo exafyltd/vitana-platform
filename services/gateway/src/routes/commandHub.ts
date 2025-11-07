@@ -76,28 +76,32 @@ router.get('/api/events/stream', async (req: Request, res: Response) => {
       throw new Error(`OASIS stream returned ${response.status}`);
     }
 
-    response.body?.on('data', (chunk: Buffer) => {
-      res.write(chunk);
-    });
+    if (response.body) {
+      response.body.on('data', (chunk: any) => {
+        res.write(chunk);
+      });
 
-    response.body?.on('end', () => {
-      console.log('[Command HUB] OASIS stream ended');
-      res.end();
-    });
+      response.body.on('end', () => {
+        console.log('[Command HUB] OASIS stream ended');
+        res.end();
+      });
 
-    response.body?.on('error', (error: Error) => {
-      console.error('[Command HUB] OASIS stream error:', error);
-      res.write(`data: ${JSON.stringify({ 
-        type: 'error', 
-        message: error.message,
-        timestamp: new Date().toISOString()
-      })}\n\n`);
-      res.end();
-    });
+      response.body.on('error', (error: Error) => {
+        console.error('[Command HUB] OASIS stream error:', error);
+        res.write(`data: ${JSON.stringify({ 
+          type: 'error', 
+          message: error.message,
+          timestamp: new Date().toISOString()
+        })}\n\n`);
+        res.end();
+      });
+    }
 
     req.on('close', () => {
       console.log('[Command HUB] Client disconnected');
-      response.body?.destroy();
+      if (response.body) {
+        (response.body as any).destroy();
+      }
     });
 
   } catch (error) {
@@ -128,7 +132,7 @@ router.get('/api/events', async (req: Request, res: Response) => {
       throw new Error(`OASIS returned ${response.status}`);
     }
 
-    const data = await response.json();
+    const data: unknown = await response.json();
     res.json(data);
 
   } catch (error) {
@@ -153,8 +157,8 @@ router.get('/api/health/services', async (req: Request, res: Response) => {
     services.map(async (service) => {
       try {
         const fetch = (await import('node-fetch')).default;
-        const response = await fetch(`${service.url}/health`, { timeout: 5000 });
-        const data = await response.json();
+        const response = await fetch(`${service.url}/health`);
+        const data: any = await response.json();
         
         return {
           name: service.name,
