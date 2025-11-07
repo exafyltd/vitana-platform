@@ -1,0 +1,184 @@
+/**
+ * Command HUB Route Handler
+ * DEV-COMMU-0042: Command HUB Feed Activation
+ */
+
+import { Router, Request, Response } from 'express';
+import path from 'path';
+
+const router = Router();
+
+router.get('/', (req: Request, res: Response) => {
+  try {
+    const htmlPath = path.join(__dirname, '../frontend/command-hub/index.html');
+    res.sendFile(htmlPath);
+  } catch (error) {
+    console.error('[Command HUB] Error serving UI:', error);
+    res.status(500).json({ 
+      error: 'Internal server error', 
+      message: 'Failed to load Command HUB UI',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+router.get('/health', (req: Request, res: Response) => {
+  res.json({
+    status: 'healthy',
+    service: 'command-hub',
+    timestamp: new Date().toISOString(),
+    version: '1.0.0'
+  });
+});
+
+router.get('/api/config', (req: Request, res: Response) => {
+  const oasisUrl = process.env.OASIS_OPERATOR_URL || 'https://oasis-operator-86804897789.us-central1.run.app';
+  
+  res.json({
+    oasisUrl,
+    services: {
+      gateway: process.env.SERVICE_URL || 'https://vitana-dev-gateway-86804897789.us-central1.run.app',
+      oasis: oasisUrl,
+      autoLogger: `${oasisUrl}/auto-logger`,
+      authProxy: process.env.AUTH_PROXY_URL || 'https://auth-proxy-q74ibpv6ia-uc.a.run.app',
+      githubSync: process.env.GITHUB_SYNC_URL || 'https://github-sync-service-86804897789.us-central1.run.app'
+    },
+    features: {
+      eventStream: true,
+      filtering: true,
+      search: true,
+      healthCards: true
+    },
+    timestamp: new Date().toISOString()
+  });
+});
+
+router.get('/api/events/stream', async (req: Request, res: Response) => {
+  const oasisUrl = process.env.OASIS_OPERATOR_URL || 'https://oasis-operator-86804897789.us-central1.run.app';
+  const streamUrl = `${oasisUrl}/events/stream`;
+
+  try {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+
+    res.write(`data: ${JSON.stringify({ 
+      type: 'connected', 
+      message: 'Command HUB event stream connected',
+      timestamp: new Date().toISOString()
+    })}\n\n`);
+
+    const fetch = (await import('node-fetch')).default;
+    const response = await fetch(streamUrl);
+    
+    if (!response.ok) {
+      throw new Error(`OASIS stream returned ${response.status}`);
+    }
+
+    response.body?.on('data', (chunk: Buffer) => {
+      res.write(chunk);
+    });
+
+    response.body?.on('end', () => {
+      console.log('[Command HUB] OASIS stream ended');
+      res.end();
+    });
+
+    response.body?.on('error', (error: Error) => {
+      console.error('[Command HUB] OASIS stream error:', error);
+      res.write(`data: ${JSON.stringify({ 
+        type: 'error', 
+        message: error.message,
+        timestamp: new Date().toISOString()
+      })}\n\n`);
+      res.end();
+    });
+
+    req.on('close', () => {
+      console.log('[Command HUB] Client disconnected');
+      response.body?.destroy();
+    });
+
+  } catch (error) {
+    console.error('[Command HUB] Error setting up event stream:', error);
+    res.status(500).json({ 
+      error: 'Failed to connect to OASIS event stream',
+      message: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+router.get('/api/events', async (req: Request, res: Response) => {
+  const oasisUrl = process.env.OASIS_OPERATOR_URL || 'https://oasis-operator-86804897789.us-central1.run.app';
+  const limit = req.query.limit || '50';
+  const vtid = req.query.vtid as string | undefined;
+  
+  try {
+    const fetch = (await import('node-fetch')).default;
+    let url = `${oasisUrl}/events?limit=${limit}`;
+    if (vtid) {
+      url += `&vtid=${encodeURIComponent(vtid)}`;
+    }
+
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error(`OASIS returned ${response.status}`);
+    }
+
+    const data = await response.json();
+    res.json(data);
+
+  } catch (error) {
+    console.error('[Command HUB] Error fetching events:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch events from OASIS',
+      message: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+router.get('/api/health/services', async (req: Request, res: Response) => {
+  const services = [
+    { name: 'Gateway', url: process.env.SERVICE_URL || 'https://vitana-dev-gateway-86804897789.us-central1.run.app' },
+    { name: 'OASIS', url: process.env.OASIS_OPERATOR_URL || 'https://oasis-operator-86804897789.us-central1.run.app' },
+    { name: 'Auth Proxy', url: process.env.AUTH_PROXY_URL || 'https://auth-proxy-q74ibpv6ia-uc.a.run.app' },
+    { name: 'GitHub Sync', url: process.env.GITHUB_SYNC_URL || 'https://github-sync-service-86804897789.us-central1.run.app' }
+  ];
+
+  const results = await Promise.all(
+    services.map(async (service) => {
+      try {
+        const fetch = (await import('node-fetch')).default;
+        const response = await fetch(`${service.url}/health`, { timeout: 5000 });
+        const data = await response.json();
+        
+        return {
+          name: service.name,
+          url: service.url,
+          status: response.ok ? 'healthy' : 'unhealthy',
+          responseTime: data.responseTime || 0,
+          lastCheck: new Date().toISOString()
+        };
+      } catch (error) {
+        return {
+          name: service.name,
+          url: service.url,
+          status: 'error',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          lastCheck: new Date().toISOString()
+        };
+      }
+    })
+  );
+
+  res.json({
+    services: results,
+    timestamp: new Date().toISOString()
+  });
+});
+
+export default router;
