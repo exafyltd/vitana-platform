@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import fetch from 'node-fetch';
-import { naturalLanguageService } from '../services/NaturalLanguageService';
+import { naturalLanguageService } from '../services/natural-language-service';
 
 const router = Router();
 

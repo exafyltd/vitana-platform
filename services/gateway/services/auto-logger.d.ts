@@ -1,4 +1,4 @@
-export declare class AutoLoggerService {
+export declare class auto-logger-service {
     private templates;
     private eventSource;
     constructor();
@@ -6,4 +6,4 @@ export declare class AutoLoggerService {
     stop(): Promise<void>;
     private handleEvent;
 }
-//# sourceMappingURL=auto_logger.d.ts.map
+//# sourceMappingURL=auto-logger.d.ts.map

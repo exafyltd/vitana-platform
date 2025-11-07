@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { autoLoggerMetrics } from '../services/AutoLoggerMetrics';
+import { autoLoggerMetrics } from '../services/auto-logger-metrics';
 
 const router = Router();
 

@@ -1,0 +1,10 @@
+{
+  "name": "oasis",
+  "version": "1.0.0",
+  "type": "service",
+  "description": "OASIS Single Source of Truth - Event ledger and VTID tracking",
+  "runtime": "python",
+  "port": 8080,
+  "healthcheck": "/health",
+  "vtid": "DEV-OASIS-0001"
+}
