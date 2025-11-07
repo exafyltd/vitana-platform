@@ -8,7 +8,7 @@ import { router as executeRouter } from "./routes/execute";
 import { router as devhubRouter } from "./routes/devhub";
 import { router as webhooksRouter } from "./routes/webhooks";
 import { router as telemetryRouter } from "./routes/telemetry";
-import contextRouter from "./routes/context";
+import { router as contextRouter } from "./routes/context";
 import commandHubRouter from "./routes/commandHub";
 import { requireVTID, VTIDRequest } from "./middleware/requireVTID";
 import { AutoLoggerService } from "./services/AutoLoggerService";

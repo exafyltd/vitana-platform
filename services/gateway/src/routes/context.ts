@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 
-const router = Router();
+export const router = Router();
 
 interface OasisEventResponse {
   service: string;
@@ -13,7 +13,7 @@ interface OasisEventResponse {
   created_at: string;
 }
 
-router.get("/context/init", async (req: Request, res: Response) => {
+router.get("/init", async (req: Request, res: Response) => {
   try {
     const agent = req.query.agent || 'unknown';
     
@@ -53,12 +53,7 @@ router.get("/context/init", async (req: Request, res: Response) => {
         command_hub: "operational",
         autologger: "operational",
         gateway: "operational"
-      },
-      key_docs: [
-        "01-PROJECT-OVERVIEW.md",
-        "02-VTID-SYSTEM.md",
-        "08-ACTIVE-VTIDS.md"
-      ]
+      }
     };
 
     res.json(context);
@@ -67,5 +62,3 @@ router.get("/context/init", async (req: Request, res: Response) => {
     res.status(500).json({ error: error.message });
   }
 });
-
-export default router;
