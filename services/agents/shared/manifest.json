@@ -1,0 +1,8 @@
+{
+  "name": "agents-shared",
+  "version": "1.0.0",
+  "type": "library",
+  "description": "Shared utilities for agent services",
+  "runtime": "python",
+  "deployable": false
+}
