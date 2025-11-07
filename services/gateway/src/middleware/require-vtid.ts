@@ -4,7 +4,7 @@ export interface VTIDRequest extends Request {
   vtid?: string;
 }
 
-export const requireVTID = (
+export const require-vtid = (
   req: VTIDRequest,
   res: Response,
   next: NextFunction

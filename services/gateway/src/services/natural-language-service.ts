@@ -8,7 +8,7 @@ const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 const flashModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
 const proModel = genAI.getGenerativeModel({ model: 'gemini-2.0-pro-exp' });
 
-export class NaturalLanguageService {
+export class natural-language-service {
   async processMessage(message: string): Promise<string> {
     try {
       const context = await this.buildContext(message);
@@ -63,4 +63,4 @@ Provide a helpful, concise answer:`;
   }
 }
 
-export const naturalLanguageService = new NaturalLanguageService();
+export const naturalLanguageService = new natural-language-service();

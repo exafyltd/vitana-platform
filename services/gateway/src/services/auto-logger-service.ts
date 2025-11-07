@@ -1,5 +1,5 @@
 import * as yaml from 'js-yaml';
-import { autoLoggerMetrics } from './AutoLoggerMetrics';
+import { autoLoggerMetrics } from './auto-logger-metrics';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -18,7 +18,7 @@ interface Template {
   message: string;
 }
 
-export class AutoLoggerService {
+export class auto-logger-service {
   private templates: Record<string, Template> = {};
   private webhookUrl: string;
 
@@ -31,7 +31,7 @@ export class AutoLoggerService {
 
   private loadTemplates(): void {
     try {
-      const templatePath = path.join(__dirname, '../../config/auto_logger_templates.yaml');
+      const templatePath = path.join(__dirname, '../../config/auto-logger_templates.yaml');
       console.log("[Auto-Logger] template path =", templatePath);
       const fileContents = fs.readFileSync(templatePath, 'utf8');
       const config: any = yaml.load(fileContents);

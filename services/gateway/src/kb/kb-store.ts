@@ -7,7 +7,7 @@ import {
   KBBundleDocRequest,
   KBBundleResponse,
   KBBundleDoc
-} from './kbTypes';
+} from './kb-types';
 
 function countWords(text: string): number {
   return text.split(/\s+/).filter(Boolean).length;
@@ -133,4 +133,4 @@ class KBStore {
   }
 }
 
-export const kbStore = new KBStore();
+export const kb-store = new KBStore();
