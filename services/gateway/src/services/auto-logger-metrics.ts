@@ -11,7 +11,7 @@ interface TelemetrySchedulerOptions {
   intervalMinutes?: number;
 }
 
-export class AutoLoggerMetrics {
+export class auto-logger-metrics {
   private sent: number = 0;
   private failed: number = 0;
   private templateMissing: number = 0;
@@ -30,7 +30,7 @@ export class AutoLoggerMetrics {
   public startTelemetryScheduler(opts: TelemetrySchedulerOptions): void {
     const intervalMinutes = opts.intervalMinutes ?? 60;
     const intervalMs = intervalMinutes * 60 * 1000;
-    console.log(`[AutoLoggerMetrics] Starting telemetry (${intervalMinutes}min)`);
+    console.log(`[auto-logger-metrics] Starting telemetry (${intervalMinutes}min)`);
     this.telemetryIntervalId = setInterval(() => this.emitTelemetry(opts.emitEvent), intervalMs);
   }
 
@@ -44,7 +44,7 @@ export class AutoLoggerMetrics {
       await emitEvent(payload);
       this.lastTelemetryAt = new Date().toISOString();
       this.resetCounters();
-    } catch (error) { console.error('[AutoLoggerMetrics] Error:', error); }
+    } catch (error) { console.error('[auto-logger-metrics] Error:', error); }
   }
 
   private resetCounters(): void {
@@ -52,4 +52,4 @@ export class AutoLoggerMetrics {
   }
 }
 
-export const autoLoggerMetrics = new AutoLoggerMetrics();
+export const autoLoggerMetrics = new auto-logger-metrics();

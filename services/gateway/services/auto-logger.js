@@ -36,7 +36,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.AutoLoggerService = void 0;
+exports.auto-logger-service = void 0;
 const eventsource_1 = __importDefault(require("eventsource"));
 const yaml = __importStar(require("js-yaml"));
 const fs = __importStar(require("fs"));
@@ -44,11 +44,11 @@ const CONFIG = {
     OASIS_API_URL: process.env.OASIS_API_URL || 'https://oasis-api.vitana.app',
     DEVOPS_CHAT_WEBHOOK: process.env.DEVOPS_CHAT_WEBHOOK || '',
 };
-class AutoLoggerService {
+class auto-logger-service {
     templates = {};
     eventSource = null;
     constructor() {
-        const config = yaml.load(fs.readFileSync(__dirname + '/../config/auto_logger_templates.yaml', 'utf8'));
+        const config = yaml.load(fs.readFileSync(__dirname + '/../config/auto-logger_templates.yaml', 'utf8'));
         this.templates = config.templates;
         console.log(`Loaded ${Object.keys(this.templates).length} templates`);
     }
@@ -97,5 +97,5 @@ class AutoLoggerService {
         }
     }
 }
-exports.AutoLoggerService = AutoLoggerService;
-//# sourceMappingURL=auto_logger.js.map
+exports.auto-logger-service = auto-logger-service;
+//# sourceMappingURL=auto-logger.js.map

@@ -3,16 +3,16 @@ import cors from "cors";
 import helmet from "helmet";
 import { router as eventsRouter } from "./routes/events";
 import { router as vtidRouter } from "./routes/vtid";
-import autoLoggerHealthRoute from "./routes/autoLoggerHealthRoute";
+import auto-logger-health-route from "./routes/auto-logger-health-route";
 import { router as executeRouter } from "./routes/execute";
 import { router as devhubRouter } from "./routes/devhub";
 import { router as webhooksRouter } from "./routes/webhooks";
 import { router as telemetryRouter } from "./routes/telemetry";
 import { router as contextRouter } from "./routes/context";
-import commandHubRouter from "./routes/commandHub";
-import { requireVTID, VTIDRequest } from "./middleware/requireVTID";
-import { AutoLoggerService } from "./services/AutoLoggerService";
-import { autoLoggerMetrics } from "./services/AutoLoggerMetrics";
+import command-hubRouter from "./routes/command-hub";
+import { require-vtid, VTIDRequest } from "./middleware/require-vtid";
+import { auto-logger-service } from "./services/auto-logger-service";
+import { autoLoggerMetrics } from "./services/auto-logger-metrics";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -51,9 +51,9 @@ app.use("/", vtidRouter);
 app.use("/", executeRouter);
 app.use("/", devhubRouter);
 app.use("/", webhooksRouter);
-app.use("/health/auto-logger", autoLoggerHealthRoute);
+app.use("/health/auto-logger", auto-logger-health-route);
 app.use("/", telemetryRouter);
-app.use("/command-hub", commandHubRouter);
+app.use("/command-hub", command-hubRouter);
 
 app.get("/", (_req: Request, res: Response) => {
   res.status(200).json({
@@ -69,7 +69,7 @@ app.post("/new-request-with-notification", (req: Request, res: Response) => {
   res.status(200).json({ ok: true, message: "Notification received" });
 });
 
-app.post("/act", requireVTID, (req: VTIDRequest, res: Response) => {
+app.post("/act", require-vtid, (req: VTIDRequest, res: Response) => {
   const { op, params } = req.body;
   const vtid = (req as any).context?.vtid || (req as any).vtid;
 
@@ -120,7 +120,7 @@ if (require.main === module) {
     // Start Auto-Logger
     if (process.env.ENABLE_AUTO_LOGGER === "true") {
       try {
-        autoLoggerInstance = new AutoLoggerService();
+        autoLoggerInstance = new auto-logger-service();
         console.log("✅ Auto-Logger initialized");
         autoLoggerMetrics.startTelemetryScheduler({ intervalMinutes: 60, emitEvent: sendTelemetryToOasis });
         console.log("✅ Telemetry started (60min)");

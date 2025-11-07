@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { kbStore } from './kbStore';
-import { KBBundleDocRequest } from './kbTypes';
+import { kb-store } from './kb-store';
+import { KBBundleDocRequest } from './kb-types';
 
 const router = Router();
 
@@ -12,7 +12,7 @@ router.get('/index', (req: Request, res: Response) => {
       tag: req.query.tag as string | undefined
     };
 
-    const index = kbStore.getFilteredIndex(filters);
+    const index = kb-store.getFilteredIndex(filters);
     res.json(index);
   } catch (error: any) {
     console.error('Error loading KB index:', error);
@@ -41,7 +41,7 @@ router.post('/bundle', (req: Request, res: Response) => {
       }
     }
 
-    const bundle = kbStore.getBundle(docs, maxTotalWords);
+    const bundle = kb-store.getBundle(docs, maxTotalWords);
     res.json(bundle);
   } catch (error: any) {
     console.error('Error building KB bundle:', error);
@@ -59,7 +59,7 @@ router.post('/bundle', (req: Request, res: Response) => {
 router.get('/:docId', (req: Request, res: Response) => {
   try {
     const { docId } = req.params;
-    const doc = kbStore.getDoc(docId);
+    const doc = kb-store.getDoc(docId);
 
     if (!doc) {
       return res.status(404).json({ error: 'KB document not found' });
@@ -75,7 +75,7 @@ router.get('/:docId', (req: Request, res: Response) => {
 router.get('/:docId/sections/:sectionId', (req: Request, res: Response) => {
   try {
     const { docId, sectionId } = req.params;
-    const result = kbStore.getSection(docId, sectionId);
+    const result = kb-store.getSection(docId, sectionId);
 
     if (!result) {
       return res.status(404).json({
