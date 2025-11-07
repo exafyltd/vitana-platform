@@ -1,0 +1,437 @@
+{
+  "doc_id": "00-foundation-doc-00-0003_vitana-core-principles-process-rules",
+  "title": "Vitana Core Principles & Process Rules",
+  "family_id": "foundation",
+  "family_name": "Foundation",
+  "status": "draft",
+  "version": "0.1.0",
+  "tags": [
+    "foundation",
+    "principles",
+    "process",
+    "rules"
+  ],
+  "last_updated": "2025-11-04T15:23:15.310Z",
+  "word_count": 3284,
+  "sections": [
+    {
+      "section_id": "vitana-core-principles-process-rules",
+      "id": "vitana-core-principles-process-rules",
+      "level": 1,
+      "title": "Vitana Core Principles & Process Rules",
+      "content": "",
+      "content_markdown": "",
+      "word_count": 0
+    },
+    {
+      "section_id": "1-purpose-of-this-document",
+      "id": "1-purpose-of-this-document",
+      "level": 2,
+      "title": "1. Purpose of This Document",
+      "content": "This document defines the **non-negotiable principles and process rules** that govern the Vitana ecosystem. These principles serve as our constitution—the foundation upon which all product decisions, technical architectures, and operational processes are built.\n\n**Why these principles exist:**\n- Ensure alignment between our health & longevity mission (DOC-00-0001) and daily execution\n- Provide clear decision-making criteria when facing trade-offs\n- Maintain consistency across three tenants (Maxina, AlKalma, Earthlings) and infrastructure (DOC-30-0300)\n- Protect member trust through transparent, predictable behavior\n\n**How they are used:**\n- **Product decisions:** \"Does this feature align with Health-First and Human-Over-Screen principles?\"\n- **Code reviews:** \"Is this change logged in OASIS? Does it have a VTID?\"\n- **Architecture Decision Records (ADRs):** Must reference and comply with relevant principles\n- **Incident reviews:** \"Which principle was violated, and how do we prevent recurrence?\"\n- **Roadmap prioritization:** Features that strengthen core principles take precedence\n\n**Precedence:** When this document conflicts with other documentation, DOC-00-0003 takes precedence unless explicitly overridden through the ADR process (Section 8).\n\n---",
+      "content_markdown": "This document defines the **non-negotiable principles and process rules** that govern the Vitana ecosystem. These principles serve as our constitution—the foundation upon which all product decisions, technical architectures, and operational processes are built.\n\n**Why these principles exist:**\n- Ensure alignment between our health & longevity mission (DOC-00-0001) and daily execution\n- Provide clear decision-making criteria when facing trade-offs\n- Maintain consistency across three tenants (Maxina, AlKalma, Earthlings) and infrastructure (DOC-30-0300)\n- Protect member trust through transparent, predictable behavior\n\n**How they are used:**\n- **Product decisions:** \"Does this feature align with Health-First and Human-Over-Screen principles?\"\n- **Code reviews:** \"Is this change logged in OASIS? Does it have a VTID?\"\n- **Architecture Decision Records (ADRs):** Must reference and comply with relevant principles\n- **Incident reviews:** \"Which principle was violated, and how do we prevent recurrence?\"\n- **Roadmap prioritization:** Features that strengthen core principles take precedence\n\n**Precedence:** When this document conflicts with other documentation, DOC-00-0003 takes precedence unless explicitly overridden through the ADR process (Section 8).\n\n---",
+      "word_count": 164
+    },
+    {
+      "section_id": "2-product-ux-principles",
+      "id": "2-product-ux-principles",
+      "level": 2,
+      "title": "2. Product & UX Principles",
+      "content": "",
+      "content_markdown": "",
+      "word_count": 0
+    },
+    {
+      "section_id": "2-1-health-first-not-engagement-first",
+      "id": "2-1-health-first-not-engagement-first",
+      "level": 3,
+      "title": "2.1 Health-First, Not Engagement-First",
+      "content": "**Principle:** Member well-being always trumps engagement metrics, retention, or revenue.\n\n**Rules:**\n- Do not use addictive dark patterns (infinite scroll, artificial urgency, manipulative notifications)\n- Measure success by health outcomes (Vitana Index improvement) before engagement metrics (DAU, session length)\n- If a feature increases screen time without improving health, reconsider or redesign it\n- Autopilot should reduce unnecessary app interactions, not increase them\n\n**Example:** Autopilot Autonomous Mode proactively sends health reminders but limits notifications to avoid notification fatigue—even if more notifications would boost engagement stats.",
+      "content_markdown": "**Principle:** Member well-being always trumps engagement metrics, retention, or revenue.\n\n**Rules:**\n- Do not use addictive dark patterns (infinite scroll, artificial urgency, manipulative notifications)\n- Measure success by health outcomes (Vitana Index improvement) before engagement metrics (DAU, session length)\n- If a feature increases screen time without improving health, reconsider or redesign it\n- Autopilot should reduce unnecessary app interactions, not increase them\n\n**Example:** Autopilot Autonomous Mode proactively sends health reminders but limits notifications to avoid notification fatigue—even if more notifications would boost engagement stats.",
+      "word_count": 85
+    },
+    {
+      "section_id": "2-2-human-relationships-screen-time",
+      "id": "2-2-human-relationships-screen-time",
+      "level": 3,
+      "title": "2.2 Human Relationships > Screen Time",
+      "content": "**Principle:** Technology should facilitate real human connection, not replace it.\n\n**Rules:**\n- Maxina meetups and in-person events prioritized over purely digital experiences\n- AlKalma telemedicine supplements (not replaces) local doctor relationships\n- Earthlings retreats emphasize disconnection from devices and immersion in nature/community\n- Social features must encourage offline interactions (e.g., \"Meet at this Maxina event\" not \"Chat more online\")\n\n**Example:** The Social Longevity Graph suggests in-person meetups based on geographic proximity, not just online group chats.",
+      "content_markdown": "**Principle:** Technology should facilitate real human connection, not replace it.\n\n**Rules:**\n- Maxina meetups and in-person events prioritized over purely digital experiences\n- AlKalma telemedicine supplements (not replaces) local doctor relationships\n- Earthlings retreats emphasize disconnection from devices and immersion in nature/community\n- Social features must encourage offline interactions (e.g., \"Meet at this Maxina event\" not \"Chat more online\")\n\n**Example:** The Social Longevity Graph suggests in-person meetups based on geographic proximity, not just online group chats.",
+      "word_count": 76
+    },
+    {
+      "section_id": "2-3-coherent-multi-tenant-experience",
+      "id": "2-3-coherent-multi-tenant-experience",
+      "level": 3,
+      "title": "2.3 Coherent Multi-Tenant Experience",
+      "content": "**Principle:** One Vitana account, seamless experience across Maxina, AlKalma, and Earthlings.\n\n**Rules:**\n- Single sign-on (SSO) across all tenants\n- Unified Credits and VTN balance visible everywhere\n- Shared Vitana Index updates across all tenant activities\n- Consistent navigation patterns (detailed in DOC-90-0900 Navigation Canon)\n- Cross-tenant context: AlKalma doctor sees Earthlings retreat history (with member consent)\n\n**Example:** A member books an Earthlings retreat, and their AlKalma doctor receives an OASIS event notification (with consent) to adjust their care plan accordingly.",
+      "content_markdown": "**Principle:** One Vitana account, seamless experience across Maxina, AlKalma, and Earthlings.\n\n**Rules:**\n- Single sign-on (SSO) across all tenants\n- Unified Credits and VTN balance visible everywhere\n- Shared Vitana Index updates across all tenant activities\n- Consistent navigation patterns (detailed in DOC-90-0900 Navigation Canon)\n- Cross-tenant context: AlKalma doctor sees Earthlings retreat history (with member consent)\n\n**Example:** A member books an Earthlings retreat, and their AlKalma doctor receives an OASIS event notification (with consent) to adjust their care plan accordingly.",
+      "word_count": 81
+    },
+    {
+      "section_id": "2-4-clarity-in-pricing-and-data-usage",
+      "id": "2-4-clarity-in-pricing-and-data-usage",
+      "level": 3,
+      "title": "2.4 Clarity in Pricing and Data Usage",
+      "content": "**Principle:** No hidden costs, no surprise data usage, no deceptive practices.\n\n**Rules:**\n- All pricing displayed upfront in Credits or fiat equivalent\n- Data sharing requires explicit, granular consent (not blanket \"agree to terms\")\n- Credit earning and spending rules transparent and predictable\n- VTN tokenomics documented publicly (supply, distribution, utility)\n- Privacy policy written in plain language (in addition to legal version)\n\n**Example:** Before sharing biomarker data with a research partner, members see: \"This will share your anonymized blood test results with Stanford Longevity Lab for cardiovascular research. You'll earn 20 Credits/month. Revoke anytime.\"",
+      "content_markdown": "**Principle:** No hidden costs, no surprise data usage, no deceptive practices.\n\n**Rules:**\n- All pricing displayed upfront in Credits or fiat equivalent\n- Data sharing requires explicit, granular consent (not blanket \"agree to terms\")\n- Credit earning and spending rules transparent and predictable\n- VTN tokenomics documented publicly (supply, distribution, utility)\n- Privacy policy written in plain language (in addition to legal version)\n\n**Example:** Before sharing biomarker data with a research partner, members see: \"This will share your anonymized blood test results with Stanford Longevity Lab for cardiovascular research. You'll earn 20 Credits/month. Revoke anytime.\"",
+      "word_count": 95
+    },
+    {
+      "section_id": "2-5-default-safe-ux",
+      "id": "2-5-default-safe-ux",
+      "level": 3,
+      "title": "2.5 Default-Safe UX",
+      "content": "**Principle:** When in doubt, choose the option that protects member health, privacy, and financial interests.\n\n**Rules:**\n- Autopilot suggestions default to conservative recommendations (e.g., \"consult a doctor\" not \"try this supplement\")\n- Financial transactions require confirmation (no one-click $1,000 retreat bookings)\n- Data sharing defaults to \"opt-in\" not \"opt-out\"\n- Health-critical features (medication reminders, symptom tracking) have redundancy and fail-safes\n\n**Example:** If Autopilot detects conflicting health advice (e.g., two supplements that may interact), it flags for human review rather than proceeding.\n\n---",
+      "content_markdown": "**Principle:** When in doubt, choose the option that protects member health, privacy, and financial interests.\n\n**Rules:**\n- Autopilot suggestions default to conservative recommendations (e.g., \"consult a doctor\" not \"try this supplement\")\n- Financial transactions require confirmation (no one-click $1,000 retreat bookings)\n- Data sharing defaults to \"opt-in\" not \"opt-out\"\n- Health-critical features (medication reminders, symptom tracking) have redundancy and fail-safes\n\n**Example:** If Autopilot detects conflicting health advice (e.g., two supplements that may interact), it flags for human review rather than proceeding.\n\n---",
+      "word_count": 82
+    },
+    {
+      "section_id": "3-data-privacy-compliance-principles",
+      "id": "3-data-privacy-compliance-principles",
+      "level": 2,
+      "title": "3. Data, Privacy & Compliance Principles",
+      "content": "",
+      "content_markdown": "",
+      "word_count": 0
+    },
+    {
+      "section_id": "3-1-member-data-ownership",
+      "id": "3-1-member-data-ownership",
+      "level": 3,
+      "title": "3.1 Member Data Ownership",
+      "content": "**Principle:** Members own 100% of their health data and can export or delete it at any time.\n\n**Rules:**\n- Full data export available in machine-readable format (JSON, CSV)\n- Delete account = delete all personal health data within 30 days (OASIS events anonymized)\n- No data lock-in: members can take Vitana Index history to other platforms\n- Data portability complies with GDPR Article 20 standards\n\n**Example:** A member clicks \"Export My Data\" and receives a complete archive of Vitana Index history, biomarkers, Credits transactions, and OASIS events related to their account.",
+      "content_markdown": "**Principle:** Members own 100% of their health data and can export or delete it at any time.\n\n**Rules:**\n- Full data export available in machine-readable format (JSON, CSV)\n- Delete account = delete all personal health data within 30 days (OASIS events anonymized)\n- No data lock-in: members can take Vitana Index history to other platforms\n- Data portability complies with GDPR Article 20 standards\n\n**Example:** A member clicks \"Export My Data\" and receives a complete archive of Vitana Index history, biomarkers, Credits transactions, and OASIS events related to their account.",
+      "word_count": 91
+    },
+    {
+      "section_id": "3-2-granular-consent-and-revocation",
+      "id": "3-2-granular-consent-and-revocation",
+      "level": 3,
+      "title": "3.2 Granular Consent and Revocation",
+      "content": "**Principle:** Members control exactly what data is shared, with whom, and for how long.\n\n**Rules:**\n- Consent requests specify: data type, recipient, purpose, duration, compensation (if any)\n- One-click revocation of any consent (effective within 24 hours)\n- No \"all or nothing\" consent: members can share Vitana Index but withhold biomarkers\n- Consent logged in OASIS for audit trail\n\n**Example:** A member shares their Mental pillar score with an AlKalma therapist but withholds Physical and Nutritional pillars. They can revoke therapist access anytime.",
+      "content_markdown": "**Principle:** Members control exactly what data is shared, with whom, and for how long.\n\n**Rules:**\n- Consent requests specify: data type, recipient, purpose, duration, compensation (if any)\n- One-click revocation of any consent (effective within 24 hours)\n- No \"all or nothing\" consent: members can share Vitana Index but withhold biomarkers\n- Consent logged in OASIS for audit trail\n\n**Example:** A member shares their Mental pillar score with an AlKalma therapist but withholds Physical and Nutritional pillars. They can revoke therapist access anytime.",
+      "word_count": 83
+    },
+    {
+      "section_id": "3-3-auditability-via-oasis",
+      "id": "3-3-auditability-via-oasis",
+      "level": 3,
+      "title": "3.3 Auditability via OASIS",
+      "content": "**Principle:** All health-critical and financial events are logged in OASIS for transparency and compliance.\n\n**Rules:**\n- Every data access, sharing event, and consent change recorded in OASIS\n- Members can query: \"Who accessed my data in the last 90 days?\"\n- Professionals and partners see audit trails for their actions\n- OASIS events immutable (append-only log) for regulatory compliance\n\n**Example:** Member asks, \"Who viewed my lab results?\" and sees: \"Dr. Smith (AlKalma) on 2025-10-15, Stanford Research Lab (anonymized) on 2025-10-28.\"",
+      "content_markdown": "**Principle:** All health-critical and financial events are logged in OASIS for transparency and compliance.\n\n**Rules:**\n- Every data access, sharing event, and consent change recorded in OASIS\n- Members can query: \"Who accessed my data in the last 90 days?\"\n- Professionals and partners see audit trails for their actions\n- OASIS events immutable (append-only log) for regulatory compliance\n\n**Example:** Member asks, \"Who viewed my lab results?\" and sees: \"Dr. Smith (AlKalma) on 2025-10-15, Stanford Research Lab (anonymized) on 2025-10-28.\"",
+      "word_count": 80
+    },
+    {
+      "section_id": "3-4-security-baselines",
+      "id": "3-4-security-baselines",
+      "level": 3,
+      "title": "3.4 Security Baselines",
+      "content": "**Principle:** Defense-in-depth security architecture with least-privilege access.\n\n**Rules:**\n- End-to-end encryption for health data in transit and at rest\n- Service accounts follow least-privilege principle (GCP IAM roles)\n- Secrets stored in GCP Secret Manager, never in code or environment variables\n- Regular security audits, penetration testing, and vulnerability scanning\n- Zero-trust network architecture (no implicit trust between services)\n\n**Example:** The Gateway service can read OASIS events but cannot write to the vtid_tracking table. Only the VTID service has write access.",
+      "content_markdown": "**Principle:** Defense-in-depth security architecture with least-privilege access.\n\n**Rules:**\n- End-to-end encryption for health data in transit and at rest\n- Service accounts follow least-privilege principle (GCP IAM roles)\n- Secrets stored in GCP Secret Manager, never in code or environment variables\n- Regular security audits, penetration testing, and vulnerability scanning\n- Zero-trust network architecture (no implicit trust between services)\n\n**Example:** The Gateway service can read OASIS events but cannot write to the vtid_tracking table. Only the VTID service has write access.",
+      "word_count": 81
+    },
+    {
+      "section_id": "3-5-gdpr-and-hipaa-alignment",
+      "id": "3-5-gdpr-and-hipaa-alignment",
+      "level": 3,
+      "title": "3.5 GDPR and HIPAA Alignment",
+      "content": "**Principle:** Operate as if GDPR and HIPAA apply globally, even when not legally required.\n\n**Rules:**\n- Data minimization: collect only necessary health data\n- Purpose limitation: use data only for stated purposes\n- Storage limitation: delete or anonymize data after retention period (90 days–7 years depending on type)\n- Business Associate Agreements (BAAs) with all health data processors\n- Breach notification within 72 hours (GDPR standard)\n\n**Example:** Even for members in countries without strict data laws, Vitana applies GDPR-level protections as baseline.\n\n---",
+      "content_markdown": "**Principle:** Operate as if GDPR and HIPAA apply globally, even when not legally required.\n\n**Rules:**\n- Data minimization: collect only necessary health data\n- Purpose limitation: use data only for stated purposes\n- Storage limitation: delete or anonymize data after retention period (90 days–7 years depending on type)\n- Business Associate Agreements (BAAs) with all health data processors\n- Breach notification within 72 hours (GDPR standard)\n\n**Example:** Even for members in countries without strict data laws, Vitana applies GDPR-level protections as baseline.\n\n---",
+      "word_count": 83
+    },
+    {
+      "section_id": "4-autopilot-agent-safety-principles",
+      "id": "4-autopilot-agent-safety-principles",
+      "level": 2,
+      "title": "4. Autopilot & Agent Safety Principles",
+      "content": "",
+      "content_markdown": "",
+      "word_count": 0
+    },
+    {
+      "section_id": "4-1-bounded-autonomy",
+      "id": "4-1-bounded-autonomy",
+      "level": 3,
+      "title": "4.1 Bounded Autonomy",
+      "content": "**Principle:** Agents execute approved tasks independently but escalate high-risk decisions to humans.\n\n**Rules:**\n- **Fully autonomous:** Logging health data, scheduling meetups, sending routine reminders, dev environment deployments\n- **Requires approval:** Production deployments, financial transactions >$100, medical advice, data sharing consents\n- **Never autonomous:** Diagnosing medical conditions, prescribing medications, irreversible data deletions\n- Boundaries defined per agent type (see DOC-95-9500 for Autopilot specifics, DOC-30-0300 for DevOps agents)\n\n**Example:** Autopilot can suggest \"Your sleep score is low, consider earlier bedtime\" but cannot say \"You have insomnia, take this medication.\"",
+      "content_markdown": "**Principle:** Agents execute approved tasks independently but escalate high-risk decisions to humans.\n\n**Rules:**\n- **Fully autonomous:** Logging health data, scheduling meetups, sending routine reminders, dev environment deployments\n- **Requires approval:** Production deployments, financial transactions >$100, medical advice, data sharing consents\n- **Never autonomous:** Diagnosing medical conditions, prescribing medications, irreversible data deletions\n- Boundaries defined per agent type (see DOC-95-9500 for Autopilot specifics, DOC-30-0300 for DevOps agents)\n\n**Example:** Autopilot can suggest \"Your sleep score is low, consider earlier bedtime\" but cannot say \"You have insomnia, take this medication.\"",
+      "word_count": 87
+    },
+    {
+      "section_id": "4-2-never-pretend-to-be-human",
+      "id": "4-2-never-pretend-to-be-human",
+      "level": 3,
+      "title": "4.2 Never Pretend to Be Human",
+      "content": "**Principle:** AI must identify itself and never impersonate human doctors, coaches, or staff.\n\n**Rules:**\n- All AI interactions clearly labeled: \"Autopilot suggests...\" or \"AI-generated recommendation\"\n- No fake names or human personas for Autopilot\n- Disclaimers on medical advice: \"This is not a substitute for professional medical advice\"\n- Members can always request human handoff (e.g., \"Connect me with an AlKalma doctor\")\n\n**Example:** Autopilot messages start with: \"🤖 Autopilot: Based on your recent activity...\" not \"Hi, this is Sarah from Vitana...\"",
+      "content_markdown": "**Principle:** AI must identify itself and never impersonate human doctors, coaches, or staff.\n\n**Rules:**\n- All AI interactions clearly labeled: \"Autopilot suggests...\" or \"AI-generated recommendation\"\n- No fake names or human personas for Autopilot\n- Disclaimers on medical advice: \"This is not a substitute for professional medical advice\"\n- Members can always request human handoff (e.g., \"Connect me with an AlKalma doctor\")\n\n**Example:** Autopilot messages start with: \"🤖 Autopilot: Based on your recent activity...\" not \"Hi, this is Sarah from Vitana...\"",
+      "word_count": 81
+    },
+    {
+      "section_id": "4-3-escalation-rules-for-health-critical-decisions",
+      "id": "4-3-escalation-rules-for-health-critical-decisions",
+      "level": 3,
+      "title": "4.3 Escalation Rules for Health-Critical Decisions",
+      "content": "**Principle:** When health risk is detected, escalate to licensed professionals immediately.\n\n**Rules:**\n- Autopilot triggers AlKalma doctor notification for: abnormal biomarkers, concerning symptoms, medication interactions\n- Emergency situations (chest pain, suicidal ideation) generate immediate alerts and emergency contact prompts\n- No automated medical diagnosis—only symptom tracking and professional referral\n- Escalation logged in OASIS with reasoning and outcome\n\n**Example:** Member logs \"severe chest pain\" in Start Stream. Autopilot immediately displays: \"This may be an emergency. Call emergency services now. [Call 911] We're also notifying your AlKalma doctor.\"",
+      "content_markdown": "**Principle:** When health risk is detected, escalate to licensed professionals immediately.\n\n**Rules:**\n- Autopilot triggers AlKalma doctor notification for: abnormal biomarkers, concerning symptoms, medication interactions\n- Emergency situations (chest pain, suicidal ideation) generate immediate alerts and emergency contact prompts\n- No automated medical diagnosis—only symptom tracking and professional referral\n- Escalation logged in OASIS with reasoning and outcome\n\n**Example:** Member logs \"severe chest pain\" in Start Stream. Autopilot immediately displays: \"This may be an emergency. Call emergency services now. [Call 911] We're also notifying your AlKalma doctor.\"",
+      "word_count": 87
+    },
+    {
+      "section_id": "4-4-logging-and-explainability",
+      "id": "4-4-logging-and-explainability",
+      "level": 3,
+      "title": "4.4 Logging and Explainability",
+      "content": "**Principle:** All agent actions are logged in OASIS with clear reasoning and traceability.\n\n**Rules:**\n- Every Autopilot recommendation includes: reasoning, data sources, confidence level\n- OASIS events link to VTID for infrastructure changes (see Section 5)\n- Members can ask: \"Why did you suggest this?\" and get plain-language explanation\n- Agent decision logic auditable by compliance and medical review teams\n\n**Example:** Autopilot suggests a supplement. Member clicks \"Why?\" and sees: \"Your Nutritional pillar score (142/200) indicates low magnesium based on recent lab test (2025-10-28). Dr. Chen (AlKalma) previously recommended magnesium for sleep optimization.\"",
+      "content_markdown": "**Principle:** All agent actions are logged in OASIS with clear reasoning and traceability.\n\n**Rules:**\n- Every Autopilot recommendation includes: reasoning, data sources, confidence level\n- OASIS events link to VTID for infrastructure changes (see Section 5)\n- Members can ask: \"Why did you suggest this?\" and get plain-language explanation\n- Agent decision logic auditable by compliance and medical review teams\n\n**Example:** Autopilot suggests a supplement. Member clicks \"Why?\" and sees: \"Your Nutritional pillar score (142/200) indicates low magnesium based on recent lab test (2025-10-28). Dr. Chen (AlKalma) previously recommended magnesium for sleep optimization.\"",
+      "word_count": 93
+    },
+    {
+      "section_id": "4-5-default-safe-behavior-on-uncertainty",
+      "id": "4-5-default-safe-behavior-on-uncertainty",
+      "level": 3,
+      "title": "4.5 Default-Safe Behavior on Uncertainty",
+      "content": "**Principle:** When data is missing, conflicting, or uncertain, agents choose conservative paths.\n\n**Rules:**\n- Insufficient data → \"I don't have enough information to recommend this. Consult your AlKalma doctor.\"\n- Conflicting advice → Flag for human review, do not proceed\n- Low confidence → Present options with caveats, do not choose unilaterally\n- System errors → Fail safe (e.g., no notification sent > incorrect notification sent)\n\n**Example:** If wearable data is missing for 3 days, Autopilot does not extrapolate—it says: \"I haven't received sleep data recently. Please check your device sync.\"\n\n---",
+      "content_markdown": "**Principle:** When data is missing, conflicting, or uncertain, agents choose conservative paths.\n\n**Rules:**\n- Insufficient data → \"I don't have enough information to recommend this. Consult your AlKalma doctor.\"\n- Conflicting advice → Flag for human review, do not proceed\n- Low confidence → Present options with caveats, do not choose unilaterally\n- System errors → Fail safe (e.g., no notification sent > incorrect notification sent)\n\n**Example:** If wearable data is missing for 3 days, Autopilot does not extrapolate—it says: \"I haven't received sleep data recently. Please check your device sync.\"\n\n---",
+      "word_count": 92
+    },
+    {
+      "section_id": "5-devops-oasis-vtid-principles",
+      "id": "5-devops-oasis-vtid-principles",
+      "level": 2,
+      "title": "5. DevOps, OASIS & VTID Principles",
+      "content": "",
+      "content_markdown": "",
+      "word_count": 0
+    },
+    {
+      "section_id": "5-1-if-it-s-not-in-oasis-it-didn-t-happen",
+      "id": "5-1-if-it-s-not-in-oasis-it-didn-t-happen",
+      "level": 3,
+      "title": "5.1 \"If It's Not in OASIS, It Didn't Happen\"",
+      "content": "**Principle:** OASIS is the single source of truth for all system events, state, and audit trails.\n\n**Rules:**\n- Every deployment, PR merge, health data update, Credit transaction recorded in OASIS\n- No reliance on tribal knowledge or external logs as primary record\n- OASIS events queryable for debugging, compliance, and analysis\n- Detailed in DOC-30-0300 (OASIS technical architecture)\n\n**Example:** During an incident review, the team queries OASIS: \"Show all deployment events and error logs for gateway service between 10:00–11:00 UTC\" rather than checking multiple dashboards.",
+      "content_markdown": "**Principle:** OASIS is the single source of truth for all system events, state, and audit trails.\n\n**Rules:**\n- Every deployment, PR merge, health data update, Credit transaction recorded in OASIS\n- No reliance on tribal knowledge or external logs as primary record\n- OASIS events queryable for debugging, compliance, and analysis\n- Detailed in DOC-30-0300 (OASIS technical architecture)\n\n**Example:** During an incident review, the team queries OASIS: \"Show all deployment events and error logs for gateway service between 10:00–11:00 UTC\" rather than checking multiple dashboards.",
+      "word_count": 85
+    },
+    {
+      "section_id": "5-2-every-meaningful-change-has-a-vtid",
+      "id": "5-2-every-meaningful-change-has-a-vtid",
+      "level": 3,
+      "title": "5.2 Every Meaningful Change Has a VTID",
+      "content": "**Principle:** All work items—features, bugs, ops tasks, documentation—tracked via unique VTID (Vitana Task Identifier).\n\n**Rules:**\n- Format: `DOMAIN-CATEGORY-NUMBER` (e.g., `DEV-CICDL-0031`, `DOC-GLOSS-0002`)\n- VTID in branch name, PR title, commit messages, OASIS events\n- VTID lifecycle tracked in OASIS: created → in_progress → review → merged → deployed → verified → closed\n- No production change without a VTID (exceptions require CTO approval + ADR)\n\n**Example:** A bug fix PR titled `[BUG-API-0042] Fix token expiration handling` with branch `bugfix/BUG-API-0042-token-expiry` and commit message referencing the VTID.",
+      "content_markdown": "**Principle:** All work items—features, bugs, ops tasks, documentation—tracked via unique VTID (Vitana Task Identifier).\n\n**Rules:**\n- Format: `DOMAIN-CATEGORY-NUMBER` (e.g., `DEV-CICDL-0031`, `DOC-GLOSS-0002`)\n- VTID in branch name, PR title, commit messages, OASIS events\n- VTID lifecycle tracked in OASIS: created → in_progress → review → merged → deployed → verified → closed\n- No production change without a VTID (exceptions require CTO approval + ADR)\n\n**Example:** A bug fix PR titled `[BUG-API-0042] Fix token expiration handling` with branch `bugfix/BUG-API-0042-token-expiry` and commit message referencing the VTID.",
+      "word_count": 84
+    },
+    {
+      "section_id": "5-3-no-production-change-without-vtid-doc-checks",
+      "id": "5-3-no-production-change-without-vtid-doc-checks",
+      "level": 3,
+      "title": "5.3 No Production Change Without: VTID + Doc + Checks",
+      "content": "**Principle:** Production deployments require traceability, documentation, and validation.\n\n**Rules:**\n- **VTID:** Unique identifier linking to all related artifacts\n- **Doc:** Specification (for features), ADR (for architecture), or runbook (for ops changes)\n- **Checks:** All CI/CD checks pass (lint, tests, security scan) per DOC-30-0300\n- Manual approval required for production (automated for dev/staging)\n\n**Example:** A production deployment of a new AlKalma telemedicine feature requires: `DEV-ALKL-0067` VTID, `DOC-20-0201` (AlKalma spec) updated, and all GitHub Actions checks green before merge.",
+      "content_markdown": "**Principle:** Production deployments require traceability, documentation, and validation.\n\n**Rules:**\n- **VTID:** Unique identifier linking to all related artifacts\n- **Doc:** Specification (for features), ADR (for architecture), or runbook (for ops changes)\n- **Checks:** All CI/CD checks pass (lint, tests, security scan) per DOC-30-0300\n- Manual approval required for production (automated for dev/staging)\n\n**Example:** A production deployment of a new AlKalma telemedicine feature requires: `DEV-ALKL-0067` VTID, `DOC-20-0201` (AlKalma spec) updated, and all GitHub Actions checks green before merge.",
+      "word_count": 77
+    },
+    {
+      "section_id": "5-4-environment-separation-and-safety",
+      "id": "5-4-environment-separation-and-safety",
+      "level": 3,
+      "title": "5.4 Environment Separation and Safety",
+      "content": "**Principle:** Changes flow through environments (dev → staging → prod) with increasing safety gates.\n\n**Rules:**\n- **Dev:** Auto-deploy on merge to `develop` branch, permissive testing\n- **Staging:** Auto-deploy on merge to `main` branch, production-like environment\n- **Prod:** Manual approval required, blue-green deployment, rollback tested\n- No direct commits to `main` or `develop` (PR required)\n- Production data never used in dev or staging (synthetic data only)\n\n**Example:** A new Credits calculation algorithm is tested in dev for 3 days, validated in staging for 1 week with synthetic transactions, then deployed to prod with 10% traffic canary release.",
+      "content_markdown": "**Principle:** Changes flow through environments (dev → staging → prod) with increasing safety gates.\n\n**Rules:**\n- **Dev:** Auto-deploy on merge to `develop` branch, permissive testing\n- **Staging:** Auto-deploy on merge to `main` branch, production-like environment\n- **Prod:** Manual approval required, blue-green deployment, rollback tested\n- No direct commits to `main` or `develop` (PR required)\n- Production data never used in dev or staging (synthetic data only)\n\n**Example:** A new Credits calculation algorithm is tested in dev for 3 days, validated in staging for 1 week with synthetic transactions, then deployed to prod with 10% traffic canary release.",
+      "word_count": 97
+    },
+    {
+      "section_id": "5-5-rollback-first-mindset",
+      "id": "5-5-rollback-first-mindset",
+      "level": 3,
+      "title": "5.5 Rollback-First Mindset",
+      "content": "**Principle:** Always have a tested rollback path before deploying.\n\n**Rules:**\n- Cloud Run revisions retained for instant rollback (see DOC-30-0300)\n- Database migrations reversible (or forward-only with data preservation)\n- Rollback procedure documented in every deployment plan\n- Agents can auto-rollback on error rate >5% (Phase 2E, DEV-CICDL-0035)\n\n**Example:** Before deploying a new gateway version, the deployment agent verifies: \"Can we rollback to gateway:v1.2.3 within 60 seconds if this fails?\" Test rollback executed in staging first.\n\n---",
+      "content_markdown": "**Principle:** Always have a tested rollback path before deploying.\n\n**Rules:**\n- Cloud Run revisions retained for instant rollback (see DOC-30-0300)\n- Database migrations reversible (or forward-only with data preservation)\n- Rollback procedure documented in every deployment plan\n- Agents can auto-rollback on error rate >5% (Phase 2E, DEV-CICDL-0035)\n\n**Example:** Before deploying a new gateway version, the deployment agent verifies: \"Can we rollback to gateway:v1.2.3 within 60 seconds if this fails?\" Test rollback executed in staging first.\n\n---",
+      "word_count": 77
+    },
+    {
+      "section_id": "6-economic-tokenomics-principles",
+      "id": "6-economic-tokenomics-principles",
+      "level": 2,
+      "title": "6. Economic & Tokenomics Principles",
+      "content": "",
+      "content_markdown": "",
+      "word_count": 0
+    },
+    {
+      "section_id": "6-1-member-first-economics",
+      "id": "6-1-member-first-economics",
+      "level": 3,
+      "title": "6.1 Member-First Economics",
+      "content": "**Principle:** The majority of economic value flows to members and professionals, not the platform.\n\n**Rules:**\n- Member earnings (Credits + VTN) > platform fees over member lifetime\n- Professional marketplace takes 10–15% commission (vs. 20–30% industry standard)\n- Referral bonuses generous (100 Credits + 10 VTN per successful referral)\n- Free tier genuinely useful (not crippled to force upgrades)\n\n**Example:** A member refers 10 friends, earns 1,000 Credits + 100 VTN (≈$1,000 value), covering their Premium subscription for 3 years.",
+      "content_markdown": "**Principle:** The majority of economic value flows to members and professionals, not the platform.\n\n**Rules:**\n- Member earnings (Credits + VTN) > platform fees over member lifetime\n- Professional marketplace takes 10–15% commission (vs. 20–30% industry standard)\n- Referral bonuses generous (100 Credits + 10 VTN per successful referral)\n- Free tier genuinely useful (not crippled to force upgrades)\n\n**Example:** A member refers 10 friends, earns 1,000 Credits + 100 VTN (≈$1,000 value), covering their Premium subscription for 3 years.",
+      "word_count": 80
+    },
+    {
+      "section_id": "6-2-utility-first-vtn-narrative",
+      "id": "6-2-utility-first-vtn-narrative",
+      "level": 3,
+      "title": "6.2 Utility-First VTN Narrative",
+      "content": "**Principle:** VTN token is primarily a utility and governance token, not a speculative investment.\n\n**Rules:**\n- Marketing emphasizes: governance, staking rewards, marketplace discounts\n- Do not promise price appreciation or \"get rich\" messaging\n- Tokenomics designed for long-term holding (staking rewards, deflationary mechanics)\n- Compliance with securities regulations (legal review required for all token communications)\n\n**Example:** VTN launch announcement focuses on: \"Earn 8% APY staking rewards + vote on feature roadmap\" not \"VTN to the moon! 100x potential!\"",
+      "content_markdown": "**Principle:** VTN token is primarily a utility and governance token, not a speculative investment.\n\n**Rules:**\n- Marketing emphasizes: governance, staking rewards, marketplace discounts\n- Do not promise price appreciation or \"get rich\" messaging\n- Tokenomics designed for long-term holding (staking rewards, deflationary mechanics)\n- Compliance with securities regulations (legal review required for all token communications)\n\n**Example:** VTN launch announcement focuses on: \"Earn 8% APY staking rewards + vote on feature roadmap\" not \"VTN to the moon! 100x potential!\"",
+      "word_count": 78
+    },
+    {
+      "section_id": "6-3-clarity-on-credits-vs-vtn",
+      "id": "6-3-clarity-on-credits-vs-vtn",
+      "level": 3,
+      "title": "6.3 Clarity on Credits vs. VTN",
+      "content": "**Principle:** Members understand the difference and use case for each currency.\n\n**Rules:**\n- **Credits:** Stable (≈$1), transactional, earned through engagement, spent on services\n- **VTN:** Variable market value, governance rights, staking rewards, long-term investment\n- Clear UI showing both balances separately\n- Conversion: Credits → fiat easy, VTN → fiat requires secondary market\n\n**Example:** Member dashboard shows: \"Credits: 450 (≈$450) | VTN: 120 tokens (current value: ≈$240)\" with clear explanations.",
+      "content_markdown": "**Principle:** Members understand the difference and use case for each currency.\n\n**Rules:**\n- **Credits:** Stable (≈$1), transactional, earned through engagement, spent on services\n- **VTN:** Variable market value, governance rights, staking rewards, long-term investment\n- Clear UI showing both balances separately\n- Conversion: Credits → fiat easy, VTN → fiat requires secondary market\n\n**Example:** Member dashboard shows: \"Credits: 450 (≈$450) | VTN: 120 tokens (current value: ≈$240)\" with clear explanations.",
+      "word_count": 70
+    },
+    {
+      "section_id": "6-4-anti-gaming-and-anti-fraud",
+      "id": "6-4-anti-gaming-and-anti-fraud",
+      "level": 3,
+      "title": "6.4 Anti-Gaming and Anti-Fraud",
+      "content": "**Principle:** Prevent exploitation of Credit/VTN earning mechanisms without harming legitimate users.\n\n**Rules:**\n- Anomaly detection for suspicious earning patterns (OASIS event analysis)\n- Rate limits on Credit earning (e.g., max 500 Credits/day from engagement)\n- Multi-factor verification for large VTN transactions or withdrawals\n- Manual review for referral bonuses above threshold (e.g., >50 referrals/month)\n- Banned users forfeit Credits and VTN (appeal process available)\n\n**Example:** A member creates 100 fake accounts to farm referral bonuses. OASIS flags suspicious IP patterns, accounts frozen, CTO investigates.",
+      "content_markdown": "**Principle:** Prevent exploitation of Credit/VTN earning mechanisms without harming legitimate users.\n\n**Rules:**\n- Anomaly detection for suspicious earning patterns (OASIS event analysis)\n- Rate limits on Credit earning (e.g., max 500 Credits/day from engagement)\n- Multi-factor verification for large VTN transactions or withdrawals\n- Manual review for referral bonuses above threshold (e.g., >50 referrals/month)\n- Banned users forfeit Credits and VTN (appeal process available)\n\n**Example:** A member creates 100 fake accounts to farm referral bonuses. OASIS flags suspicious IP patterns, accounts frozen, CTO investigates.",
+      "word_count": 84
+    },
+    {
+      "section_id": "6-5-health-outcomes-short-term-revenue",
+      "id": "6-5-health-outcomes-short-term-revenue",
+      "level": 3,
+      "title": "6.5 Health Outcomes > Short-Term Revenue",
+      "content": "**Principle:** Optimize for long-term member healthspan, not quarterly revenue.\n\n**Rules:**\n- Do not push high-margin services (expensive retreats) to members who don't need them\n- Autopilot recommendations based on health benefit, not upselling opportunity\n- Decline partnerships with brands/products misaligned with longevity mission\n- Measure success by Vitana Index improvement, not revenue per member\n\n**Example:** Autopilot does not recommend a $5,000 Earthlings retreat to a member who would benefit more from local Maxina meetups and consistent sleep tracking.\n\n---",
+      "content_markdown": "**Principle:** Optimize for long-term member healthspan, not quarterly revenue.\n\n**Rules:**\n- Do not push high-margin services (expensive retreats) to members who don't need them\n- Autopilot recommendations based on health benefit, not upselling opportunity\n- Decline partnerships with brands/products misaligned with longevity mission\n- Measure success by Vitana Index improvement, not revenue per member\n\n**Example:** Autopilot does not recommend a $5,000 Earthlings retreat to a member who would benefit more from local Maxina meetups and consistent sleep tracking.\n\n---",
+      "word_count": 79
+    },
+    {
+      "section_id": "7-documentation-process-rules",
+      "id": "7-documentation-process-rules",
+      "level": 2,
+      "title": "7. Documentation & Process Rules",
+      "content": "",
+      "content_markdown": "",
+      "word_count": 0
+    },
+    {
+      "section_id": "7-1-when-a-new-doc-is-required",
+      "id": "7-1-when-a-new-doc-is-required",
+      "level": 3,
+      "title": "7.1 When a New Doc is Required",
+      "content": "**Principle:** Significant features, tenants, or architectural changes require documentation before implementation.\n\n**Rules:**\n- **New tenant or major feature:** Concept doc (e.g., DOC-20-0201 for AlKalma) required before development starts\n- **Architecture change:** ADR (Architecture Decision Record) in DOC-99-xxxx family before implementation\n- **New process or workflow:** Runbook or playbook documented before rollout\n- **API or integration:** Specification doc required before external partners integrate\n\n**Example:** Before building the Earthlings retreat booking system, a spec doc (`DOC-20-0202_earthlings-overview.md`) is written, reviewed by CEO + CTO + product lead, and marked `status: canonical` before development begins.",
+      "content_markdown": "**Principle:** Significant features, tenants, or architectural changes require documentation before implementation.\n\n**Rules:**\n- **New tenant or major feature:** Concept doc (e.g., DOC-20-0201 for AlKalma) required before development starts\n- **Architecture change:** ADR (Architecture Decision Record) in DOC-99-xxxx family before implementation\n- **New process or workflow:** Runbook or playbook documented before rollout\n- **API or integration:** Specification doc required before external partners integrate\n\n**Example:** Before building the Earthlings retreat booking system, a spec doc (`DOC-20-0202_earthlings-overview.md`) is written, reviewed by CEO + CTO + product lead, and marked `status: canonical` before development begins.",
+      "word_count": 91
+    },
+    {
+      "section_id": "7-2-document-lifecycle-draft-reviewed-canonical-deprecated",
+      "id": "7-2-document-lifecycle-draft-reviewed-canonical-deprecated",
+      "level": 3,
+      "title": "7.2 Document Lifecycle: Draft → Reviewed → Canonical → Deprecated",
+      "content": "**Principle:** Documentation has clear status and ownership for version control.\n\n**Lifecycle:**\n1. **Draft:** Initial creation, work-in-progress, not yet authoritative\n2. **Reviewed:** Peer-reviewed by relevant stakeholders, ready for broader use\n3. **Canonical:** Authoritative source of truth, referenced by other docs and code\n4. **Deprecated:** Outdated, superseded by newer doc (link to replacement)\n\n**Rules:**\n- Only `canonical` docs can be cited as authoritative in ADRs or specifications\n- `draft` docs must transition to `reviewed` or `canonical` within 30 days or be deleted\n- `deprecated` docs retained for historical reference but clearly marked\n\n**Example:** `DOC-30-0300` (DevOps strategy) starts as `draft`, reviewed by CTO + DevOps team, promoted to `canonical` after approval. When a new version is needed, the old doc becomes `deprecated` with a link to the new one.",
+      "content_markdown": "**Principle:** Documentation has clear status and ownership for version control.\n\n**Lifecycle:**\n1. **Draft:** Initial creation, work-in-progress, not yet authoritative\n2. **Reviewed:** Peer-reviewed by relevant stakeholders, ready for broader use\n3. **Canonical:** Authoritative source of truth, referenced by other docs and code\n4. **Deprecated:** Outdated, superseded by newer doc (link to replacement)\n\n**Rules:**\n- Only `canonical` docs can be cited as authoritative in ADRs or specifications\n- `draft` docs must transition to `reviewed` or `canonical` within 30 days or be deleted\n- `deprecated` docs retained for historical reference but clearly marked\n\n**Example:** `DOC-30-0300` (DevOps strategy) starts as `draft`, reviewed by CTO + DevOps team, promoted to `canonical` after approval. When a new version is needed, the old doc becomes `deprecated` with a link to the new one.",
+      "word_count": 126
+    },
+    {
+      "section_id": "7-3-feature-not-done-until-docs-updated",
+      "id": "7-3-feature-not-done-until-docs-updated",
+      "level": 3,
+      "title": "7.3 Feature Not \"Done\" Until Docs Updated",
+      "content": "**Principle:** A VTID is not considered complete until relevant documentation is updated.\n\n**Rules:**\n- PR checklist includes: \"Update relevant docs (specs, runbooks, glossary)\"\n- Major features require corresponding doc (e.g., new Autopilot mode → update DOC-95-9500)\n- Breaking changes require migration guide documented\n- VTID state cannot transition to `closed` until doc updates merged\n\n**Example:** `DEV-CICDL-0031` (Phase 2A validation workflow) not closed until `DOC-30-0300` (DevOps strategy) updated with details on the new workflow.",
+      "content_markdown": "**Principle:** A VTID is not considered complete until relevant documentation is updated.\n\n**Rules:**\n- PR checklist includes: \"Update relevant docs (specs, runbooks, glossary)\"\n- Major features require corresponding doc (e.g., new Autopilot mode → update DOC-95-9500)\n- Breaking changes require migration guide documented\n- VTID state cannot transition to `closed` until doc updates merged\n\n**Example:** `DEV-CICDL-0031` (Phase 2A validation workflow) not closed until `DOC-30-0300` (DevOps strategy) updated with details on the new workflow.",
+      "word_count": 73
+    },
+    {
+      "section_id": "7-4-foundation-docs-are-stable-references",
+      "id": "7-4-foundation-docs-are-stable-references",
+      "level": 3,
+      "title": "7.4 Foundation Docs are Stable References",
+      "content": "**Principle:** DOC-00-0001, DOC-00-0002, and DOC-00-0003 are the stable foundation that other docs build upon.\n\n**Rules:**\n- Changes to foundation docs require CEO or CTO approval\n- Major updates trigger review of all dependent docs (ADRs, specs)\n- Versioning: Significant changes increment version (e.g., `v0.1.0` → `v1.0.0`)\n- Foundation docs reviewed quarterly even if no changes (ensure continued relevance)\n\n**Example:** If DOC-00-0001 (Vitana vision) shifts strategic direction (e.g., adding a 4th tenant), all other docs referencing the three-tenant model must be updated within 30 days.\n\n---",
+      "content_markdown": "**Principle:** DOC-00-0001, DOC-00-0002, and DOC-00-0003 are the stable foundation that other docs build upon.\n\n**Rules:**\n- Changes to foundation docs require CEO or CTO approval\n- Major updates trigger review of all dependent docs (ADRs, specs)\n- Versioning: Significant changes increment version (e.g., `v0.1.0` → `v1.0.0`)\n- Foundation docs reviewed quarterly even if no changes (ensure continued relevance)\n\n**Example:** If DOC-00-0001 (Vitana vision) shifts strategic direction (e.g., adding a 4th tenant), all other docs referencing the three-tenant model must be updated within 30 days.\n\n---",
+      "word_count": 85
+    },
+    {
+      "section_id": "8-enforcement-decision-workflow",
+      "id": "8-enforcement-decision-workflow",
+      "level": 2,
+      "title": "8. Enforcement & Decision Workflow",
+      "content": "",
+      "content_markdown": "",
+      "word_count": 0
+    },
+    {
+      "section_id": "8-1-using-principles-in-product-decisions",
+      "id": "8-1-using-principles-in-product-decisions",
+      "level": 3,
+      "title": "8.1 Using Principles in Product Decisions",
+      "content": "**Process:**\n1. Propose feature or change in product meeting or doc\n2. Evaluate against relevant principles in DOC-00-0003\n3. If conflict: discuss trade-offs, consider alternatives\n4. If proceeding despite principle conflict: document rationale in ADR (Architecture Decision Record)\n5. ADR reviewed by CEO (business) or CTO (technical) for approval\n\n**Example:** Product team proposes adding infinite scroll to Maxina feed (increases engagement). CTO flags conflict with \"Health-First, Not Engagement-First\" principle. Team redesigns as paginated feed with \"take a break\" reminders instead.",
+      "content_markdown": "**Process:**\n1. Propose feature or change in product meeting or doc\n2. Evaluate against relevant principles in DOC-00-0003\n3. If conflict: discuss trade-offs, consider alternatives\n4. If proceeding despite principle conflict: document rationale in ADR (Architecture Decision Record)\n5. ADR reviewed by CEO (business) or CTO (technical) for approval\n\n**Example:** Product team proposes adding infinite scroll to Maxina feed (increases engagement). CTO flags conflict with \"Health-First, Not Engagement-First\" principle. Team redesigns as paginated feed with \"take a break\" reminders instead.",
+      "word_count": 80
+    },
+    {
+      "section_id": "8-2-using-principles-in-technical-adrs",
+      "id": "8-2-using-principles-in-technical-adrs",
+      "level": 3,
+      "title": "8.2 Using Principles in Technical ADRs",
+      "content": "**Process:**\n1. Create ADR doc in `DOC-99-xxxx` family (e.g., `DOC-99-9905_adr-autopilot-llm-choice.md`)\n2. List relevant principles from DOC-00-0003 in \"Context\" section\n3. Evaluate options against principles\n4. Document decision, rationale, and principle compliance (or override justification)\n5. CTO approves and marks ADR as `canonical`\n\n**Example:** ADR for choosing LLM for Autopilot cites principles: \"Default-Safe UX\", \"Logging and Explainability\", \"Member Data Ownership\". Decision: Use Claude 3.5 Sonnet for explainability + data privacy controls, over cheaper but less transparent models.",
+      "content_markdown": "**Process:**\n1. Create ADR doc in `DOC-99-xxxx` family (e.g., `DOC-99-9905_adr-autopilot-llm-choice.md`)\n2. List relevant principles from DOC-00-0003 in \"Context\" section\n3. Evaluate options against principles\n4. Document decision, rationale, and principle compliance (or override justification)\n5. CTO approves and marks ADR as `canonical`\n\n**Example:** ADR for choosing LLM for Autopilot cites principles: \"Default-Safe UX\", \"Logging and Explainability\", \"Member Data Ownership\". Decision: Use Claude 3.5 Sonnet for explainability + data privacy controls, over cheaper but less transparent models.",
+      "word_count": 76
+    },
+    {
+      "section_id": "8-3-using-principles-in-incident-reviews",
+      "id": "8-3-using-principles-in-incident-reviews",
+      "level": 3,
+      "title": "8.3 Using Principles in Incident Reviews",
+      "content": "**Process:**\n1. After incident resolved, conduct post-mortem within 72 hours\n2. Document in runbook or incident report (DOC-60-xxxx family)\n3. Identify which principle(s) were violated (if any)\n4. Define corrective actions (code changes, process improvements, doc updates)\n5. Update principle docs if incident reveals gap or ambiguity\n\n**Example:** Production incident where agent auto-deployed breaking change to prod. Post-mortem reveals violation of \"No Production Change Without: VTID + Doc + Checks\" principle (checks bypassed). Corrective action: Add enforcement in CI/CD pipeline, cannot merge PR without VTID + passing checks.",
+      "content_markdown": "**Process:**\n1. After incident resolved, conduct post-mortem within 72 hours\n2. Document in runbook or incident report (DOC-60-xxxx family)\n3. Identify which principle(s) were violated (if any)\n4. Define corrective actions (code changes, process improvements, doc updates)\n5. Update principle docs if incident reveals gap or ambiguity\n\n**Example:** Production incident where agent auto-deployed breaking change to prod. Post-mortem reveals violation of \"No Production Change Without: VTID + Doc + Checks\" principle (checks bypassed). Corrective action: Add enforcement in CI/CD pipeline, cannot merge PR without VTID + passing checks.",
+      "word_count": 88
+    },
+    {
+      "section_id": "8-4-when-principles-can-be-overridden",
+      "id": "8-4-when-principles-can-be-overridden",
+      "level": 3,
+      "title": "8.4 When Principles Can Be Overridden",
+      "content": "**Principle:** Core principles can be overridden only through documented ADR process with executive approval.\n\n**Override criteria:**\n1. **Existential need:** Business survival, critical security patch, legal mandate\n2. **Temporary exception:** Time-boxed (e.g., \"For next 30 days while we migrate infrastructure\")\n3. **Documented rationale:** Why principle conflicts, why alternatives won't work\n4. **Mitigation plan:** How we minimize harm from principle violation\n5. **Executive approval:** CEO (business principles) or CTO (technical principles)\n\n**Example:** GDPR requires data deletion within 30 days, but OASIS retention policy is 90 days. ADR documents exception: GDPR-covered data deleted at 30 days, other OASIS events retained at 90 days for compliance. CTO approves.",
+      "content_markdown": "**Principle:** Core principles can be overridden only through documented ADR process with executive approval.\n\n**Override criteria:**\n1. **Existential need:** Business survival, critical security patch, legal mandate\n2. **Temporary exception:** Time-boxed (e.g., \"For next 30 days while we migrate infrastructure\")\n3. **Documented rationale:** Why principle conflicts, why alternatives won't work\n4. **Mitigation plan:** How we minimize harm from principle violation\n5. **Executive approval:** CEO (business principles) or CTO (technical principles)\n\n**Example:** GDPR requires data deletion within 30 days, but OASIS retention policy is 90 days. ADR documents exception: GDPR-covered data deleted at 30 days, other OASIS events retained at 90 days for compliance. CTO approves.",
+      "word_count": 104
+    },
+    {
+      "section_id": "8-5-principle-ownership-and-updates",
+      "id": "8-5-principle-ownership-and-updates",
+      "level": 3,
+      "title": "8.5 Principle Ownership and Updates",
+      "content": "**Ownership:**\n- **CEO:** Product & UX principles, Economic principles, overall vision alignment\n- **CTO:** DevOps/OASIS principles, Autopilot/Agent safety principles (technical aspects), Documentation rules\n- **Medical Advisor (future hire):** Health-specific aspects of Autopilot safety principles\n- **Legal Counsel:** Data privacy and compliance principles (advisory role)\n\n**Update process:**\n1. Propose change to DOC-00-0003 via PR with justification\n2. Notify relevant stakeholders (CEO/CTO/medical advisor) for review\n3. If approved: Merge, increment version number, update `updated_at` date\n4. Announce change to team via DevOps chat + all-hands meeting\n5. Update dependent docs within 30 days\n\n**Example:** Medical advisor proposes adding principle: \"Autopilot must recommend in-person doctor visit for any symptom lasting >7 days.\" PR created, reviewed by CEO + CTO, approved, merged as v0.2.0 of DOC-00-0003.\n\n---",
+      "content_markdown": "**Ownership:**\n- **CEO:** Product & UX principles, Economic principles, overall vision alignment\n- **CTO:** DevOps/OASIS principles, Autopilot/Agent safety principles (technical aspects), Documentation rules\n- **Medical Advisor (future hire):** Health-specific aspects of Autopilot safety principles\n- **Legal Counsel:** Data privacy and compliance principles (advisory role)\n\n**Update process:**\n1. Propose change to DOC-00-0003 via PR with justification\n2. Notify relevant stakeholders (CEO/CTO/medical advisor) for review\n3. If approved: Merge, increment version number, update `updated_at` date\n4. Announce change to team via DevOps chat + all-hands meeting\n5. Update dependent docs within 30 days\n\n**Example:** Medical advisor proposes adding principle: \"Autopilot must recommend in-person doctor visit for any symptom lasting >7 days.\" PR created, reviewed by CEO + CTO, approved, merged as v0.2.0 of DOC-00-0003.\n\n---",
+      "word_count": 123
+    },
+    {
+      "section_id": "conclusion",
+      "id": "conclusion",
+      "level": 2,
+      "title": "Conclusion",
+      "content": "These core principles and process rules form the **constitutional foundation** of Vitana. They ensure that as we scale—across tenants, geographies, and features—we remain true to our mission: **improving human healthspan through contextual intelligence, community, and autonomous wellness guidance.**\n\n**Key takeaway:** When in doubt, ask:\n1. Does this decision prioritize member health and well-being? (Principle: Health-First)\n2. Is it logged in OASIS for transparency? (Principle: If It's Not in OASIS, It Didn't Happen)\n3. Does it respect member data ownership and consent? (Principle: Member Data Ownership)\n4. Would I want this if I were a Vitana member myself?\n\nIf the answer to all four is \"yes,\" proceed confidently. If \"no\" to any, revisit the decision or document the override in an ADR.\n\n**These principles are living:** We will refine them as we learn, but changes require deliberate process (Section 8.5). Stability in principles enables innovation in execution.\n\n---\n\n**Document Owner:** CEO  \n**Contributors:** CTO, Product Lead, Legal Counsel (advisory)  \n**Last Updated:** 2025-11-03  \n**Next Review:** 2025-12-03 (monthly for first 6 months, then quarterly)  \n**Feedback:** Submit proposed principle updates via PR to this doc, flag @ceo and @cto for review",
+      "content_markdown": "These core principles and process rules form the **constitutional foundation** of Vitana. They ensure that as we scale—across tenants, geographies, and features—we remain true to our mission: **improving human healthspan through contextual intelligence, community, and autonomous wellness guidance.**\n\n**Key takeaway:** When in doubt, ask:\n1. Does this decision prioritize member health and well-being? (Principle: Health-First)\n2. Is it logged in OASIS for transparency? (Principle: If It's Not in OASIS, It Didn't Happen)\n3. Does it respect member data ownership and consent? (Principle: Member Data Ownership)\n4. Would I want this if I were a Vitana member myself?\n\nIf the answer to all four is \"yes,\" proceed confidently. If \"no\" to any, revisit the decision or document the override in an ADR.\n\n**These principles are living:** We will refine them as we learn, but changes require deliberate process (Section 8.5). Stability in principles enables innovation in execution.\n\n---\n\n**Document Owner:** CEO  \n**Contributors:** CTO, Product Lead, Legal Counsel (advisory)  \n**Last Updated:** 2025-11-03  \n**Next Review:** 2025-12-03 (monthly for first 6 months, then quarterly)  \n**Feedback:** Submit proposed principle updates via PR to this doc, flag @ceo and @cto for review",
+      "word_count": 186
+    }
+  ],
+  "metadata": {
+    "doc_id": "DOC-00-0003",
+    "title": "Vitana Core Principles & Process Rules",
+    "version": "0.1.0",
+    "status": "draft",
+    "template": "concept",
+    "owner": "CEO",
+    "tags": [
+      "foundation",
+      "principles",
+      "process",
+      "rules"
+    ],
+    "related_vtids": [],
+    "related_docs": [
+      "DOC-00-0001",
+      "DOC-00-0002",
+      "DOC-30-0300",
+      "DOC-95-9500"
+    ],
+    "created_at": "2025-11-03",
+    "updated_at": "2025-11-03"
+  }
+}

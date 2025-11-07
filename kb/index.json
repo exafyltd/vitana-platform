@@ -1,0 +1,108 @@
+{
+  "total_docs": 5,
+  "docs": [
+    {
+      "doc_id": "00-foundation-doc-00-0001_vitana-vision-strategy-ecosystem",
+      "title": "Vitana Vision & Strategy – Health, Longevity & Community Ecosystem",
+      "family_id": "foundation",
+      "family_name": "Foundation",
+      "status": "canonical",
+      "version": "0.1.0",
+      "tags": [
+        "vision",
+        "strategy",
+        "ecosystem",
+        "tenants",
+        "health",
+        "longevity"
+      ],
+      "last_updated": "2025-11-04T15:23:15.306Z",
+      "word_count": 2943,
+      "section_count": 42
+    },
+    {
+      "doc_id": "00-foundation-doc-00-0002_vitana-glossary",
+      "title": "Vitana Glossary",
+      "family_id": "foundation",
+      "family_name": "Foundation",
+      "status": "draft",
+      "version": "0.1.0",
+      "tags": [
+        "foundation",
+        "glossary",
+        "definitions"
+      ],
+      "last_updated": "2025-11-04T15:23:15.308Z",
+      "word_count": 1233,
+      "section_count": 8
+    },
+    {
+      "doc_id": "00-foundation-doc-00-0003_vitana-core-principles-process-rules",
+      "title": "Vitana Core Principles & Process Rules",
+      "family_id": "foundation",
+      "family_name": "Foundation",
+      "status": "draft",
+      "version": "0.1.0",
+      "tags": [
+        "foundation",
+        "principles",
+        "process",
+        "rules"
+      ],
+      "last_updated": "2025-11-04T15:23:15.310Z",
+      "word_count": 3284,
+      "section_count": 44
+    },
+    {
+      "doc_id": "30-platform-architecture-doc-30-0300_vitana-devops-oasis-strategy",
+      "title": "Vitana DevOps, OASIS & Autonomous Infrastructure Strategy",
+      "family_id": "platform-architecture",
+      "family_name": "Platform Architecture",
+      "status": "canonical",
+      "version": "0.1.0",
+      "tags": [
+        "devops",
+        "oasis",
+        "infrastructure",
+        "vtid",
+        "autopilot",
+        "agents"
+      ],
+      "last_updated": "2025-11-04T15:23:15.312Z",
+      "word_count": 2887,
+      "section_count": 48
+    },
+    {
+      "doc_id": "95-playbooks-autopilot-doc-95-9500_autopilot-modes-overview",
+      "title": "Autopilot Modes Overview",
+      "family_id": "playbooks-autopilot",
+      "family_name": "Playbooks Autopilot",
+      "status": "draft",
+      "version": "0.1.0",
+      "tags": [
+        "autopilot",
+        "playbook",
+        "modes",
+        "safety"
+      ],
+      "last_updated": "2025-11-04T15:23:15.318Z",
+      "word_count": 4428,
+      "section_count": 35
+    }
+  ],
+  "families": {
+    "foundation": {
+      "name": "Foundation",
+      "doc_count": 3
+    },
+    "platform-architecture": {
+      "name": "Platform Architecture",
+      "doc_count": 1
+    },
+    "playbooks-autopilot": {
+      "name": "Playbooks Autopilot",
+      "doc_count": 1
+    }
+  },
+  "generated_at": "2025-11-04T15:23:15.319Z"
+}

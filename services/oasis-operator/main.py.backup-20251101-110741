@@ -1,0 +1,335 @@
+"""
+OASIS Operator - Command Hub Backend
+VTID: DEV-AICOR-0015
+
+Enhanced with:
+- Dynamic origin matching for Lovable preview URLs
+- Proper SSE CORS with preflight support
+- Heartbeat mechanism
+- In-memory event storage
+"""
+
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
+import asyncio
+import json
+import logging
+from datetime import datetime
+from collections import deque
+from typing import Dict, List, Optional
+import re
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="OASIS Operator", version="1.0.0")
+
+# ========================================
+# CORS Configuration - Dynamic Origin Matching
+# ========================================
+
+# Allowed origin patterns
+ALLOWED_ORIGIN_PATTERNS = [
+    r"https://preview--vitana-v1\.lovable\.app",
+    r"https://id-preview--[a-f0-9-]+\.lovable\.app",
+    r"https://[a-f0-9-]+\.lovableproject\.com"
+]
+
+def is_origin_allowed(origin: str) -> bool:
+    """Check if the origin matches any allowed pattern."""
+    if not origin:
+        return False
+    return any(re.match(pattern, origin) for pattern in ALLOWED_ORIGIN_PATTERNS)
+
+def get_cors_headers(origin: Optional[str]) -> Dict[str, str]:
+    """Generate CORS headers for a given origin."""
+    if origin and is_origin_allowed(origin):
+        return {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Last-Event-ID, Cache-Control",
+            "Access-Control-Max-Age": "600",
+            "Cache-Control": "no-store, no-cache, must-revalidate"
+        }
+    return {}
+
+# Add CORS middleware with dynamic origin validation
+@app.middleware("http")
+async def cors_middleware(request: Request, call_next):
+    """Handle CORS for all requests, including SSE."""
+    origin = request.headers.get("origin")
+    
+    # Handle OPTIONS (preflight) requests
+    if request.method == "OPTIONS":
+        headers = get_cors_headers(origin)
+        if headers:
+            return Response(
+                status_code=204,
+                headers=headers
+            )
+        return Response(status_code=403, content="Origin not allowed")
+    
+    # Process the request
+    response = await call_next(request)
+    
+    # Add CORS headers to response
+    if origin and is_origin_allowed(origin):
+        cors_headers = get_cors_headers(origin)
+        for key, value in cors_headers.items():
+            response.headers[key] = value
+    
+    return response
+
+# ========================================
+# In-Memory Event Store
+# ========================================
+
+class EventStore:
+    """In-memory event storage with deque for efficient operations."""
+    
+    def __init__(self, max_size: int = 1000):
+        self.events: deque = deque(maxlen=max_size)
+        self.subscribers: List[asyncio.Queue] = []
+        self.lock = asyncio.Lock()
+    
+    async def add_event(self, event: Dict):
+        """Add an event and notify all subscribers."""
+        async with self.lock:
+            # Add timestamp if not present
+            if "timestamp" not in event:
+                event["timestamp"] = datetime.utcnow().isoformat() + "Z"
+            
+            self.events.append(event)
+            
+            # Notify all subscribers
+            for queue in self.subscribers:
+                try:
+                    await queue.put(event)
+                except Exception as e:
+                    logger.error(f"Error notifying subscriber: {e}")
+    
+    async def get_recent_events(self, limit: int = 50) -> List[Dict]:
+        """Get the most recent events."""
+        async with self.lock:
+            return list(self.events)[-limit:]
+    
+    async def subscribe(self) -> asyncio.Queue:
+        """Subscribe to new events."""
+        queue = asyncio.Queue(maxsize=100)
+        self.subscribers.append(queue)
+        return queue
+    
+    async def unsubscribe(self, queue: asyncio.Queue):
+        """Unsubscribe from events."""
+        if queue in self.subscribers:
+            self.subscribers.remove(queue)
+
+# Initialize event store
+event_store = EventStore()
+
+# ========================================
+# Heartbeat Task
+# ========================================
+
+async def heartbeat_task():
+    """Send periodic heartbeat events."""
+    while True:
+        try:
+            await asyncio.sleep(30)  # Every 30 seconds
+            heartbeat_event = {
+                "event_type": "system.heartbeat",
+                "source": "oasis-operator",
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "data": {
+                    "status": "alive",
+                    "active_subscribers": len(event_store.subscribers)
+                }
+            }
+            await event_store.add_event(heartbeat_event)
+            logger.info("Heartbeat sent")
+        except Exception as e:
+            logger.error(f"Heartbeat error: {e}")
+
+@app.on_event("startup")
+async def startup_event():
+    """Start background tasks."""
+    asyncio.create_task(heartbeat_task())
+    logger.info("OASIS Operator started - Heartbeat active")
+
+# ========================================
+# API Endpoints
+# ========================================
+
+@app.get("/")
+async def root():
+    """Root endpoint."""
+    return {
+        "service": "oasis-operator",
+        "version": "1.0.0",
+        "status": "live",
+        "vtid": "DEV-AICOR-0015"
+    }
+
+@app.get("/api/v1/health")
+async def health_check():
+    """Health check endpoint."""
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "subscribers": len(event_store.subscribers),
+        "events_count": len(event_store.events)
+    }
+
+@app.get("/status/cmdhub.json")
+async def command_hub_status(request: Request):
+    """Command Hub status endpoint."""
+    origin = request.headers.get("origin", "unknown")
+    return {
+        "live": True,
+        "status": "ONLINE",
+        "backend": "oasis-operator",
+        "version": "1.0.0",
+        "cors": {
+            "configured": True,
+            "origin_allowed": is_origin_allowed(origin),
+            "request_origin": origin
+        },
+        "timestamp": datetime.utcnow().isoformat() + "Z"
+    }
+
+@app.get("/api/v1/events")
+async def get_events(limit: int = 50):
+    """Get recent events (REST endpoint)."""
+    events = await event_store.get_recent_events(limit)
+    return {
+        "events": events,
+        "count": len(events),
+        "timestamp": datetime.utcnow().isoformat() + "Z"
+    }
+
+@app.post("/api/v1/events")
+async def post_event(request: Request):
+    """Post a new event."""
+    try:
+        event = await request.json()
+        await event_store.add_event(event)
+        logger.info(f"Event posted: {event.get('event_type', 'unknown')}")
+        return {
+            "status": "success",
+            "message": "Event added",
+            "timestamp": datetime.utcnow().isoformat() + "Z"
+        }
+    except Exception as e:
+        logger.error(f"Error posting event: {e}")
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": str(e)}
+        )
+
+@app.get("/api/v1/events/stream")
+async def event_stream(request: Request):
+    """SSE endpoint for real-time events."""
+    
+    async def generate():
+        # Subscribe to events
+        queue = await event_store.subscribe()
+        
+        try:
+            # Send connection established message
+            yield f"data: {json.dumps({'event_type': 'connection.established', 'timestamp': datetime.utcnow().isoformat() + 'Z'})}\n\n"
+            
+            # Send recent events first
+            recent = await event_store.get_recent_events(10)
+            for event in recent:
+                yield f"data: {json.dumps(event)}\n\n"
+            
+            # Stream new events
+            while True:
+                try:
+                    # Wait for new event with timeout for periodic heartbeat
+                    event = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    yield f"data: {json.dumps(event)}\n\n"
+                except asyncio.TimeoutError:
+                    # Send comment to keep connection alive
+                    yield f": keepalive\n\n"
+                
+        except asyncio.CancelledError:
+            logger.info("SSE connection cancelled")
+        except Exception as e:
+            logger.error(f"SSE error: {e}")
+        finally:
+            await event_store.unsubscribe(queue)
+            logger.info("SSE subscriber removed")
+    
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive"
+        }
+    )
+
+@app.get("/api/v1/chat/thread")
+async def get_chat_thread(vtid: Optional[str] = None):
+    """Get chat thread for a VTID."""
+    return {
+        "status": "success",
+        "vtid": vtid or "unknown",
+        "messages": [],
+        "timestamp": datetime.utcnow().isoformat() + "Z"
+    }
+
+@app.post("/api/v1/chat")
+async def chat(request: Request):
+    """Chat endpoint."""
+    try:
+        data = await request.json()
+        message = data.get("message", "")
+        
+        # Emit chat event
+        chat_event = {
+            "event_type": "chat.message",
+            "source": "user",
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "data": {
+                "message": message,
+                "response": "Chat functionality is operational"
+            }
+        }
+        await event_store.add_event(chat_event)
+        
+        return {
+            "status": "success",
+            "response": f"Received: {message}",
+            "timestamp": datetime.utcnow().isoformat() + "Z"
+        }
+    except Exception as e:
+        logger.error(f"Chat error: {e}")
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": str(e)}
+        )
+
+# ========================================
+# Debug Endpoint
+# ========================================
+
+@app.get("/debug/cors")
+async def debug_cors(request: Request):
+    """Debug CORS configuration."""
+    origin = request.headers.get("origin", "")
+    return {
+        "request_origin": origin,
+        "origin_allowed": is_origin_allowed(origin),
+        "allowed_patterns": ALLOWED_ORIGIN_PATTERNS,
+        "would_receive_headers": get_cors_headers(origin) if is_origin_allowed(origin) else "None - origin not allowed"
+    }
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8080)
