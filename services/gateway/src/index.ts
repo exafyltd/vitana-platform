@@ -8,6 +8,7 @@ import { router as executeRouter } from "./routes/execute";
 import { router as devhubRouter } from "./routes/devhub";
 import { router as webhooksRouter } from "./routes/webhooks";
 import { router as telemetryRouter } from "./routes/telemetry";
+import commandHubRouter from "./routes/commandHub";
 import { requireVTID, VTIDRequest } from "./middleware/requireVTID";
 import { AutoLoggerService } from "./services/AutoLoggerService";
 import { autoLoggerMetrics } from "./services/AutoLoggerMetrics";
@@ -50,6 +51,7 @@ app.use("/", devhubRouter);
 app.use("/", webhooksRouter);
 app.use("/health/auto-logger", autoLoggerHealthRoute);
 app.use("/", telemetryRouter);
+app.use("/command-hub", commandHubRouter);
 
 app.get("/", (_req: Request, res: Response) => {
   res.status(200).json({

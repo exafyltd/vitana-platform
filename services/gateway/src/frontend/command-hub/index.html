@@ -1,1 +1,130 @@
-404: Not Found
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vitana Command HUB</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0e1a; color: #e4e4e7; overflow: hidden; }
+        .container { height: 100vh; display: flex; flex-direction: column; }
+        .header { background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); padding: 1rem 1.5rem; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; }
+        .header h1 { font-size: 1.5rem; font-weight: 700; color: #60a5fa; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; animation: pulse 2s infinite; }
+        .status-dot.connected { background: #10b981; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .controls { background: #1e293b; padding: 1rem; display: flex; gap: 1rem; }
+        .filter-btn { padding: 0.5rem 1rem; background: #334155; border: none; border-radius: 6px; color: #e4e4e7; cursor: pointer; }
+        .filter-btn.active { background: #60a5fa; }
+        .event-list { padding: 1rem; overflow-y: auto; height: 100%; }
+        .event-item { background: #1e293b; border-radius: 6px; padding: 1rem; margin-bottom: 0.75rem; border-left: 3px solid #60a5fa; }
+        .event-type { font-weight: 600; margin-bottom: 0.5rem; }
+        .event-vtid { display: inline-block; background: #334155; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-family: monospace; color: #60a5fa; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⚡ Vitana Command HUB</h1>
+            <div style="display: flex; gap: 1rem; align-items: center;">
+                <span id="status">Connected</span>
+                <div class="status-dot connected" id="dot"></div>
+            </div>
+        </div>
+        <div class="controls">
+            <button class="filter-btn active" data-filter="all">All Events</button>
+            <button class="filter-btn" data-filter="success">Success</button>
+            <button class="filter-btn" data-filter="error">Errors</button>
+        </div>
+        <div class="event-list" id="events">
+            <div>Loading events...</div>
+        </div>
+    </div>
+    <script>
+        let eventSource = null;
+        let events = [];
+        
+        async function init() {
+            try {
+                const response = await fetch('/command-hub/api/events?limit=20');
+                const data = await response.json();
+                if (Array.isArray(data)) {
+                    events = data;
+                    renderEvents();
+                }
+                connectEventStream();
+            } catch (error) {
+                console.error('Init error:', error);
+                document.getElementById('events').innerHTML = '<div>Error loading events</div>';
+            }
+        }
+        
+        function connectEventStream() {
+            eventSource = new EventSource('/command-hub/api/events/stream');
+            
+            eventSource.onopen = () => {
+                document.getElementById('status').textContent = 'Connected';
+                document.getElementById('dot').className = 'status-dot connected';
+            };
+            
+            eventSource.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type !== 'connected') {
+                        events.unshift(data);
+                        if (events.length > 100) events = events.slice(0, 100);
+                        renderEvents();
+                    }
+                } catch (error) {
+                    console.error('Parse error:', error);
+                }
+            };
+            
+            eventSource.onerror = () => {
+                document.getElementById('status').textContent = 'Disconnected';
+                document.getElementById('dot').className = 'status-dot';
+                setTimeout(connectEventStream, 5000);
+            };
+        }
+        
+        function renderEvents() {
+            const container = document.getElementById('events');
+            if (events.length === 0) {
+                container.innerHTML = '<div>No events yet</div>';
+                return;
+            }
+            
+            container.innerHTML = events.map(event => {
+                const type = event.event_type || event.type || 'Unknown';
+                const vtid = event.vtid ? `<span class="event-vtid">${event.vtid}</span>` : '';
+                const notes = event.notes || '';
+                const timestamp = new Date(event.timestamp || event.created_at).toLocaleString();
+                
+                return `
+                    <div class="event-item">
+                        <div class="event-type">${type}</div>
+                        ${vtid}
+                        <div style="font-size: 0.875rem; color: #94a3b8; margin-top: 0.5rem;">
+                            ${notes}
+                        </div>
+                        <div style="font-size: 0.75rem; color: #64748b; margin-top: 0.5rem;">
+                            ${timestamp}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                // Filter logic can be added here
+                renderEvents();
+            });
+        });
+        
+        init();
+    </script>
+</body>
+</html>
