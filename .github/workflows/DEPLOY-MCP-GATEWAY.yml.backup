@@ -1,0 +1,64 @@
+name: Deploy MCP Gateway
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'services/mcp/gateway/**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      
+      - name: Install dependencies
+        working-directory: services/mcp/gateway
+        run: npm ci
+      
+      - name: Build TypeScript
+        working-directory: services/mcp/gateway
+        run: npm run build
+      
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+      
+      - name: Deploy to Cloud Run
+        working-directory: services/mcp/gateway
+        run: |
+          gcloud run deploy mcp-gateway \
+            --source . \
+            --region us-central1 \
+            --project lovable-vitana-vers1 \
+            --allow-unauthenticated \
+            --set-env-vars ENVIRONMENT=dev \
+            --set-secrets=GITHUB_MCP_TOKEN=github-token:latest,SUPABASE_URL=supabase-url:latest,SUPABASE_SERVICE_ROLE_KEY=supabase-key:latest,PERPLEXITY_API_KEY=perplexity-key:latest,LINEAR_API_KEY=linear-key:latest,CONTEXT7_API_KEY=context7-key:latest,TESTSPRITE_API_KEY=testsprite-key:latest,GATEWAY_URL=gateway-url:latest \
+            --memory 512Mi \
+            --min-instances 0 \
+            --max-instances 2
+      
+      - name: Verify deployment
+        run: |
+          SERVICE_URL=$(gcloud run services describe mcp-gateway \
+            --region us-central1 \
+            --format='value(status.url)')
+          
+          echo "Testing health endpoint..."
+          curl -f $SERVICE_URL/health || exit 1
+          
+          echo "Testing MCP health endpoint..."
+          curl -f $SERVICE_URL/mcp/health || exit 1
+          
+          echo "✅ Deployment verified!"

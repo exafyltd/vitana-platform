@@ -1,68 +1,61 @@
 interface PerplexityConfig {
   apiKey: string;
-  baseUrl: string;
 }
 
-class PerplexityMcpConnector {
-  private config: PerplexityConfig;
-
-  constructor() {
-    this.config = {
-      apiKey: process.env.PERPLEXITY_API_KEY || '',
-      baseUrl: 'https://api.perplexity.ai',
+interface PerplexityResponse {
+  choices: Array<{
+    message: {
+      content: string;
     };
+  }>;
+  citations?: string[];
+  model: string;
+  usage: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+}
 
-    if (!this.config.apiKey) {
-      console.warn('PERPLEXITY_API_KEY not set - Perplexity connector will not work');
-    }
+export class PerplexityMCP {
+  private apiKey: string;
+  private baseUrl = 'https://api.perplexity.ai';
+
+  constructor(config: PerplexityConfig) {
+    this.apiKey = config.apiKey;
   }
 
-  async health() {
-    return {
-      status: this.config.apiKey ? 'ok' : 'misconfigured',
-      message: this.config.apiKey ? 'Ready' : 'Missing API key',
-    };
-  }
-
-  async call(method: string, params: any) {
-    switch (method) {
-      case 'ask':
-        return this.ask(params);
-      case 'research':
-        return this.research(params);
-      default:
-        throw new Error(`Unknown method: ${method}`);
-    }
-  }
-
-  private async ask(params: { question: string; model?: string }) {
-    if (!params.question) {
-      throw new Error('Question is required');
-    }
-
-    const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
+  async ask(question: string, options?: { model?: string; searchDomainFilter?: string[] }): Promise<any> {
+    const fetch = (await import('node-fetch')).default;
+    
+    const response = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${this.config.apiKey}`,
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify({
-        model: params.model || 'sonar-medium-online',
+        model: options?.model || 'llama-3.1-sonar-small-128k-online',
         messages: [
           {
+            role: 'system',
+            content: 'You are a helpful assistant that provides accurate information with citations.',
+          },
+          {
             role: 'user',
-            content: params.question,
+            content: question,
           },
         ],
+        search_domain_filter: options?.searchDomainFilter,
       }),
     });
 
     if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Perplexity API error: ${response.status} - ${error}`);
+      throw new Error(`Perplexity API error: ${response.statusText}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as PerplexityResponse;
+
     return {
       answer: data.choices[0]?.message?.content || '',
       citations: data.citations || [],
@@ -71,22 +64,36 @@ class PerplexityMcpConnector {
     };
   }
 
-  private async research(params: { topic: string; depth?: string }) {
-    if (!params.topic) {
-      throw new Error('Topic is required');
-    }
-
-    const depth = params.depth || 'detailed';
-    const prompts: Record<string, string> = {
-      basic: `Provide a brief summary about: ${params.topic}`,
-      detailed: `Provide a detailed analysis with key points about: ${params.topic}`,
-      comprehensive: `Conduct comprehensive research covering all aspects, trends, and implications of: ${params.topic}`,
-    };
-
-    const question = prompts[depth] || prompts.detailed;
-
-    return this.ask({ question, model: 'sonar-medium-online' });
+  async research(topic: string, options?: { depth?: 'basic' | 'detailed' }): Promise<any> {
+    const prompt = options?.depth === 'detailed'
+      ? `Provide a comprehensive research summary on: ${topic}. Include multiple perspectives, recent developments, and relevant citations.`
+      : `Provide a concise overview of: ${topic}`;
+    return this.ask(prompt);
   }
 }
 
-export const perplexityMcpConnector = new PerplexityMcpConnector();
+// Connector factory function
+export const perplexityMcpConnector = {
+  name: 'perplexity-mcp',
+  create: (config: PerplexityConfig) => new PerplexityMCP(config),
+  skills: [
+    {
+      id: 'perplexity.ask',
+      name: 'Ask Perplexity',
+      description: 'Ask a question and get an AI-powered answer with citations',
+      parameters: {
+        question: { type: 'string', required: true },
+        model: { type: 'string', required: false }
+      }
+    },
+    {
+      id: 'perplexity.research',
+      name: 'Research Topic',
+      description: 'Conduct research on a topic with comprehensive analysis',
+      parameters: {
+        topic: { type: 'string', required: true },
+        depth: { type: 'string', enum: ['basic', 'detailed'], required: false }
+      }
+    }
+  ]
+};

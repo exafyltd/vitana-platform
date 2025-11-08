@@ -13,7 +13,6 @@ const PORT = process.env.PORT || 8080;
 app.use(cors());
 app.use(express.json());
 
-// Connector registry
 const connectors: Record<string, any> = {
   'github-mcp': githubMcpConnector,
   'supabase-mcp': supabaseMcpConnector,
@@ -23,7 +22,6 @@ const connectors: Record<string, any> = {
   'testsprite-mcp': testspriteMcpConnector,
 };
 
-// Health check
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -32,7 +30,6 @@ app.get('/health', (req, res) => {
   });
 });
 
-// MCP Health - list all connectors
 app.get('/mcp/health', async (req, res) => {
   const connectorStatus = await Promise.all(
     Object.entries(connectors).map(async ([name, connector]) => {
@@ -44,7 +41,6 @@ app.get('/mcp/health', async (req, res) => {
       }
     })
   );
-
   res.json({
     status: 'ok',
     connectors: connectorStatus,
@@ -52,17 +48,32 @@ app.get('/mcp/health', async (req, res) => {
   });
 });
 
-// MCP Call endpoint
+app.get('/skills/mcp', async (req, res) => {
+  // Return hardcoded skills list for now (until table is created)
+  const skills = [
+    { skill_id: 'github.repo.get_file', server: 'github-mcp', description: 'Get file from repo' },
+    { skill_id: 'github.repo.search_code', server: 'github-mcp', description: 'Search code' },
+    { skill_id: 'github.pr.list', server: 'github-mcp', description: 'List PRs' },
+    { skill_id: 'github.pr.get', server: 'github-mcp', description: 'Get PR details' },
+    { skill_id: 'supabase.schema.list_tables', server: 'supabase-mcp', description: 'List tables' },
+    { skill_id: 'supabase.schema.get_table', server: 'supabase-mcp', description: 'Get table schema' },
+  ];
+  res.json({
+    ok: true,
+    skills,
+    count: skills.length,
+    timestamp: new Date().toISOString(),
+  });
+});
+
 app.post('/mcp/call', async (req, res) => {
   const { server, method, params } = req.body;
-
   if (!server || !method) {
     return res.status(400).json({
       ok: false,
       error: 'Missing required fields: server, method',
     });
   }
-
   const connector = connectors[server];
   if (!connector) {
     return res.status(404).json({
@@ -70,12 +81,10 @@ app.post('/mcp/call', async (req, res) => {
       error: `Unknown server: ${server}`,
     });
   }
-
   const startTime = Date.now();
   try {
     const result = await connector.call(method, params || {});
     const latency_ms = Date.now() - startTime;
-
     res.json({
       ok: true,
       result,
@@ -83,7 +92,6 @@ app.post('/mcp/call', async (req, res) => {
     });
   } catch (error: any) {
     const latency_ms = Date.now() - startTime;
-
     res.status(500).json({
       ok: false,
       error: error.message,
@@ -92,7 +100,7 @@ app.post('/mcp/call', async (req, res) => {
   }
 });
 
-// Startup
 app.listen(PORT, () => {
   console.log(`MCP Gateway listening on port ${PORT}`);
+  console.log(`Endpoints: /health, /mcp/health, /skills/mcp, /mcp/call`);
 });

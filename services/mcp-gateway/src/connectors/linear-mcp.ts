@@ -1,50 +1,28 @@
 interface LinearConfig {
   apiKey: string;
-  baseUrl: string;
 }
 
-class LinearMcpConnector {
-  private config: LinearConfig;
+interface LinearResponse {
+  data?: any;
+  errors?: any[];
+}
 
-  constructor() {
-    this.config = {
-      apiKey: process.env.LINEAR_API_KEY || '',
-      baseUrl: 'https://api.linear.app/graphql',
-    };
+export class LinearMCP {
+  private apiKey: string;
+  private baseUrl = 'https://api.linear.app/graphql';
 
-    if (!this.config.apiKey) {
-      console.warn('LINEAR_API_KEY not set - Linear connector will not work');
-    }
+  constructor(config: LinearConfig) {
+    this.apiKey = config.apiKey;
   }
 
-  async health() {
-    return {
-      status: this.config.apiKey ? 'ok' : 'misconfigured',
-      message: this.config.apiKey ? 'Ready' : 'Missing API key',
-    };
-  }
-
-  async call(method: string, params: any) {
-    switch (method) {
-      case 'issue.list':
-        return this.listIssues(params);
-      case 'issue.get':
-        return this.getIssue(params);
-      case 'issue.update_status':
-        return this.updateIssueStatus(params);
-      case 'issue.create':
-        return this.createIssue(params);
-      default:
-        throw new Error(`Unknown method: ${method}`);
-    }
-  }
-
-  private async query(graphqlQuery: string, variables: any = {}) {
-    const response = await fetch(this.config.baseUrl, {
+  async query(graphqlQuery: string, variables?: Record<string, any>): Promise<any> {
+    const fetch = (await import('node-fetch')).default;
+    
+    const response = await fetch(this.baseUrl, {
       method: 'POST',
       headers: {
-        'Authorization': this.config.apiKey,
         'Content-Type': 'application/json',
+        'Authorization': this.apiKey,
       },
       body: JSON.stringify({
         query: graphqlQuery,
@@ -52,12 +30,8 @@ class LinearMcpConnector {
       }),
     });
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Linear API error: ${response.status} - ${error}`);
-    }
+    const data = await response.json() as LinearResponse;
 
-    const data = await response.json();
     if (data.errors) {
       throw new Error(`Linear GraphQL error: ${JSON.stringify(data.errors)}`);
     }
@@ -65,144 +39,108 @@ class LinearMcpConnector {
     return data.data;
   }
 
-  private async listIssues(params: { teamId?: string; state?: string; limit?: number }) {
+  async listIssues(filter?: { teamId?: string; state?: string }): Promise<any> {
     const query = `
-      query($teamId: String, $first: Int) {
-        issues(
-          filter: { team: { id: { eq: $teamId } } }
-          first: $first
-        ) {
+      query Issues($filter: IssueFilter) {
+        issues(filter: $filter) {
           nodes {
             id
-            identifier
             title
             description
-            state {
-              name
-              type
-            }
-            assignee {
-              name
-              email
-            }
+            state { name }
+            assignee { name }
             createdAt
             updatedAt
-            url
           }
         }
       }
     `;
-
-    const variables = {
-      teamId: params.teamId,
-      first: params.limit || 50,
-    };
-
-    const data = await this.query(query, variables);
-    return data.issues.nodes;
+    return this.query(query, { filter });
   }
 
-  private async getIssue(params: { id?: string; identifier?: string }) {
-    if (!params.id && !params.identifier) {
-      throw new Error('Either id or identifier is required');
-    }
-
+  async getIssue(issueId: string): Promise<any> {
     const query = `
-      query($id: String!) {
+      query Issue($id: String!) {
         issue(id: $id) {
           id
-          identifier
           title
           description
-          state {
-            name
-            type
-          }
-          assignee {
-            name
-            email
-          }
+          state { name }
+          assignee { name }
+          comments { nodes { body } }
           createdAt
           updatedAt
-          url
         }
       }
     `;
-
-    const data = await this.query(query, {
-      id: params.id || params.identifier,
-    });
-
-    return data.issue;
+    return this.query(query, { id: issueId });
   }
 
-  private async updateIssueStatus(params: { issueId: string; stateId: string }) {
-    if (!params.issueId || !params.stateId) {
-      throw new Error('issueId and stateId are required');
-    }
-
+  async updateIssueStatus(issueId: string, stateId: string): Promise<any> {
     const mutation = `
-      mutation($issueId: String!, $stateId: String!) {
-        issueUpdate(
-          id: $issueId
-          input: { stateId: $stateId }
-        ) {
+      mutation UpdateIssue($id: String!, $stateId: String!) {
+        issueUpdate(id: $id, input: { stateId: $stateId }) {
           success
-          issue {
-            id
-            identifier
-            title
-            state {
-              name
-              type
-            }
-          }
+          issue { id title state { name } }
         }
       }
     `;
-
-    const data = await this.query(mutation, {
-      issueId: params.issueId,
-      stateId: params.stateId,
-    });
-
-    return data.issueUpdate;
+    return this.query(mutation, { id: issueId, stateId });
   }
 
-  private async createIssue(params: {
-    teamId: string;
-    title: string;
-    description?: string;
-    assigneeId?: string;
-  }) {
-    if (!params.teamId || !params.title) {
-      throw new Error('teamId and title are required');
-    }
-
+  async createIssue(input: { title: string; description?: string; teamId: string }): Promise<any> {
     const mutation = `
-      mutation($teamId: String!, $title: String!, $description: String, $assigneeId: String) {
-        issueCreate(
-          input: {
-            teamId: $teamId
-            title: $title
-            description: $description
-            assigneeId: $assigneeId
-          }
-        ) {
+      mutation CreateIssue($input: IssueCreateInput!) {
+        issueCreate(input: $input) {
           success
-          issue {
-            id
-            identifier
-            title
-            url
-          }
+          issue { id title }
         }
       }
     `;
-
-    const data = await this.query(mutation, params);
-    return data.issueCreate;
+    return this.query(mutation, { input });
   }
 }
 
-export const linearMcpConnector = new LinearMcpConnector();
+// Connector factory function
+export const linearMcpConnector = {
+  name: 'linear-mcp',
+  create: (config: LinearConfig) => new LinearMCP(config),
+  skills: [
+    {
+      id: 'linear.issue.list',
+      name: 'List Issues',
+      description: 'List Linear issues with optional filters',
+      parameters: {
+        teamId: { type: 'string', required: false },
+        state: { type: 'string', required: false }
+      }
+    },
+    {
+      id: 'linear.issue.get',
+      name: 'Get Issue',
+      description: 'Get details of a specific Linear issue',
+      parameters: {
+        issueId: { type: 'string', required: true }
+      }
+    },
+    {
+      id: 'linear.issue.update_status',
+      name: 'Update Issue Status',
+      description: 'Update the status of a Linear issue',
+      parameters: {
+        issueId: { type: 'string', required: true },
+        stateId: { type: 'string', required: true }
+      }
+    },
+    {
+      id: 'linear.issue.create',
+      name: 'Create Issue',
+      description: 'Create a new Linear issue',
+      parameters: {
+        title: { type: 'string', required: true },
+        description: { type: 'string', required: false },
+        teamId: { type: 'string', required: true }
+      }
+    }
+  ]
+};

@@ -2,9 +2,13 @@ import { Octokit } from '@octokit/rest';
 
 class GitHubMcpConnector {
   private octokit: Octokit;
+  private defaultRepo = 'exafyltd/vitana-platform';
 
   constructor() {
     const token = process.env.GITHUB_MCP_TOKEN || '';
+    if (!token) {
+      console.warn('⚠️  GitHub MCP: GITHUB_MCP_TOKEN not set');
+    }
     this.octokit = new Octokit({ auth: token });
   }
 
@@ -32,25 +36,43 @@ class GitHubMcpConnector {
     }
   }
 
-  private async getFile(params: { repo: string; path: string; ref?: string }) {
-    const [owner, repoName] = params.repo.split('/');
+  private async getFile(params: { repo?: string; path: string; ref?: string }) {
+    const repoPath = params.repo || this.defaultRepo;
+    if (!repoPath || !repoPath.includes('/')) {
+      throw new Error(`Invalid repo format: "${repoPath}". Expected: owner/repo`);
+    }
+    const [owner, repoName] = repoPath.split('/');
+    if (!owner || !repoName) {
+      throw new Error(`Invalid repo format: "${repoPath}". Both owner and repo name required`);
+    }
     const { data } = await this.octokit.repos.getContent({
       owner,
       repo: repoName,
       path: params.path,
-      ref: params.ref,
+      ref: params.ref || 'main',
     });
     return data;
   }
 
   private async searchCode(params: { query: string; repo?: string }) {
-    const q = params.repo ? `${params.query} repo:${params.repo}` : params.query;
+    const repoPath = params.repo || this.defaultRepo;
+    if (repoPath && !repoPath.includes('/')) {
+      throw new Error(`Invalid repo format: "${repoPath}". Expected: owner/repo`);
+    }
+    const q = repoPath ? `${params.query} repo:${repoPath}` : params.query;
     const { data } = await this.octokit.search.code({ q });
     return data.items;
   }
 
-  private async listPRs(params: { repo: string; state?: string }) {
-    const [owner, repoName] = params.repo.split('/');
+  private async listPRs(params: { repo?: string; state?: string }) {
+    const repoPath = params.repo || this.defaultRepo;
+    if (!repoPath || !repoPath.includes('/')) {
+      throw new Error(`Invalid repo format: "${repoPath}". Expected: owner/repo`);
+    }
+    const [owner, repoName] = repoPath.split('/');
+    if (!owner || !repoName) {
+      throw new Error(`Invalid repo format: "${repoPath}". Both owner and repo name required`);
+    }
     const { data } = await this.octokit.pulls.list({
       owner,
       repo: repoName,
@@ -59,8 +81,15 @@ class GitHubMcpConnector {
     return data;
   }
 
-  private async getPR(params: { repo: string; pr_number: number }) {
-    const [owner, repoName] = params.repo.split('/');
+  private async getPR(params: { repo?: string; pr_number: number }) {
+    const repoPath = params.repo || this.defaultRepo;
+    if (!repoPath || !repoPath.includes('/')) {
+      throw new Error(`Invalid repo format: "${repoPath}". Expected: owner/repo`);
+    }
+    const [owner, repoName] = repoPath.split('/');
+    if (!owner || !repoName) {
+      throw new Error(`Invalid repo format: "${repoPath}". Both owner and repo name required`);
+    }
     const { data } = await this.octokit.pulls.get({
       owner,
       repo: repoName,
