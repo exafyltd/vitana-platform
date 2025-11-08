@@ -5,6 +5,7 @@ on:
     branches: [main, develop]
     paths:
       - 'services/mcp/gateway/**'
+      - '.github/workflows/DEPLOY-MCP-GATEWAY.yml'
   workflow_dispatch:
 
 jobs:
@@ -49,16 +50,97 @@ jobs:
             --min-instances 0 \
             --max-instances 2
       
-      - name: Verify deployment
+      - name: Wait for service to be ready
+        run: sleep 30
+      
+      - name: Verify deployment health
         run: |
           SERVICE_URL=$(gcloud run services describe mcp-gateway \
             --region us-central1 \
+            --project lovable-vitana-vers1 \
             --format='value(status.url)')
           
-          echo "Testing health endpoint..."
-          curl -f $SERVICE_URL/health || exit 1
+          echo "MCP Gateway URL: $SERVICE_URL"
           
-          echo "Testing MCP health endpoint..."
-          curl -f $SERVICE_URL/mcp/health || exit 1
+          echo "Testing basic health endpoint..."
+          HEALTH_RESPONSE=$(curl -s $SERVICE_URL/health)
+          echo "$HEALTH_RESPONSE"
           
-          echo "✅ Deployment verified!"
+          if ! echo "$HEALTH_RESPONSE" | grep -q '"status":"ok"'; then
+            echo "❌ Health check failed"
+            exit 1
+          fi
+          
+          echo "✅ Basic health check passed"
+      
+      - name: Verify MCP connectors
+        run: |
+          SERVICE_URL=$(gcloud run services describe mcp-gateway \
+            --region us-central1 \
+            --project lovable-vitana-vers1 \
+            --format='value(status.url)')
+          
+          echo "Testing MCP connectors health..."
+          MCP_HEALTH=$(curl -s $SERVICE_URL/mcp/health)
+          echo "$MCP_HEALTH"
+          
+          # Check if all 6 connectors are present
+          CONNECTOR_COUNT=$(echo "$MCP_HEALTH" | grep -o '"name":' | wc -l)
+          if [ "$CONNECTOR_COUNT" -ne 6 ]; then
+            echo "❌ Expected 6 connectors, found $CONNECTOR_COUNT"
+            exit 1
+          fi
+          
+          # Check if any connector is misconfigured
+          if echo "$MCP_HEALTH" | grep -q '"status":"misconfigured"'; then
+            echo "⚠️ WARNING: Some connectors are misconfigured"
+            echo "$MCP_HEALTH" | grep "misconfigured"
+            exit 1
+          fi
+          
+          # Check if any connector has error status
+          if echo "$MCP_HEALTH" | grep -q '"status":"error"'; then
+            echo "❌ ERROR: Some connectors have errors"
+            echo "$MCP_HEALTH" | grep "error"
+            exit 1
+          fi
+          
+          echo "✅ All MCP connectors are healthy"
+      
+      - name: Test sample MCP call
+        run: |
+          SERVICE_URL=$(gcloud run services describe mcp-gateway \
+            --region us-central1 \
+            --project lovable-vitana-vers1 \
+            --format='value(status.url)')
+          
+          echo "Testing sample MCP call (GitHub health)..."
+          CALL_RESPONSE=$(curl -s -X POST $SERVICE_URL/mcp/call \
+            -H "Content-Type: application/json" \
+            -d '{"server":"github-mcp","method":"health","params":{}}')
+          
+          echo "$CALL_RESPONSE"
+          
+          if echo "$CALL_RESPONSE" | grep -q '"ok":true'; then
+            echo "✅ Sample MCP call succeeded"
+          else
+            echo "❌ Sample MCP call failed"
+            exit 1
+          fi
+      
+      - name: Deployment summary
+        if: always()
+        run: |
+          SERVICE_URL=$(gcloud run services describe mcp-gateway \
+            --region us-central1 \
+            --project lovable-vitana-vers1 \
+            --format='value(status.url)' 2>/dev/null || echo "unknown")
+          
+          echo "=========================================="
+          echo "   MCP GATEWAY DEPLOYMENT COMPLETE"
+          echo "=========================================="
+          echo ""
+          echo "Service URL: $SERVICE_URL"
+          echo "VTID: DEV-CICDL-0052"
+          echo ""
+          echo "Next: All PRs will run these tests automatically"
