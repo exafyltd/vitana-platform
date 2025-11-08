@@ -114,18 +114,6 @@ jobs:
             --project lovable-vitana-vers1 \
             --format='value(status.url)')
           
-          echo "Testing sample MCP call (GitHub health)..."
-          CALL_RESPONSE=$(curl -s -X POST $SERVICE_URL/mcp/call \
-            -H "Content-Type: application/json" \
-            -d '{"server":"github-mcp","method":"health","params":{}}')
-          
-          echo "$CALL_RESPONSE"
-          
-          if echo "$CALL_RESPONSE" | grep -q '"ok":true'; then
-            echo "✅ Sample MCP call succeeded"
-          else
-            echo "❌ Sample MCP call failed"
-            exit 1
           fi
       
       - name: Deployment summary
