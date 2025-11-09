@@ -1,71 +1,66 @@
-import { Router, Request, Response } from "express";
-import { z } from "zod";
+/**
+ * VTID Management Routes
+ * Handles creation, retrieval, and updates of VTIDs in the ledger
+ * 
+ * VTID Format: DEV-{LAYER}-{NUMBER}
+ * Example: DEV-CICDL-0031, DEV-AICOR-0013
+ * 
+ * Recent Updates:
+ * - DEV-AICOR-VTID-LEDGER-CLEANUP: Added is_test filtering
+ */
 
+import { Router, Request, Response } from 'express';
+import { z } from 'zod';
+
+const router = Router();
+
+// Validation schemas
 const VtidCreateSchema = z.object({
-  taskFamily: z.string().min(1, "Task family required"),
-  taskType: z.string().min(1, "Task type required"),
-  description: z.string().min(1, "Description required"),
-  status: z.enum(["pending", "active", "complete", "blocked", "cancelled"]).default("pending"),
+  taskFamily: z.string().min(1).max(50),
+  taskType: z.string().min(1).max(50),
+  description: z.string().min(1).max(500),
+  tenant: z.string().min(1).max(100),
   assignedTo: z.string().optional(),
-  tenant: z.string().min(1, "Tenant required"),
   metadata: z.record(z.any()).optional(),
   parentVtid: z.string().optional(),
+  isTest: z.boolean().optional().default(false),
 });
 
 const VtidUpdateSchema = z.object({
-  status: z.enum(["pending", "active", "complete", "blocked", "cancelled"]).optional(),
+  status: z.enum(['pending', 'active', 'review', 'complete', 'blocked', 'cancelled']).optional(),
   assignedTo: z.string().optional(),
   metadata: z.record(z.any()).optional(),
 });
 
-type VtidCreateInput = z.infer<typeof VtidCreateSchema>;
-type VtidUpdateInput = z.infer<typeof VtidUpdateSchema>;
-
-export const router = Router();
-
-async function generateVtid(supabaseUrl: string, svcKey: string): Promise<string> {
-  const year = new Date().getFullYear();
-  const prefix = `VTID-${year}-`;
-
-  const resp = await fetch(
-    `${supabaseUrl}/rest/v1/VtidLedger?select=vtid&vtid=like.${prefix}*&order=vtid.desc&limit=1`,
-    {
-      method: "GET",
-      headers: {
-        apikey: svcKey,
-        Authorization: `Bearer ${svcKey}`,
-      },
-    }
-  );
-
-  if (!resp.ok) {
-    throw new Error(`Failed to query latest VTID: ${resp.statusText}`);
-  }
-
-  const data = (await resp.json()) as any[];
-
-  let nextNumber = 1;
-  if (data.length > 0) {
-    const lastVtid = data[0].vtid;
-    const lastNumber = parseInt(lastVtid.split("-")[2], 10);
-    nextNumber = lastNumber + 1;
-  }
-
-  return `${prefix}${String(nextNumber).padStart(4, "0")}`;
-}
-
-// CRITICAL: Static routes MUST come before parameterized routes
-router.get("/vtid/health", (_req: Request, res: Response) => {
-  res.status(200).json({
+/**
+ * Health check endpoint
+ */
+router.get('/health', (_req: Request, res: Response) => {
+  return res.status(200).json({
     ok: true,
-    service: "vtid-ledger",
+    service: 'vtid-ledger',
     timestamp: new Date().toISOString(),
   });
 });
 
-router.get("/vtid/list", async (req: Request, res: Response) => {
+/**
+ * List VTIDs with optional filters
+ * Query params:
+ * - limit: max results (default 50, max 200)
+ * - offset: pagination offset
+ * - taskFamily: filter by task family
+ * - status: filter by status
+ * - tenant: filter by tenant
+ * - includeTest: include test VTIDs (default false)
+ */
+router.get('/list', async (req: Request, res: Response) => {
   try {
-    const { taskFamily, status, tenant, limit = "50" } = req.query;
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+    const offset = parseInt(req.query.offset as string) || 0;
+    const taskFamily = req.query.taskFamily as string;
+    const status = req.query.status as string;
+    const tenant = req.query.tenant as string;
+    const includeTest = req.query.includeTest === 'true';
 
     const svcKey = process.env.SUPABASE_SERVICE_ROLE;
     const supabaseUrl = process.env.SUPABASE_URL;
@@ -76,19 +71,22 @@ router.get("/vtid/list", async (req: Request, res: Response) => {
       });
     }
 
-    let queryUrl = `${supabaseUrl}/rest/v1/VtidLedger?order=created_at.desc&limit=${limit}`;
+    // Build query filters
+    const filters: string[] = [];
+    
+    // Always filter out test VTIDs unless explicitly requested
+    if (!includeTest) {
+      filters.push('is_test=eq.false');
+    }
+    
+    if (taskFamily) filters.push(`task_family=eq.${encodeURIComponent(taskFamily)}`);
+    if (status) filters.push(`status=eq.${encodeURIComponent(status)}`);
+    if (tenant) filters.push(`tenant=eq.${encodeURIComponent(tenant)}`);
 
-    if (taskFamily) {
-      queryUrl += `&task_family=eq.${taskFamily}`;
-    }
-    if (status) {
-      queryUrl += `&status=eq.${status}`;
-    }
-    if (tenant) {
-      queryUrl += `&tenant=eq.${tenant}`;
-    }
+    const filterStr = filters.length > 0 ? '&' + filters.join('&') : '';
+    const url = `${supabaseUrl}/rest/v1/VtidLedger?order=created_at.desc&limit=${limit}&offset=${offset}${filterStr}`;
 
-    const resp = await fetch(queryUrl, {
+    const resp = await fetch(url, {
       method: "GET",
       headers: {
         apikey: svcKey,
@@ -105,7 +103,7 @@ router.get("/vtid/list", async (req: Request, res: Response) => {
       });
     }
 
-    const data = (await resp.json()) as any[];
+    const data = await resp.json() as any[];
 
     return res.status(200).json({
       ok: true,
@@ -121,7 +119,60 @@ router.get("/vtid/list", async (req: Request, res: Response) => {
   }
 });
 
-router.post("/vtid/create", async (req: Request, res: Response) => {
+/**
+ * Generate next VTID number for given task family
+ * Returns format: DEV-{LAYER}-{NUMBER}
+ */
+async function generateVtid(taskFamily: string, supabaseUrl: string, svcKey: string): Promise<string> {
+  // Extract layer from task family (e.g., "cicd" -> "CICDL", "ai-core" -> "AICOR")
+  const layerMap: Record<string, string> = {
+    'cicd': 'CICDL',
+    'ai-core': 'AICOR',
+    'ai-agent': 'AIAGE',
+    'communication': 'COMMU',
+    'gateway': 'GATEW',
+    'oasis': 'OASIS',
+    'mcp': 'MCPGW',
+    'deploy': 'DEPLO',
+    'test': 'TESTT',
+  };
+
+  const layer = layerMap[taskFamily.toLowerCase()] || 'GENER';
+
+  // Find the highest number for this layer
+  const resp = await fetch(
+    `${supabaseUrl}/rest/v1/VtidLedger?vtid=like.DEV-${layer}-%&order=vtid.desc&limit=1`,
+    {
+      method: "GET",
+      headers: {
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+      },
+    }
+  );
+
+  if (!resp.ok) {
+    throw new Error(`Failed to query latest VTID: ${resp.status}`);
+  }
+
+  const data = await resp.json() as any[];
+  
+  let nextNum = 1;
+  if (data.length > 0) {
+    const lastVtid = data[0].vtid as string;
+    const match = lastVtid.match(/DEV-[A-Z]+-(\d+)$/);
+    if (match) {
+      nextNum = parseInt(match[1], 10) + 1;
+    }
+  }
+
+  return `DEV-${layer}-${String(nextNum).padStart(4, '0')}`;
+}
+
+/**
+ * Create new VTID
+ */
+router.post('/create', async (req: Request, res: Response) => {
   try {
     const body = VtidCreateSchema.parse(req.body);
 
@@ -129,14 +180,12 @@ router.post("/vtid/create", async (req: Request, res: Response) => {
     const supabaseUrl = process.env.SUPABASE_URL;
 
     if (!svcKey || !supabaseUrl) {
-      console.error("❌ Gateway misconfigured: Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE");
       return res.status(500).json({
         error: "Gateway misconfigured",
-        detail: "Missing Supabase environment variables",
       });
     }
 
-    const vtid = await generateVtid(supabaseUrl, svcKey);
+    const vtid = await generateVtid(body.taskFamily, supabaseUrl, svcKey);
 
     const payload = {
       id: crypto.randomUUID(),
@@ -144,11 +193,12 @@ router.post("/vtid/create", async (req: Request, res: Response) => {
       task_family: body.taskFamily,
       task_type: body.taskType,
       description: body.description,
-      status: body.status,
+      status: 'pending',
       assigned_to: body.assignedTo ?? null,
       tenant: body.tenant,
       metadata: body.metadata ?? null,
       parent_vtid: body.parentVtid ?? null,
+      is_test: body.isTest ?? false,
     };
 
     const resp = await fetch(`${supabaseUrl}/rest/v1/VtidLedger`, {
@@ -178,7 +228,7 @@ router.post("/vtid/create", async (req: Request, res: Response) => {
     return res.status(200).json({
       ok: true,
       vtid,
-      data: data[0], // Extract first element from Supabase array
+      data: data[0],
     });
   } catch (e: any) {
     if (e instanceof z.ZodError) {
@@ -197,15 +247,17 @@ router.post("/vtid/create", async (req: Request, res: Response) => {
   }
 });
 
-// Parameterized routes MUST come AFTER static routes
-router.get("/vtid/:vtid([A-Z0-9-]+)", async (req: Request, res: Response) => {
+/**
+ * Get specific VTID by ID
+ */
+router.get('/:vtid([A-Z0-9-]+)', async (req: Request, res: Response) => {
   try {
     const { vtid } = req.params;
 
-    if (!vtid || !vtid.startsWith("VTID-")) {
+    if (!vtid || !vtid.startsWith('DEV-')) {
       return res.status(400).json({
         error: "Invalid VTID format",
-        detail: "VTID must start with 'VTID-'",
+        detail: "VTID must start with 'DEV-'",
       });
     }
 
@@ -257,12 +309,15 @@ router.get("/vtid/:vtid([A-Z0-9-]+)", async (req: Request, res: Response) => {
   }
 });
 
-router.patch("/vtid/:vtid([A-Z0-9-]+)", async (req: Request, res: Response) => {
+/**
+ * Update VTID status or metadata
+ */
+router.patch('/:vtid([A-Z0-9-]+)', async (req: Request, res: Response) => {
   try {
     const { vtid } = req.params;
     const body = VtidUpdateSchema.parse(req.body);
 
-    if (!vtid || !vtid.startsWith("VTID-")) {
+    if (!vtid || !vtid.startsWith('DEV-')) {
       return res.status(400).json({
         error: "Invalid VTID format",
       });
@@ -308,7 +363,7 @@ router.patch("/vtid/:vtid([A-Z0-9-]+)", async (req: Request, res: Response) => {
     return res.status(200).json({
       ok: true,
       vtid,
-      data: data[0], // Extract first element from Supabase array
+      data: data[0],
     });
   } catch (e: any) {
     if (e instanceof z.ZodError) {
@@ -325,3 +380,5 @@ router.patch("/vtid/:vtid([A-Z0-9-]+)", async (req: Request, res: Response) => {
     });
   }
 });
+
+export default router;

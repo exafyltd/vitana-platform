@@ -3,127 +3,650 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vitana Command HUB</title>
+    <title>VITANA Command HUB - LIVE</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0e1a; color: #e4e4e7; overflow: hidden; }
-        .container { height: 100vh; display: flex; flex-direction: column; }
-        .header { background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); padding: 1rem 1.5rem; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; }
-        .header h1 { font-size: 1.5rem; font-weight: 700; color: #60a5fa; }
-        .status-dot { width: 8px; height: 8px; border-radius: 50%; animation: pulse 2s infinite; }
-        .status-dot.connected { background: #10b981; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-        .controls { background: #1e293b; padding: 1rem; display: flex; gap: 1rem; }
-        .filter-btn { padding: 0.5rem 1rem; background: #334155; border: none; border-radius: 6px; color: #e4e4e7; cursor: pointer; }
-        .filter-btn.active { background: #60a5fa; }
-        .event-list { padding: 1rem; overflow-y: auto; height: 100%; }
-        .event-item { background: #1e293b; border-radius: 6px; padding: 1rem; margin-bottom: 0.75rem; border-left: 3px solid #60a5fa; }
-        .event-type { font-weight: 600; margin-bottom: 0.5rem; }
-        .event-vtid { display: inline-block; background: #334155; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-family: monospace; color: #60a5fa; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #0a0e1a 0%, #1a1f35 100%);
+            color: #e4e4e7;
+            overflow: hidden;
+            height: 100vh;
+        }
+        
+        .container { 
+            height: 100vh; 
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            grid-template-rows: 60px 1fr;
+        }
+        
+        /* Header */
+        .header { 
+            grid-column: 1 / 3;
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid #334155;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header h1 { 
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #60a5fa;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .live-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+            color: #94a3b8;
+        }
+        
+        .status-dot { 
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #10b981;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-dot.disconnected { background: #ef4444; }
+        
+        @keyframes pulse { 
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        /* Sidebar - Live Console */
+        .sidebar {
+            background: #0f172a;
+            border-right: 1px solid #334155;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .console-header {
+            padding: 1rem;
+            background: #1e293b;
+            border-bottom: 1px solid #334155;
+            font-weight: 600;
+            color: #60a5fa;
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .console-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0.75rem;
+        }
+        
+        .console-event {
+            background: #1e293b;
+            border-radius: 6px;
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            border-left: 3px solid #60a5fa;
+            font-size: 0.75rem;
+        }
+        
+        .console-event.success { border-left-color: #10b981; }
+        .console-event.error { border-left-color: #ef4444; }
+        .console-event.warning { border-left-color: #f59e0b; }
+        
+        .console-event-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.25rem;
+            font-weight: 600;
+        }
+        
+        .console-event-time {
+            color: #64748b;
+            font-size: 0.7rem;
+        }
+        
+        .console-event-message {
+            color: #cbd5e1;
+            line-height: 1.4;
+        }
+        
+        .console-event-vtid {
+            color: #60a5fa;
+            font-family: 'Courier New', monospace;
+            font-size: 0.7rem;
+            margin-top: 0.25rem;
+        }
+        
+        /* Main Content - Tasks View */
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .tasks-header {
+            background: #1e293b;
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid #334155;
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+        
+        .tasks-stats {
+            display: flex;
+            gap: 2rem;
+            flex: 1;
+        }
+        
+        .stat-box {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+        
+        .stat-label {
+            font-size: 0.75rem;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #e4e4e7;
+        }
+        
+        .search-box {
+            flex: 1;
+            max-width: 300px;
+        }
+        
+        .search-box input {
+            width: 100%;
+            padding: 0.5rem 1rem;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            color: #e4e4e7;
+            font-size: 0.875rem;
+        }
+        
+        .search-box input:focus {
+            outline: none;
+            border-color: #60a5fa;
+        }
+        
+        .tasks-panels {
+            flex: 1;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            padding: 1.5rem;
+            overflow-y: auto;
+        }
+        
+        .task-panel {
+            background: #0f172a;
+            border-radius: 8px;
+            border: 1px solid #334155;
+            display: flex;
+            flex-direction: column;
+            max-height: 100%;
+        }
+        
+        .panel-header {
+            padding: 1rem;
+            border-bottom: 1px solid #334155;
+            font-weight: 600;
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .panel-header.scheduled { color: #f59e0b; }
+        .panel-header.catalog { color: #60a5fa; }
+        .panel-header.completed { color: #10b981; }
+        
+        .panel-count {
+            background: #1e293b;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+        }
+        
+        .panel-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0.75rem;
+        }
+        
+        .task-card {
+            background: #1e293b;
+            border-radius: 6px;
+            padding: 1rem;
+            margin-bottom: 0.75rem;
+            border-left: 3px solid #60a5fa;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .task-card:hover {
+            background: #334155;
+            transform: translateX(4px);
+        }
+        
+        .task-card.pending { border-left-color: #f59e0b; }
+        .task-card.active { border-left-color: #60a5fa; }
+        .task-card.review { border-left-color: #a78bfa; }
+        .task-card.complete { border-left-color: #10b981; }
+        .task-card.blocked { border-left-color: #ef4444; }
+        
+        .task-vtid {
+            font-family: 'Courier New', monospace;
+            font-size: 0.75rem;
+            color: #60a5fa;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+        
+        .task-description {
+            font-size: 0.875rem;
+            color: #cbd5e1;
+            line-height: 1.4;
+            margin-bottom: 0.5rem;
+        }
+        
+        .task-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: #64748b;
+        }
+        
+        .task-badge {
+            display: inline-block;
+            padding: 0.125rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .task-badge.pending { background: #78350f; color: #fbbf24; }
+        .task-badge.active { background: #1e3a8a; color: #60a5fa; }
+        .task-badge.review { background: #4c1d95; color: #a78bfa; }
+        .task-badge.complete { background: #064e3b; color: #10b981; }
+        .task-badge.blocked { background: #7f1d1d; color: #ef4444; }
+        
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 2rem;
+            color: #64748b;
+            font-size: 0.875rem;
+        }
+        
+        /* Scrollbar styling */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
     </style>
 </head>
 <body>
     <div class="container">
+        <!-- Header -->
         <div class="header">
-            <h1>⚡ Vitana Command HUB</h1>
-            <div style="display: flex; gap: 1rem; align-items: center;">
-                <span id="status">Connected</span>
-                <div class="status-dot connected" id="dot"></div>
+            <h1>
+                <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+                VITANA Command HUB
+            </h1>
+            <div class="live-indicator">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">Connecting...</span>
             </div>
         </div>
-        <div class="controls">
-            <button class="filter-btn active" data-filter="all">All Events</button>
-            <button class="filter-btn" data-filter="success">Success</button>
-            <button class="filter-btn" data-filter="error">Errors</button>
+        
+        <!-- Sidebar - Live Console -->
+        <div class="sidebar">
+            <div class="console-header">Live Event Console</div>
+            <div class="console-content" id="consoleContent">
+                <div class="empty-state">Waiting for events...</div>
+            </div>
         </div>
-        <div class="event-list" id="events">
-            <div>Loading events...</div>
+        
+        <!-- Main Content - Tasks -->
+        <div class="main-content">
+            <div class="tasks-header">
+                <div class="tasks-stats">
+                    <div class="stat-box">
+                        <div class="stat-label">Scheduled</div>
+                        <div class="stat-value" id="statScheduled">0</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-label">In Progress</div>
+                        <div class="stat-value" id="statProgress">0</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-label">Completed</div>
+                        <div class="stat-value" id="statCompleted">0</div>
+                    </div>
+                </div>
+                <div class="search-box">
+                    <input type="text" id="searchInput" placeholder="Search VTIDs or tasks...">
+                </div>
+            </div>
+            
+            <div class="tasks-panels">
+                <!-- Scheduled Panel -->
+                <div class="task-panel">
+                    <div class="panel-header scheduled">
+                        <span>Scheduled</span>
+                        <span class="panel-count" id="countScheduled">0</span>
+                    </div>
+                    <div class="panel-content" id="panelScheduled">
+                        <div class="empty-state">No scheduled tasks</div>
+                    </div>
+                </div>
+                
+                <!-- In Progress Panel -->
+                <div class="task-panel">
+                    <div class="panel-header catalog">
+                        <span>In Progress</span>
+                        <span class="panel-count" id="countProgress">0</span>
+                    </div>
+                    <div class="panel-content" id="panelProgress">
+                        <div class="empty-state">No tasks in progress</div>
+                    </div>
+                </div>
+                
+                <!-- Completed Panel -->
+                <div class="task-panel">
+                    <div class="panel-header completed">
+                        <span>Completed</span>
+                        <span class="panel-count" id="countCompleted">0</span>
+                    </div>
+                    <div class="panel-content" id="panelCompleted">
+                        <div class="empty-state">No completed tasks</div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
+
     <script>
+        // State management
+        let tasks = [];
         let eventSource = null;
-        let events = [];
+        let isConnected = false;
         
-        async function init() {
+        // API Configuration
+        const API_BASE = window.location.origin;
+        const VTID_API = `${API_BASE}/api/v1/vtid`;
+        const EVENTS_API = `${API_BASE}/api/v1/events`;
+        
+        // UI Elements
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const consoleContent = document.getElementById('consoleContent');
+        const searchInput = document.getElementById('searchInput');
+        
+        const statScheduled = document.getElementById('statScheduled');
+        const statProgress = document.getElementById('statProgress');
+        const statCompleted = document.getElementById('statCompleted');
+        
+        const countScheduled = document.getElementById('countScheduled');
+        const countProgress = document.getElementById('countProgress');
+        const countCompleted = document.getElementById('countCompleted');
+        
+        const panelScheduled = document.getElementById('panelScheduled');
+        const panelProgress = document.getElementById('panelProgress');
+        const panelCompleted = document.getElementById('panelCompleted');
+        
+        // Initialize
+        async function initialize() {
+            console.log('🚀 Initializing Command HUB...');
+            
+            // Load initial tasks
+            await loadTasks();
+            
+            // Connect to event stream
+            connectEventStream();
+            
+            // Setup search
+            searchInput.addEventListener('input', handleSearch);
+        }
+        
+        // Load tasks from API
+        async function loadTasks() {
             try {
-                const response = await fetch('/command-hub/api/events?limit=20');
+                const response = await fetch(`${VTID_API}/list?limit=100`);
                 const data = await response.json();
-                if (Array.isArray(data)) {
-                    events = data;
-                    renderEvents();
+                
+                if (data.ok) {
+                    tasks = data.data || [];
+                    renderTasks();
+                    updateStats();
+                    console.log(`✅ Loaded ${tasks.length} tasks`);
                 }
-                connectEventStream();
             } catch (error) {
-                console.error('Init error:', error);
-                document.getElementById('events').innerHTML = '<div>Error loading events</div>';
+                console.error('❌ Failed to load tasks:', error);
+                addConsoleEvent({
+                    type: 'error',
+                    message: 'Failed to load tasks from API',
+                    status: 'error'
+                });
             }
         }
         
+        // Connect to SSE event stream
         function connectEventStream() {
-            eventSource = new EventSource('/command-hub/api/events/stream');
+            if (eventSource) {
+                eventSource.close();
+            }
+            
+            console.log('🔌 Connecting to event stream...');
+            eventSource = new EventSource(`${EVENTS_API}/stream`);
             
             eventSource.onopen = () => {
-                document.getElementById('status').textContent = 'Connected';
-                document.getElementById('dot').className = 'status-dot connected';
+                isConnected = true;
+                statusDot.classList.remove('disconnected');
+                statusText.textContent = 'Connected (LIVE)';
+                console.log('✅ Event stream connected');
             };
             
             eventSource.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
-                    if (data.type !== 'connected') {
-                        events.unshift(data);
-                        if (events.length > 100) events = events.slice(0, 100);
-                        renderEvents();
-                    }
+                    handleEventStreamMessage(data);
                 } catch (error) {
-                    console.error('Parse error:', error);
+                    console.error('❌ Failed to parse SSE message:', error);
                 }
             };
             
             eventSource.onerror = () => {
-                document.getElementById('status').textContent = 'Disconnected';
-                document.getElementById('dot').className = 'status-dot';
+                isConnected = false;
+                statusDot.classList.add('disconnected');
+                statusText.textContent = 'Disconnected';
+                console.error('❌ Event stream error');
+                
+                // Reconnect after 5 seconds
                 setTimeout(connectEventStream, 5000);
             };
         }
         
-        function renderEvents() {
-            const container = document.getElementById('events');
-            if (events.length === 0) {
-                container.innerHTML = '<div>No events yet</div>';
+        // Handle incoming SSE messages
+        function handleEventStreamMessage(data) {
+            if (data.type === 'connected') {
+                console.log('📡 Stream connection established');
                 return;
             }
             
-            container.innerHTML = events.map(event => {
-                const type = event.event_type || event.type || 'Unknown';
-                const vtid = event.vtid ? `<span class="event-vtid">${event.vtid}</span>` : '';
-                const notes = event.notes || '';
-                const timestamp = new Date(event.timestamp || event.created_at).toLocaleString();
+            if (data.type === 'heartbeat') {
+                return; // Ignore heartbeats
+            }
+            
+            if (data.type === 'event' && data.event) {
+                const event = data.event;
                 
-                return `
-                    <div class="event-item">
-                        <div class="event-type">${type}</div>
-                        ${vtid}
-                        <div style="font-size: 0.875rem; color: #94a3b8; margin-top: 0.5rem;">
-                            ${notes}
-                        </div>
-                        <div style="font-size: 0.75rem; color: #64748b; margin-top: 0.5rem;">
-                            ${timestamp}
-                        </div>
-                    </div>
-                `;
-            }).join('');
+                // Add to console
+                addConsoleEvent(event);
+                
+                // If event has VTID and affects status, update task
+                if (event.vtid && event.topic && event.topic.startsWith('vtid.status')) {
+                    handleVtidStatusUpdate(event);
+                }
+            }
         }
         
-        document.querySelectorAll('.filter-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                renderEvents();
-            });
-        });
+        // Handle VTID status updates from events
+        async function handleVtidStatusUpdate(event) {
+            console.log(`🔄 VTID status update: ${event.vtid}`);
+            
+            // Reload specific task
+            try {
+                const response = await fetch(`${VTID_API}/${event.vtid}`);
+                const data = await response.json();
+                
+                if (data.ok && data.data) {
+                    // Update task in local state
+                    const index = tasks.findIndex(t => t.vtid === event.vtid);
+                    if (index >= 0) {
+                        tasks[index] = data.data;
+                    } else {
+                        tasks.push(data.data);
+                    }
+                    
+                    // Re-render
+                    renderTasks();
+                    updateStats();
+                }
+            } catch (error) {
+                console.error(`❌ Failed to fetch updated VTID ${event.vtid}:`, error);
+            }
+        }
         
-        init();
+        // Add event to console
+        function addConsoleEvent(event) {
+            // Remove empty state
+            const emptyState = consoleContent.querySelector('.empty-state');
+            if (emptyState) {
+                emptyState.remove();
+            }
+            
+            // Create event element
+            const eventEl = document.createElement('div');
+            eventEl.className = `console-event ${event.status || 'info'}`;
+            
+            const time = new Date().toLocaleTimeString();
+            
+            eventEl.innerHTML = `
+                <div class="console-event-header">
+                    <span>${event.topic || event.type || 'event'}</span>
+                    <span class="console-event-time">${time}</span>
+                </div>
+                <div class="console-event-message">${event.message || ''}</div>
+                ${event.vtid ? `<div class="console-event-vtid">${event.vtid}</div>` : ''}
+            `;
+            
+            // Add to top of console
+            consoleContent.insertBefore(eventEl, consoleContent.firstChild);
+            
+            // Limit to 50 events
+            while (consoleContent.children.length > 50) {
+                consoleContent.removeChild(consoleContent.lastChild);
+            }
+        }
+        
+        // Render tasks to panels
+        function renderTasks() {
+            const searchTerm = searchInput.value.toLowerCase();
+            
+            // Filter tasks
+            const filteredTasks = tasks.filter(task => {
+                if (!searchTerm) return true;
+                return task.vtid.toLowerCase().includes(searchTerm) ||
+                       task.description.toLowerCase().includes(searchTerm);
+            });
+            
+            // Categorize
+            const scheduled = filteredTasks.filter(t => t.status === 'pending');
+            const inProgress = filteredTasks.filter(t => t.status === 'active' || t.status === 'review');
+            const completed = filteredTasks.filter(t => t.status === 'complete');
+            
+            // Render each panel
+            renderPanel(panelScheduled, scheduled);
+            renderPanel(panelProgress, inProgress);
+            renderPanel(panelCompleted, completed);
+            
+            // Update counts
+            countScheduled.textContent = scheduled.length;
+            countProgress.textContent = inProgress.length;
+            countCompleted.textContent = completed.length;
+        }
+        
+        // Render individual panel
+        function renderPanel(panel, tasks) {
+            if (tasks.length === 0) {
+                panel.innerHTML = '<div class="empty-state">No tasks</div>';
+                return;
+            }
+            
+            panel.innerHTML = tasks.map(task => `
+                <div class="task-card ${task.status}" onclick="viewTask('${task.vtid}')">
+                    <div class="task-vtid">${task.vtid}</div>
+                    <div class="task-description">${task.description}</div>
+                    <div class="task-meta">
+                        <span class="task-badge ${task.status}">${task.status}</span>
+                        <span>${new Date(task.created_at).toLocaleDateString()}</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        // Update header stats
+        function updateStats() {
+            const scheduled = tasks.filter(t => t.status === 'pending').length;
+            const inProgress = tasks.filter(t => t.status === 'active' || t.status === 'review').length;
+            const completed = tasks.filter(t => t.status === 'complete').length;
+            
+            statScheduled.textContent = scheduled;
+            statProgress.textContent = inProgress;
+            statCompleted.textContent = completed;
+        }
+        
+        // Handle search
+        function handleSearch() {
+            renderTasks();
+        }
+        
+        // View task details (placeholder)
+        function viewTask(vtid) {
+            console.log(`📋 View task: ${vtid}`);
+            // TODO: Open task drawer/modal
+        }
+        
+        // Start the app
+        initialize();
     </script>
 </body>
 </html>
