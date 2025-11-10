@@ -3,7 +3,7 @@ import cors from 'cors';
 import vtidRouter from './routes/vtid';
 import eventsApiRouter from './routes/gateway-events-api';
 import commandHubRouter from './routes/command-hub';
-import { sse-service } from './services/sse-service';
+import { sseService } from './services/sse-service';
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -24,7 +24,7 @@ app.get('/health', (req, res) => {
 app.use('/api/v1/vtid', vtidRouter);
 app.use(eventsApiRouter);
 app.use('/command-hub', commandHubRouter);
-app.use(sse-service.router); // SSE endpoint
+app.use(sseService.router); // SSE endpoint
 
 // Serve Command Hub static files (use dist in production)
 const staticPath = process.env.NODE_ENV === 'production' 
