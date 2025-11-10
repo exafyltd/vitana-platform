@@ -22,6 +22,10 @@ model OasisEvent {
   metadata   Json?
   createdAt  DateTime @default(now()) @map("created_at")
 
+  // Projection tracking (DEV-OASIS-0010)
+  projected  Boolean  @default(false)
+
+  @@index([projected, createdAt], map: "idx_oasis_events_projected_created")
   @@index([createdAt], map: "idx_oasis_events_created_at")
   @@index([service, createdAt], map: "idx_oasis_events_service_created")
   @@index([tenant, createdAt], map: "idx_oasis_events_tenant_created")
@@ -47,4 +51,18 @@ model VtidLedger {
   @@index([status, createdAt], map: "idx_vtid_status_created")
   @@index([tenant, createdAt], map: "idx_vtid_tenant_created")
   @@index([vtid], map: "idx_vtid_lookup")
+}
+
+// Projection Offsets - tracks projection progress (DEV-OASIS-0010)
+model ProjectionOffset {
+  id               String    @id @default(cuid())
+  projectorName    String    @unique @map("projector_name")
+  lastEventId      String?   @map("last_event_id")
+  lastEventTime    DateTime? @map("last_event_time")
+  lastProcessedAt  DateTime  @default(now()) @updatedAt @map("last_processed_at")
+  eventsProcessed  Int       @default(0) @map("events_processed")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  @@index([projectorName], map: "idx_projection_offsets_projector")
+  @@map("projection_offsets")
 }
