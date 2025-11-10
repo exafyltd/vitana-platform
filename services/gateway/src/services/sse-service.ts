@@ -64,4 +64,4 @@ class SseService {
   }
 }
 
-export const sse-service = new SseService();
+export const sseService = new SseService();
