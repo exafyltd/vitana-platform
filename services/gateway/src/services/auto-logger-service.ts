@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase';
-import { syncVtidFromEvent } from './eventSync';
-import { sseService } from './sseService';
+import { syncVtidFromEvent } from './event-sync';
+import { sse-service } from './sse-service';
 
 interface AutoLogEvent {
   vtid?: string;
@@ -77,7 +77,7 @@ export async function processEvent(event: AutoLogEvent): Promise<void> {
       await syncVtidFromEvent(event);
     }
 
-    sseService.broadcast({
+    sse-service.broadcast({
       type: 'vtid_update',
       vtid: event.vtid,
       status: event.status,

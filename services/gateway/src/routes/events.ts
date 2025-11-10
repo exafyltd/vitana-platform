@@ -8,17 +8,17 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { VtidSyncService } from '../services/vtidSync';
-import { GChatNotifierService } from '../services/gchatNotifier';
+import { VtidSyncService } from '../services/vtid-sync';
+import { GChatNotifierService } from '../services/gchat-notifier';
 
 const router = Router();
 
 // Initialize services
-let vtidSync: VtidSyncService | null = null;
-let gchatNotifier: GChatNotifierService | null = null;
+let vtid-sync: VtidSyncService | null = null;
+let gchat-notifier: GChatNotifierService | null = null;
 
 function getVtidSync(): VtidSyncService {
-  if (!vtidSync) {
+  if (!vtid-sync) {
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
     
@@ -26,13 +26,13 @@ function getVtidSync(): VtidSyncService {
       throw new Error('Supabase credentials not configured');
     }
     
-    vtidSync = new VtidSyncService(supabaseUrl, supabaseKey);
+    vtid-sync = new VtidSyncService(supabaseUrl, supabaseKey);
   }
-  return vtidSync;
+  return vtid-sync;
 }
 
 function getGChatNotifier(): GChatNotifierService | null {
-  if (!gchatNotifier) {
+  if (!gchat-notifier) {
     const webhookUrl = process.env.GOOGLE_CHAT_WEBHOOK_URL;
     
     if (!webhookUrl) {
@@ -40,9 +40,9 @@ function getGChatNotifier(): GChatNotifierService | null {
       return null;
     }
     
-    gchatNotifier = new GChatNotifierService(webhookUrl);
+    gchat-notifier = new GChatNotifierService(webhookUrl);
   }
-  return gchatNotifier;
+  return gchat-notifier;
 }
 
 /**
