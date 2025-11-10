@@ -32,9 +32,16 @@ const staticPath = process.env.NODE_ENV === 'production'
   : 'src/frontend/command-hub';
 app.use('/command-hub', express.static(staticPath));
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`✅ Gateway server running on port ${PORT}`);
-  console.log(`📊 Command Hub: http://localhost:${PORT}/command-hub`);
-  console.log(`🔌 SSE Stream: http://localhost:${PORT}/api/v1/events/stream`);
-});
+// Start server (skip in test mode)
+if (process.env.NODE_ENV === 'test') {
+  // Don't start server during tests
+} else {
+  app.listen(PORT, () => {
+    console.log('✅ Gateway server running on port ' + PORT);
+    console.log('📊 Command Hub: http://localhost:' + PORT + '/command-hub');
+    console.log('🔌 SSE Stream: http://localhost:' + PORT + '/api/v1/events/stream');
+  });
+}
+
+// Export for tests
+export default app;

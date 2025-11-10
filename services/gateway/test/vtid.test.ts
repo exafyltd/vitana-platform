@@ -7,7 +7,7 @@ describe("VTID Ledger API", () => {
   describe("POST /vtid/create", () => {
     it("should create a new VTID with valid payload", async () => {
       const response = await request(app)
-        .post("/vtid/create")
+        .post("/api/v1/vtid/create")
         .send({
           taskFamily: "governance",
           taskType: "test",
@@ -32,7 +32,7 @@ describe("VTID Ledger API", () => {
 
     it("should reject invalid payload", async () => {
       const response = await request(app)
-        .post("/vtid/create")
+        .post("/api/v1/vtid/create")
         .send({
           taskFamily: "",
           description: "Missing task type",
@@ -44,7 +44,7 @@ describe("VTID Ledger API", () => {
 
     it("should create VTID with default pending status", async () => {
       const response = await request(app)
-        .post("/vtid/create")
+        .post("/api/v1/vtid/create")
         .send({
           taskFamily: "deployment",
           taskType: "migration",
@@ -62,7 +62,7 @@ describe("VTID Ledger API", () => {
       if (!createdVtid) {
         // Create a VTID first if none exists
         const createResponse = await request(app)
-          .post("/vtid/create")
+          .post("/api/v1/vtid/create")
           .send({
             taskFamily: "test",
             taskType: "retrieval",
@@ -72,7 +72,7 @@ describe("VTID Ledger API", () => {
         createdVtid = createResponse.body.vtid;
       }
 
-      const response = await request(app).get(`/vtid/${createdVtid}`);
+      const response = await request(app).get(`/api/v1/vtid/${createdVtid}`);
 
       expect(response.status).toBe(200);
       expect(response.body.ok).toBe(true);
@@ -80,14 +80,14 @@ describe("VTID Ledger API", () => {
     });
 
     it("should return 404 for non-existent VTID", async () => {
-      const response = await request(app).get("/vtid/VTID-9999-9999");
+      const response = await request(app).get("/api/v1/vtid/VTID-9999-9999");
 
       expect(response.status).toBe(404);
       expect(response.body.error).toBe("VTID not found");
     });
 
     it("should return 400 for invalid VTID format", async () => {
-      const response = await request(app).get("/vtid/invalid-format");
+      const response = await request(app).get("/api/v1/vtid/invalid-format");
 
       expect(response.status).toBe(400);
       expect(response.body.error).toBe("Invalid VTID format");
@@ -98,7 +98,7 @@ describe("VTID Ledger API", () => {
     it("should update VTID status", async () => {
       if (!createdVtid) {
         const createResponse = await request(app)
-          .post("/vtid/create")
+          .post("/api/v1/vtid/create")
           .send({
             taskFamily: "test",
             taskType: "update",
@@ -109,7 +109,7 @@ describe("VTID Ledger API", () => {
       }
 
       const response = await request(app)
-        .patch(`/vtid/${createdVtid}`)
+        .patch(`/api/v1/vtid/${createdVtid}`)
         .send({
           status: "active",
           assignedTo: "claude-caeo",
@@ -123,7 +123,7 @@ describe("VTID Ledger API", () => {
     it("should update VTID metadata", async () => {
       if (!createdVtid) {
         const createResponse = await request(app)
-          .post("/vtid/create")
+          .post("/api/v1/vtid/create")
           .send({
             taskFamily: "test",
             taskType: "metadata",
@@ -134,7 +134,7 @@ describe("VTID Ledger API", () => {
       }
 
       const response = await request(app)
-        .patch(`/vtid/${createdVtid}`)
+        .patch(`/api/v1/vtid/${createdVtid}`)
         .send({
           metadata: {
             progress: 50,
@@ -148,7 +148,7 @@ describe("VTID Ledger API", () => {
 
     it("should reject invalid status", async () => {
       const response = await request(app)
-        .patch(`/vtid/${createdVtid}`)
+        .patch(`/api/v1/vtid/${createdVtid}`)
         .send({
           status: "invalid-status",
         });
@@ -160,7 +160,7 @@ describe("VTID Ledger API", () => {
 
   describe("GET /vtid/list", () => {
     it("should list all VTIDs", async () => {
-      const response = await request(app).get("/vtid/list");
+      const response = await request(app).get("/api/v1/vtid/list");
 
       expect(response.status).toBe(200);
       expect(response.body.ok).toBe(true);
@@ -169,7 +169,7 @@ describe("VTID Ledger API", () => {
     });
 
     it("should filter VTIDs by task family", async () => {
-      const response = await request(app).get("/vtid/list?taskFamily=governance");
+      const response = await request(app).get("/api/v1/vtid/list?taskFamily=governance");
 
       expect(response.status).toBe(200);
       expect(response.body.ok).toBe(true);
@@ -181,7 +181,7 @@ describe("VTID Ledger API", () => {
     });
 
     it("should filter VTIDs by status", async () => {
-      const response = await request(app).get("/vtid/list?status=pending");
+      const response = await request(app).get("/api/v1/vtid/list?status=pending");
 
       expect(response.status).toBe(200);
       expect(response.body.ok).toBe(true);
@@ -193,7 +193,7 @@ describe("VTID Ledger API", () => {
     });
 
     it("should respect limit parameter", async () => {
-      const response = await request(app).get("/vtid/list?limit=5");
+      const response = await request(app).get("/api/v1/vtid/list?limit=5");
 
       expect(response.status).toBe(200);
       expect(response.body.data.length).toBeLessThanOrEqual(5);
@@ -202,7 +202,7 @@ describe("VTID Ledger API", () => {
 
   describe("GET /vtid/health", () => {
     it("should return healthy status", async () => {
-      const response = await request(app).get("/vtid/health");
+      const response = await request(app).get("/api/v1/vtid/health");
 
       expect(response.status).toBe(200);
       expect(response.body.ok).toBe(true);
