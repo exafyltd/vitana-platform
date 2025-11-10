@@ -1,0 +1,21 @@
+{
+  "type": "task_update",
+  "data": {
+    "vtid": "DEV-COMMU-0053",
+    "layer": "COMMS",
+    "module": "COMMAND_HUB",
+    "title": "Command Hub Task Card UX Cleanup",
+    "objective": "Improve the Task cards so that priority, assignee, and visible fields provide real decision-making value. Hide or simplify fields that are uniform (all P2, all Unassigned) and add clarity about what is shown/filtered.",
+    "status": "scheduled",
+    "timestamp": "2025-11-10T10:48:48Z",
+    "metadata": {
+      "priority": "P3",
+      "notes": [
+        "Today all cards show P2 and Unassigned, which adds no information.",
+        "Future implementation should either enforce real priority/assignee usage OR hide these badges.",
+        "UI should clearly indicate how many tasks are shown and what filters (test/archived) are applied.",
+        "Safe to be executed later by autonomous pipeline once Lovable-style orchestration is in place."
+      ]
+    }
+  }
+}

@@ -1,42 +1,69 @@
 #!/bin/bash
-set -e
-
-# Vitana standard deployment script
+# Standard deployment script for Vitana services
+# VTID: SYS-RULE-DEPLOY-L1
 # Usage: ./scripts/deploy/deploy-service.sh <service-name> <service-path>
 
-SERVICE_NAME="$1"
-SERVICE_PATH="$2"
+set -euo pipefail
 
-if [ -z "$SERVICE_NAME" ] || [ -z "$SERVICE_PATH" ]; then
+# Configuration
+PROJECT_ID="lovable-vitana-vers1"
+REGION="us-central1"
+ENVIRONMENT="${ENVIRONMENT:-dev}"
+
+# Validate arguments
+if [ $# -lt 2 ]; then
   echo "Usage: $0 <service-name> <service-path>"
   echo "Example: $0 oasis-projector services/oasis-projector"
   exit 1
 fi
 
-# Load global config
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/vt-config.sh"
+SERVICE_NAME="$1"
+SERVICE_PATH="$2"
 
-echo "🚀 Deploying $SERVICE_NAME from $SERVICE_PATH..."
-echo "   Project: $PROJECT_ID"
-echo "   Region : $REGION"
+# Colors
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m'
 
-cd "$SCRIPT_DIR/../.."   # go to repo root
-cd "$SERVICE_PATH"
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}Deploying: $SERVICE_NAME${NC}"
+echo -e "${GREEN}Path: $SERVICE_PATH${NC}"
+echo -e "${GREEN}Environment: $ENVIRONMENT${NC}"
+echo -e "${GREEN}========================================${NC}"
+echo ""
 
+# Change to service directory
+cd "$SERVICE_PATH" || exit 1
+
+# Deploy using gcloud run deploy --source .
+echo -e "${YELLOW}Deploying to Cloud Run...${NC}"
 gcloud run deploy "$SERVICE_NAME" \
   --source . \
-  --project "$PROJECT_ID" \
   --region "$REGION" \
-  --allow-unauthenticated
+  --project "$PROJECT_ID" \
+  --platform managed \
+  --allow-unauthenticated \
+  --memory 512Mi \
+  --cpu 1 \
+  --min-instances 0 \
+  --max-instances 3 \
+  --timeout 300 \
+  --set-env-vars="ENVIRONMENT=$ENVIRONMENT,NODE_ENV=production"
 
+# Get service URL
 SERVICE_URL=$(gcloud run services describe "$SERVICE_NAME" \
-  --project "$PROJECT_ID" \
   --region "$REGION" \
-  --format 'value(status.url)')
+  --project "$PROJECT_ID" \
+  --format='value(status.url)')
 
 echo ""
-echo "✅ Service Deployed: $SERVICE_NAME"
-echo "🌐 URL: $SERVICE_URL"
-echo "🕒 Deployed at: $(date -u)"
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}Deployment Complete!${NC}"
+echo -e "${GREEN}========================================${NC}"
+echo "Service: $SERVICE_NAME"
+echo "URL: $SERVICE_URL"
+echo "Region: $REGION"
 echo ""
+echo "Test with:"
+echo "  curl $SERVICE_URL/alive"

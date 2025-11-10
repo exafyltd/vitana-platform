@@ -1,0 +1,338 @@
+[
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "DEV-AICOR-0007",
+      "layer": "aicor",
+      "module": "aicore",
+      "title": "Gemini Routing",
+      "objective": "Deploy LLM routing with Planner=Gemini Pro, Worker=Gemini Flash, Validator=Claude.",
+      "status": "completed",
+      "timestamp": "2025-08-15T08:00:00Z"
+    }
+  },
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "DEV-AICOR-0026",
+      "layer": "aicor",
+      "module": "aicore",
+      "title": "Auto-Logger Observability Module",
+      "objective": "Deploy telemetry module and scheduler for OASIS logging.",
+      "status": "completed",
+      "timestamp": "2025-08-17T08:00:00Z"
+    }
+  },
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "DEV-CICDL-0031",
+      "layer": "cicdl",
+      "module": "oasis",
+      "title": "OASIS Persistence Layer",
+      "objective": "Deploy Supabase persistence schema with event storage system.",
+      "status": "completed",
+      "timestamp": "2025-08-19T08:00:00Z"
+    }
+  },
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "DEV-CICDL-0034",
+      "layer": "cicdl",
+      "module": "gateway",
+      "title": "GitHub Actions Fix",
+      "objective": "Enable self-sufficient CI pipeline with local Postgres and full test coverage.",
+      "status": "completed",
+      "timestamp": "2025-08-21T08:00:00Z"
+    }
+  },
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "DEV-CICDL-0033",
+      "layer": "cicdl",
+      "module": "oasis",
+      "title": "Fabric Enforcement",
+      "objective": "Implement consistent naming governance and OpenAPI compliance.",
+      "status": "completed",
+      "timestamp": "2025-08-23T08:00:00Z"
+    }
+  },
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "DEV-CICDL-0027",
+      "layer": "cicdl",
+      "module": "oasis",
+      "title": "VTID Numbering System",
+      "objective": "Deploy VTID ledger API and enforce unique numbering.",
+      "status": "completed",
+      "timestamp": "2025-08-25T08:00:00Z"
+    }
+  },
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "DEV-AICOR-0025",
+      "layer": "aicor",
+      "module": "aicore",
+      "title": "OASIS Gateway Reporting",
+      "objective": "Integrate event reporting hooks and Gateway observability.",
+      "status": "completed",
+      "timestamp": "2025-08-27T08:00:00Z"
+    }
+  },
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "DEV-ADM-HEALT-0040",
+      "layer": "admin",
+      "module": "healt",
+      "title": "Vitana Index Foundation",
+      "objective": "Implement first version of Vitana Index algorithm core.",
+      "status": "completed",
+      "timestamp": "2025-08-29T08:00:00Z"
+    }
+  },
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "DEV-AICOR-0008",
+      "layer": "aicor",
+      "module": "agent",
+      "title": "Autonomous PR/Deploy Enablement",
+      "objective": "Allow agents to autonomously create PRs and deploy through Gateway.",
+      "status": "completed",
+      "timestamp": "2025-08-31T08:00:00Z"
+    }
+  },
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "DEV-CICDL-0035",
+      "layer": "cicdl",
+      "module": "gateway",
+      "title": "Restore Full CI Tests",
+      "objective": "Re-enable full GitHub Actions test suite after IAM fix.",
+      "status": "in_progress",
+      "timestamp": "2025-11-01T08:00:00Z"
+    }
+  },
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "DEV-COMMU-0051",
+      "layer": "comms",
+      "module": "command hub",
+      "title": "Command Hub Chat UX Upgrade",
+      "objective": "Add contextual assistant panel and task thread summaries.",
+      "status": "in_progress",
+      "timestamp": "2025-11-02T08:00:00Z"
+    }
+  },
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "DEV-AICOR-0011",
+      "layer": "aicor",
+      "module": "agent",
+      "title": "Memory Integration Phase 2 (Validator/Planner context loop)",
+      "objective": "Enable autonomous recall and context hand-off between agents.",
+      "status": "in_progress",
+      "timestamp": "2025-11-03T08:00:00Z"
+    }
+  },
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "DEV-AICOR-0008",
+      "layer": "aicor",
+      "module": "agent",
+      "title": "Autonomous PR/Deploy Enablement",
+      "objective": "Allow agents to autonomously create PRs and deploy through Gateway.",
+      "status": "scheduled",
+      "timestamp": "2025-11-11T08:00:00Z"
+    }
+  },
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "DEV-CICDL-0035",
+      "layer": "cicdl",
+      "module": "gateway",
+      "title": "Restore Full CI Tests",
+      "objective": "Re-enable full GitHub Actions test suite after IAM fix.",
+      "status": "scheduled",
+      "timestamp": "2025-11-12T08:00:00Z"
+    }
+  },
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "DEV-AICOR-0010",
+      "layer": "aicor",
+      "module": "agent",
+      "title": "Memory Integration Phase 1",
+      "objective": "Connect agents to Supabase infinite memory and context persistence.",
+      "status": "scheduled",
+      "timestamp": "2025-11-13T08:00:00Z"
+    }
+  },
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "DEV-AICOR-0011",
+      "layer": "aicor",
+      "module": "agent",
+      "title": "Memory Integration Phase 2 (Validator/Planner context loop)",
+      "objective": "Enable autonomous recall and context hand-off between agents.",
+      "status": "scheduled",
+      "timestamp": "2025-11-14T08:00:00Z"
+    }
+  },
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "DEV-CICDL-0036",
+      "layer": "cicdl",
+      "module": "oasis",
+      "title": "GitHub IAM Permission Fix",
+      "objective": "Implement least-privilege IAM roles for CI/CD builds.",
+      "status": "scheduled",
+      "timestamp": "2025-11-15T08:00:00Z"
+    }
+  },
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "DEV-ADM-HEALT-0041",
+      "layer": "admin",
+      "module": "healt",
+      "title": "Health Index API Refinement",
+      "objective": "Finalize Vitana Index algorithm parameters and normalization logic.",
+      "status": "scheduled",
+      "timestamp": "2025-11-16T08:00:00Z"
+    }
+  },
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "DEV-COMMU-0049",
+      "layer": "comms",
+      "module": "command hub",
+      "title": "Command Hub Live Ticker Upgrade",
+      "objective": "Replace mock ticker with real SSE feed from OASIS.",
+      "status": "scheduled",
+      "timestamp": "2025-11-17T08:00:00Z"
+    }
+  },
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "DEV-COMMU-0050",
+      "layer": "comms",
+      "module": "command hub",
+      "title": "Command Hub Filter Logic",
+      "objective": "Enable filtering by status (active/completed/scheduled).",
+      "status": "scheduled",
+      "timestamp": "2025-11-18T08:00:00Z"
+    }
+  },
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "DEV-COMMU-0051",
+      "layer": "comms",
+      "module": "command hub",
+      "title": "Command Hub Chat UX Upgrade",
+      "objective": "Add contextual assistant panel and task thread summaries.",
+      "status": "scheduled",
+      "timestamp": "2025-11-19T08:00:00Z"
+    }
+  },
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "DEV-WALLE-0053",
+      "layer": "wallet",
+      "module": "tokens",
+      "title": "Wallet Reward Breakdown",
+      "objective": "Display VTN, Credit, and Cash earnings by source and Autopilot campaign.",
+      "status": "scheduled",
+      "timestamp": "2025-11-20T08:00:00Z"
+    }
+  },
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "DEV-BIZNS-0054",
+      "layer": "business",
+      "module": "market",
+      "title": "Marketplace Affiliate Tracking",
+      "objective": "Implement affiliate tracking and revenue distribution per list share.",
+      "status": "scheduled",
+      "timestamp": "2025-11-21T08:00:00Z"
+    }
+  },
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "DEV-SETNG-0055",
+      "layer": "settings",
+      "module": "user",
+      "title": "Autopilot Preference Panel",
+      "objective": "Allow users to control frequency and scope of Autopilot suggestions.",
+      "status": "scheduled",
+      "timestamp": "2025-11-22T08:00:00Z"
+    }
+  },
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "DEV-DEVOPS-0056",
+      "layer": "devops",
+      "module": "monitor",
+      "title": "System Telemetry Dashboard (V2)",
+      "objective": "Add latency and model cost graphs for LLM and agent services.",
+      "status": "scheduled",
+      "timestamp": "2025-11-23T08:00:00Z"
+    }
+  },
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "DEV-AICOR-0057",
+      "layer": "aicor",
+      "module": "mcp",
+      "title": "Perplexity MCP Integration",
+      "objective": "Add Perplexity MCP research connector for Planner and Validator agents.",
+      "status": "scheduled",
+      "timestamp": "2025-11-24T08:00:00Z"
+    }
+  },
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "DEV-AICOR-0058",
+      "layer": "aicor",
+      "module": "mcp",
+      "title": "Gemini Research MCP",
+      "objective": "Build Gemini-based Ask/Research schemas with citation validation.",
+      "status": "scheduled",
+      "timestamp": "2025-11-25T08:00:00Z"
+    }
+  },
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "DEV-AICOR-0059",
+      "layer": "aicor",
+      "module": "aicore",
+      "title": "Autonomous Crew Generator V2",
+      "objective": "Extend crew generation engine for multi-crew deployment scenarios.",
+      "status": "scheduled",
+      "timestamp": "2025-11-26T08:00:00Z"
+    }
+  }
+]

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { kb-store } from './kb-store';
+import { kbStore } from './kb-store';
 import { KBBundleDocRequest } from './kb-types';
 
 const router = Router();
@@ -11,8 +11,7 @@ router.get('/index', (req: Request, res: Response) => {
       status: req.query.status as string | undefined,
       tag: req.query.tag as string | undefined
     };
-
-    const index = kb-store.getFilteredIndex(filters);
+    const index = kbStore.getFilteredIndex(filters);
     res.json(index);
   } catch (error: any) {
     console.error('Error loading KB index:', error);
@@ -41,15 +40,13 @@ router.post('/bundle', (req: Request, res: Response) => {
       }
     }
 
-    const bundle = kb-store.getBundle(docs, maxTotalWords);
+    const bundle = kbStore.getBundle(docs, maxTotalWords);
     res.json(bundle);
   } catch (error: any) {
     console.error('Error building KB bundle:', error);
-
     if (typeof error.message === 'string' && error.message.startsWith('KB document not found')) {
       return res.status(404).json({ error: error.message });
     }
-
     res.status(500).json({
       error: error.message || 'Failed to build KB bundle'
     });
@@ -59,12 +56,10 @@ router.post('/bundle', (req: Request, res: Response) => {
 router.get('/:docId', (req: Request, res: Response) => {
   try {
     const { docId } = req.params;
-    const doc = kb-store.getDoc(docId);
-
+    const doc = kbStore.getDoc(docId);
     if (!doc) {
       return res.status(404).json({ error: 'KB document not found' });
     }
-
     res.json(doc);
   } catch (error: any) {
     console.error(`Error loading KB doc ${req.params.docId}:`, error);
@@ -75,14 +70,12 @@ router.get('/:docId', (req: Request, res: Response) => {
 router.get('/:docId/sections/:sectionId', (req: Request, res: Response) => {
   try {
     const { docId, sectionId } = req.params;
-    const result = kb-store.getSection(docId, sectionId);
-
+    const result = kbStore.getSection(docId, sectionId);
     if (!result) {
       return res.status(404).json({
         error: 'KB document or section not found'
       });
     }
-
     res.json(result);
   } catch (error: any) {
     console.error(

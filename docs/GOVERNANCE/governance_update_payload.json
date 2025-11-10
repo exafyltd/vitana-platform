@@ -1,0 +1,15 @@
+{
+  "type": "governance_update",
+  "data": {
+    "vtid": "GOV-COP-2025-001",
+    "layer": "governance",
+    "module": "claude_protocol",
+    "title": "Claude Operational Protocol Reinforcement",
+    "objective": "Added Exact-Match Edit Protocol after 2025-11-10 incident",
+    "status": "completed",
+    "timestamp": "2025-11-10T09:34:58Z",
+    "hash": "50c66fd359b2734ad72d0d9793519f6ca453d782740a432c5b242c2debc74e8f",
+    "author": "CEO",
+    "verified": true
+  }
+}

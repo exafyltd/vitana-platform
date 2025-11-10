@@ -5,7 +5,8 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "tsc && npm run copy-frontend",
+    "copy-frontend": "mkdir -p dist/frontend/command-hub && cp -r src/frontend/command-hub/* dist/frontend/command-hub/",
     "start": "node dist/index.js",
     "test": "jest",
     "lint": "eslint src/**/*.ts",
@@ -13,6 +14,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@supabase/supabase-js": "^2.80.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "eventsource": "^4.0.0",

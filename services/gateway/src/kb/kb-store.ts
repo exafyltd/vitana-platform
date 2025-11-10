@@ -133,4 +133,4 @@ class KBStore {
   }
 }
 
-export const kb-store = new KBStore();
+export const kbStore = new KBStore();

@@ -1,0 +1,16 @@
+{
+  "type": "task_update",
+  "data": {
+    "vtid": "DEV-COMMU-0052",
+    "layer": "COMMS",
+    "module": "COMMAND_HUB",
+    "title": "Command Hub Kanban Redeploy",
+    "objective": "Redeploy and visually verify the Command Hub Tasks view with the correct Kanban logic, OASIS-aligned statuses, and real timestamps. Remove the old 'Catalog' column and enforce Scheduled / In Progress / Completed with ONE VTID = ONE CARD.",
+    "status": "scheduled",
+    "timestamp": "2025-11-10T10:18:41Z",
+    "metadata": {
+      "depends_on": "DEV-COMMU-0050",
+      "notes": "Prior task 0050 ended at governance compliance without visible UI change. 0052 requires actual index.html patch, Cloud Run deployment, and visual verification at /command-hub."
+    }
+  }
+}

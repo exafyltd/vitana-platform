@@ -113,7 +113,7 @@ router.post('/ingest', async (req: Request, res: Response) => {
       });
     }
 
-    const data = await resp.json();
+    const data = await resp.json() as any[];
 
     // Trigger VTID sync if event has VTID
     if (event.vtid) {
@@ -201,7 +201,7 @@ router.get('/', async (req: Request, res: Response) => {
       });
     }
 
-    const data = await resp.json();
+    const data = await resp.json() as any[];
 
     return res.status(200).json({
       ok: true,

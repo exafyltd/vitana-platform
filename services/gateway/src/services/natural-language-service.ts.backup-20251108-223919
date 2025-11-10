@@ -1,0 +1,66 @@
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import fetch from 'node-fetch';
+
+const GEMINI_API_KEY = 'AIzaSyDCbka2qbs9ql_UxzAtLIfz_n-9g985KCc';
+const OASIS_URL = process.env.OASIS_OPERATOR_URL || 'https://oasis-operator-86804897789.us-central1.run.app';
+
+const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+const flashModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+const proModel = genAI.getGenerativeModel({ model: 'gemini-2.0-pro-exp' });
+
+export class NaturalLanguageService {
+  async processMessage(message: string): Promise<string> {
+    try {
+      const context = await this.buildContext(message);
+      const useComplex = message.length > 300 || /analyze|compare|explain|detail/.test(message.toLowerCase());
+      const model = useComplex ? proModel : flashModel;
+      
+      const prompt = `You are the Vitana Command Hub AI assistant. Answer based on the context provided.
+
+CONTEXT:
+${context}
+
+USER QUESTION: ${message}
+
+Provide a helpful, concise answer:`;
+
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      return response.text();
+    } catch (error: any) {
+      console.error('Gemini error:', error);
+      return `⚠️ AI error: ${error.message}`;
+    }
+  }
+
+  private async buildContext(message: string): Promise<string> {
+    let context = 'Vitana platform - health and longevity ecosystem\n';
+    const lower = message.toLowerCase();
+
+    if (lower.includes('status') || lower.includes('health')) {
+      try {
+        const res = await fetch(`${OASIS_URL}/health/services`);
+        if (res.ok) {
+          const data: any = await res.json();
+          context += `\nSYSTEM STATUS:\n${JSON.stringify(data, null, 2)}`;
+        }
+      } catch (err) {}
+    }
+
+    if (lower.includes('event') || lower.includes('error') || lower.includes('recent')) {
+      try {
+        const res = await fetch(`${OASIS_URL}/events?limit=10`);
+        if (res.ok) {
+          const events: any = await res.json();
+          if (Array.isArray(events)) {
+            context += `\nRECENT EVENTS:\n${JSON.stringify(events.slice(0, 5), null, 2)}`;
+          }
+        }
+      } catch (err) {}
+    }
+
+    return context;
+  }
+}
+
+export const naturalLanguageService = new NaturalLanguageService();
