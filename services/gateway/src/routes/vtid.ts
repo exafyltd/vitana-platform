@@ -84,7 +84,7 @@ router.get('/list', async (req: Request, res: Response) => {
     if (tenant) filters.push(`tenant=eq.${encodeURIComponent(tenant)}`);
 
     const filterStr = filters.length > 0 ? '&' + filters.join('&') : '';
-    const url = `${supabaseUrl}/rest/v1/VtidLedger?order=created_at.desc&limit=${limit}&offset=${offset}${filterStr}`;
+    const url = `${supabaseUrl}/rest/v1/vtid_ledger?order=created_at.desc&limit=${limit}&offset=${offset}${filterStr}`;
 
     const resp = await fetch(url, {
       method: "GET",
@@ -141,7 +141,7 @@ async function generateVtid(taskFamily: string, supabaseUrl: string, svcKey: str
 
   // Find the highest number for this layer
   const resp = await fetch(
-    `${supabaseUrl}/rest/v1/VtidLedger?vtid=like.DEV-${layer}-%&order=vtid.desc&limit=1`,
+    `${supabaseUrl}/rest/v1/vtid_ledger?vtid=like.DEV-${layer}-%&order=vtid.desc&limit=1`,
     {
       method: "GET",
       headers: {
@@ -201,7 +201,7 @@ router.post('/', async (req: Request, res: Response) => {
       is_test: body.isTest ?? false,
     };
 
-    const resp = await fetch(`${supabaseUrl}/rest/v1/VtidLedger`, {
+    const resp = await fetch(`${supabaseUrl}/rest/v1/vtid_ledger`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -271,7 +271,7 @@ router.get('/:vtid', async (req: Request, res: Response) => {
       });
     }
 
-    const resp = await fetch(`${supabaseUrl}/rest/v1/VtidLedger?vtid=eq.${vtid}`, {
+    const resp = await fetch(`${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}`, {
       method: "GET",
       headers: {
         apikey: svcKey,
@@ -338,7 +338,7 @@ router.patch('/:vtid', async (req: Request, res: Response) => {
     if (body.assignedTo) updatePayload.assigned_to = body.assignedTo;
     if (body.metadata) updatePayload.metadata = body.metadata;
 
-    const resp = await fetch(`${supabaseUrl}/rest/v1/VtidLedger?vtid=eq.${vtid}`, {
+    const resp = await fetch(`${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}`, {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
