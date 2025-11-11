@@ -207,12 +207,12 @@
     <script>
         const state = {currentTab:'live',tasks:{scheduled:[],inProgress:[],completed:[]},filters:{layer:'',priority:'',status:'',search:''},vtidMap:new Map()};
         const API = {
-            async getTasks(f={}){const p=new URLSearchParams();if(f.status)p.append('status',f.status);if(f.layer)p.append('taskFamily',f.layer);p.append('limit','100');const r=await fetch(`/api/v1/vtid/list?${p}`);const d=await r.json();return d.ok?d.data:[]},
+            async getTasks(f={}){const p=new URLSearchParams();if(f.status)p.append('status',f.status);if(f.layer)p.append('layer',f.layer);p.append('limit','100');const r=await fetch(`/api/v1/tasks?${p}`);const d=await r.json();return d.data||[]},
             async getTaskDetails(v){const r=await fetch(`/api/v1/vtid/${v}`);const d=await r.json();return d.ok?d.data:null},
             async getTaskEvents(v){const r=await fetch(`/api/v1/events?vtid=${v}&limit=20`);return await r.json()},
             async sendChatMessage(m){const r=await fetch('/command-hub/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:m})});const d=await r.json();return d.response||d.text||'No response'}
         };
-        function normalizeStatus(s){const m={'pending':'scheduled','active':'in_progress','in_progress':'in_progress','scheduled':'scheduled','complete':'completed','completed':'completed','blocked':'scheduled'};return m[s]||'scheduled'}
+        function normalizeStatus(s){const m={'pending':'scheduled','active':'in_progress','in_progress':'in_progress','scheduled':'scheduled','complete':'completed','completed':'completed','success':'completed','blocked':'scheduled'};return m[s]||'scheduled'}
         function deduplicateTasks(tasks){state.vtidMap.clear();const unique=[];for(const t of tasks){if(!state.vtidMap.has(t.vtid)){state.vtidMap.set(t.vtid,t);unique.push(t)}}return unique}
         function switchTab(t){state.currentTab=t;document.querySelectorAll('.nav-tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active',p.id===`panel-${t}`));if(t==='tasks')loadTasksData();else if(t==='live')loadLiveEvents()}
         async function loadTasksData(){try{const raw=await API.getTasks();const all=deduplicateTasks(raw.map(t=>({...t,status:normalizeStatus(t.status)})));state.tasks.scheduled=all.filter(t=>t.status==='scheduled');state.tasks.inProgress=all.filter(t=>t.status==='in_progress');state.tasks.completed=all.filter(t=>t.status==='completed');document.getElementById('stat-scheduled').textContent=state.tasks.scheduled.length;document.getElementById('stat-in-progress').textContent=state.tasks.inProgress.length;document.getElementById('stat-completed').textContent=state.tasks.completed.length;renderScheduledPanel();renderInProgressPanel();renderCompletedPanel()}catch(e){console.error('Error loading tasks:',e)}}
@@ -246,6 +246,43 @@
         document.getElementById('chat-input').addEventListener('keypress',e=>{if(e.key==='Enter')sendChatMessage()});
         document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('task-drawer').classList.contains('open'))closeTaskDrawer()});
         window.addEventListener('DOMContentLoaded',()=>{loadLiveEvents();setInterval(loadLiveEvents,3000);setInterval(()=>{if(state.currentTab==='tasks')loadTasksData()},30000)});
+
+        // Task Board Real-Time Updates via SSE
+        let taskEventSource = null;
+        
+        function subscribeToTaskLifecycle() {
+            if (taskEventSource) {
+                taskEventSource.close();
+            }
+            
+            taskEventSource = new EventSource('/api/v1/events/stream');
+            
+            taskEventSource.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    
+                    if (data.event_type === 'task.lifecycle') {
+                        console.log('[LIFECYCLE]', data.metadata);
+                        
+                        // Refresh task list if tasks endpoint exists
+                        if (typeof loadTasks === 'function') {
+                            loadTasks();
+                        }
+                    }
+                } catch (error) {
+                    console.error('[SSE] Parse error:', error);
+                }
+            };
+            
+            taskEventSource.onerror = (error) => {
+                console.error('[SSE] Connection error');
+                taskEventSource.close();
+                setTimeout(subscribeToTaskLifecycle, 5000);
+            };
+        }
+        
+        // Initialize SSE subscription
+        subscribeToTaskLifecycle();
     </script>
 </body>
 </html>
