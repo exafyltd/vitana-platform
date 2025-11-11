@@ -394,13 +394,17 @@ router.patch('/:vtid', async (req: Request, res: Response) => {
     console.log(`✅ VTID updated: ${vtid}`);
 
     // Emit task.lifecycle event if status changed
-    if (body.status && data[0]) {
+
+    // Emit task.lifecycle event via OASIS operator
+    if (body.status && data[0] && data[0].status !== body.status) {
       try {
+        const oasisUrl = process.env.OASIS_OPERATOR_URL || 'https://oasis-operator-86804897789.us-central1.run.app';
+        
         const lifecycleEvent = {
           type: "task.lifecycle",
-          source: "vtid-ledger",
+          source: "vtid-ledger", 
+          vtid: vtid,
           payload: {
-            vtid: vtid,
             from_status: data[0].status,
             to_status: body.status,
             layer: data[0].layer,
@@ -410,12 +414,10 @@ router.patch('/:vtid', async (req: Request, res: Response) => {
           }
         };
 
-        const eventResp = await fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
+        const eventResp = await fetch(`${oasisUrl}/events/ingest`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            apikey: svcKey,
-            Authorization: `Bearer ${svcKey}`,
           },
           body: JSON.stringify(lifecycleEvent),
         });
@@ -431,13 +433,17 @@ router.patch('/:vtid', async (req: Request, res: Response) => {
     }
 
     // Emit task.lifecycle event if status changed
-    if (body.status && data[0]) {
+
+    // Emit task.lifecycle event via OASIS operator
+    if (body.status && data[0] && data[0].status !== body.status) {
       try {
+        const oasisUrl = process.env.OASIS_OPERATOR_URL || 'https://oasis-operator-86804897789.us-central1.run.app';
+        
         const lifecycleEvent = {
           type: "task.lifecycle",
-          source: "vtid-ledger",
+          source: "vtid-ledger", 
+          vtid: vtid,
           payload: {
-            vtid: vtid,
             from_status: data[0].status,
             to_status: body.status,
             layer: data[0].layer,
@@ -447,18 +453,18 @@ router.patch('/:vtid', async (req: Request, res: Response) => {
           }
         };
 
-        const eventResp = await fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
+        const eventResp = await fetch(`${oasisUrl}/events/ingest`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            apikey: svcKey,
-            Authorization: `Bearer ${svcKey}`,
           },
           body: JSON.stringify(lifecycleEvent),
         });
 
         if (eventResp.ok) {
           console.log(`🔄 [LIFECYCLE] ${vtid}: ${data[0].status} → ${body.status}`);
+        } else {
+          console.error(`⚠️ [LIFECYCLE] Failed:`, await eventResp.text());
         }
       } catch (eventError) {
         console.error(`⚠️ [LIFECYCLE] Event emission error:`, eventError);
