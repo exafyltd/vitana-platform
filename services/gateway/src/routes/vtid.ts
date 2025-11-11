@@ -28,7 +28,7 @@ const VtidCreateSchema = z.object({
 });
 
 const VtidUpdateSchema = z.object({
-  status: z.enum(['pending', 'active', 'review', 'complete', 'blocked', 'cancelled']).optional(),
+  status: z.enum(['scheduled', 'in_progress', 'completed', 'pending', 'active', 'review', 'complete', 'blocked', 'cancelled']).optional(),
   assignedTo: z.string().optional(),
   metadata: z.record(z.any()).optional(),
 });
