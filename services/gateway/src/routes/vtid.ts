@@ -397,7 +397,7 @@ router.patch('/:vtid', async (req: Request, res: Response) => {
     if (body.status && data[0]) {
       try {
         const lifecycleEvent = {
-          event_type: "task.lifecycle",
+          type: "task.lifecycle",
           service: "vtid-ledger",
           tenant: data[0].tenant || "default",
           status: "success",
@@ -436,7 +436,7 @@ router.patch('/:vtid', async (req: Request, res: Response) => {
     if (body.status && data[0]) {
       try {
         const lifecycleEvent = {
-          event_type: "task.lifecycle",
+          type: "task.lifecycle",
           service: "vtid-ledger",
           tenant: data[0].tenant || "default",
           status: "success",
