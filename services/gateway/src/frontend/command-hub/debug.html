@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head><title>DEV-COMMU-0055 Frontend Debug</title></head>
+<body style="background:#0a0a0a;color:#fff;font-family:monospace;padding:20px;">
+<h1>🔍 Frontend-Backend Connection Debug</h1>
+<div id="log" style="background:#1a1a1a;padding:20px;margin:20px 0;height:400px;overflow-y:auto;"></div>
+
+<h2>Manual Tests</h2>
+<button onclick="testTasksAPI()" style="padding:10px;margin:5px;">1. Test /api/v1/tasks</button>
+<button onclick="testEventsAPI()" style="padding:10px;margin:5px;">2. Test /api/v1/events</button>
+<button onclick="testSSE()" style="padding:10px;margin:5px;">3. Test SSE Stream</button>
+<button onclick="testVTIDUpdate()" style="padding:10px;margin:5px;">4. Update VTID Status</button>
+
+<script>
+const log = document.getElementById('log');
+function addLog(msg, type='info') {
+    const color = {info: '#60a5fa', success: '#10b981', error: '#ef4444', warn: '#f59e0b'}[type];
+    log.innerHTML += `<div style="color:${color};margin:5px 0;">[${new Date().toLocaleTimeString()}] ${msg}</div>`;
+    log.scrollTop = log.scrollHeight;
+}
+
+async function testTasksAPI() {
+    addLog('Testing GET /api/v1/tasks...');
+    try {
+        const res = await fetch('/api/v1/tasks');
+        const data = await res.json();
+        addLog(`✅ Tasks API response: ${JSON.stringify(data).substring(0, 200)}...`, 'success');
+        addLog(`   Found ${data.data?.length || 0} tasks`, 'info');
+    } catch(e) {
+        addLog(`❌ Tasks API error: ${e.message}`, 'error');
+    }
+}
+
+async function testEventsAPI() {
+    addLog('Testing GET /api/v1/events...');
+    try {
+        const res = await fetch('/api/v1/events?limit=3');
+        const data = await res.json();
+        addLog(`✅ Events API response: ${JSON.stringify(data).substring(0, 200)}...`, 'success');
+        addLog(`   Found ${data.data?.length || 0} events`, 'info');
+    } catch(e) {
+        addLog(`❌ Events API error: ${e.message}`, 'error');
+    }
+}
+
+let sseSource = null;
+function testSSE() {
+    if (sseSource) {
+        addLog('⚠️ Closing existing SSE connection', 'warn');
+        sseSource.close();
+    }
+    
+    addLog('Opening SSE connection to /api/v1/events/stream...');
+    sseSource = new EventSource('/api/v1/events/stream');
+    
+    sseSource.onopen = () => {
+        addLog('✅ SSE connection OPENED', 'success');
+    };
+    
+    sseSource.addEventListener('connected', (e) => {
+        addLog(`✅ SSE event [connected]: ${e.data}`, 'success');
+    });
+    
+    sseSource.addEventListener('oasis-event', (e) => {
+        addLog(`✅ SSE event [oasis-event]: ${e.data.substring(0, 150)}...`, 'success');
+        try {
+            const data = JSON.parse(e.data);
+            if (data.type === 'task.lifecycle' || data.payload?.event_type === 'task.lifecycle') {
+                addLog(`🔄 LIFECYCLE EVENT DETECTED!`, 'success');
+                addLog(`   VTID: ${data.vtid || data.payload?.vtid}`, 'info');
+                addLog(`   Status: ${data.payload?.metadata?.from_status} → ${data.payload?.metadata?.to_status}`, 'info');
+            }
+        } catch(err) {
+            addLog(`⚠️ SSE parse error: ${err.message}`, 'warn');
+        }
+    });
+    
+    sseSource.onerror = (e) => {
+        addLog(`❌ SSE connection ERROR: ${e}`, 'error');
+        addLog(`   readyState: ${sseSource.readyState} (0=CONNECTING, 1=OPEN, 2=CLOSED)`, 'info');
+    };
+    
+    addLog('SSE listener attached. Waiting for events...', 'info');
+}
+
+async function testVTIDUpdate() {
+    addLog('Updating DEV-COMMU-0053 status to IN_PROGRESS...');
+    try {
+        const res = await fetch('/api/v1/vtid/DEV-COMMU-0053', {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({status: 'IN_PROGRESS'})
+        });
+        const data = await res.json();
+        addLog(`✅ VTID updated: ${JSON.stringify(data)}`, 'success');
+        addLog('⏳ Waiting 2s for lifecycle event via SSE...', 'info');
+        setTimeout(() => {
+            addLog('🔎 Check above for [oasis-event] with task.lifecycle', 'info');
+        }, 2000);
+    } catch(e) {
+        addLog(`❌ VTID update error: ${e.message}`, 'error');
+    }
+}
+
+addLog('🚀 Frontend Debug Tool Ready', 'success');
+addLog('Click buttons above to test each component', 'info');
+</script>
+</body>
+</html>
