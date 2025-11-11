@@ -398,18 +398,16 @@ router.patch('/:vtid', async (req: Request, res: Response) => {
       try {
         const lifecycleEvent = {
           type: "task.lifecycle",
-          service: "vtid-ledger",
-          tenant: data[0].tenant || "default",
-          status: "success",
-          vtid: vtid,
-          metadata: {
+          source: "vtid-ledger",
+          payload: {
+            vtid: vtid,
             from_status: data[0].status,
             to_status: body.status,
             layer: data[0].layer,
             module: data[0].module,
             assigned_to: data[0].assigned_to,
-          },
-          timestamp: new Date().toISOString(),
+            tenant: data[0].tenant || "default"
+          }
         };
 
         const eventResp = await fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
@@ -437,18 +435,16 @@ router.patch('/:vtid', async (req: Request, res: Response) => {
       try {
         const lifecycleEvent = {
           type: "task.lifecycle",
-          service: "vtid-ledger",
-          tenant: data[0].tenant || "default",
-          status: "success",
-          vtid: vtid,
-          metadata: {
+          source: "vtid-ledger",
+          payload: {
+            vtid: vtid,
             from_status: data[0].status,
             to_status: body.status,
             layer: data[0].layer,
             module: data[0].module,
             assigned_to: data[0].assigned_to,
-          },
-          timestamp: new Date().toISOString(),
+            tenant: data[0].tenant || "default"
+          }
         };
 
         const eventResp = await fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
