@@ -247,12 +247,6 @@
         document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('task-drawer').classList.contains('open'))closeTaskDrawer()});
         window.addEventListener('DOMContentLoaded',()=>{loadLiveEvents();setInterval(loadLiveEvents,3000);setInterval(()=>{if(state.currentTab==='tasks')loadTasksData()},30000)});
 
-        // Task Board Real-Time Updates via SSE
-        let taskEventSource = null;
-        
-        function subscribeToTaskLifecycle() {
-            if (taskEventSource) {
-                taskEventSource.close();
             }
             
             taskEventSource = new EventSource('/api/v1/events/stream');
@@ -282,6 +276,45 @@
         }
         
         // Initialize SSE subscription
+        subscribeToTaskLifecycle();
+
+        // Task Board Real-Time Updates via SSE
+        let taskEventSource = null;
+        
+        function subscribeToTaskLifecycle() {
+            if (taskEventSource) {
+                taskEventSource.close();
+            }
+            
+            taskEventSource = new EventSource('/api/v1/events/stream');
+            
+            // Listen for oasis-event type
+            taskEventSource.addEventListener('oasis-event', (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    
+                    // Check if this is a task.lifecycle event
+                    if (data.type === 'task.lifecycle' || data.payload?.event_type === 'task.lifecycle') {
+                        console.log('[LIFECYCLE] Task status changed:', data);
+                        
+                        // Refresh task board immediately
+                        if (state.currentTab === 'tasks') {
+                            loadTasksData();
+                        }
+                    }
+                } catch (error) {
+                    console.error('[SSE] Parse error:', error);
+                }
+            });
+            
+            taskEventSource.onerror = (error) => {
+                console.error('[SSE] Connection error');
+                taskEventSource.close();
+                setTimeout(subscribeToTaskLifecycle, 5000);
+            };
+        }
+        
+        // Initialize SSE subscription on page load
         subscribeToTaskLifecycle();
     </script>
 </body>
