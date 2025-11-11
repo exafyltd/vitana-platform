@@ -172,7 +172,7 @@ async function generateVtid(taskFamily: string, supabaseUrl: string, svcKey: str
 /**
  * Create new VTID
  */
-router.post('/create', async (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
   try {
     const body = VtidCreateSchema.parse(req.body);
 
@@ -250,7 +250,8 @@ router.post('/create', async (req: Request, res: Response) => {
 /**
  * Get specific VTID by ID
  */
-router.get('/:vtid([A-Z0-9-]+)', async (req: Request, res: Response) => {
+router.get('/:vtid', async (req: Request, res: Response) => {
+  console.log('🔍 GET route hit for VTID:', req.params.vtid);
   try {
     const { vtid } = req.params;
 
@@ -312,7 +313,7 @@ router.get('/:vtid([A-Z0-9-]+)', async (req: Request, res: Response) => {
 /**
  * Update VTID status or metadata
  */
-router.patch('/:vtid([A-Z0-9-]+)', async (req: Request, res: Response) => {
+router.patch('/:vtid', async (req: Request, res: Response) => {
   try {
     const { vtid } = req.params;
     const body = VtidUpdateSchema.parse(req.body);
