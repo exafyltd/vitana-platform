@@ -7,7 +7,6 @@
  * 
  * Recent Updates:
  * - DEV-AICOR-VTID-LEDGER-CLEANUP: Added is_test filtering
- * - DEV-COMMU-0054: Added field mapping adapter for consistency with /api/v1/tasks
  */
 
 import { Router, Request, Response } from 'express';
@@ -85,7 +84,7 @@ router.get('/list', async (req: Request, res: Response) => {
     if (tenant) filters.push(`tenant=eq.${encodeURIComponent(tenant)}`);
 
     const filterStr = filters.length > 0 ? '&' + filters.join('&') : '';
-    const url = `${supabaseUrl}/rest/v1/vtid_ledger?order=created_at.desc&limit=${limit}&offset=${offset}${filterStr}`;
+    const url = `${supabaseUrl}/rest/v1/VtidLedger?order=created_at.desc&limit=${limit}&offset=${offset}${filterStr}`;
 
     const resp = await fetch(url, {
       method: "GET",
@@ -142,7 +141,7 @@ async function generateVtid(taskFamily: string, supabaseUrl: string, svcKey: str
 
   // Find the highest number for this layer
   const resp = await fetch(
-    `${supabaseUrl}/rest/v1/vtid_ledger?vtid=like.DEV-${layer}-%&order=vtid.desc&limit=1`,
+    `${supabaseUrl}/rest/v1/VtidLedger?vtid=like.DEV-${layer}-%&order=vtid.desc&limit=1`,
     {
       method: "GET",
       headers: {
@@ -202,7 +201,7 @@ router.post('/', async (req: Request, res: Response) => {
       is_test: body.isTest ?? false,
     };
 
-    const resp = await fetch(`${supabaseUrl}/rest/v1/vtid_ledger`, {
+    const resp = await fetch(`${supabaseUrl}/rest/v1/VtidLedger`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -250,10 +249,6 @@ router.post('/', async (req: Request, res: Response) => {
 
 /**
  * Get specific VTID by ID
- * 
- * Field mapping adapter (DEV-COMMU-0054):
- * Returns the same field structure as /api/v1/tasks for consistency
- * with Command Hub Task Board UI.
  */
 router.get('/:vtid', async (req: Request, res: Response) => {
   console.log('🔍 GET route hit for VTID:', req.params.vtid);
@@ -276,7 +271,7 @@ router.get('/:vtid', async (req: Request, res: Response) => {
       });
     }
 
-    const resp = await fetch(`${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}`, {
+    const resp = await fetch(`${supabaseUrl}/rest/v1/VtidLedger?vtid=eq.${vtid}`, {
       method: "GET",
       headers: {
         apikey: svcKey,
@@ -302,35 +297,9 @@ router.get('/:vtid', async (req: Request, res: Response) => {
       });
     }
 
-    const row = data[0];
-    
-    // Apply same field mapping as /api/v1/tasks for consistency
     return res.status(200).json({
       ok: true,
-      data: {
-        // Core fields
-        vtid: row.vtid,
-        layer: row.layer,
-        module: row.module,
-        status: row.status,
-        
-        // Primary display fields
-        title: row.title,
-        description: row.summary ?? row.title,
-        summary: row.summary,
-        
-        // TEMPORARY compatibility fields for Task Board UI
-        task_family: row.module,  // TEMP: mirror module
-        task_type: row.module,    // TEMP: mirror module
-        
-        // Metadata
-        assigned_to: row.assigned_to ?? null,
-        metadata: row.metadata ?? null,
-        
-        // Timestamps
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-      }
+      data: data[0],
     });
   } catch (e: any) {
     console.error("❌ Unexpected error:", e);
@@ -369,7 +338,7 @@ router.patch('/:vtid', async (req: Request, res: Response) => {
     if (body.assignedTo) updatePayload.assigned_to = body.assignedTo;
     if (body.metadata) updatePayload.metadata = body.metadata;
 
-    const resp = await fetch(`${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}`, {
+    const resp = await fetch(`${supabaseUrl}/rest/v1/VtidLedger?vtid=eq.${vtid}`, {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
@@ -391,85 +360,6 @@ router.patch('/:vtid', async (req: Request, res: Response) => {
 
     const data = await resp.json() as any[];
     console.log(`✅ VTID updated: ${vtid}`);
-    console.log(`✅ VTID updated: ${vtid}`);
-
-    // Emit task.lifecycle event if status changed
-
-    // Emit task.lifecycle event via OASIS operator
-    if (body.status && data[0] && data[0].status !== body.status) {
-      try {
-        const oasisUrl = process.env.OASIS_OPERATOR_URL || 'https://oasis-operator-86804897789.us-central1.run.app';
-        
-        const lifecycleEvent = {
-          type: "task.lifecycle",
-          source: "vtid-ledger", 
-          vtid: vtid,
-          payload: {
-            from_status: data[0].status,
-            to_status: body.status,
-            layer: data[0].layer,
-            module: data[0].module,
-            assigned_to: data[0].assigned_to,
-            tenant: data[0].tenant || "default"
-          }
-        };
-
-        const eventResp = await fetch(`${oasisUrl}/events/ingest`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(lifecycleEvent),
-        });
-
-        if (eventResp.ok) {
-          console.log(`🔄 [LIFECYCLE] ${vtid}: ${data[0].status} → ${body.status}`);
-        } else {
-          console.error(`⚠️ [LIFECYCLE] Failed:`, await eventResp.text());
-        }
-      } catch (eventError) {
-        console.error(`⚠️ [LIFECYCLE] Event emission error:`, eventError);
-      }
-    }
-
-    // Emit task.lifecycle event if status changed
-
-    // Emit task.lifecycle event via OASIS operator
-    if (body.status && data[0] && data[0].status !== body.status) {
-      try {
-        const oasisUrl = process.env.OASIS_OPERATOR_URL || 'https://oasis-operator-86804897789.us-central1.run.app';
-        
-        const lifecycleEvent = {
-          type: "task.lifecycle",
-          source: "vtid-ledger", 
-          vtid: vtid,
-          payload: {
-            from_status: data[0].status,
-            to_status: body.status,
-            layer: data[0].layer,
-            module: data[0].module,
-            assigned_to: data[0].assigned_to,
-            tenant: data[0].tenant || "default"
-          }
-        };
-
-        const eventResp = await fetch(`${oasisUrl}/events/ingest`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(lifecycleEvent),
-        });
-
-        if (eventResp.ok) {
-          console.log(`🔄 [LIFECYCLE] ${vtid}: ${data[0].status} → ${body.status}`);
-        } else {
-          console.error(`⚠️ [LIFECYCLE] Failed:`, await eventResp.text());
-        }
-      } catch (eventError) {
-        console.error(`⚠️ [LIFECYCLE] Event emission error:`, eventError);
-      }
-    }
 
     return res.status(200).json({
       ok: true,

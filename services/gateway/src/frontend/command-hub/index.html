@@ -245,7 +245,7 @@
         document.getElementById('send-btn').addEventListener('click',sendChatMessage);
         document.getElementById('chat-input').addEventListener('keypress',e=>{if(e.key==='Enter')sendChatMessage()});
         document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('task-drawer').classList.contains('open'))closeTaskDrawer()});
-        window.addEventListener('DOMContentLoaded',()=>{loadLiveEvents();setInterval(loadLiveEvents,3000);setInterval(()=>{if(state.currentTab==='tasks')loadTasksData()},30000)});
+        window.addEventListener('DOMContentLoaded',()=>{loadLiveEvents();setInterval(loadLiveEvents,3000);setInterval(()=>{if(state.currentTab==="tasks")loadTasksData()},10000)});
 
             }
             
