@@ -89,7 +89,7 @@ async function testVTIDUpdate() {
         const res = await fetch('/api/v1/vtid/DEV-COMMU-0053', {
             method: 'PATCH',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({status: 'IN_PROGRESS'})
+            body: JSON.stringify({status: 'in_progress'})
         });
         const data = await res.json();
         addLog(`✅ VTID updated: ${JSON.stringify(data)}`, 'success');
