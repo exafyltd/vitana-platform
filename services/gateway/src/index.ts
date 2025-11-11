@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import vtidRouter from './routes/vtid';
+import { tasksRouter } from "./routes/tasks";
 import eventsApiRouter from './routes/gateway-events-api';
 import commandHubRouter from './routes/command-hub';
 import { sseService } from './services/sse-service';
