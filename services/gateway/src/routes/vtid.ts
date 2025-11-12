@@ -53,23 +53,6 @@ router.post("/create", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/:vtid", async (req: Request, res: Response) => {
-  try {
-    const { vtid } = req.params;
-    if (!/^[A-Z]+-[A-Z0-9]+-\d{4}-\d{4}$/.test(vtid)) return res.status(400).json({ error: "invalid_format" });
-    const { supabaseUrl, svcKey } = getSupabaseConfig();
-    const resp = await fetch(supabaseUrl + "/rest/v1/VtidLedger?vtid=eq." + vtid, {
-      headers: { apikey: svcKey, Authorization: "Bearer " + svcKey },
-    });
-    if (!resp.ok) return res.status(502).json({ error: "database_query_failed" });
-    const data = (await resp.json()) as any[];
-    if (data.length === 0) return res.status(404).json({ error: "not_found", message: "VTID not found" });
-    return res.status(200).json(data[0]);
-  } catch (e: any) {
-    return res.status(500).json({ error: "internal_server_error" });
-  }
-});
-
 router.get("/list", async (req: Request, res: Response) => {
   try {
     const { limit = "50", families = "DEV,ADM,GOVRN,OASIS", status, tenant = "vitana" } = req.query as Record<string, string>;
@@ -88,6 +71,23 @@ router.get("/list", async (req: Request, res: Response) => {
     const resp = await fetch(queryUrl, { headers: { apikey: svcKey, Authorization: "Bearer " + svcKey } });
     if (!resp.ok) return res.status(502).json({ error: "database_query_failed" });
     return res.status(200).json((await resp.json()) as any[]);
+  } catch (e: any) {
+    return res.status(500).json({ error: "internal_server_error" });
+  }
+});
+
+router.get("/:vtid", async (req: Request, res: Response) => {
+  try {
+    const { vtid } = req.params;
+    if (!/^[A-Z]+-[A-Z0-9]+-\d{4}-\d{4}$/.test(vtid)) return res.status(400).json({ error: "invalid_format" });
+    const { supabaseUrl, svcKey } = getSupabaseConfig();
+    const resp = await fetch(supabaseUrl + "/rest/v1/VtidLedger?vtid=eq." + vtid, {
+      headers: { apikey: svcKey, Authorization: "Bearer " + svcKey },
+    });
+    if (!resp.ok) return res.status(502).json({ error: "database_query_failed" });
+    const data = (await resp.json()) as any[];
+    if (data.length === 0) return res.status(404).json({ error: "not_found", message: "VTID not found" });
+    return res.status(200).json(data[0]);
   } catch (e: any) {
     return res.status(500).json({ error: "internal_server_error" });
   }
