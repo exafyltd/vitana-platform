@@ -1,0 +1,10 @@
+--- a/vtid.ts
++++ b/vtid.ts
+@@ -250,6 +250,7 @@
+ });
+ 
+ router.get('/:vtid([A-Z0-9-]+)', async (req: Request, res: Response) => {
++  console.log('🔍 GET route hit for VTID:', req.params.vtid);
+   try {
+     const { vtid } = req.params;
+ 

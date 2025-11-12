@@ -1,0 +1,42 @@
+import { Router } from "express";
+
+
+export const commandhub = Router();
+
+/**
+ * Proxy: GET /api/v1/commandhub/board?limit=5
+ * Forwards to Supabase REST view: commandhub_board_v1
+ * Returns the same JSON the UI needs.
+ */
+commandhub.get("/board", async (req, res) => {
+  try {
+    const { limit = "5" } = req.query as { limit?: string };
+    const supaUrl = process.env.SUPABASE_URL!;
+    // Prefer SERVICE_ROLE (backend-only). If not set, fall back to ANON (OK if RLS permits).
+    const supaKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+    if (!supaUrl || !supaKey) {
+      return res.status(500).json({ error: "Missing Supabase env (SUPABASE_URL / SERVICE_ROLE_KEY or ANON)." });
+    }
+
+    const url = new URL(`${supaUrl}/rest/v1/commandhub_board_v1`);
+    url.searchParams.set("select", "vtid,title,status,updated_at");
+    url.searchParams.set("order", "updated_at.desc");
+    url.searchParams.set("limit", String(limit));
+
+    const r = await fetch(url.toString(), {
+      headers: {
+        "apikey": supaKey,
+        "Authorization": `Bearer ${supaKey}`,
+        "Accept": "application/json",
+      },
+    });
+
+    const text = await r.text();
+    if (!r.ok) return res.status(r.status).send(text);
+
+    res.type("application/json").send(text);
+  } catch (e: any) {
+    console.error("commandhub_board proxy failed:", e);
+    res.status(500).json({ error: "commandhub_board proxy failed", detail: String(e?.message || e) });
+  }
+});

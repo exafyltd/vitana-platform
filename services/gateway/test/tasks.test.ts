@@ -1,5 +1,5 @@
 import request from "supertest";
-import { app } from "../src/app";
+import { app } from "../src/index";
 import { supabase } from "../src/lib/supabase";
 
 describe("GET /api/v1/tasks", () => {
