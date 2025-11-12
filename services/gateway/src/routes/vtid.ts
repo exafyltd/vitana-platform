@@ -45,7 +45,7 @@ router.post("/create", async (req: Request, res: Response) => {
 
     if (!insertResp.ok) return res.status(502).json({ error: "database_insert_failed" });
     const data = (await insertResp.json()) as any[];
-    console.log("VTID created: " + vtid);
+    console.log("VTID created:", vtid);
     return res.status(201).json(data[0]);
   } catch (e: any) {
     if (e instanceof z.ZodError) return res.status(400).json({ error: "validation_failed", details: e.errors });
