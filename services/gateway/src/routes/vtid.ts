@@ -31,7 +31,7 @@ async function generateVtidInDb(supabaseUrl: string, svcKey: string, family: str
   return (await resp.json()) as string;
 }
 
-router.post("/api/v1/vtid/create", async (req: Request, res: Response) => {
+router.post("/create", async (req: Request, res: Response) => {
   try {
     const body = VtidCreateSchema.parse(req.body);
     const { supabaseUrl, svcKey } = getSupabaseConfig();
@@ -53,7 +53,7 @@ router.post("/api/v1/vtid/create", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/api/v1/vtid/:vtid", async (req: Request, res: Response) => {
+router.get("/:vtid", async (req: Request, res: Response) => {
   try {
     const { vtid } = req.params;
     if (!/^[A-Z]+-[A-Z0-9]+-\d{4}-\d{4}$/.test(vtid)) return res.status(400).json({ error: "invalid_format" });
@@ -70,7 +70,7 @@ router.get("/api/v1/vtid/:vtid", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/api/v1/vtid/list", async (req: Request, res: Response) => {
+router.get("/list", async (req: Request, res: Response) => {
   try {
     const { limit = "50", families = "DEV,ADM,GOVRN,OASIS", status, tenant = "vitana" } = req.query as Record<string, string>;
     const { supabaseUrl, svcKey } = getSupabaseConfig();
@@ -93,6 +93,8 @@ router.get("/api/v1/vtid/list", async (req: Request, res: Response) => {
   }
 });
 
-router.options("/api/v1/vtid/*", (_req: Request, res: Response) => { res.status(200).end(); });
+router.options("*", (_req: Request, res: Response) => { 
+  res.status(200).end(); 
+});
 
 export { router as vtidRouter };
