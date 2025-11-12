@@ -1,33 +1,59 @@
-import { Router, Request, Response } from "express";
-import fetch from "node-fetch";
+import { Router, Request, Response } from 'express';
+import { createClient } from '@supabase/supabase-js';
+import cors from 'cors';
 
 const router = Router();
 
-router.get("/", async (req: Request, res: Response) => {
-  try {
-    const limit = String((req.query?.limit as string) ?? "50");
-    const supaUrl = process.env.SUPABASE_URL;
-    const supaKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
-    if (!supaUrl || !supaKey) {
-      return res.status(500).json({ error: "Missing Supabase envs" });
-    }
-    const url = new URL(`${supaUrl}/rest/v1/commandhub_board_v1`);
-    url.searchParams.set("select", "vtid,title,status,updated_at");
-    url.searchParams.set("order", "updated_at.desc");
-    url.searchParams.set("limit", limit);
+const allowedOriginRegex = /^https:\/\/vitana-app-[a-z0-9-]+\.web\.app$/;
+const corsOptions = {
+  origin: (origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) => {
+    if (!origin) return cb(null, true);
+    const allowList = [
+      'http://localhost:5173',
+      'http://localhost:3000',
+      'https://id-preview--vitana-v1.lovable.app'
+    ];
+    if (allowList.includes(origin) || allowedOriginRegex.test(origin)) return cb(null, true);
+    cb(null, false);
+  },
+  methods: ['GET', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  optionsSuccessStatus: 200,
+  maxAge: 86400
+};
 
-    const r = await fetch(url.toString(), {
-      headers: {
-        apikey: supaKey,
-        Authorization: `Bearer ${supaKey}`,
-        Accept: "application/json",
-      },
+router.options('/', cors(corsOptions));
+
+router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
+  const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+
+  try {
+    const supabase = createClient(
+      process.env.SUPABASE_URL as string,
+      process.env.SUPABASE_SERVICE_ROLE_KEY as string,
+      { db: { schema: 'oasis' } }
+    );
+
+    const { data, error } = await supabase
+      .from('commandhub_board_v1')
+      .select('*')
+      .order('updated_at', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      return res.status(500).json({
+        error: 'Database query failed',
+        details: error.message
+      });
+    }
+
+    res.json(data ?? []);
+  } catch (err) {
+    res.status(500).json({
+      error: 'Internal server error',
+      details: err instanceof Error ? err.message : 'Unknown error'
     });
-    const text = await r.text();
-    if (!r.ok) return res.status(r.status).send(text);
-    res.type("application/json").send(text);
-  } catch (e: any) {
-    res.status(500).json({ error: "board-adapter proxy failed", detail: String(e?.message || e) });
   }
 });
 
