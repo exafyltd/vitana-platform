@@ -16,7 +16,7 @@ describe("VTID API - DEV-OASIS-0101", () => {
 
   describe("vtid.detail_should_return_single_object_or_404", () => {
     it("should return single object", async () => {
-      const res = await request(app).get(\`/api/v1/vtid/\${createdVtid}\`).expect(200);
+      const res = await request(app).get("/api/v1/vtid/" + createdVtid).expect(200);
       expect(res.body.vtid).toBe(createdVtid);
       expect(Array.isArray(res.body)).toBe(false);
     });

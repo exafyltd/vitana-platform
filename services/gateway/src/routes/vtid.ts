@@ -22,12 +22,12 @@ function getSupabaseConfig() {
 }
 
 async function generateVtidInDb(supabaseUrl: string, svcKey: string, family: string, module: string): Promise<string> {
-  const resp = await fetch(\`\${supabaseUrl}/rest/v1/rpc/next_vtid\`, {
+  const resp = await fetch(supabaseUrl + "/rest/v1/rpc/next_vtid", {
     method: "POST",
-    headers: { "Content-Type": "application/json", apikey: svcKey, Authorization: \`Bearer \${svcKey}\` },
+    headers: { "Content-Type": "application/json", apikey: svcKey, Authorization: "Bearer " + svcKey },
     body: JSON.stringify({ p_family: family, p_module: module }),
   });
-  if (!resp.ok) throw new Error(\`VTID generation failed: \${resp.statusText}\`);
+  if (!resp.ok) throw new Error("VTID generation failed: " + resp.statusText);
   return (await resp.json()) as string;
 }
 
@@ -37,15 +37,15 @@ router.post("/api/v1/vtid/create", async (req: Request, res: Response) => {
     const { supabaseUrl, svcKey } = getSupabaseConfig();
     const vtid = await generateVtidInDb(supabaseUrl, svcKey, body.task_family, body.task_module);
     
-    const insertResp = await fetch(\`\${supabaseUrl}/rest/v1/VtidLedger\`, {
+    const insertResp = await fetch(supabaseUrl + "/rest/v1/VtidLedger", {
       method: "POST",
-      headers: { "Content-Type": "application/json", apikey: svcKey, Authorization: \`Bearer \${svcKey}\`, Prefer: "return=representation" },
+      headers: { "Content-Type": "application/json", apikey: svcKey, Authorization: "Bearer " + svcKey, Prefer: "return=representation" },
       body: JSON.stringify({ vtid, ...body, metadata: body.metadata || {} }),
     });
 
     if (!insertResp.ok) return res.status(502).json({ error: "database_insert_failed" });
     const data = (await insertResp.json()) as any[];
-    console.log(\`✅ VTID created: \${vtid}\`);
+    console.log("VTID created: " + vtid);
     return res.status(201).json(data[0]);
   } catch (e: any) {
     if (e instanceof z.ZodError) return res.status(400).json({ error: "validation_failed", details: e.errors });
@@ -58,8 +58,8 @@ router.get("/api/v1/vtid/:vtid", async (req: Request, res: Response) => {
     const { vtid } = req.params;
     if (!/^[A-Z]+-[A-Z0-9]+-\d{4}-\d{4}$/.test(vtid)) return res.status(400).json({ error: "invalid_format" });
     const { supabaseUrl, svcKey } = getSupabaseConfig();
-    const resp = await fetch(\`\${supabaseUrl}/rest/v1/VtidLedger?vtid=eq.\${vtid}\`, {
-      headers: { apikey: svcKey, Authorization: \`Bearer \${svcKey}\` },
+    const resp = await fetch(supabaseUrl + "/rest/v1/VtidLedger?vtid=eq." + vtid, {
+      headers: { apikey: svcKey, Authorization: "Bearer " + svcKey },
     });
     if (!resp.ok) return res.status(502).json({ error: "database_query_failed" });
     const data = (await resp.json()) as any[];
@@ -74,18 +74,18 @@ router.get("/api/v1/vtid/list", async (req: Request, res: Response) => {
   try {
     const { limit = "50", families = "DEV,ADM,GOVRN,OASIS", status, tenant = "vitana" } = req.query as Record<string, string>;
     const { supabaseUrl, svcKey } = getSupabaseConfig();
-    let queryUrl = \`\${supabaseUrl}/rest/v1/VtidLedger?order=updated_at.desc&limit=\${limit}&tenant=eq.\${tenant}\`;
+    let queryUrl = supabaseUrl + "/rest/v1/VtidLedger?order=updated_at.desc&limit=" + limit + "&tenant=eq." + tenant;
     if (families) {
       const familyList = families.split(",").map(f => f.trim());
-      const familyFilter = familyList.map(f => \`task_family.eq.\${f}\`).join(",");
-      queryUrl += \`&or=(\${familyFilter})\`;
+      const familyFilter = familyList.map(f => "task_family.eq." + f).join(",");
+      queryUrl += "&or=(" + familyFilter + ")";
     }
     if (status) {
       const statusList = status.split(",").map(s => s.trim());
-      const statusFilter = statusList.map(s => \`status.eq.\${s}\`).join(",");
-      queryUrl += \`&or=(\${statusFilter})\`;
+      const statusFilter = statusList.map(s => "status.eq." + s).join(",");
+      queryUrl += "&or=(" + statusFilter + ")";
     }
-    const resp = await fetch(queryUrl, { headers: { apikey: svcKey, Authorization: \`Bearer \${svcKey}\` } });
+    const resp = await fetch(queryUrl, { headers: { apikey: svcKey, Authorization: "Bearer " + svcKey } });
     if (!resp.ok) return res.status(502).json({ error: "database_query_failed" });
     return res.status(200).json((await resp.json()) as any[]);
   } catch (e: any) {
