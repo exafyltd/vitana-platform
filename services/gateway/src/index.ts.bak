@@ -1,5 +1,4 @@
 import express from 'express';
-import boardAdapter from "./routes/board-adapter";
 import { commandhub } from "./routes/commandhub";
 import cors from 'cors';
 import vtidRouter from './routes/vtid';
@@ -9,7 +8,6 @@ import commandHubRouter from './routes/command-hub';
 import { sseService } from './services/sse-service';
 
 const app = express();
-app.use("/api/v1/commandhub", commandhub);
 const PORT = process.env.PORT || 8080;
 
 // Middleware
@@ -30,8 +28,6 @@ app.use("/", tasksRouter);
 app.use(eventsApiRouter);
 app.use('/command-hub', commandHubRouter);
 app.use(sseService.router);
-app.use('/api/v1/commandhub/board', boardAdapter);
-app.use('/api/v1/board', boardAdapter);
 
 // Serve Command Hub static files
 const staticPath = process.env.NODE_ENV === 'production' 
