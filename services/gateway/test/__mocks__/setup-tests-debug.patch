@@ -1,0 +1,4 @@
+# We'll add console.log to see:
+# 1. When VTIDs are added to the store
+# 2. When we try to retrieve them
+# 3. What's in the store at retrieval time
