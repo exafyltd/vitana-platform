@@ -74,6 +74,7 @@ router.post("/api/v1/events/ingest", async (req: Request, res: Response) => {
       status: body.status,
       title: body.message,
       topic: body.type,
+      service: body.source,
       meta: body.payload || null,
       created_at: timestamp,
       ref: `vt/${body.vtid}-${body.type.replace(/\./g, "-")}`,
