@@ -2,7 +2,7 @@ import express from 'express';
 import boardAdapter from "./routes/board-adapter";
 import { commandhub } from "./routes/commandhub";
 import cors from 'cors';
-import vtidRouter from './routes/vtid';
+import { vtidRouter } from './routes/vtid';
 import { router as tasksRouter } from "./routes/tasks";
 import eventsApiRouter from './routes/gateway-events-api';
 import commandHubRouter from './routes/command-hub';

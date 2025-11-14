@@ -1,283 +1,346 @@
-/**
- * Events Routes
- * Handles OASIS event ingestion, retrieval, and streaming
- * 
- * Recent Updates:
- * - DEV-AICOR-EVENT-VTID-SYNC: Added event webhook for VTID sync
- * - DEV-COMMU-GCHAT-NOTIFY: Added GChat notifications
- */
+import { Router, Request, Response } from "express";
+import { z } from "zod";
+import { randomUUID } from "crypto";
 
-import { Router, Request, Response } from 'express';
-import { VtidSyncService } from '../services/vtid-sync';
-import { GChatNotifierService } from '../services/gchat-notifier';
-
-const router = Router();
-
-// Initialize services
-let vtidSync: VtidSyncService | null = null;
-let gchatNotifier: GChatNotifierService | null = null;
-
-function getVtidSync(): VtidSyncService {
-  if (!vtidSync) {
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
-    
-    if (!supabaseUrl || !supabaseKey) {
-      throw new Error('Supabase credentials not configured');
-    }
-    
-    vtidSync = new VtidSyncService(supabaseUrl, supabaseKey);
-  }
-  return vtidSync;
-}
-
-function getGChatNotifier(): GChatNotifierService | null {
-  if (!gchatNotifier) {
-    const webhookUrl = process.env.GOOGLE_CHAT_WEBHOOK_URL;
-    
-    if (!webhookUrl) {
-      console.warn('⚠️ Google Chat webhook URL not configured');
-      return null;
-    }
-    
-    gchatNotifier = new GChatNotifierService(webhookUrl);
-  }
-  return gchatNotifier;
-}
-
-/**
- * Health check
- */
-router.get('/health', (_req: Request, res: Response) => {
-  res.json({
-    ok: true,
-    service: 'oasis-events',
-    timestamp: new Date().toISOString(),
-  });
+const OasisEventSchema = z.object({
+  service: z.string().min(1, "Service name required"),
+  event: z.string().min(1, "Event name required"),
+  tenant: z.string().min(1, "Tenant required"),
+  status: z.enum(["start", "success", "fail", "blocked", "warning", "info"]),
+  notes: z.string().optional(),
+  git_sha: z.string().optional(),
+  rid: z.string().optional(),
+  metadata: z.record(z.any()).optional(),
+  timestamp: z.string().optional(),
 });
 
-/**
- * Ingest new event (with VTID sync and GChat notifications)
- * POST /api/v1/events/ingest
- */
-router.post('/ingest', async (req: Request, res: Response) => {
+type OasisEventInput = z.infer<typeof OasisEventSchema>;
+
+const IngestEventSchema = z.object({
+  vtid: z.string().min(1, "vtid required"),
+  type: z.string().min(1, "type required"),
+  source: z.string().min(1, "source required"),
+  status: z.enum(["info", "warning", "error", "success"], {
+    errorMap: () => ({
+      message: "status must be: info, warning, error, or success",
+    }),
+  }),
+  message: z.string().min(1, "message required"),
+  payload: z.record(z.any()).optional(),
+  created_at: z.string().optional(),
+});
+
+export const router = Router();
+
+router.post("/api/v1/events/ingest", async (req: Request, res: Response) => {
   try {
-    const event = req.body;
+    const validation = IngestEventSchema.safeParse(req.body);
 
-    // Validate required fields
-    if (!event.topic || !event.service || !event.status || !event.message) {
+    if (!validation.success) {
+      console.error("❌ Validation error:", validation.error.errors);
       return res.status(400).json({
-        error: 'Missing required fields: topic, service, status, message',
+        ok: false,
+        error: validation.error.errors
+          .map((e) => `${e.path.join(".")}: ${e.message}`)
+          .join(", "),
+        data: null,
       });
     }
 
+    const body = validation.data;
+
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
     const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
 
-    if (!supabaseUrl || !supabaseKey) {
+    if (!svcKey || !supabaseUrl) {
+      console.error(
+        "❌ Gateway misconfigured: Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE",
+      );
       return res.status(500).json({
-        error: 'Gateway misconfigured',
+        ok: false,
+        error: "Gateway misconfigured",
+        data: null,
       });
     }
 
-    // Insert event into oasis_events
-    const eventPayload = {
-      vtid: event.vtid || null,
-      topic: event.topic,
-      service: event.service,
-      role: event.role || 'SYSTEM',
-      model: event.model || null,
-      status: event.status,
-      message: event.message,
-      link: event.link || null,
-      metadata: event.metadata || {},
+    const eventId = randomUUID();
+    const timestamp = body.created_at || new Date().toISOString();
+
+    const payload = {
+      id: eventId,
+      vtid: body.vtid,
+      kind: body.type,
+      source: body.source,
+      status: body.status,
+      title: body.message,
+      meta: body.payload || null,
+      created_at: timestamp,
+      ref: `vt/${body.vtid}-${body.type.replace(/\./g, "-")}`,
+      link: null,
+      layer: null,
+      module: null,
     };
 
     const resp = await fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
-        apikey: supabaseKey,
-        Authorization: `Bearer ${supabaseKey}`,
-        Prefer: 'return=representation',
+        "Content-Type": "application/json",
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+        Prefer: "return=representation",
       },
-      body: JSON.stringify(eventPayload),
+      body: JSON.stringify(payload),
     });
 
     if (!resp.ok) {
       const text = await resp.text();
-      console.error(`❌ Failed to insert event: ${resp.status} - ${text}`);
+      console.error(`❌ OASIS insert failed: ${resp.status} - ${text}`);
       return res.status(502).json({
-        error: 'Failed to insert event',
-        detail: text,
+        ok: false,
+        error: "Database insert failed",
+        data: null,
       });
     }
 
-    const data = await resp.json() as any[];
+    const data = await resp.json();
+    const insertedEvent = Array.isArray(data) ? data[0] : data;
 
-    // Trigger VTID sync if event has VTID
-    if (event.vtid) {
-      try {
-        const sync = getVtidSync();
-        await sync.processEvent(event);
-      } catch (syncError: any) {
-        console.error('⚠️ VTID sync failed:', syncError.message);
-        // Don't fail the request if sync fails
-      }
-    }
-
-    // Send GChat notification for important events
-    try {
-      const notifier = getGChatNotifier();
-      if (notifier) {
-        await notifier.processEvent(event);
-      }
-    } catch (notifyError: any) {
-      console.error('⚠️ GChat notification failed:', notifyError.message);
-      // Don't fail the request if notification fails
-    }
-
-    console.log(`✅ Event ingested: ${event.topic} [${event.service}]`);
+    console.log(`✅ Event ingested: ${eventId} - ${body.vtid}/${body.type}`);
 
     return res.status(200).json({
       ok: true,
-      data: data[0],
+      error: null,
+      data: {
+        id: insertedEvent.id,
+        vtid: insertedEvent.vtid,
+        type: insertedEvent.kind,
+        source: insertedEvent.source,
+        status: insertedEvent.status,
+        message: insertedEvent.title,
+        created_at: insertedEvent.created_at,
+        payload: insertedEvent.meta,
+      },
     });
-  } catch (error: any) {
-    console.error('❌ Event ingest error:', error);
+  } catch (e: any) {
+    console.error("❌ Unexpected error:", e);
     return res.status(500).json({
-      error: 'Internal server error',
-      detail: error.message,
+      ok: false,
+      error: "Internal server error",
+      data: null,
     });
   }
 });
 
-/**
- * List events with filtering
- * GET /api/v1/events?limit=50&service=gateway&topic=task.completed
- */
-router.get('/', async (req: Request, res: Response) => {
+router.post("/events/ingest", async (req: Request, res: Response) => {
   try {
-    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+    const body = OasisEventSchema.parse(req.body);
+
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+
+    if (!svcKey || !supabaseUrl) {
+      console.error(
+        "❌ Gateway misconfigured: Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE",
+      );
+      return res.status(500).json({
+        error: "Gateway misconfigured",
+        detail: "Missing Supabase environment variables",
+      });
+    }
+
+    const payload = {
+      rid: body.rid ?? randomUUID(),
+      service: body.service,
+      event: body.event,
+      tenant: body.tenant,
+      status: body.status,
+      notes: body.notes ?? null,
+      git_sha: body.git_sha ?? null,
+      metadata: body.metadata ?? null,
+    };
+
+    const resp = await fetch(`${supabaseUrl}/rest/v1/OasisEvent`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+        Prefer: "return=representation",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.error(`❌ Supabase insert failed: ${resp.status} - ${text}`);
+      return res.status(502).json({
+        error: "Supabase insert failed",
+        detail: text,
+        status: resp.status,
+      });
+    }
+
+    const data = await resp.json();
+    console.log(
+      `✅ Event persisted: ${payload.rid} - ${payload.service}/${payload.event}`,
+    );
+
+    return res.status(200).json({
+      ok: true,
+      data,
+    });
+  } catch (e: any) {
+    if (e instanceof z.ZodError) {
+      console.error("❌ Validation error:", e.errors);
+      return res.status(400).json({
+        error: "Invalid payload",
+        detail: e.errors,
+      });
+    }
+
+    console.error("❌ Unexpected error:", e);
+    return res.status(500).json({
+      error: "Internal server error",
+      detail: e.message,
+    });
+  }
+});
+
+router.get("/events", async (req: Request, res: Response) => {
+  try {
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+
+    if (!svcKey || !supabaseUrl) {
+      console.error(
+        "❌ Gateway misconfigured: Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE",
+      );
+      return res.status(500).json({
+        error: "Gateway misconfigured",
+        detail: "Missing Supabase environment variables",
+      });
+    }
+
+    const limit = parseInt(req.query.limit as string) || 10;
     const offset = parseInt(req.query.offset as string) || 0;
     const service = req.query.service as string;
     const topic = req.query.topic as string;
     const status = req.query.status as string;
-    const vtid = req.query.vtid as string;
 
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+    let queryParams = `limit=${limit}&offset=${offset}&order=created_at.desc`;
+    if (service) queryParams += `&service=eq.${service}`;
+    if (topic) queryParams += `&topic=eq.${topic}`;
+    if (status) queryParams += `&status=eq.${status}`;
 
-    if (!supabaseUrl || !supabaseKey) {
-      return res.status(500).json({
-        error: 'Gateway misconfigured',
-      });
-    }
-
-    // Build query filters
-    const filters: string[] = [];
-    if (service) filters.push(`service=eq.${encodeURIComponent(service)}`);
-    if (topic) filters.push(`topic=eq.${encodeURIComponent(topic)}`);
-    if (status) filters.push(`status=eq.${encodeURIComponent(status)}`);
-    if (vtid) filters.push(`vtid=eq.${encodeURIComponent(vtid)}`);
-
-    const filterStr = filters.length > 0 ? '&' + filters.join('&') : '';
-    const url = `${supabaseUrl}/rest/v1/oasis_events?order=created_at.desc&limit=${limit}&offset=${offset}${filterStr}`;
-
-    const resp = await fetch(url, {
-      method: 'GET',
-      headers: {
-        apikey: supabaseKey,
-        Authorization: `Bearer ${supabaseKey}`,
+    const resp = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_events?${queryParams}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
       },
-    });
+    );
 
     if (!resp.ok) {
       const text = await resp.text();
-      console.error(`❌ Failed to fetch events: ${resp.status} - ${text}`);
+      console.error(`❌ Supabase query failed: ${resp.status} - ${text}`);
       return res.status(502).json({
-        error: 'Failed to fetch events',
+        error: "Supabase query failed",
         detail: text,
+        status: resp.status,
       });
     }
 
-    const data = await resp.json() as any[];
+    const data = (await resp.json()) as any[];
+    console.log(`✅ Retrieved ${data.length} events`);
 
-    return res.status(200).json({
-      ok: true,
-      count: data.length,
-      data,
-    });
-  } catch (error: any) {
-    console.error('❌ Event fetch error:', error);
+    return res.status(200).json(data);
+  } catch (e: any) {
+    console.error("❌ Unexpected error:", e);
     return res.status(500).json({
-      error: 'Internal server error',
-      detail: error.message,
+      error: "Internal server error",
+      detail: e.message,
     });
   }
 });
 
-/**
- * SSE stream endpoint (for Task 3 - Live Refresh)
- * GET /api/v1/events/stream
- */
-router.get('/stream', async (req: Request, res: Response) => {
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-
-  // Send initial connection message
-  res.write(`data: ${JSON.stringify({ type: 'connected', timestamp: new Date().toISOString() })}\n\n`);
-
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
-
-  if (!supabaseUrl || !supabaseKey) {
-    res.write(`data: ${JSON.stringify({ type: 'error', message: 'Gateway misconfigured' })}\n\n`);
-    res.end();
-    return;
-  }
-
-  let lastEventId: string | null = null;
-
-  // Poll for new events every 2 seconds
-  const pollInterval = setInterval(async () => {
-    try {
-      const filterStr = lastEventId ? `&id=gt.${lastEventId}` : '';
-      const url = `${supabaseUrl}/rest/v1/oasis_events?order=created_at.asc&limit=10${filterStr}`;
-
-      const resp = await fetch(url, {
-        method: 'GET',
-        headers: {
-          apikey: supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`,
-        },
-      });
-
-      if (resp.ok) {
-        const events = await resp.json() as any[];
-        
-        for (const event of events) {
-          res.write(`data: ${JSON.stringify({ type: 'event', event })}\n\n`);
-          lastEventId = event.id;
-        }
-      }
-    } catch (error: any) {
-      console.error('❌ SSE poll error:', error.message);
-    }
-  }, 2000);
-
-  // Heartbeat every 15 seconds
-  const heartbeat = setInterval(() => {
-    res.write(`data: ${JSON.stringify({ type: 'heartbeat', timestamp: new Date().toISOString() })}\n\n`);
-  }, 15000);
-
-  // Cleanup on client disconnect
-  req.on('close', () => {
-    clearInterval(pollInterval);
-    clearInterval(heartbeat);
+router.get("/events/health", (_req: Request, res: Response) => {
+  res.status(200).json({
+    ok: true,
+    service: "oasis-events",
+    timestamp: new Date().toISOString(),
   });
 });
 
-export default router;
+router.get("/api/v1/oasis/events", async (req: Request, res: Response) => {
+  try {
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+
+    if (!svcKey || !supabaseUrl) {
+      console.error("❌ Gateway misconfigured");
+      return res.status(500).json({
+        error: "Gateway misconfigured",
+        detail: "Missing Supabase environment variables",
+      });
+    }
+
+    const vtid = req.query.vtid as string;
+    const limit = parseInt(req.query.limit as string) || 200;
+    const offset = parseInt(req.query.offset as string) || 0;
+    const source = req.query.source as string;
+    const kind = req.query.kind as string;
+    const status = req.query.status as string;
+    const layer = req.query.layer as string;
+
+    let queryParams = `limit=${limit}&offset=${offset}&order=created_at.desc`;
+    if (vtid) queryParams += `&vtid=eq.${vtid}`;
+    if (source) queryParams += `&source=eq.${source}`;
+    if (kind) queryParams += `&kind=eq.${kind}`;
+    if (status) queryParams += `&status=eq.${status}`;
+    if (layer) queryParams += `&layer=eq.${layer}`;
+
+    const resp = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_events?${queryParams}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+      },
+    );
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.error(`❌ OASIS query failed: ${resp.status} - ${text}`);
+      return res.status(502).json({
+        error: "OASIS query failed",
+        detail: text,
+        status: resp.status,
+      });
+    }
+
+    const data = (await resp.json()) as any[];
+
+    if (vtid) {
+      res.setHeader("X-VTID", vtid);
+    }
+
+    console.log(
+      `✅ OASIS query: ${data.length} events (vtid=${vtid || "all"})`,
+    );
+
+    return res.status(200).json(data);
+  } catch (e: any) {
+    console.error("❌ Unexpected error:", e);
+    return res.status(500).json({
+      error: "Internal server error",
+      detail: e.message,
+    });
+  }
+});
