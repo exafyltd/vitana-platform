@@ -90,6 +90,46 @@ beforeEach(() => {
       } as any);
     }
     
+        // Mock RPC next_vtid call - DEV-OASIS-0101
+    if (urlString.includes('/rest/v1/rpc/next_vtid')) {
+      if (method === 'POST' && body) {
+        const family = body.p_family || 'DEV';
+        const module = body.p_module || 'TEST';
+        const year = new Date().getFullYear();
+        
+        // Find highest number for this family-module combo
+        const prefix = family + '-' + module + '-' + year + '-';
+        const existingVtids = mockVtidStore
+          .filter(v => v.vtid && v.vtid.startsWith(prefix))
+          .map(v => parseInt(v.vtid.split('-')[3], 10))
+          .filter(n => !isNaN(n));
+        
+        const nextNumber = existingVtids.length > 0 ? Math.max(...existingVtids) + 1 : 1;
+        const vtid = family + '-' + module + '-' + year + '-' + String(nextNumber).padStart(4, '0');
+        
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => vtid,
+          text: async () => JSON.stringify(vtid),
+        } as any);
+      }
+    }
+
+    
+    // Mock RPC next_vtid call - DEV-OASIS-0101
+    if (urlString.includes('/rest/v1/rpc/next_vtid')) {
+      if (method === 'POST' && body) {
+        const family = body.p_family || 'DEV';
+        const module = body.p_module || 'TEST';
+        const year = new Date().getFullYear();
+        const prefix = family + '-' + module + '-' + year + '-';
+        const existingVtids = mockVtidStore.filter(v => v.vtid && v.vtid.startsWith(prefix)).map(v => parseInt(v.vtid.split('-')[3], 10)).filter(n => !isNaN(n));
+        const nextNumber = existingVtids.length > 0 ? Math.max(...existingVtids) + 1 : 1;
+        const vtid = family + '-' + module + '-' + year + '-' + String(nextNumber).padStart(4, '0');
+        return Promise.resolve({ ok: true, status: 200, json: async () => vtid, text: async () => JSON.stringify(vtid) } as any);
+      }
+    }
     // Mock VtidLedger queries
     if (urlString.includes('/rest/v1/VtidLedger')) {
       
