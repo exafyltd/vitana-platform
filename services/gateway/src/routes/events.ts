@@ -14,8 +14,6 @@ const OasisEventSchema = z.object({
   timestamp: z.string().optional(),
 });
 
-type OasisEventInput = z.infer<typeof OasisEventSchema>;
-
 const IngestEventSchema = z.object({
   vtid: z.string().min(1, "vtid required"),
   type: z.string().min(1, "type required"),
@@ -68,16 +66,17 @@ router.post("/api/v1/events/ingest", async (req: Request, res: Response) => {
 
     const payload = {
       id: eventId,
-      created_at: timestamp,
       vtid: body.vtid,
-      topic: body.type,
-      service: body.source,
-      role: "API",
-      model: "event-ingestion-api",
+      kind: body.type,
+      source: body.source,
       status: body.status,
-      message: body.message,
+      title: body.message,
+      meta: body.payload || null,
+      created_at: timestamp,
+      ref: `vt/${body.vtid}-${body.type.replace(/\./g, "-")}`,
       link: null,
-      metadata: body.payload || {},
+      layer: null,
+      module: null,
     };
 
     const resp = await fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
@@ -106,18 +105,38 @@ router.post("/api/v1/events/ingest", async (req: Request, res: Response) => {
 
     console.log(`✅ Event ingested: ${eventId} - ${body.vtid}/${body.type}`);
 
+    // DEV-OASIS-0109: Broadcast to SSE clients immediately
+    try {
+      const { eventBroadcaster } = await import("../utils/eventBroadcaster");
+      const layer = body.vtid ? body.vtid.split("-")[0] : null;
+      eventBroadcaster.broadcast({
+        ts: timestamp,
+        vtid: body.vtid,
+        layer,
+        module: body.source.toUpperCase(),
+        source: body.source,
+        kind: body.type,
+        status: body.status,
+        title: body.message,
+        ref: `vt/${body.vtid}-${body.type.replace(/\./g, "-")}`,
+        link: null,
+      });
+    } catch (broadcastError: any) {
+      console.warn(`⚠️ SSE broadcast failed (non-critical): ${broadcastError.message}`);
+    }
+
     return res.status(200).json({
       ok: true,
       error: null,
       data: {
         id: insertedEvent.id,
         vtid: insertedEvent.vtid,
-        type: body.type,
-        source: insertedEvent.service,
+        type: insertedEvent.kind,
+        source: insertedEvent.source,
         status: insertedEvent.status,
-        message: insertedEvent.message,
+        message: insertedEvent.title,
         created_at: insertedEvent.created_at,
-        payload: insertedEvent.metadata,
+        payload: insertedEvent.meta,
       },
     });
   } catch (e: any) {
@@ -180,9 +199,7 @@ router.post("/events/ingest", async (req: Request, res: Response) => {
     }
 
     const data = await resp.json();
-    console.log(
-      `✅ Event persisted: ${payload.rid} - ${payload.service}/${payload.event}`,
-    );
+    console.log(`✅ Event persisted: ${payload.rid} - ${payload.service}/${payload.event}`);
 
     return res.status(200).json({
       ok: true,
@@ -211,9 +228,7 @@ router.get("/events", async (req: Request, res: Response) => {
     const supabaseUrl = process.env.SUPABASE_URL;
 
     if (!svcKey || !supabaseUrl) {
-      console.error(
-        "❌ Gateway misconfigured: Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE",
-      );
+      console.error("❌ Gateway misconfigured: Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE");
       return res.status(500).json({
         error: "Gateway misconfigured",
         detail: "Missing Supabase environment variables",
@@ -222,17 +237,9 @@ router.get("/events", async (req: Request, res: Response) => {
 
     const limit = parseInt(req.query.limit as string) || 10;
     const offset = parseInt(req.query.offset as string) || 0;
-    const service = req.query.service as string;
-    const topic = req.query.topic as string;
-    const status = req.query.status as string;
-
-    let queryParams = `limit=${limit}&offset=${offset}&order=created_at.desc`;
-    if (service) queryParams += `&service=eq.${service}`;
-    if (topic) queryParams += `&topic=eq.${topic}`;
-    if (status) queryParams += `&status=eq.${status}`;
 
     const resp = await fetch(
-      `${supabaseUrl}/rest/v1/oasis_events?${queryParams}`,
+      `${supabaseUrl}/rest/v1/OasisEvent?limit=${limit}&offset=${offset}&order=created_at.desc`,
       {
         method: "GET",
         headers: {
@@ -240,22 +247,19 @@ router.get("/events", async (req: Request, res: Response) => {
           apikey: svcKey,
           Authorization: `Bearer ${svcKey}`,
         },
-      },
+      }
     );
 
     if (!resp.ok) {
       const text = await resp.text();
-      console.error(`❌ Supabase query failed: ${resp.status} - ${text}`);
+      console.error(`❌ Query failed: ${resp.status} - ${text}`);
       return res.status(502).json({
-        error: "Supabase query failed",
+        error: "Query failed",
         detail: text,
-        status: resp.status,
       });
     }
 
-    const data = (await resp.json()) as any[];
-    console.log(`✅ Retrieved ${data.length} events`);
-
+    const data = await resp.json();
     return res.status(200).json(data);
   } catch (e: any) {
     console.error("❌ Unexpected error:", e);
@@ -264,14 +268,6 @@ router.get("/events", async (req: Request, res: Response) => {
       detail: e.message,
     });
   }
-});
-
-router.get("/events/health", (_req: Request, res: Response) => {
-  res.status(200).json({
-    ok: true,
-    service: "oasis-events",
-    timestamp: new Date().toISOString(),
-  });
 });
 
 router.get("/api/v1/oasis/events", async (req: Request, res: Response) => {
@@ -293,26 +289,21 @@ router.get("/api/v1/oasis/events", async (req: Request, res: Response) => {
     const source = req.query.source as string;
     const kind = req.query.kind as string;
     const status = req.query.status as string;
-    const layer = req.query.layer as string;
 
     let queryParams = `limit=${limit}&offset=${offset}&order=created_at.desc`;
     if (vtid) queryParams += `&vtid=eq.${vtid}`;
     if (source) queryParams += `&source=eq.${source}`;
     if (kind) queryParams += `&kind=eq.${kind}`;
     if (status) queryParams += `&status=eq.${status}`;
-    if (layer) queryParams += `&layer=eq.${layer}`;
 
-    const resp = await fetch(
-      `${supabaseUrl}/rest/v1/oasis_events?${queryParams}`,
-      {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: svcKey,
-          Authorization: `Bearer ${svcKey}`,
-        },
+    const resp = await fetch(`${supabaseUrl}/rest/v1/oasis_events?${queryParams}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
       },
-    );
+    });
 
     if (!resp.ok) {
       const text = await resp.text();
@@ -325,14 +316,12 @@ router.get("/api/v1/oasis/events", async (req: Request, res: Response) => {
     }
 
     const data = (await resp.json()) as any[];
-
+    
     if (vtid) {
       res.setHeader("X-VTID", vtid);
     }
-
-    console.log(
-      `✅ OASIS query: ${data.length} events (vtid=${vtid || "all"})`,
-    );
+    
+    console.log(`✅ OASIS query: ${data.length} events (vtid=${vtid || 'all'})`);
 
     return res.status(200).json(data);
   } catch (e: any) {
@@ -342,4 +331,12 @@ router.get("/api/v1/oasis/events", async (req: Request, res: Response) => {
       detail: e.message,
     });
   }
+});
+
+router.get("/events/health", (_req: Request, res: Response) => {
+  res.status(200).json({
+    ok: true,
+    service: "events-api",
+    timestamp: new Date().toISOString(),
+  });
 });

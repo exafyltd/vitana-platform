@@ -1,20 +1,7 @@
 import { Router, Request, Response } from "express";
+import { eventBroadcaster, TickerEvent } from "../utils/eventBroadcaster";
 
 export const router = Router();
-
-// Type definitions
-interface TickerEvent {
-  ts: string;
-  vtid: string;
-  layer: string;
-  module: string;
-  source: string;
-  kind: string;
-  status: string;
-  title: string;
-  ref: string;
-  link: string | null;
-}
 
 interface DatabaseEvent {
   created_at: string;
@@ -26,19 +13,10 @@ interface DatabaseEvent {
   link?: string;
 }
 
-// In-memory cache for last 20 events (for instant replay on connection)
-let eventCache: TickerEvent[] = [];
-const CACHE_SIZE = 20;
-
-// Helper to update cache
 export function broadcastEvent(event: TickerEvent) {
-  eventCache.unshift(event);
-  if (eventCache.length > CACHE_SIZE) {
-    eventCache = eventCache.slice(0, CACHE_SIZE);
-  }
+  eventBroadcaster.broadcast(event);
 }
 
-// Helper to transform DB event to ticker format
 function transformEventToTicker(dbEvent: DatabaseEvent): TickerEvent {
   const vtid = dbEvent.vtid || "DEV-UNKNOWN-0000";
   const vtidParts = vtid.split("-");
@@ -82,7 +60,6 @@ function transformEventToTicker(dbEvent: DatabaseEvent): TickerEvent {
   };
 }
 
-// Helper to generate mock event for testing
 function generateMockEvent(): TickerEvent {
   const now = new Date().toISOString();
   const mockEvents: TickerEvent[] = [
@@ -139,7 +116,6 @@ function generateMockEvent(): TickerEvent {
   return mockEvents[Math.floor(Math.random() * mockEvents.length)];
 }
 
-// SSE endpoint: GET /api/v1/devhub/feed
 router.get("/api/v1/devhub/feed", async (req: Request, res: Response) => {
   console.log("🎯 SSE client connected to /api/v1/devhub/feed");
   
@@ -148,6 +124,8 @@ router.get("/api/v1/devhub/feed", async (req: Request, res: Response) => {
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
   
+  eventBroadcaster.addClient(res);
+  
   res.write(`data: ${JSON.stringify({ type: "connected", ts: new Date().toISOString() })}\n\n`);
   
   const svcKey = process.env.SUPABASE_SERVICE_ROLE;
@@ -155,7 +133,7 @@ router.get("/api/v1/devhub/feed", async (req: Request, res: Response) => {
   
   if (!svcKey || !supabaseUrl) {
     console.error("❌ SSE: Missing Supabase credentials");
-    res.write(`data: ${JSON.stringify({ error: "Configuration error" })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: "error", message: "Configuration error" })}\n\n`);
     res.end();
     return;
   }
@@ -169,9 +147,10 @@ router.get("/api/v1/devhub/feed", async (req: Request, res: Response) => {
   };
   
   try {
-    if (eventCache.length > 0) {
-      console.log(`📤 SSE: Replaying ${eventCache.length} cached events`);
-      eventCache.slice().reverse().forEach(event => sendEvent(event));
+    const cachedEvents = eventBroadcaster.getCachedEvents();
+    if (cachedEvents.length > 0) {
+      console.log(`📤 SSE: Replaying ${cachedEvents.length} cached events`);
+      cachedEvents.slice().reverse().forEach(event => sendEvent(event));
     } else {
       console.log("📥 SSE: Fetching last 20 events from database");
       const resp = await fetch(
@@ -190,18 +169,14 @@ router.get("/api/v1/devhub/feed", async (req: Request, res: Response) => {
         console.log(`✅ SSE: Retrieved ${dbEvents.length} events from database`);
         
         if (dbEvents.length > 0) {
-          const tickerEvents = dbEvents.reverse().map((dbEvent: DatabaseEvent) => {
-            const tickerEvent = transformEventToTicker(dbEvent);
-            broadcastEvent(tickerEvent);
-            return tickerEvent;
-          });
-          
-          tickerEvents.forEach((event: TickerEvent) => sendEvent(event));
+          const tickerEvents = dbEvents.reverse().map(transformEventToTicker);
+          eventBroadcaster.updateCache(tickerEvents);
+          tickerEvents.forEach(event => sendEvent(event));
         } else {
           console.log("⚠️ SSE: No events in database, sending mock events");
           for (let i = 0; i < 5; i++) {
             const mockEvent = generateMockEvent();
-            broadcastEvent(mockEvent);
+            eventBroadcaster.broadcast(mockEvent);
             sendEvent(mockEvent);
           }
         }
@@ -209,7 +184,7 @@ router.get("/api/v1/devhub/feed", async (req: Request, res: Response) => {
         console.error(`❌ SSE: Database query failed: ${resp.status}`);
         for (let i = 0; i < 5; i++) {
           const mockEvent = generateMockEvent();
-          broadcastEvent(mockEvent);
+          eventBroadcaster.broadcast(mockEvent);
           sendEvent(mockEvent);
         }
       }
@@ -236,11 +211,10 @@ router.get("/api/v1/devhub/feed", async (req: Request, res: Response) => {
       if (resp.ok) {
         const newEvents = await resp.json() as DatabaseEvent[];
         if (newEvents.length > 0) {
-          console.log(`📨 SSE: ${newEvents.length} new event(s) detected`);
+          console.log(`📨 SSE: ${newEvents.length} new event(s) detected via polling`);
           newEvents.forEach((dbEvent: DatabaseEvent) => {
             const tickerEvent = transformEventToTicker(dbEvent);
-            broadcastEvent(tickerEvent);
-            sendEvent(tickerEvent);
+            eventBroadcaster.broadcast(tickerEvent);
             lastEventTime = new Date(dbEvent.created_at);
           });
         }
@@ -263,6 +237,7 @@ router.get("/api/v1/devhub/feed", async (req: Request, res: Response) => {
   
   req.on("close", () => {
     console.log("👋 SSE client disconnected");
+    eventBroadcaster.removeClient(res);
     clearInterval(pollInterval);
     clearInterval(heartbeatInterval);
     res.end();
@@ -273,8 +248,7 @@ router.get("/api/v1/devhub/health", (_req: Request, res: Response) => {
   res.status(200).json({
     ok: true,
     service: "devhub-feed",
-    cache_size: eventCache.length,
+    cache_size: eventBroadcaster.getCachedEvents().length,
     timestamp: new Date().toISOString(),
   });
 });
-
