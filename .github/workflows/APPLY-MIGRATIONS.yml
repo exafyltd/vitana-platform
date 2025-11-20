@@ -30,12 +30,17 @@ jobs:
           # Mask the secret in logs just in case
           echo "::add-mask::$SUPABASE_DB_URL"
           
-          # Use env var for connection string to avoid quoting issues
-          export DATABASE_URL="$SUPABASE_DB_URL"
+          # Debug: Check if secret is set (without revealing it)
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::error::SUPABASE_DB_URL secret is empty or not set!"
+            exit 1
+          else
+            echo "SUPABASE_DB_URL is set (length: ${#SUPABASE_DB_URL})"
+          fi
           
           # Check if we can connect (allow output to see errors)
           echo "Checking database connection..."
-          if ! psql -c "SELECT 1"; then
+          if ! psql "$SUPABASE_DB_URL" -c "SELECT 1"; then
             echo "::error::Cannot connect to Supabase DB. Check SUPABASE_DB_URL secret and logs above."
             exit 1
           fi
@@ -48,7 +53,7 @@ jobs:
             
             # Apply the migration
             # ON_ERROR_STOP=1 ensures psql exits with error code if SQL fails
-            psql -v ON_ERROR_STOP=1 -f "$file"
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f "$file"
             
             if [ $? -eq 0 ]; then
               echo "✅ Successfully applied $file"
@@ -63,17 +68,16 @@ jobs:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           PGSSLMODE: require
         run: |
-          export DATABASE_URL="$SUPABASE_DB_URL"
           echo "Verifying governance tables..."
           
           # Verify oasis_events_v1 exists
-          if psql -c "SELECT 1 FROM oasis_events_v1 LIMIT 1;" -t | grep -q 1; then
+          if psql "$SUPABASE_DB_URL" -c "SELECT 1 FROM oasis_events_v1 LIMIT 1;" -t | grep -q 1; then
              echo "✅ Table oasis_events_v1 exists (or has data)"
           else
              # It might be empty but should exist. 
              # If table didn't exist, psql would error.
              # Let's check existence via information_schema to be sure
-             COUNT=$(psql -t -c "SELECT count(*) FROM information_schema.tables WHERE table_name = 'oasis_events_v1';")
+             COUNT=$(psql "$SUPABASE_DB_URL" -t -c "SELECT count(*) FROM information_schema.tables WHERE table_name = 'oasis_events_v1';")
              if [ "$(echo $COUNT | xargs)" -eq "1" ]; then
                echo "✅ Table oasis_events_v1 exists"
              else
@@ -83,7 +87,7 @@ jobs:
           fi
 
           # Verify governance_rules exists
-          COUNT=$(psql -t -c "SELECT count(*) FROM information_schema.tables WHERE table_name = 'governance_rules';")
+          COUNT=$(psql "$SUPABASE_DB_URL" -t -c "SELECT count(*) FROM information_schema.tables WHERE table_name = 'governance_rules';")
           if [ "$(echo $COUNT | xargs)" -eq "1" ]; then
             echo "✅ Table governance_rules exists"
           else
@@ -92,7 +96,7 @@ jobs:
           fi
 
           # Verify MIGRATION_GOVERNANCE category exists (DEV-OASIS-GOV-0103)
-          COUNT=$(psql -t -c "SELECT count(*) FROM governance_categories WHERE name = 'MIGRATION_GOVERNANCE';")
+          COUNT=$(psql "$SUPABASE_DB_URL" -t -c "SELECT count(*) FROM governance_categories WHERE name = 'MIGRATION_GOVERNANCE';")
           if [ "$(echo $COUNT | xargs)" -eq "1" ]; then
             echo "✅ Category MIGRATION_GOVERNANCE exists"
           else
@@ -101,7 +105,7 @@ jobs:
           fi
 
           # Verify MG-001 rule exists
-          COUNT=$(psql -t -c "SELECT count(*) FROM governance_rules WHERE logic->>'rule_code' = 'MG-001';")
+          COUNT=$(psql "$SUPABASE_DB_URL" -t -c "SELECT count(*) FROM governance_rules WHERE logic->>'rule_code' = 'MG-001';")
           if [ "$(echo $COUNT | xargs)" -eq "1" ]; then
             echo "✅ Rule MG-001 exists"
           else
