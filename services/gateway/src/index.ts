@@ -61,6 +61,7 @@ if (process.env.NODE_ENV === 'test') {
     console.log('âœ… Gateway server running on port ' + PORT);
     console.log('ðŸ“Š Command Hub: http://localhost:' + PORT + '/command-hub');
     console.log('ðŸ”Œ SSE Stream: http://localhost:' + PORT + '/api/v1/events/stream');
+    console.log('Gateway: governance routes mounted at /api/v1/governance');
   });
 }
 
