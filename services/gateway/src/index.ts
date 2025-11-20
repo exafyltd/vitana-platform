@@ -35,7 +35,7 @@ import operatorRouter from './routes/operator';
 // ... imports ...
 
 // Mount routes
-// Mount routes
+app.use('/api/v1/governance', governanceRouter); // DEV-GOVBE-0106: Governance endpoints
 app.use('/api/v1/vtid', vtidRouter);
 app.use('/api/v1/commandhub', commandhub);
 app.use('/api/v1/operator', operatorRouter); // Task 44: Operator Console
@@ -45,7 +45,7 @@ app.use(eventsRouter);
 app.use('/command-hub', commandHubRouter);
 app.use(sseService.router);
 app.use('/api/v1/board', boardAdapter); // Keep one canonical board adapter mount
-app.use('/api/v1/governance', governanceRouter); // DEV-GOVBE-0106: Governance endpoints
+app.use('/api/v1/board', boardAdapter); // Keep one canonical board adapter mount
 
 // Serve Command Hub static files
 const staticPath = process.env.NODE_ENV === 'production'
