@@ -5,6 +5,7 @@ const router = Router();
 const controller = new GovernanceController();
 
 // All routes prefixed with /api/v1/governance in index.ts mount
+router.get('/categories', (req, res) => controller.getCategories(req, res));
 router.get('/rules', (req, res) => controller.getRules(req, res));
 router.get('/rules/:ruleCode', (req, res) => controller.getRuleByCode(req, res));
 router.get('/proposals', (req, res) => controller.getProposals(req, res));

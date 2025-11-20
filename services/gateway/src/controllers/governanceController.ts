@@ -21,6 +21,41 @@ export class GovernanceController {
     }
 
     /**
+     * GET /api/v1/governance/categories
+     * Returns all governance categories
+     */
+    async getCategories(req: Request, res: Response) {
+        try {
+            const tenantId = this.getTenantId(req);
+
+            const { data: categories, error } = await supabase
+                .from('governance_categories')
+                .select('*')
+                .eq('tenant_id', tenantId)
+                .order('name', { ascending: true });
+
+            if (error) {
+                console.error('Error fetching categories:', error);
+                return res.status(500).json({ error: error.message });
+            }
+
+            // Transform to simple DTO
+            const categoryDTOs = (categories || []).map((cat: any) => ({
+                id: cat.id,
+                category_name: cat.name,
+                description: cat.description || null,
+                governance_area: cat.name.replace('_GOVERNANCE', '').toLowerCase(),
+                severity: cat.severity || null
+            }));
+
+            res.json(categoryDTOs);
+        } catch (error: any) {
+            console.error('Error in getCategories:', error);
+            res.status(500).json({ error: error.message });
+        }
+    }
+
+    /**
      * GET /api/v1/governance/rules
      * Query params: category?, status?, ruleCode?
      */
@@ -51,7 +86,7 @@ export class GovernanceController {
             }
 
             // Transform to RuleDTO format
-            const ruleDTOs: RuleDTO[] = await Promise.all((rules || []).map(async (rule: any) => {
+            const ruleDTOs: (RuleDTO | null)[] = await Promise.all((rules || []).map(async (rule: any) => {
                 const ruleCode = rule.logic?.rule_code || rule.id;
                 const categoryName = (rule.governance_categories as any)?.name || 'Uncategorized';
 
@@ -105,7 +140,7 @@ export class GovernanceController {
             }));
 
             // Filter out nulls from category/status filtering
-            const filteredRules = ruleDTOs.filter(r => r !== null);
+            const filteredRules = ruleDTOs.filter((r): r is RuleDTO => r !== null);
 
             res.json(filteredRules);
         } catch (error: any) {
