@@ -20,47 +20,36 @@ jobs:
       - name: Install Postgres Client
         run: |
           sudo apt-get update
-          sudo apt-get install -y postgresql-client dnsutils
+          sudo apt-get install -y postgresql-client
 
       - name: Apply Migrations
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-          PGSSLMODE: require
+          PGCLIENTENCODING: UTF8
         run: |
-          # Mask the secret in logs just in case
+          # Mask the secret in logs
           echo "::add-mask::$SUPABASE_DB_URL"
           
-          # Debug: Check if secret is set
+          # Check if secret is set
           if [ -z "$SUPABASE_DB_URL" ]; then
             echo "::error::SUPABASE_DB_URL secret is empty or not set!"
             exit 1
           fi
           
-          # Extract hostname from the connection string
-          # Assumes format: postgres://user:pass@hostname:port/db or similar
-          # We use sed to extract the part between @ and : (port) or / (path)
-          HOST=$(echo "$SUPABASE_DB_URL" | sed -E 's/.*@([^:/]+).*/\1/')
-          
-          echo "Resolving host: $HOST"
-          
-          # Resolve to IPv4
-          IP=$(dig +short A "$HOST" | head -n 1)
-          
-          if [ -z "$IP" ]; then
-            echo "::error::Could not resolve $HOST to an IPv4 address"
-            exit 1
+          # Ensure the connection string has sslmode=require
+          # Check if the URL already has sslmode parameter
+          if [[ "$SUPABASE_DB_URL" == *"sslmode="* ]]; then
+            export DATABASE_URL="$SUPABASE_DB_URL"
+          elif [[ "$SUPABASE_DB_URL" == *"?"* ]]; then
+            export DATABASE_URL="${SUPABASE_DB_URL}&sslmode=require"
+          else
+            export DATABASE_URL="${SUPABASE_DB_URL}?sslmode=require"
           fi
           
-          echo "Resolved to IPv4: $IP"
-          
-          # Replace hostname with IP in the connection string
-          # We use python for safer string replacement to avoid leaking secrets in sed command line
-          export DATABASE_URL=$(python3 -c "import os; print(os.environ['SUPABASE_DB_URL'].replace('$HOST', '$IP'))")
-          
-          # Check if we can connect (allow output to see errors)
+          # Check if we can connect
           echo "Checking database connection..."
-          if ! psql -c "SELECT 1"; then
-            echo "::error::Cannot connect to Supabase DB. Check SUPABASE_DB_URL secret and logs above."
+          if ! psql "$DATABASE_URL" -c "SELECT 1" 2>&1; then
+            echo "::error::Cannot connect to Supabase DB. Check SUPABASE_DB_URL secret."
             exit 1
           fi
 
@@ -72,7 +61,7 @@ jobs:
             
             # Apply the migration
             # ON_ERROR_STOP=1 ensures psql exits with error code if SQL fails
-            psql -v ON_ERROR_STOP=1 -f "$file"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$file"
             
             if [ $? -eq 0 ]; then
               echo "✅ Successfully applied $file"
@@ -85,23 +74,26 @@ jobs:
       - name: Verify Migrations
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-          PGSSLMODE: require
         run: |
-          # Resolve IP again for verification step
-          HOST=$(echo "$SUPABASE_DB_URL" | sed -E 's/.*@([^:/]+).*/\1/')
-          IP=$(dig +short A "$HOST" | head -n 1)
-          export DATABASE_URL=$(python3 -c "import os; print(os.environ['SUPABASE_DB_URL'].replace('$HOST', '$IP'))")
+          # Ensure the connection string has sslmode=require
+          if [[ "$SUPABASE_DB_URL" == *"sslmode="* ]]; then
+            export DATABASE_URL="$SUPABASE_DB_URL"
+          elif [[ "$SUPABASE_DB_URL" == *"?"* ]]; then
+            export DATABASE_URL="${SUPABASE_DB_URL}&sslmode=require"
+          else
+            export DATABASE_URL="${SUPABASE_DB_URL}?sslmode=require"
+          fi
           
           echo "Verifying governance tables..."
           
           # Verify oasis_events_v1 exists
-          if psql -c "SELECT 1 FROM oasis_events_v1 LIMIT 1;" -t | grep -q 1; then
+          if psql "$DATABASE_URL" -c "SELECT 1 FROM oasis_events_v1 LIMIT 1;" -t | grep -q 1; then
              echo "✅ Table oasis_events_v1 exists (or has data)"
           else
              # It might be empty but should exist. 
              # If table didn't exist, psql would error.
              # Let's check existence via information_schema to be sure
-             COUNT=$(psql -t -c "SELECT count(*) FROM information_schema.tables WHERE table_name = 'oasis_events_v1';")
+             COUNT=$(psql "$DATABASE_URL" -t -c "SELECT count(*) FROM information_schema.tables WHERE table_name = 'oasis_events_v1';")
              if [ "$(echo $COUNT | xargs)" -eq "1" ]; then
                echo "✅ Table oasis_events_v1 exists"
              else
@@ -111,7 +103,7 @@ jobs:
           fi
 
           # Verify governance_rules exists
-          COUNT=$(psql -t -c "SELECT count(*) FROM information_schema.tables WHERE table_name = 'governance_rules';")
+          COUNT=$(psql "$DATABASE_URL" -t -c "SELECT count(*) FROM information_schema.tables WHERE table_name = 'governance_rules';")
           if [ "$(echo $COUNT | xargs)" -eq "1" ]; then
             echo "✅ Table governance_rules exists"
           else
@@ -120,7 +112,7 @@ jobs:
           fi
 
           # Verify MIGRATION_GOVERNANCE category exists (DEV-OASIS-GOV-0103)
-          COUNT=$(psql -t -c "SELECT count(*) FROM governance_categories WHERE name = 'MIGRATION_GOVERNANCE';")
+          COUNT=$(psql "$DATABASE_URL" -t -c "SELECT count(*) FROM governance_categories WHERE name = 'MIGRATION_GOVERNANCE';")
           if [ "$(echo $COUNT | xargs)" -eq "1" ]; then
             echo "✅ Category MIGRATION_GOVERNANCE exists"
           else
@@ -129,7 +121,7 @@ jobs:
           fi
 
           # Verify MG-001 rule exists
-          COUNT=$(psql -t -c "SELECT count(*) FROM governance_rules WHERE logic->>'rule_code' = 'MG-001';")
+          COUNT=$(psql "$DATABASE_URL" -t -c "SELECT count(*) FROM governance_rules WHERE logic->>'rule_code' = 'MG-001';")
           if [ "$(echo $COUNT | xargs)" -eq "1" ]; then
             echo "✅ Rule MG-001 exists"
           else
