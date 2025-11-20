@@ -25,7 +25,8 @@ jobs:
       - name: Apply Migrations
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-          PGCLIENTENCODING: UTF8
+          PGSSLMODE: require
+          PGCONNECT_TIMEOUT: 10
         run: |
           # Mask the secret in logs
           echo "::add-mask::$SUPABASE_DB_URL"
@@ -36,20 +37,34 @@ jobs:
             exit 1
           fi
           
-          # Ensure the connection string has sslmode=require
-          # Check if the URL already has sslmode parameter
-          if [[ "$SUPABASE_DB_URL" == *"sslmode="* ]]; then
+          # Try to connect using the DB_URL directly first (backward compatible)
+          echo "Attempting connection to Supabase..."
+          if psql "$SUPABASE_DB_URL" -c "SELECT 1" 2>&1 | grep -q "Network is unreachable"; then
+            echo "IPv6 connection failed, attempting IPv4 workaround..."
+            
+            # Parse the connection string components
+            # Format: postgres://user:pass@host:port/database
+            PGUSER=$(echo "$SUPABASE_DB_URL" | sed -n 's|.*://\([^:]*\):.*|\1|p')
+            PGPASSWORD=$(echo "$SUPABASE_DB_URL" | sed -n 's|.*://[^:]*:\([^@]*\)@.*|\1|p')
+            PGHOST=$(echo "$SUPABASE_DB_URL" | sed -n 's|.*@\([^:/]*\).*|\1|p')
+            PGPORT=$(echo "$SUPABASE_DB_URL" | sed -n 's|.*:\([0-9]*\)/.*|\1|p')
+            PGDATABASE=$(echo "$SUPABASE_DB_URL" | sed -n 's|.*/\([^?]*\).*|\1|p')
+            
+            export PGUSER PGPASSWORD PGHOST PGPORT PGDATABASE
+            
+            echo "Connecting to: $PGHOST:$PGPORT/$PGDATABASE (user: $PGUSER)"
+            
+            # Test connection with environment variables
+            if ! psql -c "SELECT 1" 2>&1; then
+              echo "::error::Cannot connect to Supabase DB with IPv4 workaround. Check SUPABASE_DB_URL secret."
+              exit 1
+            fi
+          elif psql "$SUPABASE_DB_URL" -c "SELECT 1" > /dev/null 2>&1; then
+            # Connection succeeded with direct URL
+            echo "Connected successfully via URL"
             export DATABASE_URL="$SUPABASE_DB_URL"
-          elif [[ "$SUPABASE_DB_URL" == *"?"* ]]; then
-            export DATABASE_URL="${SUPABASE_DB_URL}&sslmode=require"
           else
-            export DATABASE_URL="${SUPABASE_DB_URL}?sslmode=require"
-          fi
-          
-          # Check if we can connect
-          echo "Checking database connection..."
-          if ! psql "$DATABASE_URL" -c "SELECT 1" 2>&1; then
-            echo "::error::Cannot connect to Supabase DB. Check SUPABASE_DB_URL secret."
+            echo ":: error::Cannot connect to Supabase DB. Check SUPABASE_DB_URL secret."
             exit 1
           fi
 
@@ -59,9 +74,12 @@ jobs:
           for file in $(ls supabase/migrations/*.sql | sort); do
             echo "Processing $file..."
             
-            # Apply the migration
-            # ON_ERROR_STOP=1 ensures psql exits with error code if SQL fails
-            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$file"
+            # Apply the migration using either DATABASE_URL or PG env vars
+            if [ -n "$DATABASE_URL" ]; then
+              psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$file"
+            else
+              psql -v ON_ERROR_STOP=1 -f "$file"
+            fi
             
             if [ $? -eq 0 ]; then
               echo "✅ Successfully applied $file"
@@ -74,8 +92,10 @@ jobs:
       - name: Verify Migrations
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PGSSLMODE: require
         run: |
-          # Ensure the connection string has sslmode=require
+          # Use the same connection approach as the migration step
+          # Just export DATABASE_URL for simplicity in queries below
           if [[ "$SUPABASE_DB_URL" == *"sslmode="* ]]; then
             export DATABASE_URL="$SUPABASE_DB_URL"
           elif [[ "$SUPABASE_DB_URL" == *"?"* ]]; then
