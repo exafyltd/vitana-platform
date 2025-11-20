@@ -1,9 +1,12 @@
--- 20251120173434_oasis_gov_0103.sql
--- DEV-OASIS-GOV-0103 — Insert Migration Governance Rules
+-- 20251120173434_oasis_gov_0103_fixed.sql
+-- DEV-OASIS-GOV-0103 — Insert Migration Governance Rules (FIXED)
 -- 
 -- Purpose: Insert MG-001 through MG-007 rules into governance_rules table
 -- Dependencies: 20251120171937_oasis_gov_0102.sql (governance categories seeded)
 -- Follows: MG-001 (Idempotent SQL Requirement)
+--
+-- FIX: Changed from ON CONFLICT ON CONSTRAINT to proper idempotent logic
+--      using conditional inserts within DO blocks
 
 -- Enable UUID extension if not already enabled
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -24,7 +27,7 @@ BEGIN
     AND name = 'MIGRATION_GOVERNANCE';
 
   IF v_category_id IS NULL THEN
-    RAISE EXCEPTION 'MIGRATION_GOVERNANCE category not found. Migration 0101 must be applied first.';
+    RAISE EXCEPTION 'MIGRATION_GOVERNANCE category not found. Migration 0101 or 0001 must be applied first.';
   END IF;
 
   RAISE NOTICE 'MIGRATION_GOVERNANCE category found: %', v_category_id;
@@ -38,6 +41,7 @@ DO $$
 DECLARE
   v_category_id uuid;
   v_tenant_id text := 'SYSTEM';
+  v_rule_exists boolean;
 BEGIN
   -- Get MIGRATION_GOVERNANCE category ID
   SELECT id INTO v_category_id
@@ -46,186 +50,242 @@ BEGIN
     AND name = 'MIGRATION_GOVERNANCE';
 
   -- MG-001 — Idempotent SQL Requirement
-  INSERT INTO governance_rules (
-    tenant_id,
-    category_id,
-    name,
-    description,
-    logic,
-    is_active
-  ) VALUES (
-    v_tenant_id,
-    v_category_id,
-    'Idempotent SQL Requirement',
-    'All migrations MUST use idempotent SQL patterns (CREATE TABLE IF NOT EXISTS, DROP POLICY IF EXISTS, CREATE INDEX IF NOT EXISTS, INSERT ... ON CONFLICT DO NOTHING) to allow safe re-runs via CI.',
-    jsonb_build_object(
-      'rule_code', 'MG-001',
-      'type', 'policy',
-      'severity', 3,
-      'enforcement', 'mandatory',
-      'applies_to', ARRAY['migrations', 'schema_changes'],
-      'validation', jsonb_build_object(
-        'patterns', ARRAY['IF NOT EXISTS', 'ON CONFLICT', 'DO $$']
-      )
-    ),
-    TRUE
-  )
-  ON CONFLICT ON CONSTRAINT governance_rules_pkey DO NOTHING;
+  SELECT EXISTS(
+    SELECT 1 FROM governance_rules WHERE logic->>'rule_code' = 'MG-001' AND tenant_id = v_tenant_id
+  ) INTO v_rule_exists;
+
+  IF NOT v_rule_exists THEN
+    INSERT INTO governance_rules (
+      tenant_id,
+      category_id,
+      name,
+      description,
+      logic,
+      is_active
+    ) VALUES (
+      v_tenant_id,
+      v_category_id,
+      'Idempotent SQL Requirement',
+      'All migrations MUST use idempotent SQL patterns (CREATE TABLE IF NOT EXISTS, DROP POLICY IF EXISTS, CREATE INDEX IF NOT EXISTS, INSERT ... ON CONFLICT DO NOTHING) to allow safe re-runs via CI.',
+      jsonb_build_object(
+        'rule_code', 'MG-001',
+        'type', 'policy',
+        'severity', 3,
+        'enforcement', 'mandatory',
+        'applies_to', ARRAY['migrations', 'schema_changes'],
+        'validation', jsonb_build_object(
+          'patterns', ARRAY['IF NOT EXISTS', 'ON CONFLICT', 'DO $$']
+        )
+      ),
+      TRUE
+    );
+    RAISE NOTICE 'Inserted rule: MG-001';
+  ELSE
+    RAISE NOTICE 'Rule MG-001 already exists, skipping';
+  END IF;
 
   -- MG-002 — CI-Only Migration Execution
-  INSERT INTO governance_rules (
-    tenant_id,
-    category_id,
-    name,
-    description,
-    logic,
-    is_active
-  ) VALUES (
-    v_tenant_id,
-    v_category_id,
-    'CI-Only Migration Execution',
-    'All schema migrations MUST run exclusively through the canonical GitHub Actions workflow (APPLY-MIGRATIONS.yml). No direct SQL execution via Supabase UI, local CLI, or Cloud Shell is allowed.',
-    jsonb_build_object(
-      'rule_code', 'MG-002',
-      'type', 'policy',
-      'severity', 3,
-      'enforcement', 'mandatory',
-      'applies_to', ARRAY['migrations', 'schema_changes'],
-      'workflow', 'APPLY-MIGRATIONS.yml',
-      'prohibited_methods', ARRAY['supabase_ui', 'local_cli', 'cloud_shell', 'manual_psql']
-    ),
-    TRUE
-  )
-  ON CONFLICT ON CONSTRAINT governance_rules_pkey DO NOTHING;
+  SELECT EXISTS(
+    SELECT 1 FROM governance_rules WHERE logic->>'rule_code' = 'MG-002' AND tenant_id = v_tenant_id
+  ) INTO v_rule_exists;
+
+  IF NOT v_rule_exists THEN
+    INSERT INTO governance_rules (
+      tenant_id,
+      category_id,
+      name,
+      description,
+      logic,
+      is_active
+    ) VALUES (
+      v_tenant_id,
+      v_category_id,
+      'CI-Only Migration Execution',
+      'All schema migrations MUST run exclusively through the canonical GitHub Actions workflow (APPLY-MIGRATIONS.yml). No direct SQL execution via Supabase UI, local CLI, or Cloud Shell is allowed.',
+      jsonb_build_object(
+        'rule_code', 'MG-002',
+        'type', 'policy',
+        'severity', 3,
+        'enforcement', 'mandatory',
+        'applies_to', ARRAY['migrations', 'schema_changes'],
+        'workflow', 'APPLY-MIGRATIONS.yml',
+        'prohibited_methods', ARRAY['supabase_ui', 'local_cli', 'cloud_shell', 'manual_psql']
+      ),
+      TRUE
+    );
+    RAISE NOTICE 'Inserted rule: MG-002';
+  ELSE
+    RAISE NOTICE 'Rule MG-002 already exists, skipping';
+  END IF;
 
   -- MG-003 — No Manual SQL
-  INSERT INTO governance_rules (
-    tenant_id,
-    category_id,
-    name,
-    description,
-    logic,
-    is_active
-  ) VALUES (
-    v_tenant_id,
-    v_category_id,
-    'No Manual SQL',
-    'Manual SQL changes (in Supabase Dashboard, local psql, or Cloud Shell) are prohibited. Any schema modification outside CI MUST be rejected by governance and Validator.',
-    jsonb_build_object(
-      'rule_code', 'MG-003',
-      'type', 'policy',
-      'severity', 3,
-      'enforcement', 'mandatory',
-      'applies_to', ARRAY['schema_changes', 'data_modifications'],
-      'allowed_source', 'github-actions-ci-only'
-    ),
-    TRUE
-  )
-  ON CONFLICT ON CONSTRAINT governance_rules_pkey DO NOTHING;
+  SELECT EXISTS(
+    SELECT 1 FROM governance_rules WHERE logic->>'rule_code' = 'MG-003' AND tenant_id = v_tenant_id
+  ) INTO v_rule_exists;
+
+  IF NOT v_rule_exists THEN
+    INSERT INTO governance_rules (
+      tenant_id,
+      category_id,
+      name,
+      description,
+      logic,
+      is_active
+    ) VALUES (
+      v_tenant_id,
+      v_category_id,
+      'No Manual SQL',
+      'Manual SQL changes (in Supabase Dashboard, local psql, or Cloud Shell) are prohibited. Any schema modification outside CI MUST be rejected by governance and Validator.',
+      jsonb_build_object(
+        'rule_code', 'MG-003',
+        'type', 'policy',
+        'severity', 3,
+        'enforcement', 'mandatory',
+        'applies_to', ARRAY['schema_changes', 'data_modifications'],
+        'allowed_source', 'github-actions-ci-only'
+      ),
+      TRUE
+    );
+    RAISE NOTICE 'Inserted rule: MG-003';
+  ELSE
+    RAISE NOTICE 'Rule MG-003 already exists, skipping';
+  END IF;
 
   -- MG-004 — Mandatory CI Failure on Migration Errors
-  INSERT INTO governance_rules (
-    tenant_id,
-    category_id,
-    name,
-    description,
-    logic,
-    is_active
-  ) VALUES (
-    v_tenant_id,
-    v_category_id,
-    'Mandatory CI Failure on Migration Errors',
-    'The migration workflow MUST fail (non-zero exit) on any SQL error or verification error. Silent failures or partial application of migrations are not allowed.',
-    jsonb_build_object(
-      'rule_code', 'MG-004',
-      'type', 'policy',
-      'severity', 3,
-      'enforcement', 'mandatory',
-      'applies_to', ARRAY['ci_cd', 'migrations'],
-      'required_flags', ARRAY['ON_ERROR_STOP=1', 'set -e']
-    ),
-    TRUE
-  )
-  ON CONFLICT ON CONSTRAINT governance_rules_pkey DO NOTHING;
+  SELECT EXISTS(
+    SELECT 1 FROM governance_rules WHERE logic->>'rule_code' = 'MG-004' AND tenant_id = v_tenant_id
+  ) INTO v_rule_exists;
+
+  IF NOT v_rule_exists THEN
+    INSERT INTO governance_rules (
+      tenant_id,
+      category_id,
+      name,
+      description,
+      logic,
+      is_active
+    ) VALUES (
+      v_tenant_id,
+      v_category_id,
+      'Mandatory CI Failure on Migration Errors',
+      'The migration workflow MUST fail (non-zero exit) on any SQL error or verification error. Silent failures or partial application of migrations are not allowed.',
+      jsonb_build_object(
+        'rule_code', 'MG-004',
+        'type', 'policy',
+        'severity', 3,
+        'enforcement', 'mandatory',
+        'applies_to', ARRAY['ci_cd', 'migrations'],
+        'required_flags', ARRAY['ON_ERROR_STOP=1', 'set -e']
+      ),
+      TRUE
+    );
+    RAISE NOTICE 'Inserted rule: MG-004';
+  ELSE
+    RAISE NOTICE 'Rule MG-004 already exists, skipping';
+  END IF;
 
   -- MG-005 — Use Only Existing Secrets
-  INSERT INTO governance_rules (
-    tenant_id,
-    category_id,
-    name,
-    description,
-    logic,
-    is_active
-  ) VALUES (
-    v_tenant_id,
-    v_category_id,
-    'Use Only Existing Secrets',
-    'Migration workflows MUST use only existing, approved secrets (e.g., SUPABASE_DB_URL). Introducing new credentials or ad-hoc connection strings is forbidden.',
-    jsonb_build_object(
-      'rule_code', 'MG-005',
-      'type', 'policy',
-      'severity', 3,
-      'enforcement', 'mandatory',
-      'applies_to', ARRAY['ci_cd', 'deployments', 'migrations'],
-      'approved_secrets', ARRAY['SUPABASE_DB_URL', 'SUPABASE_SERVICE_ROLE', 'GATEWAY_URL']
-    ),
-    TRUE
-  )
-  ON CONFLICT ON CONSTRAINT governance_rules_pkey DO NOTHING;
+  SELECT EXISTS(
+    SELECT 1 FROM governance_rules WHERE logic->>'rule_code' = 'MG-005' AND tenant_id = v_tenant_id
+  ) INTO v_rule_exists;
+
+  IF NOT v_rule_exists THEN
+    INSERT INTO governance_rules (
+      tenant_id,
+      category_id,
+      name,
+      description,
+      logic,
+      is_active
+    ) VALUES (
+      v_tenant_id,
+      v_category_id,
+      'Use Only Existing Secrets',
+      'Migration workflows MUST use only existing, approved secrets (e.g., SUPABASE_DB_URL). Introducing new credentials or ad-hoc connection strings is forbidden.',
+      jsonb_build_object(
+        'rule_code', 'MG-005',
+        'type', 'policy',
+        'severity', 3,
+        'enforcement', 'mandatory',
+        'applies_to', ARRAY['ci_cd', 'deployments', 'migrations'],
+        'approved_secrets', ARRAY['SUPABASE_DB_URL', 'SUPABASE_SERVICE_ROLE', 'GATEWAY_URL']
+      ),
+      TRUE
+    );
+    RAISE NOTICE 'Inserted rule: MG-005';
+  ELSE
+    RAISE NOTICE 'Rule MG-005 already exists, skipping';
+  END IF;
 
   -- MG-006 — Tenant Isolation Enforcement
-  INSERT INTO governance_rules (
-    tenant_id,
-    category_id,
-    name,
-    description,
-    logic,
-    is_active
-  ) VALUES (
-    v_tenant_id,
-    v_category_id,
-    'Tenant Isolation Enforcement',
-    'All governance-related schema objects MUST include tenant-aware design (tenant_id and appropriate RLS) to preserve tenant isolation across the Vitana platform.',
-    jsonb_build_object(
-      'rule_code', 'MG-006',
-      'type', 'policy',
-      'severity', 3,
-      'enforcement', 'mandatory',
-      'applies_to', ARRAY['schema_design', 'rls_policies'],
-      'required_columns', ARRAY['tenant_id'],
-      'required_rls', true
-    ),
-    TRUE
-  )
-  ON CONFLICT ON CONSTRAINT governance_rules_pkey DO NOTHING;
+  SELECT EXISTS(
+    SELECT 1 FROM governance_rules WHERE logic->>'rule_code' = 'MG-006' AND tenant_id = v_tenant_id
+  ) INTO v_rule_exists;
+
+  IF NOT v_rule_exists THEN
+    INSERT INTO governance_rules (
+      tenant_id,
+      category_id,
+      name,
+      description,
+      logic,
+      is_active
+    ) VALUES (
+      v_tenant_id,
+      v_category_id,
+      'Tenant Isolation Enforcement',
+      'All governance-related schema objects MUST include tenant-aware design (tenant_id and appropriate RLS) to preserve tenant isolation across the Vitana platform.',
+      jsonb_build_object(
+        'rule_code', 'MG-006',
+        'type', 'policy',
+        'severity', 3,
+        'enforcement', 'mandatory',
+        'applies_to', ARRAY['schema_design', 'rls_policies'],
+        'required_columns', ARRAY['tenant_id'],
+        'required_rls', true
+      ),
+      TRUE
+    );
+    RAISE NOTICE 'Inserted rule: MG-006';
+  ELSE
+    RAISE NOTICE 'Rule MG-006 already exists, skipping';
+  END IF;
 
   -- MG-007 — Timestamp-Ordered Migrations
-  INSERT INTO governance_rules (
-    tenant_id,
-    category_id,
-    name,
-    description,
-    logic,
-    is_active
-  ) VALUES (
-    v_tenant_id,
-    v_category_id,
-    'Timestamp-Ordered Migrations',
-    'All migration files MUST follow the global timestamp naming convention (YYYYMMDDHHMMSS_description.sql), and CI MUST apply them in sorted order to guarantee deterministic schema evolution.',
-    jsonb_build_object(
-      'rule_code', 'MG-007',
-      'type', 'policy',
-      'severity', 3,
-      'enforcement', 'mandatory',
-      'applies_to', ARRAY['migrations', 'file_naming'],
-      'naming_pattern', '^[0-9]{14}_[a-z0-9_]+\.sql$',
-      'sort_order', 'lexicographic'
-    ),
-    TRUE
-  )
-  ON CONFLICT ON CONSTRAINT governance_rules_pkey DO NOTHING;
+  SELECT EXISTS(
+    SELECT 1 FROM governance_rules WHERE logic->>'rule_code' = 'MG-007' AND tenant_id = v_tenant_id
+  ) INTO v_rule_exists;
 
-  RAISE NOTICE 'Migration Governance rules (MG-001 through MG-007) inserted successfully';
+  IF NOT v_rule_exists THEN
+    INSERT INTO governance_rules (
+      tenant_id,
+      category_id,
+      name,
+      description,
+      logic,
+      is_active
+    ) VALUES (
+      v_tenant_id,
+      v_category_id,
+      'Timestamp-Ordered Migrations',
+      'All migration files MUST follow the global timestamp naming convention (YYYYMMDDHHMMSS_description.sql), and CI MUST apply them in sorted order to guarantee deterministic schema evolution.',
+      jsonb_build_object(
+        'rule_code', 'MG-007',
+        'type', 'policy',
+        'severity', 3,
+        'enforcement', 'mandatory',
+        'applies_to', ARRAY['migrations', 'file_naming'],
+        'naming_pattern', '^[0-9]{14}_[a-z0-9_]+\.sql$',
+        'sort_order', 'lexicographic'
+      ),
+      TRUE
+    );
+    RAISE NOTICE 'Inserted rule: MG-007';
+  ELSE
+    RAISE NOTICE 'Rule MG-007 already exists, skipping';
+  END IF;
+
+  RAISE NOTICE 'Migration Governance rules (MG-001 through MG-007) processed successfully';
 END $$;
 
 -- ============================================================================
@@ -326,6 +386,7 @@ DO $$
 DECLARE
   v_mg001_rule_id uuid;
   v_tenant_id text := 'SYSTEM';
+  v_eval_exists boolean;
 BEGIN
   -- Get MG-001 rule ID
   SELECT id INTO v_mg001_rule_id
@@ -338,28 +399,37 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Insert evaluation seed for MG-001 (example: this migration itself passes)
-  INSERT INTO governance_evaluations (
-    tenant_id,
-    rule_id,
-    entity_id,
-    status,
-    metadata
-  ) VALUES (
-    v_tenant_id,
-    v_mg001_rule_id,
-    '20251120173434_oasis_gov_0103.sql',
-    'PASS',
-    jsonb_build_object(
-      'evaluated_by', 'self-test',
-      'migration_file', '20251120173434_oasis_gov_0103.sql',
-      'reason', 'Migration uses IF NOT EXISTS, ON CONFLICT, and DO blocks',
-      'timestamp', NOW()
-    )
-  )
-  ON CONFLICT ON CONSTRAINT governance_evaluations_pkey DO NOTHING;
+  -- Check if evaluation already exists
+  SELECT EXISTS(
+    SELECT 1 FROM governance_evaluations
+    WHERE rule_id = v_mg001_rule_id 
+      AND entity_id = '20251120173434_oasis_gov_0103.sql'
+  ) INTO v_eval_exists;
 
-  RAISE NOTICE 'Evaluation seed for MG-001 inserted';
+  IF NOT v_eval_exists THEN
+    -- Insert evaluation seed for MG-001 (example: this migration itself passes)
+    INSERT INTO governance_evaluations (
+      tenant_id,
+      rule_id,
+      entity_id,
+      status,
+      metadata
+    ) VALUES (
+      v_tenant_id,
+      v_mg001_rule_id,
+      '20251120173434_oasis_gov_0103.sql',
+      'PASS',
+      jsonb_build_object(
+        'evaluated_by', 'self-test',
+        'migration_file', '20251120173434_oasis_gov_0103.sql',
+        'reason', 'Migration uses IF NOT EXISTS, EXISTS checks, and DO blocks',
+        'timestamp', NOW()
+      )
+    );
+    RAISE NOTICE 'Evaluation seed for MG-001 inserted';
+  ELSE
+    RAISE NOTICE 'Evaluation seed for MG-001 already exists, skipping';
+  END IF;
 END $$;
 
 -- ============================================================================
