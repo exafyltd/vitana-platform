@@ -78,15 +78,33 @@ ALTER TABLE governance_violations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE governance_enforcements ENABLE ROW LEVEL SECURITY;
 
 -- Allow read access to authenticated users
-CREATE POLICY "Enable read access for authenticated users" ON governance_categories FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Enable read access for authenticated users" ON governance_rules FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Enable read access for authenticated users" ON governance_evaluations FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Enable read access for authenticated users" ON governance_violations FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Enable read access for authenticated users" ON governance_enforcements FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS "Enable read access for auth users on categories" ON governance_categories;
+CREATE POLICY "Enable read access for auth users on categories" ON governance_categories FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "Enable read access for auth users on rules" ON governance_rules;
+CREATE POLICY "Enable read access for auth users on rules" ON governance_rules FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "Enable read access for auth users on evaluations" ON governance_evaluations;
+CREATE POLICY "Enable read access for auth users on evaluations" ON governance_evaluations FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "Enable read access for auth users on violations" ON governance_violations;
+CREATE POLICY "Enable read access for auth users on violations" ON governance_violations FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "Enable read access for auth users on enforcements" ON governance_enforcements;
+CREATE POLICY "Enable read access for auth users on enforcements" ON governance_enforcements FOR SELECT TO authenticated USING (true);
 
 -- Allow write access ONLY to service_role (backend)
-CREATE POLICY "Enable write access for service role" ON governance_categories FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "Enable write access for service role" ON governance_rules FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "Enable write access for service role" ON governance_evaluations FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "Enable write access for service role" ON governance_violations FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "Enable write access for service role" ON governance_enforcements FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Enable write access for service role on categories" ON governance_categories;
+CREATE POLICY "Enable write access for service role on categories" ON governance_categories FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Enable write access for service role on rules" ON governance_rules;
+CREATE POLICY "Enable write access for service role on rules" ON governance_rules FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Enable write access for service role on evaluations" ON governance_evaluations;
+CREATE POLICY "Enable write access for service role on evaluations" ON governance_evaluations FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Enable write access for service role on violations" ON governance_violations;
+CREATE POLICY "Enable write access for service role on violations" ON governance_violations FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Enable write access for service role on enforcements" ON governance_enforcements;
+CREATE POLICY "Enable write access for service role on enforcements" ON governance_enforcements FOR ALL TO service_role USING (true) WITH CHECK (true);

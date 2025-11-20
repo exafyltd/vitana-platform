@@ -1,6 +1,7 @@
 name: Apply Supabase Migrations
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -16,45 +17,104 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Supabase CLI
-        uses: supabase/setup-cli@v1
-        with:
-          version: latest
+      - name: Install Postgres Client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
 
       - name: Apply Migrations
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
-          supabase link --project-ref $SUPABASE_PROJECT_ID
-          supabase db push
+          # Mask the secret in logs just in case
+          echo "::add-mask::$SUPABASE_DB_URL"
+          
+          # Check if we can connect
+          if ! psql "$SUPABASE_DB_URL" -c "SELECT 1" > /dev/null 2>&1; then
+            echo "::error::Cannot connect to Supabase DB. Check SUPABASE_DB_URL secret."
+            exit 1
+          fi
 
-      - name: Log Migration to OASIS
+          echo "Connected to Supabase. Applying migrations..."
+
+          # Loop through all SQL files in sorted order
+          for file in $(ls supabase/migrations/*.sql | sort); do
+            echo "Processing $file..."
+            
+            # Apply the migration
+            # ON_ERROR_STOP=1 ensures psql exits with error code if SQL fails
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f "$file"
+            
+            if [ $? -eq 0 ]; then
+              echo "✅ Successfully applied $file"
+            else
+              echo "::error::Failed to apply $file"
+              exit 1
+            fi
+          done
+
+      - name: Verify Migrations
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          echo "Verifying governance tables..."
+          
+          # Verify oasis_events_v1 exists
+          if psql "$SUPABASE_DB_URL" -c "SELECT 1 FROM oasis_events_v1 LIMIT 1;" -t | grep -q 1; then
+             echo "✅ Table oasis_events_v1 exists (or has data)"
+          else
+             # It might be empty but should exist. 
+             # If table didn't exist, psql would error.
+             # Let's check existence via information_schema to be sure
+             COUNT=$(psql "$SUPABASE_DB_URL" -t -c "SELECT count(*) FROM information_schema.tables WHERE table_name = 'oasis_events_v1';")
+             if [ "$(echo $COUNT | xargs)" -eq "1" ]; then
+               echo "✅ Table oasis_events_v1 exists"
+             else
+               echo "::error::Table oasis_events_v1 missing!"
+               exit 1
+             fi
+          fi
+
+          # Verify governance_rules exists
+          COUNT=$(psql "$SUPABASE_DB_URL" -t -c "SELECT count(*) FROM information_schema.tables WHERE table_name = 'governance_rules';")
+          if [ "$(echo $COUNT | xargs)" -eq "1" ]; then
+            echo "✅ Table governance_rules exists"
+          else
+            echo "::error::Table governance_rules missing!"
+            exit 1
+          fi
+
+      - name: Log Success to OASIS
+        if: success()
         env:
           GATEWAY_URL: ${{ secrets.GATEWAY_URL }}
         run: |
-          curl -X POST "$GATEWAY_URL/api/v1/events/ingest" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "vtid": "DEV-OASIS-GOV-0101",
-              "type": "MIGRATION_APPLIED",
-              "source": "github-actions",
-              "status": "success",
-              "message": "Governance v1 migration applied automatically"
-            }'
+          # Optional: Log to OASIS if Gateway URL is available
+          if [ -n "$GATEWAY_URL" ]; then
+            curl -X POST "$GATEWAY_URL/api/v1/events/ingest" \
+              -H "Content-Type: application/json" \
+              -d '{
+                "vtid": "DEV-OASIS-GOV-0102",
+                "type": "MIGRATION_APPLIED",
+                "source": "github-actions",
+                "status": "success",
+                "message": "Governance migrations applied successfully"
+              }' || true
+          fi
 
-      - name: Notify on Failure
+      - name: Log Failure to OASIS
         if: failure()
         env:
           GATEWAY_URL: ${{ secrets.GATEWAY_URL }}
         run: |
-          curl -X POST "$GATEWAY_URL/api/v1/events/ingest" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "vtid": "DEV-OASIS-GOV-0101",
-              "type": "MIGRATION_FAILED",
-              "source": "github-actions",
-              "status": "error",
-              "message": "Governance v1 migration failed - manual intervention required"
-            }'
+          if [ -n "$GATEWAY_URL" ]; then
+            curl -X POST "$GATEWAY_URL/api/v1/events/ingest" \
+              -H "Content-Type: application/json" \
+              -d '{
+                "vtid": "DEV-OASIS-GOV-0102",
+                "type": "MIGRATION_FAILED",
+                "source": "github-actions",
+                "status": "error",
+                "message": "Governance migrations failed - check GitHub Actions logs"
+              }' || true
+          fi
