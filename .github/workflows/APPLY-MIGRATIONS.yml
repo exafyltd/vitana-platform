@@ -1,0 +1,60 @@
+name: Apply Supabase Migrations
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'supabase/migrations/**'
+
+jobs:
+  apply-migrations:
+    name: Apply Database Migrations
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Apply Migrations
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+        run: |
+          supabase link --project-ref $SUPABASE_PROJECT_ID
+          supabase db push
+
+      - name: Log Migration to OASIS
+        env:
+          GATEWAY_URL: ${{ secrets.GATEWAY_URL }}
+        run: |
+          curl -X POST "$GATEWAY_URL/api/v1/events/ingest" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "vtid": "DEV-OASIS-GOV-0101",
+              "type": "MIGRATION_APPLIED",
+              "source": "github-actions",
+              "status": "success",
+              "message": "Governance v1 migration applied automatically"
+            }'
+
+      - name: Notify on Failure
+        if: failure()
+        env:
+          GATEWAY_URL: ${{ secrets.GATEWAY_URL }}
+        run: |
+          curl -X POST "$GATEWAY_URL/api/v1/events/ingest" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "vtid": "DEV-OASIS-GOV-0101",
+              "type": "MIGRATION_FAILED",
+              "source": "github-actions",
+              "status": "error",
+              "message": "Governance v1 migration failed - manual intervention required"
+            }'
