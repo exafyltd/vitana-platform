@@ -10,6 +10,7 @@ import commandHubRouter from './routes/command-hub';
 import { sseService } from './services/sse-service';
 import { setupCors, sseHeaders } from './middleware/cors';
 import governanceRouter from './routes/governance';
+import operatorRouter from './routes/operator';
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -28,9 +29,6 @@ app.use('/api/v1/operator', operatorRouter); // Task 44: Operator Console (Hotfi
 app.get('/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
-
-// Mount routes
-import operatorRouter from './routes/operator';
 
 // ... imports ...
 
