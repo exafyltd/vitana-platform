@@ -17,15 +17,10 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Prefer IPv4
-        run: |
-          # Force IPv4 precedence in getaddrinfo to avoid IPv6 connection issues on GitHub Runners
-          sudo sed -i 's/#precedence ::ffff:0:0\/96  100/precedence ::ffff:0:0\/96  100/' /etc/gai.conf
-
       - name: Install Postgres Client
         run: |
           sudo apt-get update
-          sudo apt-get install -y postgresql-client
+          sudo apt-get install -y postgresql-client dnsutils
 
       - name: Apply Migrations
         env:
@@ -35,17 +30,36 @@ jobs:
           # Mask the secret in logs just in case
           echo "::add-mask::$SUPABASE_DB_URL"
           
-          # Debug: Check if secret is set (without revealing it)
+          # Debug: Check if secret is set
           if [ -z "$SUPABASE_DB_URL" ]; then
             echo "::error::SUPABASE_DB_URL secret is empty or not set!"
             exit 1
-          else
-            echo "SUPABASE_DB_URL is set (length: ${#SUPABASE_DB_URL})"
           fi
+          
+          # Extract hostname from the connection string
+          # Assumes format: postgres://user:pass@hostname:port/db or similar
+          # We use sed to extract the part between @ and : (port) or / (path)
+          HOST=$(echo "$SUPABASE_DB_URL" | sed -E 's/.*@([^:/]+).*/\1/')
+          
+          echo "Resolving host: $HOST"
+          
+          # Resolve to IPv4
+          IP=$(dig +short A "$HOST" | head -n 1)
+          
+          if [ -z "$IP" ]; then
+            echo "::error::Could not resolve $HOST to an IPv4 address"
+            exit 1
+          fi
+          
+          echo "Resolved to IPv4: $IP"
+          
+          # Replace hostname with IP in the connection string
+          # We use python for safer string replacement to avoid leaking secrets in sed command line
+          export DATABASE_URL=$(python3 -c "import os; print(os.environ['SUPABASE_DB_URL'].replace('$HOST', '$IP'))")
           
           # Check if we can connect (allow output to see errors)
           echo "Checking database connection..."
-          if ! psql "$SUPABASE_DB_URL" -c "SELECT 1"; then
+          if ! psql -c "SELECT 1"; then
             echo "::error::Cannot connect to Supabase DB. Check SUPABASE_DB_URL secret and logs above."
             exit 1
           fi
@@ -58,7 +72,7 @@ jobs:
             
             # Apply the migration
             # ON_ERROR_STOP=1 ensures psql exits with error code if SQL fails
-            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f "$file"
+            psql -v ON_ERROR_STOP=1 -f "$file"
             
             if [ $? -eq 0 ]; then
               echo "✅ Successfully applied $file"
@@ -73,16 +87,21 @@ jobs:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           PGSSLMODE: require
         run: |
+          # Resolve IP again for verification step
+          HOST=$(echo "$SUPABASE_DB_URL" | sed -E 's/.*@([^:/]+).*/\1/')
+          IP=$(dig +short A "$HOST" | head -n 1)
+          export DATABASE_URL=$(python3 -c "import os; print(os.environ['SUPABASE_DB_URL'].replace('$HOST', '$IP'))")
+          
           echo "Verifying governance tables..."
           
           # Verify oasis_events_v1 exists
-          if psql "$SUPABASE_DB_URL" -c "SELECT 1 FROM oasis_events_v1 LIMIT 1;" -t | grep -q 1; then
+          if psql -c "SELECT 1 FROM oasis_events_v1 LIMIT 1;" -t | grep -q 1; then
              echo "✅ Table oasis_events_v1 exists (or has data)"
           else
              # It might be empty but should exist. 
              # If table didn't exist, psql would error.
              # Let's check existence via information_schema to be sure
-             COUNT=$(psql "$SUPABASE_DB_URL" -t -c "SELECT count(*) FROM information_schema.tables WHERE table_name = 'oasis_events_v1';")
+             COUNT=$(psql -t -c "SELECT count(*) FROM information_schema.tables WHERE table_name = 'oasis_events_v1';")
              if [ "$(echo $COUNT | xargs)" -eq "1" ]; then
                echo "✅ Table oasis_events_v1 exists"
              else
@@ -92,7 +111,7 @@ jobs:
           fi
 
           # Verify governance_rules exists
-          COUNT=$(psql "$SUPABASE_DB_URL" -t -c "SELECT count(*) FROM information_schema.tables WHERE table_name = 'governance_rules';")
+          COUNT=$(psql -t -c "SELECT count(*) FROM information_schema.tables WHERE table_name = 'governance_rules';")
           if [ "$(echo $COUNT | xargs)" -eq "1" ]; then
             echo "✅ Table governance_rules exists"
           else
@@ -101,7 +120,7 @@ jobs:
           fi
 
           # Verify MIGRATION_GOVERNANCE category exists (DEV-OASIS-GOV-0103)
-          COUNT=$(psql "$SUPABASE_DB_URL" -t -c "SELECT count(*) FROM governance_categories WHERE name = 'MIGRATION_GOVERNANCE';")
+          COUNT=$(psql -t -c "SELECT count(*) FROM governance_categories WHERE name = 'MIGRATION_GOVERNANCE';")
           if [ "$(echo $COUNT | xargs)" -eq "1" ]; then
             echo "✅ Category MIGRATION_GOVERNANCE exists"
           else
@@ -110,7 +129,7 @@ jobs:
           fi
 
           # Verify MG-001 rule exists
-          COUNT=$(psql "$SUPABASE_DB_URL" -t -c "SELECT count(*) FROM governance_rules WHERE logic->>'rule_code' = 'MG-001';")
+          COUNT=$(psql -t -c "SELECT count(*) FROM governance_rules WHERE logic->>'rule_code' = 'MG-001';")
           if [ "$(echo $COUNT | xargs)" -eq "1" ]; then
             echo "✅ Rule MG-001 exists"
           else
