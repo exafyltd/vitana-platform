@@ -32,6 +32,11 @@ app.get('/health', (req, res) => {
 
 // ... imports ...
 
+// Debug route to verify this code is deployed
+app.get('/debug/governance-ping', (_req, res) => {
+  res.json({ ok: true, message: 'governance debug route reached', timestamp: new Date().toISOString() });
+});
+
 // Mount routes
 app.use('/api/v1/governance', governanceRouter); // DEV-GOVBE-0106: Governance endpoints
 app.use('/api/v1/vtid', vtidRouter);
@@ -56,9 +61,10 @@ if (process.env.NODE_ENV === 'test') {
   // Don't start server during tests
 } else {
   app.listen(PORT, () => {
-    console.log('âœ… Gateway server running on port ' + PORT);
-    console.log('ðŸ“Š Command Hub: http://localhost:' + PORT + '/command-hub');
-    console.log('ðŸ”Œ SSE Stream: http://localhost:' + PORT + '/api/v1/events/stream');
+    console.log('✅ Gateway server running on port ' + PORT);
+    console.log('📊 Command Hub: http://localhost:' + PORT + '/command-hub');
+    console.log('🔌 SSE Stream: http://localhost:' + PORT + '/api/v1/events/stream');
+    console.log('Gateway: debug /debug/governance-ping route registered');
     console.log('Gateway: governance routes mounted at /api/v1/governance');
   });
 }
