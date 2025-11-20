@@ -17,6 +17,11 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Prefer IPv4
+        run: |
+          # Force IPv4 precedence in getaddrinfo to avoid IPv6 connection issues on GitHub Runners
+          sudo sed -i 's/#precedence ::ffff:0:0\/96  100/precedence ::ffff:0:0\/96  100/' /etc/gai.conf
+
       - name: Install Postgres Client
         run: |
           sudo apt-get update
