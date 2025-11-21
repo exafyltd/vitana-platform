@@ -43,7 +43,6 @@ router.post("/api/v1/events/ingest", async (req: Request, res: Response) => {
         error: validation.error.errors
           .map((e) => `${e.path.join(".")}: ${e.message}`)
           .join(", "),
-        data: null,
       });
     }
 
@@ -59,7 +58,6 @@ router.post("/api/v1/events/ingest", async (req: Request, res: Response) => {
       return res.status(500).json({
         ok: false,
         error: "Gateway misconfigured",
-        data: null,
       });
     }
 
@@ -97,7 +95,6 @@ router.post("/api/v1/events/ingest", async (req: Request, res: Response) => {
       return res.status(502).json({
         ok: false,
         error: "Database insert failed",
-        data: null,
       });
     }
 
@@ -108,17 +105,7 @@ router.post("/api/v1/events/ingest", async (req: Request, res: Response) => {
 
     return res.status(200).json({
       ok: true,
-      error: null,
-      data: {
-        id: insertedEvent.id,
-        vtid: insertedEvent.vtid,
-        type: body.type,
-        source: insertedEvent.service,
-        status: insertedEvent.status,
-        message: insertedEvent.message,
-        created_at: insertedEvent.created_at,
-        payload: insertedEvent.metadata,
-      },
+      event_id: insertedEvent.id
     });
   } catch (e: any) {
     console.error("❌ Unexpected error:", e);
