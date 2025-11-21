@@ -1,11 +1,9 @@
 import { Request, Response } from 'express';
-import { createClient } from '@supabase/supabase-js';
+import { getSupabase } from '../lib/supabase';
 import { RuleMatcher, EvaluationEngine, EnforcementExecutor, ViolationGenerator, OasisPipeline } from '../validator-core';
 import { RuleDTO, EvaluationDTO, ViolationDTO, ProposalDTO, FeedEntry, EvaluationSummary, ProposalTimelineEvent } from '../types/governance';
 
-const supabaseUrl = process.env.SUPABASE_URL || '';
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseKey);
+// Removed unsafe module-load createClient - now using getSupabase() in methods
 
 const ruleMatcher = new RuleMatcher();
 const evaluationEngine = new EvaluationEngine();
@@ -28,6 +26,15 @@ export class GovernanceController {
         try {
             const tenantId = this.getTenantId(req);
 
+            const supabase = getSupabase();
+            if (!supabase) {
+                console.warn('[GovernanceController] Supabase not configured - categories fetch unavailable');
+                return res.status(503).json({
+                    ok: false,
+                    error: 'SUPABASE_CONFIG_ERROR',
+                    message: 'Governance storage is temporarily unavailable'
+                });
+            }
             const { data: categories, error } = await supabase
                 .from('governance_categories')
                 .select('*')
@@ -64,6 +71,15 @@ export class GovernanceController {
             const tenantId = this.getTenantId(req);
             const { category, status, ruleCode } = req.query;
 
+            const supabase = getSupabase();
+            if (!supabase) {
+                console.warn('[GovernanceController] Supabase not configured - rules fetch unavailable');
+                return res.status(503).json({
+                    ok: false,
+                    error: 'SUPABASE_CONFIG_ERROR',
+                    message: 'Governance storage is temporarily unavailable'
+                });
+            }
             let query = supabase
                 .from('governance_rules')
                 .select(`
@@ -157,6 +173,15 @@ export class GovernanceController {
             const tenantId = this.getTenantId(req);
             const { ruleCode } = req.params;
 
+            const supabase = getSupabase();
+            if (!supabase) {
+                console.warn('[GovernanceController] Supabase not configured - rule fetch unavailable');
+                return res.status(503).json({
+                    ok: false,
+                    error: 'SUPABASE_CONFIG_ERROR',
+                    message: 'Governance storage is temporarily unavailable'
+                });
+            }
             const { data: rules, error } = await supabase
                 .from('governance_rules')
                 .select(`
@@ -235,6 +260,15 @@ export class GovernanceController {
             const tenantId = this.getTenantId(req);
             const { status, ruleCode, limit, offset } = req.query;
 
+            const supabase = getSupabase();
+            if (!supabase) {
+                console.warn('[GovernanceController] Supabase not configured - proposals fetch unavailable');
+                return res.status(503).json({
+                    ok: false,
+                    error: 'SUPABASE_CONFIG_ERROR',
+                    message: 'Governance storage is temporarily unavailable'
+                });
+            }
             let query = supabase
                 .from('governance_proposals')
                 .select('*')
@@ -291,6 +325,15 @@ export class GovernanceController {
             const tenantId = this.getTenantId(req);
             const { type, ruleCode, proposedRule, rationale, source } = req.body;
 
+            const supabase = getSupabase();
+            if (!supabase) {
+                console.warn('[GovernanceController] Supabase not configured - proposal creation unavailable');
+                return res.status(503).json({
+                    ok: false,
+                    error: 'SUPABASE_CONFIG_ERROR',
+                    message: 'Governance storage is temporarily unavailable'
+                });
+            }
             if (!type || !proposedRule) {
                 return res.status(400).json({ error: 'type and proposedRule are required' });
             }
@@ -397,6 +440,15 @@ export class GovernanceController {
             const { proposalId } = req.params;
             const { status } = req.body;
 
+            const supabase = getSupabase();
+            if (!supabase) {
+                console.warn('[GovernanceController] Supabase not configured - proposal status update unavailable');
+                return res.status(503).json({
+                    ok: false,
+                    error: 'SUPABASE_CONFIG_ERROR',
+                    message: 'Governance storage is temporarily unavailable'
+                });
+            }
             if (!status) {
                 return res.status(400).json({ error: 'status is required' });
             }
@@ -499,6 +551,15 @@ export class GovernanceController {
             const tenantId = this.getTenantId(req);
             const { ruleCode, result, from, to, limit, offset } = req.query;
 
+            const supabase = getSupabase();
+            if (!supabase) {
+                console.warn('[GovernanceController] Supabase not configured - evaluations fetch unavailable');
+                return res.status(503).json({
+                    ok: false,
+                    error: 'SUPABASE_CONFIG_ERROR',
+                    message: 'Governance storage is temporarily unavailable'
+                });
+            }
             let query = supabase
                 .from('governance_evaluations')
                 .select(`
@@ -565,6 +626,15 @@ export class GovernanceController {
         try {
             const tenantId = this.getTenantId(req);
 
+            const supabase = getSupabase();
+            if (!supabase) {
+                console.warn('[GovernanceController] Supabase not configured - violations fetch unavailable');
+                return res.status(503).json({
+                    ok: false,
+                    error: 'SUPABASE_CONFIG_ERROR',
+                    message: 'Governance storage is temporarily unavailable'
+                });
+            }
             const { data: violations, error } = await supabase
                 .from('governance_violations')
                 .select(`
@@ -618,7 +688,15 @@ export class GovernanceController {
     async getFeed(req: Request, res: Response) {
         try {
             // Query oasis_events_v1 for governance-related events
-            const { data: events, error } = await supabase
+            const supabase = getSupabase();
+            if (!supabase) {
+                console.warn('[GovernanceController] Supabase not configured - feed fetch unavailable');
+                return res.status(503).json({
+                    ok: false,
+                    error: 'SUPABASE_CONFIG_ERROR',
+                    message: 'Governance storage is temporarily unavailable'
+                });
+            } const { data: events, error } = await supabase
                 .from('oasis_events_v1')
                 .select('*')
                 .eq('tenant', 'SYSTEM')
@@ -664,6 +742,17 @@ export class GovernanceController {
 
     async getEnforcements(req: Request, res: Response) {
         const tenantId = this.getTenantId(req);
+
+        const supabase = getSupabase();
+        if (!supabase) {
+            console.warn('[GovernanceController] Supabase not configured - enforcements fetch unavailable');
+            return res.status(503).json({
+                ok: false,
+                error: 'SUPABASE_CONFIG_ERROR',
+                message: 'Governance storage is temporarily unavailable'
+            });
+        }
+
         const { data, error } = await supabase
             .from('governance_enforcements')
             .select('*')
@@ -677,6 +766,16 @@ export class GovernanceController {
 
     async getLogs(req: Request, res: Response) {
         // Query canonical oasis_events table
+        const supabase = getSupabase();
+        if (!supabase) {
+            console.warn('[GovernanceController] Supabase not configured - logs fetch unavailable');
+            return res.status(503).json({
+                ok: false,
+                error: 'SUPABASE_CONFIG_ERROR',
+                message: 'Governance storage is temporarily unavailable'
+            });
+        }
+
         const { data, error } = await supabase
             .from('oasis_events')
             .select('*')
@@ -693,6 +792,12 @@ export class GovernanceController {
      */
     private async emitOasisEvent(tenant: string, eventType: string, data: any) {
         try {
+            const supabase = getSupabase();
+            if (!supabase) {
+                console.warn('[GovernanceController] Supabase not configured - OASIS event not persisted');
+                return;
+            }
+
             await supabase.from('oasis_events_v1').insert({
                 rid: `GOV-${Date.now()}`,
                 tenant,
