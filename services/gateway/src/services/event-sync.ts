@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase';
+import { getSupabase } from '../lib/supabase';
 
 const STATUS_PRIORITY = {
   active: 1,
@@ -14,6 +14,13 @@ export async function syncVtidFromEvent(event: any): Promise<void> {
   }
 
   try {
+    const supabase = getSupabase();
+
+    if (!supabase) {
+      console.warn('[EventSync] Supabase not configured - VTID sync skipped');
+      return;
+    }
+
     // Check if VTID exists
     const { data: existing, error: fetchError } = await supabase
       .from('VtidLedger')

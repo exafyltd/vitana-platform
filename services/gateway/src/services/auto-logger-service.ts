@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase';
+import { getSupabase } from '../lib/supabase';
 import { syncVtidFromEvent } from './event-sync';
 import { sseService } from './sse-service';
 
@@ -17,7 +17,7 @@ interface AutoLogEvent {
 
 async function notifyGoogleChat(event: AutoLogEvent): Promise<void> {
   const webhookUrl = process.env.GCHAT_COMMANDHUB_WEBHOOK;
-  
+
   if (!webhookUrl) {
     return;
   }
@@ -48,6 +48,13 @@ async function notifyGoogleChat(event: AutoLogEvent): Promise<void> {
 
 export async function processEvent(event: AutoLogEvent): Promise<void> {
   try {
+    const supabase = getSupabase();
+
+    if (!supabase) {
+      console.warn('[AutoLogger] Supabase not configured - event not logged to DB');
+      return;
+    }
+
     const { data, error } = await supabase
       .from('OasisEvent')
       .insert({

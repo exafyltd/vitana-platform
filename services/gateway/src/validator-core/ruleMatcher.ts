@@ -1,12 +1,19 @@
-import { createClient } from '@supabase/supabase-js';
+import { getSupabase } from '../lib/supabase';
+
 import { GovernanceRule } from '../types/governance';
 
-const supabaseUrl = process.env.SUPABASE_URL || '';
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseKey);
+// Removed top-level createClient
+
 
 export class RuleMatcher {
     async getActiveRules(tenantId: string): Promise<GovernanceRule[]> {
+        const supabase = getSupabase();
+
+        if (!supabase) {
+            console.error('[RuleMatcher] Supabase not configured - cannot fetch rules');
+            return [];
+        }
+
         const { data, error } = await supabase
             .from('governance_rules')
             .select('*')

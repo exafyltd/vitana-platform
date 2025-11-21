@@ -1,28 +1,17 @@
-import { createClient } from '@supabase/supabase-js';
-import { OasisGovernanceEventPayload } from '../types/governance';
-
-const supabaseUrl = process.env.SUPABASE_URL || '';
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseKey);
+import { getSupabase } from '../lib/supabase';
 
 export class OasisPipeline {
-    async emitEvent(payload: OasisGovernanceEventPayload): Promise<void> {
-        // Use canonical oasis_events table
-        // Mapping: 
-        // - topic = eventType
-        // - service = 'governance'
-        // - status = 'info' (or 'warning' for violations)
-        // - metadata = payload.data
+    async logEvent(eventType: string, payload: any): Promise<void> {
+        const supabase = getSupabase();
 
-        const status = payload.eventType === 'GOVERNANCE_VIOLATION' ? 'warning' : 'info';
+        if (!supabase) {
+            console.warn('[OasisPipeline] Supabase not configured - event not logged to DB');
+            console.log(`[OASIS] Emitted event (local only): ${payload.eventType}`, payload);
+            return;
+        }
 
-        const { error } = await supabase.from('oasis_events').insert({
-            id: payload.eventId,
-            created_at: payload.timestamp,
-            topic: payload.eventType,
-            service: 'governance',
-            status: status,
-            message: `Governance event: ${payload.eventType}`,
+        const { error } = await supabase.from('oasis_events_v1').insert({
+            task_type: eventType,
             metadata: payload.data,
             vtid: 'DEV-OASIS-GOV-0101' // Tag with current task ID
         });

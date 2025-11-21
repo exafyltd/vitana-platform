@@ -1,9 +1,8 @@
-import { createClient } from '@supabase/supabase-js';
+import { getSupabase } from '../lib/supabase';
 import { GovernanceRule, GovernanceEnforcement } from '../types/governance';
 
-const supabaseUrl = process.env.SUPABASE_URL || '';
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseKey);
+// Removed top-level createClient
+
 
 export class EnforcementExecutor {
     async executeEnforcement(rule: GovernanceRule, entityId: string, context: any): Promise<GovernanceEnforcement> {
@@ -29,8 +28,14 @@ export class EnforcementExecutor {
             details
         };
 
-        const { error } = await supabase.from('governance_enforcements').insert(enforcement);
-        if (error) console.error('Failed to save enforcement:', error);
+        const supabase = getSupabase();
+
+        if (supabase) {
+            const { error } = await supabase.from('governance_enforcements').insert(enforcement);
+            if (error) console.error('Failed to save enforcement:', error);
+        } else {
+            console.warn('[EnforcementExecutor] Supabase not configured - enforcement not persisted');
+        }
 
         return enforcement;
     }
