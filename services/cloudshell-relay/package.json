@@ -1,0 +1,12 @@
+{
+  "name": "cloudshell-relay",
+  "version": "1.0.0",
+  "description": "Command relay service for autonomous Cloud Shell deployments",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
