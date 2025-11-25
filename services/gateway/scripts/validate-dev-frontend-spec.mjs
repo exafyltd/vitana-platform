@@ -15,8 +15,8 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const SPEC_PATH = path.resolve(__dirname, '../specs/dev_screen_inventory_v1.json');
-const CONFIG_PATH = path.resolve(__dirname, '../src/frontend/command-hub/navigationConfig.js');
+const SPEC_PATH = path.resolve(__dirname, '../specs/dev-screen-inventory-v1.json');
+const CONFIG_PATH = path.resolve(__dirname, '../src/frontend/command-hub/navigation-config.js');
 
 function fail(message, details = null) {
   console.error('');
@@ -69,7 +69,7 @@ async function main() {
     const configModule = await import(CONFIG_PATH);
     NAVIGATION_CONFIG = configModule.NAVIGATION_CONFIG;
   } catch (err) {
-    fail(`Failed to import navigationConfig.js: ${err.message}`);
+    fail(`Failed to import navigation-config.js: ${err.message}`);
   }
 
   if (!Array.isArray(NAVIGATION_CONFIG)) {
