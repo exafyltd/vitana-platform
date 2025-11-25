@@ -282,7 +282,52 @@ beforeEach(() => {
         } as any);
       }
     }
-    
+
+    // Mock vtid_ledger queries for /api/v1/tasks endpoint
+    if (urlString.includes('/rest/v1/vtid_ledger')) {
+      if (method === 'GET') {
+        // Return mock tasks data
+        const mockTasks = [
+          {
+            vtid: 'DEV-OASIS-0001',
+            layer: 'OASIS',
+            module: 'PERSISTENCE',
+            status: 'active',
+            title: 'Mock Task 1',
+            summary: 'Test task summary',
+            assigned_to: null,
+            metadata: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+          {
+            vtid: 'DEV-CICDL-0002',
+            layer: 'CICDL',
+            module: 'GATEWAY',
+            status: 'pending',
+            title: 'Mock Task 2',
+            summary: null,
+            assigned_to: 'claude',
+            metadata: { priority: 'high' },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+        ];
+
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          headers: new Headers(),
+          json: async () => mockTasks,
+          text: async () => JSON.stringify(mockTasks),
+          blob: async () => new Blob(),
+          arrayBuffer: async () => new ArrayBuffer(0),
+          formData: async () => new FormData(),
+        } as any);
+      }
+    }
+
     // Default mock response
     return Promise.resolve({
       ok: true,

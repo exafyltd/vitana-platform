@@ -87,6 +87,10 @@ jobs:
         working-directory: services/gateway
         run: pnpm run build || echo "⚠️ Build check completed"
 
+      - name: Validate Dev frontend navigation spec (17 modules / 87 screens)
+        working-directory: services/gateway
+        run: npm run validate:dev-frontend-spec
+
       - name: Gateway Type Check
         working-directory: services/gateway
         run: pnpm run typecheck || echo "⚠️ Type checking completed with warnings"

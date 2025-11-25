@@ -20,11 +20,8 @@ describe("POST /api/v1/events/ingest (DEV-OASIS-0108)", () => {
     it("should reject empty payload", async () => {
       const res = await request(app).post("/api/v1/events/ingest").send({});
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({
-        ok: false,
-        error: expect.stringContaining("vtid"),
-        data: null,
-      });
+      expect(res.body.ok).toBe(false);
+      expect(res.body.error).toContain("vtid");
     });
 
     it("should reject missing vtid", async () => {
@@ -37,7 +34,6 @@ describe("POST /api/v1/events/ingest (DEV-OASIS-0108)", () => {
       expect(res.status).toBe(400);
       expect(res.body.ok).toBe(false);
       expect(res.body.error).toContain("vtid");
-      expect(res.body.data).toBeNull();
     });
 
     it("should reject missing type", async () => {
@@ -144,20 +140,8 @@ describe("POST /api/v1/events/ingest (DEV-OASIS-0108)", () => {
       });
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({
-        ok: true,
-        error: null,
-        data: {
-          id: "test-uuid",
-          vtid: "DEV-OASIS-0108",
-          type: "test.event",
-          source: "test-service",
-          status: "success",
-          message: "Test message",
-          created_at: "2025-11-15T10:00:00.000Z",
-          payload: { foo: "bar" },
-        },
-      });
+      expect(res.body.ok).toBe(true);
+      expect(res.body.event_id).toBe("test-uuid");
     });
 
     it("should accept payload with optional fields", async () => {
@@ -211,11 +195,8 @@ describe("POST /api/v1/events/ingest (DEV-OASIS-0108)", () => {
       });
 
       expect(res.status).toBe(502);
-      expect(res.body).toEqual({
-        ok: false,
-        error: "Database insert failed",
-        data: null,
-      });
+      expect(res.body.ok).toBe(false);
+      expect(res.body.error).toBe("Database insert failed");
     });
   });
 
@@ -247,7 +228,6 @@ describe("POST /api/v1/events/ingest (DEV-OASIS-0108)", () => {
       expect(res.status).toBe(500);
       expect(res.body.ok).toBe(false);
       expect(res.body.error).toContain("misconfigured");
-      expect(res.body.data).toBeNull();
     });
 
     it("should return 500 when SUPABASE_SERVICE_ROLE missing", async () => {

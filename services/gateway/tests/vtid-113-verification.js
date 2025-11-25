@@ -15,7 +15,7 @@ console.log('[VTID-113 Test] Environment:', {
 // Import the controller (should not crash)
 console.log('[VTID-113 Test] Importing governanceController...');
 try {
-    const { GovernanceController } = require('../dist/controllers/governanceController');
+    const { GovernanceController } = require('../dist/controllers/governance-controller');
     console.log('[VTID-113 Test] ✓ Import successful - no crash!');
 
     // Create a mock request/response

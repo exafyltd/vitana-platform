@@ -2,7 +2,7 @@
 import boardAdapter from "./routes/board-adapter";
 import { commandhub } from "./routes/commandhub";
 import cors from 'cors';
-import { router as vtidRouter } from './routes/vtid';
+import { vtidRouter } from './routes/vtid';
 import { router as tasksRouter } from "./routes/tasks";
 import { router as eventsRouter } from './routes/events';
 import eventsApiRouter from './routes/gateway-events-api';
@@ -10,7 +10,6 @@ import commandHubRouter from './routes/command-hub';
 import { sseService } from './services/sse-service';
 import { setupCors, sseHeaders } from './middleware/cors';
 import governanceRouter from './routes/governance';
-import operatorRouter from './routes/operator';
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -23,7 +22,6 @@ app.use(sseHeaders);
 // Middleware
 app.use("/api/v1/commandhub/board", boardAdapter);
 app.use(express.json());
-app.use('/api/v1/operator', operatorRouter); // Task 44: Operator Console (Hotfix: Moved up)
 
 // Health check
 app.get('/health', (req, res) => {
@@ -41,7 +39,6 @@ app.get('/debug/governance-ping', (_req, res) => {
 app.use('/api/v1/governance', governanceRouter); // DEV-GOVBE-0106: Governance endpoints
 app.use('/api/v1/vtid', vtidRouter);
 app.use('/api/v1/commandhub', commandhub);
-app.use('/api/v1/operator', operatorRouter); // Task 44: Operator Console
 app.use("/", tasksRouter);
 app.use(eventsApiRouter);
 app.use(eventsRouter);
