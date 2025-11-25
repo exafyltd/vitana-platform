@@ -1,3 +1,68 @@
+// Read Model Response Types (VTID-115)
+export interface GovernanceCategoryResponse {
+    id: string;
+    categoryName: string;
+    description: string;
+    governanceArea: string;
+    severity: number;
+}
+
+export interface GovernanceRuleResponse {
+    ruleCode: string;
+    name: string;
+    category: string;
+    status: "Active" | "Deprecated";
+    severity: number;
+    description: string;
+    createdAt: string;  // ISO
+    updatedAt: string;  // ISO
+}
+
+export interface GovernanceViolationResponse {
+    id: string;
+    ruleCode: string;
+    description: string;
+    severity: number;
+    detectedAt: string;  // ISO timestamp
+    source: string;
+    metadata: object;
+}
+
+export interface GovernanceEnforcementResponse {
+    id: string;
+    ruleCode: string;
+    action: string;
+    status: "Pending" | "Completed" | "Failed";
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface GovernanceEvaluationResponse {
+    id: string;
+    ruleCode: string;
+    evaluationResult: "pass" | "fail" | "warning";
+    evaluatedAt: string;
+    details: object;
+}
+
+export interface GovernanceFeedItemResponse {
+    id: string;
+    type: string;    // "violation", "evaluation", "enforcement", or "event"
+    summary: string; // human readable
+    createdAt: string;
+    payload: object; // raw event/violation/evaluation
+}
+
+export interface GovernanceSummaryResponse {
+    totalRules: number;
+    activeRules: number;
+    violationsThisWeek: number;
+    pendingEnforcements: number;
+    events24h: number;
+    mostActiveCategory: string;
+}
+
+// Legacy/Internal types (Required by validator-core)
 export interface GovernanceCategory {
     id: string;
     tenant_id: string;
@@ -71,7 +136,6 @@ export interface ProposalTimelineEvent {
     actor?: string;
 }
 
-// DTO types for frontend
 export interface RuleDTO {
     ruleCode: string;
     name: string;
@@ -143,4 +207,3 @@ export interface OasisGovernanceEventPayload {
     };
     sequence?: number;
 }
-

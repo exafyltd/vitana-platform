@@ -1,7 +1,22 @@
 import { Request, Response } from 'express';
 import { getSupabase } from '../lib/supabase';
 import { RuleMatcher, EvaluationEngine, EnforcementExecutor, ViolationGenerator, OasisPipeline } from '../validator-core';
-import { RuleDTO, EvaluationDTO, ViolationDTO, ProposalDTO, FeedEntry, EvaluationSummary, ProposalTimelineEvent } from '../types/governance';
+import {
+    GovernanceCategoryResponse,
+    GovernanceRuleResponse,
+    GovernanceViolationResponse,
+    GovernanceEnforcementResponse,
+    GovernanceEvaluationResponse,
+    GovernanceFeedItemResponse,
+    GovernanceSummaryResponse,
+    RuleDTO,
+    EvaluationDTO,
+    ViolationDTO,
+    ProposalDTO,
+    FeedEntry,
+    EvaluationSummary,
+    ProposalTimelineEvent
+} from '../types/governance';
 
 // Removed unsafe module-load createClient - now using getSupabase() in methods
 
@@ -25,6 +40,8 @@ export class GovernanceController {
     async getCategories(req: Request, res: Response) {
         try {
             const tenantId = this.getTenantId(req);
+            const limit = Number(req.query.limit) || 50;
+            const offset = Number(req.query.offset) || 0;
 
             const supabase = getSupabase();
             if (!supabase) {
@@ -35,27 +52,32 @@ export class GovernanceController {
                     message: 'Governance storage is temporarily unavailable'
                 });
             }
-            const { data: categories, error } = await supabase
+
+            const { data: categories, count, error } = await supabase
                 .from('governance_categories')
-                .select('*')
+                .select('*', { count: 'exact' })
                 .eq('tenant_id', tenantId)
-                .order('name', { ascending: true });
+                .order('name', { ascending: true })
+                .range(offset, offset + limit - 1);
 
             if (error) {
                 console.error('Error fetching categories:', error);
                 return res.status(500).json({ error: error.message });
             }
 
-            // Transform to simple DTO
-            const categoryDTOs = (categories || []).map((cat: any) => ({
+            const categoryDTOs: GovernanceCategoryResponse[] = (categories || []).map((cat: any) => ({
                 id: cat.id,
-                category_name: cat.name,
-                description: cat.description || null,
-                governance_area: cat.name.replace('_GOVERNANCE', '').toLowerCase(),
-                severity: cat.severity || null
+                categoryName: cat.name,
+                description: cat.description || '',
+                governanceArea: cat.name.replace('_GOVERNANCE', '').toLowerCase(),
+                severity: cat.severity || 0
             }));
 
-            res.json(categoryDTOs);
+            res.json({
+                ok: true,
+                data: categoryDTOs,
+                count: count || 0
+            });
         } catch (error: any) {
             console.error('Error in getCategories:', error);
             res.status(500).json({ error: error.message });
@@ -70,6 +92,8 @@ export class GovernanceController {
         try {
             const tenantId = this.getTenantId(req);
             const { category, status, ruleCode } = req.query;
+            const limit = Number(req.query.limit) || 50;
+            const offset = Number(req.query.offset) || 0;
 
             const supabase = getSupabase();
             if (!supabase) {
@@ -80,85 +104,43 @@ export class GovernanceController {
                     message: 'Governance storage is temporarily unavailable'
                 });
             }
+
             let query = supabase
                 .from('governance_rules')
-                .select(`
-                    *,
-                    governance_categories (
-                        name
-                    )
-                `)
+                .select('*, governance_categories(name)', { count: 'exact' })
                 .eq('tenant_id', tenantId);
 
-            if (ruleCode) {
-                query = query.eq('logic->>rule_code', ruleCode as string);
+            if (category) {
+                query = query.eq('governance_categories.name', category);
             }
+            if (status) query = query.eq('is_active', status === 'Active');
+            if (ruleCode) query = query.eq('logic->>rule_code', ruleCode);
 
-            const { data: rules, error } = await query;
+            const { data: rules, count, error } = await query
+                .order('created_at', { ascending: false })
+                .range(offset, offset + limit - 1);
 
             if (error) {
                 console.error('Error fetching rules:', error);
                 return res.status(500).json({ error: error.message });
             }
 
-            // Transform to RuleDTO format
-            const ruleDTOs: (RuleDTO | null)[] = await Promise.all((rules || []).map(async (rule: any) => {
-                const ruleCode = rule.logic?.rule_code || rule.id;
-                const categoryName = (rule.governance_categories as any)?.name || 'Uncategorized';
-
-                // Filter by category if requested
-                if (category && categoryName !== category) {
-                    return null;
-                }
-
-                // Determine status
-                let ruleStatus: 'Active' | 'Draft' | 'Deprecated' | 'Proposal';
-                if (rule.is_active) {
-                    ruleStatus = 'Active';
-                } else if (rule.logic?.status === 'draft') {
-                    ruleStatus = 'Draft';
-                } else if (rule.logic?.status === 'deprecated') {
-                    ruleStatus = 'Deprecated';
-                } else {
-                    ruleStatus = 'Proposal';
-                }
-
-                // Filter by status if requested
-                if (status && ruleStatus !== status) {
-                    return null;
-                }
-
-                // Fetch recent evaluations
-                const { data: evaluations } = await supabase
-                    .from('governance_evaluations')
-                    .select('*')
-                    .eq('rule_id', rule.id)
-                    .order('evaluated_at', { ascending: false })
-                    .limit(5);
-
-                const lastEvaluations: EvaluationSummary[] = (evaluations || []).map((ev: any) => ({
-                    timestamp: ev.evaluated_at,
-                    result: ev.status === 'PASS' ? 'Pass' as const : 'Fail' as const,
-                    executor: ev.metadata?.executor || 'System'
-                }));
-
-                return {
-                    ruleCode,
-                    name: rule.name,
-                    category: categoryName,
-                    status: ruleStatus,
-                    description: rule.description || '',
-                    logic: rule.logic,
-                    updatedAt: rule.created_at,
-                    relatedServices: rule.logic?.relatedServices || [],
-                    lastEvaluations
-                };
+            const ruleDTOs: GovernanceRuleResponse[] = (rules || []).map((rule: any) => ({
+                ruleCode: rule.logic?.rule_code || rule.id,
+                name: rule.name,
+                category: rule.governance_categories?.name || 'Uncategorized',
+                status: rule.is_active ? 'Active' : 'Deprecated',
+                severity: 0, // Placeholder
+                description: rule.description || '',
+                createdAt: rule.created_at,
+                updatedAt: rule.created_at
             }));
 
-            // Filter out nulls from category/status filtering
-            const filteredRules = ruleDTOs.filter((r): r is RuleDTO => r !== null);
-
-            res.json(filteredRules);
+            res.json({
+                ok: true,
+                data: ruleDTOs,
+                count: count || 0
+            });
         } catch (error: any) {
             console.error('Error in getRules:', error);
             res.status(500).json({ error: error.message });
@@ -167,6 +149,7 @@ export class GovernanceController {
 
     /**
      * GET /api/v1/governance/rules/:ruleCode
+     * Legacy endpoint - keeping for compatibility
      */
     async getRuleByCode(req: Request, res: Response) {
         try {
@@ -253,7 +236,7 @@ export class GovernanceController {
 
     /**
      * GET /api/v1/governance/proposals
-     * Query params: status?, ruleCode?, limit?, offset?
+     * Legacy endpoint
      */
     async getProposals(req: Request, res: Response) {
         try {
@@ -318,7 +301,7 @@ export class GovernanceController {
 
     /**
      * POST /api/v1/governance/proposals
-     * Body: { type, ruleCode?, proposedRule, rationale?, source? }
+     * Legacy endpoint
      */
     async createProposal(req: Request, res: Response) {
         try {
@@ -432,7 +415,7 @@ export class GovernanceController {
 
     /**
      * PATCH /api/v1/governance/proposals/:proposalId/status
-     * Body: { status }
+     * Legacy endpoint
      */
     async updateProposalStatus(req: Request, res: Response) {
         try {
@@ -549,7 +532,9 @@ export class GovernanceController {
     async getEvaluations(req: Request, res: Response) {
         try {
             const tenantId = this.getTenantId(req);
-            const { ruleCode, result, from, to, limit, offset } = req.query;
+            const { ruleCode, result, from, to } = req.query;
+            const limit = Number(req.query.limit) || 50;
+            const offset = Number(req.query.offset) || 0;
 
             const supabase = getSupabase();
             if (!supabase) {
@@ -567,12 +552,12 @@ export class GovernanceController {
                     governance_rules!inner (
                         logic
                     )
-                `)
+                `, { count: 'exact' })
                 .eq('tenant_id', tenantId)
                 .order('evaluated_at', { ascending: false });
 
             if (result) {
-                query = query.eq('status', result === 'Pass' ? 'PASS' : 'FAIL');
+                query = query.eq('status', result === 'pass' ? 'PASS' : 'FAIL');
             }
             if (from) {
                 query = query.gte('evaluated_at', from as string);
@@ -580,39 +565,37 @@ export class GovernanceController {
             if (to) {
                 query = query.lte('evaluated_at', to as string);
             }
-            if (limit) {
-                query = query.limit(parseInt(limit as string));
-            } else {
-                query = query.limit(50);
-            }
-            if (offset) {
-                query = query.range(parseInt(offset as string), parseInt(offset as string) + (parseInt(limit as string || '50') - 1));
+            if (ruleCode) {
+                // Filter logic handled in memory or via join if possible
             }
 
-            const { data: evaluations, error } = await query;
+            const { data: evaluations, count, error } = await query
+                .range(offset, offset + limit - 1);
 
             if (error) {
                 console.error('Error fetching evaluations:', error);
                 return res.status(500).json({ error: error.message });
             }
 
-            // Transform to EvaluationDTO
-            let evaluationDTOs: EvaluationDTO[] = (evaluations || []).map((ev: any) => ({
+            // Transform to GovernanceEvaluationResponse
+            let evaluationDTOs: GovernanceEvaluationResponse[] = (evaluations || []).map((ev: any) => ({
                 id: ev.id,
-                time: ev.evaluated_at,
                 ruleCode: (ev.governance_rules as any)?.logic?.rule_code || 'Unknown',
-                target: ev.entity_id,
-                result: ev.status === 'PASS' ? 'Pass' as const : 'Fail' as const,
-                executor: ev.metadata?.executor || 'System',
-                payload: ev.metadata || null
+                evaluationResult: ev.status === 'PASS' ? 'pass' : 'fail',
+                evaluatedAt: ev.evaluated_at,
+                details: ev.metadata || {}
             }));
 
-            // Filter by ruleCode if provided
+            // Filter by ruleCode if provided (in memory fallback)
             if (ruleCode) {
                 evaluationDTOs = evaluationDTOs.filter(ev => ev.ruleCode === ruleCode);
             }
 
-            res.json(evaluationDTOs);
+            res.json({
+                ok: true,
+                data: evaluationDTOs,
+                count: count || 0
+            });
         } catch (error: any) {
             console.error('Error in getEvaluations:', error);
             res.status(500).json({ error: error.message });
@@ -625,6 +608,9 @@ export class GovernanceController {
     async getViolations(req: Request, res: Response) {
         try {
             const tenantId = this.getTenantId(req);
+            const limit = Number(req.query.limit) || 50;
+            const offset = Number(req.query.offset) || 0;
+            const { ruleCode, severity, source } = req.query;
 
             const supabase = getSupabase();
             if (!supabase) {
@@ -635,47 +621,47 @@ export class GovernanceController {
                     message: 'Governance storage is temporarily unavailable'
                 });
             }
-            const { data: violations, error } = await supabase
+            let query = supabase
                 .from('governance_violations')
                 .select(`
                     *,
                     governance_rules (
                         logic
                     )
-                `)
+                `, { count: 'exact' })
                 .eq('tenant_id', tenantId)
                 .order('created_at', { ascending: false });
+
+            if (severity) query = query.eq('severity', severity);
+
+            const { data: violations, count, error } = await query
+                .range(offset, offset + limit - 1);
 
             if (error) {
                 console.error('Error fetching violations:', error);
                 return res.status(500).json({ error: error.message });
             }
 
-            // Transform to ViolationDTO
-            const violationDTOs: ViolationDTO[] = (violations || []).map((v: any) => {
-                let severityLabel: 'Low' | 'Medium' | 'High' | 'Critical';
-                if (v.severity <= 1) severityLabel = 'Low';
-                else if (v.severity === 2) severityLabel = 'Medium';
-                else if (v.severity === 3) severityLabel = 'High';
-                else severityLabel = 'Critical';
+            // Transform to GovernanceViolationResponse
+            let violationDTOs: GovernanceViolationResponse[] = (violations || []).map((v: any) => ({
+                id: v.id,
+                ruleCode: (v.governance_rules as any)?.logic?.rule_code || 'Unknown',
+                description: `Violation of governance rule`,
+                severity: v.severity,
+                detectedAt: v.created_at,
+                source: 'System', // Placeholder
+                metadata: { status: v.status }
+            }));
 
-                let statusLabel: 'Open' | 'In Progress' | 'Resolved';
-                if (v.status === 'OPEN') statusLabel = 'Open';
-                else if (v.status === 'RESOLVED') statusLabel = 'Resolved';
-                else statusLabel = 'In Progress';
+            if (ruleCode) {
+                violationDTOs = violationDTOs.filter(v => v.ruleCode === ruleCode);
+            }
 
-                return {
-                    violationId: v.id,
-                    ruleCode: (v.governance_rules as any)?.logic?.rule_code || 'Unknown',
-                    severity: severityLabel,
-                    status: statusLabel,
-                    detectedAt: v.created_at,
-                    description: `Violation of governance rule`,
-                    impact: `Severity level ${v.severity}`
-                };
+            res.json({
+                ok: true,
+                data: violationDTOs,
+                count: count || 0
             });
-
-            res.json(violationDTOs);
         } catch (error: any) {
             console.error('Error in getViolations:', error);
             res.status(500).json({ error: error.message });
@@ -687,7 +673,9 @@ export class GovernanceController {
      */
     async getFeed(req: Request, res: Response) {
         try {
-            // Query oasis_events_v1 for governance-related events
+            const limit = Number(req.query.limit) || 50;
+            const offset = Number(req.query.offset) || 0;
+
             const supabase = getSupabase();
             if (!supabase) {
                 console.warn('[GovernanceController] Supabase not configured - feed fetch unavailable');
@@ -696,95 +684,227 @@ export class GovernanceController {
                     error: 'SUPABASE_CONFIG_ERROR',
                     message: 'Governance storage is temporarily unavailable'
                 });
-            } const { data: events, error } = await supabase
+            }
+
+            const { data: events, count, error } = await supabase
                 .from('oasis_events_v1')
-                .select('*')
+                .select('*', { count: 'exact' })
                 .eq('tenant', 'SYSTEM')
                 .or('task_type.like.%governance%,notes.like.%governance%')
                 .order('created_at', { ascending: false })
-                .limit(50);
+                .range(offset, offset + limit - 1);
 
             if (error) {
                 console.error('Error fetching feed:', error);
                 return res.status(500).json({ error: error.message });
             }
 
-            // Transform to FeedEntry
-            const feedEntries: FeedEntry[] = (events || []).map((ev: any) => {
-                let message = ev.notes || ev.task_type || 'Governance event';
-                let link: string | undefined;
+            // Transform to GovernanceFeedItemResponse
+            const feedEntries: GovernanceFeedItemResponse[] = (events || []).map((ev: any) => {
+                let summary = ev.notes || ev.task_type || 'Governance event';
 
                 // Try to parse governance events from metadata
                 const metadata = ev.metadata || {};
 
                 if (metadata.proposalId) {
-                    message = `Proposal ${metadata.proposalId} ${metadata.newStatus ? `changed to ${metadata.newStatus}` : 'created'}`;
-                    link = `/dev/governance/proposals`;
+                    summary = `Proposal ${metadata.proposalId} ${metadata.newStatus ? `changed to ${metadata.newStatus}` : 'created'}`;
                 } else if (metadata.ruleCode) {
-                    message = `Rule ${metadata.ruleCode} activity`;
-                    link = `/dev/governance/rules/${metadata.ruleCode}`;
+                    summary = `Rule ${metadata.ruleCode} activity`;
                 }
 
                 return {
                     id: ev.id.toString(),
-                    message,
-                    timestamp: ev.created_at,
-                    link
+                    type: 'event',
+                    summary,
+                    createdAt: ev.created_at,
+                    payload: metadata
                 };
             });
 
-            res.json(feedEntries);
+            res.json({
+                ok: true,
+                data: feedEntries,
+                count: count || 0
+            });
         } catch (error: any) {
             console.error('Error in getFeed:', error);
             res.status(500).json({ error: error.message });
         }
     }
 
+    /**
+     * GET /api/v1/governance/enforcements
+     */
     async getEnforcements(req: Request, res: Response) {
-        const tenantId = this.getTenantId(req);
+        try {
+            const tenantId = this.getTenantId(req);
+            const limit = Number(req.query.limit) || 50;
+            const offset = Number(req.query.offset) || 0;
+            const { ruleCode, status } = req.query;
 
-        const supabase = getSupabase();
-        if (!supabase) {
-            console.warn('[GovernanceController] Supabase not configured - enforcements fetch unavailable');
-            return res.status(503).json({
-                ok: false,
-                error: 'SUPABASE_CONFIG_ERROR',
-                message: 'Governance storage is temporarily unavailable'
+            const supabase = getSupabase();
+            if (!supabase) {
+                console.warn('[GovernanceController] Supabase not configured - enforcements fetch unavailable');
+                return res.status(503).json({
+                    ok: false,
+                    error: 'SUPABASE_CONFIG_ERROR',
+                    message: 'Governance storage is temporarily unavailable'
+                });
+            }
+
+            let query = supabase
+                .from('governance_enforcements')
+                .select('*', { count: 'exact' })
+                .eq('tenant_id', tenantId)
+                .order('executed_at', { ascending: false });
+
+            if (status) query = query.eq('status', status);
+
+            const { data: enforcements, count, error } = await query
+                .range(offset, offset + limit - 1);
+
+            if (error) {
+                return res.status(500).json({ error: error.message });
+            }
+
+            const enforcementDTOs: GovernanceEnforcementResponse[] = (enforcements || []).map((e: any) => ({
+                id: e.id,
+                ruleCode: e.rule_id, // Assuming rule_id is the code or we need to join. For now using rule_id
+                action: e.action,
+                status: e.status === 'SUCCESS' ? 'Completed' : (e.status === 'FAILURE' ? 'Failed' : 'Pending'),
+                createdAt: e.executed_at,
+                updatedAt: e.executed_at
+            }));
+
+            res.json({
+                ok: true,
+                data: enforcementDTOs,
+                count: count || 0
             });
+        } catch (error: any) {
+            console.error('Error in getEnforcements:', error);
+            res.status(500).json({ error: error.message });
         }
-
-        const { data, error } = await supabase
-            .from('governance_enforcements')
-            .select('*')
-            .eq('tenant_id', tenantId)
-            .order('executed_at', { ascending: false })
-            .limit(50);
-
-        if (error) return res.status(500).json({ error: error.message });
-        res.json(data);
     }
 
+    /**
+     * GET /api/v1/governance/logs
+     * Legacy endpoint
+     */
     async getLogs(req: Request, res: Response) {
-        // Query canonical oasis_events table
-        const supabase = getSupabase();
-        if (!supabase) {
-            console.warn('[GovernanceController] Supabase not configured - logs fetch unavailable');
-            return res.status(503).json({
+        try {
+            // Query canonical oasis_events table
+            const supabase = getSupabase();
+            if (!supabase) {
+                console.warn('[GovernanceController] Supabase not configured - logs fetch unavailable');
+                return res.status(503).json({
+                    ok: false,
+                    error: 'SUPABASE_CONFIG_ERROR',
+                    message: 'Governance storage is temporarily unavailable'
+                });
+            }
+
+            const { data, error } = await supabase
+                .from('oasis_events')
+                .select('*')
+                .eq('service', 'governance') // Filter by service
+                .order('created_at', { ascending: false })
+                .limit(100);
+
+            if (error) return res.status(500).json({ error: error.message });
+            res.json(data);
+        } catch (error: any) {
+            console.error('Error in getLogs:', error);
+            res.status(500).json({ error: error.message });
+        }
+    }
+
+    /**
+     * GET /api/v1/governance/summary
+     * Returns governance dashboard summary statistics
+     */
+    async getSummary(req: Request, res: Response) {
+        try {
+            const supabase = getSupabase();
+            if (!supabase) {
+                console.warn('[GovernanceController] Supabase not configured - summary unavailable');
+                return res.status(503).json({
+                    ok: false,
+                    error: 'SUPABASE_CONFIG_ERROR',
+                    message: 'Governance storage is temporarily unavailable'
+                });
+            }
+
+            // Query 1: Total and active rules
+            const { data: rules } = await supabase
+                .from('governance_rules')
+                .select('is_active');
+
+            const totalRules = rules?.length || 0;
+            const activeRules = rules?.filter(r => r.is_active).length || 0;
+
+            // Query 2: Violations this week
+            const oneWeekAgo = new Date();
+            oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+
+            const { count: violationsThisWeek } = await supabase
+                .from('governance_violations')
+                .select('*', { count: 'exact', head: true })
+                .gte('created_at', oneWeekAgo.toISOString());
+
+            // Query 3: Pending enforcements
+            const { count: pendingEnforcements } = await supabase
+                .from('governance_enforcements')
+                .select('*', { count: 'exact', head: true })
+                .eq('status', 'PENDING');
+
+            // Query 4: Events in last 24 hours
+            const oneDayAgo = new Date();
+            oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+
+            const { count: events24h } = await supabase
+                .from('oasis_events_v1')
+                .select('*', { count: 'exact', head: true })
+                .gte('created_at', oneDayAgo.toISOString());
+
+            // Query 5: Most active category (by violation count)
+            // This is complex to do efficiently in one query without aggregation support in client
+            // We'll fetch recent violations and aggregate in memory for now
+            const { data: categoryViolations } = await supabase
+                .from('governance_violations')
+                .select('governance_rules(category_id)')
+                .limit(100);
+
+            // Count violations per category
+            const categoryCounts: Record<string, number> = {};
+            categoryViolations?.forEach((v: any) => {
+                const category = v.governance_rules?.category_id || 'UNKNOWN';
+                categoryCounts[category] = (categoryCounts[category] || 0) + 1;
+            });
+
+            const mostActiveCategory = Object.keys(categoryCounts).reduce((a, b) =>
+                categoryCounts[a] > categoryCounts[b] ? a : b, 'N/A');
+
+            const summary: GovernanceSummaryResponse = {
+                totalRules,
+                activeRules,
+                violationsThisWeek: violationsThisWeek || 0,
+                pendingEnforcements: pendingEnforcements || 0,
+                events24h: events24h || 0,
+                mostActiveCategory
+            };
+
+            res.json({
+                ok: true,
+                data: summary
+            });
+        } catch (error: any) {
+            console.error('Error in getSummary:', error);
+            res.status(500).json({
                 ok: false,
-                error: 'SUPABASE_CONFIG_ERROR',
-                message: 'Governance storage is temporarily unavailable'
+                error: error.message
             });
         }
-
-        const { data, error } = await supabase
-            .from('oasis_events')
-            .select('*')
-            .eq('service', 'governance') // Filter by service
-            .order('created_at', { ascending: false })
-            .limit(100);
-
-        if (error) return res.status(500).json({ error: error.message });
-        res.json(data);
     }
 
     /**

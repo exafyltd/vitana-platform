@@ -1,0 +1,16 @@
+{
+    "name": "command-hub-frontend",
+    "version": "1.0.0",
+    "description": "Command Hub Frontend V2",
+    "main": "app.js",
+    "scripts": {
+        "build": "esbuild app.jsx --bundle --outfile=app.js --minify --sourcemap --loader:.js=jsx"
+    },
+    "dependencies": {
+        "react": "^18.2.0",
+        "react-dom": "^18.2.0"
+    },
+    "devDependencies": {
+        "esbuild": "^0.19.0"
+    }
+}

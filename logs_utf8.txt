@@ -1,0 +1,182 @@
+﻿Apply Database Migrations	Set up job	∩╗┐2025-11-20T07:52:44.2748683Z Current runner version: '2.329.0'
+Apply Database Migrations	Set up job	2025-11-20T07:52:44.2780553Z ##[group]Runner Image Provisioner
+Apply Database Migrations	Set up job	2025-11-20T07:52:44.2781901Z Hosted Compute Agent
+Apply Database Migrations	Set up job	2025-11-20T07:52:44.2783003Z Version: 20251016.436
+Apply Database Migrations	Set up job	2025-11-20T07:52:44.2784083Z Commit: 8ab8ac8bfd662a3739dab9fe09456aba92132568
+Apply Database Migrations	Set up job	2025-11-20T07:52:44.2785276Z Build Date: 2025-10-15T20:44:12Z
+Apply Database Migrations	Set up job	2025-11-20T07:52:44.2786168Z ##[endgroup]
+Apply Database Migrations	Set up job	2025-11-20T07:52:44.2787117Z ##[group]Operating System
+Apply Database Migrations	Set up job	2025-11-20T07:52:44.2788003Z Ubuntu
+Apply Database Migrations	Set up job	2025-11-20T07:52:44.2788737Z 24.04.3
+Apply Database Migrations	Set up job	2025-11-20T07:52:44.2789419Z LTS
+Apply Database Migrations	Set up job	2025-11-20T07:52:44.2790393Z ##[endgroup]
+Apply Database Migrations	Set up job	2025-11-20T07:52:44.2791174Z ##[group]Runner Image
+Apply Database Migrations	Set up job	2025-11-20T07:52:44.2792133Z Image: ubuntu-24.04
+Apply Database Migrations	Set up job	2025-11-20T07:52:44.2793114Z Version: 20251112.124.1
+Apply Database Migrations	Set up job	2025-11-20T07:52:44.2794796Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20251112.124/images/ubuntu/Ubuntu2404-Readme.md
+Apply Database Migrations	Set up job	2025-11-20T07:52:44.2797275Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20251112.124
+Apply Database Migrations	Set up job	2025-11-20T07:52:44.2799175Z ##[endgroup]
+Apply Database Migrations	Set up job	2025-11-20T07:52:44.2800998Z ##[group]GITHUB_TOKEN Permissions
+Apply Database Migrations	Set up job	2025-11-20T07:52:44.2803655Z Contents: read
+Apply Database Migrations	Set up job	2025-11-20T07:52:44.2804556Z Metadata: read
+Apply Database Migrations	Set up job	2025-11-20T07:52:44.2805420Z Packages: read
+Apply Database Migrations	Set up job	2025-11-20T07:52:44.2806204Z ##[endgroup]
+Apply Database Migrations	Set up job	2025-11-20T07:52:44.2809475Z Secret source: Actions
+Apply Database Migrations	Set up job	2025-11-20T07:52:44.2810532Z Prepare workflow directory
+Apply Database Migrations	Set up job	2025-11-20T07:52:44.3267492Z Prepare all required actions
+Apply Database Migrations	Set up job	2025-11-20T07:52:44.3323506Z Getting action download info
+Apply Database Migrations	Set up job	2025-11-20T07:52:44.6228774Z Download action repository 'actions/checkout@v4' (SHA:34e114876b0b11c390a56381ad16ebd13914f8d5)
+Apply Database Migrations	Set up job	2025-11-20T07:52:44.9407800Z Download action repository 'supabase/setup-cli@v1' (SHA:b60b5899c73b63a2d2d651b1e90db8d4c9392f51)
+Apply Database Migrations	Set up job	2025-11-20T07:52:45.1960360Z Complete job name: Apply Database Migrations
+Apply Database Migrations	Checkout Repository	∩╗┐2025-11-20T07:52:45.2732322Z ##[group]Run actions/checkout@v4
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.2733268Z with:
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.2733687Z   repository: exafyltd/vitana-platform
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.2734363Z   token: ***
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.2734816Z   ssh-strict: true
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.2735190Z   ssh-user: git
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.2735583Z   persist-credentials: true
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.2736003Z   clean: true
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.2736394Z   sparse-checkout-cone-mode: true
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.2736870Z   fetch-depth: 1
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.2737244Z   fetch-tags: false
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.2737633Z   show-progress: true
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.2738040Z   lfs: false
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.2738392Z   submodules: false
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.2738806Z   set-safe-directory: true
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.2739458Z ##[endgroup]
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.3796216Z Syncing repository: exafyltd/vitana-platform
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.3798253Z ##[group]Getting Git version info
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.3799053Z Working directory is '/home/runner/work/vitana-platform/vitana-platform'
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.3800140Z [command]/usr/bin/git version
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.3882122Z git version 2.51.2
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.3908570Z ##[endgroup]
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.3929847Z Temporarily overriding HOME='/home/runner/work/_temp/d0329587-38f9-43f3-8bb6-794173eeeae2' before making global git config changes
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.3931371Z Adding repository directory to the temporary git global config as a safe directory
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.3935340Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/vitana-platform/vitana-platform
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.3971056Z Deleting the contents of '/home/runner/work/vitana-platform/vitana-platform'
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.3974669Z ##[group]Initializing the repository
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.3978817Z [command]/usr/bin/git init /home/runner/work/vitana-platform/vitana-platform
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.4117647Z hint: Using 'master' as the name for the initial branch. This default branch name
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.4118759Z hint: is subject to change. To configure the initial branch name to use in all
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.4120019Z hint: of your new repositories, which will suppress this warning, call:
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.4121271Z hint:
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.4122293Z hint: 	git config --global init.defaultBranch <name>
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.4123954Z hint:
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.4124958Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.4126041Z hint: 'development'. The just-created branch can be renamed via this command:
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.4126817Z hint:
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.4127205Z hint: 	git branch -m <name>
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.4127641Z hint:
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.4128207Z hint: Disable this message with "git config set advice.defaultBranchName false"
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.4129594Z Initialized empty Git repository in /home/runner/work/vitana-platform/vitana-platform/.git/
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.4135121Z [command]/usr/bin/git remote add origin https://github.com/exafyltd/vitana-platform
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.4170741Z ##[endgroup]
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.4171483Z ##[group]Disabling automatic garbage collection
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.4174764Z [command]/usr/bin/git config --local gc.auto 0
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.4201824Z ##[endgroup]
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.4202775Z ##[group]Setting up auth
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.4208803Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.4238250Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.4598862Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.4627560Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.4842172Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.4872567Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.5094355Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.5127858Z ##[endgroup]
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.5135844Z ##[group]Fetching the repository
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:45.5137215Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +65c9ca0babb91e5340d19e3f18fbebbf63eb847d:refs/remotes/origin/main
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:47.5549011Z From https://github.com/exafyltd/vitana-platform
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:47.5550223Z  * [new ref]         65c9ca0babb91e5340d19e3f18fbebbf63eb847d -> origin/main
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:47.5582157Z ##[endgroup]
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:47.5582665Z ##[group]Determining the checkout info
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:47.5584684Z ##[endgroup]
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:47.5589684Z [command]/usr/bin/git sparse-checkout disable
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:47.5630604Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:47.5655556Z ##[group]Checking out the ref
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:47.5659274Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:48.6611322Z Updating files:  91% (4399/4822)
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:48.6738679Z Updating files:  92% (4437/4822)
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:48.6766721Z Updating files:  93% (4485/4822)
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:48.6792133Z Updating files:  94% (4533/4822)
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:48.6812470Z Updating files:  95% (4581/4822)
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:48.6850977Z Updating files:  96% (4630/4822)
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:48.6899290Z Updating files:  97% (4678/4822)
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:48.6944919Z Updating files:  98% (4726/4822)
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:48.6973430Z Updating files:  99% (4774/4822)
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:48.6973988Z Updating files: 100% (4822/4822)
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:48.6974402Z Updating files: 100% (4822/4822), done.
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:48.7035776Z Switched to a new branch 'main'
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:48.7039019Z branch 'main' set up to track 'origin/main'.
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:48.7080902Z ##[endgroup]
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:48.7119831Z [command]/usr/bin/git log -1 --format=%H
+Apply Database Migrations	Checkout Repository	2025-11-20T07:52:48.7142171Z 65c9ca0babb91e5340d19e3f18fbebbf63eb847d
+Apply Database Migrations	Setup Supabase CLI	∩╗┐2025-11-20T07:52:48.7324192Z ##[group]Run supabase/setup-cli@v1
+Apply Database Migrations	Setup Supabase CLI	2025-11-20T07:52:48.7324482Z with:
+Apply Database Migrations	Setup Supabase CLI	2025-11-20T07:52:48.7324647Z   version: latest
+Apply Database Migrations	Setup Supabase CLI	2025-11-20T07:52:48.7324831Z ##[endgroup]
+Apply Database Migrations	Setup Supabase CLI	2025-11-20T07:52:49.0236080Z [command]/usr/bin/tar xz --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/1a5e8247-bda2-4c8d-a87f-db1b86c76e57 -f /home/runner/work/_temp/55a19f0d-beae-4ee9-babb-13507940a3b3
+Apply Database Migrations	Apply Migrations	∩╗┐2025-11-20T07:52:49.4431869Z ##[group]Run supabase link --project-ref $SUPABASE_PROJECT_ID
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4432547Z [36;1msupabase link --project-ref $SUPABASE_PROJECT_ID[0m
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4432865Z [36;1msupabase db push[0m
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4471238Z shell: /usr/bin/bash -e {0}
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4471472Z env:
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4471668Z   SUPABASE_INTERNAL_IMAGE_REGISTRY: ghcr.io
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4471926Z   SUPABASE_ACCESS_TOKEN: 
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4472303Z   SUPABASE_DB_PASSWORD: 
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4472491Z   SUPABASE_PROJECT_ID: 
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4472688Z ##[endgroup]
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4776733Z Usage:
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4777011Z   supabase link [flags]
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4777165Z 
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4777231Z Flags:
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4777467Z   -h, --help                 help for link
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4777842Z   -p, --password string      Password to your remote Postgres database.
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4778251Z       --project-ref string   Project ref of the Supabase project.
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4778723Z       --skip-pooler          Use direct connection instead of pooler.
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4778961Z 
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4779032Z Global Flags:
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4779289Z       --create-ticket                                  create a support ticket for any CLI error
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4779669Z       --debug                                          output debug logs to stderr
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4780140Z       --dns-resolver [ native | https ]                lookup domain names using the specified resolver (default native)
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4780635Z       --experimental                                   enable experimental features
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4781080Z       --network-id string                              use the specified docker network instead of a generated one
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4781605Z   -o, --output [ env | pretty | json | toml | yaml ]   output format of status variables (default pretty)
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4782424Z       --profile string                                 use a specific profile for connecting to Supabase API (default "supabase")
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4782933Z       --workdir string                                 path to a Supabase project directory
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4783282Z       --yes                                            answer yes to all prompts
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4783484Z 
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4783574Z flag needs an argument: --project-ref
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4783885Z Try rerunning the command with --debug to troubleshoot the error.
+Apply Database Migrations	Apply Migrations	2025-11-20T07:52:49.4806905Z ##[error]Process completed with exit code 1.
+Apply Database Migrations	Notify on Failure	∩╗┐2025-11-20T07:52:49.4857107Z ##[group]Run curl -X POST "$GATEWAY_URL/api/v1/events/ingest" \
+Apply Database Migrations	Notify on Failure	2025-11-20T07:52:49.4857540Z [36;1mcurl -X POST "$GATEWAY_URL/api/v1/events/ingest" \[0m
+Apply Database Migrations	Notify on Failure	2025-11-20T07:52:49.4857873Z [36;1m  -H "Content-Type: application/json" \[0m
+Apply Database Migrations	Notify on Failure	2025-11-20T07:52:49.4858135Z [36;1m  -d '{[0m
+Apply Database Migrations	Notify on Failure	2025-11-20T07:52:49.4858331Z [36;1m    "vtid": "DEV-OASIS-GOV-0101",[0m
+Apply Database Migrations	Notify on Failure	2025-11-20T07:52:49.4858581Z [36;1m    "type": "MIGRATION_FAILED",[0m
+Apply Database Migrations	Notify on Failure	2025-11-20T07:52:49.4858816Z [36;1m    "source": "github-actions",[0m
+Apply Database Migrations	Notify on Failure	2025-11-20T07:52:49.4859042Z [36;1m    "status": "error",[0m
+Apply Database Migrations	Notify on Failure	2025-11-20T07:52:49.4859369Z [36;1m    "message": "Governance v1 migration failed - manual intervention required"[0m
+Apply Database Migrations	Notify on Failure	2025-11-20T07:52:49.4859711Z [36;1m  }'[0m
+Apply Database Migrations	Notify on Failure	2025-11-20T07:52:49.4893795Z shell: /usr/bin/bash -e {0}
+Apply Database Migrations	Notify on Failure	2025-11-20T07:52:49.4894015Z env:
+Apply Database Migrations	Notify on Failure	2025-11-20T07:52:49.4894204Z   SUPABASE_INTERNAL_IMAGE_REGISTRY: ghcr.io
+Apply Database Migrations	Notify on Failure	2025-11-20T07:52:49.4894457Z   GATEWAY_URL: 
+Apply Database Migrations	Notify on Failure	2025-11-20T07:52:49.4894889Z ##[endgroup]
+Apply Database Migrations	Notify on Failure	2025-11-20T07:52:49.5015916Z curl: (3) URL rejected: No host part in the URL
+Apply Database Migrations	Notify on Failure	2025-11-20T07:52:49.5026163Z ##[error]Process completed with exit code 3.
+Apply Database Migrations	Post Checkout Repository	∩╗┐2025-11-20T07:52:49.5098147Z Post job cleanup.
+Apply Database Migrations	Post Checkout Repository	2025-11-20T07:52:49.6028556Z [command]/usr/bin/git version
+Apply Database Migrations	Post Checkout Repository	2025-11-20T07:52:49.6065707Z git version 2.51.2
+Apply Database Migrations	Post Checkout Repository	2025-11-20T07:52:49.6107696Z Temporarily overriding HOME='/home/runner/work/_temp/61864271-29e9-4c7d-bc98-d05ee0390124' before making global git config changes
+Apply Database Migrations	Post Checkout Repository	2025-11-20T07:52:49.6108915Z Adding repository directory to the temporary git global config as a safe directory
+Apply Database Migrations	Post Checkout Repository	2025-11-20T07:52:49.6120463Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/vitana-platform/vitana-platform
+Apply Database Migrations	Post Checkout Repository	2025-11-20T07:52:49.6153620Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Apply Database Migrations	Post Checkout Repository	2025-11-20T07:52:49.6184491Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Apply Database Migrations	Post Checkout Repository	2025-11-20T07:52:49.6416511Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Apply Database Migrations	Post Checkout Repository	2025-11-20T07:52:49.6437417Z http.https://github.com/.extraheader
+Apply Database Migrations	Post Checkout Repository	2025-11-20T07:52:49.6450481Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+Apply Database Migrations	Post Checkout Repository	2025-11-20T07:52:49.6481522Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Apply Database Migrations	Post Checkout Repository	2025-11-20T07:52:49.6709532Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+Apply Database Migrations	Post Checkout Repository	2025-11-20T07:52:49.6740366Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Apply Database Migrations	Complete job	∩╗┐2025-11-20T07:52:49.7076434Z Cleaning up orphan processes

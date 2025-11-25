@@ -19,7 +19,7 @@ export const router = Router();
  * These compatibility fields exist because the current Task Board UI
  * expects them. Future governance work may refactor this adapter.
  */
-router.get('/api/v1/tasks', async (req: Request, res: Response) => {
+const getTasks = async (req: Request, res: Response) => {
   try {
     const svcKey = process.env.SUPABASE_SERVICE_ROLE;
     const supabaseUrl = process.env.SUPABASE_URL;
@@ -40,7 +40,7 @@ router.get('/api/v1/tasks', async (req: Request, res: Response) => {
     if (!resp.ok) return res.status(502).json({ error: "Query failed" });
 
     const data = await resp.json() as any[];
-    
+
     // Transform database rows into task objects
     const tasks = data.map(row => ({
       // Core fields from vtid_ledger
@@ -48,38 +48,41 @@ router.get('/api/v1/tasks', async (req: Request, res: Response) => {
       layer: row.layer,
       module: row.module,
       status: row.status,
-      
+
       // Primary display fields
       title: row.title,
       description: row.summary ?? row.title, // Prefer summary, fallback to title
       summary: row.summary,
-      
+
       // TEMPORARY compatibility fields for existing Task Board UI
       // TODO: Future governance work may refactor these
       task_family: row.module,  // TEMP: mirror module
       task_type: row.module,    // TEMP: mirror module
-      
+
       // Metadata
       assigned_to: row.assigned_to ?? null,
       metadata: row.metadata ?? null,
-      
+
       // Timestamps
       created_at: row.created_at,
       updated_at: row.updated_at,
     }));
 
-    return res.json({ 
-      data: tasks, 
-      meta: { 
-        count: tasks.length, 
-        limit: parseInt(limit as string), 
-        has_more: false 
-      } 
+    return res.json({
+      data: tasks,
+      meta: {
+        count: tasks.length,
+        limit: parseInt(limit as string),
+        has_more: false
+      }
     });
   } catch (e: any) {
     return res.status(500).json({ error: e.message });
   }
-});
+};
+
+router.get('/api/v1/tasks', getTasks);
+
 
 /**
  * GET /api/v1/vtid/:vtid
@@ -111,20 +114,20 @@ router.get('/api/v1/vtid/:vtid', async (req: Request, res: Response) => {
         layer: row.layer,
         module: row.module,
         status: row.status,
-        
+
         // Primary display fields
         title: row.title,
         description: row.summary ?? row.title,
         summary: row.summary,
-        
+
         // TEMPORARY compatibility fields
         task_family: row.module,  // TEMP: mirror module
         task_type: row.module,    // TEMP: mirror module
-        
+
         // Metadata
         assigned_to: row.assigned_to ?? null,
         metadata: row.metadata ?? null,
-        
+
         // Timestamps
         created_at: row.created_at,
         updated_at: row.updated_at,

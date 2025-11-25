@@ -49,6 +49,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --min-instances 0 \
   --max-instances 3 \
   --timeout 300 \
+  --quiet \
   --set-env-vars="ENVIRONMENT=$ENVIRONMENT,NODE_ENV=production"
 
 # Get service URL

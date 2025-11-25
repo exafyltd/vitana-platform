@@ -3,6 +3,7 @@ import { Express, Request, Response, NextFunction } from "express";
 
 const ALLOWED_ORIGINS = [
   "https://vitana-dev-gateway-86804897789.us-central1.run.app",
+  "https://gateway-86804897789.us-central1.run.app", // Task 44 Hotfix: Add current deployment URL
   "https://id-preview--vitana-v1.lovable.app",
 ];
 

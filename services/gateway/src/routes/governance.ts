@@ -17,5 +17,7 @@ router.get('/feed', (req, res) => controller.getFeed(req, res));
 router.get('/enforcements', (req, res) => controller.getEnforcements(req, res));
 router.get('/logs', (req, res) => controller.getLogs(req, res));
 
+router.get('/summary', (req, res) => controller.getSummary(req, res));
+
 export default router;
 

@@ -1,87 +1,94 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import fetch from 'node-fetch';
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyDCbka2qbs9ql_UxzAtLIfz_n-9g985KCc';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const OASIS_URL = process.env.OASIS_OPERATOR_URL || 'https://oasis-operator-86804897789.us-central1.run.app';
 
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-const flashModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
-const proModel = genAI.getGenerativeModel({ model: 'gemini-2.0-pro-exp' });
-
 export class NaturalLanguageService {
-  async processMessage(message: string): Promise<string> {
-    try {
-      const context = await this.buildContext(message);
-      const useComplex = message.length > 300 || /analyze|compare|explain|detail/.test(message.toLowerCase());
-      const model = useComplex ? proModel : flashModel;
-      
-      const prompt = `You are the Vitana Command Hub AI assistant for the VITANA DevOps platform.
+  private genAI: GoogleGenerativeAI;
 
-You can answer:
-- General knowledge questions (geography, science, history, etc.)
-- Vitana platform questions using the context below
-- DevOps and technical questions
-- Health and longevity topics
-
-CONTEXT:
-${context}
-
-USER QUESTION: ${message}
-
-Provide a helpful, concise answer:`;
-
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      return response.text();
-    } catch (error: any) {
-      console.error('[natural-language-service] Gemini error:', error);
-      
-      // Check for authentication/permission errors
-      if (error.message && (error.message.includes('403') || error.message.includes('401') || error.message.includes('API key') || error.message.includes('Forbidden'))) {
-        return '⚠️ AI service temporarily unavailable (API key issue). Please contact the administrator to update the Gemini API key.';
-      }
-      
-      // Rate limit errors
-      if (error.message && (error.message.includes('429') || error.message.includes('quota'))) {
-        return '⚠️ AI service rate limit reached. Please try again in a moment.';
-      }
-      
-      // Generic error
-      return '⚠️ AI service error. Please try again or contact support if the issue persists.';
-    }
+  constructor() {
+    this.genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
   }
 
-  private async buildContext(message: string): Promise<string> {
-    let context = 'Vitana platform - health, longevity ecosystem & DevOps infrastructure\n';
-    const lower = message.toLowerCase();
-
-    if (lower.includes('status') || lower.includes('health') || lower.includes('service')) {
+  async processOperatorMessage(message: string, vtid?: string): Promise<any> {
+    // 1. Check for Safe OASIS Write Command (Validation Requirement)
+    const oasisMatch = message.match(/^\/oasis create\s+(.*)/);
+    if (oasisMatch) {
       try {
-        const res = await fetch(`${OASIS_URL}/health/services`, { timeout: 3000 } as any);
-        if (res.ok) {
-          const data: any = await res.json();
-          context += `\nSYSTEM STATUS:\n${JSON.stringify(data, null, 2)}`;
+        const jsonStr = oasisMatch[1];
+        const taskData = JSON.parse(jsonStr);
+
+        // Call OASIS to create task
+        const res = await fetch(`${OASIS_URL}/tasks`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(taskData)
+        });
+
+        if (!res.ok) {
+          throw new Error(`OASIS error: ${res.statusText}`);
         }
-      } catch (err) {
-        // Silently fail - context is optional
+
+        const createdTask = await res.json() as any;
+
+        return {
+          reply: `✅ OASIS Task Created Successfully.\n\nID: ${createdTask.id || 'Unknown'}\nVTID: ${createdTask.vtid || 'Pending'}`,
+          model: 'models/gemini-3.0-pro',
+          oasis: {
+            task_created: true,
+            task_id: createdTask.id,
+            vtid: createdTask.vtid
+          },
+          timestamp: new Date().toISOString()
+        };
+      } catch (err: any) {
+        return {
+          reply: `❌ Failed to create OASIS task.\nError: ${err.message}\n\nPlease ensure valid JSON format: /oasis create {"title": "...", ...}`,
+          model: 'models/gemini-3.0-pro',
+          timestamp: new Date().toISOString()
+        };
       }
     }
 
-    if (lower.includes('event') || lower.includes('error') || lower.includes('recent') || lower.includes('vtid')) {
-      try {
-        const res = await fetch(`${OASIS_URL}/events?limit=10`, { timeout: 3000 } as any);
-        if (res.ok) {
-          const events: any = await res.json();
-          if (Array.isArray(events)) {
-            context += `\nRECENT EVENTS:\n${JSON.stringify(events.slice(0, 5), null, 2)}`;
-          }
+    // 2. Legacy Context Building (Restored)
+    let context = `You are the Vitana Command Hub AI assistant. Answer based on the text provided.`;
+
+    try {
+      // Fetch recent events from OASIS (Knowledge Hub)
+      const res = await fetch(`${OASIS_URL}/events?limit=10`);
+      if (res.ok) {
+        const events: any = await res.json();
+        if (Array.isArray(events)) {
+          context += `\nRECENT EVENTS:\n${JSON.stringify(events.slice(0, 5), null, 2)}`;
         }
-      } catch (err) {
-        // Silently fail - context is optional
       }
+    } catch (err) {
+      console.warn('Failed to fetch OASIS events for context:', err);
     }
 
-    return context;
+    context += `\nUSER MESSAGE: ${message}\n\nProvide a helpful, concise answer:`;
+
+    // 3. Generate Content
+    try {
+      const model = this.genAI.getGenerativeModel({ model: 'models/gemini-3.0-pro' });
+      const result = await model.generateContent(context);
+      const response = await result.response;
+      const text = response.text();
+
+      return {
+        reply: text,
+        model: 'models/gemini-3.0-pro',
+        timestamp: new Date().toISOString()
+      };
+    } catch (error: any) {
+      console.error('[natural-language-service] Operator error:', error);
+      return {
+        reply: "⚠️ Operator Brain Offline. (Gemini API Error)",
+        model: 'models/gemini-3.0-pro',
+        timestamp: new Date().toISOString()
+      };
+    }
   }
 }
 

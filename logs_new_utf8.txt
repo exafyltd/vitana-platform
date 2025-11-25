@@ -1,0 +1,270 @@
+﻿Apply Database Migrations	Set up job	∩╗┐2025-11-20T08:06:41.8522925Z Current runner version: '2.329.0'
+Apply Database Migrations	Set up job	2025-11-20T08:06:41.8557178Z ##[group]Runner Image Provisioner
+Apply Database Migrations	Set up job	2025-11-20T08:06:41.8558396Z Hosted Compute Agent
+Apply Database Migrations	Set up job	2025-11-20T08:06:41.8559438Z Version: 20251016.436
+Apply Database Migrations	Set up job	2025-11-20T08:06:41.8560476Z Commit: 8ab8ac8bfd662a3739dab9fe09456aba92132568
+Apply Database Migrations	Set up job	2025-11-20T08:06:41.8561710Z Build Date: 2025-10-15T20:44:12Z
+Apply Database Migrations	Set up job	2025-11-20T08:06:41.8563055Z ##[endgroup]
+Apply Database Migrations	Set up job	2025-11-20T08:06:41.8564058Z ##[group]Operating System
+Apply Database Migrations	Set up job	2025-11-20T08:06:41.8565157Z Ubuntu
+Apply Database Migrations	Set up job	2025-11-20T08:06:41.8565993Z 24.04.3
+Apply Database Migrations	Set up job	2025-11-20T08:06:41.8566741Z LTS
+Apply Database Migrations	Set up job	2025-11-20T08:06:41.8567721Z ##[endgroup]
+Apply Database Migrations	Set up job	2025-11-20T08:06:41.8568626Z ##[group]Runner Image
+Apply Database Migrations	Set up job	2025-11-20T08:06:41.8569552Z Image: ubuntu-24.04
+Apply Database Migrations	Set up job	2025-11-20T08:06:41.8570649Z Version: 20251112.124.1
+Apply Database Migrations	Set up job	2025-11-20T08:06:41.8572721Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20251112.124/images/ubuntu/Ubuntu2404-Readme.md
+Apply Database Migrations	Set up job	2025-11-20T08:06:41.8575242Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20251112.124
+Apply Database Migrations	Set up job	2025-11-20T08:06:41.8577375Z ##[endgroup]
+Apply Database Migrations	Set up job	2025-11-20T08:06:41.8579531Z ##[group]GITHUB_TOKEN Permissions
+Apply Database Migrations	Set up job	2025-11-20T08:06:41.8582508Z Contents: read
+Apply Database Migrations	Set up job	2025-11-20T08:06:41.8583377Z Metadata: read
+Apply Database Migrations	Set up job	2025-11-20T08:06:41.8584437Z Packages: read
+Apply Database Migrations	Set up job	2025-11-20T08:06:41.8585321Z ##[endgroup]
+Apply Database Migrations	Set up job	2025-11-20T08:06:41.8588106Z Secret source: Actions
+Apply Database Migrations	Set up job	2025-11-20T08:06:41.8589509Z Prepare workflow directory
+Apply Database Migrations	Set up job	2025-11-20T08:06:41.8961611Z Prepare all required actions
+Apply Database Migrations	Set up job	2025-11-20T08:06:41.9017242Z Getting action download info
+Apply Database Migrations	Set up job	2025-11-20T08:06:42.2059526Z Download action repository 'actions/checkout@v4' (SHA:34e114876b0b11c390a56381ad16ebd13914f8d5)
+Apply Database Migrations	Set up job	2025-11-20T08:06:42.8407481Z Complete job name: Apply Database Migrations
+Apply Database Migrations	Checkout Repository	∩╗┐2025-11-20T08:06:42.9202267Z ##[group]Run actions/checkout@v4
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:42.9203209Z with:
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:42.9203695Z   repository: exafyltd/vitana-platform
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:42.9204437Z   token: ***
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:42.9204823Z   ssh-strict: true
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:42.9205216Z   ssh-user: git
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:42.9205621Z   persist-credentials: true
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:42.9206095Z   clean: true
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:42.9206490Z   sparse-checkout-cone-mode: true
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:42.9206970Z   fetch-depth: 1
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:42.9207360Z   fetch-tags: false
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:42.9207767Z   show-progress: true
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:42.9208170Z   lfs: false
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:42.9208538Z   submodules: false
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:42.9208950Z   set-safe-directory: true
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:42.9209639Z ##[endgroup]
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0293167Z Syncing repository: exafyltd/vitana-platform
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0294956Z ##[group]Getting Git version info
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0295759Z Working directory is '/home/runner/work/vitana-platform/vitana-platform'
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0297003Z [command]/usr/bin/git version
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0375712Z git version 2.51.2
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0402307Z ##[endgroup]
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0417501Z Temporarily overriding HOME='/home/runner/work/_temp/6e179cbd-93f5-4a4d-8ffe-b77796decfa2' before making global git config changes
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0418908Z Adding repository directory to the temporary git global config as a safe directory
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0430572Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/vitana-platform/vitana-platform
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0467650Z Deleting the contents of '/home/runner/work/vitana-platform/vitana-platform'
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0471080Z ##[group]Initializing the repository
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0475422Z [command]/usr/bin/git init /home/runner/work/vitana-platform/vitana-platform
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0619682Z hint: Using 'master' as the name for the initial branch. This default branch name
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0621160Z hint: is subject to change. To configure the initial branch name to use in all
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0623325Z hint: of your new repositories, which will suppress this warning, call:
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0624865Z hint:
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0625823Z hint: 	git config --global init.defaultBranch <name>
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0627054Z hint:
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0627691Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0628972Z hint: 'development'. The just-created branch can be renamed via this command:
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0629767Z hint:
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0630189Z hint: 	git branch -m <name>
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0630711Z hint:
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0631719Z hint: Disable this message with "git config set advice.defaultBranchName false"
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0633214Z Initialized empty Git repository in /home/runner/work/vitana-platform/vitana-platform/.git/
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0637082Z [command]/usr/bin/git remote add origin https://github.com/exafyltd/vitana-platform
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0672628Z ##[endgroup]
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0673375Z ##[group]Disabling automatic garbage collection
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0676340Z [command]/usr/bin/git config --local gc.auto 0
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0705022Z ##[endgroup]
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0705725Z ##[group]Setting up auth
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0711686Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.0743695Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.1111830Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.1143592Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.1370580Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.1401212Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.1631219Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.1665592Z ##[endgroup]
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.1666888Z ##[group]Fetching the repository
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:43.1675110Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +a97625ecc5313d809ffeb8b45d6d030b5040f934:refs/remotes/origin/main
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:45.2807310Z From https://github.com/exafyltd/vitana-platform
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:45.2808682Z  * [new ref]         a97625ecc5313d809ffeb8b45d6d030b5040f934 -> origin/main
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:45.2840330Z ##[endgroup]
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:45.2840958Z ##[group]Determining the checkout info
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:45.2842519Z ##[endgroup]
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:45.2847415Z [command]/usr/bin/git sparse-checkout disable
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:45.2889720Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:45.2914799Z ##[group]Checking out the ref
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:45.2919118Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:46.3895897Z Updating files:  91% (4399/4823)
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:46.4021570Z Updating files:  92% (4438/4823)
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:46.4041767Z Updating files:  93% (4486/4823)
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:46.4067672Z Updating files:  94% (4534/4823)
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:46.4086989Z Updating files:  95% (4582/4823)
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:46.4112598Z Updating files:  96% (4631/4823)
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:46.4146069Z Updating files:  97% (4679/4823)
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:46.4177077Z Updating files:  98% (4727/4823)
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:46.4203911Z Updating files:  99% (4775/4823)
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:46.4204471Z Updating files: 100% (4823/4823)
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:46.4204967Z Updating files: 100% (4823/4823), done.
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:46.4266763Z Switched to a new branch 'main'
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:46.4270418Z branch 'main' set up to track 'origin/main'.
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:46.4305126Z ##[endgroup]
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:46.4345176Z [command]/usr/bin/git log -1 --format=%H
+Apply Database Migrations	Checkout Repository	2025-11-20T08:06:46.4367570Z a97625ecc5313d809ffeb8b45d6d030b5040f934
+Apply Database Migrations	Install Postgres Client	∩╗┐2025-11-20T08:06:46.4546980Z ##[group]Run sudo apt-get update
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.4547590Z [36;1msudo apt-get update[0m
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.4547928Z [36;1msudo apt-get install -y postgresql-client[0m
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.4584268Z shell: /usr/bin/bash -e {0}
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.4584604Z ##[endgroup]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.5464260Z Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.5766519Z Get:6 https://packages.microsoft.com/repos/azure-cli noble InRelease [3564 B]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.5861900Z Get:7 https://packages.microsoft.com/ubuntu/24.04/prod noble InRelease [3600 B]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.6060051Z Hit:2 http://azure.archive.ubuntu.com/ubuntu noble InRelease
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.6074144Z Get:3 http://azure.archive.ubuntu.com/ubuntu noble-updates InRelease [126 kB]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.6141149Z Get:4 http://azure.archive.ubuntu.com/ubuntu noble-backports InRelease [126 kB]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.6170007Z Get:5 http://azure.archive.ubuntu.com/ubuntu noble-security InRelease [126 kB]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.6542901Z Get:8 https://packages.microsoft.com/repos/azure-cli noble/main amd64 Packages [1763 B]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.7145137Z Get:9 https://packages.microsoft.com/ubuntu/24.04/prod noble/main armhf Packages [11.2 kB]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.7209013Z Get:10 https://packages.microsoft.com/ubuntu/24.04/prod noble/main arm64 Packages [50.9 kB]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.7243119Z Get:11 https://packages.microsoft.com/ubuntu/24.04/prod noble/main amd64 Packages [68.1 kB]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.8010363Z Get:12 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages [1588 kB]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.8122825Z Get:13 http://azure.archive.ubuntu.com/ubuntu noble-updates/main Translation-en [300 kB]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.8142352Z Get:14 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Components [175 kB]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.8167842Z Get:15 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 c-n-f Metadata [15.7 kB]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.8194186Z Get:16 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Packages [1500 kB]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.8299799Z Get:17 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe Translation-en [304 kB]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.8334063Z Get:18 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Components [378 kB]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.8373058Z Get:19 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 c-n-f Metadata [31.4 kB]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.8383573Z Get:20 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted amd64 Packages [2251 kB]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.8554130Z Get:21 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted Translation-en [510 kB]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.9044259Z Get:22 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted amd64 Components [212 B]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.9057252Z Get:23 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse Translation-en [5808 B]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.9072894Z Get:24 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse amd64 Components [940 B]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.9087356Z Get:25 http://azure.archive.ubuntu.com/ubuntu noble-backports/main amd64 Components [7148 B]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.9101114Z Get:26 http://azure.archive.ubuntu.com/ubuntu noble-backports/universe amd64 Components [11.0 kB]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.9114954Z Get:27 http://azure.archive.ubuntu.com/ubuntu noble-backports/restricted amd64 Components [216 B]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.9127046Z Get:28 http://azure.archive.ubuntu.com/ubuntu noble-backports/multiverse amd64 Components [212 B]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.9273985Z Get:29 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Packages [1311 kB]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.9378044Z Get:30 http://azure.archive.ubuntu.com/ubuntu noble-security/main Translation-en [216 kB]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.9403213Z Get:31 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Components [21.6 kB]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.9416421Z Get:32 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 c-n-f Metadata [9420 B]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.9430423Z Get:33 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Packages [909 kB]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.9493477Z Get:34 http://azure.archive.ubuntu.com/ubuntu noble-security/universe Translation-en [205 kB]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.9517159Z Get:35 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Components [52.2 kB]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.9957873Z Get:36 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 c-n-f Metadata [19.4 kB]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:46.9975680Z Get:37 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted amd64 Packages [2146 kB]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:47.0089991Z Get:38 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted Translation-en [488 kB]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:47.0131126Z Get:39 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted amd64 Components [212 B]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:47.0149604Z Get:40 http://azure.archive.ubuntu.com/ubuntu noble-security/multiverse Translation-en [5956 B]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:47.0163507Z Get:41 http://azure.archive.ubuntu.com/ubuntu noble-security/multiverse amd64 Components [212 B]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:55.5400956Z Fetched 13.0 MB in 2s (8334 kB/s)
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:56.2728331Z Reading package lists...
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:56.3053457Z Reading package lists...
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:56.4919369Z Building dependency tree...
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:56.4926095Z Reading state information...
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:56.6524984Z The following NEW packages will be installed:
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:56.6526022Z   postgresql-client
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:56.6698228Z 0 upgraded, 1 newly installed, 0 to remove and 45 not upgraded.
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:56.6698664Z Need to get 11.6 kB of archives.
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:56.6698986Z After this operation, 17.4 kB of additional disk space will be used.
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:56.6699761Z Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:56.7446019Z Get:2 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 postgresql-client all 16+257build1.1 [11.6 kB]
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:56.9987729Z Fetched 11.6 kB in 0s (135 kB/s)
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:57.0207337Z Selecting previously unselected package postgresql-client.
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:57.0494055Z (Reading database ... 
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:57.0494465Z (Reading database ... 5%
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:57.0494821Z (Reading database ... 10%
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:57.0495156Z (Reading database ... 15%
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:57.0495448Z (Reading database ... 20%
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:57.0495655Z (Reading database ... 25%
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:57.0495862Z (Reading database ... 30%
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:57.0496066Z (Reading database ... 35%
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:57.0496270Z (Reading database ... 40%
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:57.0496473Z (Reading database ... 45%
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:57.0496809Z (Reading database ... 50%
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:57.0587379Z (Reading database ... 55%
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:57.2166644Z (Reading database ... 60%
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:57.3344832Z (Reading database ... 65%
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:57.4032643Z (Reading database ... 70%
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:57.4639425Z (Reading database ... 75%
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:57.6618203Z (Reading database ... 80%
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:57.8539797Z (Reading database ... 85%
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:58.0876195Z (Reading database ... 90%
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:58.2572898Z (Reading database ... 95%
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:58.2573418Z (Reading database ... 100%
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:58.2581360Z (Reading database ... 216225 files and directories currently installed.)
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:58.2620073Z Preparing to unpack .../postgresql-client_16+257build1.1_all.deb ...
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:58.2649200Z Unpacking postgresql-client (16+257build1.1) ...
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:58.3042653Z Setting up postgresql-client (16+257build1.1) ...
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:59.0360499Z 
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:59.0360991Z Running kernel seems to be up-to-date.
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:59.0361365Z 
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:59.0361512Z No services need to be restarted.
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:59.0361789Z 
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:59.0362238Z No containers need to be restarted.
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:59.0362464Z 
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:59.0362594Z No user sessions are running outdated binaries.
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:59.0362808Z 
+Apply Database Migrations	Install Postgres Client	2025-11-20T08:06:59.0363601Z No VM guests are running outdated hypervisor (qemu) binaries on this host.
+Apply Database Migrations	Apply Migrations	∩╗┐2025-11-20T08:06:59.9737175Z ##[group]Run # Mask the secret in logs just in case
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9737591Z [36;1m# Mask the secret in logs just in case[0m
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9738037Z [36;1mecho "::add-mask::$SUPABASE_DB_URL"[0m
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9738473Z [36;1m[0m
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9738648Z [36;1m# Check if we can connect[0m
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9738978Z [36;1mif ! psql "$SUPABASE_DB_URL" -c "SELECT 1" > /dev/null 2>&1; then[0m
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9739436Z [36;1m  echo "::error::Cannot connect to Supabase DB. Check SUPABASE_DB_URL secret."[0m
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9739791Z [36;1m  exit 1[0m
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9739960Z [36;1mfi[0m
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9740121Z [36;1m[0m
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9740353Z [36;1mecho "Connected to Supabase. Applying migrations..."[0m
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9740654Z [36;1m[0m
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9740855Z [36;1m# Loop through all SQL files in sorted order[0m
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9741192Z [36;1mfor file in $(ls supabase/migrations/*.sql | sort); do[0m
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9741522Z [36;1m  echo "Processing $file..."[0m
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9741782Z [36;1m  [0m
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9741967Z [36;1m  # Apply the migration[0m
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9742509Z [36;1m  # ON_ERROR_STOP=1 ensures psql exits with error code if SQL fails[0m
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9742892Z [36;1m  psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f "$file"[0m
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9743178Z [36;1m  [0m
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9743345Z [36;1m  if [ $? -eq 0 ]; then[0m
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9743587Z [36;1m    echo "Γ£à Successfully applied $file"[0m
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9743842Z [36;1m  else[0m
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9744040Z [36;1m    echo "::error::Failed to apply $file"[0m
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9744311Z [36;1m    exit 1[0m
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9744486Z [36;1m  fi[0m
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9744644Z [36;1mdone[0m
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9779080Z shell: /usr/bin/bash -e {0}
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9779313Z env:
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9780014Z   SUPABASE_DB_URL: ***
+Apply Database Migrations	Apply Migrations	2025-11-20T08:06:59.9780237Z ##[endgroup]
+Apply Database Migrations	Apply Migrations	2025-11-20T08:07:00.1151883Z ##[error]Cannot connect to Supabase DB. Check SUPABASE_DB_URL secret.
+Apply Database Migrations	Apply Migrations	2025-11-20T08:07:00.1161089Z ##[error]Process completed with exit code 1.
+Apply Database Migrations	Log Failure to OASIS	∩╗┐2025-11-20T08:07:00.1210627Z ##[group]Run if [ -n "$GATEWAY_URL" ]; then
+Apply Database Migrations	Log Failure to OASIS	2025-11-20T08:07:00.1210960Z [36;1mif [ -n "$GATEWAY_URL" ]; then[0m
+Apply Database Migrations	Log Failure to OASIS	2025-11-20T08:07:00.1211269Z [36;1m  curl -X POST "$GATEWAY_URL/api/v1/events/ingest" \[0m
+Apply Database Migrations	Log Failure to OASIS	2025-11-20T08:07:00.1211642Z [36;1m    -H "Content-Type: application/json" \[0m
+Apply Database Migrations	Log Failure to OASIS	2025-11-20T08:07:00.1211903Z [36;1m    -d '{[0m
+Apply Database Migrations	Log Failure to OASIS	2025-11-20T08:07:00.1212275Z [36;1m      "vtid": "DEV-OASIS-GOV-0102",[0m
+Apply Database Migrations	Log Failure to OASIS	2025-11-20T08:07:00.1212539Z [36;1m      "type": "MIGRATION_FAILED",[0m
+Apply Database Migrations	Log Failure to OASIS	2025-11-20T08:07:00.1212794Z [36;1m      "source": "github-actions",[0m
+Apply Database Migrations	Log Failure to OASIS	2025-11-20T08:07:00.1213034Z [36;1m      "status": "error",[0m
+Apply Database Migrations	Log Failure to OASIS	2025-11-20T08:07:00.1213364Z [36;1m      "message": "Governance migrations failed - check GitHub Actions logs"[0m
+Apply Database Migrations	Log Failure to OASIS	2025-11-20T08:07:00.1213704Z [36;1m    }' || true[0m
+Apply Database Migrations	Log Failure to OASIS	2025-11-20T08:07:00.1213906Z [36;1mfi[0m
+Apply Database Migrations	Log Failure to OASIS	2025-11-20T08:07:00.1246877Z shell: /usr/bin/bash -e {0}
+Apply Database Migrations	Log Failure to OASIS	2025-11-20T08:07:00.1247099Z env:
+Apply Database Migrations	Log Failure to OASIS	2025-11-20T08:07:00.1247267Z   GATEWAY_URL: 
+Apply Database Migrations	Log Failure to OASIS	2025-11-20T08:07:00.1247448Z ##[endgroup]
+Apply Database Migrations	Post Checkout Repository	∩╗┐2025-11-20T08:07:00.1365118Z Post job cleanup.
+Apply Database Migrations	Post Checkout Repository	2025-11-20T08:07:00.2362838Z [command]/usr/bin/git version
+Apply Database Migrations	Post Checkout Repository	2025-11-20T08:07:00.2399945Z git version 2.51.2
+Apply Database Migrations	Post Checkout Repository	2025-11-20T08:07:00.2443800Z Temporarily overriding HOME='/home/runner/work/_temp/6370f6fe-edb2-494f-be32-8713657f0310' before making global git config changes
+Apply Database Migrations	Post Checkout Repository	2025-11-20T08:07:00.2445094Z Adding repository directory to the temporary git global config as a safe directory
+Apply Database Migrations	Post Checkout Repository	2025-11-20T08:07:00.2450158Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/vitana-platform/vitana-platform
+Apply Database Migrations	Post Checkout Repository	2025-11-20T08:07:00.2485026Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Apply Database Migrations	Post Checkout Repository	2025-11-20T08:07:00.2516575Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Apply Database Migrations	Post Checkout Repository	2025-11-20T08:07:00.2756133Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Apply Database Migrations	Post Checkout Repository	2025-11-20T08:07:00.2780439Z http.https://github.com/.extraheader
+Apply Database Migrations	Post Checkout Repository	2025-11-20T08:07:00.2793402Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+Apply Database Migrations	Post Checkout Repository	2025-11-20T08:07:00.2826423Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Apply Database Migrations	Post Checkout Repository	2025-11-20T08:07:00.3077811Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+Apply Database Migrations	Post Checkout Repository	2025-11-20T08:07:00.3111250Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Apply Database Migrations	Complete job	∩╗┐2025-11-20T08:07:00.3462552Z Cleaning up orphan processes

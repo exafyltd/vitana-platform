@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc && npm run copy-frontend",
-    "copy-frontend": "mkdir -p dist/frontend/command-hub && cp -r src/frontend/command-hub/* dist/frontend/command-hub/",
+    "copy-frontend": "node -e \"const fs=require('fs'); fs.mkdirSync('dist/frontend/command-hub', {recursive: true}); fs.cpSync('src/frontend/command-hub', 'dist/frontend/command-hub', {recursive: true});\"",
     "start": "node dist/index.js",
     "test": "jest",
     "lint": "eslint src/**/*.ts",
@@ -22,6 +22,8 @@
     "helmet": "^7.1.0",
     "js-yaml": "^4.1.0",
     "node-fetch": "^3.3.2",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
     "zod": "^3.22.4"
   },
   "devDependencies": {
@@ -34,6 +36,7 @@
     "@types/supertest": "^6.0.2",
     "@typescript-eslint/eslint-plugin": "^6.15.0",
     "@typescript-eslint/parser": "^6.15.0",
+    "esbuild": "^0.27.0",
     "eslint": "^8.56.0",
     "jest": "^29.7.0",
     "supertest": "^6.3.3",
