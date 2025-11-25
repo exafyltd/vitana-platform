@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { GovernanceController } from '../controllers/governanceController';
+import { GovernanceController } from '../controllers/governance-controller';
 
 const router = Router();
 const controller = new GovernanceController();

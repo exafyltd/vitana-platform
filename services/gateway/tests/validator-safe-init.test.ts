@@ -1,7 +1,7 @@
-import { RuleMatcher } from '../src/validator-core/ruleMatcher';
-import { EnforcementExecutor } from '../src/validator-core/enforcementExecutor';
-import { OasisPipeline } from '../src/validator-core/oasisPipeline';
-import { ViolationGenerator } from '../src/validator-core/violationGenerator';
+import { RuleMatcher } from '../src/validator-core/rule-matcher';
+import { EnforcementExecutor } from '../src/validator-core/enforcement-executor';
+import { OasisPipeline } from '../src/validator-core/oasis-pipeline';
+import { ViolationGenerator } from '../src/validator-core/violation-generator';
 
 /**
  * VTID-112: Test that validator-core doesn't crash when Supabase env vars are missing
