@@ -1,0 +1,205 @@
+name: Claude Auto-Deploy
+
+on:
+  push:
+    branches:
+      - 'claude/**'
+    paths:
+      - 'services/**'
+      - '.github/workflows/CLAUDE-AUTO-DEPLOY.yml'
+  workflow_dispatch:
+    inputs:
+      service:
+        description: 'Service to deploy (e.g., gateway, mcp-gateway)'
+        required: true
+      force:
+        description: 'Force deploy even if no changes detected'
+        type: boolean
+        default: false
+
+env:
+  PROJECT_ID: lovable-vitana-vers1
+  REGION: us-central1
+  REPO_NAME: vitana-services
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.changes.outputs.services }}
+      has_changes: ${{ steps.changes.outputs.has_changes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect changed services
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.service }}" ]; then
+            echo "Manual trigger for service: ${{ github.event.inputs.service }}"
+            echo "services=[\"${{ github.event.inputs.service }}\"]" >> $GITHUB_OUTPUT
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Get changed files
+          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          # Extract unique service directories
+          SERVICES=$(echo "$CHANGED_FILES" | grep -E "^services/" | cut -d'/' -f2 | sort -u | grep -v "^$" || true)
+
+          if [ -z "$SERVICES" ]; then
+            echo "No service changes detected"
+            echo "services=[]" >> $GITHUB_OUTPUT
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          else
+            # Convert to JSON array
+            JSON_ARRAY=$(echo "$SERVICES" | jq -R -s -c 'split("\n") | map(select(length > 0))')
+            echo "Services to deploy: $JSON_ARRAY"
+            echo "services=$JSON_ARRAY" >> $GITHUB_OUTPUT
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          fi
+
+  deploy:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: ${{ fromJson(needs.detect-changes.outputs.services) }}
+      fail-fast: false
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for Dockerfile
+        id: check-dockerfile
+        run: |
+          SERVICE_PATH="services/${{ matrix.service }}"
+          if [ -f "$SERVICE_PATH/Dockerfile" ]; then
+            echo "has_dockerfile=true" >> $GITHUB_OUTPUT
+            echo "service_path=$SERVICE_PATH" >> $GITHUB_OUTPUT
+          else
+            echo "has_dockerfile=false" >> $GITHUB_OUTPUT
+            echo "⚠️ No Dockerfile found in $SERVICE_PATH, skipping"
+          fi
+
+      - name: Authenticate to Google Cloud
+        if: steps.check-dockerfile.outputs.has_dockerfile == 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Set up Cloud SDK
+        if: steps.check-dockerfile.outputs.has_dockerfile == 'true'
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        if: steps.check-dockerfile.outputs.has_dockerfile == 'true'
+        run: |
+          gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Create Artifact Registry repo if needed
+        if: steps.check-dockerfile.outputs.has_dockerfile == 'true'
+        run: |
+          gcloud artifacts repositories create ${{ env.REPO_NAME }} \
+            --repository-format=docker \
+            --location=${{ env.REGION }} \
+            --description="Vitana Platform Docker images" \
+            2>/dev/null || echo "Repository already exists"
+
+      - name: Build and push Docker image
+        if: steps.check-dockerfile.outputs.has_dockerfile == 'true'
+        run: |
+          IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ matrix.service }}"
+
+          echo "Building image: $IMAGE"
+
+          gcloud builds submit \
+            --tag "$IMAGE:${{ github.sha }}" \
+            --tag "$IMAGE:latest" \
+            ${{ steps.check-dockerfile.outputs.service_path }}
+
+      - name: Read service manifest
+        if: steps.check-dockerfile.outputs.has_dockerfile == 'true'
+        id: manifest
+        run: |
+          MANIFEST_PATH="${{ steps.check-dockerfile.outputs.service_path }}/manifest.json"
+          if [ -f "$MANIFEST_PATH" ]; then
+            MEMORY=$(jq -r '.resources.memory // "512Mi"' "$MANIFEST_PATH")
+            CPU=$(jq -r '.resources.cpu // "1"' "$MANIFEST_PATH")
+            HEALTH_PATH=$(jq -r '.healthcheck.path // "/health"' "$MANIFEST_PATH")
+            echo "memory=$MEMORY" >> $GITHUB_OUTPUT
+            echo "cpu=$CPU" >> $GITHUB_OUTPUT
+            echo "health_path=$HEALTH_PATH" >> $GITHUB_OUTPUT
+          else
+            echo "memory=512Mi" >> $GITHUB_OUTPUT
+            echo "cpu=1" >> $GITHUB_OUTPUT
+            echo "health_path=/health" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Deploy to Cloud Run
+        if: steps.check-dockerfile.outputs.has_dockerfile == 'true'
+        run: |
+          IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ matrix.service }}:${{ github.sha }}"
+
+          gcloud run deploy ${{ matrix.service }} \
+            --image "$IMAGE" \
+            --platform managed \
+            --region ${{ env.REGION }} \
+            --allow-unauthenticated \
+            --memory ${{ steps.manifest.outputs.memory }} \
+            --cpu ${{ steps.manifest.outputs.cpu }} \
+            --timeout 300 \
+            --min-instances 0 \
+            --max-instances 3
+
+      - name: Verify deployment
+        if: steps.check-dockerfile.outputs.has_dockerfile == 'true'
+        run: |
+          SERVICE_URL=$(gcloud run services describe ${{ matrix.service }} \
+            --region ${{ env.REGION }} \
+            --format='value(status.url)')
+
+          echo "Service URL: $SERVICE_URL"
+          echo "Health check path: ${{ steps.manifest.outputs.health_path }}"
+
+          # Wait for service to be ready
+          sleep 10
+
+          # Health check
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$SERVICE_URL${{ steps.manifest.outputs.health_path }}" || echo "000")
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Deployment successful! Service is healthy."
+          else
+            echo "⚠️ Health check returned HTTP $HTTP_CODE"
+            curl -s "$SERVICE_URL${{ steps.manifest.outputs.health_path }}" || true
+          fi
+
+      - name: Deployment summary
+        if: always() && steps.check-dockerfile.outputs.has_dockerfile == 'true'
+        run: |
+          SERVICE_URL=$(gcloud run services describe ${{ matrix.service }} \
+            --region ${{ env.REGION }} \
+            --format='value(status.url)' 2>/dev/null || echo "unknown")
+
+          echo "=========================================="
+          echo "   DEPLOYMENT COMPLETE"
+          echo "=========================================="
+          echo ""
+          echo "Service: ${{ matrix.service }}"
+          echo "URL: $SERVICE_URL"
+          echo "Image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ matrix.service }}:${{ github.sha }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "=========================================="
