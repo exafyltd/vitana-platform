@@ -14,12 +14,13 @@ const router = Router();
  */
 router.get('/', (req: Request, res: Response) => {
   try {
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'");
+    // CSP compliant - no inline scripts or styles
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'");
     const htmlPath = path.join(__dirname, '../frontend/command-hub/index.html');
     res.sendFile(htmlPath);
   } catch (error) {
     console.error('[Command Hub] Error serving UI:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to load Command Hub UI',
       timestamp: new Date().toISOString()
     });
@@ -93,10 +94,42 @@ router.get('/health', (req: Request, res: Response) => {
       ui: 'tasks-enabled',
       ai: 'gemini-enabled',
       liveConsole: true,
-      tasksPanel: true
+      tasksPanel: true,
+      modules: 17,
+      screens: 87
     },
     timestamp: new Date().toISOString()
   });
+});
+
+/**
+ * SPA Catch-all Route for Deep Linking
+ * Serves index.html for all /command-hub/* routes (except static files and API)
+ * This enables client-side routing for the 87-screen navigation
+ */
+router.get('/*', (req: Request, res: Response) => {
+  // Skip static files (served by express.static)
+  const staticExts = ['.js', '.css', '.html', '.png', '.jpg', '.svg', '.ico', '.json'];
+  if (staticExts.some(ext => req.path.endsWith(ext))) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+
+  // Skip API routes
+  if (req.path.startsWith('/api')) {
+    return res.status(404).json({ error: 'API endpoint not found' });
+  }
+
+  try {
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'");
+    const htmlPath = path.join(__dirname, '../frontend/command-hub/index.html');
+    res.sendFile(htmlPath);
+  } catch (error) {
+    console.error('[Command Hub] Error serving SPA:', error);
+    res.status(500).json({
+      error: 'Failed to load Command Hub UI',
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 export default router;
