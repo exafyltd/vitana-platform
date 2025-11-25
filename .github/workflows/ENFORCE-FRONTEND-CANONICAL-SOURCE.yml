@@ -1,4 +1,5 @@
 name: ENFORCE-FRONTEND-CANONICAL-SOURCE (DEV-CICDL-0205)
+# Enforces canonical frontend source structure for Command Hub
 
 on: [pull_request]
 
