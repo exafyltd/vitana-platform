@@ -65,8 +65,7 @@ gcloud run deploy ${SERVICE_NAME} \
   --timeout 300 \
   --min-instances 0 \
   --max-instances 3 \
-  --set-env-vars "RELAY_API_KEY=${RELAY_API_KEY}" \
-  --set-env-vars "ALLOWED_COMMANDS=gcloud,docker,git,ls,cat,pwd,echo,npm,node,pnpm"
+  --set-env-vars "^@^RELAY_API_KEY=${RELAY_API_KEY}@ALLOWED_COMMANDS=gcloud,docker,git,ls,cat,pwd,echo,npm,node,pnpm"
 
 # Get service URL
 SERVICE_URL=$(gcloud run services describe ${SERVICE_NAME} --region ${REGION} --format 'value(status.url)')
