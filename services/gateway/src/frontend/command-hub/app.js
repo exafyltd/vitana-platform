@@ -15,6 +15,18 @@ const NAVIGATION_CONFIG = [
         ]
     },
     {
+        "section": "admin",
+        "basePath": "/command-hub/admin/",
+        "tabs": [
+            { "key": "users", "path": "/command-hub/admin/users/" },
+            { "key": "permissions", "path": "/command-hub/admin/permissions/" },
+            { "key": "tenants", "path": "/command-hub/admin/tenants/" },
+            { "key": "content-moderation", "path": "/command-hub/admin/content-moderation/" },
+            { "key": "identity-access", "path": "/command-hub/admin/identity-access/" },
+            { "key": "analytics", "path": "/command-hub/admin/analytics/" }
+        ]
+    },
+    {
         "section": "operator",
         "basePath": "/command-hub/operator/",
         "tabs": [
@@ -79,6 +91,17 @@ const NAVIGATION_CONFIG = [
             { "key": "entities", "path": "/command-hub/oasis/entities/" },
             { "key": "streams", "path": "/command-hub/oasis/streams/" },
             { "key": "command-log", "path": "/command-hub/oasis/command-log/" }
+        ]
+    },
+    {
+        "section": "databases",
+        "basePath": "/command-hub/databases/",
+        "tabs": [
+            { "key": "supabase", "path": "/command-hub/databases/supabase/" },
+            { "key": "vectors", "path": "/command-hub/databases/vectors/" },
+            { "key": "cache", "path": "/command-hub/databases/cache/" },
+            { "key": "analytics", "path": "/command-hub/databases/analytics/" },
+            { "key": "clusters", "path": "/command-hub/databases/clusters/" }
         ]
     },
     {
@@ -173,12 +196,14 @@ const NAVIGATION_CONFIG = [
 
 const SECTION_LABELS = {
     'overview': 'Overview',
+    'admin': 'Admin',
     'operator': 'Operator',
     'command-hub': 'Command Hub',
     'governance': 'Governance',
     'agents': 'Agents',
     'workflows': 'Workflows',
     'oasis': 'OASIS',
+    'databases': 'Databases',
     'infrastructure': 'Infrastructure',
     'security-dev': 'Security (Dev)',
     'integrations-tools': 'Integrations & Tools',
