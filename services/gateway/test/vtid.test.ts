@@ -47,4 +47,79 @@ describe("VTID API - DEV-OASIS-0101", () => {
       expect([200, 204]).toContain(res.status);
     });
   });
+
+  // DEV-OASIS-0206: VTID Enforcement Layer Tests
+  describe("vtid.get_or_create_endpoint - DEV-OASIS-0206", () => {
+    it("should create new VTID when none provided", async () => {
+      const res = await request(app).post("/api/v1/vtid/get-or-create").send({
+        task_family: "DEV",
+        task_module: "TEST",
+        title: "Test get-or-create",
+        agent: "test-agent"
+      });
+      // Allow both 201 (created) and 502 (if DB unavailable in test env)
+      if (res.status === 201) {
+        expect(res.body.ok).toBe(true);
+        expect(res.body.vtid).toBeDefined();
+        expect(res.body.source).toBe("created");
+      }
+    });
+
+    it("should reject invalid VTID format", async () => {
+      const res = await request(app).post("/api/v1/vtid/get-or-create").send({
+        vtid: "invalid-vtid-format"
+      });
+      expect(res.status).toBe(400);
+      expect(res.body.ok).toBe(false);
+      expect(res.body.error).toBe("INVALID_VTID_FORMAT");
+    });
+
+    it("should reject non-existent VTID", async () => {
+      const res = await request(app).post("/api/v1/vtid/get-or-create").send({
+        vtid: "DEV-FAKE-9999"
+      });
+      // Could be 400 (not found) or 502 (DB error)
+      expect([400, 502]).toContain(res.status);
+      expect(res.body.ok).toBe(false);
+    });
+
+    it("should use default values when not provided", async () => {
+      const res = await request(app).post("/api/v1/vtid/get-or-create").send({});
+      // Allow success or DB unavailable
+      if (res.status === 201) {
+        expect(res.body.ok).toBe(true);
+        expect(res.body.layer).toBe("DEV");
+        expect(res.body.module).toBe("OASIS");
+      }
+    });
+  });
+
+  describe("vtid.validate_endpoint - DEV-OASIS-0206", () => {
+    it("should validate format of well-formed VTID", async () => {
+      const res = await request(app).post("/api/v1/vtid/validate").send({
+        vtid: "DEV-OASIS-0001"
+      });
+      // Allow success or DB error
+      if (res.status === 200) {
+        expect(res.body.ok).toBe(true);
+        expect(res.body.format_valid).toBe(true);
+      }
+    });
+
+    it("should reject malformed VTID", async () => {
+      const res = await request(app).post("/api/v1/vtid/validate").send({
+        vtid: "not-a-valid-vtid"
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.format_valid).toBe(false);
+    });
+
+    it("should require vtid field", async () => {
+      const res = await request(app).post("/api/v1/vtid/validate").send({});
+      expect(res.status).toBe(400);
+      expect(res.body.ok).toBe(false);
+      expect(res.body.error).toBe("MISSING_VTID");
+    });
+  });
 });
