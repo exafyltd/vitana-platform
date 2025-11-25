@@ -36,6 +36,19 @@ echo ""
 # Change to service directory
 cd "$SERVICE_PATH" || exit 1
 
+# DEV-CICDL-0205: Enforce 17/87 Dev Frontend Spec before deploy
+if [ "$SERVICE_NAME" = "gateway" ]; then
+  echo "═══════════════════════════════════════════════════════════════════"
+  echo "DEV-CICDL-0205: Running Dev frontend navigation spec validator..."
+  echo "═══════════════════════════════════════════════════════════════════"
+  npm run validate:dev-frontend-spec
+  if [ $? -ne 0 ]; then
+    echo "❌ Spec validation failed. Aborting deploy."
+    exit 1
+  fi
+  echo "✅ Spec validation passed. Proceeding with deploy..."
+fi
+
 # Deploy using gcloud run deploy --source .
 echo -e "${YELLOW}Deploying to Cloud Run...${NC}"
 gcloud run deploy "$SERVICE_NAME" \

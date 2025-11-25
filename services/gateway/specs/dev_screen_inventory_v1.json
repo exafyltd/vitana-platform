@@ -1,0 +1,149 @@
+{
+  "version": 1,
+  "environment": "developer",
+  "sidebar_navigation": [
+    "overview",
+    "admin",
+    "operator",
+    "command-hub",
+    "governance",
+    "agents",
+    "workflows",
+    "oasis",
+    "databases",
+    "infrastructure",
+    "security-dev",
+    "integrations-tools",
+    "diagnostics",
+    "models-evaluations",
+    "testing-qa",
+    "intelligence-memory-dev",
+    "docs"
+  ],
+  "module_catalog": {
+    "overview": [
+      "system-overview",
+      "live-metrics",
+      "recent-events",
+      "errors-violations",
+      "release-feed"
+    ],
+    "admin": [
+      "users",
+      "permissions",
+      "tenants",
+      "content-moderation",
+      "identity-access",
+      "analytics"
+    ],
+    "operator": [
+      "task-queue",
+      "task-details",
+      "execution-logs",
+      "pipelines",
+      "runbook"
+    ],
+    "command-hub": [
+      "tasks",
+      "live-console",
+      "events",
+      "vtids",
+      "approvals"
+    ],
+    "governance": [
+      "rules",
+      "categories",
+      "evaluations",
+      "violations",
+      "history",
+      "proposals"
+    ],
+    "agents": [
+      "registered-agents",
+      "skills",
+      "pipelines",
+      "memory",
+      "telemetry"
+    ],
+    "workflows": [
+      "workflow-list",
+      "triggers",
+      "actions",
+      "schedules",
+      "history"
+    ],
+    "oasis": [
+      "events",
+      "vtid-ledger",
+      "entities",
+      "streams",
+      "command-log"
+    ],
+    "databases": [
+      "supabase",
+      "vectors",
+      "cache",
+      "analytics",
+      "clusters"
+    ],
+    "infrastructure": [
+      "services",
+      "health",
+      "deployments",
+      "logs",
+      "config"
+    ],
+    "security-dev": [
+      "policies",
+      "roles",
+      "keys-secrets",
+      "audit-log",
+      "rls-access"
+    ],
+    "integrations-tools": [
+      "mcp-connectors",
+      "llm-providers",
+      "apis",
+      "tools",
+      "service-mesh"
+    ],
+    "diagnostics": [
+      "health-checks",
+      "latency",
+      "errors",
+      "sse",
+      "debug-panel"
+    ],
+    "models-evaluations": [
+      "models",
+      "evaluations",
+      "benchmarks",
+      "routing",
+      "playground"
+    ],
+    "testing-qa": [
+      "unit-tests",
+      "integration-tests",
+      "validator-tests",
+      "e2e",
+      "ci-reports"
+    ],
+    "intelligence-memory-dev": [
+      "memory-vault",
+      "knowledge-graph",
+      "embeddings",
+      "recall",
+      "inspector"
+    ],
+    "docs": [
+      "screens",
+      "api-inventory",
+      "database-schemas",
+      "architecture",
+      "workforce"
+    ]
+  },
+  "screen_inventory": {
+    "total_screens": 87
+  }
+}
