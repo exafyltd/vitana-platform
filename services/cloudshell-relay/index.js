@@ -1,6 +1,7 @@
 const http = require('http');
 const { exec } = require('child_process');
 const crypto = require('crypto');
+const url = require('url');
 
 // API key for authentication - set via environment variable
 const API_KEY = process.env.RELAY_API_KEY || crypto.randomBytes(32).toString('hex');
@@ -39,11 +40,46 @@ function executeCommand(cmd, workingDir = '/workspace') {
   });
 }
 
+async function handleExec(providedKey, command, workingDir, res) {
+  // Check API key
+  if (providedKey !== API_KEY) {
+    res.writeHead(401, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Invalid API key' }));
+    return;
+  }
+
+  if (!command) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Command is required' }));
+    return;
+  }
+
+  // Security check
+  if (!isCommandAllowed(command)) {
+    res.writeHead(403, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      error: 'Command not allowed',
+      allowed: ALLOWED_COMMANDS
+    }));
+    return;
+  }
+
+  console.log(`Executing: ${command}`);
+  const result = await executeCommand(command, workingDir || '/workspace');
+
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(result));
+}
+
 const server = http.createServer(async (req, res) => {
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-API-Key');
+
+  const parsedUrl = url.parse(req.url, true);
+  const pathname = parsedUrl.pathname;
+  const query = parsedUrl.query;
 
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
@@ -52,49 +88,31 @@ const server = http.createServer(async (req, res) => {
   }
 
   // Health check
-  if (req.url === '/health' || req.url === '/') {
+  if (pathname === '/health' || pathname === '/') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ status: 'healthy', service: 'cloudshell-relay' }));
     return;
   }
 
-  // Command execution endpoint
-  if (req.method === 'POST' && req.url === '/exec') {
-    // Check API key
-    const providedKey = req.headers['x-api-key'];
-    if (providedKey !== API_KEY) {
-      res.writeHead(401, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Invalid API key' }));
-      return;
-    }
+  // Command execution endpoint - GET method (for WebFetch compatibility)
+  if (req.method === 'GET' && pathname === '/exec') {
+    const providedKey = query.key;
+    const command = query.cmd;
+    const workingDir = query.cwd;
+    await handleExec(providedKey, command, workingDir, res);
+    return;
+  }
+
+  // Command execution endpoint - POST method
+  if (req.method === 'POST' && pathname === '/exec') {
+    const providedKey = req.headers['x-api-key'] || query.key;
 
     let body = '';
     req.on('data', chunk => body += chunk);
     req.on('end', async () => {
       try {
         const { command, workingDir } = JSON.parse(body);
-
-        if (!command) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Command is required' }));
-          return;
-        }
-
-        // Security check
-        if (!isCommandAllowed(command)) {
-          res.writeHead(403, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({
-            error: 'Command not allowed',
-            allowed: ALLOWED_COMMANDS
-          }));
-          return;
-        }
-
-        console.log(`Executing: ${command}`);
-        const result = await executeCommand(command, workingDir);
-
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(result));
+        await handleExec(providedKey, command, workingDir, res);
       } catch (e) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Invalid JSON body' }));
