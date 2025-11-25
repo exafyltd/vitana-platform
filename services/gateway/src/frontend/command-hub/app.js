@@ -210,12 +210,16 @@
 
   // =============================================
   // ROUTING
+  // App is mounted at /command-hub/
+  // Routes: /command-hub/<module>/<tab>/
   // =============================================
+  var BASE_PATH = '/command-hub';
+
   function navigateTo(module, tab) {
     state.currentModule = module;
     state.currentTab = tab;
 
-    var path = '/' + module + '/' + tab + '/';
+    var path = BASE_PATH + '/' + module + '/' + tab + '/';
     history.pushState({ module: module, tab: tab }, '', path);
 
     render();
@@ -228,6 +232,11 @@
     // Default to command-hub/tasks
     var module = 'command-hub';
     var tab = 'tasks';
+
+    // Skip 'command-hub' prefix if present
+    if (parts[0] === 'command-hub') {
+      parts = parts.slice(1);
+    }
 
     if (parts.length >= 2) {
       module = parts[0];
