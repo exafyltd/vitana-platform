@@ -1,0 +1,578 @@
+name: CICDL-AUTO-MERGE
+# VTID: DEV-CICDL-0207
+# VT_LAYER: CICDL
+# VT_MODULE: AUTO_MERGE
+# Purpose: Autonomous Safe Merge Layer - Phase 1
+# Automatically merges PRs that meet governance criteria
+
+run-name: 'Auto-Merge [VTID: DEV-CICDL-0207] PR #${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || ''manual'' }}'
+
+on:
+  # Trigger when CI workflow completes successfully
+  workflow_run:
+    workflows: ["CICDL-GATEWAY-CI"]
+    types:
+      - completed
+    branches:
+      - main
+      - develop
+
+  # Trigger on PR events
+  pull_request:
+    types:
+      - synchronize
+      - reopened
+      - labeled
+    branches:
+      - main
+      - develop
+
+  # Manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to evaluate'
+        required: true
+        type: number
+      force_check:
+        description: 'Force re-check even if previously evaluated'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  NODE_VERSION: '20.x'
+  PNPM_VERSION: '9.0.0'
+  VTID: DEV-CICDL-0207
+  VT_LAYER: CICDL
+  VT_MODULE: AUTO_MERGE
+  GATEWAY_URL: ${{ vars.GATEWAY_URL || 'https://gateway-vitana-platform.onrender.com' }}
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  # Job 1: Determine PR context
+  get-pr-context:
+    name: Get PR Context
+    runs-on: ubuntu-latest
+    outputs:
+      pr_number: ${{ steps.get-pr.outputs.pr_number }}
+      branch: ${{ steps.get-pr.outputs.branch }}
+      base_branch: ${{ steps.get-pr.outputs.base_branch }}
+      title: ${{ steps.get-pr.outputs.title }}
+      author: ${{ steps.get-pr.outputs.author }}
+      has_override: ${{ steps.get-pr.outputs.has_override }}
+      should_process: ${{ steps.get-pr.outputs.should_process }}
+    steps:
+      - name: Get PR Info
+        id: get-pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            let prNumber, branch, baseBranch, title, author, hasOverride;
+            let shouldProcess = true;
+
+            // Determine PR number based on trigger
+            if (context.eventName === 'workflow_dispatch') {
+              prNumber = context.payload.inputs.pr_number;
+            } else if (context.eventName === 'workflow_run') {
+              const prs = context.payload.workflow_run.pull_requests;
+              if (prs && prs.length > 0) {
+                prNumber = prs[0].number;
+              } else {
+                console.log('No PR associated with workflow run');
+                shouldProcess = false;
+              }
+            } else if (context.eventName === 'pull_request') {
+              prNumber = context.payload.pull_request.number;
+            }
+
+            if (shouldProcess && prNumber) {
+              // Fetch PR details
+              const { data: pr } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber
+              });
+
+              branch = pr.head.ref;
+              baseBranch = pr.base.ref;
+              title = pr.title;
+              author = pr.user.login;
+
+              // Check for override labels
+              const labels = pr.labels.map(l => l.name.toLowerCase());
+              hasOverride = labels.includes('no-auto-merge') ||
+                           labels.includes('human-review') ||
+                           labels.includes('override');
+
+              // Check PR state
+              if (pr.state !== 'open') {
+                console.log(`PR #${prNumber} is ${pr.state}, skipping`);
+                shouldProcess = false;
+              }
+
+              if (pr.merged) {
+                console.log(`PR #${prNumber} is already merged, skipping`);
+                shouldProcess = false;
+              }
+            }
+
+            core.setOutput('pr_number', prNumber || '');
+            core.setOutput('branch', branch || '');
+            core.setOutput('base_branch', baseBranch || 'main');
+            core.setOutput('title', title || '');
+            core.setOutput('author', author || '');
+            core.setOutput('has_override', hasOverride ? 'true' : 'false');
+            core.setOutput('should_process', shouldProcess ? 'true' : 'false');
+
+            console.log(`PR #${prNumber}: branch=${branch}, override=${hasOverride}, process=${shouldProcess}`);
+
+  # Job 2: Validate PR with Governance
+  validate-pr:
+    name: Validate PR
+    runs-on: ubuntu-latest
+    needs: get-pr-context
+    if: needs.get-pr-context.outputs.should_process == 'true'
+    outputs:
+      validation_passed: ${{ steps.validate.outputs.passed }}
+      module: ${{ steps.validate.outputs.module }}
+      eligible_for_auto_merge: ${{ steps.validate.outputs.eligible }}
+      summary: ${{ steps.validate.outputs.summary }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get Changed Files
+        id: changed-files
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = ${{ needs.get-pr-context.outputs.pr_number }};
+
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+              per_page: 100
+            });
+
+            const filenames = files.map(f => f.filename);
+            core.setOutput('files', JSON.stringify(filenames));
+            core.setOutput('files_count', files.length);
+
+            console.log(`Found ${files.length} changed files`);
+
+      - name: Detect Module
+        id: detect-module
+        run: |
+          FILES='${{ steps.changed-files.outputs.files }}'
+
+          # Simple module detection based on file paths
+          if echo "$FILES" | grep -q '\.github/workflows'; then
+            MODULE="CICDL"
+          elif echo "$FILES" | grep -q 'services/gateway'; then
+            MODULE="GATEWAY"
+          elif echo "$FILES" | grep -q 'oasis'; then
+            MODULE="OASIS"
+          elif echo "$FILES" | grep -q 'governance'; then
+            MODULE="VTID_GOVERNANCE"
+          else
+            MODULE="UNKNOWN"
+          fi
+
+          echo "module=$MODULE" >> $GITHUB_OUTPUT
+          echo "Detected module: $MODULE"
+
+      - name: Validate Against Auto-Merge Rules
+        id: validate
+        env:
+          PR_NUMBER: ${{ needs.get-pr-context.outputs.pr_number }}
+          BRANCH: ${{ needs.get-pr-context.outputs.branch }}
+          TITLE: ${{ needs.get-pr-context.outputs.title }}
+          MODULE: ${{ steps.detect-module.outputs.module }}
+          HAS_OVERRIDE: ${{ needs.get-pr-context.outputs.has_override }}
+          FILES: ${{ steps.changed-files.outputs.files }}
+        run: |
+          # Allowed modules for auto-merge
+          ALLOWED_MODULES="CICDL GATEWAY OASIS VTID_GOVERNANCE"
+
+          # Check if module is allowed
+          MODULE_ALLOWED="false"
+          for allowed in $ALLOWED_MODULES; do
+            if [ "$MODULE" = "$allowed" ]; then
+              MODULE_ALLOWED="true"
+              break
+            fi
+          done
+
+          # Check for forbidden paths
+          FORBIDDEN_PATHS=".github/CODEOWNERS prisma/schema.prisma .env secrets/"
+          FORBIDDEN_FOUND="false"
+          FORBIDDEN_FILE=""
+
+          for forbidden in $FORBIDDEN_PATHS; do
+            if echo "$FILES" | grep -q "$forbidden"; then
+              FORBIDDEN_FOUND="true"
+              FORBIDDEN_FILE="$forbidden"
+              break
+            fi
+          done
+
+          # Check override flag
+          if [ "$HAS_OVERRIDE" = "true" ]; then
+            echo "passed=false" >> $GITHUB_OUTPUT
+            echo "eligible=false" >> $GITHUB_OUTPUT
+            echo "summary=Human override flag set - requires manual merge" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Check module
+          if [ "$MODULE_ALLOWED" = "false" ]; then
+            echo "passed=false" >> $GITHUB_OUTPUT
+            echo "eligible=false" >> $GITHUB_OUTPUT
+            echo "summary=Module $MODULE not allowed for auto-merge" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Check forbidden paths
+          if [ "$FORBIDDEN_FOUND" = "true" ]; then
+            echo "passed=false" >> $GITHUB_OUTPUT
+            echo "eligible=false" >> $GITHUB_OUTPUT
+            echo "summary=PR touches forbidden path: $FORBIDDEN_FILE" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "passed=true" >> $GITHUB_OUTPUT
+          echo "eligible=true" >> $GITHUB_OUTPUT
+          echo "module=$MODULE" >> $GITHUB_OUTPUT
+          echo "summary=PR #$PR_NUMBER passed validation for module $MODULE" >> $GITHUB_OUTPUT
+
+      - name: Emit PR_VALIDATED Event
+        if: steps.validate.outputs.passed == 'true'
+        run: |
+          curl -X POST "${{ env.GATEWAY_URL }}/api/v1/events/ingest" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "vtid": "${{ env.VTID }}",
+              "type": "PR_VALIDATED",
+              "source": "CICDL-AUTO-MERGE",
+              "status": "success",
+              "message": "PR #${{ needs.get-pr-context.outputs.pr_number }} validated for auto-merge",
+              "payload": {
+                "pr_number": ${{ needs.get-pr-context.outputs.pr_number }},
+                "module": "${{ steps.validate.outputs.module }}",
+                "branch": "${{ needs.get-pr-context.outputs.branch }}",
+                "eligible": true
+              }
+            }' || echo "Warning: Failed to emit event to OASIS"
+
+  # Job 3: Check CI Status
+  check-ci-status:
+    name: Check CI Status
+    runs-on: ubuntu-latest
+    needs: [get-pr-context, validate-pr]
+    if: needs.validate-pr.outputs.eligible_for_auto_merge == 'true'
+    outputs:
+      ci_passed: ${{ steps.check-ci.outputs.passed }}
+      all_checks_passed: ${{ steps.check-ci.outputs.all_passed }}
+    steps:
+      - name: Check Required Checks
+        id: check-ci
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = ${{ needs.get-pr-context.outputs.pr_number }};
+
+            // Get the PR to find the head SHA
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+
+            const headSha = pr.head.sha;
+
+            // Get check runs for the commit
+            const { data: checkRuns } = await github.rest.checks.listForRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: headSha
+            });
+
+            // Get combined status
+            const { data: status } = await github.rest.repos.getCombinedStatusForRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: headSha
+            });
+
+            // Check if all check runs passed (excluding this workflow)
+            const relevantChecks = checkRuns.check_runs.filter(
+              c => c.name !== 'Auto-Merge' &&
+                   c.name !== 'CICDL-AUTO-MERGE' &&
+                   !c.name.includes('get-pr-context') &&
+                   !c.name.includes('validate-pr')
+            );
+
+            const failedChecks = relevantChecks.filter(
+              c => c.conclusion !== 'success' && c.conclusion !== 'skipped' && c.status === 'completed'
+            );
+
+            const pendingChecks = relevantChecks.filter(
+              c => c.status !== 'completed'
+            );
+
+            const allPassed = failedChecks.length === 0 && pendingChecks.length === 0;
+            const ciPassed = status.state === 'success' ||
+                            (status.state === 'pending' && failedChecks.length === 0);
+
+            console.log(`Total checks: ${relevantChecks.length}`);
+            console.log(`Failed: ${failedChecks.length}, Pending: ${pendingChecks.length}`);
+            console.log(`Combined status: ${status.state}`);
+
+            if (failedChecks.length > 0) {
+              console.log('Failed checks:', failedChecks.map(c => c.name).join(', '));
+            }
+
+            core.setOutput('passed', ciPassed ? 'true' : 'false');
+            core.setOutput('all_passed', allPassed ? 'true' : 'false');
+
+      - name: Emit CI Status Event
+        run: |
+          STATUS="${{ steps.check-ci.outputs.passed == 'true' && 'PR_CI_PASSED' || 'PR_CI_FAILED' }}"
+          curl -X POST "${{ env.GATEWAY_URL }}/api/v1/events/ingest" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"vtid\": \"${{ env.VTID }}\",
+              \"type\": \"$STATUS\",
+              \"source\": \"CICDL-AUTO-MERGE\",
+              \"status\": \"${{ steps.check-ci.outputs.passed == 'true' && 'success' || 'error' }}\",
+              \"message\": \"CI status check for PR #${{ needs.get-pr-context.outputs.pr_number }}\",
+              \"payload\": {
+                \"pr_number\": ${{ needs.get-pr-context.outputs.pr_number }},
+                \"ci_passed\": ${{ steps.check-ci.outputs.passed }},
+                \"all_checks_passed\": ${{ steps.check-ci.outputs.all_passed }}
+              }
+            }" || echo "Warning: Failed to emit event to OASIS"
+
+  # Job 4: Auto-Merge Decision
+  auto-merge-decision:
+    name: Auto-Merge Decision
+    runs-on: ubuntu-latest
+    needs: [get-pr-context, validate-pr, check-ci-status]
+    if: |
+      needs.validate-pr.outputs.eligible_for_auto_merge == 'true' &&
+      needs.check-ci-status.outputs.ci_passed == 'true' &&
+      needs.get-pr-context.outputs.has_override != 'true'
+    outputs:
+      should_merge: ${{ steps.decision.outputs.should_merge }}
+      merge_method: ${{ steps.decision.outputs.merge_method }}
+    steps:
+      - name: Make Merge Decision
+        id: decision
+        run: |
+          echo "All criteria met for auto-merge"
+          echo "- Validation: ${{ needs.validate-pr.outputs.validation_passed }}"
+          echo "- CI Status: ${{ needs.check-ci-status.outputs.ci_passed }}"
+          echo "- Override: ${{ needs.get-pr-context.outputs.has_override }}"
+          echo "- Module: ${{ needs.validate-pr.outputs.module }}"
+
+          echo "should_merge=true" >> $GITHUB_OUTPUT
+          echo "merge_method=squash" >> $GITHUB_OUTPUT
+
+      - name: Emit PR_READY_TO_MERGE Event
+        run: |
+          curl -X POST "${{ env.GATEWAY_URL }}/api/v1/events/ingest" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "vtid": "${{ env.VTID }}",
+              "type": "PR_READY_TO_MERGE",
+              "source": "CICDL-AUTO-MERGE",
+              "status": "success",
+              "message": "PR #${{ needs.get-pr-context.outputs.pr_number }} ready for auto-merge",
+              "payload": {
+                "pr_number": ${{ needs.get-pr-context.outputs.pr_number }},
+                "module": "${{ needs.validate-pr.outputs.module }}",
+                "branch": "${{ needs.get-pr-context.outputs.branch }}",
+                "merge_method": "squash"
+              }
+            }' || echo "Warning: Failed to emit event to OASIS"
+
+  # Job 5: Execute Auto-Merge
+  execute-merge:
+    name: Execute Auto-Merge
+    runs-on: ubuntu-latest
+    needs: [get-pr-context, validate-pr, auto-merge-decision]
+    if: needs.auto-merge-decision.outputs.should_merge == 'true'
+    steps:
+      - name: Merge PR
+        id: merge
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = ${{ needs.get-pr-context.outputs.pr_number }};
+            const module = '${{ needs.validate-pr.outputs.module }}';
+            const vtid = '${{ env.VTID }}';
+
+            // Construct commit message with VTID
+            const commitTitle = `[${vtid}] Auto-merge PR #${prNumber} (${module})`;
+            const commitMessage = `Autonomous Safe Merge Layer - Phase 1
+
+            VTID: ${vtid}
+            Module: ${module}
+            PR: #${prNumber}
+
+            Auto-merged by CICDL-AUTO-MERGE workflow.
+            All governance rules passed.`;
+
+            try {
+              const result = await github.rest.pulls.merge({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber,
+                merge_method: 'squash',
+                commit_title: commitTitle,
+                commit_message: commitMessage
+              });
+
+              console.log(`Successfully merged PR #${prNumber}`);
+              console.log(`Merge SHA: ${result.data.sha}`);
+
+              core.setOutput('merged', 'true');
+              core.setOutput('sha', result.data.sha);
+            } catch (error) {
+              console.error(`Failed to merge PR #${prNumber}: ${error.message}`);
+              core.setOutput('merged', 'false');
+              core.setOutput('error', error.message);
+              throw error;
+            }
+
+      - name: Emit PR_MERGED Event
+        if: steps.merge.outputs.merged == 'true'
+        run: |
+          curl -X POST "${{ env.GATEWAY_URL }}/api/v1/events/ingest" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "vtid": "${{ env.VTID }}",
+              "type": "PR_MERGED",
+              "source": "CICDL-AUTO-MERGE",
+              "status": "success",
+              "message": "PR #${{ needs.get-pr-context.outputs.pr_number }} auto-merged successfully",
+              "payload": {
+                "pr_number": ${{ needs.get-pr-context.outputs.pr_number }},
+                "module": "${{ needs.validate-pr.outputs.module }}",
+                "branch": "${{ needs.get-pr-context.outputs.branch }}",
+                "merge_sha": "${{ steps.merge.outputs.sha }}",
+                "merge_method": "squash",
+                "merged_by": "CICDL-AUTO-MERGE"
+              }
+            }' || echo "Warning: Failed to emit event to OASIS"
+
+      - name: Report Merge Success
+        if: steps.merge.outputs.merged == 'true'
+        run: |
+          echo "## Auto-Merge Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**PR:** #${{ needs.get-pr-context.outputs.pr_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Module:** ${{ needs.validate-pr.outputs.module }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ needs.get-pr-context.outputs.branch }}" >> $GITHUB_STEP_SUMMARY
+          echo "**VTID:** ${{ env.VTID }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Merge SHA:** ${{ steps.merge.outputs.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Autonomous Safe Merge Layer successfully merged this PR." >> $GITHUB_STEP_SUMMARY
+
+  # Job 6: Handle Blocked PRs
+  handle-blocked:
+    name: Handle Blocked PR
+    runs-on: ubuntu-latest
+    needs: [get-pr-context, validate-pr, check-ci-status]
+    if: |
+      always() &&
+      needs.get-pr-context.outputs.should_process == 'true' &&
+      (needs.validate-pr.outputs.eligible_for_auto_merge != 'true' ||
+       needs.check-ci-status.outputs.ci_passed != 'true' ||
+       needs.get-pr-context.outputs.has_override == 'true')
+    steps:
+      - name: Determine Block Reason
+        id: reason
+        run: |
+          if [ "${{ needs.get-pr-context.outputs.has_override }}" = "true" ]; then
+            REASON="Human override flag set - requires manual review"
+          elif [ "${{ needs.validate-pr.outputs.eligible_for_auto_merge }}" != "true" ]; then
+            REASON="${{ needs.validate-pr.outputs.summary }}"
+          elif [ "${{ needs.check-ci-status.outputs.ci_passed }}" != "true" ]; then
+            REASON="CI checks not passing"
+          else
+            REASON="Unknown - requires investigation"
+          fi
+
+          echo "reason=$REASON" >> $GITHUB_OUTPUT
+
+      - name: Emit PR_BLOCKED Event
+        run: |
+          curl -X POST "${{ env.GATEWAY_URL }}/api/v1/events/ingest" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "vtid": "${{ env.VTID }}",
+              "type": "PR_BLOCKED",
+              "source": "CICDL-AUTO-MERGE",
+              "status": "warning",
+              "message": "PR #${{ needs.get-pr-context.outputs.pr_number }} blocked from auto-merge",
+              "payload": {
+                "pr_number": ${{ needs.get-pr-context.outputs.pr_number }},
+                "branch": "${{ needs.get-pr-context.outputs.branch }}",
+                "reason": "${{ steps.reason.outputs.reason }}",
+                "has_override": ${{ needs.get-pr-context.outputs.has_override }},
+                "validation_passed": "${{ needs.validate-pr.outputs.validation_passed }}",
+                "ci_passed": "${{ needs.check-ci-status.outputs.ci_passed }}"
+              }
+            }' || echo "Warning: Failed to emit event to OASIS"
+
+      - name: Add PR Comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = ${{ needs.get-pr-context.outputs.pr_number }};
+            const reason = '${{ steps.reason.outputs.reason }}';
+
+            const body = `## Auto-Merge Blocked
+
+            This PR cannot be auto-merged due to:
+
+            **Reason:** ${reason}
+
+            ### Checklist:
+            - Validation: ${{ needs.validate-pr.outputs.validation_passed == 'true' && 'PASS' || 'FAIL' }}
+            - CI Status: ${{ needs.check-ci-status.outputs.ci_passed == 'true' && 'PASS' || 'FAIL' }}
+            - Override Flag: ${{ needs.get-pr-context.outputs.has_override == 'true' && 'SET' || 'CLEAR' }}
+
+            To enable auto-merge, ensure all checks pass and remove any \`no-auto-merge\` or \`human-review\` labels.
+
+            ---
+            _VTID: ${{ env.VTID }} | Autonomous Safe Merge Layer_`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: body
+            });
+
+      - name: Report Block Status
+        run: |
+          echo "## Auto-Merge Blocked" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**PR:** #${{ needs.get-pr-context.outputs.pr_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Reason:** ${{ steps.reason.outputs.reason }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Status:" >> $GITHUB_STEP_SUMMARY
+          echo "- Validation: ${{ needs.validate-pr.outputs.validation_passed }}" >> $GITHUB_STEP_SUMMARY
+          echo "- CI: ${{ needs.check-ci-status.outputs.ci_passed }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Override: ${{ needs.get-pr-context.outputs.has_override }}" >> $GITHUB_STEP_SUMMARY

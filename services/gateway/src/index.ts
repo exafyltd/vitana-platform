@@ -10,6 +10,7 @@ import commandHubRouter from './routes/command-hub';
 import { sseService } from './services/sse-service';
 import { setupCors, sseHeaders } from './middleware/cors';
 import governanceRouter from './routes/governance';
+import autoMergeRouter from './routes/auto-merge'; // DEV-CICDL-0207
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -37,6 +38,7 @@ app.get('/debug/governance-ping', (_req, res) => {
 
 // Mount routes
 app.use('/api/v1/governance', governanceRouter); // DEV-GOVBE-0106: Governance endpoints
+app.use('/api/v1/auto-merge', autoMergeRouter); // DEV-CICDL-0207: Auto-merge endpoints
 app.use('/api/v1/vtid', vtidRouter);
 app.use('/api/v1/commandhub', commandhub);
 app.use("/", tasksRouter);
