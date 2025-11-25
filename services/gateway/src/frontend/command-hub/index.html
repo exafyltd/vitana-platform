@@ -1,208 +1,28 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Vitana Command Hub</title>
-  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
   <div class="app-container">
-    <!-- Sidebar Navigation -->
-    <aside class="sidebar" id="sidebar">
-      <div class="sidebar-header">
-        <div class="logo">
-          <span class="logo-icon">V</span>
-          <span class="logo-text">Vitana</span>
-        </div>
-        <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar">
-          <span class="toggle-icon"></span>
-        </button>
-      </div>
-      <nav class="sidebar-nav" id="sidebarNav">
-        <!-- Populated dynamically from OASIS spec -->
-      </nav>
-      <div class="sidebar-footer">
-        <div class="env-badge">DEV</div>
-      </div>
-    </aside>
+    <!-- Sidebar Navigation (17 modules) -->
+    <aside class="sidebar" id="sidebar"></aside>
 
-    <!-- Main Content Area -->
+    <!-- Main Content -->
     <main class="main-content">
-      <!-- Top Header -->
-      <header class="top-header">
-        <div class="header-left">
-          <h1 class="page-title" id="pageTitle">Command Hub</h1>
-          <span class="breadcrumb" id="breadcrumb"></span>
-        </div>
-        <div class="header-right">
-          <!-- Utility Bar -->
-          <div class="utility-bar">
-            <button class="utility-btn" id="notificationBtn" aria-label="Notifications">
-              <span class="icon">&#128276;</span>
-              <span class="badge" id="notificationBadge">0</span>
-            </button>
-            <button class="utility-btn" id="searchBtn" aria-label="Search">
-              <span class="icon">&#128269;</span>
-            </button>
-          </div>
-          <!-- Profile Capsule -->
-          <div class="profile-capsule" id="profileCapsule">
-            <div class="avatar" id="avatar">D</div>
-            <div class="profile-info">
-              <span class="user-name" id="userName">Developer</span>
-              <span class="user-role" id="userRole">DEVELOPER</span>
-            </div>
-            <span class="dropdown-arrow">&#9662;</span>
-          </div>
-        </div>
-      </header>
+      <!-- Top Tabs -->
+      <nav class="top-tabs" id="topTabs"></nav>
 
-      <!-- Top Navigation Tabs -->
-      <nav class="top-tabs" id="topTabs">
-        <!-- Populated dynamically based on current module -->
-      </nav>
-
-      <!-- Content Area -->
-      <div class="content-area" id="contentArea">
-        <!-- Task Board (default view) -->
-        <div class="task-board-container" id="taskBoardContainer">
-          <div class="board-header">
-            <h2 class="board-title">Tasks</h2>
-            <div class="board-actions">
-              <select class="filter-select" id="filterLayer">
-                <option value="">All Layers</option>
-                <option value="CICDL">CICDL</option>
-                <option value="COMMU">COMMU</option>
-                <option value="AGENT">AGENT</option>
-                <option value="API">API</option>
-                <option value="INFRA">INFRA</option>
-              </select>
-              <input type="text" class="search-input" id="searchInput" placeholder="Search tasks...">
-              <button class="action-btn primary" id="actionBtn">
-                <span class="icon">+</span>
-                <span>Action</span>
-              </button>
-            </div>
-          </div>
-          <div class="task-board" id="taskBoard">
-            <div class="task-column scheduled" id="columnScheduled">
-              <div class="column-header">
-                <span class="column-title">Scheduled</span>
-                <span class="column-count" id="countScheduled">0</span>
-              </div>
-              <div class="column-content" id="tasksScheduled"></div>
-            </div>
-            <div class="task-column in-progress" id="columnInProgress">
-              <div class="column-header">
-                <span class="column-title">In Progress</span>
-                <span class="column-count" id="countInProgress">0</span>
-              </div>
-              <div class="column-content" id="tasksInProgress"></div>
-            </div>
-            <div class="task-column completed" id="columnCompleted">
-              <div class="column-header">
-                <span class="column-title">Completed</span>
-                <span class="column-count" id="countCompleted">0</span>
-              </div>
-              <div class="column-content" id="tasksCompleted"></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Screen Content (for non-task views) -->
-        <div class="screen-content" id="screenContent" style="display: none;">
-          <!-- Dynamic content loaded here -->
-        </div>
+      <!-- Screen Content -->
+      <div class="screen-container" id="screenContainer">
+        <!-- Task Board (Golden v4) -->
+        <div class="task-board" id="taskBoard"></div>
       </div>
     </main>
   </div>
-
-  <!-- Task Drawer -->
-  <div class="drawer-overlay" id="drawerOverlay"></div>
-  <div class="drawer" id="taskDrawer">
-    <div class="drawer-header">
-      <div class="drawer-title-group">
-        <span class="drawer-vtid" id="drawerVtid"></span>
-        <h3 class="drawer-title" id="drawerTitle">Task Details</h3>
-      </div>
-      <button class="drawer-close" id="drawerClose" aria-label="Close drawer">&times;</button>
-    </div>
-    <div class="drawer-content" id="drawerContent">
-      <!-- Task details loaded here -->
-    </div>
-    <div class="drawer-footer">
-      <button class="btn secondary" id="copyBriefBtn">Copy Brief</button>
-      <button class="btn primary" id="viewFullBtn">View Full</button>
-    </div>
-  </div>
-
-  <!-- Action Popup -->
-  <div class="popup-overlay" id="actionPopupOverlay"></div>
-  <div class="popup" id="actionPopup">
-    <div class="popup-header">
-      <h3 class="popup-title">Quick Actions</h3>
-      <button class="popup-close" id="actionPopupClose" aria-label="Close popup">&times;</button>
-    </div>
-    <div class="popup-content">
-      <button class="popup-action" data-action="create-vtid">
-        <span class="action-icon">&#128203;</span>
-        <span class="action-label">Create VTID</span>
-      </button>
-      <button class="popup-action" data-action="run-validator">
-        <span class="action-icon">&#9989;</span>
-        <span class="action-label">Run Validator</span>
-      </button>
-      <button class="popup-action" data-action="view-events">
-        <span class="action-icon">&#128202;</span>
-        <span class="action-label">View Events</span>
-      </button>
-      <button class="popup-action" data-action="open-docs">
-        <span class="action-icon">&#128214;</span>
-        <span class="action-label">Open Docs</span>
-      </button>
-    </div>
-  </div>
-
-  <!-- Role Switch Modal -->
-  <div class="modal-overlay" id="roleSwitchOverlay"></div>
-  <div class="modal" id="roleSwitchModal">
-    <div class="modal-header">
-      <h3 class="modal-title">Switch Role</h3>
-      <button class="modal-close" id="roleSwitchClose" aria-label="Close modal">&times;</button>
-    </div>
-    <div class="modal-content">
-      <div class="role-option" data-role="DEVELOPER">
-        <span class="role-icon">&#128187;</span>
-        <div class="role-info">
-          <span class="role-name">Developer</span>
-          <span class="role-desc">Full access to development tools</span>
-        </div>
-      </div>
-      <div class="role-option" data-role="ADMIN">
-        <span class="role-icon">&#128272;</span>
-        <div class="role-info">
-          <span class="role-name">Admin</span>
-          <span class="role-desc">Administrative controls and settings</span>
-        </div>
-      </div>
-      <div class="role-option" data-role="STAFF">
-        <span class="role-icon">&#128100;</span>
-        <div class="role-info">
-          <span class="role-name">Staff</span>
-          <span class="role-desc">Standard operational access</span>
-        </div>
-      </div>
-      <div class="role-option" data-role="OPERATOR">
-        <span class="role-icon">&#9881;</span>
-        <div class="role-info">
-          <span class="role-name">Operator</span>
-          <span class="role-desc">System operations and monitoring</span>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <script src="./app.js"></script>
 </body>
 </html>
