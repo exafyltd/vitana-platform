@@ -72,14 +72,7 @@ router.get('/tasks', async (req: Request, res: Response) => {
       updated_at: row.updated_at,
     }));
 
-    return res.json({
-      ok: true,
-      data: tasks,
-      meta: {
-        count: tasks.length,
-        limit: parseInt(limit as string),
-      }
-    });
+    return res.status(200).json(tasks);
 
   } catch (e: any) {
     console.error('[OASIS Tasks] GET error:', e);
@@ -175,10 +168,7 @@ router.post('/tasks', async (req: Request, res: Response) => {
       console.warn('[OASIS Tasks] Event emission failed:', eventError);
     }
 
-    return res.status(201).json({
-      ok: true,
-      data: createdTask,
-    });
+    return res.status(201).json(createdTask);
 
   } catch (e: any) {
     console.error('[OASIS Tasks] POST error:', e);
@@ -204,44 +194,12 @@ router.get('/specs/dev-screen-inventory', (req: Request, res: Response) => {
     const specContent = fs.readFileSync(specPath, 'utf-8');
     const specData = JSON.parse(specContent);
 
-    return res.json({
-      ok: true,
-      data: {
-        screen_inventory: {
-          screens: generateScreensFromSpec(specData),
-        },
-        ...specData,
-      },
-    });
+    return res.status(200).json(specData);
 
   } catch (e: any) {
     console.error('[OASIS Specs] Error:', e);
     return res.status(500).json({ ok: false, error: e.message });
   }
 });
-
-/**
- * Generate flat screen list from module_catalog
- */
-function generateScreensFromSpec(spec: any): any[] {
-  const screens: any[] = [];
-  const moduleCatalog = spec.module_catalog || {};
-
-  for (const [moduleName, tabs] of Object.entries(moduleCatalog)) {
-    if (Array.isArray(tabs)) {
-      for (const tab of tabs) {
-        screens.push({
-          screen_id: `DEV_${moduleName.toUpperCase().replace(/-/g, '_')}_${tab.toUpperCase().replace(/-/g, '_')}`,
-          module: moduleName,
-          tab: tab,
-          url_path: `/command-hub/${moduleName}/${tab}/`,
-          role: 'DEVELOPER',
-        });
-      }
-    }
-  }
-
-  return screens;
-}
 
 export default router;
