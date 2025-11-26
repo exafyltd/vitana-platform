@@ -90,7 +90,7 @@ router.post('/tasks', async (req: Request, res: Response) => {
   try {
     const { svcKey, supabaseUrl } = getSupabaseConfig();
 
-    const { title, vtid, status, summary, layer, module, metadata } = req.body;
+    const { title, vtid, status, summary, layer, module } = req.body;
 
     // Validation
     if (!title) {
@@ -110,7 +110,7 @@ router.post('/tasks', async (req: Request, res: Response) => {
       oasisStatus = 'pending';
     }
 
-    // Build task record
+    // Build task record (only columns that exist in vtid_ledger)
     const taskRecord = {
       vtid,
       title,
@@ -118,7 +118,6 @@ router.post('/tasks', async (req: Request, res: Response) => {
       status: oasisStatus,
       layer: layer ?? 'DEV',
       module: module ?? 'command-hub',
-      metadata: metadata ?? {},
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
