@@ -259,7 +259,17 @@ const state = {
     screenInventory: null,
     screenInventoryLoading: false,
     screenInventoryError: null,
-    selectedRole: 'DEVELOPER'
+    selectedRole: 'DEVELOPER',
+
+    // Operator Console
+    operatorTickerEvents: [
+        { id: 1, message: 'System ready (placeholder)', timestamp: new Date().toISOString() },
+        { id: 2, message: 'No live events yet', timestamp: new Date().toISOString() }
+    ],
+    operatorChatMessages: [
+        { id: 1, role: 'system', content: 'Welcome to Operator Console (UI stub).', timestamp: new Date().toISOString() }
+    ],
+    operatorChatInput: ''
 };
 
 // --- DOM Elements & Rendering ---
@@ -358,6 +368,15 @@ function renderHeader() {
   `;
     left.appendChild(live);
 
+    // Heartbeat indicator
+    const heartbeat = document.createElement('div');
+    heartbeat.className = 'commandhub-heartbeat';
+    heartbeat.innerHTML = `
+    <span class="heartbeat-dot"></span>
+    Heartbeat: Standby
+  `;
+    left.appendChild(heartbeat);
+
     header.appendChild(left);
 
     // Right: Multimodal Controls & Profile
@@ -453,16 +472,155 @@ function renderMainContent() {
         content.appendChild(subNav);
     }
 
-    // Module Content
-    const moduleContent = document.createElement('div');
-    moduleContent.style.flex = '1';
-    moduleContent.style.overflow = 'hidden';
+    // For Operator module, use special two-column layout
+    if (state.currentModuleKey === 'operator') {
+        const operatorLayout = document.createElement('div');
+        operatorLayout.className = 'operator-layout';
 
-    moduleContent.appendChild(renderModuleContent(state.currentModuleKey, state.currentTab));
+        // Left: Main Operator content
+        const operatorMain = document.createElement('div');
+        operatorMain.className = 'operator-main';
+        operatorMain.appendChild(renderModuleContent(state.currentModuleKey, state.currentTab));
 
-    content.appendChild(moduleContent);
+        // Right: Operator Console
+        const operatorConsole = renderOperatorConsole();
+
+        operatorLayout.appendChild(operatorMain);
+        operatorLayout.appendChild(operatorConsole);
+        content.appendChild(operatorLayout);
+    } else {
+        // Module Content (normal layout)
+        const moduleContent = document.createElement('div');
+        moduleContent.style.flex = '1';
+        moduleContent.style.overflow = 'hidden';
+
+        moduleContent.appendChild(renderModuleContent(state.currentModuleKey, state.currentTab));
+
+        content.appendChild(moduleContent);
+    }
 
     return content;
+}
+
+function renderOperatorConsole() {
+    const console = document.createElement('div');
+    console.className = 'operator-console';
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'operator-console-header';
+    header.innerHTML = `
+        <div class="operator-console-title">Operator Console</div>
+        <div class="operator-console-subtitle">Live events & chat</div>
+    `;
+    console.appendChild(header);
+
+    // Live Ticker Section
+    const ticker = document.createElement('div');
+    ticker.className = 'operator-ticker';
+
+    const tickerLabel = document.createElement('div');
+    tickerLabel.className = 'operator-ticker-label';
+    tickerLabel.textContent = 'Live Ticker';
+    ticker.appendChild(tickerLabel);
+
+    const tickerList = document.createElement('div');
+    tickerList.className = 'operator-ticker-list';
+
+    state.operatorTickerEvents.forEach(event => {
+        const item = document.createElement('div');
+        item.className = 'operator-ticker-item';
+        const time = new Date(event.timestamp).toLocaleTimeString();
+        item.innerHTML = `<span class="ticker-time">${time}</span> ${event.message}`;
+        tickerList.appendChild(item);
+    });
+
+    ticker.appendChild(tickerList);
+    console.appendChild(ticker);
+
+    // Chat Section
+    const chat = document.createElement('div');
+    chat.className = 'operator-chat';
+
+    const chatMessages = document.createElement('div');
+    chatMessages.className = 'operator-chat-messages';
+
+    state.operatorChatMessages.forEach(msg => {
+        const msgEl = document.createElement('div');
+        msgEl.className = `operator-chat-message ${msg.role}`;
+        const time = new Date(msg.timestamp).toLocaleTimeString();
+        msgEl.innerHTML = `
+            <div class="message-header">
+                <span class="message-role">${msg.role === 'system' ? 'System' : 'You'}</span>
+                <span class="message-time">${time}</span>
+            </div>
+            <div class="message-content">${msg.content}</div>
+        `;
+        chatMessages.appendChild(msgEl);
+    });
+
+    chat.appendChild(chatMessages);
+
+    // Input row
+    const inputRow = document.createElement('div');
+    inputRow.className = 'operator-chat-input-row';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'operator-chat-input';
+    input.placeholder = 'Type a message to the system…';
+    input.value = state.operatorChatInput;
+    input.oninput = (e) => {
+        state.operatorChatInput = e.target.value;
+    };
+    input.onkeydown = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            handleOperatorChatSend();
+        }
+    };
+
+    const sendBtn = document.createElement('button');
+    sendBtn.className = 'operator-chat-send-btn';
+    sendBtn.textContent = 'Send';
+    sendBtn.onclick = handleOperatorChatSend;
+
+    inputRow.appendChild(input);
+    inputRow.appendChild(sendBtn);
+    chat.appendChild(inputRow);
+
+    console.appendChild(chat);
+
+    return console;
+}
+
+function handleOperatorChatSend() {
+    const message = state.operatorChatInput.trim();
+    if (!message) return;
+
+    // Add user message
+    const userMsg = {
+        id: Date.now(),
+        role: 'user',
+        content: message,
+        timestamp: new Date().toISOString()
+    };
+    state.operatorChatMessages.push(userMsg);
+
+    // Add placeholder system response
+    const systemMsg = {
+        id: Date.now() + 1,
+        role: 'system',
+        content: '(Placeholder) Message received by UI.',
+        timestamp: new Date().toISOString()
+    };
+    state.operatorChatMessages.push(systemMsg);
+
+    // Clear input
+    state.operatorChatInput = '';
+
+    // Re-render
+    renderApp();
 }
 
 function renderSplitScreen() {
