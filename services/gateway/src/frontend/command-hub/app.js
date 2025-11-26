@@ -620,6 +620,26 @@ function renderTasksView() {
 
     const columns = ['Scheduled', 'In Progress', 'Completed'];
 
+    // Check if there are any tasks at all
+    if (state.tasks.length === 0) {
+        const emptyState = document.createElement('div');
+        emptyState.style.gridColumn = '1 / -1';
+        emptyState.style.display = 'flex';
+        emptyState.style.flexDirection = 'column';
+        emptyState.style.alignItems = 'center';
+        emptyState.style.justifyContent = 'center';
+        emptyState.style.padding = '3rem';
+        emptyState.style.color = 'var(--color-text-secondary)';
+        emptyState.innerHTML = `
+            <div style="font-size: 3rem; margin-bottom: 1rem;">📋</div>
+            <div style="font-size: 1.1rem; font-weight: 500; margin-bottom: 0.5rem;">No tasks found</div>
+            <div style="font-size: 0.9rem;">Click "+ New Task" to create your first task, or tasks will appear here once created via OASIS.</div>
+        `;
+        board.appendChild(emptyState);
+        container.appendChild(board);
+        return container;
+    }
+
     columns.forEach(colName => {
         const col = document.createElement('div');
         col.className = 'task-column';
@@ -640,7 +660,8 @@ function renderTasksView() {
             // Search query
             if (state.taskSearchQuery) {
                 const q = state.taskSearchQuery.toLowerCase();
-                if (!t.title.toLowerCase().includes(q) && !t.vtid.toLowerCase().includes(q)) return false;
+                const vtid = t.vtid || '';
+                if (!t.title.toLowerCase().includes(q) && !vtid.toLowerCase().includes(q)) return false;
             }
 
             // Date filter (assuming createdAt exists and is YYYY-MM-DD compatible or ISO)
@@ -651,9 +672,20 @@ function renderTasksView() {
             return true;
         });
 
-        colTasks.forEach(task => {
-            content.appendChild(createTaskCard(task));
-        });
+        if (colTasks.length === 0) {
+            const emptyCol = document.createElement('div');
+            emptyCol.style.padding = '1rem';
+            emptyCol.style.color = 'var(--color-text-secondary)';
+            emptyCol.style.fontSize = '0.85rem';
+            emptyCol.style.textAlign = 'center';
+            emptyCol.style.fontStyle = 'italic';
+            emptyCol.textContent = 'No tasks';
+            content.appendChild(emptyCol);
+        } else {
+            colTasks.forEach(task => {
+                content.appendChild(createTaskCard(task));
+            });
+        }
 
         col.appendChild(content);
         board.appendChild(col);
@@ -675,7 +707,7 @@ function createTaskCard(task) {
 
     const title = document.createElement('div');
     title.className = 'title';
-    title.textContent = task.title;
+    title.textContent = task.title || 'Untitled Task';
     card.appendChild(title);
 
     const meta = document.createElement('div');
@@ -683,14 +715,24 @@ function createTaskCard(task) {
 
     const vtid = document.createElement('span');
     vtid.className = 'vtid';
-    vtid.textContent = task.vtid;
+    vtid.textContent = task.vtid || `#${task.id || '—'}`;
     meta.appendChild(vtid);
 
     const status = document.createElement('span');
-    status.textContent = task.status;
+    status.textContent = task.status || 'pending';
     meta.appendChild(status);
 
     card.appendChild(meta);
+
+    // Show layer/module if available
+    if (task.layer || task.module) {
+        const layerMod = document.createElement('div');
+        layerMod.style.fontSize = '0.7rem';
+        layerMod.style.color = 'var(--color-text-secondary)';
+        layerMod.style.marginTop = '0.5rem';
+        layerMod.textContent = [task.layer, task.module].filter(Boolean).join(' / ');
+        card.appendChild(layerMod);
+    }
 
     return card;
 }
@@ -701,6 +743,8 @@ function renderTaskDrawer() {
 
     if (!state.selectedTask) return drawer;
 
+    const task = state.selectedTask;
+
     const header = document.createElement('div');
     header.className = 'drawer-header';
 
@@ -708,7 +752,7 @@ function renderTaskDrawer() {
     title.style.margin = '0';
     title.style.fontSize = '1.25rem';
     title.style.color = 'var(--color-accent)';
-    title.textContent = state.selectedTask.vtid;
+    title.textContent = task.vtid || `Task #${task.id || '—'}`;
     header.appendChild(title);
 
     const closeBtn = document.createElement('button');
@@ -729,19 +773,66 @@ function renderTaskDrawer() {
     const content = document.createElement('div');
     content.className = 'drawer-content';
 
-    const summary = document.createElement('p');
-    summary.style.color = 'var(--color-text-primary)';
-    summary.textContent = state.selectedTask.summary;
-    content.appendChild(summary);
+    // Task title
+    const titleEl = document.createElement('h3');
+    titleEl.style.margin = '0 0 1rem 0';
+    titleEl.style.color = 'var(--color-text-primary)';
+    titleEl.style.fontSize = '1.1rem';
+    titleEl.textContent = task.title || 'Untitled Task';
+    content.appendChild(titleEl);
 
+    // Summary
+    if (task.summary) {
+        const summary = document.createElement('p');
+        summary.style.color = 'var(--color-text-primary)';
+        summary.style.marginBottom = '1rem';
+        summary.textContent = task.summary;
+        content.appendChild(summary);
+    }
+
+    // Description
+    if (task.description) {
+        const descLabel = document.createElement('div');
+        descLabel.style.color = 'var(--color-text-secondary)';
+        descLabel.style.fontSize = '0.8rem';
+        descLabel.style.marginBottom = '0.25rem';
+        descLabel.style.textTransform = 'uppercase';
+        descLabel.textContent = 'Description';
+        content.appendChild(descLabel);
+
+        const descContent = document.createElement('p');
+        descContent.style.color = 'var(--color-text-primary)';
+        descContent.style.marginBottom = '1.5rem';
+        descContent.style.whiteSpace = 'pre-wrap';
+        descContent.textContent = task.description;
+        content.appendChild(descContent);
+    }
+
+    // Details grid
     const details = document.createElement('div');
-    details.style.marginTop = '2rem';
-    details.style.color = 'var(--color-text-secondary)';
-    details.innerHTML = `
-        <p><strong>Status:</strong> ${state.selectedTask.status}</p>
-        <p><strong>Title:</strong> ${state.selectedTask.title}</p>
-        <p><strong>Created:</strong> ${state.selectedTask.createdAt || 'N/A'}</p>
-    `;
+    details.style.marginTop = '1.5rem';
+    details.style.display = 'grid';
+    details.style.gridTemplateColumns = '1fr 1fr';
+    details.style.gap = '1rem';
+    details.style.fontSize = '0.875rem';
+
+    const detailItems = [
+        { label: 'Status', value: task.status || 'pending' },
+        { label: 'Layer', value: task.layer || '—' },
+        { label: 'Module', value: task.module || '—' },
+        { label: 'Assigned To', value: task.assigned_to || 'Unassigned' },
+        { label: 'Created', value: task.createdAt ? new Date(task.createdAt).toLocaleString() : 'N/A' }
+    ];
+
+    detailItems.forEach(item => {
+        const detailItem = document.createElement('div');
+        detailItem.innerHTML = `
+            <div style="color: var(--color-text-secondary); font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;">${item.label}</div>
+            <div style="color: var(--color-text-primary);">${item.value}</div>
+        `;
+        details.appendChild(detailItem);
+    });
+
     content.appendChild(details);
 
     drawer.appendChild(content);
@@ -826,29 +917,79 @@ function renderTaskModal() {
     const body = document.createElement('div');
     body.className = 'modal-body';
 
+    // Title field
     const titleGroup = document.createElement('div');
     titleGroup.className = 'form-group';
-    titleGroup.innerHTML = '<label>Task Title</label><input type="text" class="form-control" placeholder="Enter title">';
+    titleGroup.innerHTML = '<label>Task Title *</label><input type="text" class="form-control" id="task-title" placeholder="Enter title">';
     body.appendChild(titleGroup);
 
-    const vtidGroup = document.createElement('div');
-    vtidGroup.className = 'form-group';
-    vtidGroup.innerHTML = '<label>VTID</label><input type="text" class="form-control" placeholder="VTID-XXXX">';
-    body.appendChild(vtidGroup);
+    // Summary field
+    const summaryGroup = document.createElement('div');
+    summaryGroup.className = 'form-group';
+    summaryGroup.innerHTML = '<label>Summary *</label><input type="text" class="form-control" id="task-summary" placeholder="Brief summary of the task">';
+    body.appendChild(summaryGroup);
 
+    // Description field
+    const descGroup = document.createElement('div');
+    descGroup.className = 'form-group';
+    descGroup.innerHTML = '<label>Description</label><textarea class="form-control" id="task-description" rows="3" placeholder="Detailed description (optional)"></textarea>';
+    body.appendChild(descGroup);
+
+    // Layer field
+    const layerGroup = document.createElement('div');
+    layerGroup.className = 'form-group';
+    layerGroup.innerHTML = `
+        <label>Layer</label>
+        <select class="form-control" id="task-layer">
+            <option value="DEV" selected>DEV</option>
+            <option value="OPS">OPS</option>
+            <option value="BIZ">BIZ</option>
+            <option value="GOV">GOV</option>
+        </select>
+    `;
+    body.appendChild(layerGroup);
+
+    // Module field
+    const moduleGroup = document.createElement('div');
+    moduleGroup.className = 'form-group';
+    moduleGroup.innerHTML = `
+        <label>Module</label>
+        <select class="form-control" id="task-module">
+            <option value="COMHU" selected>COMHU (Command Hub)</option>
+            <option value="OASIS">OASIS</option>
+            <option value="GATEWAY">GATEWAY</option>
+            <option value="AGENT">AGENT</option>
+            <option value="INFRA">INFRA</option>
+            <option value="OTHER">OTHER</option>
+        </select>
+    `;
+    body.appendChild(moduleGroup);
+
+    // Status field
     const statusGroup = document.createElement('div');
     statusGroup.className = 'form-group';
     statusGroup.innerHTML = `
         <label>Status</label>
-        <select class="form-control">
-            <option value="Scheduled">Scheduled</option>
-            <option value="In Progress">In Progress</option>
-            <option value="Completed">Completed</option>
+        <select class="form-control" id="task-status">
+            <option value="pending" selected>Pending (Scheduled)</option>
+            <option value="in_progress">In Progress</option>
+            <option value="done">Completed</option>
         </select>
     `;
     body.appendChild(statusGroup);
 
     modal.appendChild(body);
+
+    // Error banner (hidden by default)
+    const errorBanner = document.createElement('div');
+    errorBanner.id = 'task-error-banner';
+    errorBanner.style.display = 'none';
+    errorBanner.style.padding = '0.75rem 1.5rem';
+    errorBanner.style.background = 'rgba(239, 68, 68, 0.1)';
+    errorBanner.style.borderTop = '1px solid rgba(239, 68, 68, 0.3)';
+    errorBanner.style.color = '#ef4444';
+    errorBanner.style.fontSize = '0.875rem';
+    modal.appendChild(errorBanner);
 
     const footer = document.createElement('div');
     footer.className = 'modal-footer';
@@ -867,40 +1008,38 @@ function renderTaskModal() {
     createBtn.textContent = 'Create';
     createBtn.onclick = async () => {
         // Extract form values
-        const titleInput = body.querySelector('.form-group:nth-child(1) input');
-        const vtidInput = body.querySelector('.form-group:nth-child(2) input');
-        const statusSelect = body.querySelector('.form-group:nth-child(3) select');
+        const title = document.getElementById('task-title').value.trim();
+        const summary = document.getElementById('task-summary').value.trim();
+        const description = document.getElementById('task-description').value.trim();
+        const layer = document.getElementById('task-layer').value;
+        const module = document.getElementById('task-module').value;
+        const status = document.getElementById('task-status').value;
 
-        const title = titleInput.value.trim();
-        const vtid = vtidInput.value.trim();
-        const status = statusSelect.value; // "Scheduled", "In Progress", "Completed"
+        // Hide previous error
+        errorBanner.style.display = 'none';
 
         // Basic validation
         if (!title) {
-            alert('Title is required');
+            errorBanner.textContent = 'Title is required';
+            errorBanner.style.display = 'block';
             return;
         }
 
-        if (!vtid) {
-            alert('VTID is required');
+        if (!summary) {
+            errorBanner.textContent = 'Summary is required';
+            errorBanner.style.display = 'block';
             return;
         }
 
-        // Map UI status to backend status
-        let backendStatus = 'pending'; // Default
-        if (status === 'In Progress') {
-            backendStatus = 'in_progress';
-        } else if (status === 'Completed') {
-            backendStatus = 'complete';
-        } else if (status === 'Scheduled') {
-            backendStatus = 'pending';
-        }
-
-        // Prepare payload
+        // Prepare payload - VTID is NOT sent, backend handles generation
         const payload = {
+            layer: layer,
+            module: module,
+            status: status,
             title: title,
-            vtid: vtid,
-            status: backendStatus
+            summary: summary,
+            description: description || null,
+            assigned_to: null
         };
 
         try {
@@ -917,8 +1056,15 @@ function renderTaskModal() {
             });
 
             if (!response.ok) {
-                const errorData = await response.json();
-                alert(`Error creating task: ${errorData.error || 'Unknown error'}`);
+                let errorMsg = 'Unknown error';
+                try {
+                    const errorData = await response.json();
+                    errorMsg = errorData.error || errorData.message || JSON.stringify(errorData);
+                } catch (e) {
+                    errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+                }
+                errorBanner.textContent = `Error creating task: ${errorMsg}`;
+                errorBanner.style.display = 'block';
                 createBtn.disabled = false;
                 createBtn.textContent = 'Create';
                 return;
@@ -930,7 +1076,8 @@ function renderTaskModal() {
             renderApp();
         } catch (error) {
             console.error('Failed to create task:', error);
-            alert(`Failed to create task: ${error.message}`);
+            errorBanner.textContent = `Failed to create task: ${error.message}`;
+            errorBanner.style.display = 'block';
             createBtn.disabled = false;
             createBtn.textContent = 'Create';
         }
@@ -1050,7 +1197,7 @@ async function fetchTasks() {
     renderApp();
 
     try {
-        const response = await fetch('/api/v1/oasis/tasks?limit=50');
+        const response = await fetch('/api/v1/oasis/tasks?limit=100');
         if (!response.ok) throw new Error('Network response was not ok');
 
         const json = await response.json();
@@ -1062,16 +1209,18 @@ async function fetchTasks() {
             status: item.status, // Raw status, mapped in UI
             vtid: item.vtid,
             summary: item.summary,
+            description: item.description,
+            layer: item.layer,
+            module: item.module,
+            assigned_to: item.assigned_to,
             createdAt: item.created_at || item.createdAt // Capture date for filtering
         }));
         state.tasksError = null;
     } catch (error) {
         console.error('Failed to fetch tasks:', error);
         state.tasksError = error.message;
-        // Fallback data for demo if API fails (optional, but good for dev)
-        state.tasks = [
-            { id: 1, title: 'Fallback Task 1', status: 'Scheduled', vtid: 'VTID-001', summary: 'Fallback data due to API error.', createdAt: '2023-10-27' }
-        ];
+        // No fallback dummy data - show error state instead
+        state.tasks = [];
     } finally {
         state.tasksLoading = false;
         renderApp();
@@ -1156,46 +1305,34 @@ function renderDocsScreensView() {
         // Try to fetch it
         fetchScreenInventory();
     } else {
-        // Render screen table
+        // Render screen table - support both { modules: [...] } and { screen_inventory: { screens: [...] } } formats
+        const modules = state.screenInventory.modules || [];
         const screens = state.screenInventory.screen_inventory?.screens || [];
-        const filteredScreens = screens.filter(screen => {
-            if (state.selectedRole === 'FULL CATALOG') return true;
-            return screen.role.toUpperCase() === state.selectedRole;
-        });
+        const allScreens = screens.length > 0 ? screens : [];
 
-        const table = document.createElement('table');
-        table.style.width = '100%';
-        table.style.borderCollapse = 'collapse';
-        table.style.fontSize = '0.875rem';
-
-        // Header
-        const thead = document.createElement('thead');
-        thead.innerHTML = `
-            <tr style="background: var(--color-sidebar-bg); text-align: left;">
-                <th style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);">Screen ID</th>
-                <th style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);">Module</th>
-                <th style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);">Tab</th>
-                <th style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);">URL Path</th>
-                <th style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);">Role</th>
-            </tr>
-        `;
-        table.appendChild(thead);
-
-        // Body
-        const tbody = document.createElement('tbody');
-        filteredScreens.forEach((screen, index) => {
-            const tr = document.createElement('tr');
-            tr.style.background = index % 2 === 0 ? 'transparent' : 'var(--color-sidebar-bg)';
-            tr.innerHTML = `
-                <td style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);">${screen.screen_id}</td>
-                <td style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);">${screen.module}</td>
-                <td style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);">${screen.tab}</td>
-                <td style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);"><code style="background: var(--color-sidebar-bg); padding: 2px 6px; border-radius: 3px;">${screen.url_path}</code></td>
-                <td style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);">${screen.role}</td>
+        // If data is loaded but empty (modules.length === 0 or screens.length === 0), show clean empty state
+        if (modules.length === 0 && allScreens.length === 0) {
+            const emptyState = document.createElement('div');
+            emptyState.style.display = 'flex';
+            emptyState.style.flexDirection = 'column';
+            emptyState.style.alignItems = 'center';
+            emptyState.style.justifyContent = 'center';
+            emptyState.style.padding = '3rem';
+            emptyState.style.color = 'var(--color-text-secondary)';
+            emptyState.innerHTML = `
+                <div style="font-size: 3rem; margin-bottom: 1rem;">📄</div>
+                <div style="font-size: 1.1rem; font-weight: 500; margin-bottom: 0.5rem;">No Screen Inventory Available</div>
+                <div style="font-size: 0.9rem; max-width: 400px; text-align: center;">The Dev Screen Inventory spec is empty. Screens will appear here once they are defined in OASIS.</div>
             `;
-            tbody.appendChild(tr);
+            content.appendChild(emptyState);
+            container.appendChild(content);
+            return container;
+        }
+
+        const filteredScreens = allScreens.filter(screen => {
+            if (state.selectedRole === 'FULL CATALOG') return true;
+            return screen.role && screen.role.toUpperCase() === state.selectedRole;
         });
-        table.appendChild(tbody);
 
         const summary = document.createElement('div');
         summary.style.marginBottom = '1rem';
@@ -1206,7 +1343,51 @@ function renderDocsScreensView() {
         summary.textContent = `Showing ${filteredScreens.length} screens for ${state.selectedRole}`;
         content.appendChild(summary);
 
-        content.appendChild(table);
+        if (filteredScreens.length === 0) {
+            const noMatch = document.createElement('div');
+            noMatch.style.padding = '2rem';
+            noMatch.style.color = 'var(--color-text-secondary)';
+            noMatch.style.textAlign = 'center';
+            noMatch.style.fontStyle = 'italic';
+            noMatch.textContent = `No screens found for role: ${state.selectedRole}`;
+            content.appendChild(noMatch);
+        } else {
+            const table = document.createElement('table');
+            table.style.width = '100%';
+            table.style.borderCollapse = 'collapse';
+            table.style.fontSize = '0.875rem';
+
+            // Header
+            const thead = document.createElement('thead');
+            thead.innerHTML = `
+                <tr style="background: var(--color-sidebar-bg); text-align: left;">
+                    <th style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);">Screen ID</th>
+                    <th style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);">Module</th>
+                    <th style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);">Tab</th>
+                    <th style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);">URL Path</th>
+                    <th style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);">Role</th>
+                </tr>
+            `;
+            table.appendChild(thead);
+
+            // Body
+            const tbody = document.createElement('tbody');
+            filteredScreens.forEach((screen, index) => {
+                const tr = document.createElement('tr');
+                tr.style.background = index % 2 === 0 ? 'transparent' : 'var(--color-sidebar-bg)';
+                tr.innerHTML = `
+                    <td style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);">${screen.screen_id || '—'}</td>
+                    <td style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);">${screen.module || '—'}</td>
+                    <td style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);">${screen.tab || '—'}</td>
+                    <td style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);"><code style="background: var(--color-sidebar-bg); padding: 2px 6px; border-radius: 3px;">${screen.url_path || '—'}</code></td>
+                    <td style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);">${screen.role || '—'}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+            table.appendChild(tbody);
+
+            content.appendChild(table);
+        }
     }
 
     container.appendChild(content);
