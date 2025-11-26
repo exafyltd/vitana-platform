@@ -42,16 +42,16 @@ app.use('/api/v1/commandhub', commandhub);
 app.use("/", tasksRouter);
 app.use(eventsApiRouter);
 app.use(eventsRouter);
-app.use('/command-hub', commandHubRouter);
-app.use(sseService.router);
-app.use('/api/v1/board', boardAdapter); // Keep one canonical board adapter mount
-app.use('/api/v1/board', boardAdapter); // Keep one canonical board adapter mount
-
-// Serve Command Hub static files
+// Serve Command Hub static files BEFORE the router (order matters!)
 const staticPath = process.env.NODE_ENV === 'production'
   ? 'dist/frontend/command-hub'
   : 'src/frontend/command-hub';
 app.use('/command-hub', express.static(staticPath));
+
+// Command Hub router (after static files)
+app.use('/command-hub', commandHubRouter);
+app.use(sseService.router);
+app.use('/api/v1/board', boardAdapter); // Keep one canonical board adapter mount
 
 // Start server
 if (process.env.NODE_ENV === 'test') {
