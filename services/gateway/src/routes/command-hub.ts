@@ -14,8 +14,8 @@ const router = Router();
  */
 router.get('/', (req: Request, res: Response) => {
   try {
-    // CSP compliant - no inline scripts or styles
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'");
+    // CSP headers - allow inline styles for dynamic UI rendering
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'");
     const htmlPath = path.join(__dirname, '../frontend/command-hub/index.html');
     res.sendFile(htmlPath);
   } catch (error) {
@@ -120,7 +120,8 @@ router.get('/*', (req: Request, res: Response) => {
   }
 
   try {
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'");
+    // CSP headers - allow inline styles for dynamic UI rendering
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'");
     const htmlPath = path.join(__dirname, '../frontend/command-hub/index.html');
     res.sendFile(htmlPath);
   } catch (error) {

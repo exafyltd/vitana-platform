@@ -193,7 +193,8 @@ router.get('/specs/dev-screen-inventory', (req: Request, res: Response) => {
     const specContent = fs.readFileSync(specPath, 'utf-8');
     const specData = JSON.parse(specContent);
 
-    return res.status(200).json(specData);
+    // Return in OASIS response format expected by frontend
+    return res.status(200).json({ ok: true, data: specData });
 
   } catch (e: any) {
     console.error('[OASIS Specs] Error:', e);
