@@ -10,6 +10,7 @@ import commandHubRouter from './routes/command-hub';
 import { sseService } from './services/sse-service';
 import { setupCors, sseHeaders } from './middleware/cors';
 import governanceRouter from './routes/governance';
+import cicdRouter from './routes/cicd';
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -37,6 +38,7 @@ app.get('/debug/governance-ping', (_req, res) => {
 
 // Mount routes
 app.use('/api/v1/governance', governanceRouter); // DEV-GOVBE-0106: Governance endpoints
+app.use(cicdRouter); // VTID-0515: CICD endpoints (health, safe-merge, deploy)
 app.use('/api/v1/vtid', vtidRouter);
 app.use('/api/v1/commandhub', commandhub);
 app.use("/", tasksRouter);
@@ -63,6 +65,7 @@ if (process.env.NODE_ENV === 'test') {
     console.log('🔌 SSE Stream: http://localhost:' + PORT + '/api/v1/events/stream');
     console.log('Gateway: debug /debug/governance-ping route registered');
     console.log('Gateway: governance routes mounted at /api/v1/governance');
+    console.log('Gateway: CICD routes mounted at /api/v1/cicd/*, /api/v1/github/*, /api/v1/deploy/*');
   });
 }
 
