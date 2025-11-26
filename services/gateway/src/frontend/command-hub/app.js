@@ -248,6 +248,21 @@ const state = {
     showProfileModal: false,
     showTaskModal: false,
 
+    // Global Overlays (VTID-0508)
+    isHeartbeatOpen: false,
+    isOperatorOpen: false,
+    operatorActiveTab: 'chat', // 'chat', 'ticker', 'history'
+
+    // Operator Chat State
+    chatMessages: [],
+    chatInputValue: '',
+
+    // Operator Ticker State
+    tickerEvents: [
+        { id: 1, timestamp: '--:--:--', type: 'system', content: 'System ready (placeholder)' },
+        { id: 2, timestamp: '--:--:--', type: 'info', content: 'No live events yet' }
+    ],
+
     // User
     user: {
         name: 'David Stevens',
@@ -293,11 +308,25 @@ function renderApp() {
     // Modals
     if (state.showProfileModal) root.appendChild(renderProfileModal());
     if (state.showTaskModal) root.appendChild(renderTaskModal());
+
+    // Global Overlays (VTID-0508)
+    if (state.isHeartbeatOpen) root.appendChild(renderHeartbeatOverlay());
+    if (state.isOperatorOpen) root.appendChild(renderOperatorOverlay());
 }
 
 function renderSidebar() {
     const sidebar = document.createElement('div');
     sidebar.className = `sidebar ${state.sidebarCollapsed ? 'collapsed' : ''}`;
+
+    // Brand (VTID-0508)
+    const brand = document.createElement('div');
+    brand.className = 'sidebar-brand';
+    if (state.sidebarCollapsed) {
+        brand.textContent = 'VD';
+    } else {
+        brand.innerHTML = 'VITANA DEV';
+    }
+    sidebar.appendChild(brand);
 
     // Modules
     const navSection = document.createElement('div');
@@ -316,6 +345,38 @@ function renderSidebar() {
 
     sidebar.appendChild(navSection);
 
+    // Profile at bottom (VTID-0508)
+    const profile = document.createElement('div');
+    profile.className = 'sidebar-profile';
+    profile.onclick = () => {
+        state.showProfileModal = true;
+        renderApp();
+    };
+
+    const avatar = document.createElement('div');
+    avatar.className = 'sidebar-profile-avatar';
+    avatar.textContent = state.user.avatar;
+    profile.appendChild(avatar);
+
+    if (!state.sidebarCollapsed) {
+        const info = document.createElement('div');
+        info.className = 'sidebar-profile-info';
+
+        const name = document.createElement('div');
+        name.className = 'sidebar-profile-name';
+        name.textContent = state.user.name;
+        info.appendChild(name);
+
+        const role = document.createElement('div');
+        role.className = 'sidebar-profile-role';
+        role.textContent = state.user.role;
+        info.appendChild(role);
+
+        profile.appendChild(info);
+    }
+
+    sidebar.appendChild(profile);
+
     // Toggle
     const toggle = document.createElement('div');
     toggle.className = 'collapse-toggle';
@@ -333,97 +394,47 @@ function renderHeader() {
     const header = document.createElement('div');
     header.className = 'header-bar';
 
-    // Left: Title + Autopilot Card
+    // Left: LIVE chip + Heartbeat chip (VTID-0508)
     const left = document.createElement('div');
     left.className = 'header-left';
 
-    const title = document.createElement('div');
-    title.className = 'header-title';
-    title.innerHTML = 'Command Hub <span style="font-size:0.7em; background:#333; padding:2px 6px; border-radius:4px; margin-left:8px;">v4</span>';
-    left.appendChild(title);
+    // LIVE chip (green by default)
+    const liveChip = document.createElement('div');
+    liveChip.className = 'status-live';
+    liveChip.innerHTML = '<div class="live-dot"></div>LIVE';
+    left.appendChild(liveChip);
 
-    const autopilot = document.createElement('div');
-    autopilot.className = 'autopilot-card';
-    autopilot.innerHTML = `
-    <span class="title">Autopilot</span>
-    <span class="status">Standby</span>
-  `;
-    left.appendChild(autopilot);
-
-    const live = document.createElement('div');
-    live.className = 'live-indicator';
-    live.innerHTML = `
-    <div class="live-dot"></div>
-    LIVE
-  `;
-    left.appendChild(live);
+    // Heartbeat chip
+    const heartbeatChip = document.createElement('div');
+    heartbeatChip.className = 'heartbeat-chip';
+    heartbeatChip.textContent = 'Heartbeat: Standby';
+    heartbeatChip.onclick = () => {
+        state.isHeartbeatOpen = true;
+        renderApp();
+    };
+    left.appendChild(heartbeatChip);
 
     header.appendChild(left);
 
-    // Right: Multimodal Controls & Profile
+    // Right: Operator button + Autopilot button (VTID-0508)
     const right = document.createElement('div');
-    right.style.display = 'flex';
-    right.style.gap = '1rem';
-    right.style.alignItems = 'center';
+    right.className = 'header-right';
 
-    const mmControls = document.createElement('div');
-    mmControls.className = 'multimodal-controls';
-
-    // Split Screen Toggle
-    const splitBtn = document.createElement('select');
-    splitBtn.className = 'form-control';
-    splitBtn.style.width = 'auto';
-    splitBtn.style.padding = '0.25rem 0.5rem';
-    splitBtn.style.fontSize = '0.8rem';
-    splitBtn.innerHTML = '<option value="">Single View</option>';
-    splitScreenCombos.forEach(combo => {
-        const opt = document.createElement('option');
-        opt.value = combo.id;
-        opt.textContent = combo.label;
-        if (state.activeSplitScreenId === combo.id) opt.selected = true;
-        splitBtn.appendChild(opt);
-    });
-    splitBtn.onchange = (e) => handleSplitScreenToggle(e.target.value);
-    right.appendChild(splitBtn);
-
-    const micBtn = document.createElement('button');
-    micBtn.className = 'mm-btn';
-    micBtn.innerHTML = '🎤'; // Placeholder icon
-    micBtn.title = 'Toggle Voice';
-
-    const camBtn = document.createElement('button');
-    camBtn.className = 'mm-btn';
-    camBtn.innerHTML = '📷'; // Placeholder icon
-    camBtn.title = 'Toggle Camera';
-
-    const streamBtn = document.createElement('button');
-    streamBtn.className = 'mm-btn';
-    streamBtn.innerHTML = '📡'; // Placeholder icon
-    streamBtn.title = 'Toggle Stream';
-
-    mmControls.appendChild(micBtn);
-    mmControls.appendChild(camBtn);
-    mmControls.appendChild(streamBtn);
-    right.appendChild(mmControls);
-
-    // Profile Avatar
-    const avatar = document.createElement('div');
-    avatar.style.width = '32px';
-    avatar.style.height = '32px';
-    avatar.style.borderRadius = '50%';
-    avatar.style.background = 'var(--color-accent)';
-    avatar.style.display = 'flex';
-    avatar.style.alignItems = 'center';
-    avatar.style.justifyContent = 'center';
-    avatar.style.fontSize = '0.8rem';
-    avatar.style.fontWeight = 'bold';
-    avatar.style.cursor = 'pointer';
-    avatar.textContent = state.user.avatar;
-    avatar.onclick = () => {
-        state.showProfileModal = true;
+    // Operator button
+    const operatorBtn = document.createElement('button');
+    operatorBtn.className = 'header-btn header-btn-operator';
+    operatorBtn.textContent = 'Operator';
+    operatorBtn.onclick = () => {
+        state.isOperatorOpen = true;
         renderApp();
     };
-    right.appendChild(avatar);
+    right.appendChild(operatorBtn);
+
+    // Autopilot button
+    const autopilotBtn = document.createElement('button');
+    autopilotBtn.className = 'header-btn header-btn-primary';
+    autopilotBtn.innerHTML = 'Autopilot <span style="font-size:0.7em; opacity:0.8;">Standby</span>';
+    right.appendChild(autopilotBtn);
 
     header.appendChild(right);
 
@@ -1210,6 +1221,354 @@ function renderDocsScreensView() {
     }
 
     container.appendChild(content);
+    return container;
+}
+
+// --- Global Overlays (VTID-0508) ---
+
+function renderHeartbeatOverlay() {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'overlay-backdrop';
+    backdrop.onclick = (e) => {
+        if (e.target === backdrop) {
+            state.isHeartbeatOpen = false;
+            renderApp();
+        }
+    };
+
+    const panel = document.createElement('div');
+    panel.className = 'overlay-panel heartbeat-overlay';
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'overlay-header';
+
+    const titleBlock = document.createElement('div');
+    const title = document.createElement('div');
+    title.className = 'overlay-title';
+    title.textContent = 'Heartbeat';
+    titleBlock.appendChild(title);
+
+    const subtitle = document.createElement('div');
+    subtitle.className = 'overlay-subtitle';
+    subtitle.textContent = 'System status & telemetry (UI stub)';
+    titleBlock.appendChild(subtitle);
+
+    header.appendChild(titleBlock);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'overlay-close';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.onclick = () => {
+        state.isHeartbeatOpen = false;
+        renderApp();
+    };
+    header.appendChild(closeBtn);
+
+    panel.appendChild(header);
+
+    // Content
+    const content = document.createElement('div');
+    content.className = 'overlay-content';
+
+    // Current Status Section
+    const statusSection = document.createElement('div');
+    statusSection.className = 'heartbeat-section';
+
+    const statusTitle = document.createElement('div');
+    statusTitle.className = 'heartbeat-section-title';
+    statusTitle.textContent = 'Current Status';
+    statusSection.appendChild(statusTitle);
+
+    const statusBox = document.createElement('div');
+    statusBox.className = 'heartbeat-status';
+
+    const statusDot = document.createElement('div');
+    statusDot.className = 'heartbeat-status-dot standby';
+    statusBox.appendChild(statusDot);
+
+    const statusText = document.createElement('span');
+    statusText.textContent = 'Standby';
+    statusBox.appendChild(statusText);
+
+    statusSection.appendChild(statusBox);
+    content.appendChild(statusSection);
+
+    // Metrics Section
+    const metricsSection = document.createElement('div');
+    metricsSection.className = 'heartbeat-section';
+
+    const metricsTitle = document.createElement('div');
+    metricsTitle.className = 'heartbeat-section-title';
+    metricsTitle.textContent = 'Metrics';
+    metricsSection.appendChild(metricsTitle);
+
+    const metricsGrid = document.createElement('div');
+    metricsGrid.className = 'heartbeat-metrics';
+
+    const metrics = [
+        { label: 'Last beat', value: '–' },
+        { label: 'Latency', value: '–' },
+        { label: 'Uptime', value: '–' },
+        { label: 'Connections', value: '–' }
+    ];
+
+    metrics.forEach(m => {
+        const metric = document.createElement('div');
+        metric.className = 'heartbeat-metric';
+
+        const label = document.createElement('div');
+        label.className = 'heartbeat-metric-label';
+        label.textContent = m.label;
+        metric.appendChild(label);
+
+        const value = document.createElement('div');
+        value.className = 'heartbeat-metric-value';
+        value.textContent = m.value;
+        metric.appendChild(value);
+
+        metricsGrid.appendChild(metric);
+    });
+
+    metricsSection.appendChild(metricsGrid);
+    content.appendChild(metricsSection);
+
+    // Events Section
+    const eventsSection = document.createElement('div');
+    eventsSection.className = 'heartbeat-section';
+
+    const eventsTitle = document.createElement('div');
+    eventsTitle.className = 'heartbeat-section-title';
+    eventsTitle.textContent = 'Recent Events';
+    eventsSection.appendChild(eventsTitle);
+
+    const eventsBox = document.createElement('div');
+    eventsBox.className = 'heartbeat-events';
+    eventsBox.textContent = 'No telemetry yet';
+    eventsSection.appendChild(eventsBox);
+
+    content.appendChild(eventsSection);
+
+    panel.appendChild(content);
+    backdrop.appendChild(panel);
+
+    return backdrop;
+}
+
+function renderOperatorOverlay() {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'overlay-backdrop';
+    backdrop.onclick = (e) => {
+        if (e.target === backdrop) {
+            state.isOperatorOpen = false;
+            renderApp();
+        }
+    };
+
+    const panel = document.createElement('div');
+    panel.className = 'overlay-panel operator-overlay';
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'overlay-header';
+
+    const titleBlock = document.createElement('div');
+    const title = document.createElement('div');
+    title.className = 'overlay-title';
+    title.textContent = 'Operator Console';
+    titleBlock.appendChild(title);
+
+    const subtitle = document.createElement('div');
+    subtitle.className = 'overlay-subtitle';
+    subtitle.textContent = 'Live events & chat';
+    titleBlock.appendChild(subtitle);
+
+    header.appendChild(titleBlock);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'overlay-close';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.onclick = () => {
+        state.isOperatorOpen = false;
+        renderApp();
+    };
+    header.appendChild(closeBtn);
+
+    panel.appendChild(header);
+
+    // Tabs
+    const tabs = document.createElement('div');
+    tabs.className = 'operator-tabs';
+
+    const tabConfigs = [
+        { key: 'chat', label: 'Chat' },
+        { key: 'ticker', label: 'Live Ticker' },
+        { key: 'history', label: 'History' }
+    ];
+
+    tabConfigs.forEach(t => {
+        const tab = document.createElement('button');
+        tab.className = `operator-tab ${state.operatorActiveTab === t.key ? 'active' : ''}`;
+        tab.textContent = t.label;
+        tab.onclick = () => {
+            state.operatorActiveTab = t.key;
+            renderApp();
+        };
+        tabs.appendChild(tab);
+    });
+
+    panel.appendChild(tabs);
+
+    // Tab Content
+    const tabContent = document.createElement('div');
+    tabContent.className = 'operator-tab-content';
+
+    if (state.operatorActiveTab === 'chat') {
+        tabContent.appendChild(renderOperatorChat());
+    } else if (state.operatorActiveTab === 'ticker') {
+        tabContent.appendChild(renderOperatorTicker());
+    } else if (state.operatorActiveTab === 'history') {
+        tabContent.appendChild(renderOperatorHistory());
+    }
+
+    panel.appendChild(tabContent);
+    backdrop.appendChild(panel);
+
+    return backdrop;
+}
+
+function renderOperatorChat() {
+    const container = document.createElement('div');
+    container.className = 'chat-container';
+
+    // Messages area
+    const messages = document.createElement('div');
+    messages.className = 'chat-messages';
+
+    if (state.chatMessages.length === 0) {
+        const empty = document.createElement('div');
+        empty.style.textAlign = 'center';
+        empty.style.color = 'var(--color-text-secondary)';
+        empty.style.padding = '2rem';
+        empty.textContent = 'No messages yet. Start a conversation with the Operator.';
+        messages.appendChild(empty);
+    } else {
+        state.chatMessages.forEach(msg => {
+            const msgEl = document.createElement('div');
+            msgEl.className = `chat-message ${msg.type}`;
+
+            const bubble = document.createElement('div');
+            bubble.className = 'chat-message-bubble';
+            bubble.textContent = msg.content;
+            msgEl.appendChild(bubble);
+
+            const time = document.createElement('div');
+            time.className = 'chat-message-time';
+            time.textContent = msg.timestamp;
+            msgEl.appendChild(time);
+
+            messages.appendChild(msgEl);
+        });
+    }
+
+    container.appendChild(messages);
+
+    // Input area
+    const inputContainer = document.createElement('div');
+    inputContainer.className = 'chat-input-container';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'chat-input';
+    input.placeholder = 'Type a message...';
+    input.value = state.chatInputValue;
+    input.oninput = (e) => {
+        state.chatInputValue = e.target.value;
+    };
+    input.onkeydown = (e) => {
+        if (e.key === 'Enter' && state.chatInputValue.trim()) {
+            sendChatMessage();
+        }
+    };
+    inputContainer.appendChild(input);
+
+    const sendBtn = document.createElement('button');
+    sendBtn.className = 'chat-send-btn';
+    sendBtn.textContent = 'Send';
+    sendBtn.onclick = () => {
+        if (state.chatInputValue.trim()) {
+            sendChatMessage();
+        }
+    };
+    inputContainer.appendChild(sendBtn);
+
+    container.appendChild(inputContainer);
+
+    return container;
+}
+
+function sendChatMessage() {
+    const now = new Date();
+    const timestamp = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+    // Add user message
+    state.chatMessages.push({
+        type: 'user',
+        content: state.chatInputValue,
+        timestamp: timestamp
+    });
+
+    // Add placeholder system response
+    state.chatMessages.push({
+        type: 'system',
+        content: '(Placeholder) Message received by UI',
+        timestamp: timestamp
+    });
+
+    state.chatInputValue = '';
+    renderApp();
+}
+
+function renderOperatorTicker() {
+    const container = document.createElement('div');
+    container.className = 'ticker-container';
+
+    if (state.tickerEvents.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'ticker-empty';
+        empty.textContent = 'No live events yet';
+        container.appendChild(empty);
+    } else {
+        state.tickerEvents.forEach(event => {
+            const item = document.createElement('div');
+            item.className = 'ticker-item';
+
+            const timestamp = document.createElement('div');
+            timestamp.className = 'ticker-timestamp';
+            timestamp.textContent = event.timestamp;
+            item.appendChild(timestamp);
+
+            const content = document.createElement('div');
+            content.className = 'ticker-content';
+            content.textContent = event.content;
+            item.appendChild(content);
+
+            const type = document.createElement('div');
+            type.className = `ticker-type ${event.type}`;
+            type.textContent = event.type;
+            item.appendChild(type);
+
+            container.appendChild(item);
+        });
+    }
+
+    return container;
+}
+
+function renderOperatorHistory() {
+    const container = document.createElement('div');
+    container.className = 'history-empty';
+    container.textContent = 'No past conversations yet (UI stub)';
     return container;
 }
 
