@@ -466,8 +466,7 @@ function renderMainContent() {
 
     // Module Content
     const moduleContent = document.createElement('div');
-    moduleContent.style.flex = '1';
-    moduleContent.style.overflow = 'hidden';
+    moduleContent.className = 'module-content-wrapper';
 
     moduleContent.appendChild(renderModuleContent(state.currentModuleKey, state.currentTab));
 
@@ -484,18 +483,12 @@ function renderSplitScreen() {
     left.className = 'split-panel-left';
     // Header for pane
     const leftHeader = document.createElement('div');
-    leftHeader.style.padding = '0.5rem 1rem';
-    leftHeader.style.background = 'var(--color-sidebar-bg)';
-    leftHeader.style.borderBottom = '1px solid var(--color-border)';
-    leftHeader.style.fontSize = '0.8rem';
-    leftHeader.style.fontWeight = '600';
-    leftHeader.style.color = 'var(--color-text-secondary)';
+    leftHeader.className = 'split-pane-header';
     leftHeader.textContent = `${SECTION_LABELS[state.leftPane.module] || state.leftPane.module} > ${formatTabLabel(state.leftPane.tab)}`;
     left.appendChild(leftHeader);
 
     const leftContent = document.createElement('div');
-    leftContent.style.flex = '1';
-    leftContent.style.overflow = 'hidden';
+    leftContent.className = 'split-pane-content';
     leftContent.appendChild(renderModuleContent(state.leftPane.module, state.leftPane.tab));
     left.appendChild(leftContent);
 
@@ -509,18 +502,12 @@ function renderSplitScreen() {
     right.className = 'split-panel-right';
     // Header for pane
     const rightHeader = document.createElement('div');
-    rightHeader.style.padding = '0.5rem 1rem';
-    rightHeader.style.background = 'var(--color-sidebar-bg)';
-    rightHeader.style.borderBottom = '1px solid var(--color-border)';
-    rightHeader.style.fontSize = '0.8rem';
-    rightHeader.style.fontWeight = '600';
-    rightHeader.style.color = 'var(--color-text-secondary)';
+    rightHeader.className = 'split-pane-header';
     rightHeader.textContent = `${SECTION_LABELS[state.rightPane.module] || state.rightPane.module} > ${formatTabLabel(state.rightPane.tab)}`;
     right.appendChild(rightHeader);
 
     const rightContent = document.createElement('div');
-    rightContent.style.flex = '1';
-    rightContent.style.overflow = 'hidden';
+    rightContent.className = 'split-pane-content';
     rightContent.appendChild(renderModuleContent(state.rightPane.module, state.rightPane.tab));
     right.appendChild(rightContent);
 
@@ -531,9 +518,7 @@ function renderSplitScreen() {
 
 function renderModuleContent(moduleKey, tab) {
     const container = document.createElement('div');
-    container.style.height = '100%';
-    container.style.display = 'flex';
-    container.style.flexDirection = 'column';
+    container.className = 'content-container';
 
     if (moduleKey === 'command-hub' && tab === 'tasks') {
         container.appendChild(renderTasksView());
@@ -542,8 +527,7 @@ function renderModuleContent(moduleKey, tab) {
     } else {
         // Placeholder for other modules
         const placeholder = document.createElement('div');
-        placeholder.style.padding = '2rem';
-        placeholder.style.color = 'var(--color-text-secondary)';
+        placeholder.className = 'placeholder-content';
 
         if (moduleKey === 'command-hub' && tab === 'live-console') {
             placeholder.innerHTML = '<div class="placeholder-panel">Live Console placeholder</div>';
@@ -559,9 +543,7 @@ function renderModuleContent(moduleKey, tab) {
 
 function renderTasksView() {
     const container = document.createElement('div');
-    container.style.display = 'flex';
-    container.style.flexDirection = 'column';
-    container.style.height = '100%';
+    container.className = 'tasks-container';
 
     // Toolbar
     const toolbar = document.createElement('div');
@@ -579,9 +561,7 @@ function renderTasksView() {
 
     const dateFilter = document.createElement('input');
     dateFilter.type = 'date';
-    dateFilter.className = 'form-control';
-    dateFilter.style.width = 'auto';
-    dateFilter.style.marginLeft = '1rem';
+    dateFilter.className = 'form-control date-filter-input';
     dateFilter.value = state.taskDateFilter;
     dateFilter.onchange = (e) => {
         state.taskDateFilter = e.target.value;
@@ -603,9 +583,8 @@ function renderTasksView() {
     toolbar.appendChild(newBtn);
 
     const refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn';
+    refreshBtn.className = 'btn refresh-btn-margin';
     refreshBtn.textContent = '↻';
-    refreshBtn.style.marginLeft = '0.5rem';
     refreshBtn.onclick = () => {
         fetchTasks();
     };
@@ -618,13 +597,13 @@ function renderTasksView() {
     board.className = 'task-board';
 
     if (state.tasksLoading) {
-        board.innerHTML = '<div style="padding: 2rem; color: var(--color-text-secondary);">Loading tasks...</div>';
+        board.innerHTML = '<div class="placeholder-content">Loading tasks...</div>';
         container.appendChild(board);
         return container;
     }
 
     if (state.tasksError) {
-        board.innerHTML = `<div style="padding: 2rem; color: #ef4444;">Error: ${state.tasksError}</div>`;
+        board.innerHTML = `<div class="placeholder-content error-text">Error: ${state.tasksError}</div>`;
         container.appendChild(board);
         return container;
     }
@@ -716,18 +695,12 @@ function renderTaskDrawer() {
     header.className = 'drawer-header';
 
     const title = document.createElement('h2');
-    title.style.margin = '0';
-    title.style.fontSize = '1.25rem';
-    title.style.color = 'var(--color-accent)';
+    title.className = 'drawer-title-text';
     title.textContent = state.selectedTask.vtid;
     header.appendChild(title);
 
     const closeBtn = document.createElement('button');
-    closeBtn.style.background = 'transparent';
-    closeBtn.style.border = 'none';
-    closeBtn.style.color = 'var(--color-text-secondary)';
-    closeBtn.style.fontSize = '1.5rem';
-    closeBtn.style.cursor = 'pointer';
+    closeBtn.className = 'drawer-close-btn';
     closeBtn.innerHTML = '&times;';
     closeBtn.onclick = () => {
         state.selectedTask = null;
@@ -741,13 +714,12 @@ function renderTaskDrawer() {
     content.className = 'drawer-content';
 
     const summary = document.createElement('p');
-    summary.style.color = 'var(--color-text-primary)';
+    summary.className = 'task-summary-text';
     summary.textContent = state.selectedTask.summary;
     content.appendChild(summary);
 
     const details = document.createElement('div');
-    details.style.marginTop = '2rem';
-    details.style.color = 'var(--color-text-secondary)';
+    details.className = 'task-details-block';
     details.innerHTML = `
         <p><strong>Status:</strong> ${state.selectedTask.status}</p>
         <p><strong>Title:</strong> ${state.selectedTask.title}</p>
@@ -1116,33 +1088,22 @@ async function fetchScreenInventory() {
 
 function renderDocsScreensView() {
     const container = document.createElement('div');
-    container.style.display = 'flex';
-    container.style.flexDirection = 'column';
-    container.style.height = '100%';
+    container.className = 'docs-container';
 
     // Toolbar with role filters
     const toolbar = document.createElement('div');
-    toolbar.style.padding = '1rem';
-    toolbar.style.borderBottom = '1px solid var(--color-border)';
-    toolbar.style.display = 'flex';
-    toolbar.style.gap = '0.5rem';
-    toolbar.style.alignItems = 'center';
+    toolbar.className = 'docs-toolbar';
 
     const label = document.createElement('span');
     label.textContent = 'Role:';
-    label.style.fontWeight = '600';
-    label.style.marginRight = '0.5rem';
+    label.className = 'docs-toolbar-label';
     toolbar.appendChild(label);
 
     const roles = ['DEVELOPER', 'COMMUNITY', 'PATIENT', 'STAFF', 'PROFESSIONAL', 'ADMIN', 'FULL CATALOG'];
     roles.forEach(role => {
         const btn = document.createElement('button');
-        btn.className = 'btn';
+        btn.className = state.selectedRole === role ? 'btn role-btn-active' : 'btn';
         btn.textContent = role;
-        if (state.selectedRole === role) {
-            btn.style.background = 'var(--color-accent)';
-            btn.style.color = '#fff';
-        }
         btn.onclick = () => {
             state.selectedRole = role;
             renderApp();
@@ -1154,16 +1115,14 @@ function renderDocsScreensView() {
 
     // Content area
     const content = document.createElement('div');
-    content.style.flex = '1';
-    content.style.overflow = 'auto';
-    content.style.padding = '1rem';
+    content.className = 'docs-content';
 
     if (state.screenInventoryLoading) {
-        content.innerHTML = '<div style=\"padding: 2rem; color: var(--color-text-secondary);\">Loading screen inventory...</div>';
+        content.innerHTML = '<div class="placeholder-content">Loading screen inventory...</div>';
     } else if (state.screenInventoryError) {
-        content.innerHTML = `<div style=\"padding: 2rem; color: #ef4444;\">Error: ${state.screenInventoryError}</div>`;
+        content.innerHTML = `<div class="placeholder-content error-text">Error: ${state.screenInventoryError}</div>`;
     } else if (!state.screenInventory) {
-        content.innerHTML = '<div style=\"padding: 2rem; color: var(--color-text-secondary);\">No screen inventory data available.</div>';
+        content.innerHTML = '<div class="placeholder-content">No screen inventory data available.</div>';
         // Try to fetch it
         fetchScreenInventory();
     } else {
@@ -1175,19 +1134,17 @@ function renderDocsScreensView() {
         });
 
         const table = document.createElement('table');
-        table.style.width = '100%';
-        table.style.borderCollapse = 'collapse';
-        table.style.fontSize = '0.875rem';
+        table.className = 'docs-table';
 
         // Header
         const thead = document.createElement('thead');
         thead.innerHTML = `
-            <tr style="background: var(--color-sidebar-bg); text-align: left;">
-                <th style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);">Screen ID</th>
-                <th style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);">Module</th>
-                <th style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);">Tab</th>
-                <th style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);">URL Path</th>
-                <th style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);">Role</th>
+            <tr class="docs-table-header">
+                <th class="docs-table-cell">Screen ID</th>
+                <th class="docs-table-cell">Module</th>
+                <th class="docs-table-cell">Tab</th>
+                <th class="docs-table-cell">URL Path</th>
+                <th class="docs-table-cell">Role</th>
             </tr>
         `;
         table.appendChild(thead);
@@ -1196,24 +1153,20 @@ function renderDocsScreensView() {
         const tbody = document.createElement('tbody');
         filteredScreens.forEach((screen, index) => {
             const tr = document.createElement('tr');
-            tr.style.background = index % 2 === 0 ? 'transparent' : 'var(--color-sidebar-bg)';
+            if (index % 2 !== 0) tr.className = 'docs-table-row-alt';
             tr.innerHTML = `
-                <td style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);">${screen.screen_id}</td>
-                <td style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);">${screen.module}</td>
-                <td style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);">${screen.tab}</td>
-                <td style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);"><code style="background: var(--color-sidebar-bg); padding: 2px 6px; border-radius: 3px;">${screen.url_path}</code></td>
-                <td style="padding: 0.75rem; border-bottom: 1px solid var(--color-border);">${screen.role}</td>
+                <td class="docs-table-cell">${screen.screen_id}</td>
+                <td class="docs-table-cell">${screen.module}</td>
+                <td class="docs-table-cell">${screen.tab}</td>
+                <td class="docs-table-cell"><code class="docs-table-code">${screen.url_path}</code></td>
+                <td class="docs-table-cell">${screen.role}</td>
             `;
             tbody.appendChild(tr);
         });
         table.appendChild(tbody);
 
         const summary = document.createElement('div');
-        summary.style.marginBottom = '1rem';
-        summary.style.padding = '0.5rem 1rem';
-        summary.style.background = 'var(--color-sidebar-bg)';
-        summary.style.borderRadius = '4px';
-        summary.style.fontSize = '0.875rem';
+        summary.className = 'docs-summary';
         summary.textContent = `Showing ${filteredScreens.length} screens for ${state.selectedRole}`;
         content.appendChild(summary);
 
@@ -1447,9 +1400,7 @@ function renderOperatorChat() {
 
     if (state.chatMessages.length === 0) {
         const empty = document.createElement('div');
-        empty.style.textAlign = 'center';
-        empty.style.color = 'var(--color-text-secondary)';
-        empty.style.padding = '2rem';
+        empty.className = 'chat-empty-state';
         empty.textContent = 'No messages yet. Start a conversation with the Operator.';
         messages.appendChild(empty);
     } else {
