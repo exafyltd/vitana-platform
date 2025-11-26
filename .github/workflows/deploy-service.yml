@@ -1,0 +1,193 @@
+# Deploy Service Workflow
+# VTID: VTID-0512 (Safe Merge + Auto-Deploy Bridge)
+# Layer: DEV | System: DevConsole | Module: CICDL
+#
+# Generic deployment workflow that can be triggered via workflow_dispatch.
+# Uses the standard deploy-service.sh script per SYS-RULE-DEPLOY-L1.
+#
+# Triggered by: Gateway /api/v1/deploy/service endpoint
+#
+name: Deploy Service
+
+on:
+  workflow_dispatch:
+    inputs:
+      vtid:
+        description: 'VTID for tracking'
+        required: true
+        type: string
+      service:
+        description: 'Service name to deploy'
+        required: true
+        type: choice
+        options:
+          - gateway
+          - oasis
+          - mcp-gateway
+          - oasis-projector
+          - oasis-operator
+          - deploy-watcher
+          - validators
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - dev
+        default: dev
+
+env:
+  PROJECT_ID: lovable-vitana-vers1
+  REGION: us-central1
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.service }} to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Log deployment start
+        run: |
+          echo "=========================================="
+          echo "   VTID-0512: Safe Merge Auto-Deploy"
+          echo "=========================================="
+          echo "VTID: ${{ inputs.vtid }}"
+          echo "Service: ${{ inputs.service }}"
+          echo "Environment: ${{ inputs.environment }}"
+          echo "Triggered at: $(date -u)"
+          echo "=========================================="
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies for service
+        working-directory: services/${{ inputs.service }}
+        run: |
+          if [ -f "package.json" ]; then
+            echo "Installing npm dependencies..."
+            npm ci
+          else
+            echo "No package.json found, skipping npm install"
+          fi
+
+      - name: Build service (if applicable)
+        working-directory: services/${{ inputs.service }}
+        run: |
+          if [ -f "package.json" ] && grep -q '"build"' package.json; then
+            echo "Building service..."
+            npm run build
+          else
+            echo "No build script found, skipping build"
+          fi
+
+      - name: Deploy service via deploy-service.sh
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          echo "Deploying ${{ inputs.service }} using SYS-RULE-DEPLOY-L1 script..."
+          chmod +x ./scripts/deploy/deploy-service.sh
+          ./scripts/deploy/deploy-service.sh ${{ inputs.service }} services/${{ inputs.service }}
+
+      - name: Get service URL
+        id: service-url
+        run: |
+          SERVICE_URL=$(gcloud run services describe ${{ inputs.service }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
+            --format='value(status.url)' 2>/dev/null || echo "")
+          echo "url=$SERVICE_URL" >> $GITHUB_OUTPUT
+          echo "Service URL: $SERVICE_URL"
+
+      - name: Health check
+        if: steps.service-url.outputs.url != ''
+        run: |
+          SERVICE_URL="${{ steps.service-url.outputs.url }}"
+          HEALTH_PATH="/health"
+
+          # Try /health first, then /alive
+          echo "Checking health at ${SERVICE_URL}${HEALTH_PATH}..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${SERVICE_URL}${HEALTH_PATH}" -H "X-VTID: ${{ inputs.vtid }}" || echo "000")
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Trying /alive endpoint..."
+            HEALTH_PATH="/alive"
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${SERVICE_URL}${HEALTH_PATH}" -H "X-VTID: ${{ inputs.vtid }}" || echo "000")
+          fi
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "Health check passed (HTTP $HTTP_CODE)"
+          else
+            echo "Health check returned HTTP $HTTP_CODE"
+            # Don't fail the workflow on health check failure, just warn
+            echo "::warning::Health check returned non-200 status code: $HTTP_CODE"
+          fi
+
+      - name: Notify OASIS of deployment result
+        if: always()
+        env:
+          GATEWAY_URL: ${{ secrets.GATEWAY_URL }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          # If GATEWAY_URL is set, notify OASIS of deployment result
+          if [ -n "$GATEWAY_URL" ]; then
+            STATUS="success"
+            MESSAGE="Deployment succeeded"
+
+            if [ "$JOB_STATUS" != "success" ]; then
+              STATUS="error"
+              MESSAGE="Deployment failed"
+            fi
+
+            echo "Notifying OASIS: $STATUS"
+            curl -s -X POST "$GATEWAY_URL/api/v1/events/ingest" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"vtid\": \"${{ inputs.vtid }}\",
+                \"type\": \"DEPLOY_${STATUS^^}\",
+                \"source\": \"github-actions\",
+                \"status\": \"$STATUS\",
+                \"message\": \"$MESSAGE for ${{ inputs.service }} to ${{ inputs.environment }}\",
+                \"payload\": {
+                  \"service\": \"${{ inputs.service }}\",
+                  \"environment\": \"${{ inputs.environment }}\",
+                  \"workflow_run_id\": \"${{ github.run_id }}\",
+                  \"service_url\": \"${{ steps.service-url.outputs.url }}\"
+                }
+              }" || echo "Failed to notify OASIS (non-critical)"
+          else
+            echo "GATEWAY_URL not set, skipping OASIS notification"
+          fi
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          echo "=========================================="
+          echo "   DEPLOYMENT COMPLETE"
+          echo "=========================================="
+          echo "VTID: ${{ inputs.vtid }}"
+          echo "Service: ${{ inputs.service }}"
+          echo "Environment: ${{ inputs.environment }}"
+          echo "Service URL: ${{ steps.service-url.outputs.url }}"
+          echo "Workflow Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo "Status: ${{ job.status }}"
+          echo "=========================================="
