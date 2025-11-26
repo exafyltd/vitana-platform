@@ -433,7 +433,7 @@ function renderHeader() {
     // Autopilot button
     const autopilotBtn = document.createElement('button');
     autopilotBtn.className = 'header-btn header-btn-primary';
-    autopilotBtn.innerHTML = 'Autopilot <span style="font-size:0.7em; opacity:0.8;">Standby</span>';
+    autopilotBtn.innerHTML = 'Autopilot <span class="autopilot-status-text">Standby</span>';
     right.appendChild(autopilotBtn);
 
     header.appendChild(right);
@@ -1544,6 +1544,6 @@ document.addEventListener('DOMContentLoaded', () => {
         fetchTasks();
     } catch (e) {
         console.error('Critical Render Error:', e);
-        document.body.innerHTML = `<div style="color:red; padding:2rem;"><h1>Critical Error</h1><pre>${e.stack}</pre></div>`;
+        document.body.innerHTML = `<div class="critical-error"><h1>Critical Error</h1><pre>${e.stack}</pre></div>`;
     }
 });

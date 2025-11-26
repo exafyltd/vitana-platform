@@ -1288,6 +1288,30 @@ body {
   border-radius: 3px;
 }
 
+/* Autopilot status text */
+.autopilot-status-text {
+  font-size: 0.7em;
+  opacity: 0.8;
+}
+
+/* Critical error display */
+.critical-error {
+  color: #ef4444;
+  padding: 2rem;
+}
+
+.critical-error h1 {
+  margin-bottom: 1rem;
+}
+
+.critical-error pre {
+  background: var(--color-sidebar-bg);
+  padding: 1rem;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-size: 0.875rem;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .operator-overlay {
