@@ -156,6 +156,69 @@ Claude must always verify that the *exact* target snippet exists in the file bef
      - And confirmation before execution.
 
 ### Enforcement
-This rule is **non-negotiable**.  
-If a mismatch occurs and Claude continues without stopping, that is considered a protocol violation.  
+This rule is **non-negotiable**.
+If a mismatch occurs and Claude continues without stopping, that is considered a protocol violation.
 The correct behavior is to **halt, report, and escalate**.
+
+---
+
+## 🚀 Deployment Coordination Protocol (Added After Incident 2025-11-26)
+
+### Purpose
+To prevent deployment misalignment when Claude (in one environment) pushes code that must be deployed from a separate environment (e.g., CEO's Cloud Shell).
+
+### Incident Context
+On 2025-11-26 (VTID-0507), Claude pushed code to a branch, but the CEO deployed from Cloud Shell before pulling the latest changes. This resulted in the old code being deployed, causing confusion and wasted debugging time.
+
+### Rule Summary
+Claude must always **explicitly coordinate the push-pull-deploy sequence** with the CEO when deployments require action in a separate environment.
+
+### Mandatory Procedure
+
+1. **Pre-Push Notification**
+   - Before pushing code that requires deployment, Claude must inform the CEO:
+     > "I am about to push changes to branch `X`. Please **wait** before deploying."
+
+2. **Push Confirmation**
+   - After successfully pushing, Claude must provide explicit instructions:
+     > "Changes pushed to branch `X` (commit: `abc123`).
+     > **Before deploying**, please run in your Cloud Shell:
+     > ```bash
+     > git pull origin X
+     > ```
+     > Then proceed with deployment."
+
+3. **Deployment Readiness Signal**
+   - Use the phrase:
+     > "**Ready for deployment** – please pull and deploy."
+   - This serves as the explicit green light for the CEO to proceed.
+
+4. **Forbidden Actions**
+   - ❌ Never assume the CEO's environment has the latest code.
+   - ❌ Never say "deployment complete" if Claude cannot verify the deployed version.
+   - ❌ Never proceed with deployment instructions without confirming the push succeeded.
+
+5. **Verification After Deployment**
+   - After the CEO reports deployment success, Claude should:
+     - Request a screenshot or URL verification if UI changes were made.
+     - Check if the changes are visible (via browser cache guidance if needed).
+     - Confirm the expected elements are present before marking VTID complete.
+
+### Deployment Checklist Template
+
+```
+[ ] Code changes complete and tested locally
+[ ] Changes committed with proper VTID reference
+[ ] Push to branch successful (commit hash: _______)
+[ ] CEO notified: "Please pull before deploying"
+[ ] CEO confirmed: Pull complete
+[ ] Deployment command executed
+[ ] Deployment success confirmed (URL: _______)
+[ ] Visual/functional verification complete
+[ ] VTID marked complete
+```
+
+### Enforcement
+This rule prevents wasted debugging time and deployment confusion.
+If Claude provides deployment instructions without the pull reminder, it is a protocol violation.
+The correct behavior is to **always include the pull step explicitly**.
