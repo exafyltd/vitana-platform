@@ -43,13 +43,32 @@ app.use('/api/v1/commandhub', commandhub);
 app.use("/", tasksRouter);
 app.use(eventsApiRouter);
 app.use(eventsRouter);
-// Serve Command Hub static files BEFORE router (use absolute path from __dirname)
-const staticPath = path.join(__dirname, 'frontend/command-hub');
-console.log('[Gateway] Static files path:', staticPath);
+// Serve Command Hub static files - try multiple paths for Docker compatibility
+const fs = require('fs');
+const possiblePaths = [
+  path.join(__dirname, 'frontend/command-hub'),                    // Standard: from dist/
+  path.join(process.cwd(), 'dist/frontend/command-hub'),           // From app root
+  path.resolve(__dirname, 'frontend/command-hub'),                 // Absolute from dist/
+  path.resolve(process.cwd(), 'dist', 'frontend', 'command-hub'),  // Absolute from app root
+  '/app/dist/frontend/command-hub'                                 // Docker hardcoded path
+];
+
+let staticPath = possiblePaths[0]; // Default
+for (const tryPath of possiblePaths) {
+  if (fs.existsSync(tryPath)) {
+    staticPath = tryPath;
+    console.log('[Gateway] Found static files at:', tryPath);
+    break;
+  } else {
+    console.log('[Gateway] Static path not found:', tryPath);
+  }
+}
+console.log('[Gateway] Using static files path:', staticPath);
+console.log('[Gateway] __dirname:', __dirname);
+console.log('[Gateway] process.cwd():', process.cwd());
 
 // Debug endpoint to check static file setup
 app.get('/debug/static-path', (_req, res) => {
-  const fs = require('fs');
   let files: string[] = [];
   let error: string | null = null;
   try {
@@ -60,15 +79,18 @@ app.get('/debug/static-path', (_req, res) => {
   res.json({
     staticPath,
     __dirname,
+    cwd: process.cwd(),
+    possiblePaths,
     files,
     error,
-    exists: fs.existsSync(staticPath)
+    exists: fs.existsSync(staticPath),
+    stylesExists: fs.existsSync(path.join(staticPath, 'styles.css')),
+    appJsExists: fs.existsSync(path.join(staticPath, 'app.js'))
   });
 });
 
 // Explicit routes for Command Hub static files (most reliable approach)
 app.get('/command-hub/styles.css', (_req, res) => {
-  const fs = require('fs');
   const filePath = path.join(staticPath, 'styles.css');
   console.log('[Gateway] Serving styles.css from:', filePath);
   if (fs.existsSync(filePath)) {
@@ -81,7 +103,6 @@ app.get('/command-hub/styles.css', (_req, res) => {
 });
 
 app.get('/command-hub/app.js', (_req, res) => {
-  const fs = require('fs');
   const filePath = path.join(staticPath, 'app.js');
   console.log('[Gateway] Serving app.js from:', filePath);
   if (fs.existsSync(filePath)) {
@@ -94,7 +115,6 @@ app.get('/command-hub/app.js', (_req, res) => {
 });
 
 app.get('/command-hub/navigation-config.js', (_req, res) => {
-  const fs = require('fs');
   const filePath = path.join(staticPath, 'navigation-config.js');
   console.log('[Gateway] Serving navigation-config.js from:', filePath);
   if (fs.existsSync(filePath)) {
