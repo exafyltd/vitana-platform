@@ -45,7 +45,73 @@ app.use(eventsApiRouter);
 app.use(eventsRouter);
 // Serve Command Hub static files BEFORE router (use absolute path from __dirname)
 const staticPath = path.join(__dirname, 'frontend/command-hub');
-app.use('/command-hub', express.static(staticPath));
+console.log('[Gateway] Static files path:', staticPath);
+
+// Debug endpoint to check static file setup
+app.get('/debug/static-path', (_req, res) => {
+  const fs = require('fs');
+  let files: string[] = [];
+  let error: string | null = null;
+  try {
+    files = fs.readdirSync(staticPath);
+  } catch (e: any) {
+    error = e.message;
+  }
+  res.json({
+    staticPath,
+    __dirname,
+    files,
+    error,
+    exists: fs.existsSync(staticPath)
+  });
+});
+
+// Explicit routes for Command Hub static files (most reliable approach)
+app.get('/command-hub/styles.css', (_req, res) => {
+  const fs = require('fs');
+  const filePath = path.join(staticPath, 'styles.css');
+  console.log('[Gateway] Serving styles.css from:', filePath);
+  if (fs.existsSync(filePath)) {
+    res.setHeader('Content-Type', 'text/css');
+    res.sendFile(filePath);
+  } else {
+    console.error('[Gateway] styles.css not found at:', filePath);
+    res.status(404).send('/* File not found: ' + filePath + ' */');
+  }
+});
+
+app.get('/command-hub/app.js', (_req, res) => {
+  const fs = require('fs');
+  const filePath = path.join(staticPath, 'app.js');
+  console.log('[Gateway] Serving app.js from:', filePath);
+  if (fs.existsSync(filePath)) {
+    res.setHeader('Content-Type', 'application/javascript');
+    res.sendFile(filePath);
+  } else {
+    console.error('[Gateway] app.js not found at:', filePath);
+    res.status(404).send('// File not found: ' + filePath);
+  }
+});
+
+app.get('/command-hub/navigation-config.js', (_req, res) => {
+  const fs = require('fs');
+  const filePath = path.join(staticPath, 'navigation-config.js');
+  console.log('[Gateway] Serving navigation-config.js from:', filePath);
+  if (fs.existsSync(filePath)) {
+    res.setHeader('Content-Type', 'application/javascript');
+    res.sendFile(filePath);
+  } else {
+    console.error('[Gateway] navigation-config.js not found at:', filePath);
+    res.status(404).send('// File not found: ' + filePath);
+  }
+});
+
+// Fallback static file middleware (for other static files)
+app.use('/command-hub', express.static(staticPath, {
+  setHeaders: (res, filePath) => {
+    console.log('[Gateway] Serving static file:', filePath);
+  }
+}));
 app.use('/command-hub', commandHubRouter);
 app.use(sseService.router);
 app.use('/api/v1/board', boardAdapter); // Keep one canonical board adapter mount
