@@ -83,6 +83,7 @@ const getTasks = async (req: Request, res: Response) => {
 
 router.get('/api/v1/tasks', getTasks);
 // Alias for Command Hub compatibility
+console.log('Registering /api/v1/oasis/tasks alias');
 router.get('/api/v1/oasis/tasks', getTasks);
 
 
