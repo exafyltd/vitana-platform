@@ -107,11 +107,11 @@ router.get('/health', (req: Request, res: Response) => {
  * Serves index.html for all /command-hub/* routes (except static files and API)
  * This enables client-side routing for the 87-screen navigation
  */
-router.get('/*', (req: Request, res: Response) => {
-  // Skip static files (served by express.static)
+router.get('/*', (req: Request, res: Response, next: Function) => {
+  // Skip static files - let express.static handle them
   const staticExts = ['.js', '.css', '.html', '.png', '.jpg', '.svg', '.ico', '.json'];
   if (staticExts.some(ext => req.path.endsWith(ext))) {
-    return res.status(404).json({ error: 'Not found' });
+    return next();
   }
 
   // Skip API routes
