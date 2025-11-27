@@ -1,4 +1,5 @@
 ﻿import express from 'express';
+import path from 'path';
 import boardAdapter from "./routes/board-adapter";
 import { commandhub } from "./routes/commandhub";
 import cors from 'cors';
@@ -42,16 +43,12 @@ app.use('/api/v1/commandhub', commandhub);
 app.use("/", tasksRouter);
 app.use(eventsApiRouter);
 app.use(eventsRouter);
+// Serve Command Hub static files BEFORE router (use absolute path from __dirname)
+const staticPath = path.join(__dirname, 'frontend/command-hub');
+app.use('/command-hub', express.static(staticPath));
 app.use('/command-hub', commandHubRouter);
 app.use(sseService.router);
 app.use('/api/v1/board', boardAdapter); // Keep one canonical board adapter mount
-app.use('/api/v1/board', boardAdapter); // Keep one canonical board adapter mount
-
-// Serve Command Hub static files
-const staticPath = process.env.NODE_ENV === 'production'
-  ? 'dist/frontend/command-hub'
-  : 'src/frontend/command-hub';
-app.use('/command-hub', express.static(staticPath));
 
 // Start server
 if (process.env.NODE_ENV === 'test') {
