@@ -10,6 +10,8 @@ import commandHubRouter from './routes/command-hub';
 import { sseService } from './services/sse-service';
 import { setupCors, sseHeaders } from './middleware/cors';
 import governanceRouter from './routes/governance';
+import { oasisTasksRouter } from './routes/oasis-tasks';
+import cicdRouter from './routes/cicd';
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -28,6 +30,11 @@ app.get('/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 
+// Alive endpoint for deployment validation
+app.get('/alive', (req, res) => {
+  res.json({ status: 'ok', service: 'gateway', timestamp: new Date().toISOString() });
+});
+
 // ... imports ...
 
 // Debug route to verify this code is deployed
@@ -38,10 +45,19 @@ app.get('/debug/governance-ping', (_req, res) => {
 // Mount routes
 app.use('/api/v1/governance', governanceRouter); // DEV-GOVBE-0106: Governance endpoints
 app.use('/api/v1/vtid', vtidRouter);
+
+// VTID-0516: Autonomous Safe-Merge Layer - CICD routes
+// Routes: /api/v1/github/create-pr, /api/v1/github/safe-merge
+app.use('/api/v1/github', cicdRouter);
+// Routes: /api/v1/deploy/service
+app.use('/api/v1/deploy', cicdRouter);
+// Routes: /api/v1/cicd/health
+app.use('/api/v1/cicd', cicdRouter);
 app.use('/api/v1/commandhub', commandhub);
 app.use("/", tasksRouter);
 app.use(eventsApiRouter);
 app.use(eventsRouter);
+app.use(oasisTasksRouter); // OASIS Tasks API
 app.use('/command-hub', commandHubRouter);
 app.use(sseService.router);
 app.use('/api/v1/board', boardAdapter); // Keep one canonical board adapter mount
