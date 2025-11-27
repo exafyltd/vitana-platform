@@ -10,6 +10,7 @@ import commandHubRouter from './routes/command-hub';
 import { sseService } from './services/sse-service';
 import { setupCors, sseHeaders } from './middleware/cors';
 import governanceRouter from './routes/governance';
+import { oasisTasksRouter } from './routes/oasis-tasks';
 import cicdRouter from './routes/cicd';
 
 const app = express();
@@ -56,6 +57,7 @@ app.use('/api/v1/commandhub', commandhub);
 app.use("/", tasksRouter);
 app.use(eventsApiRouter);
 app.use(eventsRouter);
+app.use(oasisTasksRouter); // OASIS Tasks API
 app.use('/command-hub', commandHubRouter);
 app.use(sseService.router);
 app.use('/api/v1/board', boardAdapter); // Keep one canonical board adapter mount
