@@ -19,7 +19,8 @@ export const router = Router();
  * These compatibility fields exist because the current Task Board UI
  * expects them. Future governance work may refactor this adapter.
  */
-router.get('/api/v1/tasks', async (req: Request, res: Response) => {
+// Support both /api/v1/tasks and /api/v1/oasis/tasks for Command Hub compatibility
+const tasksHandler = async (req: Request, res: Response) => {
   try {
     const svcKey = process.env.SUPABASE_SERVICE_ROLE;
     const supabaseUrl = process.env.SUPABASE_URL;
@@ -76,6 +77,58 @@ router.get('/api/v1/tasks', async (req: Request, res: Response) => {
         has_more: false 
       } 
     });
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+};
+
+// Register the tasks handler for both paths (Command Hub uses /api/v1/oasis/tasks)
+router.get('/api/v1/tasks', tasksHandler);
+router.get('/api/v1/oasis/tasks', tasksHandler);
+
+/**
+ * POST /api/v1/oasis/tasks
+ *
+ * Creates a new task in vtid_ledger
+ */
+router.post('/api/v1/oasis/tasks', async (req: Request, res: Response) => {
+  try {
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+    if (!svcKey || !supabaseUrl) return res.status(500).json({ error: "Misconfigured" });
+
+    const { title, vtid, status, summary, module, layer } = req.body;
+
+    if (!title) return res.status(400).json({ error: "title is required" });
+    if (!vtid) return res.status(400).json({ error: "vtid is required" });
+
+    const payload = {
+      vtid,
+      title,
+      status: status || 'pending',
+      summary: summary || null,
+      module: module || 'command-hub',
+      layer: layer || 'L3',
+    };
+
+    const resp = await fetch(`${supabaseUrl}/rest/v1/vtid_ledger`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': svcKey,
+        'Authorization': `Bearer ${svcKey}`,
+        'Prefer': 'return=representation'
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!resp.ok) {
+      const errorText = await resp.text();
+      return res.status(502).json({ error: "Insert failed", details: errorText });
+    }
+
+    const data = await resp.json() as any[];
+    return res.status(201).json({ ok: true, data: data[0] || data });
   } catch (e: any) {
     return res.status(500).json({ error: e.message });
   }
