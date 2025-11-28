@@ -1489,6 +1489,11 @@ body {
   z-index: 100;
   min-width: 100px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  display: none;
+}
+
+.chat-attach-menu.menu-open {
+  display: block;
 }
 
 .attach-option {

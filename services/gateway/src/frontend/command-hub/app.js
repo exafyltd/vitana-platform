@@ -1494,11 +1494,11 @@ function renderOperatorChat() {
         <div class="attach-option" data-kind="video">Video</div>
         <div class="attach-option" data-kind="file">File</div>
     `;
-    attachMenu.style.display = 'none';
+    // Menu hidden by default via CSS .chat-attach-menu { display: none; }
 
     attachBtn.onclick = (e) => {
         e.stopPropagation();
-        attachMenu.style.display = attachMenu.style.display === 'none' ? 'block' : 'none';
+        attachMenu.classList.toggle('menu-open');
     };
 
     // Handle attach menu clicks
@@ -1506,7 +1506,7 @@ function renderOperatorChat() {
         opt.onclick = (e) => {
             e.stopPropagation();
             const kind = opt.dataset.kind;
-            attachMenu.style.display = 'none';
+            attachMenu.classList.remove('menu-open');
 
             // Create file input
             const fileInput = document.createElement('input');
@@ -1529,7 +1529,7 @@ function renderOperatorChat() {
 
     // Close menu on outside click
     document.addEventListener('click', () => {
-        attachMenu.style.display = 'none';
+        attachMenu.classList.remove('menu-open');
     });
 
     // Textarea for message
