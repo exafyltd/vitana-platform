@@ -54,8 +54,8 @@ app.use('/api/v1/github', cicdRouter);
 app.use('/api/v1/deploy', cicdRouter);
 // Routes: /api/v1/cicd/health
 app.use('/api/v1/cicd', cicdRouter);
-// VTID-0510: Software Version Tracking - Operator routes
-// Routes: /api/v1/operator/deployments
+// VTID-0509 + VTID-0510: Operator Console & Version Tracking
+// Routes: /api/v1/operator/health, /heartbeat, /history, /chat, /upload, /deployments
 app.use('/api/v1/operator', operatorRouter);
 app.use('/api/v1/commandhub', commandhub);
 app.use('/api/v1', operatorRouter); // VTID-0509: Operator Console API
