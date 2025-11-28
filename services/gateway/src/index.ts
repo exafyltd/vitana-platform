@@ -12,7 +12,7 @@ import { setupCors, sseHeaders } from './middleware/cors';
 import governanceRouter from './routes/governance';
 import { oasisTasksRouter } from './routes/oasis-tasks';
 import cicdRouter from './routes/cicd';
-import operatorRouter from './routes/operator';  // VTID-0510: Software Version Tracking
+import operatorRouter from './routes/operator';  // VTID-0509 + VTID-0510: Operator Console & Version Tracking
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -58,6 +58,7 @@ app.use('/api/v1/cicd', cicdRouter);
 // Routes: /api/v1/operator/deployments
 app.use('/api/v1/operator', operatorRouter);
 app.use('/api/v1/commandhub', commandhub);
+app.use('/api/v1', operatorRouter); // VTID-0509: Operator Console API
 app.use("/", tasksRouter);
 app.use(eventsApiRouter);
 app.use(eventsRouter);
