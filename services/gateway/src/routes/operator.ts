@@ -52,7 +52,7 @@ const FileUploadSchema = z.object({
  * POST /operator/chat - DEV-AICOR-0027 Operator Chat
  * Logs request/response events and calls AI orchestrator
  */
-router.post('/operator/chat', async (req: Request, res: Response) => {
+router.post('/chat', async (req: Request, res: Response) => {
   const requestId = randomUUID();
   console.log(`[Operator Chat] Request ${requestId} started`);
 
@@ -137,7 +137,7 @@ router.post('/operator/chat', async (req: Request, res: Response) => {
 /**
  * GET /operator/health - Simple health check
  */
-router.get('/operator/health', (_req: Request, res: Response) => {
+router.get('/health', (_req: Request, res: Response) => {
   return res.status(200).json({
     ok: true,
     service: 'operator-api',
@@ -151,7 +151,7 @@ router.get('/operator/health', (_req: Request, res: Response) => {
  * GET /operator/heartbeat - Heartbeat snapshot
  * Aggregates task status, recent events, and CICD health
  */
-router.get('/operator/heartbeat', async (_req: Request, res: Response) => {
+router.get('/heartbeat', async (_req: Request, res: Response) => {
   console.log('[Operator Heartbeat] Snapshot requested');
 
   try {
@@ -204,7 +204,7 @@ router.get('/operator/heartbeat', async (_req: Request, res: Response) => {
  * GET /operator/history - Operator history
  * Returns filtered events from OASIS
  */
-router.get('/operator/history', async (req: Request, res: Response) => {
+router.get('/history', async (req: Request, res: Response) => {
   console.log('[Operator History] Request received');
 
   try {
@@ -235,7 +235,7 @@ router.get('/operator/history', async (req: Request, res: Response) => {
 /**
  * POST /operator/heartbeat/session - Start/stop heartbeat session
  */
-router.post('/operator/heartbeat/session', async (req: Request, res: Response) => {
+router.post('/heartbeat/session', async (req: Request, res: Response) => {
   console.log('[Operator Session] Request received');
 
   try {
@@ -287,7 +287,7 @@ router.post('/operator/heartbeat/session', async (req: Request, res: Response) =
  * POST /operator/upload - File upload
  * Creates OASIS file reference and logs upload event
  */
-router.post('/operator/upload', async (req: Request, res: Response) => {
+router.post('/upload', async (req: Request, res: Response) => {
   console.log('[Operator Upload] Request received');
 
   try {
