@@ -70,6 +70,9 @@ SERVICE_URL=$(gcloud run services describe "$SERVICE_NAME" \
   --project "$PROJECT_ID" \
   --format='value(status.url)')
 
+# Get git commit SHA
+GIT_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+
 echo ""
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}Deployment Complete!${NC}"
@@ -77,6 +80,30 @@ echo -e "${GREEN}========================================${NC}"
 echo "Service: $SERVICE_NAME"
 echo "URL: $SERVICE_URL"
 echo "Region: $REGION"
+echo "Git Commit: $GIT_COMMIT"
+echo ""
+
+# VTID-0510: Record software version after validator success
+echo -e "${YELLOW}VTID-0510: Recording software version...${NC}"
+INITIATOR="${INITIATOR:-user}"
+DEPLOY_TYPE="${DEPLOY_TYPE:-normal}"
+
+# Use gateway URL from environment or derive from service URL
+GATEWAY_URL="${GATEWAY_URL:-https://gateway-667307951183.us-central1.run.app}"
+
+# Record the deployment version
+if curl -fsS "${GATEWAY_URL}/api/v1/operator/deployments" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -H "X-VTID: VTID-0510" \
+  -d "{\"service\":\"${SERVICE_NAME}\",\"git_commit\":\"${GIT_COMMIT}\",\"deploy_type\":\"${DEPLOY_TYPE}\",\"initiator\":\"${INITIATOR}\",\"environment\":\"${ENVIRONMENT}-sandbox\"}"; then
+  echo ""
+  echo -e "${GREEN}✅ Software version recorded successfully${NC}"
+else
+  echo ""
+  echo -e "${YELLOW}⚠ Warning: Failed to record software version (non-fatal)${NC}"
+fi
+
 echo ""
 echo "Test with:"
 echo "  curl $SERVICE_URL/alive"
