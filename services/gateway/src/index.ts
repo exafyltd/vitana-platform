@@ -12,7 +12,7 @@ import { setupCors, sseHeaders } from './middleware/cors';
 import governanceRouter from './routes/governance';
 import { oasisTasksRouter } from './routes/oasis-tasks';
 import cicdRouter from './routes/cicd';
-import operatorRouter from './routes/operator';
+import operatorRouter from './routes/operator';  // VTID-0509 + VTID-0510: Operator Console & Version Tracking
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -54,6 +54,9 @@ app.use('/api/v1/github', cicdRouter);
 app.use('/api/v1/deploy', cicdRouter);
 // Routes: /api/v1/cicd/health
 app.use('/api/v1/cicd', cicdRouter);
+// VTID-0510: Software Version Tracking - Operator routes
+// Routes: /api/v1/operator/deployments
+app.use('/api/v1/operator', operatorRouter);
 app.use('/api/v1/commandhub', commandhub);
 app.use('/api/v1', operatorRouter); // VTID-0509: Operator Console API
 app.use("/", tasksRouter);
@@ -81,6 +84,7 @@ if (process.env.NODE_ENV === 'test') {
     console.log('🔌 SSE Stream: http://localhost:' + PORT + '/api/v1/events/stream');
     console.log('Gateway: debug /debug/governance-ping route registered');
     console.log('Gateway: governance routes mounted at /api/v1/governance');
+    console.log('Gateway: operator routes mounted at /api/v1/operator (VTID-0510)');
   });
 }
 

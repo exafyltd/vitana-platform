@@ -1,6 +1,19 @@
 /**
- * VTID-0509: Operator Console API Routes
- * Implements: chat, heartbeat, history, upload, session endpoints
+ * Operator Routes - VTID-0509 + VTID-0510
+ *
+ * VTID-0509: Operator Console API (chat, heartbeat, history, upload, session)
+ * VTID-0510: Software Version Tracking (deployments)
+ *
+ * Final API endpoints (after mounting in index.ts):
+ * - POST /api/v1/operator/chat - Operator chat with AI
+ * - GET  /api/v1/operator/health - Health check
+ * - GET  /api/v1/operator/heartbeat - Heartbeat snapshot
+ * - GET  /api/v1/operator/history - Operator history
+ * - POST /api/v1/operator/heartbeat/session - Start/stop heartbeat
+ * - POST /api/v1/operator/upload - File upload
+ * - GET  /api/v1/operator/deployments - Deployment history (VTID-0510)
+ * - POST /api/v1/operator/deployments - Record deployment (VTID-0510)
+ * - GET  /api/v1/operator/deployments/health - Deployments health (VTID-0510)
  */
 
 import { Router, Request, Response } from 'express';
@@ -8,10 +21,11 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { processMessage } from '../services/ai-orchestrator';
 import { ingestOperatorEvent, getTasksSummary, getRecentEvents, getCicdHealth, getOperatorHistory } from '../services/operator-service';
+import { getDeploymentHistory, getNextSWV, insertSoftwareVersion } from '../lib/versioning';
 
 const router = Router();
 
-// --- Schemas ---
+// ==================== VTID-0509 Schemas ====================
 
 const ChatMessageSchema = z.object({
   message: z.string().min(1, "Message is required"),
@@ -32,7 +46,7 @@ const FileUploadSchema = z.object({
   data: z.string().optional() // Base64 encoded data (optional for stub)
 });
 
-// --- Routes ---
+// ==================== VTID-0509 Routes ====================
 
 /**
  * POST /operator/chat - DEV-AICOR-0027 Operator Chat
@@ -128,7 +142,8 @@ router.get('/operator/health', (_req: Request, res: Response) => {
     ok: true,
     service: 'operator-api',
     timestamp: new Date().toISOString(),
-    status: 'healthy'
+    status: 'healthy',
+    vtid: 'VTID-0509'
   });
 });
 
@@ -157,17 +172,20 @@ router.get('/operator/heartbeat', async (_req: Request, res: Response) => {
     ]);
 
     const snapshot = {
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-      vtid: 'VTID-0509',
-      tasks: tasksSummary,
-      events: recentEvents,
-      cicd: cicdHealth
+      ok: true,
+      heartbeat: {
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        vtid: 'VTID-0509'
+      },
+      tasks_summary: tasksSummary,
+      recent_events: recentEvents,
+      cicd_health: cicdHealth
     };
 
     console.log('[Operator Heartbeat] Snapshot generated:', {
-      tasks_total: snapshot.tasks.total,
-      events_count: snapshot.events.length
+      tasks_total: snapshot.tasks_summary.total,
+      events_count: snapshot.recent_events.length
     });
 
     return res.status(200).json(snapshot);
@@ -197,8 +215,11 @@ router.get('/operator/history', async (req: Request, res: Response) => {
 
     return res.status(200).json({
       ok: true,
-      count: history.length,
-      data: history
+      history: history,
+      pagination: {
+        limit: limit,
+        count: history.length
+      }
     });
 
   } catch (error: any) {
@@ -317,6 +338,139 @@ router.post('/operator/upload', async (req: Request, res: Response) => {
       details: error.message
     });
   }
+});
+
+// ==================== VTID-0510 Routes ====================
+
+/**
+ * GET /deployments - Get deployment history feed
+ * Returns latest deployment records formatted for UI
+ */
+router.get('/deployments', async (req: Request, res: Response) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+
+    const result = await getDeploymentHistory(limit);
+
+    if (!result.ok) {
+      return res.status(502).json({
+        ok: false,
+        error: 'Database query failed',
+        detail: result.error,
+      });
+    }
+
+    // Format for UI feed
+    const deployments = (result.deployments || []).map((d) => ({
+      swv_id: d.swv_id,
+      created_at: d.created_at,
+      git_commit: d.git_commit,
+      status: d.status,
+      initiator: d.initiator,
+      deploy_type: d.deploy_type,
+      service: d.service,
+      environment: d.environment,
+    }));
+
+    return res.status(200).json(deployments);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[Operator] Error fetching deployments: ${errorMessage}`);
+    return res.status(500).json({
+      ok: false,
+      error: 'Internal server error',
+      detail: errorMessage,
+    });
+  }
+});
+
+/**
+ * POST /deployments - Record a new deployment
+ * Internal use - called after successful deploy
+ */
+router.post('/deployments', async (req: Request, res: Response) => {
+  try {
+    const { service, git_commit, deploy_type, initiator, environment } = req.body;
+
+    // Validate required fields
+    if (!service || typeof service !== 'string') {
+      return res.status(400).json({ ok: false, error: 'service is required' });
+    }
+    if (!git_commit || typeof git_commit !== 'string') {
+      return res.status(400).json({ ok: false, error: 'git_commit is required' });
+    }
+    if (!deploy_type || !['normal', 'rollback'].includes(deploy_type)) {
+      return res.status(400).json({ ok: false, error: 'deploy_type must be "normal" or "rollback"' });
+    }
+    if (!initiator || !['user', 'agent'].includes(initiator)) {
+      return res.status(400).json({ ok: false, error: 'initiator must be "user" or "agent"' });
+    }
+
+    // Get next SWV ID
+    const swv_id = await getNextSWV();
+
+    // Insert the deployment record
+    const result = await insertSoftwareVersion({
+      swv_id,
+      service,
+      git_commit,
+      deploy_type,
+      initiator,
+      status: 'success',
+      environment: environment || 'dev-sandbox',
+    });
+
+    if (!result.ok) {
+      return res.status(502).json({
+        ok: false,
+        error: 'Failed to record deployment',
+        detail: result.error,
+      });
+    }
+
+    console.log(`[Operator] Deployment recorded: ${swv_id} for ${service}`);
+
+    return res.status(201).json({
+      ok: true,
+      swv_id: result.swv_id,
+      service,
+      git_commit,
+      deploy_type,
+      initiator,
+      environment: environment || 'dev-sandbox',
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[Operator] Error recording deployment: ${errorMessage}`);
+    return res.status(500).json({
+      ok: false,
+      error: 'Internal server error',
+      detail: errorMessage,
+    });
+  }
+});
+
+/**
+ * GET /deployments/health - Health check for deployments subsystem
+ */
+router.get('/deployments/health', (_req: Request, res: Response) => {
+  const hasSupabaseUrl = !!process.env.SUPABASE_URL;
+  const hasSupabaseKey = !!process.env.SUPABASE_SERVICE_ROLE;
+
+  const status = hasSupabaseUrl && hasSupabaseKey ? 'ok' : 'degraded';
+
+  return res.status(200).json({
+    ok: true,
+    status,
+    service: 'operator-deployments',
+    version: '1.0.0',
+    vtid: 'VTID-0510',
+    timestamp: new Date().toISOString(),
+    capabilities: {
+      database_connection: hasSupabaseUrl && hasSupabaseKey,
+      version_tracking: true,
+    },
+  });
 });
 
 export default router;

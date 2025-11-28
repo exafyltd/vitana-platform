@@ -221,6 +221,31 @@ export const cicdEvents = {
       message: `Deploy validation ${success ? 'passed' : 'failed'}: ${service}`,
       payload: { service, validation_passed: success, ...details },
     }),
+
+  // ==================== Version Tracking Events (VTID-0510) ====================
+  deployVersionRecorded: (
+    swvId: string,
+    service: string,
+    gitCommit: string,
+    deployType: 'normal' | 'rollback',
+    initiator: 'user' | 'agent',
+    environment: string
+  ) =>
+    emitOasisEvent({
+      vtid: `VTID-0510-${swvId}`,
+      type: 'cicd.deploy.version.recorded',
+      source: 'gateway-versioning',
+      status: 'success',
+      message: `Software version ${swvId} recorded for ${service}`,
+      payload: {
+        swv_id: swvId,
+        service,
+        git_commit: gitCommit,
+        deploy_type: deployType,
+        initiator,
+        environment,
+      },
+    }),
 };
 
 export default cicdEvents;
