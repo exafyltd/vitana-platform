@@ -1,4 +1,6 @@
 FROM node:20-alpine AS builder
+# VTID-0509: Cache buster for Cloud Run rebuild
+ARG CACHE_BUST=2025-11-28-vtid0509
 WORKDIR /app
 COPY package*.json ./
 COPY tsconfig.json ./
