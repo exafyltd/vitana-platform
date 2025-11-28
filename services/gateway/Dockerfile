@@ -3,6 +3,7 @@ WORKDIR /app
 COPY package*.json ./
 COPY tsconfig.json ./
 RUN npm install
+COPY BUILD_INFO ./
 COPY src ./src
 COPY config ./config
 RUN npm run build
@@ -13,6 +14,7 @@ COPY package*.json ./
 RUN npm install --production
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/config ./config
+COPY BUILD_INFO ./
 ENV NODE_ENV=production
 ENV PORT=8080
 EXPOSE 8080
