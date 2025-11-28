@@ -790,6 +790,372 @@ body {
   border-color: rgba(245, 158, 11, 0.5);
 }
 
+/* --- Header Toolbar (VTID-0517) --- */
+
+.header-toolbar {
+  height: var(--header-height);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  padding: 0 1.5rem;
+  background-color: var(--color-bg);
+  gap: 0.75rem;
+}
+
+.header-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  position: relative;
+}
+
+.header-toolbar-center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+
+.header-toolbar-right {
+  display: flex;
+  align-items: center;
+}
+
+/* --- Header Buttons (VTID-0517) --- */
+
+.header-button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-primary);
+  transition: all 0.2s;
+}
+
+.header-button:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--color-text-secondary);
+}
+
+/* Status button style (Heartbeat, Autopilot) */
+.header-button--status {
+  background: rgba(148, 163, 184, 0.1);
+  border-color: rgba(148, 163, 184, 0.3);
+  color: var(--color-text-secondary);
+}
+
+.header-button--status:hover {
+  background: rgba(148, 163, 184, 0.2);
+  border-color: rgba(148, 163, 184, 0.5);
+  color: var(--color-text-primary);
+}
+
+/* Active heartbeat state (VTID-0509/0517) */
+.header-button--status.header-button--active {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.3);
+  color: #10b981;
+}
+
+.header-button--status.header-button--active:hover {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(16, 185, 129, 0.5);
+}
+
+.header-button__label {
+  font-weight: 500;
+}
+
+.header-button__state {
+  font-size: 0.65rem;
+  opacity: 0.8;
+}
+
+/* Primary button style (Operator, Publish) */
+.header-button--primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.header-button--primary:hover {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+}
+
+/* Operator button variant */
+.header-button--operator {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.3);
+  color: var(--color-operator);
+}
+
+.header-button--operator:hover {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: rgba(245, 158, 11, 0.5);
+}
+
+/* Publish button - slightly less dominant than Operator */
+.header-button--publish {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+  font-weight: 500;
+  padding: 0.4rem 1rem;
+  font-size: 0.8rem;
+}
+
+.header-button--publish:hover {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+}
+
+/* Clock / Icon Button */
+.header-icon-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.header-icon-button:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--color-text-secondary);
+  color: var(--color-text-primary);
+}
+
+.header-icon-button__icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+/* --- LIVE Status Pill (VTID-0517) --- */
+
+.header-live-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #10b981;
+}
+
+.header-live-pill__dot {
+  width: 8px;
+  height: 8px;
+  background-color: #10b981;
+  border-radius: 50%;
+  animation: pulse 2s infinite;
+}
+
+/* --- Version History Dropdown (VTID-0517) --- */
+
+.version-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 360px;
+  max-height: 400px;
+  background: var(--color-sidebar-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.version-dropdown__title {
+  padding: 0.75rem 1rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.version-dropdown__list {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 340px;
+}
+
+.version-dropdown__item {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--color-border);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.version-dropdown__item:last-child {
+  border-bottom: none;
+}
+
+.version-dropdown__item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.version-dropdown__item--selected {
+  background: rgba(59, 130, 246, 0.1);
+  border-left: 3px solid var(--color-accent);
+}
+
+.version-dropdown__item-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  margin-bottom: 0.25rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.version-dropdown__item-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+}
+
+.version-dropdown__item-timestamp {
+  color: var(--color-text-secondary);
+}
+
+.version-dropdown__item-badge {
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.version-dropdown__item-badge--live {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.version-dropdown__item-badge--draft {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.version-dropdown__item-badge--unpublished {
+  background: rgba(148, 163, 184, 0.15);
+  color: var(--color-text-secondary);
+}
+
+.version-dropdown__item-badge--unknown {
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--color-text-secondary);
+}
+
+/* --- Toast Notifications (VTID-0517) --- */
+
+.toast-container {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 3000;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: 400px;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  border-radius: 8px;
+  background: var(--color-sidebar-bg);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+  animation: toast-slide-in 0.3s ease-out;
+}
+
+@keyframes toast-slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.toast--info {
+  border-left: 3px solid var(--color-accent);
+}
+
+.toast--success {
+  border-left: 3px solid #10b981;
+}
+
+.toast--error {
+  border-left: 3px solid #ef4444;
+}
+
+.toast__message {
+  flex: 1;
+  font-size: 0.875rem;
+  color: var(--color-text-primary);
+  line-height: 1.4;
+}
+
+.toast__close {
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  transition: color 0.2s;
+  flex-shrink: 0;
+}
+
+.toast__close:hover {
+  color: var(--color-text-primary);
+}
+
+/* --- Publish Modal (VTID-0517) --- */
+
+.publish-modal {
+  max-width: 450px;
+}
+
+.publish-modal__message {
+  margin: 0;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
 /* --- Global Overlays --- */
 .overlay-backdrop {
   position: fixed;
