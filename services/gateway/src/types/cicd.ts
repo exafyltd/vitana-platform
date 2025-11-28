@@ -148,7 +148,8 @@ export type CicdEventType =
   | 'cicd.deploy.service.blocked'
   | 'cicd.deploy.service.succeeded'
   | 'cicd.deploy.service.failed'
-  | 'cicd.deploy.service.validated';
+  | 'cicd.deploy.service.validated'
+  | 'cicd.deploy.version.recorded';  // VTID-0510: Software version recorded
 
 export interface CicdOasisEvent {
   vtid: string;
