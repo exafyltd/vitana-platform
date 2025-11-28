@@ -248,20 +248,29 @@ const state = {
     showProfileModal: false,
     showTaskModal: false,
 
-    // Global Overlays (VTID-0508)
+    // Global Overlays (VTID-0508 / VTID-0509)
     isHeartbeatOpen: false,
     isOperatorOpen: false,
-    operatorActiveTab: 'chat', // 'chat', 'ticker', 'history'
+    operatorActiveTab: 'ticker', // 'chat', 'ticker', 'history'
+
+    // VTID-0509: Operator Console State
+    operatorHeartbeatActive: false,
+    operatorSseSource: null,
+    operatorHeartbeatSnapshot: null,
 
     // Operator Chat State
     chatMessages: [],
     chatInputValue: '',
+    chatAttachments: [], // Array of { oasis_ref, kind, name }
+    chatSending: false,
 
     // Operator Ticker State
-    tickerEvents: [
-        { id: 1, timestamp: '--:--:--', type: 'system', content: 'System ready (placeholder)' },
-        { id: 2, timestamp: '--:--:--', type: 'info', content: 'No live events yet' }
-    ],
+    tickerEvents: [],
+
+    // Operator History State
+    historyEvents: [],
+    historyLoading: false,
+    historyError: null,
 
     // User
     user: {
@@ -404,27 +413,38 @@ function renderHeader() {
     liveChip.innerHTML = '<div class="live-dot"></div>LIVE';
     left.appendChild(liveChip);
 
-    // Heartbeat chip
+    // Heartbeat chip - VTID-0509: Toggle between Standby/Live
     const heartbeatChip = document.createElement('div');
-    heartbeatChip.className = 'heartbeat-chip';
-    heartbeatChip.textContent = 'Heartbeat: Standby';
+    heartbeatChip.className = state.operatorHeartbeatActive ? 'heartbeat-chip heartbeat-live' : 'heartbeat-chip';
+    heartbeatChip.textContent = state.operatorHeartbeatActive ? 'Heartbeat: Live' : 'Heartbeat: Standby';
     heartbeatChip.onclick = () => {
-        state.isHeartbeatOpen = true;
-        renderApp();
+        toggleHeartbeatSession();
     };
     left.appendChild(heartbeatChip);
 
     header.appendChild(left);
 
-    // Right: Operator button + Autopilot button (VTID-0508)
+    // Right: Live Ticker button + Operator button + Autopilot button (VTID-0508/0509)
     const right = document.createElement('div');
     right.className = 'header-right';
 
-    // Operator button
+    // Live Ticker button - opens Operator Console on Ticker tab
+    const tickerBtn = document.createElement('button');
+    tickerBtn.className = 'header-btn header-btn-ticker';
+    tickerBtn.textContent = 'Live Ticker';
+    tickerBtn.onclick = () => {
+        state.operatorActiveTab = 'ticker';
+        state.isOperatorOpen = true;
+        renderApp();
+    };
+    right.appendChild(tickerBtn);
+
+    // Operator button - opens Operator Console on Chat tab
     const operatorBtn = document.createElement('button');
     operatorBtn.className = 'header-btn header-btn-operator';
     operatorBtn.textContent = 'Operator';
     operatorBtn.onclick = () => {
+        state.operatorActiveTab = 'chat';
         state.isOperatorOpen = true;
         renderApp();
     };
@@ -1406,12 +1426,25 @@ function renderOperatorChat() {
     } else {
         state.chatMessages.forEach(msg => {
             const msgEl = document.createElement('div');
-            msgEl.className = `chat-message ${msg.type}`;
+            msgEl.className = `chat-message ${msg.type}${msg.isError ? ' error' : ''}`;
 
             const bubble = document.createElement('div');
             bubble.className = 'chat-message-bubble';
             bubble.textContent = msg.content;
             msgEl.appendChild(bubble);
+
+            // Show attachments if any
+            if (msg.attachments && msg.attachments.length > 0) {
+                const attachmentsEl = document.createElement('div');
+                attachmentsEl.className = 'chat-message-attachments';
+                msg.attachments.forEach(att => {
+                    const chip = document.createElement('span');
+                    chip.className = `attachment-chip attachment-${att.kind}`;
+                    chip.textContent = att.name || att.oasis_ref;
+                    attachmentsEl.appendChild(chip);
+                });
+                msgEl.appendChild(attachmentsEl);
+            }
 
             const time = document.createElement('div');
             time.className = 'chat-message-time';
@@ -1424,30 +1457,105 @@ function renderOperatorChat() {
 
     container.appendChild(messages);
 
+    // Attachments preview
+    if (state.chatAttachments.length > 0) {
+        const attachmentsPreview = document.createElement('div');
+        attachmentsPreview.className = 'chat-attachments-preview';
+
+        state.chatAttachments.forEach((att, index) => {
+            const chip = document.createElement('span');
+            chip.className = `attachment-chip attachment-${att.kind}`;
+            chip.innerHTML = `${att.name} <span class="attachment-remove" data-index="${index}">&times;</span>`;
+            chip.querySelector('.attachment-remove').onclick = () => {
+                state.chatAttachments.splice(index, 1);
+                renderApp();
+            };
+            attachmentsPreview.appendChild(chip);
+        });
+
+        container.appendChild(attachmentsPreview);
+    }
+
     // Input area
     const inputContainer = document.createElement('div');
     inputContainer.className = 'chat-input-container';
 
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'chat-input';
-    input.placeholder = 'Type a message...';
-    input.value = state.chatInputValue;
-    input.oninput = (e) => {
+    // Attachment button with dropdown
+    const attachBtn = document.createElement('div');
+    attachBtn.className = 'chat-attach-btn';
+    attachBtn.innerHTML = '&#128206;'; // Paperclip emoji
+    attachBtn.title = 'Add attachment';
+
+    // Attachment menu (hidden by default)
+    const attachMenu = document.createElement('div');
+    attachMenu.className = 'chat-attach-menu';
+    attachMenu.innerHTML = `
+        <div class="attach-option" data-kind="image">Image</div>
+        <div class="attach-option" data-kind="video">Video</div>
+        <div class="attach-option" data-kind="file">File</div>
+    `;
+    attachMenu.style.display = 'none';
+
+    attachBtn.onclick = (e) => {
+        e.stopPropagation();
+        attachMenu.style.display = attachMenu.style.display === 'none' ? 'block' : 'none';
+    };
+
+    // Handle attach menu clicks
+    attachMenu.querySelectorAll('.attach-option').forEach(opt => {
+        opt.onclick = (e) => {
+            e.stopPropagation();
+            const kind = opt.dataset.kind;
+            attachMenu.style.display = 'none';
+
+            // Create file input
+            const fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            if (kind === 'image') fileInput.accept = 'image/*';
+            else if (kind === 'video') fileInput.accept = 'video/*';
+
+            fileInput.onchange = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    uploadOperatorFile(file, kind);
+                }
+            };
+            fileInput.click();
+        };
+    });
+
+    attachBtn.appendChild(attachMenu);
+    inputContainer.appendChild(attachBtn);
+
+    // Close menu on outside click
+    document.addEventListener('click', () => {
+        attachMenu.style.display = 'none';
+    });
+
+    // Textarea for message
+    const textarea = document.createElement('textarea');
+    textarea.className = 'chat-textarea';
+    textarea.placeholder = 'Type a message...';
+    textarea.value = state.chatInputValue;
+    textarea.rows = 2;
+    textarea.oninput = (e) => {
         state.chatInputValue = e.target.value;
     };
-    input.onkeydown = (e) => {
-        if (e.key === 'Enter' && state.chatInputValue.trim()) {
+    textarea.onkeydown = (e) => {
+        if (e.key === 'Enter' && e.ctrlKey && state.chatInputValue.trim()) {
+            e.preventDefault();
             sendChatMessage();
         }
     };
-    inputContainer.appendChild(input);
+    inputContainer.appendChild(textarea);
 
+    // Send button
     const sendBtn = document.createElement('button');
     sendBtn.className = 'chat-send-btn';
-    sendBtn.textContent = 'Send';
+    sendBtn.textContent = state.chatSending ? 'Sending...' : 'Send';
+    sendBtn.disabled = state.chatSending;
     sendBtn.onclick = () => {
-        if (state.chatInputValue.trim()) {
+        if (state.chatInputValue.trim() && !state.chatSending) {
             sendChatMessage();
         }
     };
@@ -1458,37 +1566,131 @@ function renderOperatorChat() {
     return container;
 }
 
-function sendChatMessage() {
+async function sendChatMessage() {
+    if (state.chatSending) return;
+
     const now = new Date();
     const timestamp = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    const messageText = state.chatInputValue.trim();
+
+    if (!messageText) return;
 
     // Add user message
     state.chatMessages.push({
         type: 'user',
-        content: state.chatInputValue,
-        timestamp: timestamp
+        content: messageText,
+        timestamp: timestamp,
+        attachments: [...state.chatAttachments]
     });
 
-    // Add placeholder system response
-    state.chatMessages.push({
-        type: 'system',
-        content: '(Placeholder) Message received by UI',
-        timestamp: timestamp
-    });
+    // Prepare attachments for API
+    const attachments = state.chatAttachments.map(a => ({
+        oasis_ref: a.oasis_ref,
+        kind: a.kind
+    }));
 
+    // Clear input and attachments
     state.chatInputValue = '';
+    state.chatAttachments = [];
+    state.chatSending = true;
     renderApp();
+
+    try {
+        const response = await fetch('/api/v1/operator/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                message: messageText,
+                attachments: attachments
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Chat request failed: ${response.status}`);
+        }
+
+        const result = await response.json();
+        console.log('[Operator] Chat response:', result);
+
+        // Add AI response
+        state.chatMessages.push({
+            type: 'system',
+            content: result.reply || 'No response received',
+            timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+            oasis_ref: result.oasis_ref
+        });
+
+    } catch (error) {
+        console.error('[Operator] Chat error:', error);
+        state.chatMessages.push({
+            type: 'system',
+            content: `Error: ${error.message}`,
+            timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+            isError: true
+        });
+    } finally {
+        state.chatSending = false;
+        renderApp();
+
+        // Re-focus textarea after sending - CRITICAL UX RULE
+        setTimeout(() => {
+            const textarea = document.querySelector('.chat-textarea');
+            if (textarea) textarea.focus();
+        }, 50);
+    }
 }
 
 function renderOperatorTicker() {
     const container = document.createElement('div');
     container.className = 'ticker-container';
 
+    // Heartbeat status banner
+    const statusBanner = document.createElement('div');
+    statusBanner.className = state.operatorHeartbeatActive ? 'ticker-status-banner ticker-live' : 'ticker-status-banner ticker-standby';
+
+    if (state.operatorHeartbeatActive && state.operatorHeartbeatSnapshot) {
+        const snapshot = state.operatorHeartbeatSnapshot;
+        statusBanner.innerHTML = `
+            <div class="ticker-status-row">
+                <span class="ticker-status-label">Status:</span>
+                <span class="ticker-status-value status-live">LIVE</span>
+                <span class="ticker-status-label">Tasks:</span>
+                <span class="ticker-status-value">${snapshot.tasks?.total || 0}</span>
+                <span class="ticker-status-label">CICD:</span>
+                <span class="ticker-status-value status-${snapshot.cicd?.status || 'ok'}">${snapshot.cicd?.status || 'OK'}</span>
+            </div>
+            <div class="ticker-status-row ticker-status-tasks">
+                <span>Scheduled: ${snapshot.tasks?.by_status?.scheduled || 0}</span>
+                <span>In Progress: ${snapshot.tasks?.by_status?.in_progress || 0}</span>
+                <span>Completed: ${snapshot.tasks?.by_status?.completed || 0}</span>
+            </div>
+        `;
+    } else if (!state.operatorHeartbeatActive) {
+        statusBanner.innerHTML = `
+            <div class="ticker-status-row">
+                <span class="ticker-status-value status-standby">STANDBY</span>
+                <span class="ticker-hint">Click "Heartbeat: Standby" button to enable live monitoring</span>
+            </div>
+        `;
+    } else {
+        statusBanner.innerHTML = `
+            <div class="ticker-status-row">
+                <span class="ticker-status-value status-live">LIVE</span>
+                <span>Loading snapshot...</span>
+            </div>
+        `;
+    }
+    container.appendChild(statusBanner);
+
+    // Events list
+    const eventsList = document.createElement('div');
+    eventsList.className = 'ticker-events-list';
+
     if (state.tickerEvents.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'ticker-empty';
-        empty.textContent = 'No live events yet';
-        container.appendChild(empty);
+        empty.textContent = state.operatorHeartbeatActive ? 'Waiting for events...' : 'Enable heartbeat to see live events';
+        eventsList.appendChild(empty);
     } else {
         state.tickerEvents.forEach(event => {
             const item = document.createElement('div');
@@ -1505,22 +1707,300 @@ function renderOperatorTicker() {
             item.appendChild(content);
 
             const type = document.createElement('div');
-            type.className = `ticker-type ${event.type}`;
+            type.className = `ticker-type ticker-type-${event.type}`;
             type.textContent = event.type;
             item.appendChild(type);
 
-            container.appendChild(item);
+            eventsList.appendChild(item);
         });
     }
+
+    container.appendChild(eventsList);
 
     return container;
 }
 
 function renderOperatorHistory() {
     const container = document.createElement('div');
-    container.className = 'history-empty';
-    container.textContent = 'No past conversations yet (UI stub)';
+    container.className = 'history-container';
+
+    // Header with refresh button
+    const header = document.createElement('div');
+    header.className = 'history-header';
+
+    const title = document.createElement('span');
+    title.textContent = 'Event History';
+    header.appendChild(title);
+
+    const refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn history-refresh-btn';
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.onclick = () => fetchOperatorHistory();
+    header.appendChild(refreshBtn);
+
+    container.appendChild(header);
+
+    // Content
+    const content = document.createElement('div');
+    content.className = 'history-content';
+
+    if (state.historyLoading) {
+        content.innerHTML = '<div class="history-loading">Loading history...</div>';
+    } else if (state.historyError) {
+        content.innerHTML = `<div class="history-error">Error: ${state.historyError}</div>`;
+    } else if (state.historyEvents.length === 0) {
+        content.innerHTML = '<div class="history-empty">No history events yet. Click Refresh to load.</div>';
+        // Auto-fetch on first open
+        if (!state.historyLoading) {
+            setTimeout(() => fetchOperatorHistory(), 100);
+        }
+    } else {
+        // Render history table
+        const table = document.createElement('table');
+        table.className = 'history-table';
+
+        const thead = document.createElement('thead');
+        thead.innerHTML = `
+            <tr>
+                <th>Type</th>
+                <th>Status</th>
+                <th>VTID</th>
+                <th>Time</th>
+                <th>Summary</th>
+            </tr>
+        `;
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        state.historyEvents.forEach(event => {
+            const tr = document.createElement('tr');
+            const timeStr = new Date(event.created_at).toLocaleString();
+            tr.innerHTML = `
+                <td class="history-type">${event.type}</td>
+                <td class="history-status history-status-${event.status}">${event.status}</td>
+                <td class="history-vtid">${event.vtid || '-'}</td>
+                <td class="history-time">${timeStr}</td>
+                <td class="history-summary">${event.summary}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        content.appendChild(table);
+    }
+
+    container.appendChild(content);
     return container;
+}
+
+// --- VTID-0509: Operator Console API Functions ---
+
+/**
+ * Toggle heartbeat session between Live and Standby
+ */
+async function toggleHeartbeatSession() {
+    const newStatus = state.operatorHeartbeatActive ? 'standby' : 'live';
+    console.log(`[Operator] Toggling heartbeat to: ${newStatus}`);
+
+    try {
+        const response = await fetch('/api/v1/operator/heartbeat/session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: newStatus })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Session update failed: ${response.status}`);
+        }
+
+        const result = await response.json();
+        console.log('[Operator] Session updated:', result);
+
+        state.operatorHeartbeatActive = newStatus === 'live';
+
+        if (state.operatorHeartbeatActive) {
+            // Fetch heartbeat snapshot
+            await fetchHeartbeatSnapshot();
+            // Start SSE stream
+            startOperatorSse();
+            // Open operator console on ticker tab
+            state.operatorActiveTab = 'ticker';
+            state.isOperatorOpen = true;
+        } else {
+            // Stop SSE stream
+            stopOperatorSse();
+        }
+
+        renderApp();
+
+    } catch (error) {
+        console.error('[Operator] Session toggle error:', error);
+        alert('Failed to update heartbeat session: ' + error.message);
+    }
+}
+
+/**
+ * Fetch heartbeat snapshot from API
+ */
+async function fetchHeartbeatSnapshot() {
+    console.log('[Operator] Fetching heartbeat snapshot...');
+    try {
+        const response = await fetch('/api/v1/operator/heartbeat');
+        if (!response.ok) {
+            throw new Error(`Heartbeat fetch failed: ${response.status}`);
+        }
+
+        const snapshot = await response.json();
+        console.log('[Operator] Heartbeat snapshot:', snapshot);
+
+        state.operatorHeartbeatSnapshot = snapshot;
+
+        // Add snapshot events to ticker
+        if (snapshot.events && snapshot.events.length > 0) {
+            snapshot.events.forEach(event => {
+                state.tickerEvents.unshift({
+                    id: Date.now() + Math.random(),
+                    timestamp: new Date(event.created_at).toLocaleTimeString(),
+                    type: event.type.split('.')[0] || 'info',
+                    content: event.summary
+                });
+            });
+        }
+
+    } catch (error) {
+        console.error('[Operator] Heartbeat snapshot error:', error);
+    }
+}
+
+/**
+ * Start SSE stream for operator channel
+ */
+function startOperatorSse() {
+    if (state.operatorSseSource) {
+        console.log('[Operator] SSE already connected');
+        return;
+    }
+
+    console.log('[Operator] Starting SSE stream...');
+    const sseUrl = '/api/v1/events/stream?channel=operator';
+    const eventSource = new EventSource(sseUrl);
+
+    eventSource.onopen = () => {
+        console.log('[Operator] SSE connected');
+    };
+
+    eventSource.addEventListener('connected', (e) => {
+        console.log('[Operator] SSE connection confirmed:', e.data);
+    });
+
+    eventSource.addEventListener('oasis-event', (e) => {
+        try {
+            const event = JSON.parse(e.data);
+            console.log('[Operator] SSE event:', event);
+
+            // Add to ticker
+            state.tickerEvents.unshift({
+                id: event.id || Date.now(),
+                timestamp: new Date(event.created_at).toLocaleTimeString(),
+                type: event.type?.split('.')[0] || 'info',
+                content: event.payload?.message || event.type || 'Event received'
+            });
+
+            // Keep only last 100 events
+            if (state.tickerEvents.length > 100) {
+                state.tickerEvents = state.tickerEvents.slice(0, 100);
+            }
+
+            renderApp();
+        } catch (err) {
+            console.error('[Operator] SSE event parse error:', err);
+        }
+    });
+
+    eventSource.onerror = (err) => {
+        console.error('[Operator] SSE error:', err);
+    };
+
+    state.operatorSseSource = eventSource;
+}
+
+/**
+ * Stop SSE stream
+ */
+function stopOperatorSse() {
+    if (state.operatorSseSource) {
+        console.log('[Operator] Stopping SSE stream...');
+        state.operatorSseSource.close();
+        state.operatorSseSource = null;
+    }
+}
+
+/**
+ * Fetch operator history from API
+ */
+async function fetchOperatorHistory() {
+    console.log('[Operator] Fetching history...');
+    state.historyLoading = true;
+    state.historyError = null;
+    renderApp();
+
+    try {
+        const response = await fetch('/api/v1/operator/history?limit=50');
+        if (!response.ok) {
+            throw new Error(`History fetch failed: ${response.status}`);
+        }
+
+        const result = await response.json();
+        console.log('[Operator] History loaded:', result);
+
+        state.historyEvents = result.data || [];
+        state.historyError = null;
+
+    } catch (error) {
+        console.error('[Operator] History error:', error);
+        state.historyError = error.message;
+    } finally {
+        state.historyLoading = false;
+        renderApp();
+    }
+}
+
+/**
+ * Upload file for operator chat
+ */
+async function uploadOperatorFile(file, kind) {
+    console.log('[Operator] Uploading file:', file.name, kind);
+
+    try {
+        const response = await fetch('/api/v1/operator/upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: file.name,
+                kind: kind,
+                content_type: file.type || 'application/octet-stream'
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Upload failed: ${response.status}`);
+        }
+
+        const result = await response.json();
+        console.log('[Operator] File uploaded:', result);
+
+        // Add to chat attachments
+        state.chatAttachments.push({
+            oasis_ref: result.oasis_ref,
+            kind: kind,
+            name: result.name
+        });
+
+        renderApp();
+
+    } catch (error) {
+        console.error('[Operator] Upload error:', error);
+        alert('Failed to upload file: ' + error.message);
+    }
 }
 
 // --- Init ---

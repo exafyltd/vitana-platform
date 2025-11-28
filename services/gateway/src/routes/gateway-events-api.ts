@@ -76,12 +76,34 @@ router.get('/api/v1/events', async (req: Request, res: Response) => {
   }
 });
 
+// Operator channel event types for filtering
+const OPERATOR_CHANNEL_TYPES = [
+  'gateway.health',
+  'deploy',
+  'operator.chat',
+  'operator.heartbeat',
+  'operator.upload',
+  'cicd'
+];
+
+/**
+ * Check if an event type matches the operator channel filter
+ */
+function isOperatorChannelEvent(eventType: string): boolean {
+  if (!eventType) return false;
+  return OPERATOR_CHANNEL_TYPES.some(prefix => eventType.startsWith(prefix));
+}
+
 /**
  * GET /api/v1/events/stream
  * SSE stream - proxies OASIS event stream to browser
+ * Supports ?channel=operator for filtered operator events
  */
 router.get('/api/v1/events/stream', async (req: Request, res: Response) => {
-  console.log('[Gateway SSE] Client connected');
+  const channel = req.query.channel as string;
+  const isOperatorChannel = channel === 'operator';
+
+  console.log(`[Gateway SSE] Client connected (channel: ${channel || 'all'})`);
 
   // Set SSE headers
   res.setHeader('Content-Type', 'text/event-stream');
@@ -97,7 +119,7 @@ router.get('/api/v1/events/stream', async (req: Request, res: Response) => {
   try {
     // Connect to OASIS SSE stream
     const oasisStreamUrl = `${OASIS_URL}/api/v1/events/stream`;
-    console.log(`[Gateway SSE] Connecting to OASIS: ${oasisStreamUrl}`);
+    console.log(`[Gateway SSE] Connecting to OASIS: ${oasisStreamUrl} (operator filter: ${isOperatorChannel})`);
 
     const oasisResponse = await fetch(oasisStreamUrl);
 
@@ -109,9 +131,10 @@ router.get('/api/v1/events/stream', async (req: Request, res: Response) => {
     }
 
     // Send connection confirmation
-    res.write(`event: connected\ndata: ${JSON.stringify({ 
-      message: 'Gateway SSE stream connected', 
-      timestamp: new Date().toISOString() 
+    res.write(`event: connected\ndata: ${JSON.stringify({
+      message: 'Gateway SSE stream connected',
+      timestamp: new Date().toISOString(),
+      channel: channel || 'all'
     })}\n\n`);
 
     // Pipe OASIS stream to client with transformation
@@ -119,7 +142,7 @@ router.get('/api/v1/events/stream', async (req: Request, res: Response) => {
       oasisResponse.body.on('data', (chunk: Buffer) => {
         try {
           const text = chunk.toString();
-          
+
           // Forward SSE data, transforming event names
           if (text.startsWith('data:')) {
             // Parse and normalize the event
@@ -127,7 +150,7 @@ router.get('/api/v1/events/stream', async (req: Request, res: Response) => {
             if (dataMatch) {
               try {
                 const oasisEvent = JSON.parse(dataMatch[1]);
-                
+
                 // Transform to standard format
                 const gatewayEvent = {
                   id: oasisEvent.id || oasisEvent.event_id || crypto.randomUUID(),
@@ -138,11 +161,21 @@ router.get('/api/v1/events/stream', async (req: Request, res: Response) => {
                   payload: oasisEvent.data || oasisEvent
                 };
 
+                // Apply operator channel filter if requested
+                if (isOperatorChannel) {
+                  if (!isOperatorChannelEvent(gatewayEvent.type)) {
+                    // Skip non-operator events
+                    return;
+                  }
+                }
+
                 // Send as oasis-event type
                 res.write(`event: oasis-event\ndata: ${JSON.stringify(gatewayEvent)}\n\n`);
               } catch (parseError) {
-                // If can't parse, forward as-is
-                res.write(text + '\n\n');
+                // If can't parse, forward as-is (only if not filtered)
+                if (!isOperatorChannel) {
+                  res.write(text + '\n\n');
+                }
               }
             }
           } else if (text.startsWith(':')) {
