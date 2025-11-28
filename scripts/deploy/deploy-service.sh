@@ -88,8 +88,8 @@ echo -e "${YELLOW}VTID-0510: Recording software version...${NC}"
 INITIATOR="${INITIATOR:-user}"
 DEPLOY_TYPE="${DEPLOY_TYPE:-normal}"
 
-# Use gateway URL from environment or derive from service URL
-GATEWAY_URL="${GATEWAY_URL:-https://gateway-667307951183.us-central1.run.app}"
+# Use gateway URL from environment or canonical gateway URL
+GATEWAY_URL="${GATEWAY_URL:-https://gateway-q74ibpv6ia-uc.a.run.app}"
 
 # Record the deployment version
 if curl -fsS "${GATEWAY_URL}/api/v1/operator/deployments" \
