@@ -274,8 +274,127 @@ const state = {
     screenInventory: null,
     screenInventoryLoading: false,
     screenInventoryError: null,
-    selectedRole: 'DEVELOPER'
+    selectedRole: 'DEVELOPER',
+
+    // Version History (VTID-0517)
+    isVersionDropdownOpen: false,
+    versionHistory: [],
+    selectedVersionId: null,
+
+    // Publish Modal (VTID-0517)
+    showPublishModal: false,
+
+    // Toast Notifications (VTID-0517)
+    toasts: []
 };
+
+// --- Version History Data Model (VTID-0517) ---
+
+/**
+ * Version status constants for deployment entries.
+ * @enum {string}
+ */
+const VersionStatus = {
+    LIVE: 'live',
+    DRAFT: 'draft',
+    UNPUBLISHED: 'unpublished',
+    UNKNOWN: 'unknown'
+};
+
+/**
+ * Loads version history entries.
+ * Phase 1: Returns mock data for UI development.
+ *
+ * TODO (future VTID): Replace mock data with real backend call, e.g.:
+ * GET /api/v1/cicd/versions or /api/v1/oasis/events?topic=DEPLOYMENT
+ * and map the response into VersionEntry[].
+ *
+ * @returns {Array<{id: string, vtid: string|null, label: string, status: string, createdAt: string, actor: string|null}>}
+ */
+function loadVersionHistory() {
+    // Phase 1: Local mock data
+    return [
+        {
+            id: 'deploy-001',
+            vtid: 'DEV-OASIS-0108',
+            label: 'OASIS tasks API endpoint',
+            status: VersionStatus.LIVE,
+            createdAt: '2025-11-28T08:14:42Z',
+            actor: 'claude-agent'
+        },
+        {
+            id: 'deploy-002',
+            vtid: 'DEV-CICDL-0207',
+            label: 'Safe merge CICD endpoints',
+            status: VersionStatus.DRAFT,
+            createdAt: '2025-11-27T15:30:00Z',
+            actor: 'david.stevens'
+        },
+        {
+            id: 'deploy-003',
+            vtid: 'DEV-NAV-0045',
+            label: 'Navigation operator update',
+            status: VersionStatus.UNPUBLISHED,
+            createdAt: '2025-11-26T10:45:00Z',
+            actor: 'system'
+        },
+        {
+            id: 'deploy-004',
+            vtid: 'DEV-CSP-0043',
+            label: 'Command Hub CSP compliance fix',
+            status: VersionStatus.UNPUBLISHED,
+            createdAt: '2025-11-25T18:22:15Z',
+            actor: 'claude-agent'
+        },
+        {
+            id: 'deploy-005',
+            vtid: null,
+            label: 'Gateway deploy r00164',
+            status: VersionStatus.UNPUBLISHED,
+            createdAt: '2025-11-24T09:00:00Z',
+            actor: 'ci-pipeline'
+        }
+    ];
+}
+
+/**
+ * Formats an ISO timestamp into a human-readable string.
+ * @param {string} isoString - ISO 8601 timestamp
+ * @returns {string} Formatted date string (e.g., "Nov 28, 8:14 AM")
+ */
+function formatVersionTimestamp(isoString) {
+    const date = new Date(isoString);
+    return date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric'
+    }) + ', ' + date.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+    });
+}
+
+// --- Toast Notification System (VTID-0517) ---
+
+let toastIdCounter = 0;
+
+/**
+ * Shows a toast notification.
+ * @param {string} message - The message to display
+ * @param {string} type - Toast type: 'info', 'success', 'error'
+ * @param {number} duration - Duration in milliseconds (default: 4000)
+ */
+function showToast(message, type = 'info', duration = 4000) {
+    const id = ++toastIdCounter;
+    state.toasts.push({ id, message, type });
+    renderApp();
+
+    // Auto-dismiss after duration
+    setTimeout(() => {
+        state.toasts = state.toasts.filter(t => t.id !== id);
+        renderApp();
+    }, duration);
+}
 
 // --- DOM Elements & Rendering ---
 
@@ -312,6 +431,12 @@ function renderApp() {
     // Global Overlays (VTID-0508)
     if (state.isHeartbeatOpen) root.appendChild(renderHeartbeatOverlay());
     if (state.isOperatorOpen) root.appendChild(renderOperatorOverlay());
+
+    // Publish Modal (VTID-0517)
+    if (state.showPublishModal) root.appendChild(renderPublishModal());
+
+    // Toast Notifications (VTID-0517)
+    if (state.toasts.length > 0) root.appendChild(renderToastContainer());
 }
 
 function renderSidebar() {
@@ -392,53 +517,172 @@ function renderSidebar() {
 
 function renderHeader() {
     const header = document.createElement('div');
-    header.className = 'header-bar';
+    header.className = 'header-toolbar';
 
-    // Left: LIVE chip + Heartbeat chip (VTID-0508)
+    // --- Left Section: Heartbeat, Autopilot, Operator, Clock (VTID-0517) ---
     const left = document.createElement('div');
-    left.className = 'header-left';
+    left.className = 'header-toolbar-left';
 
-    // LIVE chip (green by default)
-    const liveChip = document.createElement('div');
-    liveChip.className = 'status-live';
-    liveChip.innerHTML = '<div class="live-dot"></div>LIVE';
-    left.appendChild(liveChip);
-
-    // Heartbeat chip
-    const heartbeatChip = document.createElement('div');
-    heartbeatChip.className = 'heartbeat-chip';
-    heartbeatChip.textContent = 'Heartbeat: Standby';
-    heartbeatChip.onclick = () => {
+    // 1. Heartbeat button (status button style)
+    const heartbeatBtn = document.createElement('button');
+    heartbeatBtn.className = 'header-button header-button--status';
+    heartbeatBtn.innerHTML = '<span class="header-button__label">Heartbeat</span><span class="header-button__state">Standby</span>';
+    heartbeatBtn.onclick = () => {
         state.isHeartbeatOpen = true;
         renderApp();
     };
-    left.appendChild(heartbeatChip);
+    left.appendChild(heartbeatBtn);
 
-    header.appendChild(left);
+    // 2. Autopilot button (same style as Heartbeat)
+    const autopilotBtn = document.createElement('button');
+    autopilotBtn.className = 'header-button header-button--status';
+    autopilotBtn.innerHTML = '<span class="header-button__label">Autopilot</span><span class="header-button__state">Standby</span>';
+    left.appendChild(autopilotBtn);
 
-    // Right: Operator button + Autopilot button (VTID-0508)
-    const right = document.createElement('div');
-    right.className = 'header-right';
-
-    // Operator button
+    // 3. Operator button (primary action style)
     const operatorBtn = document.createElement('button');
-    operatorBtn.className = 'header-btn header-btn-operator';
+    operatorBtn.className = 'header-button header-button--primary header-button--operator';
     operatorBtn.textContent = 'Operator';
     operatorBtn.onclick = () => {
         state.isOperatorOpen = true;
         renderApp();
     };
-    right.appendChild(operatorBtn);
+    left.appendChild(operatorBtn);
 
-    // Autopilot button
-    const autopilotBtn = document.createElement('button');
-    autopilotBtn.className = 'header-btn header-btn-primary';
-    autopilotBtn.innerHTML = 'Autopilot <span class="autopilot-status-text">Standby</span>';
-    right.appendChild(autopilotBtn);
+    // 4. Clock / Version History icon button
+    const versionBtn = document.createElement('button');
+    versionBtn.className = 'header-icon-button';
+    versionBtn.title = 'Version History';
+    // Clock icon using Unicode character (CSP compliant)
+    versionBtn.innerHTML = '<span class="header-icon-button__icon">&#128337;</span>';
+    versionBtn.onclick = (e) => {
+        e.stopPropagation();
+        state.isVersionDropdownOpen = !state.isVersionDropdownOpen;
+        if (state.isVersionDropdownOpen) {
+            // Load version history when opening
+            state.versionHistory = loadVersionHistory();
+        }
+        renderApp();
+    };
+    left.appendChild(versionBtn);
+
+    // Version History Dropdown (rendered within left for positioning)
+    if (state.isVersionDropdownOpen) {
+        left.appendChild(renderVersionDropdown());
+    }
+
+    header.appendChild(left);
+
+    // --- Center Section: Publish button (VTID-0517) ---
+    const center = document.createElement('div');
+    center.className = 'header-toolbar-center';
+
+    const publishBtn = document.createElement('button');
+    publishBtn.className = 'header-button header-button--publish';
+    publishBtn.textContent = 'Publish';
+    publishBtn.onclick = () => {
+        state.showPublishModal = true;
+        renderApp();
+    };
+    center.appendChild(publishBtn);
+
+    header.appendChild(center);
+
+    // --- Right Section: LIVE status pill (VTID-0517) ---
+    const right = document.createElement('div');
+    right.className = 'header-toolbar-right';
+
+    // LIVE pill (status indicator, not a button)
+    const livePill = document.createElement('div');
+    livePill.className = 'header-live-pill';
+    livePill.innerHTML = '<span class="header-live-pill__dot"></span>LIVE';
+    right.appendChild(livePill);
 
     header.appendChild(right);
 
+    // Add click-outside handler for dropdown
+    if (state.isVersionDropdownOpen) {
+        setTimeout(() => {
+            const closeDropdown = (e) => {
+                const dropdown = document.querySelector('.version-dropdown');
+                const iconBtn = document.querySelector('.header-icon-button');
+                if (dropdown && !dropdown.contains(e.target) && !iconBtn.contains(e.target)) {
+                    state.isVersionDropdownOpen = false;
+                    document.removeEventListener('click', closeDropdown);
+                    renderApp();
+                }
+            };
+            document.addEventListener('click', closeDropdown);
+        }, 0);
+    }
+
     return header;
+}
+
+// --- Version History Dropdown (VTID-0517) ---
+
+function renderVersionDropdown() {
+    const dropdown = document.createElement('div');
+    dropdown.className = 'version-dropdown';
+
+    // Header
+    const dropdownHeader = document.createElement('div');
+    dropdownHeader.className = 'version-dropdown__title';
+    dropdownHeader.textContent = 'Versions';
+    dropdown.appendChild(dropdownHeader);
+
+    // List container
+    const list = document.createElement('div');
+    list.className = 'version-dropdown__list';
+
+    state.versionHistory.forEach(version => {
+        const item = document.createElement('div');
+        item.className = 'version-dropdown__item';
+        if (state.selectedVersionId === version.id) {
+            item.className += ' version-dropdown__item--selected';
+        }
+
+        // Primary label with VTID or just label
+        const label = document.createElement('div');
+        label.className = 'version-dropdown__item-label';
+        label.textContent = version.vtid
+            ? version.vtid + ' – ' + version.label
+            : version.label;
+        item.appendChild(label);
+
+        // Meta line: timestamp + optional status badge
+        const meta = document.createElement('div');
+        meta.className = 'version-dropdown__item-meta';
+
+        const timestamp = document.createElement('span');
+        timestamp.className = 'version-dropdown__item-timestamp';
+        timestamp.textContent = formatVersionTimestamp(version.createdAt);
+        meta.appendChild(timestamp);
+
+        if (version.status) {
+            const badge = document.createElement('span');
+            badge.className = 'version-dropdown__item-badge version-dropdown__item-badge--' + version.status;
+            badge.textContent = version.status.charAt(0).toUpperCase() + version.status.slice(1);
+            meta.appendChild(badge);
+        }
+
+        item.appendChild(meta);
+
+        // Click handler
+        item.onclick = (e) => {
+            e.stopPropagation();
+            state.selectedVersionId = version.id;
+            const displayName = version.vtid || version.label;
+            showToast('Version ' + displayName + ' selected. Restore/publish flow will be implemented in a later step.', 'info');
+            state.isVersionDropdownOpen = false;
+            renderApp();
+        };
+
+        list.appendChild(item);
+    });
+
+    dropdown.appendChild(list);
+    return dropdown;
 }
 
 function renderMainContent() {
@@ -1520,6 +1764,99 @@ function renderOperatorHistory() {
     const container = document.createElement('div');
     container.className = 'history-empty';
     container.textContent = 'No past conversations yet (UI stub)';
+    return container;
+}
+
+// --- Publish Modal (VTID-0517) ---
+
+function renderPublishModal() {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.onclick = (e) => {
+        if (e.target === overlay) {
+            state.showPublishModal = false;
+            renderApp();
+        }
+    };
+
+    const modal = document.createElement('div');
+    modal.className = 'modal publish-modal';
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'modal-header';
+    header.textContent = 'Publish current configuration?';
+    modal.appendChild(header);
+
+    // Body
+    const body = document.createElement('div');
+    body.className = 'modal-body';
+
+    const message = document.createElement('p');
+    message.className = 'publish-modal__message';
+    message.textContent = 'This will publish the current Vitana Dev configuration to the active environment. (Backend automation will be wired in a later task.)';
+    body.appendChild(message);
+
+    modal.appendChild(body);
+
+    // Footer
+    const footer = document.createElement('div');
+    footer.className = 'modal-footer';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.onclick = () => {
+        state.showPublishModal = false;
+        renderApp();
+    };
+    footer.appendChild(cancelBtn);
+
+    const publishBtn = document.createElement('button');
+    publishBtn.className = 'btn btn-primary';
+    publishBtn.textContent = 'Publish';
+    publishBtn.onclick = () => {
+        // Phase 1: Just logging and UX, no real backend calls
+        console.log('[VTID-0517] Publish requested (backend wiring pending)');
+        state.showPublishModal = false;
+        showToast('Publish requested (backend wiring pending).', 'success');
+        renderApp();
+    };
+    footer.appendChild(publishBtn);
+
+    modal.appendChild(footer);
+    overlay.appendChild(modal);
+
+    return overlay;
+}
+
+// --- Toast Notification Container (VTID-0517) ---
+
+function renderToastContainer() {
+    const container = document.createElement('div');
+    container.className = 'toast-container';
+
+    state.toasts.forEach(toast => {
+        const toastEl = document.createElement('div');
+        toastEl.className = 'toast toast--' + toast.type;
+
+        const message = document.createElement('span');
+        message.className = 'toast__message';
+        message.textContent = toast.message;
+        toastEl.appendChild(message);
+
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'toast__close';
+        closeBtn.innerHTML = '&times;';
+        closeBtn.onclick = () => {
+            state.toasts = state.toasts.filter(t => t.id !== toast.id);
+            renderApp();
+        };
+        toastEl.appendChild(closeBtn);
+
+        container.appendChild(toastEl);
+    });
+
     return container;
 }
 
