@@ -4,7 +4,7 @@
  * VTID-0509: Operator Console API (chat, heartbeat, history, upload, session)
  * VTID-0510: Software Version Tracking (deployments)
  *
- * Final API endpoints (after mounting in index.ts):
+ * Final API endpoints (after mounting at /api/v1/operator):
  * - POST /api/v1/operator/chat - Operator chat with AI
  * - GET  /api/v1/operator/health - Health check
  * - GET  /api/v1/operator/heartbeat - Heartbeat snapshot
@@ -47,10 +47,10 @@ const FileUploadSchema = z.object({
 });
 
 // ==================== VTID-0509 Routes ====================
+// Routes defined WITHOUT /operator prefix since router is mounted at /api/v1/operator
 
 /**
- * POST /operator/chat - DEV-AICOR-0027 Operator Chat
- * Logs request/response events and calls AI orchestrator
+ * POST /chat → /api/v1/operator/chat
  */
 router.post('/chat', async (req: Request, res: Response) => {
   const requestId = randomUUID();
@@ -135,7 +135,7 @@ router.post('/chat', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /operator/health - Simple health check
+ * GET /health → /api/v1/operator/health
  */
 router.get('/health', (_req: Request, res: Response) => {
   return res.status(200).json({
@@ -148,8 +148,7 @@ router.get('/health', (_req: Request, res: Response) => {
 });
 
 /**
- * GET /operator/heartbeat - Heartbeat snapshot
- * Aggregates task status, recent events, and CICD health
+ * GET /heartbeat → /api/v1/operator/heartbeat
  */
 router.get('/heartbeat', async (_req: Request, res: Response) => {
   console.log('[Operator Heartbeat] Snapshot requested');
@@ -201,8 +200,7 @@ router.get('/heartbeat', async (_req: Request, res: Response) => {
 });
 
 /**
- * GET /operator/history - Operator history
- * Returns filtered events from OASIS
+ * GET /history → /api/v1/operator/history
  */
 router.get('/history', async (req: Request, res: Response) => {
   console.log('[Operator History] Request received');
@@ -233,7 +231,7 @@ router.get('/history', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /operator/heartbeat/session - Start/stop heartbeat session
+ * POST /heartbeat/session → /api/v1/operator/heartbeat/session
  */
 router.post('/heartbeat/session', async (req: Request, res: Response) => {
   console.log('[Operator Session] Request received');
@@ -284,8 +282,7 @@ router.post('/heartbeat/session', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /operator/upload - File upload
- * Creates OASIS file reference and logs upload event
+ * POST /upload → /api/v1/operator/upload
  */
 router.post('/upload', async (req: Request, res: Response) => {
   console.log('[Operator Upload] Request received');
@@ -343,8 +340,7 @@ router.post('/upload', async (req: Request, res: Response) => {
 // ==================== VTID-0510 Routes ====================
 
 /**
- * GET /deployments - Get deployment history feed
- * Returns latest deployment records formatted for UI
+ * GET /deployments → /api/v1/operator/deployments
  */
 router.get('/deployments', async (req: Request, res: Response) => {
   try {
@@ -385,8 +381,7 @@ router.get('/deployments', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /deployments - Record a new deployment
- * Internal use - called after successful deploy
+ * POST /deployments → /api/v1/operator/deployments
  */
 router.post('/deployments', async (req: Request, res: Response) => {
   try {
@@ -451,7 +446,7 @@ router.post('/deployments', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /deployments/health - Health check for deployments subsystem
+ * GET /deployments/health → /api/v1/operator/deployments/health
  */
 router.get('/deployments/health', (_req: Request, res: Response) => {
   const hasSupabaseUrl = !!process.env.SUPABASE_URL;

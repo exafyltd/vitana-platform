@@ -58,6 +58,7 @@ app.use('/api/v1/cicd', cicdRouter);
 // Routes: /api/v1/operator/health, /heartbeat, /history, /chat, /upload, /deployments
 app.use('/api/v1/operator', operatorRouter);
 app.use('/api/v1/commandhub', commandhub);
+app.use('/api/v1', operatorRouter); // VTID-0509: Operator Console API
 app.use("/", tasksRouter);
 app.use(eventsApiRouter);
 app.use(eventsRouter);
