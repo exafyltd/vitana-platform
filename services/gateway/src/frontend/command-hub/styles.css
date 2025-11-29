@@ -2056,3 +2056,246 @@ body {
   background: rgba(239, 68, 68, 0.15);
   color: #ef4444;
 }
+
+/* --- VTID-0520: CI/CD Health Indicator --- */
+
+.cicd-health-indicator {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-right: 0.75rem;
+}
+
+.cicd-health-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.cicd-health-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--color-text-secondary);
+}
+
+.cicd-health-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+}
+
+.cicd-health-icon {
+  font-size: 1.25rem;
+  line-height: 1;
+  transition: transform 0.2s ease;
+}
+
+/* Healthy state - green heartbeat */
+.cicd-health-btn--healthy {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.cicd-health-btn--healthy:hover {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(16, 185, 129, 0.5);
+}
+
+.cicd-health-btn--healthy .cicd-health-icon {
+  color: #10b981;
+  animation: cicd-heartbeat 1.5s ease-in-out infinite;
+}
+
+/* Error state - red heartbeat */
+.cicd-health-btn--error {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.cicd-health-btn--error:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.cicd-health-btn--error .cicd-health-icon {
+  color: #ef4444;
+  animation: cicd-heartbeat-error 0.8s ease-in-out infinite;
+}
+
+/* Loading state - gray pulsing */
+.cicd-health-btn--loading {
+  background: rgba(148, 163, 184, 0.1);
+  border-color: rgba(148, 163, 184, 0.3);
+}
+
+.cicd-health-btn--loading .cicd-health-icon {
+  color: var(--color-text-secondary);
+  animation: cicd-pulse 1s ease-in-out infinite;
+}
+
+/* Unknown state - gray */
+.cicd-health-btn--unknown {
+  background: rgba(148, 163, 184, 0.1);
+  border-color: rgba(148, 163, 184, 0.3);
+}
+
+.cicd-health-btn--unknown .cicd-health-icon {
+  color: var(--color-text-secondary);
+}
+
+/* Heartbeat animation for healthy state */
+@keyframes cicd-heartbeat {
+  0%, 100% {
+    transform: scale(1);
+  }
+  14% {
+    transform: scale(1.15);
+  }
+  28% {
+    transform: scale(1);
+  }
+  42% {
+    transform: scale(1.15);
+  }
+  56% {
+    transform: scale(1);
+  }
+}
+
+/* Faster heartbeat for error state */
+@keyframes cicd-heartbeat-error {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2);
+  }
+}
+
+/* Pulse animation for loading */
+@keyframes cicd-pulse {
+  0%, 100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* --- CI/CD Health Tooltip (VTID-0520) --- */
+
+.cicd-health-tooltip {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 280px;
+  background: var(--color-sidebar-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  overflow: hidden;
+  animation: cicd-tooltip-fade-in 0.15s ease-out;
+}
+
+@keyframes cicd-tooltip-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.cicd-health-tooltip__header {
+  padding: 0.75rem 1rem;
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.cicd-health-tooltip__status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.cicd-health-tooltip__status--healthy {
+  color: #10b981;
+}
+
+.cicd-health-tooltip__status--error {
+  color: #ef4444;
+}
+
+.cicd-health-tooltip__details {
+  padding: 0.75rem 1rem;
+}
+
+.cicd-health-tooltip__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.35rem 0;
+  font-size: 0.8rem;
+}
+
+.cicd-health-tooltip__label {
+  color: var(--color-text-secondary);
+}
+
+.cicd-health-tooltip__value {
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.cicd-health-tooltip__value--yes {
+  color: #10b981;
+}
+
+.cicd-health-tooltip__value--no {
+  color: #ef4444;
+}
+
+.cicd-health-tooltip__caps-header {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 0.75rem;
+  margin-bottom: 0.25rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.cicd-health-tooltip__error {
+  padding: 0.75rem 1rem;
+  color: #ef4444;
+  font-size: 0.8rem;
+}
+
+.cicd-health-tooltip__loading {
+  padding: 0.75rem 1rem;
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.cicd-health-tooltip__footer {
+  padding: 0.5rem 1rem;
+  background: var(--color-bg);
+  border-top: 1px solid var(--color-border);
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+  text-align: right;
+}
