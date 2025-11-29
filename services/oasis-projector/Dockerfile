@@ -5,30 +5,21 @@ RUN apk add --no-cache openssl libc6-compat
 
 WORKDIR /app
 
-# Copy package files
-COPY package.json ./
-COPY package-lock.json ./
+# Copy all source files
+COPY package.json package-lock.json ./
 COPY prisma ./prisma/
-
-# Install all dependencies
-RUN npm ci
-
-# Generate Prisma client
-RUN npx prisma generate
-
-# Copy source code and build
 COPY src ./src/
 COPY tsconfig.json ./
-RUN npm run build
 
-# Remove devDependencies after build
-RUN npm prune --production
+# Install dependencies and build
+RUN npm install && \
+    npx prisma generate && \
+    npm run build && \
+    npm prune --production
 
-# Expose port
-EXPOSE 8080
-
+# Environment
 ENV NODE_ENV=production
 ENV PORT=8080
+EXPOSE 8080
 
-# Start the application
 CMD ["node", "dist/index.js"]
