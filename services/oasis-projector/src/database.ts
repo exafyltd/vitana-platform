@@ -13,7 +13,7 @@ export class Database {
       });
 
       // Handle connection errors
-      Database.instance.$connect().catch((error) => {
+      Database.instance.$connect().catch((error: Error) => {
         logger.error('Database connection failed', error);
         throw error;
       });

@@ -141,7 +141,7 @@ app.get('/internal/oasis/ledger/status', async (req, res) => {
         last_event_id: offset?.lastEventId,
         last_event_time: offset?.lastEventTime,
       },
-      recent_syncs: recentSyncs.map(s => ({
+      recent_syncs: recentSyncs.map((s: { id: string; status: string; notes: string | null; metadata: unknown; createdAt: Date }) => ({
         id: s.id,
         status: s.status,
         notes: s.notes,
