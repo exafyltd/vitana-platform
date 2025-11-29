@@ -1,11 +1,13 @@
 import { Database } from './database';
 import { logger } from './logger';
 
-interface Event {
+interface OasisEventRecord {
   id: string;
-  type: string;
-  payload: any;
-  timestamp: Date;
+  event: string;
+  service: string;
+  status: string;
+  metadata: unknown;
+  createdAt: Date;
   projected: boolean;
 }
 
@@ -53,19 +55,19 @@ export class Projector {
     const db = Database.getInstance();
 
     // Get current offset
-    const offset = await db.projection_offsets.findUnique({
-      where: { projector_name: this.PROJECTOR_NAME }
+    const offset = await db.projectionOffset.findUnique({
+      where: { projectorName: this.PROJECTOR_NAME }
     });
 
     // Find unprojected events
-    const events = await db.events.findMany({
+    const events = await db.oasisEvent.findMany({
       where: {
         projected: false,
-        timestamp: {
-          gt: offset?.last_event_time || new Date(0)
+        createdAt: {
+          gt: offset?.lastEventTime || new Date(0)
         }
       },
-      orderBy: { timestamp: 'asc' },
+      orderBy: { createdAt: 'asc' },
       take: this.BATCH_SIZE
     });
 
@@ -74,24 +76,24 @@ export class Projector {
     }
 
     logger.info(`Processing ${events.length} events`, {
-      firstEventTime: events[0].timestamp,
-      lastEventTime: events[events.length - 1].timestamp
+      firstEventTime: events[0].createdAt,
+      lastEventTime: events[events.length - 1].createdAt
     });
 
     // Process each event
     for (const event of events) {
-      await this.projectEvent(event);
+      await this.projectEvent(event as OasisEventRecord);
     }
 
     // Update offset
     const lastEvent = events[events.length - 1];
-    await db.projection_offsets.update({
-      where: { projector_name: this.PROJECTOR_NAME },
+    await db.projectionOffset.update({
+      where: { projectorName: this.PROJECTOR_NAME },
       data: {
-        last_event_id: lastEvent.id,
-        last_event_time: lastEvent.timestamp,
-        last_processed_at: new Date(),
-        events_processed: {
+        lastEventId: lastEvent.id,
+        lastEventTime: lastEvent.createdAt,
+        lastProcessedAt: new Date(),
+        eventsProcessed: {
           increment: events.length
         }
       }
@@ -100,10 +102,10 @@ export class Projector {
     logger.info(`Batch complete. Processed ${events.length} events`);
   }
 
-  private async projectEvent(event: Event): Promise<void> {
+  private async projectEvent(event: OasisEventRecord): Promise<void> {
     try {
       // Project the event based on its type
-      switch (event.type) {
+      switch (event.event) {
         case 'user_created':
           await this.projectUserCreated(event);
           break;
@@ -114,16 +116,16 @@ export class Projector {
           await this.projectTransactionCreated(event);
           break;
         default:
-          logger.warn(`Unknown event type: ${event.type}`, { eventId: event.id });
+          logger.debug(`Unhandled event type: ${event.event}`, { eventId: event.id });
       }
 
       // Mark event as projected
-      await Database.getInstance().events.update({
+      await Database.getInstance().oasisEvent.update({
         where: { id: event.id },
         data: { projected: true }
       });
 
-      logger.debug(`Event projected: ${event.type}`, { eventId: event.id });
+      logger.debug(`Event projected: ${event.event}`, { eventId: event.id });
 
     } catch (error) {
       logger.error(`Failed to project event ${event.id}`, error);
@@ -131,29 +133,27 @@ export class Projector {
     }
   }
 
-  private async projectUserCreated(event: Event): Promise<void> {
-    const { userId, email, name } = event.payload;
+  private async projectUserCreated(event: OasisEventRecord): Promise<void> {
+    const metadata = event.metadata as Record<string, unknown> || {};
+    const { userId, email, name } = metadata;
     logger.info(`Projecting user created: ${userId}`, { email, name });
-    
+
     // TODO: Implement actual projection logic
-    // This could involve:
-    // - Creating a user record in a read-optimized table
-    // - Updating search indexes
-    // - Sending notifications
-    // - Updating cache
   }
 
-  private async projectUserUpdated(event: Event): Promise<void> {
-    const { userId, changes } = event.payload;
+  private async projectUserUpdated(event: OasisEventRecord): Promise<void> {
+    const metadata = event.metadata as Record<string, unknown> || {};
+    const { userId, changes } = metadata;
     logger.info(`Projecting user updated: ${userId}`, { changes });
-    
+
     // TODO: Implement actual projection logic
   }
 
-  private async projectTransactionCreated(event: Event): Promise<void> {
-    const { transactionId, amount, currency } = event.payload;
+  private async projectTransactionCreated(event: OasisEventRecord): Promise<void> {
+    const metadata = event.metadata as Record<string, unknown> || {};
+    const { transactionId, amount, currency } = metadata;
     logger.info(`Projecting transaction created: ${transactionId}`, { amount, currency });
-    
+
     // TODO: Implement actual projection logic
   }
 
