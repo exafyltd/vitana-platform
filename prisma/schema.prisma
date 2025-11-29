@@ -46,11 +46,19 @@ model VtidLedger {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
+  // VTID-0521: Event tracking columns for automatic ledger sync
+  lastEventId String?   @map("last_event_id") // ID of last OASIS event that updated this VTID
+  lastEventAt DateTime? @map("last_event_at") // Timestamp of last event
+  service     String? // Service that triggered the update (e.g., "gateway", "oasis-projector")
+  environment String?   @default("dev") // Environment (dev, staging, prod)
+
   @@index([createdAt], map: "idx_vtid_created_at")
   @@index([taskFamily, createdAt], map: "idx_vtid_family_created")
   @@index([status, createdAt], map: "idx_vtid_status_created")
   @@index([tenant, createdAt], map: "idx_vtid_tenant_created")
   @@index([vtid], map: "idx_vtid_lookup")
+  @@index([lastEventAt(sort: Desc)], map: "idx_vtid_last_event_at")
+  @@index([service], map: "idx_vtid_service")
 }
 
 // Projection Offsets - tracks projection progress (DEV-OASIS-0010)
