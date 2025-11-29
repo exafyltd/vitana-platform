@@ -294,7 +294,13 @@ const state = {
     showPublishModal: false,
 
     // Toast Notifications (VTID-0517)
-    toasts: []
+    toasts: [],
+
+    // CI/CD Health (VTID-0520)
+    cicdHealth: null,
+    cicdHealthLoading: false,
+    cicdHealthError: null,
+    cicdHealthTooltipOpen: false
 };
 
 // --- Version History Data Model (VTID-0517) ---
@@ -601,9 +607,131 @@ function renderHeader() {
 
     header.appendChild(center);
 
-    // --- Right Section: LIVE status pill (VTID-0517) ---
+    // --- Right Section: CI/CD Health + LIVE status pill (VTID-0517/0520) ---
     const right = document.createElement('div');
     right.className = 'header-toolbar-right';
+
+    // CI/CD Health Indicator (VTID-0520)
+    const cicdHealthIndicator = document.createElement('div');
+    cicdHealthIndicator.className = 'cicd-health-indicator';
+
+    // Determine health status
+    const isHealthy = state.cicdHealth && state.cicdHealth.ok === true;
+    const hasError = state.cicdHealthError !== null || (state.cicdHealth && state.cicdHealth.ok === false);
+    const isLoading = state.cicdHealthLoading && !state.cicdHealth;
+
+    // Create heartbeat icon button
+    const cicdBtn = document.createElement('button');
+    if (isLoading) {
+        cicdBtn.className = 'cicd-health-btn cicd-health-btn--loading';
+        cicdBtn.title = 'CI/CD: Loading...';
+    } else if (hasError) {
+        cicdBtn.className = 'cicd-health-btn cicd-health-btn--error';
+        cicdBtn.title = state.cicdHealthError || 'CI/CD Issues';
+    } else if (isHealthy) {
+        cicdBtn.className = 'cicd-health-btn cicd-health-btn--healthy';
+        cicdBtn.title = 'CI/CD Healthy';
+    } else {
+        cicdBtn.className = 'cicd-health-btn cicd-health-btn--unknown';
+        cicdBtn.title = 'CI/CD: Unknown';
+    }
+
+    // Heartbeat icon (Unicode heart with pulse effect via CSS)
+    const heartIcon = document.createElement('span');
+    heartIcon.className = 'cicd-health-icon';
+    // Using Unicode heart character (CSP compliant)
+    heartIcon.innerHTML = '&#9829;'; // ♥
+    cicdBtn.appendChild(heartIcon);
+
+    // Click handler to show tooltip/popup
+    cicdBtn.onclick = (e) => {
+        e.stopPropagation();
+        state.cicdHealthTooltipOpen = !state.cicdHealthTooltipOpen;
+        renderApp();
+    };
+
+    cicdHealthIndicator.appendChild(cicdBtn);
+
+    // Tooltip/popup with full status (VTID-0520)
+    if (state.cicdHealthTooltipOpen) {
+        const tooltip = document.createElement('div');
+        tooltip.className = 'cicd-health-tooltip';
+
+        // Header
+        const tooltipHeader = document.createElement('div');
+        tooltipHeader.className = 'cicd-health-tooltip__header';
+        tooltipHeader.innerHTML = isHealthy
+            ? '<span class="cicd-health-tooltip__status cicd-health-tooltip__status--healthy">&#9829; CI/CD Healthy</span>'
+            : '<span class="cicd-health-tooltip__status cicd-health-tooltip__status--error">&#9829; CI/CD Issues</span>';
+        tooltip.appendChild(tooltipHeader);
+
+        // Status details
+        if (state.cicdHealth) {
+            const details = document.createElement('div');
+            details.className = 'cicd-health-tooltip__details';
+
+            // Status line
+            const statusLine = document.createElement('div');
+            statusLine.className = 'cicd-health-tooltip__row';
+            statusLine.innerHTML = '<span class="cicd-health-tooltip__label">Status:</span>' +
+                '<span class="cicd-health-tooltip__value">' + (state.cicdHealth.status || 'unknown') + '</span>';
+            details.appendChild(statusLine);
+
+            // Capabilities
+            if (state.cicdHealth.capabilities) {
+                const capsHeader = document.createElement('div');
+                capsHeader.className = 'cicd-health-tooltip__caps-header';
+                capsHeader.textContent = 'Capabilities';
+                details.appendChild(capsHeader);
+
+                for (const [key, value] of Object.entries(state.cicdHealth.capabilities)) {
+                    const capRow = document.createElement('div');
+                    capRow.className = 'cicd-health-tooltip__row';
+                    const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                    capRow.innerHTML = '<span class="cicd-health-tooltip__label">' + label + ':</span>' +
+                        '<span class="cicd-health-tooltip__value cicd-health-tooltip__value--' + (value ? 'yes' : 'no') + '">' +
+                        (value ? 'Yes' : 'No') + '</span>';
+                    details.appendChild(capRow);
+                }
+            }
+
+            tooltip.appendChild(details);
+        } else if (state.cicdHealthError) {
+            const errorDetails = document.createElement('div');
+            errorDetails.className = 'cicd-health-tooltip__error';
+            errorDetails.textContent = 'Error: ' + state.cicdHealthError;
+            tooltip.appendChild(errorDetails);
+        } else {
+            const loadingDetails = document.createElement('div');
+            loadingDetails.className = 'cicd-health-tooltip__loading';
+            loadingDetails.textContent = 'Loading...';
+            tooltip.appendChild(loadingDetails);
+        }
+
+        // Last updated timestamp
+        const footer = document.createElement('div');
+        footer.className = 'cicd-health-tooltip__footer';
+        footer.textContent = 'Updated: ' + new Date().toLocaleTimeString();
+        tooltip.appendChild(footer);
+
+        cicdHealthIndicator.appendChild(tooltip);
+
+        // Click-outside handler
+        setTimeout(() => {
+            const closeTooltip = (e) => {
+                const tooltipEl = document.querySelector('.cicd-health-tooltip');
+                const btnEl = document.querySelector('.cicd-health-btn');
+                if (tooltipEl && !tooltipEl.contains(e.target) && btnEl && !btnEl.contains(e.target)) {
+                    state.cicdHealthTooltipOpen = false;
+                    document.removeEventListener('click', closeTooltip);
+                    renderApp();
+                }
+            };
+            document.addEventListener('click', closeTooltip);
+        }, 0);
+    }
+
+    right.appendChild(cicdHealthIndicator);
 
     // LIVE pill (status indicator, not a button)
     const livePill = document.createElement('div');
@@ -2333,6 +2461,93 @@ async function uploadOperatorFile(file, kind) {
     }
 }
 
+// --- VTID-0520: CI/CD Health Indicator ---
+
+let cicdHealthPollInterval = null;
+
+/**
+ * Fetches CI/CD health status from the backend API.
+ * Updates state.cicdHealth with the response.
+ */
+async function fetchCicdHealth() {
+    console.log('[CICD] Fetching health status...');
+    state.cicdHealthLoading = true;
+
+    try {
+        const response = await fetch('/api/v1/cicd/health');
+        if (!response.ok) {
+            throw new Error(`CICD health fetch failed: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('[CICD] Health status:', data);
+
+        state.cicdHealth = data;
+        state.cicdHealthError = null;
+
+    } catch (error) {
+        console.error('[CICD] Health fetch error:', error);
+        state.cicdHealthError = error.message;
+        state.cicdHealth = null;
+    } finally {
+        state.cicdHealthLoading = false;
+        renderApp();
+    }
+}
+
+/**
+ * Starts polling for CI/CD health every 10 seconds.
+ */
+function startCicdHealthPolling() {
+    // Fetch immediately on start
+    fetchCicdHealth();
+
+    // Clear any existing interval
+    if (cicdHealthPollInterval) {
+        clearInterval(cicdHealthPollInterval);
+    }
+
+    // Poll every 10 seconds
+    cicdHealthPollInterval = setInterval(() => {
+        fetchCicdHealth();
+    }, 10000);
+
+    console.log('[CICD] Health polling started (10s interval)');
+}
+
+/**
+ * Stops CI/CD health polling.
+ */
+function stopCicdHealthPolling() {
+    if (cicdHealthPollInterval) {
+        clearInterval(cicdHealthPollInterval);
+        cicdHealthPollInterval = null;
+        console.log('[CICD] Health polling stopped');
+    }
+}
+
+/**
+ * Formats the CI/CD health data for tooltip display.
+ * @param {Object} healthData - The health response object
+ * @returns {string} Formatted tooltip text
+ */
+function formatCicdHealthTooltip(healthData) {
+    if (!healthData) return 'CI/CD: Loading...';
+
+    const statusText = healthData.ok ? 'Healthy' : 'Issues Detected';
+    let tooltip = `CI/CD: ${statusText}\nStatus: ${healthData.status || 'unknown'}`;
+
+    if (healthData.capabilities) {
+        tooltip += '\n\nCapabilities:';
+        for (const [key, value] of Object.entries(healthData.capabilities)) {
+            const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            tooltip += `\n  ${label}: ${value ? 'Yes' : 'No'}`;
+        }
+    }
+
+    return tooltip;
+}
+
 // --- Init ---
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -2352,6 +2567,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         renderApp();
         fetchTasks();
+
+        // VTID-0520: Start CI/CD health polling
+        startCicdHealthPolling();
     } catch (e) {
         console.error('Critical Render Error:', e);
         document.body.innerHTML = `<div class="critical-error"><h1>Critical Error</h1><pre>${e.stack}</pre></div>`;
