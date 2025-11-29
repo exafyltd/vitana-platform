@@ -31,9 +31,11 @@ WORKDIR /app
 
 # Copy package files and install production dependencies only
 COPY package.json package-lock.json ./
-COPY prisma ./prisma/
-RUN npm ci --only=production
-RUN npx prisma generate
+RUN npm ci --omit=dev
+
+# Copy Prisma client from builder (already generated)
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
 # Copy built files from builder
 COPY --from=builder /app/dist ./dist
