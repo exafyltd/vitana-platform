@@ -9,21 +9,28 @@
 import { Database } from './database';
 import { logger } from './logger';
 
-// OASIS event structure from the oasis_events table
+// OASIS event structure matching Prisma OasisEvent model
+// Uses camelCase field names as returned by Prisma
 interface OasisEvent {
   id: string;
-  vtid?: string;
-  topic?: string;      // Event type (used by /api/v1/events/ingest)
-  event?: string;      // Event name (used by Prisma OasisEvent model)
+  vtid?: string | null;
+  topic?: string | null;      // Event type (used by /api/v1/events/ingest)
+  event?: string | null;      // Event name (legacy field)
   service: string;
   status: string;
-  message?: string;
-  metadata?: Record<string, any>;
-  created_at: Date;
+  message?: string | null;
+  metadata?: Record<string, any> | null;
+  createdAt: Date;            // Prisma returns camelCase
+  source?: string | null;     // Event source (alternative to service)
+  role?: string | null;
+  model?: string | null;
+  link?: string | null;
+  notes?: string | null;
+  tenant?: string | null;
+  // Legacy fields that might exist in metadata
   layer?: string;
   module?: string;
   kind?: string;
-  source?: string;
   title?: string;
   ref?: string;
 }
@@ -301,7 +308,12 @@ export class LedgerWriter {
           service,
           environment,
           lastEventId: event.id,
-          lastEventAt: event.created_at,
+          lastEventAt: event.createdAt,  // Use camelCase (Prisma field name)
+          // VTID-0522: Update tasks API columns
+          layer: metadata.layer || existingEntry.layer,
+          module: metadata.module || existingEntry.module,
+          title: metadata.title || existingEntry.title,
+          summary: metadata.summary || existingEntry.summary,
           // Only update these if present in event
           ...(metadata.description && { description: metadata.description }),
           ...(metadata.taskFamily && { taskFamily: metadata.taskFamily }),
@@ -323,6 +335,12 @@ export class LedgerWriter {
 
       return 'updated';
     } else {
+      // Derive layer from event metadata or taskFamily
+      const layer = metadata.layer || (metadata.taskFamily ? metadata.taskFamily.toUpperCase() : 'AUTO');
+      const module = metadata.module || metadata.taskType || 'event';
+      const title = metadata.title || vtid;
+      const summary = metadata.summary || metadata.description || `Auto-created from OASIS event: ${event.topic || event.event}`;
+
       // Create new entry
       await db.vtidLedger.create({
         data: {
@@ -333,10 +351,15 @@ export class LedgerWriter {
           taskFamily: metadata.taskFamily || 'auto',
           taskType: metadata.taskType || 'event',
           description: metadata.description || `Auto-created from OASIS event: ${event.topic || event.event}`,
-          tenant: event.metadata?.tenant || 'system',
+          tenant: event.tenant || event.metadata?.tenant || 'system',
           assignedTo: metadata.assignedTo,
           lastEventId: event.id,
-          lastEventAt: event.created_at,
+          lastEventAt: event.createdAt,  // Use camelCase (Prisma field name)
+          // VTID-0522: Populate tasks API columns
+          layer,
+          module,
+          title,
+          summary,
           metadata: {
             autoCreated: true,
             sourceEvent: event.id,
@@ -349,6 +372,8 @@ export class LedgerWriter {
       logger.info(`Created VTID ${vtid} from event ${event.id}`, {
         status: newStatus,
         service,
+        layer,
+        module,
       });
 
       return 'created';
@@ -455,7 +480,7 @@ export class LedgerWriter {
     newStatus: string
   ): boolean {
     // Always update if this event is newer
-    if (existing.lastEventAt && event.created_at > existing.lastEventAt) {
+    if (existing.lastEventAt && event.createdAt > existing.lastEventAt) {
       return true;
     }
 
@@ -468,21 +493,45 @@ export class LedgerWriter {
 
   /**
    * Extract additional metadata from event
+   * VTID-0522: Extended to include layer, module, title, summary for tasks API
    */
   private extractMetadata(event: OasisEvent): {
     description?: string;
     taskFamily?: string;
     taskType?: string;
     assignedTo?: string;
+    layer?: string;
+    module?: string;
+    title?: string;
+    summary?: string;
     extra: Record<string, any>;
   } {
     const meta = event.metadata || {};
 
+    // Extract layer - from metadata, event source, or derive from taskFamily
+    const taskFamily = meta.taskFamily || meta.task_family || event.layer;
+    const layer = meta.layer || event.layer || (taskFamily ? taskFamily.toUpperCase() : undefined);
+
+    // Extract module - from metadata or event topic/type
+    const taskType = meta.taskType || meta.task_type || event.kind || event.topic || event.event;
+    const module = meta.module || event.module || taskType;
+
+    // Extract title - from metadata or message
+    const title = meta.title || event.title;
+
+    // Extract summary/description - from metadata, message, or notes
+    const description = meta.description || meta.summary || event.title || event.message;
+    const summary = meta.summary || description || event.message || event.notes;
+
     return {
-      description: meta.description || meta.summary || event.title || event.message,
-      taskFamily: meta.taskFamily || meta.task_family || event.layer,
-      taskType: meta.taskType || meta.task_type || event.kind || event.topic || event.event,
+      description,
+      taskFamily,
+      taskType,
       assignedTo: meta.assignedTo || meta.assigned_to || meta.assignee,
+      layer,
+      module,
+      title,
+      summary,
       extra: {
         layer: event.layer,
         module: event.module,
