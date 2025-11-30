@@ -12,11 +12,14 @@ datasource db {
 
 model OasisEvent {
   id        String   @id @default(cuid())
-  rid       String // external request/event id (optional but recommended)
+  rid       String?  // external request/event id (optional)
+  vtid      String?  // VTID for ledger sync (VTID-0521)
+  topic     String?  // Event type from ingest API (maps to event)
   service   String
-  event     String
-  tenant    String // "system" | "maxina" | "earthlings" | "alkalma" | etc.
-  status    String // "start" | "success" | "fail" | "blocked" | ...
+  event     String?  // Event name (legacy field)
+  tenant    String?  // "system" | "maxina" | "earthlings" | "alkalma" | etc.
+  status    String   // "start" | "success" | "fail" | "blocked" | ...
+  message   String?  @db.Text // Event message
   notes     String?  @db.Text
   gitSha    String?  @map("git_sha")
   metadata  Json?
