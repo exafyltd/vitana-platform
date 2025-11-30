@@ -1,11 +1,14 @@
 /**
- * Operator Routes - VTID-0509 + VTID-0510
+ * Operator Routes - VTID-0509 + VTID-0510 + VTID-0525
  *
  * VTID-0509: Operator Console API (chat, heartbeat, history, upload, session)
  * VTID-0510: Software Version Tracking (deployments)
+ * VTID-0525: Operator Command Hub (NL -> Schema -> Deploy Orchestrator)
  *
  * Final API endpoints (after mounting at /api/v1/operator):
  * - POST /api/v1/operator/chat - Operator chat with AI
+ * - POST /api/v1/operator/command - Natural language command (VTID-0525)
+ * - POST /api/v1/operator/deploy - Deploy orchestrator (VTID-0525)
  * - GET  /api/v1/operator/health - Health check
  * - GET  /api/v1/operator/heartbeat - Heartbeat snapshot
  * - GET  /api/v1/operator/history - Operator history
@@ -22,6 +25,17 @@ import { randomUUID } from 'crypto';
 import { processMessage } from '../services/ai-orchestrator';
 import { ingestOperatorEvent, getTasksSummary, getRecentEvents, getCicdHealth, getOperatorHistory } from '../services/operator-service';
 import { getDeploymentHistory, getNextSWV, insertSoftwareVersion } from '../lib/versioning';
+import { naturalLanguageService } from '../services/natural-language-service';
+import {
+  OperatorCommandRequestSchema,
+  OperatorCommandSchema,
+  OperatorDeployRequestSchema,
+  OperatorCommandResponse,
+  OperatorDeployResponse,
+  OrchestratorStep,
+  ALLOWED_COMMAND_SERVICES,
+} from '../types/operator-command';
+import cicdEvents from '../services/oasis-event-service';
 
 const router = Router();
 
@@ -334,6 +348,411 @@ router.post('/upload', async (req: Request, res: Response) => {
       error: 'Failed to upload file',
       details: error.message
     });
+  }
+});
+
+// ==================== VTID-0525 Routes ====================
+// Operator Command Hub: NL -> Schema -> Deploy Orchestrator
+
+/**
+ * POST /deploy → /api/v1/operator/deploy
+ * Deploy orchestrator: chains PR creation (if needed), safe-merge, and deploy.
+ * This is the single orchestrator that executes deployment workflows.
+ */
+router.post('/deploy', async (req: Request, res: Response) => {
+  const requestId = randomUUID();
+  console.log(`[Operator Deploy] Request ${requestId} started`);
+
+  try {
+    const validation = OperatorDeployRequestSchema.safeParse(req.body);
+    if (!validation.success) {
+      console.error(`[Operator Deploy] Validation failed:`, validation.error.errors);
+      return res.status(400).json({
+        ok: false,
+        vtid: req.body?.vtid || 'UNKNOWN',
+        steps: [],
+        error: 'Validation failed',
+        details: { errors: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ') }
+      } as OperatorDeployResponse);
+    }
+
+    const { vtid, service, environment, branch } = validation.data;
+    const steps: OrchestratorStep[] = [];
+
+    // Log deploy orchestrator started event
+    await ingestOperatorEvent({
+      vtid,
+      type: 'operator.deploy.started',
+      status: 'info',
+      message: `Deploy orchestrator started for ${service} to ${environment}`,
+      payload: { request_id: requestId, service, environment, branch }
+    });
+
+    // Step 1: Create PR (if not on main branch) - SKIPPED for now
+    // In the future, this could create a PR if branch !== 'main'
+    steps.push({
+      step: 'create_pr',
+      status: 'skipped',
+      details: { reason: 'Direct deploy from main branch' }
+    });
+
+    // Step 2: Safe Merge - SKIPPED (already on main)
+    steps.push({
+      step: 'safe_merge',
+      status: 'skipped',
+      details: { reason: 'Direct deploy from main branch' }
+    });
+
+    // Step 3: Deploy Service - call the existing deploy/service endpoint internally
+    try {
+      console.log(`[Operator Deploy] Triggering deploy for ${service} (${vtid})`);
+
+      // Emit deploy requested event
+      await cicdEvents.deployRequested(vtid, service, environment);
+
+      // Import github service for triggering workflow
+      const githubService = (await import('../services/github-service')).default;
+      const DEFAULT_REPO = 'exafyltd/vitana-platform';
+
+      // Trigger the deploy workflow
+      await githubService.triggerWorkflow(
+        DEFAULT_REPO,
+        'EXEC-DEPLOY.yml',
+        'main',
+        {
+          vtid,
+          service: service === 'gateway' ? 'vitana-gateway' : service,
+          image: `gcr.io/lovable-vitana-vers1/${service}:latest`,
+          health_path: '/alive',
+        }
+      );
+
+      // Get recent workflow runs to find the URL
+      const runs = await githubService.getWorkflowRuns(DEFAULT_REPO, 'EXEC-DEPLOY.yml');
+      const latestRun = runs.workflow_runs[0];
+
+      await cicdEvents.deployAccepted(vtid, service, environment, latestRun?.html_url);
+
+      steps.push({
+        step: 'deploy_service',
+        status: 'success',
+        details: {
+          workflow_run_id: latestRun?.id,
+          workflow_url: latestRun?.html_url
+        }
+      });
+
+      console.log(`[Operator Deploy] Deploy workflow triggered for ${service} (${vtid})`);
+
+    } catch (deployError: any) {
+      console.error(`[Operator Deploy] Deploy failed:`, deployError);
+      await cicdEvents.deployFailed(vtid, service, deployError.message);
+
+      steps.push({
+        step: 'deploy_service',
+        status: 'failed',
+        details: { error: deployError.message }
+      });
+
+      // Log deploy failed event
+      await ingestOperatorEvent({
+        vtid,
+        type: 'operator.deploy.failed',
+        status: 'error',
+        message: `Deploy failed for ${service}: ${deployError.message}`,
+        payload: { request_id: requestId, service, error: deployError.message }
+      });
+
+      return res.status(500).json({
+        ok: false,
+        vtid,
+        steps,
+        error: deployError.message
+      } as OperatorDeployResponse);
+    }
+
+    // Log deploy completed event
+    await ingestOperatorEvent({
+      vtid,
+      type: 'operator.deploy.completed',
+      status: 'success',
+      message: `Deploy completed for ${service} to ${environment}`,
+      payload: { request_id: requestId, service, environment, steps }
+    });
+
+    console.log(`[Operator Deploy] Request ${requestId} completed successfully`);
+
+    return res.status(200).json({
+      ok: true,
+      vtid,
+      steps
+    } as OperatorDeployResponse);
+
+  } catch (error: any) {
+    console.error(`[Operator Deploy] Error:`, error);
+
+    return res.status(500).json({
+      ok: false,
+      vtid: req.body?.vtid || 'UNKNOWN',
+      steps: [],
+      error: error.message
+    } as OperatorDeployResponse);
+  }
+});
+
+/**
+ * POST /command → /api/v1/operator/command
+ * Natural language command parser and executor.
+ * Parses NL messages into structured commands using Gemini,
+ * then executes them via the deploy orchestrator.
+ */
+router.post('/command', async (req: Request, res: Response) => {
+  const requestId = randomUUID();
+  console.log(`[Operator Command] Request ${requestId} started`);
+
+  try {
+    const validation = OperatorCommandRequestSchema.safeParse(req.body);
+    if (!validation.success) {
+      console.error(`[Operator Command] Validation failed:`, validation.error.errors);
+      return res.status(400).json({
+        ok: false,
+        vtid: req.body?.vtid || 'UNKNOWN',
+        error: 'Validation failed',
+        details: { errors: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ') }
+      } as OperatorCommandResponse);
+    }
+
+    const { message, vtid, environment, default_branch } = validation.data;
+
+    // Log command received event
+    await ingestOperatorEvent({
+      vtid,
+      type: 'operator.command.received',
+      status: 'info',
+      message: `Command received: ${message.substring(0, 100)}${message.length > 100 ? '...' : ''}`,
+      payload: { request_id: requestId, message_length: message.length }
+    });
+
+    // Step 1: Parse natural language into structured command using Gemini
+    console.log(`[Operator Command] Parsing message: "${message}"`);
+    const parsedCommand = await naturalLanguageService.parseCommand(message);
+
+    // Check for parsing errors
+    if (parsedCommand.error) {
+      console.log(`[Operator Command] Parse error: ${parsedCommand.error}`);
+
+      await ingestOperatorEvent({
+        vtid,
+        type: 'operator.command.parse_failed',
+        status: 'warning',
+        message: `Could not parse command: ${parsedCommand.error}`,
+        payload: { request_id: requestId, error: parsedCommand.error }
+      });
+
+      return res.status(200).json({
+        ok: false,
+        vtid,
+        error: parsedCommand.error,
+        details: { message: 'The message could not be understood as a deploy command' }
+      } as OperatorCommandResponse);
+    }
+
+    // Step 2: Validate the parsed command against schema
+    const commandValidation = OperatorCommandSchema.safeParse({
+      action: parsedCommand.action,
+      service: parsedCommand.service,
+      environment: parsedCommand.environment || environment,
+      branch: parsedCommand.branch || default_branch,
+      vtid: vtid,
+      dry_run: parsedCommand.dry_run || false
+    });
+
+    if (!commandValidation.success) {
+      console.log(`[Operator Command] Command validation failed:`, commandValidation.error.errors);
+
+      const errorDetails = commandValidation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
+
+      await ingestOperatorEvent({
+        vtid,
+        type: 'operator.command.validation_failed',
+        status: 'warning',
+        message: `Command validation failed: ${errorDetails}`,
+        payload: { request_id: requestId, parsed: parsedCommand, errors: commandValidation.error.errors }
+      });
+
+      return res.status(200).json({
+        ok: false,
+        vtid,
+        error: `Invalid command: ${errorDetails}`,
+        details: { parsed: parsedCommand }
+      } as OperatorCommandResponse);
+    }
+
+    const command = commandValidation.data;
+    console.log(`[Operator Command] Parsed command:`, command);
+
+    // Log command parsed event
+    await ingestOperatorEvent({
+      vtid,
+      type: 'operator.command.parsed',
+      status: 'success',
+      message: `Parsed command: ${command.action} ${command.service} to ${command.environment}`,
+      payload: { request_id: requestId, command }
+    });
+
+    // Step 3: Handle dry_run
+    if (command.dry_run) {
+      console.log(`[Operator Command] Dry run - returning parsed command`);
+
+      return res.status(200).json({
+        ok: true,
+        vtid,
+        command,
+        orchestrator_result: {
+          ok: true,
+          steps: []
+        }
+      } as OperatorCommandResponse);
+    }
+
+    // Step 4: Execute based on action
+    if (command.action === 'deploy') {
+      console.log(`[Operator Command] Executing deploy for ${command.service}`);
+
+      // Call the deploy orchestrator endpoint internally
+      // We simulate an internal call by directly calling the deploy logic
+      const deployPayload = {
+        vtid: command.vtid,
+        service: command.service,
+        environment: command.environment,
+        branch: command.branch
+      };
+
+      // Make internal request to deploy orchestrator
+      const deployResponse = await new Promise<OperatorDeployResponse>((resolve) => {
+        // Create a mock request/response for internal call
+        const mockReq = { body: deployPayload } as Request;
+        const mockRes = {
+          status: (code: number) => ({
+            json: (data: OperatorDeployResponse) => {
+              resolve(data);
+              return mockRes;
+            }
+          })
+        } as unknown as Response;
+
+        // We need to call the deploy handler directly
+        // For simplicity, we'll make an actual HTTP call to the endpoint
+        // Or we can inline the logic - let's inline it for efficiency
+
+        (async () => {
+          const steps: OrchestratorStep[] = [];
+
+          // Skip PR and merge for direct deploy
+          steps.push({ step: 'create_pr', status: 'skipped', details: { reason: 'Direct deploy from main branch' } });
+          steps.push({ step: 'safe_merge', status: 'skipped', details: { reason: 'Direct deploy from main branch' } });
+
+          try {
+            // Emit deploy requested event
+            await cicdEvents.deployRequested(command.vtid, command.service, command.environment);
+
+            // Import github service for triggering workflow
+            const githubService = (await import('../services/github-service')).default;
+            const DEFAULT_REPO = 'exafyltd/vitana-platform';
+
+            // Trigger the deploy workflow
+            await githubService.triggerWorkflow(
+              DEFAULT_REPO,
+              'EXEC-DEPLOY.yml',
+              'main',
+              {
+                vtid: command.vtid,
+                service: command.service === 'gateway' ? 'vitana-gateway' : command.service,
+                image: `gcr.io/lovable-vitana-vers1/${command.service}:latest`,
+                health_path: '/alive',
+              }
+            );
+
+            // Get recent workflow runs to find the URL
+            const runs = await githubService.getWorkflowRuns(DEFAULT_REPO, 'EXEC-DEPLOY.yml');
+            const latestRun = runs.workflow_runs[0];
+
+            await cicdEvents.deployAccepted(command.vtid, command.service, command.environment, latestRun?.html_url);
+
+            steps.push({
+              step: 'deploy_service',
+              status: 'success',
+              details: {
+                workflow_run_id: latestRun?.id,
+                workflow_url: latestRun?.html_url
+              }
+            });
+
+            resolve({ ok: true, vtid: command.vtid, steps });
+
+          } catch (deployError: any) {
+            console.error(`[Operator Command] Deploy error:`, deployError);
+            await cicdEvents.deployFailed(command.vtid, command.service, deployError.message);
+
+            steps.push({
+              step: 'deploy_service',
+              status: 'failed',
+              details: { error: deployError.message }
+            });
+
+            resolve({ ok: false, vtid: command.vtid, steps, error: deployError.message });
+          }
+        })();
+      });
+
+      // Log command executed event
+      await ingestOperatorEvent({
+        vtid,
+        type: 'operator.command.executed',
+        status: deployResponse.ok ? 'success' : 'error',
+        message: deployResponse.ok
+          ? `Deploy command executed successfully for ${command.service}`
+          : `Deploy command failed: ${deployResponse.error}`,
+        payload: { request_id: requestId, command, result: deployResponse }
+      });
+
+      console.log(`[Operator Command] Request ${requestId} completed`);
+
+      return res.status(200).json({
+        ok: deployResponse.ok,
+        vtid,
+        command,
+        orchestrator_result: {
+          ok: deployResponse.ok,
+          steps: deployResponse.steps,
+          error: deployResponse.error
+        }
+      } as OperatorCommandResponse);
+    }
+
+    // Unknown action (should not happen due to schema validation)
+    return res.status(400).json({
+      ok: false,
+      vtid,
+      error: `Unknown action: ${command.action}`
+    } as OperatorCommandResponse);
+
+  } catch (error: any) {
+    console.error(`[Operator Command] Error:`, error);
+
+    await ingestOperatorEvent({
+      vtid: req.body?.vtid || 'UNKNOWN',
+      type: 'operator.command.error',
+      status: 'error',
+      message: `Command error: ${error.message}`,
+      payload: { request_id: requestId, error: error.message }
+    }).catch(() => {}); // Don't fail if logging fails
+
+    return res.status(500).json({
+      ok: false,
+      vtid: req.body?.vtid || 'UNKNOWN',
+      error: error.message
+    } as OperatorCommandResponse);
   }
 });
 
