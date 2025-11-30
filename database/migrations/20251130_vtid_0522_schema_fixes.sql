@@ -93,6 +93,23 @@ END $$;
 -- Create index on vtid for efficient querying
 CREATE INDEX IF NOT EXISTS idx_oasis_events_vtid ON oasis_events(vtid);
 
+-- Add projected column (required by Prisma schema for projection tracking)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'oasis_events' AND column_name = 'projected'
+  ) THEN
+    ALTER TABLE oasis_events ADD COLUMN projected BOOLEAN DEFAULT false;
+    COMMENT ON COLUMN oasis_events.projected IS 'Tracks if event has been projected to downstream systems';
+  END IF;
+END $$;
+
+-- Create index for efficient querying of unprocessed events
+CREATE INDEX IF NOT EXISTS idx_oasis_events_projected_created
+  ON oasis_events(projected, created_at)
+  WHERE projected = false;
+
 -- ============================================================
 -- PART 2: Add missing columns to vtid_ledger table
 -- ============================================================
