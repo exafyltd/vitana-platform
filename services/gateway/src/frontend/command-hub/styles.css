@@ -867,6 +867,18 @@ body {
   border-color: rgba(16, 185, 129, 0.5);
 }
 
+/* VTID-0523: Degraded heartbeat state (amber/orange) */
+.header-button--status.header-button--degraded {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.3);
+  color: #f59e0b;
+}
+
+.header-button--status.header-button--degraded:hover {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: rgba(245, 158, 11, 0.5);
+}
+
 .header-button__label {
   font-weight: 500;
 }
@@ -966,6 +978,126 @@ body {
   background-color: #10b981;
   border-radius: 50%;
   animation: pulse 2s infinite;
+}
+
+/* --- VTID-0523: Heartbeat State Pill (read-only indicator) --- */
+
+.heartbeat-indicator {
+  display: flex;
+  align-items: center;
+}
+
+.heartbeat-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 0.35rem 0.6rem;
+  border-radius: 6px;
+  cursor: default;
+}
+
+.heartbeat-pill__icon {
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.heartbeat-pill__label {
+  font-size: 0.65rem;
+}
+
+/* Standby state (grey) */
+.heartbeat-pill--standby {
+  background: rgba(148, 163, 184, 0.1);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  color: var(--color-text-secondary);
+}
+
+.heartbeat-pill--standby .heartbeat-pill__icon {
+  opacity: 0.6;
+}
+
+/* Live state (green) */
+.heartbeat-pill--live {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #10b981;
+}
+
+.heartbeat-pill--live .heartbeat-pill__icon {
+  animation: heartbeat-pulse 1.5s ease-in-out infinite;
+}
+
+/* Degraded state (amber) */
+.heartbeat-pill--degraded {
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #f59e0b;
+}
+
+.heartbeat-pill--degraded .heartbeat-pill__icon {
+  animation: heartbeat-warning 0.8s ease-in-out infinite;
+}
+
+@keyframes heartbeat-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.15); opacity: 0.85; }
+}
+
+@keyframes heartbeat-warning {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* --- VTID-0523: CI/CD Health Badge (text-only) --- */
+
+.cicd-health-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.65rem;
+  font-weight: 500;
+  padding: 0.3rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cicd-health-badge--healthy {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+
+.cicd-health-badge--healthy:hover {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.cicd-health-badge--error {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+.cicd-health-badge--error:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.cicd-health-badge--loading {
+  background: rgba(148, 163, 184, 0.1);
+  border-color: rgba(148, 163, 184, 0.2);
+  color: var(--color-text-secondary);
+}
+
+.cicd-health-badge--unknown {
+  background: rgba(148, 163, 184, 0.1);
+  border-color: rgba(148, 163, 184, 0.2);
+  color: var(--color-text-secondary);
 }
 
 /* --- Version History Dropdown (VTID-0517) --- */
@@ -1201,6 +1333,21 @@ body {
   font-size: 0.8rem;
   color: var(--color-text-secondary);
   margin-top: 0.25rem;
+}
+
+/* VTID-0523: Heartbeat state text in subtitle */
+.overlay-subtitle__state {
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+}
+
+.overlay-subtitle--live {
+  color: #10b981;
+}
+
+.overlay-subtitle--degraded {
+  color: #f59e0b;
 }
 
 .overlay-close {
@@ -1734,6 +1881,12 @@ body {
   background: var(--color-bg);
 }
 
+/* VTID-0523: Degraded ticker state */
+.ticker-status-banner.ticker-degraded {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, var(--color-bg) 100%);
+  border-bottom-color: rgba(245, 158, 11, 0.3);
+}
+
 .ticker-status-row {
   display: flex;
   align-items: center;
@@ -1766,6 +1919,11 @@ body {
   color: var(--color-text-secondary);
 }
 
+/* VTID-0523: Degraded status value */
+.ticker-status-value.status-degraded {
+  color: #f59e0b;
+}
+
 .ticker-status-value.status-ok {
   color: #10b981;
 }
@@ -1774,6 +1932,18 @@ body {
   font-size: 0.8rem;
   color: var(--color-text-secondary);
   font-style: italic;
+}
+
+/* VTID-0523: Warning hint for degraded state */
+.ticker-hint--warning {
+  color: #f59e0b;
+  font-style: normal;
+}
+
+.ticker-degraded-info {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
 }
 
 .ticker-events-list {

@@ -253,10 +253,15 @@ const state = {
     isOperatorOpen: false,
     operatorActiveTab: 'ticker', // 'chat', 'ticker', 'history'
 
-    // VTID-0509: Operator Console State
+    // VTID-0509/VTID-0523: Operator Console State
     operatorHeartbeatActive: false,
     operatorSseSource: null,
     operatorHeartbeatSnapshot: null,
+
+    // VTID-0523: Heartbeat tri-state model ('off' | 'live' | 'degraded')
+    heartbeatState: 'off',
+    heartbeatRetryCount: 0,
+    heartbeatMaxRetries: 3,
 
     // Operator Chat State
     chatMessages: [],
@@ -538,14 +543,23 @@ function renderHeader() {
     const left = document.createElement('div');
     left.className = 'header-toolbar-left';
 
-    // 1. Heartbeat button (status button style) - VTID-0509/0517: Toggle between Standby/Live
+    // 1. Heartbeat button (status button style) - VTID-0509/0517/0523: Toggle with tri-state display
     const heartbeatBtn = document.createElement('button');
-    heartbeatBtn.className = state.operatorHeartbeatActive
-        ? 'header-button header-button--status header-button--active'
-        : 'header-button header-button--status';
-    heartbeatBtn.innerHTML = state.operatorHeartbeatActive
-        ? '<span class="header-button__label">Heartbeat</span><span class="header-button__state">Live</span>'
-        : '<span class="header-button__label">Heartbeat</span><span class="header-button__state">Standby</span>';
+    // VTID-0523: Determine button class based on tri-state
+    let heartbeatBtnClass = 'header-button header-button--status';
+    let heartbeatStateLabel = 'Standby';
+    if (state.heartbeatState === 'live') {
+        heartbeatBtnClass += ' header-button--active';
+        heartbeatStateLabel = 'Live';
+    } else if (state.heartbeatState === 'degraded') {
+        heartbeatBtnClass += ' header-button--degraded';
+        heartbeatStateLabel = 'Degraded';
+    }
+    heartbeatBtn.className = heartbeatBtnClass;
+    heartbeatBtn.innerHTML = `<span class="header-button__label">Heartbeat</span><span class="header-button__state">${heartbeatStateLabel}</span>`;
+    heartbeatBtn.title = state.heartbeatState === 'degraded'
+        ? 'Connection issues - Click to reconnect'
+        : (state.heartbeatState === 'live' ? 'Click to stop live monitoring' : 'Click to start live monitoring');
     heartbeatBtn.onclick = () => {
         toggleHeartbeatSession();
     };
@@ -607,11 +621,51 @@ function renderHeader() {
 
     header.appendChild(center);
 
-    // --- Right Section: CI/CD Health + LIVE status pill (VTID-0517/0520) ---
+    // --- Right Section: Heartbeat indicator + CI/CD Health badge (VTID-0517/0520/0523) ---
     const right = document.createElement('div');
     right.className = 'header-toolbar-right';
 
-    // CI/CD Health Indicator (VTID-0520)
+    // VTID-0523: Green Heart Pill - Heartbeat State Indicator (read-only)
+    const heartbeatIndicator = document.createElement('div');
+    heartbeatIndicator.className = 'heartbeat-indicator';
+
+    // Determine heartbeat state styling
+    const heartPill = document.createElement('div');
+    let heartPillClass = 'heartbeat-pill';
+    let heartPillTitle = 'Heartbeat: Standby';
+    let heartPillLabel = 'STANDBY';
+
+    if (state.heartbeatState === 'live') {
+        heartPillClass += ' heartbeat-pill--live';
+        heartPillTitle = 'Heartbeat: Live - Streaming events';
+        heartPillLabel = 'LIVE';
+    } else if (state.heartbeatState === 'degraded') {
+        heartPillClass += ' heartbeat-pill--degraded';
+        heartPillTitle = 'Heartbeat: Degraded - Connection issues, retrying...';
+        heartPillLabel = 'DEGRADED';
+    } else {
+        heartPillClass += ' heartbeat-pill--standby';
+    }
+
+    heartPill.className = heartPillClass;
+    heartPill.title = heartPillTitle;
+
+    // Heart icon with state-based animation
+    const heartIcon = document.createElement('span');
+    heartIcon.className = 'heartbeat-pill__icon';
+    heartIcon.innerHTML = '&#9829;'; // ♥
+    heartPill.appendChild(heartIcon);
+
+    // State label
+    const heartLabel = document.createElement('span');
+    heartLabel.className = 'heartbeat-pill__label';
+    heartLabel.textContent = heartPillLabel;
+    heartPill.appendChild(heartLabel);
+
+    heartbeatIndicator.appendChild(heartPill);
+    right.appendChild(heartbeatIndicator);
+
+    // CI/CD Health Badge (VTID-0520) - Separate from heartbeat, text-only badge
     const cicdHealthIndicator = document.createElement('div');
     cicdHealthIndicator.className = 'cicd-health-indicator';
 
@@ -620,28 +674,25 @@ function renderHeader() {
     const hasError = state.cicdHealthError !== null || (state.cicdHealth && state.cicdHealth.ok === false);
     const isLoading = state.cicdHealthLoading && !state.cicdHealth;
 
-    // Create heartbeat icon button
+    // Create CI/CD health badge (button for tooltip)
     const cicdBtn = document.createElement('button');
     if (isLoading) {
-        cicdBtn.className = 'cicd-health-btn cicd-health-btn--loading';
+        cicdBtn.className = 'cicd-health-badge cicd-health-badge--loading';
+        cicdBtn.textContent = 'CI/CD...';
         cicdBtn.title = 'CI/CD: Loading...';
     } else if (hasError) {
-        cicdBtn.className = 'cicd-health-btn cicd-health-btn--error';
+        cicdBtn.className = 'cicd-health-badge cicd-health-badge--error';
+        cicdBtn.textContent = 'CI/CD Issues';
         cicdBtn.title = state.cicdHealthError || 'CI/CD Issues';
     } else if (isHealthy) {
-        cicdBtn.className = 'cicd-health-btn cicd-health-btn--healthy';
+        cicdBtn.className = 'cicd-health-badge cicd-health-badge--healthy';
+        cicdBtn.textContent = 'CI/CD OK';
         cicdBtn.title = 'CI/CD Healthy';
     } else {
-        cicdBtn.className = 'cicd-health-btn cicd-health-btn--unknown';
+        cicdBtn.className = 'cicd-health-badge cicd-health-badge--unknown';
+        cicdBtn.textContent = 'CI/CD ?';
         cicdBtn.title = 'CI/CD: Unknown';
     }
-
-    // Heartbeat icon (Unicode heart with pulse effect via CSS)
-    const heartIcon = document.createElement('span');
-    heartIcon.className = 'cicd-health-icon';
-    // Using Unicode heart character (CSP compliant)
-    heartIcon.innerHTML = '&#9829;'; // ♥
-    cicdBtn.appendChild(heartIcon);
 
     // Click handler to show tooltip/popup
     cicdBtn.onclick = (e) => {
@@ -661,8 +712,8 @@ function renderHeader() {
         const tooltipHeader = document.createElement('div');
         tooltipHeader.className = 'cicd-health-tooltip__header';
         tooltipHeader.innerHTML = isHealthy
-            ? '<span class="cicd-health-tooltip__status cicd-health-tooltip__status--healthy">&#9829; CI/CD Healthy</span>'
-            : '<span class="cicd-health-tooltip__status cicd-health-tooltip__status--error">&#9829; CI/CD Issues</span>';
+            ? '<span class="cicd-health-tooltip__status cicd-health-tooltip__status--healthy">CI/CD Healthy</span>'
+            : '<span class="cicd-health-tooltip__status cicd-health-tooltip__status--error">CI/CD Issues</span>';
         tooltip.appendChild(tooltipHeader);
 
         // Status details
@@ -720,7 +771,7 @@ function renderHeader() {
         setTimeout(() => {
             const closeTooltip = (e) => {
                 const tooltipEl = document.querySelector('.cicd-health-tooltip');
-                const btnEl = document.querySelector('.cicd-health-btn');
+                const btnEl = document.querySelector('.cicd-health-badge');
                 if (tooltipEl && !tooltipEl.contains(e.target) && btnEl && !btnEl.contains(e.target)) {
                     state.cicdHealthTooltipOpen = false;
                     document.removeEventListener('click', closeTooltip);
@@ -733,11 +784,7 @@ function renderHeader() {
 
     right.appendChild(cicdHealthIndicator);
 
-    // LIVE pill (status indicator, not a button)
-    const livePill = document.createElement('div');
-    livePill.className = 'header-live-pill';
-    livePill.innerHTML = '<span class="header-live-pill__dot"></span>LIVE';
-    right.appendChild(livePill);
+    // VTID-0523: Removed redundant static LIVE pill - heartbeat indicator now shows state
 
     header.appendChild(right);
 
@@ -1716,9 +1763,19 @@ function renderOperatorOverlay() {
     title.textContent = 'Operator Console';
     titleBlock.appendChild(title);
 
+    // VTID-0523: Subtitle shows current heartbeat state with guidance (text only, no toggle)
     const subtitle = document.createElement('div');
     subtitle.className = 'overlay-subtitle';
-    subtitle.textContent = 'Live events & chat';
+    let heartbeatStateText = 'Standby';
+    let heartbeatStateClass = '';
+    if (state.heartbeatState === 'live') {
+        heartbeatStateText = 'Live';
+        heartbeatStateClass = 'overlay-subtitle--live';
+    } else if (state.heartbeatState === 'degraded') {
+        heartbeatStateText = 'Degraded';
+        heartbeatStateClass = 'overlay-subtitle--degraded';
+    }
+    subtitle.innerHTML = `Heartbeat: <span class="overlay-subtitle__state ${heartbeatStateClass}">${heartbeatStateText}</span> – use top Heartbeat toggle to change`;
     titleBlock.appendChild(subtitle);
 
     header.appendChild(titleBlock);
@@ -2009,11 +2066,20 @@ function renderOperatorTicker() {
     const container = document.createElement('div');
     container.className = 'ticker-container';
 
-    // Heartbeat status banner
+    // VTID-0523: Heartbeat status banner with tri-state support
     const statusBanner = document.createElement('div');
-    statusBanner.className = state.operatorHeartbeatActive ? 'ticker-status-banner ticker-live' : 'ticker-status-banner ticker-standby';
+    let bannerClass = 'ticker-status-banner';
+    if (state.heartbeatState === 'live') {
+        bannerClass += ' ticker-live';
+    } else if (state.heartbeatState === 'degraded') {
+        bannerClass += ' ticker-degraded';
+    } else {
+        bannerClass += ' ticker-standby';
+    }
+    statusBanner.className = bannerClass;
 
-    if (state.operatorHeartbeatActive && state.operatorHeartbeatSnapshot) {
+    // VTID-0523: Render status banner based on tri-state
+    if (state.heartbeatState === 'live' && state.operatorHeartbeatSnapshot) {
         const snapshot = state.operatorHeartbeatSnapshot;
         statusBanner.innerHTML = `
             <div class="ticker-status-row">
@@ -2030,14 +2096,25 @@ function renderOperatorTicker() {
                 <span>Completed: ${snapshot.tasks?.by_status?.completed || 0}</span>
             </div>
         `;
-    } else if (!state.operatorHeartbeatActive) {
+    } else if (state.heartbeatState === 'degraded') {
+        statusBanner.innerHTML = `
+            <div class="ticker-status-row">
+                <span class="ticker-status-value status-degraded">DEGRADED</span>
+                <span class="ticker-hint ticker-hint--warning">Connection issues - retrying automatically (${state.heartbeatRetryCount}/${state.heartbeatMaxRetries})</span>
+            </div>
+            <div class="ticker-status-row ticker-degraded-info">
+                <span>Events may be delayed. Use the Heartbeat toggle to reconnect.</span>
+            </div>
+        `;
+    } else if (state.heartbeatState === 'off') {
         statusBanner.innerHTML = `
             <div class="ticker-status-row">
                 <span class="ticker-status-value status-standby">STANDBY</span>
-                <span class="ticker-hint">Click "Heartbeat: Standby" button to enable live monitoring</span>
+                <span class="ticker-hint">Enable Heartbeat to see live events</span>
             </div>
         `;
-    } else {
+    } else if (state.heartbeatState === 'live') {
+        // Live but no snapshot yet
         statusBanner.innerHTML = `
             <div class="ticker-status-row">
                 <span class="ticker-status-value status-live">LIVE</span>
@@ -2051,10 +2128,17 @@ function renderOperatorTicker() {
     const eventsList = document.createElement('div');
     eventsList.className = 'ticker-events-list';
 
+    // VTID-0523: Update empty state message based on tri-state
     if (state.tickerEvents.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'ticker-empty';
-        empty.textContent = state.operatorHeartbeatActive ? 'Waiting for events...' : 'Enable heartbeat to see live events';
+        if (state.heartbeatState === 'live') {
+            empty.textContent = 'Waiting for events...';
+        } else if (state.heartbeatState === 'degraded') {
+            empty.textContent = 'Connection degraded - events may be delayed';
+        } else {
+            empty.textContent = 'Enable heartbeat to see live events';
+        }
         eventsList.appendChild(empty);
     } else {
         state.tickerEvents.forEach(event => {
@@ -2254,10 +2338,12 @@ function renderToastContainer() {
 
 /**
  * Toggle heartbeat session between Live and Standby
+ * VTID-0523: Updated to use tri-state model (off | live | degraded)
  */
 async function toggleHeartbeatSession() {
-    const newStatus = state.operatorHeartbeatActive ? 'standby' : 'live';
-    console.log(`[Operator] Toggling heartbeat to: ${newStatus}`);
+    const isCurrentlyActive = state.heartbeatState !== 'off';
+    const newStatus = isCurrentlyActive ? 'standby' : 'live';
+    console.log(`[Operator] Toggling heartbeat to: ${newStatus} (current state: ${state.heartbeatState})`);
 
     try {
         const response = await fetch('/api/v1/operator/heartbeat/session', {
@@ -2273,9 +2359,11 @@ async function toggleHeartbeatSession() {
         const result = await response.json();
         console.log('[Operator] Session updated:', result);
 
-        state.operatorHeartbeatActive = newStatus === 'live';
-
-        if (state.operatorHeartbeatActive) {
+        if (newStatus === 'live') {
+            // VTID-0523: Set heartbeat state to 'live' (will change to 'degraded' on SSE error)
+            state.operatorHeartbeatActive = true;
+            state.heartbeatState = 'live';
+            state.heartbeatRetryCount = 0;
             // Fetch heartbeat snapshot
             await fetchHeartbeatSnapshot();
             // Start SSE stream
@@ -2284,6 +2372,10 @@ async function toggleHeartbeatSession() {
             state.operatorActiveTab = 'ticker';
             state.isOperatorOpen = true;
         } else {
+            // VTID-0523: Set heartbeat state to 'off'
+            state.operatorHeartbeatActive = false;
+            state.heartbeatState = 'off';
+            state.heartbeatRetryCount = 0;
             // Stop SSE stream
             stopOperatorSse();
         }
@@ -2292,6 +2384,11 @@ async function toggleHeartbeatSession() {
 
     } catch (error) {
         console.error('[Operator] Session toggle error:', error);
+        // VTID-0523: Set to degraded if we failed while trying to go live
+        if (newStatus === 'live') {
+            state.heartbeatState = 'degraded';
+            renderApp();
+        }
         alert('Failed to update heartbeat session: ' + error.message);
     }
 }
@@ -2331,6 +2428,7 @@ async function fetchHeartbeatSnapshot() {
 
 /**
  * Start SSE stream for operator channel
+ * VTID-0523: Added proper error handling with retry logic and degraded state
  */
 function startOperatorSse() {
     if (state.operatorSseSource) {
@@ -2344,10 +2442,20 @@ function startOperatorSse() {
 
     eventSource.onopen = () => {
         console.log('[Operator] SSE connected');
+        // VTID-0523: Reset retry count and confirm live state on successful connection
+        state.heartbeatRetryCount = 0;
+        if (state.heartbeatState === 'degraded') {
+            state.heartbeatState = 'live';
+            renderApp();
+        }
     };
 
     eventSource.addEventListener('connected', (e) => {
         console.log('[Operator] SSE connection confirmed:', e.data);
+        // VTID-0523: Confirm live state on successful handshake
+        state.heartbeatState = 'live';
+        state.heartbeatRetryCount = 0;
+        renderApp();
     });
 
     eventSource.addEventListener('oasis-event', (e) => {
@@ -2374,11 +2482,59 @@ function startOperatorSse() {
         }
     });
 
+    // VTID-0523: Handle error events from SSE
+    eventSource.addEventListener('error', (e) => {
+        try {
+            const errData = JSON.parse(e.data);
+            console.error('[Operator] SSE error event:', errData);
+            handleSseError(errData.error || 'Stream error');
+        } catch (parseErr) {
+            // Not a parseable error event
+        }
+    });
+
     eventSource.onerror = (err) => {
-        console.error('[Operator] SSE error:', err);
+        console.error('[Operator] SSE connection error:', err);
+        handleSseError('Connection lost');
     };
 
     state.operatorSseSource = eventSource;
+}
+
+/**
+ * Handle SSE errors with retry logic
+ * VTID-0523: Implements graceful degradation with retries
+ */
+function handleSseError(errorMessage) {
+    console.log(`[Operator] Handling SSE error: ${errorMessage} (retry ${state.heartbeatRetryCount}/${state.heartbeatMaxRetries})`);
+
+    // Close existing connection
+    if (state.operatorSseSource) {
+        state.operatorSseSource.close();
+        state.operatorSseSource = null;
+    }
+
+    // Check if we should retry
+    if (state.heartbeatRetryCount < state.heartbeatMaxRetries && state.heartbeatState !== 'off') {
+        state.heartbeatRetryCount++;
+        state.heartbeatState = 'degraded';
+        renderApp();
+
+        // Exponential backoff: 2s, 4s, 8s
+        const retryDelay = Math.pow(2, state.heartbeatRetryCount) * 1000;
+        console.log(`[Operator] Retrying SSE connection in ${retryDelay}ms...`);
+
+        setTimeout(() => {
+            if (state.heartbeatState !== 'off') {
+                startOperatorSse();
+            }
+        }, retryDelay);
+    } else if (state.heartbeatState !== 'off') {
+        // Max retries exceeded, stay in degraded state
+        state.heartbeatState = 'degraded';
+        console.error('[Operator] SSE max retries exceeded, staying in degraded state');
+        renderApp();
+    }
 }
 
 /**
