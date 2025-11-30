@@ -389,8 +389,13 @@ export class LedgerWriter {
    * Validate VTID format
    */
   private isValidVtid(vtid: string): boolean {
-    // Matches patterns like: VTID-0521, VTID-2025-0001, DEV-OASIS-0010
-    return /^[A-Z]+-[A-Z0-9]+-?\d+$/i.test(vtid) || /^VTID-\d{4}(-\d+)?$/i.test(vtid);
+    // Matches patterns like:
+    // - VTID-0521
+    // - VTID-0521-0001
+    // - VTID-0521-TEST-0001
+    // - DEV-OASIS-0010
+    // Pattern: PREFIX-SEGMENT(-SEGMENT)*
+    return /^[A-Z]+-[A-Z0-9]+(-[A-Z0-9]+)*$/i.test(vtid);
   }
 
   /**
