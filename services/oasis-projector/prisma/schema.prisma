@@ -33,6 +33,7 @@ model OasisEvent {
   @@index([service, createdAt], map: "idx_oasis_events_service_created")
   @@index([tenant, createdAt], map: "idx_oasis_events_tenant_created")
   @@index([status, createdAt], map: "idx_oasis_events_status_created")
+  @@map("oasis_events")
 }
 
 model VtidLedger {
