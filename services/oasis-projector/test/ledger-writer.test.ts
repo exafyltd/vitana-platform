@@ -478,4 +478,143 @@ describe('LedgerWriter (VTID-0521)', () => {
       expect(result.created).toBe(5);
     });
   });
+
+  // VTID-0522: Tests for tasks API column mapping
+  describe('VTID-0522: Tasks API Column Mapping', () => {
+    it('should populate layer, module, title, summary columns on create', async () => {
+      mockOasisEventStore.push({
+        id: 'event-columns',
+        vtid: 'VTID-0522-TEST-001',
+        topic: 'deployment_succeeded',
+        service: 'gateway',
+        status: 'success',
+        message: 'Test deployment completed',
+        metadata: {
+          layer: 'OASIS',
+          module: 'projector',
+          title: 'Test Deployment',
+          summary: 'VTID-0522 test deployment',
+        },
+        createdAt: new Date(),
+      });
+
+      await ledgerWriter.processBatch();
+
+      const entry = mockVtidLedgerStore[0];
+      expect(entry.vtid).toBe('VTID-0522-TEST-001');
+      expect(entry.layer).toBe('OASIS');
+      expect(entry.module).toBe('projector');
+      expect(entry.title).toBe('Test Deployment');
+      expect(entry.summary).toBe('VTID-0522 test deployment');
+    });
+
+    it('should derive layer from taskFamily if not provided', async () => {
+      mockOasisEventStore.push({
+        id: 'event-derive-layer',
+        vtid: 'VTID-0522-TEST-002',
+        topic: 'task_started',
+        service: 'gateway',
+        status: 'start',
+        metadata: {
+          taskFamily: 'governance',
+        },
+        createdAt: new Date(),
+      });
+
+      await ledgerWriter.processBatch();
+
+      const entry = mockVtidLedgerStore[0];
+      expect(entry.layer).toBe('GOVERNANCE');
+    });
+
+    it('should derive module from topic if not provided', async () => {
+      mockOasisEventStore.push({
+        id: 'event-derive-module',
+        vtid: 'VTID-0522-TEST-003',
+        topic: 'build_succeeded',
+        service: 'ci-cd',
+        status: 'success',
+        createdAt: new Date(),
+      });
+
+      await ledgerWriter.processBatch();
+
+      const entry = mockVtidLedgerStore[0];
+      expect(entry.module).toBe('build_succeeded');
+    });
+
+    it('should use vtid as title if not provided', async () => {
+      mockOasisEventStore.push({
+        id: 'event-derive-title',
+        vtid: 'VTID-0522-TEST-004',
+        topic: 'task_created',
+        service: 'gateway',
+        status: 'info',
+        createdAt: new Date(),
+      });
+
+      await ledgerWriter.processBatch();
+
+      const entry = mockVtidLedgerStore[0];
+      expect(entry.title).toBe('VTID-0522-TEST-004');
+    });
+
+    it('should derive summary from message if not provided', async () => {
+      mockOasisEventStore.push({
+        id: 'event-derive-summary',
+        vtid: 'VTID-0522-TEST-005',
+        topic: 'task_completed',
+        service: 'gateway',
+        status: 'success',
+        message: 'Task completed successfully',
+        createdAt: new Date(),
+      });
+
+      await ledgerWriter.processBatch();
+
+      const entry = mockVtidLedgerStore[0];
+      expect(entry.summary).toContain('Task completed successfully');
+    });
+
+    it('should preserve existing columns on update', async () => {
+      // Pre-populate with existing entry that has tasks API columns
+      mockVtidLedgerStore.push({
+        id: 'existing-with-columns',
+        vtid: 'VTID-0522-UPDATE',
+        status: 'active',
+        service: 'gateway',
+        taskFamily: 'deployment',
+        taskType: 'deploy',
+        description: 'Existing task',
+        tenant: 'system',
+        layer: 'DEPLOYMENT',
+        module: 'ci-cd',
+        title: 'Original Title',
+        summary: 'Original summary',
+        lastEventAt: new Date(Date.now() - 10000),
+        createdAt: new Date(Date.now() - 20000),
+        updatedAt: new Date(Date.now() - 10000),
+      });
+
+      // Update event without tasks API columns in metadata
+      mockOasisEventStore.push({
+        id: 'event-update-preserve',
+        vtid: 'VTID-0522-UPDATE',
+        topic: 'deployment_succeeded',
+        service: 'ci-cd',
+        status: 'success',
+        createdAt: new Date(),
+      });
+
+      await ledgerWriter.processBatch();
+
+      const entry = mockVtidLedgerStore[0];
+      expect(entry.status).toBe('complete');
+      // Tasks API columns should be preserved
+      expect(entry.layer).toBe('DEPLOYMENT');
+      expect(entry.module).toBe('ci-cd');
+      expect(entry.title).toBe('Original Title');
+      expect(entry.summary).toBe('Original summary');
+    });
+  });
 });
