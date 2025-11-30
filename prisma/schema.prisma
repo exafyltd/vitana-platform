@@ -14,8 +14,8 @@ model OasisEvent {
   id        String   @id @default(cuid())
   rid       String? // external request/event id (optional)
   service   String
-  event     String?  // Event name (legacy field)
-  tenant    String?  // "system" | "maxina" | "earthlings" | "alkalma" | etc.
+  event     String? // Event name (legacy field)
+  tenant    String? // "system" | "maxina" | "earthlings" | "alkalma" | etc.
   status    String // "start" | "success" | "fail" | "blocked" | "info" | "warning" | "error"
   notes     String?  @db.Text
   gitSha    String?  @map("git_sha")
@@ -23,13 +23,13 @@ model OasisEvent {
   createdAt DateTime @default(now()) @map("created_at")
 
   // VTID-0522: Fields for event ingest API (/api/v1/events/ingest)
-  vtid      String?  // VTID reference (e.g., "VTID-0521-TEST-0001")
-  topic     String?  // Event type (e.g., "deployment_succeeded")
-  message   String?  @db.Text // Event message
-  role      String?  // Role (e.g., "API", "claude")
-  model     String?  // Model name (e.g., "event-ingestion-api")
-  link      String?  // Optional link
-  source    String?  // Event source (alternative to service)
+  vtid    String? // VTID reference (e.g., "VTID-0521-TEST-0001")
+  topic   String? // Event type (e.g., "deployment_succeeded")
+  message String? @db.Text // Event message
+  role    String? // Role (e.g., "API", "claude")
+  model   String? // Model name (e.g., "event-ingestion-api")
+  link    String? // Optional link
+  source  String? // Event source (alternative to service)
 
   // Projection tracking (DEV-OASIS-0010)
   projected Boolean @default(false)
@@ -64,10 +64,10 @@ model VtidLedger {
   environment String?   @default("dev") // Environment (dev, staging, prod)
 
   // VTID-0522: Additional columns for tasks API compatibility
-  layer       String?  // High-level category (maps to taskFamily for compatibility)
-  module      String?  // Module name (maps to taskType for compatibility)
-  title       String?  // Short display title
-  summary     String?  @db.Text // Summary text for display
+  layer   String? // High-level category (maps to taskFamily for compatibility)
+  module  String? // Module name (maps to taskType for compatibility)
+  title   String? // Short display title
+  summary String? @db.Text // Summary text for display
 
   @@index([createdAt], map: "idx_vtid_created_at")
   @@index([taskFamily, createdAt], map: "idx_vtid_family_created")
