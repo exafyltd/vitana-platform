@@ -4,8 +4,9 @@ import { logger } from './logger';
 interface Event {
   id: string;
   type: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   payload: any;
-  timestamp: Date;
+  createdAt: Date;
   projected: boolean;
 }
 
@@ -53,19 +54,19 @@ export class Projector {
     const db = Database.getInstance();
 
     // Get current offset
-    const offset = await db.projection_offsets.findUnique({
-      where: { projector_name: this.PROJECTOR_NAME }
+    const offset = await db.projectionOffset.findUnique({
+      where: { projectorName: this.PROJECTOR_NAME }
     });
 
     // Find unprojected events
-    const events = await db.events.findMany({
+    const events = await db.oasisEvent.findMany({
       where: {
         projected: false,
-        timestamp: {
-          gt: offset?.last_event_time || new Date(0)
+        createdAt: {
+          gt: offset?.lastEventTime || new Date(0)
         }
       },
-      orderBy: { timestamp: 'asc' },
+      orderBy: { createdAt: 'asc' },
       take: this.BATCH_SIZE
     });
 
@@ -74,8 +75,8 @@ export class Projector {
     }
 
     logger.info(`Processing ${events.length} events`, {
-      firstEventTime: events[0].timestamp,
-      lastEventTime: events[events.length - 1].timestamp
+      firstEventTime: events[0].createdAt,
+      lastEventTime: events[events.length - 1].createdAt
     });
 
     // Process each event
@@ -85,13 +86,20 @@ export class Projector {
 
     // Update offset
     const lastEvent = events[events.length - 1];
-    await db.projection_offsets.update({
-      where: { projector_name: this.PROJECTOR_NAME },
-      data: {
-        last_event_id: lastEvent.id,
-        last_event_time: lastEvent.timestamp,
-        last_processed_at: new Date(),
-        events_processed: {
+    await db.projectionOffset.upsert({
+      where: { projectorName: this.PROJECTOR_NAME },
+      create: {
+        projectorName: this.PROJECTOR_NAME,
+        lastEventId: lastEvent.id,
+        lastEventTime: lastEvent.createdAt,
+        lastProcessedAt: new Date(),
+        eventsProcessed: events.length
+      },
+      update: {
+        lastEventId: lastEvent.id,
+        lastEventTime: lastEvent.createdAt,
+        lastProcessedAt: new Date(),
+        eventsProcessed: {
           increment: events.length
         }
       }
@@ -118,7 +126,7 @@ export class Projector {
       }
 
       // Mark event as projected
-      await Database.getInstance().events.update({
+      await Database.getInstance().oasisEvent.update({
         where: { id: event.id },
         data: { projected: true }
       });
