@@ -14,6 +14,15 @@ import { Projector } from './projector';
 import { LedgerWriter } from './ledger-writer';
 import { Database } from './database';
 
+// VTID-0522: Type for OasisEvent status endpoint response mapping
+interface OasisEventStatusRecord {
+  id: string;
+  status: string;
+  notes: string | null;
+  metadata: unknown;
+  createdAt: Date;
+}
+
 // Load environment variables
 dotenv.config();
 
@@ -163,7 +172,7 @@ app.get('/internal/oasis/ledger/status', async (req, res) => {
         running: ledgerWriter !== null,
         last_processed_at: offset?.lastProcessedAt?.toISOString() || null,
       },
-      recent_syncs: recentSyncs.map(s => ({
+      recent_syncs: recentSyncs.map((s: OasisEventStatusRecord) => ({
         id: s.id,
         status: s.status,
         notes: s.notes,
