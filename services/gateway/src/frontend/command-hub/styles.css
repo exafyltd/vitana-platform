@@ -1073,6 +1073,36 @@ body {
   color: var(--color-text-secondary);
 }
 
+/* VTID-0524: Success/Failure badge styles for deployments */
+.version-dropdown__item-badge--success {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.version-dropdown__item-badge--failure {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+/* VTID-0524: History tab status badge styles */
+.history-status-badge {
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.history-status-success {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.history-status-failed {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
 /* --- Toast Notifications (VTID-0517) --- */
 
 .toast-container {

@@ -1,8 +1,9 @@
 /**
- * Operator Routes - VTID-0509 + VTID-0510
+ * Operator Routes - VTID-0509 + VTID-0510 + VTID-0524
  *
  * VTID-0509: Operator Console API (chat, heartbeat, history, upload, session)
  * VTID-0510: Software Version Tracking (deployments)
+ * VTID-0524: Operator History & Versions Rewire (VTID/SWV Source of Truth)
  *
  * Final API endpoints (after mounting at /api/v1/operator):
  * - POST /api/v1/operator/chat - Operator chat with AI
@@ -11,7 +12,7 @@
  * - GET  /api/v1/operator/history - Operator history
  * - POST /api/v1/operator/heartbeat/session - Start/stop heartbeat
  * - POST /api/v1/operator/upload - File upload
- * - GET  /api/v1/operator/deployments - Deployment history (VTID-0510)
+ * - GET  /api/v1/operator/deployments - Deployment history with VTID (VTID-0524)
  * - POST /api/v1/operator/deployments - Record deployment (VTID-0510)
  * - GET  /api/v1/operator/deployments/health - Deployments health (VTID-0510)
  */
@@ -21,7 +22,7 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { processMessage } from '../services/ai-orchestrator';
 import { ingestOperatorEvent, getTasksSummary, getRecentEvents, getCicdHealth, getOperatorHistory } from '../services/operator-service';
-import { getDeploymentHistory, getNextSWV, insertSoftwareVersion } from '../lib/versioning';
+import { getDeploymentHistory, getDeploymentHistoryWithVtid, getNextSWV, insertSoftwareVersion } from '../lib/versioning';
 
 const router = Router();
 
@@ -341,12 +342,15 @@ router.post('/upload', async (req: Request, res: Response) => {
 
 /**
  * GET /deployments → /api/v1/operator/deployments
+ * VTID-0524: Returns deployment history with VTID correlation
+ * Response format: { ok: true, deployments: [{ vtid, swv, service, environment, status, created_at, commit }] }
  */
 router.get('/deployments', async (req: Request, res: Response) => {
   try {
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
 
-    const result = await getDeploymentHistory(limit);
+    // VTID-0524: Use enhanced function with VTID correlation
+    const result = await getDeploymentHistoryWithVtid(limit);
 
     if (!result.ok) {
       return res.status(502).json({
@@ -356,19 +360,11 @@ router.get('/deployments', async (req: Request, res: Response) => {
       });
     }
 
-    // Format for UI feed
-    const deployments = (result.deployments || []).map((d) => ({
-      swv_id: d.swv_id,
-      created_at: d.created_at,
-      git_commit: d.git_commit,
-      status: d.status,
-      initiator: d.initiator,
-      deploy_type: d.deploy_type,
-      service: d.service,
-      environment: d.environment,
-    }));
-
-    return res.status(200).json(deployments);
+    // VTID-0524: Return canonical format with ok wrapper
+    return res.status(200).json({
+      ok: true,
+      deployments: result.deployments || [],
+    });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error(`[Operator] Error fetching deployments: ${errorMessage}`);
