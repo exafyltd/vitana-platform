@@ -1,0 +1,397 @@
+{
+  "vtid": "VTID-0301",
+  "title": "Autonomous System Reality Inventory",
+  "generated_at": "2025-11-30T19:30:00.000Z",
+  "generated_by": "claude-caeo",
+  "version": "1.0.0",
+  "github": {
+    "repository": "exafyltd/vitana-platform",
+    "services": [
+      {
+        "name": "gateway",
+        "path": "services/gateway",
+        "role": "Main API Gateway - Express/TypeScript, routes all API traffic, hosts Command Hub frontend",
+        "vtid_refs": ["CORE-GATEWAY-001", "VTID-0509", "VTID-0510", "DEV-CICDL-0034"],
+        "runtime": "nodejs",
+        "port": 8080
+      },
+      {
+        "name": "oasis-projector",
+        "path": "services/oasis-projector",
+        "role": "Event Projector - Processes OASIS events and projects to downstream systems",
+        "vtid_refs": ["DEV-OASIS-0010"],
+        "runtime": "nodejs"
+      },
+      {
+        "name": "oasis-operator",
+        "path": "services/oasis-operator",
+        "role": "OASIS Operator Service - Legacy backups only, functionality moved to gateway",
+        "vtid_refs": [],
+        "runtime": "python",
+        "status": "deprecated"
+      },
+      {
+        "name": "mcp-gateway",
+        "path": "services/mcp-gateway",
+        "role": "MCP Integration Gateway - 6 connectors (GitHub, Supabase, Perplexity, Linear, Context7, Testsprite), 21 skills",
+        "vtid_refs": ["DEV-AGENT-0200", "DEV-AGENT-0201", "DEV-AGENT-0202"],
+        "runtime": "nodejs"
+      },
+      {
+        "name": "agents/conductor",
+        "path": "services/agents/conductor",
+        "role": "Agent Conductor/Orchestrator with LLM Router",
+        "vtid_refs": [],
+        "runtime": "python"
+      },
+      {
+        "name": "agents/crewai-gcp",
+        "path": "services/agents/crewai-gcp",
+        "role": "CrewAI Agent Implementation - Knowledge base executor, prompt synthesis crew",
+        "vtid_refs": [],
+        "runtime": "python"
+      },
+      {
+        "name": "agents/memory-indexer",
+        "path": "services/agents/memory-indexer",
+        "role": "Memory Indexer Agent - Vector embeddings and memory management",
+        "vtid_refs": [],
+        "runtime": "python"
+      },
+      {
+        "name": "agents/validator-core",
+        "path": "services/agents/validator-core",
+        "role": "Validator Core Agent with LLM Router",
+        "vtid_refs": [],
+        "runtime": "python"
+      },
+      {
+        "name": "deploy-watcher",
+        "path": "services/deploy-watcher",
+        "role": "Deployment Watcher Service",
+        "vtid_refs": [],
+        "runtime": "unknown"
+      },
+      {
+        "name": "validators",
+        "path": "services/validators",
+        "role": "Validators Service Directory",
+        "vtid_refs": [],
+        "runtime": "unknown"
+      },
+      {
+        "name": "oasis",
+        "path": "services/oasis",
+        "role": "OASIS Service Directory (may be empty or minimal)",
+        "vtid_refs": [],
+        "runtime": "unknown"
+      }
+    ],
+    "frontend_modules": [
+      "Overview",
+      "Admin",
+      "Operator",
+      "Command Hub",
+      "Governance",
+      "Agents",
+      "Workflows",
+      "OASIS",
+      "Databases",
+      "Infrastructure",
+      "Security (Dev)",
+      "Integrations & Tools",
+      "Diagnostics",
+      "Models & Evaluations",
+      "Testing & QA",
+      "Intelligence & Memory (Dev)",
+      "Docs"
+    ],
+    "ci_workflows": [
+      {
+        "name": "CICDL-GATEWAY-CI",
+        "file": ".github/workflows/CICDL-GATEWAY-CI.yml",
+        "vtid": "DEV-CICDL-0034",
+        "purpose": "Gateway validation - build, typecheck, lint, test"
+      },
+      {
+        "name": "APPLY-MIGRATIONS",
+        "file": ".github/workflows/APPLY-MIGRATIONS.yml",
+        "purpose": "Database migrations"
+      },
+      {
+        "name": "DAILY-STATUS-UPDATE",
+        "file": ".github/workflows/DAILY-STATUS-UPDATE.yml",
+        "purpose": "Daily status reporting"
+      },
+      {
+        "name": "EXEC-DEPLOY",
+        "file": ".github/workflows/EXEC-DEPLOY.yml",
+        "purpose": "Deployment execution"
+      },
+      {
+        "name": "DEPLOY-MCP-GATEWAY",
+        "file": ".github/workflows/DEPLOY-MCP-GATEWAY.yml",
+        "purpose": "MCP Gateway deployment"
+      },
+      {
+        "name": "ENFORCE-FRONTEND-CANONICAL-SOURCE",
+        "file": ".github/workflows/ENFORCE-FRONTEND-CANONICAL-SOURCE.yml",
+        "purpose": "Frontend spec validation (17 modules / 87 screens)"
+      }
+    ],
+    "key_directories": [
+      { "path": "prisma/", "purpose": "Prisma schema and migrations" },
+      { "path": "specs/", "purpose": "API specifications (OpenAPI)" },
+      { "path": "supabase/migrations/", "purpose": "Supabase SQL migrations" },
+      { "path": "database/migrations/", "purpose": "Additional database migrations" },
+      { "path": "docs/", "purpose": "Documentation including governance and VTIDs" },
+      { "path": "packages/openapi/", "purpose": "OpenAPI package" },
+      { "path": "skills/", "purpose": "Agent skills definitions" },
+      { "path": "tasks/", "purpose": "Task definitions" }
+    ]
+  },
+  "gcp": {
+    "services": [
+      {
+        "name": "gateway",
+        "url": "https://gateway-q74ibpv6ia-uc.a.run.app",
+        "alive": "unknown",
+        "notes": "Canonical Dev Sandbox Gateway - WebFetch returned 403 (network restriction from sandbox). Service is active per recent commits."
+      },
+      {
+        "name": "oasis-operator",
+        "url": "https://oasis-operator-86804897789.us-central1.run.app",
+        "alive": "unknown",
+        "notes": "Referenced in command-hub.ts for health checks. May be deprecated or combined with gateway."
+      },
+      {
+        "name": "mcp-gateway",
+        "url": "unknown",
+        "alive": "unknown",
+        "notes": "MCP Gateway service - deployment URL not discovered via local code inspection."
+      }
+    ],
+    "endpoints_confirmed_in_code": [
+      "/alive",
+      "/health",
+      "/api/v1/events/ingest",
+      "/api/v1/oasis/events",
+      "/api/v1/oasis/tasks",
+      "/api/v1/vtid/create",
+      "/api/v1/vtid/list",
+      "/api/v1/governance/rules",
+      "/api/v1/governance/categories",
+      "/api/v1/governance/evaluations",
+      "/api/v1/governance/violations",
+      "/api/v1/operator/chat",
+      "/api/v1/operator/health",
+      "/api/v1/operator/deployments",
+      "/api/v1/github/create-pr",
+      "/api/v1/github/safe-merge",
+      "/api/v1/cicd/health",
+      "/command-hub/",
+      "/api/v1/events/stream"
+    ]
+  },
+  "supabase": {
+    "tables": [
+      {
+        "name": "oasis_events",
+        "columns": ["id", "rid", "service", "event", "tenant", "status", "notes", "git_sha", "metadata", "created_at", "vtid", "topic", "message", "role", "model", "link", "source", "projected"],
+        "purpose": "Event ledger - stores all OASIS events including deployments, CI/CD, governance events",
+        "vtid_refs": ["VTID-0522"]
+      },
+      {
+        "name": "vtid_ledger",
+        "columns": ["id", "vtid", "task_family", "task_type", "description", "status", "assigned_to", "tenant", "metadata", "parent_vtid", "created_at", "updated_at", "last_event_id", "last_event_at", "service", "environment", "layer", "module", "title", "summary"],
+        "purpose": "VTID task tracking - central ledger for all VTIDs with status and event tracking",
+        "vtid_refs": ["VTID-0521", "VTID-0522"]
+      },
+      {
+        "name": "projection_offsets",
+        "columns": ["id", "projector_name", "last_event_id", "last_event_time", "last_processed_at", "events_processed", "created_at"],
+        "purpose": "Projection tracking - maintains projection progress for event sourcing",
+        "vtid_refs": ["DEV-OASIS-0010"]
+      },
+      {
+        "name": "governance_categories",
+        "columns": ["id", "tenant_id", "name", "description", "severity", "created_at"],
+        "purpose": "Governance rule categories"
+      },
+      {
+        "name": "governance_rules",
+        "columns": ["id", "tenant_id", "category_id", "name", "description", "logic", "is_active", "created_at"],
+        "purpose": "Governance rules with JSONB logic definitions"
+      },
+      {
+        "name": "governance_evaluations",
+        "columns": ["id", "tenant_id", "rule_id", "entity_id", "status", "evaluated_at", "metadata"],
+        "purpose": "Governance rule evaluation results (PASS/FAIL)"
+      },
+      {
+        "name": "governance_violations",
+        "columns": ["id", "tenant_id", "rule_id", "entity_id", "severity", "status", "created_at", "resolved_at"],
+        "purpose": "Governance violations tracking with status (OPEN/RESOLVED/IGNORED)"
+      },
+      {
+        "name": "governance_enforcements",
+        "columns": ["id", "tenant_id", "rule_id", "action", "status", "executed_at", "details"],
+        "purpose": "Governance enforcement actions log"
+      },
+      {
+        "name": "software_versions",
+        "columns": ["id", "swv_id", "service", "git_commit", "deploy_type", "initiator", "status", "environment", "created_at"],
+        "purpose": "Software version deployments history - immutable audit log",
+        "vtid_refs": ["VTID-0510"]
+      },
+      {
+        "name": "governance_proposals",
+        "columns": ["inferred"],
+        "purpose": "Governance proposals (referenced in routes but migration not inspected)",
+        "vtid_refs": []
+      }
+    ]
+  },
+  "frontend": {
+    "command_hub": {
+      "base_path": "/command-hub/",
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css",
+        "navigation-config.js"
+      ],
+      "sidebar_modules": [
+        "overview",
+        "admin",
+        "operator",
+        "command-hub",
+        "governance",
+        "agents",
+        "workflows",
+        "oasis",
+        "databases",
+        "infrastructure",
+        "security-dev",
+        "integrations-tools",
+        "diagnostics",
+        "models-evaluations",
+        "testing-qa",
+        "intelligence-memory-dev",
+        "docs"
+      ],
+      "screens": [
+        { "module": "overview", "tabs": ["system-overview", "live-metrics", "recent-events", "errors-violations", "release-feed"] },
+        { "module": "admin", "tabs": ["users", "permissions", "tenants", "content-moderation", "identity-access", "analytics"] },
+        { "module": "operator", "tabs": ["task-queue", "task-details", "execution-logs", "pipelines", "runbook"] },
+        { "module": "command-hub", "tabs": ["tasks", "live-console", "events", "vtids", "approvals"] },
+        { "module": "governance", "tabs": ["rules", "categories", "evaluations", "violations", "history", "proposals"] },
+        { "module": "agents", "tabs": ["registered-agents", "skills", "pipelines", "memory", "telemetry"] },
+        { "module": "workflows", "tabs": ["workflow-list", "triggers", "actions", "schedules", "history"] },
+        { "module": "oasis", "tabs": ["events", "vtid-ledger", "entities", "streams", "command-log"] },
+        { "module": "databases", "tabs": ["supabase", "vectors", "cache", "analytics", "clusters"] },
+        { "module": "infrastructure", "tabs": ["services", "health", "deployments", "logs", "config"] },
+        { "module": "security-dev", "tabs": ["policies", "roles", "keys-secrets", "audit-log", "rls-access"] },
+        { "module": "integrations-tools", "tabs": ["mcp-connectors", "llm-providers", "apis", "tools", "service-mesh"] },
+        { "module": "diagnostics", "tabs": ["health-checks", "latency", "errors", "sse", "debug-panel"] },
+        { "module": "models-evaluations", "tabs": ["models", "evaluations", "benchmarks", "routing", "playground"] },
+        { "module": "testing-qa", "tabs": ["unit-tests", "integration-tests", "validator-tests", "e2e", "ci-reports"] },
+        { "module": "intelligence-memory-dev", "tabs": ["memory-vault", "knowledge-graph", "embeddings", "recall", "inspector"] },
+        { "module": "docs", "tabs": ["screens", "api-inventory", "database-schemas", "architecture", "workforce"] }
+      ],
+      "total_modules": 17,
+      "total_screens": 87,
+      "golden_v4_detected": true,
+      "features": {
+        "3_column_task_board": true,
+        "header_toolbar": true,
+        "sidebar_collapsible": true,
+        "split_screen_support": true,
+        "version_history_dropdown": true,
+        "cicd_health_indicator": true,
+        "operator_overlay": true,
+        "heartbeat_overlay": true,
+        "toast_notifications": true,
+        "publish_modal": true,
+        "sse_live_events": true
+      }
+    }
+  },
+  "api_inventory": {
+    "gateway_routes": [
+      { "path": "/alive", "method": "GET", "purpose": "Deployment validation" },
+      { "path": "/health", "method": "GET", "purpose": "Health check" },
+      { "path": "/api/v1/events/ingest", "method": "POST", "purpose": "OASIS event ingestion" },
+      { "path": "/events/ingest", "method": "POST", "purpose": "Legacy event ingestion" },
+      { "path": "/events", "method": "GET", "purpose": "Query OASIS events" },
+      { "path": "/api/v1/oasis/events", "method": "GET", "purpose": "OASIS events query with filters" },
+      { "path": "/api/v1/oasis/tasks", "method": "GET/POST", "purpose": "OASIS tasks CRUD" },
+      { "path": "/api/v1/oasis/tasks/:id", "method": "GET/PATCH/DELETE", "purpose": "OASIS task operations" },
+      { "path": "/api/v1/vtid/create", "method": "POST", "purpose": "Create new VTID" },
+      { "path": "/api/v1/vtid/list", "method": "GET", "purpose": "List VTIDs" },
+      { "path": "/api/v1/vtid/:vtid", "method": "GET", "purpose": "Get VTID details" },
+      { "path": "/api/v1/governance/categories", "method": "GET", "purpose": "Get governance categories" },
+      { "path": "/api/v1/governance/rules", "method": "GET", "purpose": "Get governance rules" },
+      { "path": "/api/v1/governance/rules/:ruleCode", "method": "GET", "purpose": "Get rule by code" },
+      { "path": "/api/v1/governance/proposals", "method": "GET/POST", "purpose": "Governance proposals" },
+      { "path": "/api/v1/governance/evaluations", "method": "GET", "purpose": "Get evaluations" },
+      { "path": "/api/v1/governance/violations", "method": "GET", "purpose": "Get violations" },
+      { "path": "/api/v1/governance/enforcements", "method": "GET", "purpose": "Get enforcements" },
+      { "path": "/api/v1/operator/chat", "method": "POST", "purpose": "Operator AI chat" },
+      { "path": "/api/v1/operator/health", "method": "GET", "purpose": "Operator health" },
+      { "path": "/api/v1/operator/heartbeat", "method": "GET", "purpose": "Heartbeat snapshot" },
+      { "path": "/api/v1/operator/history", "method": "GET", "purpose": "Operator history" },
+      { "path": "/api/v1/operator/deployments", "method": "GET/POST", "purpose": "Deployment history" },
+      { "path": "/api/v1/github/create-pr", "method": "POST", "purpose": "Create GitHub PR" },
+      { "path": "/api/v1/github/safe-merge", "method": "POST", "purpose": "Safe merge PR" },
+      { "path": "/api/v1/cicd/health", "method": "GET", "purpose": "CI/CD health status" },
+      { "path": "/api/v1/events/stream", "method": "GET", "purpose": "SSE event stream" },
+      { "path": "/command-hub/", "method": "GET", "purpose": "Serve Command Hub UI" },
+      { "path": "/command-hub/api/chat", "method": "POST", "purpose": "Command Hub chat" }
+    ]
+  },
+  "notes": [
+    "Gateway service is the central hub - hosts API routes and Command Hub frontend",
+    "Command Hub implements Golden v4 baseline with 17 modules and 87 screens confirmed",
+    "OASIS event sourcing architecture with oasis_events table and projection_offsets",
+    "VTID ledger system tracks all tasks with automatic event-based updates (VTID-0521/0522)",
+    "Governance subsystem fully implemented with rules, evaluations, violations, and enforcements",
+    "MCP Gateway provides 21 skills across 6 connectors for agent integration",
+    "CI/CD workflows include Gateway CI, migrations, daily status, and frontend spec enforcement",
+    "Agent services (conductor, crewai-gcp, memory-indexer, validator-core) are Python-based",
+    "Software versions table provides immutable deployment audit trail (VTID-0510)",
+    "WebFetch to gateway returned 403 - likely network sandbox restriction, not service issue"
+  ],
+  "gaps_and_observations": [
+    {
+      "category": "GCP Verification",
+      "issue": "Could not verify live Gateway status via HTTP due to sandbox network restrictions",
+      "severity": "low",
+      "recommendation": "Manual verification of /alive endpoint recommended"
+    },
+    {
+      "category": "Service Discovery",
+      "issue": "Several services in services/ directory have minimal or no README/manifest",
+      "severity": "medium",
+      "recommendation": "Add manifest.json to all services for consistent documentation"
+    },
+    {
+      "category": "OASIS Operator",
+      "issue": "oasis-operator directory contains only backup files - functionality may have moved to gateway",
+      "severity": "medium",
+      "recommendation": "Confirm if oasis-operator Cloud Run service is still needed or can be decommissioned"
+    },
+    {
+      "category": "Agent Services",
+      "issue": "Agent services (conductor, crewai-gcp, validator-core) lack clear deployment status",
+      "severity": "medium",
+      "recommendation": "Document deployment status and Cloud Run URLs for each agent service"
+    },
+    {
+      "category": "Frontend Spec Alignment",
+      "issue": "navigation-config.js and app.js both define NAVIGATION_CONFIG - potential duplication",
+      "severity": "low",
+      "recommendation": "Ensure single source of truth for navigation configuration"
+    }
+  ]
+}
