@@ -575,7 +575,12 @@ router.post('/deploy', async (req: Request, res: Response) => {
       })
     });
 
-    const deployResult = await deployResponse.json();
+    const deployResult = await deployResponse.json() as {
+      ok: boolean;
+      error?: string;
+      workflow_url?: string;
+      workflow_run_id?: string;
+    };
 
     if (!deployResult.ok) {
       // Emit operator.deploy.failed event
