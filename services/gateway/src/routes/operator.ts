@@ -1,16 +1,18 @@
 /**
- * Operator Routes - VTID-0509 + VTID-0510 + VTID-0524
+ * Operator Routes - VTID-0509 + VTID-0510 + VTID-0524 + VTID-0533
  *
  * VTID-0509: Operator Console API (chat, heartbeat, history, upload, session)
  * VTID-0510: Software Version Tracking (deployments)
  * VTID-0524: Operator History & Versions Rewire (VTID/SWV Source of Truth)
+ * VTID-0533: Heartbeat Backend Stability & Endpoint Fix
  *
  * Final API endpoints (after mounting at /api/v1/operator):
  * - POST /api/v1/operator/chat - Operator chat with AI
  * - GET  /api/v1/operator/health - Health check
- * - GET  /api/v1/operator/heartbeat - Heartbeat snapshot
+ * - GET  /api/v1/operator/heartbeat - Heartbeat snapshot (tasks, events, cicd)
  * - GET  /api/v1/operator/history - Operator history
- * - POST /api/v1/operator/heartbeat/session - Start/stop heartbeat
+ * - GET  /api/v1/operator/heartbeat/session - Read current heartbeat state (VTID-0533)
+ * - POST /api/v1/operator/heartbeat/session - Update heartbeat state (live/standby)
  * - POST /api/v1/operator/upload - File upload
  * - GET  /api/v1/operator/deployments - Deployment history with VTID (VTID-0524)
  * - POST /api/v1/operator/deployments - Record deployment (VTID-0510)
@@ -37,7 +39,10 @@ const ChatMessageSchema = z.object({
 });
 
 const HeartbeatSessionSchema = z.object({
-  status: z.enum(['live', 'standby'])
+  status: z.enum(['live', 'standby']).optional(),
+  state: z.enum(['live', 'standby']).optional()
+}).refine(data => data.status || data.state, {
+  message: "Either 'status' or 'state' is required"
 });
 
 const FileUploadSchema = z.object({
@@ -46,6 +51,20 @@ const FileUploadSchema = z.object({
   content_type: z.string().optional(),
   data: z.string().optional() // Base64 encoded data (optional for stub)
 });
+
+// ==================== Heartbeat State (in-memory for single instance) ====================
+// For multi-instance deployment, this should be stored in database
+interface HeartbeatState {
+  state: 'live' | 'standby';
+  updated_at: string;
+  session_id: string | null;
+}
+
+let heartbeatState: HeartbeatState = {
+  state: 'standby',
+  updated_at: new Date().toISOString(),
+  session_id: null
+};
 
 // ==================== VTID-0509 Routes ====================
 // Routes defined WITHOUT /operator prefix since router is mounted at /api/v1/operator
@@ -232,52 +251,91 @@ router.get('/history', async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /heartbeat/session → /api/v1/operator/heartbeat/session
+ * Returns current heartbeat session state
+ */
+router.get('/heartbeat/session', (_req: Request, res: Response) => {
+  console.log('[Operator Session] GET request - current state:', heartbeatState.state);
+
+  return res.status(200).json({
+    ok: true,
+    data: {
+      state: heartbeatState.state,
+      updated_at: heartbeatState.updated_at,
+      session_id: heartbeatState.session_id
+    },
+    error: null
+  });
+});
+
+/**
  * POST /heartbeat/session → /api/v1/operator/heartbeat/session
+ * Update heartbeat session state (live/standby)
+ * Accepts either { status: 'live'|'standby' } or { state: 'live'|'standby' }
  */
 router.post('/heartbeat/session', async (req: Request, res: Response) => {
-  console.log('[Operator Session] Request received');
+  console.log('[Operator Session] POST request received:', req.body);
 
   try {
     const validation = HeartbeatSessionSchema.safeParse(req.body);
     if (!validation.success) {
       return res.status(400).json({
         ok: false,
-        error: 'Validation failed',
-        details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+        data: null,
+        error: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
       });
     }
 
-    const { status } = validation.data;
+    // Accept both 'status' (legacy) and 'state' (new) parameters
+    const newState = validation.data.state || validation.data.status;
+    if (!newState) {
+      return res.status(400).json({
+        ok: false,
+        data: null,
+        error: "Either 'status' or 'state' is required with value 'live' or 'standby'"
+      });
+    }
+
     const sessionId = randomUUID();
 
-    // Log session event
-    const eventType = status === 'live'
-      ? 'operator.heartbeat.started'
-      : 'operator.heartbeat.stopped';
+    // Update in-memory state
+    heartbeatState = {
+      state: newState,
+      updated_at: new Date().toISOString(),
+      session_id: sessionId
+    };
+
+    // Log session event to OASIS
+    const eventType = newState === 'live'
+      ? 'operator.heartbeat.session.start'
+      : 'operator.heartbeat.session.end';
 
     await ingestOperatorEvent({
       vtid: 'VTID-0509',
       type: eventType,
       status: 'info',
-      message: `Heartbeat session ${status}`,
-      payload: { session_id: sessionId, status }
+      message: `Heartbeat session ${newState}`,
+      payload: { session_id: sessionId, state: newState }
     });
 
-    console.log(`[Operator Session] Session ${sessionId} set to ${status}`);
+    console.log(`[Operator Session] Session ${sessionId} set to ${newState}`);
 
     return res.status(200).json({
       ok: true,
-      session_id: sessionId,
-      status: status,
-      timestamp: new Date().toISOString()
+      data: {
+        state: heartbeatState.state,
+        updated_at: heartbeatState.updated_at,
+        session_id: heartbeatState.session_id
+      },
+      error: null
     });
 
   } catch (error: any) {
     console.error('[Operator Session] Error:', error);
     return res.status(500).json({
       ok: false,
-      error: 'Failed to update heartbeat session',
-      details: error.message
+      data: null,
+      error: error.message || 'Failed to update heartbeat session'
     });
   }
 });
