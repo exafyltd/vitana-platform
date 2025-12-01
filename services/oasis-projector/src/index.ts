@@ -1,14 +1,8 @@
 import express from 'express';
-<<<<<<< HEAD
 // VTID: DEV-OASIS-0010, VTID-0521, VTID-0522
 const VTID = 'DEV-OASIS-0010';
 const VTID_LEDGER_WRITER = 'VTID-0521';
 const VTID_LEDGER_FIX = 'VTID-0522'; // Fix for auto-ledger writer mapping & status
-=======
-// VTID: DEV-OASIS-0010, VTID-0521
-const VTID = 'DEV-OASIS-0010';
-const VTID_LEDGER_WRITER = 'VTID-0521';
->>>>>>> claude/auto-vtid-ledger-writer-014epsPGWZMwKqBJb1iJZrzg
 const VT_LAYER = 'OASIS';
 const VT_MODULE = 'PROJECTOR';
 
@@ -96,10 +90,7 @@ app.get('/metrics', async (req, res) => {
 // VTID-0521: Internal sync endpoint for manual ledger sync
 let ledgerWriter: LedgerWriter | null = null;
 
-<<<<<<< HEAD
 // VTID-0522: Manual sync endpoint (updated response format)
-=======
->>>>>>> claude/auto-vtid-ledger-writer-014epsPGWZMwKqBJb1iJZrzg
 app.post('/internal/oasis/ledger/sync', async (req, res) => {
   try {
     if (!ledgerWriter) {
@@ -109,7 +100,6 @@ app.post('/internal/oasis/ledger/sync', async (req, res) => {
     logger.info('Manual ledger sync triggered');
     const result = await ledgerWriter.syncNow();
 
-<<<<<<< HEAD
     // VTID-0522: Response format matches specification
     res.json({
       ok: true,
@@ -118,23 +108,12 @@ app.post('/internal/oasis/ledger/sync', async (req, res) => {
       synced: result.processed,
       // Extended details
       details: {
-=======
-    res.json({
-      ok: true,
-      vtid: VTID_LEDGER_WRITER,
-      result: {
->>>>>>> claude/auto-vtid-ledger-writer-014epsPGWZMwKqBJb1iJZrzg
         processed: result.processed,
         updated: result.updated,
         created: result.created,
         errors: result.errors,
-<<<<<<< HEAD
         last_event_id: result.lastEventId || null,
         last_event_time: result.lastEventTime?.toISOString() || null,
-=======
-        last_event_id: result.lastEventId,
-        last_event_time: result.lastEventTime?.toISOString(),
->>>>>>> claude/auto-vtid-ledger-writer-014epsPGWZMwKqBJb1iJZrzg
       },
       timestamp: new Date().toISOString()
     });
@@ -149,24 +128,16 @@ app.post('/internal/oasis/ledger/sync', async (req, res) => {
   }
 });
 
-<<<<<<< HEAD
 // VTID-0522: Get ledger writer status (updated response format)
 app.get('/internal/oasis/ledger/status', async (req, res) => {
   try {
     const db = Database.getInstance();
 
     // Get projection offset
-=======
-// VTID-0521: Get ledger writer status
-app.get('/internal/oasis/ledger/status', async (req, res) => {
-  try {
-    const db = Database.getInstance();
->>>>>>> claude/auto-vtid-ledger-writer-014epsPGWZMwKqBJb1iJZrzg
     const offset = await db.projectionOffset.findUnique({
       where: { projectorName: 'vtid_ledger_writer' }
     });
 
-<<<<<<< HEAD
     // Count pending events (events that haven't been processed yet)
     const lastEventTime = offset?.lastEventTime || new Date(0);
     const pendingCount = await db.oasisEvent.count({
@@ -177,8 +148,6 @@ app.get('/internal/oasis/ledger/status', async (req, res) => {
       }
     });
 
-=======
->>>>>>> claude/auto-vtid-ledger-writer-014epsPGWZMwKqBJb1iJZrzg
     // Get recent ledger_sync events
     const recentSyncs = await db.oasisEvent.findMany({
       where: {
@@ -189,7 +158,6 @@ app.get('/internal/oasis/ledger/status', async (req, res) => {
       take: 5
     });
 
-<<<<<<< HEAD
     // VTID-0522: Response format matches specification
     res.json({
       ok: true,
@@ -205,19 +173,6 @@ app.get('/internal/oasis/ledger/status', async (req, res) => {
         last_processed_at: offset?.lastProcessedAt?.toISOString() || null,
       },
       recent_syncs: recentSyncs.map((s: OasisEventStatusRecord) => ({
-=======
-    res.json({
-      ok: true,
-      vtid: VTID_LEDGER_WRITER,
-      status: {
-        running: ledgerWriter !== null,
-        events_processed: offset?.eventsProcessed || 0,
-        last_processed_at: offset?.lastProcessedAt,
-        last_event_id: offset?.lastEventId,
-        last_event_time: offset?.lastEventTime,
-      },
-      recent_syncs: recentSyncs.map((s: { id: string; status: string; notes: string | null; metadata: unknown; createdAt: Date }) => ({
->>>>>>> claude/auto-vtid-ledger-writer-014epsPGWZMwKqBJb1iJZrzg
         id: s.id,
         status: s.status,
         notes: s.notes,
@@ -231,12 +186,8 @@ app.get('/internal/oasis/ledger/status', async (req, res) => {
     res.status(500).json({
       ok: false,
       vtid: VTID_LEDGER_WRITER,
-<<<<<<< HEAD
       error: 'Failed to get ledger status',
       detail: error instanceof Error ? error.message : 'Unknown error'
-=======
-      error: 'Failed to get ledger status'
->>>>>>> claude/auto-vtid-ledger-writer-014epsPGWZMwKqBJb1iJZrzg
     });
   }
 });
