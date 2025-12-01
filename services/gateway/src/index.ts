@@ -74,6 +74,43 @@ const staticPath = process.env.NODE_ENV === 'production'
   : 'src/frontend/command-hub';
 app.use('/command-hub', express.static(staticPath));
 
+// VTID-0523: Global JSON error handlers - ensure all API errors return JSON, never HTML
+
+// 404 handler for API routes
+app.use('/api', (req, res) => {
+  res.status(404).json({
+    ok: false,
+    error: 'Not Found',
+    path: req.path,
+    method: req.method,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Global error handler - catches all unhandled errors and returns JSON
+app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error('[Gateway Error]', err.message || err);
+
+  // Handle CORS errors specifically
+  if (err.message && err.message.includes('CORS')) {
+    return res.status(403).json({
+      ok: false,
+      error: 'CORS Error',
+      message: err.message,
+      origin: req.headers.origin || 'unknown'
+    });
+  }
+
+  // Handle all other errors
+  const statusCode = err.statusCode || err.status || 500;
+  res.status(statusCode).json({
+    ok: false,
+    error: err.message || 'Internal Server Error',
+    path: req.path,
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Start server
 if (process.env.NODE_ENV === 'test') {
   // Don't start server during tests

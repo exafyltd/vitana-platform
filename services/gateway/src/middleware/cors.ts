@@ -2,8 +2,12 @@ import cors from "cors";
 import { Express, Request, Response, NextFunction } from "express";
 
 const ALLOWED_ORIGINS = [
+  // Cloud Run gateway URLs (multiple formats)
   "https://gateway-86804897789.us-central1.run.app",
+  "https://gateway-q74ibpv6ia-uc.a.run.app",
+  // Vitana dev gateway URLs
   "https://vitana-dev-gateway-86804897789.us-central1.run.app",
+  // Lovable preview
   "https://id-preview--vitana-v1.lovable.app",
 ];
 
