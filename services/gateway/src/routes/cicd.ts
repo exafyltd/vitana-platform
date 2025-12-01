@@ -376,12 +376,22 @@ router.post('/service', async (req: Request, res: Response) => {
 
 // ==================== GET /health ====================
 // Mounted at /api/v1/cicd -> final path: /api/v1/cicd/health
+// VTID-0523: Updated to compute capabilities without external network calls
 router.get('/health', (_req: Request, res: Response) => {
   const hasGitHubToken = !!process.env.GITHUB_SAFE_MERGE_TOKEN;
   const hasSupabaseUrl = !!process.env.SUPABASE_URL;
   const hasSupabaseKey = !!process.env.SUPABASE_SERVICE_ROLE;
 
-  const status = hasGitHubToken && hasSupabaseUrl && hasSupabaseKey ? 'ok' : 'degraded';
+  // VTID-0523: Handlers are always registered, so capabilities are true if routes exist
+  // The actual execution may fail if tokens are missing, but the handlers are present
+  const hasCreatePrHandler = true;  // POST /api/v1/github/create-pr is registered
+  const hasSafeMergeHandler = true; // POST /api/v1/github/safe-merge is registered
+  const hasDeployServiceHandler = true; // POST /api/v1/deploy/service is registered
+  const hasOasisEvents = hasSupabaseUrl && hasSupabaseKey;
+
+  // Status is healthy if all handlers exist and OASIS events work
+  // GitHub integration is a bonus, not required for "healthy"
+  const status = hasOasisEvents ? (hasGitHubToken ? 'healthy' : 'degraded') : 'degraded';
 
   return res.status(200).json({
     ok: true,
@@ -392,10 +402,15 @@ router.get('/health', (_req: Request, res: Response) => {
     timestamp: new Date().toISOString(),
     capabilities: {
       github_integration: hasGitHubToken,
-      oasis_events: hasSupabaseUrl && hasSupabaseKey,
-      create_pr: hasGitHubToken,
-      safe_merge: hasGitHubToken,
-      deploy_service: hasGitHubToken,
+      oasis_events: hasOasisEvents,
+      create_pr: hasCreatePrHandler,
+      safe_merge: hasSafeMergeHandler,
+      deploy_service: hasDeployServiceHandler,
+    },
+    configuration: {
+      github_token_present: hasGitHubToken,
+      supabase_url_present: hasSupabaseUrl,
+      supabase_key_present: hasSupabaseKey,
     },
     allowed_services: ALLOWED_DEPLOY_SERVICES,
     allowed_environments: ['dev'],

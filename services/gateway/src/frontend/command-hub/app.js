@@ -2241,14 +2241,90 @@ function renderOperatorHistory() {
     return container;
 }
 
-// --- Publish Modal (VTID-0517) ---
+// --- Publish Modal (VTID-0517 + VTID-0523) ---
+
+// VTID-0523: State for deployment pipeline
+let deployState = {
+    isDeploying: false,
+    steps: [],
+    error: null,
+    result: null
+};
+
+async function runDeployPipeline(service, environment) {
+    deployState.isDeploying = true;
+    deployState.steps = [
+        { name: 'create-pr', status: 'pending' },
+        { name: 'safe-merge', status: 'pending' },
+        { name: 'deploy-service', status: 'pending' }
+    ];
+    deployState.error = null;
+    deployState.result = null;
+    renderApp();
+
+    console.log(`[VTID-0523] Starting deployment: ${service} -> ${environment}`);
+
+    try {
+        const payload = {
+            vtid: 'VTID-0523',
+            service: service,
+            environment: environment,
+            skip_pr: true,      // Skip PR for direct deploy
+            skip_merge: true,   // Skip merge for direct deploy
+            trigger_workflow: false  // Dry run for safety
+        };
+
+        const response = await fetch('/api/v1/operator/deploy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+        console.log('[VTID-0523] Deploy result:', result);
+
+        deployState.result = result;
+
+        if (result.ok && result.data) {
+            deployState.steps = result.data.steps || deployState.steps;
+            showToast('Deployment pipeline completed successfully!', 'success');
+
+            // Add to ticker events
+            state.tickerEvents.unshift({
+                id: Date.now(),
+                timestamp: new Date().toLocaleTimeString(),
+                type: 'deploy',
+                content: `Deploy ${service} to ${environment} completed`
+            });
+        } else {
+            deployState.error = result.error || 'Unknown error';
+            showToast(`Deployment failed: ${deployState.error}`, 'error');
+
+            // Add failure to ticker
+            state.tickerEvents.unshift({
+                id: Date.now(),
+                timestamp: new Date().toLocaleTimeString(),
+                type: 'deploy',
+                content: `Deploy ${service} failed: ${deployState.error}`
+            });
+        }
+    } catch (error) {
+        console.error('[VTID-0523] Deploy error:', error);
+        deployState.error = error.message;
+        showToast(`Deployment error: ${error.message}`, 'error');
+    } finally {
+        deployState.isDeploying = false;
+        renderApp();
+    }
+}
 
 function renderPublishModal() {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.onclick = (e) => {
-        if (e.target === overlay) {
+        if (e.target === overlay && !deployState.isDeploying) {
             state.showPublishModal = false;
+            deployState = { isDeploying: false, steps: [], error: null, result: null };
             renderApp();
         }
     };
@@ -2259,17 +2335,77 @@ function renderPublishModal() {
     // Header
     const header = document.createElement('div');
     header.className = 'modal-header';
-    header.textContent = 'Publish current configuration?';
+    header.textContent = deployState.isDeploying ? 'Deploying...' : 'Deploy Gateway Service';
     modal.appendChild(header);
 
     // Body
     const body = document.createElement('div');
     body.className = 'modal-body';
 
-    const message = document.createElement('p');
-    message.className = 'publish-modal__message';
-    message.textContent = 'This will publish the current Vitana Dev configuration to the active environment. (Backend automation will be wired in a later task.)';
-    body.appendChild(message);
+    if (deployState.isDeploying || deployState.result) {
+        // Show pipeline progress
+        const stepsContainer = document.createElement('div');
+        stepsContainer.className = 'deploy-steps';
+
+        deployState.steps.forEach(step => {
+            const stepEl = document.createElement('div');
+            stepEl.className = `deploy-step deploy-step--${step.status}`;
+
+            const stepIcon = document.createElement('span');
+            stepIcon.className = 'deploy-step__icon';
+            if (step.status === 'success') stepIcon.textContent = '✓';
+            else if (step.status === 'error') stepIcon.textContent = '✗';
+            else if (step.status === 'running') stepIcon.textContent = '⟳';
+            else if (step.status === 'skipped') stepIcon.textContent = '⊘';
+            else stepIcon.textContent = '○';
+            stepEl.appendChild(stepIcon);
+
+            const stepName = document.createElement('span');
+            stepName.className = 'deploy-step__name';
+            stepName.textContent = step.name.replace(/-/g, ' ');
+            stepEl.appendChild(stepName);
+
+            if (step.detail) {
+                const stepDetail = document.createElement('span');
+                stepDetail.className = 'deploy-step__detail';
+                stepDetail.textContent = step.detail;
+                stepEl.appendChild(stepDetail);
+            }
+
+            stepsContainer.appendChild(stepEl);
+        });
+
+        body.appendChild(stepsContainer);
+
+        if (deployState.error) {
+            const errorMsg = document.createElement('div');
+            errorMsg.className = 'deploy-error';
+            errorMsg.textContent = deployState.error;
+            body.appendChild(errorMsg);
+        }
+
+        if (deployState.result && deployState.result.ok) {
+            const successMsg = document.createElement('div');
+            successMsg.className = 'deploy-success';
+            successMsg.textContent = 'Pipeline completed successfully!';
+            body.appendChild(successMsg);
+        }
+    } else {
+        // Initial state - show deploy options
+        const message = document.createElement('p');
+        message.className = 'publish-modal__message';
+        message.textContent = 'This will run the deployment pipeline for the Gateway service. The pipeline validates and prepares the service for deployment.';
+        body.appendChild(message);
+
+        const serviceInfo = document.createElement('div');
+        serviceInfo.className = 'deploy-info';
+        serviceInfo.innerHTML = `
+            <div class="deploy-info__row"><span>Service:</span><strong>gateway</strong></div>
+            <div class="deploy-info__row"><span>Environment:</span><strong>dev</strong></div>
+            <div class="deploy-info__row"><span>Mode:</span><strong>Validation (dry run)</strong></div>
+        `;
+        body.appendChild(serviceInfo);
+    }
 
     modal.appendChild(body);
 
@@ -2277,26 +2413,27 @@ function renderPublishModal() {
     const footer = document.createElement('div');
     footer.className = 'modal-footer';
 
-    const cancelBtn = document.createElement('button');
-    cancelBtn.className = 'btn';
-    cancelBtn.textContent = 'Cancel';
-    cancelBtn.onclick = () => {
-        state.showPublishModal = false;
-        renderApp();
-    };
-    footer.appendChild(cancelBtn);
+    if (!deployState.isDeploying) {
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'btn';
+        cancelBtn.textContent = deployState.result ? 'Close' : 'Cancel';
+        cancelBtn.onclick = () => {
+            state.showPublishModal = false;
+            deployState = { isDeploying: false, steps: [], error: null, result: null };
+            renderApp();
+        };
+        footer.appendChild(cancelBtn);
+    }
 
-    const publishBtn = document.createElement('button');
-    publishBtn.className = 'btn btn-primary';
-    publishBtn.textContent = 'Publish';
-    publishBtn.onclick = () => {
-        // Phase 1: Just logging and UX, no real backend calls
-        console.log('[VTID-0517] Publish requested (backend wiring pending)');
-        state.showPublishModal = false;
-        showToast('Publish requested (backend wiring pending).', 'success');
-        renderApp();
-    };
-    footer.appendChild(publishBtn);
+    if (!deployState.result && !deployState.isDeploying) {
+        const publishBtn = document.createElement('button');
+        publishBtn.className = 'btn btn-primary';
+        publishBtn.textContent = 'Deploy';
+        publishBtn.onclick = () => {
+            runDeployPipeline('gateway', 'dev');
+        };
+        footer.appendChild(publishBtn);
+    }
 
     modal.appendChild(footer);
     overlay.appendChild(modal);

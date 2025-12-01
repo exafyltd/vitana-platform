@@ -2469,3 +2469,194 @@ body {
   color: var(--color-text-secondary);
   text-align: right;
 }
+
+/* --- VTID-0523: Deploy Pipeline Modal Styles --- */
+
+.deploy-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.deploy-step {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--color-bg);
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  transition: all 0.2s ease;
+}
+
+.deploy-step__icon {
+  font-size: 1rem;
+  width: 24px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.deploy-step__name {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.deploy-step__detail {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  margin-left: auto;
+  max-width: 200px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* Pending step state (grey) */
+.deploy-step--pending {
+  opacity: 0.6;
+}
+
+.deploy-step--pending .deploy-step__icon {
+  color: var(--color-text-secondary);
+}
+
+/* Running step state (blue pulsing) */
+.deploy-step--running {
+  border-color: rgba(59, 130, 246, 0.4);
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.deploy-step--running .deploy-step__icon {
+  color: var(--color-accent);
+  animation: deploy-spinner 1s linear infinite;
+}
+
+@keyframes deploy-spinner {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Success step state (green) */
+.deploy-step--success {
+  border-color: rgba(16, 185, 129, 0.4);
+  background: rgba(16, 185, 129, 0.05);
+}
+
+.deploy-step--success .deploy-step__icon {
+  color: #10b981;
+}
+
+/* Error step state (red) */
+.deploy-step--error {
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.deploy-step--error .deploy-step__icon {
+  color: #ef4444;
+}
+
+.deploy-step--error .deploy-step__detail {
+  color: #ef4444;
+}
+
+/* Skipped step state (grey italic) */
+.deploy-step--skipped {
+  opacity: 0.5;
+}
+
+.deploy-step--skipped .deploy-step__icon {
+  color: var(--color-text-secondary);
+}
+
+.deploy-step--skipped .deploy-step__name {
+  text-decoration: line-through;
+  color: var(--color-text-secondary);
+}
+
+/* Deploy Info Panel */
+.deploy-info {
+  padding: 1rem;
+  background: var(--color-bg);
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  margin-top: 1rem;
+}
+
+.deploy-info__row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.35rem 0;
+  font-size: 0.85rem;
+}
+
+.deploy-info__row:not(:last-child) {
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.deploy-info__label {
+  color: var(--color-text-secondary);
+}
+
+.deploy-info__value {
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.deploy-info__value a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.deploy-info__value a:hover {
+  text-decoration: underline;
+}
+
+/* Deploy Error Message */
+.deploy-error {
+  padding: 1rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  margin-top: 1rem;
+  color: #ef4444;
+  font-size: 0.875rem;
+}
+
+.deploy-error__title {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+/* Deploy Success Message */
+.deploy-success {
+  padding: 1rem;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 8px;
+  margin-top: 1rem;
+  color: #10b981;
+  font-size: 0.875rem;
+}
+
+.deploy-success__title {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+/* Deploy button states */
+.header-button--publish.header-button--deploying {
+  background: var(--color-text-secondary);
+  border-color: var(--color-text-secondary);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.header-button--publish.header-button--deploying:hover {
+  background: var(--color-text-secondary);
+  border-color: var(--color-text-secondary);
+}

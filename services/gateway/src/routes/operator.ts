@@ -1,8 +1,9 @@
 /**
- * Operator Routes - VTID-0509 + VTID-0510
+ * Operator Routes - VTID-0509 + VTID-0510 + VTID-0523
  *
  * VTID-0509: Operator Console API (chat, heartbeat, history, upload, session)
  * VTID-0510: Software Version Tracking (deployments)
+ * VTID-0523: Operator Deploy Orchestrator
  *
  * Final API endpoints (after mounting at /api/v1/operator):
  * - POST /api/v1/operator/chat - Operator chat with AI
@@ -14,6 +15,7 @@
  * - GET  /api/v1/operator/deployments - Deployment history (VTID-0510)
  * - POST /api/v1/operator/deployments - Record deployment (VTID-0510)
  * - GET  /api/v1/operator/deployments/health - Deployments health (VTID-0510)
+ * - POST /api/v1/operator/deploy - Deploy orchestrator pipeline (VTID-0523)
  */
 
 import { Router, Request, Response } from 'express';
@@ -22,6 +24,7 @@ import { randomUUID } from 'crypto';
 import { processMessage } from '../services/ai-orchestrator';
 import { ingestOperatorEvent, getTasksSummary, getRecentEvents, getCicdHealth, getOperatorHistory } from '../services/operator-service';
 import { getDeploymentHistory, getNextSWV, insertSoftwareVersion } from '../lib/versioning';
+import { runOperatorDeployPipeline } from '../services/operator-orchestrator'; // VTID-0523
 
 const router = Router();
 
@@ -466,6 +469,95 @@ router.get('/deployments/health', (_req: Request, res: Response) => {
       version_tracking: true,
     },
   });
+});
+
+// ==================== VTID-0523: Operator Deploy Orchestrator ====================
+
+const OperatorDeploySchema = z.object({
+  vtid: z.string().min(1, "VTID is required"),
+  service: z.string().min(1, "Service is required"),
+  environment: z.string().default('dev'),
+  branch: z.string().optional(),
+  pr_number: z.number().optional(),
+  skip_pr: z.boolean().default(true),      // Default: skip PR creation for Publish button
+  skip_merge: z.boolean().default(true),   // Default: skip merge for Publish button
+  trigger_workflow: z.boolean().default(false), // Default: dry run for safety
+});
+
+/**
+ * POST /deploy → /api/v1/operator/deploy
+ * VTID-0523: Operator Deploy Orchestrator endpoint
+ *
+ * Orchestrates the full deployment pipeline:
+ * - Create PR (optional)
+ * - Safe merge (optional)
+ * - Deploy service
+ */
+router.post('/deploy', async (req: Request, res: Response) => {
+  console.log('[Operator Deploy] Request received:', JSON.stringify(req.body));
+
+  try {
+    const validation = OperatorDeploySchema.safeParse(req.body);
+    if (!validation.success) {
+      console.error('[Operator Deploy] Validation failed:', validation.error.errors);
+      return res.status(400).json({
+        ok: false,
+        error: 'Validation failed',
+        details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+      });
+    }
+
+    const input = validation.data;
+
+    // Log the deploy request event
+    await ingestOperatorEvent({
+      vtid: input.vtid,
+      type: 'operator.deploy.requested',
+      status: 'info',
+      message: `Deploy requested: ${input.service} to ${input.environment}`,
+      payload: {
+        service: input.service,
+        environment: input.environment,
+        branch: input.branch,
+        skip_pr: input.skip_pr,
+        skip_merge: input.skip_merge,
+        trigger_workflow: input.trigger_workflow,
+      }
+    });
+
+    // Run the orchestrator pipeline
+    const result = await runOperatorDeployPipeline(input);
+
+    console.log(`[Operator Deploy] Pipeline ${result.ok ? 'succeeded' : 'failed'} for ${input.vtid}`);
+
+    return res.status(result.ok ? 200 : 500).json({
+      ok: result.ok,
+      data: result,
+      error: result.error || null
+    });
+
+  } catch (error: any) {
+    console.error('[Operator Deploy] Error:', error);
+
+    // Try to log the error event
+    try {
+      await ingestOperatorEvent({
+        vtid: req.body?.vtid || 'UNKNOWN',
+        type: 'operator.deploy.error',
+        status: 'error',
+        message: `Deploy error: ${error.message}`,
+        payload: { error: error.message }
+      });
+    } catch (e) {
+      // Ignore logging errors
+    }
+
+    return res.status(500).json({
+      ok: false,
+      error: 'Internal server error',
+      details: error.message
+    });
+  }
 });
 
 export default router;
