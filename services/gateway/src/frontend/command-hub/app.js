@@ -2283,11 +2283,16 @@ function getMostRecentVersion() {
     return state.versionHistory[0];
 }
 
+/**
+ * VTID-0523-B: Full Publish Confirmation Sheet
+ * Unified UX with inline version selection - no separate dropdown needed
+ */
 function renderPublishModal() {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.onclick = (e) => {
         if (e.target === overlay) {
+            console.log('[VTID-0523-B] Publish cancelled: clicked overlay');
             state.showPublishModal = false;
             renderApp();
         }
@@ -2295,134 +2300,226 @@ function renderPublishModal() {
 
     const modal = document.createElement('div');
     modal.className = 'modal publish-modal';
+    modal.style.cssText = 'max-width: 520px; width: 90%;';
 
-    // VTID-0523-A: Get selected version or default to most recent
-    const selectedVersion = getSelectedVersion() || getMostRecentVersion();
-    const hasVersion = selectedVersion !== null;
+    // Get current selection
+    const selectedVersion = getSelectedVersion();
+    const hasVersions = state.versionHistory && state.versionHistory.length > 0;
 
-    // Header - show exactly what will be deployed
+    // === HEADER ===
     const header = document.createElement('div');
     header.className = 'modal-header';
-    if (hasVersion) {
-        const commitShort = selectedVersion.commit ? selectedVersion.commit.substring(0, 7) : 'unknown';
-        header.textContent = `Deploy ${selectedVersion.swv} (${commitShort}) to dev?`;
-    } else {
-        header.textContent = 'No version selected';
-    }
+    header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.1);';
+
+    const title = document.createElement('span');
+    title.textContent = 'Publish to Environment';
+    title.style.cssText = 'font-size: 18px; font-weight: 600;';
+    header.appendChild(title);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.innerHTML = '&times;';
+    closeBtn.style.cssText = 'background: none; border: none; color: #888; font-size: 28px; cursor: pointer; padding: 0; line-height: 1;';
+    closeBtn.onclick = () => {
+        console.log('[VTID-0523-B] Publish cancelled: clicked close');
+        state.showPublishModal = false;
+        renderApp();
+    };
+    header.appendChild(closeBtn);
     modal.appendChild(header);
 
-    // Body - version details
+    // === BODY ===
     const body = document.createElement('div');
     body.className = 'modal-body';
+    body.style.cssText = 'padding: 20px;';
 
-    if (hasVersion) {
-        // VTID-0523-A: Version details panel
+    // Environment Info Section
+    const envSection = document.createElement('div');
+    envSection.style.cssText = 'margin-bottom: 20px; padding: 14px; background: rgba(255,255,255,0.03); border-radius: 8px; font-size: 13px;';
+    envSection.innerHTML = `
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <span style="color: #888;">Environment:</span>
+            <span style="color: #4ade80; font-weight: 500;">vitana-dev (us-central1)</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <span style="color: #888;">Service:</span>
+            <span style="color: #fff;">gateway</span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+            <span style="color: #888;">Domain:</span>
+            <span style="color: #60a5fa;">gateway-*.run.app</span>
+        </div>
+    `;
+    body.appendChild(envSection);
+
+    // Version Selector Section
+    const versionSection = document.createElement('div');
+    versionSection.style.cssText = 'margin-bottom: 20px;';
+
+    const versionLabel = document.createElement('div');
+    versionLabel.style.cssText = 'color: #888; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;';
+    versionLabel.textContent = 'Version to Deploy';
+    versionSection.appendChild(versionLabel);
+
+    // Inline Version Dropdown
+    const versionSelect = document.createElement('select');
+    versionSelect.id = 'publish-version-select';
+    versionSelect.style.cssText = `
+        width: 100%;
+        padding: 14px 16px;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.15);
+        border-radius: 8px;
+        color: #fff;
+        font-size: 14px;
+        cursor: pointer;
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 14px center;
+    `;
+
+    if (!hasVersions) {
+        const emptyOption = document.createElement('option');
+        emptyOption.value = '';
+        emptyOption.textContent = 'Loading versions...';
+        versionSelect.appendChild(emptyOption);
+        versionSelect.disabled = true;
+    } else {
+        // Placeholder option
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = '— Select a version to deploy —';
+        if (!selectedVersion) placeholder.selected = true;
+        versionSelect.appendChild(placeholder);
+
+        // Version options (newest first)
+        state.versionHistory.forEach(v => {
+            const option = document.createElement('option');
+            option.value = v.id;
+            const commitShort = v.commit ? v.commit.substring(0, 8) : 'unknown';
+            const statusIcon = v.status === 'success' ? '✓' : '⚠';
+            option.textContent = `${v.swv} — ${v.service} — ${commitShort} ${statusIcon}`;
+            if (selectedVersion && v.id === selectedVersion.id) {
+                option.selected = true;
+            }
+            versionSelect.appendChild(option);
+        });
+    }
+
+    versionSelect.onchange = (e) => {
+        state.selectedVersionId = e.target.value || null;
+        renderApp(); // Re-render to update details
+    };
+
+    versionSection.appendChild(versionSelect);
+    body.appendChild(versionSection);
+
+    // Version Details Panel (shows when version selected)
+    if (selectedVersion) {
         const detailsPanel = document.createElement('div');
-        detailsPanel.className = 'publish-modal__details';
-        detailsPanel.style.cssText = 'background: rgba(255,255,255,0.05); border-radius: 8px; padding: 16px; margin-bottom: 16px; font-family: monospace;';
+        detailsPanel.style.cssText = 'background: rgba(74, 222, 128, 0.08); border: 1px solid rgba(74, 222, 128, 0.25); border-radius: 8px; padding: 16px; margin-bottom: 16px; font-family: ui-monospace, monospace; font-size: 13px;';
 
-        const detailsTitle = document.createElement('div');
-        detailsTitle.style.cssText = 'color: #888; font-size: 12px; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;';
-        detailsTitle.textContent = 'Deploying';
-        detailsPanel.appendChild(detailsTitle);
-
-        // Service
-        const serviceRow = document.createElement('div');
-        serviceRow.style.cssText = 'display: flex; justify-content: space-between; margin-bottom: 8px;';
-        serviceRow.innerHTML = `<span style="color: #888;">Service:</span><span style="color: #fff;">${selectedVersion.service || 'gateway'}</span>`;
-        detailsPanel.appendChild(serviceRow);
-
-        // Version (SWV)
-        const versionRow = document.createElement('div');
-        versionRow.style.cssText = 'display: flex; justify-content: space-between; margin-bottom: 8px;';
-        versionRow.innerHTML = `<span style="color: #888;">Version:</span><span style="color: #4ade80; font-weight: bold;">${selectedVersion.swv}</span>`;
-        detailsPanel.appendChild(versionRow);
-
-        // VTID
-        const vtidRow = document.createElement('div');
-        vtidRow.style.cssText = 'display: flex; justify-content: space-between; margin-bottom: 8px;';
-        vtidRow.innerHTML = `<span style="color: #888;">VTID:</span><span style="color: #60a5fa;">${selectedVersion.vtid || 'N/A'}</span>`;
-        detailsPanel.appendChild(vtidRow);
-
-        // Commit
-        const commitRow = document.createElement('div');
-        commitRow.style.cssText = 'display: flex; justify-content: space-between; margin-bottom: 8px;';
         const commitFull = selectedVersion.commit || 'unknown';
-        const commitDisplay = commitFull.length > 7 ? commitFull.substring(0, 7) : commitFull;
-        commitRow.innerHTML = `<span style="color: #888;">Commit:</span><span style="color: #fbbf24;" title="${commitFull}">${commitDisplay}</span>`;
-        detailsPanel.appendChild(commitRow);
+        const commitShort = commitFull.length > 8 ? commitFull.substring(0, 8) : commitFull;
+        const statusColor = selectedVersion.status === 'success' ? '#4ade80' : '#fbbf24';
 
-        // Environment
-        const envRow = document.createElement('div');
-        envRow.style.cssText = 'display: flex; justify-content: space-between;';
-        envRow.innerHTML = `<span style="color: #888;">Environment:</span><span style="color: #fff;">dev</span>`;
-        detailsPanel.appendChild(envRow);
-
+        detailsPanel.innerHTML = `
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                <span style="color: #888;">Version:</span>
+                <span style="color: #4ade80; font-weight: 600; font-size: 14px;">${selectedVersion.swv}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                <span style="color: #888;">Commit:</span>
+                <span style="color: #fbbf24;" title="${commitFull}">${commitShort}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                <span style="color: #888;">VTID:</span>
+                <span style="color: #60a5fa;">${selectedVersion.vtid || 'N/A'}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+                <span style="color: #888;">Build Status:</span>
+                <span style="color: ${statusColor};">${(selectedVersion.status || 'unknown').charAt(0).toUpperCase() + (selectedVersion.status || 'unknown').slice(1)}</span>
+            </div>
+        `;
         body.appendChild(detailsPanel);
 
-        // Info message
-        const message = document.createElement('p');
-        message.className = 'publish-modal__message';
-        message.style.cssText = 'color: #888; font-size: 13px;';
-        message.textContent = 'This will trigger the deployment pipeline. Progress will appear in Live Ticker.';
-        body.appendChild(message);
-    } else {
-        // No version selected warning
-        const warning = document.createElement('div');
-        warning.style.cssText = 'text-align: center; padding: 24px; color: #f59e0b;';
-        warning.innerHTML = `
-            <div style="font-size: 48px; margin-bottom: 16px;">⚠️</div>
-            <div style="font-size: 16px; margin-bottom: 8px;">No version selected</div>
-            <div style="font-size: 13px; color: #888;">Select a version from the Versions dropdown before deploying.</div>
+        // Warning if this is the most recent (possibly already live)
+        const isLatest = state.versionHistory[0] && state.versionHistory[0].id === selectedVersion.id;
+        if (isLatest) {
+            const warningBox = document.createElement('div');
+            warningBox.style.cssText = 'background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.25); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; font-size: 13px; color: #fbbf24;';
+            warningBox.innerHTML = `<strong>Note:</strong> ${selectedVersion.swv} is the latest version. Re-deploying will trigger a fresh deployment.`;
+            body.appendChild(warningBox);
+        }
+    } else if (hasVersions) {
+        // No version selected - show instruction
+        const instructionBox = document.createElement('div');
+        instructionBox.style.cssText = 'background: rgba(96, 165, 250, 0.08); border: 1px solid rgba(96, 165, 250, 0.25); border-radius: 8px; padding: 20px; text-align: center; color: #60a5fa;';
+        instructionBox.innerHTML = `
+            <div style="font-size: 32px; margin-bottom: 10px;">☝️</div>
+            <div style="font-size: 14px;">Select a version above to see details</div>
         `;
-        body.appendChild(warning);
+        body.appendChild(instructionBox);
+    }
+
+    // CI/CD Health Warning
+    if (state.cicdHealth && state.cicdHealth.status === 'degraded') {
+        const cicdWarning = document.createElement('div');
+        cicdWarning.style.cssText = 'background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; font-size: 13px; color: #f87171;';
+        cicdWarning.innerHTML = `<strong>⚠ CI/CD Degraded:</strong> Deployment may fail. Check CI/CD health before proceeding.`;
+        body.appendChild(cicdWarning);
     }
 
     modal.appendChild(body);
 
-    // Footer
+    // === FOOTER ===
     const footer = document.createElement('div');
     footer.className = 'modal-footer';
+    footer.style.cssText = 'display: flex; justify-content: flex-end; gap: 12px; padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.1);';
 
     const cancelBtn = document.createElement('button');
     cancelBtn.className = 'btn';
     cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.cssText = 'padding: 12px 24px; background: rgba(255,255,255,0.1); border: none; border-radius: 6px; color: #fff; cursor: pointer;';
     cancelBtn.onclick = () => {
+        console.log('[VTID-0523-B] Publish cancelled: clicked cancel button');
         state.showPublishModal = false;
         renderApp();
     };
     footer.appendChild(cancelBtn);
 
-    const publishBtn = document.createElement('button');
-    publishBtn.className = 'btn btn-primary';
-    publishBtn.textContent = 'Deploy';
+    const deployBtn = document.createElement('button');
+    deployBtn.className = 'btn btn-primary';
 
-    // VTID-0523-A: Disable deploy if no version selected
-    if (!hasVersion) {
-        publishBtn.disabled = true;
-        publishBtn.style.cssText = 'opacity: 0.5; cursor: not-allowed;';
-        publishBtn.title = 'Select a version before deploying';
+    if (selectedVersion) {
+        deployBtn.textContent = `Deploy ${selectedVersion.swv}`;
+        deployBtn.style.cssText = 'padding: 12px 28px; background: #4ade80; border: none; border-radius: 6px; color: #000; font-weight: 600; cursor: pointer;';
+    } else {
+        deployBtn.textContent = 'Deploy';
+        deployBtn.disabled = true;
+        deployBtn.style.cssText = 'padding: 12px 28px; background: #4ade80; border: none; border-radius: 6px; color: #000; font-weight: 600; opacity: 0.4; cursor: not-allowed;';
+        deployBtn.title = 'Select a version first';
     }
 
-    publishBtn.onclick = async () => {
-        if (!hasVersion) {
+    deployBtn.onclick = async () => {
+        if (!selectedVersion) {
             showToast('Please select a version before deploying', 'error');
             return;
         }
 
-        // VTID-0523-A: Trigger deployment with full version info
-        console.log('[VTID-0523-A] Deploy requested:', selectedVersion);
-        publishBtn.disabled = true;
-        publishBtn.textContent = 'Deploying...';
+        console.log('[VTID-0523-B] Deploy confirmed:', selectedVersion);
+        deployBtn.disabled = true;
+        deployBtn.textContent = 'Deploying...';
+        deployBtn.style.opacity = '0.7';
 
         try {
-            // VTID-0523-A: Include full version details in payload
             const payload = {
                 vtid: selectedVersion.vtid || ('VTID-DEPLOY-' + Date.now()),
                 swv: selectedVersion.swv,
                 service: selectedVersion.service || 'gateway',
                 environment: 'dev',
-                commit: selectedVersion.commit
+                commit: selectedVersion.commit,
+                actor: 'operator-ui'
             };
 
             const response = await fetch('/api/v1/operator/deploy', {
@@ -2437,34 +2534,35 @@ function renderPublishModal() {
                 throw new Error(result.error || 'Deploy failed');
             }
 
-            console.log('[VTID-0523-A] Deploy queued:', result);
+            console.log('[VTID-0523-B] Deploy queued:', result);
             state.showPublishModal = false;
 
             const commitShort = selectedVersion.commit ? selectedVersion.commit.substring(0, 7) : '';
             showToast(`Deployment started: ${selectedVersion.swv} (${commitShort})`, 'success');
 
-            // Add to ticker with version details
+            // Add to ticker with full version details
             state.tickerEvents.unshift({
                 id: Date.now(),
                 timestamp: new Date().toLocaleTimeString(),
                 type: 'operator',
-                content: `Deploy started: ${selectedVersion.swv} (${commitShort}) to dev`
+                content: `Deploy: ${selectedVersion.swv} (${commitShort}) → vitana-dev`
             });
 
             renderApp();
 
         } catch (error) {
-            console.error('[VTID-0523-A] Deploy error:', error);
+            console.error('[VTID-0523-B] Deploy error:', error);
             showToast('Deploy failed: ' + error.message, 'error');
-            publishBtn.disabled = false;
-            publishBtn.textContent = 'Deploy';
+            deployBtn.disabled = false;
+            deployBtn.textContent = `Deploy ${selectedVersion.swv}`;
+            deployBtn.style.opacity = '1';
         }
     };
-    footer.appendChild(publishBtn);
 
+    footer.appendChild(deployBtn);
     modal.appendChild(footer);
-    overlay.appendChild(modal);
 
+    overlay.appendChild(modal);
     return overlay;
 }
 
