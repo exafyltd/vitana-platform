@@ -265,10 +265,130 @@ export async function getDeploymentHistory(limit: number = 20): Promise<{
   }
 }
 
+// ==================== VTID-0524 Types ====================
+
+export interface DeploymentWithVtid {
+  vtid: string | null;
+  swv: string;
+  service: string;
+  environment: string;
+  status: string;
+  created_at: string;
+  commit: string;
+}
+
+/**
+ * Get deployment history with VTID correlation (VTID-0524)
+ * Queries software_versions and correlates with oasis_events for VTID data
+ * Returns deployments sorted by created_at DESC with VTID when available
+ */
+export async function getDeploymentHistoryWithVtid(limit: number = 20): Promise<{
+  ok: boolean;
+  deployments?: DeploymentWithVtid[];
+  error?: string;
+}> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('[Versioning] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE');
+    return { ok: false, error: 'Gateway misconfigured: missing Supabase credentials' };
+  }
+
+  try {
+    // Step 1: Get software versions
+    const versionsResponse = await fetch(
+      `${supabaseUrl}/rest/v1/software_versions?select=swv_id,created_at,git_commit,status,service,environment&order=created_at.desc&limit=${limit}`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+        },
+      }
+    );
+
+    if (!versionsResponse.ok) {
+      const errorText = await versionsResponse.text();
+      console.error(`[Versioning] Failed to fetch software versions: ${versionsResponse.status} - ${errorText}`);
+      return { ok: false, error: `Database query failed: ${versionsResponse.status}` };
+    }
+
+    const versions = await versionsResponse.json() as Array<{
+      swv_id: string;
+      created_at: string;
+      git_commit: string;
+      status: string;
+      service: string;
+      environment: string;
+    }>;
+
+    if (!versions || versions.length === 0) {
+      return { ok: true, deployments: [] };
+    }
+
+    // Step 2: Get VTID mappings from oasis_events for deploy version recorded events
+    // Look for events where metadata contains the swv_id
+    const swvIds = versions.map(v => v.swv_id);
+    const vtidMap: Map<string, string> = new Map();
+
+    // Query oasis_events for cicd.deploy.version.recorded events
+    const eventsResponse = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_events?topic=eq.cicd.deploy.version.recorded&select=vtid,metadata&order=created_at.desc&limit=${limit * 2}`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+        },
+      }
+    );
+
+    if (eventsResponse.ok) {
+      const events = await eventsResponse.json() as Array<{
+        vtid: string;
+        metadata: { swv_id?: string } | null;
+      }>;
+
+      // Build a map of swv_id -> vtid
+      for (const event of events) {
+        const eventSwvId = event.metadata?.swv_id;
+        if (eventSwvId && swvIds.includes(eventSwvId) && !vtidMap.has(eventSwvId)) {
+          vtidMap.set(eventSwvId, event.vtid);
+        }
+      }
+    } else {
+      // Log warning but continue - VTID data is optional
+      console.warn('[Versioning] Could not fetch VTID mappings from oasis_events, continuing without VTID data');
+    }
+
+    // Step 3: Map deployments with VTID correlation
+    const deployments: DeploymentWithVtid[] = versions.map(v => ({
+      vtid: vtidMap.get(v.swv_id) || null,
+      swv: v.swv_id,
+      service: v.service,
+      environment: v.environment,
+      status: v.status,
+      created_at: v.created_at,
+      commit: v.git_commit.substring(0, 7), // Short commit hash
+    }));
+
+    console.log(`[Versioning] Returning ${deployments.length} deployments with VTID correlation`);
+    return { ok: true, deployments };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[Versioning] Error fetching deployments with VTID: ${errorMessage}`);
+    return { ok: false, error: errorMessage };
+  }
+}
+
 export default {
   getNextSWV,
   insertSoftwareVersion,
   getDeploymentHistory,
+  getDeploymentHistoryWithVtid,
   parseSWVNumber,
   formatSWV,
 };

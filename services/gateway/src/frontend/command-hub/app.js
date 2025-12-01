@@ -303,13 +303,15 @@ const state = {
     cicdHealthTooltipOpen: false
 };
 
-// --- Version History Data Model (VTID-0517) ---
+// --- Version History Data Model (VTID-0517 + VTID-0524) ---
 
 /**
  * Version status constants for deployment entries.
  * @enum {string}
  */
 const VersionStatus = {
+    SUCCESS: 'success',
+    FAILURE: 'failure',
     LIVE: 'live',
     DRAFT: 'draft',
     UNPUBLISHED: 'unpublished',
@@ -317,59 +319,56 @@ const VersionStatus = {
 };
 
 /**
+ * VTID-0524: Fetches deployment history from the canonical API endpoint.
+ * Returns deployment entries with VTID + SWV correlation.
+ *
+ * @returns {Promise<Array<{id: string, vtid: string|null, swv: string, label: string, status: string, createdAt: string, service: string, environment: string, commit: string}>>}
+ */
+async function fetchDeploymentHistory() {
+    console.log('[VTID-0524] Fetching deployment history...');
+
+    try {
+        const response = await fetch('/api/v1/operator/deployments?limit=50');
+        if (!response.ok) {
+            throw new Error('Deployment history fetch failed: ' + response.status);
+        }
+
+        const result = await response.json();
+        console.log('[VTID-0524] Deployment history loaded:', result);
+
+        if (!result.ok || !result.deployments) {
+            console.warn('[VTID-0524] Unexpected response format:', result);
+            return [];
+        }
+
+        // Map API response to version history format
+        return result.deployments.map((d, index) => ({
+            id: 'deploy-' + (d.swv || index),
+            vtid: d.vtid || null,
+            swv: d.swv || 'unknown',
+            label: d.service + ' ' + (d.swv || ''),
+            status: d.status || VersionStatus.UNKNOWN,
+            createdAt: d.created_at,
+            service: d.service,
+            environment: d.environment,
+            commit: d.commit
+        }));
+    } catch (error) {
+        console.error('[VTID-0524] Failed to fetch deployment history:', error);
+        return [];
+    }
+}
+
+/**
  * Loads version history entries.
- * Phase 1: Returns mock data for UI development.
+ * VTID-0524: Now returns cached version history or empty array.
+ * Use fetchDeploymentHistory() to refresh from API.
  *
- * TODO (future VTID): Replace mock data with real backend call, e.g.:
- * GET /api/v1/cicd/versions or /api/v1/oasis/events?topic=DEPLOYMENT
- * and map the response into VersionEntry[].
- *
- * @returns {Array<{id: string, vtid: string|null, label: string, status: string, createdAt: string, actor: string|null}>}
+ * @returns {Array}
  */
 function loadVersionHistory() {
-    // Phase 1: Local mock data
-    return [
-        {
-            id: 'deploy-001',
-            vtid: 'DEV-OASIS-0108',
-            label: 'OASIS tasks API endpoint',
-            status: VersionStatus.LIVE,
-            createdAt: '2025-11-28T08:14:42Z',
-            actor: 'claude-agent'
-        },
-        {
-            id: 'deploy-002',
-            vtid: 'DEV-CICDL-0207',
-            label: 'Safe merge CICD endpoints',
-            status: VersionStatus.DRAFT,
-            createdAt: '2025-11-27T15:30:00Z',
-            actor: 'david.stevens'
-        },
-        {
-            id: 'deploy-003',
-            vtid: 'DEV-NAV-0045',
-            label: 'Navigation operator update',
-            status: VersionStatus.UNPUBLISHED,
-            createdAt: '2025-11-26T10:45:00Z',
-            actor: 'system'
-        },
-        {
-            id: 'deploy-004',
-            vtid: 'DEV-CSP-0043',
-            label: 'Command Hub CSP compliance fix',
-            status: VersionStatus.UNPUBLISHED,
-            createdAt: '2025-11-25T18:22:15Z',
-            actor: 'claude-agent'
-        },
-        {
-            id: 'deploy-005',
-            vtid: null,
-            label: 'Gateway deploy r00164',
-            status: VersionStatus.UNPUBLISHED,
-            createdAt: '2025-11-24T09:00:00Z',
-            actor: 'ci-pipeline'
-        }
-    ];
+    // Return current state (populated by fetchDeploymentHistory)
+    return state.versionHistory || [];
 }
 
 /**
@@ -568,20 +567,27 @@ function renderHeader() {
     };
     left.appendChild(operatorBtn);
 
-    // 4. Clock / Version History icon button
+    // 4. Clock / Version History icon button (VTID-0524)
     const versionBtn = document.createElement('button');
     versionBtn.className = 'header-icon-button';
     versionBtn.title = 'Version History';
     // Clock icon using Unicode character (CSP compliant)
     versionBtn.innerHTML = '<span class="header-icon-button__icon">&#128337;</span>';
-    versionBtn.onclick = (e) => {
+    versionBtn.onclick = async (e) => {
         e.stopPropagation();
         state.isVersionDropdownOpen = !state.isVersionDropdownOpen;
         if (state.isVersionDropdownOpen) {
-            // Load version history when opening
-            state.versionHistory = loadVersionHistory();
+            // VTID-0524: Fetch version history from API when opening
+            renderApp(); // Show dropdown immediately
+            try {
+                state.versionHistory = await fetchDeploymentHistory();
+                renderApp();
+            } catch (error) {
+                console.error('[VTID-0524] Failed to fetch version history:', error);
+            }
+        } else {
+            renderApp();
         }
-        renderApp();
     };
     left.appendChild(versionBtn);
 
@@ -760,8 +766,14 @@ function renderHeader() {
     return header;
 }
 
-// --- Version History Dropdown (VTID-0517) ---
+// --- Version History Dropdown (VTID-0517 + VTID-0524) ---
 
+/**
+ * VTID-0524: Renders version history dropdown with deployments from API
+ * - Most recent on top
+ * - Shows SWV label
+ * - Hover/tooltip shows VTID + timestamp
+ */
 function renderVersionDropdown() {
     const dropdown = document.createElement('div');
     dropdown.className = 'version-dropdown';
@@ -776,51 +788,80 @@ function renderVersionDropdown() {
     const list = document.createElement('div');
     list.className = 'version-dropdown__list';
 
-    state.versionHistory.forEach(version => {
-        const item = document.createElement('div');
-        item.className = 'version-dropdown__item';
-        if (state.selectedVersionId === version.id) {
-            item.className += ' version-dropdown__item--selected';
-        }
+    // Show loading state if no data yet
+    if (!state.versionHistory || state.versionHistory.length === 0) {
+        const emptyItem = document.createElement('div');
+        emptyItem.className = 'version-dropdown__item version-dropdown__item--empty';
+        emptyItem.textContent = 'Loading deployments...';
+        list.appendChild(emptyItem);
+    } else {
+        // VTID-0524: Render deployments (already sorted by created_at DESC from API)
+        state.versionHistory.forEach(function(version) {
+            const item = document.createElement('div');
+            item.className = 'version-dropdown__item';
+            if (state.selectedVersionId === version.id) {
+                item.className += ' version-dropdown__item--selected';
+            }
 
-        // Primary label with VTID or just label
-        const label = document.createElement('div');
-        label.className = 'version-dropdown__item-label';
-        label.textContent = version.vtid
-            ? version.vtid + ' – ' + version.label
-            : version.label;
-        item.appendChild(label);
+            // VTID-0524: Build tooltip with VTID + timestamp
+            const tooltipParts = [];
+            if (version.vtid) {
+                tooltipParts.push(version.vtid);
+            }
+            if (version.createdAt) {
+                tooltipParts.push(new Date(version.createdAt).toLocaleString());
+            }
+            if (version.commit) {
+                tooltipParts.push('Commit: ' + version.commit);
+            }
+            item.title = tooltipParts.join(' | ');
 
-        // Meta line: timestamp + optional status badge
-        const meta = document.createElement('div');
-        meta.className = 'version-dropdown__item-meta';
+            // Primary label: SWV + service
+            const label = document.createElement('div');
+            label.className = 'version-dropdown__item-label';
+            label.textContent = version.swv + ' – ' + (version.service || 'unknown');
+            item.appendChild(label);
 
-        const timestamp = document.createElement('span');
-        timestamp.className = 'version-dropdown__item-timestamp';
-        timestamp.textContent = formatVersionTimestamp(version.createdAt);
-        meta.appendChild(timestamp);
+            // Meta line: timestamp + status badge
+            const meta = document.createElement('div');
+            meta.className = 'version-dropdown__item-meta';
 
-        if (version.status) {
-            const badge = document.createElement('span');
-            badge.className = 'version-dropdown__item-badge version-dropdown__item-badge--' + version.status;
-            badge.textContent = version.status.charAt(0).toUpperCase() + version.status.slice(1);
-            meta.appendChild(badge);
-        }
+            const timestamp = document.createElement('span');
+            timestamp.className = 'version-dropdown__item-timestamp';
+            timestamp.textContent = version.createdAt ? formatVersionTimestamp(version.createdAt) : '';
+            meta.appendChild(timestamp);
 
-        item.appendChild(meta);
+            if (version.status) {
+                const badge = document.createElement('span');
+                // VTID-0524: Map status to badge classes
+                let badgeClass = 'version-dropdown__item-badge';
+                if (version.status === 'success') {
+                    badgeClass += ' version-dropdown__item-badge--success';
+                } else if (version.status === 'failure') {
+                    badgeClass += ' version-dropdown__item-badge--failure';
+                } else {
+                    badgeClass += ' version-dropdown__item-badge--' + version.status;
+                }
+                badge.className = badgeClass;
+                badge.textContent = version.status.charAt(0).toUpperCase() + version.status.slice(1);
+                meta.appendChild(badge);
+            }
 
-        // Click handler
-        item.onclick = (e) => {
-            e.stopPropagation();
-            state.selectedVersionId = version.id;
-            const displayName = version.vtid || version.label;
-            showToast('Version ' + displayName + ' selected. Restore/publish flow will be implemented in a later step.', 'info');
-            state.isVersionDropdownOpen = false;
-            renderApp();
-        };
+            item.appendChild(meta);
 
-        list.appendChild(item);
-    });
+            // Click handler
+            item.onclick = function(e) {
+                e.stopPropagation();
+                state.selectedVersionId = version.id;
+                const displayName = version.swv || version.vtid || version.label;
+                showToast('Version ' + displayName + ' selected. Restore/publish flow will be implemented in a later step.', 'info');
+                state.isVersionDropdownOpen = false;
+                renderApp();
+            };
+
+            list.appendChild(item);
+        });
+    }
 
     dropdown.appendChild(list);
     return dropdown;
@@ -2085,6 +2126,10 @@ function renderOperatorTicker() {
     return container;
 }
 
+/**
+ * VTID-0524: Renders the operator history tab showing deployment history
+ * with VTID + SWV + status + timestamp
+ */
 function renderOperatorHistory() {
     const container = document.createElement('div');
     container.className = 'history-container';
@@ -2094,13 +2139,26 @@ function renderOperatorHistory() {
     header.className = 'history-header';
 
     const title = document.createElement('span');
-    title.textContent = 'Event History';
+    title.textContent = 'Deployment History';
     header.appendChild(title);
 
     const refreshBtn = document.createElement('button');
     refreshBtn.className = 'btn history-refresh-btn';
     refreshBtn.textContent = 'Refresh';
-    refreshBtn.onclick = () => fetchOperatorHistory();
+    refreshBtn.onclick = async () => {
+        state.historyLoading = true;
+        state.historyError = null;
+        renderApp();
+        try {
+            state.versionHistory = await fetchDeploymentHistory();
+            state.historyError = null;
+        } catch (error) {
+            state.historyError = error.message;
+        } finally {
+            state.historyLoading = false;
+            renderApp();
+        }
+    };
     header.appendChild(refreshBtn);
 
     container.appendChild(header);
@@ -2110,43 +2168,87 @@ function renderOperatorHistory() {
     content.className = 'history-content';
 
     if (state.historyLoading) {
-        content.innerHTML = '<div class="history-loading">Loading history...</div>';
+        content.innerHTML = '<div class="history-loading">Loading deployment history...</div>';
     } else if (state.historyError) {
-        content.innerHTML = `<div class="history-error">Error: ${state.historyError}</div>`;
-    } else if (state.historyEvents.length === 0) {
-        content.innerHTML = '<div class="history-empty">No history events yet. Click Refresh to load.</div>';
-        // Auto-fetch on first open
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'history-error';
+        errorDiv.textContent = 'Error: ' + state.historyError;
+        content.appendChild(errorDiv);
+    } else if (!state.versionHistory || state.versionHistory.length === 0) {
+        content.innerHTML = '<div class="history-empty">No deployments yet. Click Refresh to load.</div>';
+        // Auto-fetch on first open if empty
         if (!state.historyLoading) {
-            setTimeout(() => fetchOperatorHistory(), 100);
+            setTimeout(async () => {
+                state.historyLoading = true;
+                renderApp();
+                try {
+                    state.versionHistory = await fetchDeploymentHistory();
+                } catch (error) {
+                    state.historyError = error.message;
+                } finally {
+                    state.historyLoading = false;
+                    renderApp();
+                }
+            }, 100);
         }
     } else {
-        // Render history table
+        // VTID-0524: Render deployment history table
         const table = document.createElement('table');
         table.className = 'history-table';
 
         const thead = document.createElement('thead');
-        thead.innerHTML = `
-            <tr>
-                <th>Type</th>
-                <th>Status</th>
-                <th>VTID</th>
-                <th>Time</th>
-                <th>Summary</th>
-            </tr>
-        `;
+        const theadTr = document.createElement('tr');
+
+        ['VTID', 'Service', 'SWV', 'Timestamp', 'Status'].forEach(function(headerText) {
+            const th = document.createElement('th');
+            th.textContent = headerText;
+            theadTr.appendChild(th);
+        });
+        thead.appendChild(theadTr);
         table.appendChild(thead);
 
         const tbody = document.createElement('tbody');
-        state.historyEvents.forEach(event => {
+        state.versionHistory.forEach(function(deploy) {
             const tr = document.createElement('tr');
-            const timeStr = new Date(event.created_at).toLocaleString();
-            tr.innerHTML = `
-                <td class="history-type">${event.type}</td>
-                <td class="history-status history-status-${event.status}">${event.status}</td>
-                <td class="history-vtid">${event.vtid || '-'}</td>
-                <td class="history-time">${timeStr}</td>
-                <td class="history-summary">${event.summary}</td>
-            `;
+
+            // VTID column
+            const vtidTd = document.createElement('td');
+            vtidTd.className = 'history-vtid';
+            vtidTd.textContent = deploy.vtid || '-';
+            tr.appendChild(vtidTd);
+
+            // Service column
+            const serviceTd = document.createElement('td');
+            serviceTd.className = 'history-service';
+            serviceTd.textContent = deploy.service || '-';
+            tr.appendChild(serviceTd);
+
+            // SWV column
+            const swvTd = document.createElement('td');
+            swvTd.className = 'history-swv';
+            swvTd.textContent = deploy.swv || '-';
+            tr.appendChild(swvTd);
+
+            // Timestamp column
+            const timeTd = document.createElement('td');
+            timeTd.className = 'history-time';
+            timeTd.textContent = deploy.createdAt ? new Date(deploy.createdAt).toLocaleString() : '-';
+            tr.appendChild(timeTd);
+
+            // Status column with color coding
+            const statusTd = document.createElement('td');
+            statusTd.className = 'history-status';
+            const statusBadge = document.createElement('span');
+            statusBadge.className = 'history-status-badge';
+            if (deploy.status === 'success') {
+                statusBadge.className += ' history-status-success';
+            } else if (deploy.status === 'failure') {
+                statusBadge.className += ' history-status-failed';
+            }
+            statusBadge.textContent = deploy.status || 'unknown';
+            statusTd.appendChild(statusBadge);
+            tr.appendChild(statusTd);
+
             tbody.appendChild(tr);
         });
         table.appendChild(tbody);
