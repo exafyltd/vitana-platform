@@ -123,7 +123,9 @@ export async function createVtid(
     });
 
     if (!rpcResp.ok) {
-      return { ok: false, error: 'VTID generation failed' };
+      const errorText = await rpcResp.text();
+      console.error(`[Deploy Orchestrator] VTID generation failed: ${rpcResp.status} - ${errorText}`);
+      return { ok: false, error: `VTID generation failed: ${errorText}` };
     }
 
     const vtid = await rpcResp.json() as string;
@@ -145,12 +147,15 @@ export async function createVtid(
         status: 'scheduled',
         tenant: 'vitana',
         is_test: false,
+        description_md: '',
         metadata: {},
       }),
     });
 
     if (!insertResp.ok) {
-      return { ok: false, error: 'VTID insert failed' };
+      const errorText = await insertResp.text();
+      console.error(`[Deploy Orchestrator] VTID insert failed: ${insertResp.status} - ${errorText}`);
+      return { ok: false, error: `VTID insert failed: ${errorText}` };
     }
 
     console.log(`[Deploy Orchestrator] Created VTID: ${vtid}`);
