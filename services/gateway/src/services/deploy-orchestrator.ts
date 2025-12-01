@@ -144,7 +144,7 @@ export async function createVtid(
         vtid,
         task_family: family,
         task_module: module.toUpperCase(),
-        layer: family.toUpperCase(),
+        layer: module.toUpperCase().slice(0, 3),
         title,
         status: 'scheduled',
         tenant: 'vitana',
