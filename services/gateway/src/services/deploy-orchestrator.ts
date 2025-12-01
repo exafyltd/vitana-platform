@@ -140,6 +140,7 @@ export async function createVtid(
         Prefer: 'return=representation',
       },
       body: JSON.stringify({
+        id: randomUUID(),
         vtid,
         task_family: family,
         task_module: module.toUpperCase(),
