@@ -2360,55 +2360,114 @@ function renderPublishModal() {
     versionLabel.textContent = 'Version to Deploy';
     versionSection.appendChild(versionLabel);
 
-    // Inline Version Dropdown - dark text so options visible in native browser dropdown
-    const versionSelect = document.createElement('select');
-    versionSelect.id = 'publish-version-select';
-    versionSelect.style.cssText = `
+    // Custom dark-themed dropdown
+    const dropdownContainer = document.createElement('div');
+    dropdownContainer.style.cssText = 'position: relative;';
+
+    const dropdownButton = document.createElement('button');
+    dropdownButton.type = 'button';
+    dropdownButton.style.cssText = `
         width: 100%;
         padding: 14px 16px;
-        background: #fff;
-        border: 2px solid #4ade80;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.15);
         border-radius: 8px;
-        color: #000;
+        color: #fff;
         font-size: 14px;
-        font-weight: 500;
         cursor: pointer;
+        text-align: left;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
     `;
 
+    const buttonText = document.createElement('span');
     if (!hasVersions) {
-        const emptyOption = document.createElement('option');
-        emptyOption.value = '';
-        emptyOption.textContent = 'Loading versions...';
-        versionSelect.appendChild(emptyOption);
-        versionSelect.disabled = true;
+        buttonText.textContent = 'Loading versions...';
+        buttonText.style.color = '#888';
+    } else if (selectedVersion) {
+        const commitShort = selectedVersion.commit ? selectedVersion.commit.substring(0, 8) : 'unknown';
+        buttonText.textContent = `${selectedVersion.swv} — ${selectedVersion.service} — ${commitShort}`;
+        buttonText.style.color = '#4ade80';
     } else {
-        // Placeholder option
-        const placeholder = document.createElement('option');
-        placeholder.value = '';
-        placeholder.textContent = '— Select a version to deploy —';
-        if (!selectedVersion) placeholder.selected = true;
-        versionSelect.appendChild(placeholder);
+        buttonText.textContent = '— Select a version to deploy —';
+        buttonText.style.color = '#888';
+    }
+    dropdownButton.appendChild(buttonText);
 
-        // Version options (newest first)
+    const arrow = document.createElement('span');
+    arrow.textContent = '▼';
+    arrow.style.cssText = 'color: #888; font-size: 10px; transition: transform 0.2s;';
+    dropdownButton.appendChild(arrow);
+
+    const dropdownList = document.createElement('div');
+    dropdownList.id = 'version-dropdown-list';
+    dropdownList.style.cssText = `
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: #1e293b;
+        border: 1px solid rgba(255,255,255,0.15);
+        border-radius: 8px;
+        margin-top: 4px;
+        max-height: 280px;
+        overflow-y: auto;
+        z-index: 1000;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    `;
+
+    if (hasVersions) {
         state.versionHistory.forEach(v => {
-            const option = document.createElement('option');
-            option.value = v.id;
+            const item = document.createElement('div');
             const commitShort = v.commit ? v.commit.substring(0, 8) : 'unknown';
             const statusIcon = v.status === 'success' ? '✓' : '⚠';
-            option.textContent = `${v.swv} — ${v.service} — ${commitShort} ${statusIcon}`;
-            if (selectedVersion && v.id === selectedVersion.id) {
-                option.selected = true;
-            }
-            versionSelect.appendChild(option);
+            const isSelected = selectedVersion && v.id === selectedVersion.id;
+
+            item.style.cssText = `
+                padding: 12px 16px;
+                cursor: pointer;
+                border-bottom: 1px solid rgba(255,255,255,0.05);
+                color: ${isSelected ? '#4ade80' : '#fff'};
+                background: ${isSelected ? 'rgba(74,222,128,0.1)' : 'transparent'};
+            `;
+            item.innerHTML = `
+                <div style="font-weight: 500;">${v.swv} — ${v.service} ${statusIcon}</div>
+                <div style="font-size: 12px; color: #888; margin-top: 4px;">Commit: ${commitShort} | ${v.vtid || 'N/A'}</div>
+            `;
+
+            item.onmouseenter = () => { item.style.background = isSelected ? 'rgba(74,222,128,0.15)' : 'rgba(255,255,255,0.08)'; };
+            item.onmouseleave = () => { item.style.background = isSelected ? 'rgba(74,222,128,0.1)' : 'transparent'; };
+
+            item.onclick = (e) => {
+                e.stopPropagation();
+                state.selectedVersionId = v.id;
+                renderApp();
+            };
+
+            dropdownList.appendChild(item);
         });
     }
 
-    versionSelect.onchange = (e) => {
-        state.selectedVersionId = e.target.value || null;
-        renderApp(); // Re-render to update details
+    dropdownButton.onclick = (e) => {
+        e.stopPropagation();
+        const isOpen = dropdownList.style.display === 'block';
+        dropdownList.style.display = isOpen ? 'none' : 'block';
+        arrow.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
     };
 
-    versionSection.appendChild(versionSelect);
+    // Close dropdown when clicking outside
+    overlay.addEventListener('click', (e) => {
+        if (!dropdownContainer.contains(e.target)) {
+            dropdownList.style.display = 'none';
+            arrow.style.transform = 'rotate(0deg)';
+        }
+    });
+
+    dropdownContainer.appendChild(dropdownButton);
+    dropdownContainer.appendChild(dropdownList);
+    versionSection.appendChild(dropdownContainer);
     body.appendChild(versionSection);
 
     // Version Details Panel (shows when version selected)
