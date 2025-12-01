@@ -605,9 +605,20 @@ function renderHeader() {
     const publishBtn = document.createElement('button');
     publishBtn.className = 'header-button header-button--publish';
     publishBtn.textContent = 'Publish';
-    publishBtn.onclick = () => {
+    publishBtn.onclick = async () => {
         state.showPublishModal = true;
-        renderApp();
+        renderApp(); // Show modal immediately with loading state
+
+        // Fetch version history if not already loaded
+        if (!state.versionHistory || state.versionHistory.length === 0) {
+            try {
+                console.log('[VTID-0523-B] Fetching version history for publish modal');
+                state.versionHistory = await fetchDeploymentHistory();
+                renderApp(); // Re-render with loaded versions
+            } catch (error) {
+                console.error('[VTID-0523-B] Failed to fetch version history:', error);
+            }
+        }
     };
     center.appendChild(publishBtn);
 
