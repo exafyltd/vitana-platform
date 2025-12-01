@@ -2414,9 +2414,10 @@ async function fetchHeartbeatSnapshot() {
 
         state.operatorHeartbeatSnapshot = snapshot;
 
-        // Add snapshot events to ticker
-        if (snapshot.events && snapshot.events.length > 0) {
-            snapshot.events.forEach(event => {
+        // Add snapshot events to ticker (backend returns 'recent_events', not 'events')
+        const events = snapshot.recent_events || snapshot.events || [];
+        if (events.length > 0) {
+            events.forEach(event => {
                 state.tickerEvents.unshift({
                     id: Date.now() + Math.random(),
                     timestamp: new Date(event.created_at).toLocaleTimeString(),
