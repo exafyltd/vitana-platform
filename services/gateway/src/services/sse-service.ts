@@ -51,7 +51,15 @@ class SseService {
       this.eventBuffer.shift();
     }
 
-    const message = `data: ${JSON.stringify(event)}\n\n`;
+    // VTID-0523: Support named events for Live Ticker
+    // If event has 'event' and 'data' properties, use SSE named event format
+    let message: string;
+    if (event.event && event.data) {
+      message = `event: ${event.event}\ndata: ${JSON.stringify(event.data)}\n\n`;
+    } else {
+      message = `data: ${JSON.stringify(event)}\n\n`;
+    }
+
     this.clients.forEach(client => {
       try {
         client.res.write(message);

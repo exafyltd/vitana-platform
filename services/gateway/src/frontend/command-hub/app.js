@@ -2703,7 +2703,7 @@ async function fetchOperatorHistory() {
         const result = await response.json();
         console.log('[Operator] History loaded:', result);
 
-        state.historyEvents = result.data || [];
+        state.historyEvents = result.history || result.data || [];
         state.historyError = null;
 
     } catch (error) {

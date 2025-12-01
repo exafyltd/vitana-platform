@@ -5,6 +5,7 @@
 
 import fetch from 'node-fetch';
 import { randomUUID } from 'crypto';
+import { sseService } from './sse-service';
 
 // Environment config
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -53,31 +54,47 @@ export interface HistoryEvent {
 
 /**
  * Ingest an operator event to OASIS via /api/v1/events/ingest
+ * VTID-0523: Also broadcasts to local SSE for Live Ticker
  */
 export async function ingestOperatorEvent(input: OperatorEventInput): Promise<void> {
+  const eventId = randomUUID();
+  const timestamp = new Date().toISOString();
+
+  // Build the event payload
+  const eventPayload = {
+    id: eventId,
+    created_at: timestamp,
+    vtid: input.vtid,
+    type: input.type,  // For SSE broadcast
+    topic: input.type, // For Supabase storage
+    service: 'operator-console',
+    role: 'OPERATOR',
+    model: 'operator-service',
+    status: input.status,
+    message: input.message,
+    link: null,
+    metadata: input.payload || {},
+    payload: { message: input.message, ...input.payload } // For SSE event format
+  };
+
+  // VTID-0523: Broadcast via local SSE for Live Ticker (always works, no external deps)
+  try {
+    sseService.broadcast({
+      event: 'oasis-event',
+      data: eventPayload
+    });
+    console.log(`[Operator Service] Event broadcasted via SSE: ${input.type}`);
+  } catch (e) {
+    console.error(`[Operator Service] SSE broadcast failed: ${e}`);
+  }
+
+  // Store in Supabase if configured
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
-    console.warn('[Operator Service] Supabase not configured, skipping event ingest');
+    console.warn('[Operator Service] Supabase not configured, skipping database storage');
     return;
   }
 
   try {
-    const eventId = randomUUID();
-    const timestamp = new Date().toISOString();
-
-    const payload = {
-      id: eventId,
-      created_at: timestamp,
-      vtid: input.vtid,
-      topic: input.type,
-      service: 'operator-console',
-      role: 'OPERATOR',
-      model: 'operator-service',
-      status: input.status,
-      message: input.message,
-      link: null,
-      metadata: input.payload || {}
-    };
-
     const resp = await fetch(`${SUPABASE_URL}/rest/v1/oasis_events`, {
       method: 'POST',
       headers: {
@@ -86,14 +103,14 @@ export async function ingestOperatorEvent(input: OperatorEventInput): Promise<vo
         Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
         Prefer: 'return=minimal'
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(eventPayload)
     });
 
     if (!resp.ok) {
       const text = await resp.text();
       console.error(`[Operator Service] Event ingest failed: ${resp.status} - ${text}`);
     } else {
-      console.log(`[Operator Service] Event ingested: ${input.type}`);
+      console.log(`[Operator Service] Event ingested to DB: ${input.type}`);
     }
   } catch (error: any) {
     console.error(`[Operator Service] Event ingest error: ${error.message}`);

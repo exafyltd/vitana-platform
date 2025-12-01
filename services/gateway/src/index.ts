@@ -60,11 +60,13 @@ app.use('/api/v1/operator', operatorRouter);
 app.use('/api/v1/commandhub', commandhub);
 app.use('/api/v1', operatorRouter); // VTID-0509: Operator Console API
 app.use("/", tasksRouter);
-app.use(eventsApiRouter);
+// VTID-0523: Mount local SSE service FIRST so it handles /api/v1/events/stream
+// This provides real-time events for Live Ticker without external OASIS dependency
+app.use(sseService.router);
+app.use(eventsApiRouter);  // Handles /api/v1/events (list endpoint)
 app.use(eventsRouter);
 app.use(oasisTasksRouter); // OASIS Tasks API
 app.use('/command-hub', commandHubRouter);
-app.use(sseService.router);
 app.use('/api/v1/board', boardAdapter); // Keep one canonical board adapter mount
 app.use('/api/v1/board', boardAdapter); // Keep one canonical board adapter mount
 
