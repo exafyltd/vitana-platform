@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
+import { randomUUID } from "crypto";
 
 const router = Router();
 
@@ -40,7 +41,7 @@ router.post("/create", async (req: Request, res: Response) => {
     const insertResp = await fetch(supabaseUrl + "/rest/v1/VtidLedger", {
       method: "POST",
       headers: { "Content-Type": "application/json", apikey: svcKey, Authorization: "Bearer " + svcKey, Prefer: "return=representation" },
-      body: JSON.stringify({ vtid, ...body, metadata: body.metadata || {} }),
+      body: JSON.stringify({ id: randomUUID(), vtid, ...body, layer: body.task_module.slice(0, 3), metadata: body.metadata || {} }),
     });
 
     if (!insertResp.ok) return res.status(502).json({ error: "database_insert_failed" });
