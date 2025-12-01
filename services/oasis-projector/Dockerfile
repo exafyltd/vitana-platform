@@ -1,32 +1,26 @@
-FROM node:18-alpine
-
-# Install dependencies for Prisma
-RUN apk add --no-cache openssl
-
+FROM node:20-alpine AS builder
+RUN apk add --no-cache openssl libc6-compat
 WORKDIR /app
-
-# Copy package files
 COPY package*.json ./
+COPY tsconfig.json ./
 COPY prisma ./prisma/
-
-# Install dependencies
-RUN npm ci
-
-# Generate Prisma client
+RUN npm install
 RUN npx prisma generate
-
-# Copy source code
-COPY . .
-
-# Build the application
+COPY BUILD_INFO ./
+COPY src ./src
 RUN npm run build
 
-# Expose port
+FROM node:20-alpine
+RUN apk add --no-cache openssl libc6-compat
+WORKDIR /app
+COPY package*.json ./
+COPY prisma ./prisma/
+RUN npm install --production
+RUN npx prisma generate || true
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/dist ./dist
+COPY BUILD_INFO ./
+ENV NODE_ENV=production
+ENV PORT=8080
 EXPOSE 8080
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:8080/alive', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"
-
-# Start the application
-CMD ["npm", "start"]
+CMD ["node", "dist/index.js"]

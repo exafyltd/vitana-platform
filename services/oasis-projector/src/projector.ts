@@ -1,11 +1,18 @@
 import { Database } from './database';
 import { logger } from './logger';
 
-interface Event {
+interface OasisEventRecord {
   id: string;
+<<<<<<< HEAD
   type: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   payload: any;
+=======
+  event: string;
+  service: string;
+  status: string;
+  metadata: unknown;
+>>>>>>> claude/auto-vtid-ledger-writer-014epsPGWZMwKqBJb1iJZrzg
   createdAt: Date;
   projected: boolean;
 }
@@ -81,11 +88,12 @@ export class Projector {
 
     // Process each event
     for (const event of events) {
-      await this.projectEvent(event);
+      await this.projectEvent(event as OasisEventRecord);
     }
 
     // Update offset
     const lastEvent = events[events.length - 1];
+<<<<<<< HEAD
     await db.projectionOffset.upsert({
       where: { projectorName: this.PROJECTOR_NAME },
       create: {
@@ -96,6 +104,11 @@ export class Projector {
         eventsProcessed: events.length
       },
       update: {
+=======
+    await db.projectionOffset.update({
+      where: { projectorName: this.PROJECTOR_NAME },
+      data: {
+>>>>>>> claude/auto-vtid-ledger-writer-014epsPGWZMwKqBJb1iJZrzg
         lastEventId: lastEvent.id,
         lastEventTime: lastEvent.createdAt,
         lastProcessedAt: new Date(),
@@ -108,10 +121,10 @@ export class Projector {
     logger.info(`Batch complete. Processed ${events.length} events`);
   }
 
-  private async projectEvent(event: Event): Promise<void> {
+  private async projectEvent(event: OasisEventRecord): Promise<void> {
     try {
       // Project the event based on its type
-      switch (event.type) {
+      switch (event.event) {
         case 'user_created':
           await this.projectUserCreated(event);
           break;
@@ -122,7 +135,7 @@ export class Projector {
           await this.projectTransactionCreated(event);
           break;
         default:
-          logger.warn(`Unknown event type: ${event.type}`, { eventId: event.id });
+          logger.debug(`Unhandled event type: ${event.event}`, { eventId: event.id });
       }
 
       // Mark event as projected
@@ -131,7 +144,7 @@ export class Projector {
         data: { projected: true }
       });
 
-      logger.debug(`Event projected: ${event.type}`, { eventId: event.id });
+      logger.debug(`Event projected: ${event.event}`, { eventId: event.id });
 
     } catch (error) {
       logger.error(`Failed to project event ${event.id}`, error);
@@ -139,29 +152,27 @@ export class Projector {
     }
   }
 
-  private async projectUserCreated(event: Event): Promise<void> {
-    const { userId, email, name } = event.payload;
+  private async projectUserCreated(event: OasisEventRecord): Promise<void> {
+    const metadata = event.metadata as Record<string, unknown> || {};
+    const { userId, email, name } = metadata;
     logger.info(`Projecting user created: ${userId}`, { email, name });
-    
+
     // TODO: Implement actual projection logic
-    // This could involve:
-    // - Creating a user record in a read-optimized table
-    // - Updating search indexes
-    // - Sending notifications
-    // - Updating cache
   }
 
-  private async projectUserUpdated(event: Event): Promise<void> {
-    const { userId, changes } = event.payload;
+  private async projectUserUpdated(event: OasisEventRecord): Promise<void> {
+    const metadata = event.metadata as Record<string, unknown> || {};
+    const { userId, changes } = metadata;
     logger.info(`Projecting user updated: ${userId}`, { changes });
-    
+
     // TODO: Implement actual projection logic
   }
 
-  private async projectTransactionCreated(event: Event): Promise<void> {
-    const { transactionId, amount, currency } = event.payload;
+  private async projectTransactionCreated(event: OasisEventRecord): Promise<void> {
+    const metadata = event.metadata as Record<string, unknown> || {};
+    const { transactionId, amount, currency } = metadata;
     logger.info(`Projecting transaction created: ${transactionId}`, { amount, currency });
-    
+
     // TODO: Implement actual projection logic
   }
 

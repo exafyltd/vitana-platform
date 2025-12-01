@@ -12,16 +12,25 @@ datasource db {
 
 model OasisEvent {
   id        String   @id @default(cuid())
+<<<<<<< HEAD
   rid       String? // external request/event id (optional)
   service   String
   event     String? // Event name (legacy field)
   tenant    String? // "system" | "maxina" | "earthlings" | "alkalma" | etc.
   status    String // "start" | "success" | "fail" | "blocked" | "info" | "warning" | "error"
+=======
+  rid       String // external request/event id (optional but recommended)
+  service   String
+  event     String
+  tenant    String // "system" | "maxina" | "earthlings" | "alkalma" | etc.
+  status    String // "start" | "success" | "fail" | "blocked" | ...
+>>>>>>> claude/auto-vtid-ledger-writer-014epsPGWZMwKqBJb1iJZrzg
   notes     String?  @db.Text
   gitSha    String?  @map("git_sha")
   metadata  Json?
   createdAt DateTime @default(now()) @map("created_at")
 
+<<<<<<< HEAD
   // VTID-0522: Fields for event ingest API (/api/v1/events/ingest)
   vtid    String? // VTID reference (e.g., "VTID-0521-TEST-0001")
   topic   String? // Event type (e.g., "deployment_succeeded")
@@ -31,6 +40,8 @@ model OasisEvent {
   link    String? // Optional link
   source  String? // Event source (alternative to service)
 
+=======
+>>>>>>> claude/auto-vtid-ledger-writer-014epsPGWZMwKqBJb1iJZrzg
   // Projection tracking (DEV-OASIS-0010)
   projected Boolean @default(false)
 
@@ -39,8 +50,11 @@ model OasisEvent {
   @@index([service, createdAt], map: "idx_oasis_events_service_created")
   @@index([tenant, createdAt], map: "idx_oasis_events_tenant_created")
   @@index([status, createdAt], map: "idx_oasis_events_status_created")
+<<<<<<< HEAD
   @@index([vtid], map: "idx_oasis_events_vtid")
   @@map("oasis_events")
+=======
+>>>>>>> claude/auto-vtid-ledger-writer-014epsPGWZMwKqBJb1iJZrzg
 }
 
 model VtidLedger {
@@ -63,12 +77,15 @@ model VtidLedger {
   service     String? // Service that triggered the update (e.g., "gateway", "oasis-projector")
   environment String?   @default("dev") // Environment (dev, staging, prod)
 
+<<<<<<< HEAD
   // VTID-0522: Additional columns for tasks API compatibility
   layer   String? // High-level category (maps to taskFamily for compatibility)
   module  String? // Module name (maps to taskType for compatibility)
   title   String? // Short display title
   summary String? @db.Text // Summary text for display
 
+=======
+>>>>>>> claude/auto-vtid-ledger-writer-014epsPGWZMwKqBJb1iJZrzg
   @@index([createdAt], map: "idx_vtid_created_at")
   @@index([taskFamily, createdAt], map: "idx_vtid_family_created")
   @@index([status, createdAt], map: "idx_vtid_status_created")
@@ -76,7 +93,10 @@ model VtidLedger {
   @@index([vtid], map: "idx_vtid_lookup")
   @@index([lastEventAt(sort: Desc)], map: "idx_vtid_last_event_at")
   @@index([service], map: "idx_vtid_service")
+<<<<<<< HEAD
   @@map("vtid_ledger")
+=======
+>>>>>>> claude/auto-vtid-ledger-writer-014epsPGWZMwKqBJb1iJZrzg
 }
 
 // Projection Offsets - tracks projection progress (DEV-OASIS-0010)

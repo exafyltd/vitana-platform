@@ -63,12 +63,15 @@ model VtidLedger {
   service     String? // Service that triggered the update (e.g., "gateway", "oasis-projector")
   environment String?   @default("dev") // Environment (dev, staging, prod)
 
+<<<<<<< HEAD
   // VTID-0522: Additional columns for tasks API compatibility
   layer   String? // High-level category (maps to taskFamily for compatibility)
   module  String? // Module name (maps to taskType for compatibility)
   title   String? // Short display title
   summary String? @db.Text // Summary text for display
 
+=======
+>>>>>>> claude/auto-vtid-ledger-writer-014epsPGWZMwKqBJb1iJZrzg
   @@index([createdAt], map: "idx_vtid_created_at")
   @@index([taskFamily, createdAt], map: "idx_vtid_family_created")
   @@index([status, createdAt], map: "idx_vtid_status_created")
@@ -76,7 +79,10 @@ model VtidLedger {
   @@index([vtid], map: "idx_vtid_lookup")
   @@index([lastEventAt(sort: Desc)], map: "idx_vtid_last_event_at")
   @@index([service], map: "idx_vtid_service")
+<<<<<<< HEAD
   @@map("vtid_ledger")
+=======
+>>>>>>> claude/auto-vtid-ledger-writer-014epsPGWZMwKqBJb1iJZrzg
 }
 
 // Projection Offsets - tracks projection progress (DEV-OASIS-0010)
