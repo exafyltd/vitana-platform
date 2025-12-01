@@ -19,11 +19,9 @@ const PORT = process.env.PORT || 8080;
 
 // CORS setup - DEV-OASIS-0101
 setupCors(app);
-app.use("/api/v1/commandhub/board", boardAdapter);
 app.use(sseHeaders);
 
-// Middleware
-app.use("/api/v1/commandhub/board", boardAdapter);
+// Middleware - IMPORTANT: JSON body parser must come before route handlers
 app.use(express.json());
 
 // Health check
@@ -43,6 +41,29 @@ app.get('/debug/governance-ping', (_req, res) => {
   res.json({ ok: true, message: 'governance debug route reached', timestamp: new Date().toISOString() });
 });
 
+// VTID-0524: Diagnostic endpoint to verify deployed code version
+app.get('/debug/vtid-0524', (_req, res) => {
+  res.json({
+    ok: true,
+    vtid: 'VTID-0524',
+    description: 'Operator History & Versions Rewire - VTID/SWV Source of Truth',
+    build: 'vtid-0524-fix-routes-' + Date.now(),
+    fixes: [
+      'Removed duplicate operatorRouter mount at /api/v1 (was causing route conflicts)',
+      'Moved boardAdapter mount after express.json() (body parsing fix)',
+      'Removed duplicate boardAdapter mounts',
+      'Cleaned up middleware ordering'
+    ],
+    timestamp: new Date().toISOString(),
+    env: {
+      hasSupabaseUrl: !!process.env.SUPABASE_URL,
+      hasSupabaseKey: !!process.env.SUPABASE_SERVICE_ROLE,
+      hasGitHubToken: !!process.env.GITHUB_SAFE_MERGE_TOKEN,
+      nodeEnv: process.env.NODE_ENV || 'development'
+    }
+  });
+});
+
 // Mount routes
 app.use('/api/v1/governance', governanceRouter); // DEV-GOVBE-0106: Governance endpoints
 app.use('/api/v1/vtid', vtidRouter);
@@ -58,15 +79,15 @@ app.use('/api/v1/cicd', cicdRouter);
 // Routes: /api/v1/operator/health, /heartbeat, /history, /chat, /upload, /deployments
 app.use('/api/v1/operator', operatorRouter);
 app.use('/api/v1/commandhub', commandhub);
-app.use('/api/v1', operatorRouter); // VTID-0509: Operator Console API
+// Board adapter for commandhub
+app.use("/api/v1/commandhub/board", boardAdapter);
 app.use("/", tasksRouter);
 app.use(eventsApiRouter);
 app.use(eventsRouter);
 app.use(oasisTasksRouter); // OASIS Tasks API
 app.use('/command-hub', commandHubRouter);
 app.use(sseService.router);
-app.use('/api/v1/board', boardAdapter); // Keep one canonical board adapter mount
-app.use('/api/v1/board', boardAdapter); // Keep one canonical board adapter mount
+app.use('/api/v1/board', boardAdapter); // Board adapter for v1 API
 
 // Serve Command Hub static files
 const staticPath = process.env.NODE_ENV === 'production'
@@ -89,4 +110,4 @@ if (process.env.NODE_ENV === 'test') {
 }
 
 export default app;
-// VTID-0509 build 1764361525
+// VTID-0524 build fix-routes-middleware-ordering
