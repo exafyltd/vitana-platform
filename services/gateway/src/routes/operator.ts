@@ -546,7 +546,7 @@ router.post('/deploy', async (req: Request, res: Response) => {
       return res.status(400).json({ ok: false, error: 'service is required' });
     }
 
-    const env = environment || 'dev-sandbox';
+    const env = environment || 'dev';
 
     // Emit operator.deploy.requested event
     await ingestOperatorEvent({

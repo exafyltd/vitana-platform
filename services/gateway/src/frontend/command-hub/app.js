@@ -2317,7 +2317,7 @@ function renderPublishModal() {
             const payload = {
                 vtid: 'VTID-0523-UI-' + Date.now(),
                 service: 'gateway',
-                environment: 'dev-sandbox'
+                environment: 'dev'
             };
 
             const response = await fetch('/api/v1/operator/deploy', {
@@ -2341,7 +2341,7 @@ function renderPublishModal() {
                 id: Date.now(),
                 timestamp: new Date().toLocaleTimeString(),
                 type: 'operator',
-                content: `Deploy requested: gateway to dev-sandbox`
+                content: `Deploy requested: gateway to dev`
             });
 
             renderApp();
