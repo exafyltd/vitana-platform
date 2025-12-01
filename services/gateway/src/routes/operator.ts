@@ -1,22 +1,20 @@
 /**
- * Operator Routes - VTID-0509 + VTID-0510 + VTID-0523 + VTID-0524 + VTID-0533
+ * Operator Routes - VTID-0509 + VTID-0510 + VTID-0525
  *
  * VTID-0509: Operator Console API (chat, heartbeat, history, upload, session)
  * VTID-0510: Software Version Tracking (deployments)
- * VTID-0523: Operator Deploy Orchestrator (deploy pipeline trigger)
- * VTID-0524: Operator History & Versions Rewire (VTID/SWV Source of Truth)
- * VTID-0533: Heartbeat Backend Stability & Endpoint Fix
+ * VTID-0525: Operator Command Hub (NL -> Schema -> Deploy Orchestrator)
  *
  * Final API endpoints (after mounting at /api/v1/operator):
  * - POST /api/v1/operator/chat - Operator chat with AI
+ * - POST /api/v1/operator/command - Natural language command (VTID-0525)
+ * - POST /api/v1/operator/deploy - Deploy orchestrator (VTID-0525)
  * - GET  /api/v1/operator/health - Health check
- * - GET  /api/v1/operator/heartbeat - Heartbeat snapshot (tasks, events, cicd)
+ * - GET  /api/v1/operator/heartbeat - Heartbeat snapshot
  * - GET  /api/v1/operator/history - Operator history
- * - GET  /api/v1/operator/heartbeat/session - Read current heartbeat state (VTID-0533)
- * - POST /api/v1/operator/heartbeat/session - Update heartbeat state (live/standby)
+ * - POST /api/v1/operator/heartbeat/session - Start/stop heartbeat
  * - POST /api/v1/operator/upload - File upload
- * - POST /api/v1/operator/deploy - Trigger deployment pipeline (VTID-0523)
- * - GET  /api/v1/operator/deployments - Deployment history with VTID (VTID-0524)
+ * - GET  /api/v1/operator/deployments - Deployment history (VTID-0510)
  * - POST /api/v1/operator/deployments - Record deployment (VTID-0510)
  * - GET  /api/v1/operator/deployments/health - Deployments health (VTID-0510)
  */
@@ -26,7 +24,16 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { processMessage } from '../services/ai-orchestrator';
 import { ingestOperatorEvent, getTasksSummary, getRecentEvents, getCicdHealth, getOperatorHistory } from '../services/operator-service';
-import { getDeploymentHistory, getDeploymentHistoryWithVtid, getNextSWV, insertSoftwareVersion } from '../lib/versioning';
+import { getDeploymentHistory, getNextSWV, insertSoftwareVersion } from '../lib/versioning';
+import { naturalLanguageService } from '../services/natural-language-service';
+import {
+  OperatorCommandRequestSchema,
+  OperatorDeployRequestSchema,
+  OperatorCommandResponse,
+  OperatorDeployResponse,
+  ALLOWED_COMMAND_SERVICES,
+} from '../types/operator-command';
+import cicdEvents from '../services/oasis-event-service';
 
 const router = Router();
 
@@ -41,10 +48,7 @@ const ChatMessageSchema = z.object({
 });
 
 const HeartbeatSessionSchema = z.object({
-  status: z.enum(['live', 'standby']).optional(),
-  state: z.enum(['live', 'standby']).optional()
-}).refine(data => data.status || data.state, {
-  message: "Either 'status' or 'state' is required"
+  status: z.enum(['live', 'standby'])
 });
 
 const FileUploadSchema = z.object({
@@ -53,20 +57,6 @@ const FileUploadSchema = z.object({
   content_type: z.string().optional(),
   data: z.string().optional() // Base64 encoded data (optional for stub)
 });
-
-// ==================== Heartbeat State (in-memory for single instance) ====================
-// For multi-instance deployment, this should be stored in database
-interface HeartbeatState {
-  state: 'live' | 'standby';
-  updated_at: string;
-  session_id: string | null;
-}
-
-let heartbeatState: HeartbeatState = {
-  state: 'standby',
-  updated_at: new Date().toISOString(),
-  session_id: null
-};
 
 // ==================== VTID-0509 Routes ====================
 // Routes defined WITHOUT /operator prefix since router is mounted at /api/v1/operator
@@ -253,91 +243,52 @@ router.get('/history', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /heartbeat/session → /api/v1/operator/heartbeat/session
- * Returns current heartbeat session state
- */
-router.get('/heartbeat/session', (_req: Request, res: Response) => {
-  console.log('[Operator Session] GET request - current state:', heartbeatState.state);
-
-  return res.status(200).json({
-    ok: true,
-    data: {
-      state: heartbeatState.state,
-      updated_at: heartbeatState.updated_at,
-      session_id: heartbeatState.session_id
-    },
-    error: null
-  });
-});
-
-/**
  * POST /heartbeat/session → /api/v1/operator/heartbeat/session
- * Update heartbeat session state (live/standby)
- * Accepts either { status: 'live'|'standby' } or { state: 'live'|'standby' }
  */
 router.post('/heartbeat/session', async (req: Request, res: Response) => {
-  console.log('[Operator Session] POST request received:', req.body);
+  console.log('[Operator Session] Request received');
 
   try {
     const validation = HeartbeatSessionSchema.safeParse(req.body);
     if (!validation.success) {
       return res.status(400).json({
         ok: false,
-        data: null,
-        error: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+        error: 'Validation failed',
+        details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
       });
     }
 
-    // Accept both 'status' (legacy) and 'state' (new) parameters
-    const newState = validation.data.state || validation.data.status;
-    if (!newState) {
-      return res.status(400).json({
-        ok: false,
-        data: null,
-        error: "Either 'status' or 'state' is required with value 'live' or 'standby'"
-      });
-    }
-
+    const { status } = validation.data;
     const sessionId = randomUUID();
 
-    // Update in-memory state
-    heartbeatState = {
-      state: newState,
-      updated_at: new Date().toISOString(),
-      session_id: sessionId
-    };
-
-    // Log session event to OASIS
-    const eventType = newState === 'live'
-      ? 'operator.heartbeat.session.start'
-      : 'operator.heartbeat.session.end';
+    // Log session event
+    const eventType = status === 'live'
+      ? 'operator.heartbeat.started'
+      : 'operator.heartbeat.stopped';
 
     await ingestOperatorEvent({
       vtid: 'VTID-0509',
       type: eventType,
       status: 'info',
-      message: `Heartbeat session ${newState}`,
-      payload: { session_id: sessionId, state: newState }
+      message: `Heartbeat session ${status}`,
+      payload: { session_id: sessionId, status }
     });
 
-    console.log(`[Operator Session] Session ${sessionId} set to ${newState}`);
+    console.log(`[Operator Session] Session ${sessionId} set to ${status}`);
 
     return res.status(200).json({
       ok: true,
-      data: {
-        state: heartbeatState.state,
-        updated_at: heartbeatState.updated_at,
-        session_id: heartbeatState.session_id
-      },
-      error: null
+      session_id: sessionId,
+      status: status,
+      timestamp: new Date().toISOString()
     });
 
   } catch (error: any) {
     console.error('[Operator Session] Error:', error);
     return res.status(500).json({
       ok: false,
-      data: null,
-      error: error.message || 'Failed to update heartbeat session'
+      error: 'Failed to update heartbeat session',
+      details: error.message
     });
   }
 });
@@ -398,19 +349,309 @@ router.post('/upload', async (req: Request, res: Response) => {
   }
 });
 
+// ==================== VTID-0525 Routes ====================
+// Operator Command Hub: NL -> Schema -> Deploy/Task Orchestrator
+// Single front door to VTID creation, OASIS events, safe deploy orchestrator, and task creation
+
+import deployOrchestrator from '../services/deploy-orchestrator';
+import { emitOasisEvent } from '../services/oasis-event-service';
+import {
+  DeployCommandSchema,
+  TaskCommandSchema,
+} from '../types/operator-command';
+
+/**
+ * POST /deploy → /api/v1/operator/deploy
+ * Deploy orchestrator: uses the shared deploy service (same as Publish modal).
+ * This is the single orchestrator that executes deployment workflows.
+ */
+router.post('/deploy', async (req: Request, res: Response) => {
+  const requestId = randomUUID();
+  console.log(`[Operator Deploy] Request ${requestId} started`);
+
+  try {
+    const validation = OperatorDeployRequestSchema.safeParse(req.body);
+    if (!validation.success) {
+      console.error(`[Operator Deploy] Validation failed:`, validation.error.errors);
+      return res.status(400).json({
+        ok: false,
+        vtid: req.body?.vtid || 'UNKNOWN',
+        service: req.body?.service || 'UNKNOWN',
+        environment: req.body?.environment || 'dev',
+        error: 'Validation failed',
+      } as OperatorDeployResponse);
+    }
+
+    const { vtid, service, environment, source } = validation.data;
+
+    // Use the shared deploy orchestrator (same implementation as Publish modal)
+    const result = await deployOrchestrator.executeDeploy({
+      vtid,
+      service,
+      environment,
+      source,
+    });
+
+    return res.status(result.ok ? 200 : 500).json(result as OperatorDeployResponse);
+
+  } catch (error: any) {
+    console.error(`[Operator Deploy] Error:`, error);
+    return res.status(500).json({
+      ok: false,
+      vtid: req.body?.vtid || 'UNKNOWN',
+      service: req.body?.service || 'UNKNOWN',
+      environment: 'dev',
+      error: error.message
+    } as OperatorDeployResponse);
+  }
+});
+
+/**
+ * POST /command → /api/v1/operator/command
+ * Natural language command parser and executor.
+ * Single front door for Operator Console Chat:
+ * - Auto-creates VTID if not provided
+ * - Writes operator.chat.request and operator.action.scheduled events to OASIS
+ * - For deploy: Uses the shared deploy orchestrator (same as Publish modal)
+ * - For task: Creates Command Hub tasks
+ */
+router.post('/command', async (req: Request, res: Response) => {
+  const requestId = randomUUID();
+  console.log(`[Operator Command] Request ${requestId} started`);
+
+  try {
+    const validation = OperatorCommandRequestSchema.safeParse(req.body);
+    if (!validation.success) {
+      console.error(`[Operator Command] Validation failed:`, validation.error.errors);
+      return res.status(400).json({
+        ok: false,
+        vtid: 'UNKNOWN',
+        reply: 'Invalid request: ' + validation.error.errors.map(e => e.message).join(', '),
+        error: 'Validation failed',
+      } as OperatorCommandResponse);
+    }
+
+    const { message, environment, default_branch } = validation.data;
+    let vtid = validation.data.vtid;
+
+    // Step 1: Ensure VTID exists (auto-create if missing)
+    if (!vtid) {
+      console.log(`[Operator Command] No VTID provided, creating one...`);
+      const vtidResult = await deployOrchestrator.createVtid(
+        'OASIS',
+        'CMD',
+        `Operator Command: ${message.substring(0, 50)}${message.length > 50 ? '...' : ''}`
+      );
+
+      if (!vtidResult.ok || !vtidResult.vtid) {
+        return res.status(500).json({
+          ok: false,
+          vtid: 'UNKNOWN',
+          reply: 'Failed to create VTID for this command.',
+          error: vtidResult.error || 'VTID creation failed',
+        } as OperatorCommandResponse);
+      }
+
+      vtid = vtidResult.vtid;
+      console.log(`[Operator Command] Created VTID: ${vtid}`);
+    }
+
+    // Step 2: Parse natural language into structured command using Gemini
+    console.log(`[Operator Command] Parsing message: "${message}"`);
+    const parsedCommand = await naturalLanguageService.parseCommand(message);
+
+    // Step 3: Write operator.chat.request event to OASIS
+    await emitOasisEvent({
+      vtid,
+      type: 'operator.chat.request' as any,
+      source: 'operator.console.chat',
+      status: 'info',
+      message: `Chat request: ${message.substring(0, 100)}${message.length > 100 ? '...' : ''}`,
+      payload: {
+        request_id: requestId,
+        message,
+        parsed_command: parsedCommand,
+      },
+    });
+
+    // Check for parsing errors
+    if (parsedCommand.error) {
+      console.log(`[Operator Command] Parse error: ${parsedCommand.error}`);
+      return res.status(200).json({
+        ok: false,
+        vtid,
+        reply: `I couldn't understand that command: ${parsedCommand.error}. Try something like "Deploy gateway to dev" or "Show latest errors".`,
+        error: parsedCommand.error,
+      } as OperatorCommandResponse);
+    }
+
+    // Step 4: Handle based on action type
+    if (parsedCommand.action === 'deploy') {
+      // Validate deploy command
+      const deployValidation = DeployCommandSchema.safeParse({
+        action: 'deploy',
+        service: parsedCommand.service,
+        environment: parsedCommand.environment || environment,
+        branch: parsedCommand.branch || default_branch,
+        vtid: vtid,
+        dry_run: parsedCommand.dry_run || false,
+      });
+
+      if (!deployValidation.success) {
+        const errorDetails = deployValidation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
+        return res.status(200).json({
+          ok: false,
+          vtid,
+          reply: `Invalid deploy command: ${errorDetails}. Make sure to specify a valid service (gateway, oasis-operator, oasis-projector).`,
+          error: errorDetails,
+        } as OperatorCommandResponse);
+      }
+
+      const command = deployValidation.data;
+
+      // Handle dry_run
+      if (command.dry_run) {
+        return res.status(200).json({
+          ok: true,
+          vtid,
+          reply: `[Dry Run] Would deploy ${command.service} to ${command.environment} from branch ${command.branch} (VTID: ${vtid}).`,
+          command,
+        } as OperatorCommandResponse);
+      }
+
+      // Write operator.action.scheduled event to OASIS
+      await emitOasisEvent({
+        vtid,
+        type: 'operator.action.scheduled' as any,
+        source: 'operator.console.chat',
+        status: 'info',
+        message: `Scheduled deploy: ${command.service} to ${command.environment}`,
+        payload: {
+          action_type: 'deploy',
+          service: command.service,
+          environment: command.environment,
+          branch: command.branch,
+        },
+      });
+
+      // Execute deploy using the shared orchestrator
+      console.log(`[Operator Command] Executing deploy for ${command.service}`);
+      const deployResult = await deployOrchestrator.executeDeploy({
+        vtid: command.vtid,
+        service: command.service,
+        environment: command.environment,
+        branch: command.branch,
+        source: 'operator.console.chat',
+      });
+
+      // Generate operator reply
+      const reply = deployResult.ok
+        ? `Deploying ${command.service} to ${command.environment} via safe orchestrator for ${vtid}. ${deployResult.workflow_url ? `Workflow: ${deployResult.workflow_url}` : ''}`
+        : `Deploy failed for ${command.service}: ${deployResult.error}`;
+
+      return res.status(200).json({
+        ok: deployResult.ok,
+        vtid,
+        reply,
+        command,
+        workflow_url: deployResult.workflow_url,
+        error: deployResult.error,
+      } as OperatorCommandResponse);
+    }
+
+    if (parsedCommand.action === 'task') {
+      // Validate task command
+      const taskValidation = TaskCommandSchema.safeParse({
+        action: 'task',
+        task_type: parsedCommand.task_type || 'operator.task.generic',
+        title: parsedCommand.title || message.substring(0, 100),
+        vtid: vtid,
+      });
+
+      if (!taskValidation.success) {
+        const errorDetails = taskValidation.error.errors.map(e => e.message).join(', ');
+        return res.status(200).json({
+          ok: false,
+          vtid,
+          reply: `Invalid task command: ${errorDetails}`,
+          error: errorDetails,
+        } as OperatorCommandResponse);
+      }
+
+      const command = taskValidation.data;
+
+      // Write operator.action.scheduled event to OASIS
+      await emitOasisEvent({
+        vtid,
+        type: 'operator.action.scheduled' as any,
+        source: 'operator.console.chat',
+        status: 'info',
+        message: `Scheduled task: ${command.task_type}`,
+        payload: {
+          action_type: 'task',
+          task_type: command.task_type,
+          title: command.title,
+        },
+      });
+
+      // Create task using the existing task creation infrastructure
+      console.log(`[Operator Command] Creating task: ${command.task_type}`);
+      const taskResult = await deployOrchestrator.createTask(
+        vtid,
+        command.title,
+        command.task_type,
+        { original_message: message }
+      );
+
+      if (!taskResult.ok) {
+        return res.status(200).json({
+          ok: false,
+          vtid,
+          reply: `Failed to create task: ${taskResult.error}`,
+          error: taskResult.error,
+        } as OperatorCommandResponse);
+      }
+
+      const reply = `Scheduled ${command.task_type.split('.').pop()} task under ${vtid}. Task ID: ${taskResult.task_id}`;
+
+      return res.status(200).json({
+        ok: true,
+        vtid,
+        reply,
+        command,
+        task_id: taskResult.task_id,
+      } as OperatorCommandResponse);
+    }
+
+    // Unknown action
+    return res.status(200).json({
+      ok: false,
+      vtid,
+      reply: `Unknown command action: ${parsedCommand.action}. Try "Deploy gateway to dev" or "Show latest errors".`,
+      error: `Unknown action: ${parsedCommand.action}`,
+    } as OperatorCommandResponse);
+
+  } catch (error: any) {
+    console.error(`[Operator Command] Error:`, error);
+    return res.status(500).json({
+      ok: false,
+      vtid: req.body?.vtid || 'UNKNOWN',
+      reply: `Command error: ${error.message}`,
+      error: error.message,
+    } as OperatorCommandResponse);
+  }
+});
+
 // ==================== VTID-0510 Routes ====================
 
 /**
  * GET /deployments → /api/v1/operator/deployments
- * VTID-0524: Returns deployment history with VTID correlation
- * Response format: { ok: true, deployments: [{ vtid, swv, service, environment, status, created_at, commit }] }
  */
 router.get('/deployments', async (req: Request, res: Response) => {
   try {
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
 
-    // VTID-0524: Use enhanced function with VTID correlation
-    const result = await getDeploymentHistoryWithVtid(limit);
+    const result = await getDeploymentHistory(limit);
 
     if (!result.ok) {
       return res.status(502).json({
@@ -420,11 +661,19 @@ router.get('/deployments', async (req: Request, res: Response) => {
       });
     }
 
-    // VTID-0524: Return canonical format with ok wrapper
-    return res.status(200).json({
-      ok: true,
-      deployments: result.deployments || [],
-    });
+    // Format for UI feed
+    const deployments = (result.deployments || []).map((d) => ({
+      swv_id: d.swv_id,
+      created_at: d.created_at,
+      git_commit: d.git_commit,
+      status: d.status,
+      initiator: d.initiator,
+      deploy_type: d.deploy_type,
+      service: d.service,
+      environment: d.environment,
+    }));
+
+    return res.status(200).json(deployments);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error(`[Operator] Error fetching deployments: ${errorMessage}`);
@@ -522,159 +771,6 @@ router.get('/deployments/health', (_req: Request, res: Response) => {
       version_tracking: true,
     },
   });
-});
-
-// ==================== VTID-0523 Routes ====================
-
-/**
- * POST /deploy → /api/v1/operator/deploy
- * Operator Deploy Orchestrator - triggers deployment pipeline
- * This wraps the CICD deploy endpoint and adds operator-specific telemetry
- */
-router.post('/deploy', async (req: Request, res: Response) => {
-  const requestId = randomUUID();
-  console.log(`[Operator Deploy] Request ${requestId} started`);
-
-  try {
-    // VTID-0523-A: Extract full version info from request
-    const { vtid, service, environment, swv, commit } = req.body;
-
-    // Validate required fields
-    if (!vtid || typeof vtid !== 'string') {
-      return res.status(400).json({ ok: false, error: 'vtid is required' });
-    }
-    if (!service || typeof service !== 'string') {
-      return res.status(400).json({ ok: false, error: 'service is required' });
-    }
-
-    const env = environment || 'dev';
-    const commitShort = commit ? commit.substring(0, 7) : 'unknown';
-
-    // VTID-0523-A: Log with full version details
-    console.log(`[Operator Deploy] Deploying ${swv || 'unknown'} (${commitShort}) for ${service} to ${env}`);
-
-    // Emit operator.deploy.requested event with version details
-    await ingestOperatorEvent({
-      vtid,
-      type: 'operator.deploy.requested',
-      status: 'info',
-      message: `Deploy requested: ${swv || service} (${commitShort}) to ${env}`,
-      payload: {
-        request_id: requestId,
-        service,
-        environment: env,
-        swv: swv || null,
-        commit: commit || null
-      }
-    });
-
-    // Call the CICD deploy endpoint internally
-    const deployUrl = `${process.env.GATEWAY_INTERNAL_URL || 'http://localhost:8080'}/api/v1/deploy/service`;
-
-    // For internal calls, we'll directly use the logic
-    // Call the actual deploy service via internal fetch
-    const GATEWAY_URL = process.env.GATEWAY_URL || `http://localhost:${process.env.PORT || 8080}`;
-
-    const deployResponse = await fetch(`${GATEWAY_URL}/api/v1/deploy/service`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        vtid,
-        service,
-        environment: env,
-        trigger_workflow: true
-      })
-    });
-
-    const deployResult = await deployResponse.json() as {
-      ok: boolean;
-      error?: string;
-      workflow_url?: string;
-      workflow_run_id?: string;
-    };
-
-    if (!deployResult.ok) {
-      // Emit operator.deploy.failed event with version details
-      await ingestOperatorEvent({
-        vtid,
-        type: 'operator.deploy.failed',
-        status: 'error',
-        message: `Deploy failed: ${swv || service} - ${deployResult.error || 'Unknown error'}`,
-        payload: {
-          request_id: requestId,
-          service,
-          environment: env,
-          swv: swv || null,
-          commit: commit || null,
-          error: deployResult.error
-        }
-      });
-
-      return res.status(deployResponse.status).json({
-        ok: false,
-        error: deployResult.error || 'Deploy failed',
-        vtid,
-        swv,
-        service,
-        environment: env
-      });
-    }
-
-    // Emit operator.deploy.started event with version details
-    await ingestOperatorEvent({
-      vtid,
-      type: 'operator.deploy.started',
-      status: 'success',
-      message: `Deployment started: ${swv || service} (${commitShort}) to ${env}`,
-      payload: {
-        request_id: requestId,
-        service,
-        environment: env,
-        swv: swv || null,
-        commit: commit || null,
-        workflow_url: deployResult.workflow_url
-      }
-    });
-
-    console.log(`[Operator Deploy] Request ${requestId} completed - ${swv || service} (${commitShort}) queued`);
-
-    return res.status(200).json({
-      ok: true,
-      status: 'queued',
-      vtid,
-      swv,
-      commit,
-      service,
-      environment: env,
-      workflow_url: deployResult.workflow_url,
-      workflow_run_id: deployResult.workflow_run_id
-    });
-
-  } catch (error: any) {
-    console.error(`[Operator Deploy] Error:`, error);
-
-    // Emit error event with available version info
-    const vtid = req.body?.vtid || 'UNKNOWN';
-    const swv = req.body?.swv || null;
-    const commit = req.body?.commit || null;
-    await ingestOperatorEvent({
-      vtid,
-      type: 'operator.deploy.failed',
-      status: 'error',
-      message: `Deploy error: ${error.message}`,
-      payload: {
-        request_id: requestId,
-        swv,
-        commit,
-        error: error.message
-      }
-    }).catch(() => {}); // Don't fail if logging fails
-
-    return res.status(500).json({
-      ok: false,
-      error: error.message || 'Internal server error'
-    });
-  }
 });
 
 export default router;
