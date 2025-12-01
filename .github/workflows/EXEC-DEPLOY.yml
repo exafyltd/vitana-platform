@@ -6,12 +6,13 @@ on:
         description: 'VTID'
         required: true
       service:
-        description: 'Service name'
+        description: 'Service name (e.g., gateway, oasis-operator)'
         required: true
-        default: 'vitana-gateway'
-      image:
-        description: 'Container image'
-        required: true
+        default: 'gateway'
+      source_path:
+        description: 'Source path (e.g., services/gateway)'
+        required: false
+        default: ''
       health_path:
         description: 'Health path'
         required: true
@@ -34,12 +35,51 @@ jobs:
           service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
           project_id: lovable-vitana-vers1
       - uses: google-github-actions/setup-gcloud@v2
-      - name: Deploy to Cloud Run
+      - name: Deploy to Cloud Run (Source Deploy)
         id: deploy
         run: |
-          gcloud run deploy "${{ github.event.inputs.service }}" --image="${{ github.event.inputs.image }}" --region=us-central1 --project=lovable-vitana-vers1 --allow-unauthenticated
-          URL=$(gcloud run services describe ${{ github.event.inputs.service }} --region=us-central1 --format='value(status.url)')
+          SERVICE="${{ github.event.inputs.service }}"
+          # Map service name to Cloud Run service name and source path
+          case "$SERVICE" in
+            gateway)
+              CLOUD_RUN_SERVICE="gateway"
+              SOURCE_PATH="services/gateway"
+              ;;
+            oasis-operator)
+              CLOUD_RUN_SERVICE="oasis-operator"
+              SOURCE_PATH="services/oasis-operator"
+              ;;
+            oasis-projector)
+              CLOUD_RUN_SERVICE="oasis-projector"
+              SOURCE_PATH="services/oasis-projector"
+              ;;
+            *)
+              # Use inputs directly for custom services
+              CLOUD_RUN_SERVICE="$SERVICE"
+              SOURCE_PATH="${{ github.event.inputs.source_path }}"
+              if [ -z "$SOURCE_PATH" ]; then
+                SOURCE_PATH="services/$SERVICE"
+              fi
+              ;;
+          esac
+
+          echo "Deploying $CLOUD_RUN_SERVICE from $SOURCE_PATH"
+
+          # Source deploy (builds container from source)
+          gcloud run deploy "$CLOUD_RUN_SERVICE" \
+            --source="$SOURCE_PATH" \
+            --region=us-central1 \
+            --project=lovable-vitana-vers1 \
+            --allow-unauthenticated \
+            --quiet
+
+          # Get service URL
+          URL=$(gcloud run services describe "$CLOUD_RUN_SERVICE" --region=us-central1 --format='value(status.url)')
           echo "service_url=$URL" >> $GITHUB_OUTPUT
+          echo "cloud_run_service=$CLOUD_RUN_SERVICE" >> $GITHUB_OUTPUT
+
+          # Health check
+          echo "Running health check: $URL${{ github.event.inputs.health_path }}"
           curl -fsS "$URL${{ github.event.inputs.health_path }}" -H "X-VTID: ${{ github.event.inputs.vtid }}"
       - name: Record Software Version (VTID-0510)
         if: success()
@@ -47,11 +87,7 @@ jobs:
           GATEWAY_URL: ${{ steps.deploy.outputs.service_url }}
         run: |
           # Record deployment version in OASIS via Gateway API
-          # Extract service name (remove prefix if present)
-          SERVICE_NAME="${{ github.event.inputs.service }}"
-          SERVICE_NAME="${SERVICE_NAME#vitana-}"
-
-          # Get git commit SHA
+          SERVICE_NAME="${{ steps.deploy.outputs.cloud_run_service }}"
           GIT_COMMIT="${{ github.sha }}"
 
           # Call operator API to record deployment

@@ -47,16 +47,16 @@ export async function executeDeploy(request: DeployRequest): Promise<DeployResul
     await cicdEvents.deployRequested(vtid, service, environment);
 
     // Step 2: Trigger the deploy workflow via GitHub Actions
-    // This uses the same workflow as VTID-0516
+    // This uses the same workflow as VTID-0516 (source deploy, no pre-built image)
     await githubService.triggerWorkflow(
       DEFAULT_REPO,
       'EXEC-DEPLOY.yml',
       'main',
       {
         vtid,
-        service: service === 'gateway' ? 'vitana-gateway' : service,
-        image: `gcr.io/lovable-vitana-vers1/${service}:latest`,
+        service, // 'gateway', 'oasis-operator', or 'oasis-projector'
         health_path: '/alive',
+        initiator: source === 'operator.console.chat' ? 'agent' : 'user',
       }
     );
 
