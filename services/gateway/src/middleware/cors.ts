@@ -2,6 +2,7 @@ import cors from "cors";
 import { Express, Request, Response, NextFunction } from "express";
 
 const ALLOWED_ORIGINS = [
+  "https://gateway-86804897789.us-central1.run.app",
   "https://vitana-dev-gateway-86804897789.us-central1.run.app",
   "https://id-preview--vitana-v1.lovable.app",
 ];
