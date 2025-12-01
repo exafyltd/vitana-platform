@@ -2261,6 +2261,28 @@ function renderOperatorHistory() {
 
 // --- Publish Modal (VTID-0517) ---
 
+/**
+ * VTID-0523-A: Get the selected version object from version history
+ * Returns the full version object or null if no version selected
+ */
+function getSelectedVersion() {
+    if (!state.selectedVersionId || !state.versionHistory) {
+        return null;
+    }
+    return state.versionHistory.find(v => v.id === state.selectedVersionId) || null;
+}
+
+/**
+ * VTID-0523-A: Get the most recent version as default selection
+ * Returns the first (most recent) version from history or null
+ */
+function getMostRecentVersion() {
+    if (!state.versionHistory || state.versionHistory.length === 0) {
+        return null;
+    }
+    return state.versionHistory[0];
+}
+
 function renderPublishModal() {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
@@ -2274,20 +2296,87 @@ function renderPublishModal() {
     const modal = document.createElement('div');
     modal.className = 'modal publish-modal';
 
-    // Header
+    // VTID-0523-A: Get selected version or default to most recent
+    const selectedVersion = getSelectedVersion() || getMostRecentVersion();
+    const hasVersion = selectedVersion !== null;
+
+    // Header - show exactly what will be deployed
     const header = document.createElement('div');
     header.className = 'modal-header';
-    header.textContent = 'Deploy gateway to dev-sandbox?';
+    if (hasVersion) {
+        const commitShort = selectedVersion.commit ? selectedVersion.commit.substring(0, 7) : 'unknown';
+        header.textContent = `Deploy ${selectedVersion.swv} (${commitShort}) to dev?`;
+    } else {
+        header.textContent = 'No version selected';
+    }
     modal.appendChild(header);
 
-    // Body
+    // Body - version details
     const body = document.createElement('div');
     body.className = 'modal-body';
 
-    const message = document.createElement('p');
-    message.className = 'publish-modal__message';
-    message.textContent = 'This will trigger the deployment pipeline for gateway service to dev-sandbox environment. Progress will appear in Live Ticker.';
-    body.appendChild(message);
+    if (hasVersion) {
+        // VTID-0523-A: Version details panel
+        const detailsPanel = document.createElement('div');
+        detailsPanel.className = 'publish-modal__details';
+        detailsPanel.style.cssText = 'background: rgba(255,255,255,0.05); border-radius: 8px; padding: 16px; margin-bottom: 16px; font-family: monospace;';
+
+        const detailsTitle = document.createElement('div');
+        detailsTitle.style.cssText = 'color: #888; font-size: 12px; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;';
+        detailsTitle.textContent = 'Deploying';
+        detailsPanel.appendChild(detailsTitle);
+
+        // Service
+        const serviceRow = document.createElement('div');
+        serviceRow.style.cssText = 'display: flex; justify-content: space-between; margin-bottom: 8px;';
+        serviceRow.innerHTML = `<span style="color: #888;">Service:</span><span style="color: #fff;">${selectedVersion.service || 'gateway'}</span>`;
+        detailsPanel.appendChild(serviceRow);
+
+        // Version (SWV)
+        const versionRow = document.createElement('div');
+        versionRow.style.cssText = 'display: flex; justify-content: space-between; margin-bottom: 8px;';
+        versionRow.innerHTML = `<span style="color: #888;">Version:</span><span style="color: #4ade80; font-weight: bold;">${selectedVersion.swv}</span>`;
+        detailsPanel.appendChild(versionRow);
+
+        // VTID
+        const vtidRow = document.createElement('div');
+        vtidRow.style.cssText = 'display: flex; justify-content: space-between; margin-bottom: 8px;';
+        vtidRow.innerHTML = `<span style="color: #888;">VTID:</span><span style="color: #60a5fa;">${selectedVersion.vtid || 'N/A'}</span>`;
+        detailsPanel.appendChild(vtidRow);
+
+        // Commit
+        const commitRow = document.createElement('div');
+        commitRow.style.cssText = 'display: flex; justify-content: space-between; margin-bottom: 8px;';
+        const commitFull = selectedVersion.commit || 'unknown';
+        const commitDisplay = commitFull.length > 7 ? commitFull.substring(0, 7) : commitFull;
+        commitRow.innerHTML = `<span style="color: #888;">Commit:</span><span style="color: #fbbf24;" title="${commitFull}">${commitDisplay}</span>`;
+        detailsPanel.appendChild(commitRow);
+
+        // Environment
+        const envRow = document.createElement('div');
+        envRow.style.cssText = 'display: flex; justify-content: space-between;';
+        envRow.innerHTML = `<span style="color: #888;">Environment:</span><span style="color: #fff;">dev</span>`;
+        detailsPanel.appendChild(envRow);
+
+        body.appendChild(detailsPanel);
+
+        // Info message
+        const message = document.createElement('p');
+        message.className = 'publish-modal__message';
+        message.style.cssText = 'color: #888; font-size: 13px;';
+        message.textContent = 'This will trigger the deployment pipeline. Progress will appear in Live Ticker.';
+        body.appendChild(message);
+    } else {
+        // No version selected warning
+        const warning = document.createElement('div');
+        warning.style.cssText = 'text-align: center; padding: 24px; color: #f59e0b;';
+        warning.innerHTML = `
+            <div style="font-size: 48px; margin-bottom: 16px;">⚠️</div>
+            <div style="font-size: 16px; margin-bottom: 8px;">No version selected</div>
+            <div style="font-size: 13px; color: #888;">Select a version from the Versions dropdown before deploying.</div>
+        `;
+        body.appendChild(warning);
+    }
 
     modal.appendChild(body);
 
@@ -2307,17 +2396,33 @@ function renderPublishModal() {
     const publishBtn = document.createElement('button');
     publishBtn.className = 'btn btn-primary';
     publishBtn.textContent = 'Deploy';
+
+    // VTID-0523-A: Disable deploy if no version selected
+    if (!hasVersion) {
+        publishBtn.disabled = true;
+        publishBtn.style.cssText = 'opacity: 0.5; cursor: not-allowed;';
+        publishBtn.title = 'Select a version before deploying';
+    }
+
     publishBtn.onclick = async () => {
-        // VTID-0523: Trigger deployment via Operator Deploy Orchestrator
-        console.log('[VTID-0523] Deploy requested via Operator');
+        if (!hasVersion) {
+            showToast('Please select a version before deploying', 'error');
+            return;
+        }
+
+        // VTID-0523-A: Trigger deployment with full version info
+        console.log('[VTID-0523-A] Deploy requested:', selectedVersion);
         publishBtn.disabled = true;
         publishBtn.textContent = 'Deploying...';
 
         try {
+            // VTID-0523-A: Include full version details in payload
             const payload = {
-                vtid: 'VTID-0523-UI-' + Date.now(),
-                service: 'gateway',
-                environment: 'dev'
+                vtid: selectedVersion.vtid || ('VTID-DEPLOY-' + Date.now()),
+                swv: selectedVersion.swv,
+                service: selectedVersion.service || 'gateway',
+                environment: 'dev',
+                commit: selectedVersion.commit
             };
 
             const response = await fetch('/api/v1/operator/deploy', {
@@ -2332,22 +2437,24 @@ function renderPublishModal() {
                 throw new Error(result.error || 'Deploy failed');
             }
 
-            console.log('[VTID-0523] Deploy queued:', result);
+            console.log('[VTID-0523-A] Deploy queued:', result);
             state.showPublishModal = false;
-            showToast('Deployment started! Check Live Ticker for updates.', 'success');
 
-            // Add to ticker immediately
+            const commitShort = selectedVersion.commit ? selectedVersion.commit.substring(0, 7) : '';
+            showToast(`Deployment started: ${selectedVersion.swv} (${commitShort})`, 'success');
+
+            // Add to ticker with version details
             state.tickerEvents.unshift({
                 id: Date.now(),
                 timestamp: new Date().toLocaleTimeString(),
                 type: 'operator',
-                content: `Deploy requested: gateway to dev`
+                content: `Deploy started: ${selectedVersion.swv} (${commitShort}) to dev`
             });
 
             renderApp();
 
         } catch (error) {
-            console.error('[VTID-0523] Deploy error:', error);
+            console.error('[VTID-0523-A] Deploy error:', error);
             showToast('Deploy failed: ' + error.message, 'error');
             publishBtn.disabled = false;
             publishBtn.textContent = 'Deploy';

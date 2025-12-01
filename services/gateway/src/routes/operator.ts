@@ -536,7 +536,8 @@ router.post('/deploy', async (req: Request, res: Response) => {
   console.log(`[Operator Deploy] Request ${requestId} started`);
 
   try {
-    const { vtid, service, environment } = req.body;
+    // VTID-0523-A: Extract full version info from request
+    const { vtid, service, environment, swv, commit } = req.body;
 
     // Validate required fields
     if (!vtid || typeof vtid !== 'string') {
@@ -547,14 +548,24 @@ router.post('/deploy', async (req: Request, res: Response) => {
     }
 
     const env = environment || 'dev';
+    const commitShort = commit ? commit.substring(0, 7) : 'unknown';
 
-    // Emit operator.deploy.requested event
+    // VTID-0523-A: Log with full version details
+    console.log(`[Operator Deploy] Deploying ${swv || 'unknown'} (${commitShort}) for ${service} to ${env}`);
+
+    // Emit operator.deploy.requested event with version details
     await ingestOperatorEvent({
       vtid,
       type: 'operator.deploy.requested',
       status: 'info',
-      message: `Deploy requested: ${service} to ${env}`,
-      payload: { request_id: requestId, service, environment: env }
+      message: `Deploy requested: ${swv || service} (${commitShort}) to ${env}`,
+      payload: {
+        request_id: requestId,
+        service,
+        environment: env,
+        swv: swv || null,
+        commit: commit || null
+      }
     });
 
     // Call the CICD deploy endpoint internally
@@ -583,44 +594,56 @@ router.post('/deploy', async (req: Request, res: Response) => {
     };
 
     if (!deployResult.ok) {
-      // Emit operator.deploy.failed event
+      // Emit operator.deploy.failed event with version details
       await ingestOperatorEvent({
         vtid,
         type: 'operator.deploy.failed',
         status: 'error',
-        message: `Deploy failed: ${deployResult.error || 'Unknown error'}`,
-        payload: { request_id: requestId, service, environment: env, error: deployResult.error }
+        message: `Deploy failed: ${swv || service} - ${deployResult.error || 'Unknown error'}`,
+        payload: {
+          request_id: requestId,
+          service,
+          environment: env,
+          swv: swv || null,
+          commit: commit || null,
+          error: deployResult.error
+        }
       });
 
       return res.status(deployResponse.status).json({
         ok: false,
         error: deployResult.error || 'Deploy failed',
         vtid,
+        swv,
         service,
         environment: env
       });
     }
 
-    // Emit operator.deploy.started event
+    // Emit operator.deploy.started event with version details
     await ingestOperatorEvent({
       vtid,
       type: 'operator.deploy.started',
       status: 'success',
-      message: `Deployment pipeline started for ${service}`,
+      message: `Deployment started: ${swv || service} (${commitShort}) to ${env}`,
       payload: {
         request_id: requestId,
         service,
         environment: env,
+        swv: swv || null,
+        commit: commit || null,
         workflow_url: deployResult.workflow_url
       }
     });
 
-    console.log(`[Operator Deploy] Request ${requestId} completed - deployment queued`);
+    console.log(`[Operator Deploy] Request ${requestId} completed - ${swv || service} (${commitShort}) queued`);
 
     return res.status(200).json({
       ok: true,
       status: 'queued',
       vtid,
+      swv,
+      commit,
       service,
       environment: env,
       workflow_url: deployResult.workflow_url,
@@ -630,14 +653,21 @@ router.post('/deploy', async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error(`[Operator Deploy] Error:`, error);
 
-    // Emit error event if vtid is available
+    // Emit error event with available version info
     const vtid = req.body?.vtid || 'UNKNOWN';
+    const swv = req.body?.swv || null;
+    const commit = req.body?.commit || null;
     await ingestOperatorEvent({
       vtid,
       type: 'operator.deploy.failed',
       status: 'error',
       message: `Deploy error: ${error.message}`,
-      payload: { request_id: requestId, error: error.message }
+      payload: {
+        request_id: requestId,
+        swv,
+        commit,
+        error: error.message
+      }
     }).catch(() => {}); // Don't fail if logging fails
 
     return res.status(500).json({
