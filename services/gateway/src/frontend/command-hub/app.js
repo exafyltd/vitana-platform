@@ -2415,16 +2415,16 @@ async function fetchHeartbeatSnapshot() {
         state.operatorHeartbeatSnapshot = snapshot;
 
         // Add snapshot events to ticker (backend returns 'recent_events', not 'events')
+        // Backend returns newest first, we want newest at top (index 0)
         const events = snapshot.recent_events || snapshot.events || [];
         if (events.length > 0) {
-            events.forEach(event => {
-                state.tickerEvents.unshift({
-                    id: Date.now() + Math.random(),
-                    timestamp: new Date(event.created_at).toLocaleTimeString(),
-                    type: event.type.split('.')[0] || 'info',
-                    content: event.summary
-                });
-            });
+            // Clear existing ticker events and add new ones (newest first)
+            state.tickerEvents = events.map(event => ({
+                id: Date.now() + Math.random(),
+                timestamp: new Date(event.created_at).toLocaleTimeString(),
+                type: event.type.split('.')[0] || 'info',
+                content: event.summary
+            }));
         }
 
     } catch (error) {
