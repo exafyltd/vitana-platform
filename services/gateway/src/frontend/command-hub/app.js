@@ -1932,66 +1932,43 @@ function renderOperatorChat() {
 }
 
 /**
- * Check if message looks like a deploy command
- * VTID-0525: Operator Command Hub
+ * @deprecated VTID-0525: No longer used - all messages go through /operator/command
+ * The backend parses NL and decides if it's deploy, task, or chat.
+ * Kept for reference only.
  */
 function isDeployCommand(message) {
-    const lower = message.toLowerCase();
-    const deployKeywords = ['deploy', 'release', 'push', 'ship'];
-    const serviceKeywords = ['gateway', 'oasis-operator', 'oasis-projector', 'oasis operator', 'oasis projector'];
-
-    const hasDeployKeyword = deployKeywords.some(kw => lower.includes(kw));
-    const hasServiceKeyword = serviceKeywords.some(kw => lower.includes(kw));
-
-    return hasDeployKeyword && hasServiceKeyword;
+    // DEPRECATED: Not used anymore - backend handles command detection
+    return false;
 }
 
 /**
- * Generate a VTID for commands
- * VTID-0525: Operator Command Hub
+ * @deprecated VTID-0525: No longer used - backend auto-creates VTIDs
+ * The /operator/command endpoint creates VTIDs via the deploy orchestrator.
+ * Kept for reference only.
  */
 function generateCommandVtid() {
-    const timestamp = Date.now().toString(36).toUpperCase();
-    const random = Math.random().toString(36).substring(2, 6).toUpperCase();
-    return `VTID-CMD-${timestamp}-${random}`;
+    // DEPRECATED: Not used anymore - backend auto-creates VTIDs
+    return null;
 }
 
 /**
  * Format command result for display
  * VTID-0525: Operator Command Hub
+ * Uses the `reply` field from the backend response
  */
 function formatCommandResult(result) {
+    // Use the operator reply from the backend
+    // The backend generates a descriptive message for all command types (deploy, task, errors)
+    if (result.reply) {
+        return result.reply;
+    }
+
+    // Fallback for legacy responses or errors
     if (!result.ok) {
         return `Command Error: ${result.error || 'Unknown error'}`;
     }
 
-    const cmd = result.command;
-    let message = '';
-
-    // Show parsed command summary
-    message += `Command: ${cmd.action} ${cmd.service} to ${cmd.environment} (branch: ${cmd.branch})\n`;
-    message += `VTID: ${result.vtid}\n\n`;
-
-    // Show orchestrator steps
-    if (result.orchestrator_result && result.orchestrator_result.steps) {
-        message += 'Steps:\n';
-        result.orchestrator_result.steps.forEach(step => {
-            const icon = step.status === 'success' ? '[OK]' :
-                         step.status === 'skipped' ? '[--]' :
-                         step.status === 'failed' ? '[FAIL]' : '[...]';
-            message += `  ${icon} ${step.step}: ${step.status}`;
-            if (step.details && step.details.workflow_url) {
-                message += ` (${step.details.workflow_url})`;
-            }
-            message += '\n';
-        });
-    }
-
-    if (result.orchestrator_result && result.orchestrator_result.ok) {
-        message += '\nDeploy workflow triggered successfully!';
-    }
-
-    return message;
+    return 'Command processed';
 }
 
 async function sendChatMessage() {
@@ -2024,70 +2001,43 @@ async function sendChatMessage() {
     renderApp();
 
     try {
-        // VTID-0525: Check if this is a deploy command
-        const isCommand = isDeployCommand(messageText);
+        // VTID-0525: All messages go through /operator/command
+        // The backend parses NL and decides if it's deploy, task, or chat
+        // VTID is auto-created by the backend if not provided
+        console.log('[Operator] Sending message to /api/v1/operator/command');
 
-        if (isCommand) {
-            // Use the new operator command endpoint
-            console.log('[Operator] Detected deploy command, using /api/v1/operator/command');
+        const response = await fetch('/api/v1/operator/command', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                message: messageText,
+                // Don't pass vtid - let backend auto-create
+                environment: 'dev',
+                default_branch: 'main'
+            })
+        });
 
-            const vtid = generateCommandVtid();
-            const response = await fetch('/api/v1/operator/command', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    message: messageText,
-                    vtid: vtid,
-                    environment: 'dev',
-                    default_branch: 'main'
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`Command request failed: ${response.status}`);
-            }
-
-            const result = await response.json();
-            console.log('[Operator] Command response:', result);
-
-            // Format and display the command result
-            const formattedResult = formatCommandResult(result);
-
-            state.chatMessages.push({
-                type: 'system',
-                content: formattedResult,
-                timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-                oasis_ref: result.vtid,
-                isCommand: true,
-                commandResult: result
-            });
-
-        } else {
-            // Use the regular chat endpoint for non-command messages
-            const response = await fetch('/api/v1/operator/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    message: messageText,
-                    attachments: attachments
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`Chat request failed: ${response.status}`);
-            }
-
-            const result = await response.json();
-            console.log('[Operator] Chat response:', result);
-
-            // Add AI response
-            state.chatMessages.push({
-                type: 'system',
-                content: result.reply || 'No response received',
-                timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-                oasis_ref: result.oasis_ref
-            });
+        if (!response.ok) {
+            throw new Error(`Command request failed: ${response.status}`);
         }
+
+        const result = await response.json();
+        console.log('[Operator] Command response:', result);
+
+        // Format and display the command result using the backend's reply
+        const formattedResult = formatCommandResult(result);
+
+        // Determine if this was a command (deploy/task) or just a chat query
+        const isCommandAction = result.command && (result.command.action === 'deploy' || result.command.action === 'task');
+
+        state.chatMessages.push({
+            type: 'system',
+            content: formattedResult,
+            timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+            oasis_ref: result.vtid,
+            isCommand: isCommandAction,
+            commandResult: result
+        });
 
     } catch (error) {
         console.error('[Operator] Chat error:', error);

@@ -79,46 +79,77 @@ jest.mock('../src/services/natural-language-service', () => ({
 // Mock github service
 jest.mock('../src/services/github-service', () => ({
     default: {
-        triggerWorkflow: jest.fn(),
-        getWorkflowRuns: jest.fn(),
-    },
-}));
-
-// Mock OASIS event service
-jest.mock('../src/services/oasis-event-service', () => ({
-    default: {
-        deployRequested: jest.fn().mockResolvedValue(undefined),
-        deployAccepted: jest.fn().mockResolvedValue(undefined),
-        deployFailed: jest.fn().mockResolvedValue(undefined),
-    },
-}));
-
-// Import app AFTER all mocks are set up
-import app from '../src/index';
-import { naturalLanguageService } from '../src/services/natural-language-service';
-import githubService from '../src/services/github-service';
-
-const mockParseCommand = naturalLanguageService.parseCommand as jest.Mock;
-const mockTriggerWorkflow = githubService.triggerWorkflow as jest.Mock;
-const mockGetWorkflowRuns = githubService.getWorkflowRuns as jest.Mock;
-
-describe('Operator Command Hub - VTID-0525', () => {
-    beforeEach(() => {
-        jest.clearAllMocks();
-        mockSupabase.mockClear();
-
-        // Default mock for workflow runs
-        mockGetWorkflowRuns.mockResolvedValue({
+        triggerWorkflow: jest.fn().mockResolvedValue(undefined),
+        getWorkflowRuns: jest.fn().mockResolvedValue({
             workflow_runs: [
                 {
                     id: 12345,
                     html_url: 'https://github.com/exafyltd/vitana-platform/actions/runs/12345',
                 },
             ],
-        });
+        }),
+    },
+}));
 
-        // Default mock for trigger workflow
-        mockTriggerWorkflow.mockResolvedValue(undefined);
+// Mock OASIS event service - include both default and named exports
+jest.mock('../src/services/oasis-event-service', () => ({
+    default: {
+        deployRequested: jest.fn().mockResolvedValue(undefined),
+        deployAccepted: jest.fn().mockResolvedValue(undefined),
+        deployFailed: jest.fn().mockResolvedValue(undefined),
+    },
+    emitOasisEvent: jest.fn().mockResolvedValue({ ok: true, event_id: 'test-event-id' }),
+}));
+
+// Mock deploy orchestrator - use factory function to avoid hoisting issues
+jest.mock('../src/services/deploy-orchestrator', () => {
+    return {
+        __esModule: true,
+        default: {
+            executeDeploy: jest.fn(),
+            createVtid: jest.fn(),
+            createTask: jest.fn(),
+        },
+    };
+});
+
+// Import app and modules AFTER all mocks are set up
+import app from '../src/index';
+import { naturalLanguageService } from '../src/services/natural-language-service';
+import githubService from '../src/services/github-service';
+import deployOrchestrator from '../src/services/deploy-orchestrator';
+
+const mockParseCommand = naturalLanguageService.parseCommand as jest.Mock;
+const mockTriggerWorkflow = githubService.triggerWorkflow as jest.Mock;
+const mockGetWorkflowRuns = githubService.getWorkflowRuns as jest.Mock;
+
+describe('Operator Command Hub - VTID-0525', () => {
+    // Get mock references from the imported module
+    const mockExecuteDeploy = deployOrchestrator.executeDeploy as jest.Mock;
+    const mockCreateVtid = deployOrchestrator.createVtid as jest.Mock;
+    const mockCreateTask = deployOrchestrator.createTask as jest.Mock;
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+        mockSupabase.mockClear();
+
+        // Reset deploy orchestrator mocks
+        mockExecuteDeploy.mockResolvedValue({
+            ok: true,
+            vtid: 'VTID-TEST',
+            service: 'gateway',
+            environment: 'dev',
+            workflow_run_id: 12345,
+            workflow_url: 'https://github.com/exafyltd/vitana-platform/actions/runs/12345',
+        });
+        mockCreateVtid.mockResolvedValue({
+            ok: true,
+            vtid: 'OASIS-CMD-2025-0001',
+        });
+        mockCreateTask.mockResolvedValue({
+            ok: true,
+            task_id: 'OASIS-CMD-2025-0001-TASK1',
+        });
 
         // Default mock for Supabase insert (for event logging)
         mockSupabase.mockResolvedValue({ data: null, error: null });
@@ -147,6 +178,7 @@ describe('Operator Command Hub - VTID-0525', () => {
 
             expect(response.body.ok).toBe(true);
             expect(response.body.vtid).toBe('VTID-0525-TEST-0001');
+            expect(response.body.reply).toBeDefined();
             expect(response.body.command).toEqual({
                 action: 'deploy',
                 service: 'gateway',
@@ -155,9 +187,30 @@ describe('Operator Command Hub - VTID-0525', () => {
                 vtid: 'VTID-0525-TEST-0001',
                 dry_run: false,
             });
-            expect(response.body.orchestrator_result).toBeDefined();
-            expect(response.body.orchestrator_result.ok).toBe(true);
-            expect(response.body.orchestrator_result.steps).toBeDefined();
+        });
+
+        it('should auto-create VTID when not provided', async () => {
+            mockParseCommand.mockResolvedValueOnce({
+                action: 'deploy',
+                service: 'gateway',
+                environment: 'dev',
+                branch: 'main',
+                confidence: 0.95,
+            });
+
+            const response = await request(app)
+                .post('/api/v1/operator/command')
+                .send({
+                    message: 'Deploy gateway to dev',
+                    // No vtid provided - should auto-create
+                    environment: 'dev',
+                    default_branch: 'main',
+                })
+                .expect(200);
+
+            expect(response.body.ok).toBe(true);
+            expect(response.body.vtid).toBe('OASIS-CMD-2025-0001'); // Auto-created
+            expect(mockCreateVtid).toHaveBeenCalled();
         });
 
         it('should return dry_run result without triggering deploy', async () => {
@@ -182,21 +235,46 @@ describe('Operator Command Hub - VTID-0525', () => {
 
             expect(response.body.ok).toBe(true);
             expect(response.body.command.dry_run).toBe(true);
-            expect(response.body.orchestrator_result.steps).toEqual([]);
+            expect(response.body.reply).toContain('Dry Run');
 
-            // Verify deploy workflow was NOT triggered
-            expect(mockTriggerWorkflow).not.toHaveBeenCalled();
+            // Verify deploy orchestrator was NOT called
+            expect(mockExecuteDeploy).not.toHaveBeenCalled();
         });
 
-        it('should return error for non-deploy commands', async () => {
+        it('should handle task commands', async () => {
             mockParseCommand.mockResolvedValueOnce({
-                error: 'Not a deploy command',
+                action: 'task',
+                task_type: 'operator.diagnostics.latest-errors',
+                title: 'Show latest errors',
+                confidence: 0.9,
             });
 
             const response = await request(app)
                 .post('/api/v1/operator/command')
                 .send({
-                    message: 'What is the weather today?',
+                    message: 'Show latest errors',
+                    vtid: 'VTID-0525-TEST-TASK',
+                    environment: 'dev',
+                    default_branch: 'main',
+                })
+                .expect(200);
+
+            expect(response.body.ok).toBe(true);
+            expect(response.body.vtid).toBe('VTID-0525-TEST-TASK');
+            expect(response.body.task_id).toBeDefined();
+            expect(response.body.command.action).toBe('task');
+            expect(mockCreateTask).toHaveBeenCalled();
+        });
+
+        it('should return error for non-parseable commands', async () => {
+            mockParseCommand.mockResolvedValueOnce({
+                error: 'Could not understand command',
+            });
+
+            const response = await request(app)
+                .post('/api/v1/operator/command')
+                .send({
+                    message: 'Hello there!',
                     vtid: 'VTID-0525-TEST-0003',
                     environment: 'dev',
                     default_branch: 'main',
@@ -204,7 +282,7 @@ describe('Operator Command Hub - VTID-0525', () => {
                 .expect(200);
 
             expect(response.body.ok).toBe(false);
-            expect(response.body.error).toBe('Not a deploy command');
+            expect(response.body.reply).toContain("couldn't understand");
         });
 
         it('should return error for invalid service', async () => {
@@ -226,7 +304,7 @@ describe('Operator Command Hub - VTID-0525', () => {
                 .expect(200);
 
             expect(response.body.ok).toBe(false);
-            expect(response.body.error).toContain('Invalid');
+            expect(response.body.reply).toContain('Invalid');
         });
 
         it('should validate required fields', async () => {
@@ -236,7 +314,6 @@ describe('Operator Command Hub - VTID-0525', () => {
                 .expect(400);
 
             expect(response.body.ok).toBe(false);
-            expect(response.body.error).toBe('Validation failed');
         });
 
         it('should require message field', async () => {
@@ -250,22 +327,10 @@ describe('Operator Command Hub - VTID-0525', () => {
 
             expect(response.body.ok).toBe(false);
         });
-
-        it('should require vtid field', async () => {
-            const response = await request(app)
-                .post('/api/v1/operator/command')
-                .send({
-                    message: 'Deploy gateway to dev',
-                    environment: 'dev',
-                })
-                .expect(400);
-
-            expect(response.body.ok).toBe(false);
-        });
     });
 
     describe('POST /api/v1/operator/deploy', () => {
-        it('should trigger deploy workflow for valid service', async () => {
+        it('should execute deploy for valid service', async () => {
             const response = await request(app)
                 .post('/api/v1/operator/deploy')
                 .send({
@@ -277,18 +342,14 @@ describe('Operator Command Hub - VTID-0525', () => {
                 .expect(200);
 
             expect(response.body.ok).toBe(true);
-            expect(response.body.vtid).toBe('VTID-0525-TEST-0010');
-            expect(response.body.steps).toBeDefined();
-            expect(Array.isArray(response.body.steps)).toBe(true);
+            expect(response.body.vtid).toBe('VTID-TEST');
 
-            // Verify workflow was triggered
-            expect(mockTriggerWorkflow).toHaveBeenCalledWith(
-                'exafyltd/vitana-platform',
-                'EXEC-DEPLOY.yml',
-                'main',
+            // Verify deploy orchestrator was called
+            expect(mockExecuteDeploy).toHaveBeenCalledWith(
                 expect.objectContaining({
                     vtid: 'VTID-0525-TEST-0010',
-                    service: 'vitana-gateway', // gateway -> vitana-gateway
+                    service: 'gateway',
+                    environment: 'dev',
                 })
             );
         });
@@ -306,11 +367,7 @@ describe('Operator Command Hub - VTID-0525', () => {
 
             expect(response.body.ok).toBe(true);
 
-            // Verify workflow was triggered with correct service name
-            expect(mockTriggerWorkflow).toHaveBeenCalledWith(
-                'exafyltd/vitana-platform',
-                'EXEC-DEPLOY.yml',
-                'main',
+            expect(mockExecuteDeploy).toHaveBeenCalledWith(
                 expect.objectContaining({
                     service: 'oasis-operator',
                 })
@@ -368,8 +425,14 @@ describe('Operator Command Hub - VTID-0525', () => {
             expect(response.body.ok).toBe(false);
         });
 
-        it('should handle workflow trigger failure', async () => {
-            mockTriggerWorkflow.mockRejectedValueOnce(new Error('GitHub API error'));
+        it('should handle deploy orchestrator failure', async () => {
+            mockExecuteDeploy.mockResolvedValueOnce({
+                ok: false,
+                vtid: 'VTID-0525-TEST-0015',
+                service: 'gateway',
+                environment: 'dev',
+                error: 'GitHub API error',
+            });
 
             const response = await request(app)
                 .post('/api/v1/operator/deploy')
@@ -383,22 +446,16 @@ describe('Operator Command Hub - VTID-0525', () => {
 
             expect(response.body.ok).toBe(false);
             expect(response.body.error).toContain('GitHub API error');
-            expect(response.body.steps).toBeDefined();
-
-            // Check that deploy_service step is marked as failed
-            const deployStep = response.body.steps.find((s: any) => s.step === 'deploy_service');
-            expect(deployStep).toBeDefined();
-            expect(deployStep.status).toBe('failed');
         });
 
         it('should include workflow URL in response', async () => {
-            mockGetWorkflowRuns.mockResolvedValueOnce({
-                workflow_runs: [
-                    {
-                        id: 99999,
-                        html_url: 'https://github.com/exafyltd/vitana-platform/actions/runs/99999',
-                    },
-                ],
+            mockExecuteDeploy.mockResolvedValueOnce({
+                ok: true,
+                vtid: 'VTID-0525-TEST-0016',
+                service: 'gateway',
+                environment: 'dev',
+                workflow_run_id: 99999,
+                workflow_url: 'https://github.com/exafyltd/vitana-platform/actions/runs/99999',
             });
 
             const response = await request(app)
@@ -411,9 +468,7 @@ describe('Operator Command Hub - VTID-0525', () => {
                 })
                 .expect(200);
 
-            const deployStep = response.body.steps.find((s: any) => s.step === 'deploy_service');
-            expect(deployStep.details.workflow_run_id).toBe(99999);
-            expect(deployStep.details.workflow_url).toContain('actions/runs/99999');
+            expect(response.body.workflow_url).toContain('actions/runs/99999');
         });
     });
 });

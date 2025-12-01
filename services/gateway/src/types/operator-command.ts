@@ -3,7 +3,7 @@
  *
  * Schema definitions for natural language → structured command flow.
  * The Operator Console Chat parses NL messages into these commands,
- * then executes them via the deploy orchestrator.
+ * then executes them via the deploy orchestrator or task system.
  */
 
 import { z } from 'zod';
@@ -12,9 +12,10 @@ import { z } from 'zod';
 
 /**
  * Supported command actions.
- * Currently only 'deploy' is implemented. Future: 'inspect', 'rollback', etc.
+ * 'deploy' - Deploy a service via the safe deploy orchestrator
+ * 'task' - Create a task for non-deploy operations (diagnostics, queries, etc.)
  */
-export const CommandActionSchema = z.enum(['deploy']);
+export const CommandActionSchema = z.enum(['deploy', 'task']);
 export type CommandAction = z.infer<typeof CommandActionSchema>;
 
 /**
@@ -31,10 +32,10 @@ export const CommandEnvironmentSchema = z.enum(['dev']);
 export type CommandEnvironment = z.infer<typeof CommandEnvironmentSchema>;
 
 /**
- * The structured command schema parsed from natural language.
+ * The structured command schema for deploy actions.
  */
-export const OperatorCommandSchema = z.object({
-  action: CommandActionSchema,
+export const DeployCommandSchema = z.object({
+  action: z.literal('deploy'),
   service: CommandServiceSchema,
   environment: CommandEnvironmentSchema.default('dev'),
   branch: z.string().default('main'),
@@ -42,16 +43,35 @@ export const OperatorCommandSchema = z.object({
   dry_run: z.boolean().default(false),
 });
 
-export type OperatorCommand = z.infer<typeof OperatorCommandSchema>;
+export type DeployCommand = z.infer<typeof DeployCommandSchema>;
+
+/**
+ * The structured command schema for task actions.
+ */
+export const TaskCommandSchema = z.object({
+  action: z.literal('task'),
+  task_type: z.string().min(1, 'Task type is required'),
+  title: z.string().min(1, 'Title is required'),
+  vtid: z.string().min(1, 'VTID is required'),
+  metadata: z.record(z.any()).optional(),
+});
+
+export type TaskCommand = z.infer<typeof TaskCommandSchema>;
+
+/**
+ * Union type for all operator commands.
+ */
+export type OperatorCommand = DeployCommand | TaskCommand;
 
 // ==================== API Request/Response Schemas ====================
 
 /**
  * Request body for POST /api/v1/operator/command
+ * VTID is optional - if not provided, one will be created automatically.
  */
 export const OperatorCommandRequestSchema = z.object({
   message: z.string().min(1, 'Message is required'),
-  vtid: z.string().min(1, 'VTID is required'),
+  vtid: z.string().optional(), // Optional - will be auto-created if missing
   environment: CommandEnvironmentSchema.default('dev'),
   default_branch: z.string().default('main'),
 });
@@ -64,24 +84,11 @@ export type OperatorCommandRequest = z.infer<typeof OperatorCommandRequestSchema
 export interface OperatorCommandResponse {
   ok: boolean;
   vtid: string;
+  reply: string; // Operator message explaining what happened
   command?: OperatorCommand;
-  orchestrator_result?: OrchestratorResult;
+  task_id?: string; // For task commands
+  workflow_url?: string; // For deploy commands
   error?: string;
-  details?: Record<string, unknown>;
-}
-
-/**
- * Result from the deploy orchestrator.
- */
-export interface OrchestratorResult {
-  ok: boolean;
-  steps: OrchestratorStep[];
-  error?: string;
-}
-
-export interface OrchestratorStep {
-  step: 'create_pr' | 'safe_merge' | 'deploy_service';
-  status: 'success' | 'skipped' | 'failed' | 'pending';
   details?: Record<string, unknown>;
 }
 
@@ -96,6 +103,7 @@ export const OperatorDeployRequestSchema = z.object({
   service: CommandServiceSchema,
   environment: CommandEnvironmentSchema.default('dev'),
   branch: z.string().default('main'),
+  source: z.enum(['operator.console.chat', 'publish.modal', 'api']).default('api'),
 });
 
 export type OperatorDeployRequest = z.infer<typeof OperatorDeployRequestSchema>;
@@ -106,9 +114,11 @@ export type OperatorDeployRequest = z.infer<typeof OperatorDeployRequestSchema>;
 export interface OperatorDeployResponse {
   ok: boolean;
   vtid: string;
-  steps: OrchestratorStep[];
+  service: string;
+  environment: string;
+  workflow_run_id?: number;
+  workflow_url?: string;
   error?: string;
-  details?: Record<string, unknown>;
 }
 
 // ==================== Gemini Command Parsing ====================
@@ -117,11 +127,16 @@ export interface OperatorDeployResponse {
  * Raw command structure from Gemini before validation.
  */
 export interface GeminiParsedCommand {
-  action?: string;
+  action?: 'deploy' | 'task';
+  // For deploy commands
   service?: string;
   environment?: string;
   branch?: string;
   dry_run?: boolean;
+  // For task commands
+  task_type?: string;
+  title?: string;
+  // Common
   confidence?: number;
   error?: string;
 }
@@ -130,20 +145,33 @@ export interface GeminiParsedCommand {
  * The prompt template for Gemini to parse commands.
  */
 export const COMMAND_PARSE_PROMPT = `You are a DevOps command parser for the Vitana platform.
-Parse the user's natural language message into a structured deploy command.
+Parse the user's natural language message into a structured command.
 
-ALLOWED SERVICES: gateway, oasis-operator, oasis-projector
-ALLOWED ENVIRONMENTS: dev (only dev is allowed)
-ALLOWED ACTIONS: deploy
+COMMAND TYPES:
+1. DEPLOY commands - Deploy a service to an environment
+   ALLOWED SERVICES: gateway, oasis-operator, oasis-projector
+   ALLOWED ENVIRONMENTS: dev (only dev is allowed)
 
-If the message is not a deploy command, respond with: {"error": "Not a deploy command"}
-If you cannot determine the service, respond with: {"error": "Could not determine service"}
+2. TASK commands - Non-deploy operations like diagnostics, queries, tests
+   Examples: show errors, run tests, check status, fetch logs
+
+RESPONSE FORMAT (JSON only):
+
+For DEPLOY commands:
+{"action": "deploy", "service": "gateway", "environment": "dev", "branch": "main", "confidence": 0.95}
+
+For TASK commands:
+{"action": "task", "task_type": "operator.diagnostics.latest-errors", "title": "Show latest errors", "confidence": 0.9}
+
+If the message is unclear or cannot be parsed:
+{"error": "Could not understand command"}
 
 EXAMPLES:
 "Deploy gateway to dev" → {"action": "deploy", "service": "gateway", "environment": "dev", "branch": "main", "confidence": 0.95}
-"Deploy oasis-operator using feature-branch" → {"action": "deploy", "service": "oasis-operator", "environment": "dev", "branch": "feature-branch", "confidence": 0.9}
-"Deploy latest gateway to dev from main branch" → {"action": "deploy", "service": "gateway", "environment": "dev", "branch": "main", "confidence": 0.98}
-"What's the weather?" → {"error": "Not a deploy command"}
-"Deploy something" → {"error": "Could not determine service"}
+"Deploy oasis-operator" → {"action": "deploy", "service": "oasis-operator", "environment": "dev", "branch": "main", "confidence": 0.9}
+"Show latest errors" → {"action": "task", "task_type": "operator.diagnostics.latest-errors", "title": "Show latest errors", "confidence": 0.9}
+"Run tests for VTID-0517" → {"action": "task", "task_type": "operator.tests.run", "title": "Run tests for VTID-0517", "confidence": 0.85}
+"What's the system status?" → {"action": "task", "task_type": "operator.diagnostics.status", "title": "Check system status", "confidence": 0.9}
+"Hello" → {"error": "Could not understand command"}
 
 USER MESSAGE: `;
