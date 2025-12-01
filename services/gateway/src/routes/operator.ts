@@ -1,8 +1,9 @@
 /**
- * Operator Routes - VTID-0509 + VTID-0510 + VTID-0524 + VTID-0533
+ * Operator Routes - VTID-0509 + VTID-0510 + VTID-0523 + VTID-0524 + VTID-0533
  *
  * VTID-0509: Operator Console API (chat, heartbeat, history, upload, session)
  * VTID-0510: Software Version Tracking (deployments)
+ * VTID-0523: Operator Deploy Orchestrator (deploy pipeline trigger)
  * VTID-0524: Operator History & Versions Rewire (VTID/SWV Source of Truth)
  * VTID-0533: Heartbeat Backend Stability & Endpoint Fix
  *
@@ -14,6 +15,7 @@
  * - GET  /api/v1/operator/heartbeat/session - Read current heartbeat state (VTID-0533)
  * - POST /api/v1/operator/heartbeat/session - Update heartbeat state (live/standby)
  * - POST /api/v1/operator/upload - File upload
+ * - POST /api/v1/operator/deploy - Trigger deployment pipeline (VTID-0523)
  * - GET  /api/v1/operator/deployments - Deployment history with VTID (VTID-0524)
  * - POST /api/v1/operator/deployments - Record deployment (VTID-0510)
  * - GET  /api/v1/operator/deployments/health - Deployments health (VTID-0510)
@@ -520,6 +522,124 @@ router.get('/deployments/health', (_req: Request, res: Response) => {
       version_tracking: true,
     },
   });
+});
+
+// ==================== VTID-0523 Routes ====================
+
+/**
+ * POST /deploy → /api/v1/operator/deploy
+ * Operator Deploy Orchestrator - triggers deployment pipeline
+ * This wraps the CICD deploy endpoint and adds operator-specific telemetry
+ */
+router.post('/deploy', async (req: Request, res: Response) => {
+  const requestId = randomUUID();
+  console.log(`[Operator Deploy] Request ${requestId} started`);
+
+  try {
+    const { vtid, service, environment } = req.body;
+
+    // Validate required fields
+    if (!vtid || typeof vtid !== 'string') {
+      return res.status(400).json({ ok: false, error: 'vtid is required' });
+    }
+    if (!service || typeof service !== 'string') {
+      return res.status(400).json({ ok: false, error: 'service is required' });
+    }
+
+    const env = environment || 'dev-sandbox';
+
+    // Emit operator.deploy.requested event
+    await ingestOperatorEvent({
+      vtid,
+      type: 'operator.deploy.requested',
+      status: 'info',
+      message: `Deploy requested: ${service} to ${env}`,
+      payload: { request_id: requestId, service, environment: env }
+    });
+
+    // Call the CICD deploy endpoint internally
+    const deployUrl = `${process.env.GATEWAY_INTERNAL_URL || 'http://localhost:8080'}/api/v1/deploy/service`;
+
+    // For internal calls, we'll directly use the logic
+    // Call the actual deploy service via internal fetch
+    const GATEWAY_URL = process.env.GATEWAY_URL || `http://localhost:${process.env.PORT || 8080}`;
+
+    const deployResponse = await fetch(`${GATEWAY_URL}/api/v1/deploy/service`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        vtid,
+        service,
+        environment: env,
+        trigger_workflow: true
+      })
+    });
+
+    const deployResult = await deployResponse.json();
+
+    if (!deployResult.ok) {
+      // Emit operator.deploy.failed event
+      await ingestOperatorEvent({
+        vtid,
+        type: 'operator.deploy.failed',
+        status: 'error',
+        message: `Deploy failed: ${deployResult.error || 'Unknown error'}`,
+        payload: { request_id: requestId, service, environment: env, error: deployResult.error }
+      });
+
+      return res.status(deployResponse.status).json({
+        ok: false,
+        error: deployResult.error || 'Deploy failed',
+        vtid,
+        service,
+        environment: env
+      });
+    }
+
+    // Emit operator.deploy.started event
+    await ingestOperatorEvent({
+      vtid,
+      type: 'operator.deploy.started',
+      status: 'success',
+      message: `Deployment pipeline started for ${service}`,
+      payload: {
+        request_id: requestId,
+        service,
+        environment: env,
+        workflow_url: deployResult.workflow_url
+      }
+    });
+
+    console.log(`[Operator Deploy] Request ${requestId} completed - deployment queued`);
+
+    return res.status(200).json({
+      ok: true,
+      status: 'queued',
+      vtid,
+      service,
+      environment: env,
+      workflow_url: deployResult.workflow_url,
+      workflow_run_id: deployResult.workflow_run_id
+    });
+
+  } catch (error: any) {
+    console.error(`[Operator Deploy] Error:`, error);
+
+    // Emit error event if vtid is available
+    const vtid = req.body?.vtid || 'UNKNOWN';
+    await ingestOperatorEvent({
+      vtid,
+      type: 'operator.deploy.failed',
+      status: 'error',
+      message: `Deploy error: ${error.message}`,
+      payload: { request_id: requestId, error: error.message }
+    }).catch(() => {}); // Don't fail if logging fails
+
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'Internal server error'
+    });
+  }
 });
 
 export default router;

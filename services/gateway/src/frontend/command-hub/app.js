@@ -2277,7 +2277,7 @@ function renderPublishModal() {
     // Header
     const header = document.createElement('div');
     header.className = 'modal-header';
-    header.textContent = 'Publish current configuration?';
+    header.textContent = 'Deploy gateway to dev-sandbox?';
     modal.appendChild(header);
 
     // Body
@@ -2286,7 +2286,7 @@ function renderPublishModal() {
 
     const message = document.createElement('p');
     message.className = 'publish-modal__message';
-    message.textContent = 'This will publish the current Vitana Dev configuration to the active environment. (Backend automation will be wired in a later task.)';
+    message.textContent = 'This will trigger the deployment pipeline for gateway service to dev-sandbox environment. Progress will appear in Live Ticker.';
     body.appendChild(message);
 
     modal.appendChild(body);
@@ -2306,13 +2306,52 @@ function renderPublishModal() {
 
     const publishBtn = document.createElement('button');
     publishBtn.className = 'btn btn-primary';
-    publishBtn.textContent = 'Publish';
-    publishBtn.onclick = () => {
-        // Phase 1: Just logging and UX, no real backend calls
-        console.log('[VTID-0517] Publish requested (backend wiring pending)');
-        state.showPublishModal = false;
-        showToast('Publish requested (backend wiring pending).', 'success');
-        renderApp();
+    publishBtn.textContent = 'Deploy';
+    publishBtn.onclick = async () => {
+        // VTID-0523: Trigger deployment via Operator Deploy Orchestrator
+        console.log('[VTID-0523] Deploy requested via Operator');
+        publishBtn.disabled = true;
+        publishBtn.textContent = 'Deploying...';
+
+        try {
+            const payload = {
+                vtid: 'VTID-0523-UI-' + Date.now(),
+                service: 'gateway',
+                environment: 'dev-sandbox'
+            };
+
+            const response = await fetch('/api/v1/operator/deploy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+
+            if (!result.ok) {
+                throw new Error(result.error || 'Deploy failed');
+            }
+
+            console.log('[VTID-0523] Deploy queued:', result);
+            state.showPublishModal = false;
+            showToast('Deployment started! Check Live Ticker for updates.', 'success');
+
+            // Add to ticker immediately
+            state.tickerEvents.unshift({
+                id: Date.now(),
+                timestamp: new Date().toLocaleTimeString(),
+                type: 'operator',
+                content: `Deploy requested: gateway to dev-sandbox`
+            });
+
+            renderApp();
+
+        } catch (error) {
+            console.error('[VTID-0523] Deploy error:', error);
+            showToast('Deploy failed: ' + error.message, 'error');
+            publishBtn.disabled = false;
+            publishBtn.textContent = 'Deploy';
+        }
     };
     footer.appendChild(publishBtn);
 
