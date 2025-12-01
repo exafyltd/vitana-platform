@@ -9,7 +9,6 @@
 import { Database } from './database';
 import { logger } from './logger';
 
-<<<<<<< HEAD
 // OASIS event structure matching Prisma OasisEvent model
 // Uses camelCase field names as returned by Prisma
 interface OasisEvent {
@@ -32,23 +31,6 @@ interface OasisEvent {
   layer?: string;
   module?: string;
   kind?: string;
-=======
-// OASIS event structure from the oasis_events table
-interface OasisEvent {
-  id: string;
-  vtid?: string;
-  topic?: string;      // Event type (used by /api/v1/events/ingest)
-  event?: string;      // Event name (used by Prisma OasisEvent model)
-  service: string;
-  status: string;
-  message?: string;
-  metadata?: Record<string, any>;
-  created_at: Date;
-  layer?: string;
-  module?: string;
-  kind?: string;
-  source?: string;
->>>>>>> claude/auto-vtid-ledger-writer-014epsPGWZMwKqBJb1iJZrzg
   title?: string;
   ref?: string;
 }
@@ -326,16 +308,12 @@ export class LedgerWriter {
           service,
           environment,
           lastEventId: event.id,
-<<<<<<< HEAD
           lastEventAt: event.createdAt,  // Use camelCase (Prisma field name)
           // VTID-0522: Update tasks API columns
           layer: metadata.layer || existingEntry.layer,
           module: metadata.module || existingEntry.module,
           title: metadata.title || existingEntry.title,
           summary: metadata.summary || existingEntry.summary,
-=======
-          lastEventAt: event.created_at,
->>>>>>> claude/auto-vtid-ledger-writer-014epsPGWZMwKqBJb1iJZrzg
           // Only update these if present in event
           ...(metadata.description && { description: metadata.description }),
           ...(metadata.taskFamily && { taskFamily: metadata.taskFamily }),
@@ -357,15 +335,12 @@ export class LedgerWriter {
 
       return 'updated';
     } else {
-<<<<<<< HEAD
       // Derive layer from event metadata or taskFamily
       const layer = metadata.layer || (metadata.taskFamily ? metadata.taskFamily.toUpperCase() : 'AUTO');
       const module = metadata.module || metadata.taskType || 'event';
       const title = metadata.title || vtid;
       const summary = metadata.summary || metadata.description || `Auto-created from OASIS event: ${event.topic || event.event}`;
 
-=======
->>>>>>> claude/auto-vtid-ledger-writer-014epsPGWZMwKqBJb1iJZrzg
       // Create new entry
       await db.vtidLedger.create({
         data: {
@@ -376,7 +351,6 @@ export class LedgerWriter {
           taskFamily: metadata.taskFamily || 'auto',
           taskType: metadata.taskType || 'event',
           description: metadata.description || `Auto-created from OASIS event: ${event.topic || event.event}`,
-<<<<<<< HEAD
           tenant: event.tenant || event.metadata?.tenant || 'system',
           assignedTo: metadata.assignedTo,
           lastEventId: event.id,
@@ -386,12 +360,6 @@ export class LedgerWriter {
           module,
           title,
           summary,
-=======
-          tenant: event.metadata?.tenant || 'system',
-          assignedTo: metadata.assignedTo,
-          lastEventId: event.id,
-          lastEventAt: event.created_at,
->>>>>>> claude/auto-vtid-ledger-writer-014epsPGWZMwKqBJb1iJZrzg
           metadata: {
             autoCreated: true,
             sourceEvent: event.id,
@@ -404,11 +372,8 @@ export class LedgerWriter {
       logger.info(`Created VTID ${vtid} from event ${event.id}`, {
         status: newStatus,
         service,
-<<<<<<< HEAD
         layer,
         module,
-=======
->>>>>>> claude/auto-vtid-ledger-writer-014epsPGWZMwKqBJb1iJZrzg
       });
 
       return 'created';
@@ -515,11 +480,7 @@ export class LedgerWriter {
     newStatus: string
   ): boolean {
     // Always update if this event is newer
-<<<<<<< HEAD
     if (existing.lastEventAt && event.createdAt > existing.lastEventAt) {
-=======
-    if (existing.lastEventAt && event.created_at > existing.lastEventAt) {
->>>>>>> claude/auto-vtid-ledger-writer-014epsPGWZMwKqBJb1iJZrzg
       return true;
     }
 
@@ -532,28 +493,21 @@ export class LedgerWriter {
 
   /**
    * Extract additional metadata from event
-<<<<<<< HEAD
    * VTID-0522: Extended to include layer, module, title, summary for tasks API
-=======
->>>>>>> claude/auto-vtid-ledger-writer-014epsPGWZMwKqBJb1iJZrzg
    */
   private extractMetadata(event: OasisEvent): {
     description?: string;
     taskFamily?: string;
     taskType?: string;
     assignedTo?: string;
-<<<<<<< HEAD
     layer?: string;
     module?: string;
     title?: string;
     summary?: string;
-=======
->>>>>>> claude/auto-vtid-ledger-writer-014epsPGWZMwKqBJb1iJZrzg
     extra: Record<string, any>;
   } {
     const meta = event.metadata || {};
 
-<<<<<<< HEAD
     // Extract layer - from metadata, event source, or derive from taskFamily
     const taskFamily = meta.taskFamily || meta.task_family || event.layer;
     const layer = meta.layer || event.layer || (taskFamily ? taskFamily.toUpperCase() : undefined);
@@ -578,13 +532,6 @@ export class LedgerWriter {
       module,
       title,
       summary,
-=======
-    return {
-      description: meta.description || meta.summary || event.title || event.message,
-      taskFamily: meta.taskFamily || meta.task_family || event.layer,
-      taskType: meta.taskType || meta.task_type || event.kind || event.topic || event.event,
-      assignedTo: meta.assignedTo || meta.assigned_to || meta.assignee,
->>>>>>> claude/auto-vtid-ledger-writer-014epsPGWZMwKqBJb1iJZrzg
       extra: {
         layer: event.layer,
         module: event.module,
