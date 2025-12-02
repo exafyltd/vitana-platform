@@ -200,7 +200,6 @@ export async function createTask(
         id: randomUUID(),
         vtid: taskId,
         title,
-        summary: `Task type: ${taskType}`,
         layer: 'CMD',
         module: 'CMD',
         task_family: 'OASIS',
@@ -208,7 +207,6 @@ export async function createTask(
         status: 'scheduled',
         tenant: 'vitana',
         is_test: false,
-        description_md: '',
         metadata: { ...metadata, parent_vtid: vtid, task_type: taskType },
       }),
     });
