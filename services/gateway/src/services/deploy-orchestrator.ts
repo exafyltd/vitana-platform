@@ -209,7 +209,6 @@ export async function createTask(
         tenant: 'vitana',
         is_test: false,
         description_md: '',
-        assigned_to: null,
         metadata: { ...metadata, parent_vtid: vtid, task_type: taskType },
       }),
     });
