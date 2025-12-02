@@ -196,19 +196,27 @@ export async function createTask(
         Prefer: 'return=representation',
       },
       body: JSON.stringify({
+        id: randomUUID(),
         vtid: taskId,
         title,
         summary: `Task type: ${taskType}`,
-        layer: 'operator',
-        module: 'command',
+        layer: 'CMD',
+        module: 'CMD',
+        task_family: 'OASIS',
+        task_module: 'CMD',
         status: 'scheduled',
+        tenant: 'vitana',
+        is_test: false,
+        description_md: '',
         assigned_to: null,
         metadata: { ...metadata, parent_vtid: vtid, task_type: taskType },
       }),
     });
 
     if (!resp.ok) {
-      return { ok: false, error: 'Task creation failed' };
+      const errorText = await resp.text();
+      console.error(`[Deploy Orchestrator] Task creation failed: ${resp.status} - ${errorText}`);
+      return { ok: false, error: `Task creation failed: ${errorText}` };
     }
 
     console.log(`[Deploy Orchestrator] Created task: ${taskId}`);
