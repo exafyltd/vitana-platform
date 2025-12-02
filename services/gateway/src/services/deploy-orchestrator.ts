@@ -197,17 +197,12 @@ export async function createTask(
         Prefer: 'return=representation',
       },
       body: JSON.stringify({
-        id: randomUUID(),
         vtid: taskId,
-        title,
-        layer: 'CMD',
+        layer: 'DEV',
         module: 'CMD',
-        task_family: 'OASIS',
-        task_module: 'CMD',
         status: 'scheduled',
-        tenant: 'vitana',
-        is_test: false,
-        metadata: { ...metadata, parent_vtid: vtid, task_type: taskType },
+        title,
+        summary: `Task type: ${taskType}`,
       }),
     });
 
