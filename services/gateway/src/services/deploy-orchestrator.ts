@@ -97,80 +97,33 @@ export async function executeDeploy(request: DeployRequest): Promise<DeployResul
 /**
  * Create a VTID using the existing VTID creation infrastructure.
  * Used when a command doesn't provide a VTID.
+ *
+ * VTID-0525-B: DISABLED - Direct vtid_ledger writes cause schema mismatch errors.
+ * The real vtid_ledger table only has: vtid, layer, module, status, title, summary, created_at, updated_at
+ * For MVP, we skip VTID auto-creation and use a placeholder.
  */
 export async function createVtid(
   family: 'DEV' | 'ADM' | 'GOVRN' | 'OASIS',
   module: string,
   title: string
 ): Promise<{ ok: boolean; vtid?: string; error?: string }> {
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+  // VTID-0525-B: Skip VTID creation for MVP - use placeholder
+  // Direct vtid_ledger writes were causing schema mismatch errors
+  console.log(`[Deploy Orchestrator] VTID-0525-B: Skipping VTID creation, using placeholder`);
 
-  if (!supabaseUrl || !svcKey) {
-    return { ok: false, error: 'Supabase not configured' };
-  }
+  // Generate a simple placeholder VTID for tracking purposes
+  const timestamp = Date.now().toString(36).toUpperCase();
+  const placeholder = `OASIS-CMD-${timestamp}`;
 
-  try {
-    // Generate VTID via database RPC
-    const rpcResp = await fetch(`${supabaseUrl}/rest/v1/rpc/next_vtid`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: svcKey,
-        Authorization: `Bearer ${svcKey}`,
-      },
-      body: JSON.stringify({ p_family: family, p_module: module.toUpperCase() }),
-    });
-
-    if (!rpcResp.ok) {
-      const errorText = await rpcResp.text();
-      console.error(`[Deploy Orchestrator] VTID generation failed: ${rpcResp.status} - ${errorText}`);
-      return { ok: false, error: `VTID generation failed: ${errorText}` };
-    }
-
-    const vtid = await rpcResp.json() as string;
-
-    // Insert into VtidLedger
-    const insertResp = await fetch(`${supabaseUrl}/rest/v1/VtidLedger`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: svcKey,
-        Authorization: `Bearer ${svcKey}`,
-        Prefer: 'return=representation',
-      },
-      body: JSON.stringify({
-        id: randomUUID(),
-        vtid,
-        task_family: family,
-        task_module: module.toUpperCase(),
-        module: module.toUpperCase(),
-        layer: module.toUpperCase().slice(0, 3),
-        title,
-        status: 'scheduled',
-        tenant: 'vitana',
-        is_test: false,
-        description_md: '',
-        metadata: {},
-      }),
-    });
-
-    if (!insertResp.ok) {
-      const errorText = await insertResp.text();
-      console.error(`[Deploy Orchestrator] VTID insert failed: ${insertResp.status} - ${errorText}`);
-      return { ok: false, error: `VTID insert failed: ${errorText}` };
-    }
-
-    console.log(`[Deploy Orchestrator] Created VTID: ${vtid}`);
-    return { ok: true, vtid };
-
-  } catch (error: any) {
-    return { ok: false, error: error.message };
-  }
+  console.log(`[Deploy Orchestrator] Using placeholder VTID: ${placeholder}`);
+  return { ok: true, vtid: placeholder };
 }
 
 /**
  * Create a Command Hub task for non-deploy commands.
+ *
+ * VTID-0525-B: DISABLED - Direct vtid_ledger writes cause schema mismatch errors.
+ * For MVP, we return a friendly message instead of creating tasks.
  */
 export async function createTask(
   vtid: string,
@@ -178,46 +131,19 @@ export async function createTask(
   taskType: string,
   metadata: Record<string, unknown> = {}
 ): Promise<{ ok: boolean; task_id?: string; error?: string }> {
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+  // VTID-0525-B: Skip task creation for MVP
+  // Direct vtid_ledger writes were causing schema mismatch errors
+  console.log(`[Deploy Orchestrator] VTID-0525-B: Skipping task creation for MVP`);
+  console.log(`[Deploy Orchestrator] Would create task: ${title} (type: ${taskType})`);
 
-  if (!supabaseUrl || !svcKey) {
-    return { ok: false, error: 'Supabase not configured' };
-  }
+  // Return a placeholder task ID so the flow continues
+  const timestamp = Date.now().toString(36).toUpperCase();
+  const placeholderTaskId = `TASK-${timestamp}`;
 
-  try {
-    const taskId = `${vtid}-${randomUUID().slice(0, 8).toUpperCase()}`;
-
-    const resp = await fetch(`${supabaseUrl}/rest/v1/vtid_ledger`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: svcKey,
-        Authorization: `Bearer ${svcKey}`,
-        Prefer: 'return=representation',
-      },
-      body: JSON.stringify({
-        vtid: taskId,
-        layer: 'DEV',
-        module: 'CMD',
-        status: 'scheduled',
-        title,
-        summary: `Task type: ${taskType}`,
-      }),
-    });
-
-    if (!resp.ok) {
-      const errorText = await resp.text();
-      console.error(`[Deploy Orchestrator] Task creation failed: ${resp.status} - ${errorText}`);
-      return { ok: false, error: `Task creation failed: ${errorText}` };
-    }
-
-    console.log(`[Deploy Orchestrator] Created task: ${taskId}`);
-    return { ok: true, task_id: taskId };
-
-  } catch (error: any) {
-    return { ok: false, error: error.message };
-  }
+  return {
+    ok: true,
+    task_id: placeholderTaskId,
+  };
 }
 
 export default {

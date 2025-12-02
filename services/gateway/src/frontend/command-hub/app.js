@@ -322,6 +322,9 @@ const VersionStatus = {
  * VTID-0524: Fetches deployment history from the canonical API endpoint.
  * Returns deployment entries with VTID + SWV correlation.
  *
+ * VTID-0525-B: Fixed to handle plain array response from API.
+ * The API returns a plain array, not {ok: true, deployments: [...]}
+ *
  * @returns {Promise<Array<{id: string, vtid: string|null, swv: string, label: string, status: string, createdAt: string, service: string, environment: string, commit: string}>>}
  */
 async function fetchDeploymentHistory() {
@@ -333,26 +336,47 @@ async function fetchDeploymentHistory() {
             throw new Error('Deployment history fetch failed: ' + response.status);
         }
 
-        const result = await response.json();
-        console.log('[VTID-0524] Deployment history loaded:', result);
+        const data = await response.json();
+        console.log('[VTID-0524] Deployment history loaded:', data);
 
-        if (!result.ok || !result.deployments) {
-            console.warn('[VTID-0524] Unexpected response format:', result);
+        // VTID-0525-B: Handle both plain array and wrapped response formats
+        // API returns plain array: [{swv_id, service, ...}, ...]
+        // Previously expected: {ok: true, deployments: [...]}
+        var deployments = [];
+        if (Array.isArray(data)) {
+            // Plain array response (current API format)
+            deployments = data;
+        } else if (data && Array.isArray(data.deployments)) {
+            // Wrapped response format (legacy)
+            deployments = data.deployments;
+        } else if (data && Array.isArray(data.details)) {
+            // Alternative wrapped format
+            deployments = data.details;
+        } else {
+            console.warn('[VTID-0524] Unexpected response format:', data);
+            return [];
+        }
+
+        if (deployments.length === 0) {
+            console.log('[VTID-0524] No deployments found');
             return [];
         }
 
         // Map API response to version history format
-        return result.deployments.map((d, index) => ({
-            id: 'deploy-' + (d.swv || index),
-            vtid: d.vtid || null,
-            swv: d.swv || 'unknown',
-            label: d.service + ' ' + (d.swv || ''),
-            status: d.status || VersionStatus.UNKNOWN,
-            createdAt: d.created_at,
-            service: d.service,
-            environment: d.environment,
-            commit: d.commit
-        }));
+        // API returns: swv_id, service, git_commit, status, initiator, deploy_type, environment, created_at
+        return deployments.map(function(d, index) {
+            return {
+                id: 'deploy-' + (d.swv_id || d.swv || index),
+                vtid: d.vtid || null,
+                swv: d.swv_id || d.swv || 'unknown',
+                label: d.service + ' ' + (d.swv_id || d.swv || ''),
+                status: d.status || VersionStatus.UNKNOWN,
+                createdAt: d.created_at,
+                service: d.service,
+                environment: d.environment,
+                commit: d.git_commit || d.commit
+            };
+        });
     } catch (error) {
         console.error('[VTID-0524] Failed to fetch deployment history:', error);
         return [];
@@ -2052,6 +2076,14 @@ async function sendChatMessage() {
     state.chatSending = true;
     renderApp();
 
+    // VTID-0525-B: Auto-scroll immediately after user message
+    setTimeout(function() {
+        var messagesContainer = document.querySelector('.chat-messages');
+        if (messagesContainer) {
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+    }, 10);
+
     try {
         // VTID-0525: All messages go through /operator/command
         // The backend parses NL and decides if it's deploy, task, or chat
@@ -2103,10 +2135,19 @@ async function sendChatMessage() {
         state.chatSending = false;
         renderApp();
 
-        // Re-focus textarea after sending - CRITICAL UX RULE
-        setTimeout(() => {
-            const textarea = document.querySelector('.chat-textarea');
-            if (textarea) textarea.focus();
+        // VTID-0525-B: Auto-scroll to newest message + re-focus input
+        setTimeout(function() {
+            // Auto-scroll to bottom of chat messages
+            var messagesContainer = document.querySelector('.chat-messages');
+            if (messagesContainer) {
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+
+            // Re-focus textarea after sending - CRITICAL UX RULE
+            var textarea = document.querySelector('.chat-textarea');
+            if (textarea) {
+                textarea.focus();
+            }
         }, 50);
     }
 }
