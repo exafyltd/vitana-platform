@@ -2389,13 +2389,16 @@ body {
 }
 
 .governance-filter-select {
+  width: auto !important;
   min-width: 140px;
+  max-width: 200px;
   background: var(--color-sidebar-bg);
   border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 0.5rem 0.75rem;
   color: var(--color-text-primary);
   font-size: 0.875rem;
+  flex-shrink: 0;
 }
 
 .governance-filter-select:focus {
