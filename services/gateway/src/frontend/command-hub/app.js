@@ -2945,8 +2945,10 @@ function startOperatorSse() {
                 state.tickerEvents = state.tickerEvents.slice(0, 100);
             }
 
-            // VTID-0526-D: Skip render while user is typing in chat to prevent caret loss
-            if (!state.chatIsTyping) {
+            // VTID-0526-E: Skip render when chat tab is active to prevent flickering
+            // Only render if on ticker tab (where events are displayed) or not in operator console
+            var shouldRender = !state.isOperatorOpen || state.operatorActiveTab === 'ticker';
+            if (shouldRender) {
                 renderApp();
             }
         } catch (err) {
