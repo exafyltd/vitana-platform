@@ -171,7 +171,7 @@ BEGIN
             'L3', ARRAY['backend', 'CI', 'DB'],
             ARRAY['supabase/migrations/20251120000001_add_migration_governance_rules.sql', '.github/workflows/APPLY-MIGRATIONS.yml'],
             ARRAY['DEV-OASIS-GOV-0103'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-MIGRATION-001", "type": "policy"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_migration_cat_id, 'GOV-MIGRATION-002', 'CI-Only Migration Execution',
@@ -179,7 +179,7 @@ BEGIN
             'L3', ARRAY['CI', 'DB'],
             ARRAY['supabase/migrations/20251120000001_add_migration_governance_rules.sql', '.github/workflows/APPLY-MIGRATIONS.yml'],
             ARRAY['DEV-OASIS-GOV-0102', 'DEV-OASIS-GOV-0103'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-MIGRATION-002", "type": "policy"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_migration_cat_id, 'GOV-MIGRATION-003', 'No Manual SQL',
@@ -187,7 +187,7 @@ BEGIN
             'L3', ARRAY['CI', 'DB', 'agents'],
             ARRAY['supabase/migrations/20251120000001_add_migration_governance_rules.sql'],
             ARRAY['DEV-OASIS-GOV-0103'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-MIGRATION-003", "type": "policy"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_migration_cat_id, 'GOV-MIGRATION-004', 'Mandatory CI Failure on Migration Errors',
@@ -195,7 +195,7 @@ BEGIN
             'L3', ARRAY['CI'],
             ARRAY['supabase/migrations/20251120000001_add_migration_governance_rules.sql', '.github/workflows/APPLY-MIGRATIONS.yml'],
             ARRAY['DEV-OASIS-GOV-0103'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-MIGRATION-004", "type": "policy"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_migration_cat_id, 'GOV-MIGRATION-005', 'Use Only Existing Secrets',
@@ -203,7 +203,7 @@ BEGIN
             'L3', ARRAY['CI'],
             ARRAY['supabase/migrations/20251120000001_add_migration_governance_rules.sql', '.github/workflows/APPLY-MIGRATIONS.yml'],
             ARRAY['DEV-OASIS-GOV-0103'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-MIGRATION-005", "type": "policy"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_migration_cat_id, 'GOV-MIGRATION-006', 'Tenant Isolation Enforcement',
@@ -211,7 +211,7 @@ BEGIN
             'L3', ARRAY['backend', 'DB'],
             ARRAY['supabase/migrations/20251120000001_add_migration_governance_rules.sql', 'supabase/migrations/20251120000000_init_governance.sql'],
             ARRAY['DEV-OASIS-GOV-0103'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-MIGRATION-006", "type": "policy"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_migration_cat_id, 'GOV-MIGRATION-007', 'Timestamp-Ordered Migrations',
@@ -219,7 +219,7 @@ BEGIN
             'L3', ARRAY['CI', 'DB'],
             ARRAY['supabase/migrations/20251120000001_add_migration_governance_rules.sql', '.github/workflows/APPLY-MIGRATIONS.yml'],
             ARRAY['DEV-OASIS-GOV-0103'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-MIGRATION-007", "type": "policy"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     -- FRONTEND GOVERNANCE RULES (L2-L3)
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
@@ -228,7 +228,7 @@ BEGIN
             'L3', ARRAY['frontend', 'CI'],
             ARRAY['services/validators/frontend-canonical-source.js', '.github/workflows/ENFORCE-FRONTEND-CANONICAL-SOURCE.yml', 'docs/governance/CEO-HANDOVER-REVISED.md'],
             ARRAY['DEV-CICDL-0205', 'GOV-FRONTEND-CANONICAL-SOURCE-0001'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-FRONTEND-001", "type": "structural"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_frontend_cat_id, 'GOV-FRONTEND-002', 'Navigation Canon',
@@ -236,7 +236,7 @@ BEGIN
             'L2', ARRAY['frontend', 'CI'],
             ARRAY['services/gateway/src/frontend/command-hub/navigation-config.js'],
             ARRAY['DEV-CICDL-0205'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-FRONTEND-002", "type": "structural", "modules": 17, "screens": 87}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_frontend_cat_id, 'GOV-FRONTEND-003', 'CSP Compliance',
@@ -244,7 +244,7 @@ BEGIN
             'L2', ARRAY['frontend', 'backend'],
             ARRAY['services/gateway/src/routes/command-hub.ts'],
             ARRAY['DEV-CICDL-0205'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-FRONTEND-003", "type": "security"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     -- CI/CD GOVERNANCE RULES (L2)
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
@@ -253,7 +253,7 @@ BEGIN
             'L2', ARRAY['CI'],
             ARRAY['.github/workflows/PHASE-2B-NAMING-ENFORCEMENT.yml'],
             ARRAY['DEV-CICDL-0033'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-CICD-001", "type": "naming"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_cicd_cat_id, 'GOV-CICD-002', 'Workflow VTID in run-name',
@@ -261,7 +261,7 @@ BEGIN
             'L2', ARRAY['CI'],
             ARRAY['.github/workflows/PHASE-2B-NAMING-ENFORCEMENT.yml'],
             ARRAY['DEV-CICDL-0033'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-CICD-002", "type": "naming"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_cicd_cat_id, 'GOV-CICD-003', 'File Naming Convention (kebab-case)',
@@ -269,7 +269,7 @@ BEGIN
             'L2', ARRAY['CI'],
             ARRAY['.github/workflows/PHASE-2B-NAMING-ENFORCEMENT.yml'],
             ARRAY['DEV-CICDL-0033'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-CICD-003", "type": "naming"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_cicd_cat_id, 'GOV-CICD-004', 'Service Manifest Required',
@@ -277,7 +277,7 @@ BEGIN
             'L2', ARRAY['CI'],
             ARRAY['.github/workflows/CICDL-CORE-LINT-SERVICES.yml'],
             ARRAY['DEV-CICDL-0033'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-CICD-004", "type": "structural"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_cicd_cat_id, 'GOV-CICD-005', 'Top-Level Service Directory Naming',
@@ -285,7 +285,7 @@ BEGIN
             'L2', ARRAY['CI'],
             ARRAY['.github/workflows/CICDL-CORE-LINT-SERVICES.yml'],
             ARRAY['DEV-CICDL-0033'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-CICD-005", "type": "naming"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_cicd_cat_id, 'GOV-CICD-006', 'OpenAPI Spectral Validation',
@@ -293,7 +293,7 @@ BEGIN
             'L2', ARRAY['CI'],
             ARRAY['.github/workflows/CICDL-CORE-OPENAPI-ENFORCE.yml'],
             ARRAY['DEV-CICDL-0033'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-CICD-006", "type": "validation"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_cicd_cat_id, 'GOV-CICD-007', 'OpenAPI Version Requirement',
@@ -301,7 +301,7 @@ BEGIN
             'L2', ARRAY['CI'],
             ARRAY['.github/workflows/CICDL-CORE-OPENAPI-ENFORCE.yml'],
             ARRAY['DEV-CICDL-0033'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-CICD-007", "type": "validation"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_cicd_cat_id, 'GOV-CICD-008', 'No Duplicate Operation IDs',
@@ -309,7 +309,7 @@ BEGIN
             'L2', ARRAY['CI'],
             ARRAY['.github/workflows/CICDL-CORE-OPENAPI-ENFORCE.yml'],
             ARRAY['DEV-CICDL-0033'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-CICD-008", "type": "validation"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_cicd_cat_id, 'GOV-CICD-009', 'Prisma Schema Check',
@@ -317,7 +317,7 @@ BEGIN
             'L2', ARRAY['CI'],
             ARRAY['.github/workflows/OASIS-PERSISTENCE.yml'],
             ARRAY['DEV-OASIS-GOV-0102'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-CICD-009", "type": "validation"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     -- DATABASE GOVERNANCE RULES (L1)
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
@@ -326,7 +326,7 @@ BEGIN
             'L1', ARRAY['DB'],
             ARRAY['supabase/migrations/20251120000000_init_governance.sql'],
             ARRAY['DEV-OASIS-GOV-0102'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-DB-001", "type": "security"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_db_cat_id, 'GOV-DB-002', 'Service Role Write Access',
@@ -334,7 +334,7 @@ BEGIN
             'L1', ARRAY['DB', 'backend'],
             ARRAY['supabase/migrations/20251120000000_init_governance.sql'],
             ARRAY['DEV-OASIS-GOV-0102'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-DB-002", "type": "security"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_db_cat_id, 'GOV-DB-003', 'Authenticated Read Access',
@@ -342,7 +342,7 @@ BEGIN
             'L1', ARRAY['DB'],
             ARRAY['supabase/migrations/20251120000000_init_governance.sql'],
             ARRAY['DEV-OASIS-GOV-0102'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-DB-003", "type": "security"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_db_cat_id, 'GOV-DB-004', 'OASIS Events Tenant Isolation',
@@ -350,7 +350,7 @@ BEGIN
             'L1', ARRAY['DB'],
             ARRAY['database/policies/002_oasis_events.sql'],
             ARRAY['DEV-OASIS-GOV-0102'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-DB-004", "type": "security"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_db_cat_id, 'GOV-DB-005', 'OASIS Events Service Insert Only',
@@ -358,7 +358,7 @@ BEGIN
             'L1', ARRAY['DB', 'backend'],
             ARRAY['database/policies/002_oasis_events.sql'],
             ARRAY['DEV-OASIS-GOV-0102'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-DB-005", "type": "security"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_db_cat_id, 'GOV-DB-006', 'VtidLedger RLS Policies',
@@ -366,7 +366,7 @@ BEGIN
             'L1', ARRAY['DB'],
             ARRAY['database/policies/003_vtid_ledger.sql'],
             ARRAY['DEV-VTID-LEDGER'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-DB-006", "type": "security"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     -- AGENT GOVERNANCE RULES (L4)
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
@@ -375,7 +375,7 @@ BEGIN
             'L4', ARRAY['agents'],
             ARRAY['docs/GOVERNANCE/CLAUDE_START_PROMPT.md'],
             ARRAY['COP-V1.0'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-AGENT-001", "type": "protocol"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_agent_cat_id, 'GOV-AGENT-002', 'VTID Required for All Tasks',
@@ -383,7 +383,7 @@ BEGIN
             'L4', ARRAY['agents', 'CI'],
             ARRAY['docs/GOVERNANCE/CLAUDE_START_PROMPT.md'],
             ARRAY['COP-V1.0'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-AGENT-002", "type": "protocol"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_agent_cat_id, 'GOV-AGENT-003', 'No Direct Push to Main',
@@ -391,7 +391,7 @@ BEGIN
             'L4', ARRAY['agents', 'CI'],
             ARRAY['docs/GOVERNANCE/CLAUDE_START_PROMPT.md'],
             ARRAY['COP-V1.0'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-AGENT-003", "type": "protocol"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_agent_cat_id, 'GOV-AGENT-004', 'Command Hierarchy',
@@ -399,7 +399,7 @@ BEGIN
             'L4', ARRAY['agents'],
             ARRAY['docs/GOVERNANCE/CLAUDE_START_PROMPT.md'],
             ARRAY['COP-V1.0'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-AGENT-004", "type": "protocol"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_agent_cat_id, 'GOV-AGENT-005', 'Exact-Match Edit Protocol',
@@ -407,7 +407,7 @@ BEGIN
             'L4', ARRAY['agents'],
             ARRAY['docs/GOVERNANCE/CLAUDE_START_PROMPT.md'],
             ARRAY['COP-V1.0'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-AGENT-005", "type": "protocol"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_agent_cat_id, 'GOV-AGENT-006', 'Telemetry Event Emission',
@@ -415,7 +415,7 @@ BEGIN
             'L4', ARRAY['agents', 'backend'],
             ARRAY['docs/GOVERNANCE/CLAUDE_START_PROMPT.md'],
             ARRAY['COP-V1.0'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-AGENT-006", "type": "protocol"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_agent_cat_id, 'GOV-AGENT-007', 'Safety and Validation Framework',
@@ -423,7 +423,7 @@ BEGIN
             'L4', ARRAY['agents'],
             ARRAY['docs/GOVERNANCE/CLAUDE_START_PROMPT.md'],
             ARRAY['COP-V1.0'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-AGENT-007", "type": "protocol"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     -- API GOVERNANCE RULES (L2)
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
@@ -432,7 +432,7 @@ BEGIN
             'L2', ARRAY['backend'],
             ARRAY['services/gateway/src/middleware/require-vtid.ts'],
             ARRAY['DEV-API-GOVERNANCE'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-API-001", "type": "traceability"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_api_cat_id, 'GOV-API-002', 'Health Endpoint Requirement',
@@ -440,7 +440,7 @@ BEGIN
             'L2', ARRAY['backend', 'CI'],
             ARRAY['.github/workflows/EXEC-DEPLOY.yml', 'services/gateway/src/routes/command-hub.ts'],
             ARRAY['DEV-CICDL-DEPLOY'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-API-002", "type": "monitoring"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
     INSERT INTO governance_rules (tenant_id, category_id, rule_id, name, description, level, enforcement, sources, vtids, commit_hash, catalog_version, is_active, logic)
     VALUES (v_tenant_id, v_api_cat_id, 'GOV-API-003', 'Deployment Version Recording',
@@ -448,7 +448,7 @@ BEGIN
             'L2', ARRAY['CI', 'backend'],
             ARRAY['.github/workflows/EXEC-DEPLOY.yml'],
             ARRAY['VTID-0510'], v_commit_hash, '0.1', TRUE, '{"rule_code": "GOV-API-003", "type": "traceability"}'::jsonb)
-    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash;
+    ON CONFLICT (rule_id) DO UPDATE SET description = EXCLUDED.description, commit_hash = EXCLUDED.commit_hash, level = EXCLUDED.level;
 
 END $$;
 
