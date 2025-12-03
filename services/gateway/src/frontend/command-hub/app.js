@@ -263,6 +263,7 @@ const state = {
     chatInputValue: '',
     chatAttachments: [], // Array of { oasis_ref, kind, name }
     chatSending: false,
+    chatIsTyping: false, // VTID-0526-D: Guard against scroll/render during typing
 
     // Operator Ticker State
     tickerEvents: [],
@@ -1998,14 +1999,21 @@ function renderOperatorChat() {
     textarea.placeholder = 'Type a message...';
     textarea.value = state.chatInputValue;
     textarea.rows = 2;
+    // VTID-0526-D: Track typing state to prevent scroll/render interruptions
     textarea.oninput = (e) => {
         state.chatInputValue = e.target.value;
+        state.chatIsTyping = true;
     };
     textarea.onkeydown = (e) => {
+        state.chatIsTyping = true;
         if (e.key === 'Enter' && e.ctrlKey && state.chatInputValue.trim()) {
             e.preventDefault();
             sendChatMessage();
         }
+    };
+    textarea.onblur = () => {
+        // Only reset typing flag when user leaves the input
+        state.chatIsTyping = false;
     };
     inputContainer.appendChild(textarea);
 
@@ -2069,6 +2077,9 @@ function formatCommandResult(result) {
 async function sendChatMessage() {
     if (state.chatSending) return;
 
+    // VTID-0526-D: Reset typing flag - user is done typing, now sending
+    state.chatIsTyping = false;
+
     const now = new Date();
     const timestamp = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     const messageText = state.chatInputValue.trim();
@@ -2095,8 +2106,7 @@ async function sendChatMessage() {
     state.chatSending = true;
     renderApp();
 
-    // VTID-0526-B: Auto-scroll immediately after user message using requestAnimationFrame
-    // VTID-0526-C: Only scroll here - do NOT call focus() while user is typing (causes caret flicker)
+    // VTID-0526-D: Scroll to bottom after user message (safe - typing flag is reset)
     requestAnimationFrame(function() {
         var messagesContainer = document.querySelector('.chat-messages');
         if (messagesContainer) {
@@ -2155,18 +2165,17 @@ async function sendChatMessage() {
         state.chatSending = false;
         renderApp();
 
-        // VTID-0526-C: Single requestAnimationFrame - no nested loops
-        // Only re-focus if input is not already active (prevents caret flicker)
+        // VTID-0526-D: Single rAF for scroll + conditional focus after message complete
         requestAnimationFrame(function() {
-            var textarea = document.querySelector('.chat-textarea');
-            if (!textarea) return;
-            // Only re-focus if the input is not already active
-            if (document.activeElement !== textarea) {
-                textarea.focus();
-            }
+            // Scroll to bottom to show the reply
             var messagesContainer = document.querySelector('.chat-messages');
             if (messagesContainer) {
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+            // Only re-focus if input lost focus during send
+            var textarea = document.querySelector('.chat-textarea');
+            if (textarea && document.activeElement !== textarea) {
+                textarea.focus();
             }
         });
     }
@@ -2897,7 +2906,10 @@ function startOperatorSse() {
                 state.tickerEvents = state.tickerEvents.slice(0, 100);
             }
 
-            renderApp();
+            // VTID-0526-D: Skip render while user is typing in chat to prevent caret loss
+            if (!state.chatIsTyping) {
+                renderApp();
+            }
         } catch (err) {
             console.error('[Operator] SSE event parse error:', err);
         }
