@@ -2096,15 +2096,11 @@ async function sendChatMessage() {
     renderApp();
 
     // VTID-0526-B: Auto-scroll immediately after user message using requestAnimationFrame
+    // VTID-0526-C: Only scroll here - do NOT call focus() while user is typing (causes caret flicker)
     requestAnimationFrame(function() {
         var messagesContainer = document.querySelector('.chat-messages');
         if (messagesContainer) {
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        }
-        // Immediately re-focus the textarea to prevent cursor loss during typing
-        var textarea = document.querySelector('.chat-textarea');
-        if (textarea) {
-            textarea.focus();
         }
     });
 
@@ -2159,23 +2155,19 @@ async function sendChatMessage() {
         state.chatSending = false;
         renderApp();
 
-        // VTID-0526-B: Robust auto-scroll and focus restoration using requestAnimationFrame
-        // This ensures DOM is fully updated before we try to manipulate it
+        // VTID-0526-C: Single requestAnimationFrame - no nested loops
+        // Only re-focus if input is not already active (prevents caret flicker)
         requestAnimationFrame(function() {
-            // Auto-scroll to bottom of chat messages
+            var textarea = document.querySelector('.chat-textarea');
+            if (!textarea) return;
+            // Only re-focus if the input is not already active
+            if (document.activeElement !== textarea) {
+                textarea.focus();
+            }
             var messagesContainer = document.querySelector('.chat-messages');
             if (messagesContainer) {
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
             }
-
-            // Re-focus textarea after sending - CRITICAL UX RULE
-            // Use another frame to ensure focus happens after scroll
-            requestAnimationFrame(function() {
-                var textarea = document.querySelector('.chat-textarea');
-                if (textarea) {
-                    textarea.focus();
-                }
-            });
         });
     }
 }
