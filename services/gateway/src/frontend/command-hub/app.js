@@ -500,6 +500,16 @@ function renderApp() {
             }
         });
     }
+
+    // VTID-0526-E: Always scroll chat to bottom when chat tab is active
+    if (state.isOperatorOpen && state.operatorActiveTab === 'chat') {
+        requestAnimationFrame(function() {
+            var messagesContainer = document.querySelector('.chat-messages');
+            if (messagesContainer) {
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+        });
+    }
 }
 
 function renderSidebar() {
