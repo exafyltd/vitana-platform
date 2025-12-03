@@ -1731,7 +1731,12 @@ function renderGovernanceRulesView() {
         '<option value="L2">L2 (Standard)</option>' +
         '<option value="L3">L3 (Important)</option>' +
         '<option value="L4">L4 (Agent)</option>';
-    levelSelect.value = state.governanceRulesLevelFilter;
+    // Explicitly set selection to avoid browser auto-fill issues
+    if (state.governanceRulesLevelFilter) {
+        levelSelect.value = state.governanceRulesLevelFilter;
+    } else {
+        levelSelect.selectedIndex = 0;
+    }
     levelSelect.onchange = (e) => {
         state.governanceRulesLevelFilter = e.target.value;
         renderApp();
@@ -1744,7 +1749,12 @@ function renderGovernanceRulesView() {
     const domains = [...new Set(state.governanceRules.map(r => r.domain))].sort();
     categorySelect.innerHTML = '<option value="">All Categories</option>' +
         domains.map(d => `<option value="${d}">${d}</option>`).join('');
-    categorySelect.value = state.governanceRulesCategoryFilter;
+    // Explicitly set selection to avoid browser auto-fill issues
+    if (state.governanceRulesCategoryFilter) {
+        categorySelect.value = state.governanceRulesCategoryFilter;
+    } else {
+        categorySelect.selectedIndex = 0;
+    }
     categorySelect.onchange = (e) => {
         state.governanceRulesCategoryFilter = e.target.value;
         renderApp();
