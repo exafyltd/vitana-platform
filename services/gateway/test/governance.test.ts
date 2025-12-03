@@ -74,18 +74,24 @@ describe('Governance API', () => {
     });
 
     describe('GET /api/v1/governance/rules', () => {
-        it('should return array of rules', async () => {
+        it('should return catalog format with rules array (VTID-0401)', async () => {
             // First call: get rules
             mockSupabase.mockResolvedValueOnce({
                 data: [
                     {
                         id: 'rule-1',
                         tenant_id: 'SYSTEM',
+                        rule_id: 'MG-001',
                         name: 'Test Rule',
                         description: 'Test rule description',
+                        domain: 'MIGRATION_GOVERNANCE',
+                        level: 'L2',
+                        status: 'Active',
+                        category: 'Migration',
                         logic: { rule_code: 'MG-001', type: 'policy' },
                         is_active: true,
                         created_at: '2025-11-20T00:00:00Z',
+                        updated_at: '2025-11-20T00:00:00Z',
                         governance_categories: { name: 'MIGRATION_GOVERNANCE' }
                     }
                 ],
@@ -96,7 +102,13 @@ describe('Governance API', () => {
                 .get('/api/v1/governance/rules')
                 .expect(200);
 
-            expect(Array.isArray(response.body)).toBe(true);
+            // VTID-0401: Response is now catalog format
+            expect(response.body.ok).toBe(true);
+            expect(response.body.vtid).toBe('VTID-0401');
+            expect(response.body.count).toBe(1);
+            expect(Array.isArray(response.body.data)).toBe(true);
+            expect(response.body.data[0]).toHaveProperty('id');
+            expect(response.body.data[0]).toHaveProperty('domain');
         });
 
         it('should filter rules by category', async () => {
