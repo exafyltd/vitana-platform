@@ -588,6 +588,10 @@ function renderHeader() {
         state.operatorActiveTab = 'chat';
         state.isOperatorOpen = true;
         renderApp();
+
+        // VTID-0526-B: Auto-start live ticker when opening Operator Console
+        // This ensures events are streaming without requiring Heartbeat button click
+        startOperatorLiveTicker();
     };
     left.appendChild(operatorBtn);
 
@@ -2091,13 +2095,18 @@ async function sendChatMessage() {
     state.chatSending = true;
     renderApp();
 
-    // VTID-0525-B: Auto-scroll immediately after user message
-    setTimeout(function() {
+    // VTID-0526-B: Auto-scroll immediately after user message using requestAnimationFrame
+    requestAnimationFrame(function() {
         var messagesContainer = document.querySelector('.chat-messages');
         if (messagesContainer) {
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
         }
-    }, 10);
+        // Immediately re-focus the textarea to prevent cursor loss during typing
+        var textarea = document.querySelector('.chat-textarea');
+        if (textarea) {
+            textarea.focus();
+        }
+    });
 
     try {
         // VTID-0525: All messages go through /operator/command
@@ -2150,8 +2159,9 @@ async function sendChatMessage() {
         state.chatSending = false;
         renderApp();
 
-        // VTID-0525-B: Auto-scroll to newest message + re-focus input
-        setTimeout(function() {
+        // VTID-0526-B: Robust auto-scroll and focus restoration using requestAnimationFrame
+        // This ensures DOM is fully updated before we try to manipulate it
+        requestAnimationFrame(function() {
             // Auto-scroll to bottom of chat messages
             var messagesContainer = document.querySelector('.chat-messages');
             if (messagesContainer) {
@@ -2159,11 +2169,14 @@ async function sendChatMessage() {
             }
 
             // Re-focus textarea after sending - CRITICAL UX RULE
-            var textarea = document.querySelector('.chat-textarea');
-            if (textarea) {
-                textarea.focus();
-            }
-        }, 50);
+            // Use another frame to ensure focus happens after scroll
+            requestAnimationFrame(function() {
+                var textarea = document.querySelector('.chat-textarea');
+                if (textarea) {
+                    textarea.focus();
+                }
+            });
+        });
     }
 }
 
@@ -2196,7 +2209,7 @@ function renderOperatorTicker() {
         statusBanner.innerHTML = `
             <div class="ticker-status-row">
                 <span class="ticker-status-value status-standby">STANDBY</span>
-                <span class="ticker-hint">Click "Heartbeat: Standby" button to enable live monitoring</span>
+                <span class="ticker-hint">Loading live events...</span>
             </div>
         `;
     } else {
@@ -2216,7 +2229,7 @@ function renderOperatorTicker() {
     if (state.tickerEvents.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'ticker-empty';
-        empty.textContent = state.operatorHeartbeatActive ? 'Waiting for events...' : 'Enable heartbeat to see live events';
+        empty.textContent = state.operatorHeartbeatActive ? 'Waiting for events...' : 'Loading events...';
         eventsList.appendChild(empty);
     } else {
         state.tickerEvents.forEach(event => {
@@ -2913,6 +2926,51 @@ function stopOperatorSse() {
         console.log('[Operator] Stopping SSE stream...');
         state.operatorSseSource.close();
         state.operatorSseSource = null;
+    }
+}
+
+/**
+ * VTID-0526-B: Start Live Ticker automatically when Operator Console opens.
+ * This function starts the heartbeat session and SSE stream without requiring
+ * the user to click the Heartbeat button first.
+ */
+async function startOperatorLiveTicker() {
+    // Skip if already active
+    if (state.operatorHeartbeatActive) {
+        console.log('[Operator] Live ticker already active');
+        return;
+    }
+
+    console.log('[Operator] Auto-starting live ticker...');
+
+    try {
+        // Start heartbeat session
+        const response = await fetch('/api/v1/operator/heartbeat/session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'live' })
+        });
+
+        if (!response.ok) {
+            console.warn('[Operator] Failed to start heartbeat session:', response.status);
+            // Don't throw - continue to try loading events anyway
+        } else {
+            const result = await response.json();
+            console.log('[Operator] Heartbeat session started:', result);
+            state.operatorHeartbeatActive = true;
+        }
+
+        // Fetch initial heartbeat snapshot (events history)
+        await fetchHeartbeatSnapshot();
+
+        // Start SSE stream for live events
+        startOperatorSse();
+
+        renderApp();
+
+    } catch (error) {
+        console.error('[Operator] Failed to auto-start live ticker:', error);
+        // Don't alert - this is a background auto-start, not a user action
     }
 }
 
