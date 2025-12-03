@@ -64,104 +64,132 @@ export class GovernanceController {
 
     /**
      * GET /api/v1/governance/rules
-     * Query params: category?, status?, ruleCode?
+     * Query params: category?, status?, level?, search?
+     *
+     * VTID-0401: Returns rules in catalog format for the Governance Rules UI.
+     * Response shape:
+     * {
+     *   "ok": true,
+     *   "vtid": "VTID-0401",
+     *   "count": 35,
+     *   "data": [...]
+     * }
      */
     async getRules(req: Request, res: Response) {
         try {
             const tenantId = this.getTenantId(req);
-            const { category, status, ruleCode } = req.query;
+            const { category, status, level, search } = req.query;
 
             const supabase = getSupabase();
             if (!supabase) {
                 console.warn('[GovernanceController] Supabase not configured - rules fetch unavailable');
                 return res.status(503).json({
                     ok: false,
+                    vtid: 'VTID-0401',
                     error: 'SUPABASE_CONFIG_ERROR',
                     message: 'Governance storage is temporarily unavailable'
                 });
             }
+
             let query = supabase
                 .from('governance_rules')
                 .select(`
                     *,
                     governance_categories (
-                        name
+                        name,
+                        code
                     )
                 `)
-                .eq('tenant_id', tenantId);
+                .eq('tenant_id', tenantId)
+                .order('rule_id', { ascending: true });
 
-            if (ruleCode) {
-                query = query.eq('logic->>rule_code', ruleCode as string);
+            // Apply level filter at DB level if provided
+            if (level) {
+                query = query.eq('level', level as string);
             }
 
             const { data: rules, error } = await query;
 
             if (error) {
                 console.error('Error fetching rules:', error);
-                return res.status(500).json({ error: error.message });
+                return res.status(500).json({
+                    ok: false,
+                    vtid: 'VTID-0401',
+                    error: error.message
+                });
             }
 
-            // Transform to RuleDTO format
-            const ruleDTOs: (RuleDTO | null)[] = await Promise.all((rules || []).map(async (rule: any) => {
-                const ruleCode = rule.logic?.rule_code || rule.id;
-                const categoryName = (rule.governance_categories as any)?.name || 'Uncategorized';
-
-                // Filter by category if requested
-                if (category && categoryName !== category) {
-                    return null;
-                }
+            // Transform to catalog format
+            let catalogRules = (rules || []).map((rule: any) => {
+                const categoryData = rule.governance_categories as any;
+                const categoryName = categoryData?.name || 'Uncategorized';
+                const domain = categoryData?.code || categoryName.replace(' Governance', '').toUpperCase();
 
                 // Determine status
-                let ruleStatus: 'Active' | 'Draft' | 'Deprecated' | 'Proposal';
+                let ruleStatus: string;
                 if (rule.is_active) {
-                    ruleStatus = 'Active';
+                    ruleStatus = 'active';
                 } else if (rule.logic?.status === 'draft') {
-                    ruleStatus = 'Draft';
+                    ruleStatus = 'draft';
                 } else if (rule.logic?.status === 'deprecated') {
-                    ruleStatus = 'Deprecated';
+                    ruleStatus = 'deprecated';
                 } else {
-                    ruleStatus = 'Proposal';
+                    ruleStatus = 'proposal';
                 }
-
-                // Filter by status if requested
-                if (status && ruleStatus !== status) {
-                    return null;
-                }
-
-                // Fetch recent evaluations
-                const { data: evaluations } = await supabase
-                    .from('governance_evaluations')
-                    .select('*')
-                    .eq('rule_id', rule.id)
-                    .order('evaluated_at', { ascending: false })
-                    .limit(5);
-
-                const lastEvaluations: EvaluationSummary[] = (evaluations || []).map((ev: any) => ({
-                    timestamp: ev.evaluated_at,
-                    result: ev.status === 'PASS' ? 'Pass' as const : 'Fail' as const,
-                    executor: ev.metadata?.executor || 'System'
-                }));
 
                 return {
-                    ruleCode,
-                    name: rule.name,
-                    category: categoryName,
-                    status: ruleStatus,
+                    id: rule.rule_id || rule.logic?.rule_code || rule.id,
+                    domain: domain,
+                    level: rule.level || 'L2',
+                    title: rule.name,
                     description: rule.description || '',
-                    logic: rule.logic,
-                    updatedAt: rule.created_at,
-                    relatedServices: rule.logic?.relatedServices || [],
-                    lastEvaluations
+                    status: ruleStatus,
+                    category: categoryName,
+                    vtids: rule.vtids || [],
+                    sources: rule.sources || [],
+                    enforcement: rule.enforcement || [],
+                    updated_at: rule.updated_at || rule.created_at
                 };
-            }));
+            });
 
-            // Filter out nulls from category/status filtering
-            const filteredRules = ruleDTOs.filter((r): r is RuleDTO => r !== null);
+            // Apply category filter (client-side for flexibility)
+            if (category) {
+                const categoryLower = (category as string).toLowerCase();
+                catalogRules = catalogRules.filter(r =>
+                    r.category.toLowerCase().includes(categoryLower) ||
+                    r.domain.toLowerCase().includes(categoryLower)
+                );
+            }
 
-            res.json(filteredRules);
+            // Apply status filter (client-side for flexibility)
+            if (status) {
+                const statusLower = (status as string).toLowerCase();
+                catalogRules = catalogRules.filter(r => r.status.toLowerCase() === statusLower);
+            }
+
+            // Apply search filter (searches id, title, description)
+            if (search) {
+                const searchLower = (search as string).toLowerCase();
+                catalogRules = catalogRules.filter(r =>
+                    r.id.toLowerCase().includes(searchLower) ||
+                    r.title.toLowerCase().includes(searchLower) ||
+                    r.description.toLowerCase().includes(searchLower)
+                );
+            }
+
+            res.json({
+                ok: true,
+                vtid: 'VTID-0401',
+                count: catalogRules.length,
+                data: catalogRules
+            });
         } catch (error: any) {
             console.error('Error in getRules:', error);
-            res.status(500).json({ error: error.message });
+            res.status(500).json({
+                ok: false,
+                vtid: 'VTID-0401',
+                error: error.message
+            });
         }
     }
 

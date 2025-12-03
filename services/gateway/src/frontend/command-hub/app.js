@@ -301,7 +301,18 @@ const state = {
     cicdHealth: null,
     cicdHealthLoading: false,
     cicdHealthError: null,
-    cicdHealthTooltipOpen: false
+    cicdHealthTooltipOpen: false,
+
+    // Governance Rules (VTID-0401)
+    governanceRules: [],
+    governanceRulesLoading: false,
+    governanceRulesError: null,
+    governanceRulesSearchQuery: '',
+    governanceRulesLevelFilter: '',
+    governanceRulesCategoryFilter: '',
+    governanceRulesSortColumn: 'id',
+    governanceRulesSortDirection: 'asc',
+    selectedGovernanceRule: null
 };
 
 // --- Version History Data Model (VTID-0517 + VTID-0524) ---
@@ -474,6 +485,9 @@ function renderApp() {
 
     // Drawer
     root.appendChild(renderTaskDrawer());
+
+    // VTID-0401: Governance Rule Detail Drawer
+    root.appendChild(renderGovernanceRuleDetailDrawer());
 
     // Modals
     if (state.showProfileModal) root.appendChild(renderProfileModal());
@@ -1029,6 +1043,9 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderTasksView());
     } else if (moduleKey === 'docs' && tab === 'screens') {
         container.appendChild(renderDocsScreensView());
+    } else if (moduleKey === 'governance' && tab === 'rules') {
+        // VTID-0401: Governance Rules catalog view
+        container.appendChild(renderGovernanceRulesView());
     } else {
         // Placeholder for other modules
         const placeholder = document.createElement('div');
@@ -1589,6 +1606,455 @@ async function fetchScreenInventory() {
         state.screenInventoryLoading = false;
         renderApp();
     }
+}
+
+// --- Governance Rules (VTID-0401) ---
+
+/**
+ * VTID-0401: Fetches governance rules from the catalog API endpoint.
+ * Populates state.governanceRules with the catalog data.
+ */
+async function fetchGovernanceRules() {
+    state.governanceRulesLoading = true;
+    renderApp();
+
+    try {
+        const response = await fetch('/api/v1/governance/rules');
+        if (!response.ok) throw new Error('Network response was not ok: ' + response.status);
+
+        const json = await response.json();
+        if (json.ok && json.data) {
+            state.governanceRules = json.data;
+            state.governanceRulesError = null;
+            console.log('[VTID-0401] Governance rules loaded:', json.count, 'rules');
+        } else {
+            throw new Error(json.error || 'Failed to load governance rules');
+        }
+    } catch (error) {
+        console.error('[VTID-0401] Failed to fetch governance rules:', error);
+        state.governanceRulesError = error.message;
+        state.governanceRules = [];
+    } finally {
+        state.governanceRulesLoading = false;
+        renderApp();
+    }
+}
+
+/**
+ * VTID-0401: Sorts governance rules by the specified column.
+ */
+function sortGovernanceRules(column) {
+    if (state.governanceRulesSortColumn === column) {
+        // Toggle direction
+        state.governanceRulesSortDirection = state.governanceRulesSortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+        state.governanceRulesSortColumn = column;
+        state.governanceRulesSortDirection = 'asc';
+    }
+    renderApp();
+}
+
+/**
+ * VTID-0401: Returns sorted and filtered governance rules.
+ */
+function getFilteredGovernanceRules() {
+    let rules = [...state.governanceRules];
+
+    // Apply search filter
+    if (state.governanceRulesSearchQuery) {
+        const query = state.governanceRulesSearchQuery.toLowerCase();
+        rules = rules.filter(r =>
+            r.id.toLowerCase().includes(query) ||
+            r.title.toLowerCase().includes(query)
+        );
+    }
+
+    // Apply level filter
+    if (state.governanceRulesLevelFilter) {
+        rules = rules.filter(r => r.level === state.governanceRulesLevelFilter);
+    }
+
+    // Apply category filter
+    if (state.governanceRulesCategoryFilter) {
+        rules = rules.filter(r => r.domain === state.governanceRulesCategoryFilter);
+    }
+
+    // Apply sorting
+    const col = state.governanceRulesSortColumn;
+    const dir = state.governanceRulesSortDirection === 'asc' ? 1 : -1;
+
+    rules.sort((a, b) => {
+        let aVal = a[col] || '';
+        let bVal = b[col] || '';
+        if (typeof aVal === 'string') aVal = aVal.toLowerCase();
+        if (typeof bVal === 'string') bVal = bVal.toLowerCase();
+        if (aVal < bVal) return -1 * dir;
+        if (aVal > bVal) return 1 * dir;
+        return 0;
+    });
+
+    return rules;
+}
+
+/**
+ * VTID-0401: Renders the Governance Rules catalog view.
+ */
+function renderGovernanceRulesView() {
+    const container = document.createElement('div');
+    container.className = 'governance-rules-container';
+
+    // Auto-fetch governance rules if not loaded and not currently loading
+    if (state.governanceRules.length === 0 && !state.governanceRulesLoading && !state.governanceRulesError) {
+        fetchGovernanceRules();
+    }
+
+    // Toolbar
+    const toolbar = document.createElement('div');
+    toolbar.className = 'governance-rules-toolbar';
+
+    // Search input
+    const search = document.createElement('input');
+    search.className = 'search-field governance-rules-search';
+    search.placeholder = 'Search rules by ID or title...';
+    search.value = state.governanceRulesSearchQuery;
+    search.oninput = (e) => {
+        state.governanceRulesSearchQuery = e.target.value;
+        renderApp();
+    };
+    toolbar.appendChild(search);
+
+    // Level filter
+    const levelSelect = document.createElement('select');
+    levelSelect.className = 'form-control governance-filter-select';
+    levelSelect.innerHTML = '<option value="">All Levels</option>' +
+        '<option value="L1">L1 (Critical)</option>' +
+        '<option value="L2">L2 (Standard)</option>' +
+        '<option value="L3">L3 (Important)</option>' +
+        '<option value="L4">L4 (Agent)</option>';
+    levelSelect.value = state.governanceRulesLevelFilter;
+    levelSelect.onchange = (e) => {
+        state.governanceRulesLevelFilter = e.target.value;
+        renderApp();
+    };
+    toolbar.appendChild(levelSelect);
+
+    // Category/Domain filter
+    const categorySelect = document.createElement('select');
+    categorySelect.className = 'form-control governance-filter-select';
+    const domains = [...new Set(state.governanceRules.map(r => r.domain))].sort();
+    categorySelect.innerHTML = '<option value="">All Categories</option>' +
+        domains.map(d => `<option value="${d}">${d}</option>`).join('');
+    categorySelect.value = state.governanceRulesCategoryFilter;
+    categorySelect.onchange = (e) => {
+        state.governanceRulesCategoryFilter = e.target.value;
+        renderApp();
+    };
+    toolbar.appendChild(categorySelect);
+
+    // Spacer
+    const spacer = document.createElement('div');
+    spacer.className = 'spacer';
+    toolbar.appendChild(spacer);
+
+    // Rule count
+    const filteredRules = getFilteredGovernanceRules();
+    const countLabel = document.createElement('span');
+    countLabel.className = 'governance-rules-count';
+    countLabel.textContent = filteredRules.length + ' of ' + state.governanceRules.length + ' rules';
+    toolbar.appendChild(countLabel);
+
+    // Refresh button
+    const refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn';
+    refreshBtn.textContent = '↻';
+    refreshBtn.title = 'Refresh rules';
+    refreshBtn.onclick = () => { fetchGovernanceRules(); };
+    toolbar.appendChild(refreshBtn);
+
+    container.appendChild(toolbar);
+
+    // Loading state
+    if (state.governanceRulesLoading) {
+        const loading = document.createElement('div');
+        loading.className = 'governance-rules-loading';
+        loading.innerHTML = '<div class="skeleton-table">' +
+            '<div class="skeleton-row"></div>'.repeat(10) +
+            '</div>';
+        container.appendChild(loading);
+        return container;
+    }
+
+    // Error state
+    if (state.governanceRulesError) {
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'governance-rules-error';
+        errorDiv.innerHTML = '<span class="error-icon">⚠</span> Error loading rules: ' + state.governanceRulesError;
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    // Table
+    const tableWrapper = document.createElement('div');
+    tableWrapper.className = 'governance-rules-table-wrapper';
+
+    const table = document.createElement('table');
+    table.className = 'governance-rules-table';
+
+    // Table header
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+
+    const columns = [
+        { key: 'id', label: 'Rule ID', sortable: true },
+        { key: 'level', label: 'Level', sortable: true },
+        { key: 'domain', label: 'Domain', sortable: true },
+        { key: 'title', label: 'Title', sortable: true },
+        { key: 'status', label: 'Status', sortable: true },
+        { key: 'vtids', label: 'VTIDs', sortable: false },
+        { key: 'updated_at', label: 'Updated', sortable: true }
+    ];
+
+    columns.forEach(col => {
+        const th = document.createElement('th');
+        th.className = col.sortable ? 'sortable' : '';
+        if (col.sortable) {
+            th.onclick = () => sortGovernanceRules(col.key);
+            const sortIndicator = state.governanceRulesSortColumn === col.key
+                ? (state.governanceRulesSortDirection === 'asc' ? ' ↑' : ' ↓')
+                : '';
+            th.textContent = col.label + sortIndicator;
+        } else {
+            th.textContent = col.label;
+        }
+        headerRow.appendChild(th);
+    });
+
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    // Table body
+    const tbody = document.createElement('tbody');
+
+    filteredRules.forEach(rule => {
+        const row = document.createElement('tr');
+        row.className = 'governance-rule-row';
+        row.onclick = () => {
+            state.selectedGovernanceRule = rule;
+            renderApp();
+        };
+
+        // Rule ID
+        const idCell = document.createElement('td');
+        idCell.className = 'rule-id-cell';
+        idCell.textContent = rule.id;
+        row.appendChild(idCell);
+
+        // Level with badge
+        const levelCell = document.createElement('td');
+        const levelBadge = document.createElement('span');
+        levelBadge.className = 'level-badge level-' + rule.level.toLowerCase();
+        levelBadge.textContent = rule.level;
+        levelCell.appendChild(levelBadge);
+        row.appendChild(levelCell);
+
+        // Domain
+        const domainCell = document.createElement('td');
+        domainCell.className = 'domain-cell';
+        domainCell.textContent = rule.domain;
+        row.appendChild(domainCell);
+
+        // Title
+        const titleCell = document.createElement('td');
+        titleCell.className = 'title-cell';
+        titleCell.textContent = rule.title;
+        row.appendChild(titleCell);
+
+        // Status with badge
+        const statusCell = document.createElement('td');
+        const statusBadge = document.createElement('span');
+        statusBadge.className = 'status-badge status-' + rule.status.toLowerCase();
+        statusBadge.textContent = rule.status.charAt(0).toUpperCase() + rule.status.slice(1);
+        statusCell.appendChild(statusBadge);
+        row.appendChild(statusCell);
+
+        // VTIDs
+        const vtidsCell = document.createElement('td');
+        vtidsCell.className = 'vtids-cell';
+        if (rule.vtids && rule.vtids.length > 0) {
+            vtidsCell.innerHTML = rule.vtids.slice(0, 2).map(v =>
+                '<span class="vtid-chip">' + v + '</span>'
+            ).join('');
+            if (rule.vtids.length > 2) {
+                vtidsCell.innerHTML += '<span class="vtid-more">+' + (rule.vtids.length - 2) + '</span>';
+            }
+        } else {
+            vtidsCell.textContent = '-';
+        }
+        row.appendChild(vtidsCell);
+
+        // Updated
+        const updatedCell = document.createElement('td');
+        updatedCell.className = 'updated-cell';
+        updatedCell.textContent = formatRelativeDate(rule.updated_at);
+        row.appendChild(updatedCell);
+
+        tbody.appendChild(row);
+    });
+
+    table.appendChild(tbody);
+    tableWrapper.appendChild(table);
+    container.appendChild(tableWrapper);
+
+    return container;
+}
+
+/**
+ * VTID-0401: Renders the rule detail sheet/drawer.
+ */
+function renderGovernanceRuleDetailDrawer() {
+    const drawer = document.createElement('div');
+    drawer.className = 'governance-rule-drawer ' + (state.selectedGovernanceRule ? 'open' : '');
+
+    if (!state.selectedGovernanceRule) return drawer;
+
+    const rule = state.selectedGovernanceRule;
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'drawer-header';
+
+    const title = document.createElement('h2');
+    title.className = 'drawer-title-text';
+    title.textContent = rule.id;
+    header.appendChild(title);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'drawer-close-btn';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.onclick = () => {
+        state.selectedGovernanceRule = null;
+        renderApp();
+    };
+    header.appendChild(closeBtn);
+
+    drawer.appendChild(header);
+
+    // Content
+    const content = document.createElement('div');
+    content.className = 'drawer-content';
+
+    // Rule metadata
+    const metaSection = document.createElement('div');
+    metaSection.className = 'rule-detail-meta';
+
+    const levelBadge = document.createElement('span');
+    levelBadge.className = 'level-badge level-' + rule.level.toLowerCase();
+    levelBadge.textContent = rule.level;
+    metaSection.appendChild(levelBadge);
+
+    const statusBadge = document.createElement('span');
+    statusBadge.className = 'status-badge status-' + rule.status.toLowerCase();
+    statusBadge.textContent = rule.status.charAt(0).toUpperCase() + rule.status.slice(1);
+    metaSection.appendChild(statusBadge);
+
+    const domainBadge = document.createElement('span');
+    domainBadge.className = 'domain-badge';
+    domainBadge.textContent = rule.domain;
+    metaSection.appendChild(domainBadge);
+
+    content.appendChild(metaSection);
+
+    // Title
+    const titleSection = document.createElement('div');
+    titleSection.className = 'rule-detail-section';
+    titleSection.innerHTML = '<h3>Title</h3><p>' + escapeHtml(rule.title) + '</p>';
+    content.appendChild(titleSection);
+
+    // Description
+    const descSection = document.createElement('div');
+    descSection.className = 'rule-detail-section';
+    descSection.innerHTML = '<h3>Description</h3><p>' + escapeHtml(rule.description) + '</p>';
+    content.appendChild(descSection);
+
+    // Category
+    const categorySection = document.createElement('div');
+    categorySection.className = 'rule-detail-section';
+    categorySection.innerHTML = '<h3>Category</h3><p>' + escapeHtml(rule.category) + '</p>';
+    content.appendChild(categorySection);
+
+    // VTIDs
+    if (rule.vtids && rule.vtids.length > 0) {
+        const vtidsSection = document.createElement('div');
+        vtidsSection.className = 'rule-detail-section';
+        vtidsSection.innerHTML = '<h3>Linked VTIDs</h3><div class="vtid-chips">' +
+            rule.vtids.map(v => '<span class="vtid-chip">' + escapeHtml(v) + '</span>').join('') +
+            '</div>';
+        content.appendChild(vtidsSection);
+    }
+
+    // Sources
+    if (rule.sources && rule.sources.length > 0) {
+        const sourcesSection = document.createElement('div');
+        sourcesSection.className = 'rule-detail-section';
+        sourcesSection.innerHTML = '<h3>Sources</h3><ul class="sources-list">' +
+            rule.sources.map(s => '<li><code>' + escapeHtml(s) + '</code></li>').join('') +
+            '</ul>';
+        content.appendChild(sourcesSection);
+    }
+
+    // Enforcement
+    if (rule.enforcement && rule.enforcement.length > 0) {
+        const enforcementSection = document.createElement('div');
+        enforcementSection.className = 'rule-detail-section';
+        enforcementSection.innerHTML = '<h3>Enforcement</h3><div class="enforcement-chips">' +
+            rule.enforcement.map(e => '<span class="enforcement-chip">' + escapeHtml(e) + '</span>').join('') +
+            '</div>';
+        content.appendChild(enforcementSection);
+    }
+
+    // Updated
+    const updatedSection = document.createElement('div');
+    updatedSection.className = 'rule-detail-section';
+    updatedSection.innerHTML = '<h3>Last Updated</h3><p>' + formatRelativeDate(rule.updated_at) + '</p>';
+    content.appendChild(updatedSection);
+
+    drawer.appendChild(content);
+
+    return drawer;
+}
+
+/**
+ * Helper: Format relative date.
+ */
+function formatRelativeDate(dateStr) {
+    if (!dateStr) return '-';
+    try {
+        const date = new Date(dateStr);
+        const now = new Date();
+        const diffMs = now - date;
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+        if (diffDays === 0) return 'Today';
+        if (diffDays === 1) return 'Yesterday';
+        if (diffDays < 7) return diffDays + ' days ago';
+        if (diffDays < 30) return Math.floor(diffDays / 7) + ' weeks ago';
+        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch (e) {
+        return dateStr;
+    }
+}
+
+/**
+ * Helper: Escape HTML to prevent XSS.
+ */
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
 }
 
 function renderDocsScreensView() {
