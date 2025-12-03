@@ -2363,3 +2363,348 @@ body {
   color: var(--color-text-secondary);
   text-align: right;
 }
+
+/* --- VTID-0401: Governance Rules Catalog --- */
+
+.governance-rules-container {
+  padding: 1.5rem;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.governance-rules-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.governance-rules-search {
+  min-width: 250px;
+  flex: 1;
+  max-width: 400px;
+}
+
+.governance-filter-select {
+  min-width: 140px;
+  background: var(--color-sidebar-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  color: var(--color-text-primary);
+  font-size: 0.875rem;
+}
+
+.governance-filter-select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.governance-rules-count {
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.governance-rules-loading {
+  padding: 2rem;
+}
+
+.skeleton-table {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.skeleton-row {
+  height: 48px;
+  background: linear-gradient(90deg, var(--color-sidebar-bg) 25%, var(--color-border) 50%, var(--color-sidebar-bg) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s infinite;
+  border-radius: 4px;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.governance-rules-error {
+  padding: 2rem;
+  text-align: center;
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 8px;
+}
+
+.governance-rules-error .error-icon {
+  font-size: 1.5rem;
+  margin-right: 0.5rem;
+}
+
+.governance-rules-table-wrapper {
+  flex: 1;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-sidebar-bg);
+}
+
+.governance-rules-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.governance-rules-table thead {
+  position: sticky;
+  top: 0;
+  background: var(--color-bg);
+  z-index: 1;
+}
+
+.governance-rules-table th {
+  padding: 0.875rem 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.governance-rules-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.governance-rules-table th.sortable:hover {
+  color: var(--color-text-primary);
+}
+
+.governance-rule-row {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.governance-rule-row:hover {
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.governance-rules-table td {
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.rule-id-cell {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.8rem;
+  color: var(--color-accent);
+  font-weight: 500;
+}
+
+.domain-cell {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
+
+.title-cell {
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.updated-cell {
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+/* Level badges */
+.level-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.level-l1 {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.level-l2 {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.level-l3 {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.level-l4 {
+  background: rgba(139, 92, 246, 0.15);
+  color: #8b5cf6;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+/* Status badges */
+.status-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.status-active {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.status-draft {
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+}
+
+.status-deprecated {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.status-proposal {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+/* VTID chips */
+.vtids-cell {
+  white-space: nowrap;
+}
+
+.vtid-chip {
+  display: inline-block;
+  padding: 0.125rem 0.375rem;
+  margin-right: 0.25rem;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 3px;
+  font-size: 0.7rem;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  color: var(--color-accent);
+}
+
+.vtid-more {
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+}
+
+.vtid-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+/* Domain badge for detail drawer */
+.domain-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  background: rgba(148, 163, 184, 0.15);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+}
+
+/* Enforcement chips */
+.enforcement-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.enforcement-chip {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  background: rgba(139, 92, 246, 0.1);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: 4px;
+  font-size: 0.75rem;
+  color: #8b5cf6;
+}
+
+/* Sources list */
+.sources-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  list-style-type: disc;
+}
+
+.sources-list li {
+  margin-bottom: 0.375rem;
+}
+
+.sources-list code {
+  background: var(--color-sidebar-bg);
+  padding: 0.125rem 0.375rem;
+  border-radius: 3px;
+  font-size: 0.8rem;
+  word-break: break-all;
+}
+
+/* Governance Rule Detail Drawer */
+.governance-rule-drawer {
+  position: fixed;
+  top: 0;
+  right: -500px;
+  width: 500px;
+  height: 100vh;
+  background: var(--color-sidebar-bg);
+  border-left: 1px solid var(--color-border);
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.3);
+  transition: right 0.3s ease;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+}
+
+.governance-rule-drawer.open {
+  right: 0;
+}
+
+.rule-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.rule-detail-section {
+  margin-bottom: 1.25rem;
+}
+
+.rule-detail-section h3 {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-text-secondary);
+  margin: 0 0 0.5rem 0;
+}
+
+.rule-detail-section p {
+  margin: 0;
+  line-height: 1.6;
+  color: var(--color-text-primary);
+}
