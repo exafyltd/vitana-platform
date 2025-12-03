@@ -501,9 +501,9 @@ function renderApp() {
         });
     }
 
-    // VTID-0526-E: Always scroll chat to bottom when chat tab is active
-    // Use double rAF + setTimeout to ensure DOM is fully laid out before scrolling
-    if (state.isOperatorOpen && state.operatorActiveTab === 'chat') {
+    // VTID-0526-E: Scroll chat to bottom ONLY when user was NOT typing
+    // If savedChatFocus is set, user was typing - don't interrupt with scroll
+    if (state.isOperatorOpen && state.operatorActiveTab === 'chat' && !savedChatFocus) {
         requestAnimationFrame(function() {
             requestAnimationFrame(function() {
                 setTimeout(function() {
