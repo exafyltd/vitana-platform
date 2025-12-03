@@ -1865,14 +1865,26 @@ function renderOperatorChat() {
         empty.textContent = 'No messages yet. Start a conversation with the Operator.';
         messages.appendChild(empty);
     } else {
+        // VTID-0526: Updated message rendering with new bubble styles
         state.chatMessages.forEach(msg => {
-            const msgEl = document.createElement('div');
-            msgEl.className = `chat-message ${msg.type}${msg.isError ? ' error' : ''}`;
+            // Determine message type: sent (user) or reply (system)
+            const isSent = msg.type === 'user' || msg.type === 'sent';
+            const isError = msg.isError || msg.error;
 
+            // Create bubble element with appropriate classes
             const bubble = document.createElement('div');
-            bubble.className = 'chat-message-bubble';
-            bubble.textContent = msg.content;
-            msgEl.appendChild(bubble);
+            let bubbleClasses = 'message-bubble';
+            if (isSent) {
+                bubbleClasses += ' message-sent';
+            } else {
+                bubbleClasses += ' message-reply';
+            }
+            if (isError) {
+                bubbleClasses += ' message-error';
+            }
+            bubble.className = bubbleClasses;
+            bubble.textContent = msg.content || msg.text;
+            messages.appendChild(bubble);
 
             // Show attachments if any
             if (msg.attachments && msg.attachments.length > 0) {
@@ -1884,15 +1896,18 @@ function renderOperatorChat() {
                     chip.textContent = att.name || att.oasis_ref;
                     attachmentsEl.appendChild(chip);
                 });
-                msgEl.appendChild(attachmentsEl);
+                messages.appendChild(attachmentsEl);
             }
 
+            // Timestamp element
             const time = document.createElement('div');
-            time.className = 'chat-message-time';
+            time.className = 'timestamp';
+            // Align timestamp with the message bubble
+            if (isSent) {
+                time.style.alignSelf = 'flex-end';
+            }
             time.textContent = msg.timestamp;
-            msgEl.appendChild(time);
-
-            messages.appendChild(msgEl);
+            messages.appendChild(time);
         });
     }
 
