@@ -1723,14 +1723,14 @@ function renderGovernanceRulesView() {
     };
     toolbar.appendChild(search);
 
-    // Level filter
+    // Level filter - static options per VTID-0401-B spec
     const levelSelect = document.createElement('select');
     levelSelect.className = 'form-control governance-filter-select';
     levelSelect.innerHTML = '<option value="">All Levels</option>' +
         '<option value="L1">L1 (Critical)</option>' +
         '<option value="L2">L2 (Standard)</option>' +
-        '<option value="L3">L3 (Important)</option>' +
-        '<option value="L4">L4 (Agent)</option>';
+        '<option value="L3">L3 (Structural)</option>' +
+        '<option value="L4">L4 (Autonomy / Agents)</option>';
     // Explicitly set selection to avoid browser auto-fill issues
     if (state.governanceRulesLevelFilter) {
         levelSelect.value = state.governanceRulesLevelFilter;
@@ -1743,12 +1743,17 @@ function renderGovernanceRulesView() {
     };
     toolbar.appendChild(levelSelect);
 
-    // Category/Domain filter
+    // Category/Domain filter - static options per VTID-0401-B spec
+    // Using 6 canonical categories from specs/governance/rules.json
     const categorySelect = document.createElement('select');
     categorySelect.className = 'form-control governance-filter-select';
-    const domains = [...new Set(state.governanceRules.map(r => r.domain))].sort();
     categorySelect.innerHTML = '<option value="">All Categories</option>' +
-        domains.map(d => `<option value="${d}">${d}</option>`).join('');
+        '<option value="MIGRATION">Migration Governance</option>' +
+        '<option value="FRONTEND">Frontend Governance</option>' +
+        '<option value="CICD">CI/CD Governance</option>' +
+        '<option value="DB">Database Governance</option>' +
+        '<option value="AGENT">Agent Governance</option>' +
+        '<option value="API">API Governance</option>';
     // Explicitly set selection to avoid browser auto-fill issues
     if (state.governanceRulesCategoryFilter) {
         categorySelect.value = state.governanceRulesCategoryFilter;
