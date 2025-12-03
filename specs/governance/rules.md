@@ -4,7 +4,7 @@ This file lists all active governance rules (L1–L4) enforced across Vitana.
 
 **Last Updated:** 2025-12-03
 **Commit:** 654c542667c45e741bc47cfc85e817ca4f5db9f8
-**Total Rules:** 32
+**Total Rules:** 35
 
 ---
 
@@ -415,7 +415,7 @@ This file lists all active governance rules (L1–L4) enforced across Vitana.
 
 ## Statistics
 
-- **Total Rules:** 32
+- **Total Rules:** 35
 - **L1 (Database Security):** 6 rules
 - **L2 (Standards & Conventions):** 14 rules
 - **L3 (Migration & Source Control):** 8 rules

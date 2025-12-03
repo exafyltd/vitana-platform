@@ -97,7 +97,7 @@ INSERT INTO governance_catalog (version, commit_hash, rules_count, categories_co
 VALUES (
     '0.1',
     '654c542667c45e741bc47cfc85e817ca4f5db9f8',
-    32,
+    35,
     6,
     '{"extracted_from": "codebase", "vtid": "VTID-0400", "extraction_date": "2025-12-03"}'::jsonb
 )
@@ -472,8 +472,8 @@ BEGIN
             'VTID-0400',
             'GOVERNANCE_CATALOG_INITIALIZED',
             'success',
-            'Governance catalog v0.1 initialized with 32 rules across 6 categories',
-            '{"version": "0.1", "rules_count": 32, "categories_count": 6}'::jsonb
+            'Governance catalog v0.1 initialized with 35 rules across 6 categories',
+            '{"version": "0.1", "rules_count": 35, "categories_count": 6}'::jsonb
         );
     END IF;
 END $$;
