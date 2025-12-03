@@ -439,6 +439,18 @@ function showToast(message, type = 'info', duration = 4000) {
 
 function renderApp() {
     const root = document.getElementById('root');
+
+    // VTID-0526-E: Save chat textarea focus state before destroying DOM
+    var chatTextarea = document.querySelector('.chat-textarea');
+    var savedChatFocus = null;
+    if (chatTextarea && document.activeElement === chatTextarea) {
+        savedChatFocus = {
+            value: chatTextarea.value,
+            selectionStart: chatTextarea.selectionStart,
+            selectionEnd: chatTextarea.selectionEnd
+        };
+    }
+
     root.innerHTML = '';
 
     const container = document.createElement('div');
@@ -476,6 +488,18 @@ function renderApp() {
 
     // Toast Notifications (VTID-0517)
     if (state.toasts.length > 0) root.appendChild(renderToastContainer());
+
+    // VTID-0526-E: Restore chat textarea focus after render
+    if (savedChatFocus) {
+        requestAnimationFrame(function() {
+            var newTextarea = document.querySelector('.chat-textarea');
+            if (newTextarea) {
+                newTextarea.focus();
+                // Restore cursor position
+                newTextarea.setSelectionRange(savedChatFocus.selectionStart, savedChatFocus.selectionEnd);
+            }
+        });
+    }
 }
 
 function renderSidebar() {
