@@ -1,7 +1,8 @@
 -- ============================================================
 -- GOVERNANCE CATALOG INITIALIZATION
--- VTID: VTID-0400
+-- VTID: VTID-0400, VTID-0402 (ON CONFLICT fix)
 -- Purpose: Initialize governance catalog and seed rules from codebase
+-- Fix: Changed partial unique index to proper UNIQUE constraint for ON CONFLICT
 -- ============================================================
 
 -- 1. Create governance_catalog table for versioned catalog metadata
@@ -77,8 +78,22 @@ BEGIN
     END IF;
 END $$;
 
--- 4. Create unique index on rule_id
-CREATE UNIQUE INDEX IF NOT EXISTS idx_rules_rule_id ON governance_rules(rule_id) WHERE rule_id IS NOT NULL;
+-- 4. Create unique constraint on rule_id (required for ON CONFLICT)
+-- Note: Partial unique indexes don't work with ON CONFLICT, we need an actual constraint
+DO $$
+BEGIN
+    -- Drop partial index if exists (partial indexes don't work with ON CONFLICT)
+    DROP INDEX IF EXISTS idx_rules_rule_id;
+
+    -- Add unique constraint if it doesn't exist
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'governance_rules_rule_id_key'
+        AND conrelid = 'governance_rules'::regclass
+    ) THEN
+        ALTER TABLE governance_rules ADD CONSTRAINT governance_rules_rule_id_key UNIQUE (rule_id);
+    END IF;
+END $$;
 
 -- 5. Add category_code to governance_categories if not exists
 DO $$
