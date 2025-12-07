@@ -1726,17 +1726,16 @@ function renderGovernanceRulesView() {
     // Level filter - static options per VTID-0401-B spec
     const levelSelect = document.createElement('select');
     levelSelect.className = 'form-control governance-filter-select';
+    levelSelect.setAttribute('autocomplete', 'off');
+    levelSelect.setAttribute('data-lpignore', 'true'); // LastPass ignore
+    levelSelect.name = 'governance-level-filter-' + Date.now(); // Unique name prevents autofill
     levelSelect.innerHTML = '<option value="">All Levels</option>' +
         '<option value="L1">L1 (Critical)</option>' +
         '<option value="L2">L2 (Standard)</option>' +
         '<option value="L3">L3 (Structural)</option>' +
         '<option value="L4">L4 (Autonomy / Agents)</option>';
-    // Explicitly set selection to avoid browser auto-fill issues
-    if (state.governanceRulesLevelFilter) {
-        levelSelect.value = state.governanceRulesLevelFilter;
-    } else {
-        levelSelect.selectedIndex = 0;
-    }
+    // Set value based on state - empty string means "All Levels"
+    levelSelect.value = state.governanceRulesLevelFilter || '';
     levelSelect.onchange = (e) => {
         state.governanceRulesLevelFilter = e.target.value;
         renderApp();
@@ -1747,6 +1746,9 @@ function renderGovernanceRulesView() {
     // Using 6 canonical categories from specs/governance/rules.json
     const categorySelect = document.createElement('select');
     categorySelect.className = 'form-control governance-filter-select';
+    categorySelect.setAttribute('autocomplete', 'off');
+    categorySelect.setAttribute('data-lpignore', 'true'); // LastPass ignore
+    categorySelect.name = 'governance-category-filter-' + Date.now(); // Unique name prevents autofill
     categorySelect.innerHTML = '<option value="">All Categories</option>' +
         '<option value="MIGRATION">Migration Governance</option>' +
         '<option value="FRONTEND">Frontend Governance</option>' +
@@ -1754,12 +1756,8 @@ function renderGovernanceRulesView() {
         '<option value="DB">Database Governance</option>' +
         '<option value="AGENT">Agent Governance</option>' +
         '<option value="API">API Governance</option>';
-    // Explicitly set selection to avoid browser auto-fill issues
-    if (state.governanceRulesCategoryFilter) {
-        categorySelect.value = state.governanceRulesCategoryFilter;
-    } else {
-        categorySelect.selectedIndex = 0;
-    }
+    // Set value based on state - empty string means "All Categories"
+    categorySelect.value = state.governanceRulesCategoryFilter || '';
     categorySelect.onchange = (e) => {
         state.governanceRulesCategoryFilter = e.target.value;
         renderApp();
