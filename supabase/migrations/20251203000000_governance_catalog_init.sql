@@ -1,8 +1,8 @@
 -- ============================================================
 -- GOVERNANCE CATALOG INITIALIZATION
--- VTID: VTID-0400, VTID-0402 (ON CONFLICT fix)
+-- VTID: VTID-0400, VTID-0402, VTID-0403 (constraint fix in separate migration)
 -- Purpose: Initialize governance catalog and seed rules from codebase
--- Fix: Changed partial unique index to proper UNIQUE constraint for ON CONFLICT
+-- Note: The rule_id UNIQUE constraint is now created by 20251207000000_fix_governance_rules_rule_id_constraint.sql
 -- ============================================================
 
 -- 1. Create governance_catalog table for versioned catalog metadata
