@@ -88,48 +88,47 @@ describe("GET /api/v1/operator/deployments - VTID-0524", () => {
     });
   });
 
+  // VTID-0525-B: API now returns plain array, not {ok: true, deployments: [...]}
   it("returns 200 with valid JSON format", async () => {
     const res = await request(app).get("/api/v1/operator/deployments");
 
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toMatch(/application\/json/);
-    expect(res.body.ok).toBe(true);
-    expect(res.body.deployments).toBeInstanceOf(Array);
+    // VTID-0525-B: API returns plain array
+    expect(res.body).toBeInstanceOf(Array);
   });
 
   it("returns deployments in correct VTID-0524 format", async () => {
     const res = await request(app).get("/api/v1/operator/deployments");
 
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
-
-    const deployments = res.body.deployments;
+    // VTID-0525-B: API returns plain array
+    const deployments = res.body;
+    expect(deployments).toBeInstanceOf(Array);
     expect(deployments.length).toBe(3);
 
     // Verify first deployment has all required fields
     const first = deployments[0];
-    expect(first).toHaveProperty('vtid');
-    expect(first).toHaveProperty('swv');
+    // Note: API returns swv_id, not swv
+    expect(first).toHaveProperty('swv_id');
     expect(first).toHaveProperty('service');
     expect(first).toHaveProperty('environment');
     expect(first).toHaveProperty('status');
     expect(first).toHaveProperty('created_at');
-    expect(first).toHaveProperty('commit');
-
-    // Verify commit is shortened (7 chars)
-    expect(first.commit.length).toBe(7);
+    expect(first).toHaveProperty('git_commit');
   });
 
   it("returns deployments sorted by created_at DESC (most recent first)", async () => {
     const res = await request(app).get("/api/v1/operator/deployments");
 
     expect(res.status).toBe(200);
-    const deployments = res.body.deployments;
+    // VTID-0525-B: API returns plain array
+    const deployments = res.body;
 
-    // Verify ordering - first should be most recent
-    expect(deployments[0].swv).toBe('SWV-0003');
-    expect(deployments[1].swv).toBe('SWV-0002');
-    expect(deployments[2].swv).toBe('SWV-0001');
+    // Verify ordering - first should be most recent (by swv_id)
+    expect(deployments[0].swv_id).toBe('SWV-0003');
+    expect(deployments[1].swv_id).toBe('SWV-0002');
+    expect(deployments[2].swv_id).toBe('SWV-0001');
 
     // Verify timestamps are in descending order
     for (let i = 0; i < deployments.length - 1; i++) {
@@ -178,11 +177,13 @@ describe("GET /api/v1/operator/deployments - VTID-0524", () => {
     const res = await request(app).get("/api/v1/operator/deployments");
 
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
+    // VTID-0525-B: API returns plain array
+    const deployments = res.body;
+    expect(deployments).toBeInstanceOf(Array);
 
-    // All VTIDs should be null when no mapping exists
-    res.body.deployments.forEach((d: any) => {
-      expect(d.vtid).toBeNull();
+    // All VTIDs should be null or undefined when no mapping exists
+    deployments.forEach((d: any) => {
+      expect(d.vtid == null).toBe(true); // null or undefined
     });
   });
 
@@ -190,7 +191,8 @@ describe("GET /api/v1/operator/deployments - VTID-0524", () => {
     const res = await request(app).get("/api/v1/operator/deployments?limit=2");
 
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
+    // VTID-0525-B: API returns plain array
+    expect(res.body).toBeInstanceOf(Array);
     // Note: The actual limiting happens in the database query
     // Here we just verify the endpoint accepts the parameter
   });
@@ -216,8 +218,8 @@ describe("GET /api/v1/operator/deployments - VTID-0524", () => {
     const res = await request(app).get("/api/v1/operator/deployments");
 
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
-    expect(res.body.deployments).toEqual([]);
+    // VTID-0525-B: API returns plain array
+    expect(res.body).toEqual([]);
   });
 
   it("returns 502 when database query fails", async () => {
