@@ -2711,3 +2711,116 @@ body {
   line-height: 1.6;
   color: var(--color-text-primary);
 }
+
+/* --- VTID-0526-D: Stage Counters Styling --- */
+
+/* Stage counter row in ticker status banner */
+.ticker-stage-counters {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.stage-counter {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: default;
+}
+
+.stage-icon {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  font-weight: 700;
+  font-size: 0.7rem;
+}
+
+.stage-count {
+  min-width: 20px;
+  text-align: center;
+}
+
+/* Stage-specific colors */
+.stage-planner {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+}
+
+.stage-planner .stage-icon {
+  background: #3b82f6;
+  color: white;
+}
+
+.stage-worker {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+}
+
+.stage-worker .stage-icon {
+  background: #f59e0b;
+  color: white;
+}
+
+.stage-validator {
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+}
+
+.stage-validator .stage-icon {
+  background: #8b5cf6;
+  color: white;
+}
+
+.stage-deploy {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+}
+
+.stage-deploy .stage-icon {
+  background: #10b981;
+  color: white;
+}
+
+/* Stage badges in ticker event items */
+.ticker-stage {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 0.65rem;
+  flex-shrink: 0;
+  margin-right: 0.5rem;
+}
+
+.ticker-stage-planner {
+  background: #3b82f6;
+  color: white;
+}
+
+.ticker-stage-worker {
+  background: #f59e0b;
+  color: white;
+}
+
+.ticker-stage-validator {
+  background: #8b5cf6;
+  color: white;
+}
+
+.ticker-stage-deploy {
+  background: #10b981;
+  color: white;
+}
