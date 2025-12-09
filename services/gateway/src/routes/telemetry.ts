@@ -24,8 +24,9 @@ const TelemetryEventSchema = z.object({
 
 type TelemetryEvent = z.infer<typeof TelemetryEventSchema>;
 
-// POST /api/v1/telemetry/event - Single telemetry event
-router.post("/api/v1/telemetry/event", async (req: Request, res: Response) => {
+// POST /event - Single telemetry event
+// VTID-0526-D: Route mounted at /api/v1/telemetry, so this becomes /api/v1/telemetry/event
+router.post("/event", async (req: Request, res: Response) => {
   try {
     // Validate request body
     const body = TelemetryEventSchema.parse(req.body);
@@ -137,8 +138,9 @@ router.post("/api/v1/telemetry/event", async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/v1/telemetry/batch - Batch telemetry events
-router.post("/api/v1/telemetry/batch", async (req: Request, res: Response) => {
+// POST /batch - Batch telemetry events
+// VTID-0526-D: Route mounted at /api/v1/telemetry, so this becomes /api/v1/telemetry/batch
+router.post("/batch", async (req: Request, res: Response) => {
   try {
     // Validate that body is an array
     if (!Array.isArray(req.body)) {
@@ -251,18 +253,9 @@ router.post("/api/v1/telemetry/batch", async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/v1/health - Gateway health check
-router.get("/api/v1/health", (_req: Request, res: Response) => {
-  res.status(200).json({
-    ok: true,
-    service: "vitana-gateway",
-    timestamp: new Date().toISOString(),
-    version: "1.0.0",
-  });
-});
-
-// GET /api/v1/telemetry/health - Telemetry subsystem health
-router.get("/api/v1/telemetry/health", (_req: Request, res: Response) => {
+// GET /health - Telemetry subsystem health
+// VTID-0526-D: Route mounted at /api/v1/telemetry, so this becomes /api/v1/telemetry/health
+router.get("/health", (_req: Request, res: Response) => {
   res.status(200).json({
     ok: true,
     service: "telemetry",
@@ -273,7 +266,8 @@ router.get("/api/v1/telemetry/health", (_req: Request, res: Response) => {
 /**
  * VTID-0526-D: Telemetry Snapshot Endpoint
  *
- * GET /api/v1/telemetry/snapshot
+ * GET /snapshot
+ * Route mounted at /api/v1/telemetry, so this becomes /api/v1/telemetry/snapshot
  *
  * Returns a snapshot of:
  * - Recent telemetry events (last N events)
@@ -282,7 +276,7 @@ router.get("/api/v1/telemetry/health", (_req: Request, res: Response) => {
  * This endpoint is used by the frontend for auto-loading telemetry
  * when the Operator Console / Command Hub opens.
  */
-router.get("/api/v1/telemetry/snapshot", async (req: Request, res: Response) => {
+router.get("/snapshot", async (req: Request, res: Response) => {
   console.log("[Telemetry Snapshot] Request received");
 
   try {
