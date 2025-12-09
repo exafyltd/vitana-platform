@@ -1,10 +1,12 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { randomUUID } from "crypto";
+import { mapRawToStage, normalizeStage, isValidStage, emptyStageCounters, VALID_STAGES, type TaskStage, type StageCounters } from "../lib/stage-mapping";
 
 export const router = Router();
 
 // Telemetry Event Schema (TickerEvent format)
+// VTID-0526-D: Added task_stage for 4-stage mapping
 const TelemetryEventSchema = z.object({
   ts: z.string().optional(), // Will default to now() if not provided
   vtid: z.string().min(1, "VTID required"),
@@ -17,6 +19,7 @@ const TelemetryEventSchema = z.object({
   ref: z.string().optional(),
   link: z.string().nullable().optional(),
   meta: z.record(z.any()).optional(),
+  task_stage: z.enum(["PLANNER", "WORKER", "VALIDATOR", "DEPLOY"]).optional(), // VTID-0526-D
 });
 
 type TelemetryEvent = z.infer<typeof TelemetryEventSchema>;
@@ -42,7 +45,10 @@ router.post("/api/v1/telemetry/event", async (req: Request, res: Response) => {
     // Prepare event payload for OASIS
     const timestamp = body.ts || new Date().toISOString();
     const eventId = randomUUID();
-    
+
+    // VTID-0526-D: Determine task_stage - use provided value or auto-map from kind/title
+    const taskStage = body.task_stage || mapRawToStage(body.kind, body.title, body.status);
+
     const payload = {
       id: eventId,
       created_at: timestamp,
@@ -56,6 +62,7 @@ router.post("/api/v1/telemetry/event", async (req: Request, res: Response) => {
       ref: body.ref || `vt/${body.vtid}-${body.kind.replace(/\./g, "-")}`,
       link: body.link || null,
       meta: body.meta || null,
+      task_stage: taskStage, // VTID-0526-D
     };
 
     // Persist to OASIS (oasis_events table)
@@ -98,6 +105,7 @@ router.post("/api/v1/telemetry/event", async (req: Request, res: Response) => {
         title: body.title,
         ref: payload.ref,
         link: body.link || null,
+        task_stage: taskStage, // VTID-0526-D
       });
       console.log(`📡 Event broadcasted to SSE feed`);
     } catch (e: any) {
@@ -155,6 +163,7 @@ router.post("/api/v1/telemetry/batch", async (req: Request, res: Response) => {
     }
 
     // Prepare payloads
+    // VTID-0526-D: Include task_stage with auto-mapping
     const timestamp = new Date().toISOString();
     const payloads = events.map((event: TelemetryEvent) => ({
       id: randomUUID(),
@@ -169,6 +178,7 @@ router.post("/api/v1/telemetry/batch", async (req: Request, res: Response) => {
       ref: event.ref || `vt/${event.vtid}-${event.kind.replace(/\./g, "-")}`,
       link: event.link || null,
       meta: event.meta || null,
+      task_stage: event.task_stage || mapRawToStage(event.kind, event.title, event.status), // VTID-0526-D
     }));
 
     // Batch insert to OASIS
@@ -211,6 +221,7 @@ router.post("/api/v1/telemetry/batch", async (req: Request, res: Response) => {
           title: event.title,
           ref: payloads[idx].ref,
           link: event.link || null,
+          task_stage: payloads[idx].task_stage, // VTID-0526-D
         });
       });
       console.log(`📡 ${events.length} events broadcasted to SSE feed`);
@@ -257,4 +268,156 @@ router.get("/api/v1/telemetry/health", (_req: Request, res: Response) => {
     service: "telemetry",
     timestamp: new Date().toISOString(),
   });
+});
+
+/**
+ * VTID-0526-D: Telemetry Snapshot Endpoint
+ *
+ * GET /api/v1/telemetry/snapshot
+ *
+ * Returns a snapshot of:
+ * - Recent telemetry events (last N events)
+ * - Stage counters (PLANNER, WORKER, VALIDATOR, DEPLOY)
+ *
+ * This endpoint is used by the frontend for auto-loading telemetry
+ * when the Operator Console / Command Hub opens.
+ */
+router.get("/api/v1/telemetry/snapshot", async (req: Request, res: Response) => {
+  console.log("[Telemetry Snapshot] Request received");
+
+  try {
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+
+    if (!svcKey || !supabaseUrl) {
+      console.error("❌ Gateway misconfigured: Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE");
+      return res.status(500).json({
+        error: "Gateway misconfigured",
+        detail: "Missing Supabase environment variables",
+      });
+    }
+
+    // Parse query params
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+    const hoursBack = Math.min(parseInt(req.query.hours as string) || 24, 168); // Max 7 days
+
+    // Calculate time window
+    const since = new Date(Date.now() - hoursBack * 60 * 60 * 1000).toISOString();
+
+    // Fetch recent events with task_stage
+    const eventsResp = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_events?select=id,created_at,vtid,kind,status,title,task_stage,source,layer&order=created_at.desc&limit=${limit}`,
+      {
+        headers: {
+          "Content-Type": "application/json",
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+      }
+    );
+
+    if (!eventsResp.ok) {
+      const text = await eventsResp.text();
+      console.error(`❌ Events query failed: ${eventsResp.status} - ${text}`);
+      return res.status(502).json({
+        error: "Database query failed",
+        detail: text,
+      });
+    }
+
+    const events = await eventsResp.json();
+
+    // Fetch stage counters (counts of events per stage within time window)
+    // Using a separate query for efficiency
+    const countersResp = await fetch(
+      `${supabaseUrl}/rest/v1/rpc/count_events_by_stage`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+        body: JSON.stringify({ since_time: since }),
+      }
+    );
+
+    // Build counters - either from RPC or from manual count
+    let counters: StageCounters = emptyStageCounters();
+
+    if (countersResp.ok) {
+      // If RPC exists and works, use it
+      const rpcResult = (await countersResp.json()) as Array<{ task_stage: string; count: string | number }>;
+      if (Array.isArray(rpcResult)) {
+        for (const row of rpcResult) {
+          if (isValidStage(row.task_stage)) {
+            counters[row.task_stage] = parseInt(String(row.count)) || 0;
+          }
+        }
+      }
+    } else {
+      // Fallback: count from events in memory (less accurate but works without RPC)
+      console.log("[Telemetry Snapshot] RPC not available, counting from events");
+
+      // Fetch all events with stage in time window for counting
+      const countResp = await fetch(
+        `${supabaseUrl}/rest/v1/oasis_events?select=task_stage&created_at=gte.${since}&task_stage=not.is.null`,
+        {
+          headers: {
+            "Content-Type": "application/json",
+            apikey: svcKey,
+            Authorization: `Bearer ${svcKey}`,
+          },
+        }
+      );
+
+      if (countResp.ok) {
+        const countEvents = (await countResp.json()) as Array<{ task_stage: string }>;
+        for (const event of countEvents) {
+          if (isValidStage(event.task_stage)) {
+            counters[event.task_stage]++;
+          }
+        }
+      }
+    }
+
+    // Type the events array
+    const eventsTyped = events as Array<{
+      id: string;
+      created_at: string;
+      vtid: string;
+      kind: string;
+      status: string;
+      title: string;
+      task_stage: string | null;
+      source: string;
+      layer: string;
+    }>;
+
+    console.log(`[Telemetry Snapshot] Returning ${eventsTyped.length} events, counters:`, counters);
+
+    return res.status(200).json({
+      ok: true,
+      timestamp: new Date().toISOString(),
+      events: eventsTyped.map((e) => ({
+        id: e.id,
+        created_at: e.created_at,
+        vtid: e.vtid,
+        kind: e.kind,
+        status: e.status,
+        title: e.title,
+        task_stage: e.task_stage,
+        source: e.source,
+        layer: e.layer,
+      })),
+      counters: counters,
+      valid_stages: VALID_STAGES,
+    });
+  } catch (e: any) {
+    console.error("❌ Telemetry snapshot error:", e);
+    return res.status(500).json({
+      error: "Internal server error",
+      detail: e.message,
+    });
+  }
 });

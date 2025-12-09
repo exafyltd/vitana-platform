@@ -268,6 +268,18 @@ const state = {
     // Operator Ticker State
     tickerEvents: [],
 
+    // VTID-0526-D: Stage Counters State (4-stage model)
+    stageCounters: {
+        PLANNER: 0,
+        WORKER: 0,
+        VALIDATOR: 0,
+        DEPLOY: 0
+    },
+    stageCountersLoading: false,
+    telemetrySnapshotError: null,
+    lastTelemetryRefresh: null,
+    telemetryAutoRefreshEnabled: true,
+
     // Operator History State
     historyEvents: [],
     historyLoading: false,
@@ -2709,6 +2721,7 @@ function renderOperatorTicker() {
 
     if (state.operatorHeartbeatActive && state.operatorHeartbeatSnapshot) {
         const snapshot = state.operatorHeartbeatSnapshot;
+        const counters = state.stageCounters;
         statusBanner.innerHTML = `
             <div class="ticker-status-row">
                 <span class="ticker-status-label">Status:</span>
@@ -2722,6 +2735,24 @@ function renderOperatorTicker() {
                 <span>Scheduled: ${snapshot.tasks?.by_status?.scheduled || 0}</span>
                 <span>In Progress: ${snapshot.tasks?.by_status?.in_progress || 0}</span>
                 <span>Completed: ${snapshot.tasks?.by_status?.completed || 0}</span>
+            </div>
+            <div class="ticker-status-row ticker-stage-counters">
+                <span class="stage-counter stage-planner" title="Planning stage events">
+                    <span class="stage-icon">P</span>
+                    <span class="stage-count">${counters.PLANNER}</span>
+                </span>
+                <span class="stage-counter stage-worker" title="Worker stage events">
+                    <span class="stage-icon">W</span>
+                    <span class="stage-count">${counters.WORKER}</span>
+                </span>
+                <span class="stage-counter stage-validator" title="Validator stage events">
+                    <span class="stage-icon">V</span>
+                    <span class="stage-count">${counters.VALIDATOR}</span>
+                </span>
+                <span class="stage-counter stage-deploy" title="Deploy stage events">
+                    <span class="stage-icon">D</span>
+                    <span class="stage-count">${counters.DEPLOY}</span>
+                </span>
             </div>
         `;
     } else if (!state.operatorHeartbeatActive) {
@@ -2759,6 +2790,15 @@ function renderOperatorTicker() {
             timestamp.className = 'ticker-timestamp';
             timestamp.textContent = event.timestamp;
             item.appendChild(timestamp);
+
+            // VTID-0526-D: Show task_stage badge if present
+            if (event.task_stage) {
+                const stageBadge = document.createElement('div');
+                stageBadge.className = `ticker-stage ticker-stage-${event.task_stage.toLowerCase()}`;
+                stageBadge.textContent = event.task_stage.charAt(0);
+                stageBadge.title = event.task_stage;
+                item.appendChild(stageBadge);
+            }
 
             const content = document.createElement('div');
             content.className = 'ticker-content';
@@ -3411,13 +3451,19 @@ function startOperatorSse() {
             const event = JSON.parse(e.data);
             console.log('[Operator] SSE event:', event);
 
-            // Add to ticker
+            // Add to ticker (VTID-0526-D: include task_stage)
             state.tickerEvents.unshift({
                 id: event.id || Date.now(),
                 timestamp: new Date(event.created_at).toLocaleTimeString(),
                 type: event.type?.split('.')[0] || 'info',
-                content: event.payload?.message || event.type || 'Event received'
+                content: event.payload?.message || event.type || 'Event received',
+                task_stage: event.task_stage || event.payload?.task_stage || null // VTID-0526-D
             });
+
+            // VTID-0526-D: Update stage counters on new event
+            if (event.task_stage && state.stageCounters[event.task_stage] !== undefined) {
+                state.stageCounters[event.task_stage]++;
+            }
 
             // Keep only last 100 events
             if (state.tickerEvents.length > 100) {
@@ -3454,7 +3500,95 @@ function stopOperatorSse() {
 }
 
 /**
+ * VTID-0526-D: Telemetry auto-refresh interval ID
+ */
+let telemetryAutoRefreshInterval = null;
+
+/**
+ * VTID-0526-D: Fetch telemetry snapshot with stage counters.
+ * This populates the stageCounters state and optionally the tickerEvents.
+ */
+async function fetchTelemetrySnapshot() {
+    console.log('[VTID-0526-D] Fetching telemetry snapshot...');
+    state.stageCountersLoading = true;
+
+    try {
+        const response = await fetch('/api/v1/telemetry/snapshot?limit=20&hours=24');
+        if (!response.ok) {
+            throw new Error(`Telemetry snapshot fetch failed: ${response.status}`);
+        }
+
+        const result = await response.json();
+        console.log('[VTID-0526-D] Telemetry snapshot loaded:', result);
+
+        // Update stage counters
+        if (result.counters) {
+            state.stageCounters = {
+                PLANNER: result.counters.PLANNER || 0,
+                WORKER: result.counters.WORKER || 0,
+                VALIDATOR: result.counters.VALIDATOR || 0,
+                DEPLOY: result.counters.DEPLOY || 0
+            };
+        }
+
+        // Optionally merge events into ticker if not already populated via SSE
+        if (result.events && result.events.length > 0 && state.tickerEvents.length === 0) {
+            state.tickerEvents = result.events.map(function(event) {
+                return {
+                    id: event.id || Date.now() + Math.random(),
+                    timestamp: new Date(event.created_at).toLocaleTimeString(),
+                    type: (event.kind || '').split('.')[0] || 'info',
+                    content: event.title || 'Event',
+                    task_stage: event.task_stage || null
+                };
+            });
+        }
+
+        state.telemetrySnapshotError = null;
+        state.lastTelemetryRefresh = new Date().toISOString();
+
+    } catch (error) {
+        console.error('[VTID-0526-D] Telemetry snapshot error:', error);
+        state.telemetrySnapshotError = error.message;
+    } finally {
+        state.stageCountersLoading = false;
+        renderApp();
+    }
+}
+
+/**
+ * VTID-0526-D: Start auto-refresh for telemetry (during active execution).
+ * Polls every 3 seconds while the operator console is open.
+ */
+function startTelemetryAutoRefresh() {
+    if (telemetryAutoRefreshInterval) {
+        console.log('[VTID-0526-D] Auto-refresh already active');
+        return;
+    }
+
+    console.log('[VTID-0526-D] Starting telemetry auto-refresh (3s interval)');
+
+    telemetryAutoRefreshInterval = setInterval(function() {
+        if (state.telemetryAutoRefreshEnabled && state.isOperatorOpen) {
+            fetchTelemetrySnapshot();
+        }
+    }, 3000);
+}
+
+/**
+ * VTID-0526-D: Stop auto-refresh for telemetry.
+ */
+function stopTelemetryAutoRefresh() {
+    if (telemetryAutoRefreshInterval) {
+        clearInterval(telemetryAutoRefreshInterval);
+        telemetryAutoRefreshInterval = null;
+        console.log('[VTID-0526-D] Telemetry auto-refresh stopped');
+    }
+}
+
+/**
  * VTID-0526-B: Start Live Ticker automatically when Operator Console opens.
+ * VTID-0526-D: Also loads telemetry snapshot with stage counters.
  * This function starts the heartbeat session and SSE stream without requiring
  * the user to click the Heartbeat button first.
  */
@@ -3484,11 +3618,17 @@ async function startOperatorLiveTicker() {
             state.operatorHeartbeatActive = true;
         }
 
+        // VTID-0526-D: Fetch telemetry snapshot with stage counters (parallel with heartbeat)
+        fetchTelemetrySnapshot();
+
         // Fetch initial heartbeat snapshot (events history)
         await fetchHeartbeatSnapshot();
 
         // Start SSE stream for live events
         startOperatorSse();
+
+        // VTID-0526-D: Start auto-refresh for stage counters during active execution
+        startTelemetryAutoRefresh();
 
         renderApp();
 
