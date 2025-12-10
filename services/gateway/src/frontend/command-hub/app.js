@@ -248,6 +248,13 @@ const state = {
     showProfileModal: false,
     showTaskModal: false,
 
+    // VTID-0528-B: Create Task Modal State - preserves form values across re-renders
+    createTaskModal: {
+        title: '',
+        vtid: '',
+        status: 'Scheduled'
+    },
+
     // Global Overlays (VTID-0508 / VTID-0509)
     isHeartbeatOpen: false,
     isOperatorOpen: false,
@@ -474,6 +481,19 @@ function renderApp() {
         };
     }
 
+    // VTID-0528-B: Save Create Task modal focus state before destroying DOM
+    var savedCreateTaskFocus = null;
+    if (state.showTaskModal) {
+        var activeEl = document.activeElement;
+        if (activeEl && (activeEl.id === 'create-task-title' || activeEl.id === 'create-task-vtid')) {
+            savedCreateTaskFocus = {
+                id: activeEl.id,
+                selectionStart: activeEl.selectionStart,
+                selectionEnd: activeEl.selectionEnd
+            };
+        }
+    }
+
     root.innerHTML = '';
 
     const container = document.createElement('div');
@@ -505,6 +525,11 @@ function renderApp() {
     if (state.showProfileModal) root.appendChild(renderProfileModal());
     if (state.showTaskModal) root.appendChild(renderTaskModal());
 
+    // VTID-0528-B: Attach Create Task modal input handlers (sync to state without re-render)
+    if (state.showTaskModal) {
+        attachCreateTaskModalHandlers();
+    }
+
     // Global Overlays (VTID-0508)
     if (state.isHeartbeatOpen) root.appendChild(renderHeartbeatOverlay());
     if (state.isOperatorOpen) root.appendChild(renderOperatorOverlay());
@@ -523,6 +548,18 @@ function renderApp() {
                 newTextarea.focus();
                 // Restore cursor position
                 newTextarea.setSelectionRange(savedChatFocus.selectionStart, savedChatFocus.selectionEnd);
+            }
+        });
+    }
+
+    // VTID-0528-B: Restore Create Task modal focus after render
+    if (savedCreateTaskFocus) {
+        requestAnimationFrame(function() {
+            var inputToFocus = document.getElementById(savedCreateTaskFocus.id);
+            if (inputToFocus) {
+                inputToFocus.focus();
+                // Restore cursor position
+                inputToFocus.setSelectionRange(savedCreateTaskFocus.selectionStart, savedCreateTaskFocus.selectionEnd);
             }
         });
     }
@@ -1323,10 +1360,15 @@ function renderProfileModal() {
 }
 
 function renderTaskModal() {
+    // VTID-0528-B: Use state values to preserve form inputs across re-renders
+    const { title, vtid, status } = state.createTaskModal;
+
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.onclick = (e) => {
         if (e.target === overlay) {
+            // VTID-0528-B: Clear modal state on close
+            state.createTaskModal = { title: '', vtid: '', status: 'Scheduled' };
             state.showTaskModal = false;
             renderApp();
         }
@@ -1343,24 +1385,25 @@ function renderTaskModal() {
     const body = document.createElement('div');
     body.className = 'modal-body';
 
+    // VTID-0528-B: Use IDs and populate with state values
     const titleGroup = document.createElement('div');
     titleGroup.className = 'form-group';
-    titleGroup.innerHTML = '<label>Task Title</label><input type="text" class="form-control" placeholder="Enter title">';
+    titleGroup.innerHTML = `<label>Task Title</label><input type="text" id="create-task-title" class="form-control" placeholder="Enter title" value="${escapeHtml(title)}">`;
     body.appendChild(titleGroup);
 
     const vtidGroup = document.createElement('div');
     vtidGroup.className = 'form-group';
-    vtidGroup.innerHTML = '<label>VTID</label><input type="text" class="form-control" placeholder="VTID-XXXX">';
+    vtidGroup.innerHTML = `<label>VTID</label><input type="text" id="create-task-vtid" class="form-control" placeholder="VTID-XXXX" value="${escapeHtml(vtid)}">`;
     body.appendChild(vtidGroup);
 
     const statusGroup = document.createElement('div');
     statusGroup.className = 'form-group';
     statusGroup.innerHTML = `
         <label>Status</label>
-        <select class="form-control">
-            <option value="Scheduled">Scheduled</option>
-            <option value="In Progress">In Progress</option>
-            <option value="Completed">Completed</option>
+        <select id="create-task-status" class="form-control">
+            <option value="Scheduled"${status === 'Scheduled' ? ' selected' : ''}>Scheduled</option>
+            <option value="In Progress"${status === 'In Progress' ? ' selected' : ''}>In Progress</option>
+            <option value="Completed"${status === 'Completed' ? ' selected' : ''}>Completed</option>
         </select>
     `;
     body.appendChild(statusGroup);
@@ -1374,6 +1417,8 @@ function renderTaskModal() {
     cancelBtn.className = 'btn';
     cancelBtn.textContent = 'Cancel';
     cancelBtn.onclick = () => {
+        // VTID-0528-B: Clear modal state on cancel
+        state.createTaskModal = { title: '', vtid: '', status: 'Scheduled' };
         state.showTaskModal = false;
         renderApp();
     };
@@ -1383,40 +1428,36 @@ function renderTaskModal() {
     createBtn.className = 'btn btn-primary';
     createBtn.textContent = 'Create';
     createBtn.onclick = async () => {
-        // Extract form values
-        const titleInput = body.querySelector('.form-group:nth-child(1) input');
-        const vtidInput = body.querySelector('.form-group:nth-child(2) input');
-        const statusSelect = body.querySelector('.form-group:nth-child(3) select');
-
-        const title = titleInput.value.trim();
-        const vtid = vtidInput.value.trim();
-        const status = statusSelect.value; // "Scheduled", "In Progress", "Completed"
+        // VTID-0528-B: Read values from state (already synced by input handlers)
+        const currentTitle = state.createTaskModal.title.trim();
+        const currentVtid = state.createTaskModal.vtid.trim();
+        const currentStatus = state.createTaskModal.status;
 
         // Basic validation
-        if (!title) {
+        if (!currentTitle) {
             alert('Title is required');
             return;
         }
 
-        if (!vtid) {
+        if (!currentVtid) {
             alert('VTID is required');
             return;
         }
 
         // Map UI status to backend status
         let backendStatus = 'pending'; // Default
-        if (status === 'In Progress') {
+        if (currentStatus === 'In Progress') {
             backendStatus = 'in_progress';
-        } else if (status === 'Completed') {
+        } else if (currentStatus === 'Completed') {
             backendStatus = 'complete';
-        } else if (status === 'Scheduled') {
+        } else if (currentStatus === 'Scheduled') {
             backendStatus = 'pending';
         }
 
         // Prepare payload
         const payload = {
-            title: title,
-            vtid: vtid,
+            title: currentTitle,
+            vtid: currentVtid,
             status: backendStatus
         };
 
@@ -1441,7 +1482,8 @@ function renderTaskModal() {
                 return;
             }
 
-            // Success! Close modal and refresh task list
+            // Success! Close modal, clear state, and refresh task list
+            state.createTaskModal = { title: '', vtid: '', status: 'Scheduled' };
             state.showTaskModal = false;
             fetchTasks(); // Refresh the task board
             renderApp();
@@ -1458,6 +1500,31 @@ function renderTaskModal() {
     overlay.appendChild(modal);
 
     return overlay;
+}
+
+/**
+ * VTID-0528-B: Attach event handlers to Create Task modal inputs.
+ * These handlers sync input values to state WITHOUT triggering re-render.
+ * This prevents user input from being lost during background refreshes.
+ */
+function attachCreateTaskModalHandlers() {
+    const titleInput = document.getElementById('create-task-title');
+    const vtidInput = document.getElementById('create-task-vtid');
+    const statusSelect = document.getElementById('create-task-status');
+
+    if (!titleInput) return; // Modal not rendered
+
+    titleInput.addEventListener('input', function(e) {
+        state.createTaskModal.title = e.target.value;
+    });
+
+    vtidInput.addEventListener('input', function(e) {
+        state.createTaskModal.vtid = e.target.value;
+    });
+
+    statusSelect.addEventListener('change', function(e) {
+        state.createTaskModal.status = e.target.value;
+    });
 }
 
 // --- Logic ---
