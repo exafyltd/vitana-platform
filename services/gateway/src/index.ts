@@ -1,4 +1,5 @@
 ﻿import express from 'express';
+import path from 'path';
 import boardAdapter from "./routes/board-adapter";
 import { commandhub } from "./routes/commandhub";
 import cors from 'cors';
@@ -93,10 +94,11 @@ app.use('/command-hub', commandHubRouter);
 app.use(sseService.router);
 app.use('/api/v1/board', boardAdapter); // Board adapter for v1 API
 
-// Serve Command Hub static files
-const staticPath = process.env.NODE_ENV === 'production'
-  ? 'dist/frontend/command-hub'
-  : 'src/frontend/command-hub';
+// VTID-0529: Command Hub SPA canonical static path
+// Use __dirname to ensure correct path resolution in all environments.
+// After TypeScript compilation, __dirname = dist/, so this resolves to dist/frontend/command-hub/
+// The bundle fingerprint "Bundle: VTID-0529" and console log must be visible after deploy.
+const staticPath = path.join(__dirname, 'frontend/command-hub');
 app.use('/command-hub', express.static(staticPath));
 
 // Start server

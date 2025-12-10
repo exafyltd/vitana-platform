@@ -1,5 +1,8 @@
 // Vitana Dev Frontend Spec v2 Implementation - Task 3
 
+// VTID-0529: Bundle fingerprint for deployment verification
+console.log('COMMAND HUB BUNDLE: VTID-0529');
+
 // --- Configs ---
 
 const NAVIGATION_CONFIG = [
@@ -613,6 +616,9 @@ function renderApp() {
 
     // Toast Notifications (VTID-0517)
     if (state.toasts.length > 0) root.appendChild(renderToastContainer());
+
+    // VTID-0529: Bundle fingerprint - always visible to prove correct bundle
+    root.appendChild(renderBundleFingerprint());
 
     // VTID-0526-E: Restore chat textarea focus after render
     if (savedChatFocus) {
@@ -3545,6 +3551,15 @@ function renderPublishModal() {
 
     overlay.appendChild(modal);
     return overlay;
+}
+
+// --- Bundle Fingerprint (VTID-0529) ---
+// This visible label proves which bundle is actually being served
+function renderBundleFingerprint() {
+    const fingerprint = document.createElement('div');
+    fingerprint.className = 'bundle-fingerprint';
+    fingerprint.textContent = 'Bundle: VTID-0529';
+    return fingerprint;
 }
 
 // --- Toast Notification Container (VTID-0517) ---
