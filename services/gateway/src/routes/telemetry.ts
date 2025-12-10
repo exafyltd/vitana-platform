@@ -64,6 +64,10 @@ router.post("/event", async (req: Request, res: Response) => {
       link: body.link || null,
       meta: body.meta || null,
       task_stage: taskStage, // VTID-0526-D
+      // Legacy fields required by existing oasis_events table
+      topic: body.kind, // Use kind as topic for compatibility
+      service: body.source, // Use source as service for compatibility
+      message: body.title, // Use title as message for compatibility
     };
 
     // Persist to OASIS (oasis_events table)
@@ -181,6 +185,10 @@ router.post("/batch", async (req: Request, res: Response) => {
       link: event.link || null,
       meta: event.meta || null,
       task_stage: event.task_stage || mapRawToStage(event.kind, event.title, event.status), // VTID-0526-D
+      // Legacy fields required by existing oasis_events table
+      topic: event.kind,
+      service: event.source,
+      message: event.title,
     }));
 
     // Batch insert to OASIS
