@@ -71,13 +71,14 @@ END $$;
 -- Log the fix
 DO $$
 BEGIN
+    -- oasis_events_v1 columns: tenant, task_type, assignee_ai, rid, status, notes, metadata
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'oasis_events_v1') THEN
-        INSERT INTO oasis_events_v1 (tenant, service, vtid, topic, status, notes, metadata)
+        INSERT INTO oasis_events_v1 (tenant, task_type, assignee_ai, rid, status, notes, metadata)
         VALUES (
             'SYSTEM',
             'governance-catalog',
-            'VTID-0401-B',
-            'GOVERNANCE_LEVELS_FIXED',
+            'system',
+            'VTID-0401-B-levels-fix',
             'success',
             'Governance rule levels corrected to match specs/governance/rules.json',
             jsonb_build_object(
@@ -91,4 +92,7 @@ BEGIN
             )
         );
     END IF;
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE NOTICE 'Could not log to oasis_events_v1: %', SQLERRM;
 END $$;
