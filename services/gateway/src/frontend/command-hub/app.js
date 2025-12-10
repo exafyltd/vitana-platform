@@ -1261,6 +1261,54 @@ function renderTaskDrawer() {
     `;
     content.appendChild(details);
 
+    // Action buttons based on task status
+    const actions = document.createElement('div');
+    actions.className = 'task-drawer-actions';
+
+    const currentStatus = (state.selectedTask.status || '').toLowerCase();
+    const mappedColumn = mapStatusToColumn(state.selectedTask.status);
+
+    if (mappedColumn === 'Scheduled') {
+        // Show "Send to Claude (In Progress)" button for scheduled tasks
+        const sendBtn = document.createElement('button');
+        sendBtn.className = 'btn btn-primary';
+        sendBtn.textContent = 'Send to Claude (In Progress)';
+        sendBtn.onclick = async () => {
+            await updateTaskStatus(state.selectedTask.id, 'in_progress');
+            // Copy task brief to clipboard
+            const brief = `${state.selectedTask.vtid} – ${state.selectedTask.title}\n\n${state.selectedTask.summary || ''}`;
+            try {
+                await navigator.clipboard.writeText(brief);
+                showToast('Task brief copied to clipboard!');
+            } catch (err) {
+                console.error('Failed to copy to clipboard:', err);
+            }
+        };
+        actions.appendChild(sendBtn);
+    } else if (mappedColumn === 'In Progress') {
+        // Show "Mark Completed" button for in-progress tasks
+        const completeBtn = document.createElement('button');
+        completeBtn.className = 'btn btn-success';
+        completeBtn.textContent = 'Mark Completed';
+        completeBtn.onclick = async () => {
+            await updateTaskStatus(state.selectedTask.id, 'completed');
+        };
+        actions.appendChild(completeBtn);
+
+        // Also show "Mark Failed" button
+        const failedBtn = document.createElement('button');
+        failedBtn.className = 'btn btn-danger';
+        failedBtn.textContent = 'Mark Failed';
+        failedBtn.onclick = async () => {
+            await updateTaskStatus(state.selectedTask.id, 'failed');
+        };
+        actions.appendChild(failedBtn);
+    }
+
+    if (actions.children.length > 0) {
+        content.appendChild(actions);
+    }
+
     drawer.appendChild(content);
 
     return drawer;
@@ -1593,6 +1641,58 @@ async function fetchTasks() {
         state.tasksLoading = false;
         renderApp();
     }
+}
+
+/**
+ * Update task status via PATCH /api/v1/tasks/:id/status
+ * @param {string} taskId - The task VTID
+ * @param {string} newStatus - One of: scheduled, in_progress, completed, failed
+ */
+async function updateTaskStatus(taskId, newStatus) {
+    try {
+        const response = await fetch(`/api/v1/tasks/${taskId}/status`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: newStatus }),
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to update status');
+        }
+
+        const result = await response.json();
+        showToast(`Status updated to "${newStatus}"`);
+
+        // Close drawer and refresh tasks
+        state.selectedTask = null;
+        await fetchTasks();
+    } catch (error) {
+        console.error('Failed to update task status:', error);
+        showToast(`Error: ${error.message}`, 'error');
+    }
+}
+
+/**
+ * Show a toast notification
+ * @param {string} message - Message to display
+ * @param {string} type - 'success' or 'error'
+ */
+function showToast(message, type = 'success') {
+    // Remove any existing toast
+    const existingToast = document.querySelector('.toast-notification');
+    if (existingToast) existingToast.remove();
+
+    const toast = document.createElement('div');
+    toast.className = `toast-notification toast-${type}`;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+
+    // Auto-remove after 3 seconds
+    setTimeout(() => {
+        toast.classList.add('toast-fade-out');
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
 }
 
 async function fetchScreenInventory() {
