@@ -1631,7 +1631,10 @@ function mapStatusToColumn(status) {
 
 async function fetchTasks() {
     state.tasksLoading = true;
-    renderApp();
+    // VTID-0528-C: Don't re-render if Create Task modal is open (preserves user input)
+    if (!state.showTaskModal) {
+        renderApp();
+    }
 
     try {
         const response = await fetch('/api/v1/oasis/tasks?limit=50');
@@ -1658,7 +1661,10 @@ async function fetchTasks() {
         ];
     } finally {
         state.tasksLoading = false;
-        renderApp();
+        // VTID-0528-C: Don't re-render if Create Task modal is open (preserves user input)
+        if (!state.showTaskModal) {
+            renderApp();
+        }
     }
 }
 
@@ -3619,7 +3625,10 @@ async function fetchTelemetrySnapshot() {
         state.telemetrySnapshotError = error.message;
     } finally {
         state.stageCountersLoading = false;
-        renderApp();
+        // VTID-0528-C: Don't re-render if Create Task modal is open (preserves user input)
+        if (!state.showTaskModal) {
+            renderApp();
+        }
     }
 }
 
@@ -3804,7 +3813,10 @@ async function fetchCicdHealth() {
         state.cicdHealth = null;
     } finally {
         state.cicdHealthLoading = false;
-        renderApp();
+        // VTID-0528-C: Don't re-render if Create Task modal is open (preserves user input)
+        if (!state.showTaskModal) {
+            renderApp();
+        }
     }
 }
 
