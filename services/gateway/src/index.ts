@@ -1,5 +1,6 @@
 ﻿import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import boardAdapter from "./routes/board-adapter";
 import { commandhub } from "./routes/commandhub";
 import cors from 'cors';
@@ -63,6 +64,61 @@ app.get('/debug/vtid-0524', (_req, res) => {
       hasGitHubToken: !!process.env.GITHUB_SAFE_MERGE_TOKEN,
       nodeEnv: process.env.NODE_ENV || 'development'
     }
+  });
+});
+
+// VTID-0529-C: Diagnostic endpoint to verify Command Hub bundle at runtime
+app.get('/debug/vtid-0529', (_req, res) => {
+  const staticPath = path.join(__dirname, 'frontend/command-hub');
+  let files: string[] = [];
+  let appJsPreview = '';
+  let stylesPreview = '';
+  let error = '';
+
+  try {
+    if (fs.existsSync(staticPath)) {
+      files = fs.readdirSync(staticPath);
+
+      // Read first 5 lines of app.js to check fingerprint
+      const appJsPath = path.join(staticPath, 'app.js');
+      if (fs.existsSync(appJsPath)) {
+        const content = fs.readFileSync(appJsPath, 'utf-8');
+        appJsPreview = content.split('\n').slice(0, 5).join('\n');
+      }
+
+      // Check styles.css for fingerprint CSS
+      const stylesPath = path.join(staticPath, 'styles.css');
+      if (fs.existsSync(stylesPath)) {
+        const content = fs.readFileSync(stylesPath, 'utf-8');
+        const lines = content.split('\n');
+        const idx = lines.findIndex(l => l.includes('VTID-0529'));
+        if (idx >= 0) {
+          stylesPreview = lines.slice(idx, idx + 3).join('\n');
+        } else {
+          stylesPreview = 'VTID-0529 fingerprint CSS NOT FOUND';
+        }
+      }
+    } else {
+      error = 'Static path does not exist!';
+    }
+  } catch (e: any) {
+    error = e.message;
+  }
+
+  res.json({
+    ok: !error,
+    vtid: 'VTID-0529-C',
+    description: 'Command Hub Bundle Verification',
+    runtime: {
+      __dirname,
+      staticPath,
+      staticPathExists: fs.existsSync(staticPath),
+      files,
+      appJsPreview,
+      stylesPreview
+    },
+    error: error || undefined,
+    timestamp: new Date().toISOString()
   });
 });
 
