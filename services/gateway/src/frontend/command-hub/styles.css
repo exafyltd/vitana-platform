@@ -2824,3 +2824,227 @@ body {
   background: #10b981;
   color: white;
 }
+
+/* --- VTID-0527: Task Stage Timeline Styles --- */
+
+/* Card-level stage timeline pills */
+.task-stage-timeline {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+.task-stage-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  transition: all 0.2s ease;
+}
+
+/* Stage-specific base colors */
+.task-stage-pill-planner {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.task-stage-pill-worker {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.task-stage-pill-validator {
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.task-stage-pill-deploy {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+/* Completed state - solid fill */
+.task-stage-pill-completed.task-stage-pill-planner {
+  background: #3b82f6;
+  color: white;
+  border-color: #3b82f6;
+}
+
+.task-stage-pill-completed.task-stage-pill-worker {
+  background: #f59e0b;
+  color: white;
+  border-color: #f59e0b;
+}
+
+.task-stage-pill-completed.task-stage-pill-validator {
+  background: #8b5cf6;
+  color: white;
+  border-color: #8b5cf6;
+}
+
+.task-stage-pill-completed.task-stage-pill-deploy {
+  background: #10b981;
+  color: white;
+  border-color: #10b981;
+}
+
+/* Current state - highlighted with pulse */
+.task-stage-pill-current {
+  box-shadow: 0 0 0 2px var(--color-bg), 0 0 0 4px currentColor;
+  animation: stage-pulse 2s ease-in-out infinite;
+}
+
+@keyframes stage-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+/* Pending state - muted */
+.task-stage-pill-pending {
+  opacity: 0.4;
+}
+
+/* --- Task Stage Detail (Drawer) --- */
+
+.task-stage-detail {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.task-stage-detail-heading {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 0 1rem 0;
+}
+
+.task-stage-detail-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.task-stage-detail-item {
+  padding: 0.75rem;
+  background: var(--color-bg);
+  border-radius: 8px;
+  border-left: 3px solid var(--color-border);
+}
+
+.task-stage-detail-item-completed {
+  border-left-color: #10b981;
+  background: rgba(16, 185, 129, 0.05);
+}
+
+.task-stage-detail-item-current {
+  border-left-color: var(--color-accent);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.task-stage-detail-item-pending {
+  border-left-color: var(--color-border);
+  opacity: 0.6;
+}
+
+.task-stage-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.25rem;
+}
+
+.task-stage-detail-stage {
+  font-weight: 600;
+  font-size: 0.8rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+}
+
+.task-stage-detail-stage-planner {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+}
+
+.task-stage-detail-stage-worker {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+}
+
+.task-stage-detail-stage-validator {
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+}
+
+.task-stage-detail-stage-deploy {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+}
+
+.task-stage-detail-status {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+}
+
+.task-stage-detail-status-completed {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.task-stage-detail-status-current {
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--color-accent);
+}
+
+.task-stage-detail-status-pending {
+  background: rgba(148, 163, 184, 0.15);
+  color: var(--color-text-secondary);
+}
+
+.task-stage-detail-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+}
+
+.task-stage-detail-time {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+.task-stage-detail-message {
+  font-size: 0.8rem;
+  color: var(--color-text-primary);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}

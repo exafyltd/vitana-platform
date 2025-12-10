@@ -280,6 +280,9 @@ const state = {
     lastTelemetryRefresh: null,
     telemetryAutoRefreshEnabled: true,
 
+    // VTID-0527: Raw telemetry events for task stage computation
+    telemetryEvents: [],
+
     // Operator History State
     historyEvents: [],
     historyLoading: false,
@@ -326,6 +329,102 @@ const state = {
     governanceRulesSortDirection: 'asc',
     selectedGovernanceRule: null
 };
+
+// --- VTID-0527: Task Stage Timeline Model ---
+
+/**
+ * VTID-0527: Task execution stages in order.
+ * This defines the 4-stage pipeline: PLANNER → WORKER → VALIDATOR → DEPLOY
+ */
+const TASK_STAGES = ['PLANNER', 'WORKER', 'VALIDATOR', 'DEPLOY'];
+
+/**
+ * VTID-0527: Stage display labels (short form for pills)
+ */
+const STAGE_LABELS = {
+    PLANNER: 'PL',
+    WORKER: 'WO',
+    VALIDATOR: 'VA',
+    DEPLOY: 'DE'
+};
+
+/**
+ * VTID-0527: Derive task stage state from telemetry events.
+ * Computes which stages are completed, current, and pending for a task.
+ *
+ * @param {Object} task - Task object with vtid
+ * @param {Array} events - Telemetry events array
+ * @returns {Object} Stage state object
+ */
+function deriveTaskStageState(task, events) {
+    // Filter events relevant to this task by vtid
+    const relevantEvents = events.filter(function(ev) {
+        return ev.vtid === task.vtid;
+    });
+
+    // Build stage info
+    const byStage = {};
+    TASK_STAGES.forEach(function(stage) {
+        const stageEvents = relevantEvents.filter(function(ev) {
+            return ev.task_stage === stage;
+        });
+        byStage[stage] = {
+            reached: stageEvents.length > 0,
+            latestEvent: stageEvents.length > 0 ? stageEvents.reduce(function(a, b) {
+                return new Date(a.created_at) > new Date(b.created_at) ? a : b;
+            }) : null,
+            eventCount: stageEvents.length
+        };
+    });
+
+    // Determine current stage (highest reached stage)
+    let currentStage = null;
+    for (var i = TASK_STAGES.length - 1; i >= 0; i--) {
+        if (byStage[TASK_STAGES[i]].reached) {
+            currentStage = TASK_STAGES[i];
+            break;
+        }
+    }
+
+    // Build completed/pending lists
+    const completed = [];
+    const pending = [];
+    let reachedCurrent = false;
+
+    TASK_STAGES.forEach(function(stage) {
+        if (byStage[stage].reached) {
+            if (stage === currentStage) {
+                reachedCurrent = true;
+            } else if (!reachedCurrent) {
+                completed.push(stage);
+            }
+        } else {
+            pending.push(stage);
+        }
+    });
+
+    return {
+        currentStage: currentStage,
+        completed: completed,
+        pending: pending,
+        byStage: byStage,
+        hasAnyStage: currentStage !== null
+    };
+}
+
+/**
+ * VTID-0527: Format timestamp for stage detail display
+ */
+function formatStageTimestamp(isoString) {
+    if (!isoString) return 'N/A';
+    const date = new Date(isoString);
+    return date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
 
 // --- Version History Data Model (VTID-0517 + VTID-0524) ---
 
@@ -1121,6 +1220,8 @@ function renderTasksView() {
     refreshBtn.textContent = '↻';
     refreshBtn.onclick = () => {
         fetchTasks();
+        // VTID-0527: Also refresh telemetry for stage timelines
+        fetchTelemetrySnapshot();
     };
     toolbar.appendChild(refreshBtn);
 
@@ -1216,7 +1317,51 @@ function createTaskCard(task) {
 
     card.appendChild(meta);
 
+    // VTID-0527: Add stage timeline pills
+    const stageTimeline = createTaskStageTimeline(task);
+    card.appendChild(stageTimeline);
+
     return card;
+}
+
+/**
+ * VTID-0527: Create stage timeline pills for a task card.
+ * Shows PLANNER → WORKER → VALIDATOR → DEPLOY progression.
+ */
+function createTaskStageTimeline(task) {
+    const timeline = document.createElement('div');
+    timeline.className = 'task-stage-timeline';
+
+    // Get stage state from telemetry events
+    const stageState = deriveTaskStageState(task, state.telemetryEvents);
+
+    TASK_STAGES.forEach(function(stage) {
+        const pill = document.createElement('span');
+        const stageInfo = stageState.byStage[stage];
+        const isCompleted = stageInfo && stageInfo.reached;
+        const isCurrent = stageState.currentStage === stage;
+
+        // Build class list
+        const classes = ['task-stage-pill', 'task-stage-pill-' + stage.toLowerCase()];
+        if (isCompleted) {
+            classes.push('task-stage-pill-completed');
+        }
+        if (isCurrent) {
+            classes.push('task-stage-pill-current');
+        }
+        if (!isCompleted && !isCurrent) {
+            classes.push('task-stage-pill-pending');
+        }
+        pill.className = classes.join(' ');
+
+        // Use short label
+        pill.textContent = STAGE_LABELS[stage];
+        pill.title = stage + (isCompleted ? ' (completed)' : isCurrent ? ' (current)' : ' (pending)');
+
+        timeline.appendChild(pill);
+    });
+
+    return timeline;
 }
 
 function renderTaskDrawer() {
@@ -1261,9 +1406,96 @@ function renderTaskDrawer() {
     `;
     content.appendChild(details);
 
+    // VTID-0527: Add detailed stage timeline view
+    const stageDetail = renderTaskStageDetail(state.selectedTask);
+    content.appendChild(stageDetail);
+
     drawer.appendChild(content);
 
     return drawer;
+}
+
+/**
+ * VTID-0527: Render detailed stage timeline for selected task.
+ * Shows vertical list of stages with timestamps and messages.
+ */
+function renderTaskStageDetail(task) {
+    const container = document.createElement('div');
+    container.className = 'task-stage-detail';
+
+    const heading = document.createElement('h3');
+    heading.className = 'task-stage-detail-heading';
+    heading.textContent = 'Execution Stages';
+    container.appendChild(heading);
+
+    // Get stage state from telemetry events
+    const stageState = deriveTaskStageState(task, state.telemetryEvents);
+
+    const list = document.createElement('ul');
+    list.className = 'task-stage-detail-list';
+
+    TASK_STAGES.forEach(function(stage) {
+        const stageInfo = stageState.byStage[stage];
+        const isCompleted = stageInfo && stageInfo.reached;
+        const isCurrent = stageState.currentStage === stage;
+
+        const item = document.createElement('li');
+        const statusClass = isCompleted ? 'task-stage-detail-item-completed' :
+                           isCurrent ? 'task-stage-detail-item-current' :
+                           'task-stage-detail-item-pending';
+        item.className = 'task-stage-detail-item ' + statusClass;
+
+        // Header row with stage name and status
+        const headerRow = document.createElement('div');
+        headerRow.className = 'task-stage-detail-header';
+
+        const stageName = document.createElement('span');
+        stageName.className = 'task-stage-detail-stage task-stage-detail-stage-' + stage.toLowerCase();
+        stageName.textContent = stage;
+        headerRow.appendChild(stageName);
+
+        const statusLabel = document.createElement('span');
+        statusLabel.className = 'task-stage-detail-status';
+        if (isCompleted && !isCurrent) {
+            statusLabel.textContent = 'Completed';
+            statusLabel.classList.add('task-stage-detail-status-completed');
+        } else if (isCurrent) {
+            statusLabel.textContent = 'In Progress';
+            statusLabel.classList.add('task-stage-detail-status-current');
+        } else {
+            statusLabel.textContent = 'Pending';
+            statusLabel.classList.add('task-stage-detail-status-pending');
+        }
+        headerRow.appendChild(statusLabel);
+
+        item.appendChild(headerRow);
+
+        // Meta row with timestamp and message (if available)
+        if (stageInfo && stageInfo.latestEvent) {
+            const metaRow = document.createElement('div');
+            metaRow.className = 'task-stage-detail-meta';
+
+            const timestamp = document.createElement('span');
+            timestamp.className = 'task-stage-detail-time';
+            timestamp.textContent = formatStageTimestamp(stageInfo.latestEvent.created_at);
+            metaRow.appendChild(timestamp);
+
+            if (stageInfo.latestEvent.title) {
+                const message = document.createElement('span');
+                message.className = 'task-stage-detail-message';
+                message.textContent = stageInfo.latestEvent.title;
+                metaRow.appendChild(message);
+            }
+
+            item.appendChild(metaRow);
+        }
+
+        list.appendChild(item);
+    });
+
+    container.appendChild(list);
+
+    return container;
 }
 
 function renderProfileModal() {
@@ -3506,20 +3738,22 @@ let telemetryAutoRefreshInterval = null;
 
 /**
  * VTID-0526-D: Fetch telemetry snapshot with stage counters.
+ * VTID-0527: Also populates telemetryEvents for task stage timelines.
  * This populates the stageCounters state and optionally the tickerEvents.
  */
 async function fetchTelemetrySnapshot() {
-    console.log('[VTID-0526-D] Fetching telemetry snapshot...');
+    console.log('[VTID-0527] Fetching telemetry snapshot...');
     state.stageCountersLoading = true;
 
     try {
-        const response = await fetch('/api/v1/telemetry/snapshot?limit=20&hours=24');
+        // VTID-0527: Increased limit to 100 for more comprehensive task stage tracking
+        const response = await fetch('/api/v1/telemetry/snapshot?limit=100&hours=48');
         if (!response.ok) {
             throw new Error(`Telemetry snapshot fetch failed: ${response.status}`);
         }
 
         const result = await response.json();
-        console.log('[VTID-0526-D] Telemetry snapshot loaded:', result);
+        console.log('[VTID-0527] Telemetry snapshot loaded:', result);
 
         // Update stage counters
         if (result.counters) {
@@ -3531,9 +3765,26 @@ async function fetchTelemetrySnapshot() {
             };
         }
 
+        // VTID-0527: Store raw events for task stage timeline computation
+        if (result.events && result.events.length > 0) {
+            state.telemetryEvents = result.events.map(function(event) {
+                return {
+                    id: event.id,
+                    created_at: event.created_at,
+                    vtid: event.vtid,
+                    kind: event.kind,
+                    status: event.status,
+                    title: event.title,
+                    task_stage: event.task_stage || null,
+                    source: event.source,
+                    layer: event.layer
+                };
+            });
+        }
+
         // Optionally merge events into ticker if not already populated via SSE
         if (result.events && result.events.length > 0 && state.tickerEvents.length === 0) {
-            state.tickerEvents = result.events.map(function(event) {
+            state.tickerEvents = result.events.slice(0, 20).map(function(event) {
                 return {
                     id: event.id || Date.now() + Math.random(),
                     timestamp: new Date(event.created_at).toLocaleTimeString(),
@@ -3548,7 +3799,7 @@ async function fetchTelemetrySnapshot() {
         state.lastTelemetryRefresh = new Date().toISOString();
 
     } catch (error) {
-        console.error('[VTID-0526-D] Telemetry snapshot error:', error);
+        console.error('[VTID-0527] Telemetry snapshot error:', error);
         state.telemetrySnapshotError = error.message;
     } finally {
         state.stageCountersLoading = false;
@@ -3813,6 +4064,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         renderApp();
         fetchTasks();
+
+        // VTID-0527: Fetch telemetry snapshot for task stage timelines
+        fetchTelemetrySnapshot();
 
         // VTID-0520: Start CI/CD health polling
         startCicdHealthPolling();
