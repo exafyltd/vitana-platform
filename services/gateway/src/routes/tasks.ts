@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { buildStageTimeline, type TimelineEvent, type StageTimelineEntry } from '../lib/stage-mapping';
+import { buildStageTimeline, defaultStageTimeline, type TimelineEvent, type StageTimelineEntry } from '../lib/stage-mapping';
 
 export const router = Router();
 
@@ -106,9 +106,13 @@ router.get('/api/v1/vtid/:vtid', async (req: Request, res: Response) => {
 
     const row = vtidData[0];
 
-    // VTID-0527: Fetch telemetry events for this VTID to build stage timeline
-    let stageTimeline: StageTimelineEntry[] = [];
+    // VTID-0527-B: Fetch telemetry events for this VTID to build stage timeline
+    // ALWAYS return 4 entries (PLANNER, WORKER, VALIDATOR, DEPLOY), never null or empty
+    let stageTimeline: StageTimelineEntry[] = defaultStageTimeline();
+    let eventsFound = 0;
+
     try {
+      console.log(`[VTID-0527-B] Fetching events for VTID: ${vtid}`);
       const eventsResp = await fetch(
         `${supabaseUrl}/rest/v1/oasis_events?vtid=eq.${vtid}&select=id,created_at,vtid,kind,status,title,task_stage,source,layer&order=created_at.asc&limit=100`,
         {
@@ -118,12 +122,31 @@ router.get('/api/v1/vtid/:vtid', async (req: Request, res: Response) => {
 
       if (eventsResp.ok) {
         const events = await eventsResp.json() as TimelineEvent[];
-        stageTimeline = buildStageTimeline(events);
-        console.log(`[VTID-0527] Built stage timeline for ${vtid}:`, stageTimeline.map(s => `${s.stage}:${s.status}`).join(', '));
+        eventsFound = events.length;
+        console.log(`[VTID-0527-B] Found ${eventsFound} events for ${vtid}`);
+
+        if (events.length > 0) {
+          // Build timeline from actual events
+          stageTimeline = buildStageTimeline(events);
+          console.log(`[VTID-0527-B] Built stage timeline for ${vtid}:`, stageTimeline.map(s => `${s.stage}:${s.status}`).join(', '));
+        } else {
+          // No events found - keep default (all PENDING)
+          console.log(`[VTID-0527-B] No events found for ${vtid}, using default timeline (all PENDING)`);
+        }
+      } else {
+        const errText = await eventsResp.text();
+        console.warn(`[VTID-0527-B] Events query failed for ${vtid}: ${eventsResp.status} - ${errText}`);
+        // Keep default timeline
       }
     } catch (err) {
-      console.warn(`[VTID-0527] Failed to fetch events for timeline:`, err);
-      // Continue without timeline - not a critical failure
+      console.warn(`[VTID-0527-B] Failed to fetch events for ${vtid}:`, err);
+      // Keep default timeline - not a critical failure
+    }
+
+    // Ensure stageTimeline always has 4 entries
+    if (!stageTimeline || stageTimeline.length !== 4) {
+      console.warn(`[VTID-0527-B] Invalid stageTimeline, using default`);
+      stageTimeline = defaultStageTimeline();
     }
 
     return res.json({
@@ -152,8 +175,9 @@ router.get('/api/v1/vtid/:vtid', async (req: Request, res: Response) => {
         created_at: row.created_at,
         updated_at: row.updated_at,
 
-        // VTID-0527: Stage timeline
+        // VTID-0527-B: Stage timeline (always 4 entries, never null)
         stageTimeline: stageTimeline,
+        _stageTimelineEventsFound: eventsFound, // Debug: number of events found for this VTID
       }
     });
   } catch (e: any) {
