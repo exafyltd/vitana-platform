@@ -2716,25 +2716,30 @@ function renderOperatorTicker() {
     container.className = 'ticker-container';
 
     // Heartbeat status banner
+    // VTID-0526-D: Show LIVE status and stage counters as soon as telemetry loads (no heartbeat required)
     const statusBanner = document.createElement('div');
-    statusBanner.className = state.operatorHeartbeatActive ? 'ticker-status-banner ticker-live' : 'ticker-status-banner ticker-standby';
+    const hasStageCounters = state.stageCounters && (state.stageCounters.PLANNER > 0 || state.stageCounters.WORKER > 0 || state.stageCounters.VALIDATOR > 0 || state.stageCounters.DEPLOY > 0 || state.lastTelemetryRefresh);
+    const isLive = state.operatorHeartbeatActive || hasStageCounters;
+    statusBanner.className = isLive ? 'ticker-status-banner ticker-live' : 'ticker-status-banner ticker-standby';
 
-    if (state.operatorHeartbeatActive && state.operatorHeartbeatSnapshot) {
-        const snapshot = state.operatorHeartbeatSnapshot;
-        const counters = state.stageCounters;
+    // VTID-0526-D: Show stage counters immediately from telemetry, even before heartbeat snapshot
+    const counters = state.stageCounters;
+    const snapshot = state.operatorHeartbeatSnapshot;
+
+    if (isLive) {
         statusBanner.innerHTML = `
             <div class="ticker-status-row">
                 <span class="ticker-status-label">Status:</span>
                 <span class="ticker-status-value status-live">LIVE</span>
                 <span class="ticker-status-label">Tasks:</span>
-                <span class="ticker-status-value">${snapshot.tasks?.total || 0}</span>
+                <span class="ticker-status-value">${snapshot?.tasks?.total || counters.PLANNER + counters.WORKER + counters.VALIDATOR + counters.DEPLOY}</span>
                 <span class="ticker-status-label">CICD:</span>
-                <span class="ticker-status-value status-${snapshot.cicd?.status || 'ok'}">${snapshot.cicd?.status || 'OK'}</span>
+                <span class="ticker-status-value status-${snapshot?.cicd?.status || 'ok'}">${snapshot?.cicd?.status || 'OK'}</span>
             </div>
             <div class="ticker-status-row ticker-status-tasks">
-                <span>Scheduled: ${snapshot.tasks?.by_status?.scheduled || 0}</span>
-                <span>In Progress: ${snapshot.tasks?.by_status?.in_progress || 0}</span>
-                <span>Completed: ${snapshot.tasks?.by_status?.completed || 0}</span>
+                <span>Scheduled: ${snapshot?.tasks?.by_status?.scheduled || 0}</span>
+                <span>In Progress: ${snapshot?.tasks?.by_status?.in_progress || 0}</span>
+                <span>Completed: ${snapshot?.tasks?.by_status?.completed || 0}</span>
             </div>
             <div class="ticker-status-row ticker-stage-counters">
                 <span class="stage-counter stage-planner" title="Planning stage events">
@@ -2755,18 +2760,18 @@ function renderOperatorTicker() {
                 </span>
             </div>
         `;
-    } else if (!state.operatorHeartbeatActive) {
+    } else if (state.stageCountersLoading) {
         statusBanner.innerHTML = `
             <div class="ticker-status-row">
-                <span class="ticker-status-value status-standby">STANDBY</span>
-                <span class="ticker-hint">Loading live events...</span>
+                <span class="ticker-status-value status-standby">LOADING</span>
+                <span class="ticker-hint">Fetching telemetry...</span>
             </div>
         `;
     } else {
         statusBanner.innerHTML = `
             <div class="ticker-status-row">
-                <span class="ticker-status-value status-live">LIVE</span>
-                <span>Loading snapshot...</span>
+                <span class="ticker-status-value status-standby">STANDBY</span>
+                <span class="ticker-hint">Loading live events...</span>
             </div>
         `;
     }
