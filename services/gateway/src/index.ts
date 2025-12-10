@@ -94,10 +94,11 @@ app.use('/command-hub', commandHubRouter);
 app.use(sseService.router);
 app.use('/api/v1/board', boardAdapter); // Board adapter for v1 API
 
-// VTID-0529: Command Hub SPA canonical static path
-// Use __dirname to ensure correct path resolution in all environments.
-// After TypeScript compilation, __dirname = dist/, so this resolves to dist/frontend/command-hub/
-// The bundle fingerprint "Bundle: VTID-0529" and console log must be visible after deploy.
+// VTID-0529-B: Single source of truth for Command Hub SPA.
+// Build must write to dist/frontend/command-hub.
+// At runtime, /command-hub/ is served from path.join(__dirname, 'frontend/command-hub')
+// which resolves to dist/frontend/command-hub/ after TypeScript compilation.
+// The bundle fingerprint "VTID-0529-B – LIVE BUNDLE" banner and console log must be visible after deploy.
 const staticPath = path.join(__dirname, 'frontend/command-hub');
 app.use('/command-hub', express.static(staticPath));
 
