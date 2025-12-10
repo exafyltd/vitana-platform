@@ -41,16 +41,20 @@ END $$;
 -- Log the fix to OASIS
 DO $$
 BEGIN
+    -- oasis_events_v1 columns: tenant, task_type, assignee_ai, rid, status, notes, metadata
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'oasis_events_v1') THEN
-        INSERT INTO oasis_events_v1 (tenant, service, vtid, topic, status, notes, metadata)
+        INSERT INTO oasis_events_v1 (tenant, task_type, assignee_ai, rid, status, notes, metadata)
         VALUES (
             'SYSTEM',
             'governance-catalog',
-            'VTID-0403',
-            'GOVERNANCE_RULE_ID_CONSTRAINT_FIXED',
+            'system',
+            'VTID-0403-rule-id-constraint',
             'success',
             'Fixed governance_rules.rule_id to have UNIQUE constraint for ON CONFLICT support',
             '{"fix": "replaced plain index with UNIQUE constraint", "constraint_name": "governance_rules_rule_id_key"}'::jsonb
         );
     END IF;
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE NOTICE 'Could not log to oasis_events_v1: %', SQLERRM;
 END $$;
