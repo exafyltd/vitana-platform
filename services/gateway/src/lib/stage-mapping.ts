@@ -140,9 +140,23 @@ export type StageStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'ERROR';
 export interface StageTimelineEntry {
   stage: TaskStage;
   status: StageStatus;
-  startedAt?: string;
-  completedAt?: string;
-  errorAt?: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  errorAt?: string | null;
+}
+
+/**
+ * VTID-0527-B: Return default stage timeline with all stages PENDING.
+ * Used as fallback when no events are found.
+ */
+export function defaultStageTimeline(): StageTimelineEntry[] {
+  return VALID_STAGES.map((stage): StageTimelineEntry => ({
+    stage,
+    status: 'PENDING',
+    startedAt: null,
+    completedAt: null,
+    errorAt: null,
+  }));
 }
 
 /**
