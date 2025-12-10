@@ -479,16 +479,20 @@ WHERE version = '0.1';
 DO $$
 BEGIN
     -- Log to OASIS if table exists
+    -- oasis_events_v1 columns: tenant, task_type, assignee_ai, rid, status, notes, metadata
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'oasis_events_v1') THEN
-        INSERT INTO oasis_events_v1 (tenant, service, vtid, topic, status, notes, metadata)
+        INSERT INTO oasis_events_v1 (tenant, task_type, assignee_ai, rid, status, notes, metadata)
         VALUES (
             'SYSTEM',
             'governance-catalog',
-            'VTID-0400',
-            'GOVERNANCE_CATALOG_INITIALIZED',
+            'system',
+            'VTID-0400-catalog-init',
             'success',
             'Governance catalog v0.1 initialized with 35 rules across 6 categories',
             '{"version": "0.1", "rules_count": 35, "categories_count": 6}'::jsonb
         );
     END IF;
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE NOTICE 'Could not log to oasis_events_v1: %', SQLERRM;
 END $$;
