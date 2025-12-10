@@ -3048,3 +3048,39 @@ body {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
+
+/* --- VTID-0529-B: Hard Bundle Fingerprint UI --- */
+/* Banner at top + footer label at bottom-right to prove which bundle is served */
+
+.bundle-fingerprint-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 6px 12px;
+  text-align: center;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  background: rgba(255, 196, 0, 0.18);
+  border-bottom: 1px solid rgba(255, 196, 0, 0.4);
+  color: #ffcc33;
+  z-index: 9999;
+  pointer-events: none;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-weight: 600;
+}
+
+.bundle-fingerprint-footer {
+  position: fixed;
+  bottom: 8px;
+  right: 12px;
+  font-size: 10px;
+  opacity: 0.7;
+  z-index: 9999;
+  pointer-events: none;
+  color: var(--color-text-secondary);
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 2px 6px;
+  border-radius: 3px;
+}

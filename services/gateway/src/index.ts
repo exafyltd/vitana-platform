@@ -1,4 +1,5 @@
 ﻿import express from 'express';
+import path from 'path';
 import boardAdapter from "./routes/board-adapter";
 import { commandhub } from "./routes/commandhub";
 import cors from 'cors';
@@ -93,10 +94,12 @@ app.use('/command-hub', commandHubRouter);
 app.use(sseService.router);
 app.use('/api/v1/board', boardAdapter); // Board adapter for v1 API
 
-// Serve Command Hub static files
-const staticPath = process.env.NODE_ENV === 'production'
-  ? 'dist/frontend/command-hub'
-  : 'src/frontend/command-hub';
+// VTID-0529-B: Single source of truth for Command Hub SPA.
+// Build must write to dist/frontend/command-hub.
+// At runtime, /command-hub/ is served from path.join(__dirname, 'frontend/command-hub')
+// which resolves to dist/frontend/command-hub/ after TypeScript compilation.
+// The bundle fingerprint "VTID-0529-B – LIVE BUNDLE" banner and console log must be visible after deploy.
+const staticPath = path.join(__dirname, 'frontend/command-hub');
 app.use('/command-hub', express.static(staticPath));
 
 // Start server

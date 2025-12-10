@@ -1,5 +1,8 @@
 // Vitana Dev Frontend Spec v2 Implementation - Task 3
 
+// VTID-0529-B: Hard bundle fingerprint for deployment verification
+console.log('🔥 COMMAND HUB BUNDLE: VTID-0529-B LIVE 🔥');
+
 // --- Configs ---
 
 const NAVIGATION_CONFIG = [
@@ -613,6 +616,10 @@ function renderApp() {
 
     // Toast Notifications (VTID-0517)
     if (state.toasts.length > 0) root.appendChild(renderToastContainer());
+
+    // VTID-0529-B: Hard bundle fingerprint - banner at top, footer at bottom-right
+    root.appendChild(renderBundleFingerprintBanner());
+    root.appendChild(renderBundleFingerprintFooter());
 
     // VTID-0526-E: Restore chat textarea focus after render
     if (savedChatFocus) {
@@ -3545,6 +3552,24 @@ function renderPublishModal() {
 
     overlay.appendChild(modal);
     return overlay;
+}
+
+// --- Bundle Fingerprint (VTID-0529-B) ---
+// Hard fingerprint that proves which bundle is actually being served
+// Banner at top + footer label at bottom-right
+
+function renderBundleFingerprintBanner() {
+    const banner = document.createElement('div');
+    banner.className = 'bundle-fingerprint-banner';
+    banner.textContent = 'VTID-0529-B – LIVE BUNDLE';
+    return banner;
+}
+
+function renderBundleFingerprintFooter() {
+    const footer = document.createElement('div');
+    footer.className = 'bundle-fingerprint-footer';
+    footer.textContent = 'Bundle: VTID-0529-B';
+    return footer;
 }
 
 // --- Toast Notification Container (VTID-0517) ---
