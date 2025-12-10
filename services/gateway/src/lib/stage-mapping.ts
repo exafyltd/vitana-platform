@@ -128,3 +128,131 @@ export function emptyStageCounters(): StageCounters {
     DEPLOY: 0
   };
 }
+
+/**
+ * VTID-0527: Stage status type for timeline entries.
+ */
+export type StageStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'ERROR';
+
+/**
+ * VTID-0527: Individual stage timeline entry.
+ */
+export interface StageTimelineEntry {
+  stage: TaskStage;
+  status: StageStatus;
+  startedAt?: string;
+  completedAt?: string;
+  errorAt?: string;
+}
+
+/**
+ * VTID-0527: Telemetry event structure for timeline building.
+ */
+export interface TimelineEvent {
+  id?: string;
+  created_at: string;
+  vtid: string;
+  kind?: string;
+  status?: string;
+  title?: string;
+  task_stage?: string | null;
+  source?: string;
+  layer?: string;
+}
+
+/**
+ * VTID-0527: Build stage timeline from telemetry events for a specific VTID.
+ *
+ * Returns an array of 4 entries (PLANNER, WORKER, VALIDATOR, DEPLOY) in order.
+ * Each entry has a status (PENDING, RUNNING, COMPLETED, ERROR) and timestamps.
+ *
+ * Rules:
+ * - If no events seen for a stage → status: "PENDING", no timestamps
+ * - If events exist but no completion → status: "RUNNING", startedAt present
+ * - If completion/success events exist → status: "COMPLETED", startedAt & completedAt present
+ * - If error/failure events exist → status: "ERROR", errorAt present (overrides others)
+ *
+ * @param events - Array of telemetry events (pre-filtered by VTID or not)
+ * @param vtid - The VTID to filter events by (optional if already filtered)
+ * @returns Array of 4 StageTimelineEntry objects
+ */
+export function buildStageTimeline(events: TimelineEvent[], vtid?: string): StageTimelineEntry[] {
+  // Filter events by VTID if specified
+  const relevantEvents = vtid
+    ? events.filter(e => e.vtid === vtid)
+    : events;
+
+  // Build timeline for each stage
+  return VALID_STAGES.map((stage): StageTimelineEntry => {
+    // Find all events for this stage
+    const stageEvents = relevantEvents.filter(e => e.task_stage === stage);
+
+    if (stageEvents.length === 0) {
+      return { stage, status: 'PENDING' };
+    }
+
+    // Sort events by timestamp
+    const sorted = [...stageEvents].sort((a, b) =>
+      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
+
+    // Determine status based on event statuses
+    const hasError = sorted.some(e =>
+      e.status === 'failure' || e.status === 'error' ||
+      (e.title && /error|fail|exception/i.test(e.title))
+    );
+
+    const hasCompleted = sorted.some(e =>
+      e.status === 'success' || e.status === 'completed' ||
+      (e.kind && /completed|done|finished|success/i.test(e.kind)) ||
+      (e.title && /completed|done|finished|success/i.test(e.title))
+    );
+
+    const hasRunning = sorted.some(e =>
+      e.status === 'in_progress' || e.status === 'running' ||
+      (e.kind && /started|running|processing|executing/i.test(e.kind))
+    );
+
+    // Get timestamps
+    const startedAt = sorted[0]?.created_at;
+    const lastEvent = sorted[sorted.length - 1];
+
+    // Build entry based on status priority: ERROR > COMPLETED > RUNNING > PENDING
+    if (hasError) {
+      const errorEvent = sorted.find(e =>
+        e.status === 'failure' || e.status === 'error' ||
+        (e.title && /error|fail|exception/i.test(e.title))
+      );
+      return {
+        stage,
+        status: 'ERROR',
+        startedAt,
+        errorAt: errorEvent?.created_at
+      };
+    }
+
+    if (hasCompleted) {
+      const completedEvent = sorted.find(e =>
+        e.status === 'success' || e.status === 'completed' ||
+        (e.kind && /completed|done|finished|success/i.test(e.kind)) ||
+        (e.title && /completed|done|finished|success/i.test(e.title))
+      ) || lastEvent;
+      return {
+        stage,
+        status: 'COMPLETED',
+        startedAt,
+        completedAt: completedEvent?.created_at
+      };
+    }
+
+    if (hasRunning || stageEvents.length > 0) {
+      return {
+        stage,
+        status: 'RUNNING',
+        startedAt
+      };
+    }
+
+    return { stage, status: 'PENDING' };
+  });
+}

@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { buildStageTimeline, type TimelineEvent, type StageTimelineEntry } from '../lib/stage-mapping';
 
 export const router = Router();
 
@@ -83,9 +84,9 @@ router.get('/api/v1/tasks', async (req: Request, res: Response) => {
 
 /**
  * GET /api/v1/vtid/:vtid
- * 
- * Returns detail for a specific VTID with the same field mapping
- * as /api/v1/tasks for consistency.
+ *
+ * VTID-0527: Returns detail for a specific VTID with stageTimeline.
+ * Includes stage timeline built from telemetry events.
  */
 router.get('/api/v1/vtid/:vtid', async (req: Request, res: Response) => {
   try {
@@ -94,15 +95,37 @@ router.get('/api/v1/vtid/:vtid', async (req: Request, res: Response) => {
     const supabaseUrl = process.env.SUPABASE_URL;
     if (!svcKey || !supabaseUrl) return res.status(500).json({ error: "Misconfigured" });
 
-    const resp = await fetch(`${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}`, {
+    // Fetch VTID from ledger
+    const vtidResp = await fetch(`${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}`, {
       headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` },
     });
 
-    if (!resp.ok) return res.status(502).json({ error: "Query failed" });
-    const data = await resp.json() as any[];
-    if (data.length === 0) return res.status(404).json({ error: "VTID not found", vtid });
+    if (!vtidResp.ok) return res.status(502).json({ error: "Query failed" });
+    const vtidData = await vtidResp.json() as any[];
+    if (vtidData.length === 0) return res.status(404).json({ error: "VTID not found", vtid });
 
-    const row = data[0];
+    const row = vtidData[0];
+
+    // VTID-0527: Fetch telemetry events for this VTID to build stage timeline
+    let stageTimeline: StageTimelineEntry[] = [];
+    try {
+      const eventsResp = await fetch(
+        `${supabaseUrl}/rest/v1/oasis_events?vtid=eq.${vtid}&select=id,created_at,vtid,kind,status,title,task_stage,source,layer&order=created_at.asc&limit=100`,
+        {
+          headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` },
+        }
+      );
+
+      if (eventsResp.ok) {
+        const events = await eventsResp.json() as TimelineEvent[];
+        stageTimeline = buildStageTimeline(events);
+        console.log(`[VTID-0527] Built stage timeline for ${vtid}:`, stageTimeline.map(s => `${s.stage}:${s.status}`).join(', '));
+      }
+    } catch (err) {
+      console.warn(`[VTID-0527] Failed to fetch events for timeline:`, err);
+      // Continue without timeline - not a critical failure
+    }
+
     return res.json({
       ok: true,
       data: {
@@ -111,23 +134,26 @@ router.get('/api/v1/vtid/:vtid', async (req: Request, res: Response) => {
         layer: row.layer,
         module: row.module,
         status: row.status,
-        
+
         // Primary display fields
         title: row.title,
         description: row.summary ?? row.title,
         summary: row.summary,
-        
+
         // TEMPORARY compatibility fields
         task_family: row.module,  // TEMP: mirror module
         task_type: row.module,    // TEMP: mirror module
-        
+
         // Metadata
         assigned_to: row.assigned_to ?? null,
         metadata: row.metadata ?? null,
-        
+
         // Timestamps
         created_at: row.created_at,
         updated_at: row.updated_at,
+
+        // VTID-0527: Stage timeline
+        stageTimeline: stageTimeline,
       }
     });
   } catch (e: any) {

@@ -3084,3 +3084,112 @@ body {
   padding: 2px 6px;
   border-radius: 3px;
 }
+
+/* VTID-0527: Additional stage detail styles */
+
+.task-stage-detail-loading {
+  padding: 1rem;
+  text-align: center;
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+}
+
+.task-stage-detail-item-error {
+  border-left-color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.task-stage-detail-status-error {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.task-stage-detail-time-completed {
+  color: #10b981;
+}
+
+.task-stage-detail-time-error {
+  color: #ef4444;
+}
+
+/* --- VTID-0527: VTID Stage Timeline Visual Component --- */
+
+.vtid-stage-timeline {
+  margin-top: 12px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.vtid-stage-timeline-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.vtid-stage-timeline-item:last-child {
+  border-bottom: none;
+}
+
+.vtid-stage-timeline-item-marker {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+/* Status colors for timeline markers */
+.vtid-stage-timeline-item-marker--completed {
+  background: #10b981;
+  box-shadow: 0 0 4px rgba(16, 185, 129, 0.4);
+}
+
+.vtid-stage-timeline-item-marker--running {
+  background: #f59e0b;
+  box-shadow: 0 0 4px rgba(245, 158, 11, 0.4);
+  animation: marker-pulse 1.5s ease-in-out infinite;
+}
+
+.vtid-stage-timeline-item-marker--pending {
+  background: #4b5563;
+  opacity: 0.5;
+}
+
+.vtid-stage-timeline-item-marker--error {
+  background: #ef4444;
+  box-shadow: 0 0 4px rgba(239, 68, 68, 0.4);
+}
+
+@keyframes marker-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.1);
+  }
+}
+
+.vtid-stage-timeline-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.vtid-stage-timeline-item-title {
+  font-weight: 500;
+  font-size: 0.8rem;
+  color: var(--color-text-primary);
+}
+
+.vtid-stage-timeline-item-meta {
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+  opacity: 0.8;
+}

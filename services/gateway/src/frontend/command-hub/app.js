@@ -238,6 +238,9 @@ const state = {
     tasksLoading: false,
     tasksError: null,
     selectedTask: null,
+    // VTID-0527: VTID detail with stageTimeline from API
+    selectedTaskDetail: null,
+    selectedTaskDetailLoading: false,
     taskSearchQuery: '',
     taskDateFilter: '',
 
@@ -1302,7 +1305,11 @@ function createTaskCard(task) {
     card.dataset.status = mapStatusToColumn(task.status).toLowerCase().replace(' ', '-');
     card.onclick = () => {
         state.selectedTask = task;
+        state.selectedTaskDetail = null;
+        state.selectedTaskDetailLoading = true;
         renderApp();
+        // VTID-0527: Fetch full VTID detail with stageTimeline
+        fetchVtidDetail(task.vtid);
     };
 
     const title = document.createElement('div');
@@ -1390,6 +1397,8 @@ function renderTaskDrawer() {
     closeBtn.innerHTML = '&times;';
     closeBtn.onclick = () => {
         state.selectedTask = null;
+        state.selectedTaskDetail = null;
+        state.selectedTaskDetailLoading = false;
         renderApp();
     };
     header.appendChild(closeBtn);
@@ -1425,6 +1434,7 @@ function renderTaskDrawer() {
 /**
  * VTID-0527: Render detailed stage timeline for selected task.
  * Shows vertical list of stages with timestamps and messages.
+ * Uses API stageTimeline when available, falls back to client-side computation.
  */
 function renderTaskStageDetail(task) {
     const container = document.createElement('div');
@@ -1435,20 +1445,46 @@ function renderTaskStageDetail(task) {
     heading.textContent = 'Execution Stages';
     container.appendChild(heading);
 
-    // Get stage state from telemetry events
-    const stageState = deriveTaskStageState(task, state.telemetryEvents);
+    // VTID-0527: Show loading state
+    if (state.selectedTaskDetailLoading) {
+        const loadingDiv = document.createElement('div');
+        loadingDiv.className = 'task-stage-detail-loading';
+        loadingDiv.textContent = 'Loading stage timeline...';
+        container.appendChild(loadingDiv);
+        return container;
+    }
+
+    // VTID-0527: Use API stageTimeline if available, otherwise fall back to client-side
+    const apiTimeline = state.selectedTaskDetail && state.selectedTaskDetail.stageTimeline;
+    const clientStageState = deriveTaskStageState(task, state.telemetryEvents);
 
     const list = document.createElement('ul');
     list.className = 'task-stage-detail-list';
 
     TASK_STAGES.forEach(function(stage) {
-        const stageInfo = stageState.byStage[stage];
-        const isCompleted = stageInfo && stageInfo.reached;
-        const isCurrent = stageState.currentStage === stage;
+        // Get stage info from API timeline or client-side computation
+        const apiEntry = apiTimeline ? apiTimeline.find(function(e) { return e.stage === stage; }) : null;
+        const clientInfo = clientStageState.byStage[stage];
+
+        // Determine status from API or client
+        var stageStatus, startedAt, completedAt, errorAt;
+        if (apiEntry) {
+            stageStatus = apiEntry.status; // 'PENDING', 'RUNNING', 'COMPLETED', 'ERROR'
+            startedAt = apiEntry.startedAt;
+            completedAt = apiEntry.completedAt;
+            errorAt = apiEntry.errorAt;
+        } else {
+            // Fallback to client-side computation
+            const isCompleted = clientInfo && clientInfo.reached;
+            const isCurrent = clientStageState.currentStage === stage;
+            stageStatus = isCompleted ? 'COMPLETED' : isCurrent ? 'RUNNING' : 'PENDING';
+            startedAt = clientInfo && clientInfo.latestEvent ? clientInfo.latestEvent.created_at : null;
+        }
 
         const item = document.createElement('li');
-        const statusClass = isCompleted ? 'task-stage-detail-item-completed' :
-                           isCurrent ? 'task-stage-detail-item-current' :
+        const statusClass = stageStatus === 'ERROR' ? 'task-stage-detail-item-error' :
+                           stageStatus === 'COMPLETED' ? 'task-stage-detail-item-completed' :
+                           stageStatus === 'RUNNING' ? 'task-stage-detail-item-current' :
                            'task-stage-detail-item-pending';
         item.className = 'task-stage-detail-item ' + statusClass;
 
@@ -1463,11 +1499,14 @@ function renderTaskStageDetail(task) {
 
         const statusLabel = document.createElement('span');
         statusLabel.className = 'task-stage-detail-status';
-        if (isCompleted && !isCurrent) {
+        if (stageStatus === 'ERROR') {
+            statusLabel.textContent = 'Error';
+            statusLabel.classList.add('task-stage-detail-status-error');
+        } else if (stageStatus === 'COMPLETED') {
             statusLabel.textContent = 'Completed';
             statusLabel.classList.add('task-stage-detail-status-completed');
-        } else if (isCurrent) {
-            statusLabel.textContent = 'In Progress';
+        } else if (stageStatus === 'RUNNING') {
+            statusLabel.textContent = 'Running';
             statusLabel.classList.add('task-stage-detail-status-current');
         } else {
             statusLabel.textContent = 'Pending';
@@ -1477,21 +1516,30 @@ function renderTaskStageDetail(task) {
 
         item.appendChild(headerRow);
 
-        // Meta row with timestamp and message (if available)
-        if (stageInfo && stageInfo.latestEvent) {
+        // Meta row with timestamps
+        if (startedAt || completedAt || errorAt) {
             const metaRow = document.createElement('div');
             metaRow.className = 'task-stage-detail-meta';
 
-            const timestamp = document.createElement('span');
-            timestamp.className = 'task-stage-detail-time';
-            timestamp.textContent = formatStageTimestamp(stageInfo.latestEvent.created_at);
-            metaRow.appendChild(timestamp);
+            if (startedAt) {
+                const startTime = document.createElement('span');
+                startTime.className = 'task-stage-detail-time';
+                startTime.textContent = 'Started: ' + formatStageTimestamp(startedAt);
+                metaRow.appendChild(startTime);
+            }
 
-            if (stageInfo.latestEvent.title) {
-                const message = document.createElement('span');
-                message.className = 'task-stage-detail-message';
-                message.textContent = stageInfo.latestEvent.title;
-                metaRow.appendChild(message);
+            if (completedAt) {
+                const endTime = document.createElement('span');
+                endTime.className = 'task-stage-detail-time task-stage-detail-time-completed';
+                endTime.textContent = 'Completed: ' + formatStageTimestamp(completedAt);
+                metaRow.appendChild(endTime);
+            }
+
+            if (errorAt) {
+                const errTime = document.createElement('span');
+                errTime.className = 'task-stage-detail-time task-stage-detail-time-error';
+                errTime.textContent = 'Error: ' + formatStageTimestamp(errorAt);
+                metaRow.appendChild(errTime);
             }
 
             item.appendChild(metaRow);
@@ -1501,6 +1549,65 @@ function renderTaskStageDetail(task) {
     });
 
     container.appendChild(list);
+
+    // VTID-0527: Add vtid-stage-timeline view below the detail list
+    const timelineView = renderVtidStageTimeline();
+    if (timelineView) {
+        container.appendChild(timelineView);
+    }
+
+    return container;
+}
+
+/**
+ * VTID-0527: Render the vtid-stage-timeline visual component.
+ * Shows a compact visual timeline with markers and timestamps.
+ */
+function renderVtidStageTimeline() {
+    const apiTimeline = state.selectedTaskDetail && state.selectedTaskDetail.stageTimeline;
+    if (!apiTimeline || apiTimeline.length === 0) {
+        return null;
+    }
+
+    const container = document.createElement('div');
+    container.className = 'vtid-stage-timeline';
+
+    apiTimeline.forEach(function(entry) {
+        const item = document.createElement('div');
+        item.className = 'vtid-stage-timeline-item';
+
+        // Marker
+        const marker = document.createElement('div');
+        marker.className = 'vtid-stage-timeline-item-marker vtid-stage-timeline-item-marker--' + entry.status.toLowerCase();
+        item.appendChild(marker);
+
+        // Main content
+        const main = document.createElement('div');
+        main.className = 'vtid-stage-timeline-item-main';
+
+        const title = document.createElement('div');
+        title.className = 'vtid-stage-timeline-item-title';
+        title.textContent = entry.stage;
+        main.appendChild(title);
+
+        // Timestamp meta
+        var metaText = entry.status;
+        if (entry.completedAt) {
+            metaText = 'Completed ' + formatStageTimestamp(entry.completedAt);
+        } else if (entry.errorAt) {
+            metaText = 'Error ' + formatStageTimestamp(entry.errorAt);
+        } else if (entry.startedAt) {
+            metaText = 'Started ' + formatStageTimestamp(entry.startedAt);
+        }
+
+        const meta = document.createElement('div');
+        meta.className = 'vtid-stage-timeline-item-meta';
+        meta.textContent = metaText;
+        main.appendChild(meta);
+
+        item.appendChild(main);
+        container.appendChild(item);
+    });
 
     return container;
 }
@@ -1830,6 +1937,35 @@ async function fetchTasks() {
         ];
     } finally {
         state.tasksLoading = false;
+        renderApp();
+    }
+}
+
+/**
+ * VTID-0527: Fetch VTID detail with stageTimeline from API.
+ * Called when a task card is clicked to load detailed stage timeline.
+ */
+async function fetchVtidDetail(vtid) {
+    console.log('[VTID-0527] Fetching VTID detail:', vtid);
+    state.selectedTaskDetailLoading = true;
+
+    try {
+        const response = await fetch('/api/v1/vtid/' + encodeURIComponent(vtid));
+        if (!response.ok) {
+            throw new Error('VTID detail fetch failed: ' + response.status);
+        }
+
+        const result = await response.json();
+        console.log('[VTID-0527] VTID detail loaded:', result);
+
+        if (result.ok && result.data) {
+            state.selectedTaskDetail = result.data;
+        }
+    } catch (error) {
+        console.error('[VTID-0527] Failed to fetch VTID detail:', error);
+        // Continue without detail - not critical, fallback to client-side computation
+    } finally {
+        state.selectedTaskDetailLoading = false;
         renderApp();
     }
 }
