@@ -137,6 +137,12 @@ export class GovernanceController {
                     ruleStatus = 'proposal';
                 }
 
+                // VTID-0405: Determine source (SYSTEM or CATALOG) from rule metadata
+                // Rules with is_system_rule flag or logic.source='SYSTEM' are SYSTEM rules
+                const ruleSource = rule.is_system_rule || rule.logic?.source === 'SYSTEM'
+                    ? 'SYSTEM'
+                    : (rule.logic?.source || 'CATALOG');
+
                 return {
                     id: rule.rule_id || rule.logic?.rule_code || rule.id,
                     domain: domain,
@@ -145,9 +151,11 @@ export class GovernanceController {
                     description: rule.description || '',
                     status: ruleStatus,
                     category: categoryName,
+                    source: ruleSource,
                     vtids: rule.vtids || [],
                     sources: rule.sources || [],
                     enforcement: rule.enforcement || [],
+                    created_at: rule.created_at,
                     updated_at: rule.updated_at || rule.created_at
                 };
             });
