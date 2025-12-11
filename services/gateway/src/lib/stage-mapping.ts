@@ -131,8 +131,9 @@ export function emptyStageCounters(): StageCounters {
 
 /**
  * VTID-0527: Stage status type for timeline entries.
+ * VTID-0530: Changed COMPLETED to SUCCESS for clarity.
  */
-export type StageStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'ERROR';
+export type StageStatus = 'PENDING' | 'RUNNING' | 'SUCCESS' | 'ERROR';
 
 /**
  * VTID-0527: Individual stage timeline entry.
@@ -176,14 +177,15 @@ export interface TimelineEvent {
 
 /**
  * VTID-0527: Build stage timeline from telemetry events for a specific VTID.
+ * VTID-0530: Updated to return SUCCESS instead of COMPLETED.
  *
  * Returns an array of 4 entries (PLANNER, WORKER, VALIDATOR, DEPLOY) in order.
- * Each entry has a status (PENDING, RUNNING, COMPLETED, ERROR) and timestamps.
+ * Each entry has a status (PENDING, RUNNING, SUCCESS, ERROR) and timestamps.
  *
  * Rules:
  * - If no events seen for a stage → status: "PENDING", no timestamps
  * - If events exist but no completion → status: "RUNNING", startedAt present
- * - If completion/success events exist → status: "COMPLETED", startedAt & completedAt present
+ * - If completion/success events exist → status: "SUCCESS", startedAt & completedAt present
  * - If error/failure events exist → status: "ERROR", errorAt present (overrides others)
  *
  * @param events - Array of telemetry events (pre-filtered by VTID or not)
@@ -231,7 +233,8 @@ export function buildStageTimeline(events: TimelineEvent[], vtid?: string): Stag
     const startedAt = sorted[0]?.created_at;
     const lastEvent = sorted[sorted.length - 1];
 
-    // Build entry based on status priority: ERROR > COMPLETED > RUNNING > PENDING
+    // Build entry based on status priority: ERROR > SUCCESS > RUNNING > PENDING
+    // VTID-0530: Changed from COMPLETED to SUCCESS for clarity
     if (hasError) {
       const errorEvent = sorted.find(e =>
         e.status === 'failure' || e.status === 'error' ||
@@ -253,7 +256,7 @@ export function buildStageTimeline(events: TimelineEvent[], vtid?: string): Stag
       ) || lastEvent;
       return {
         stage,
-        status: 'COMPLETED',
+        status: 'SUCCESS',
         startedAt,
         completedAt: completedEvent?.created_at
       };

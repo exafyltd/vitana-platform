@@ -2953,7 +2953,9 @@ body {
   border-left: 3px solid var(--color-border);
 }
 
-.task-stage-detail-item-completed {
+/* VTID-0530: Added -success alias for -completed */
+.task-stage-detail-item-completed,
+.task-stage-detail-item-success {
   border-left-color: #10b981;
   background: rgba(16, 185, 129, 0.05);
 }
@@ -3011,7 +3013,9 @@ body {
   border-radius: 4px;
 }
 
-.task-stage-detail-status-completed {
+/* VTID-0530: Added -success alias for -completed */
+.task-stage-detail-status-completed,
+.task-stage-detail-status-success {
   background: rgba(16, 185, 129, 0.15);
   color: #10b981;
 }
@@ -3143,7 +3147,9 @@ body {
 }
 
 /* Status colors for timeline markers */
-.vtid-stage-timeline-item-marker--completed {
+/* VTID-0530: Added --success alias for --completed */
+.vtid-stage-timeline-item-marker--completed,
+.vtid-stage-timeline-item-marker--success {
   background: #10b981;
   box-shadow: 0 0 4px rgba(16, 185, 129, 0.4);
 }
