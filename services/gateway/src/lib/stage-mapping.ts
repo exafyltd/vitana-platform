@@ -201,7 +201,16 @@ export function buildStageTimeline(events: TimelineEvent[], vtid?: string): Stag
   // Build timeline for each stage
   return VALID_STAGES.map((stage): StageTimelineEntry => {
     // Find all events for this stage
-    const stageEvents = relevantEvents.filter(e => e.task_stage === stage);
+    // VTID-0530: Check explicit task_stage first, then infer from kind/title/status
+    const stageEvents = relevantEvents.filter(e => {
+      // If task_stage is explicitly set, use it
+      if (e.task_stage) {
+        return e.task_stage === stage;
+      }
+      // Otherwise, infer stage from event content using mapRawToStage
+      const inferredStage = mapRawToStage(e.kind, e.title, e.status);
+      return inferredStage === stage;
+    });
 
     if (stageEvents.length === 0) {
       return { stage, status: 'PENDING' };
