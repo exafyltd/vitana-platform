@@ -858,10 +858,10 @@ export async function getPendingPlanTasks(): Promise<PendingPlanTask[]> {
       return [];
     }
 
-    // Fetch task entries for these VTIDs
+    // Fetch task entries for these VTIDs (use VtidLedger to match insert pattern)
     const vtidList = vtids.map(v => `"${v}"`).join(',');
     const tasksResp = await fetch(
-      `${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=in.(${vtidList})&status=in.(pending,scheduled)&select=vtid,title,summary,module,status,created_at`,
+      `${SUPABASE_URL}/rest/v1/VtidLedger?vtid=in.(${vtidList})&status=in.(pending,scheduled)&select=vtid,title,description_md,module,status,created_at`,
       {
         headers: {
           'Content-Type': 'application/json',
@@ -880,7 +880,7 @@ export async function getPendingPlanTasks(): Promise<PendingPlanTask[]> {
     const tasks = await tasksResp.json() as Array<{
       vtid: string;
       title: string;
-      summary: string;
+      description_md: string;
       module: string;
       status: string;
       created_at: string;
@@ -900,7 +900,7 @@ export async function getPendingPlanTasks(): Promise<PendingPlanTask[]> {
         return {
           vtid: t.vtid,
           title: t.title,
-          description: t.summary ?? t.title,
+          description: t.description_md ?? t.title,
           module: t.module ?? null,
           mode: 'plan-only' as const,
           createdAt: t.created_at,
