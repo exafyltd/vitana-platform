@@ -1,9 +1,10 @@
 /**
- * VTID-0509 + VTID-0531 + VTID-0532: Operator Service
+ * VTID-0509 + VTID-0531 + VTID-0532 + VTID-0533: Operator Service
  * Business logic for operator console - aggregates data from OASIS/CICD
  *
  * VTID-0531: Added OASIS integration for chat messages with thread/vtid support
  * VTID-0532: Added task extraction, VTID/Task creation, and planner handoff
+ * VTID-0533: Added Planner execution pipeline (plan submission, worker/validator events)
  */
 
 import fetch from 'node-fetch';
@@ -914,5 +915,504 @@ export async function getPendingPlanTasks(): Promise<PendingPlanTask[]> {
   } catch (error: any) {
     console.error(`[VTID-0532] Pending plan tasks error: ${error.message}`);
     return [];
+  }
+}
+
+// ==================== VTID-0533: Planner Execution Pipeline ====================
+
+/**
+ * Plan step interface
+ */
+export interface PlanStep {
+  id: string;
+  title: string;
+  description: string;
+  owner: 'WORKER' | 'PLANNER' | 'VALIDATOR' | 'OPERATOR';
+  estimated_effort: 'XS' | 'S' | 'M' | 'L' | 'XL';
+  dependencies: string[];
+}
+
+/**
+ * Plan submission payload
+ */
+export interface PlanPayload {
+  summary: string;
+  steps: PlanStep[];
+}
+
+/**
+ * Plan metadata
+ */
+export interface PlanMetadata {
+  plannerModel: string;
+  plannerRole: string;
+  source?: string;
+  notes?: string;
+}
+
+/**
+ * Task status type for the execution pipeline
+ */
+export type AutopilotTaskStatus =
+  | 'pending'
+  | 'scheduled'
+  | 'planned'
+  | 'in-progress'
+  | 'completed'
+  | 'validated'
+  | 'failed'
+  | 'cancelled';
+
+/**
+ * Task status response
+ */
+export interface TaskStatusResponse {
+  vtid: string;
+  status: AutopilotTaskStatus;
+  title?: string;
+  planSteps?: number;
+  validationStatus?: 'pending' | 'approved' | 'rejected';
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/**
+ * Work started payload
+ */
+export interface WorkStartedPayload {
+  stepId: string;
+  workerModel: string;
+  notes?: string;
+}
+
+/**
+ * Work completed payload
+ */
+export interface WorkCompletedPayload {
+  stepId: string;
+  status: 'success' | 'failure' | 'partial';
+  outputSummary: string;
+  details?: Record<string, unknown>;
+}
+
+/**
+ * Validation issue
+ */
+export interface ValidationIssue {
+  code: string;
+  message: string;
+}
+
+/**
+ * Validation result payload
+ */
+export interface ValidationResultPayload {
+  status: 'approved' | 'rejected';
+  issues?: ValidationIssue[];
+  notes?: string;
+}
+
+/**
+ * Validation metadata
+ */
+export interface ValidationMetadata {
+  validatorModel: string;
+  validatorRole: string;
+}
+
+/**
+ * Update task status in VtidLedger
+ */
+async function updateTaskStatus(vtid: string, status: AutopilotTaskStatus, metadata?: Record<string, unknown>): Promise<boolean> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    console.error('[VTID-0533] Supabase not configured');
+    return false;
+  }
+
+  try {
+    const updatePayload: Record<string, unknown> = {
+      status,
+      updated_at: new Date().toISOString()
+    };
+
+    if (metadata) {
+      updatePayload.metadata = metadata;
+    }
+
+    const resp = await fetch(
+      `${SUPABASE_URL}/rest/v1/VtidLedger?vtid=eq.${encodeURIComponent(vtid)}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_SERVICE_ROLE,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+          Prefer: 'return=minimal'
+        },
+        body: JSON.stringify(updatePayload)
+      }
+    );
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.error(`[VTID-0533] Task status update failed: ${resp.status} - ${text}`);
+      return false;
+    }
+
+    console.log(`[VTID-0533] Task ${vtid} status updated to: ${status}`);
+    return true;
+  } catch (error: any) {
+    console.error(`[VTID-0533] Task status update error: ${error.message}`);
+    return false;
+  }
+}
+
+/**
+ * Emit an autopilot event to OASIS
+ */
+async function emitAutopilotEvent(params: {
+  vtid: string;
+  topic: string;
+  status: 'info' | 'success' | 'warning' | 'error';
+  message: string;
+  metadata: Record<string, unknown>;
+}): Promise<{ ok: boolean; eventId?: string; error?: string }> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    console.warn('[VTID-0533] Supabase not configured, skipping event');
+    return { ok: false, error: 'Supabase not configured' };
+  }
+
+  try {
+    const eventId = randomUUID();
+    const timestamp = new Date().toISOString();
+
+    const dbPayload = {
+      id: eventId,
+      created_at: timestamp,
+      vtid: params.vtid,
+      topic: params.topic,
+      service: 'autopilot-pipeline',
+      role: 'AUTOPILOT',
+      model: 'execution-pipeline',
+      status: params.status,
+      message: params.message,
+      link: null,
+      metadata: params.metadata
+    };
+
+    const resp = await fetch(`${SUPABASE_URL}/rest/v1/oasis_events`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_SERVICE_ROLE,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+        Prefer: 'return=minimal'
+      },
+      body: JSON.stringify(dbPayload)
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.error(`[VTID-0533] Event emit failed: ${resp.status} - ${text}`);
+      return { ok: false, error: `Event emit failed: ${resp.status}` };
+    }
+
+    console.log(`[VTID-0533] Event emitted: ${params.topic} for ${params.vtid} (${eventId})`);
+    return { ok: true, eventId };
+  } catch (error: any) {
+    console.error(`[VTID-0533] Event emit error: ${error.message}`);
+    return { ok: false, error: error.message };
+  }
+}
+
+/**
+ * Check if a task exists and get its current status
+ */
+export async function getTaskInfo(vtid: string): Promise<{ exists: boolean; status?: string; title?: string; metadata?: Record<string, unknown> }> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    console.warn('[VTID-0533] Supabase not configured');
+    return { exists: false };
+  }
+
+  try {
+    const resp = await fetch(
+      `${SUPABASE_URL}/rest/v1/VtidLedger?vtid=eq.${encodeURIComponent(vtid)}&select=vtid,status,title,metadata&limit=1`,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_SERVICE_ROLE,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`
+        }
+      }
+    );
+
+    if (!resp.ok) {
+      console.error(`[VTID-0533] Task info query failed: ${resp.status}`);
+      return { exists: false };
+    }
+
+    const data = await resp.json() as Array<{ vtid: string; status: string; title: string; metadata?: Record<string, unknown> }>;
+
+    if (data.length === 0) {
+      return { exists: false };
+    }
+
+    return {
+      exists: true,
+      status: data[0].status,
+      title: data[0].title,
+      metadata: data[0].metadata
+    };
+  } catch (error: any) {
+    console.error(`[VTID-0533] Task info error: ${error.message}`);
+    return { exists: false };
+  }
+}
+
+/**
+ * Submit a plan for a task
+ * - Validates task exists and is in pending/scheduled status
+ * - Emits autopilot.plan.created event
+ * - Updates task status to 'planned'
+ */
+export async function submitPlan(
+  vtid: string,
+  plan: PlanPayload,
+  metadata: PlanMetadata
+): Promise<{ ok: boolean; vtid?: string; status?: string; planSteps?: number; error?: string }> {
+  console.log(`[VTID-0533] Submitting plan for ${vtid}`);
+
+  // Get task info
+  const taskInfo = await getTaskInfo(vtid);
+
+  if (!taskInfo.exists) {
+    return { ok: false, error: `Task ${vtid} not found` };
+  }
+
+  // Check if task is in a valid state for planning
+  const validStatuses = ['pending', 'scheduled'];
+  if (!validStatuses.includes(taskInfo.status || '')) {
+    return { ok: false, error: `Task ${vtid} is not pending a plan (current status: ${taskInfo.status})` };
+  }
+
+  // Emit plan created event
+  const eventResult = await emitAutopilotEvent({
+    vtid,
+    topic: 'autopilot.plan.created',
+    status: 'success',
+    message: plan.summary,
+    metadata: {
+      plan,
+      plannerModel: metadata.plannerModel,
+      plannerRole: metadata.plannerRole,
+      source: metadata.source || 'autopilot',
+      notes: metadata.notes,
+      stepCount: plan.steps.length
+    }
+  });
+
+  if (!eventResult.ok) {
+    return { ok: false, error: `Failed to emit plan event: ${eventResult.error}` };
+  }
+
+  // Update task status to 'planned'
+  const updateResult = await updateTaskStatus(vtid, 'planned', {
+    ...taskInfo.metadata,
+    plan,
+    planEventId: eventResult.eventId,
+    plannedAt: new Date().toISOString(),
+    plannerModel: metadata.plannerModel
+  });
+
+  if (!updateResult) {
+    console.warn(`[VTID-0533] Plan event emitted but status update failed for ${vtid}`);
+  }
+
+  console.log(`[VTID-0533] Plan submitted for ${vtid} with ${plan.steps.length} steps`);
+
+  return {
+    ok: true,
+    vtid,
+    status: 'planned',
+    planSteps: plan.steps.length
+  };
+}
+
+/**
+ * Emit work started event
+ */
+export async function emitWorkStarted(
+  vtid: string,
+  payload: WorkStartedPayload
+): Promise<{ ok: boolean; eventId?: string; error?: string }> {
+  console.log(`[VTID-0533] Emitting work started for ${vtid}, step: ${payload.stepId}`);
+
+  // Verify task exists
+  const taskInfo = await getTaskInfo(vtid);
+  if (!taskInfo.exists) {
+    return { ok: false, error: `Task ${vtid} not found` };
+  }
+
+  // Emit work started event
+  const result = await emitAutopilotEvent({
+    vtid,
+    topic: 'autopilot.work.started',
+    status: 'info',
+    message: `Work started on step: ${payload.stepId}`,
+    metadata: {
+      stepId: payload.stepId,
+      workerModel: payload.workerModel,
+      notes: payload.notes
+    }
+  });
+
+  // Update task status to 'in-progress'
+  if (result.ok) {
+    await updateTaskStatus(vtid, 'in-progress');
+  }
+
+  return result;
+}
+
+/**
+ * Emit work completed event
+ */
+export async function emitWorkCompleted(
+  vtid: string,
+  payload: WorkCompletedPayload
+): Promise<{ ok: boolean; eventId?: string; error?: string }> {
+  console.log(`[VTID-0533] Emitting work completed for ${vtid}, step: ${payload.stepId}`);
+
+  // Verify task exists
+  const taskInfo = await getTaskInfo(vtid);
+  if (!taskInfo.exists) {
+    return { ok: false, error: `Task ${vtid} not found` };
+  }
+
+  // Emit work completed event
+  const result = await emitAutopilotEvent({
+    vtid,
+    topic: 'autopilot.work.completed',
+    status: payload.status === 'success' ? 'success' : 'warning',
+    message: payload.outputSummary,
+    metadata: {
+      stepId: payload.stepId,
+      status: payload.status,
+      outputSummary: payload.outputSummary,
+      details: payload.details || {}
+    }
+  });
+
+  // Optionally update task status to 'completed' if all work is done
+  // For now, keep it as 'in-progress' until validation
+  // The validator will set final status
+
+  return result;
+}
+
+/**
+ * Emit validation completed event
+ */
+export async function emitValidationResult(
+  vtid: string,
+  result: ValidationResultPayload,
+  metadata: ValidationMetadata
+): Promise<{ ok: boolean; eventId?: string; error?: string }> {
+  console.log(`[VTID-0533] Emitting validation result for ${vtid}: ${result.status}`);
+
+  // Verify task exists
+  const taskInfo = await getTaskInfo(vtid);
+  if (!taskInfo.exists) {
+    return { ok: false, error: `Task ${vtid} not found` };
+  }
+
+  // Emit validation completed event
+  const eventResult = await emitAutopilotEvent({
+    vtid,
+    topic: 'autopilot.validation.completed',
+    status: result.status === 'approved' ? 'success' : 'warning',
+    message: result.status === 'approved'
+      ? 'Validation passed'
+      : `Validation failed: ${result.issues?.length || 0} issues found`,
+    metadata: {
+      validationStatus: result.status,
+      issues: result.issues || [],
+      notes: result.notes,
+      validatorModel: metadata.validatorModel,
+      validatorRole: metadata.validatorRole
+    }
+  });
+
+  // Update task status based on validation result
+  if (eventResult.ok) {
+    const newStatus: AutopilotTaskStatus = result.status === 'approved' ? 'validated' : 'in-progress';
+    await updateTaskStatus(vtid, newStatus, {
+      ...taskInfo.metadata,
+      validationStatus: result.status,
+      validatedAt: new Date().toISOString(),
+      validatorModel: metadata.validatorModel
+    });
+  }
+
+  return eventResult;
+}
+
+/**
+ * Get task status for the autopilot pipeline
+ */
+export async function getAutopilotTaskStatus(vtid: string): Promise<TaskStatusResponse | null> {
+  console.log(`[VTID-0533] Getting task status for ${vtid}`);
+
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    console.warn('[VTID-0533] Supabase not configured');
+    return null;
+  }
+
+  try {
+    const resp = await fetch(
+      `${SUPABASE_URL}/rest/v1/VtidLedger?vtid=eq.${encodeURIComponent(vtid)}&select=vtid,status,title,metadata,created_at,updated_at&limit=1`,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_SERVICE_ROLE,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`
+        }
+      }
+    );
+
+    if (!resp.ok) {
+      console.error(`[VTID-0533] Task status query failed: ${resp.status}`);
+      return null;
+    }
+
+    const data = await resp.json() as Array<{
+      vtid: string;
+      status: string;
+      title: string;
+      metadata?: Record<string, unknown>;
+      created_at: string;
+      updated_at: string;
+    }>;
+
+    if (data.length === 0) {
+      return null;
+    }
+
+    const task = data[0];
+    const metadata = task.metadata || {};
+    const plan = metadata.plan as PlanPayload | undefined;
+
+    return {
+      vtid: task.vtid,
+      status: task.status as AutopilotTaskStatus,
+      title: task.title,
+      planSteps: plan?.steps?.length,
+      validationStatus: metadata.validationStatus as 'pending' | 'approved' | 'rejected' | undefined,
+      createdAt: task.created_at,
+      updatedAt: task.updated_at
+    };
+  } catch (error: any) {
+    console.error(`[VTID-0533] Task status error: ${error.message}`);
+    return null;
   }
 }
