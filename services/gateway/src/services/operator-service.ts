@@ -695,7 +695,7 @@ export async function emitTaskSpecEvent(params: {
       service: 'operator-console',
       role: 'OPERATOR',
       model: 'task-extractor',
-      status: 'pending',
+      status: 'info',  // Use 'info' as valid status (pending is task status, not event status)
       message: params.title,
       link: null,
       metadata
