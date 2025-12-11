@@ -613,26 +613,24 @@ async function insertTaskEntry(params: {
   }
 
   try {
-    const eventId = randomUUID();
-
+    // Match the existing VtidLedger insert pattern from vtid.ts
     const payload = {
-      id: eventId,
+      id: randomUUID(),
       vtid: params.vtid,
-      layer: params.layer,
+      task_family: params.layer,
+      task_module: params.module,
+      layer: params.module.slice(0, 3),  // First 3 chars of module
       module: params.module,
       title: params.title,
-      summary: params.summary,
+      description_md: params.summary,
       status: params.status,
       tenant: 'vitana',
       is_test: false,
-      task_family: params.layer,
-      task_module: params.module,
-      metadata: params.metadata,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      metadata: params.metadata
     };
 
-    const resp = await fetch(`${SUPABASE_URL}/rest/v1/vtid_ledger`, {
+    // Use VtidLedger (PascalCase) to match existing vtid.ts pattern
+    const resp = await fetch(`${SUPABASE_URL}/rest/v1/VtidLedger`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
