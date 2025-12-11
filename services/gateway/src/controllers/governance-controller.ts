@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { getSupabase } from '../lib/supabase';
 import { RuleMatcher, EvaluationEngine, EnforcementExecutor, ViolationGenerator, OasisPipeline } from '../validator-core';
 import { RuleDTO, EvaluationDTO, ViolationDTO, ProposalDTO, FeedEntry, EvaluationSummary, ProposalTimelineEvent } from '../types/governance';
+import { GovernanceEvaluator, EvaluateActionPayload, logEvaluationToOasis } from '../lib/governance/evaluator';
 
 // Removed unsafe module-load createClient - now using getSupabase() in methods
 
@@ -813,6 +814,122 @@ export class GovernanceController {
 
         if (error) return res.status(500).json({ error: error.message });
         res.json(data);
+    }
+
+    /**
+     * POST /api/v1/governance/evaluate
+     * VTID-0404: Governance Evaluation Engine v1
+     *
+     * Evaluates a proposed action against all governance rules.
+     * Returns explicit allow/deny + violated rules + reasons.
+     *
+     * Input:
+     * {
+     *   "action": "deploy" | "modify" | "delete" | "create" | "route_change" | "csp_change",
+     *   "service": "gateway",
+     *   "environment": "dev" | "staging" | "prod",
+     *   "files": ["path/to/file.ts"],
+     *   "metadata": {
+     *     "vtid": "VTID-0533",
+     *     "author": "Claude",
+     *     "description": "Orchestrator commit",
+     *     "deployMethod": "deploy-service.sh",
+     *     "fileContents": { "path/to/file.ts": "content..." }
+     *   }
+     * }
+     *
+     * Output:
+     * {
+     *   "allowed": false,
+     *   "violatedRules": ["GOV-Frontend-R.1", "SYS-RULE-DEPLOY-L1"],
+     *   "reasons": ["Inline scripts detected", "Invalid deploy method"]
+     * }
+     */
+    async evaluate(req: Request, res: Response) {
+        try {
+            const tenantId = this.getTenantId(req);
+            const payload = req.body as EvaluateActionPayload;
+
+            // Validate required fields
+            if (!payload.action) {
+                return res.status(400).json({
+                    ok: false,
+                    vtid: 'VTID-0404',
+                    error: 'VALIDATION_ERROR',
+                    message: 'Missing required field: action'
+                });
+            }
+
+            if (!payload.service) {
+                return res.status(400).json({
+                    ok: false,
+                    vtid: 'VTID-0404',
+                    error: 'VALIDATION_ERROR',
+                    message: 'Missing required field: service'
+                });
+            }
+
+            if (!payload.environment) {
+                return res.status(400).json({
+                    ok: false,
+                    vtid: 'VTID-0404',
+                    error: 'VALIDATION_ERROR',
+                    message: 'Missing required field: environment'
+                });
+            }
+
+            // Validate action type
+            const validActions = ['deploy', 'modify', 'delete', 'create', 'route_change', 'csp_change'];
+            if (!validActions.includes(payload.action)) {
+                return res.status(400).json({
+                    ok: false,
+                    vtid: 'VTID-0404',
+                    error: 'VALIDATION_ERROR',
+                    message: `Invalid action: ${payload.action}. Must be one of: ${validActions.join(', ')}`
+                });
+            }
+
+            // Validate environment
+            const validEnvironments = ['dev', 'staging', 'prod'];
+            if (!validEnvironments.includes(payload.environment)) {
+                return res.status(400).json({
+                    ok: false,
+                    vtid: 'VTID-0404',
+                    error: 'VALIDATION_ERROR',
+                    message: `Invalid environment: ${payload.environment}. Must be one of: ${validEnvironments.join(', ')}`
+                });
+            }
+
+            console.log(`[GovernanceController] Evaluating action: ${payload.action} on ${payload.service} in ${payload.environment}`);
+
+            // Create evaluator instance with tenant
+            const evaluator = new GovernanceEvaluator(tenantId);
+
+            // Run evaluation
+            const result = await evaluator.evaluateActionAgainstRules(payload);
+
+            // Log to OASIS
+            await logEvaluationToOasis(payload, result);
+
+            // Return evaluation result
+            res.json({
+                ok: true,
+                vtid: 'VTID-0404',
+                allowed: result.allowed,
+                violatedRules: result.violatedRules,
+                reasons: result.reasons,
+                evaluatedAt: result.evaluatedAt,
+                metadata: result.metadata
+            });
+        } catch (error: any) {
+            console.error('[GovernanceController] Error in evaluate:', error);
+            res.status(500).json({
+                ok: false,
+                vtid: 'VTID-0404',
+                error: 'EVALUATION_ERROR',
+                message: error.message
+            });
+        }
     }
 
     /**

@@ -5,6 +5,12 @@ const router = Router();
 const controller = new GovernanceController();
 
 // All routes prefixed with /api/v1/governance in index.ts mount
+
+// VTID-0404: Governance Evaluation Engine v1
+// POST /api/v1/governance/evaluate - Hard gate for action validation
+router.post('/evaluate', (req, res) => controller.evaluate(req, res));
+
+// Existing governance routes
 router.get('/categories', (req, res) => controller.getCategories(req, res));
 router.get('/rules', (req, res) => controller.getRules(req, res));
 router.get('/rules/:ruleCode', (req, res) => controller.getRuleByCode(req, res));
