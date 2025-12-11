@@ -314,6 +314,42 @@ beforeEach(() => {
           },
         ];
 
+        // VTID-0527-C: Handle specific VTID lookup queries
+        if (urlString.includes('vtid=eq.')) {
+          const match = urlString.match(/vtid=eq\.([^&]+)/);
+          const requestedVtid = match ? match[1] : '';
+
+          // First check the mockVtidStore (for dynamically created VTIDs)
+          const fromStore = mockVtidStore.find(v => v.vtid === requestedVtid);
+          if (fromStore) {
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              statusText: 'OK',
+              headers: new Headers(),
+              json: async () => [fromStore],
+              text: async () => JSON.stringify([fromStore]),
+              blob: async () => new Blob(),
+              arrayBuffer: async () => new ArrayBuffer(0),
+              formData: async () => new FormData(),
+            } as any);
+          }
+
+          // Then check mockTasks
+          const found = mockTasks.find(t => t.vtid === requestedVtid);
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            statusText: 'OK',
+            headers: new Headers(),
+            json: async () => found ? [found] : [],
+            text: async () => JSON.stringify(found ? [found] : []),
+            blob: async () => new Blob(),
+            arrayBuffer: async () => new ArrayBuffer(0),
+            formData: async () => new FormData(),
+          } as any);
+        }
+
         return Promise.resolve({
           ok: true,
           status: 200,

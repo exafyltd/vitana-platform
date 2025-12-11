@@ -19,8 +19,13 @@ describe("VTID API - DEV-OASIS-0101", () => {
       if (!createdVtid) return;
       const res = await request(app).get("/api/v1/vtid/" + createdVtid);
       if (res.status === 200) {
-        expect(res.body.vtid).toBe(createdVtid);
-        expect(Array.isArray(res.body)).toBe(false);
+        // VTID-0527-C: Response is now wrapped in { ok, data }
+        expect(res.body.ok).toBe(true);
+        expect(res.body.data.vtid).toBe(createdVtid);
+        expect(Array.isArray(res.body.data)).toBe(false);
+        // VTID-0527-C: stageTimeline should always be present with 4 entries
+        expect(Array.isArray(res.body.data.stageTimeline)).toBe(true);
+        expect(res.body.data.stageTimeline.length).toBe(4);
       }
     });
     it("should return 404 for missing", async () => {
