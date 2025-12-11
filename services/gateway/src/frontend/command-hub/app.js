@@ -324,13 +324,14 @@ const state = {
     cicdHealthError: null,
     cicdHealthTooltipOpen: false,
 
-    // Governance Rules (VTID-0401)
+    // Governance Rules (VTID-0401, VTID-0405)
     governanceRules: [],
     governanceRulesLoading: false,
     governanceRulesError: null,
     governanceRulesSearchQuery: '',
     governanceRulesLevelFilter: '',
     governanceRulesCategoryFilter: '',
+    governanceRulesSourceFilter: '',
     governanceRulesSortColumn: 'id',
     governanceRulesSortDirection: 'asc',
     selectedGovernanceRule: null
@@ -2062,12 +2063,13 @@ function sortGovernanceRules(column) {
 function getFilteredGovernanceRules() {
     let rules = [...state.governanceRules];
 
-    // Apply search filter
+    // Apply search filter (VTID-0405: extended to include description)
     if (state.governanceRulesSearchQuery) {
         const query = state.governanceRulesSearchQuery.toLowerCase();
         rules = rules.filter(r =>
             r.id.toLowerCase().includes(query) ||
-            r.title.toLowerCase().includes(query)
+            r.title.toLowerCase().includes(query) ||
+            (r.description && r.description.toLowerCase().includes(query))
         );
     }
 
@@ -2079,6 +2081,11 @@ function getFilteredGovernanceRules() {
     // Apply category filter
     if (state.governanceRulesCategoryFilter) {
         rules = rules.filter(r => r.domain === state.governanceRulesCategoryFilter);
+    }
+
+    // VTID-0405: Apply source filter (SYSTEM/CATALOG)
+    if (state.governanceRulesSourceFilter) {
+        rules = rules.filter(r => r.source === state.governanceRulesSourceFilter);
     }
 
     // Apply sorting
@@ -2165,6 +2172,22 @@ function renderGovernanceRulesView() {
         renderApp();
     };
     toolbar.appendChild(categorySelect);
+
+    // VTID-0405: Source/Family filter (SYSTEM vs CATALOG)
+    const sourceSelect = document.createElement('select');
+    sourceSelect.className = 'form-control governance-filter-select';
+    sourceSelect.setAttribute('autocomplete', 'off');
+    sourceSelect.setAttribute('data-lpignore', 'true');
+    sourceSelect.name = 'governance-source-filter-' + Date.now();
+    sourceSelect.innerHTML = '<option value="">All Sources</option>' +
+        '<option value="SYSTEM">System Rules</option>' +
+        '<option value="CATALOG">Catalog Rules</option>';
+    sourceSelect.value = state.governanceRulesSourceFilter || '';
+    sourceSelect.onchange = (e) => {
+        state.governanceRulesSourceFilter = e.target.value;
+        renderApp();
+    };
+    toolbar.appendChild(sourceSelect);
 
     // Spacer
     const spacer = document.createElement('div');
@@ -2397,6 +2420,43 @@ function renderGovernanceRuleDetailDrawer() {
     categorySection.innerHTML = '<h3>Category</h3><p>' + escapeHtml(rule.category) + '</p>';
     content.appendChild(categorySection);
 
+    // VTID-0405: Source/Family (SYSTEM vs CATALOG)
+    const sourceSection = document.createElement('div');
+    sourceSection.className = 'rule-detail-section';
+    const sourceValue = rule.source || 'CATALOG';
+    const sourceLabel = sourceValue === 'SYSTEM' ? 'System Rule' : 'Catalog Rule';
+    sourceSection.innerHTML = '<h3>Source</h3><p><span class="source-badge source-' + sourceValue.toLowerCase() + '">' + sourceLabel + '</span></p>';
+    content.appendChild(sourceSection);
+
+    // VTID-0405: Enforcement Semantics based on level
+    const enforcementSemanticsSection = document.createElement('div');
+    enforcementSemanticsSection.className = 'rule-detail-section';
+    let enforcementSemantics = '';
+    let enforcementClass = '';
+    switch (rule.level) {
+        case 'L1':
+            enforcementSemantics = 'Hard block — always denies. This rule cannot be bypassed and will block any violating action.';
+            enforcementClass = 'enforcement-hard';
+            break;
+        case 'L2':
+            enforcementSemantics = 'Soft block — denies unless override (future). This rule blocks by default but may support authorized overrides.';
+            enforcementClass = 'enforcement-soft';
+            break;
+        case 'L3':
+            enforcementSemantics = 'Informational — not blocking. This rule logs violations but does not prevent actions.';
+            enforcementClass = 'enforcement-info';
+            break;
+        case 'L4':
+            enforcementSemantics = 'Informational — not blocking. Advisory rule for agent autonomy guidance.';
+            enforcementClass = 'enforcement-info';
+            break;
+        default:
+            enforcementSemantics = 'Unknown enforcement level.';
+            enforcementClass = 'enforcement-info';
+    }
+    enforcementSemanticsSection.innerHTML = '<h3>Enforcement Semantics</h3><div class="enforcement-semantics ' + enforcementClass + '">' + enforcementSemantics + '</div>';
+    content.appendChild(enforcementSemanticsSection);
+
     // VTIDs
     if (rule.vtids && rule.vtids.length > 0) {
         const vtidsSection = document.createElement('div');
@@ -2426,6 +2486,12 @@ function renderGovernanceRuleDetailDrawer() {
             '</div>';
         content.appendChild(enforcementSection);
     }
+
+    // VTID-0405: Created At
+    const createdSection = document.createElement('div');
+    createdSection.className = 'rule-detail-section';
+    createdSection.innerHTML = '<h3>Created</h3><p>' + formatRelativeDate(rule.created_at) + '</p>';
+    content.appendChild(createdSection);
 
     // Updated
     const updatedSection = document.createElement('div');
