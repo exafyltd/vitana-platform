@@ -56,10 +56,12 @@ describe('Stage Timeline Status Mapping (VTID-0530)', () => {
       });
     });
 
-    it('should return all PENDING for events without task_stage', () => {
+    it('should return all PENDING for events with unmappable content', () => {
+      // VTID-0530: Events without task_stage now get inferred from content
+      // These events have no keywords that map to any stage
       const events: TimelineEvent[] = [
-        createEvent(null, 'info', { title: 'Generic event' }),
-        createEvent(null, 'success', { title: 'Another event' }),
+        createEvent(null, 'info', { title: 'Generic notification', kind: 'system.heartbeat' }),
+        createEvent(null, 'info', { title: 'Another notification', kind: 'system.ping' }),
       ];
 
       const timeline = buildStageTimeline(events);
@@ -68,6 +70,23 @@ describe('Stage Timeline Status Mapping (VTID-0530)', () => {
       timeline.forEach((entry) => {
         expect(entry.status).toBe('PENDING');
       });
+    });
+
+    it('should infer stage from event content when task_stage is null', () => {
+      // VTID-0530: Events without task_stage get stage inferred from kind/title
+      const events: TimelineEvent[] = [
+        createEvent(null, 'success', { kind: 'deploy.service.succeeded', title: 'Deployment completed' }),
+      ];
+
+      const timeline = buildStageTimeline(events);
+
+      // Deploy stage should be SUCCESS because kind contains 'deploy' keyword
+      expect(timeline[3].stage).toBe('DEPLOY');
+      expect(timeline[3].status).toBe('SUCCESS');
+      // Other stages should remain PENDING
+      expect(timeline[0].status).toBe('PENDING');
+      expect(timeline[1].status).toBe('PENDING');
+      expect(timeline[2].status).toBe('PENDING');
     });
 
     // Scenario 1: Happy path - all 4 stages end in SUCCESS
