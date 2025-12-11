@@ -1,12 +1,14 @@
 /**
- * Operator Routes - VTID-0509 + VTID-0510 + VTID-0525
+ * Operator Routes - VTID-0509 + VTID-0510 + VTID-0525 + VTID-0531
  *
  * VTID-0509: Operator Console API (chat, heartbeat, history, upload, session)
  * VTID-0510: Software Version Tracking (deployments)
  * VTID-0525: Operator Command Hub (NL -> Schema -> Deploy Orchestrator)
+ * VTID-0531: Operator Chat → OASIS Integration & Thread/VTID Hardening
  *
  * Final API endpoints (after mounting at /api/v1/operator):
  * - POST /api/v1/operator/chat - Operator chat with AI
+ * - GET  /api/v1/operator/chat/:threadId - Get chat thread history (VTID-0531)
  * - POST /api/v1/operator/command - Natural language command (VTID-0525)
  * - POST /api/v1/operator/deploy - Deploy orchestrator (VTID-0525)
  * - GET  /api/v1/operator/health - Health check
@@ -23,7 +25,17 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { processMessage } from '../services/ai-orchestrator';
-import { ingestOperatorEvent, getTasksSummary, getRecentEvents, getCicdHealth, getOperatorHistory } from '../services/operator-service';
+import {
+  ingestOperatorEvent,
+  getTasksSummary,
+  getRecentEvents,
+  getCicdHealth,
+  getOperatorHistory,
+  ingestChatMessageEvent,
+  validateVtidExists,
+  getChatThreadHistory
+} from '../services/operator-service';
+import { OperatorChatMessageSchema, OperatorChatRole, OperatorChatMode } from '../types/operator-chat';
 import { getDeploymentHistory, getNextSWV, insertSoftwareVersion } from '../lib/versioning';
 // VTID-0525-B: naturalLanguageService disabled for MVP - using simple command matching
 // import { naturalLanguageService } from '../services/natural-language-service';
@@ -41,13 +53,8 @@ const router = Router();
 
 // ==================== VTID-0509 Schemas ====================
 
-const ChatMessageSchema = z.object({
-  message: z.string().min(1, "Message is required"),
-  attachments: z.array(z.object({
-    oasis_ref: z.string(),
-    kind: z.enum(['image', 'video', 'file'])
-  })).optional().default([])
-});
+// VTID-0531: Use extended schema from types/operator-chat.ts (OperatorChatMessageSchema)
+// which adds threadId, vtid, role, mode, metadata to the original ChatMessageSchema
 
 const HeartbeatSessionSchema = z.object({
   status: z.enum(['live', 'standby'])
@@ -65,13 +72,15 @@ const FileUploadSchema = z.object({
 
 /**
  * POST /chat → /api/v1/operator/chat
+ * VTID-0531: Extended with threadId, vtid, role, mode support and unified OASIS event logging
  */
 router.post('/chat', async (req: Request, res: Response) => {
   const requestId = randomUUID();
   console.log(`[Operator Chat] Request ${requestId} started`);
 
   try {
-    const validation = ChatMessageSchema.safeParse(req.body);
+    // VTID-0531: Use extended schema with threadId, vtid, role, mode
+    const validation = OperatorChatMessageSchema.safeParse(req.body);
     if (!validation.success) {
       console.error(`[Operator Chat] Validation failed:`, validation.error.errors);
       return res.status(400).json({
@@ -81,60 +90,82 @@ router.post('/chat', async (req: Request, res: Response) => {
       });
     }
 
-    const { message, attachments } = validation.data;
+    const { message, attachments, role, mode, metadata } = validation.data;
 
-    // Log operator.chat.request event
-    await ingestOperatorEvent({
-      vtid: 'VTID-0509',
-      type: 'operator.chat.request',
-      status: 'info',
-      message: `User message: ${message.substring(0, 100)}${message.length > 100 ? '...' : ''}`,
-      payload: {
-        request_id: requestId,
-        message_length: message.length,
-        attachment_count: attachments.length
+    // VTID-0531: Normalize threadId - generate if missing
+    const threadId = validation.data.threadId || randomUUID();
+    const createdAt = new Date().toISOString();
+
+    // VTID-0531: Validate VTID if provided (warn but don't fail)
+    let validatedVtid: string | undefined = validation.data.vtid;
+    if (validatedVtid) {
+      const vtidExists = await validateVtidExists(validatedVtid);
+      if (!vtidExists) {
+        console.warn(`[Operator Chat] VTID validation failed for ${validatedVtid}, continuing without VTID link`);
+        // Don't clear vtid - still include in payload but vtid column will be null
       }
+    }
+
+    // VTID-0531: Log operator message with unified event type
+    const operatorEventResult = await ingestChatMessageEvent({
+      threadId,
+      vtid: validatedVtid,
+      role: role as OperatorChatRole,
+      mode: mode as OperatorChatMode,
+      message: message,
+      attachmentsCount: attachments.length,
+      metadata
     });
+
+    const operatorMessageId = operatorEventResult.eventId || requestId;
 
     // Call AI orchestrator
     const aiResult = await processMessage({
       text: message,
       attachments: attachments,
       oasisContext: {
-        vtid: 'VTID-0509',
+        vtid: validatedVtid || 'VTID-0509',
         request_id: requestId
       }
     });
 
-    // Log operator.chat.response event
-    await ingestOperatorEvent({
-      vtid: 'VTID-0509',
-      type: 'operator.chat.response',
-      status: 'success',
-      message: `AI response generated: ${aiResult.reply.substring(0, 100)}${aiResult.reply.length > 100 ? '...' : ''}`,
-      payload: {
+    // VTID-0531: Log assistant response with unified event type
+    const assistantEventResult = await ingestChatMessageEvent({
+      threadId,
+      vtid: validatedVtid,
+      role: 'assistant',
+      mode: mode as OperatorChatMode,
+      message: aiResult.reply,
+      metadata: {
         request_id: requestId,
-        reply_length: aiResult.reply.length
+        ...(aiResult.meta || {})
       }
     });
 
-    console.log(`[Operator Chat] Request ${requestId} completed successfully`);
+    const assistantMessageId = assistantEventResult.eventId || randomUUID();
 
+    console.log(`[Operator Chat] Request ${requestId} completed successfully (thread: ${threadId})`);
+
+    // VTID-0531: Extended response with threadId, messageId, createdAt
     return res.status(200).json({
       ok: true,
       reply: aiResult.reply,
       attachments: attachments,
       oasis_ref: `OASIS-CHAT-${requestId.slice(0, 8).toUpperCase()}`,
-      meta: aiResult.meta || {}
+      meta: aiResult.meta || {},
+      // VTID-0531: Extended fields
+      threadId,
+      messageId: assistantMessageId,  // ID of the assistant response event
+      createdAt
     });
 
   } catch (error: any) {
     console.error(`[Operator Chat] Error:`, error);
 
-    // Log error event
+    // Log error event using legacy method (for backwards compatibility)
     await ingestOperatorEvent({
       vtid: 'VTID-0509',
-      type: 'operator.chat.response',
+      type: 'operator.chat.error',
       status: 'error',
       message: `Chat error: ${error.message}`,
       payload: { request_id: requestId, error: error.message }
@@ -143,6 +174,45 @@ router.post('/chat', async (req: Request, res: Response) => {
     return res.status(500).json({
       ok: false,
       error: 'Internal server error',
+      details: error.message
+    });
+  }
+});
+
+/**
+ * GET /chat/:threadId → /api/v1/operator/chat/:threadId
+ * VTID-0531: Thread history read endpoint
+ */
+router.get('/chat/:threadId', async (req: Request, res: Response) => {
+  console.log('[Operator Chat History] Request received');
+
+  try {
+    const { threadId } = req.params;
+
+    // Validate threadId format (UUID)
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!UUID_REGEX.test(threadId)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Invalid threadId format',
+        details: 'threadId must be a valid UUID'
+      });
+    }
+
+    const messages = await getChatThreadHistory(threadId);
+
+    console.log(`[Operator Chat History] Returning ${messages.length} messages for thread ${threadId}`);
+
+    return res.status(200).json({
+      ok: true,
+      data: messages
+    });
+
+  } catch (error: any) {
+    console.error('[Operator Chat History] Error:', error);
+    return res.status(500).json({
+      ok: false,
+      error: 'Failed to fetch chat thread history',
       details: error.message
     });
   }
