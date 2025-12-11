@@ -1467,9 +1467,10 @@ function renderTaskStageDetail(task) {
         const clientInfo = clientStageState.byStage[stage];
 
         // Determine status from API or client
+        // VTID-0530: API now returns SUCCESS instead of COMPLETED
         var stageStatus, startedAt, completedAt, errorAt;
         if (apiEntry) {
-            stageStatus = apiEntry.status; // 'PENDING', 'RUNNING', 'COMPLETED', 'ERROR'
+            stageStatus = apiEntry.status; // 'PENDING', 'RUNNING', 'SUCCESS', 'ERROR' (or legacy 'COMPLETED')
             startedAt = apiEntry.startedAt;
             completedAt = apiEntry.completedAt;
             errorAt = apiEntry.errorAt;
@@ -1477,13 +1478,15 @@ function renderTaskStageDetail(task) {
             // Fallback to client-side computation
             const isCompleted = clientInfo && clientInfo.reached;
             const isCurrent = clientStageState.currentStage === stage;
-            stageStatus = isCompleted ? 'COMPLETED' : isCurrent ? 'RUNNING' : 'PENDING';
+            stageStatus = isCompleted ? 'SUCCESS' : isCurrent ? 'RUNNING' : 'PENDING';
             startedAt = clientInfo && clientInfo.latestEvent ? clientInfo.latestEvent.created_at : null;
         }
 
         const item = document.createElement('li');
+        // VTID-0530: Handle both SUCCESS and legacy COMPLETED
+        const isSuccess = stageStatus === 'SUCCESS' || stageStatus === 'COMPLETED';
         const statusClass = stageStatus === 'ERROR' ? 'task-stage-detail-item-error' :
-                           stageStatus === 'COMPLETED' ? 'task-stage-detail-item-completed' :
+                           isSuccess ? 'task-stage-detail-item-completed task-stage-detail-item-success' :
                            stageStatus === 'RUNNING' ? 'task-stage-detail-item-current' :
                            'task-stage-detail-item-pending';
         item.className = 'task-stage-detail-item ' + statusClass;
@@ -1502,9 +1505,11 @@ function renderTaskStageDetail(task) {
         if (stageStatus === 'ERROR') {
             statusLabel.textContent = 'Error';
             statusLabel.classList.add('task-stage-detail-status-error');
-        } else if (stageStatus === 'COMPLETED') {
-            statusLabel.textContent = 'Completed';
+        } else if (isSuccess) {
+            // VTID-0530: Show "Success" for SUCCESS status (and legacy COMPLETED)
+            statusLabel.textContent = 'Success';
             statusLabel.classList.add('task-stage-detail-status-completed');
+            statusLabel.classList.add('task-stage-detail-status-success');
         } else if (stageStatus === 'RUNNING') {
             statusLabel.textContent = 'Running';
             statusLabel.classList.add('task-stage-detail-status-current');
@@ -1561,6 +1566,7 @@ function renderTaskStageDetail(task) {
 
 /**
  * VTID-0527: Render the vtid-stage-timeline visual component.
+ * VTID-0530: Updated to handle SUCCESS status.
  * Shows a compact visual timeline with markers and timestamps.
  */
 function renderVtidStageTimeline() {
@@ -1577,8 +1583,13 @@ function renderVtidStageTimeline() {
         item.className = 'vtid-stage-timeline-item';
 
         // Marker
+        // VTID-0530: Normalize SUCCESS/COMPLETED to 'success' for CSS class
+        var markerStatus = entry.status.toLowerCase();
+        if (markerStatus === 'completed') {
+            markerStatus = 'success';
+        }
         const marker = document.createElement('div');
-        marker.className = 'vtid-stage-timeline-item-marker vtid-stage-timeline-item-marker--' + entry.status.toLowerCase();
+        marker.className = 'vtid-stage-timeline-item-marker vtid-stage-timeline-item-marker--' + markerStatus;
         item.appendChild(marker);
 
         // Main content
@@ -1591,13 +1602,17 @@ function renderVtidStageTimeline() {
         main.appendChild(title);
 
         // Timestamp meta
+        // VTID-0530: Show "Success" for SUCCESS/COMPLETED status
         var metaText = entry.status;
+        var isSuccess = entry.status === 'SUCCESS' || entry.status === 'COMPLETED';
         if (entry.completedAt) {
-            metaText = 'Completed ' + formatStageTimestamp(entry.completedAt);
+            metaText = 'Success ' + formatStageTimestamp(entry.completedAt);
         } else if (entry.errorAt) {
             metaText = 'Error ' + formatStageTimestamp(entry.errorAt);
         } else if (entry.startedAt) {
-            metaText = 'Started ' + formatStageTimestamp(entry.startedAt);
+            metaText = (isSuccess ? 'Success' : 'Started') + ' ' + formatStageTimestamp(entry.startedAt);
+        } else if (isSuccess) {
+            metaText = 'Success';
         }
 
         const meta = document.createElement('div');
