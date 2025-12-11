@@ -1,13 +1,14 @@
 /**
- * Operator Routes - VTID-0509 + VTID-0510 + VTID-0525 + VTID-0531
+ * Operator Routes - VTID-0509 + VTID-0510 + VTID-0525 + VTID-0531 + VTID-0532
  *
  * VTID-0509: Operator Console API (chat, heartbeat, history, upload, session)
  * VTID-0510: Software Version Tracking (deployments)
  * VTID-0525: Operator Command Hub (NL -> Schema -> Deploy Orchestrator)
  * VTID-0531: Operator Chat → OASIS Integration & Thread/VTID Hardening
+ * VTID-0532: Operator Task Extractor + VTID/Planner Handoff
  *
  * Final API endpoints (after mounting at /api/v1/operator):
- * - POST /api/v1/operator/chat - Operator chat with AI
+ * - POST /api/v1/operator/chat - Operator chat with AI (+ task extraction VTID-0532)
  * - GET  /api/v1/operator/chat/:threadId - Get chat thread history (VTID-0531)
  * - POST /api/v1/operator/command - Natural language command (VTID-0525)
  * - POST /api/v1/operator/deploy - Deploy orchestrator (VTID-0525)
@@ -33,7 +34,9 @@ import {
   getOperatorHistory,
   ingestChatMessageEvent,
   validateVtidExists,
-  getChatThreadHistory
+  getChatThreadHistory,
+  createOperatorTask,
+  CreatedTask
 } from '../services/operator-service';
 import { OperatorChatMessageSchema, OperatorChatRole, OperatorChatMode } from '../types/operator-chat';
 import { getDeploymentHistory, getNextSWV, insertSoftwareVersion } from '../lib/versioning';
@@ -73,6 +76,7 @@ const FileUploadSchema = z.object({
 /**
  * POST /chat → /api/v1/operator/chat
  * VTID-0531: Extended with threadId, vtid, role, mode support and unified OASIS event logging
+ * VTID-0532: Added task detection and automatic VTID/Task creation
  */
 router.post('/chat', async (req: Request, res: Response) => {
   const requestId = randomUUID();
@@ -106,6 +110,26 @@ router.post('/chat', async (req: Request, res: Response) => {
       }
     }
 
+    // VTID-0532: Task detection logic
+    // A message is treated as a task request if:
+    // - mode === 'task', OR
+    // - message starts with '/task ' (case-insensitive, leading spaces allowed)
+    const rawMessage = message ?? '';
+    const isSlashTask = rawMessage.trim().toLowerCase().startsWith('/task ');
+    const isTaskRequest = mode === 'task' || isSlashTask;
+
+    // VTID-0532: Extract raw description for task
+    let rawDescription = '';
+    if (isTaskRequest) {
+      if (isSlashTask) {
+        // "/task Add a Governance History tab..." -> "Add a Governance History tab..."
+        rawDescription = rawMessage.trim().slice(5).trim();
+      } else {
+        // mode === 'task' and no /task prefix - use full message
+        rawDescription = rawMessage;
+      }
+    }
+
     // VTID-0531: Log operator message with unified event type
     const operatorEventResult = await ingestChatMessageEvent({
       threadId,
@@ -118,6 +142,23 @@ router.post('/chat', async (req: Request, res: Response) => {
     });
 
     const operatorMessageId = operatorEventResult.eventId || requestId;
+
+    // VTID-0532: Create VTID + Task if this is a task request
+    let createdTask: CreatedTask | undefined;
+    if (isTaskRequest) {
+      console.log(`[VTID-0532] Task request detected (mode=${mode}, isSlashTask=${isSlashTask})`);
+      createdTask = await createOperatorTask({
+        rawDescription,
+        sourceThreadId: threadId,
+        sourceMessageId: operatorMessageId
+      });
+
+      if (createdTask) {
+        console.log(`[VTID-0532] Task created: ${createdTask.vtid} - "${createdTask.title}"`);
+      } else {
+        console.warn(`[VTID-0532] Task creation failed for request ${requestId}`);
+      }
+    }
 
     // Call AI orchestrator
     const aiResult = await processMessage({
@@ -138,7 +179,9 @@ router.post('/chat', async (req: Request, res: Response) => {
       message: aiResult.reply,
       metadata: {
         request_id: requestId,
-        ...(aiResult.meta || {})
+        ...(aiResult.meta || {}),
+        // VTID-0532: Include created task reference in metadata if task was created
+        ...(createdTask ? { createdTaskVtid: createdTask.vtid } : {})
       }
     });
 
@@ -146,8 +189,8 @@ router.post('/chat', async (req: Request, res: Response) => {
 
     console.log(`[Operator Chat] Request ${requestId} completed successfully (thread: ${threadId})`);
 
-    // VTID-0531: Extended response with threadId, messageId, createdAt
-    return res.status(200).json({
+    // VTID-0531 + VTID-0532: Extended response with threadId, messageId, createdAt, and optional createdTask
+    const response: Record<string, unknown> = {
       ok: true,
       reply: aiResult.reply,
       attachments: attachments,
@@ -157,7 +200,14 @@ router.post('/chat', async (req: Request, res: Response) => {
       threadId,
       messageId: assistantMessageId,  // ID of the assistant response event
       createdAt
-    });
+    };
+
+    // VTID-0532: Add createdTask only when a task was actually created
+    if (createdTask) {
+      response.createdTask = createdTask;
+    }
+
+    return res.status(200).json(response);
 
   } catch (error: any) {
     console.error(`[Operator Chat] Error:`, error);

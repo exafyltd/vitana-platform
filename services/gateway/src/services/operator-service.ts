@@ -1,8 +1,9 @@
 /**
- * VTID-0509 + VTID-0531: Operator Service
+ * VTID-0509 + VTID-0531 + VTID-0532: Operator Service
  * Business logic for operator console - aggregates data from OASIS/CICD
  *
  * VTID-0531: Added OASIS integration for chat messages with thread/vtid support
+ * VTID-0532: Added task extraction, VTID/Task creation, and planner handoff
  */
 
 import fetch from 'node-fetch';
@@ -498,6 +499,422 @@ export async function getChatThreadHistory(threadId: string): Promise<ThreadHist
     }));
   } catch (error: any) {
     console.error(`[Operator Service] Thread history error: ${error.message}`);
+    return [];
+  }
+}
+
+// ==================== VTID-0532: Task Extractor + Planner Handoff ====================
+
+/**
+ * Task creation result
+ */
+export interface CreatedTask {
+  vtid: string;
+  title: string;
+  mode: 'plan-only';
+}
+
+/**
+ * Task spec event metadata payload
+ */
+export interface TaskSpecEventPayload {
+  vtid: string;
+  sourceThreadId: string;
+  sourceMessageId?: string;
+  rawDescription: string;
+  mode: 'plan-only';
+  createdBy: 'operator';
+  module: string;
+  acceptanceCriteria: string[];
+  constraints: string[];
+}
+
+/**
+ * Extract title from raw description
+ * Uses first sentence or first ~100-120 characters
+ */
+function extractTitle(rawDescription: string): string {
+  if (!rawDescription || rawDescription.trim().length === 0) {
+    return 'Untitled Operator Task';
+  }
+
+  const trimmed = rawDescription.trim();
+
+  // Try to get first sentence (ending with . ! or ?)
+  const sentenceMatch = trimmed.match(/^[^.!?]+[.!?]/);
+  if (sentenceMatch && sentenceMatch[0].length <= 120) {
+    return sentenceMatch[0].trim();
+  }
+
+  // Otherwise, take first 100-120 characters at word boundary
+  if (trimmed.length <= 120) {
+    return trimmed;
+  }
+
+  // Find last space before 120 chars
+  const truncated = trimmed.slice(0, 120);
+  const lastSpace = truncated.lastIndexOf(' ');
+  if (lastSpace > 80) {
+    return truncated.slice(0, lastSpace) + '...';
+  }
+
+  return truncated + '...';
+}
+
+/**
+ * Create a VTID for an operator task
+ * Uses the existing VTID generation RPC
+ */
+async function generateVtid(family: string, module: string): Promise<string | null> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    console.error('[VTID-0532] Supabase not configured');
+    return null;
+  }
+
+  try {
+    const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/next_vtid`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_SERVICE_ROLE,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`
+      },
+      body: JSON.stringify({ p_family: family, p_module: module })
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.error(`[VTID-0532] VTID generation failed: ${resp.status} - ${text}`);
+      return null;
+    }
+
+    return (await resp.json()) as string;
+  } catch (error: any) {
+    console.error(`[VTID-0532] VTID generation error: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Insert a task entry into vtid_ledger
+ */
+async function insertTaskEntry(params: {
+  vtid: string;
+  layer: string;
+  module: string;
+  title: string;
+  summary: string;
+  status: string;
+  metadata: Record<string, unknown>;
+}): Promise<boolean> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    console.error('[VTID-0532] Supabase not configured');
+    return false;
+  }
+
+  try {
+    const eventId = randomUUID();
+
+    const payload = {
+      id: eventId,
+      vtid: params.vtid,
+      layer: params.layer,
+      module: params.module,
+      title: params.title,
+      summary: params.summary,
+      status: params.status,
+      tenant: 'vitana',
+      is_test: false,
+      task_family: params.layer,
+      task_module: params.module,
+      metadata: params.metadata,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    const resp = await fetch(`${SUPABASE_URL}/rest/v1/vtid_ledger`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_SERVICE_ROLE,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+        Prefer: 'return=minimal'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.error(`[VTID-0532] Task insert failed: ${resp.status} - ${text}`);
+      return false;
+    }
+
+    console.log(`[VTID-0532] Task entry created: ${params.vtid}`);
+    return true;
+  } catch (error: any) {
+    console.error(`[VTID-0532] Task insert error: ${error.message}`);
+    return false;
+  }
+}
+
+/**
+ * Emit autopilot.task.spec.created event to OASIS
+ */
+export async function emitTaskSpecEvent(params: {
+  vtid: string;
+  title: string;
+  sourceThreadId: string;
+  sourceMessageId?: string;
+  rawDescription: string;
+  module: string;
+}): Promise<{ ok: boolean; eventId?: string; error?: string }> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    console.warn('[VTID-0532] Supabase not configured, skipping task spec event');
+    return { ok: false, error: 'Supabase not configured' };
+  }
+
+  try {
+    const eventId = randomUUID();
+    const timestamp = new Date().toISOString();
+
+    const metadata: TaskSpecEventPayload = {
+      vtid: params.vtid,
+      sourceThreadId: params.sourceThreadId,
+      sourceMessageId: params.sourceMessageId,
+      rawDescription: params.rawDescription,
+      mode: 'plan-only',
+      createdBy: 'operator',
+      module: params.module,
+      acceptanceCriteria: [],
+      constraints: []
+    };
+
+    const dbPayload = {
+      id: eventId,
+      created_at: timestamp,
+      vtid: params.vtid,
+      topic: 'autopilot.task.spec.created',
+      service: 'operator-console',
+      role: 'OPERATOR',
+      model: 'task-extractor',
+      status: 'pending',
+      message: params.title,
+      link: null,
+      metadata
+    };
+
+    const resp = await fetch(`${SUPABASE_URL}/rest/v1/oasis_events`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_SERVICE_ROLE,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+        Prefer: 'return=minimal'
+      },
+      body: JSON.stringify(dbPayload)
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.error(`[VTID-0532] Task spec event failed: ${resp.status} - ${text}`);
+      return { ok: false, error: `Event emit failed: ${resp.status}` };
+    }
+
+    console.log(`[VTID-0532] Task spec event emitted: ${eventId} for ${params.vtid}`);
+    return { ok: true, eventId };
+  } catch (error: any) {
+    console.error(`[VTID-0532] Task spec event error: ${error.message}`);
+    return { ok: false, error: error.message };
+  }
+}
+
+/**
+ * Create VTID + Task entry + Task Spec event for an operator task request
+ * @returns CreatedTask if successful, undefined otherwise
+ */
+export async function createOperatorTask(params: {
+  rawDescription: string;
+  sourceThreadId: string;
+  sourceMessageId?: string;
+}): Promise<CreatedTask | undefined> {
+  const { rawDescription, sourceThreadId, sourceMessageId } = params;
+
+  // Use DEV layer and COMHU (Command Hub) module for operator tasks
+  const layer = 'DEV';
+  const module = 'COMHU';
+
+  // Generate VTID
+  const vtid = await generateVtid(layer, module);
+  if (!vtid) {
+    console.error('[VTID-0532] Failed to generate VTID');
+    return undefined;
+  }
+
+  // Extract title from description
+  const title = extractTitle(rawDescription);
+
+  // Insert task entry
+  const inserted = await insertTaskEntry({
+    vtid,
+    layer,
+    module,
+    title,
+    summary: rawDescription,
+    status: 'pending',
+    metadata: {
+      source: 'operator-chat',
+      threadId: sourceThreadId,
+      createdVia: 'task-extractor'
+    }
+  });
+
+  if (!inserted) {
+    console.error(`[VTID-0532] Failed to insert task entry for ${vtid}`);
+    return undefined;
+  }
+
+  // Emit task spec event
+  const eventResult = await emitTaskSpecEvent({
+    vtid,
+    title,
+    sourceThreadId,
+    sourceMessageId,
+    rawDescription,
+    module
+  });
+
+  if (!eventResult.ok) {
+    console.warn(`[VTID-0532] Task created but spec event failed: ${eventResult.error}`);
+    // Task was still created, so return it
+  }
+
+  console.log(`[VTID-0532] Operator task created: ${vtid} - "${title}"`);
+
+  return {
+    vtid,
+    title,
+    mode: 'plan-only'
+  };
+}
+
+/**
+ * Pending task for planner
+ */
+export interface PendingPlanTask {
+  vtid: string;
+  title: string;
+  description: string;
+  module: string | null;
+  mode: 'plan-only';
+  createdAt: string;
+  sourceThreadId?: string;
+  sourceMessageId?: string;
+}
+
+/**
+ * Get pending tasks for planner agents
+ * Returns tasks that have autopilot.task.spec.created events
+ * and are in pending/scheduled status
+ */
+export async function getPendingPlanTasks(): Promise<PendingPlanTask[]> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    console.warn('[VTID-0532] Supabase not configured, returning empty pending tasks');
+    return [];
+  }
+
+  try {
+    // First, get VTIDs that have autopilot.task.spec.created events
+    const eventsResp = await fetch(
+      `${SUPABASE_URL}/rest/v1/oasis_events?topic=eq.autopilot.task.spec.created&select=vtid,created_at,message,metadata&order=created_at.desc&limit=100`,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_SERVICE_ROLE,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`
+        }
+      }
+    );
+
+    if (!eventsResp.ok) {
+      const text = await eventsResp.text();
+      console.error(`[VTID-0532] Events query failed: ${eventsResp.status} - ${text}`);
+      return [];
+    }
+
+    const events = await eventsResp.json() as Array<{
+      vtid: string;
+      created_at: string;
+      message: string;
+      metadata: TaskSpecEventPayload;
+    }>;
+
+    if (events.length === 0) {
+      console.log('[VTID-0532] No pending task spec events found');
+      return [];
+    }
+
+    // Get unique VTIDs
+    const vtids = [...new Set(events.map(e => e.vtid).filter(Boolean))];
+
+    if (vtids.length === 0) {
+      return [];
+    }
+
+    // Fetch task entries for these VTIDs
+    const vtidList = vtids.map(v => `"${v}"`).join(',');
+    const tasksResp = await fetch(
+      `${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=in.(${vtidList})&status=in.(pending,scheduled)&select=vtid,title,summary,module,status,created_at`,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_SERVICE_ROLE,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`
+        }
+      }
+    );
+
+    if (!tasksResp.ok) {
+      const text = await tasksResp.text();
+      console.error(`[VTID-0532] Tasks query failed: ${tasksResp.status} - ${text}`);
+      return [];
+    }
+
+    const tasks = await tasksResp.json() as Array<{
+      vtid: string;
+      title: string;
+      summary: string;
+      module: string;
+      status: string;
+      created_at: string;
+    }>;
+
+    // Check if any tasks already have a plan event (autopilot.plan.created)
+    // For now, skip this filter as the event type doesn't exist yet
+    // TODO: Add this filter when autopilot.plan.created events are implemented
+
+    // Build the result by joining tasks with their spec events
+    const eventsByVtid = new Map(events.map(e => [e.vtid, e]));
+
+    const pendingTasks: PendingPlanTask[] = tasks
+      .filter(t => eventsByVtid.has(t.vtid))
+      .map(t => {
+        const event = eventsByVtid.get(t.vtid)!;
+        return {
+          vtid: t.vtid,
+          title: t.title,
+          description: t.summary ?? t.title,
+          module: t.module ?? null,
+          mode: 'plan-only' as const,
+          createdAt: t.created_at,
+          sourceThreadId: event.metadata?.sourceThreadId,
+          sourceMessageId: event.metadata?.sourceMessageId
+        };
+      });
+
+    console.log(`[VTID-0532] Found ${pendingTasks.length} pending plan tasks`);
+    return pendingTasks;
+  } catch (error: any) {
+    console.error(`[VTID-0532] Pending plan tasks error: ${error.message}`);
     return [];
   }
 }
