@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { randomUUID } from "crypto";
+import { buildStageTimeline, defaultStageTimeline, type TimelineEvent, type StageTimelineEntry } from '../lib/stage-mapping';
 
 const router = Router();
 
@@ -80,17 +81,90 @@ router.get("/list", async (req: Request, res: Response) => {
 router.get("/:vtid", async (req: Request, res: Response) => {
   try {
     const { vtid } = req.params;
-    if (!/^[A-Z]+-[A-Z0-9]+-\d{4}-\d{4}$/.test(vtid)) return res.status(400).json({ error: "invalid_format" });
+    // VTID-0527-C: Accept both formats:
+    // - Simple: VTID-0516, VTID-0527-B
+    // - Complex: DEV-ABC-0001-0002
+    const VTID_REGEX = /^(VTID-\d{4}(-[A-Za-z0-9]+)?|[A-Z]+-[A-Z0-9]+-\d{4}-\d{4})$/;
+    if (!VTID_REGEX.test(vtid)) {
+      console.log(`[VTID-0527-C] Invalid VTID format: ${vtid}`);
+      return res.status(400).json({ error: "invalid_format", vtid, expected: "VTID-#### or XXX-YYY-####-####" });
+    }
     const { supabaseUrl, svcKey } = getSupabaseConfig();
-    const resp = await fetch(supabaseUrl + "/rest/v1/VtidLedger?vtid=eq." + vtid, {
+
+    // VTID-0527-C: Query vtid_ledger (lowercase) for consistency with tasks.ts
+    const resp = await fetch(supabaseUrl + "/rest/v1/vtid_ledger?vtid=eq." + vtid, {
       headers: { apikey: svcKey, Authorization: "Bearer " + svcKey },
     });
     if (!resp.ok) return res.status(502).json({ error: "database_query_failed" });
     const data = (await resp.json()) as any[];
-    if (data.length === 0) return res.status(404).json({ error: "not_found", message: "VTID not found" });
-    return res.status(200).json(data[0]);
+    if (data.length === 0) return res.status(404).json({ error: "not_found", message: "VTID not found", vtid });
+
+    const row = data[0];
+
+    // VTID-0527-C: Build stage timeline from telemetry events
+    // ALWAYS return 4 entries (PLANNER, WORKER, VALIDATOR, DEPLOY), never null or empty
+    let stageTimeline: StageTimelineEntry[] = defaultStageTimeline();
+    let eventsFound = 0;
+
+    try {
+      console.log(`[VTID-0527-C] Fetching events for VTID: ${vtid}`);
+      const eventsResp = await fetch(
+        `${supabaseUrl}/rest/v1/oasis_events?vtid=eq.${vtid}&select=id,created_at,vtid,kind,status,title,task_stage,source,layer&order=created_at.asc&limit=100`,
+        {
+          headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` },
+        }
+      );
+
+      if (eventsResp.ok) {
+        const events = await eventsResp.json() as TimelineEvent[];
+        eventsFound = events.length;
+        console.log(`[VTID-0527-C] Found ${eventsFound} events for ${vtid}`);
+
+        if (events.length > 0) {
+          stageTimeline = buildStageTimeline(events);
+          console.log(`[VTID-0527-C] Built stage timeline for ${vtid}:`, stageTimeline.map(s => `${s.stage}:${s.status}`).join(', '));
+        } else {
+          console.log(`[VTID-0527-C] No events found for ${vtid}, using default timeline (all PENDING)`);
+        }
+      } else {
+        const errText = await eventsResp.text();
+        console.warn(`[VTID-0527-C] Events query failed for ${vtid}: ${eventsResp.status} - ${errText}`);
+      }
+    } catch (err) {
+      console.warn(`[VTID-0527-C] Failed to fetch events for ${vtid}:`, err);
+    }
+
+    // Ensure stageTimeline always has 4 entries
+    if (!stageTimeline || stageTimeline.length !== 4) {
+      console.warn(`[VTID-0527-C] Invalid stageTimeline, using default`);
+      stageTimeline = defaultStageTimeline();
+    }
+
+    // Return response with stageTimeline
+    return res.status(200).json({
+      ok: true,
+      data: {
+        vtid: row.vtid,
+        layer: row.layer,
+        module: row.module,
+        status: row.status,
+        title: row.title,
+        description: row.summary ?? row.title,
+        summary: row.summary,
+        task_family: row.task_family || row.module,
+        task_type: row.task_type || row.module,
+        assigned_to: row.assigned_to ?? null,
+        metadata: row.metadata ?? null,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        // VTID-0527-C: Stage timeline (always 4 entries, never null)
+        stageTimeline: stageTimeline,
+        _stageTimelineEventsFound: eventsFound,
+      }
+    });
   } catch (e: any) {
-    return res.status(500).json({ error: "internal_server_error" });
+    console.error(`[VTID-0527-C] Error:`, e);
+    return res.status(500).json({ error: "internal_server_error", message: e.message });
   }
 });
 
