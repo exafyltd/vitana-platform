@@ -108,8 +108,9 @@ router.get("/:vtid", async (req: Request, res: Response) => {
 
     try {
       console.log(`[VTID-0527-C] Fetching events for VTID: ${vtid}`);
+      // VTID-0530: Use topic->kind and message->title aliases since events use topic/message not kind/title
       const eventsResp = await fetch(
-        `${supabaseUrl}/rest/v1/oasis_events?vtid=eq.${vtid}&select=id,created_at,vtid,kind,status,title,task_stage,source,layer&order=created_at.asc&limit=100`,
+        `${supabaseUrl}/rest/v1/oasis_events?vtid=eq.${vtid}&select=id,created_at,vtid,kind:topic,status,title:message,task_stage,source,layer&order=created_at.asc&limit=100`,
         {
           headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` },
         }
