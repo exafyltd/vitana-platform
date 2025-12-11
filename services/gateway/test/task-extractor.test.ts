@@ -278,11 +278,11 @@ describe('Task Extractor - VTID-0532', () => {
       expect(response.body.ok).toBe(true);
       expect(response.body.service).toBe('autopilot-api');
       expect(response.body.status).toBe('healthy');
-      expect(response.body.vtid).toBe('VTID-0532');
+      expect(response.body.vtid).toBe('VTID-0533');  // Updated in VTID-0533
       expect(response.body.capabilities).toBeDefined();
       expect(response.body.capabilities.task_extraction).toBe(true);
       expect(response.body.capabilities.planner_handoff).toBe(true);
-      expect(response.body.capabilities.execution).toBe(false);
+      expect(response.body.capabilities.execution).toBe(true);  // Updated in VTID-0533
     });
   });
 });
