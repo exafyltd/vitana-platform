@@ -854,41 +854,37 @@ export class GovernanceController {
 
     /**
      * GET /api/v1/governance/evaluations
-     * Query params: ruleCode?, result?, from?, to?, limit?, offset?
+     * VTID-0406: Query OASIS events for governance.evaluate events
+     * Query params: action?, service?, environment?, result?, from?, to?, limit?, offset?
      */
     async getEvaluations(req: Request, res: Response) {
         try {
-            const tenantId = this.getTenantId(req);
-            const { ruleCode, result, from, to, limit, offset } = req.query;
+            const { action, service, environment, result, from, to, limit, offset } = req.query;
 
             const supabase = getSupabase();
             if (!supabase) {
                 console.warn('[GovernanceController] Supabase not configured - evaluations fetch unavailable');
                 return res.status(503).json({
                     ok: false,
+                    vtid: 'VTID-0406',
                     error: 'SUPABASE_CONFIG_ERROR',
                     message: 'Governance storage is temporarily unavailable'
                 });
             }
-            let query = supabase
-                .from('governance_evaluations')
-                .select(`
-                    *,
-                    governance_rules!inner (
-                        logic
-                    )
-                `)
-                .eq('tenant_id', tenantId)
-                .order('evaluated_at', { ascending: false });
 
-            if (result) {
-                query = query.eq('status', result === 'Pass' ? 'PASS' : 'FAIL');
-            }
+            // VTID-0406: Query oasis_events for governance.evaluate events
+            let query = supabase
+                .from('oasis_events')
+                .select('*')
+                .eq('topic', 'governance.evaluate')
+                .order('created_at', { ascending: false });
+
+            // Apply filters
             if (from) {
-                query = query.gte('evaluated_at', from as string);
+                query = query.gte('created_at', from as string);
             }
             if (to) {
-                query = query.lte('evaluated_at', to as string);
+                query = query.lte('created_at', to as string);
             }
             if (limit) {
                 query = query.limit(parseInt(limit as string));
@@ -899,33 +895,72 @@ export class GovernanceController {
                 query = query.range(parseInt(offset as string), parseInt(offset as string) + (parseInt(limit as string || '50') - 1));
             }
 
-            const { data: evaluations, error } = await query;
+            const { data: events, error } = await query;
 
             if (error) {
-                console.error('Error fetching evaluations:', error);
-                return res.status(500).json({ error: error.message });
+                console.error('[VTID-0406] Error fetching governance evaluations:', error);
+                return res.status(500).json({
+                    ok: false,
+                    vtid: 'VTID-0406',
+                    error: error.message
+                });
             }
 
-            // Transform to EvaluationDTO
-            let evaluationDTOs: EvaluationDTO[] = (evaluations || []).map((ev: any) => ({
-                id: ev.id,
-                time: ev.evaluated_at,
-                ruleCode: (ev.governance_rules as any)?.logic?.rule_code || 'Unknown',
-                target: ev.entity_id,
-                result: ev.status === 'PASS' ? 'Pass' as const : 'Fail' as const,
-                executor: ev.metadata?.executor || 'System',
-                payload: ev.metadata || null
-            }));
+            // VTID-0406: Transform OASIS events to evaluation DTOs
+            let evaluationData = (events || []).map((ev: any) => {
+                const metadata = ev.metadata || {};
+                return {
+                    id: ev.id,
+                    created_at: ev.created_at,
+                    action: metadata.action || ev.message || 'Unknown',
+                    service: metadata.service || ev.service || 'Unknown',
+                    environment: metadata.environment || 'Unknown',
+                    allow: metadata.allow !== undefined ? metadata.allow : (ev.status === 'success'),
+                    violated_rules: (metadata.violated_rules || []).map((rule: any) => ({
+                        rule_id: rule.rule_id || rule.ruleId || rule.id || 'Unknown',
+                        level: rule.level || 'L2',
+                        domain: rule.domain || 'Unknown'
+                    }))
+                };
+            });
 
-            // Filter by ruleCode if provided
-            if (ruleCode) {
-                evaluationDTOs = evaluationDTOs.filter(ev => ev.ruleCode === ruleCode);
+            // Apply client-side filters for metadata fields
+            if (action) {
+                const actionLower = (action as string).toLowerCase();
+                evaluationData = evaluationData.filter((ev: any) =>
+                    ev.action.toLowerCase().includes(actionLower)
+                );
+            }
+            if (service) {
+                const serviceLower = (service as string).toLowerCase();
+                evaluationData = evaluationData.filter((ev: any) =>
+                    ev.service.toLowerCase().includes(serviceLower)
+                );
+            }
+            if (environment) {
+                const envLower = (environment as string).toLowerCase();
+                evaluationData = evaluationData.filter((ev: any) =>
+                    ev.environment.toLowerCase().includes(envLower)
+                );
+            }
+            if (result) {
+                const isAllow = result === 'allow' || result === 'Allow';
+                evaluationData = evaluationData.filter((ev: any) => ev.allow === isAllow);
             }
 
-            res.json(evaluationDTOs);
+            res.json({
+                ok: true,
+                vtid: 'VTID-0406',
+                count: evaluationData.length,
+                data: evaluationData
+            });
         } catch (error: any) {
-            console.error('Error in getEvaluations:', error);
-            res.status(500).json({ error: error.message });
+            console.error('[VTID-0406] Error in getEvaluations:', error);
+            res.status(500).json({
+                ok: false,
+                vtid: 'VTID-0406',
+                error: error.message
+            });
         }
     }
 

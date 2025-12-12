@@ -338,7 +338,14 @@ const state = {
     governanceRulesSourceFilter: '',
     governanceRulesSortColumn: 'id',
     governanceRulesSortDirection: 'asc',
-    selectedGovernanceRule: null
+    selectedGovernanceRule: null,
+
+    // VTID-0406: Governance Evaluations (OASIS Integration)
+    governanceEvaluations: [],
+    governanceEvaluationsLoading: false,
+    governanceEvaluationsError: null,
+    governanceEvaluationsResultFilter: '',
+    governanceEvaluationsFetched: false
 };
 
 // --- VTID-0527: Task Stage Timeline Model ---
@@ -1175,6 +1182,9 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'governance' && tab === 'rules') {
         // VTID-0401: Governance Rules catalog view
         container.appendChild(renderGovernanceRulesView());
+    } else if (moduleKey === 'governance' && tab === 'evaluations') {
+        // VTID-0406: Governance Evaluations viewer (OASIS integration)
+        container.appendChild(renderGovernanceEvaluationsView());
     } else {
         // Placeholder for other modules
         const placeholder = document.createElement('div');
@@ -1849,6 +1859,11 @@ function handleModuleClick(sectionKey) {
 
     state.isSplitScreen = false; // Reset split screen on module change
     state.activeSplitScreenId = null;
+    // VTID-0406: Close drawers when navigating between modules
+    state.selectedTask = null;
+    state.selectedTaskDetail = null;
+    state.selectedTaskDetailLoading = false;
+    state.selectedGovernanceRule = null;
     renderApp();
 }
 
@@ -2543,6 +2558,276 @@ function escapeHtml(str) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
+}
+
+// --- VTID-0406: Governance Evaluations Viewer (OASIS Integration) ---
+
+/**
+ * VTID-0406: Fetches governance evaluation events from OASIS.
+ * Populates state.governanceEvaluations with the evaluation data.
+ */
+async function fetchGovernanceEvaluations() {
+    state.governanceEvaluationsLoading = true;
+    state.governanceEvaluationsFetched = true;
+    renderApp();
+
+    try {
+        const response = await fetch('/api/v1/governance/evaluations');
+        const json = await response.json();
+
+        if (json.ok && json.data) {
+            state.governanceEvaluations = json.data;
+            state.governanceEvaluationsError = null;
+            console.log('[VTID-0406] Governance evaluations loaded:', json.count, 'evaluations');
+        } else {
+            throw new Error(json.error || 'Failed to load governance evaluations');
+        }
+    } catch (error) {
+        console.error('[VTID-0406] Failed to fetch governance evaluations:', error);
+        state.governanceEvaluationsError = error.message;
+        state.governanceEvaluations = [];
+    }
+    state.governanceEvaluationsLoading = false;
+    renderApp();
+}
+
+/**
+ * VTID-0406: Returns filtered governance evaluations based on result filter.
+ */
+function getFilteredGovernanceEvaluations() {
+    var evals = state.governanceEvaluations.slice();
+
+    // Filter by result (allow/deny)
+    if (state.governanceEvaluationsResultFilter) {
+        var isAllow = state.governanceEvaluationsResultFilter === 'allow';
+        evals = evals.filter(function(ev) { return ev.allow === isAllow; });
+    }
+
+    return evals;
+}
+
+/**
+ * VTID-0406: Renders the Governance Evaluations viewer.
+ */
+function renderGovernanceEvaluationsView() {
+    var container = document.createElement('div');
+    container.className = 'gov-evals-container';
+
+    // Auto-fetch evaluations if not yet fetched and not currently loading
+    if (!state.governanceEvaluationsFetched && !state.governanceEvaluationsLoading) {
+        fetchGovernanceEvaluations();
+    }
+
+    // Toolbar
+    var toolbar = document.createElement('div');
+    toolbar.className = 'gov-evals-toolbar';
+
+    // Result filter
+    var resultSelect = document.createElement('select');
+    resultSelect.className = 'form-control governance-filter-select';
+    resultSelect.autocomplete = 'off';
+    resultSelect.name = 'gov-evals-result-filter-' + Date.now();
+    resultSelect.innerHTML =
+        '<option value="">All Results</option>' +
+        '<option value="allow">Allow</option>' +
+        '<option value="deny">Deny</option>';
+    resultSelect.value = state.governanceEvaluationsResultFilter || '';
+    resultSelect.onchange = function(e) {
+        state.governanceEvaluationsResultFilter = e.target.value;
+        renderApp();
+    };
+    toolbar.appendChild(resultSelect);
+
+    // Spacer
+    var spacer = document.createElement('div');
+    spacer.className = 'spacer';
+    toolbar.appendChild(spacer);
+
+    // Count label
+    var filteredEvals = getFilteredGovernanceEvaluations();
+    var countLabel = document.createElement('span');
+    countLabel.className = 'gov-evals-count';
+    countLabel.textContent = filteredEvals.length + ' of ' + state.governanceEvaluations.length + ' evaluations';
+    toolbar.appendChild(countLabel);
+
+    // Refresh button
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn';
+    refreshBtn.textContent = '↻';
+    refreshBtn.onclick = function() { fetchGovernanceEvaluations(); };
+    toolbar.appendChild(refreshBtn);
+
+    container.appendChild(toolbar);
+
+    // Loading state
+    if (state.governanceEvaluationsLoading) {
+        var loading = document.createElement('div');
+        loading.className = 'gov-evals-loading';
+        loading.innerHTML = '<div class="skeleton-table">' +
+            '<div class="skeleton-row"></div>' +
+            '<div class="skeleton-row"></div>' +
+            '<div class="skeleton-row"></div>' +
+            '<div class="skeleton-row"></div>' +
+            '</div>';
+        container.appendChild(loading);
+        return container;
+    }
+
+    // Error state
+    if (state.governanceEvaluationsError) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'gov-evals-error';
+        errorDiv.innerHTML = '<span class="error-icon">⚠</span> Error loading evaluations: ' + state.governanceEvaluationsError;
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    // Empty state
+    if (filteredEvals.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'gov-evals-empty';
+        emptyDiv.innerHTML = '<p>No governance evaluations found.</p>' +
+            '<p class="gov-evals-empty-hint">Evaluations will appear here when the GovernanceEvaluator processes requests.</p>';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    // Table wrapper
+    var tableWrapper = document.createElement('div');
+    tableWrapper.className = 'gov-evals-table-wrapper';
+
+    // Table
+    var table = document.createElement('table');
+    table.className = 'gov-evals-table';
+
+    // Table header
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    var headers = ['Timestamp', 'Action', 'Service', 'Env', 'Result', 'Violated Rules'];
+    headers.forEach(function(headerText) {
+        var th = document.createElement('th');
+        th.textContent = headerText;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    // Table body
+    var tbody = document.createElement('tbody');
+    filteredEvals.forEach(function(evalItem) {
+        var row = document.createElement('tr');
+        row.className = 'gov-eval-row';
+
+        // Timestamp
+        var timestampTd = document.createElement('td');
+        timestampTd.className = 'gov-eval-timestamp';
+        timestampTd.textContent = formatEvalTimestamp(evalItem.created_at);
+        row.appendChild(timestampTd);
+
+        // Action
+        var actionTd = document.createElement('td');
+        actionTd.className = 'gov-eval-action';
+        actionTd.textContent = evalItem.action;
+        row.appendChild(actionTd);
+
+        // Service
+        var serviceTd = document.createElement('td');
+        serviceTd.className = 'gov-eval-service';
+        serviceTd.textContent = evalItem.service;
+        row.appendChild(serviceTd);
+
+        // Environment
+        var envTd = document.createElement('td');
+        envTd.className = 'gov-eval-env';
+        envTd.textContent = evalItem.environment;
+        row.appendChild(envTd);
+
+        // Result (Allow/Deny)
+        var resultTd = document.createElement('td');
+        var resultBadge = document.createElement('span');
+        resultBadge.className = evalItem.allow ? 'gov-eval-allow' : 'gov-eval-deny';
+        resultBadge.textContent = evalItem.allow ? 'Allow' : 'Deny';
+        resultTd.appendChild(resultBadge);
+        row.appendChild(resultTd);
+
+        // Violated Rules (chips)
+        var rulesTd = document.createElement('td');
+        rulesTd.className = 'gov-eval-rules';
+        if (evalItem.violated_rules && evalItem.violated_rules.length > 0) {
+            evalItem.violated_rules.forEach(function(rule) {
+                var chip = document.createElement('span');
+                chip.className = 'gov-rule-chip gov-rule-chip-' + rule.level.toLowerCase();
+                chip.innerHTML = '<span class="gov-rule-chip-id">' + escapeHtml(rule.rule_id) + '</span>' +
+                    '<span class="gov-rule-chip-level">' + rule.level + '</span>';
+                chip.title = rule.domain + ' - ' + rule.level;
+                // VTID-0406: Click chip to open Rule Detail Drawer from VTID-0405
+                chip.onclick = function(e) {
+                    e.stopPropagation();
+                    openRuleDetailByCode(rule.rule_id);
+                };
+                rulesTd.appendChild(chip);
+            });
+        } else {
+            rulesTd.innerHTML = '<span class="gov-eval-no-violations">—</span>';
+        }
+        row.appendChild(rulesTd);
+
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    tableWrapper.appendChild(table);
+    container.appendChild(tableWrapper);
+
+    return container;
+}
+
+/**
+ * VTID-0406: Format timestamp for evaluation display.
+ */
+function formatEvalTimestamp(dateStr) {
+    if (!dateStr) return '-';
+    try {
+        var date = new Date(dateStr);
+        return date.toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+    } catch (e) {
+        return dateStr;
+    }
+}
+
+/**
+ * VTID-0406: Opens the Rule Detail Drawer for a specific rule code.
+ * Links to VTID-0405 Rule Detail Drawer functionality.
+ */
+function openRuleDetailByCode(ruleCode) {
+    // Find the rule in the loaded governance rules
+    var rule = state.governanceRules.find(function(r) {
+        return r.id === ruleCode;
+    });
+
+    if (rule) {
+        state.selectedGovernanceRule = rule;
+        renderApp();
+    } else {
+        // If rules aren't loaded, fetch them first then try again
+        console.log('[VTID-0406] Rule not in cache, fetching rules first:', ruleCode);
+        fetchGovernanceRules().then(function() {
+            var foundRule = state.governanceRules.find(function(r) {
+                return r.id === ruleCode;
+            });
+            if (foundRule) {
+                state.selectedGovernanceRule = foundRule;
+                renderApp();
+            } else {
+                console.warn('[VTID-0406] Rule not found:', ruleCode);
+            }
+        });
+    }
 }
 
 function renderDocsScreensView() {
