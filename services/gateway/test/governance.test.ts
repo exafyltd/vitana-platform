@@ -351,4 +351,170 @@ describe('Governance API', () => {
             expect(Array.isArray(response.body)).toBe(true);
         });
     });
+
+    // VTID-0407: Governance evaluation endpoint tests
+    describe('POST /api/v1/governance/evaluate', () => {
+        it('should allow deploy when no rules exist', async () => {
+            // Mock: no rules in database
+            mockSupabase.mockResolvedValueOnce({
+                data: [],
+                error: null
+            });
+
+            // Mock: OASIS event insert
+            mockSupabase.mockResolvedValueOnce({
+                data: null,
+                error: null
+            });
+
+            const response = await request(app)
+                .post('/api/v1/governance/evaluate')
+                .send({
+                    action: 'deploy',
+                    service: 'gateway',
+                    environment: 'dev',
+                    vtid: 'VTID-TEST-001'
+                })
+                .expect(200);
+
+            expect(response.body.ok).toBe(true);
+            expect(response.body.allowed).toBe(true);
+            expect(response.body.level).toBe('L4');
+            expect(response.body.violations).toEqual([]);
+        });
+
+        it('should block deploy on L1 violation', async () => {
+            // Mock: L1 rule that blocks gateway deploys
+            mockSupabase.mockResolvedValueOnce({
+                data: [{
+                    id: 'rule-1',
+                    tenant_id: 'SYSTEM',
+                    rule_id: 'GOV-DEPLOY-001',
+                    name: 'Block unauthorized services',
+                    level: 'L1',
+                    is_active: true,
+                    logic: {
+                        applies_to: ['deploy'],
+                        allowed_services: ['oasis-operator'],
+                        violation_message: 'Gateway deploys are blocked'
+                    }
+                }],
+                error: null
+            });
+
+            // Mock: OASIS event insert
+            mockSupabase.mockResolvedValueOnce({
+                data: null,
+                error: null
+            });
+
+            const response = await request(app)
+                .post('/api/v1/governance/evaluate')
+                .send({
+                    action: 'deploy',
+                    service: 'gateway',
+                    environment: 'dev',
+                    vtid: 'VTID-TEST-002'
+                })
+                .expect(200);
+
+            expect(response.body.ok).toBe(true);
+            expect(response.body.allowed).toBe(false);
+            expect(response.body.level).toBe('L1');
+            expect(response.body.violations.length).toBe(1);
+            expect(response.body.violations[0].rule_id).toBe('GOV-DEPLOY-001');
+        });
+
+        it('should block deploy on L2 violation (V1 behavior)', async () => {
+            // Mock: L2 rule
+            mockSupabase.mockResolvedValueOnce({
+                data: [{
+                    id: 'rule-2',
+                    tenant_id: 'SYSTEM',
+                    rule_id: 'GOV-ENV-001',
+                    name: 'Block prod deploys',
+                    level: 'L2',
+                    is_active: true,
+                    logic: {
+                        applies_to: ['deploy'],
+                        allowed_environments: ['staging'],
+                        violation_message: 'Dev environment is not allowed'
+                    }
+                }],
+                error: null
+            });
+
+            // Mock: OASIS event insert
+            mockSupabase.mockResolvedValueOnce({
+                data: null,
+                error: null
+            });
+
+            const response = await request(app)
+                .post('/api/v1/governance/evaluate')
+                .send({
+                    action: 'deploy',
+                    service: 'gateway',
+                    environment: 'dev',
+                    vtid: 'VTID-TEST-003'
+                })
+                .expect(200);
+
+            expect(response.body.ok).toBe(true);
+            expect(response.body.allowed).toBe(false);
+            expect(response.body.level).toBe('L2');
+        });
+
+        it('should allow deploy on L3/L4 violations only', async () => {
+            // Mock: L3 rule (warning only)
+            mockSupabase.mockResolvedValueOnce({
+                data: [{
+                    id: 'rule-3',
+                    tenant_id: 'SYSTEM',
+                    rule_id: 'GOV-WARN-001',
+                    name: 'Documentation warning',
+                    level: 'L3',
+                    is_active: true,
+                    logic: {
+                        applies_to: ['deploy'],
+                        conditions: [{ field: 'has_docs', op: 'eq', value: true }]
+                    }
+                }],
+                error: null
+            });
+
+            // Mock: OASIS event insert
+            mockSupabase.mockResolvedValueOnce({
+                data: null,
+                error: null
+            });
+
+            const response = await request(app)
+                .post('/api/v1/governance/evaluate')
+                .send({
+                    action: 'deploy',
+                    service: 'gateway',
+                    environment: 'dev',
+                    vtid: 'VTID-TEST-004'
+                })
+                .expect(200);
+
+            expect(response.body.ok).toBe(true);
+            expect(response.body.allowed).toBe(true);
+            expect(response.body.level).toBe('L3');
+        });
+
+        it('should require action, service, environment fields', async () => {
+            const response = await request(app)
+                .post('/api/v1/governance/evaluate')
+                .send({
+                    action: 'deploy'
+                    // missing service and environment
+                })
+                .expect(400);
+
+            expect(response.body.ok).toBe(false);
+            expect(response.body.error).toContain('Missing required fields');
+        });
+    });
 });
