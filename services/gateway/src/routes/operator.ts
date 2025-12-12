@@ -86,7 +86,7 @@ router.post('/chat', async (req: Request, res: Response) => {
     // VTID-0531: Use extended schema with threadId, vtid, role, mode
     const validation = OperatorChatMessageSchema.safeParse(req.body);
     if (!validation.success) {
-      console.error(`[Operator Chat] Validation failed:`, validation.error.errors);
+      console.warn(`[Operator Chat] Validation failed:`, validation.error.errors);
       return res.status(400).json({
         ok: false,
         error: 'Validation failed',
@@ -210,7 +210,7 @@ router.post('/chat', async (req: Request, res: Response) => {
     return res.status(200).json(response);
 
   } catch (error: any) {
-    console.error(`[Operator Chat] Error:`, error);
+    console.warn(`[Operator Chat] Error:`, error);
 
     // Log error event using legacy method (for backwards compatibility)
     await ingestOperatorEvent({
@@ -259,7 +259,7 @@ router.get('/chat/:threadId', async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error('[Operator Chat History] Error:', error);
+    console.warn('[Operator Chat History] Error:', error);
     return res.status(500).json({
       ok: false,
       error: 'Failed to fetch chat thread history',
@@ -324,7 +324,7 @@ router.get('/heartbeat', async (_req: Request, res: Response) => {
     return res.status(200).json(snapshot);
 
   } catch (error: any) {
-    console.error('[Operator Heartbeat] Error:', error);
+    console.warn('[Operator Heartbeat] Error:', error);
     return res.status(500).json({
       ok: false,
       error: 'Failed to generate heartbeat snapshot',
@@ -355,7 +355,7 @@ router.get('/history', async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error('[Operator History] Error:', error);
+    console.warn('[Operator History] Error:', error);
     return res.status(500).json({
       ok: false,
       error: 'Failed to fetch operator history',
@@ -406,7 +406,7 @@ router.post('/heartbeat/session', async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error('[Operator Session] Error:', error);
+    console.warn('[Operator Session] Error:', error);
     return res.status(500).json({
       ok: false,
       error: 'Failed to update heartbeat session',
@@ -462,7 +462,7 @@ router.post('/upload', async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error('[Operator Upload] Error:', error);
+    console.warn('[Operator Upload] Error:', error);
     return res.status(500).json({
       ok: false,
       error: 'Failed to upload file',
@@ -492,7 +492,7 @@ router.post('/deploy', async (req: Request, res: Response) => {
   try {
     const validation = OperatorDeployRequestSchema.safeParse(req.body);
     if (!validation.success) {
-      console.error(`[Operator Deploy] Validation failed:`, validation.error.errors);
+      console.warn(`[Operator Deploy] Validation failed:`, validation.error.errors);
       return res.status(400).json({
         ok: false,
         vtid: req.body?.vtid || 'UNKNOWN',
@@ -515,7 +515,7 @@ router.post('/deploy', async (req: Request, res: Response) => {
     return res.status(result.ok ? 200 : 500).json(result as OperatorDeployResponse);
 
   } catch (error: any) {
-    console.error(`[Operator Deploy] Error:`, error);
+    console.warn(`[Operator Deploy] Error:`, error);
     return res.status(500).json({
       ok: false,
       vtid: req.body?.vtid || 'UNKNOWN',
@@ -542,7 +542,7 @@ router.post('/command', async (req: Request, res: Response) => {
   try {
     const validation = OperatorCommandRequestSchema.safeParse(req.body);
     if (!validation.success) {
-      console.error(`[VTID-0525-B] Validation failed:`, validation.error.errors);
+      console.warn(`[VTID-0525-B] Validation failed:`, validation.error.errors);
       return res.status(400).json({
         ok: false,
         vtid: 'UNKNOWN',
@@ -582,7 +582,7 @@ router.post('/command', async (req: Request, res: Response) => {
           service: 'gateway',
           environment: 'dev',
         },
-      }).catch(err => console.error('[VTID-0525-B] Event emit failed:', err));
+      }).catch(err => console.warn('[VTID-0525-B] Event emit failed:', err));
 
       // Execute deploy using the shared orchestrator (same as Publish modal)
       const deployResult = await deployOrchestrator.executeDeploy({
@@ -622,7 +622,7 @@ router.post('/command', async (req: Request, res: Response) => {
           service: 'oasis-operator',
           environment: 'dev',
         },
-      }).catch(err => console.error('[VTID-0525-B] Event emit failed:', err));
+      }).catch(err => console.warn('[VTID-0525-B] Event emit failed:', err));
 
       const deployResult = await deployOrchestrator.executeDeploy({
         vtid,
@@ -661,7 +661,7 @@ router.post('/command', async (req: Request, res: Response) => {
           service: 'oasis-projector',
           environment: 'dev',
         },
-      }).catch(err => console.error('[VTID-0525-B] Event emit failed:', err));
+      }).catch(err => console.warn('[VTID-0525-B] Event emit failed:', err));
 
       const deployResult = await deployOrchestrator.executeDeploy({
         vtid,
@@ -694,7 +694,7 @@ router.post('/command', async (req: Request, res: Response) => {
     } as OperatorCommandResponse);
 
   } catch (error: any) {
-    console.error(`[VTID-0525-B] Error:`, error);
+    console.warn(`[VTID-0525-B] Error:`, error);
     return res.status(500).json({
       ok: false,
       vtid: 'UNKNOWN',
@@ -738,7 +738,7 @@ router.get('/deployments', async (req: Request, res: Response) => {
     return res.status(200).json(deployments);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`[Operator] Error fetching deployments: ${errorMessage}`);
+    console.warn(`[Operator] Error fetching deployments: ${errorMessage}`);
     return res.status(500).json({
       ok: false,
       error: 'Internal server error',
@@ -803,7 +803,7 @@ router.post('/deployments', async (req: Request, res: Response) => {
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`[Operator] Error recording deployment: ${errorMessage}`);
+    console.warn(`[Operator] Error recording deployment: ${errorMessage}`);
     return res.status(500).json({
       ok: false,
       error: 'Internal server error',

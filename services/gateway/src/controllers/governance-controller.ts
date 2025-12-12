@@ -11,11 +11,285 @@ const enforcementExecutor = new EnforcementExecutor();
 const violationGenerator = new ViolationGenerator();
 const oasisPipeline = new OasisPipeline();
 
+/**
+ * VTID-0407: Governance Evaluation Result
+ */
+interface GovernanceEvaluationResult {
+    ok: boolean;
+    allowed: boolean;
+    level: 'L1' | 'L2' | 'L3' | 'L4';
+    violations: Array<{
+        rule_id: string;
+        level: string;
+        message: string;
+    }>;
+}
+
 export class GovernanceController {
     private getTenantId(req: Request): string {
         // Enforce tenantId from header or query, default to 'SYSTEM' for governance
         const tenantId = (req.headers['x-tenant-id'] as string) || (req.query.tenantId as string) || 'SYSTEM';
         return tenantId;
+    }
+
+    /**
+     * POST /api/v1/governance/evaluate
+     * VTID-0407: Evaluate governance rules for deploy actions
+     *
+     * Request body:
+     * {
+     *   "action": "deploy",
+     *   "service": "gateway",
+     *   "environment": "dev",
+     *   "vtid": "VTID-XXXX"
+     * }
+     *
+     * Response:
+     * {
+     *   "ok": true,
+     *   "allowed": true|false,
+     *   "level": "L1"|"L2"|"L3"|"L4",
+     *   "violations": [...]
+     * }
+     */
+    async evaluateDeploy(req: Request, res: Response) {
+        try {
+            const tenantId = this.getTenantId(req);
+            const { action, service, environment, vtid } = req.body;
+
+            console.log(`[VTID-0407] Governance evaluation requested: action=${action}, service=${service}, env=${environment}, vtid=${vtid}`);
+
+            // Validate required fields
+            if (!action || !service || !environment) {
+                return res.status(400).json({
+                    ok: false,
+                    error: 'Missing required fields: action, service, environment'
+                });
+            }
+
+            const supabase = getSupabase();
+            if (!supabase) {
+                console.warn('[VTID-0407] Supabase not configured - allowing deploy by default');
+                return res.json({
+                    ok: true,
+                    allowed: true,
+                    level: 'L4',
+                    violations: []
+                } as GovernanceEvaluationResult);
+            }
+
+            // Fetch active governance rules for deploy actions
+            const { data: rules, error: rulesError } = await supabase
+                .from('governance_rules')
+                .select('*')
+                .eq('tenant_id', tenantId)
+                .eq('is_active', true);
+
+            if (rulesError) {
+                console.error('[VTID-0407] Error fetching governance rules:', rulesError);
+                // On error, allow deploy but log warning
+                return res.json({
+                    ok: true,
+                    allowed: true,
+                    level: 'L4',
+                    violations: []
+                } as GovernanceEvaluationResult);
+            }
+
+            // Evaluate rules against the deploy context
+            const violations: Array<{ rule_id: string; level: string; message: string }> = [];
+            let highestViolationLevel = 'L4'; // Default to most permissive
+
+            const context = { action, service, environment, vtid };
+
+            for (const rule of (rules || [])) {
+                const ruleLogic = rule.logic || {};
+                const ruleLevel = rule.level || 'L4';
+                const ruleId = rule.rule_id || ruleLogic.rule_code || rule.id;
+
+                // Check if this rule applies to deploy actions
+                const appliesTo = ruleLogic.applies_to || [];
+                const ruleTarget = ruleLogic.target || {};
+
+                // Rule applies if:
+                // 1. applies_to includes 'deploy' or '*', OR
+                // 2. target.action === 'deploy', OR
+                // 3. Rule domain is 'CICD' or 'DEPLOYMENT'
+                const appliesToDeploy =
+                    appliesTo.includes('deploy') ||
+                    appliesTo.includes('*') ||
+                    ruleTarget.action === 'deploy' ||
+                    (ruleLogic.domain && ['CICD', 'DEPLOYMENT'].includes(ruleLogic.domain.toUpperCase()));
+
+                if (!appliesToDeploy) continue;
+
+                // Evaluate rule logic
+                const evaluation = this.evaluateRuleLogic(rule, context);
+
+                if (!evaluation.passed) {
+                    violations.push({
+                        rule_id: ruleId,
+                        level: ruleLevel,
+                        message: evaluation.message || rule.name || `Rule ${ruleId} violation`
+                    });
+
+                    // Track highest violation level (L1 is most severe)
+                    if (this.compareLevels(ruleLevel, highestViolationLevel) < 0) {
+                        highestViolationLevel = ruleLevel;
+                    }
+                }
+            }
+
+            // Determine if deploy is allowed based on violation levels
+            // L1 = Critical (always block)
+            // L2 = High (block in V1)
+            // L3 = Medium (allow with warning)
+            // L4 = Low (allow)
+            const hasBlockingViolations = violations.some(v => v.level === 'L1' || v.level === 'L2');
+            const allowed = !hasBlockingViolations;
+
+            // Log evaluation to OASIS
+            await this.emitOasisEvent(tenantId, 'governance.deploy.evaluated', {
+                vtid,
+                service,
+                environment,
+                action,
+                allowed,
+                level: violations.length > 0 ? highestViolationLevel : 'L4',
+                violations_count: violations.length
+            });
+
+            console.log(`[VTID-0407] Governance evaluation result: allowed=${allowed}, level=${highestViolationLevel}, violations=${violations.length}`);
+
+            return res.json({
+                ok: true,
+                allowed,
+                level: violations.length > 0 ? highestViolationLevel : 'L4',
+                violations
+            } as GovernanceEvaluationResult);
+
+        } catch (error: any) {
+            console.error('[VTID-0407] Error in evaluateDeploy:', error);
+            // On error, allow deploy but include error info
+            return res.status(500).json({
+                ok: false,
+                allowed: true, // Fail-open to not block deployments on errors
+                level: 'L4',
+                violations: [],
+                error: error.message
+            });
+        }
+    }
+
+    /**
+     * VTID-0407: Evaluate a single rule's logic against the deploy context
+     */
+    private evaluateRuleLogic(rule: any, context: any): { passed: boolean; message?: string } {
+        const logic = rule.logic || {};
+
+        // If rule has explicit conditions
+        if (logic.conditions) {
+            for (const condition of logic.conditions) {
+                const { field, op, value } = condition;
+                const contextValue = this.getNestedValue(context, field);
+
+                if (!this.evaluateCondition(contextValue, op, value)) {
+                    return {
+                        passed: false,
+                        message: condition.message || logic.violation_message || rule.description || `Condition failed: ${field} ${op} ${value}`
+                    };
+                }
+            }
+        }
+
+        // If rule has service restrictions
+        if (logic.allowed_services && context.service) {
+            if (!logic.allowed_services.includes(context.service)) {
+                return {
+                    passed: false,
+                    message: logic.violation_message || `Service '${context.service}' is not in allowed list`
+                };
+            }
+        }
+
+        // If rule has environment restrictions
+        if (logic.allowed_environments && context.environment) {
+            if (!logic.allowed_environments.includes(context.environment)) {
+                return {
+                    passed: false,
+                    message: logic.violation_message || `Environment '${context.environment}' is not allowed`
+                };
+            }
+        }
+
+        // If rule has blocked patterns (for file checks, etc.)
+        if (logic.blocked_patterns && context.files) {
+            for (const file of context.files) {
+                for (const pattern of logic.blocked_patterns) {
+                    if (new RegExp(pattern).test(file)) {
+                        return {
+                            passed: false,
+                            message: logic.violation_message || `File '${file}' matches blocked pattern`
+                        };
+                    }
+                }
+            }
+        }
+
+        return { passed: true };
+    }
+
+    /**
+     * VTID-0407: Compare governance levels (returns negative if a < b, positive if a > b, 0 if equal)
+     */
+    private compareLevels(a: string, b: string): number {
+        const levelOrder: Record<string, number> = { 'L1': 1, 'L2': 2, 'L3': 3, 'L4': 4 };
+        return (levelOrder[a] || 4) - (levelOrder[b] || 4);
+    }
+
+    /**
+     * VTID-0407: Get nested value from object using dot notation
+     */
+    private getNestedValue(obj: any, path: string): any {
+        return path.split('.').reduce((curr, key) => curr?.[key], obj);
+    }
+
+    /**
+     * VTID-0407: Evaluate a condition with various operators
+     */
+    private evaluateCondition(contextValue: any, op: string, value: any): boolean {
+        switch (op) {
+            case 'eq':
+            case '==':
+            case '===':
+                return contextValue === value;
+            case 'neq':
+            case '!=':
+            case '!==':
+                return contextValue !== value;
+            case 'gt':
+            case '>':
+                return contextValue > value;
+            case 'gte':
+            case '>=':
+                return contextValue >= value;
+            case 'lt':
+            case '<':
+                return contextValue < value;
+            case 'lte':
+            case '<=':
+                return contextValue <= value;
+            case 'contains':
+                return String(contextValue).includes(String(value));
+            case 'in':
+                return Array.isArray(value) && value.includes(contextValue);
+            case 'not_in':
+                return Array.isArray(value) && !value.includes(contextValue);
+            case 'matches':
+                return new RegExp(value).test(String(contextValue));
+            default:
+                return true; // Unknown operator - pass by default
+        }
     }
 
     /**

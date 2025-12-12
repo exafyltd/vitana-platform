@@ -246,6 +246,45 @@ export const cicdEvents = {
         environment,
       },
     }),
+
+  // ==================== Governance Deploy Events (VTID-0407) ====================
+  governanceDeployBlocked: (
+    vtid: string,
+    service: string,
+    level: string,
+    violations: Array<{ rule_id: string; level: string; message: string }>
+  ) =>
+    emitOasisEvent({
+      vtid,
+      type: 'governance.deploy.blocked',
+      source: 'gateway-governance',
+      status: 'warning',
+      message: `Deploy blocked by governance: ${service} (${violations.length} violation${violations.length !== 1 ? 's' : ''})`,
+      payload: {
+        service,
+        level,
+        violations,
+        blocked_at: new Date().toISOString(),
+      },
+    }),
+
+  governanceDeployAllowed: (
+    vtid: string,
+    service: string,
+    level: string
+  ) =>
+    emitOasisEvent({
+      vtid,
+      type: 'governance.deploy.allowed',
+      source: 'gateway-governance',
+      status: 'success',
+      message: `Deploy allowed by governance: ${service}`,
+      payload: {
+        service,
+        level,
+        allowed_at: new Date().toISOString(),
+      },
+    }),
 };
 
 export default cicdEvents;

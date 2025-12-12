@@ -315,6 +315,10 @@ const state = {
     // Publish Modal (VTID-0517)
     showPublishModal: false,
 
+    // VTID-0407: Governance Blocked Modal
+    showGovernanceBlockedModal: false,
+    governanceBlockedData: null, // { level, violations, service, vtid }
+
     // Toast Notifications (VTID-0517)
     toasts: [],
 
@@ -624,6 +628,9 @@ function renderApp() {
 
     // Publish Modal (VTID-0517)
     if (state.showPublishModal) root.appendChild(renderPublishModal());
+
+    // VTID-0407: Governance Blocked Modal
+    if (state.showGovernanceBlockedModal) root.appendChild(renderGovernanceBlockedModal());
 
     // Toast Notifications (VTID-0517)
     if (state.toasts.length > 0) root.appendChild(renderToastContainer());
@@ -4025,6 +4032,31 @@ function renderPublishModal() {
 
             const result = await response.json();
 
+            // VTID-0407: Check for governance blocked response
+            if (result.blocked === true) {
+                console.log('[VTID-0407] Deploy blocked by governance:', result);
+                state.showPublishModal = false;
+                state.showGovernanceBlockedModal = true;
+                state.governanceBlockedData = {
+                    level: result.level || 'L1',
+                    violations: result.violations || [],
+                    service: payload.service,
+                    vtid: payload.vtid,
+                    swv: selectedVersion.swv
+                };
+
+                // Add to ticker with governance blocked event
+                state.tickerEvents.unshift({
+                    id: Date.now(),
+                    timestamp: new Date().toLocaleTimeString(),
+                    type: 'governance',
+                    content: 'governance.deploy.blocked: ' + selectedVersion.swv + ' deployment stopped'
+                });
+
+                renderApp();
+                return;
+            }
+
             if (!result.ok) {
                 throw new Error(result.error || 'Deploy failed');
             }
@@ -4033,14 +4065,14 @@ function renderPublishModal() {
             state.showPublishModal = false;
 
             const commitShort = selectedVersion.commit ? selectedVersion.commit.substring(0, 7) : '';
-            showToast(`Deployment started: ${selectedVersion.swv} (${commitShort})`, 'success');
+            showToast('Deployment started: ' + selectedVersion.swv + ' (' + commitShort + ')', 'success');
 
-            // Add to ticker with full version details
+            // Add to ticker with full version details and governance allowed event
             state.tickerEvents.unshift({
                 id: Date.now(),
                 timestamp: new Date().toLocaleTimeString(),
-                type: 'operator',
-                content: `Deploy: ${selectedVersion.swv} (${commitShort}) → vitana-dev`
+                type: 'governance',
+                content: 'governance.deploy.allowed: ' + selectedVersion.swv + ' deployment started'
             });
 
             renderApp();
@@ -4049,7 +4081,7 @@ function renderPublishModal() {
             console.error('[VTID-0523-B] Deploy error:', error);
             showToast('Deploy failed: ' + error.message, 'error');
             deployBtn.disabled = false;
-            deployBtn.textContent = `Deploy ${selectedVersion.swv}`;
+            deployBtn.textContent = 'Deploy ' + selectedVersion.swv;
             deployBtn.style.opacity = '1';
         }
     };
@@ -4057,6 +4089,195 @@ function renderPublishModal() {
     footer.appendChild(deployBtn);
     modal.appendChild(footer);
 
+    overlay.appendChild(modal);
+    return overlay;
+}
+
+// --- VTID-0407: Governance Blocked Modal ---
+
+/**
+ * VTID-0407: Render the Governance Blocked modal
+ * Shown when deployment is blocked due to L1/L2 violations
+ */
+function renderGovernanceBlockedModal() {
+    var data = state.governanceBlockedData;
+    if (!data) return null;
+
+    var overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.onclick = function(e) {
+        if (e.target === overlay) {
+            state.showGovernanceBlockedModal = false;
+            state.governanceBlockedData = null;
+            renderApp();
+        }
+    };
+
+    var modal = document.createElement('div');
+    modal.className = 'modal governance-blocked-modal';
+    modal.style.cssText = 'max-width: 560px; width: 90%;';
+
+    // === HEADER ===
+    var header = document.createElement('div');
+    header.className = 'modal-header governance-blocked-header';
+    header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid rgba(239,68,68,0.3); background: rgba(239,68,68,0.08);';
+
+    var titleRow = document.createElement('div');
+    titleRow.style.cssText = 'display: flex; align-items: center; gap: 12px;';
+
+    var iconSpan = document.createElement('span');
+    iconSpan.style.cssText = 'font-size: 24px;';
+    iconSpan.textContent = '\u26D4'; // No entry unicode
+    titleRow.appendChild(iconSpan);
+
+    var title = document.createElement('span');
+    title.textContent = 'Deployment Blocked by Governance';
+    title.style.cssText = 'font-size: 18px; font-weight: 600; color: #f87171;';
+    titleRow.appendChild(title);
+
+    header.appendChild(titleRow);
+
+    var closeBtn = document.createElement('button');
+    closeBtn.innerHTML = '&times;';
+    closeBtn.style.cssText = 'background: none; border: none; color: #888; font-size: 28px; cursor: pointer; padding: 0; line-height: 1;';
+    closeBtn.onclick = function() {
+        state.showGovernanceBlockedModal = false;
+        state.governanceBlockedData = null;
+        renderApp();
+    };
+    header.appendChild(closeBtn);
+    modal.appendChild(header);
+
+    // === BODY ===
+    var body = document.createElement('div');
+    body.className = 'modal-body';
+    body.style.cssText = 'padding: 20px;';
+
+    // Message section
+    var messageSection = document.createElement('div');
+    messageSection.style.cssText = 'margin-bottom: 20px; padding: 14px; background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25); border-radius: 8px;';
+
+    var messageText = document.createElement('p');
+    messageText.style.cssText = 'margin: 0; color: #f8fafc; font-size: 14px; line-height: 1.5;';
+    messageText.textContent = 'Your deployment was stopped because one or more ' + data.level + ' rules were violated. Please address the violations below before attempting to deploy again.';
+    messageSection.appendChild(messageText);
+
+    body.appendChild(messageSection);
+
+    // Deploy info
+    var infoSection = document.createElement('div');
+    infoSection.style.cssText = 'margin-bottom: 20px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; font-size: 13px;';
+    infoSection.innerHTML = '<div style="display: flex; justify-content: space-between; margin-bottom: 6px;"><span style="color: #888;">Version:</span><span style="color: #4ade80;">' + (data.swv || 'N/A') + '</span></div>' +
+        '<div style="display: flex; justify-content: space-between; margin-bottom: 6px;"><span style="color: #888;">Service:</span><span style="color: #fff;">' + (data.service || 'gateway') + '</span></div>' +
+        '<div style="display: flex; justify-content: space-between;"><span style="color: #888;">VTID:</span><span style="color: #60a5fa;">' + (data.vtid || 'N/A') + '</span></div>';
+    body.appendChild(infoSection);
+
+    // Violations label
+    var violationsLabel = document.createElement('div');
+    violationsLabel.style.cssText = 'color: #888; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px;';
+    violationsLabel.textContent = 'Violated Rules (' + (data.violations ? data.violations.length : 0) + ')';
+    body.appendChild(violationsLabel);
+
+    // Violations list
+    var violationsList = document.createElement('div');
+    violationsList.style.cssText = 'display: flex; flex-direction: column; gap: 10px; max-height: 240px; overflow-y: auto;';
+
+    if (data.violations && data.violations.length > 0) {
+        data.violations.forEach(function(violation) {
+            var violationCard = document.createElement('div');
+            violationCard.className = 'governance-violation-card';
+            violationCard.style.cssText = 'padding: 12px 14px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; cursor: pointer; transition: all 0.2s;';
+
+            // Make card clickable to open rule drawer
+            violationCard.onclick = function() {
+                // Set selected rule and navigate to governance rules
+                state.selectedGovernanceRule = {
+                    id: violation.rule_id,
+                    level: violation.level,
+                    title: violation.message
+                };
+                state.showGovernanceBlockedModal = false;
+                state.governanceBlockedData = null;
+                // Navigate to governance rules tab
+                state.currentModuleKey = 'governance';
+                state.currentTab = 'rules';
+                renderApp();
+            };
+
+            violationCard.onmouseenter = function() {
+                violationCard.style.background = 'rgba(255,255,255,0.06)';
+                violationCard.style.borderColor = 'rgba(239,68,68,0.3)';
+            };
+            violationCard.onmouseleave = function() {
+                violationCard.style.background = 'rgba(255,255,255,0.03)';
+                violationCard.style.borderColor = 'rgba(255,255,255,0.1)';
+            };
+
+            var cardHeader = document.createElement('div');
+            cardHeader.style.cssText = 'display: flex; align-items: center; gap: 10px; margin-bottom: 8px;';
+
+            // Rule ID chip
+            var ruleChip = document.createElement('span');
+            ruleChip.className = 'governance-rule-chip';
+            ruleChip.style.cssText = 'padding: 4px 8px; background: rgba(96,165,250,0.15); border: 1px solid rgba(96,165,250,0.3); border-radius: 4px; font-size: 12px; font-weight: 600; color: #60a5fa; font-family: ui-monospace, monospace;';
+            ruleChip.textContent = violation.rule_id || 'UNKNOWN';
+            cardHeader.appendChild(ruleChip);
+
+            // Level indicator
+            var levelBadge = document.createElement('span');
+            var levelColor = violation.level === 'L1' ? '#ef4444' : violation.level === 'L2' ? '#f59e0b' : '#60a5fa';
+            levelBadge.style.cssText = 'padding: 2px 6px; background: ' + levelColor + '22; border: 1px solid ' + levelColor + '44; border-radius: 4px; font-size: 11px; font-weight: 600; color: ' + levelColor + ';';
+            levelBadge.textContent = violation.level || 'L1';
+            cardHeader.appendChild(levelBadge);
+
+            violationCard.appendChild(cardHeader);
+
+            // Message
+            var messageP = document.createElement('p');
+            messageP.style.cssText = 'margin: 0; color: #94a3b8; font-size: 13px; line-height: 1.4;';
+            messageP.textContent = violation.message || 'Rule violation detected';
+            violationCard.appendChild(messageP);
+
+            // Hint to click
+            var hintText = document.createElement('div');
+            hintText.style.cssText = 'margin-top: 8px; font-size: 11px; color: #64748b;';
+            hintText.textContent = 'Click to view rule details \u2192';
+            violationCard.appendChild(hintText);
+
+            violationsList.appendChild(violationCard);
+        });
+    } else {
+        var noViolations = document.createElement('div');
+        noViolations.style.cssText = 'padding: 20px; text-align: center; color: #888;';
+        noViolations.textContent = 'No violation details available';
+        violationsList.appendChild(noViolations);
+    }
+
+    body.appendChild(violationsList);
+    modal.appendChild(body);
+
+    // === FOOTER ===
+    var footer = document.createElement('div');
+    footer.className = 'modal-footer';
+    footer.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.1);';
+
+    var helpText = document.createElement('span');
+    helpText.style.cssText = 'font-size: 12px; color: #64748b;';
+    helpText.textContent = 'Contact admin to request rule exceptions';
+    footer.appendChild(helpText);
+
+    var dismissBtn = document.createElement('button');
+    dismissBtn.className = 'btn';
+    dismissBtn.textContent = 'Dismiss';
+    dismissBtn.style.cssText = 'padding: 10px 20px; background: rgba(255,255,255,0.1); border: none; border-radius: 6px; color: #fff; cursor: pointer;';
+    dismissBtn.onclick = function() {
+        state.showGovernanceBlockedModal = false;
+        state.governanceBlockedData = null;
+        renderApp();
+    };
+    footer.appendChild(dismissBtn);
+
+    modal.appendChild(footer);
     overlay.appendChild(modal);
     return overlay;
 }

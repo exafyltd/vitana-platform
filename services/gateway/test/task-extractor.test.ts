@@ -278,7 +278,7 @@ describe('Task Extractor - VTID-0532', () => {
       expect(response.body.ok).toBe(true);
       expect(response.body.service).toBe('autopilot-api');
       expect(response.body.status).toBe('healthy');
-      expect(response.body.vtid).toBe('VTID-0534');  // Updated in VTID-0534
+      expect(response.body.vtid).toBe('VTID-0535');  // Updated in VTID-0535
       expect(response.body.capabilities).toBeDefined();
       expect(response.body.capabilities.task_extraction).toBe(true);
       expect(response.body.capabilities.planner_handoff).toBe(true);

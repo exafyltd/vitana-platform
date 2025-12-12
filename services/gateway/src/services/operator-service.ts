@@ -102,12 +102,12 @@ export async function ingestOperatorEvent(input: OperatorEventInput): Promise<vo
 
     if (!resp.ok) {
       const text = await resp.text();
-      console.error(`[Operator Service] Event ingest failed: ${resp.status} - ${text}`);
+      console.warn(`[Operator Service] Event ingest failed: ${resp.status} - ${text}`);
     } else {
       console.log(`[Operator Service] Event ingested: ${input.type}`);
     }
   } catch (error: any) {
-    console.error(`[Operator Service] Event ingest error: ${error.message}`);
+    console.warn(`[Operator Service] Event ingest error: ${error.message}`);
   }
 }
 
@@ -134,7 +134,7 @@ export async function getTasksSummary(): Promise<TasksSummary> {
     });
 
     if (!resp.ok) {
-      console.error(`[Operator Service] Tasks query failed: ${resp.status}`);
+      console.warn(`[Operator Service] Tasks query failed: ${resp.status}`);
       return {
         total: 0,
         by_status: { scheduled: 0, in_progress: 0, completed: 0, pending: 0, blocked: 0, cancelled: 0 }
@@ -173,7 +173,7 @@ export async function getTasksSummary(): Promise<TasksSummary> {
     };
 
   } catch (error: any) {
-    console.error(`[Operator Service] Tasks summary error: ${error.message}`);
+    console.warn(`[Operator Service] Tasks summary error: ${error.message}`);
     return {
       total: 0,
       by_status: { scheduled: 0, in_progress: 0, completed: 0, pending: 0, blocked: 0, cancelled: 0 }
@@ -203,7 +203,7 @@ export async function getRecentEvents(limit: number = 10): Promise<RecentEvent[]
     );
 
     if (!resp.ok) {
-      console.error(`[Operator Service] Events query failed: ${resp.status}`);
+      console.warn(`[Operator Service] Events query failed: ${resp.status}`);
       return [];
     }
 
@@ -216,7 +216,7 @@ export async function getRecentEvents(limit: number = 10): Promise<RecentEvent[]
     }));
 
   } catch (error: any) {
-    console.error(`[Operator Service] Recent events error: ${error.message}`);
+    console.warn(`[Operator Service] Recent events error: ${error.message}`);
     return [];
   }
 }
@@ -279,7 +279,7 @@ export async function getOperatorHistory(limit: number = 50): Promise<HistoryEve
       );
 
       if (!fallbackResp.ok) {
-        console.error(`[Operator Service] History fallback query failed: ${fallbackResp.status}`);
+        console.warn(`[Operator Service] History fallback query failed: ${fallbackResp.status}`);
         return [];
       }
 
@@ -314,7 +314,7 @@ export async function getOperatorHistory(limit: number = 50): Promise<HistoryEve
     }));
 
   } catch (error: any) {
-    console.error(`[Operator Service] History error: ${error.message}`);
+    console.warn(`[Operator Service] History error: ${error.message}`);
     return [];
   }
 }
@@ -390,14 +390,14 @@ export async function ingestChatMessageEvent(input: {
 
     if (!resp.ok) {
       const text = await resp.text();
-      console.error(`[Operator Service] Chat event ingest failed: ${resp.status} - ${text}`);
+      console.warn(`[Operator Service] Chat event ingest failed: ${resp.status} - ${text}`);
       return { ok: false, error: `Event ingest failed: ${resp.status}` };
     }
 
     console.log(`[Operator Service] Chat event ingested: ${eventId} (thread: ${input.threadId}, role: ${input.role})`);
     return { ok: true, eventId };
   } catch (error: any) {
-    console.error(`[Operator Service] Chat event ingest error: ${error.message}`);
+    console.warn(`[Operator Service] Chat event ingest error: ${error.message}`);
     return { ok: false, error: error.message };
   }
 }
@@ -475,7 +475,7 @@ export async function getChatThreadHistory(threadId: string): Promise<ThreadHist
 
     if (!resp.ok) {
       const text = await resp.text();
-      console.error(`[Operator Service] Thread history query failed: ${resp.status} - ${text}`);
+      console.warn(`[Operator Service] Thread history query failed: ${resp.status} - ${text}`);
       return [];
     }
 
@@ -499,7 +499,7 @@ export async function getChatThreadHistory(threadId: string): Promise<ThreadHist
       createdAt: e.created_at
     }));
   } catch (error: any) {
-    console.error(`[Operator Service] Thread history error: ${error.message}`);
+    console.warn(`[Operator Service] Thread history error: ${error.message}`);
     return [];
   }
 }
@@ -568,7 +568,7 @@ function extractTitle(rawDescription: string): string {
  */
 async function generateVtid(family: string, module: string): Promise<string | null> {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
-    console.error('[VTID-0532] Supabase not configured');
+    console.warn('[VTID-0532] Supabase not configured');
     return null;
   }
 
@@ -585,13 +585,13 @@ async function generateVtid(family: string, module: string): Promise<string | nu
 
     if (!resp.ok) {
       const text = await resp.text();
-      console.error(`[VTID-0532] VTID generation failed: ${resp.status} - ${text}`);
+      console.warn(`[VTID-0532] VTID generation failed: ${resp.status} - ${text}`);
       return null;
     }
 
     return (await resp.json()) as string;
   } catch (error: any) {
-    console.error(`[VTID-0532] VTID generation error: ${error.message}`);
+    console.warn(`[VTID-0532] VTID generation error: ${error.message}`);
     return null;
   }
 }
@@ -609,7 +609,7 @@ async function insertTaskEntry(params: {
   metadata: Record<string, unknown>;
 }): Promise<boolean> {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
-    console.error('[VTID-0532] Supabase not configured');
+    console.warn('[VTID-0532] Supabase not configured');
     return false;
   }
 
@@ -644,14 +644,14 @@ async function insertTaskEntry(params: {
 
     if (!resp.ok) {
       const text = await resp.text();
-      console.error(`[VTID-0532] Task insert failed: ${resp.status} - ${text}`);
+      console.warn(`[VTID-0532] Task insert failed: ${resp.status} - ${text}`);
       return false;
     }
 
     console.log(`[VTID-0532] Task entry created: ${params.vtid}`);
     return true;
   } catch (error: any) {
-    console.error(`[VTID-0532] Task insert error: ${error.message}`);
+    console.warn(`[VTID-0532] Task insert error: ${error.message}`);
     return false;
   }
 }
@@ -715,14 +715,14 @@ export async function emitTaskSpecEvent(params: {
 
     if (!resp.ok) {
       const text = await resp.text();
-      console.error(`[VTID-0532] Task spec event failed: ${resp.status} - ${text}`);
+      console.warn(`[VTID-0532] Task spec event failed: ${resp.status} - ${text}`);
       return { ok: false, error: `Event emit failed: ${resp.status}` };
     }
 
     console.log(`[VTID-0532] Task spec event emitted: ${eventId} for ${params.vtid}`);
     return { ok: true, eventId };
   } catch (error: any) {
-    console.error(`[VTID-0532] Task spec event error: ${error.message}`);
+    console.warn(`[VTID-0532] Task spec event error: ${error.message}`);
     return { ok: false, error: error.message };
   }
 }
@@ -745,7 +745,7 @@ export async function createOperatorTask(params: {
   // Generate VTID
   const vtid = await generateVtid(layer, module);
   if (!vtid) {
-    console.error('[VTID-0532] Failed to generate VTID');
+    console.warn('[VTID-0532] Failed to generate VTID');
     return undefined;
   }
 
@@ -768,7 +768,7 @@ export async function createOperatorTask(params: {
   });
 
   if (!inserted) {
-    console.error(`[VTID-0532] Failed to insert task entry for ${vtid}`);
+    console.warn(`[VTID-0532] Failed to insert task entry for ${vtid}`);
     return undefined;
   }
 
@@ -836,7 +836,7 @@ export async function getPendingPlanTasks(): Promise<PendingPlanTask[]> {
 
     if (!eventsResp.ok) {
       const text = await eventsResp.text();
-      console.error(`[VTID-0532] Events query failed: ${eventsResp.status} - ${text}`);
+      console.warn(`[VTID-0532] Events query failed: ${eventsResp.status} - ${text}`);
       return [];
     }
 
@@ -874,7 +874,7 @@ export async function getPendingPlanTasks(): Promise<PendingPlanTask[]> {
 
     if (!tasksResp.ok) {
       const text = await tasksResp.text();
-      console.error(`[VTID-0532] Tasks query failed: ${tasksResp.status} - ${text}`);
+      console.warn(`[VTID-0532] Tasks query failed: ${tasksResp.status} - ${text}`);
       return [];
     }
 
@@ -913,7 +913,7 @@ export async function getPendingPlanTasks(): Promise<PendingPlanTask[]> {
     console.log(`[VTID-0532] Found ${pendingTasks.length} pending plan tasks`);
     return pendingTasks;
   } catch (error: any) {
-    console.error(`[VTID-0532] Pending plan tasks error: ${error.message}`);
+    console.warn(`[VTID-0532] Pending plan tasks error: ${error.message}`);
     return [];
   }
 }
@@ -1025,7 +1025,7 @@ export interface ValidationMetadata {
  */
 async function updateTaskStatus(vtid: string, status: AutopilotTaskStatus, metadata?: Record<string, unknown>): Promise<boolean> {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
-    console.error('[VTID-0533] Supabase not configured');
+    console.warn('[VTID-0533] Supabase not configured');
     return false;
   }
 
@@ -1055,14 +1055,14 @@ async function updateTaskStatus(vtid: string, status: AutopilotTaskStatus, metad
 
     if (!resp.ok) {
       const text = await resp.text();
-      console.error(`[VTID-0533] Task status update failed: ${resp.status} - ${text}`);
+      console.warn(`[VTID-0533] Task status update failed: ${resp.status} - ${text}`);
       return false;
     }
 
     console.log(`[VTID-0533] Task ${vtid} status updated to: ${status}`);
     return true;
   } catch (error: any) {
-    console.error(`[VTID-0533] Task status update error: ${error.message}`);
+    console.warn(`[VTID-0533] Task status update error: ${error.message}`);
     return false;
   }
 }
@@ -1113,14 +1113,14 @@ async function emitAutopilotEvent(params: {
 
     if (!resp.ok) {
       const text = await resp.text();
-      console.error(`[VTID-0533] Event emit failed: ${resp.status} - ${text}`);
+      console.warn(`[VTID-0533] Event emit failed: ${resp.status} - ${text}`);
       return { ok: false, error: `Event emit failed: ${resp.status}` };
     }
 
     console.log(`[VTID-0533] Event emitted: ${params.topic} for ${params.vtid} (${eventId})`);
     return { ok: true, eventId };
   } catch (error: any) {
-    console.error(`[VTID-0533] Event emit error: ${error.message}`);
+    console.warn(`[VTID-0533] Event emit error: ${error.message}`);
     return { ok: false, error: error.message };
   }
 }
@@ -1147,7 +1147,7 @@ export async function getTaskInfo(vtid: string): Promise<{ exists: boolean; stat
     );
 
     if (!resp.ok) {
-      console.error(`[VTID-0533] Task info query failed: ${resp.status}`);
+      console.warn(`[VTID-0533] Task info query failed: ${resp.status}`);
       return { exists: false };
     }
 
@@ -1164,7 +1164,7 @@ export async function getTaskInfo(vtid: string): Promise<{ exists: boolean; stat
       metadata: data[0].metadata
     };
   } catch (error: any) {
-    console.error(`[VTID-0533] Task info error: ${error.message}`);
+    console.warn(`[VTID-0533] Task info error: ${error.message}`);
     return { exists: false };
   }
 }
@@ -1381,7 +1381,7 @@ export async function getAutopilotTaskStatus(vtid: string): Promise<TaskStatusRe
     );
 
     if (!resp.ok) {
-      console.error(`[VTID-0533] Task status query failed: ${resp.status}`);
+      console.warn(`[VTID-0533] Task status query failed: ${resp.status}`);
       return null;
     }
 
@@ -1412,7 +1412,7 @@ export async function getAutopilotTaskStatus(vtid: string): Promise<TaskStatusRe
       updatedAt: task.updated_at
     };
   } catch (error: any) {
-    console.error(`[VTID-0533] Task status error: ${error.message}`);
+    console.warn(`[VTID-0533] Task status error: ${error.message}`);
     return null;
   }
 }

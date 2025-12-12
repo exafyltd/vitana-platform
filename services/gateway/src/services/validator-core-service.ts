@@ -142,13 +142,13 @@ async function fetchOasisEvents(vtid: string, topics: string[]): Promise<Autopil
 
     if (!resp.ok) {
       const text = await resp.text();
-      console.error(`[VTID-0535] Events fetch failed: ${resp.status} - ${text}`);
+      console.warn(`[VTID-0535] Events fetch failed: ${resp.status} - ${text}`);
       return [];
     }
 
     return await resp.json() as AutopilotOasisEvent[];
   } catch (error: any) {
-    console.error(`[VTID-0535] Events fetch error: ${error.message}`);
+    console.warn(`[VTID-0535] Events fetch error: ${error.message}`);
     return [];
   }
 }
@@ -445,14 +445,14 @@ async function emitValidationCompletedEvent(
 
     if (!resp.ok) {
       const text = await resp.text();
-      console.error(`[VTID-0535] Validation completed event failed: ${resp.status} - ${text}`);
+      console.warn(`[VTID-0535] Validation completed event failed: ${resp.status} - ${text}`);
       return { ok: false, error: `Event emit failed: ${resp.status}` };
     }
 
     console.log(`[VTID-0535] Validation completed event emitted: ${eventId}`);
     return { ok: true, eventId };
   } catch (error: any) {
-    console.error(`[VTID-0535] Validation completed event error: ${error.message}`);
+    console.warn(`[VTID-0535] Validation completed event error: ${error.message}`);
     return { ok: false, error: error.message };
   }
 }
@@ -508,14 +508,14 @@ async function emitTaskFinalizedEvent(
 
     if (!resp.ok) {
       const text = await resp.text();
-      console.error(`[VTID-0535] Task finalized event failed: ${resp.status} - ${text}`);
+      console.warn(`[VTID-0535] Task finalized event failed: ${resp.status} - ${text}`);
       return { ok: false, error: `Event emit failed: ${resp.status}` };
     }
 
     console.log(`[VTID-0535] Task finalized event emitted: ${eventId}`);
     return { ok: true, eventId };
   } catch (error: any) {
-    console.error(`[VTID-0535] Task finalized event error: ${error.message}`);
+    console.warn(`[VTID-0535] Task finalized event error: ${error.message}`);
     return { ok: false, error: error.message };
   }
 }

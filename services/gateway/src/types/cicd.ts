@@ -149,7 +149,10 @@ export type CicdEventType =
   | 'cicd.deploy.service.succeeded'
   | 'cicd.deploy.service.failed'
   | 'cicd.deploy.service.validated'
-  | 'cicd.deploy.version.recorded';  // VTID-0510: Software version recorded
+  | 'cicd.deploy.version.recorded'  // VTID-0510: Software version recorded
+  // VTID-0407: Governance deploy enforcement events
+  | 'governance.deploy.blocked'
+  | 'governance.deploy.allowed';
 
 export interface CicdOasisEvent {
   vtid: string;

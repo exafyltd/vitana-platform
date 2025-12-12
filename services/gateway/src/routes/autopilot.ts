@@ -78,7 +78,7 @@ router.get('/tasks/pending-plan', async (_req: Request, res: Response) => {
       data: tasks
     });
   } catch (error: any) {
-    console.error('[VTID-0532] Pending plan tasks error:', error);
+    console.warn('[VTID-0532] Pending plan tasks error:', error);
     return res.status(500).json({
       ok: false,
       error: 'Failed to fetch pending plan tasks',
@@ -192,7 +192,7 @@ router.post('/tasks/:vtid/plan', async (req: Request, res: Response) => {
       planSteps: result.planSteps
     });
   } catch (error: any) {
-    console.error(`[VTID-0533] Plan submission error for ${vtid}:`, error);
+    console.warn(`[VTID-0533] Plan submission error for ${vtid}:`, error);
     return res.status(500).json({
       ok: false,
       error: 'Failed to submit plan',
@@ -300,7 +300,7 @@ router.post('/tasks/:vtid/work/start', async (req: Request, res: Response) => {
       worker: result.state
     });
   } catch (error: any) {
-    console.error(`[VTID-0534] Work start error for ${vtid}:`, error);
+    console.warn(`[VTID-0534] Work start error for ${vtid}:`, error);
     return res.status(500).json({
       ok: false,
       error: 'Failed to start work',
@@ -393,7 +393,7 @@ router.post('/tasks/:vtid/work/complete', async (req: Request, res: Response) =>
       worker: result.state
     });
   } catch (error: any) {
-    console.error(`[VTID-0534] Work complete error for ${vtid}:`, error);
+    console.warn(`[VTID-0534] Work complete error for ${vtid}:`, error);
     return res.status(500).json({
       ok: false,
       error: 'Failed to complete work',
@@ -461,7 +461,7 @@ router.post('/tasks/:vtid/validate', async (req: Request, res: Response) => {
       validation: validationResult.result
     });
   } catch (error: any) {
-    console.error(`[VTID-0535] Validation error for ${vtid}:`, error);
+    console.warn(`[VTID-0535] Validation error for ${vtid}:`, error);
     return res.status(500).json({
       ok: false,
       error: 'Failed to run validation',
@@ -544,7 +544,7 @@ router.get('/tasks/:vtid/status', async (req: Request, res: Response) => {
 
     return res.status(200).json(statusResponse);
   } catch (error: any) {
-    console.error(`[VTID-0535] Status error for ${vtid}:`, error);
+    console.warn(`[VTID-0535] Status error for ${vtid}:`, error);
     return res.status(500).json({
       ok: false,
       error: 'Failed to get task status',

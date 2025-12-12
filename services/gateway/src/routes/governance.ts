@@ -5,6 +5,10 @@ const router = Router();
 const controller = new GovernanceController();
 
 // All routes prefixed with /api/v1/governance in index.ts mount
+
+// VTID-0407: Governance evaluation endpoint for deploy enforcement
+router.post('/evaluate', (req, res) => controller.evaluateDeploy(req, res));
+
 router.get('/categories', (req, res) => controller.getCategories(req, res));
 router.get('/rules', (req, res) => controller.getRules(req, res));
 router.get('/rules/:ruleCode', (req, res) => controller.getRuleByCode(req, res));
