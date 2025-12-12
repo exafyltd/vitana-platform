@@ -365,6 +365,21 @@ const state = {
         },
         selectedEvent: null,
         fetched: false
+    },
+
+    // VTID-0150-A: ORB UI State (Global Assistant Overlay)
+    orb: {
+        overlayVisible: false,
+        chatDrawerOpen: false,
+        micActive: false,
+        cameraActive: false,
+        screenShareActive: false,
+        isThinking: false,
+        chatMessages: [
+            // Placeholder messages for UI demonstration
+            { id: 1, role: 'assistant', content: 'Hello! I\'m your Vitana assistant. How can I help you today?', timestamp: new Date().toISOString() }
+        ],
+        chatInputValue: ''
     }
 };
 
@@ -658,6 +673,11 @@ function renderApp() {
     // VTID-0529-B: Hard bundle fingerprint - banner at top, footer at bottom-right
     root.appendChild(renderBundleFingerprintBanner());
     root.appendChild(renderBundleFingerprintFooter());
+
+    // VTID-0150-A: ORB UI & Interaction Shell (Global Assistant Overlay)
+    root.appendChild(renderOrbIdle());
+    root.appendChild(renderOrbOverlay());
+    root.appendChild(renderOrbChatDrawer());
 
     // VTID-0526-E: Restore chat textarea focus after render
     if (savedChatFocus) {
@@ -5309,6 +5329,385 @@ function formatCicdHealthTooltip(healthData) {
     }
 
     return tooltip;
+}
+
+// ==========================================================================
+// VTID-0150-A: ORB UI & Interaction Shell (Global Assistant Overlay)
+// ==========================================================================
+
+/**
+ * VTID-0150-A: SVG Icon definitions for ORB controls (CSP-compliant)
+ */
+const ORB_ICONS = {
+    sparkle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707"/><circle cx="12" cy="12" r="4"/></svg>',
+    close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+    mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>',
+    micOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>',
+    screen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>',
+    camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>',
+    cameraOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"/><path d="M21 21H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3m3-3h6l2 3h4a2 2 0 0 1 2 2v9.34m-7.72-2.06a4 4 0 1 1-5.56-5.56"/></svg>',
+    chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+    send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>'
+};
+
+/**
+ * VTID-0150-A: Renders the ORB Idle State (floating sphere in bottom-left)
+ * @returns {HTMLElement}
+ */
+function renderOrbIdle() {
+    var orb = document.createElement('div');
+    orb.className = 'orb-idle orb-idle-pulse' + (state.orb.overlayVisible ? ' orb-hidden' : '');
+    orb.setAttribute('role', 'button');
+    orb.setAttribute('aria-label', 'Open Vitana Assistant');
+    orb.setAttribute('tabindex', '0');
+
+    // Inner sparkle icon
+    var icon = document.createElement('span');
+    icon.className = 'orb-idle-icon';
+    icon.innerHTML = ORB_ICONS.sparkle;
+    orb.appendChild(icon);
+
+    // Click handler
+    orb.addEventListener('click', function() {
+        console.log('[ORB] Opening overlay...');
+        state.orb.overlayVisible = true;
+        renderApp();
+    });
+
+    // Keyboard accessibility
+    orb.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            state.orb.overlayVisible = true;
+            renderApp();
+        }
+    });
+
+    return orb;
+}
+
+/**
+ * VTID-0150-A: Renders the ORB Overlay (full-screen mode)
+ * @returns {HTMLElement}
+ */
+function renderOrbOverlay() {
+    var overlay = document.createElement('div');
+    overlay.className = 'orb-overlay' + (state.orb.overlayVisible ? ' orb-overlay-visible' : '');
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', 'Vitana Assistant');
+
+    // Block background clicks
+    overlay.addEventListener('click', function(e) {
+        if (e.target === overlay) {
+            // Close overlay when clicking backdrop
+            state.orb.overlayVisible = false;
+            state.orb.chatDrawerOpen = false;
+            renderApp();
+        }
+    });
+
+    // Large centered ORB
+    var largeOrb = document.createElement('div');
+    largeOrb.className = 'orb-large' + (state.orb.isThinking ? ' orb-large-thinking' : ' orb-large-idle');
+    overlay.appendChild(largeOrb);
+
+    // Status text
+    var statusText = document.createElement('div');
+    statusText.className = 'orb-status-text';
+    statusText.textContent = state.orb.isThinking ? 'Thinking...' : 'How can I help you?';
+    overlay.appendChild(statusText);
+
+    // Control row
+    var controls = document.createElement('div');
+    controls.className = 'orb-controls';
+
+    // Close button
+    var closeWrapper = document.createElement('div');
+    closeWrapper.className = 'orb-control-wrapper';
+    var closeBtn = document.createElement('button');
+    closeBtn.className = 'orb-control-btn orb-control-close';
+    closeBtn.setAttribute('aria-label', 'Close');
+    closeBtn.innerHTML = ORB_ICONS.close;
+    closeBtn.addEventListener('click', function() {
+        console.log('[ORB] Closing overlay...');
+        state.orb.overlayVisible = false;
+        state.orb.chatDrawerOpen = false;
+        renderApp();
+    });
+    var closeLabel = document.createElement('span');
+    closeLabel.className = 'orb-control-label';
+    closeLabel.textContent = 'Close';
+    closeWrapper.appendChild(closeBtn);
+    closeWrapper.appendChild(closeLabel);
+    controls.appendChild(closeWrapper);
+
+    // Mic toggle
+    var micWrapper = document.createElement('div');
+    micWrapper.className = 'orb-control-wrapper';
+    var micBtn = document.createElement('button');
+    micBtn.className = 'orb-control-btn' + (state.orb.micActive ? ' orb-control-active' : '');
+    micBtn.setAttribute('aria-label', state.orb.micActive ? 'Mute microphone' : 'Unmute microphone');
+    micBtn.setAttribute('aria-pressed', state.orb.micActive ? 'true' : 'false');
+    micBtn.innerHTML = state.orb.micActive ? ORB_ICONS.mic : ORB_ICONS.micOff;
+    micBtn.addEventListener('click', function() {
+        console.log('[ORB] Mic toggle:', !state.orb.micActive);
+        state.orb.micActive = !state.orb.micActive;
+        renderApp();
+    });
+    var micLabel = document.createElement('span');
+    micLabel.className = 'orb-control-label';
+    micLabel.textContent = state.orb.micActive ? 'Mic On' : 'Mic Off';
+    micWrapper.appendChild(micBtn);
+    micWrapper.appendChild(micLabel);
+    controls.appendChild(micWrapper);
+
+    // Screen share toggle
+    var screenWrapper = document.createElement('div');
+    screenWrapper.className = 'orb-control-wrapper';
+    var screenBtn = document.createElement('button');
+    screenBtn.className = 'orb-control-btn' + (state.orb.screenShareActive ? ' orb-control-active' : '');
+    screenBtn.setAttribute('aria-label', state.orb.screenShareActive ? 'Stop screen share' : 'Start screen share');
+    screenBtn.setAttribute('aria-pressed', state.orb.screenShareActive ? 'true' : 'false');
+    screenBtn.innerHTML = ORB_ICONS.screen;
+    screenBtn.addEventListener('click', function() {
+        console.log('[ORB] Screen share toggle:', !state.orb.screenShareActive);
+        state.orb.screenShareActive = !state.orb.screenShareActive;
+        renderApp();
+    });
+    var screenLabel = document.createElement('span');
+    screenLabel.className = 'orb-control-label';
+    screenLabel.textContent = state.orb.screenShareActive ? 'Sharing' : 'Screen';
+    screenWrapper.appendChild(screenBtn);
+    screenWrapper.appendChild(screenLabel);
+    controls.appendChild(screenWrapper);
+
+    // Camera toggle
+    var cameraWrapper = document.createElement('div');
+    cameraWrapper.className = 'orb-control-wrapper';
+    var cameraBtn = document.createElement('button');
+    cameraBtn.className = 'orb-control-btn' + (state.orb.cameraActive ? ' orb-control-active' : '');
+    cameraBtn.setAttribute('aria-label', state.orb.cameraActive ? 'Turn off camera' : 'Turn on camera');
+    cameraBtn.setAttribute('aria-pressed', state.orb.cameraActive ? 'true' : 'false');
+    cameraBtn.innerHTML = state.orb.cameraActive ? ORB_ICONS.camera : ORB_ICONS.cameraOff;
+    cameraBtn.addEventListener('click', function() {
+        console.log('[ORB] Camera toggle:', !state.orb.cameraActive);
+        state.orb.cameraActive = !state.orb.cameraActive;
+        renderApp();
+    });
+    var cameraLabel = document.createElement('span');
+    cameraLabel.className = 'orb-control-label';
+    cameraLabel.textContent = state.orb.cameraActive ? 'Cam On' : 'Cam Off';
+    cameraWrapper.appendChild(cameraBtn);
+    cameraWrapper.appendChild(cameraLabel);
+    controls.appendChild(cameraWrapper);
+
+    overlay.appendChild(controls);
+
+    // Chat button
+    var chatBtn = document.createElement('button');
+    chatBtn.className = 'orb-chat-btn';
+    chatBtn.innerHTML = ORB_ICONS.chat + ' <span>Open Chat</span>';
+    chatBtn.addEventListener('click', function() {
+        console.log('[ORB] Opening chat drawer...');
+        state.orb.chatDrawerOpen = true;
+        renderApp();
+    });
+    overlay.appendChild(chatBtn);
+
+    return overlay;
+}
+
+/**
+ * VTID-0150-A: Formats timestamp for chat messages
+ */
+function formatOrbChatTime(isoString) {
+    var date = new Date(isoString);
+    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+}
+
+/**
+ * VTID-0150-A: Renders the ORB Chat Drawer (right-side panel)
+ * @returns {HTMLElement}
+ */
+function renderOrbChatDrawer() {
+    var drawer = document.createElement('div');
+    drawer.className = 'orb-chat-drawer' + (state.orb.chatDrawerOpen ? ' orb-chat-drawer-open' : '');
+    drawer.setAttribute('role', 'dialog');
+    drawer.setAttribute('aria-label', 'Vitana Chat');
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'orb-chat-header';
+
+    var titleBlock = document.createElement('div');
+    titleBlock.className = 'orb-chat-title';
+
+    var titleOrb = document.createElement('div');
+    titleOrb.className = 'orb-chat-title-orb';
+    titleBlock.appendChild(titleOrb);
+
+    var titleText = document.createElement('h2');
+    titleText.className = 'orb-chat-title-text';
+    titleText.textContent = 'Vitana Assistant';
+    titleBlock.appendChild(titleText);
+
+    header.appendChild(titleBlock);
+
+    var closeBtn = document.createElement('button');
+    closeBtn.className = 'orb-chat-close';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close chat');
+    closeBtn.addEventListener('click', function() {
+        console.log('[ORB] Closing chat drawer...');
+        state.orb.chatDrawerOpen = false;
+        renderApp();
+    });
+    header.appendChild(closeBtn);
+
+    drawer.appendChild(header);
+
+    // Suggestion chips placeholder
+    var chipsArea = document.createElement('div');
+    chipsArea.className = 'orb-suggestion-chips';
+    var suggestions = ['Show my tasks', 'System status', 'Help me deploy', 'Run tests'];
+    suggestions.forEach(function(suggestion) {
+        var chip = document.createElement('button');
+        chip.className = 'orb-suggestion-chip';
+        chip.textContent = suggestion;
+        chip.addEventListener('click', function() {
+            // Add as user message and echo response
+            orbSendMessage(suggestion);
+        });
+        chipsArea.appendChild(chip);
+    });
+    drawer.appendChild(chipsArea);
+
+    // Messages area
+    var messagesArea = document.createElement('div');
+    messagesArea.className = 'orb-chat-messages';
+
+    if (state.orb.chatMessages.length === 0) {
+        // Empty state
+        var emptyState = document.createElement('div');
+        emptyState.className = 'orb-chat-empty';
+
+        var emptyOrb = document.createElement('div');
+        emptyOrb.className = 'orb-chat-empty-orb';
+        emptyState.appendChild(emptyOrb);
+
+        var emptyText = document.createElement('p');
+        emptyText.className = 'orb-chat-empty-text';
+        emptyText.textContent = 'Start a conversation';
+        emptyState.appendChild(emptyText);
+
+        var emptyHint = document.createElement('p');
+        emptyHint.className = 'orb-chat-empty-hint';
+        emptyHint.textContent = 'Type a message or click a suggestion above';
+        emptyState.appendChild(emptyHint);
+
+        messagesArea.appendChild(emptyState);
+    } else {
+        // Render messages
+        state.orb.chatMessages.forEach(function(msg) {
+            var msgEl = document.createElement('div');
+            msgEl.className = 'orb-chat-message orb-chat-message-' + msg.role;
+
+            var bubble = document.createElement('div');
+            bubble.className = 'orb-chat-bubble';
+            bubble.textContent = msg.content;
+            msgEl.appendChild(bubble);
+
+            var time = document.createElement('span');
+            time.className = 'orb-chat-message-time';
+            time.textContent = formatOrbChatTime(msg.timestamp);
+            msgEl.appendChild(time);
+
+            messagesArea.appendChild(msgEl);
+        });
+    }
+
+    drawer.appendChild(messagesArea);
+
+    // Input area
+    var inputContainer = document.createElement('div');
+    inputContainer.className = 'orb-chat-input-container';
+
+    var input = document.createElement('textarea');
+    input.className = 'orb-chat-input';
+    input.placeholder = 'Type a message...';
+    input.value = state.orb.chatInputValue;
+    input.setAttribute('rows', '1');
+    input.addEventListener('input', function(e) {
+        state.orb.chatInputValue = e.target.value;
+        // Auto-resize
+        e.target.style.height = 'auto';
+        e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
+    });
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            orbSendMessage(state.orb.chatInputValue);
+        }
+    });
+    inputContainer.appendChild(input);
+
+    var sendBtn = document.createElement('button');
+    sendBtn.className = 'orb-chat-send';
+    sendBtn.innerHTML = ORB_ICONS.send;
+    sendBtn.setAttribute('aria-label', 'Send message');
+    sendBtn.disabled = !state.orb.chatInputValue.trim();
+    sendBtn.addEventListener('click', function() {
+        orbSendMessage(state.orb.chatInputValue);
+    });
+    inputContainer.appendChild(sendBtn);
+
+    drawer.appendChild(inputContainer);
+
+    return drawer;
+}
+
+/**
+ * VTID-0150-A: Sends a message in the ORB chat (UI-only, no backend)
+ * @param {string} message - The message to send
+ */
+function orbSendMessage(message) {
+    if (!message || !message.trim()) return;
+
+    console.log('[ORB] Sending message:', message);
+
+    // Add user message
+    state.orb.chatMessages.push({
+        id: Date.now(),
+        role: 'user',
+        content: message.trim(),
+        timestamp: new Date().toISOString()
+    });
+
+    // Clear input
+    state.orb.chatInputValue = '';
+
+    // Simulate thinking
+    state.orb.isThinking = true;
+    renderApp();
+
+    // Simulate echo response after short delay (placeholder behavior)
+    setTimeout(function() {
+        state.orb.chatMessages.push({
+            id: Date.now() + 1,
+            role: 'assistant',
+            content: 'I received your message: "' + message.trim() + '". This is a placeholder response. Backend integration coming soon!',
+            timestamp: new Date().toISOString()
+        });
+        state.orb.isThinking = false;
+        renderApp();
+
+        // Scroll to bottom
+        var messagesEl = document.querySelector('.orb-chat-messages');
+        if (messagesEl) {
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+    }, 800);
 }
 
 // --- Init ---

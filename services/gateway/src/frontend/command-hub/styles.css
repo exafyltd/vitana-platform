@@ -3897,3 +3897,623 @@ body {
   word-break: break-word;
   color: var(--color-text-secondary);
 }
+
+/* ==========================================================================
+   VTID-0150-A: ORB UI & Interaction Shell (Global Assistant Overlay)
+   ========================================================================== */
+
+/* --- ORB Variables --- */
+:root {
+  --orb-outer: #5a6a8a;
+  --orb-mid: #4a5a7a;
+  --orb-core: #3a4a6a;
+  --orb-highlight: rgba(140, 160, 200, 0.4);
+  --orb-glow: rgba(90, 110, 150, 0.5);
+  --orb-size-idle: 72px;
+  --orb-size-large: 280px;
+  --orb-z-idle: 850;
+  --orb-z-overlay: 2500;
+  --orb-z-drawer: 2600;
+}
+
+/* --- ORB Container (Global Overlay Layer) --- */
+.orb-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: var(--orb-z-idle);
+}
+
+/* --- ORB Idle State (Floating Sphere - Nebula Style) --- */
+.orb-idle {
+  position: fixed;
+  bottom: 80px;
+  left: 14px;
+  width: var(--orb-size-idle);
+  height: var(--orb-size-idle);
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at 35% 35%,
+    var(--orb-highlight) 0%,
+    var(--orb-outer) 25%,
+    var(--orb-mid) 50%,
+    var(--orb-core) 75%,
+    #2a3a5a 100%
+  );
+  box-shadow:
+    0 8px 32px var(--orb-glow),
+    0 0 60px rgba(90, 110, 150, 0.3),
+    inset 0 -8px 20px rgba(0, 0, 0, 0.4),
+    inset 0 8px 20px rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  pointer-events: auto;
+  z-index: var(--orb-z-idle);
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* Highlight shimmer effect */
+.orb-idle::before {
+  content: '';
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at 25% 25%,
+    rgba(255, 255, 255, 0.25) 0%,
+    rgba(255, 255, 255, 0.1) 20%,
+    transparent 50%
+  );
+}
+
+/* Subtle inner glow / nebula particles effect */
+.orb-idle::after {
+  content: '';
+  position: absolute;
+  width: 60%;
+  height: 60%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 60% 60%,
+    rgba(180, 190, 220, 0.15) 0%,
+    transparent 70%
+  );
+  animation: orb-nebula-drift 6s ease-in-out infinite;
+}
+
+@keyframes orb-nebula-drift {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.6;
+  }
+  50% {
+    transform: translate(5px, -5px) scale(1.1);
+    opacity: 0.8;
+  }
+}
+
+.orb-idle:hover {
+  transform: scale(1.08);
+  box-shadow:
+    0 10px 40px var(--orb-glow),
+    0 0 80px rgba(90, 110, 150, 0.4),
+    inset 0 -8px 20px rgba(0, 0, 0, 0.4),
+    inset 0 8px 20px rgba(255, 255, 255, 0.1);
+}
+
+.orb-idle:active {
+  transform: scale(0.95);
+}
+
+/* Subtle pulse animation for idle orb */
+.orb-idle-pulse {
+  animation: orb-idle-pulse 4s ease-in-out infinite;
+}
+
+@keyframes orb-idle-pulse {
+  0%, 100% {
+    box-shadow:
+      0 8px 32px var(--orb-glow),
+      0 0 60px rgba(90, 110, 150, 0.3),
+      inset 0 -8px 20px rgba(0, 0, 0, 0.4),
+      inset 0 8px 20px rgba(255, 255, 255, 0.08);
+  }
+  50% {
+    box-shadow:
+      0 8px 40px rgba(90, 110, 150, 0.6),
+      0 0 80px rgba(90, 110, 150, 0.4),
+      inset 0 -8px 20px rgba(0, 0, 0, 0.4),
+      inset 0 8px 20px rgba(255, 255, 255, 0.1);
+  }
+}
+
+/* Inner orb icon - hidden for clean sphere look per design */
+.orb-idle-icon {
+  display: none;
+}
+
+/* Hide idle orb when overlay is open */
+.orb-idle.orb-hidden {
+  opacity: 0;
+  transform: scale(0);
+  pointer-events: none;
+}
+
+/* --- ORB Overlay (Full-Screen Mode) --- */
+.orb-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(200, 210, 220, 0.75);
+  backdrop-filter: blur(8px);
+  z-index: var(--orb-z-overlay);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.4s ease, visibility 0.4s ease;
+}
+
+.orb-overlay.orb-overlay-visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Large centered ORB - Nebula/Galaxy Style */
+.orb-large {
+  width: var(--orb-size-large);
+  height: var(--orb-size-large);
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at 40% 35%,
+    rgba(160, 175, 200, 0.5) 0%,
+    #7080a0 15%,
+    #5a6a8a 30%,
+    #4a5a7a 50%,
+    #3a4a6a 70%,
+    #2a3a5a 100%
+  );
+  box-shadow:
+    0 20px 80px rgba(60, 80, 120, 0.5),
+    0 0 150px rgba(80, 100, 140, 0.3),
+    inset 0 -20px 50px rgba(0, 0, 0, 0.4),
+    inset 0 20px 40px rgba(255, 255, 255, 0.08);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0;
+}
+
+/* Main highlight */
+.orb-large::before {
+  content: '';
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at 30% 25%,
+    rgba(255, 255, 255, 0.3) 0%,
+    rgba(255, 255, 255, 0.15) 15%,
+    transparent 45%
+  );
+}
+
+/* Subtle inner nebula glow */
+.orb-large::after {
+  content: '';
+  position: absolute;
+  width: 70%;
+  height: 70%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 55% 55%,
+    rgba(140, 160, 200, 0.2) 0%,
+    transparent 60%
+  );
+  animation: orb-large-nebula 8s ease-in-out infinite;
+}
+
+@keyframes orb-large-nebula {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.5;
+  }
+  50% {
+    transform: translate(10px, -10px) scale(1.1);
+    opacity: 0.7;
+  }
+}
+
+/* Idle animation for large orb */
+.orb-large-idle {
+  animation: orb-large-idle 5s ease-in-out infinite;
+}
+
+@keyframes orb-large-idle {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+}
+
+/* Thinking animation for large orb */
+.orb-large-thinking {
+  animation: orb-large-thinking 1.5s ease-in-out infinite;
+}
+
+@keyframes orb-large-thinking {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow:
+      0 20px 80px rgba(60, 80, 120, 0.5),
+      0 0 150px rgba(80, 100, 140, 0.3),
+      inset 0 -20px 50px rgba(0, 0, 0, 0.4),
+      inset 0 20px 40px rgba(255, 255, 255, 0.08);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow:
+      0 20px 100px rgba(60, 80, 120, 0.7),
+      0 0 180px rgba(80, 100, 140, 0.5),
+      inset 0 -20px 50px rgba(0, 0, 0, 0.4),
+      inset 0 20px 40px rgba(255, 255, 255, 0.1);
+  }
+}
+
+/* Status text below orb - hidden in overlay mode per screenshot */
+.orb-status-text {
+  display: none;
+}
+
+/* --- ORB Control Row (Fixed at bottom center) --- */
+.orb-controls {
+  position: fixed;
+  bottom: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.95);
+  padding: 12px 16px;
+  border-radius: 32px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.orb-control-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.orb-control-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: #334155;
+}
+
+.orb-control-btn.orb-control-active {
+  color: #3b82f6;
+}
+
+.orb-control-btn.orb-control-active:hover {
+  background: rgba(59, 130, 246, 0.1);
+}
+
+/* Close button - same style as others */
+.orb-control-close {
+  color: #64748b;
+}
+
+.orb-control-close:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: #334155;
+}
+
+.orb-control-icon {
+  width: 24px;
+  height: 24px;
+}
+
+/* Hide labels - controls are icon-only per design */
+.orb-control-label {
+  display: none;
+}
+
+/* Wrapper for control buttons - no labels */
+.orb-control-wrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.orb-control-wrapper .orb-control-label {
+  display: none;
+  opacity: 0.7;
+}
+
+/* Chat button in overlay - hidden per design, chat accessed via control */
+.orb-chat-btn {
+  display: none;
+}
+
+/* --- ORB Chat Drawer --- */
+.orb-chat-drawer {
+  position: fixed;
+  top: 0;
+  right: -420px;
+  width: 420px;
+  height: 100vh;
+  background: var(--color-sidebar-bg);
+  border-left: 1px solid var(--color-border);
+  box-shadow: -8px 0 30px rgba(0, 0, 0, 0.4);
+  z-index: var(--orb-z-drawer);
+  display: flex;
+  flex-direction: column;
+  transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.orb-chat-drawer.orb-chat-drawer-open {
+  right: 0;
+}
+
+/* Drawer Header */
+.orb-chat-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--color-bg);
+}
+
+.orb-chat-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.orb-chat-title-orb {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--orb-primary) 0%, var(--orb-secondary) 100%);
+  box-shadow: 0 2px 10px var(--orb-glow);
+}
+
+.orb-chat-title-text {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.orb-chat-close {
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+  transition: color 0.2s;
+}
+
+.orb-chat-close:hover {
+  color: var(--color-text-primary);
+}
+
+/* Chat Messages Area */
+.orb-chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Suggestion Chips Area (Placeholder) */
+.orb-suggestion-chips {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  background: var(--color-bg);
+}
+
+.orb-suggestion-chip {
+  padding: 6px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.orb-suggestion-chip:hover {
+  background: rgba(139, 92, 246, 0.1);
+  border-color: var(--orb-primary);
+  color: var(--orb-primary);
+}
+
+/* Chat Message Bubble */
+.orb-chat-message {
+  display: flex;
+  flex-direction: column;
+  max-width: 85%;
+}
+
+.orb-chat-message-user {
+  align-self: flex-end;
+}
+
+.orb-chat-message-assistant {
+  align-self: flex-start;
+}
+
+.orb-chat-bubble {
+  padding: 12px 16px;
+  border-radius: 16px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.orb-chat-message-user .orb-chat-bubble {
+  background: var(--orb-primary);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+
+.orb-chat-message-assistant .orb-chat-bubble {
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-bottom-left-radius: 4px;
+}
+
+.orb-chat-message-time {
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+  margin-top: 4px;
+  padding: 0 8px;
+}
+
+/* Chat Input Area */
+.orb-chat-input-container {
+  padding: 16px 20px;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  gap: 12px;
+  background: var(--color-bg);
+}
+
+.orb-chat-input {
+  flex: 1;
+  padding: 12px 16px;
+  background: var(--color-sidebar-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 24px;
+  color: var(--color-text-primary);
+  font-size: 0.9rem;
+  resize: none;
+  font-family: inherit;
+  min-height: 44px;
+  max-height: 120px;
+}
+
+.orb-chat-input:focus {
+  outline: none;
+  border-color: var(--orb-primary);
+}
+
+.orb-chat-input::placeholder {
+  color: var(--color-text-secondary);
+}
+
+.orb-chat-send {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: none;
+  background: var(--orb-primary);
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.orb-chat-send:hover {
+  background: var(--orb-secondary);
+  transform: scale(1.05);
+}
+
+.orb-chat-send:disabled {
+  background: var(--color-border);
+  cursor: not-allowed;
+  transform: none;
+}
+
+.orb-chat-send-icon {
+  width: 20px;
+  height: 20px;
+}
+
+/* Empty state for chat */
+.orb-chat-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+  text-align: center;
+  padding: 40px;
+}
+
+.orb-chat-empty-orb {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--orb-primary) 0%, var(--orb-secondary) 100%);
+  box-shadow: 0 4px 20px var(--orb-glow);
+  margin-bottom: 16px;
+  opacity: 0.6;
+}
+
+.orb-chat-empty-text {
+  font-size: 0.9rem;
+  margin-bottom: 8px;
+}
+
+.orb-chat-empty-hint {
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .orb-chat-drawer {
+    width: 100%;
+    right: -100%;
+  }
+
+  .orb-large {
+    width: 140px;
+    height: 140px;
+  }
+
+  .orb-controls {
+    gap: 12px;
+  }
+
+  .orb-control-btn {
+    width: 48px;
+    height: 48px;
+  }
+}
