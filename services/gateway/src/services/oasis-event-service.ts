@@ -384,7 +384,7 @@ export async function getGovernanceHistory(params: GovernanceHistoryParams): Pro
             };
         }
 
-        const rawEvents = await response.json();
+        const rawEvents = await response.json() as any[];
 
         // Check if there are more results
         const hasMore = rawEvents.length > params.limit;
