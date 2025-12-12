@@ -1,5 +1,5 @@
 /**
- * Autopilot Routes - VTID-0532 + VTID-0533
+ * Autopilot Routes - VTID-0532 + VTID-0533 + VTID-0534 + VTID-0535
  *
  * Planner Handoff API and Execution Pipeline for multi-agent planning workflows.
  *
@@ -15,23 +15,42 @@
  * - POST /api/v1/autopilot/tasks/:vtid/work/complete - Mark work completed on a step
  * - POST /api/v1/autopilot/tasks/:vtid/validate - Submit validation result
  * - GET /api/v1/autopilot/tasks/:vtid/status - Get task status
+ *
+ * VTID-0534 (Worker-Core Engine v1):
+ * - Enhanced work/start and work/complete with step-level state machine
+ * - Worker state reconstruction from OASIS events
+ * - Rich worker section in status endpoint
+ *
+ * VTID-0535 (Validator-Core Engine v1):
+ * - Deterministic validation rules (VAL-RULE-001 to VAL-RULE-006)
+ * - No LLM calls - purely rule-based validation
+ * - Rich validator section in status endpoint
+ * - autopilot.validation.completed and autopilot.task.finalized events
  */
 
 import { Router, Request, Response } from 'express';
 import {
   getPendingPlanTasks,
   submitPlan,
-  emitWorkStarted,
-  emitWorkCompleted,
   emitValidationResult,
   getAutopilotTaskStatus,
   PlanPayload,
   PlanMetadata,
-  WorkStartedPayload,
-  WorkCompletedPayload,
   ValidationResultPayload,
   ValidationMetadata
 } from '../services/operator-service';
+import {
+  startWork,
+  completeWork,
+  getWorkerState,
+  WorkStartRequest,
+  WorkCompleteRequest
+} from '../services/worker-core-service';
+import {
+  runValidation,
+  getValidatorState,
+  ValidateRequest
+} from '../services/validator-core-service';
 
 const router = Router();
 
@@ -184,64 +203,107 @@ router.post('/tasks/:vtid/plan', async (req: Request, res: Response) => {
 
 /**
  * POST /tasks/:vtid/work/start → /api/v1/autopilot/tasks/:vtid/work/start
- * VTID-0533: Worker Skeleton - Mark work started on a step
+ * VTID-0534: Worker-Core Engine - Mark work started on a step
  *
- * Request body:
+ * Request body (v1):
  * {
- *   "stepId": "step-1",
- *   "workerModel": "gemini-flash",
+ *   "step_id": "step-1",
+ *   "step_index": 0,
+ *   "label": "Analyze repository and list services",
+ *   "agent": "Gemini-Worker",
+ *   "executor_type": "llm",
  *   "notes": "optional"
  * }
  *
  * Response:
- * { "ok": true, "eventId": "..." }
+ * {
+ *   "ok": true,
+ *   "eventId": "...",
+ *   "worker": { "overall_status": "in_progress", "steps": [...] }
+ * }
+ *
+ * Error codes:
+ * - 400 + worker.step_not_found: Step not in plan
+ * - 400 + worker.plan_missing: No plan for VTID
+ * - 409 + worker.invalid_transition: Step not in pending state
  */
 router.post('/tasks/:vtid/work/start', async (req: Request, res: Response) => {
   const { vtid } = req.params;
-  const { stepId, workerModel, notes } = req.body;
+  const { step_id, step_index, label, agent, executor_type, notes } = req.body;
 
-  console.log(`[VTID-0533] Work start received for ${vtid}, step: ${stepId}`);
+  console.log(`[VTID-0534] Work start received for ${vtid}, step: ${step_id}`);
 
   // Validate request body
-  if (!stepId || typeof stepId !== 'string') {
+  if (!step_id || typeof step_id !== 'string') {
     return res.status(400).json({
       ok: false,
       error: 'Validation failed',
-      details: 'Missing or invalid "stepId" string'
+      details: 'Missing or invalid "step_id" string'
     });
   }
 
-  if (!workerModel || typeof workerModel !== 'string') {
+  if (typeof step_index !== 'number') {
     return res.status(400).json({
       ok: false,
       error: 'Validation failed',
-      details: 'Missing or invalid "workerModel" string'
+      details: 'Missing or invalid "step_index" number'
+    });
+  }
+
+  if (!label || typeof label !== 'string') {
+    return res.status(400).json({
+      ok: false,
+      error: 'Validation failed',
+      details: 'Missing or invalid "label" string'
+    });
+  }
+
+  if (!agent || typeof agent !== 'string') {
+    return res.status(400).json({
+      ok: false,
+      error: 'Validation failed',
+      details: 'Missing or invalid "agent" string'
+    });
+  }
+
+  if (!executor_type || typeof executor_type !== 'string') {
+    return res.status(400).json({
+      ok: false,
+      error: 'Validation failed',
+      details: 'Missing or invalid "executor_type" string'
     });
   }
 
   try {
-    const result = await emitWorkStarted(vtid, {
-      stepId,
-      workerModel,
+    const result = await startWork(vtid, {
+      step_id,
+      step_index,
+      label,
+      agent,
+      executor_type,
       notes
-    } as WorkStartedPayload);
+    } as WorkStartRequest);
 
     if (!result.ok) {
-      return res.status(400).json({
+      // Determine appropriate HTTP status based on error code
+      const httpStatus = result.error.code === 'worker.invalid_transition' ? 409 : 400;
+      return res.status(httpStatus).json({
         ok: false,
-        error: result.error
+        error: result.error.message,
+        code: result.error.code
       });
     }
 
     return res.status(200).json({
       ok: true,
-      eventId: result.eventId
+      eventId: result.eventId,
+      worker: result.state
     });
   } catch (error: any) {
-    console.error(`[VTID-0533] Work start error for ${vtid}:`, error);
+    console.error(`[VTID-0534] Work start error for ${vtid}:`, error);
     return res.status(500).json({
       ok: false,
-      error: 'Failed to emit work started event',
+      error: 'Failed to start work',
       details: error.message
     });
   }
@@ -249,74 +311,92 @@ router.post('/tasks/:vtid/work/start', async (req: Request, res: Response) => {
 
 /**
  * POST /tasks/:vtid/work/complete → /api/v1/autopilot/tasks/:vtid/work/complete
- * VTID-0533: Worker Skeleton - Mark work completed on a step
+ * VTID-0534: Worker-Core Engine - Mark work completed on a step
  *
- * Request body:
+ * Request body (v1):
  * {
- *   "stepId": "step-1",
- *   "status": "success",
- *   "outputSummary": "short description",
- *   "details": {}
+ *   "step_id": "step-1",
+ *   "step_index": 0,
+ *   "status": "completed",
+ *   "output_summary": "Services identified and categorized.",
+ *   "error": null,
+ *   "agent": "Gemini-Worker"
  * }
  *
  * Response:
- * { "ok": true, "eventId": "..." }
+ * {
+ *   "ok": true,
+ *   "eventId": "...",
+ *   "worker": { "overall_status": "completed", "steps": [...] }
+ * }
+ *
+ * Error codes:
+ * - 400 + worker.step_not_found: Step not in plan
+ * - 400 + worker.plan_missing: No plan for VTID
+ * - 400 + worker.error_required: Error required when status is "failed"
+ * - 409 + worker.invalid_transition: Step not in in_progress state
  */
 router.post('/tasks/:vtid/work/complete', async (req: Request, res: Response) => {
   const { vtid } = req.params;
-  const { stepId, status, outputSummary, details } = req.body;
+  const { step_id, step_index, status, output_summary, error, agent } = req.body;
 
-  console.log(`[VTID-0533] Work complete received for ${vtid}, step: ${stepId}`);
+  console.log(`[VTID-0534] Work complete received for ${vtid}, step: ${step_id}`);
 
   // Validate request body
-  if (!stepId || typeof stepId !== 'string') {
+  if (!step_id || typeof step_id !== 'string') {
     return res.status(400).json({
       ok: false,
       error: 'Validation failed',
-      details: 'Missing or invalid "stepId" string'
+      details: 'Missing or invalid "step_id" string'
     });
   }
 
-  if (!status || !['success', 'failure', 'partial'].includes(status)) {
+  if (typeof step_index !== 'number') {
     return res.status(400).json({
       ok: false,
       error: 'Validation failed',
-      details: 'Missing or invalid "status" (must be "success", "failure", or "partial")'
+      details: 'Missing or invalid "step_index" number'
     });
   }
 
-  if (!outputSummary || typeof outputSummary !== 'string') {
+  if (!status || !['completed', 'failed'].includes(status)) {
     return res.status(400).json({
       ok: false,
       error: 'Validation failed',
-      details: 'Missing or invalid "outputSummary" string'
+      details: 'Missing or invalid "status" (must be "completed" or "failed")'
     });
   }
 
   try {
-    const result = await emitWorkCompleted(vtid, {
-      stepId,
+    const result = await completeWork(vtid, {
+      step_id,
+      step_index,
       status,
-      outputSummary,
-      details
-    } as WorkCompletedPayload);
+      output_summary,
+      error,
+      agent
+    } as WorkCompleteRequest);
 
     if (!result.ok) {
-      return res.status(400).json({
+      // Determine appropriate HTTP status based on error code
+      const httpStatus = result.error.code === 'worker.invalid_transition' ? 409 : 400;
+      return res.status(httpStatus).json({
         ok: false,
-        error: result.error
+        error: result.error.message,
+        code: result.error.code
       });
     }
 
     return res.status(200).json({
       ok: true,
-      eventId: result.eventId
+      eventId: result.eventId,
+      worker: result.state
     });
   } catch (error: any) {
-    console.error(`[VTID-0533] Work complete error for ${vtid}:`, error);
+    console.error(`[VTID-0534] Work complete error for ${vtid}:`, error);
     return res.status(500).json({
       ok: false,
-      error: 'Failed to emit work completed event',
+      error: 'Failed to complete work',
       details: error.message
     });
   }
@@ -324,95 +404,68 @@ router.post('/tasks/:vtid/work/complete', async (req: Request, res: Response) =>
 
 /**
  * POST /tasks/:vtid/validate → /api/v1/autopilot/tasks/:vtid/validate
- * VTID-0533: Validator Skeleton - Submit validation result
+ * VTID-0535: Validator-Core Engine v1 - Run deterministic validation
  *
- * Request body:
+ * Request body (v1):
  * {
- *   "result": {
- *     "status": "approved",
- *     "issues": [
- *       { "code": "MISSING_TESTS", "message": "..." }
- *     ],
- *     "notes": "optional"
- *   },
- *   "metadata": {
- *     "validatorModel": "gpt-5.1",
- *     "validatorRole": "VALIDATOR"
+ *   "mode": "auto",
+ *   "override": null
+ * }
+ *
+ * Response (success):
+ * {
+ *   "ok": true,
+ *   "vtid": "...",
+ *   "validation": {
+ *     "final_status": "success" | "failed",
+ *     "rules_checked": ["VAL-RULE-001", ...],
+ *     "violations": [],
+ *     "summary": "...",
+ *     "validated_at": "..."
  *   }
  * }
  *
- * Response:
- * { "ok": true, "eventId": "..." }
+ * Error codes:
+ * - validator.plan_missing: No plan found for VTID
+ * - validator.worker_state_missing: Cannot reconstruct worker state
+ * - validator.no_steps: Plan has zero steps
  */
 router.post('/tasks/:vtid/validate', async (req: Request, res: Response) => {
   const { vtid } = req.params;
-  const { result, metadata } = req.body;
+  const { mode, override } = req.body;
 
-  console.log(`[VTID-0533] Validation received for ${vtid}`);
+  console.log(`[VTID-0535] Validation requested for ${vtid}`);
 
-  // Validate request body
-  if (!result || typeof result !== 'object') {
-    return res.status(400).json({
-      ok: false,
-      error: 'Validation failed',
-      details: 'Missing or invalid "result" object in request body'
-    });
-  }
-
-  if (!result.status || !['approved', 'rejected'].includes(result.status)) {
-    return res.status(400).json({
-      ok: false,
-      error: 'Validation failed',
-      details: 'Missing or invalid "result.status" (must be "approved" or "rejected")'
-    });
-  }
-
-  if (!metadata || typeof metadata !== 'object') {
-    return res.status(400).json({
-      ok: false,
-      error: 'Validation failed',
-      details: 'Missing or invalid "metadata" object in request body'
-    });
-  }
-
-  if (!metadata.validatorModel || typeof metadata.validatorModel !== 'string') {
-    return res.status(400).json({
-      ok: false,
-      error: 'Validation failed',
-      details: 'Missing or invalid "metadata.validatorModel" string'
-    });
-  }
+  // Build request (mode defaults to 'auto')
+  const validateRequest: ValidateRequest = {
+    mode: mode || 'auto',
+    override: override || null
+  };
 
   try {
-    const eventResult = await emitValidationResult(
-      vtid,
-      {
-        status: result.status,
-        issues: result.issues,
-        notes: result.notes
-      } as ValidationResultPayload,
-      {
-        validatorModel: metadata.validatorModel,
-        validatorRole: metadata.validatorRole || 'VALIDATOR'
-      } as ValidationMetadata
-    );
+    const validationResult = await runValidation(vtid, validateRequest);
 
-    if (!eventResult.ok) {
-      return res.status(400).json({
+    if (!validationResult.ok) {
+      // Return error with appropriate status code
+      const statusCode = validationResult.error.code === 'validator.internal_error' ? 500 : 400;
+      return res.status(statusCode).json({
         ok: false,
-        error: eventResult.error
+        error: validationResult.error.message,
+        code: validationResult.error.code
       });
     }
 
     return res.status(200).json({
       ok: true,
-      eventId: eventResult.eventId
+      vtid,
+      validation: validationResult.result
     });
   } catch (error: any) {
-    console.error(`[VTID-0533] Validation error for ${vtid}:`, error);
+    console.error(`[VTID-0535] Validation error for ${vtid}:`, error);
     return res.status(500).json({
       ok: false,
-      error: 'Failed to emit validation event',
+      error: 'Failed to run validation',
+      code: 'validator.internal_error',
       details: error.message
     });
   }
@@ -420,23 +473,32 @@ router.post('/tasks/:vtid/validate', async (req: Request, res: Response) => {
 
 /**
  * GET /tasks/:vtid/status → /api/v1/autopilot/tasks/:vtid/status
- * VTID-0533: Get task status
+ * VTID-0535: Get task status with worker and validator sections
  *
  * Response:
  * {
+ *   "ok": true,
  *   "vtid": "...",
- *   "status": "planned|in-progress|completed|validated",
- *   "title": "...",
- *   "planSteps": 3,
- *   "validationStatus": "pending|approved|rejected",
- *   "createdAt": "...",
- *   "updatedAt": "..."
+ *   "status": {
+ *     "planner": { ... },
+ *     "worker": {
+ *       "overall_status": "in_progress",
+ *       "steps": [...]
+ *     },
+ *     "validator": {
+ *       "final_status": "pending" | "success" | "failed",
+ *       "summary": "...",
+ *       "rules_checked": [...],
+ *       "violations": [...],
+ *       "validated_at": "..."
+ *     }
+ *   }
  * }
  */
 router.get('/tasks/:vtid/status', async (req: Request, res: Response) => {
   const { vtid } = req.params;
 
-  console.log(`[VTID-0533] Status requested for ${vtid}`);
+  console.log(`[VTID-0535] Status requested for ${vtid}`);
 
   try {
     const taskStatus = await getAutopilotTaskStatus(vtid);
@@ -448,12 +510,41 @@ router.get('/tasks/:vtid/status', async (req: Request, res: Response) => {
       });
     }
 
-    return res.status(200).json({
+    // Get worker state from OASIS events
+    const workerResult = await getWorkerState(vtid);
+
+    // Get validator state from OASIS events (VTID-0535)
+    const validatorState = await getValidatorState(vtid);
+
+    // Build the enhanced status response
+    const statusResponse: Record<string, unknown> = {
       ok: true,
-      ...taskStatus
-    });
+      vtid: taskStatus.vtid,
+      status: {
+        // Planner info
+        planner: {
+          status: taskStatus.status,
+          planSteps: taskStatus.planSteps || 0
+        },
+        // Worker info (VTID-0534)
+        worker: workerResult.ok ? workerResult.state : {
+          overall_status: 'pending',
+          steps: []
+        },
+        // Validator info (VTID-0535)
+        validator: validatorState
+      },
+      // Preserve backward compatibility with flat fields
+      title: taskStatus.title,
+      planSteps: taskStatus.planSteps,
+      validationStatus: validatorState.final_status,
+      createdAt: taskStatus.createdAt,
+      updatedAt: taskStatus.updatedAt
+    };
+
+    return res.status(200).json(statusResponse);
   } catch (error: any) {
-    console.error(`[VTID-0533] Status error for ${vtid}:`, error);
+    console.error(`[VTID-0535] Status error for ${vtid}:`, error);
     return res.status(500).json({
       ok: false,
       error: 'Failed to get task status',
@@ -466,7 +557,7 @@ router.get('/tasks/:vtid/status', async (req: Request, res: Response) => {
 
 /**
  * GET /health → /api/v1/autopilot/health
- * VTID-0532 + VTID-0533: Autopilot health check
+ * VTID-0532 + VTID-0533 + VTID-0534 + VTID-0535: Autopilot health check
  */
 router.get('/health', (_req: Request, res: Response) => {
   return res.status(200).json({
@@ -474,13 +565,15 @@ router.get('/health', (_req: Request, res: Response) => {
     service: 'autopilot-api',
     timestamp: new Date().toISOString(),
     status: 'healthy',
-    vtid: 'VTID-0533',
+    vtid: 'VTID-0535',
     capabilities: {
       task_extraction: true,
       planner_handoff: true,
       execution: true,
       worker_skeleton: true,
-      validator_skeleton: true
+      validator_skeleton: true,
+      worker_core_engine: true,
+      validator_core_engine: true
     }
   });
 });
