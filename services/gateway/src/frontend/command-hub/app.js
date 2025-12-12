@@ -340,7 +340,8 @@ const state = {
     governanceEvaluations: [],
     governanceEvaluationsLoading: false,
     governanceEvaluationsError: null,
-    governanceEvaluationsResultFilter: ''
+    governanceEvaluationsResultFilter: '',
+    governanceEvaluationsFetched: false
 };
 
 // --- VTID-0527: Task Stage Timeline Model ---
@@ -1851,6 +1852,11 @@ function handleModuleClick(sectionKey) {
 
     state.isSplitScreen = false; // Reset split screen on module change
     state.activeSplitScreenId = null;
+    // VTID-0406: Close drawers when navigating between modules
+    state.selectedTask = null;
+    state.selectedTaskDetail = null;
+    state.selectedTaskDetailLoading = false;
+    state.selectedGovernanceRule = null;
     renderApp();
 }
 
@@ -2555,6 +2561,7 @@ function escapeHtml(str) {
  */
 async function fetchGovernanceEvaluations() {
     state.governanceEvaluationsLoading = true;
+    state.governanceEvaluationsFetched = true;
     renderApp();
 
     try {
@@ -2599,8 +2606,8 @@ function renderGovernanceEvaluationsView() {
     var container = document.createElement('div');
     container.className = 'gov-evals-container';
 
-    // Auto-fetch evaluations if not loaded and not currently loading
-    if (state.governanceEvaluations.length === 0 && !state.governanceEvaluationsLoading && !state.governanceEvaluationsError) {
+    // Auto-fetch evaluations if not yet fetched and not currently loading
+    if (!state.governanceEvaluationsFetched && !state.governanceEvaluationsLoading) {
         fetchGovernanceEvaluations();
     }
 
