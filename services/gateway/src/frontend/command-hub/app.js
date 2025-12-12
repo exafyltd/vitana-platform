@@ -345,7 +345,27 @@ const state = {
     governanceEvaluationsLoading: false,
     governanceEvaluationsError: null,
     governanceEvaluationsResultFilter: '',
-    governanceEvaluationsFetched: false
+    governanceEvaluationsFetched: false,
+
+    // VTID-0408: Governance History (Event Timeline)
+    governanceHistory: {
+        items: [],
+        loading: false,
+        error: null,
+        filters: {
+            type: 'all',
+            level: 'all',
+            actor: 'all',
+            range: '7d'
+        },
+        pagination: {
+            limit: 50,
+            offset: 0,
+            hasMore: false
+        },
+        selectedEvent: null,
+        fetched: false
+    }
 };
 
 // --- VTID-0527: Task Stage Timeline Model ---
@@ -1185,6 +1205,9 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'governance' && tab === 'evaluations') {
         // VTID-0406: Governance Evaluations viewer (OASIS integration)
         container.appendChild(renderGovernanceEvaluationsView());
+    } else if (moduleKey === 'governance' && tab === 'history') {
+        // VTID-0408: Governance History timeline view
+        container.appendChild(renderGovernanceHistoryView());
     } else {
         // Placeholder for other modules
         const placeholder = document.createElement('div');
@@ -2828,6 +2851,496 @@ function openRuleDetailByCode(ruleCode) {
             }
         });
     }
+}
+
+// --- VTID-0408: Governance History Timeline ---
+
+/**
+ * VTID-0408: Fetches governance history events from OASIS.
+ * Populates state.governanceHistory with the event data.
+ */
+async function fetchGovernanceHistory() {
+    state.governanceHistory.loading = true;
+    state.governanceHistory.fetched = true;
+    renderApp();
+
+    try {
+        // Build query string from filters and pagination
+        var params = new URLSearchParams();
+        params.append('limit', state.governanceHistory.pagination.limit.toString());
+        params.append('offset', state.governanceHistory.pagination.offset.toString());
+
+        if (state.governanceHistory.filters.type !== 'all') {
+            params.append('type', state.governanceHistory.filters.type);
+        }
+        if (state.governanceHistory.filters.level !== 'all') {
+            params.append('level', state.governanceHistory.filters.level);
+        }
+        if (state.governanceHistory.filters.actor !== 'all') {
+            params.append('actor', state.governanceHistory.filters.actor);
+        }
+
+        var response = await fetch('/api/v1/governance/history?' + params.toString());
+        var json = await response.json();
+
+        if (json.ok && json.events) {
+            state.governanceHistory.items = json.events;
+            state.governanceHistory.pagination.hasMore = json.pagination.has_more;
+            state.governanceHistory.error = null;
+            console.log('[VTID-0408] Governance history loaded:', json.events.length, 'events');
+        } else {
+            throw new Error(json.error || 'Failed to load governance history');
+        }
+    } catch (error) {
+        console.warn('[VTID-0408] Governance history fetch error:', error);
+        state.governanceHistory.error = error.message;
+        state.governanceHistory.items = [];
+    }
+    state.governanceHistory.loading = false;
+    renderApp();
+}
+
+/**
+ * VTID-0408: Renders the Governance History viewer.
+ */
+function renderGovernanceHistoryView() {
+    var container = document.createElement('div');
+    container.className = 'gov-history-container';
+
+    // Auto-fetch history if not yet fetched and not currently loading
+    if (!state.governanceHistory.fetched && !state.governanceHistory.loading) {
+        fetchGovernanceHistory();
+    }
+
+    // Toolbar with filters
+    var toolbar = document.createElement('div');
+    toolbar.className = 'gov-history-toolbar';
+
+    // Event Type filter
+    var typeSelect = document.createElement('select');
+    typeSelect.className = 'form-control governance-filter-select';
+    typeSelect.autocomplete = 'off';
+    typeSelect.name = 'gov-history-type-filter-' + Date.now();
+    typeSelect.innerHTML =
+        '<option value="all">All Types</option>' +
+        '<option value="governance.deploy.allowed">Deploy Allowed</option>' +
+        '<option value="governance.deploy.blocked">Deploy Blocked</option>' +
+        '<option value="governance.evaluate">Evaluate</option>' +
+        '<option value="governance.rule.created">Rule Created</option>' +
+        '<option value="governance.rule.updated">Rule Updated</option>';
+    typeSelect.value = state.governanceHistory.filters.type;
+    typeSelect.onchange = function(e) {
+        state.governanceHistory.filters.type = e.target.value;
+        state.governanceHistory.pagination.offset = 0;
+        state.governanceHistory.fetched = false;
+        fetchGovernanceHistory();
+    };
+    toolbar.appendChild(typeSelect);
+
+    // Level filter
+    var levelSelect = document.createElement('select');
+    levelSelect.className = 'form-control governance-filter-select';
+    levelSelect.autocomplete = 'off';
+    levelSelect.name = 'gov-history-level-filter-' + Date.now();
+    levelSelect.innerHTML =
+        '<option value="all">All Levels</option>' +
+        '<option value="L1">L1</option>' +
+        '<option value="L2">L2</option>' +
+        '<option value="L3">L3</option>' +
+        '<option value="L4">L4</option>';
+    levelSelect.value = state.governanceHistory.filters.level;
+    levelSelect.onchange = function(e) {
+        state.governanceHistory.filters.level = e.target.value;
+        state.governanceHistory.pagination.offset = 0;
+        state.governanceHistory.fetched = false;
+        fetchGovernanceHistory();
+    };
+    toolbar.appendChild(levelSelect);
+
+    // Actor filter
+    var actorSelect = document.createElement('select');
+    actorSelect.className = 'form-control governance-filter-select';
+    actorSelect.autocomplete = 'off';
+    actorSelect.name = 'gov-history-actor-filter-' + Date.now();
+    actorSelect.innerHTML =
+        '<option value="all">All Actors</option>' +
+        '<option value="operator">Operator</option>' +
+        '<option value="autopilot">Autopilot</option>' +
+        '<option value="validator">Validator</option>' +
+        '<option value="system">System</option>';
+    actorSelect.value = state.governanceHistory.filters.actor;
+    actorSelect.onchange = function(e) {
+        state.governanceHistory.filters.actor = e.target.value;
+        state.governanceHistory.pagination.offset = 0;
+        state.governanceHistory.fetched = false;
+        fetchGovernanceHistory();
+    };
+    toolbar.appendChild(actorSelect);
+
+    // Spacer
+    var spacer = document.createElement('div');
+    spacer.className = 'spacer';
+    toolbar.appendChild(spacer);
+
+    // Count label
+    var countLabel = document.createElement('span');
+    countLabel.className = 'gov-history-count';
+    countLabel.textContent = state.governanceHistory.items.length + ' events';
+    toolbar.appendChild(countLabel);
+
+    // Refresh button
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn';
+    refreshBtn.textContent = '↻';
+    refreshBtn.title = 'Refresh';
+    refreshBtn.onclick = function() {
+        state.governanceHistory.fetched = false;
+        fetchGovernanceHistory();
+    };
+    toolbar.appendChild(refreshBtn);
+
+    container.appendChild(toolbar);
+
+    // Loading state
+    if (state.governanceHistory.loading) {
+        var loading = document.createElement('div');
+        loading.className = 'gov-history-loading';
+        loading.innerHTML = '<div class="skeleton-table">' +
+            '<div class="skeleton-row"></div>' +
+            '<div class="skeleton-row"></div>' +
+            '<div class="skeleton-row"></div>' +
+            '<div class="skeleton-row"></div>' +
+            '</div>';
+        container.appendChild(loading);
+        return container;
+    }
+
+    // Error state
+    if (state.governanceHistory.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'gov-history-error';
+        errorDiv.innerHTML = '<span class="error-icon">⚠</span> Error loading history: ' + escapeHtml(state.governanceHistory.error);
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    // Empty state
+    if (state.governanceHistory.items.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'gov-history-empty';
+        emptyDiv.innerHTML = '<p>No governance history events found.</p>' +
+            '<p class="gov-history-empty-hint">Events will appear here as governance actions are performed.</p>';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    // Table wrapper
+    var tableWrapper = document.createElement('div');
+    tableWrapper.className = 'gov-history-table-wrapper';
+
+    // Table
+    var table = document.createElement('table');
+    table.className = 'gov-history-table';
+
+    // Table header
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    var headers = ['Timestamp', 'Type', 'Level', 'Actor', 'Summary', ''];
+    headers.forEach(function(headerText) {
+        var th = document.createElement('th');
+        th.textContent = headerText;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    // Table body
+    var tbody = document.createElement('tbody');
+    state.governanceHistory.items.forEach(function(event) {
+        var row = document.createElement('tr');
+        row.className = 'gov-history-row';
+        row.tabIndex = 0;
+        row.setAttribute('role', 'button');
+        row.setAttribute('aria-label', 'View event details: ' + event.summary);
+
+        // Timestamp
+        var timestampTd = document.createElement('td');
+        timestampTd.className = 'gov-history-timestamp';
+        timestampTd.textContent = formatHistoryTimestamp(event.timestamp);
+        row.appendChild(timestampTd);
+
+        // Type (badge)
+        var typeTd = document.createElement('td');
+        var typeBadge = document.createElement('span');
+        typeBadge.className = 'gov-history-type-badge ' + getHistoryTypeBadgeClass(event.type);
+        typeBadge.textContent = formatHistoryType(event.type);
+        typeTd.appendChild(typeBadge);
+        row.appendChild(typeTd);
+
+        // Level
+        var levelTd = document.createElement('td');
+        if (event.level) {
+            var levelBadge = document.createElement('span');
+            levelBadge.className = 'level-badge level-' + event.level.toLowerCase();
+            levelBadge.textContent = event.level;
+            levelTd.appendChild(levelBadge);
+        } else {
+            levelTd.innerHTML = '<span class="gov-history-no-level">—</span>';
+        }
+        row.appendChild(levelTd);
+
+        // Actor
+        var actorTd = document.createElement('td');
+        actorTd.className = 'gov-history-actor';
+        var actorBadge = document.createElement('span');
+        actorBadge.className = 'gov-history-actor-badge gov-history-actor-' + event.actor;
+        actorBadge.textContent = capitalizeFirst(event.actor);
+        actorTd.appendChild(actorBadge);
+        row.appendChild(actorTd);
+
+        // Summary
+        var summaryTd = document.createElement('td');
+        summaryTd.className = 'gov-history-summary';
+        summaryTd.textContent = event.summary;
+        row.appendChild(summaryTd);
+
+        // Details chevron
+        var detailsTd = document.createElement('td');
+        detailsTd.className = 'gov-history-details-cell';
+        var chevron = document.createElement('span');
+        chevron.className = 'gov-history-chevron';
+        chevron.textContent = '›';
+        detailsTd.appendChild(chevron);
+        row.appendChild(detailsTd);
+
+        // Click handler to open drawer
+        row.onclick = function() {
+            state.governanceHistory.selectedEvent = event;
+            renderApp();
+        };
+        row.onkeydown = function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                state.governanceHistory.selectedEvent = event;
+                renderApp();
+            }
+        };
+
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    tableWrapper.appendChild(table);
+    container.appendChild(tableWrapper);
+
+    // Load more button
+    if (state.governanceHistory.pagination.hasMore) {
+        var loadMoreBtn = document.createElement('button');
+        loadMoreBtn.className = 'btn gov-history-load-more';
+        loadMoreBtn.textContent = 'Load More';
+        loadMoreBtn.onclick = function() {
+            state.governanceHistory.pagination.offset += state.governanceHistory.pagination.limit;
+            fetchGovernanceHistory();
+        };
+        container.appendChild(loadMoreBtn);
+    }
+
+    // History Event Drawer
+    if (state.governanceHistory.selectedEvent) {
+        container.appendChild(renderGovernanceHistoryDrawer(state.governanceHistory.selectedEvent));
+    }
+
+    return container;
+}
+
+/**
+ * VTID-0408: Renders the History Event Drawer.
+ */
+function renderGovernanceHistoryDrawer(event) {
+    var drawer = document.createElement('div');
+    drawer.className = 'gov-history-drawer open';
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'gov-history-drawer-header';
+
+    var title = document.createElement('h2');
+    title.className = 'gov-history-drawer-title';
+    title.textContent = formatHistoryType(event.type);
+    header.appendChild(title);
+
+    var closeBtn = document.createElement('button');
+    closeBtn.className = 'drawer-close-btn';
+    closeBtn.innerHTML = '×';
+    closeBtn.onclick = function() {
+        state.governanceHistory.selectedEvent = null;
+        renderApp();
+    };
+    header.appendChild(closeBtn);
+
+    drawer.appendChild(header);
+
+    // Drawer content
+    var content = document.createElement('div');
+    content.className = 'gov-history-drawer-content';
+
+    // Timestamp
+    var timestampSection = document.createElement('div');
+    timestampSection.className = 'gov-history-drawer-section';
+    timestampSection.innerHTML = '<h3>Timestamp</h3><p>' + formatHistoryTimestamp(event.timestamp) + '</p>';
+    content.appendChild(timestampSection);
+
+    // Meta badges (level, actor)
+    var metaSection = document.createElement('div');
+    metaSection.className = 'gov-history-drawer-meta';
+
+    if (event.level) {
+        var levelBadge = document.createElement('span');
+        levelBadge.className = 'level-badge level-' + event.level.toLowerCase();
+        levelBadge.textContent = event.level;
+        metaSection.appendChild(levelBadge);
+    }
+
+    var actorBadge = document.createElement('span');
+    actorBadge.className = 'gov-history-actor-badge gov-history-actor-' + event.actor;
+    actorBadge.textContent = capitalizeFirst(event.actor);
+    metaSection.appendChild(actorBadge);
+
+    var typeBadge = document.createElement('span');
+    typeBadge.className = 'gov-history-type-badge ' + getHistoryTypeBadgeClass(event.type);
+    typeBadge.textContent = formatHistoryType(event.type);
+    metaSection.appendChild(typeBadge);
+
+    content.appendChild(metaSection);
+
+    // Summary
+    var summarySection = document.createElement('div');
+    summarySection.className = 'gov-history-drawer-section';
+    summarySection.innerHTML = '<h3>Summary</h3><p>' + escapeHtml(event.summary) + '</p>';
+    content.appendChild(summarySection);
+
+    // Rule IDs as chips (if present in details)
+    if (event.details && event.details.violations && event.details.violations.length > 0) {
+        var rulesSection = document.createElement('div');
+        rulesSection.className = 'gov-history-drawer-section';
+        rulesSection.innerHTML = '<h3>Violated Rules</h3>';
+
+        var rulesContainer = document.createElement('div');
+        rulesContainer.className = 'gov-history-rules-chips';
+
+        event.details.violations.forEach(function(violation) {
+            var chip = document.createElement('span');
+            chip.className = 'gov-rule-chip gov-rule-chip-' + (violation.level || 'l2').toLowerCase();
+            chip.innerHTML = '<span class="gov-rule-chip-id">' + escapeHtml(violation.rule_id) + '</span>' +
+                '<span class="gov-rule-chip-level">' + (violation.level || 'L2') + '</span>';
+            chip.title = violation.message || 'Click to view rule details';
+            chip.onclick = function(e) {
+                e.stopPropagation();
+                openRuleDetailByCode(violation.rule_id);
+            };
+            rulesContainer.appendChild(chip);
+        });
+
+        rulesSection.appendChild(rulesContainer);
+        content.appendChild(rulesSection);
+    }
+
+    // Service / VTID info
+    if (event.details && (event.details.service || event.details.vtid)) {
+        var contextSection = document.createElement('div');
+        contextSection.className = 'gov-history-drawer-section';
+        contextSection.innerHTML = '<h3>Context</h3>';
+
+        var contextList = document.createElement('div');
+        contextList.className = 'gov-history-context-list';
+
+        if (event.details.vtid) {
+            var vtidItem = document.createElement('div');
+            vtidItem.className = 'gov-history-context-item';
+            vtidItem.innerHTML = '<span class="label">VTID:</span><span class="value">' + escapeHtml(event.details.vtid) + '</span>';
+            contextList.appendChild(vtidItem);
+        }
+        if (event.details.service) {
+            var serviceItem = document.createElement('div');
+            serviceItem.className = 'gov-history-context-item';
+            serviceItem.innerHTML = '<span class="label">Service:</span><span class="value">' + escapeHtml(event.details.service) + '</span>';
+            contextList.appendChild(serviceItem);
+        }
+
+        contextSection.appendChild(contextList);
+        content.appendChild(contextSection);
+    }
+
+    // Raw JSON details
+    var jsonSection = document.createElement('div');
+    jsonSection.className = 'gov-history-drawer-section gov-history-json-section';
+    jsonSection.innerHTML = '<h3>Raw Details</h3>';
+
+    var jsonPre = document.createElement('pre');
+    jsonPre.className = 'gov-history-json';
+    jsonPre.textContent = JSON.stringify(event.details || {}, null, 2);
+    jsonSection.appendChild(jsonPre);
+    content.appendChild(jsonSection);
+
+    drawer.appendChild(content);
+
+    return drawer;
+}
+
+/**
+ * VTID-0408: Format timestamp for history display.
+ */
+function formatHistoryTimestamp(dateStr) {
+    if (!dateStr) return '-';
+    try {
+        var date = new Date(dateStr);
+        return date.toLocaleString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    } catch (e) {
+        return dateStr;
+    }
+}
+
+/**
+ * VTID-0408: Format event type for display.
+ */
+function formatHistoryType(type) {
+    var typeMap = {
+        'governance.deploy.blocked': 'Blocked',
+        'governance.deploy.allowed': 'Allowed',
+        'governance.evaluate': 'Evaluate',
+        'governance.rule.created': 'Rule Created',
+        'governance.rule.updated': 'Rule Updated',
+        'governance.violated': 'Violation'
+    };
+    return typeMap[type] || type;
+}
+
+/**
+ * VTID-0408: Get CSS class for type badge.
+ */
+function getHistoryTypeBadgeClass(type) {
+    var classMap = {
+        'governance.deploy.blocked': 'gov-history-type-blocked',
+        'governance.deploy.allowed': 'gov-history-type-allowed',
+        'governance.evaluate': 'gov-history-type-evaluate',
+        'governance.rule.created': 'gov-history-type-rule',
+        'governance.rule.updated': 'gov-history-type-rule',
+        'governance.violated': 'gov-history-type-blocked'
+    };
+    return classMap[type] || 'gov-history-type-default';
+}
+
+/**
+ * VTID-0408: Capitalize first letter of string.
+ */
+function capitalizeFirst(str) {
+    if (!str) return '';
+    return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
 function renderDocsScreensView() {

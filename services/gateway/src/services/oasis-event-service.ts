@@ -287,4 +287,202 @@ export const cicdEvents = {
     }),
 };
 
+/**
+ * VTID-0408: Governance History Event Types
+ * These are the event types that appear in the governance history timeline.
+ */
+export const GOVERNANCE_EVENT_TYPES = [
+    'governance.deploy.blocked',
+    'governance.deploy.allowed',
+    'governance.evaluate',
+    'governance.rule.created',
+    'governance.rule.updated',
+    'governance.violated'
+] as const;
+
+/**
+ * VTID-0408: Governance History Event DTO
+ */
+export interface GovernanceHistoryEvent {
+    id: string;
+    timestamp: string;
+    type: string;
+    actor: string;
+    level?: string;
+    summary: string;
+    details?: any;
+}
+
+/**
+ * VTID-0408: Parameters for fetching governance history
+ */
+export interface GovernanceHistoryParams {
+    limit: number;
+    offset: number;
+    type?: string;
+    level?: string;
+    actor?: string;
+}
+
+/**
+ * VTID-0408: Fetches governance history events from OASIS.
+ * Queries oasis_events table for governance-related event types.
+ */
+export async function getGovernanceHistory(params: GovernanceHistoryParams): Promise<{
+    ok: boolean;
+    events: GovernanceHistoryEvent[];
+    pagination: {
+        limit: number;
+        offset: number;
+        count: number;
+        has_more: boolean;
+    };
+    error?: string;
+}> {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+
+    if (!supabaseUrl || !supabaseKey) {
+        console.warn('[VTID-0408] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE');
+        return {
+            ok: false,
+            events: [],
+            pagination: { limit: params.limit, offset: params.offset, count: 0, has_more: false },
+            error: 'Gateway misconfigured: missing Supabase credentials'
+        };
+    }
+
+    try {
+        // Build query URL for oasis_events
+        // We query for multiple governance event types using OR filter
+        const eventTypesFilter = GOVERNANCE_EVENT_TYPES.map(t => `topic.eq.${t}`).join(',');
+
+        let queryUrl = `${supabaseUrl}/rest/v1/oasis_events?or=(${eventTypesFilter})&order=created_at.desc&limit=${params.limit + 1}&offset=${params.offset}`;
+
+        // Add type filter if specified
+        if (params.type && params.type !== 'all') {
+            queryUrl = `${supabaseUrl}/rest/v1/oasis_events?topic=eq.${params.type}&order=created_at.desc&limit=${params.limit + 1}&offset=${params.offset}`;
+        }
+
+        const response = await fetch(queryUrl, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': supabaseKey,
+                'Authorization': `Bearer ${supabaseKey}`,
+            },
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.warn('[VTID-0408] Governance history fetch error:', response.status, errorText);
+            return {
+                ok: false,
+                events: [],
+                pagination: { limit: params.limit, offset: params.offset, count: 0, has_more: false },
+                error: `Failed to fetch events: ${response.status}`
+            };
+        }
+
+        const rawEvents = await response.json() as any[];
+
+        // Check if there are more results
+        const hasMore = rawEvents.length > params.limit;
+        const events = rawEvents.slice(0, params.limit);
+
+        // Transform raw OASIS events to GovernanceHistoryEvent DTOs
+        const transformedEvents: GovernanceHistoryEvent[] = events.map((ev: any) => {
+            const metadata = ev.metadata || {};
+
+            // Derive actor from metadata or default
+            let actor = metadata.actor || metadata.initiator || 'system';
+            if (ev.service === 'gateway-governance') {
+                actor = 'validator';
+            } else if (metadata.source === 'autopilot' || metadata.initiator === 'agent') {
+                actor = 'autopilot';
+            } else if (metadata.source === 'operator' || metadata.initiator === 'user') {
+                actor = 'operator';
+            }
+
+            // Derive level from metadata
+            const level = metadata.level || undefined;
+
+            // Create human-readable summary
+            let summary = ev.message || '';
+            if (!summary) {
+                switch (ev.topic) {
+                    case 'governance.deploy.blocked':
+                        summary = `Deploy blocked for ${metadata.service || 'unknown'} (${metadata.violations?.length || 0} violations)`;
+                        break;
+                    case 'governance.deploy.allowed':
+                        summary = `Deploy allowed for ${metadata.service || 'unknown'}`;
+                        break;
+                    case 'governance.evaluate':
+                        summary = `Governance evaluation for ${metadata.action || 'action'} on ${metadata.service || 'service'}`;
+                        break;
+                    case 'governance.rule.created':
+                        summary = `Rule created: ${metadata.rule_id || metadata.ruleCode || 'unknown'}`;
+                        break;
+                    case 'governance.rule.updated':
+                        summary = `Rule updated: ${metadata.rule_id || metadata.ruleCode || 'unknown'}`;
+                        break;
+                    case 'governance.violated':
+                        summary = `Governance violation detected`;
+                        break;
+                    default:
+                        summary = `Governance event: ${ev.topic}`;
+                }
+            }
+
+            return {
+                id: ev.id,
+                timestamp: ev.created_at,
+                type: ev.topic,
+                actor,
+                level,
+                summary,
+                details: {
+                    ...metadata,
+                    vtid: ev.vtid,
+                    service: ev.service,
+                    status: ev.status
+                }
+            };
+        });
+
+        // Apply additional filters in memory (for level and actor)
+        let filteredEvents = transformedEvents;
+
+        if (params.level && params.level !== 'all') {
+            filteredEvents = filteredEvents.filter(ev => ev.level === params.level);
+        }
+
+        if (params.actor && params.actor !== 'all') {
+            filteredEvents = filteredEvents.filter(ev => ev.actor === params.actor);
+        }
+
+        console.log(`[VTID-0408] Governance history fetched: ${filteredEvents.length} events`);
+
+        return {
+            ok: true,
+            events: filteredEvents,
+            pagination: {
+                limit: params.limit,
+                offset: params.offset,
+                count: filteredEvents.length,
+                has_more: hasMore
+            }
+        };
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.warn('[VTID-0408] Governance history fetch error:', errorMessage);
+        return {
+            ok: false,
+            events: [],
+            pagination: { limit: params.limit, offset: params.offset, count: 0, has_more: false },
+            error: errorMessage
+        };
+    }
+}
+
 export default cicdEvents;
