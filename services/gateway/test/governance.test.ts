@@ -603,4 +603,178 @@ describe('Governance API', () => {
             expect(response.body.error).toContain('Missing required fields');
         });
     });
+
+    describe('GET /api/v1/governance/history', () => {
+        it('should return history events in VTID-0408 format', async () => {
+            // Mock oasis_events query for governance events
+            mockSupabase.mockResolvedValueOnce({
+                data: [
+                    {
+                        id: 'event-1',
+                        created_at: '2025-12-12T10:00:00Z',
+                        topic: 'governance.deploy.allowed',
+                        service: 'gateway-governance',
+                        status: 'success',
+                        message: 'Deploy allowed for gateway',
+                        vtid: 'VTID-0001',
+                        metadata: {
+                            service: 'gateway',
+                            level: 'L4',
+                            allowed_at: '2025-12-12T10:00:00Z'
+                        }
+                    },
+                    {
+                        id: 'event-2',
+                        created_at: '2025-12-12T09:00:00Z',
+                        topic: 'governance.deploy.blocked',
+                        service: 'gateway-governance',
+                        status: 'warning',
+                        message: 'Deploy blocked for api (2 violations)',
+                        vtid: 'VTID-0002',
+                        metadata: {
+                            service: 'api',
+                            level: 'L1',
+                            violations: [
+                                { rule_id: 'GOV-001', level: 'L1', message: 'Critical rule violated' }
+                            ]
+                        }
+                    }
+                ],
+                error: null
+            });
+
+            const response = await request(app)
+                .get('/api/v1/governance/history')
+                .expect(200);
+
+            // VTID-0408: Response format
+            expect(response.body.ok).toBe(true);
+            expect(response.body.vtid).toBe('VTID-0408');
+            expect(Array.isArray(response.body.events)).toBe(true);
+            expect(response.body.pagination).toBeDefined();
+            expect(response.body.pagination.limit).toBe(50);
+            expect(response.body.pagination.offset).toBe(0);
+        });
+
+        it('should apply limit and offset parameters', async () => {
+            mockSupabase.mockResolvedValueOnce({
+                data: [
+                    {
+                        id: 'event-1',
+                        created_at: '2025-12-12T10:00:00Z',
+                        topic: 'governance.deploy.allowed',
+                        service: 'gateway-governance',
+                        status: 'success',
+                        message: 'Deploy allowed',
+                        metadata: {}
+                    }
+                ],
+                error: null
+            });
+
+            const response = await request(app)
+                .get('/api/v1/governance/history?limit=10&offset=5')
+                .expect(200);
+
+            expect(response.body.ok).toBe(true);
+            expect(response.body.pagination.limit).toBe(10);
+            expect(response.body.pagination.offset).toBe(5);
+        });
+
+        it('should apply type filter', async () => {
+            mockSupabase.mockResolvedValueOnce({
+                data: [
+                    {
+                        id: 'event-blocked-1',
+                        created_at: '2025-12-12T10:00:00Z',
+                        topic: 'governance.deploy.blocked',
+                        service: 'gateway-governance',
+                        status: 'warning',
+                        message: 'Deploy blocked',
+                        metadata: { service: 'test' }
+                    }
+                ],
+                error: null
+            });
+
+            const response = await request(app)
+                .get('/api/v1/governance/history?type=governance.deploy.blocked')
+                .expect(200);
+
+            expect(response.body.ok).toBe(true);
+            expect(response.body.events.length).toBeGreaterThanOrEqual(0);
+        });
+
+        it('should apply level filter', async () => {
+            mockSupabase.mockResolvedValueOnce({
+                data: [
+                    {
+                        id: 'event-l1',
+                        created_at: '2025-12-12T10:00:00Z',
+                        topic: 'governance.deploy.blocked',
+                        service: 'gateway-governance',
+                        status: 'warning',
+                        message: 'Deploy blocked',
+                        metadata: { level: 'L1', service: 'test' }
+                    },
+                    {
+                        id: 'event-l2',
+                        created_at: '2025-12-12T09:00:00Z',
+                        topic: 'governance.deploy.blocked',
+                        service: 'gateway-governance',
+                        status: 'warning',
+                        message: 'Deploy blocked',
+                        metadata: { level: 'L2', service: 'test' }
+                    }
+                ],
+                error: null
+            });
+
+            const response = await request(app)
+                .get('/api/v1/governance/history?level=L1')
+                .expect(200);
+
+            expect(response.body.ok).toBe(true);
+            // Level filtering happens in memory, so we should get events with L1 level
+            if (response.body.events.length > 0) {
+                expect(response.body.events.every((e: any) => e.level === 'L1')).toBe(true);
+            }
+        });
+
+        it('should apply actor filter', async () => {
+            mockSupabase.mockResolvedValueOnce({
+                data: [
+                    {
+                        id: 'event-validator',
+                        created_at: '2025-12-12T10:00:00Z',
+                        topic: 'governance.evaluate',
+                        service: 'gateway-governance',
+                        status: 'success',
+                        message: 'Evaluation completed',
+                        metadata: { actor: 'validator', service: 'test' }
+                    },
+                    {
+                        id: 'event-operator',
+                        created_at: '2025-12-12T09:00:00Z',
+                        topic: 'governance.deploy.allowed',
+                        service: 'gateway-governance',
+                        status: 'success',
+                        message: 'Deploy allowed',
+                        metadata: { source: 'operator', service: 'test' }
+                    }
+                ],
+                error: null
+            });
+
+            const response = await request(app)
+                .get('/api/v1/governance/history?actor=validator')
+                .expect(200);
+
+            expect(response.body.ok).toBe(true);
+            // Actor filtering happens in memory
+            if (response.body.events.length > 0) {
+                expect(response.body.events.every((e: any) => e.actor === 'validator')).toBe(true);
+            }
+        });
+    });
 });

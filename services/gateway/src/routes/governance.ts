@@ -21,5 +21,8 @@ router.get('/feed', (req, res) => controller.getFeed(req, res));
 router.get('/enforcements', (req, res) => controller.getEnforcements(req, res));
 router.get('/logs', (req, res) => controller.getLogs(req, res));
 
+// VTID-0408: Governance History endpoint
+router.get('/history', (req, res) => controller.getHistory(req, res));
+
 export default router;
 

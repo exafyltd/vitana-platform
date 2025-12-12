@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { getSupabase } from '../lib/supabase';
 import { RuleMatcher, EvaluationEngine, EnforcementExecutor, ViolationGenerator, OasisPipeline } from '../validator-core';
 import { RuleDTO, EvaluationDTO, ViolationDTO, ProposalDTO, FeedEntry, EvaluationSummary, ProposalTimelineEvent } from '../types/governance';
+import { getGovernanceHistory, GovernanceHistoryEvent, GOVERNANCE_EVENT_TYPES } from '../services/oasis-event-service';
 
 // Removed unsafe module-load createClient - now using getSupabase() in methods
 
@@ -1130,6 +1131,67 @@ export class GovernanceController {
 
         if (error) return res.status(500).json({ error: error.message });
         res.json(data);
+    }
+
+    /**
+     * GET /api/v1/governance/history
+     * VTID-0408: Query OASIS events for governance history timeline.
+     * Query params: limit?, offset?, type?, level?, actor?
+     *
+     * Returns a chronological, filterable audit log of governance events.
+     */
+    async getHistory(req: Request, res: Response) {
+        try {
+            const { limit, offset, type, level, actor } = req.query;
+
+            // Parse and validate parameters
+            const parsedLimit = Math.min(Math.max(parseInt(limit as string) || 50, 1), 200);
+            const parsedOffset = Math.max(parseInt(offset as string) || 0, 0);
+
+            console.log(`[VTID-0408] Governance history requested: limit=${parsedLimit}, offset=${parsedOffset}, type=${type || 'all'}, level=${level || 'all'}, actor=${actor || 'all'}`);
+
+            // Call the oasis-event-service function
+            const result = await getGovernanceHistory({
+                limit: parsedLimit,
+                offset: parsedOffset,
+                type: type as string,
+                level: level as string,
+                actor: actor as string
+            });
+
+            if (!result.ok) {
+                console.warn('[VTID-0408] Governance history fetch error:', result.error);
+                return res.status(500).json({
+                    ok: false,
+                    vtid: 'VTID-0408',
+                    error: result.error,
+                    events: [],
+                    pagination: result.pagination
+                });
+            }
+
+            return res.json({
+                ok: true,
+                vtid: 'VTID-0408',
+                events: result.events,
+                pagination: result.pagination
+            });
+
+        } catch (error: any) {
+            console.warn('[VTID-0408] Governance history error:', error.message);
+            return res.status(500).json({
+                ok: false,
+                vtid: 'VTID-0408',
+                error: error.message,
+                events: [],
+                pagination: {
+                    limit: 50,
+                    offset: 0,
+                    count: 0,
+                    has_more: false
+                }
+            });
+        }
     }
 
     /**

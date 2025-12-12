@@ -3558,3 +3558,342 @@ body {
   background: rgba(139, 92, 246, 0.2);
   color: #8b5cf6;
 }
+
+/* --- VTID-0408: Governance History Timeline --- */
+
+.gov-history-container {
+  padding: 1.5rem;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.gov-history-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.gov-history-count {
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.gov-history-loading {
+  padding: 2rem;
+}
+
+.gov-history-error {
+  padding: 2rem;
+  text-align: center;
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 8px;
+}
+
+.gov-history-error .error-icon {
+  font-size: 1.5rem;
+  margin-right: 0.5rem;
+}
+
+.gov-history-empty {
+  padding: 3rem;
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+
+.gov-history-empty p {
+  margin: 0.5rem 0;
+}
+
+.gov-history-empty-hint {
+  font-size: 0.875rem;
+  opacity: 0.7;
+}
+
+.gov-history-table-wrapper {
+  flex: 1;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-sidebar-bg);
+}
+
+.gov-history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.gov-history-table thead {
+  position: sticky;
+  top: 0;
+  background: var(--color-bg);
+  z-index: 1;
+}
+
+.gov-history-table th {
+  padding: 0.875rem 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.gov-history-row {
+  transition: background 0.15s ease;
+  cursor: pointer;
+}
+
+.gov-history-row:hover {
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.gov-history-row:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.gov-history-table td {
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.gov-history-timestamp {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.gov-history-summary {
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gov-history-no-level {
+  color: var(--color-text-secondary);
+  opacity: 0.5;
+}
+
+.gov-history-details-cell {
+  width: 40px;
+  text-align: center;
+}
+
+.gov-history-chevron {
+  font-size: 1.25rem;
+  color: var(--color-text-secondary);
+  transition: transform 0.2s ease;
+}
+
+.gov-history-row:hover .gov-history-chevron {
+  transform: translateX(3px);
+  color: var(--color-accent);
+}
+
+/* Event Type Badges */
+.gov-history-type-badge {
+  display: inline-block;
+  padding: 0.25rem 0.625rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.gov-history-type-blocked {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.gov-history-type-allowed {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.gov-history-type-evaluate {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.gov-history-type-rule {
+  background: rgba(156, 163, 175, 0.15);
+  color: #9ca3af;
+  border: 1px solid rgba(156, 163, 175, 0.3);
+}
+
+.gov-history-type-default {
+  background: rgba(156, 163, 175, 0.15);
+  color: #9ca3af;
+  border: 1px solid rgba(156, 163, 175, 0.3);
+}
+
+/* Actor Badges */
+.gov-history-actor-badge {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.gov-history-actor-operator {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.gov-history-actor-autopilot {
+  background: rgba(139, 92, 246, 0.15);
+  color: #8b5cf6;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.gov-history-actor-validator {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.gov-history-actor-system {
+  background: rgba(156, 163, 175, 0.15);
+  color: #9ca3af;
+  border: 1px solid rgba(156, 163, 175, 0.3);
+}
+
+/* Load More Button */
+.gov-history-load-more {
+  margin-top: 1rem;
+  width: 100%;
+  padding: 0.75rem;
+}
+
+/* History Event Drawer */
+.gov-history-drawer {
+  position: fixed;
+  top: 0;
+  right: -500px;
+  width: 500px;
+  height: 100vh;
+  background: var(--color-sidebar-bg);
+  border-left: 1px solid var(--color-border);
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.3);
+  transition: right 0.3s ease;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+}
+
+.gov-history-drawer.open {
+  right: 0;
+}
+
+.gov-history-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.gov-history-drawer-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--color-text-primary);
+}
+
+.gov-history-drawer-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem;
+}
+
+.gov-history-drawer-section {
+  margin-bottom: 1.5rem;
+}
+
+.gov-history-drawer-section h3 {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-text-secondary);
+  margin: 0 0 0.5rem 0;
+}
+
+.gov-history-drawer-section p {
+  margin: 0;
+  line-height: 1.6;
+  color: var(--color-text-primary);
+}
+
+.gov-history-drawer-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.gov-history-rules-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.gov-history-context-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.gov-history-context-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.gov-history-context-item .label {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  min-width: 60px;
+}
+
+.gov-history-context-item .value {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.8rem;
+  color: var(--color-accent);
+}
+
+.gov-history-json-section {
+  margin-top: 2rem;
+}
+
+.gov-history-json {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 1rem;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.75rem;
+  overflow-x: auto;
+  max-height: 300px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--color-text-secondary);
+}
