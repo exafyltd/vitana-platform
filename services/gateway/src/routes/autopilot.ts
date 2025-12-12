@@ -1,5 +1,5 @@
 /**
- * Autopilot Routes - VTID-0532 + VTID-0533 + VTID-0534
+ * Autopilot Routes - VTID-0532 + VTID-0533 + VTID-0534 + VTID-0535
  *
  * Planner Handoff API and Execution Pipeline for multi-agent planning workflows.
  *
@@ -20,6 +20,12 @@
  * - Enhanced work/start and work/complete with step-level state machine
  * - Worker state reconstruction from OASIS events
  * - Rich worker section in status endpoint
+ *
+ * VTID-0535 (Validator-Core Engine v1):
+ * - Deterministic validation rules (VAL-RULE-001 to VAL-RULE-006)
+ * - No LLM calls - purely rule-based validation
+ * - Rich validator section in status endpoint
+ * - autopilot.validation.completed and autopilot.task.finalized events
  */
 
 import { Router, Request, Response } from 'express';
@@ -40,6 +46,11 @@ import {
   WorkStartRequest,
   WorkCompleteRequest
 } from '../services/worker-core-service';
+import {
+  runValidation,
+  getValidatorState,
+  ValidateRequest
+} from '../services/validator-core-service';
 
 const router = Router();
 
@@ -393,95 +404,68 @@ router.post('/tasks/:vtid/work/complete', async (req: Request, res: Response) =>
 
 /**
  * POST /tasks/:vtid/validate → /api/v1/autopilot/tasks/:vtid/validate
- * VTID-0533: Validator Skeleton - Submit validation result
+ * VTID-0535: Validator-Core Engine v1 - Run deterministic validation
  *
- * Request body:
+ * Request body (v1):
  * {
- *   "result": {
- *     "status": "approved",
- *     "issues": [
- *       { "code": "MISSING_TESTS", "message": "..." }
- *     ],
- *     "notes": "optional"
- *   },
- *   "metadata": {
- *     "validatorModel": "gpt-5.1",
- *     "validatorRole": "VALIDATOR"
+ *   "mode": "auto",
+ *   "override": null
+ * }
+ *
+ * Response (success):
+ * {
+ *   "ok": true,
+ *   "vtid": "...",
+ *   "validation": {
+ *     "final_status": "success" | "failed",
+ *     "rules_checked": ["VAL-RULE-001", ...],
+ *     "violations": [],
+ *     "summary": "...",
+ *     "validated_at": "..."
  *   }
  * }
  *
- * Response:
- * { "ok": true, "eventId": "..." }
+ * Error codes:
+ * - validator.plan_missing: No plan found for VTID
+ * - validator.worker_state_missing: Cannot reconstruct worker state
+ * - validator.no_steps: Plan has zero steps
  */
 router.post('/tasks/:vtid/validate', async (req: Request, res: Response) => {
   const { vtid } = req.params;
-  const { result, metadata } = req.body;
+  const { mode, override } = req.body;
 
-  console.log(`[VTID-0533] Validation received for ${vtid}`);
+  console.log(`[VTID-0535] Validation requested for ${vtid}`);
 
-  // Validate request body
-  if (!result || typeof result !== 'object') {
-    return res.status(400).json({
-      ok: false,
-      error: 'Validation failed',
-      details: 'Missing or invalid "result" object in request body'
-    });
-  }
-
-  if (!result.status || !['approved', 'rejected'].includes(result.status)) {
-    return res.status(400).json({
-      ok: false,
-      error: 'Validation failed',
-      details: 'Missing or invalid "result.status" (must be "approved" or "rejected")'
-    });
-  }
-
-  if (!metadata || typeof metadata !== 'object') {
-    return res.status(400).json({
-      ok: false,
-      error: 'Validation failed',
-      details: 'Missing or invalid "metadata" object in request body'
-    });
-  }
-
-  if (!metadata.validatorModel || typeof metadata.validatorModel !== 'string') {
-    return res.status(400).json({
-      ok: false,
-      error: 'Validation failed',
-      details: 'Missing or invalid "metadata.validatorModel" string'
-    });
-  }
+  // Build request (mode defaults to 'auto')
+  const validateRequest: ValidateRequest = {
+    mode: mode || 'auto',
+    override: override || null
+  };
 
   try {
-    const eventResult = await emitValidationResult(
-      vtid,
-      {
-        status: result.status,
-        issues: result.issues,
-        notes: result.notes
-      } as ValidationResultPayload,
-      {
-        validatorModel: metadata.validatorModel,
-        validatorRole: metadata.validatorRole || 'VALIDATOR'
-      } as ValidationMetadata
-    );
+    const validationResult = await runValidation(vtid, validateRequest);
 
-    if (!eventResult.ok) {
-      return res.status(400).json({
+    if (!validationResult.ok) {
+      // Return error with appropriate status code
+      const statusCode = validationResult.error.code === 'validator.internal_error' ? 500 : 400;
+      return res.status(statusCode).json({
         ok: false,
-        error: eventResult.error
+        error: validationResult.error.message,
+        code: validationResult.error.code
       });
     }
 
     return res.status(200).json({
       ok: true,
-      eventId: eventResult.eventId
+      vtid,
+      validation: validationResult.result
     });
   } catch (error: any) {
-    console.error(`[VTID-0533] Validation error for ${vtid}:`, error);
+    console.error(`[VTID-0535] Validation error for ${vtid}:`, error);
     return res.status(500).json({
       ok: false,
-      error: 'Failed to emit validation event',
+      error: 'Failed to run validation',
+      code: 'validator.internal_error',
       details: error.message
     });
   }
@@ -489,7 +473,7 @@ router.post('/tasks/:vtid/validate', async (req: Request, res: Response) => {
 
 /**
  * GET /tasks/:vtid/status → /api/v1/autopilot/tasks/:vtid/status
- * VTID-0534: Get task status with worker section
+ * VTID-0535: Get task status with worker and validator sections
  *
  * Response:
  * {
@@ -501,14 +485,20 @@ router.post('/tasks/:vtid/validate', async (req: Request, res: Response) => {
  *       "overall_status": "in_progress",
  *       "steps": [...]
  *     },
- *     "validator": { ... }
+ *     "validator": {
+ *       "final_status": "pending" | "success" | "failed",
+ *       "summary": "...",
+ *       "rules_checked": [...],
+ *       "violations": [...],
+ *       "validated_at": "..."
+ *     }
  *   }
  * }
  */
 router.get('/tasks/:vtid/status', async (req: Request, res: Response) => {
   const { vtid } = req.params;
 
-  console.log(`[VTID-0534] Status requested for ${vtid}`);
+  console.log(`[VTID-0535] Status requested for ${vtid}`);
 
   try {
     const taskStatus = await getAutopilotTaskStatus(vtid);
@@ -522,6 +512,9 @@ router.get('/tasks/:vtid/status', async (req: Request, res: Response) => {
 
     // Get worker state from OASIS events
     const workerResult = await getWorkerState(vtid);
+
+    // Get validator state from OASIS events (VTID-0535)
+    const validatorState = await getValidatorState(vtid);
 
     // Build the enhanced status response
     const statusResponse: Record<string, unknown> = {
@@ -538,22 +531,20 @@ router.get('/tasks/:vtid/status', async (req: Request, res: Response) => {
           overall_status: 'pending',
           steps: []
         },
-        // Validator info
-        validator: {
-          status: taskStatus.validationStatus || 'pending'
-        }
+        // Validator info (VTID-0535)
+        validator: validatorState
       },
       // Preserve backward compatibility with flat fields
       title: taskStatus.title,
       planSteps: taskStatus.planSteps,
-      validationStatus: taskStatus.validationStatus,
+      validationStatus: validatorState.final_status,
       createdAt: taskStatus.createdAt,
       updatedAt: taskStatus.updatedAt
     };
 
     return res.status(200).json(statusResponse);
   } catch (error: any) {
-    console.error(`[VTID-0534] Status error for ${vtid}:`, error);
+    console.error(`[VTID-0535] Status error for ${vtid}:`, error);
     return res.status(500).json({
       ok: false,
       error: 'Failed to get task status',
@@ -566,7 +557,7 @@ router.get('/tasks/:vtid/status', async (req: Request, res: Response) => {
 
 /**
  * GET /health → /api/v1/autopilot/health
- * VTID-0532 + VTID-0533 + VTID-0534: Autopilot health check
+ * VTID-0532 + VTID-0533 + VTID-0534 + VTID-0535: Autopilot health check
  */
 router.get('/health', (_req: Request, res: Response) => {
   return res.status(200).json({
@@ -574,14 +565,15 @@ router.get('/health', (_req: Request, res: Response) => {
     service: 'autopilot-api',
     timestamp: new Date().toISOString(),
     status: 'healthy',
-    vtid: 'VTID-0534',
+    vtid: 'VTID-0535',
     capabilities: {
       task_extraction: true,
       planner_handoff: true,
       execution: true,
       worker_skeleton: true,
       validator_skeleton: true,
-      worker_core_engine: true
+      worker_core_engine: true,
+      validator_core_engine: true
     }
   });
 });

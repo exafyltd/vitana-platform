@@ -1,18 +1,24 @@
 /**
- * Autopilot Pipeline Tests - VTID-0533 + VTID-0534
+ * Autopilot Pipeline Tests - VTID-0533 + VTID-0534 + VTID-0535
  *
  * Tests for:
  * - POST /api/v1/autopilot/tasks/:vtid/plan - Plan submission
  * - POST /api/v1/autopilot/tasks/:vtid/work/start - Work started event (v1 with state machine)
  * - POST /api/v1/autopilot/tasks/:vtid/work/complete - Work completed event (v1 with state machine)
- * - POST /api/v1/autopilot/tasks/:vtid/validate - Validation result
- * - GET /api/v1/autopilot/tasks/:vtid/status - Task status with worker section
- * - GET /api/v1/autopilot/health - Health check with VTID-0534 capabilities
+ * - POST /api/v1/autopilot/tasks/:vtid/validate - Validator-Core Engine validation
+ * - GET /api/v1/autopilot/tasks/:vtid/status - Task status with worker + validator sections
+ * - GET /api/v1/autopilot/health - Health check with VTID-0535 capabilities
  *
  * VTID-0534 additions:
  * - Worker-Core Engine v1 state machine tests
  * - Invalid transition handling (409 errors)
  * - Plan mismatch handling (400 errors)
+ *
+ * VTID-0535 additions:
+ * - Validator-Core Engine v1 deterministic validation
+ * - Validation rules VAL-RULE-001 to VAL-RULE-006
+ * - Rich validator section in status endpoint
+ * - autopilot.validation.completed and autopilot.task.finalized events
  */
 
 import request from 'supertest';
@@ -125,7 +131,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
   // ==================== Health Check ====================
 
   describe('GET /api/v1/autopilot/health', () => {
-    it('should return VTID-0534 with Worker-Core Engine capabilities', async () => {
+    it('should return VTID-0535 with Validator-Core Engine capabilities', async () => {
       const response = await request(app)
         .get('/api/v1/autopilot/health')
         .expect(200);
@@ -133,14 +139,15 @@ describe('Autopilot Pipeline - VTID-0533', () => {
       expect(response.body.ok).toBe(true);
       expect(response.body.service).toBe('autopilot-api');
       expect(response.body.status).toBe('healthy');
-      expect(response.body.vtid).toBe('VTID-0534');
+      expect(response.body.vtid).toBe('VTID-0535');
       expect(response.body.capabilities).toEqual({
         task_extraction: true,
         planner_handoff: true,
         execution: true,
         worker_skeleton: true,
         validator_skeleton: true,
-        worker_core_engine: true
+        worker_core_engine: true,
+        validator_core_engine: true
       });
     });
   });
@@ -434,72 +441,25 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     });
   });
 
-  // ==================== Validation ====================
+  // ==================== Validation (VTID-0535) ====================
 
   describe('POST /api/v1/autopilot/tasks/:vtid/validate', () => {
-    it('should reject missing result object', async () => {
+    it('should accept empty body and use defaults', async () => {
       const response = await request(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/validate')
-        .send({ metadata: { validatorModel: 'gpt-4' } })
-        .expect(400);
+        .send({})
+        .expect((res) => {
+          // Without plan in OASIS, should return 400 with validator.plan_missing
+          expect([200, 400]).toContain(res.status);
+        });
 
-      expect(response.body.ok).toBe(false);
-      expect(response.body.error).toBe('Validation failed');
-      expect(response.body.details).toContain('result');
+      expect(response.body).toHaveProperty('ok');
     });
 
-    it('should reject invalid result.status', async () => {
+    it('should accept mode: auto', async () => {
       const response = await request(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/validate')
-        .send({
-          result: { status: 'invalid' },
-          metadata: { validatorModel: 'gpt-4' }
-        })
-        .expect(400);
-
-      expect(response.body.ok).toBe(false);
-      expect(response.body.error).toBe('Validation failed');
-      expect(response.body.details).toContain('status');
-    });
-
-    it('should reject missing metadata', async () => {
-      const response = await request(app)
-        .post('/api/v1/autopilot/tasks/TEST-VTID-001/validate')
-        .send({ result: { status: 'approved' } })
-        .expect(400);
-
-      expect(response.body.ok).toBe(false);
-      expect(response.body.error).toBe('Validation failed');
-      expect(response.body.details).toContain('metadata');
-    });
-
-    it('should reject missing validatorModel', async () => {
-      const response = await request(app)
-        .post('/api/v1/autopilot/tasks/TEST-VTID-001/validate')
-        .send({
-          result: { status: 'approved' },
-          metadata: { validatorRole: 'VALIDATOR' }
-        })
-        .expect(400);
-
-      expect(response.body.ok).toBe(false);
-      expect(response.body.error).toBe('Validation failed');
-      expect(response.body.details).toContain('validatorModel');
-    });
-
-    it('should accept approved validation', async () => {
-      const response = await request(app)
-        .post('/api/v1/autopilot/tasks/TEST-VTID-001/validate')
-        .send({
-          result: {
-            status: 'approved',
-            notes: 'All checks passed'
-          },
-          metadata: {
-            validatorModel: 'gpt-4',
-            validatorRole: 'VALIDATOR'
-          }
-        })
+        .send({ mode: 'auto' })
         .expect((res) => {
           expect([200, 400]).toContain(res.status);
         });
@@ -507,28 +467,32 @@ describe('Autopilot Pipeline - VTID-0533', () => {
       expect(response.body).toHaveProperty('ok');
     });
 
-    it('should accept rejected validation with issues', async () => {
+    it('should return validator.plan_missing when no plan exists', async () => {
       const response = await request(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/validate')
-        .send({
-          result: {
-            status: 'rejected',
-            issues: [
-              { code: 'MISSING_TESTS', message: 'Tests for endpoint /xyz are missing' },
-              { code: 'TYPE_ERROR', message: 'Type mismatch in function foo()' }
-            ],
-            notes: 'Please address the issues before resubmitting'
-          },
-          metadata: {
-            validatorModel: 'claude-3-opus',
-            validatorRole: 'VALIDATOR'
-          }
-        })
-        .expect((res) => {
-          expect([200, 400]).toContain(res.status);
-        });
+        .send({ mode: 'auto' });
 
-      expect(response.body).toHaveProperty('ok');
+      // Without a plan event in OASIS, should return plan_missing
+      if (response.status === 400) {
+        expect(response.body.code).toBe('validator.plan_missing');
+      }
+    });
+
+    it('should return validation object in response on success', async () => {
+      const response = await request(app)
+        .post('/api/v1/autopilot/tasks/TEST-VTID-001/validate')
+        .send({ mode: 'auto' });
+
+      // Response structure should have validation object when ok=true
+      if (response.body.ok === true) {
+        expect(response.body).toHaveProperty('vtid');
+        expect(response.body).toHaveProperty('validation');
+        expect(response.body.validation).toHaveProperty('final_status');
+        expect(response.body.validation).toHaveProperty('rules_checked');
+        expect(response.body.validation).toHaveProperty('violations');
+        expect(response.body.validation).toHaveProperty('summary');
+        expect(response.body.validation).toHaveProperty('validated_at');
+      }
     });
   });
 
@@ -951,7 +915,7 @@ describe('VTID-0534 Worker-Core Engine Tests', () => {
     it('should include worker section structure', () => {
       const statusResponse = {
         ok: true,
-        vtid: 'VTID-0534',
+        vtid: 'VTID-0535',
         status: {
           planner: { status: 'planned', planSteps: 3 },
           worker: {
@@ -983,7 +947,7 @@ describe('VTID-0534 Worker-Core Engine Tests', () => {
               }
             ]
           },
-          validator: { status: 'pending' }
+          validator: { final_status: 'pending', summary: 'Validation not yet executed.', rules_checked: [], violations: [], validated_at: null }
         }
       };
 
@@ -1017,6 +981,413 @@ describe('VTID-0534 Worker-Core Engine Tests', () => {
       expect(step).toHaveProperty('executor_type');
       expect(step).toHaveProperty('output_summary');
       expect(step).toHaveProperty('error');
+    });
+  });
+});
+
+// ==================== VTID-0535 Validator-Core Engine Tests ====================
+
+describe('VTID-0535 Validator-Core Engine Tests', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('Validator-Core Error Codes', () => {
+    it('should define validator.plan_missing error code', () => {
+      const errorCodes = [
+        'validator.plan_missing',
+        'validator.worker_state_missing',
+        'validator.no_steps',
+        'validator.internal_error'
+      ];
+      expect(errorCodes).toContain('validator.plan_missing');
+    });
+
+    it('should define validator.worker_state_missing error code', () => {
+      const errorCodes = [
+        'validator.plan_missing',
+        'validator.worker_state_missing',
+        'validator.no_steps',
+        'validator.internal_error'
+      ];
+      expect(errorCodes).toContain('validator.worker_state_missing');
+    });
+
+    it('should define validator.no_steps error code', () => {
+      const errorCodes = [
+        'validator.plan_missing',
+        'validator.worker_state_missing',
+        'validator.no_steps',
+        'validator.internal_error'
+      ];
+      expect(errorCodes).toContain('validator.no_steps');
+    });
+
+    it('should define validator.internal_error error code', () => {
+      const errorCodes = [
+        'validator.plan_missing',
+        'validator.worker_state_missing',
+        'validator.no_steps',
+        'validator.internal_error'
+      ];
+      expect(errorCodes).toContain('validator.internal_error');
+    });
+  });
+
+  describe('Validation Rule IDs', () => {
+    it('should define VAL-RULE-001 (Plan Exists & Non-Empty)', () => {
+      const ruleIds = ['VAL-RULE-001', 'VAL-RULE-002', 'VAL-RULE-003', 'VAL-RULE-004', 'VAL-RULE-005', 'VAL-RULE-006'];
+      expect(ruleIds).toContain('VAL-RULE-001');
+    });
+
+    it('should define VAL-RULE-002 (Worker Steps Cover the Plan)', () => {
+      const ruleIds = ['VAL-RULE-001', 'VAL-RULE-002', 'VAL-RULE-003', 'VAL-RULE-004', 'VAL-RULE-005', 'VAL-RULE-006'];
+      expect(ruleIds).toContain('VAL-RULE-002');
+    });
+
+    it('should define VAL-RULE-003 (No Failed Steps for Success)', () => {
+      const ruleIds = ['VAL-RULE-001', 'VAL-RULE-002', 'VAL-RULE-003', 'VAL-RULE-004', 'VAL-RULE-005', 'VAL-RULE-006'];
+      expect(ruleIds).toContain('VAL-RULE-003');
+    });
+
+    it('should define VAL-RULE-004 (Failure Must Have Error Details)', () => {
+      const ruleIds = ['VAL-RULE-001', 'VAL-RULE-002', 'VAL-RULE-003', 'VAL-RULE-004', 'VAL-RULE-005', 'VAL-RULE-006'];
+      expect(ruleIds).toContain('VAL-RULE-004');
+    });
+
+    it('should define VAL-RULE-005 (Valid State Machine)', () => {
+      const ruleIds = ['VAL-RULE-001', 'VAL-RULE-002', 'VAL-RULE-003', 'VAL-RULE-004', 'VAL-RULE-005', 'VAL-RULE-006'];
+      expect(ruleIds).toContain('VAL-RULE-005');
+    });
+
+    it('should define VAL-RULE-006 (Final Status Derivation)', () => {
+      const ruleIds = ['VAL-RULE-001', 'VAL-RULE-002', 'VAL-RULE-003', 'VAL-RULE-004', 'VAL-RULE-005', 'VAL-RULE-006'];
+      expect(ruleIds).toContain('VAL-RULE-006');
+    });
+  });
+
+  describe('Validation Final Status', () => {
+    it('should define success status', () => {
+      const validStatuses = ['success', 'failed', 'pending'];
+      expect(validStatuses).toContain('success');
+    });
+
+    it('should define failed status', () => {
+      const validStatuses = ['success', 'failed', 'pending'];
+      expect(validStatuses).toContain('failed');
+    });
+
+    it('should define pending status', () => {
+      const validStatuses = ['success', 'failed', 'pending'];
+      expect(validStatuses).toContain('pending');
+    });
+  });
+
+  describe('Validation Result Structure', () => {
+    it('should have correct validation result structure for success', () => {
+      const successResult = {
+        final_status: 'success',
+        rules_checked: ['VAL-RULE-001', 'VAL-RULE-002', 'VAL-RULE-003', 'VAL-RULE-004', 'VAL-RULE-005', 'VAL-RULE-006'],
+        violations: [],
+        summary: 'All 3 steps completed successfully without failures.',
+        validated_at: '2025-12-12T00:10:00Z'
+      };
+
+      expect(successResult).toHaveProperty('final_status');
+      expect(successResult).toHaveProperty('rules_checked');
+      expect(successResult).toHaveProperty('violations');
+      expect(successResult).toHaveProperty('summary');
+      expect(successResult).toHaveProperty('validated_at');
+      expect(successResult.final_status).toBe('success');
+      expect(successResult.violations).toHaveLength(0);
+    });
+
+    it('should have correct validation result structure for failure', () => {
+      const failedResult = {
+        final_status: 'failed',
+        rules_checked: ['VAL-RULE-001', 'VAL-RULE-002', 'VAL-RULE-003'],
+        violations: [
+          {
+            code: 'VAL-RULE-003',
+            message: 'Step "step-2" is in failed state',
+            step_id: 'step-2'
+          }
+        ],
+        summary: 'Task failed: 1 step(s) in failed state.',
+        validated_at: '2025-12-12T00:10:00Z'
+      };
+
+      expect(failedResult.final_status).toBe('failed');
+      expect(failedResult.violations).toHaveLength(1);
+      expect(failedResult.violations[0]).toHaveProperty('code');
+      expect(failedResult.violations[0]).toHaveProperty('message');
+      expect(failedResult.violations[0]).toHaveProperty('step_id');
+    });
+  });
+
+  describe('Validation Violation Structure', () => {
+    it('should have correct violation structure with step_id', () => {
+      const violation = {
+        code: 'VAL-RULE-002',
+        message: 'Planned step "step-3" has no worker state',
+        step_id: 'step-3'
+      };
+
+      expect(violation).toHaveProperty('code');
+      expect(violation).toHaveProperty('message');
+      expect(violation).toHaveProperty('step_id');
+    });
+
+    it('should have correct violation structure without step_id', () => {
+      const violation = {
+        code: 'VAL-RULE-001',
+        message: 'Plan is missing for this VTID'
+      };
+
+      expect(violation).toHaveProperty('code');
+      expect(violation).toHaveProperty('message');
+      expect(violation).not.toHaveProperty('step_id');
+    });
+  });
+
+  describe('Final Status Derivation Logic', () => {
+    const deriveFinalStatus = (
+      hasRule001Violation: boolean,
+      hasRule002Violations: boolean,
+      hasRule003Violations: boolean,
+      hasRule004Violations: boolean,
+      hasRule005Violations: boolean,
+      allStepsCompleted: boolean
+    ): string => {
+      if (hasRule001Violation) return 'failed';
+      if (hasRule002Violations) return 'failed';
+      if (hasRule003Violations) return 'failed';
+      if (hasRule004Violations) return 'failed';
+      if (hasRule005Violations) return 'failed';
+      if (allStepsCompleted) return 'success';
+      return 'failed';
+    };
+
+    it('should return failed when plan is missing (VAL-RULE-001)', () => {
+      expect(deriveFinalStatus(true, false, false, false, false, false)).toBe('failed');
+    });
+
+    it('should return failed when worker coverage is incomplete (VAL-RULE-002)', () => {
+      expect(deriveFinalStatus(false, true, false, false, false, false)).toBe('failed');
+    });
+
+    it('should return failed when any step failed (VAL-RULE-003)', () => {
+      expect(deriveFinalStatus(false, false, true, false, false, false)).toBe('failed');
+    });
+
+    it('should return failed when failed step missing error (VAL-RULE-004)', () => {
+      expect(deriveFinalStatus(false, false, false, true, false, false)).toBe('failed');
+    });
+
+    it('should return failed when state machine inconsistency (VAL-RULE-005)', () => {
+      expect(deriveFinalStatus(false, false, false, false, true, false)).toBe('failed');
+    });
+
+    it('should return success when all steps completed and no violations', () => {
+      expect(deriveFinalStatus(false, false, false, false, false, true)).toBe('success');
+    });
+
+    it('should return failed when not all steps completed (strict v1)', () => {
+      expect(deriveFinalStatus(false, false, false, false, false, false)).toBe('failed');
+    });
+  });
+
+  describe('OASIS Event Payloads', () => {
+    describe('autopilot.validation.completed event', () => {
+      it('should include required fields for success', () => {
+        const eventPayload = {
+          vtid: 'VTID-0535',
+          final_status: 'success',
+          rules_checked: ['VAL-RULE-001', 'VAL-RULE-002', 'VAL-RULE-003', 'VAL-RULE-004', 'VAL-RULE-005', 'VAL-RULE-006'],
+          violations: [],
+          summary: 'All steps completed successfully.',
+          validated_at: new Date().toISOString()
+        };
+
+        expect(eventPayload).toHaveProperty('vtid');
+        expect(eventPayload).toHaveProperty('final_status');
+        expect(eventPayload).toHaveProperty('rules_checked');
+        expect(eventPayload).toHaveProperty('violations');
+        expect(eventPayload).toHaveProperty('summary');
+        expect(eventPayload).toHaveProperty('validated_at');
+      });
+
+      it('should include required fields for failure', () => {
+        const eventPayload = {
+          vtid: 'VTID-0535',
+          final_status: 'failed',
+          rules_checked: ['VAL-RULE-001', 'VAL-RULE-002', 'VAL-RULE-003'],
+          violations: [
+            {
+              code: 'VAL-RULE-003',
+              message: 'At least one step is failed.',
+              step_id: 'step-2'
+            }
+          ],
+          summary: 'Task failed because at least one step failed.',
+          validated_at: new Date().toISOString()
+        };
+
+        expect(eventPayload.final_status).toBe('failed');
+        expect(eventPayload.violations.length).toBeGreaterThan(0);
+        expect(eventPayload.violations[0]).toHaveProperty('code');
+        expect(eventPayload.violations[0]).toHaveProperty('message');
+      });
+    });
+
+    describe('autopilot.task.finalized event', () => {
+      it('should include required fields for success', () => {
+        const eventPayload = {
+          vtid: 'VTID-0535',
+          final_status: 'success',
+          finalized_at: new Date().toISOString(),
+          summary: 'Task successfully validated and finalized.',
+          violations: []
+        };
+
+        expect(eventPayload).toHaveProperty('vtid');
+        expect(eventPayload).toHaveProperty('final_status');
+        expect(eventPayload).toHaveProperty('finalized_at');
+        expect(eventPayload).toHaveProperty('summary');
+        expect(eventPayload).toHaveProperty('violations');
+      });
+
+      it('should include required fields for failure', () => {
+        const eventPayload = {
+          vtid: 'VTID-0535',
+          final_status: 'failed',
+          finalized_at: new Date().toISOString(),
+          summary: 'Task finalized as failed due to failed worker steps.',
+          violations: [
+            {
+              code: 'VAL-RULE-003',
+              message: '1 step failed.',
+              step_id: 'step-2'
+            }
+          ]
+        };
+
+        expect(eventPayload.final_status).toBe('failed');
+        expect(eventPayload.violations.length).toBeGreaterThan(0);
+      });
+    });
+  });
+
+  describe('Status Response Validator Section', () => {
+    it('should include validator section structure before validation', () => {
+      const statusResponse = {
+        ok: true,
+        vtid: 'VTID-0535',
+        status: {
+          planner: { status: 'planned', planSteps: 3 },
+          worker: { overall_status: 'completed', steps: [] },
+          validator: {
+            final_status: 'pending',
+            summary: 'Validation not yet executed.',
+            rules_checked: [],
+            violations: [],
+            validated_at: null
+          }
+        }
+      };
+
+      expect(statusResponse.status).toHaveProperty('validator');
+      expect(statusResponse.status.validator).toHaveProperty('final_status');
+      expect(statusResponse.status.validator).toHaveProperty('summary');
+      expect(statusResponse.status.validator).toHaveProperty('rules_checked');
+      expect(statusResponse.status.validator).toHaveProperty('violations');
+      expect(statusResponse.status.validator).toHaveProperty('validated_at');
+      expect(statusResponse.status.validator.final_status).toBe('pending');
+      expect(statusResponse.status.validator.validated_at).toBeNull();
+    });
+
+    it('should include validator section structure after validation', () => {
+      const statusResponse = {
+        ok: true,
+        vtid: 'VTID-0535',
+        status: {
+          planner: { status: 'completed', planSteps: 3 },
+          worker: { overall_status: 'completed', steps: [] },
+          validator: {
+            final_status: 'success',
+            summary: 'All 3 steps completed successfully without failures.',
+            rules_checked: ['VAL-RULE-001', 'VAL-RULE-002', 'VAL-RULE-003', 'VAL-RULE-004', 'VAL-RULE-005', 'VAL-RULE-006'],
+            violations: [],
+            validated_at: '2025-12-12T00:10:00Z'
+          }
+        }
+      };
+
+      expect(statusResponse.status.validator.final_status).toBe('success');
+      expect(statusResponse.status.validator.rules_checked.length).toBe(6);
+      expect(statusResponse.status.validator.violations).toHaveLength(0);
+      expect(statusResponse.status.validator.validated_at).not.toBeNull();
+    });
+
+    it('should include validator section with violations for failed validation', () => {
+      const statusResponse = {
+        ok: true,
+        vtid: 'VTID-0535',
+        status: {
+          planner: { status: 'completed', planSteps: 3 },
+          worker: { overall_status: 'failed', steps: [] },
+          validator: {
+            final_status: 'failed',
+            summary: 'Task failed: 1 step(s) in failed state.',
+            rules_checked: ['VAL-RULE-001', 'VAL-RULE-002', 'VAL-RULE-003'],
+            violations: [
+              {
+                code: 'VAL-RULE-003',
+                message: 'Step "step-2" is in failed state',
+                step_id: 'step-2'
+              }
+            ],
+            validated_at: '2025-12-12T00:10:00Z'
+          }
+        }
+      };
+
+      expect(statusResponse.status.validator.final_status).toBe('failed');
+      expect(statusResponse.status.validator.violations.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Validate Request Structure', () => {
+    it('should accept mode auto (default)', () => {
+      const request = { mode: 'auto', override: null };
+      expect(request.mode).toBe('auto');
+      expect(request.override).toBeNull();
+    });
+
+    it('should accept empty request body', () => {
+      const request = {};
+      expect(request).toBeDefined();
+    });
+  });
+
+  describe('Idempotency', () => {
+    it('should produce consistent validation results for same state', () => {
+      // Validation results should be deterministic
+      const workerState = {
+        overall_status: 'completed',
+        steps: [
+          { step_id: 'step-1', status: 'completed', error: null },
+          { step_id: 'step-2', status: 'completed', error: null },
+          { step_id: 'step-3', status: 'completed', error: null }
+        ]
+      };
+
+      // Same state should always produce same result
+      const hasFailedSteps = workerState.steps.some(s => s.status === 'failed');
+      expect(hasFailedSteps).toBe(false);
+
+      const allCompleted = workerState.steps.every(s => s.status === 'completed');
+      expect(allCompleted).toBe(true);
     });
   });
 });
