@@ -308,9 +308,26 @@ describe('Governance API', () => {
     });
 
     describe('GET /api/v1/governance/evaluations', () => {
-        it('should return array of evaluations', async () => {
+        it('should return evaluations in VTID-0406 format', async () => {
+            // Mock oasis_events query for governance.evaluate events
             mockSupabase.mockResolvedValueOnce({
-                data: [],
+                data: [
+                    {
+                        id: 'eval-1',
+                        created_at: '2025-12-12T10:00:00Z',
+                        topic: 'governance.evaluate',
+                        service: 'gateway',
+                        status: 'success',
+                        message: 'deploy',
+                        metadata: {
+                            action: 'deploy',
+                            service: 'gateway',
+                            environment: 'production',
+                            allow: true,
+                            violated_rules: []
+                        }
+                    }
+                ],
                 error: null
             });
 
@@ -318,7 +335,76 @@ describe('Governance API', () => {
                 .get('/api/v1/governance/evaluations')
                 .expect(200);
 
-            expect(Array.isArray(response.body)).toBe(true);
+            // VTID-0406: Response format
+            expect(response.body.ok).toBe(true);
+            expect(response.body.vtid).toBe('VTID-0406');
+            expect(response.body.count).toBe(1);
+            expect(Array.isArray(response.body.data)).toBe(true);
+            expect(response.body.data[0]).toHaveProperty('id');
+            expect(response.body.data[0]).toHaveProperty('action');
+            expect(response.body.data[0]).toHaveProperty('allow');
+        });
+
+        it('should return evaluations with violated rules', async () => {
+            mockSupabase.mockResolvedValueOnce({
+                data: [
+                    {
+                        id: 'eval-2',
+                        created_at: '2025-12-12T10:00:00Z',
+                        topic: 'governance.evaluate',
+                        service: 'gateway',
+                        status: 'error',
+                        message: 'deploy blocked',
+                        metadata: {
+                            action: 'deploy',
+                            service: 'gateway',
+                            environment: 'production',
+                            allow: false,
+                            violated_rules: [
+                                { rule_id: 'MG-001', level: 'L1', domain: 'MIGRATION' }
+                            ]
+                        }
+                    }
+                ],
+                error: null
+            });
+
+            const response = await request(app)
+                .get('/api/v1/governance/evaluations')
+                .expect(200);
+
+            expect(response.body.ok).toBe(true);
+            expect(response.body.data[0].allow).toBe(false);
+            expect(response.body.data[0].violated_rules).toHaveLength(1);
+            expect(response.body.data[0].violated_rules[0].rule_id).toBe('MG-001');
+        });
+
+        it('should filter evaluations by result', async () => {
+            mockSupabase.mockResolvedValueOnce({
+                data: [
+                    {
+                        id: 'eval-1',
+                        created_at: '2025-12-12T10:00:00Z',
+                        topic: 'governance.evaluate',
+                        metadata: { allow: true, violated_rules: [] }
+                    },
+                    {
+                        id: 'eval-2',
+                        created_at: '2025-12-12T10:00:00Z',
+                        topic: 'governance.evaluate',
+                        metadata: { allow: false, violated_rules: [] }
+                    }
+                ],
+                error: null
+            });
+
+            const response = await request(app)
+                .get('/api/v1/governance/evaluations?result=allow')
+                .expect(200);
+
+            expect(response.body.ok).toBe(true);
+            // Only allowed evaluations should be returned
+            expect(response.body.data.every((ev: any) => ev.allow === true)).toBe(true);
         });
     });
 
