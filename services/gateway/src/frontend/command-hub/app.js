@@ -1852,6 +1852,11 @@ function handleModuleClick(sectionKey) {
 
     state.isSplitScreen = false; // Reset split screen on module change
     state.activeSplitScreenId = null;
+    // VTID-0406: Close drawers when navigating between modules
+    state.selectedTask = null;
+    state.selectedTaskDetail = null;
+    state.selectedTaskDetailLoading = false;
+    state.selectedGovernanceRule = null;
     renderApp();
 }
 
