@@ -59,7 +59,7 @@ router.get('/tasks/pending-plan', async (_req: Request, res: Response) => {
       data: tasks
     });
   } catch (error: any) {
-    console.error('[VTID-0532] Pending plan tasks error:', error);
+    console.warn('[VTID-0532] Pending plan tasks error:', error);
     return res.status(500).json({
       ok: false,
       error: 'Failed to fetch pending plan tasks',
@@ -173,7 +173,7 @@ router.post('/tasks/:vtid/plan', async (req: Request, res: Response) => {
       planSteps: result.planSteps
     });
   } catch (error: any) {
-    console.error(`[VTID-0533] Plan submission error for ${vtid}:`, error);
+    console.warn(`[VTID-0533] Plan submission error for ${vtid}:`, error);
     return res.status(500).json({
       ok: false,
       error: 'Failed to submit plan',
@@ -238,7 +238,7 @@ router.post('/tasks/:vtid/work/start', async (req: Request, res: Response) => {
       eventId: result.eventId
     });
   } catch (error: any) {
-    console.error(`[VTID-0533] Work start error for ${vtid}:`, error);
+    console.warn(`[VTID-0533] Work start error for ${vtid}:`, error);
     return res.status(500).json({
       ok: false,
       error: 'Failed to emit work started event',
@@ -313,7 +313,7 @@ router.post('/tasks/:vtid/work/complete', async (req: Request, res: Response) =>
       eventId: result.eventId
     });
   } catch (error: any) {
-    console.error(`[VTID-0533] Work complete error for ${vtid}:`, error);
+    console.warn(`[VTID-0533] Work complete error for ${vtid}:`, error);
     return res.status(500).json({
       ok: false,
       error: 'Failed to emit work completed event',
@@ -409,7 +409,7 @@ router.post('/tasks/:vtid/validate', async (req: Request, res: Response) => {
       eventId: eventResult.eventId
     });
   } catch (error: any) {
-    console.error(`[VTID-0533] Validation error for ${vtid}:`, error);
+    console.warn(`[VTID-0533] Validation error for ${vtid}:`, error);
     return res.status(500).json({
       ok: false,
       error: 'Failed to emit validation event',
@@ -453,7 +453,7 @@ router.get('/tasks/:vtid/status', async (req: Request, res: Response) => {
       ...taskStatus
     });
   } catch (error: any) {
-    console.error(`[VTID-0533] Status error for ${vtid}:`, error);
+    console.warn(`[VTID-0533] Status error for ${vtid}:`, error);
     return res.status(500).json({
       ok: false,
       error: 'Failed to get task status',
