@@ -289,6 +289,9 @@ const state = {
     // VTID-0527: Raw telemetry events for task stage computation
     telemetryEvents: [],
 
+    // DEV-COMHU-0202: Global events state for VTID correlation
+    events: [],
+
     // Operator History State
     historyEvents: [],
     historyLoading: false,
@@ -1499,9 +1502,99 @@ function renderTaskDrawer() {
     const stageDetail = renderTaskStageDetail(state.selectedTask);
     content.appendChild(stageDetail);
 
+    // DEV-COMHU-0202: Add VTID event history section
+    const eventHistory = renderTaskEventHistory(state.selectedTask.vtid);
+    content.appendChild(eventHistory);
+
     drawer.appendChild(content);
 
     return drawer;
+}
+
+/**
+ * DEV-COMHU-0202: Get events for a specific VTID from global events state.
+ */
+function getEventsForVtid(vtid) {
+    if (!vtid) return [];
+    return (state.events || []).filter(function(e) {
+        return e.vtid === vtid;
+    });
+}
+
+/**
+ * DEV-COMHU-0202: Render event history for a VTID in the task drawer.
+ * Shows last deploy, governance, and other events for correlation.
+ */
+function renderTaskEventHistory(vtid) {
+    const container = document.createElement('div');
+    container.className = 'task-event-history';
+
+    const heading = document.createElement('h3');
+    heading.className = 'task-event-history-heading';
+    heading.textContent = 'Event History';
+    container.appendChild(heading);
+
+    const events = getEventsForVtid(vtid);
+
+    if (!events || events.length === 0) {
+        const emptyDiv = document.createElement('div');
+        emptyDiv.className = 'task-event-history-empty';
+        emptyDiv.textContent = 'No recent events for this VTID.';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    const list = document.createElement('div');
+    list.className = 'task-event-history-list';
+
+    // Show last 5 events, sorted by timestamp (newest first)
+    var sortedEvents = events.slice().sort(function(a, b) {
+        if (!a.createdAt || !b.createdAt) return 0;
+        return new Date(b.createdAt) - new Date(a.createdAt);
+    });
+
+    sortedEvents.slice(0, 5).forEach(function(event) {
+        const item = document.createElement('div');
+        item.className = 'task-event-history-item';
+
+        // Status-based styling
+        if (event.topic && event.topic.includes('.success')) {
+            item.classList.add('task-event-history-item-success');
+        } else if (event.topic && (event.topic.includes('.failed') || event.topic.includes('.blocked'))) {
+            item.classList.add('task-event-history-item-error');
+        }
+
+        const timestamp = event.createdAt ? new Date(event.createdAt).toLocaleTimeString() : '';
+
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'task-event-history-time';
+        timeSpan.textContent = timestamp;
+        item.appendChild(timeSpan);
+
+        const topicSpan = document.createElement('span');
+        topicSpan.className = 'task-event-history-topic';
+        topicSpan.textContent = event.topic || 'unknown';
+        item.appendChild(topicSpan);
+
+        if (event.swv) {
+            const swvSpan = document.createElement('span');
+            swvSpan.className = 'task-event-history-swv';
+            swvSpan.textContent = event.swv;
+            item.appendChild(swvSpan);
+        }
+
+        if (event.message) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'task-event-history-message';
+            msgDiv.textContent = event.message;
+            item.appendChild(msgDiv);
+        }
+
+        list.appendChild(item);
+    });
+
+    container.appendChild(list);
+    return container;
 }
 
 /**
@@ -4344,6 +4437,13 @@ function renderOperatorTicker() {
             const item = document.createElement('div');
             item.className = 'ticker-item';
 
+            // DEV-COMHU-0202: Add status-based class for deploy events
+            if (event.topic && event.topic.includes('.success')) {
+                item.classList.add('ticker-item-success');
+            } else if (event.topic && (event.topic.includes('.failed') || event.topic.includes('.blocked'))) {
+                item.classList.add('ticker-item-error');
+            }
+
             const timestamp = document.createElement('div');
             timestamp.className = 'ticker-timestamp';
             timestamp.textContent = event.timestamp;
@@ -4358,14 +4458,34 @@ function renderOperatorTicker() {
                 item.appendChild(stageBadge);
             }
 
+            // DEV-COMHU-0202: Show VTID badge for deploy/governance events
+            if (event.vtid) {
+                const vtidBadge = document.createElement('div');
+                vtidBadge.className = 'ticker-vtid';
+                vtidBadge.textContent = event.vtid;
+                vtidBadge.title = 'VTID: ' + event.vtid;
+                item.appendChild(vtidBadge);
+            }
+
+            // DEV-COMHU-0202: Show SWV badge if present
+            if (event.swv) {
+                const swvBadge = document.createElement('div');
+                swvBadge.className = 'ticker-swv';
+                swvBadge.textContent = event.swv;
+                swvBadge.title = 'SWV: ' + event.swv;
+                item.appendChild(swvBadge);
+            }
+
             const content = document.createElement('div');
             content.className = 'ticker-content';
             content.textContent = event.content;
             item.appendChild(content);
 
+            // DEV-COMHU-0202: Show topic for deploy events instead of generic type
+            const typeLabel = event.topic && event.topic.startsWith('deploy.') ? event.topic : event.type;
             const type = document.createElement('div');
             type.className = `ticker-type ticker-type-${event.type}`;
-            type.textContent = event.type;
+            type.textContent = typeLabel;
             item.appendChild(type);
 
             eventsList.appendChild(item);
@@ -5241,21 +5361,58 @@ function startOperatorSse() {
             const event = JSON.parse(e.data);
             console.log('[Operator] SSE event:', event);
 
-            // Add to ticker (VTID-0526-D: include task_stage)
+            // DEV-COMHU-0202: Normalize event for ticker with deploy event support
+            const vtid = event.vtid || (event.payload && event.payload.vtid) || null;
+            const swv = event.swv || (event.payload && event.payload.swv) || null;
+            const topic = event.topic || event.type || 'unknown';
+            const service = event.service || (event.payload && event.payload.service) || null;
+            const message = event.message || (event.payload && event.payload.message) || '';
+
+            // Build display content with deploy event info
+            let displayContent = message || topic;
+            if (topic.startsWith('deploy.') && service) {
+                displayContent = topic.replace('deploy.', '').replace('.', ' ').toUpperCase();
+                if (message) displayContent += ': ' + message;
+            }
+
+            // Add to ticker (VTID-0526-D: include task_stage, DEV-COMHU-0202: include vtid/swv/topic)
             state.tickerEvents.unshift({
                 id: event.id || Date.now(),
                 timestamp: new Date(event.created_at).toLocaleTimeString(),
-                type: event.type?.split('.')[0] || 'info',
-                content: event.payload?.message || event.type || 'Event received',
-                task_stage: event.task_stage || event.payload?.task_stage || null // VTID-0526-D
+                type: topic.split('.')[0] || 'info',
+                topic: topic,
+                content: displayContent,
+                vtid: vtid,
+                swv: swv,
+                service: service,
+                status: event.status,
+                task_stage: event.task_stage || (event.payload && event.payload.task_stage) || null
             });
+
+            // DEV-COMHU-0202: Also store in global events state for VTID correlation
+            state.events = state.events || [];
+            state.events.unshift({
+                id: event.id,
+                topic: topic,
+                vtid: vtid,
+                swv: swv,
+                service: service,
+                message: message,
+                status: event.status,
+                createdAt: event.created_at,
+                raw: event
+            });
+            // Cap events at 200
+            if (state.events.length > 200) {
+                state.events = state.events.slice(0, 200);
+            }
 
             // VTID-0526-D: Update stage counters on new event
             if (event.task_stage && state.stageCounters[event.task_stage] !== undefined) {
                 state.stageCounters[event.task_stage]++;
             }
 
-            // Keep only last 100 events
+            // Keep only last 100 ticker events
             if (state.tickerEvents.length > 100) {
                 state.tickerEvents = state.tickerEvents.slice(0, 100);
             }
