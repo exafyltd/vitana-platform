@@ -675,7 +675,7 @@ function renderApp() {
     root.appendChild(renderBundleFingerprintFooter());
 
     // VTID-0150-A: ORB UI & Interaction Shell (Global Assistant Overlay)
-    root.appendChild(renderOrbIdle());
+    // Note: ORB idle is now rendered inside sidebar footer via renderOrbIdleElement()
     root.appendChild(renderOrbOverlay());
     root.appendChild(renderOrbChatDrawer());
 
@@ -738,7 +738,11 @@ function renderSidebar() {
 
     sidebar.appendChild(navSection);
 
-    // Profile at bottom (VTID-0508)
+    // Sidebar Footer: Profile + ORB (VTID-0150-A)
+    const sidebarFooter = document.createElement('div');
+    sidebarFooter.className = 'sidebar-footer';
+
+    // Profile capsule (VTID-0508)
     const profile = document.createElement('div');
     profile.className = 'sidebar-profile';
     profile.onclick = () => {
@@ -768,7 +772,15 @@ function renderSidebar() {
         profile.appendChild(info);
     }
 
-    sidebar.appendChild(profile);
+    sidebarFooter.appendChild(profile);
+
+    // ORB container (centered) - VTID-0150-A
+    const orbContainer = document.createElement('div');
+    orbContainer.className = 'sidebar-orb-container';
+    orbContainer.appendChild(renderOrbIdleElement());
+    sidebarFooter.appendChild(orbContainer);
+
+    sidebar.appendChild(sidebarFooter);
 
     // Toggle
     const toggle = document.createElement('div');
@@ -781,6 +793,36 @@ function renderSidebar() {
     sidebar.appendChild(toggle);
 
     return sidebar;
+}
+
+/**
+ * VTID-0150-A: Creates the ORB idle element for the sidebar footer
+ * @returns {HTMLElement}
+ */
+function renderOrbIdleElement() {
+    var orb = document.createElement('div');
+    orb.className = 'orb-idle orb-idle-pulse' + (state.orb.overlayVisible ? ' orb-hidden' : '');
+    orb.setAttribute('role', 'button');
+    orb.setAttribute('aria-label', 'Open Vitana Assistant');
+    orb.setAttribute('tabindex', '0');
+
+    // Click handler
+    orb.addEventListener('click', function() {
+        console.log('[ORB] Opening overlay...');
+        state.orb.overlayVisible = true;
+        renderApp();
+    });
+
+    // Keyboard accessibility
+    orb.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            state.orb.overlayVisible = true;
+            renderApp();
+        }
+    });
+
+    return orb;
 }
 
 function renderHeader() {
@@ -5350,41 +5392,7 @@ const ORB_ICONS = {
     send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>'
 };
 
-/**
- * VTID-0150-A: Renders the ORB Idle State (floating sphere in bottom-left)
- * @returns {HTMLElement}
- */
-function renderOrbIdle() {
-    var orb = document.createElement('div');
-    orb.className = 'orb-idle orb-idle-pulse' + (state.orb.overlayVisible ? ' orb-hidden' : '');
-    orb.setAttribute('role', 'button');
-    orb.setAttribute('aria-label', 'Open Vitana Assistant');
-    orb.setAttribute('tabindex', '0');
-
-    // Inner sparkle icon
-    var icon = document.createElement('span');
-    icon.className = 'orb-idle-icon';
-    icon.innerHTML = ORB_ICONS.sparkle;
-    orb.appendChild(icon);
-
-    // Click handler
-    orb.addEventListener('click', function() {
-        console.log('[ORB] Opening overlay...');
-        state.orb.overlayVisible = true;
-        renderApp();
-    });
-
-    // Keyboard accessibility
-    orb.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            state.orb.overlayVisible = true;
-            renderApp();
-        }
-    });
-
-    return orb;
-}
+// VTID-0150-A: ORB Idle is now rendered via renderOrbIdleElement() inside sidebar footer
 
 /**
  * VTID-0150-A: Renders the ORB Overlay (full-screen mode)
