@@ -261,6 +261,122 @@ router.get("/events/health", (_req: Request, res: Response) => {
   });
 });
 
+/**
+ * VTID-0416: Deploy Event Schema for CI/CD workflow
+ * Accepts deploy events from the governed CI pipeline
+ */
+const DeployEventSchema = z.object({
+  type: z.string().min(1, "type required"),
+  vtid: z.string().min(1, "vtid required"),
+  service: z.string().min(1, "service required"),
+  branch: z.string().optional(),
+  source: z.string().default("ci_cd"),
+  message: z.string().min(1, "message required"),
+  details: z.record(z.any()).optional(),
+});
+
+/**
+ * POST /api/v1/oasis/events
+ * VTID-0416: Emit deploy events to OASIS from CI/CD workflow
+ */
+router.post("/api/v1/oasis/events", async (req: Request, res: Response) => {
+  try {
+    const validation = DeployEventSchema.safeParse(req.body);
+
+    if (!validation.success) {
+      console.error("[VTID-0416] Validation error:", validation.error.errors);
+      return res.status(400).json({
+        ok: false,
+        error: validation.error.errors
+          .map((e) => `${e.path.join(".")}: ${e.message}`)
+          .join(", "),
+      });
+    }
+
+    const body = validation.data;
+
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+
+    if (!svcKey || !supabaseUrl) {
+      console.error("[VTID-0416] Gateway misconfigured: Missing Supabase credentials");
+      return res.status(500).json({
+        ok: false,
+        error: "Gateway misconfigured",
+      });
+    }
+
+    const eventId = randomUUID();
+    const timestamp = new Date().toISOString();
+
+    // Determine status based on event type
+    let eventStatus: string = "info";
+    if (body.type.includes(".success")) {
+      eventStatus = "success";
+    } else if (body.type.includes(".failed") || body.type.includes(".blocked")) {
+      eventStatus = "error";
+    } else if (body.type.includes(".warning")) {
+      eventStatus = "warning";
+    }
+
+    const payload = {
+      id: eventId,
+      created_at: timestamp,
+      vtid: body.vtid,
+      topic: body.type,
+      service: body.source,
+      role: "CICD",
+      model: "vtid-0416-governed-deploy",
+      status: eventStatus,
+      message: body.message,
+      link: null,
+      metadata: {
+        service: body.service,
+        branch: body.branch,
+        ...body.details,
+      },
+    };
+
+    const resp = await fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+        Prefer: "return=representation",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.error(`[VTID-0416] OASIS insert failed: ${resp.status} - ${text}`);
+      return res.status(502).json({
+        ok: false,
+        error: "Database insert failed",
+      });
+    }
+
+    const data = await resp.json();
+    const insertedEvent = Array.isArray(data) ? data[0] : data;
+
+    console.log(`[VTID-0416] Deploy event recorded: ${eventId} - ${body.type} for ${body.service}`);
+
+    return res.status(200).json({
+      ok: true,
+      event_id: insertedEvent.id,
+      vtid: body.vtid,
+      type: body.type,
+    });
+  } catch (e: any) {
+    console.error("[VTID-0416] Unexpected error:", e);
+    return res.status(500).json({
+      ok: false,
+      error: "Internal server error",
+    });
+  }
+});
+
 router.get("/api/v1/oasis/events", async (req: Request, res: Response) => {
   try {
     const svcKey = process.env.SUPABASE_SERVICE_ROLE;

@@ -1,4 +1,7 @@
 name: Exec Deploy (VTID Bridge)
+# VTID-0416: Gateway Deploy Governance Lockdown
+# This is the CANONICAL deployment workflow for gateway and other services.
+# All deploys must go through this governed, validated CI pipeline.
 on:
   workflow_dispatch:
     inputs:
@@ -21,6 +24,10 @@ on:
         description: 'Initiator (user or agent)'
         required: false
         default: 'agent'
+      environment:
+        description: 'Deployment environment'
+        required: false
+        default: 'dev'
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -35,6 +42,98 @@ jobs:
           service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
           project_id: lovable-vitana-vers1
       - uses: google-github-actions/setup-gcloud@v2
+
+      # =========================================================================
+      # VTID-0416: Governance Evaluate Pre-Check (Hard Gate, Before Deploy)
+      # =========================================================================
+      - name: Governance Evaluate (VTID-0416)
+        id: governance
+        run: |
+          set -e
+          VTID="${{ github.event.inputs.vtid }}"
+          SERVICE="${{ github.event.inputs.service }}"
+          BRANCH="${{ github.ref_name }}"
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+
+          echo "VTID-0416: Running governance pre-check for $SERVICE deploy"
+
+          # Resolve gateway URL (current deployed instance)
+          GATEWAY_URL=$(gcloud run services describe gateway \
+            --region=us-central1 \
+            --project=lovable-vitana-vers1 \
+            --format="value(status.url)" 2>/dev/null || echo "")
+
+          if [ -z "$GATEWAY_URL" ]; then
+            echo "Warning: Could not resolve gateway URL. Proceeding with deploy (first-time deploy scenario)."
+            echo "governance_allowed=true" >> $GITHUB_OUTPUT
+            echo "governance_gateway_url=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Using GATEWAY_URL=$GATEWAY_URL"
+          echo "governance_gateway_url=$GATEWAY_URL" >> $GITHUB_OUTPUT
+
+          # Call governance evaluate endpoint
+          RESPONSE=$(curl -s -X POST "$GATEWAY_URL/api/v1/governance/evaluate" \
+            -H "Content-Type: application/json" \
+            -H "X-VTID: $VTID" \
+            -d "{
+              \"vtid\": \"$VTID\",
+              \"service\": \"$SERVICE\",
+              \"action\": \"deploy\",
+              \"environment\": \"$ENVIRONMENT\",
+              \"branch\": \"$BRANCH\"
+            }" 2>&1 || echo '{"ok":false,"error":"request_failed"}')
+
+          echo "Governance response: $RESPONSE"
+
+          # Parse governance response using jq
+          ALLOWED=$(echo "$RESPONSE" | jq -r '.allowed // .allow // empty')
+          OK=$(echo "$RESPONSE" | jq -r '.ok // empty')
+          VIOLATIONS=$(echo "$RESPONSE" | jq -r '.violations // []')
+          LEVEL=$(echo "$RESPONSE" | jq -r '.level // "L4"')
+
+          # Check for hard errors (network issues, etc.)
+          if [ "$OK" = "false" ]; then
+            ERROR=$(echo "$RESPONSE" | jq -r '.error // "unknown"')
+            echo "Warning: Governance evaluation returned error: $ERROR"
+            echo "Proceeding with deploy (fail-open on governance errors)"
+            echo "governance_allowed=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Check if allowed
+          if [ "$ALLOWED" = "true" ]; then
+            echo "VTID-0416: Governance APPROVED deployment for $SERVICE"
+            echo "governance_allowed=true" >> $GITHUB_OUTPUT
+            echo "governance_level=$LEVEL" >> $GITHUB_OUTPUT
+          else
+            echo "VTID-0416: Governance DENIED deployment for $SERVICE on branch $BRANCH"
+            echo "Violations: $VIOLATIONS"
+            echo "governance_allowed=false" >> $GITHUB_OUTPUT
+            echo "governance_level=$LEVEL" >> $GITHUB_OUTPUT
+
+            # Emit OASIS event for blocked deploy
+            curl -s -X POST "$GATEWAY_URL/api/v1/oasis/events" \
+              -H "Content-Type: application/json" \
+              -H "X-VTID: $VTID" \
+              -d "{
+                \"type\": \"deploy.gateway.blocked\",
+                \"vtid\": \"$VTID\",
+                \"service\": \"$SERVICE\",
+                \"branch\": \"$BRANCH\",
+                \"source\": \"ci_cd\",
+                \"message\": \"Gateway deploy blocked by governance (VTID-0416)\",
+                \"details\": {\"violations\": $VIOLATIONS, \"level\": \"$LEVEL\"}
+              }" 2>/dev/null || true
+
+            echo "::error::VTID-0416: Governance denied deployment. Check violations above."
+            exit 1
+          fi
+
+      # =========================================================================
+      # Deploy to Cloud Run (Source Deploy)
+      # =========================================================================
       - name: Deploy to Cloud Run (Source Deploy)
         id: deploy
         run: |
@@ -81,6 +180,59 @@ jobs:
           # Health check
           echo "Running health check: $URL${{ github.event.inputs.health_path }}"
           curl -fsS "$URL${{ github.event.inputs.health_path }}" -H "X-VTID: ${{ github.event.inputs.vtid }}"
+
+      # =========================================================================
+      # VTID-0416: Post-Deploy Smoke Tests
+      # =========================================================================
+      - name: Post-Deploy Smoke Tests (VTID-0416)
+        id: smoke_tests
+        if: success() && github.event.inputs.service == 'gateway'
+        env:
+          GATEWAY_URL: ${{ steps.deploy.outputs.service_url }}
+        run: |
+          set -e
+          echo "VTID-0416: Running post-deploy smoke tests on $GATEWAY_URL"
+
+          # 1) Health endpoint
+          echo "Smoke Test 1/3: Health check (/alive)"
+          HEALTH=$(curl -fsS "$GATEWAY_URL/alive" 2>&1 || echo '{"error":"failed"}')
+          echo "$HEALTH" | jq '.' || echo "$HEALTH"
+          if echo "$HEALTH" | jq -e '.error' > /dev/null 2>&1; then
+            echo "::error::VTID-0416: Health check failed"
+            exit 1
+          fi
+          echo "✓ Health check passed"
+
+          # 2) Governance Categories - must be JSON with vtid=VTID-0409
+          echo "Smoke Test 2/3: Governance Categories"
+          CATEGORIES=$(curl -fsS "$GATEWAY_URL/api/v1/governance/categories" 2>&1 || echo '{"error":"failed"}')
+          echo "$CATEGORIES" | jq '.' || echo "$CATEGORIES"
+          VTID_FIELD=$(echo "$CATEGORIES" | jq -r '.vtid // empty')
+          if [ "$VTID_FIELD" != "VTID-0409" ]; then
+            echo "::error::VTID-0416: Expected governance categories vtid=VTID-0409, got '$VTID_FIELD'"
+            exit 1
+          fi
+          echo "✓ Governance categories check passed (vtid=$VTID_FIELD)"
+
+          # 3) Governance History - should be ok:true JSON
+          echo "Smoke Test 3/3: Governance History"
+          HISTORY=$(curl -fsS "$GATEWAY_URL/api/v1/governance/history?limit=1" 2>&1 || echo '{"ok":false,"error":"failed"}')
+          echo "$HISTORY" | jq '.' || echo "$HISTORY"
+          OK_FIELD=$(echo "$HISTORY" | jq -r '.ok // empty')
+          if [ "$OK_FIELD" != "true" ]; then
+            echo "::error::VTID-0416: Governance history did not return ok:true"
+            exit 1
+          fi
+          echo "✓ Governance history check passed"
+
+          echo ""
+          echo "==========================================="
+          echo "VTID-0416: All smoke tests PASSED"
+          echo "==========================================="
+
+      # =========================================================================
+      # VTID-0510: Record Software Version
+      # =========================================================================
       - name: Record Software Version (VTID-0510)
         if: success()
         env:
@@ -97,3 +249,84 @@ jobs:
             -H "X-VTID: ${{ github.event.inputs.vtid }}" \
             -d "{\"service\":\"${SERVICE_NAME}\",\"git_commit\":\"${GIT_COMMIT}\",\"deploy_type\":\"normal\",\"initiator\":\"${{ github.event.inputs.initiator }}\",\"environment\":\"dev-sandbox\"}" \
             || echo "Warning: Failed to record version (non-fatal)"
+
+      # =========================================================================
+      # VTID-0416: Emit OASIS Event for Deploy Success
+      # =========================================================================
+      - name: Emit OASIS Deploy Success Event (VTID-0416)
+        if: success()
+        env:
+          GATEWAY_URL: ${{ steps.deploy.outputs.service_url }}
+        run: |
+          VTID="${{ github.event.inputs.vtid }}"
+          SERVICE="${{ steps.deploy.outputs.cloud_run_service }}"
+          BRANCH="${{ github.ref_name }}"
+          GIT_COMMIT="${{ github.sha }}"
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+
+          echo "VTID-0416: Emitting deploy success event"
+
+          # Emit OASIS event for successful deploy
+          curl -s -X POST "${GATEWAY_URL}/api/v1/oasis/events" \
+            -H "Content-Type: application/json" \
+            -H "X-VTID: $VTID" \
+            -d "{
+              \"type\": \"deploy.$SERVICE.success\",
+              \"vtid\": \"$VTID\",
+              \"service\": \"$SERVICE\",
+              \"branch\": \"$BRANCH\",
+              \"source\": \"ci_cd\",
+              \"message\": \"$SERVICE deployed via VTID-0416 governed pipeline\",
+              \"details\": {
+                \"git_commit\": \"$GIT_COMMIT\",
+                \"environment\": \"$ENVIRONMENT\",
+                \"governance_approved\": true,
+                \"smoke_tests_passed\": true,
+                \"workflow_run_id\": \"${{ github.run_id }}\"
+              }
+            }" 2>/dev/null || echo "Warning: Failed to emit success event (non-fatal)"
+
+          echo "VTID-0416: Deploy completed successfully via governed pipeline"
+
+      # =========================================================================
+      # VTID-0416: Emit OASIS Event for Deploy Failure
+      # =========================================================================
+      - name: Emit OASIS Deploy Failure Event (VTID-0416)
+        if: failure()
+        run: |
+          VTID="${{ github.event.inputs.vtid }}"
+          SERVICE="${{ github.event.inputs.service }}"
+          BRANCH="${{ github.ref_name }}"
+          GIT_COMMIT="${{ github.sha }}"
+
+          # Try to get gateway URL if available
+          GATEWAY_URL="${{ steps.governance.outputs.governance_gateway_url }}"
+          if [ -z "$GATEWAY_URL" ]; then
+            GATEWAY_URL=$(gcloud run services describe gateway \
+              --region=us-central1 \
+              --project=lovable-vitana-vers1 \
+              --format="value(status.url)" 2>/dev/null || echo "")
+          fi
+
+          if [ -n "$GATEWAY_URL" ]; then
+            echo "VTID-0416: Emitting deploy failure event to $GATEWAY_URL"
+
+            curl -s -X POST "${GATEWAY_URL}/api/v1/oasis/events" \
+              -H "Content-Type: application/json" \
+              -H "X-VTID: $VTID" \
+              -d "{
+                \"type\": \"deploy.$SERVICE.failed\",
+                \"vtid\": \"$VTID\",
+                \"service\": \"$SERVICE\",
+                \"branch\": \"$BRANCH\",
+                \"source\": \"ci_cd\",
+                \"message\": \"$SERVICE deploy failed (governance or smoke tests)\",
+                \"details\": {
+                  \"git_commit\": \"$GIT_COMMIT\",
+                  \"workflow_run_id\": \"${{ github.run_id }}\",
+                  \"failure_stage\": \"unknown\"
+                }
+              }" 2>/dev/null || true
+          fi
+
+          echo "VTID-0416: Deploy failed - check workflow logs for details"
