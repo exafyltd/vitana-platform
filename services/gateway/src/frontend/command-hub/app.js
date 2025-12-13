@@ -3926,42 +3926,51 @@ async function sendChatMessage() {
     });
 
     try {
-        // VTID-0525: All messages go through /operator/command
-        // The backend parses NL and decides if it's deploy, task, or chat
-        // VTID is auto-created by the backend if not provided
-        console.log('[Operator] Sending message to /api/v1/operator/command');
+        // VTID-0537: Wire to /operator/chat for Gemini + Tools (VTID-0536)
+        // This endpoint supports natural language chat with autopilot tools
+        console.log('[Operator] Sending message to /api/v1/operator/chat');
 
-        const response = await fetch('/api/v1/operator/command', {
+        const response = await fetch('/api/v1/operator/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 message: messageText,
-                // Don't pass vtid - let backend auto-create
-                environment: 'dev',
-                default_branch: 'main'
+                attachments: attachments.length > 0 ? attachments : undefined
             })
         });
 
         if (!response.ok) {
-            throw new Error(`Command request failed: ${response.status}`);
+            throw new Error(`Chat request failed: ${response.status}`);
         }
 
         const result = await response.json();
-        console.log('[Operator] Command response:', result);
+        console.log('[Operator] Chat response:', result);
 
-        // Format and display the command result using the backend's reply
-        const formattedResult = formatCommandResult(result);
+        // VTID-0537: Use the reply from the Gemini Operator Tools Bridge
+        const replyContent = result.reply || 'No response received';
 
-        // Determine if this was a command (deploy/task) or just a chat query
-        const isCommandAction = result.command && (result.command.action === 'deploy' || result.command.action === 'task');
+        // VTID-0537: Check if a task was created via tools
+        const hasCreatedTask = result.createdTask && result.createdTask.vtid;
+        const hasToolResults = result.toolResults && result.toolResults.length > 0;
+
+        // Build enhanced content if task was created
+        let displayContent = replyContent;
+        if (hasCreatedTask) {
+            displayContent += `\n\n📋 Task Created: **${result.createdTask.vtid}**`;
+            if (result.createdTask.title) {
+                displayContent += ` - ${result.createdTask.title}`;
+            }
+        }
 
         state.chatMessages.push({
             type: 'system',
-            content: formattedResult,
+            content: displayContent,
             timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-            oasis_ref: result.vtid,
-            isCommand: isCommandAction,
-            commandResult: result
+            oasis_ref: result.oasis_ref,
+            threadId: result.threadId,
+            createdTask: result.createdTask,
+            toolResults: result.toolResults,
+            meta: result.meta
         });
 
     } catch (error) {
