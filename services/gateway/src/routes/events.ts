@@ -446,3 +446,130 @@ router.get("/api/v1/oasis/events", async (req: Request, res: Response) => {
     });
   }
 });
+
+/**
+ * DEV-COMHU-0202: SSE Stream endpoint for real-time events
+ * GET /api/v1/events/stream
+ *
+ * Provides Server-Sent Events for real-time event streaming to Command Hub UI.
+ * Supports the following query parameters:
+ * - channel: Filter channel (e.g., "operator")
+ * - topic: Filter by event topic (e.g., "deploy.gateway.success")
+ * - vtid: Filter by VTID
+ */
+router.get("/api/v1/events/stream", async (req: Request, res: Response) => {
+  const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+  const supabaseUrl = process.env.SUPABASE_URL;
+
+  // Set SSE headers
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no"); // Disable nginx buffering
+
+  // Send initial connection event
+  res.write(`event: connected\ndata: ${JSON.stringify({ status: "connected", timestamp: new Date().toISOString() })}\n\n`);
+
+  // Track last seen event ID for polling
+  let lastSeenId: string | null = null;
+  let lastSeenTimestamp: string | null = null;
+
+  // Function to fetch and send new events
+  const pollEvents = async () => {
+    if (!svcKey || !supabaseUrl) {
+      console.error("[SSE] Gateway misconfigured");
+      return;
+    }
+
+    try {
+      // Build query params - fetch recent events
+      let queryParams = "limit=20&order=created_at.desc";
+
+      // If we have a last seen timestamp, only get newer events
+      if (lastSeenTimestamp) {
+        queryParams += `&created_at=gt.${lastSeenTimestamp}`;
+      }
+
+      // Apply optional filters
+      const topic = req.query.topic as string;
+      const vtid = req.query.vtid as string;
+      if (topic) queryParams += `&topic=eq.${topic}`;
+      if (vtid) queryParams += `&vtid=eq.${vtid}`;
+
+      const resp = await fetch(
+        `${supabaseUrl}/rest/v1/oasis_events?${queryParams}`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: svcKey,
+            Authorization: `Bearer ${svcKey}`,
+          },
+        },
+      );
+
+      if (!resp.ok) {
+        console.error(`[SSE] OASIS poll failed: ${resp.status}`);
+        return;
+      }
+
+      const events = (await resp.json()) as any[];
+
+      // Send new events (reverse to send oldest first)
+      const newEvents = events.filter((e: any) => e.id !== lastSeenId).reverse();
+
+      for (const event of newEvents) {
+        // Normalize event structure for frontend
+        const normalizedEvent = {
+          id: event.id,
+          type: event.topic || event.kind || "unknown",
+          topic: event.topic || event.kind || "unknown",
+          vtid: event.vtid || (event.metadata && event.metadata.vtid) || null,
+          swv: event.metadata && event.metadata.swv || null,
+          service: event.service || (event.metadata && event.metadata.service) || null,
+          created_at: event.created_at,
+          status: event.status,
+          message: event.message || event.title || "",
+          task_stage: event.task_stage || (event.metadata && event.metadata.task_stage) || null,
+          payload: {
+            message: event.message || event.title || "",
+            vtid: event.vtid,
+            swv: event.metadata && event.metadata.swv,
+            service: event.metadata && event.metadata.service,
+            branch: event.metadata && event.metadata.branch,
+            task_stage: event.task_stage || (event.metadata && event.metadata.task_stage),
+            ...event.metadata,
+          },
+        };
+
+        res.write(`event: oasis-event\ndata: ${JSON.stringify(normalizedEvent)}\n\n`);
+
+        lastSeenId = event.id;
+        if (event.created_at) {
+          lastSeenTimestamp = event.created_at;
+        }
+      }
+    } catch (err: any) {
+      console.error("[SSE] Poll error:", err.message);
+    }
+  };
+
+  // Initial poll to send recent events
+  await pollEvents();
+
+  // Set up polling interval (every 3 seconds)
+  const pollInterval = setInterval(pollEvents, 3000);
+
+  // Send heartbeat every 30 seconds to keep connection alive
+  const heartbeatInterval = setInterval(() => {
+    res.write(`: heartbeat ${new Date().toISOString()}\n\n`);
+  }, 30000);
+
+  // Cleanup on client disconnect
+  req.on("close", () => {
+    console.log("[SSE] Client disconnected");
+    clearInterval(pollInterval);
+    clearInterval(heartbeatInterval);
+    res.end();
+  });
+});
