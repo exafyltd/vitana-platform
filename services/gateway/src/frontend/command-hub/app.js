@@ -367,6 +367,15 @@ const state = {
         fetched: false
     },
 
+    // VTID-0409: Governance Categories (Read-Only V1)
+    governanceCategories: {
+        items: [],
+        loading: false,
+        error: null,
+        selectedCategoryId: null,
+        fetched: false
+    },
+
     // VTID-0150-A: ORB UI State (Global Assistant Overlay)
     orb: {
         overlayVisible: false,
@@ -1228,6 +1237,9 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'governance' && tab === 'history') {
         // VTID-0408: Governance History timeline view
         container.appendChild(renderGovernanceHistoryView());
+    } else if (moduleKey === 'governance' && tab === 'categories') {
+        // VTID-0409: Governance Categories (Read-Only V1)
+        container.appendChild(renderGovernanceCategoriesView());
     } else {
         // Placeholder for other modules
         const placeholder = document.createElement('div');
@@ -3304,6 +3316,257 @@ function renderGovernanceHistoryDrawer(event) {
     drawer.appendChild(content);
 
     return drawer;
+}
+
+// --- VTID-0409: Governance Categories (Read-Only V1) ---
+
+/**
+ * VTID-0409: Fetches governance categories from the API.
+ * Populates state.governanceCategories with category data including rules.
+ */
+async function fetchGovernanceCategories() {
+    state.governanceCategories.loading = true;
+    state.governanceCategories.fetched = true;
+    state.governanceCategories.error = null;
+    renderApp();
+
+    try {
+        var response = await fetch('/api/v1/governance/categories');
+        var json = await response.json();
+
+        if (json.ok && json.categories) {
+            state.governanceCategories.items = json.categories;
+
+            // Auto-select first category if none selected
+            if (!state.governanceCategories.selectedCategoryId && json.categories.length > 0) {
+                state.governanceCategories.selectedCategoryId = json.categories[0].id;
+            }
+
+            console.log('[VTID-0409] Governance categories loaded:', json.categories.length, 'categories');
+        } else {
+            throw new Error(json.error || 'Failed to load governance categories');
+        }
+    } catch (error) {
+        console.warn('[VTID-0409] Governance categories fetch error:', error);
+        state.governanceCategories.error = error.message;
+        state.governanceCategories.items = [];
+    }
+
+    state.governanceCategories.loading = false;
+    renderApp();
+}
+
+/**
+ * VTID-0409: Renders the Governance Categories view.
+ * Two-column layout: left = category list, right = rules table for selected category.
+ */
+function renderGovernanceCategoriesView() {
+    var container = document.createElement('div');
+    container.className = 'gov-categories-container';
+
+    // Auto-fetch categories if not yet fetched and not currently loading
+    if (!state.governanceCategories.fetched && !state.governanceCategories.loading) {
+        fetchGovernanceCategories();
+    }
+
+    // Loading state
+    if (state.governanceCategories.loading) {
+        var loading = document.createElement('div');
+        loading.className = 'gov-categories-loading';
+        loading.innerHTML = '<div class="skeleton-table">' +
+            '<div class="skeleton-row"></div>' +
+            '<div class="skeleton-row"></div>' +
+            '<div class="skeleton-row"></div>' +
+            '</div>';
+        container.appendChild(loading);
+        return container;
+    }
+
+    // Error state
+    if (state.governanceCategories.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'gov-categories-error';
+        errorDiv.innerHTML = '<span class="error-icon">⚠</span> Error loading categories: ' + escapeHtml(state.governanceCategories.error);
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    // Empty state
+    if (state.governanceCategories.items.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'gov-categories-empty';
+        emptyDiv.innerHTML = '<p>No governance categories found.</p>' +
+            '<p class="gov-categories-empty-hint">Categories will appear here as governance rules are added.</p>';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    // Two-column layout
+    var layout = document.createElement('div');
+    layout.className = 'gov-categories-layout';
+
+    // Left column: category list
+    var leftColumn = document.createElement('div');
+    leftColumn.className = 'gov-categories-list';
+
+    var selectedId = state.governanceCategories.selectedCategoryId;
+    var selectedCategory = state.governanceCategories.items.find(function(c) {
+        return c.id === selectedId;
+    }) || state.governanceCategories.items[0];
+
+    state.governanceCategories.items.forEach(function(cat) {
+        var catBtn = document.createElement('button');
+        catBtn.className = 'gov-category-item' + (cat.id === selectedCategory.id ? ' selected' : '');
+        catBtn.setAttribute('role', 'option');
+        catBtn.setAttribute('aria-selected', cat.id === selectedCategory.id ? 'true' : 'false');
+
+        var labelDiv = document.createElement('div');
+        labelDiv.className = 'gov-category-label';
+        labelDiv.textContent = cat.label;
+        catBtn.appendChild(labelDiv);
+
+        var metaDiv = document.createElement('div');
+        metaDiv.className = 'gov-category-meta';
+
+        var countSpan = document.createElement('span');
+        countSpan.className = 'gov-category-count';
+        countSpan.textContent = cat.rule_count + ' rule' + (cat.rule_count !== 1 ? 's' : '');
+        metaDiv.appendChild(countSpan);
+
+        var levelsSpan = document.createElement('span');
+        levelsSpan.className = 'gov-category-levels';
+        levelsSpan.innerHTML =
+            '<span class="lvl lvl-L1" title="L1 Critical">' + cat.levels.L1 + '</span>' +
+            '<span class="lvl lvl-L2" title="L2 High">' + cat.levels.L2 + '</span>' +
+            '<span class="lvl lvl-L3" title="L3 Medium">' + cat.levels.L3 + '</span>' +
+            '<span class="lvl lvl-L4" title="L4 Low">' + cat.levels.L4 + '</span>';
+        metaDiv.appendChild(levelsSpan);
+
+        catBtn.appendChild(metaDiv);
+
+        catBtn.onclick = function() {
+            state.governanceCategories.selectedCategoryId = cat.id;
+            renderApp();
+        };
+
+        leftColumn.appendChild(catBtn);
+    });
+
+    layout.appendChild(leftColumn);
+
+    // Right column: rules table for selected category
+    var rightColumn = document.createElement('div');
+    rightColumn.className = 'gov-category-rules';
+
+    // Category header
+    var catHeader = document.createElement('div');
+    catHeader.className = 'gov-category-header';
+
+    var catTitle = document.createElement('h3');
+    catTitle.className = 'gov-category-title';
+    catTitle.textContent = selectedCategory.label;
+    catHeader.appendChild(catTitle);
+
+    var catCount = document.createElement('span');
+    catCount.className = 'gov-category-rule-count';
+    catCount.textContent = selectedCategory.rule_count + ' rule' + (selectedCategory.rule_count !== 1 ? 's' : '');
+    catHeader.appendChild(catCount);
+
+    rightColumn.appendChild(catHeader);
+
+    // Rules table
+    if (selectedCategory.rules && selectedCategory.rules.length > 0) {
+        var tableWrapper = document.createElement('div');
+        tableWrapper.className = 'gov-category-table-wrapper';
+
+        var table = document.createElement('table');
+        table.className = 'gov-category-rules-table';
+
+        // Table header
+        var thead = document.createElement('thead');
+        thead.innerHTML =
+            '<tr>' +
+            '<th>Rule ID</th>' +
+            '<th>Title</th>' +
+            '<th>Level</th>' +
+            '<th>Source</th>' +
+            '<th></th>' +
+            '</tr>';
+        table.appendChild(thead);
+
+        // Table body
+        var tbody = document.createElement('tbody');
+        selectedCategory.rules.forEach(function(rule) {
+            var row = document.createElement('tr');
+            row.className = 'gov-category-rule-row';
+            row.tabIndex = 0;
+            row.setAttribute('role', 'button');
+            row.setAttribute('aria-label', 'View rule details: ' + rule.rule_id);
+
+            // Rule ID
+            var idCell = document.createElement('td');
+            idCell.className = 'gov-rule-id';
+            idCell.textContent = rule.rule_id;
+            row.appendChild(idCell);
+
+            // Title
+            var titleCell = document.createElement('td');
+            titleCell.className = 'gov-rule-title';
+            titleCell.textContent = rule.title;
+            row.appendChild(titleCell);
+
+            // Level badge
+            var levelCell = document.createElement('td');
+            levelCell.className = 'gov-rule-level-cell';
+            var levelBadge = document.createElement('span');
+            levelBadge.className = 'gov-rule-level lvl-' + rule.level;
+            levelBadge.textContent = rule.level;
+            levelCell.appendChild(levelBadge);
+            row.appendChild(levelCell);
+
+            // Source badge
+            var sourceCell = document.createElement('td');
+            sourceCell.className = 'gov-rule-source-cell';
+            var sourceBadge = document.createElement('span');
+            sourceBadge.className = 'gov-rule-source source-' + rule.source.toLowerCase();
+            sourceBadge.textContent = rule.source;
+            sourceCell.appendChild(sourceBadge);
+            row.appendChild(sourceCell);
+
+            // Chevron
+            var chevronCell = document.createElement('td');
+            chevronCell.className = 'gov-rule-chevron';
+            chevronCell.innerHTML = '›';
+            row.appendChild(chevronCell);
+
+            // Click handler to open rule drawer
+            row.onclick = function() {
+                openRuleDetailByCode(rule.rule_id);
+            };
+            row.onkeydown = function(e) {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    openRuleDetailByCode(rule.rule_id);
+                }
+            };
+
+            tbody.appendChild(row);
+        });
+
+        table.appendChild(tbody);
+        tableWrapper.appendChild(table);
+        rightColumn.appendChild(tableWrapper);
+    } else {
+        var noRules = document.createElement('div');
+        noRules.className = 'gov-categories-empty';
+        noRules.innerHTML = '<p>No rules in this category.</p>';
+        rightColumn.appendChild(noRules);
+    }
+
+    layout.appendChild(rightColumn);
+    container.appendChild(layout);
+
+    return container;
 }
 
 /**

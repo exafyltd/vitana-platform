@@ -295,7 +295,24 @@ export class GovernanceController {
 
     /**
      * GET /api/v1/governance/categories
-     * Returns all governance categories
+     * VTID-0409: Returns governance categories with rule counts, level distribution, and rules list.
+     *
+     * Response shape:
+     * {
+     *   "ok": true,
+     *   "vtid": "VTID-0409",
+     *   "categories": [
+     *     {
+     *       "id": "FRONTEND",
+     *       "label": "Frontend & Navigation",
+     *       "rule_count": 5,
+     *       "levels": { "L1": 1, "L2": 2, "L3": 1, "L4": 1 },
+     *       "rules": [
+     *         { "rule_id": "GOV-FRONTEND-R.1", "title": "...", "level": "L1", "source": "SYSTEM" }
+     *       ]
+     *     }
+     *   ]
+     * }
      */
     async getCategories(req: Request, res: Response) {
         try {
@@ -303,38 +320,123 @@ export class GovernanceController {
 
             const supabase = getSupabase();
             if (!supabase) {
-                console.warn('[GovernanceController] Supabase not configured - categories fetch unavailable');
+                console.warn('[VTID-0409] Supabase not configured - categories fetch unavailable');
                 return res.status(503).json({
                     ok: false,
+                    vtid: 'VTID-0409',
                     error: 'SUPABASE_CONFIG_ERROR',
                     message: 'Governance storage is temporarily unavailable'
                 });
             }
-            const { data: categories, error } = await supabase
-                .from('governance_categories')
-                .select('*')
-                .eq('tenant_id', tenantId)
-                .order('name', { ascending: true });
 
-            if (error) {
-                console.error('Error fetching categories:', error);
-                return res.status(500).json({ error: error.message });
+            // VTID-0409: Fetch all governance rules with category join
+            const { data: rules, error: rulesError } = await supabase
+                .from('governance_rules')
+                .select(`
+                    *,
+                    governance_categories (
+                        name,
+                        code,
+                        description
+                    )
+                `)
+                .eq('tenant_id', tenantId)
+                .order('rule_id', { ascending: true });
+
+            if (rulesError) {
+                console.error('[VTID-0409] Error fetching rules for categories:', rulesError);
+                return res.status(500).json({
+                    ok: false,
+                    vtid: 'VTID-0409',
+                    error: rulesError.message
+                });
             }
 
-            // Transform to simple DTO
-            const categoryDTOs = (categories || []).map((cat: any) => ({
-                id: cat.id,
-                category_name: cat.name,
-                description: cat.description || null,
-                governance_area: cat.name.replace('_GOVERNANCE', '').toLowerCase(),
-                severity: cat.severity || null
-            }));
+            // VTID-0409: Group rules by domain (category code)
+            const categoryMap = new Map<string, {
+                id: string;
+                label: string;
+                rule_count: number;
+                levels: { L1: number; L2: number; L3: number; L4: number };
+                rules: Array<{ rule_id: string; title: string; level: string; source: string }>;
+            }>();
 
-            res.json(categoryDTOs);
+            for (const rule of (rules || [])) {
+                const categoryData = rule.governance_categories as any;
+                const domain = categoryData?.code ||
+                    (categoryData?.name || 'UNKNOWN').replace(' Governance', '').replace('_GOVERNANCE', '').toUpperCase();
+
+                if (!categoryMap.has(domain)) {
+                    categoryMap.set(domain, {
+                        id: domain,
+                        label: this.mapDomainToLabel(domain),
+                        rule_count: 0,
+                        levels: { L1: 0, L2: 0, L3: 0, L4: 0 },
+                        rules: []
+                    });
+                }
+
+                const cat = categoryMap.get(domain)!;
+                cat.rule_count += 1;
+
+                // Count by level
+                const lvl = (rule.level || 'L3') as 'L1' | 'L2' | 'L3' | 'L4';
+                if (cat.levels[lvl] !== undefined) {
+                    cat.levels[lvl] += 1;
+                }
+
+                // VTID-0405: Determine source (SYSTEM or CATALOG)
+                const ruleSource = rule.is_system_rule || rule.logic?.source === 'SYSTEM'
+                    ? 'SYSTEM'
+                    : (rule.logic?.source || 'CATALOG');
+
+                cat.rules.push({
+                    rule_id: rule.rule_id || rule.logic?.rule_code || rule.id,
+                    title: rule.name,
+                    level: rule.level || 'L2',
+                    source: ruleSource
+                });
+            }
+
+            // Sort categories alphabetically by label
+            const categories = Array.from(categoryMap.values())
+                .sort((a, b) => a.label.localeCompare(b.label));
+
+            console.log(`[VTID-0409] Returning ${categories.length} governance categories with ${rules?.length || 0} total rules`);
+
+            res.json({
+                ok: true,
+                vtid: 'VTID-0409',
+                categories
+            });
         } catch (error: any) {
-            console.error('Error in getCategories:', error);
-            res.status(500).json({ error: error.message });
+            console.error('[VTID-0409] Error in getCategories:', error);
+            res.status(500).json({
+                ok: false,
+                vtid: 'VTID-0409',
+                error: error.message
+            });
         }
+    }
+
+    /**
+     * VTID-0409: Maps domain code to human-readable label
+     */
+    private mapDomainToLabel(domain: string): string {
+        const labelMap: Record<string, string> = {
+            'FRONTEND': 'Frontend & Navigation',
+            'CSP': 'Content Security Policy',
+            'DEPLOYMENT': 'Deployment',
+            'CICD': 'CI/CD',
+            'API': 'API Governance',
+            'DB': 'Database & Migrations',
+            'AGENT': 'Agents & Autonomy',
+            'MIGRATION': 'Migration Governance',
+            'NAVIGATION': 'Navigation',
+            'SECURITY': 'Security',
+            'UNKNOWN': 'Uncategorized'
+        };
+        return labelMap[domain] || domain.charAt(0) + domain.slice(1).toLowerCase() + ' Governance';
     }
 
     /**

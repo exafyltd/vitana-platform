@@ -73,6 +73,213 @@ describe('Governance API', () => {
         mockSupabase.mockClear();
     });
 
+    // VTID-0409: Governance Categories tests
+    describe('GET /api/v1/governance/categories', () => {
+        it('should return VTID-0409 format with categories array', async () => {
+            // Mock: rules with category join
+            mockSupabase.mockResolvedValueOnce({
+                data: [
+                    {
+                        id: 'rule-1',
+                        tenant_id: 'SYSTEM',
+                        rule_id: 'GOV-MIGRATION-001',
+                        name: 'Migration Rule 1',
+                        level: 'L1',
+                        is_active: true,
+                        governance_categories: { name: 'MIGRATION_GOVERNANCE', code: 'MIGRATION' }
+                    },
+                    {
+                        id: 'rule-2',
+                        tenant_id: 'SYSTEM',
+                        rule_id: 'GOV-MIGRATION-002',
+                        name: 'Migration Rule 2',
+                        level: 'L2',
+                        is_active: true,
+                        governance_categories: { name: 'MIGRATION_GOVERNANCE', code: 'MIGRATION' }
+                    },
+                    {
+                        id: 'rule-3',
+                        tenant_id: 'SYSTEM',
+                        rule_id: 'GOV-FRONTEND-001',
+                        name: 'Frontend Rule 1',
+                        level: 'L3',
+                        is_active: true,
+                        logic: { source: 'SYSTEM' },
+                        governance_categories: { name: 'FRONTEND_GOVERNANCE', code: 'FRONTEND' }
+                    }
+                ],
+                error: null
+            });
+
+            const response = await request(app)
+                .get('/api/v1/governance/categories')
+                .expect(200);
+
+            // VTID-0409: Response format
+            expect(response.body.ok).toBe(true);
+            expect(response.body.vtid).toBe('VTID-0409');
+            expect(Array.isArray(response.body.categories)).toBe(true);
+            expect(response.body.categories.length).toBe(2);
+
+            // Check category structure
+            const migrationCat = response.body.categories.find((c: any) => c.id === 'MIGRATION');
+            expect(migrationCat).toBeDefined();
+            expect(migrationCat.label).toBe('Migration Governance');
+            expect(migrationCat.rule_count).toBe(2);
+            expect(migrationCat.levels.L1).toBe(1);
+            expect(migrationCat.levels.L2).toBe(1);
+            expect(migrationCat.rules.length).toBe(2);
+        });
+
+        it('should aggregate rules correctly by domain', async () => {
+            // Mock: multiple rules in same domain
+            mockSupabase.mockResolvedValueOnce({
+                data: [
+                    {
+                        id: 'rule-1',
+                        tenant_id: 'SYSTEM',
+                        rule_id: 'GOV-API-001',
+                        name: 'API Rule 1',
+                        level: 'L1',
+                        is_active: true,
+                        governance_categories: { name: 'API_GOVERNANCE', code: 'API' }
+                    },
+                    {
+                        id: 'rule-2',
+                        tenant_id: 'SYSTEM',
+                        rule_id: 'GOV-API-002',
+                        name: 'API Rule 2',
+                        level: 'L2',
+                        is_active: true,
+                        governance_categories: { name: 'API_GOVERNANCE', code: 'API' }
+                    },
+                    {
+                        id: 'rule-3',
+                        tenant_id: 'SYSTEM',
+                        rule_id: 'GOV-API-003',
+                        name: 'API Rule 3',
+                        level: 'L2',
+                        is_active: true,
+                        governance_categories: { name: 'API_GOVERNANCE', code: 'API' }
+                    }
+                ],
+                error: null
+            });
+
+            const response = await request(app)
+                .get('/api/v1/governance/categories')
+                .expect(200);
+
+            expect(response.body.ok).toBe(true);
+            expect(response.body.categories.length).toBe(1);
+
+            const apiCat = response.body.categories[0];
+            expect(apiCat.id).toBe('API');
+            expect(apiCat.rule_count).toBe(3);
+            expect(apiCat.levels.L1).toBe(1);
+            expect(apiCat.levels.L2).toBe(2);
+            expect(apiCat.levels.L3).toBe(0);
+            expect(apiCat.levels.L4).toBe(0);
+        });
+
+        it('should include rule source (SYSTEM or CATALOG)', async () => {
+            mockSupabase.mockResolvedValueOnce({
+                data: [
+                    {
+                        id: 'rule-1',
+                        tenant_id: 'SYSTEM',
+                        rule_id: 'GOV-DB-001',
+                        name: 'DB System Rule',
+                        level: 'L1',
+                        is_system_rule: true,
+                        is_active: true,
+                        governance_categories: { name: 'DB_GOVERNANCE', code: 'DB' }
+                    },
+                    {
+                        id: 'rule-2',
+                        tenant_id: 'SYSTEM',
+                        rule_id: 'GOV-DB-002',
+                        name: 'DB Catalog Rule',
+                        level: 'L2',
+                        is_active: true,
+                        logic: { source: 'CATALOG' },
+                        governance_categories: { name: 'DB_GOVERNANCE', code: 'DB' }
+                    }
+                ],
+                error: null
+            });
+
+            const response = await request(app)
+                .get('/api/v1/governance/categories')
+                .expect(200);
+
+            expect(response.body.ok).toBe(true);
+            const dbCat = response.body.categories[0];
+            expect(dbCat.rules[0].source).toBe('SYSTEM');
+            expect(dbCat.rules[1].source).toBe('CATALOG');
+        });
+
+        it('should return empty categories array when no rules exist', async () => {
+            mockSupabase.mockResolvedValueOnce({
+                data: [],
+                error: null
+            });
+
+            const response = await request(app)
+                .get('/api/v1/governance/categories')
+                .expect(200);
+
+            expect(response.body.ok).toBe(true);
+            expect(response.body.vtid).toBe('VTID-0409');
+            expect(response.body.categories).toEqual([]);
+        });
+
+        it('should sort categories alphabetically by label', async () => {
+            mockSupabase.mockResolvedValueOnce({
+                data: [
+                    {
+                        id: 'rule-1',
+                        tenant_id: 'SYSTEM',
+                        rule_id: 'GOV-FRONTEND-001',
+                        name: 'Frontend Rule',
+                        level: 'L2',
+                        is_active: true,
+                        governance_categories: { name: 'FRONTEND', code: 'FRONTEND' }
+                    },
+                    {
+                        id: 'rule-2',
+                        tenant_id: 'SYSTEM',
+                        rule_id: 'GOV-API-001',
+                        name: 'API Rule',
+                        level: 'L2',
+                        is_active: true,
+                        governance_categories: { name: 'API', code: 'API' }
+                    },
+                    {
+                        id: 'rule-3',
+                        tenant_id: 'SYSTEM',
+                        rule_id: 'GOV-CICD-001',
+                        name: 'CI/CD Rule',
+                        level: 'L2',
+                        is_active: true,
+                        governance_categories: { name: 'CICD', code: 'CICD' }
+                    }
+                ],
+                error: null
+            });
+
+            const response = await request(app)
+                .get('/api/v1/governance/categories')
+                .expect(200);
+
+            expect(response.body.ok).toBe(true);
+            // Should be sorted: API Governance, CI/CD, Frontend & Navigation
+            expect(response.body.categories[0].id).toBe('API');
+            expect(response.body.categories[1].id).toBe('CICD');
+            expect(response.body.categories[2].id).toBe('FRONTEND');
+        });
+    });
+
     describe('GET /api/v1/governance/rules', () => {
         it('should return catalog format with rules array (VTID-0401)', async () => {
             // First call: get rules
