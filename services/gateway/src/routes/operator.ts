@@ -1,14 +1,15 @@
 /**
- * Operator Routes - VTID-0509 + VTID-0510 + VTID-0525 + VTID-0531 + VTID-0532
+ * Operator Routes - VTID-0509 + VTID-0510 + VTID-0525 + VTID-0531 + VTID-0532 + VTID-0536
  *
  * VTID-0509: Operator Console API (chat, heartbeat, history, upload, session)
  * VTID-0510: Software Version Tracking (deployments)
  * VTID-0525: Operator Command Hub (NL -> Schema -> Deploy Orchestrator)
  * VTID-0531: Operator Chat → OASIS Integration & Thread/VTID Hardening
  * VTID-0532: Operator Task Extractor + VTID/Planner Handoff
+ * VTID-0536: Gemini Operator Tools Bridge (autopilot.create_task, get_status, list_recent_tasks)
  *
  * Final API endpoints (after mounting at /api/v1/operator):
- * - POST /api/v1/operator/chat - Operator chat with AI (+ task extraction VTID-0532)
+ * - POST /api/v1/operator/chat - Operator chat with AI (+ task extraction VTID-0532 + tools VTID-0536)
  * - GET  /api/v1/operator/chat/:threadId - Get chat thread history (VTID-0531)
  * - POST /api/v1/operator/command - Natural language command (VTID-0525)
  * - POST /api/v1/operator/deploy - Deploy orchestrator (VTID-0525)
@@ -26,6 +27,8 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { processMessage } from '../services/ai-orchestrator';
+// VTID-0536: Gemini Operator Tools Bridge
+import { processWithGemini } from '../services/gemini-operator';
 import {
   ingestOperatorEvent,
   getTasksSummary,
@@ -160,15 +163,37 @@ router.post('/chat', async (req: Request, res: Response) => {
       }
     }
 
-    // Call AI orchestrator
-    const aiResult = await processMessage({
+    // VTID-0536: Use Gemini Operator Tools Bridge for AI processing
+    // This enables function calling for autopilot.create_task, get_status, and list_recent_tasks
+    // Falls back to local routing if Gemini API is not configured
+    const geminiResult = await processWithGemini({
       text: message,
-      attachments: attachments,
-      oasisContext: {
-        vtid: validatedVtid || 'VTID-0509',
-        request_id: requestId
+      threadId,
+      attachments: attachments.map(a => ({ oasis_ref: a.oasis_ref, kind: a.kind })),
+      context: {
+        vtid: validatedVtid || 'VTID-0536',
+        request_id: requestId,
+        mode: mode
       }
     });
+
+    // VTID-0536: Check if Gemini created a task via tools (in addition to explicit /task command)
+    let geminiCreatedTask: CreatedTask | undefined;
+    if (geminiResult.toolResults) {
+      const createTaskResult = geminiResult.toolResults.find(
+        tr => tr.name === 'autopilot_create_task' && tr.response.ok
+      );
+      if (createTaskResult && createTaskResult.response.vtid) {
+        geminiCreatedTask = {
+          vtid: createTaskResult.response.vtid as string,
+          title: createTaskResult.response.title as string || 'Untitled',
+          mode: 'plan-only'
+        };
+      }
+    }
+
+    // Use the task created by explicit /task command or by Gemini tools
+    const finalCreatedTask = createdTask || geminiCreatedTask;
 
     // VTID-0531: Log assistant response with unified event type
     const assistantEventResult = await ingestChatMessageEvent({
@@ -176,12 +201,14 @@ router.post('/chat', async (req: Request, res: Response) => {
       vtid: validatedVtid,
       role: 'assistant',
       mode: mode as OperatorChatMode,
-      message: aiResult.reply,
+      message: geminiResult.reply,
       metadata: {
         request_id: requestId,
-        ...(aiResult.meta || {}),
-        // VTID-0532: Include created task reference in metadata if task was created
-        ...(createdTask ? { createdTaskVtid: createdTask.vtid } : {})
+        ...(geminiResult.meta || {}),
+        // VTID-0532 + VTID-0536: Include created task reference if task was created
+        ...(finalCreatedTask ? { createdTaskVtid: finalCreatedTask.vtid } : {}),
+        // VTID-0536: Include tool calls info if any
+        ...(geminiResult.toolResults ? { toolCalls: geminiResult.toolResults.map(tr => tr.name) } : {})
       }
     });
 
@@ -189,22 +216,27 @@ router.post('/chat', async (req: Request, res: Response) => {
 
     console.log(`[Operator Chat] Request ${requestId} completed successfully (thread: ${threadId})`);
 
-    // VTID-0531 + VTID-0532: Extended response with threadId, messageId, createdAt, and optional createdTask
+    // VTID-0531 + VTID-0532 + VTID-0536: Extended response with threadId, messageId, createdAt, and optional createdTask
     const response: Record<string, unknown> = {
       ok: true,
-      reply: aiResult.reply,
+      reply: geminiResult.reply,
       attachments: attachments,
       oasis_ref: `OASIS-CHAT-${requestId.slice(0, 8).toUpperCase()}`,
-      meta: aiResult.meta || {},
+      meta: geminiResult.meta || {},
       // VTID-0531: Extended fields
       threadId,
       messageId: assistantMessageId,  // ID of the assistant response event
       createdAt
     };
 
-    // VTID-0532: Add createdTask only when a task was actually created
-    if (createdTask) {
-      response.createdTask = createdTask;
+    // VTID-0532 + VTID-0536: Add createdTask when a task was created (explicit or via tools)
+    if (finalCreatedTask) {
+      response.createdTask = finalCreatedTask;
+    }
+
+    // VTID-0536: Include tool results if any tools were called
+    if (geminiResult.toolResults && geminiResult.toolResults.length > 0) {
+      response.toolResults = geminiResult.toolResults;
     }
 
     return res.status(200).json(response);

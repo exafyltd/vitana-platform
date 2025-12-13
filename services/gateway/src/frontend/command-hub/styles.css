@@ -4529,3 +4529,317 @@ body {
     height: 48px;
   }
 }
+
+/* ========================================
+   VTID-0409: Governance Categories Styles
+   ======================================== */
+
+.gov-categories-container {
+  padding: 1.5rem;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.gov-categories-loading {
+  padding: 2rem;
+}
+
+.gov-categories-error {
+  padding: 2rem;
+  text-align: center;
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 8px;
+}
+
+.gov-categories-error .error-icon {
+  font-size: 1.5rem;
+  margin-right: 0.5rem;
+}
+
+.gov-categories-empty {
+  padding: 3rem;
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+
+.gov-categories-empty p {
+  margin: 0.5rem 0;
+}
+
+.gov-categories-empty-hint {
+  font-size: 0.875rem;
+  opacity: 0.7;
+}
+
+/* Two-column layout */
+.gov-categories-layout {
+  display: flex;
+  gap: 1.5rem;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Left column: Category list */
+.gov-categories-list {
+  width: 280px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  overflow-y: auto;
+  padding-right: 0.5rem;
+}
+
+.gov-category-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.875rem 1rem;
+  background: var(--color-sidebar-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+  width: 100%;
+}
+
+.gov-category-item:hover {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.gov-category-item:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.gov-category-item.selected {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: var(--color-accent);
+}
+
+.gov-category-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--color-text-primary);
+}
+
+.gov-category-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.gov-category-count {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+.gov-category-levels {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.gov-category-levels .lvl {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 18px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  border-radius: 3px;
+}
+
+.gov-category-levels .lvl-L1 {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.gov-category-levels .lvl-L2 {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.gov-category-levels .lvl-L3 {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+}
+
+.gov-category-levels .lvl-L4 {
+  background: rgba(156, 163, 175, 0.15);
+  color: #9ca3af;
+}
+
+/* Right column: Rules table */
+.gov-category-rules {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.gov-category-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.gov-category-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--color-text-primary);
+}
+
+.gov-category-rule-count {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  background: var(--color-sidebar-bg);
+  padding: 0.25rem 0.625rem;
+  border-radius: 12px;
+}
+
+.gov-category-table-wrapper {
+  flex: 1;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-sidebar-bg);
+}
+
+.gov-category-rules-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.gov-category-rules-table thead {
+  position: sticky;
+  top: 0;
+  background: var(--color-bg);
+  z-index: 1;
+}
+
+.gov-category-rules-table th {
+  padding: 0.875rem 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.gov-category-rule-row {
+  transition: background 0.15s ease;
+  cursor: pointer;
+}
+
+.gov-category-rule-row:hover {
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.gov-category-rule-row:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.gov-category-rules-table td {
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.gov-rule-id {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.8rem;
+  color: var(--color-accent);
+  white-space: nowrap;
+}
+
+.gov-rule-title {
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Level badges in categories table */
+.gov-rule-level {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.gov-rule-level.lvl-L1 {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.gov-rule-level.lvl-L2 {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.gov-rule-level.lvl-L3 {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.gov-rule-level.lvl-L4 {
+  background: rgba(156, 163, 175, 0.15);
+  color: #9ca3af;
+  border: 1px solid rgba(156, 163, 175, 0.3);
+}
+
+/* Source badges */
+.gov-rule-source {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.gov-rule-source.source-system {
+  background: rgba(139, 92, 246, 0.15);
+  color: #8b5cf6;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.gov-rule-source.source-catalog {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.gov-rule-chevron {
+  width: 30px;
+  text-align: center;
+  font-size: 1.25rem;
+  color: var(--color-text-secondary);
+  transition: transform 0.2s ease;
+}
+
+.gov-category-rule-row:hover .gov-rule-chevron {
+  transform: translateX(3px);
+  color: var(--color-accent);
+}

@@ -152,7 +152,17 @@ export type CicdEventType =
   | 'cicd.deploy.version.recorded'  // VTID-0510: Software version recorded
   // VTID-0407: Governance deploy enforcement events
   | 'governance.deploy.blocked'
-  | 'governance.deploy.allowed';
+  | 'governance.deploy.allowed'
+  // VTID-0536: Gemini Operator Tools Bridge events
+  | 'assistant.turn'
+  | 'autopilot.intent.created'
+  | 'autopilot.intent.approved'
+  | 'autopilot.intent.rejected'
+  | 'autopilot.intent.executed'
+  | 'governance.evaluate'
+  | 'vtid.created'
+  | 'autopilot.status.requested'
+  | 'autopilot.list.requested';
 
 export interface CicdOasisEvent {
   vtid: string;
