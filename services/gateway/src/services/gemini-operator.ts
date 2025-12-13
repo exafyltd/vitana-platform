@@ -21,6 +21,8 @@ import {
   TaskStatusResponse
 } from './operator-service';
 import { emitOasisEvent } from './oasis-event-service';
+// VTID-0538: Knowledge Hub integration
+import { executeKnowledgeSearch, KNOWLEDGE_SEARCH_TOOL_DEFINITION } from './knowledge-hub';
 
 // Environment config
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -142,6 +144,31 @@ export const GEMINI_TOOL_DEFINITIONS = {
           }
         },
         required: []
+      }
+    },
+    // VTID-0538: Knowledge Hub search tool
+    {
+      name: 'knowledge_search',
+      description: `Search the Vitana documentation and knowledge base to answer questions about Vitana concepts, architecture, features, and specifications.
+
+Use this tool when the user asks:
+- "What is the Vitana Index?"
+- "Explain the Command Hub architecture"
+- "What is OASIS?"
+- "How does the Autopilot system work?"
+- "What are the three tenants (Maxina, AlKalma, Earthlings)?"
+- Any "What", "How", "Explain", "Why" questions about Vitana
+
+Do NOT use this tool for action commands like "Create a task" or "Deploy gateway" - use autopilot tools for those.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'The search query or question about Vitana documentation'
+          }
+        },
+        required: ['query']
       }
     }
   ]
@@ -714,6 +741,14 @@ export async function executeTool(
         );
         break;
 
+      // VTID-0538: Knowledge Hub search tool
+      case 'knowledge_search':
+        result = await executeKnowledgeSearch(
+          args as { query: string },
+          threadId
+        );
+        break;
+
       default:
         result = {
           ok: false,
@@ -836,12 +871,17 @@ async function callGeminiWithTools(text: string, threadId: string): Promise<{
     tools: [GEMINI_TOOL_DEFINITIONS],
     systemInstruction: {
       parts: [{
-        text: `You are the Vitana Operator Assistant, helping operators manage the Autopilot system.
+        text: `You are the Vitana Operator Assistant, helping operators manage the Autopilot system and answer questions about Vitana.
 
 When operators want to:
 - Create a new task: Use the autopilot_create_task function
 - Check task status: Use the autopilot_get_status function
 - See recent tasks: Use the autopilot_list_recent_tasks function
+- Ask "What/How/Explain/Why" questions about Vitana: Use the knowledge_search function
+
+For questions like "What is the Vitana Index?", "Explain OASIS", "What are the three tenants?", etc., ALWAYS use knowledge_search first to provide doc-grounded answers.
+
+For action commands like "Create a task", "Deploy gateway", use the autopilot tools.
 
 Be helpful and concise. When calling tools, explain what you're doing.
 If a task is blocked by governance, explain the reason clearly.
@@ -1061,16 +1101,47 @@ async function processLocalRouting(text: string, threadId: string): Promise<Gemi
     });
   }
 
+  // VTID-0538: Detect knowledge questions (What/How/Explain/Why about Vitana)
+  else if (
+    lowerText.match(/^what\s+(is|are|does)/i) ||
+    lowerText.match(/^how\s+(does|do|can|to)/i) ||
+    lowerText.match(/^explain\s+/i) ||
+    lowerText.match(/^why\s+(is|are|does|do)/i) ||
+    lowerText.includes('vitana index') ||
+    lowerText.includes('oasis') ||
+    lowerText.includes('command hub') ||
+    lowerText.includes('autopilot') && !lowerText.includes('task') ||
+    lowerText.includes('maxina') ||
+    lowerText.includes('alkalma') ||
+    lowerText.includes('earthlings') ||
+    lowerText.includes('three tenants') ||
+    lowerText.includes('architecture') ||
+    lowerText.includes('governance')
+  ) {
+    // Use knowledge search for documentation questions
+    const result = await executeTool('knowledge_search', { query: text }, threadId);
+    toolResults.push({
+      name: 'knowledge_search',
+      response: {
+        ok: result.ok,
+        ...result.data,
+        error: result.error
+      }
+    });
+  }
+
   // No tool matched - return helpful message
   if (toolResults.length === 0) {
     return {
-      reply: `I can help you with Autopilot tasks. Try:
+      reply: `I can help you with Autopilot tasks and answer questions about Vitana. Try:
 - "Create a task to fix the health check endpoint"
 - "What is the status of VTID-0533?"
 - "Show recent tasks"
+- "What is the Vitana Index?"
+- "Explain the OASIS architecture"
 
 What would you like to do?`,
-      meta: { model: 'local-router', vtid: 'VTID-0536' }
+      meta: { model: 'local-router', vtid: 'VTID-0538' }
     };
   }
 
@@ -1081,7 +1152,14 @@ What would you like to do?`,
   let reply = '';
 
   for (const result of successResults) {
-    if (result.response.message) {
+    // VTID-0538: Handle knowledge_search answer format
+    if (result.name === 'knowledge_search' && result.response.answer) {
+      reply += result.response.answer + '\n\n';
+      // Add sources if docs were found
+      if (result.response.docs && (result.response.docs as any[]).length > 0) {
+        reply += '_Sources: ' + (result.response.docs as any[]).map((d: any) => d.title).join(', ') + '_\n\n';
+      }
+    } else if (result.response.message) {
       reply += result.response.message + '\n\n';
     }
   }

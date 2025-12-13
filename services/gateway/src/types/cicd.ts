@@ -162,7 +162,11 @@ export type CicdEventType =
   | 'governance.evaluate'
   | 'vtid.created'
   | 'autopilot.status.requested'
-  | 'autopilot.list.requested';
+  | 'autopilot.list.requested'
+  // VTID-0538: Knowledge Hub events
+  | 'knowledge.search'
+  | 'knowledge.search.success'
+  | 'knowledge.search.error';
 
 export interface CicdOasisEvent {
   vtid: string;
