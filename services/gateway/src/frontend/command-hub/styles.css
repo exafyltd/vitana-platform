@@ -695,7 +695,6 @@ body {
 
 .sidebar-profile {
   padding: 1rem 1.5rem;
-  border-top: 1px solid var(--color-border);
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -705,6 +704,21 @@ body {
 
 .sidebar-profile:hover {
   background: rgba(255, 255, 255, 0.05);
+}
+
+/* --- Sidebar Footer (Fixed bottom: Profile + ORB) --- */
+.sidebar-footer {
+  flex-shrink: 0;
+  background: var(--color-sidebar-bg);
+  border-top: 1px solid var(--color-border);
+}
+
+.sidebar-orb-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  padding: 1rem 0;
 }
 
 .sidebar-profile-avatar {
@@ -4042,9 +4056,7 @@ body {
 
 /* --- ORB Idle State (Floating Sphere - Nebula Style) --- */
 .orb-idle {
-  position: fixed;
-  bottom: 80px;
-  left: 14px;
+  position: relative;
   width: var(--orb-size-idle);
   height: var(--orb-size-idle);
   border-radius: 50%;
@@ -4063,13 +4075,13 @@ body {
     inset 0 8px 20px rgba(255, 255, 255, 0.08);
   cursor: pointer;
   pointer-events: auto;
-  z-index: var(--orb-z-idle);
   transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
               box-shadow 0.3s ease;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 /* Highlight shimmer effect */
