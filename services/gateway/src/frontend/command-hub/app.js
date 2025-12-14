@@ -380,6 +380,7 @@ const state = {
     },
 
     // VTID-0150-A: ORB UI State (Global Assistant Overlay)
+    // VTID-0150-B: Added sessionId for Assistant Core integration
     orb: {
         overlayVisible: false,
         chatDrawerOpen: false,
@@ -387,8 +388,9 @@ const state = {
         cameraActive: false,
         screenShareActive: false,
         isThinking: false,
+        sessionId: null, // VTID-0150-B: Tracks Assistant Core session
         chatMessages: [
-            // Placeholder messages for UI demonstration
+            // Initial assistant greeting
             { id: 1, role: 'assistant', content: 'Hello! I\'m your Vitana assistant. How can I help you today?', timestamp: new Date().toISOString() }
         ],
         chatInputValue: ''
@@ -6105,7 +6107,43 @@ function renderOrbChatDrawer() {
 }
 
 /**
- * VTID-0150-A: Sends a message in the ORB chat (UI-only, no backend)
+ * VTID-0150-B: Scrolls the ORB chat messages to the bottom
+ */
+function scrollOrbChatToBottom() {
+    var container = document.querySelector('.orb-chat-messages');
+    if (!container) return;
+    container.scrollTop = container.scrollHeight;
+}
+
+/**
+ * VTID-0150-B: Sends a message to the Assistant Core API
+ * @param {string} text - The message to send
+ * @param {Object} context - Additional context (route, selectedId)
+ * @returns {Promise<Object>} - The API response
+ */
+async function sendOrbMessage(text, context) {
+    var res = await fetch('/api/v1/assistant/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            message: text,
+            sessionId: state.orb.sessionId || null,
+            role: 'DEV',
+            tenant: 'Vitana-Dev',
+            route: context.route || state.currentModuleKey || '',
+            selectedId: context.selectedId || ''
+        })
+    });
+    var data = await res.json();
+    if (data.sessionId && !state.orb.sessionId) {
+        state.orb.sessionId = data.sessionId;
+        console.log('[ORB] Session established:', data.sessionId);
+    }
+    return data;
+}
+
+/**
+ * VTID-0150-B: Sends a message in the ORB chat (calls Assistant Core API)
  * @param {string} message - The message to send
  */
 function orbSendMessage(message) {
@@ -6113,7 +6151,7 @@ function orbSendMessage(message) {
 
     console.log('[ORB] Sending message:', message);
 
-    // Add user message
+    // Add user message immediately
     state.orb.chatMessages.push({
         id: Date.now(),
         role: 'user',
@@ -6121,30 +6159,49 @@ function orbSendMessage(message) {
         timestamp: new Date().toISOString()
     });
 
-    // Clear input
+    // Clear input and show thinking state
     state.orb.chatInputValue = '';
-
-    // Simulate thinking
     state.orb.isThinking = true;
     renderApp();
+    scrollOrbChatToBottom();
 
-    // Simulate echo response after short delay (placeholder behavior)
-    setTimeout(function() {
-        state.orb.chatMessages.push({
-            id: Date.now() + 1,
-            role: 'assistant',
-            content: 'I received your message: "' + message.trim() + '". This is a placeholder response. Backend integration coming soon!',
-            timestamp: new Date().toISOString()
+    // Build context from current state
+    var context = {
+        route: state.currentModuleKey || '',
+        selectedId: state.selectedTaskId || ''
+    };
+
+    // Call Assistant Core API
+    sendOrbMessage(message.trim(), context)
+        .then(function(data) {
+            console.log('[ORB] Response received:', data.ok ? 'success' : 'error');
+
+            // Add assistant response
+            state.orb.chatMessages.push({
+                id: Date.now() + 1,
+                role: 'assistant',
+                content: data.reply || 'I could not generate a response.',
+                timestamp: new Date().toISOString(),
+                meta: data.meta
+            });
+            state.orb.isThinking = false;
+            renderApp();
+            scrollOrbChatToBottom();
+        })
+        .catch(function(error) {
+            console.error('[ORB] API error:', error);
+
+            // Add error message
+            state.orb.chatMessages.push({
+                id: Date.now() + 1,
+                role: 'assistant',
+                content: 'I encountered an error while processing your request. Please try again.',
+                timestamp: new Date().toISOString()
+            });
+            state.orb.isThinking = false;
+            renderApp();
+            scrollOrbChatToBottom();
         });
-        state.orb.isThinking = false;
-        renderApp();
-
-        // Scroll to bottom
-        var messagesEl = document.querySelector('.orb-chat-messages');
-        if (messagesEl) {
-            messagesEl.scrollTop = messagesEl.scrollHeight;
-        }
-    }, 800);
 }
 
 // --- Init ---
