@@ -1,7 +1,7 @@
 /**
- * Assistant Routes - VTID-0150-B + VTID-0151
+ * Assistant Routes - VTID-0150-B + VTID-0151 + VTID-0538
  *
- * API endpoints for the global Vitana Assistant.
+ * API endpoints for the global Vitana Assistant and Knowledge Hub.
  * Separate from Operator Chat (/api/v1/operator/chat).
  *
  * Endpoints:
@@ -9,6 +9,8 @@
  * - POST /api/v1/assistant/live/init - Initialize live session (VTID-0151)
  * - POST /api/v1/assistant/live/frame - Process camera/screen frames (VTID-0151)
  * - POST /api/v1/assistant/live/audio - Process audio chunks (VTID-0151)
+ * - POST /api/v1/assistant/knowledge/search - Search Vitana knowledge base (VTID-0538)
+ * - GET /api/v1/assistant/knowledge/health - Knowledge Hub health check (VTID-0538)
  *
  * IMPORTANT:
  * - These endpoints are READ-ONLY. No destructive operations.
@@ -29,6 +31,8 @@ import {
   FrameProcessRequest,
   AudioProcessRequest
 } from '../services/assistant-core';
+// VTID-0538: Knowledge Hub integration
+import { searchKnowledge } from '../services/knowledge-hub';
 
 const router = Router();
 
@@ -57,6 +61,15 @@ const AudioProcessSchema = z.object({
   audio: z.string().min(1, 'Audio data is required'),
   route: z.string().min(1, 'Route is required'),
   selectedId: z.string().default('')
+});
+
+// ==================== VTID-0538 Schemas ====================
+
+const KnowledgeSearchSchema = z.object({
+  query: z.string().min(1, 'Query is required'),
+  role: z.string().optional().default('operator'),
+  tenant: z.string().optional(),
+  maxResults: z.number().int().min(1).max(20).optional().default(5)
 });
 
 // ==================== VTID-0150-B Routes ====================
@@ -327,19 +340,101 @@ router.get('/live/session/:sessionId', async (req: Request, res: Response) => {
   }
 });
 
+// ==================== VTID-0538 Routes ====================
+
+/**
+ * POST /knowledge/search -> /api/v1/assistant/knowledge/search
+ * VTID-0538: Knowledge Hub search endpoint
+ *
+ * Request body:
+ * {
+ *   "query": "What is the Vitana Index?",
+ *   "role": "operator",
+ *   "tenant": "vitana"
+ * }
+ *
+ * Response:
+ * {
+ *   "ok": true,
+ *   "answer": "The Vitana Index is...",
+ *   "docs": [
+ *     { "id": "...", "title": "...", "snippet": "...", "source": "...", "score": 0.95 }
+ *   ]
+ * }
+ */
+router.post('/knowledge/search', async (req: Request, res: Response) => {
+  console.log('[VTID-0538] Knowledge search API called');
+
+  try {
+    const validation = KnowledgeSearchSchema.safeParse(req.body);
+    if (!validation.success) {
+      console.warn('[VTID-0538] Validation failed:', validation.error.errors);
+      return res.status(400).json({
+        ok: false,
+        error: 'Validation failed',
+        details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+      });
+    }
+
+    const { query, role, tenant, maxResults } = validation.data;
+
+    const result = await searchKnowledge({
+      query,
+      role,
+      tenant,
+      maxResults
+    });
+
+    return res.status(result.ok ? 200 : 500).json(result);
+
+  } catch (error: any) {
+    console.error('[VTID-0538] Knowledge search error:', error);
+    return res.status(500).json({
+      ok: false,
+      error: 'Internal server error',
+      details: error.message
+    });
+  }
+});
+
+/**
+ * GET /knowledge/health -> /api/v1/assistant/knowledge/health
+ * Health check for Knowledge Hub
+ */
+router.get('/knowledge/health', (_req: Request, res: Response) => {
+  const hasSupabaseUrl = !!process.env.SUPABASE_URL;
+  const hasSupabaseKey = !!process.env.SUPABASE_SERVICE_ROLE;
+
+  const status = hasSupabaseUrl && hasSupabaseKey ? 'ok' : 'degraded';
+
+  return res.status(200).json({
+    ok: true,
+    status,
+    service: 'knowledge-hub',
+    version: '1.0.0',
+    vtid: 'VTID-0538',
+    timestamp: new Date().toISOString(),
+    capabilities: {
+      database_connection: hasSupabaseUrl && hasSupabaseKey,
+      full_text_search: true,
+      gemini_integration: !!process.env.GOOGLE_GEMINI_API_KEY
+    }
+  });
+});
+
 // ==================== Health Check ====================
 
 /**
  * GET /health -> /api/v1/assistant/health
  *
- * Health check for Assistant Core.
+ * Health check for Assistant Core + Knowledge Hub.
  */
 router.get('/health', (_req: Request, res: Response) => {
   return res.status(200).json({
     ok: true,
     service: 'assistant-core',
-    vtids: ['VTID-0150-B', 'VTID-0151'],
-    capabilities: ['chat', 'live-session', 'frame-processing', 'audio-processing'],
+    vtids: ['VTID-0150-B', 'VTID-0151', 'VTID-0538'],
+    capabilities: ['chat', 'live-session', 'frame-processing', 'audio-processing', 'knowledge-search'],
     gemini_configured: !!process.env.GOOGLE_GEMINI_API_KEY,
     timestamp: new Date().toISOString()
   });

@@ -174,6 +174,10 @@ export type CicdEventType =
   | 'assistant.live.started'
   | 'assistant.live.frame'
   | 'assistant.live.audio'
+  // VTID-0538: Knowledge Hub events
+  | 'knowledge.search'
+  | 'knowledge.search.success'
+  | 'knowledge.search.error'
   // VTID-0601: Autonomous Safe Merge & Deploy Control
   | 'cicd.merge.requested'
   | 'cicd.merge.success'
