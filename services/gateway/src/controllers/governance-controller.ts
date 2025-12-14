@@ -149,15 +149,23 @@ export class GovernanceController {
             const hasBlockingViolations = violations.some(v => v.level === 'L1' || v.level === 'L2');
             const allowed = !hasBlockingViolations;
 
-            // Log evaluation to OASIS
-            await this.emitOasisEvent(tenantId, 'governance.deploy.evaluated', {
+            // DEV-OASIS-0210: Emit governance.evaluation event to OASIS
+            const evalResult = violations.length === 0 ? 'pass' :
+                (hasBlockingViolations ? 'fail' : 'warning');
+            const ruleIds = violations.map(v => v.rule_id);
+
+            await this.emitOasisEvent(tenantId, 'governance.evaluation', {
                 vtid,
+                swv: null, // SWV not available at evaluation time
                 service,
                 environment,
                 action,
-                allowed,
+                result: evalResult,
+                rule_ids: ruleIds,
                 level: violations.length > 0 ? highestViolationLevel : 'L4',
-                violations_count: violations.length
+                allowed,
+                violations_count: violations.length,
+                message: `Governance evaluation ${evalResult} for ${service} deploy`
             });
 
             console.log(`[VTID-0407] Governance evaluation result: allowed=${allowed}, level=${highestViolationLevel}, violations=${violations.length}`);
@@ -1297,28 +1305,69 @@ export class GovernanceController {
     }
 
     /**
-     * Helper to emit OASIS events
+     * DEV-OASIS-0210: Helper to emit OASIS events to the oasis_events table.
+     * This ensures governance events are visible in /api/v1/events and /api/v1/events/stream.
      */
     private async emitOasisEvent(tenant: string, eventType: string, data: any) {
         try {
-            const supabase = getSupabase();
-            if (!supabase) {
+            const supabaseUrl = process.env.SUPABASE_URL;
+            const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+
+            if (!supabaseUrl || !supabaseKey) {
                 console.warn('[GovernanceController] Supabase not configured - OASIS event not persisted');
                 return;
             }
 
-            await supabase.from('oasis_events_v1').insert({
-                rid: `GOV-${Date.now()}`,
-                tenant,
-                task_type: eventType,
-                assignee_ai: 'Gemini',
-                status: 'success',
-                notes: `Governance event: ${eventType}`,
-                metadata: data,
-                schema_version: 1
+            const { randomUUID } = await import('crypto');
+            const eventId = randomUUID();
+            const timestamp = new Date().toISOString();
+
+            // Determine status from event type
+            let status = 'info';
+            if (eventType.includes('.blocked') || eventType.includes('.fail')) {
+                status = 'warning';
+            } else if (eventType.includes('.allowed') || eventType.includes('.success') || eventType.includes('.pass')) {
+                status = 'success';
+            }
+
+            // DEV-OASIS-0210: Write to oasis_events table (same table used by /api/v1/events)
+            const payload = {
+                id: eventId,
+                created_at: timestamp,
+                vtid: data.vtid || null,
+                topic: eventType,  // Maps to 'topic' column for filtering
+                service: 'gateway-governance',
+                role: 'VALIDATOR',
+                model: 'governance-controller',
+                status,
+                message: `Governance event: ${eventType}`,
+                link: null,
+                metadata: {
+                    ...data,
+                    tenant
+                }
+            };
+
+            const response = await fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'apikey': supabaseKey,
+                    'Authorization': `Bearer ${supabaseKey}`,
+                    'Prefer': 'return=minimal'
+                },
+                body: JSON.stringify(payload)
             });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error(`[GovernanceController] Failed to emit OASIS event: ${response.status} - ${errorText}`);
+                return;
+            }
+
+            console.log(`[DEV-OASIS-0210] Governance event emitted: ${eventType} for ${data.vtid || 'SYSTEM'}`);
         } catch (error) {
-            console.error('Failed to emit OASIS event:', error);
+            console.error('[GovernanceController] Failed to emit OASIS event:', error);
         }
     }
 }

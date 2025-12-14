@@ -150,9 +150,14 @@ export type CicdEventType =
   | 'cicd.deploy.service.failed'
   | 'cicd.deploy.service.validated'
   | 'cicd.deploy.version.recorded'  // VTID-0510: Software version recorded
+  // DEV-OASIS-0210: Deploy gateway events for Command Hub UI
+  | 'deploy.gateway.success'
+  | 'deploy.gateway.failed'
   // VTID-0407: Governance deploy enforcement events
   | 'governance.deploy.blocked'
   | 'governance.deploy.allowed'
+  // DEV-OASIS-0210: Governance evaluation events
+  | 'governance.evaluation'
   // VTID-0536: Gemini Operator Tools Bridge events
   | 'assistant.turn'
   // VTID-0150-B: Assistant Core events
