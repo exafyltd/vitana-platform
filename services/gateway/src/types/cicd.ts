@@ -164,7 +164,11 @@ export type CicdEventType =
   | 'governance.evaluate'
   | 'vtid.created'
   | 'autopilot.status.requested'
-  | 'autopilot.list.requested';
+  | 'autopilot.list.requested'
+  // VTID-0151: Assistant Core v2 Multimodal events
+  | 'assistant.live.started'
+  | 'assistant.live.frame'
+  | 'assistant.live.audio';
 
 export interface CicdOasisEvent {
   vtid: string;
