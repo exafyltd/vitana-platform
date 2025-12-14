@@ -26,8 +26,8 @@ const VERTEX_PROJECT =
 
 const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'us-central1';
 
-// Model to use - gemini-1.5-flash-002 for fast, cost-effective responses
-const VERTEX_MODEL = process.env.VERTEX_MODEL || 'gemini-1.5-flash-002';
+// Model to use - gemini-1.5-flash for fast, cost-effective responses
+const VERTEX_MODEL = process.env.VERTEX_MODEL || 'gemini-1.5-flash';
 
 // Singleton Vertex AI client (uses ADC automatically on Cloud Run)
 const vertex = new VertexAI({ project: VERTEX_PROJECT, location: VERTEX_LOCATION });
