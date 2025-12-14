@@ -17,6 +17,7 @@ import cicdRouter from './routes/cicd';
 import operatorRouter from './routes/operator';  // VTID-0509 + VTID-0510: Operator Console & Version Tracking
 import { router as telemetryRouter } from './routes/telemetry';  // VTID-0526-D: Telemetry with stage counters
 import autopilotRouter from './routes/autopilot';  // VTID-0532: Autopilot Task Extractor & Planner Handoff
+import assistantRouter from './routes/assistant';  // VTID-0150-B: Assistant Core for Dev ORB
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -143,6 +144,9 @@ app.use('/api/v1/telemetry', telemetryRouter);
 // VTID-0532: Autopilot Task Extractor & Planner Handoff
 // Routes: /api/v1/autopilot/tasks/pending-plan, /health
 app.use('/api/v1/autopilot', autopilotRouter);
+// VTID-0150-B: Assistant Core for Dev ORB
+// Routes: /api/v1/assistant/chat, /health
+app.use('/api/v1/assistant', assistantRouter);
 app.use('/api/v1/commandhub', commandhub);
 // Board adapter for commandhub
 app.use("/api/v1/commandhub/board", boardAdapter);

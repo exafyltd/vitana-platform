@@ -155,6 +155,8 @@ export type CicdEventType =
   | 'governance.deploy.allowed'
   // VTID-0536: Gemini Operator Tools Bridge events
   | 'assistant.turn'
+  // VTID-0150-B: Assistant Core events
+  | 'assistant.session.started'
   | 'autopilot.intent.created'
   | 'autopilot.intent.approved'
   | 'autopilot.intent.rejected'
