@@ -8,15 +8,29 @@
  * - No tools (pure Q&A / explanation)
  * - Safe, concise answers oriented to help developers understand the system
  * - OASIS event logging for assistant.session.started and assistant.turn
+ *
+ * VTID-0151-C: Updated to use Vertex AI with ADC (Application Default Credentials)
+ * via Cloud Run service account instead of API key.
  */
 
-import fetch from 'node-fetch';
+import { VertexAI } from '@google-cloud/vertexai';
 import { randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
 import { AssistantContext, AssistantChatResponse } from '../types/assistant';
 
-// Environment config
-const GOOGLE_GEMINI_API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
+// Vertex AI configuration (ADC via Cloud Run SA)
+const VERTEX_PROJECT =
+  process.env.GOOGLE_CLOUD_PROJECT ||
+  process.env.PROJECT_ID ||
+  'lovable-vitana-vers1';
+
+const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'us-central1';
+
+// Model to use - gemini-1.5-flash-002 for fast, cost-effective responses
+const VERTEX_MODEL = process.env.VERTEX_MODEL || 'gemini-1.5-flash-002';
+
+// Singleton Vertex AI client (uses ADC automatically on Cloud Run)
+const vertex = new VertexAI({ project: VERTEX_PROJECT, location: VERTEX_LOCATION });
 
 // Track sessions to detect first turn
 const activeSessions = new Set<string>();
@@ -58,71 +72,37 @@ Answer the developer's question with clarity and precision.`;
 }
 
 /**
- * VTID-0150-B: Call Gemini API for assistant response
+ * VTID-0150-B/VTID-0151-C: Call Vertex AI Gemini for assistant response
+ * Uses ADC (Application Default Credentials) via Cloud Run service account.
  */
 async function callGemini(
   message: string,
   context: AssistantContext
 ): Promise<{ reply: string; tokens_in: number; tokens_out: number }> {
-  if (!GOOGLE_GEMINI_API_KEY) {
-    // Fallback response when Gemini is not configured
-    console.warn('[VTID-0150-B] GOOGLE_GEMINI_API_KEY not configured, using fallback');
-    return {
-      reply: `I'm the Vitana Assistant. I received your message: "${message.substring(0, 100)}${message.length > 100 ? '...' : ''}"
-
-Currently, the Gemini API is not configured. Once configured, I'll be able to provide intelligent responses to help you understand the Vitana system.
-
-**Context I have:**
-- Your role: ${context.role}
-- Current route: ${context.route || 'Not specified'}
-- Selected entity: ${context.selectedId || 'None'}
-
-Please configure GOOGLE_GEMINI_API_KEY to enable full assistant capabilities.`,
-      tokens_in: 0,
-      tokens_out: 0
-    };
-  }
-
   const systemPrompt = buildSystemPrompt(context);
 
-  const requestBody = {
-    contents: [
-      {
-        role: 'user',
-        parts: [{ text: message }]
-      }
-    ],
-    systemInstruction: {
-      parts: [{ text: systemPrompt }]
-    },
-    generationConfig: {
-      temperature: 0.7,
-      maxOutputTokens: 1024,
-      topP: 0.95,
-      topK: 40
-    }
-  };
-
   try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GOOGLE_GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestBody)
+    console.log(`[VTID-0151-C] Calling Vertex AI model=${VERTEX_MODEL}, project=${VERTEX_PROJECT}, location=${VERTEX_LOCATION}`);
+
+    // Get the generative model from Vertex AI
+    const model = vertex.getGenerativeModel({
+      model: VERTEX_MODEL,
+      systemInstruction: systemPrompt,
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 1024,
+        topP: 0.95,
+        topK: 40
       }
-    );
+    });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[VTID-0150-B] Gemini API error: ${response.status} - ${errorText}`);
-      throw new Error(`Gemini API error: ${response.status}`);
-    }
+    // Generate content
+    const result = await model.generateContent({
+      contents: [{ role: 'user', parts: [{ text: message }] }]
+    });
 
-    const result = await response.json() as any;
-    const candidate = result.candidates?.[0];
+    const response = result.response;
+    const candidate = response?.candidates?.[0];
     const content = candidate?.content;
 
     if (!content) {
@@ -134,17 +114,20 @@ Please configure GOOGLE_GEMINI_API_KEY to enable full assistant capabilities.`,
     }
 
     // Extract text response
-    const textPart = content.parts?.find((part: any) => part.text);
-    const reply = textPart?.text || 'I could not generate a response.';
+    const reply =
+      content.parts?.map((p: { text?: string }) => p.text).filter(Boolean).join('') ||
+      'I could not generate a response.';
 
     // Extract token usage if available
-    const usageMetadata = result.usageMetadata || {};
-    const tokens_in = usageMetadata.promptTokenCount || 0;
-    const tokens_out = usageMetadata.candidatesTokenCount || 0;
+    const usageMetadata = response?.usageMetadata;
+    const tokens_in = usageMetadata?.promptTokenCount || 0;
+    const tokens_out = usageMetadata?.candidatesTokenCount || 0;
+
+    console.log(`[VTID-0151-C] Vertex AI response received, tokens_in=${tokens_in}, tokens_out=${tokens_out}`);
 
     return { reply, tokens_in, tokens_out };
   } catch (error: any) {
-    console.error(`[VTID-0150-B] Gemini call failed:`, error.message);
+    console.error(`[VTID-0151-C] Vertex AI call failed:`, error.message);
     return {
       reply: `I encountered an error while processing your request. Please try again.
 
@@ -255,7 +238,7 @@ export async function processAssistantMessage(
     const geminiResult = await callGemini(message, context);
 
     const latency_ms = Date.now() - startTime;
-    const model = GOOGLE_GEMINI_API_KEY ? 'gemini-pro' : 'fallback';
+    const model = VERTEX_MODEL; // VTID-0151-C: Now using Vertex AI
 
     // Log the turn
     const turnEventId = await logAssistantTurn(
