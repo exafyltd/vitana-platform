@@ -289,6 +289,9 @@ const state = {
     // VTID-0527: Raw telemetry events for task stage computation
     telemetryEvents: [],
 
+    // DEV-COMHU-0202: Global events state for VTID correlation
+    events: [],
+
     // Operator History State
     historyEvents: [],
     historyLoading: false,
@@ -377,6 +380,7 @@ const state = {
     },
 
     // VTID-0150-A: ORB UI State (Global Assistant Overlay)
+    // VTID-0150-B: Added sessionId for Assistant Core integration
     orb: {
         overlayVisible: false,
         chatDrawerOpen: false,
@@ -384,8 +388,9 @@ const state = {
         cameraActive: false,
         screenShareActive: false,
         isThinking: false,
+        sessionId: null, // VTID-0150-B: Tracks Assistant Core session
         chatMessages: [
-            // Placeholder messages for UI demonstration
+            // Initial assistant greeting
             { id: 1, role: 'assistant', content: 'Hello! I\'m your Vitana assistant. How can I help you today?', timestamp: new Date().toISOString() }
         ],
         chatInputValue: ''
@@ -1114,7 +1119,7 @@ function renderApp() {
     root.appendChild(renderBundleFingerprintFooter());
 
     // VTID-0150-A: ORB UI & Interaction Shell (Global Assistant Overlay)
-    root.appendChild(renderOrbIdle());
+    // Note: ORB idle is now rendered inside sidebar footer via renderOrbIdleElement()
     root.appendChild(renderOrbOverlay());
     root.appendChild(renderOrbChatDrawer());
 
@@ -1177,7 +1182,11 @@ function renderSidebar() {
 
     sidebar.appendChild(navSection);
 
-    // Profile at bottom (VTID-0508)
+    // Sidebar Footer: Profile + ORB (VTID-0150-A)
+    const sidebarFooter = document.createElement('div');
+    sidebarFooter.className = 'sidebar-footer';
+
+    // Profile capsule (VTID-0508)
     const profile = document.createElement('div');
     profile.className = 'sidebar-profile';
     profile.onclick = () => {
@@ -1207,7 +1216,15 @@ function renderSidebar() {
         profile.appendChild(info);
     }
 
-    sidebar.appendChild(profile);
+    sidebarFooter.appendChild(profile);
+
+    // ORB container (centered) - VTID-0150-A
+    const orbContainer = document.createElement('div');
+    orbContainer.className = 'sidebar-orb-container';
+    orbContainer.appendChild(renderOrbIdleElement());
+    sidebarFooter.appendChild(orbContainer);
+
+    sidebar.appendChild(sidebarFooter);
 
     // Toggle
     const toggle = document.createElement('div');
@@ -1220,6 +1237,36 @@ function renderSidebar() {
     sidebar.appendChild(toggle);
 
     return sidebar;
+}
+
+/**
+ * VTID-0150-A: Creates the ORB idle element for the sidebar footer
+ * @returns {HTMLElement}
+ */
+function renderOrbIdleElement() {
+    var orb = document.createElement('div');
+    orb.className = 'orb-idle orb-idle-pulse' + (state.orb.overlayVisible ? ' orb-hidden' : '');
+    orb.setAttribute('role', 'button');
+    orb.setAttribute('aria-label', 'Open Vitana Assistant');
+    orb.setAttribute('tabindex', '0');
+
+    // Click handler
+    orb.addEventListener('click', function() {
+        console.log('[ORB] Opening overlay...');
+        state.orb.overlayVisible = true;
+        renderApp();
+    });
+
+    // Keyboard accessibility
+    orb.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            state.orb.overlayVisible = true;
+            renderApp();
+        }
+    });
+
+    return orb;
 }
 
 function renderHeader() {
@@ -1941,9 +1988,99 @@ function renderTaskDrawer() {
     const stageDetail = renderTaskStageDetail(state.selectedTask);
     content.appendChild(stageDetail);
 
+    // DEV-COMHU-0202: Add VTID event history section
+    const eventHistory = renderTaskEventHistory(state.selectedTask.vtid);
+    content.appendChild(eventHistory);
+
     drawer.appendChild(content);
 
     return drawer;
+}
+
+/**
+ * DEV-COMHU-0202: Get events for a specific VTID from global events state.
+ */
+function getEventsForVtid(vtid) {
+    if (!vtid) return [];
+    return (state.events || []).filter(function(e) {
+        return e.vtid === vtid;
+    });
+}
+
+/**
+ * DEV-COMHU-0202: Render event history for a VTID in the task drawer.
+ * Shows last deploy, governance, and other events for correlation.
+ */
+function renderTaskEventHistory(vtid) {
+    const container = document.createElement('div');
+    container.className = 'task-event-history';
+
+    const heading = document.createElement('h3');
+    heading.className = 'task-event-history-heading';
+    heading.textContent = 'Event History';
+    container.appendChild(heading);
+
+    const events = getEventsForVtid(vtid);
+
+    if (!events || events.length === 0) {
+        const emptyDiv = document.createElement('div');
+        emptyDiv.className = 'task-event-history-empty';
+        emptyDiv.textContent = 'No recent events for this VTID.';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    const list = document.createElement('div');
+    list.className = 'task-event-history-list';
+
+    // Show last 5 events, sorted by timestamp (newest first)
+    var sortedEvents = events.slice().sort(function(a, b) {
+        if (!a.createdAt || !b.createdAt) return 0;
+        return new Date(b.createdAt) - new Date(a.createdAt);
+    });
+
+    sortedEvents.slice(0, 5).forEach(function(event) {
+        const item = document.createElement('div');
+        item.className = 'task-event-history-item';
+
+        // Status-based styling
+        if (event.topic && event.topic.includes('.success')) {
+            item.classList.add('task-event-history-item-success');
+        } else if (event.topic && (event.topic.includes('.failed') || event.topic.includes('.blocked'))) {
+            item.classList.add('task-event-history-item-error');
+        }
+
+        const timestamp = event.createdAt ? new Date(event.createdAt).toLocaleTimeString() : '';
+
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'task-event-history-time';
+        timeSpan.textContent = timestamp;
+        item.appendChild(timeSpan);
+
+        const topicSpan = document.createElement('span');
+        topicSpan.className = 'task-event-history-topic';
+        topicSpan.textContent = event.topic || 'unknown';
+        item.appendChild(topicSpan);
+
+        if (event.swv) {
+            const swvSpan = document.createElement('span');
+            swvSpan.className = 'task-event-history-swv';
+            swvSpan.textContent = event.swv;
+            item.appendChild(swvSpan);
+        }
+
+        if (event.message) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'task-event-history-message';
+            msgDiv.textContent = event.message;
+            item.appendChild(msgDiv);
+        }
+
+        list.appendChild(item);
+    });
+
+    container.appendChild(list);
+    return container;
 }
 
 /**
@@ -5552,6 +5689,13 @@ function renderOperatorTicker() {
             var item = document.createElement('div');
             item.className = 'ticker-item ticker-item-' + event.severity;
 
+            // DEV-COMHU-0202: Add status-based class for deploy events
+            if (event.topic && event.topic.includes('.success')) {
+                item.classList.add('ticker-item-success');
+            } else if (event.topic && (event.topic.includes('.failed') || event.topic.includes('.blocked'))) {
+                item.classList.add('ticker-item-error');
+            }
+
             // Severity indicator
             var severityDot = document.createElement('span');
             severityDot.className = 'ticker-severity-dot ticker-severity-' + event.severity;
@@ -5571,14 +5715,34 @@ function renderOperatorTicker() {
                 item.appendChild(stageBadge);
             }
 
+            // DEV-COMHU-0202: Show VTID badge for deploy/governance events
+            if (event.vtid) {
+                var vtidBadge = document.createElement('div');
+                vtidBadge.className = 'ticker-vtid';
+                vtidBadge.textContent = event.vtid;
+                vtidBadge.title = 'VTID: ' + event.vtid;
+                item.appendChild(vtidBadge);
+            }
+
+            // DEV-COMHU-0202: Show SWV badge if present
+            if (event.swv) {
+                var swvBadge = document.createElement('div');
+                swvBadge.className = 'ticker-swv';
+                swvBadge.textContent = event.swv;
+                swvBadge.title = 'SWV: ' + event.swv;
+                item.appendChild(swvBadge);
+            }
+
             var content = document.createElement('div');
             content.className = 'ticker-content';
             content.textContent = event.content;
             item.appendChild(content);
 
+            // DEV-COMHU-0202: Show topic for deploy events instead of generic type
+            var typeLabel = event.topic && event.topic.startsWith('deploy.') ? event.topic : event.type;
             var type = document.createElement('div');
             type.className = 'ticker-type ticker-type-' + event.type;
-            type.textContent = event.type;
+            type.textContent = typeLabel;
             item.appendChild(type);
 
             eventsList.appendChild(item);
@@ -6506,21 +6670,58 @@ function startOperatorSse() {
             const event = JSON.parse(e.data);
             console.log('[Operator] SSE event:', event);
 
-            // Add to ticker (VTID-0526-D: include task_stage)
+            // DEV-COMHU-0202: Normalize event for ticker with deploy event support
+            const vtid = event.vtid || (event.payload && event.payload.vtid) || null;
+            const swv = event.swv || (event.payload && event.payload.swv) || null;
+            const topic = event.topic || event.type || 'unknown';
+            const service = event.service || (event.payload && event.payload.service) || null;
+            const message = event.message || (event.payload && event.payload.message) || '';
+
+            // Build display content with deploy event info
+            let displayContent = message || topic;
+            if (topic.startsWith('deploy.') && service) {
+                displayContent = topic.replace('deploy.', '').replace('.', ' ').toUpperCase();
+                if (message) displayContent += ': ' + message;
+            }
+
+            // Add to ticker (VTID-0526-D: include task_stage, DEV-COMHU-0202: include vtid/swv/topic)
             state.tickerEvents.unshift({
                 id: event.id || Date.now(),
                 timestamp: new Date(event.created_at).toLocaleTimeString(),
-                type: event.type?.split('.')[0] || 'info',
-                content: event.payload?.message || event.type || 'Event received',
-                task_stage: event.task_stage || event.payload?.task_stage || null // VTID-0526-D
+                type: topic.split('.')[0] || 'info',
+                topic: topic,
+                content: displayContent,
+                vtid: vtid,
+                swv: swv,
+                service: service,
+                status: event.status,
+                task_stage: event.task_stage || (event.payload && event.payload.task_stage) || null
             });
+
+            // DEV-COMHU-0202: Also store in global events state for VTID correlation
+            state.events = state.events || [];
+            state.events.unshift({
+                id: event.id,
+                topic: topic,
+                vtid: vtid,
+                swv: swv,
+                service: service,
+                message: message,
+                status: event.status,
+                createdAt: event.created_at,
+                raw: event
+            });
+            // Cap events at 200
+            if (state.events.length > 200) {
+                state.events = state.events.slice(0, 200);
+            }
 
             // VTID-0526-D: Update stage counters on new event
             if (event.task_stage && state.stageCounters[event.task_stage] !== undefined) {
                 state.stageCounters[event.task_stage]++;
             }
 
-            // Keep only last 100 events
+            // Keep only last 100 ticker events
             if (state.tickerEvents.length > 100) {
                 state.tickerEvents = state.tickerEvents.slice(0, 100);
             }
@@ -6887,41 +7088,7 @@ const ORB_ICONS = {
     send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>'
 };
 
-/**
- * VTID-0150-A: Renders the ORB Idle State (floating sphere in bottom-left)
- * @returns {HTMLElement}
- */
-function renderOrbIdle() {
-    var orb = document.createElement('div');
-    orb.className = 'orb-idle orb-idle-pulse' + (state.orb.overlayVisible ? ' orb-hidden' : '');
-    orb.setAttribute('role', 'button');
-    orb.setAttribute('aria-label', 'Open Vitana Assistant');
-    orb.setAttribute('tabindex', '0');
-
-    // Inner sparkle icon
-    var icon = document.createElement('span');
-    icon.className = 'orb-idle-icon';
-    icon.innerHTML = ORB_ICONS.sparkle;
-    orb.appendChild(icon);
-
-    // Click handler
-    orb.addEventListener('click', function() {
-        console.log('[ORB] Opening overlay...');
-        state.orb.overlayVisible = true;
-        renderApp();
-    });
-
-    // Keyboard accessibility
-    orb.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            state.orb.overlayVisible = true;
-            renderApp();
-        }
-    });
-
-    return orb;
-}
+// VTID-0150-A: ORB Idle is now rendered via renderOrbIdleElement() inside sidebar footer
 
 /**
  * VTID-0150-A: Renders the ORB Overlay (full-screen mode)
@@ -7205,7 +7372,43 @@ function renderOrbChatDrawer() {
 }
 
 /**
- * VTID-0150-A: Sends a message in the ORB chat (UI-only, no backend)
+ * VTID-0150-B: Scrolls the ORB chat messages to the bottom
+ */
+function scrollOrbChatToBottom() {
+    var container = document.querySelector('.orb-chat-messages');
+    if (!container) return;
+    container.scrollTop = container.scrollHeight;
+}
+
+/**
+ * VTID-0150-B: Sends a message to the Assistant Core API
+ * @param {string} text - The message to send
+ * @param {Object} context - Additional context (route, selectedId)
+ * @returns {Promise<Object>} - The API response
+ */
+async function sendOrbMessage(text, context) {
+    var res = await fetch('/api/v1/assistant/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            message: text,
+            sessionId: state.orb.sessionId || null,
+            role: 'DEV',
+            tenant: 'Vitana-Dev',
+            route: context.route || state.currentModuleKey || '',
+            selectedId: context.selectedId || ''
+        })
+    });
+    var data = await res.json();
+    if (data.sessionId && !state.orb.sessionId) {
+        state.orb.sessionId = data.sessionId;
+        console.log('[ORB] Session established:', data.sessionId);
+    }
+    return data;
+}
+
+/**
+ * VTID-0150-B: Sends a message in the ORB chat (calls Assistant Core API)
  * @param {string} message - The message to send
  */
 function orbSendMessage(message) {
@@ -7213,7 +7416,7 @@ function orbSendMessage(message) {
 
     console.log('[ORB] Sending message:', message);
 
-    // Add user message
+    // Add user message immediately
     state.orb.chatMessages.push({
         id: Date.now(),
         role: 'user',
@@ -7221,30 +7424,49 @@ function orbSendMessage(message) {
         timestamp: new Date().toISOString()
     });
 
-    // Clear input
+    // Clear input and show thinking state
     state.orb.chatInputValue = '';
-
-    // Simulate thinking
     state.orb.isThinking = true;
     renderApp();
+    scrollOrbChatToBottom();
 
-    // Simulate echo response after short delay (placeholder behavior)
-    setTimeout(function() {
-        state.orb.chatMessages.push({
-            id: Date.now() + 1,
-            role: 'assistant',
-            content: 'I received your message: "' + message.trim() + '". This is a placeholder response. Backend integration coming soon!',
-            timestamp: new Date().toISOString()
+    // Build context from current state
+    var context = {
+        route: state.currentModuleKey || '',
+        selectedId: state.selectedTaskId || ''
+    };
+
+    // Call Assistant Core API
+    sendOrbMessage(message.trim(), context)
+        .then(function(data) {
+            console.log('[ORB] Response received:', data.ok ? 'success' : 'error');
+
+            // Add assistant response
+            state.orb.chatMessages.push({
+                id: Date.now() + 1,
+                role: 'assistant',
+                content: data.reply || 'I could not generate a response.',
+                timestamp: new Date().toISOString(),
+                meta: data.meta
+            });
+            state.orb.isThinking = false;
+            renderApp();
+            scrollOrbChatToBottom();
+        })
+        .catch(function(error) {
+            console.error('[ORB] API error:', error);
+
+            // Add error message
+            state.orb.chatMessages.push({
+                id: Date.now() + 1,
+                role: 'assistant',
+                content: 'I encountered an error while processing your request. Please try again.',
+                timestamp: new Date().toISOString()
+            });
+            state.orb.isThinking = false;
+            renderApp();
+            scrollOrbChatToBottom();
         });
-        state.orb.isThinking = false;
-        renderApp();
-
-        // Scroll to bottom
-        var messagesEl = document.querySelector('.orb-chat-messages');
-        if (messagesEl) {
-            messagesEl.scrollTop = messagesEl.scrollHeight;
-        }
-    }, 800);
 }
 
 // --- Init ---

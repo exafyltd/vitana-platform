@@ -1,6 +1,10 @@
 /**
- * Gateway Events API - Proxies OASIS events to Command Hub
- * Implements: /api/v1/events (list) and /api/v1/events/stream (SSE)
+ * Gateway Events API - DEV-OASIS-0210-B
+ * Implements: /api/v1/gateway-events (proxy) and /api/v1/gateway-events/stream (proxy SSE)
+ *
+ * NOTE: These are PROXY routes to external OASIS service.
+ * The canonical /api/v1/events and /api/v1/events/stream routes are in events.ts
+ * which query the local oasis_events table directly.
  */
 
 import { Router, Request, Response } from 'express';
@@ -8,14 +12,15 @@ import fetch from 'node-fetch';
 
 const router = Router();
 
-// OASIS base URL from environment
+// OASIS base URL from environment (for proxy to external OASIS service)
 const OASIS_URL = process.env.OASIS_OPERATOR_URL || 'https://oasis-operator-86804897789.us-central1.run.app';
 
 /**
- * GET /api/v1/events
- * List recent events from OASIS with optional filters
+ * GET /api/v1/gateway-events
+ * DEV-OASIS-0210-B: Proxy to external OASIS service (legacy route)
+ * For local events, use GET /api/v1/events instead.
  */
-router.get('/api/v1/events', async (req: Request, res: Response) => {
+router.get('/api/v1/gateway-events', async (req: Request, res: Response) => {
   try {
     // Parse query parameters
     const limit = parseInt(req.query.limit as string) || 50;
@@ -31,13 +36,13 @@ router.get('/api/v1/events', async (req: Request, res: Response) => {
       oasisUrl += `&type=${encodeURIComponent(type)}`;
     }
 
-    console.log(`[Gateway Events] Fetching from OASIS: ${oasisUrl}`);
+    console.log(`[Gateway Events Proxy] Fetching from OASIS: ${oasisUrl}`);
 
     // Fetch from OASIS
     const response = await fetch(oasisUrl);
 
     if (!response.ok) {
-      console.error(`[Gateway Events] OASIS returned ${response.status}`);
+      console.error(`[Gateway Events Proxy] OASIS returned ${response.status}`);
       return res.status(502).json({
         ok: false,
         error: `OASIS returned ${response.status}`
@@ -59,7 +64,7 @@ router.get('/api/v1/events', async (req: Request, res: Response) => {
       payload: event.data || event
     }));
 
-    console.log(`[Gateway Events] Returning ${normalizedEvents.length} events`);
+    console.log(`[Gateway Events Proxy] Returning ${normalizedEvents.length} events`);
 
     return res.status(200).json({
       ok: true,
@@ -68,7 +73,7 @@ router.get('/api/v1/events', async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error('[Gateway Events] Error:', error);
+    console.error('[Gateway Events Proxy] Error:', error);
     return res.status(500).json({
       ok: false,
       error: error.message || 'Internal server error'
@@ -95,11 +100,12 @@ function isOperatorChannelEvent(eventType: string): boolean {
 }
 
 /**
- * GET /api/v1/events/stream
- * SSE stream - proxies OASIS event stream to browser
+ * GET /api/v1/gateway-events/stream
+ * DEV-OASIS-0210-B: Proxy SSE stream to external OASIS service (legacy route)
+ * For local SSE events, use GET /api/v1/events/stream instead.
  * Supports ?channel=operator for filtered operator events
  */
-router.get('/api/v1/events/stream', async (req: Request, res: Response) => {
+router.get('/api/v1/gateway-events/stream', async (req: Request, res: Response) => {
   const channel = req.query.channel as string;
   const isOperatorChannel = channel === 'operator';
 

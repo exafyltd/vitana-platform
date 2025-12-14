@@ -285,16 +285,95 @@ export const cicdEvents = {
         allowed_at: new Date().toISOString(),
       },
     }),
+
+  // ==================== DEV-OASIS-0210: Deploy Gateway Events ====================
+  // These events are used by Command Hub UI for Live Ticker, Operator Console,
+  // and Task Event History displays.
+
+  deployGatewaySuccess: (
+    vtid: string,
+    service: string,
+    environment: string,
+    swv?: string,
+    branch?: string
+  ) =>
+    emitOasisEvent({
+      vtid,
+      type: 'deploy.gateway.success',
+      source: 'gateway-deploy-orchestrator',
+      status: 'success',
+      message: `Gateway deploy SUCCESS (${swv || 'latest'} on ${branch || 'main'})`,
+      payload: {
+        vtid,
+        swv: swv || null,
+        service,
+        environment,
+        branch: branch || 'main',
+        deployed_at: new Date().toISOString(),
+      },
+    }),
+
+  deployGatewayFailed: (
+    vtid: string,
+    service: string,
+    environment: string,
+    error: string,
+    swv?: string,
+    branch?: string
+  ) =>
+    emitOasisEvent({
+      vtid,
+      type: 'deploy.gateway.failed',
+      source: 'gateway-deploy-orchestrator',
+      status: 'error',
+      message: `Gateway deploy FAILED (${swv || 'latest'} on ${branch || 'main'}): ${error}`,
+      payload: {
+        vtid,
+        swv: swv || null,
+        service,
+        environment,
+        branch: branch || 'main',
+        error,
+        failed_at: new Date().toISOString(),
+      },
+    }),
+
+  // ==================== DEV-OASIS-0210: Governance Evaluation Events ====================
+  governanceEvaluation: (
+    vtid: string,
+    service: string,
+    result: 'pass' | 'fail' | 'warning',
+    level: 'L1' | 'L2' | 'L3' | 'L4',
+    ruleIds: string[] = [],
+    swv?: string
+  ) =>
+    emitOasisEvent({
+      vtid,
+      type: 'governance.evaluation',
+      source: 'governance-engine',
+      status: result === 'fail' ? 'error' : result === 'warning' ? 'warning' : 'success',
+      message: `Governance evaluation ${result} for ${service}`,
+      payload: {
+        vtid,
+        swv: swv || null,
+        result,
+        rule_ids: ruleIds,
+        level,
+        service,
+        evaluated_at: new Date().toISOString(),
+      },
+    }),
 };
 
 /**
- * VTID-0408: Governance History Event Types
+ * VTID-0408 + DEV-OASIS-0210: Governance History Event Types
  * These are the event types that appear in the governance history timeline.
  */
 export const GOVERNANCE_EVENT_TYPES = [
     'governance.deploy.blocked',
     'governance.deploy.allowed',
-    'governance.evaluate',
+    'governance.evaluation',  // DEV-OASIS-0210: Standard governance evaluation event
+    'governance.evaluate',    // Legacy event type for backward compatibility
     'governance.rule.created',
     'governance.rule.updated',
     'governance.violated'
