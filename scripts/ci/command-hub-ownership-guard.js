@@ -13,7 +13,7 @@ const { execSync } = require('child_process');
 const path = require('path');
 
 const PROTECTED_PATH = 'services/gateway/src/frontend/command-hub/';
-const ALLOWED_VTID_PATTERN = /DEV-COMHU-\d+|VTID-0302/i;
+const ALLOWED_VTID_PATTERN = /DEV-COMHU-\d+|VTID-0302|VTID-0600/i;
 
 function getChangedFiles() {
   try {

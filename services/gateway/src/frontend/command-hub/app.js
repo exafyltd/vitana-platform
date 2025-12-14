@@ -394,7 +394,57 @@ const state = {
             { id: 1, role: 'assistant', content: 'Hello! I\'m your Vitana assistant. How can I help you today?', timestamp: new Date().toISOString() }
         ],
         chatInputValue: ''
-    }
+    },
+
+    // VTID-0600: Operational Visibility Foundation State
+    oasisEvents: {
+        items: [],
+        loading: false,
+        error: null,
+        fetched: false,
+        selectedEvent: null,
+        filters: {
+            topic: '',
+            service: '',
+            status: ''
+        },
+        autoRefreshEnabled: true,
+        autoRefreshInterval: null
+    },
+
+    // VTID-0600: Command Hub Events (Curated Operational View)
+    commandHubEvents: {
+        items: [],
+        loading: false,
+        error: null,
+        fetched: false,
+        filters: {
+            topic: '',
+            service: '',
+            status: ''
+        }
+    },
+
+    // VTID-0600: VTIDs Lifecycle Overview
+    vtidsList: {
+        items: [],
+        loading: false,
+        error: null,
+        fetched: false,
+        selectedVtid: null
+    },
+
+    // VTID-0600: Approvals UI Scaffolding
+    approvals: {
+        items: [],
+        loading: false,
+        error: null,
+        fetched: false
+    },
+
+    // VTID-0600: Ticker Severity Prioritization
+    tickerCollapseHeartbeat: true,
+    tickerSeverityFilter: 'all' // 'all', 'critical', 'important', 'info'
 };
 
 // --- VTID-0527: Task Stage Timeline Model ---
@@ -491,6 +541,383 @@ function formatStageTimestamp(isoString) {
         hour: '2-digit',
         minute: '2-digit'
     });
+}
+
+// --- VTID-0600: Operational Visibility Foundation ---
+
+/**
+ * VTID-0600: Event Severity Levels
+ * Used for prioritizing and color-coding events in ticker and views.
+ */
+const EVENT_SEVERITY = {
+    CRITICAL: 'critical',   // deploy failed, governance denied
+    IMPORTANT: 'important', // deploy success, governance allowed
+    INFO: 'info',           // autopilot events, general operations
+    LOW: 'low'              // heartbeat, pings, routine checks
+};
+
+/**
+ * VTID-0600: Severity color mapping (CSP compliant hex values)
+ */
+const SEVERITY_COLORS = {
+    critical: '#ff4d4f',
+    important: '#f7b731',
+    info: '#2ecc71',
+    low: '#95a5a6'
+};
+
+/**
+ * VTID-0600: Determine event severity based on topic and status
+ * @param {Object} event - OASIS event object
+ * @returns {string} Severity level (critical, important, info, low)
+ */
+function getEventSeverity(event) {
+    const topic = (event.topic || '').toLowerCase();
+    const status = (event.status || '').toLowerCase();
+
+    // Critical: failures, denials, blocked events
+    if (status === 'error' || status === 'fail' || status === 'blocked') {
+        return EVENT_SEVERITY.CRITICAL;
+    }
+    if (topic.includes('.failed') || topic.includes('.blocked') || topic.includes('.denied')) {
+        return EVENT_SEVERITY.CRITICAL;
+    }
+    if (topic.includes('governance') && status === 'deny') {
+        return EVENT_SEVERITY.CRITICAL;
+    }
+
+    // Important: successes, approvals, deployments
+    if (topic.includes('deploy') && (status === 'success' || topic.includes('.success'))) {
+        return EVENT_SEVERITY.IMPORTANT;
+    }
+    if (topic.includes('governance') && (status === 'allow' || status === 'success')) {
+        return EVENT_SEVERITY.IMPORTANT;
+    }
+    if (topic.includes('.success') || topic.includes('.approved')) {
+        return EVENT_SEVERITY.IMPORTANT;
+    }
+
+    // Low: heartbeat, ping, routine checks
+    if (topic.includes('heartbeat') || topic.includes('ping') || topic.includes('health')) {
+        return EVENT_SEVERITY.LOW;
+    }
+
+    // Default: info level
+    return EVENT_SEVERITY.INFO;
+}
+
+/**
+ * VTID-0600: Format event timestamp for display
+ */
+function formatEventTimestamp(isoString) {
+    if (!isoString) return 'N/A';
+    const date = new Date(isoString);
+    return date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    });
+}
+
+/**
+ * VTID-0600: Fetch OASIS events from the API
+ * @param {Object} filters - Optional filters (topic, service, status)
+ */
+async function fetchOasisEvents(filters) {
+    console.log('[VTID-0600] Fetching OASIS events...');
+    state.oasisEvents.loading = true;
+    renderApp();
+
+    try {
+        var queryParams = 'limit=100';
+        if (filters) {
+            if (filters.topic) queryParams += '&topic=like.*' + encodeURIComponent(filters.topic) + '*';
+            if (filters.service) queryParams += '&service=eq.' + encodeURIComponent(filters.service);
+            if (filters.status) queryParams += '&status=eq.' + encodeURIComponent(filters.status);
+        }
+
+        const response = await fetch('/api/v1/oasis/events?' + queryParams);
+        if (!response.ok) {
+            throw new Error('OASIS events fetch failed: ' + response.status);
+        }
+
+        const data = await response.json();
+        console.log('[VTID-0600] OASIS events loaded:', data.length);
+
+        state.oasisEvents.items = Array.isArray(data) ? data : [];
+        state.oasisEvents.error = null;
+        state.oasisEvents.fetched = true;
+    } catch (error) {
+        console.error('[VTID-0600] Failed to fetch OASIS events:', error);
+        state.oasisEvents.error = error.message;
+        state.oasisEvents.items = [];
+    } finally {
+        state.oasisEvents.loading = false;
+        renderApp();
+    }
+}
+
+/**
+ * VTID-0600: Start auto-refresh for OASIS events (5 second interval)
+ */
+function startOasisEventsAutoRefresh() {
+    if (state.oasisEvents.autoRefreshInterval) {
+        clearInterval(state.oasisEvents.autoRefreshInterval);
+    }
+    state.oasisEvents.autoRefreshEnabled = true;
+    state.oasisEvents.autoRefreshInterval = setInterval(function() {
+        if (state.oasisEvents.autoRefreshEnabled) {
+            fetchOasisEvents(state.oasisEvents.filters);
+        }
+    }, 5000);
+    console.log('[VTID-0600] OASIS events auto-refresh started (5s interval)');
+}
+
+/**
+ * VTID-0600: Stop auto-refresh for OASIS events
+ */
+function stopOasisEventsAutoRefresh() {
+    if (state.oasisEvents.autoRefreshInterval) {
+        clearInterval(state.oasisEvents.autoRefreshInterval);
+        state.oasisEvents.autoRefreshInterval = null;
+    }
+    state.oasisEvents.autoRefreshEnabled = false;
+    console.log('[VTID-0600] OASIS events auto-refresh stopped');
+}
+
+/**
+ * VTID-0600: Fetch Command Hub Events (filtered operational events)
+ * Only fetches events relevant to supervision: deploy.*, governance.*, cicd.*, autopilot.*
+ */
+async function fetchCommandHubEvents() {
+    console.log('[VTID-0600] Fetching Command Hub events...');
+    state.commandHubEvents.loading = true;
+    renderApp();
+
+    try {
+        const response = await fetch('/api/v1/oasis/events?limit=100');
+        if (!response.ok) {
+            throw new Error('Command Hub events fetch failed: ' + response.status);
+        }
+
+        const data = await response.json();
+        var allEvents = Array.isArray(data) ? data : [];
+
+        // Filter to operational events only
+        var operationalTopics = ['deploy', 'governance', 'cicd', 'autopilot', 'operator'];
+        var filteredEvents = allEvents.filter(function(event) {
+            var topic = (event.topic || '').toLowerCase();
+            return operationalTopics.some(function(prefix) {
+                return topic.startsWith(prefix);
+            });
+        });
+
+        // Apply additional filters from state
+        if (state.commandHubEvents.filters.topic) {
+            var topicFilter = state.commandHubEvents.filters.topic.toLowerCase();
+            filteredEvents = filteredEvents.filter(function(e) {
+                return (e.topic || '').toLowerCase().includes(topicFilter);
+            });
+        }
+        if (state.commandHubEvents.filters.service) {
+            filteredEvents = filteredEvents.filter(function(e) {
+                return e.service === state.commandHubEvents.filters.service;
+            });
+        }
+        if (state.commandHubEvents.filters.status) {
+            filteredEvents = filteredEvents.filter(function(e) {
+                return e.status === state.commandHubEvents.filters.status;
+            });
+        }
+
+        console.log('[VTID-0600] Command Hub events filtered:', filteredEvents.length);
+        state.commandHubEvents.items = filteredEvents;
+        state.commandHubEvents.error = null;
+        state.commandHubEvents.fetched = true;
+    } catch (error) {
+        console.error('[VTID-0600] Failed to fetch Command Hub events:', error);
+        state.commandHubEvents.error = error.message;
+        state.commandHubEvents.items = [];
+    } finally {
+        state.commandHubEvents.loading = false;
+        renderApp();
+    }
+}
+
+/**
+ * VTID-0600: Fetch VTIDs list from OASIS events
+ * Groups events by VTID to show lifecycle overview
+ */
+async function fetchVtidsList() {
+    console.log('[VTID-0600] Fetching VTIDs list...');
+    state.vtidsList.loading = true;
+    renderApp();
+
+    try {
+        const response = await fetch('/api/v1/oasis/events?limit=200');
+        if (!response.ok) {
+            throw new Error('VTIDs list fetch failed: ' + response.status);
+        }
+
+        const data = await response.json();
+        var events = Array.isArray(data) ? data : [];
+
+        // Group events by VTID
+        var vtidMap = {};
+        events.forEach(function(event) {
+            if (!event.vtid) return;
+
+            if (!vtidMap[event.vtid]) {
+                vtidMap[event.vtid] = {
+                    vtid: event.vtid,
+                    layer: extractLayer(event.vtid),
+                    status: 'PL', // default to PLANNER
+                    events: [],
+                    latestEvent: null,
+                    services: new Set()
+                };
+            }
+
+            vtidMap[event.vtid].events.push(event);
+            if (event.service) {
+                vtidMap[event.vtid].services.add(event.service);
+            }
+
+            // Update latest event
+            if (!vtidMap[event.vtid].latestEvent ||
+                new Date(event.created_at) > new Date(vtidMap[event.vtid].latestEvent.created_at)) {
+                vtidMap[event.vtid].latestEvent = event;
+            }
+
+            // Determine status from event topic/stage
+            var topic = (event.topic || '').toLowerCase();
+            var stage = (event.task_stage || '').toUpperCase();
+            if (stage === 'DEPLOY' || topic.includes('deploy')) {
+                vtidMap[event.vtid].status = 'DE';
+            } else if (stage === 'VALIDATOR' || topic.includes('validat')) {
+                if (vtidMap[event.vtid].status !== 'DE') {
+                    vtidMap[event.vtid].status = 'VA';
+                }
+            } else if (stage === 'WORKER' || topic.includes('work')) {
+                if (vtidMap[event.vtid].status !== 'DE' && vtidMap[event.vtid].status !== 'VA') {
+                    vtidMap[event.vtid].status = 'WO';
+                }
+            }
+        });
+
+        // Convert to array and sort by latest event
+        var vtidList = Object.values(vtidMap);
+        vtidList.forEach(function(v) {
+            v.services = Array.from(v.services);
+        });
+        vtidList.sort(function(a, b) {
+            var aTime = a.latestEvent ? new Date(a.latestEvent.created_at) : new Date(0);
+            var bTime = b.latestEvent ? new Date(b.latestEvent.created_at) : new Date(0);
+            return bTime - aTime;
+        });
+
+        console.log('[VTID-0600] VTIDs list generated:', vtidList.length);
+        state.vtidsList.items = vtidList;
+        state.vtidsList.error = null;
+        state.vtidsList.fetched = true;
+    } catch (error) {
+        console.error('[VTID-0600] Failed to fetch VTIDs list:', error);
+        state.vtidsList.error = error.message;
+        state.vtidsList.items = [];
+    } finally {
+        state.vtidsList.loading = false;
+        renderApp();
+    }
+}
+
+/**
+ * VTID-0600: Extract layer from VTID (DEV, CICD, GOV, ADM, etc.)
+ */
+function extractLayer(vtid) {
+    if (!vtid) return 'UNK';
+    var parts = vtid.split('-');
+    if (parts.length >= 2) {
+        // Check for known prefixes
+        var prefix = parts[0].toUpperCase();
+        if (prefix === 'VTID' && parts.length >= 2) {
+            // Try to infer from number range
+            var num = parseInt(parts[1], 10);
+            if (num >= 100 && num < 200) return 'GOV';
+            if (num >= 200 && num < 300) return 'DEV';
+            if (num >= 400 && num < 500) return 'GOV';
+            if (num >= 500 && num < 600) return 'DEV';
+            if (num >= 600 && num < 700) return 'ADM';
+            return 'DEV';
+        }
+        return prefix;
+    }
+    return 'UNK';
+}
+
+/**
+ * VTID-0600: Fetch approvals (placeholder - returns empty for now)
+ */
+async function fetchApprovals() {
+    console.log('[VTID-0600] Fetching approvals (placeholder)...');
+    state.approvals.loading = true;
+    renderApp();
+
+    // Placeholder: In future, this will fetch from /api/v1/governance/approvals
+    setTimeout(function() {
+        state.approvals.items = [];
+        state.approvals.loading = false;
+        state.approvals.error = null;
+        state.approvals.fetched = true;
+        console.log('[VTID-0600] Approvals loaded (empty placeholder)');
+        renderApp();
+    }, 100);
+}
+
+/**
+ * VTID-0600: Generate human-readable summary from deployment data
+ * Extracts meaning from VTID, service, and status
+ */
+function generateDeploySummary(deploy) {
+    var service = deploy.service || 'unknown service';
+    var vtid = deploy.vtid || '';
+    var status = deploy.status || 'unknown';
+
+    // Try to extract meaning from VTID pattern
+    var meaning = '';
+
+    if (vtid.includes('-0600')) {
+        meaning = 'Operational visibility foundation';
+    } else if (vtid.includes('-0500') || vtid.includes('-05')) {
+        meaning = 'Core infrastructure update';
+    } else if (vtid.includes('-0400') || vtid.includes('-04')) {
+        meaning = 'Governance system change';
+    } else if (vtid.includes('-0300') || vtid.includes('-03')) {
+        meaning = 'Agent pipeline update';
+    } else if (vtid.includes('-0200') || vtid.includes('-02')) {
+        meaning = 'API/Integration change';
+    } else if (vtid.includes('-0100') || vtid.includes('-01')) {
+        meaning = 'Foundation layer update';
+    }
+
+    // Generate summary based on available data
+    if (status === 'success') {
+        if (meaning) {
+            return 'Deployed ' + meaning + ' to ' + service;
+        }
+        return 'Successful deployment to ' + service;
+    } else if (status === 'failure') {
+        if (meaning) {
+            return 'Failed: ' + meaning + ' for ' + service;
+        }
+        return 'Deployment failed for ' + service;
+    } else {
+        if (meaning) {
+            return meaning + ' (' + service + ')';
+        }
+        return 'Update to ' + service;
+    }
 }
 
 // --- Version History Data Model (VTID-0517 + VTID-0524) ---
@@ -666,6 +1093,9 @@ function renderApp() {
 
     // VTID-0401: Governance Rule Detail Drawer
     root.appendChild(renderGovernanceRuleDetailDrawer());
+
+    // VTID-0600: OASIS Event Detail Drawer
+    root.appendChild(renderOasisEventDrawer());
 
     // Modals
     if (state.showProfileModal) root.appendChild(renderProfileModal());
@@ -1273,6 +1703,18 @@ function renderModuleContent(moduleKey, tab) {
 
     if (moduleKey === 'command-hub' && tab === 'tasks') {
         container.appendChild(renderTasksView());
+    } else if (moduleKey === 'command-hub' && tab === 'events') {
+        // VTID-0600: Command Hub Events (curated operational view)
+        container.appendChild(renderCommandHubEventsView());
+    } else if (moduleKey === 'command-hub' && tab === 'vtids') {
+        // VTID-0600: VTIDs Lifecycle Overview
+        container.appendChild(renderVtidsView());
+    } else if (moduleKey === 'command-hub' && tab === 'approvals') {
+        // VTID-0600: Approvals UI Scaffolding
+        container.appendChild(renderApprovalsView());
+    } else if (moduleKey === 'oasis' && tab === 'events') {
+        // VTID-0600: OASIS Events View
+        container.appendChild(renderOasisEventsView());
     } else if (moduleKey === 'docs' && tab === 'screens') {
         container.appendChild(renderDocsScreensView());
     } else if (moduleKey === 'governance' && tab === 'rules') {
@@ -3763,6 +4205,691 @@ function capitalizeFirst(str) {
     return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
+// --- VTID-0600: Operational Visibility Views ---
+
+/**
+ * VTID-0600: Renders the OASIS > Events view with auto-refresh, severity colors, and drawer.
+ */
+function renderOasisEventsView() {
+    var container = document.createElement('div');
+    container.className = 'oasis-events-container';
+
+    // Auto-fetch events if not yet fetched
+    if (!state.oasisEvents.fetched && !state.oasisEvents.loading) {
+        fetchOasisEvents(state.oasisEvents.filters);
+        startOasisEventsAutoRefresh();
+    }
+
+    // Toolbar
+    var toolbar = document.createElement('div');
+    toolbar.className = 'oasis-events-toolbar';
+
+    // Auto-refresh toggle
+    var refreshToggle = document.createElement('div');
+    refreshToggle.className = 'auto-refresh-toggle';
+
+    var refreshLabel = document.createElement('span');
+    refreshLabel.textContent = 'Auto-refresh (5s):';
+    refreshToggle.appendChild(refreshLabel);
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = state.oasisEvents.autoRefreshEnabled ? 'btn btn-sm btn-active' : 'btn btn-sm';
+    refreshBtn.textContent = state.oasisEvents.autoRefreshEnabled ? 'ON' : 'OFF';
+    refreshBtn.onclick = function() {
+        if (state.oasisEvents.autoRefreshEnabled) {
+            stopOasisEventsAutoRefresh();
+        } else {
+            startOasisEventsAutoRefresh();
+        }
+        renderApp();
+    };
+    refreshToggle.appendChild(refreshBtn);
+    toolbar.appendChild(refreshToggle);
+
+    // Topic filter
+    var topicFilter = document.createElement('select');
+    topicFilter.className = 'form-control filter-select';
+    topicFilter.innerHTML =
+        '<option value="">All Topics</option>' +
+        '<option value="deploy">Deploy</option>' +
+        '<option value="governance">Governance</option>' +
+        '<option value="cicd">CI/CD</option>' +
+        '<option value="autopilot">Autopilot</option>' +
+        '<option value="operator">Operator</option>';
+    topicFilter.value = state.oasisEvents.filters.topic || '';
+    topicFilter.onchange = function(e) {
+        state.oasisEvents.filters.topic = e.target.value;
+        fetchOasisEvents(state.oasisEvents.filters);
+    };
+    toolbar.appendChild(topicFilter);
+
+    // Status filter
+    var statusFilter = document.createElement('select');
+    statusFilter.className = 'form-control filter-select';
+    statusFilter.innerHTML =
+        '<option value="">All Status</option>' +
+        '<option value="success">Success</option>' +
+        '<option value="error">Error</option>' +
+        '<option value="info">Info</option>' +
+        '<option value="warning">Warning</option>';
+    statusFilter.value = state.oasisEvents.filters.status || '';
+    statusFilter.onchange = function(e) {
+        state.oasisEvents.filters.status = e.target.value;
+        fetchOasisEvents(state.oasisEvents.filters);
+    };
+    toolbar.appendChild(statusFilter);
+
+    // Spacer
+    var spacer = document.createElement('div');
+    spacer.className = 'spacer';
+    toolbar.appendChild(spacer);
+
+    // Refresh button
+    var manualRefresh = document.createElement('button');
+    manualRefresh.className = 'btn';
+    manualRefresh.textContent = 'Refresh Now';
+    manualRefresh.onclick = function() {
+        fetchOasisEvents(state.oasisEvents.filters);
+    };
+    toolbar.appendChild(manualRefresh);
+
+    container.appendChild(toolbar);
+
+    // Live indicator
+    if (state.oasisEvents.autoRefreshEnabled) {
+        var liveIndicator = document.createElement('div');
+        liveIndicator.className = 'oasis-live-indicator';
+        liveIndicator.innerHTML = '<span class="live-dot"></span> LIVE - Auto-refreshing every 5 seconds';
+        container.appendChild(liveIndicator);
+    }
+
+    // Events table
+    var content = document.createElement('div');
+    content.className = 'oasis-events-content';
+
+    if (state.oasisEvents.loading && state.oasisEvents.items.length === 0) {
+        content.innerHTML = '<div class="placeholder-content">Loading OASIS events...</div>';
+    } else if (state.oasisEvents.error) {
+        content.innerHTML = '<div class="placeholder-content error-text">Error: ' + state.oasisEvents.error + '</div>';
+    } else if (state.oasisEvents.items.length === 0) {
+        content.innerHTML = '<div class="placeholder-content">No events found.</div>';
+    } else {
+        var table = document.createElement('table');
+        table.className = 'oasis-events-table';
+
+        // Header
+        var thead = document.createElement('thead');
+        var headerRow = document.createElement('tr');
+        ['Severity', 'Timestamp', 'Topic', 'VTID', 'Service', 'Status', 'Message'].forEach(function(header) {
+            var th = document.createElement('th');
+            th.textContent = header;
+            headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        // Body
+        var tbody = document.createElement('tbody');
+        state.oasisEvents.items.forEach(function(event) {
+            var row = document.createElement('tr');
+            row.className = 'oasis-event-row';
+            var severity = getEventSeverity(event);
+            row.dataset.severity = severity;
+            row.onclick = function() {
+                state.oasisEvents.selectedEvent = event;
+                renderApp();
+            };
+
+            // Severity indicator
+            var severityCell = document.createElement('td');
+            var severityDot = document.createElement('span');
+            severityDot.className = 'severity-dot severity-' + severity;
+            severityCell.appendChild(severityDot);
+            row.appendChild(severityCell);
+
+            // Timestamp
+            var tsCell = document.createElement('td');
+            tsCell.className = 'event-timestamp';
+            tsCell.textContent = formatEventTimestamp(event.created_at);
+            row.appendChild(tsCell);
+
+            // Topic
+            var topicCell = document.createElement('td');
+            topicCell.className = 'event-topic';
+            topicCell.textContent = event.topic || '-';
+            row.appendChild(topicCell);
+
+            // VTID
+            var vtidCell = document.createElement('td');
+            vtidCell.className = 'event-vtid';
+            vtidCell.textContent = event.vtid || '-';
+            row.appendChild(vtidCell);
+
+            // Service
+            var serviceCell = document.createElement('td');
+            serviceCell.className = 'event-service';
+            serviceCell.textContent = event.service || '-';
+            row.appendChild(serviceCell);
+
+            // Status
+            var statusCell = document.createElement('td');
+            var statusBadge = document.createElement('span');
+            statusBadge.className = 'status-badge status-' + (event.status || 'info');
+            statusBadge.textContent = event.status || '-';
+            statusCell.appendChild(statusBadge);
+            row.appendChild(statusCell);
+
+            // Message
+            var msgCell = document.createElement('td');
+            msgCell.className = 'event-message';
+            msgCell.textContent = (event.message || '').substring(0, 60) + ((event.message || '').length > 60 ? '...' : '');
+            row.appendChild(msgCell);
+
+            tbody.appendChild(row);
+        });
+        table.appendChild(tbody);
+        content.appendChild(table);
+    }
+
+    container.appendChild(content);
+
+    return container;
+}
+
+/**
+ * VTID-0600: Renders the OASIS Event Detail Drawer.
+ */
+function renderOasisEventDrawer() {
+    var drawer = document.createElement('div');
+    drawer.className = 'drawer oasis-event-drawer' + (state.oasisEvents.selectedEvent ? ' open' : '');
+
+    if (!state.oasisEvents.selectedEvent) {
+        return drawer;
+    }
+
+    var event = state.oasisEvents.selectedEvent;
+    var severity = getEventSeverity(event);
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'drawer-header';
+
+    var title = document.createElement('h3');
+    title.textContent = 'Event Details';
+    header.appendChild(title);
+
+    var closeBtn = document.createElement('button');
+    closeBtn.className = 'drawer-close-btn';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.onclick = function() {
+        state.oasisEvents.selectedEvent = null;
+        renderApp();
+    };
+    header.appendChild(closeBtn);
+    drawer.appendChild(header);
+
+    // Content
+    var content = document.createElement('div');
+    content.className = 'drawer-content';
+
+    // Severity banner
+    var severityBanner = document.createElement('div');
+    severityBanner.className = 'severity-banner severity-banner-' + severity;
+    severityBanner.textContent = severity.toUpperCase() + ' SEVERITY';
+    content.appendChild(severityBanner);
+
+    // Fields
+    var fields = [
+        { label: 'Event ID', value: event.id },
+        { label: 'Timestamp', value: formatEventTimestamp(event.created_at) },
+        { label: 'Topic', value: event.topic },
+        { label: 'VTID', value: event.vtid },
+        { label: 'Service', value: event.service },
+        { label: 'Status', value: event.status },
+        { label: 'Role', value: event.role },
+        { label: 'Model', value: event.model },
+        { label: 'Message', value: event.message }
+    ];
+
+    fields.forEach(function(field) {
+        if (field.value) {
+            var row = document.createElement('div');
+            row.className = 'drawer-field';
+
+            var label = document.createElement('div');
+            label.className = 'drawer-field-label';
+            label.textContent = field.label;
+            row.appendChild(label);
+
+            var value = document.createElement('div');
+            value.className = 'drawer-field-value';
+            value.textContent = field.value;
+            row.appendChild(value);
+
+            content.appendChild(row);
+        }
+    });
+
+    // Metadata section
+    if (event.metadata && Object.keys(event.metadata).length > 0) {
+        var metaSection = document.createElement('div');
+        metaSection.className = 'drawer-section';
+
+        var metaTitle = document.createElement('h4');
+        metaTitle.textContent = 'Metadata';
+        metaSection.appendChild(metaTitle);
+
+        var metaPre = document.createElement('pre');
+        metaPre.className = 'drawer-metadata';
+        metaPre.textContent = JSON.stringify(event.metadata, null, 2);
+        metaSection.appendChild(metaPre);
+
+        content.appendChild(metaSection);
+    }
+
+    drawer.appendChild(content);
+
+    return drawer;
+}
+
+/**
+ * VTID-0600: Renders the Command Hub > Events view (curated operational events).
+ */
+function renderCommandHubEventsView() {
+    var container = document.createElement('div');
+    container.className = 'command-hub-events-container';
+
+    // Auto-fetch events if not yet fetched
+    if (!state.commandHubEvents.fetched && !state.commandHubEvents.loading) {
+        fetchCommandHubEvents();
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'command-hub-events-header';
+
+    var title = document.createElement('h2');
+    title.textContent = 'Operational Events';
+    header.appendChild(title);
+
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Curated events for supervisor oversight: deployments, governance decisions, CI/CD, and autopilot activity.';
+    header.appendChild(subtitle);
+
+    container.appendChild(header);
+
+    // Filters toolbar
+    var toolbar = document.createElement('div');
+    toolbar.className = 'command-hub-events-toolbar';
+
+    // Topic filter
+    var topicFilter = document.createElement('select');
+    topicFilter.className = 'form-control filter-select';
+    topicFilter.innerHTML =
+        '<option value="">All Types</option>' +
+        '<option value="deploy">Deployments</option>' +
+        '<option value="governance">Governance</option>' +
+        '<option value="cicd">CI/CD</option>' +
+        '<option value="autopilot">Autopilot</option>' +
+        '<option value="operator">Operator</option>';
+    topicFilter.value = state.commandHubEvents.filters.topic || '';
+    topicFilter.onchange = function(e) {
+        state.commandHubEvents.filters.topic = e.target.value;
+        fetchCommandHubEvents();
+    };
+    toolbar.appendChild(topicFilter);
+
+    // Status filter
+    var statusFilter = document.createElement('select');
+    statusFilter.className = 'form-control filter-select';
+    statusFilter.innerHTML =
+        '<option value="">All Status</option>' +
+        '<option value="success">Success</option>' +
+        '<option value="error">Error/Blocked</option>' +
+        '<option value="info">Info</option>';
+    statusFilter.value = state.commandHubEvents.filters.status || '';
+    statusFilter.onchange = function(e) {
+        state.commandHubEvents.filters.status = e.target.value;
+        fetchCommandHubEvents();
+    };
+    toolbar.appendChild(statusFilter);
+
+    // Spacer
+    var spacer = document.createElement('div');
+    spacer.className = 'spacer';
+    toolbar.appendChild(spacer);
+
+    // Refresh button
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn';
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.onclick = function() {
+        fetchCommandHubEvents();
+    };
+    toolbar.appendChild(refreshBtn);
+
+    container.appendChild(toolbar);
+
+    // Events list
+    var content = document.createElement('div');
+    content.className = 'command-hub-events-content';
+
+    if (state.commandHubEvents.loading) {
+        content.innerHTML = '<div class="placeholder-content">Loading operational events...</div>';
+    } else if (state.commandHubEvents.error) {
+        content.innerHTML = '<div class="placeholder-content error-text">Error: ' + state.commandHubEvents.error + '</div>';
+    } else if (state.commandHubEvents.items.length === 0) {
+        content.innerHTML = '<div class="placeholder-content">No operational events found.</div>';
+    } else {
+        var table = document.createElement('table');
+        table.className = 'command-hub-events-table';
+
+        var thead = document.createElement('thead');
+        var headerRow = document.createElement('tr');
+        ['Priority', 'Time', 'Type', 'VTID', 'Status', 'Summary'].forEach(function(h) {
+            var th = document.createElement('th');
+            th.textContent = h;
+            headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        var tbody = document.createElement('tbody');
+        state.commandHubEvents.items.forEach(function(event) {
+            var row = document.createElement('tr');
+            var severity = getEventSeverity(event);
+            row.className = 'command-hub-event-row severity-row-' + severity;
+
+            // Priority indicator
+            var prioCell = document.createElement('td');
+            var prioDot = document.createElement('span');
+            prioDot.className = 'severity-dot severity-' + severity;
+            prioCell.appendChild(prioDot);
+            row.appendChild(prioCell);
+
+            // Time
+            var timeCell = document.createElement('td');
+            timeCell.textContent = formatEventTimestamp(event.created_at);
+            row.appendChild(timeCell);
+
+            // Type
+            var typeCell = document.createElement('td');
+            var typeBadge = document.createElement('span');
+            typeBadge.className = 'event-type-badge';
+            typeBadge.textContent = (event.topic || '').split('.')[0];
+            typeCell.appendChild(typeBadge);
+            row.appendChild(typeCell);
+
+            // VTID
+            var vtidCell = document.createElement('td');
+            vtidCell.textContent = event.vtid || '-';
+            row.appendChild(vtidCell);
+
+            // Status
+            var statusCell = document.createElement('td');
+            var statusBadge = document.createElement('span');
+            statusBadge.className = 'status-badge status-' + (event.status || 'info');
+            statusBadge.textContent = event.status || '-';
+            statusCell.appendChild(statusBadge);
+            row.appendChild(statusCell);
+
+            // Summary
+            var summaryCell = document.createElement('td');
+            summaryCell.textContent = event.message || '-';
+            row.appendChild(summaryCell);
+
+            tbody.appendChild(row);
+        });
+        table.appendChild(tbody);
+        content.appendChild(table);
+    }
+
+    container.appendChild(content);
+
+    return container;
+}
+
+/**
+ * VTID-0600: Renders the Command Hub > VTIDs lifecycle view.
+ */
+function renderVtidsView() {
+    var container = document.createElement('div');
+    container.className = 'vtids-container';
+
+    // Auto-fetch VTIDs if not yet fetched
+    if (!state.vtidsList.fetched && !state.vtidsList.loading) {
+        fetchVtidsList();
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'vtids-header';
+
+    var title = document.createElement('h2');
+    title.textContent = 'VTID Lifecycle Overview';
+    header.appendChild(title);
+
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Track all VTIDs through their lifecycle stages: Planning, Working, Validation, and Deployment.';
+    header.appendChild(subtitle);
+
+    container.appendChild(header);
+
+    // Status legend
+    var legend = document.createElement('div');
+    legend.className = 'vtid-status-legend';
+    ['PL:Planner', 'WO:Worker', 'VA:Validator', 'DE:Deploy'].forEach(function(item) {
+        var parts = item.split(':');
+        var badge = document.createElement('span');
+        badge.className = 'vtid-stage-badge vtid-stage-' + parts[0].toLowerCase();
+        badge.textContent = parts[0] + ' = ' + parts[1];
+        legend.appendChild(badge);
+    });
+    container.appendChild(legend);
+
+    // Toolbar
+    var toolbar = document.createElement('div');
+    toolbar.className = 'vtids-toolbar';
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn';
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.onclick = function() {
+        fetchVtidsList();
+    };
+    toolbar.appendChild(refreshBtn);
+
+    container.appendChild(toolbar);
+
+    // Content
+    var content = document.createElement('div');
+    content.className = 'vtids-content';
+
+    if (state.vtidsList.loading) {
+        content.innerHTML = '<div class="placeholder-content">Loading VTIDs...</div>';
+    } else if (state.vtidsList.error) {
+        content.innerHTML = '<div class="placeholder-content error-text">Error: ' + state.vtidsList.error + '</div>';
+    } else if (state.vtidsList.items.length === 0) {
+        content.innerHTML = '<div class="placeholder-content">No VTIDs found.</div>';
+    } else {
+        var table = document.createElement('table');
+        table.className = 'vtids-table';
+
+        var thead = document.createElement('thead');
+        var headerRow = document.createElement('tr');
+        ['VTID', 'Layer', 'Status', 'Services', 'Events', 'Last Activity'].forEach(function(h) {
+            var th = document.createElement('th');
+            th.textContent = h;
+            headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        var tbody = document.createElement('tbody');
+        state.vtidsList.items.forEach(function(vtidEntry) {
+            var row = document.createElement('tr');
+            row.className = 'vtid-row';
+
+            // VTID
+            var vtidCell = document.createElement('td');
+            vtidCell.className = 'vtid-cell';
+            vtidCell.textContent = vtidEntry.vtid;
+            row.appendChild(vtidCell);
+
+            // Layer
+            var layerCell = document.createElement('td');
+            var layerBadge = document.createElement('span');
+            layerBadge.className = 'vtid-layer-badge vtid-layer-' + vtidEntry.layer.toLowerCase();
+            layerBadge.textContent = vtidEntry.layer;
+            layerCell.appendChild(layerBadge);
+            row.appendChild(layerCell);
+
+            // Status
+            var statusCell = document.createElement('td');
+            var statusBadge = document.createElement('span');
+            statusBadge.className = 'vtid-stage-badge vtid-stage-' + vtidEntry.status.toLowerCase();
+            statusBadge.textContent = vtidEntry.status;
+            statusCell.appendChild(statusBadge);
+            row.appendChild(statusCell);
+
+            // Services
+            var servicesCell = document.createElement('td');
+            servicesCell.textContent = vtidEntry.services.join(', ') || '-';
+            row.appendChild(servicesCell);
+
+            // Events count
+            var eventsCell = document.createElement('td');
+            eventsCell.textContent = vtidEntry.events.length;
+            row.appendChild(eventsCell);
+
+            // Last activity
+            var lastCell = document.createElement('td');
+            lastCell.textContent = vtidEntry.latestEvent ? formatEventTimestamp(vtidEntry.latestEvent.created_at) : '-';
+            row.appendChild(lastCell);
+
+            tbody.appendChild(row);
+        });
+        table.appendChild(tbody);
+        content.appendChild(table);
+    }
+
+    container.appendChild(content);
+
+    return container;
+}
+
+/**
+ * VTID-0600: Renders the Command Hub > Approvals view (UI scaffolding).
+ */
+function renderApprovalsView() {
+    var container = document.createElement('div');
+    container.className = 'approvals-container';
+
+    // Auto-fetch approvals if not yet fetched
+    if (!state.approvals.fetched && !state.approvals.loading) {
+        fetchApprovals();
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'approvals-header';
+
+    var title = document.createElement('h2');
+    title.textContent = 'Governance Approvals';
+    header.appendChild(title);
+
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Review and manage pending approval requests for governance decisions.';
+    header.appendChild(subtitle);
+
+    container.appendChild(header);
+
+    // Sections
+    var sections = [
+        { id: 'pending', title: 'Pending Approvals', icon: '⏳' },
+        { id: 'history', title: 'Approval History', icon: '📋' }
+    ];
+
+    sections.forEach(function(section) {
+        var sectionEl = document.createElement('div');
+        sectionEl.className = 'approvals-section';
+
+        var sectionHeader = document.createElement('div');
+        sectionHeader.className = 'approvals-section-header';
+        sectionHeader.innerHTML = '<span>' + section.icon + '</span> ' + section.title;
+        sectionEl.appendChild(sectionHeader);
+
+        var sectionContent = document.createElement('div');
+        sectionContent.className = 'approvals-section-content';
+
+        if (state.approvals.loading) {
+            sectionContent.innerHTML = '<div class="placeholder-content">Loading...</div>';
+        } else if (state.approvals.items.length === 0) {
+            // Show placeholder table structure
+            var table = document.createElement('table');
+            table.className = 'approvals-table';
+
+            var thead = document.createElement('thead');
+            var headerRow = document.createElement('tr');
+            ['ID', 'Type', 'Requester', 'Status', 'Created At', 'Actions'].forEach(function(h) {
+                var th = document.createElement('th');
+                th.textContent = h;
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+
+            var tbody = document.createElement('tbody');
+            var emptyRow = document.createElement('tr');
+            var emptyCell = document.createElement('td');
+            emptyCell.colSpan = 6;
+            emptyCell.className = 'approvals-empty-cell';
+            emptyCell.textContent = section.id === 'pending' ? 'No pending approvals' : 'No approval history yet';
+            emptyRow.appendChild(emptyCell);
+            tbody.appendChild(emptyRow);
+            table.appendChild(tbody);
+
+            sectionContent.appendChild(table);
+
+            // Add sample row structure for visualization
+            if (section.id === 'pending') {
+                var sampleNote = document.createElement('div');
+                sampleNote.className = 'approvals-sample-note';
+                sampleNote.innerHTML = '<em>When approvals are pending, they will appear here with Approve/Deny buttons.</em>';
+                sectionContent.appendChild(sampleNote);
+            }
+        }
+
+        sectionEl.appendChild(sectionContent);
+        container.appendChild(sectionEl);
+    });
+
+    // Action buttons placeholder
+    var actionsSection = document.createElement('div');
+    actionsSection.className = 'approvals-actions-section';
+
+    var approveBtn = document.createElement('button');
+    approveBtn.className = 'btn btn-success';
+    approveBtn.textContent = 'Approve';
+    approveBtn.disabled = true;
+    approveBtn.title = 'No pending approvals to approve';
+    actionsSection.appendChild(approveBtn);
+
+    var denyBtn = document.createElement('button');
+    denyBtn.className = 'btn btn-danger';
+    denyBtn.textContent = 'Deny';
+    denyBtn.disabled = true;
+    denyBtn.title = 'No pending approvals to deny';
+    actionsSection.appendChild(denyBtn);
+
+    container.appendChild(actionsSection);
+
+    return container;
+}
+
 function renderDocsScreensView() {
     const container = document.createElement('div');
     container.className = 'docs-container';
@@ -4467,6 +5594,38 @@ function renderOperatorTicker() {
     }
     container.appendChild(statusBanner);
 
+    // VTID-0600: Ticker filter toolbar
+    var filterToolbar = document.createElement('div');
+    filterToolbar.className = 'ticker-filter-toolbar';
+
+    var collapseToggle = document.createElement('label');
+    collapseToggle.className = 'ticker-collapse-toggle';
+    var collapseCheckbox = document.createElement('input');
+    collapseCheckbox.type = 'checkbox';
+    collapseCheckbox.checked = state.tickerCollapseHeartbeat;
+    collapseCheckbox.onchange = function() {
+        state.tickerCollapseHeartbeat = collapseCheckbox.checked;
+        renderApp();
+    };
+    collapseToggle.appendChild(collapseCheckbox);
+    collapseToggle.appendChild(document.createTextNode(' Collapse heartbeat'));
+    filterToolbar.appendChild(collapseToggle);
+
+    var severityFilter = document.createElement('select');
+    severityFilter.className = 'ticker-severity-filter';
+    severityFilter.innerHTML =
+        '<option value="all">All Events</option>' +
+        '<option value="critical">Critical Only</option>' +
+        '<option value="important">Important+</option>';
+    severityFilter.value = state.tickerSeverityFilter;
+    severityFilter.onchange = function() {
+        state.tickerSeverityFilter = severityFilter.value;
+        renderApp();
+    };
+    filterToolbar.appendChild(severityFilter);
+
+    container.appendChild(filterToolbar);
+
     // Events list
     const eventsList = document.createElement('div');
     eventsList.className = 'ticker-events-list';
@@ -4477,9 +5636,58 @@ function renderOperatorTicker() {
         empty.textContent = state.operatorHeartbeatActive ? 'Waiting for events...' : 'Loading events...';
         eventsList.appendChild(empty);
     } else {
-        state.tickerEvents.forEach(event => {
-            const item = document.createElement('div');
-            item.className = 'ticker-item';
+        // VTID-0600: Classify and sort events by severity
+        var classifiedEvents = state.tickerEvents.map(function(event) {
+            var eventCopy = Object.assign({}, event);
+            // Determine severity from event type/content
+            var type = (event.type || '').toLowerCase();
+            var content = (event.content || '').toLowerCase();
+
+            if (type === 'error' || content.includes('failed') || content.includes('blocked') || content.includes('denied')) {
+                eventCopy.severity = 'critical';
+            } else if (type === 'governance' || type === 'deploy' || content.includes('success') || content.includes('allowed')) {
+                eventCopy.severity = 'important';
+            } else if (type === 'heartbeat' || type === 'ping' || content.includes('heartbeat') || content.includes('health')) {
+                eventCopy.severity = 'low';
+            } else {
+                eventCopy.severity = 'info';
+            }
+            return eventCopy;
+        });
+
+        // Filter by severity if filter is active
+        if (state.tickerSeverityFilter === 'critical') {
+            classifiedEvents = classifiedEvents.filter(function(e) { return e.severity === 'critical'; });
+        } else if (state.tickerSeverityFilter === 'important') {
+            classifiedEvents = classifiedEvents.filter(function(e) { return e.severity === 'critical' || e.severity === 'important'; });
+        }
+
+        // Sort: critical first, then important, then info, then low
+        var severityOrder = { critical: 0, important: 1, info: 2, low: 3 };
+        classifiedEvents.sort(function(a, b) {
+            return severityOrder[a.severity] - severityOrder[b.severity];
+        });
+
+        // Group heartbeat events if collapsing is enabled
+        var heartbeatEvents = [];
+        var otherEvents = [];
+
+        if (state.tickerCollapseHeartbeat) {
+            classifiedEvents.forEach(function(event) {
+                if (event.severity === 'low') {
+                    heartbeatEvents.push(event);
+                } else {
+                    otherEvents.push(event);
+                }
+            });
+        } else {
+            otherEvents = classifiedEvents;
+        }
+
+        // Render other events first
+        otherEvents.forEach(function(event) {
+            var item = document.createElement('div');
+            item.className = 'ticker-item ticker-item-' + event.severity;
 
             // DEV-COMHU-0202: Add status-based class for deploy events
             if (event.topic && event.topic.includes('.success')) {
@@ -4488,15 +5696,20 @@ function renderOperatorTicker() {
                 item.classList.add('ticker-item-error');
             }
 
-            const timestamp = document.createElement('div');
+            // Severity indicator
+            var severityDot = document.createElement('span');
+            severityDot.className = 'ticker-severity-dot ticker-severity-' + event.severity;
+            item.appendChild(severityDot);
+
+            var timestamp = document.createElement('div');
             timestamp.className = 'ticker-timestamp';
             timestamp.textContent = event.timestamp;
             item.appendChild(timestamp);
 
             // VTID-0526-D: Show task_stage badge if present
             if (event.task_stage) {
-                const stageBadge = document.createElement('div');
-                stageBadge.className = `ticker-stage ticker-stage-${event.task_stage.toLowerCase()}`;
+                var stageBadge = document.createElement('div');
+                stageBadge.className = 'ticker-stage ticker-stage-' + event.task_stage.toLowerCase();
                 stageBadge.textContent = event.task_stage.charAt(0);
                 stageBadge.title = event.task_stage;
                 item.appendChild(stageBadge);
@@ -4504,7 +5717,7 @@ function renderOperatorTicker() {
 
             // DEV-COMHU-0202: Show VTID badge for deploy/governance events
             if (event.vtid) {
-                const vtidBadge = document.createElement('div');
+                var vtidBadge = document.createElement('div');
                 vtidBadge.className = 'ticker-vtid';
                 vtidBadge.textContent = event.vtid;
                 vtidBadge.title = 'VTID: ' + event.vtid;
@@ -4513,27 +5726,61 @@ function renderOperatorTicker() {
 
             // DEV-COMHU-0202: Show SWV badge if present
             if (event.swv) {
-                const swvBadge = document.createElement('div');
+                var swvBadge = document.createElement('div');
                 swvBadge.className = 'ticker-swv';
                 swvBadge.textContent = event.swv;
                 swvBadge.title = 'SWV: ' + event.swv;
                 item.appendChild(swvBadge);
             }
 
-            const content = document.createElement('div');
+            var content = document.createElement('div');
             content.className = 'ticker-content';
             content.textContent = event.content;
             item.appendChild(content);
 
             // DEV-COMHU-0202: Show topic for deploy events instead of generic type
-            const typeLabel = event.topic && event.topic.startsWith('deploy.') ? event.topic : event.type;
-            const type = document.createElement('div');
-            type.className = `ticker-type ticker-type-${event.type}`;
+            var typeLabel = event.topic && event.topic.startsWith('deploy.') ? event.topic : event.type;
+            var type = document.createElement('div');
+            type.className = 'ticker-type ticker-type-' + event.type;
             type.textContent = typeLabel;
             item.appendChild(type);
 
             eventsList.appendChild(item);
         });
+
+        // Render collapsed heartbeat section
+        if (state.tickerCollapseHeartbeat && heartbeatEvents.length > 0) {
+            var heartbeatSection = document.createElement('div');
+            heartbeatSection.className = 'ticker-heartbeat-collapsed';
+
+            var heartbeatHeader = document.createElement('div');
+            heartbeatHeader.className = 'ticker-heartbeat-header';
+            heartbeatHeader.innerHTML = '<span class="ticker-severity-dot ticker-severity-low"></span> Heartbeat/Health events (' + heartbeatEvents.length + ')';
+            heartbeatHeader.onclick = function() {
+                heartbeatSection.classList.toggle('expanded');
+            };
+            heartbeatSection.appendChild(heartbeatHeader);
+
+            var heartbeatList = document.createElement('div');
+            heartbeatList.className = 'ticker-heartbeat-list';
+
+            heartbeatEvents.slice(0, 10).forEach(function(event) {
+                var item = document.createElement('div');
+                item.className = 'ticker-item ticker-item-low ticker-item-mini';
+                item.innerHTML = '<span class="ticker-timestamp">' + event.timestamp + '</span> ' + event.content;
+                heartbeatList.appendChild(item);
+            });
+
+            if (heartbeatEvents.length > 10) {
+                var moreNote = document.createElement('div');
+                moreNote.className = 'ticker-more-note';
+                moreNote.textContent = '... and ' + (heartbeatEvents.length - 10) + ' more heartbeat events';
+                heartbeatList.appendChild(moreNote);
+            }
+
+            heartbeatSection.appendChild(heartbeatList);
+            eventsList.appendChild(heartbeatSection);
+        }
     }
 
     container.appendChild(eventsList);
@@ -4607,14 +5854,15 @@ function renderOperatorHistory() {
             }, 100);
         }
     } else {
-        // VTID-0524: Render deployment history table
+        // VTID-0524 + VTID-0600: Render deployment history table with human-readable meaning
         const table = document.createElement('table');
         table.className = 'history-table';
 
         const thead = document.createElement('thead');
         const theadTr = document.createElement('tr');
 
-        ['VTID', 'Service', 'SWV', 'Timestamp', 'Status'].forEach(function(headerText) {
+        // VTID-0600: Added 'Summary', 'Triggered By', and 'Meaning' columns
+        ['VTID', 'Service', 'SWV', 'Timestamp', 'Status', 'Summary', 'Triggered By'].forEach(function(headerText) {
             const th = document.createElement('th');
             th.textContent = headerText;
             theadTr.appendChild(th);
@@ -4663,6 +5911,23 @@ function renderOperatorHistory() {
             statusBadge.textContent = deploy.status || 'unknown';
             statusTd.appendChild(statusBadge);
             tr.appendChild(statusTd);
+
+            // VTID-0600: Event Summary column (derived from VTID and service)
+            const summaryTd = document.createElement('td');
+            summaryTd.className = 'history-summary';
+            var summary = generateDeploySummary(deploy);
+            summaryTd.textContent = summary;
+            tr.appendChild(summaryTd);
+
+            // VTID-0600: Triggered By column
+            const triggeredByTd = document.createElement('td');
+            triggeredByTd.className = 'history-triggered-by';
+            var triggeredBy = deploy.initiator || 'user';
+            var triggeredByBadge = document.createElement('span');
+            triggeredByBadge.className = 'history-trigger-badge history-trigger-' + triggeredBy.toLowerCase();
+            triggeredByBadge.textContent = triggeredBy === 'agent' ? 'CI/CD' : 'User';
+            triggeredByTd.appendChild(triggeredByBadge);
+            tr.appendChild(triggeredByTd);
 
             tbody.appendChild(tr);
         });
