@@ -173,7 +173,16 @@ export type CicdEventType =
   // VTID-0151: Assistant Core v2 Multimodal events
   | 'assistant.live.started'
   | 'assistant.live.frame'
-  | 'assistant.live.audio';
+  | 'assistant.live.audio'
+  // VTID-0601: Autonomous Safe Merge & Deploy Control
+  | 'cicd.merge.requested'
+  | 'cicd.merge.success'
+  | 'cicd.merge.failed'
+  | 'cicd.deploy.requested'
+  | 'cicd.deploy.started'
+  | 'cicd.approval.created'
+  | 'cicd.approval.approved'
+  | 'cicd.approval.denied';
 
 export interface CicdOasisEvent {
   vtid: string;
@@ -187,6 +196,83 @@ export interface CicdOasisEvent {
 // ==================== Allowed Services for Deploy ====================
 export const ALLOWED_DEPLOY_SERVICES = ['gateway', 'oasis-operator', 'oasis-projector'] as const;
 export type AllowedDeployService = typeof ALLOWED_DEPLOY_SERVICES[number];
+
+// ==================== VTID-0601: Autonomous Safe Merge & Deploy Control ====================
+
+/**
+ * VTID-0601: Approval item representing a pending PR or deploy request
+ */
+export interface ApprovalItem {
+  id: string;
+  type: 'merge' | 'deploy' | 'merge+deploy';
+  vtid: string;
+  pr_number?: number;
+  branch?: string;
+  service?: string;
+  environment?: string;
+  commit_sha?: string;
+  governance_status: 'pass' | 'fail' | 'pending' | 'unknown';
+  ci_status: 'pass' | 'fail' | 'pending' | 'unknown';
+  requester: string;
+  created_at: string;
+  pr_url?: string;
+  pr_title?: string;
+}
+
+/**
+ * VTID-0601: Merge request schema for Command Hub approvals
+ */
+export const CicdMergeRequestSchema = z.object({
+  vtid: z.string().min(1, 'VTID is required'),
+  pr_number: z.number().int().positive('PR number must be a positive integer'),
+  repo: z.string().default('exafyltd/vitana-platform'),
+});
+
+export type CicdMergeRequest = z.infer<typeof CicdMergeRequestSchema>;
+
+export interface CicdMergeResponse {
+  ok: boolean;
+  merged?: boolean;
+  sha?: string;
+  vtid: string;
+  pr_number: number;
+  error?: string;
+  reason?: string;
+}
+
+/**
+ * VTID-0601: Deploy request schema for Command Hub approvals
+ */
+export const CicdDeployRequestSchema = z.object({
+  vtid: z.string().min(1, 'VTID is required'),
+  service: z.enum(['gateway', 'oasis-operator', 'oasis-projector'], {
+    errorMap: () => ({ message: "Service must be 'gateway', 'oasis-operator', or 'oasis-projector'" })
+  }),
+  environment: z.enum(['dev'], {
+    errorMap: () => ({ message: "Only 'dev' environment is allowed" })
+  }),
+});
+
+export type CicdDeployRequest = z.infer<typeof CicdDeployRequestSchema>;
+
+export interface CicdDeployResponse {
+  ok: boolean;
+  vtid: string;
+  service: string;
+  environment: string;
+  workflow_url?: string;
+  workflow_run_id?: number;
+  error?: string;
+}
+
+/**
+ * VTID-0601: Approval action request schema
+ */
+export const ApprovalActionRequestSchema = z.object({
+  action: z.enum(['merge', 'deploy', 'merge+deploy']),
+});
+
+export type ApprovalActionRequest = z.infer<typeof ApprovalActionRequestSchema>;
 
 // ==================== Governance Rules ====================
 export const BLOCKED_FILE_PATTERNS = [

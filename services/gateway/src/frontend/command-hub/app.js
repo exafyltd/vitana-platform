@@ -857,22 +857,101 @@ function extractLayer(vtid) {
 }
 
 /**
- * VTID-0600: Fetch approvals (placeholder - returns empty for now)
+ * VTID-0601: Fetch approvals from CICD API
  */
 async function fetchApprovals() {
-    console.log('[VTID-0600] Fetching approvals (placeholder)...');
+    console.log('[VTID-0601] Fetching approvals...');
+    state.approvals.loading = true;
+    state.approvals.error = null;
+    renderApp();
+
+    try {
+        var response = await fetch('/api/v1/cicd/approvals');
+        var data = await response.json();
+
+        if (data.ok) {
+            state.approvals.items = data.approvals || [];
+            state.approvals.error = null;
+            console.log('[VTID-0601] Approvals loaded:', state.approvals.items.length, 'items');
+        } else {
+            state.approvals.items = [];
+            state.approvals.error = data.error || 'Failed to fetch approvals';
+            console.error('[VTID-0601] Approvals fetch error:', state.approvals.error);
+        }
+    } catch (err) {
+        state.approvals.items = [];
+        state.approvals.error = err.message || 'Network error';
+        console.error('[VTID-0601] Approvals fetch exception:', err);
+    }
+
+    state.approvals.loading = false;
+    state.approvals.fetched = true;
+    renderApp();
+}
+
+/**
+ * VTID-0601: Approve an approval item (merge + optional deploy)
+ */
+async function approveApprovalItem(approvalId) {
+    console.log('[VTID-0601] Approving item:', approvalId);
     state.approvals.loading = true;
     renderApp();
 
-    // Placeholder: In future, this will fetch from /api/v1/governance/approvals
-    setTimeout(function() {
-        state.approvals.items = [];
+    try {
+        var response = await fetch('/api/v1/cicd/approvals/' + approvalId + '/approve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        var data = await response.json();
+
+        if (data.ok) {
+            showToast('Approval executed successfully! PR merged' + (data.deploy ? ' and deploy triggered.' : '.'), 'success');
+            // Refresh approvals list
+            state.approvals.fetched = false;
+            await fetchApprovals();
+        } else {
+            showToast('Approval failed: ' + (data.error || 'Unknown error'), 'error');
+            state.approvals.loading = false;
+            renderApp();
+        }
+    } catch (err) {
+        showToast('Approval failed: ' + err.message, 'error');
         state.approvals.loading = false;
-        state.approvals.error = null;
-        state.approvals.fetched = true;
-        console.log('[VTID-0600] Approvals loaded (empty placeholder)');
         renderApp();
-    }, 100);
+    }
+}
+
+/**
+ * VTID-0601: Deny an approval item
+ */
+async function denyApprovalItem(approvalId, reason) {
+    console.log('[VTID-0601] Denying item:', approvalId);
+    state.approvals.loading = true;
+    renderApp();
+
+    try {
+        var response = await fetch('/api/v1/cicd/approvals/' + approvalId + '/deny', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason: reason || 'Denied by user' })
+        });
+        var data = await response.json();
+
+        if (data.ok) {
+            showToast('Approval denied.', 'info');
+            // Refresh approvals list
+            state.approvals.fetched = false;
+            await fetchApprovals();
+        } else {
+            showToast('Denial failed: ' + (data.error || 'Unknown error'), 'error');
+            state.approvals.loading = false;
+            renderApp();
+        }
+    } catch (err) {
+        showToast('Denial failed: ' + err.message, 'error');
+        state.approvals.loading = false;
+        renderApp();
+    }
 }
 
 /**
@@ -4781,7 +4860,8 @@ function renderVtidsView() {
 }
 
 /**
- * VTID-0600: Renders the Command Hub > Approvals view (UI scaffolding).
+ * VTID-0601: Renders the Command Hub > Approvals view.
+ * Shows pending PRs from Claude branches that can be merged/deployed.
  */
 function renderApprovalsView() {
     var container = document.createElement('div');
@@ -4797,95 +4877,221 @@ function renderApprovalsView() {
     header.className = 'approvals-header';
 
     var title = document.createElement('h2');
-    title.textContent = 'Governance Approvals';
+    title.textContent = 'Autonomous Safe Merge & Deploy';
     header.appendChild(title);
 
     var subtitle = document.createElement('p');
     subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Review and manage pending approval requests for governance decisions.';
+    subtitle.textContent = 'Review and approve pending PRs for merge and deploy. VTID-0601: No GitHub UI required.';
     header.appendChild(subtitle);
+
+    // Refresh button
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-secondary';
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.style.marginTop = '8px';
+    refreshBtn.onclick = function() {
+        state.approvals.fetched = false;
+        fetchApprovals();
+    };
+    header.appendChild(refreshBtn);
 
     container.appendChild(header);
 
-    // Sections
-    var sections = [
-        { id: 'pending', title: 'Pending Approvals', icon: '⏳' },
-        { id: 'history', title: 'Approval History', icon: '📋' }
-    ];
+    // Error display
+    if (state.approvals.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'approvals-error';
+        errorDiv.style.cssText = 'background: #3b1515; border: 1px solid #ef4444; padding: 12px; border-radius: 6px; margin-bottom: 16px; color: #fca5a5;';
+        errorDiv.textContent = 'Error: ' + state.approvals.error;
+        container.appendChild(errorDiv);
+    }
 
-    sections.forEach(function(section) {
-        var sectionEl = document.createElement('div');
-        sectionEl.className = 'approvals-section';
+    // Pending Approvals Section
+    var pendingSection = document.createElement('div');
+    pendingSection.className = 'approvals-section';
 
-        var sectionHeader = document.createElement('div');
-        sectionHeader.className = 'approvals-section-header';
-        sectionHeader.innerHTML = '<span>' + section.icon + '</span> ' + section.title;
-        sectionEl.appendChild(sectionHeader);
+    var pendingHeader = document.createElement('div');
+    pendingHeader.className = 'approvals-section-header';
+    pendingHeader.innerHTML = '<span>⏳</span> Pending Approvals (' + state.approvals.items.length + ')';
+    pendingSection.appendChild(pendingHeader);
 
-        var sectionContent = document.createElement('div');
-        sectionContent.className = 'approvals-section-content';
+    var pendingContent = document.createElement('div');
+    pendingContent.className = 'approvals-section-content';
 
-        if (state.approvals.loading) {
-            sectionContent.innerHTML = '<div class="placeholder-content">Loading...</div>';
-        } else if (state.approvals.items.length === 0) {
-            // Show placeholder table structure
-            var table = document.createElement('table');
-            table.className = 'approvals-table';
+    if (state.approvals.loading) {
+        pendingContent.innerHTML = '<div class="placeholder-content">Loading approvals from GitHub...</div>';
+    } else if (state.approvals.items.length === 0) {
+        // Empty state
+        var emptyState = document.createElement('div');
+        emptyState.className = 'approvals-empty-state';
+        emptyState.style.cssText = 'text-align: center; padding: 40px 20px; color: #888;';
+        emptyState.innerHTML = '<div style="font-size: 48px; margin-bottom: 16px;">✓</div>' +
+            '<div style="font-size: 18px; margin-bottom: 8px;">No pending approvals</div>' +
+            '<div style="font-size: 14px;">All PRs from Claude branches have been processed.</div>';
+        pendingContent.appendChild(emptyState);
+    } else {
+        // Real approvals table
+        var table = document.createElement('table');
+        table.className = 'approvals-table';
 
-            var thead = document.createElement('thead');
-            var headerRow = document.createElement('tr');
-            ['ID', 'Type', 'Requester', 'Status', 'Created At', 'Actions'].forEach(function(h) {
-                var th = document.createElement('th');
-                th.textContent = h;
-                headerRow.appendChild(th);
-            });
-            thead.appendChild(headerRow);
-            table.appendChild(thead);
+        var thead = document.createElement('thead');
+        var headerRow = document.createElement('tr');
+        ['VTID', 'PR', 'Branch', 'Service', 'CI', 'Gov', 'Action', 'Actions'].forEach(function(h) {
+            var th = document.createElement('th');
+            th.textContent = h;
+            th.style.textAlign = h === 'Actions' ? 'center' : 'left';
+            headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
 
-            var tbody = document.createElement('tbody');
-            var emptyRow = document.createElement('tr');
-            var emptyCell = document.createElement('td');
-            emptyCell.colSpan = 6;
-            emptyCell.className = 'approvals-empty-cell';
-            emptyCell.textContent = section.id === 'pending' ? 'No pending approvals' : 'No approval history yet';
-            emptyRow.appendChild(emptyCell);
-            tbody.appendChild(emptyRow);
-            table.appendChild(tbody);
+        var tbody = document.createElement('tbody');
 
-            sectionContent.appendChild(table);
+        state.approvals.items.forEach(function(item) {
+            var row = document.createElement('tr');
 
-            // Add sample row structure for visualization
-            if (section.id === 'pending') {
-                var sampleNote = document.createElement('div');
-                sampleNote.className = 'approvals-sample-note';
-                sampleNote.innerHTML = '<em>When approvals are pending, they will appear here with Approve/Deny buttons.</em>';
-                sectionContent.appendChild(sampleNote);
+            // VTID
+            var vtidCell = document.createElement('td');
+            var vtidBadge = document.createElement('span');
+            vtidBadge.className = 'vtid-badge';
+            vtidBadge.style.cssText = 'background: #1e3a5f; color: #60a5fa; padding: 2px 8px; border-radius: 4px; font-family: monospace;';
+            vtidBadge.textContent = item.vtid;
+            vtidCell.appendChild(vtidBadge);
+            row.appendChild(vtidCell);
+
+            // PR number with link
+            var prCell = document.createElement('td');
+            var prLink = document.createElement('a');
+            prLink.href = item.pr_url || '#';
+            prLink.target = '_blank';
+            prLink.style.color = '#60a5fa';
+            prLink.textContent = '#' + item.pr_number;
+            prLink.title = item.pr_title || '';
+            prCell.appendChild(prLink);
+            row.appendChild(prCell);
+
+            // Branch
+            var branchCell = document.createElement('td');
+            branchCell.style.fontFamily = 'monospace';
+            branchCell.style.fontSize = '12px';
+            branchCell.textContent = item.branch ? (item.branch.length > 30 ? item.branch.substring(0, 30) + '...' : item.branch) : '-';
+            branchCell.title = item.branch || '';
+            row.appendChild(branchCell);
+
+            // Service
+            var serviceCell = document.createElement('td');
+            if (item.service) {
+                var serviceBadge = document.createElement('span');
+                serviceBadge.style.cssText = 'background: #1e3a3f; color: #34d399; padding: 2px 6px; border-radius: 4px; font-size: 11px;';
+                serviceBadge.textContent = item.service;
+                serviceCell.appendChild(serviceBadge);
+            } else {
+                serviceCell.textContent = '-';
             }
-        }
+            row.appendChild(serviceCell);
 
-        sectionEl.appendChild(sectionContent);
-        container.appendChild(sectionEl);
-    });
+            // CI Status
+            var ciCell = document.createElement('td');
+            var ciIndicator = document.createElement('span');
+            ciIndicator.style.cssText = 'display: inline-flex; align-items: center; gap: 4px;';
+            if (item.ci_status === 'pass') {
+                ciIndicator.innerHTML = '<span style="color: #22c55e;">✓</span> Pass';
+            } else if (item.ci_status === 'fail') {
+                ciIndicator.innerHTML = '<span style="color: #ef4444;">✗</span> Fail';
+            } else if (item.ci_status === 'pending') {
+                ciIndicator.innerHTML = '<span style="color: #f59e0b;">⋯</span> Pending';
+            } else {
+                ciIndicator.innerHTML = '<span style="color: #888;">?</span> Unknown';
+            }
+            ciCell.appendChild(ciIndicator);
+            row.appendChild(ciCell);
 
-    // Action buttons placeholder
-    var actionsSection = document.createElement('div');
-    actionsSection.className = 'approvals-actions-section';
+            // Governance Status
+            var govCell = document.createElement('td');
+            var govIndicator = document.createElement('span');
+            govIndicator.style.cssText = 'display: inline-flex; align-items: center; gap: 4px;';
+            if (item.governance_status === 'pass') {
+                govIndicator.innerHTML = '<span style="color: #22c55e;">✓</span> Pass';
+            } else if (item.governance_status === 'fail') {
+                govIndicator.innerHTML = '<span style="color: #ef4444;">✗</span> Blocked';
+            } else {
+                govIndicator.innerHTML = '<span style="color: #888;">?</span> Unknown';
+            }
+            govCell.appendChild(govIndicator);
+            row.appendChild(govCell);
 
-    var approveBtn = document.createElement('button');
-    approveBtn.className = 'btn btn-success';
-    approveBtn.textContent = 'Approve';
-    approveBtn.disabled = true;
-    approveBtn.title = 'No pending approvals to approve';
-    actionsSection.appendChild(approveBtn);
+            // Action type
+            var actionCell = document.createElement('td');
+            var actionBadge = document.createElement('span');
+            if (item.type === 'merge+deploy') {
+                actionBadge.style.cssText = 'background: #4c1d95; color: #c4b5fd; padding: 2px 6px; border-radius: 4px; font-size: 11px;';
+                actionBadge.textContent = 'MERGE+DEPLOY';
+            } else if (item.type === 'deploy') {
+                actionBadge.style.cssText = 'background: #1e3a3f; color: #34d399; padding: 2px 6px; border-radius: 4px; font-size: 11px;';
+                actionBadge.textContent = 'DEPLOY';
+            } else {
+                actionBadge.style.cssText = 'background: #1e3a5f; color: #60a5fa; padding: 2px 6px; border-radius: 4px; font-size: 11px;';
+                actionBadge.textContent = 'MERGE';
+            }
+            actionCell.appendChild(actionBadge);
+            row.appendChild(actionCell);
 
-    var denyBtn = document.createElement('button');
-    denyBtn.className = 'btn btn-danger';
-    denyBtn.textContent = 'Deny';
-    denyBtn.disabled = true;
-    denyBtn.title = 'No pending approvals to deny';
-    actionsSection.appendChild(denyBtn);
+            // Actions buttons
+            var actionsCell = document.createElement('td');
+            actionsCell.style.textAlign = 'center';
 
-    container.appendChild(actionsSection);
+            var canApprove = item.ci_status === 'pass' && item.governance_status === 'pass';
+
+            var approveBtn = document.createElement('button');
+            approveBtn.className = 'btn btn-success btn-sm';
+            approveBtn.textContent = '✓ Approve';
+            approveBtn.style.cssText = 'padding: 4px 12px; font-size: 12px; margin-right: 8px;';
+            approveBtn.disabled = !canApprove || state.approvals.loading;
+            approveBtn.title = canApprove ? 'Merge PR' + (item.service ? ' and trigger deploy' : '') : 'CI or Governance not passed';
+            approveBtn.onclick = function() {
+                if (confirm('Approve PR #' + item.pr_number + '?\n\nThis will merge the PR' + (item.service ? ' and trigger a deploy to ' + item.service : '') + '.')) {
+                    approveApprovalItem(item.id);
+                }
+            };
+            actionsCell.appendChild(approveBtn);
+
+            var denyBtn = document.createElement('button');
+            denyBtn.className = 'btn btn-danger btn-sm';
+            denyBtn.textContent = '✗ Deny';
+            denyBtn.style.cssText = 'padding: 4px 12px; font-size: 12px;';
+            denyBtn.disabled = state.approvals.loading;
+            denyBtn.onclick = function() {
+                var reason = prompt('Reason for denial (optional):');
+                if (reason !== null) {
+                    denyApprovalItem(item.id, reason);
+                }
+            };
+            actionsCell.appendChild(denyBtn);
+
+            row.appendChild(actionsCell);
+            tbody.appendChild(row);
+        });
+
+        table.appendChild(tbody);
+        pendingContent.appendChild(table);
+    }
+
+    pendingSection.appendChild(pendingContent);
+    container.appendChild(pendingSection);
+
+    // Info section
+    var infoSection = document.createElement('div');
+    infoSection.className = 'approvals-info';
+    infoSection.style.cssText = 'margin-top: 24px; padding: 16px; background: #1a1a2e; border-radius: 8px; border: 1px solid #333;';
+    infoSection.innerHTML = '<div style="font-weight: 600; margin-bottom: 8px;">VTID-0601 Workflow</div>' +
+        '<div style="font-size: 13px; color: #888; line-height: 1.6;">' +
+        '1. Claude creates PR on <code style="background: #2a2a3e; padding: 2px 6px; border-radius: 4px;">claude/*</code> branch<br>' +
+        '2. CI runs automatically<br>' +
+        '3. Governance evaluation runs<br>' +
+        '4. <strong style="color: #fff;">You approve here</strong> → Vitana merges + deploys<br>' +
+        '5. No GitHub UI or Cloud Shell required</div>';
+    container.appendChild(infoSection);
 
     return container;
 }
