@@ -192,6 +192,120 @@ router.post("/events/ingest", async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * GET /api/v1/events
+ * DEV-OASIS-0210-B: Canonical events list endpoint - queries local oasis_events table
+ *
+ * Query params:
+ * - topic: Filter by event type/topic (e.g., "assistant.session.started", "deploy.gateway.success")
+ * - vtid: Filter by VTID (e.g., "VTID-0416")
+ * - limit: Max number of events to return (default 50, max 200)
+ * - since: ISO timestamp to filter events after
+ */
+router.get("/api/v1/events", async (req: Request, res: Response) => {
+  try {
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+
+    if (!svcKey || !supabaseUrl) {
+      console.error("[DEV-OASIS-0210-B] Gateway misconfigured: Missing Supabase credentials");
+      return res.status(500).json({
+        ok: false,
+        error: "Gateway misconfigured",
+      });
+    }
+
+    // Parse query parameters
+    const limitParam = parseInt(req.query.limit as string) || 50;
+    const limit = Math.min(Math.max(limitParam, 1), 200); // Clamp between 1-200
+    const topic = req.query.topic as string;
+    const vtid = req.query.vtid as string;
+    const since = req.query.since as string;
+    const type = req.query.type as string; // Legacy support
+
+    // Build Supabase REST API query
+    let queryParams = `limit=${limit}&order=created_at.desc`;
+
+    // Topic filter - filter by event type/topic column
+    if (topic) {
+      queryParams += `&topic=eq.${encodeURIComponent(topic)}`;
+    } else if (type) {
+      // Legacy support for 'type' param
+      queryParams += `&topic=eq.${encodeURIComponent(type)}`;
+    }
+
+    // VTID filter
+    if (vtid) {
+      queryParams += `&vtid=eq.${encodeURIComponent(vtid)}`;
+    }
+
+    // Since filter - events created after timestamp
+    if (since) {
+      queryParams += `&created_at=gt.${encodeURIComponent(since)}`;
+    }
+
+    console.log(`[DEV-OASIS-0210-B] Querying oasis_events: topic=${topic || 'all'}, vtid=${vtid || 'all'}, limit=${limit}`);
+
+    const resp = await fetch(`${supabaseUrl}/rest/v1/oasis_events?${queryParams}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+      },
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.error(`[DEV-OASIS-0210-B] Supabase query failed: ${resp.status} - ${text}`);
+      return res.status(502).json({
+        ok: false,
+        error: "Database query failed",
+      });
+    }
+
+    const events = (await resp.json()) as any[];
+
+    // Transform to Gateway standard format
+    const normalizedEvents = events.map((event: any) => ({
+      id: event.id,
+      vtid: event.vtid || (event.metadata && event.metadata.vtid) || undefined,
+      type: event.topic || "unknown",
+      topic: event.topic || "unknown",
+      source: event.service || "oasis",
+      status: event.status,
+      message: event.message,
+      created_at: event.created_at,
+      payload: {
+        message: event.message,
+        vtid: event.vtid,
+        swv: event.metadata && event.metadata.swv,
+        service: event.metadata && event.metadata.service,
+        branch: event.metadata && event.metadata.branch,
+        environment: event.metadata && event.metadata.environment,
+        ...event.metadata,
+      },
+    }));
+
+    console.log(`[DEV-OASIS-0210-B] Returning ${normalizedEvents.length} events`);
+
+    return res.status(200).json({
+      ok: true,
+      count: normalizedEvents.length,
+      data: normalizedEvents,
+    });
+  } catch (e: any) {
+    console.error("[DEV-OASIS-0210-B] Error:", e);
+    return res.status(500).json({
+      ok: false,
+      error: e.message || "Internal server error",
+    });
+  }
+});
+
+/**
+ * GET /events (legacy route)
+ */
 router.get("/events", async (req: Request, res: Response) => {
   try {
     const svcKey = process.env.SUPABASE_SERVICE_ROLE;
