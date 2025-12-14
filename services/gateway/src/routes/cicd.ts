@@ -1,5 +1,5 @@
 /**
- * CICD Routes - VTID-0516 Autonomous Safe-Merge Layer
+ * CICD Routes - VTID-0516 Autonomous Safe-Merge Layer + VTID-0601 Autonomous Safe Merge & Deploy Control
  *
  * Final API endpoints (after mounting in index.ts):
  * - POST /api/v1/github/create-pr    - Create a PR for a VTID
@@ -7,10 +7,17 @@
  * - POST /api/v1/deploy/service      - Trigger deployment workflow
  * - GET  /api/v1/cicd/health         - Health check for CICD subsystem
  *
+ * VTID-0601 Endpoints (for Command Hub Approvals):
+ * - POST /api/v1/cicd/merge          - Governed merge via Command Hub
+ * - POST /api/v1/cicd/deploy         - Governed deploy via Command Hub
+ * - GET  /api/v1/cicd/approvals      - Fetch pending approval items (PRs)
+ * - POST /api/v1/cicd/approvals/:id/approve - Approve and execute
+ * - POST /api/v1/cicd/approvals/:id/deny    - Deny approval request
+ *
  * Mounting (in index.ts):
  * - app.use('/api/v1/github', cicdRouter);  // GitHub operations
  * - app.use('/api/v1/deploy', cicdRouter);  // Deploy operations
- * - app.use('/api/v1/cicd', cicdRouter);    // CICD health
+ * - app.use('/api/v1/cicd', cicdRouter);    // CICD health + VTID-0601 endpoints
  */
 
 import { Router, Request, Response } from 'express';
@@ -22,10 +29,17 @@ import {
   CreatePrResponse,
   SafeMergeResponse,
   DeployServiceResponse,
+  // VTID-0601: New types
+  CicdMergeRequestSchema,
+  CicdMergeResponse,
+  CicdDeployRequestSchema,
+  CicdDeployResponse,
+  ApprovalItem,
 } from '../types/cicd';
 import githubService from '../services/github-service';
 import cicdEvents from '../services/oasis-event-service';
 import { ZodError } from 'zod';
+import { randomUUID } from 'crypto';
 
 const router = Router();
 const DEFAULT_REPO = 'exafyltd/vitana-platform';
@@ -387,8 +401,8 @@ router.get('/health', (_req: Request, res: Response) => {
     ok: true,
     status,
     service: 'cicd-layer',
-    version: '1.0.0',
-    vtid: 'VTID-0516',
+    version: '2.0.0', // VTID-0601 upgrade
+    vtid: 'VTID-0601',
     timestamp: new Date().toISOString(),
     capabilities: {
       github_integration: hasGitHubToken,
@@ -396,10 +410,546 @@ router.get('/health', (_req: Request, res: Response) => {
       create_pr: hasGitHubToken,
       safe_merge: hasGitHubToken,
       deploy_service: hasGitHubToken,
+      // VTID-0601: New capabilities
+      command_hub_merge: hasGitHubToken,
+      command_hub_deploy: hasGitHubToken,
+      approvals: hasGitHubToken,
     },
     allowed_services: ALLOWED_DEPLOY_SERVICES,
     allowed_environments: ['dev'],
   });
+});
+
+// ==================== VTID-0601: Autonomous Safe Merge & Deploy Control ====================
+
+/**
+ * VTID-0601: POST /merge - Governed merge via Command Hub
+ *
+ * This endpoint is the canonical merge pathway for Command Hub approvals.
+ * It performs:
+ * 1. PR status check (open, targeting main)
+ * 2. CI status verification
+ * 3. Governance evaluation
+ * 4. Merge execution via GitHub API
+ * 5. OASIS event emission
+ */
+router.post('/merge', async (req: Request, res: Response) => {
+  try {
+    const validation = CicdMergeRequestSchema.safeParse(req.body);
+    if (!validation.success) {
+      return handleZodError(validation.error, res);
+    }
+
+    const { vtid, pr_number, repo } = validation.data;
+
+    // Validate repo is the allowed one
+    if (repo !== DEFAULT_REPO) {
+      return res.status(403).json({
+        ok: false,
+        error: `Only ${DEFAULT_REPO} is allowed`,
+        vtid,
+        pr_number,
+      } as CicdMergeResponse);
+    }
+
+    // Emit merge requested event
+    await cicdEvents.mergeRequested(vtid, pr_number, repo);
+
+    console.log(`[VTID-0601] Merge requested for PR #${pr_number} (${vtid})`);
+
+    // Get PR status
+    let prStatus;
+    try {
+      prStatus = await githubService.getPrStatus(repo, pr_number);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      await cicdEvents.mergeFailed(vtid, pr_number, `PR not found: ${errorMessage}`, repo);
+      return res.status(404).json({
+        ok: false,
+        error: `PR not found: ${errorMessage}`,
+        reason: 'pr_not_found',
+        vtid,
+        pr_number,
+      } as CicdMergeResponse);
+    }
+
+    const { pr, checks, allPassed } = prStatus;
+
+    // Validate PR is open
+    if (pr.state !== 'open') {
+      await cicdEvents.mergeFailed(vtid, pr_number, `PR is ${pr.state}, not open`, repo);
+      return res.status(400).json({
+        ok: false,
+        error: `PR is ${pr.state}, not open`,
+        reason: 'pr_not_open',
+        vtid,
+        pr_number,
+      } as CicdMergeResponse);
+    }
+
+    // Validate base is main
+    if (pr.base.ref !== 'main') {
+      await cicdEvents.mergeFailed(vtid, pr_number, `PR targets ${pr.base.ref}, not main`, repo);
+      return res.status(400).json({
+        ok: false,
+        error: `PR targets ${pr.base.ref}, not main`,
+        reason: 'invalid_base',
+        vtid,
+        pr_number,
+      } as CicdMergeResponse);
+    }
+
+    // Check CI status
+    if (!allPassed) {
+      const failedChecks = checks.filter((c) => c.status === 'failure' || c.status === 'pending');
+      await cicdEvents.mergeFailed(vtid, pr_number, `CI checks not passed: ${failedChecks.map(c => c.name).join(', ')}`, repo);
+      return res.status(400).json({
+        ok: false,
+        error: `CI checks not passed`,
+        reason: 'checks_failed',
+        vtid,
+        pr_number,
+      } as CicdMergeResponse);
+    }
+
+    // Run governance evaluation
+    const governance = await githubService.evaluateGovernance(repo, pr_number, vtid);
+
+    if (governance.decision === 'blocked') {
+      await cicdEvents.mergeFailed(vtid, pr_number, `Governance blocked: ${governance.blocked_reasons.join(', ')}`, repo);
+      return res.status(403).json({
+        ok: false,
+        error: `Governance blocked merge`,
+        reason: 'governance_blocked',
+        vtid,
+        pr_number,
+      } as CicdMergeResponse);
+    }
+
+    // All checks passed - proceed with merge (squash)
+    const mergeResult = await githubService.mergePullRequest(
+      repo,
+      pr_number,
+      `${pr.title} (#${pr_number})`,
+      'squash'
+    );
+
+    // Emit success event
+    await cicdEvents.mergeSuccess(vtid, pr_number, mergeResult.sha, repo);
+
+    console.log(`[VTID-0601] PR #${pr_number} merged successfully (${vtid}): ${mergeResult.sha}`);
+
+    return res.status(200).json({
+      ok: true,
+      merged: true,
+      sha: mergeResult.sha,
+      vtid,
+      pr_number,
+    } as CicdMergeResponse);
+
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const vtid = req.body?.vtid || 'UNKNOWN';
+    const prNumber = req.body?.pr_number || 0;
+
+    console.error(`[VTID-0601] Merge failed for ${vtid} PR #${prNumber}: ${errorMessage}`);
+    await cicdEvents.mergeFailed(vtid, prNumber, errorMessage, DEFAULT_REPO);
+
+    return res.status(500).json({
+      ok: false,
+      error: errorMessage,
+      vtid,
+      pr_number: prNumber,
+    } as CicdMergeResponse);
+  }
+});
+
+/**
+ * VTID-0601: POST /deploy - Governed deploy via Command Hub
+ *
+ * This endpoint triggers EXEC-DEPLOY.yml workflow.
+ * It performs:
+ * 1. Service validation
+ * 2. Environment validation (dev only)
+ * 3. Governance evaluation
+ * 4. Workflow trigger via GitHub API
+ * 5. OASIS event emission
+ */
+router.post('/deploy', async (req: Request, res: Response) => {
+  try {
+    const validation = CicdDeployRequestSchema.safeParse(req.body);
+    if (!validation.success) {
+      return handleZodError(validation.error, res);
+    }
+
+    const { vtid, service, environment } = validation.data;
+
+    // Emit deploy requested event
+    await cicdEvents.deployRequestedFromHub(vtid, service, environment);
+
+    console.log(`[VTID-0601] Deploy requested for ${service} to ${environment} (${vtid})`);
+
+    // Trigger the deploy workflow
+    try {
+      await githubService.triggerWorkflow(
+        DEFAULT_REPO,
+        'EXEC-DEPLOY.yml',
+        'main',
+        {
+          vtid,
+          service,
+          health_path: '/alive',
+          initiator: 'command-hub',
+          environment,
+        }
+      );
+
+      // Get recent workflow runs to find the URL
+      const runs = await githubService.getWorkflowRuns(DEFAULT_REPO, 'EXEC-DEPLOY.yml');
+      const latestRun = runs.workflow_runs[0];
+
+      // Emit deploy started event
+      await cicdEvents.deployStarted(vtid, service, environment, latestRun?.html_url);
+
+      console.log(`[VTID-0601] Deploy workflow triggered for ${service} (${vtid})`);
+
+      return res.status(200).json({
+        ok: true,
+        vtid,
+        service,
+        environment,
+        workflow_run_id: latestRun?.id,
+        workflow_url: latestRun?.html_url,
+      } as CicdDeployResponse);
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      await cicdEvents.deployFailed(vtid, service, errorMessage);
+      return res.status(500).json({
+        ok: false,
+        vtid,
+        service,
+        environment,
+        error: errorMessage,
+      } as CicdDeployResponse);
+    }
+
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const vtid = req.body?.vtid || 'UNKNOWN';
+    const service = req.body?.service || 'UNKNOWN';
+
+    console.error(`[VTID-0601] Deploy failed for ${vtid}: ${errorMessage}`);
+    await cicdEvents.deployFailed(vtid, service, errorMessage);
+
+    return res.status(500).json({
+      ok: false,
+      vtid,
+      service: service,
+      environment: 'dev',
+      error: errorMessage,
+    } as CicdDeployResponse);
+  }
+});
+
+/**
+ * VTID-0601: GET /approvals - Fetch pending approval items
+ *
+ * This endpoint fetches open PRs from GitHub that match claude/* branch pattern.
+ * Each PR becomes an approval item that can be merged/deployed from Command Hub.
+ */
+router.get('/approvals', async (_req: Request, res: Response) => {
+  try {
+    const approvals: ApprovalItem[] = [];
+
+    // Fetch open PRs targeting main
+    const prsResponse = await fetch(`https://api.github.com/repos/${DEFAULT_REPO}/pulls?state=open&base=main&per_page=20`, {
+      headers: {
+        'Accept': 'application/vnd.github+json',
+        'Authorization': `Bearer ${process.env.GITHUB_SAFE_MERGE_TOKEN}`,
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+
+    if (!prsResponse.ok) {
+      console.error(`[VTID-0601] Failed to fetch PRs: ${prsResponse.status}`);
+      return res.status(200).json({
+        ok: true,
+        approvals: [],
+        error: 'Failed to fetch PRs from GitHub',
+      });
+    }
+
+    const prs = await prsResponse.json() as Array<{
+      number: number;
+      title: string;
+      state: string;
+      html_url: string;
+      head: { ref: string; sha: string };
+      base: { ref: string };
+      user: { login: string };
+      created_at: string;
+    }>;
+
+    // Filter for claude/* branches (created by Claude)
+    const claudePrs = prs.filter(pr => pr.head.ref.startsWith('claude/'));
+
+    // Get status for each PR
+    for (const pr of claudePrs) {
+      // Extract VTID from branch name or PR title
+      let vtid = 'UNKNOWN';
+      const branchMatch = pr.head.ref.match(/VTID-\d+/i) || pr.title.match(/VTID-\d+/i);
+      if (branchMatch) {
+        vtid = branchMatch[0].toUpperCase();
+      }
+
+      // Detect service from branch or PR title
+      let service: string | undefined;
+      if (pr.head.ref.includes('gateway') || pr.title.toLowerCase().includes('gateway')) {
+        service = 'gateway';
+      } else if (pr.head.ref.includes('oasis-operator') || pr.title.toLowerCase().includes('oasis-operator')) {
+        service = 'oasis-operator';
+      }
+
+      // Get PR status (CI checks)
+      let ciStatus: 'pass' | 'fail' | 'pending' | 'unknown' = 'unknown';
+      try {
+        const prStatus = await githubService.getPrStatus(DEFAULT_REPO, pr.number);
+        ciStatus = prStatus.allPassed ? 'pass' :
+                   prStatus.checks.some(c => c.status === 'pending') ? 'pending' : 'fail';
+      } catch {
+        ciStatus = 'unknown';
+      }
+
+      // Run governance evaluation
+      let governanceStatus: 'pass' | 'fail' | 'pending' | 'unknown' = 'unknown';
+      try {
+        const governance = await githubService.evaluateGovernance(DEFAULT_REPO, pr.number, vtid);
+        governanceStatus = governance.decision === 'approved' ? 'pass' : 'fail';
+      } catch {
+        governanceStatus = 'unknown';
+      }
+
+      const approvalItem: ApprovalItem = {
+        id: `pr-${pr.number}`,
+        type: service ? 'merge+deploy' : 'merge',
+        vtid,
+        pr_number: pr.number,
+        branch: pr.head.ref,
+        service,
+        environment: 'dev',
+        commit_sha: pr.head.sha,
+        governance_status: governanceStatus,
+        ci_status: ciStatus,
+        requester: pr.user.login,
+        created_at: pr.created_at,
+        pr_url: pr.html_url,
+        pr_title: pr.title,
+      };
+
+      approvals.push(approvalItem);
+    }
+
+    console.log(`[VTID-0601] Found ${approvals.length} pending approvals`);
+
+    return res.status(200).json({
+      ok: true,
+      approvals,
+      count: approvals.length,
+    });
+
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[VTID-0601] Failed to fetch approvals: ${errorMessage}`);
+    return res.status(500).json({
+      ok: false,
+      approvals: [],
+      error: errorMessage,
+    });
+  }
+});
+
+/**
+ * VTID-0601: POST /approvals/:id/approve - Approve and execute
+ *
+ * This endpoint approves an approval item and executes the action:
+ * - For 'merge': Merges the PR
+ * - For 'deploy': Triggers deploy workflow
+ * - For 'merge+deploy': Merges PR then triggers deploy
+ */
+router.post('/approvals/:id/approve', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const prMatch = id.match(/^pr-(\d+)$/);
+
+    if (!prMatch) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Invalid approval ID format',
+      });
+    }
+
+    const prNumber = parseInt(prMatch[1], 10);
+
+    // Get PR details
+    let pr;
+    try {
+      pr = await githubService.getPullRequest(DEFAULT_REPO, prNumber);
+    } catch (error) {
+      return res.status(404).json({
+        ok: false,
+        error: `PR #${prNumber} not found`,
+      });
+    }
+
+    // Extract VTID
+    let vtid = 'UNKNOWN';
+    const branchMatch = pr.head.ref.match(/VTID-\d+/i) || pr.title.match(/VTID-\d+/i);
+    if (branchMatch) {
+      vtid = branchMatch[0].toUpperCase();
+    }
+
+    // Emit approval approved event
+    await cicdEvents.approvalApproved(vtid, id, 'merge', 'command-hub-user');
+
+    // Check if PR is still open
+    if (pr.state !== 'open') {
+      return res.status(400).json({
+        ok: false,
+        error: `PR is ${pr.state}, cannot merge`,
+      });
+    }
+
+    // Execute merge
+    console.log(`[VTID-0601] Executing approval for PR #${prNumber} (${vtid})`);
+
+    await cicdEvents.mergeRequested(vtid, prNumber, DEFAULT_REPO);
+
+    const mergeResult = await githubService.mergePullRequest(
+      DEFAULT_REPO,
+      prNumber,
+      `${pr.title} (#${prNumber})`,
+      'squash'
+    );
+
+    await cicdEvents.mergeSuccess(vtid, prNumber, mergeResult.sha, DEFAULT_REPO);
+
+    // Detect service for auto-deploy
+    const files = await githubService.getPrFiles(DEFAULT_REPO, prNumber);
+    const service = githubService.detectServiceFromFiles(files.map(f => f.filename));
+
+    let deployResult = null;
+    if (service && ALLOWED_DEPLOY_SERVICES.includes(service as any)) {
+      console.log(`[VTID-0601] Auto-triggering deploy for ${service}`);
+
+      await cicdEvents.deployRequestedFromHub(vtid, service, 'dev');
+
+      try {
+        await githubService.triggerWorkflow(
+          DEFAULT_REPO,
+          'EXEC-DEPLOY.yml',
+          'main',
+          {
+            vtid,
+            service,
+            health_path: '/alive',
+            initiator: 'command-hub',
+            environment: 'dev',
+          }
+        );
+
+        const runs = await githubService.getWorkflowRuns(DEFAULT_REPO, 'EXEC-DEPLOY.yml');
+        const latestRun = runs.workflow_runs[0];
+
+        await cicdEvents.deployStarted(vtid, service, 'dev', latestRun?.html_url);
+
+        deployResult = {
+          service,
+          workflow_url: latestRun?.html_url,
+        };
+      } catch (error) {
+        console.error(`[VTID-0601] Deploy trigger failed:`, error);
+      }
+    }
+
+    console.log(`[VTID-0601] Approval executed successfully for PR #${prNumber}`);
+
+    return res.status(200).json({
+      ok: true,
+      approval_id: id,
+      vtid,
+      pr_number: prNumber,
+      merged: true,
+      sha: mergeResult.sha,
+      deploy: deployResult,
+    });
+
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[VTID-0601] Approval execution failed: ${errorMessage}`);
+    return res.status(500).json({
+      ok: false,
+      error: errorMessage,
+    });
+  }
+});
+
+/**
+ * VTID-0601: POST /approvals/:id/deny - Deny approval request
+ *
+ * This endpoint denies an approval request without taking action.
+ * It emits an event for audit purposes.
+ */
+router.post('/approvals/:id/deny', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body || {};
+
+    const prMatch = id.match(/^pr-(\d+)$/);
+
+    if (!prMatch) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Invalid approval ID format',
+      });
+    }
+
+    const prNumber = parseInt(prMatch[1], 10);
+
+    // Get PR details for VTID extraction
+    let vtid = 'UNKNOWN';
+    try {
+      const pr = await githubService.getPullRequest(DEFAULT_REPO, prNumber);
+      const branchMatch = pr.head.ref.match(/VTID-\d+/i) || pr.title.match(/VTID-\d+/i);
+      if (branchMatch) {
+        vtid = branchMatch[0].toUpperCase();
+      }
+    } catch {
+      // PR might not exist, continue with UNKNOWN VTID
+    }
+
+    // Emit denial event
+    await cicdEvents.approvalDenied(vtid, id, 'merge', 'command-hub-user', reason);
+
+    console.log(`[VTID-0601] Approval denied for PR #${prNumber}: ${reason || 'No reason provided'}`);
+
+    return res.status(200).json({
+      ok: true,
+      approval_id: id,
+      vtid,
+      pr_number: prNumber,
+      denied: true,
+      reason: reason || 'No reason provided',
+    });
+
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[VTID-0601] Denial failed: ${errorMessage}`);
+    return res.status(500).json({
+      ok: false,
+      error: errorMessage,
+    });
+  }
 });
 
 export default router;

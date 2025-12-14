@@ -363,6 +363,112 @@ export const cicdEvents = {
         evaluated_at: new Date().toISOString(),
       },
     }),
+
+  // ==================== VTID-0601: Autonomous Safe Merge & Deploy Control ====================
+
+  /**
+   * VTID-0601: Emit merge requested event
+   */
+  mergeRequested: (vtid: string, prNumber: number, repo: string) =>
+    emitOasisEvent({
+      vtid,
+      type: 'cicd.merge.requested',
+      source: 'command-hub-cicd',
+      status: 'info',
+      message: `Merge requested for PR #${prNumber} via Command Hub`,
+      payload: { pr_number: prNumber, repo, source: 'command-hub' },
+    }),
+
+  /**
+   * VTID-0601: Emit merge success event
+   */
+  mergeSuccess: (vtid: string, prNumber: number, sha: string, repo: string) =>
+    emitOasisEvent({
+      vtid,
+      type: 'cicd.merge.success',
+      source: 'command-hub-cicd',
+      status: 'success',
+      message: `PR #${prNumber} merged successfully via Command Hub`,
+      payload: { pr_number: prNumber, sha, repo, merged_at: new Date().toISOString() },
+    }),
+
+  /**
+   * VTID-0601: Emit merge failed event
+   */
+  mergeFailed: (vtid: string, prNumber: number, reason: string, repo: string) =>
+    emitOasisEvent({
+      vtid,
+      type: 'cicd.merge.failed',
+      source: 'command-hub-cicd',
+      status: 'error',
+      message: `Merge failed for PR #${prNumber}: ${reason}`,
+      payload: { pr_number: prNumber, reason, repo, failed_at: new Date().toISOString() },
+    }),
+
+  /**
+   * VTID-0601: Emit deploy requested event (Command Hub triggered)
+   */
+  deployRequestedFromHub: (vtid: string, service: string, environment: string) =>
+    emitOasisEvent({
+      vtid,
+      type: 'cicd.deploy.requested',
+      source: 'command-hub-cicd',
+      status: 'info',
+      message: `Deploy requested for ${service} to ${environment} via Command Hub`,
+      payload: { service, environment, source: 'command-hub', requested_at: new Date().toISOString() },
+    }),
+
+  /**
+   * VTID-0601: Emit deploy started event
+   */
+  deployStarted: (vtid: string, service: string, environment: string, workflowUrl?: string) =>
+    emitOasisEvent({
+      vtid,
+      type: 'cicd.deploy.started',
+      source: 'command-hub-cicd',
+      status: 'info',
+      message: `Deploy workflow started for ${service} to ${environment}`,
+      payload: { service, environment, workflow_url: workflowUrl, started_at: new Date().toISOString() },
+    }),
+
+  /**
+   * VTID-0601: Emit approval created event
+   */
+  approvalCreated: (vtid: string, approvalId: string, type: string, prNumber?: number, service?: string) =>
+    emitOasisEvent({
+      vtid,
+      type: 'cicd.approval.created',
+      source: 'command-hub-cicd',
+      status: 'info',
+      message: `Approval request created: ${type}${prNumber ? ` for PR #${prNumber}` : ''}${service ? ` (${service})` : ''}`,
+      payload: { approval_id: approvalId, approval_type: type, pr_number: prNumber, service, created_at: new Date().toISOString() },
+    }),
+
+  /**
+   * VTID-0601: Emit approval approved event
+   */
+  approvalApproved: (vtid: string, approvalId: string, type: string, approvedBy: string) =>
+    emitOasisEvent({
+      vtid,
+      type: 'cicd.approval.approved',
+      source: 'command-hub-cicd',
+      status: 'success',
+      message: `Approval granted: ${type} approved by ${approvedBy}`,
+      payload: { approval_id: approvalId, approval_type: type, approved_by: approvedBy, approved_at: new Date().toISOString() },
+    }),
+
+  /**
+   * VTID-0601: Emit approval denied event
+   */
+  approvalDenied: (vtid: string, approvalId: string, type: string, deniedBy: string, reason?: string) =>
+    emitOasisEvent({
+      vtid,
+      type: 'cicd.approval.denied',
+      source: 'command-hub-cicd',
+      status: 'warning',
+      message: `Approval denied: ${type}${reason ? ` - ${reason}` : ''}`,
+      payload: { approval_id: approvalId, approval_type: type, denied_by: deniedBy, reason, denied_at: new Date().toISOString() },
+    }),
 };
 
 /**
