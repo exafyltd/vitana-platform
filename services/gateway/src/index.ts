@@ -69,6 +69,55 @@ app.get('/debug/vtid-0524', (_req, res) => {
   });
 });
 
+// VTID-0538-D: Diagnostic endpoint to verify Knowledge Hub routes are deployed
+app.get('/debug/vtid-0538-routes', (_req, res) => {
+  // Check if the assistantRouter has the knowledge routes by inspecting the app's routes
+  const assistantRoutes: string[] = [];
+
+  // The assistant router is mounted at /api/v1/assistant
+  // We can check if the routes exist by looking at the router's stack
+  try {
+    const assistantStack = (assistantRouter as any).stack || [];
+    assistantStack.forEach((layer: any) => {
+      if (layer.route) {
+        const methods = Object.keys(layer.route.methods).join(',').toUpperCase();
+        assistantRoutes.push(`${methods} ${layer.route.path}`);
+      }
+    });
+  } catch (e: any) {
+    // Fallback - just report what we know
+  }
+
+  const hasKnowledgeHealthRoute = assistantRoutes.some(r => r.includes('/knowledge/health'));
+  const hasKnowledgeSearchRoute = assistantRoutes.some(r => r.includes('/knowledge/search'));
+
+  // Read BUILD_INFO if available
+  let buildInfo: string | null = null;
+  try {
+    const buildInfoPath = path.join(__dirname, '..', 'BUILD_INFO');
+    if (fs.existsSync(buildInfoPath)) {
+      buildInfo = fs.readFileSync(buildInfoPath, 'utf-8').trim();
+    }
+  } catch (e) {
+    // Ignore
+  }
+
+  res.json({
+    ok: hasKnowledgeHealthRoute && hasKnowledgeSearchRoute,
+    vtid: 'VTID-0538-D',
+    description: 'Knowledge Hub Routes Verification',
+    verification: {
+      hasKnowledgeHealthRoute,
+      hasKnowledgeSearchRoute,
+      totalAssistantRoutes: assistantRoutes.length,
+      assistantRoutes
+    },
+    buildInfo,
+    buildCommit: process.env.BUILD_COMMIT || null,
+    timestamp: new Date().toISOString()
+  });
+});
+
 // VTID-0529-C: Diagnostic endpoint to verify Command Hub bundle at runtime
 app.get('/debug/vtid-0529', (_req, res) => {
   const staticPath = path.join(__dirname, 'frontend/command-hub');

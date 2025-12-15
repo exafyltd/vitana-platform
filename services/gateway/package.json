@@ -5,6 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "prebuild": "rm -rf dist",
     "build": "tsc && npm run copy-frontend",
     "copy-frontend": "mkdir -p dist/frontend/command-hub && cp -r src/frontend/command-hub/* dist/frontend/command-hub/",
     "start": "node dist/index.js",
