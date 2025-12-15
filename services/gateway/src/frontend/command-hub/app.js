@@ -1,7 +1,7 @@
 // Vitana Dev Frontend Spec v2 Implementation - Task 3
 
-// VTID-0529-B: Hard bundle fingerprint for deployment verification
-console.log('🔥 COMMAND HUB BUNDLE: VTID-0529-B LIVE 🔥');
+// VTID-0539: Operator Console Chat Experience Improvements
+console.log('🔥 COMMAND HUB BUNDLE: VTID-0539 LIVE 🔥');
 
 // --- Configs ---
 
@@ -1146,6 +1146,21 @@ function renderApp() {
         };
     }
 
+    // VTID-0539: Save chat scroll position for scroll anchoring
+    var messagesContainer = document.querySelector('.chat-messages');
+    var savedChatScroll = null;
+    if (messagesContainer) {
+        var scrollTop = messagesContainer.scrollTop;
+        var scrollHeight = messagesContainer.scrollHeight;
+        var clientHeight = messagesContainer.clientHeight;
+        var distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+        savedChatScroll = {
+            scrollTop: scrollTop,
+            wasNearBottom: distanceFromBottom <= 80, // Within 80px of bottom
+            previousScrollHeight: scrollHeight
+        };
+    }
+
     root.innerHTML = '';
 
     const container = document.createElement('div');
@@ -1214,18 +1229,27 @@ function renderApp() {
         });
     }
 
-    // VTID-0526-E: Scroll chat to bottom ONLY when user was NOT typing
-    // If savedChatFocus is set, user was typing - don't interrupt with scroll
+    // VTID-0539: Scroll anchoring - preserve scroll position or scroll to bottom based on user's position
+    // Only auto-scroll if user was near bottom; otherwise preserve their scroll position
     if (state.isOperatorOpen && state.operatorActiveTab === 'chat' && !savedChatFocus) {
         requestAnimationFrame(function() {
-            requestAnimationFrame(function() {
-                setTimeout(function() {
-                    var messagesContainer = document.querySelector('.chat-messages');
-                    if (messagesContainer) {
-                        messagesContainer.scrollTop = messagesContainer.scrollHeight;
-                    }
-                }, 0);
-            });
+            var newMessagesContainer = document.querySelector('.chat-messages');
+            if (newMessagesContainer && savedChatScroll) {
+                if (savedChatScroll.wasNearBottom) {
+                    // User was at/near bottom - scroll to show new messages
+                    newMessagesContainer.scrollTop = newMessagesContainer.scrollHeight;
+                } else {
+                    // User had scrolled up - preserve their position relative to content
+                    // Adjust for any new content added at bottom
+                    var newScrollHeight = newMessagesContainer.scrollHeight;
+                    var heightDiff = newScrollHeight - savedChatScroll.previousScrollHeight;
+                    // Keep the same scrollTop (content added below their view)
+                    newMessagesContainer.scrollTop = savedChatScroll.scrollTop;
+                }
+            } else if (newMessagesContainer) {
+                // No previous scroll state (first render) - scroll to bottom
+                newMessagesContainer.scrollTop = newMessagesContainer.scrollHeight;
+            }
         });
     }
 }
@@ -5659,52 +5683,102 @@ async function sendChatMessage() {
     });
 
     try {
-        // VTID-0537: Wire to /operator/chat for Gemini + Tools (VTID-0536)
-        // This endpoint supports natural language chat with autopilot tools
-        console.log('[Operator] Sending message to /api/v1/operator/chat');
+        // VTID-0539: Route to Knowledge Hub API first for NL answers
+        // This provides doc-grounded responses for questions about Vitana
+        console.log('[Operator] Sending query to Knowledge Hub:', messageText);
 
-        const response = await fetch('/api/v1/operator/chat', {
+        const knowledgeResponse = await fetch('/api/v1/assistant/knowledge/search', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                message: messageText,
-                attachments: attachments.length > 0 ? attachments : undefined
+                query: messageText,
+                role: 'operator',
+                tenant: 'vitana',
+                maxResults: 5
             })
         });
 
-        if (!response.ok) {
-            throw new Error(`Chat request failed: ${response.status}`);
-        }
+        let replyContent = '';
+        let knowledgeDocs = [];
+        let usedKnowledgeHub = false;
 
-        const result = await response.json();
-        console.log('[Operator] Chat response:', result);
+        if (knowledgeResponse.ok) {
+            const knowledgeResult = await knowledgeResponse.json();
+            console.log('[Operator] Knowledge Hub response:', knowledgeResult);
 
-        // VTID-0537: Use the reply from the Gemini Operator Tools Bridge
-        const replyContent = result.reply || 'No response received';
-
-        // VTID-0537: Check if a task was created via tools
-        const hasCreatedTask = result.createdTask && result.createdTask.vtid;
-        const hasToolResults = result.toolResults && result.toolResults.length > 0;
-
-        // Build enhanced content if task was created
-        let displayContent = replyContent;
-        if (hasCreatedTask) {
-            displayContent += `\n\n📋 Task Created: **${result.createdTask.vtid}**`;
-            if (result.createdTask.title) {
-                displayContent += ` - ${result.createdTask.title}`;
+            if (knowledgeResult.ok && knowledgeResult.answer && knowledgeResult.answer.trim()) {
+                // Knowledge Hub returned a valid answer
+                replyContent = knowledgeResult.answer;
+                knowledgeDocs = knowledgeResult.docs || [];
+                usedKnowledgeHub = true;
+                console.log('[Operator] Using Knowledge Hub answer with', knowledgeDocs.length, 'docs');
             }
         }
 
-        state.chatMessages.push({
-            type: 'system',
-            content: displayContent,
-            timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-            oasis_ref: result.oasis_ref,
-            threadId: result.threadId,
-            createdTask: result.createdTask,
-            toolResults: result.toolResults,
-            meta: result.meta
-        });
+        // Fallback to operator/chat if Knowledge Hub didn't provide an answer
+        if (!usedKnowledgeHub) {
+            console.log('[Operator] Knowledge Hub unavailable, falling back to /api/v1/operator/chat');
+
+            const response = await fetch('/api/v1/operator/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message: messageText,
+                    attachments: attachments.length > 0 ? attachments : undefined
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Chat request failed: ${response.status}`);
+            }
+
+            const result = await response.json();
+            console.log('[Operator] Chat response:', result);
+
+            // VTID-0537: Use the reply from the Gemini Operator Tools Bridge
+            replyContent = result.reply || 'No response received';
+
+            // VTID-0537: Check if a task was created via tools
+            const hasCreatedTask = result.createdTask && result.createdTask.vtid;
+
+            // Build enhanced content if task was created
+            if (hasCreatedTask) {
+                replyContent += `\n\n📋 Task Created: **${result.createdTask.vtid}**`;
+                if (result.createdTask.title) {
+                    replyContent += ` - ${result.createdTask.title}`;
+                }
+            }
+
+            state.chatMessages.push({
+                type: 'system',
+                content: replyContent,
+                timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+                oasis_ref: result.oasis_ref,
+                threadId: result.threadId,
+                createdTask: result.createdTask,
+                toolResults: result.toolResults,
+                meta: result.meta
+            });
+        } else {
+            // VTID-0539: Build message with Knowledge Hub response
+            let displayContent = replyContent;
+
+            // Add sources section if docs available
+            if (knowledgeDocs.length > 0) {
+                displayContent += '\n\n---\n**Sources:**';
+                knowledgeDocs.forEach((doc, index) => {
+                    displayContent += `\n${index + 1}. ${doc.title}`;
+                });
+            }
+
+            state.chatMessages.push({
+                type: 'system',
+                content: displayContent,
+                timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+                knowledgeDocs: knowledgeDocs,
+                isKnowledgeHub: true
+            });
+        }
 
     } catch (error) {
         console.error('[Operator] Chat error:', error);
