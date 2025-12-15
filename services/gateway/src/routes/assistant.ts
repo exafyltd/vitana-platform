@@ -417,7 +417,9 @@ router.get('/knowledge/health', (_req: Request, res: Response) => {
     capabilities: {
       database_connection: hasSupabaseUrl && hasSupabaseKey,
       full_text_search: true,
-      gemini_integration: !!process.env.GOOGLE_GEMINI_API_KEY
+      gemini_integration:
+        !!process.env.VERTEX_MODEL &&
+        !!process.env.VERTEX_LOCATION
     }
   });
 });
@@ -440,7 +442,9 @@ router.get('/health', (_req: Request, res: Response) => {
       search: '/knowledge/search',
       health: '/knowledge/health'
     },
-    gemini_configured: !!process.env.GOOGLE_GEMINI_API_KEY,
+    gemini_configured:
+      !!process.env.VERTEX_MODEL &&
+      !!process.env.VERTEX_LOCATION,
     timestamp: new Date().toISOString()
   });
 });
