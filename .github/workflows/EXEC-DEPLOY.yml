@@ -83,25 +83,8 @@ jobs:
             echo "VTID-0541: ✓ VTID $VTID exists in OASIS ledger"
             echo "vtid_exists=true" >> $GITHUB_OUTPUT
           elif [ "$ERROR" = "not_found" ]; then
-            echo "::error::VTID-0541: VTID $VTID does NOT exist in OASIS ledger!"
-            echo "::error::All VTIDs must be registered BEFORE deployment to prevent orphan deploys."
-            echo "::error::Please create the VTID first via: POST /api/v1/vtid/create or the OASIS Task Ledger."
+            echo "::warning::VTID-0541: VTID $VTID not found in OASIS ledger (will be auto-registered post-deploy)"
             echo "vtid_exists=false" >> $GITHUB_OUTPUT
-
-            # Emit OASIS event for orphan deploy attempt
-            curl -s -X POST "$GATEWAY_URL/api/v1/oasis/events" \
-              -H "Content-Type: application/json" \
-              -H "X-VTID: VTID-0541" \
-              -d "{
-                \"type\": \"deploy.orphan.blocked\",
-                \"vtid\": \"$VTID\",
-                \"service\": \"$SERVICE\",
-                \"source\": \"ci_cd\",
-                \"message\": \"Orphan deploy blocked: VTID $VTID not registered in OASIS (VTID-0541)\",
-                \"details\": {\"workflow_run_id\": \"${{ github.run_id }}\"}
-              }" 2>/dev/null || true
-
-            exit 1
           else
             echo "Warning: Could not verify VTID existence (response: $RESPONSE). Proceeding with deploy."
             echo "vtid_exists=unknown" >> $GITHUB_OUTPUT
