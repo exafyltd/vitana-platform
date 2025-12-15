@@ -867,4 +867,179 @@ router.get('/deployments/health', (_req: Request, res: Response) => {
   });
 });
 
+// ==================== VTID-0541: OASIS Repair Endpoints ====================
+
+/**
+ * POST /repair/vtid-0540 → /api/v1/operator/repair/vtid-0540
+ * VTID-0541 D1: Retroactively register VTID-0540 in OASIS
+ * This endpoint implements the repair script logic directly
+ */
+router.post('/repair/vtid-0540', async (req: Request, res: Response) => {
+  console.log('[VTID-0541] Repair endpoint called for VTID-0540');
+
+  const SUPABASE_URL = process.env.SUPABASE_URL;
+  const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Supabase not configured',
+      message: 'Cannot perform repair without database connection'
+    });
+  }
+
+  try {
+    const timestamp = new Date().toISOString();
+    const results: { step: string; success: boolean; message: string }[] = [];
+
+    // Step 1: Check if VTID-0540 already exists
+    const checkResp = await fetch(
+      `${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.VTID-0540&select=vtid&limit=1`,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_SERVICE_ROLE,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`
+        }
+      }
+    );
+
+    if (!checkResp.ok) {
+      throw new Error(`Failed to check VTID-0540 existence: ${checkResp.status}`);
+    }
+
+    const existingData = await checkResp.json() as any[];
+    const vtidExists = existingData.length > 0;
+
+    if (vtidExists) {
+      results.push({ step: 'check_vtid', success: true, message: 'VTID-0540 already exists in ledger' });
+    } else {
+      // Step 2: Create VTID-0540 entry
+      const vtid0540Entry = {
+        id: randomUUID(),
+        vtid: 'VTID-0540',
+        task_family: 'DEV',
+        task_module: 'GATEWAY',
+        layer: 'DEV',
+        module: 'GATEWAY',
+        title: 'Gemini Vertex ADC Health Gate Fix',
+        description_md: 'Updated assistant routes health check to verify Vertex AI configuration instead of GOOGLE_GEMINI_API_KEY. Retroactively registered by VTID-0541.',
+        status: 'deployed',
+        tenant: 'vitana',
+        is_test: false,
+        metadata: {
+          created_by: 'system.repair',
+          repair_vtid: 'VTID-0541',
+          result: 'deployed',
+          layer: 'DEV',
+          note: 'Retroactively registered by VTID-0541'
+        },
+        created_at: '2025-12-15T10:00:00.000Z',
+        updated_at: timestamp
+      };
+
+      const insertResp = await fetch(`${SUPABASE_URL}/rest/v1/VtidLedger`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_SERVICE_ROLE,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+          Prefer: 'return=minimal'
+        },
+        body: JSON.stringify(vtid0540Entry)
+      });
+
+      if (insertResp.ok) {
+        results.push({ step: 'create_vtid', success: true, message: 'VTID-0540 created in ledger' });
+      } else {
+        const text = await insertResp.text();
+        results.push({ step: 'create_vtid', success: false, message: `Failed to create VTID: ${text}` });
+      }
+    }
+
+    // Step 3: Create deploy success event
+    const deployEvent = {
+      id: randomUUID(),
+      vtid: 'VTID-0540',
+      topic: 'deploy.service.success',
+      service: 'gateway',
+      role: 'CICD',
+      model: 'exec-deploy',
+      status: 'success',
+      message: 'VTID-0540: Gemini Vertex ADC Health Gate Fix deployed successfully',
+      metadata: {
+        service: 'gateway',
+        environment: 'dev',
+        repair_vtid: 'VTID-0541',
+        note: 'Deployment event retroactively created by VTID-0541'
+      },
+      created_at: '2025-12-15T10:05:00.000Z'
+    };
+
+    const eventResp = await fetch(`${SUPABASE_URL}/rest/v1/oasis_events`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_SERVICE_ROLE,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+        Prefer: 'return=minimal'
+      },
+      body: JSON.stringify(deployEvent)
+    });
+
+    if (eventResp.ok) {
+      results.push({ step: 'create_event', success: true, message: 'Deploy success event created' });
+    } else {
+      results.push({ step: 'create_event', success: false, message: 'Event may already exist' });
+    }
+
+    // Step 4: Emit repair completion event
+    const repairEvent = {
+      id: randomUUID(),
+      vtid: 'VTID-0541',
+      topic: 'repair.vtid.completed',
+      service: 'gateway',
+      role: 'SYSTEM',
+      model: 'repair-endpoint',
+      status: 'success',
+      message: 'VTID-0541: VTID-0540 retroactively registered via repair endpoint',
+      metadata: {
+        target_vtid: 'VTID-0540',
+        results
+      },
+      created_at: timestamp
+    };
+
+    await fetch(`${SUPABASE_URL}/rest/v1/oasis_events`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_SERVICE_ROLE,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+        Prefer: 'return=minimal'
+      },
+      body: JSON.stringify(repairEvent)
+    });
+
+    console.log('[VTID-0541] Repair completed:', results);
+
+    return res.status(200).json({
+      ok: true,
+      vtid: 'VTID-0541',
+      target: 'VTID-0540',
+      message: 'VTID-0540 retroactively registered in OASIS',
+      results,
+      timestamp
+    });
+
+  } catch (error: any) {
+    console.error('[VTID-0541] Repair failed:', error);
+    return res.status(500).json({
+      ok: false,
+      error: error.message,
+      message: 'Repair operation failed'
+    });
+  }
+});
+
 export default router;
