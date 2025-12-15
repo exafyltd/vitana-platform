@@ -434,7 +434,12 @@ router.get('/health', (_req: Request, res: Response) => {
     ok: true,
     service: 'assistant-core',
     vtids: ['VTID-0150-B', 'VTID-0151', 'VTID-0538'],
+    buildFix: 'VTID-0538-D',
     capabilities: ['chat', 'live-session', 'frame-processing', 'audio-processing', 'knowledge-search'],
+    knowledgeRoutes: {
+      search: '/knowledge/search',
+      health: '/knowledge/health'
+    },
     gemini_configured: !!process.env.GOOGLE_GEMINI_API_KEY,
     timestamp: new Date().toISOString()
   });
