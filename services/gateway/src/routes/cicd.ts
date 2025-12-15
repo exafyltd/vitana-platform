@@ -390,33 +390,76 @@ router.post('/service', async (req: Request, res: Response) => {
 
 // ==================== GET /health ====================
 // Mounted at /api/v1/cicd -> final path: /api/v1/cicd/health
+// VTID-0541: Updated to distinguish runtime deploy health from governance capabilities
 router.get('/health', (_req: Request, res: Response) => {
   const hasGitHubToken = !!process.env.GITHUB_SAFE_MERGE_TOKEN;
   const hasSupabaseUrl = !!process.env.SUPABASE_URL;
   const hasSupabaseKey = !!process.env.SUPABASE_SERVICE_ROLE;
 
-  const status = hasGitHubToken && hasSupabaseUrl && hasSupabaseKey ? 'ok' : 'degraded';
+  // VTID-0541 D2: Check Vertex AI configuration for AI capabilities
+  const hasVertexConfig = !!process.env.VERTEX_MODEL && !!process.env.VERTEX_LOCATION;
+
+  // VTID-0541 D2: Runtime Deploy Health
+  // - Runtime is healthy if we have OASIS connectivity (for event logging)
+  // - And AI services are available (Vertex AI configured)
+  const runtimeDeployHealthy = hasSupabaseUrl && hasSupabaseKey;
+
+  // VTID-0541 D2: Governance Capabilities
+  // - GitHub token enables PR creation, merges, and approvals
+  // - Missing GitHub token means "governance limited" (actions blocked, but system operational)
+  const governanceHealthy = hasGitHubToken;
+
+  // VTID-0541 D2: Status Determination
+  // - 'ok': Both runtime and governance are healthy
+  // - 'ok_governance_limited': Runtime OK but governance features unavailable (Dev Sandbox normal state)
+  // - 'degraded': Runtime itself is broken (OASIS unavailable)
+  let status: 'ok' | 'ok_governance_limited' | 'degraded';
+  if (!runtimeDeployHealthy) {
+    status = 'degraded';
+  } else if (!governanceHealthy) {
+    status = 'ok_governance_limited';
+  } else {
+    status = 'ok';
+  }
 
   return res.status(200).json({
     ok: true,
     status,
     service: 'cicd-layer',
-    version: '2.0.0', // VTID-0601 upgrade
-    vtid: 'VTID-0601',
+    version: '2.1.0', // VTID-0541 upgrade
+    vtid: 'VTID-0541',
     timestamp: new Date().toISOString(),
+    // VTID-0541 D2: Explicit health dimensions
+    health: {
+      runtime_deploy: runtimeDeployHealthy ? 'ok' : 'degraded',
+      governance: governanceHealthy ? 'ok' : 'limited',
+      ai_services: hasVertexConfig ? 'ok' : 'unavailable',
+    },
     capabilities: {
       github_integration: hasGitHubToken,
       oasis_events: hasSupabaseUrl && hasSupabaseKey,
       create_pr: hasGitHubToken,
       safe_merge: hasGitHubToken,
-      deploy_service: hasGitHubToken,
-      // VTID-0601: New capabilities
+      deploy_service: runtimeDeployHealthy, // VTID-0541: Deploy only requires runtime health
+      // VTID-0601: Command Hub capabilities
       command_hub_merge: hasGitHubToken,
-      command_hub_deploy: hasGitHubToken,
+      command_hub_deploy: runtimeDeployHealthy, // VTID-0541: Deploy via Command Hub only requires runtime
       approvals: hasGitHubToken,
+      // VTID-0541: AI capabilities
+      ai_chat: hasVertexConfig,
+      gemini_operator: hasVertexConfig,
     },
     allowed_services: ALLOWED_DEPLOY_SERVICES,
     allowed_environments: ['dev'],
+    // VTID-0541: Informational notes for UI
+    notes: {
+      governance_limited: !governanceHealthy
+        ? 'GitHub integration unavailable - PR/merge/approval actions blocked, but deploy and chat work normally'
+        : null,
+      ai_unavailable: !hasVertexConfig
+        ? 'Vertex AI not configured - chat will use local routing'
+        : null,
+    },
   });
 });
 

@@ -2398,6 +2398,22 @@ body {
   animation: cicd-heartbeat-error 0.8s ease-in-out infinite;
 }
 
+/* VTID-0541 D4: Warning state - yellow/amber (governance limited, runtime OK) */
+.cicd-health-btn--warning {
+  background: rgba(251, 191, 36, 0.1);
+  border-color: rgba(251, 191, 36, 0.3);
+}
+
+.cicd-health-btn--warning:hover {
+  background: rgba(251, 191, 36, 0.2);
+  border-color: rgba(251, 191, 36, 0.5);
+}
+
+.cicd-health-btn--warning .cicd-health-icon {
+  color: #fbbf24;
+  animation: cicd-heartbeat 1.5s ease-in-out infinite;
+}
+
 /* Loading state - gray pulsing */
 .cicd-health-btn--loading {
   background: rgba(148, 163, 184, 0.1);
@@ -2505,6 +2521,11 @@ body {
 
 .cicd-health-tooltip__status--error {
   color: #ef4444;
+}
+
+/* VTID-0541 D4: Warning status for governance limited */
+.cicd-health-tooltip__status--warning {
+  color: #fbbf24;
 }
 
 .cicd-health-tooltip__details {

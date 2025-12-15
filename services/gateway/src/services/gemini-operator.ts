@@ -29,6 +29,15 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 const GOOGLE_GEMINI_API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
 
+// VTID-0541 D3: Vertex AI configuration (alternative to direct Gemini API)
+const VERTEX_MODEL = process.env.VERTEX_MODEL;
+const VERTEX_LOCATION = process.env.VERTEX_LOCATION;
+
+// VTID-0541 D3: Check if any AI backend is configured
+const hasGeminiConfig = !!GOOGLE_GEMINI_API_KEY;
+const hasVertexConfig = !!VERTEX_MODEL && !!VERTEX_LOCATION;
+const hasAnyAIConfig = hasGeminiConfig || hasVertexConfig;
+
 // ==================== Types ====================
 
 /**
@@ -782,6 +791,10 @@ export async function executeTool(
 
 /**
  * Process a message with Gemini, including function calling
+ * VTID-0541 D3: Updated routing logic
+ * - Uses Gemini API if GOOGLE_GEMINI_API_KEY is configured
+ * - Falls back to local routing with conversational support if no AI backend
+ * - Governance-limited status does NOT trigger fallback
  */
 export async function processWithGemini(input: {
   text: string;
@@ -793,9 +806,11 @@ export async function processWithGemini(input: {
 
   console.log(`[VTID-0536] Processing message with Gemini: "${text.substring(0, 50)}..."`);
 
-  // Check if Gemini API key is configured
+  // VTID-0541 D3: Check if any AI backend is configured
+  // Note: Vertex AI is used by assistant-service.ts, not this file
+  // This file uses direct Gemini API calls, so check GOOGLE_GEMINI_API_KEY
   if (!GOOGLE_GEMINI_API_KEY) {
-    console.warn('[VTID-0536] GOOGLE_GEMINI_API_KEY not configured, using local routing');
+    console.log('[VTID-0541] No Gemini API key configured, using enhanced local routing');
     return processLocalRouting(text, threadId);
   }
 
@@ -1021,11 +1036,36 @@ If successful, confirm what was done and any next steps.`
 
 /**
  * Local routing fallback when Gemini is not available
+ * VTID-0541 D3: Enhanced to support natural conversation
  * Uses keyword matching to determine tool calls
  */
 async function processLocalRouting(text: string, threadId: string): Promise<GeminiOperatorResponse> {
-  const lowerText = text.toLowerCase();
+  const lowerText = text.toLowerCase().trim();
   const toolResults: GeminiToolResult[] = [];
+
+  // VTID-0541 D3: Handle conversational messages first (greetings, thanks, etc.)
+  // These should NOT fall back to Knowledge search - they should get friendly responses
+  const conversationalPatterns = [
+    { pattern: /^(hi|hello|hey|good\s*(morning|afternoon|evening)|greetings)/i, response: "Hello! I'm the Vitana Operator Assistant. I can help you create tasks, check task status, or answer questions about Vitana. What would you like to do?" },
+    { pattern: /^(thanks|thank\s*you|thx|ty)/i, response: "You're welcome! Let me know if you need anything else." },
+    { pattern: /^(bye|goodbye|see\s*you|later)/i, response: "Goodbye! Feel free to return anytime you need assistance." },
+    { pattern: /^(help|what\s+can\s+you\s+do|\?+)$/i, response: null }, // Will fall through to help message below
+    { pattern: /^(ok|okay|sure|got\s*it|understood|alright)/i, response: "Great! Let me know what you'd like to do next." },
+    { pattern: /^(yes|no|yeah|nope|yep|nah)/i, response: "I understand. What would you like me to help you with?" },
+  ];
+
+  for (const { pattern, response } of conversationalPatterns) {
+    if (pattern.test(lowerText)) {
+      if (response) {
+        return {
+          reply: response,
+          meta: { model: 'local-router', vtid: 'VTID-0541', conversational: true }
+        };
+      }
+      // If response is null, fall through to the help message
+      break;
+    }
+  }
 
   // Detect task creation requests
   if (
@@ -1130,18 +1170,44 @@ async function processLocalRouting(text: string, threadId: string): Promise<Gemi
     });
   }
 
-  // No tool matched - return helpful message
+  // No tool matched - return helpful conversational message
+  // VTID-0541 D3: Make this more conversational, not just a help menu
   if (toolResults.length === 0) {
-    return {
-      reply: `I can help you with Autopilot tasks and answer questions about Vitana. Try:
-- "Create a task to fix the health check endpoint"
-- "What is the status of VTID-0533?"
-- "Show recent tasks"
+    // Check if it looks like a general question or statement
+    const looksLikeQuestion = lowerText.includes('?') || lowerText.match(/^(can|could|would|will|do|does|is|are|how|what|when|where|why|who)/i);
+    const looksLikeStatement = lowerText.length > 50; // Longer text might be a statement/request
+
+    if (looksLikeQuestion || looksLikeStatement) {
+      // Provide a conversational response that acknowledges the input
+      return {
+        reply: `I understand you're asking about something, but I'm not sure exactly how to help with that. Here's what I can do:
+
+**Task Management:**
+- Create tasks: "Create a task to fix the health check"
+- Check status: "What is the status of VTID-0540?"
+- List tasks: "Show recent tasks"
+
+**Vitana Knowledge:**
 - "What is the Vitana Index?"
 - "Explain the OASIS architecture"
+- "How does governance work?"
+
+Could you rephrase your request, or let me know which of these you'd like help with?`,
+        meta: { model: 'local-router', vtid: 'VTID-0541', conversational: true }
+      };
+    }
+
+    // Simple fallback for short unrecognized input
+    return {
+      reply: `Hello! I'm the Vitana Operator Assistant. I can help you with:
+
+- **Creating tasks**: "Create a task to..."
+- **Checking status**: "Status of VTID-0540"
+- **Listing tasks**: "Show recent tasks"
+- **Vitana questions**: "What is OASIS?"
 
 What would you like to do?`,
-      meta: { model: 'local-router', vtid: 'VTID-0538' }
+      meta: { model: 'local-router', vtid: 'VTID-0541' }
     };
   }
 

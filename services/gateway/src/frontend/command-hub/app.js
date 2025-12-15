@@ -1475,13 +1475,19 @@ function renderHeader() {
     const right = document.createElement('div');
     right.className = 'header-toolbar-right';
 
-    // CI/CD Health Indicator (VTID-0520)
+    // CI/CD Health Indicator (VTID-0520 + VTID-0541 D4)
     const cicdHealthIndicator = document.createElement('div');
     cicdHealthIndicator.className = 'cicd-health-indicator';
 
-    // Determine health status
-    const isHealthy = state.cicdHealth && state.cicdHealth.ok === true;
-    const hasError = state.cicdHealthError !== null || (state.cicdHealth && state.cicdHealth.ok === false);
+    // VTID-0541 D4: Determine health status with proper distinction
+    // - 'ok': Fully healthy (green)
+    // - 'ok_governance_limited': Runtime OK but governance limited (yellow)
+    // - 'degraded': Runtime broken (red)
+    const healthStatus = state.cicdHealth?.status;
+    const isFullyHealthy = state.cicdHealth && state.cicdHealth.ok === true && healthStatus === 'ok';
+    const isGovernanceLimited = healthStatus === 'ok_governance_limited';
+    const isDegraded = healthStatus === 'degraded' || (state.cicdHealth && state.cicdHealth.ok === false);
+    const hasError = state.cicdHealthError !== null || isDegraded;
     const isLoading = state.cicdHealthLoading && !state.cicdHealth;
 
     // Create heartbeat icon button
@@ -1491,8 +1497,12 @@ function renderHeader() {
         cicdBtn.title = 'CI/CD: Loading...';
     } else if (hasError) {
         cicdBtn.className = 'cicd-health-btn cicd-health-btn--error';
-        cicdBtn.title = state.cicdHealthError || 'CI/CD Issues';
-    } else if (isHealthy) {
+        cicdBtn.title = state.cicdHealthError || 'CI/CD Runtime Degraded';
+    } else if (isGovernanceLimited) {
+        // VTID-0541 D4: Yellow state for governance limited (runtime OK)
+        cicdBtn.className = 'cicd-health-btn cicd-health-btn--warning';
+        cicdBtn.title = 'CI/CD OK (Governance Limited)';
+    } else if (isFullyHealthy) {
         cicdBtn.className = 'cicd-health-btn cicd-health-btn--healthy';
         cicdBtn.title = 'CI/CD Healthy';
     } else {
@@ -1521,12 +1531,18 @@ function renderHeader() {
         const tooltip = document.createElement('div');
         tooltip.className = 'cicd-health-tooltip';
 
-        // Header
+        // Header - VTID-0541 D4: Show proper status distinction
         const tooltipHeader = document.createElement('div');
         tooltipHeader.className = 'cicd-health-tooltip__header';
-        tooltipHeader.innerHTML = isHealthy
-            ? '<span class="cicd-health-tooltip__status cicd-health-tooltip__status--healthy">&#9829; CI/CD Healthy</span>'
-            : '<span class="cicd-health-tooltip__status cicd-health-tooltip__status--error">&#9829; CI/CD Issues</span>';
+        if (isDegraded) {
+            tooltipHeader.innerHTML = '<span class="cicd-health-tooltip__status cicd-health-tooltip__status--error">&#9829; CI/CD Degraded</span>';
+        } else if (isGovernanceLimited) {
+            tooltipHeader.innerHTML = '<span class="cicd-health-tooltip__status cicd-health-tooltip__status--warning">&#9829; CI/CD OK (Governance Limited)</span>';
+        } else if (isFullyHealthy) {
+            tooltipHeader.innerHTML = '<span class="cicd-health-tooltip__status cicd-health-tooltip__status--healthy">&#9829; CI/CD Healthy</span>';
+        } else {
+            tooltipHeader.innerHTML = '<span class="cicd-health-tooltip__status">&#9829; CI/CD Status</span>';
+        }
         tooltip.appendChild(tooltipHeader);
 
         // Status details
@@ -6478,12 +6494,28 @@ function renderPublishModal() {
         body.appendChild(instructionBox);
     }
 
-    // CI/CD Health Warning
-    if (state.cicdHealth && state.cicdHealth.status === 'degraded') {
-        const cicdWarning = document.createElement('div');
-        cicdWarning.style.cssText = 'background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; font-size: 13px; color: #f87171;';
-        cicdWarning.innerHTML = `<strong>⚠ CI/CD Degraded:</strong> Deployment may fail. Check CI/CD health before proceeding.`;
-        body.appendChild(cicdWarning);
+    // VTID-0541 D4: CI/CD Health Warning with proper distinction
+    // - 'degraded': Runtime is broken - show error warning
+    // - 'ok_governance_limited': Runtime OK but governance features unavailable - show info warning
+    // - 'ok': All good - no warning
+    if (state.cicdHealth) {
+        const healthStatus = state.cicdHealth.status;
+        const runtimeHealth = state.cicdHealth.health?.runtime_deploy;
+
+        if (healthStatus === 'degraded' || runtimeHealth === 'degraded') {
+            // Runtime actually broken - show red error warning
+            const cicdWarning = document.createElement('div');
+            cicdWarning.style.cssText = 'background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; font-size: 13px; color: #f87171;';
+            cicdWarning.innerHTML = `<strong>⚠ CI/CD Degraded:</strong> Runtime deploy health is not available. Deployment may fail.`;
+            body.appendChild(cicdWarning);
+        } else if (healthStatus === 'ok_governance_limited') {
+            // Governance limited but runtime OK - show yellow informational warning
+            const govWarning = document.createElement('div');
+            govWarning.style.cssText = 'background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.25); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; font-size: 13px; color: #fbbf24;';
+            const note = state.cicdHealth.notes?.governance_limited || 'GitHub integration unavailable - some governance features are limited';
+            govWarning.innerHTML = `<strong>ℹ Governance Limited:</strong> ${note}. Deploy will proceed normally.`;
+            body.appendChild(govWarning);
+        }
     }
 
     modal.appendChild(body);
