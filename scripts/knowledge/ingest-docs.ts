@@ -19,6 +19,11 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+// ESM compatibility: Define __dirname for ESM modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Configuration
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -140,12 +145,63 @@ async function upsertDoc(
 
     if (!response.ok) {
       const errorText = await response.text();
+
+      // Check for common migration-related errors
+      if (errorText.includes('relation') && errorText.includes('does not exist')) {
+        return {
+          ok: false,
+          error: 'MIGRATION REQUIRED: knowledge_docs table does not exist. Please run the migration in Supabase SQL Editor: supabase/migrations/20251213000000_knowledge_docs.sql'
+        };
+      }
+      if (errorText.includes('function') && errorText.includes('does not exist')) {
+        return {
+          ok: false,
+          error: 'MIGRATION REQUIRED: upsert_knowledge_doc function does not exist. Please run the migration in Supabase SQL Editor: supabase/migrations/20251213000000_knowledge_docs.sql'
+        };
+      }
+
       return { ok: false, error: `Supabase error: ${response.status} - ${errorText}` };
     }
 
     return { ok: true };
   } catch (error: any) {
     return { ok: false, error: error.message };
+  }
+}
+
+/**
+ * Emit OASIS event for ingestion tracking
+ */
+async function emitOasisEvent(
+  type: string,
+  status: 'info' | 'success' | 'error',
+  message: string,
+  payload: Record<string, any>
+): Promise<void> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    return;
+  }
+
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/oasis_events`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_SERVICE_ROLE,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+        Prefer: 'return=minimal'
+      },
+      body: JSON.stringify({
+        vtid: 'VTID-0538',
+        type,
+        source: 'knowledge-ingest',
+        status,
+        message,
+        payload: JSON.stringify(payload)
+      })
+    });
+  } catch (e) {
+    // Silent fail for OASIS events - don't block ingestion
   }
 }
 
@@ -369,17 +425,72 @@ async function main() {
   // Summary
   const succeeded = allResults.filter(r => r.success).length;
   const failed = allResults.filter(r => !r.success).length;
+  const successfulPaths = allResults.filter(r => r.success).map(r => r.path);
 
   console.log('=====================================');
   console.log(`Ingestion complete: ${succeeded} succeeded, ${failed} failed`);
+
+  // Show first 3 successful paths for verification
+  if (succeeded > 0) {
+    console.log('\nExample ingested docs (first 3):');
+    for (const docPath of successfulPaths.slice(0, 3)) {
+      console.log(`  - ${docPath}`);
+    }
+    if (succeeded > 3) {
+      console.log(`  ... and ${succeeded - 3} more`);
+    }
+  }
+
+  // Emit OASIS event for tracking
+  if (succeeded > 0) {
+    await emitOasisEvent(
+      'knowledge.ingest.success',
+      'success',
+      `Knowledge Hub ingestion completed: ${succeeded} docs ingested`,
+      {
+        totalDocs: succeeded,
+        failedDocs: failed,
+        examplePaths: successfulPaths.slice(0, 5),
+        vtid: 'VTID-0538'
+      }
+    );
+    console.log('\n✓ OASIS event emitted: knowledge.ingest.success');
+  }
 
   if (failed > 0) {
     console.log('\nFailed documents:');
     for (const result of allResults.filter(r => !r.success)) {
       console.log(`  - ${result.path}: ${result.error}`);
     }
+
+    // Check if this is a migration issue
+    const migrationError = allResults.find(r => r.error?.includes('MIGRATION REQUIRED'));
+    if (migrationError) {
+      console.log('\n' + '='.repeat(60));
+      console.log('ACTION REQUIRED:');
+      console.log('The knowledge_docs table or upsert function does not exist.');
+      console.log('Please run this migration in Supabase SQL Editor:');
+      console.log('  supabase/migrations/20251213000000_knowledge_docs.sql');
+      console.log('='.repeat(60));
+    }
+
+    await emitOasisEvent(
+      'knowledge.ingest.error',
+      'error',
+      `Knowledge Hub ingestion had failures: ${failed} docs failed`,
+      {
+        totalDocs: succeeded,
+        failedDocs: failed,
+        failedPaths: allResults.filter(r => !r.success).slice(0, 5).map(r => ({ path: r.path, error: r.error })),
+        vtid: 'VTID-0538'
+      }
+    );
+
     process.exit(1);
   }
+
+  console.log('\n✅ VTID-0538: Knowledge Hub ingestion complete!');
+  console.log('Test with: curl -X POST "$GATEWAY_URL/api/v1/assistant/knowledge/search" -H "Content-Type: application/json" -d \'{"query":"OASIS"}\'');
 
   process.exit(0);
 }
