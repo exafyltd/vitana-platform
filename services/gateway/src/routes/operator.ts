@@ -938,7 +938,7 @@ router.post('/repair/vtid-0540', async (req: Request, res: Response) => {
         updated_at: timestamp
       };
 
-      const insertResp = await fetch(`${SUPABASE_URL}/rest/v1/VtidLedger`, {
+      const insertResp = await fetch(`${SUPABASE_URL}/rest/v1/vtid_ledger`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
