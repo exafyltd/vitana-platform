@@ -44,6 +44,70 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v2
 
       # =========================================================================
+      # VTID-0541: Orphan Deploy Prevention Gate (VTID Must Exist in OASIS)
+      # =========================================================================
+      - name: VTID Existence Check (VTID-0541)
+        id: vtid_check
+        run: |
+          set -e
+          VTID="${{ github.event.inputs.vtid }}"
+          SERVICE="${{ github.event.inputs.service }}"
+
+          echo "VTID-0541: Checking if VTID $VTID exists in OASIS ledger"
+
+          # Resolve gateway URL (current deployed instance)
+          GATEWAY_URL=$(gcloud run services describe gateway \
+            --region=us-central1 \
+            --project=lovable-vitana-vers1 \
+            --format="value(status.url)" 2>/dev/null || echo "")
+
+          if [ -z "$GATEWAY_URL" ]; then
+            echo "Warning: Could not resolve gateway URL. Skipping VTID existence check (first-time deploy scenario)."
+            echo "vtid_exists=skip" >> $GITHUB_OUTPUT
+            echo "vtid_gateway_url=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Using GATEWAY_URL=$GATEWAY_URL"
+          echo "vtid_gateway_url=$GATEWAY_URL" >> $GITHUB_OUTPUT
+
+          # Query VTID endpoint to check if task exists
+          RESPONSE=$(curl -s "$GATEWAY_URL/api/v1/vtid/$VTID" 2>&1 || echo '{"ok":false,"error":"request_failed"}')
+          echo "VTID query response: $RESPONSE"
+
+          # Check if VTID exists
+          OK=$(echo "$RESPONSE" | jq -r '.ok // empty')
+          ERROR=$(echo "$RESPONSE" | jq -r '.error // empty')
+
+          if [ "$OK" = "true" ]; then
+            echo "VTID-0541: ✓ VTID $VTID exists in OASIS ledger"
+            echo "vtid_exists=true" >> $GITHUB_OUTPUT
+          elif [ "$ERROR" = "not_found" ]; then
+            echo "::error::VTID-0541: VTID $VTID does NOT exist in OASIS ledger!"
+            echo "::error::All VTIDs must be registered BEFORE deployment to prevent orphan deploys."
+            echo "::error::Please create the VTID first via: POST /api/v1/vtid/create or the OASIS Task Ledger."
+            echo "vtid_exists=false" >> $GITHUB_OUTPUT
+
+            # Emit OASIS event for orphan deploy attempt
+            curl -s -X POST "$GATEWAY_URL/api/v1/oasis/events" \
+              -H "Content-Type: application/json" \
+              -H "X-VTID: VTID-0541" \
+              -d "{
+                \"type\": \"deploy.orphan.blocked\",
+                \"vtid\": \"$VTID\",
+                \"service\": \"$SERVICE\",
+                \"source\": \"ci_cd\",
+                \"message\": \"Orphan deploy blocked: VTID $VTID not registered in OASIS (VTID-0541)\",
+                \"details\": {\"workflow_run_id\": \"${{ github.run_id }}\"}
+              }" 2>/dev/null || true
+
+            exit 1
+          else
+            echo "Warning: Could not verify VTID existence (response: $RESPONSE). Proceeding with deploy."
+            echo "vtid_exists=unknown" >> $GITHUB_OUTPUT
+          fi
+
+      # =========================================================================
       # VTID-0416: Governance Evaluate Pre-Check (Hard Gate, Before Deploy)
       # =========================================================================
       - name: Governance Evaluate (VTID-0416)
@@ -58,10 +122,13 @@ jobs:
           echo "VTID-0416: Running governance pre-check for $SERVICE deploy"
 
           # Resolve gateway URL (current deployed instance)
-          GATEWAY_URL=$(gcloud run services describe gateway \
-            --region=us-central1 \
-            --project=lovable-vitana-vers1 \
-            --format="value(status.url)" 2>/dev/null || echo "")
+          GATEWAY_URL="${{ steps.vtid_check.outputs.vtid_gateway_url }}"
+          if [ -z "$GATEWAY_URL" ]; then
+            GATEWAY_URL=$(gcloud run services describe gateway \
+              --region=us-central1 \
+              --project=lovable-vitana-vers1 \
+              --format="value(status.url)" 2>/dev/null || echo "")
+          fi
 
           if [ -z "$GATEWAY_URL" ]; then
             echo "Warning: Could not resolve gateway URL. Proceeding with deploy (first-time deploy scenario)."

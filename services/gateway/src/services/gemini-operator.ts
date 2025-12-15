@@ -795,6 +795,7 @@ export async function executeTool(
  * - Uses Gemini API if GOOGLE_GEMINI_API_KEY is configured
  * - Falls back to local routing with conversational support if no AI backend
  * - Governance-limited status does NOT trigger fallback
+ * - Always includes provider/model metadata for transparency
  */
 export async function processWithGemini(input: {
   text: string;
@@ -842,9 +843,12 @@ export async function processWithGemini(input: {
         reply: finalResponse.reply,
         toolResults,
         meta: {
+          // VTID-0541: Explicit provider/model metadata for transparency
+          provider: 'gemini-api',
           model: 'gemini-pro',
+          mode: 'operator_gemini',
           tool_calls: geminiResponse.toolCalls.length,
-          vtid: 'VTID-0536'
+          vtid: 'VTID-0541'
         }
       };
     }
@@ -853,15 +857,23 @@ export async function processWithGemini(input: {
     return {
       reply: geminiResponse.reply,
       meta: {
+        // VTID-0541: Explicit provider/model metadata for transparency
+        provider: 'gemini-api',
         model: 'gemini-pro',
+        mode: 'operator_gemini',
         tool_calls: 0,
-        vtid: 'VTID-0536'
+        vtid: 'VTID-0541'
       }
     };
   } catch (error: any) {
     console.error(`[VTID-0536] Gemini processing error:`, error);
     // Fallback to local routing on error
-    return processLocalRouting(text, threadId);
+    const fallbackResponse = await processLocalRouting(text, threadId);
+    // Mark that this was a fallback due to error
+    if (fallbackResponse.meta) {
+      fallbackResponse.meta.fallback_reason = 'gemini_error';
+    }
+    return fallbackResponse;
   }
 }
 
@@ -1038,10 +1050,19 @@ If successful, confirm what was done and any next steps.`
  * Local routing fallback when Gemini is not available
  * VTID-0541 D3: Enhanced to support natural conversation
  * Uses keyword matching to determine tool calls
+ * Always includes provider/model/mode metadata for transparency
  */
 async function processLocalRouting(text: string, threadId: string): Promise<GeminiOperatorResponse> {
   const lowerText = text.toLowerCase().trim();
   const toolResults: GeminiToolResult[] = [];
+
+  // VTID-0541: Base metadata for local routing - always transparent about provider
+  const localRoutingMeta = {
+    provider: 'local-router',
+    model: 'keyword-matcher',
+    mode: 'operator_local',
+    vtid: 'VTID-0541'
+  };
 
   // VTID-0541 D3: Handle conversational messages first (greetings, thanks, etc.)
   // These should NOT fall back to Knowledge search - they should get friendly responses
@@ -1059,7 +1080,7 @@ async function processLocalRouting(text: string, threadId: string): Promise<Gemi
       if (response) {
         return {
           reply: response,
-          meta: { model: 'local-router', vtid: 'VTID-0541', conversational: true }
+          meta: { ...localRoutingMeta, conversational: true }
         };
       }
       // If response is null, fall through to the help message
@@ -1114,7 +1135,7 @@ async function processLocalRouting(text: string, threadId: string): Promise<Gemi
     } else {
       return {
         reply: 'I need a VTID to check the status. Please provide it in the format VTID-XXXX (e.g., "What is the status of VTID-0533?")',
-        meta: { model: 'local-router', vtid: 'VTID-0536' }
+        meta: localRoutingMeta
       };
     }
   }
@@ -1193,7 +1214,7 @@ async function processLocalRouting(text: string, threadId: string): Promise<Gemi
 - "How does governance work?"
 
 Could you rephrase your request, or let me know which of these you'd like help with?`,
-        meta: { model: 'local-router', vtid: 'VTID-0541', conversational: true }
+        meta: { ...localRoutingMeta, conversational: true }
       };
     }
 
@@ -1207,7 +1228,7 @@ Could you rephrase your request, or let me know which of these you'd like help w
 - **Vitana questions**: "What is OASIS?"
 
 What would you like to do?`,
-      meta: { model: 'local-router', vtid: 'VTID-0541' }
+      meta: localRoutingMeta
     };
   }
 
@@ -1242,9 +1263,8 @@ What would you like to do?`,
     reply: reply.trim() || 'Operation completed.',
     toolResults,
     meta: {
-      model: 'local-router',
-      tool_calls: toolResults.length,
-      vtid: 'VTID-0536'
+      ...localRoutingMeta,
+      tool_calls: toolResults.length
     }
   };
 }
