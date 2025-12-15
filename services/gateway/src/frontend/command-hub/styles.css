@@ -3345,6 +3345,12 @@ body {
   border-radius: 3px;
 }
 
+/* VTID-0539: Hide bundle fingerprint banner and footer for cleaner chat experience */
+.bundle-fingerprint-banner,
+.bundle-fingerprint-footer {
+  display: none !important;
+}
+
 /* VTID-0527: Additional stage detail styles */
 
 .task-stage-detail-loading {
