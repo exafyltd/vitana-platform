@@ -916,26 +916,13 @@ router.post('/repair/vtid-0540', async (req: Request, res: Response) => {
     } else {
       // Step 2: Create VTID-0540 entry
       const vtid0540Entry = {
-        id: randomUUID(),
         vtid: 'VTID-0540',
-        task_family: 'DEV',
-        task_module: 'GW',
+        title: 'Gemini Vertex ADC Health Gate Fix',
+        summary: 'Updated assistant routes health check to verify Vertex AI configuration. Retroactively registered by VTID-0541.',
         layer: 'DEV',
         module: 'GW',
-        title: 'Gemini Vertex ADC Health Gate Fix',
-        description_md: 'Updated assistant routes health check to verify Vertex AI configuration instead of GOOGLE_GEMINI_API_KEY. Retroactively registered by VTID-0541.',
         status: 'deployed',
-        tenant: 'vitana',
-        is_test: false,
-        metadata: {
-          created_by: 'system.repair',
-          repair_vtid: 'VTID-0541',
-          result: 'deployed',
-          layer: 'DEV',
-          note: 'Retroactively registered by VTID-0541'
-        },
-        created_at: '2025-12-15T10:00:00.000Z',
-        updated_at: timestamp
+        metadata: { repair_vtid: 'VTID-0541', note: 'Retroactively registered' }
       };
 
       const insertResp = await fetch(`${SUPABASE_URL}/rest/v1/vtid_ledger`, {
