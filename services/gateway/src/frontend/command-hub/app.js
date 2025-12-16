@@ -2739,10 +2739,16 @@ function handleTabClick(tabKey) {
 // Router Logic
 
 function getRouteFromPath(pathname) {
-    // 1. Try to find exact tab match
+    // DEV-COMHU-2025-0009: Normalize path - ensure trailing slash for consistent matching
+    var normalizedPath = pathname;
+    if (normalizedPath && !normalizedPath.endsWith('/')) {
+        normalizedPath = normalizedPath + '/';
+    }
+
+    // 1. Try to find exact tab match (with normalized path)
     for (const section of NAVIGATION_CONFIG) {
         for (const tab of section.tabs) {
-            if (pathname === tab.path) {
+            if (normalizedPath === tab.path) {
                 return { section: section.section, tab: tab.key };
             }
         }
@@ -2750,7 +2756,7 @@ function getRouteFromPath(pathname) {
 
     // 2. Try to find section base path match
     for (const section of NAVIGATION_CONFIG) {
-        if (pathname === section.basePath) {
+        if (normalizedPath === section.basePath) {
             // Default to first tab
             const firstTab = section.tabs[0];
             return { section: section.section, tab: firstTab ? firstTab.key : '' };
@@ -5028,8 +5034,9 @@ function renderVtidsView() {
 }
 
 /**
- * DEV-COMHU-2025-0008: Renders the OASIS > VTID Ledger view.
+ * DEV-COMHU-2025-0009: Renders the OASIS > VTID Ledger view.
  * Uses the same authoritative VTID Ledger API as Command Hub > VTIDs.
+ * Includes fingerprint for deployment verification.
  */
 function renderOasisVtidLedgerView() {
     var container = document.createElement('div');
@@ -5040,13 +5047,19 @@ function renderOasisVtidLedgerView() {
         fetchVtidLedger();
     }
 
-    // Header
+    // Header - always rendered immediately
     var header = document.createElement('div');
     header.className = 'vtids-header';
 
     var title = document.createElement('h2');
     title.textContent = 'VTID Ledger';
     header.appendChild(title);
+
+    // DEV-COMHU-2025-0009: Visible fingerprint for deployment proof
+    var fingerprint = document.createElement('span');
+    fingerprint.className = 'view-fingerprint';
+    fingerprint.textContent = 'View: OASIS_VTID_LEDGER_ACTIVE (DEV-COMHU-2025-0009)';
+    header.appendChild(fingerprint);
 
     var subtitle = document.createElement('p');
     subtitle.className = 'section-subtitle';
@@ -5086,15 +5099,15 @@ function renderOasisVtidLedgerView() {
     } else if (state.vtidLedger.fetched && !state.vtidLedger.error) {
         statusLine.textContent = 'Loaded ' + state.vtidLedger.items.length + ' VTIDs from Ledger';
     } else if (!state.vtidLedger.fetched) {
-        statusLine.textContent = 'VTID Ledger not yet loaded';
+        statusLine.textContent = 'Loading VTID Ledger...';
     }
     container.appendChild(statusLine);
 
-    // Content
+    // Content - always render a visible block
     var content = document.createElement('div');
     content.className = 'vtids-content';
 
-    if (state.vtidLedger.loading) {
+    if (state.vtidLedger.loading || (!state.vtidLedger.fetched && !state.vtidLedger.error)) {
         content.innerHTML = '<div class="placeholder-content">Loading VTID Ledger...</div>';
     } else if (state.vtidLedger.items.length === 0 && !state.vtidLedger.error) {
         content.innerHTML = '<div class="placeholder-content">No VTIDs found in ledger.</div>';

@@ -5396,6 +5396,20 @@ body {
   padding: 0.25rem 0;
 }
 
+/* DEV-COMHU-2025-0009: View fingerprint for deployment verification */
+.view-fingerprint {
+  display: inline-block;
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+  background: rgba(107, 114, 128, 0.1);
+  border: 1px solid rgba(107, 114, 128, 0.2);
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  margin-left: 1rem;
+  vertical-align: middle;
+  font-family: 'Courier New', monospace;
+}
+
 /* DEV-COMHU-2025-0008: VTID Status Badges */
 .vtid-status-badge {
   display: inline-block;
