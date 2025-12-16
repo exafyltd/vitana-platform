@@ -35,8 +35,7 @@ import {
   CicdDeployRequestSchema,
   CicdDeployResponse,
   ApprovalItem,
-  // VTID-0602: Approval action schema for deny endpoint
-  ApprovalActionRequestSchema,
+  // VTID-0603: Schema import removed - handler reads directly from req.body
 } from '../types/cicd';
 import githubService from '../services/github-service';
 import cicdEvents from '../services/oasis-event-service';
@@ -961,10 +960,9 @@ router.post('/approvals/:id/deny', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    // VTID-0602: Parse body using schema to ensure vtid is not stripped
-    const parsed = ApprovalActionRequestSchema.safeParse(req.body || {});
-    const reason = parsed.success ? parsed.data.reason : undefined;
-    const vtidFromBody = parsed.success ? parsed.data.vtid : undefined;
+    // VTID-0603: Read body.vtid DIRECTLY from req.body before any schema parsing
+    // This prevents vtid loss if schema validation fails or strips unknown fields
+    const { reason, vtid: vtidFromBody } = req.body || {};
 
     const prMatch = id.match(/^pr-(\d+)$/);
 
@@ -977,16 +975,13 @@ router.post('/approvals/:id/deny', async (req: Request, res: Response) => {
 
     const prNumber = parseInt(prMatch[1], 10);
 
-    // VTID-0602: Check body.vtid first
+    // VTID-0603: Validate body.vtid first - must read before any schema parse
     let vtid = 'UNKNOWN';
-    if (
-      typeof vtidFromBody === 'string' &&
-      /^VTID-\d{4}$/i.test(vtidFromBody.trim())
-    ) {
+    if (typeof vtidFromBody === 'string' && /^VTID-\d{4}$/i.test(vtidFromBody.trim())) {
       vtid = vtidFromBody.trim().toUpperCase();
     }
 
-    // VTID-0602: Fallback extraction ONLY if still UNKNOWN
+    // VTID-0603: Fallback extraction ONLY if still UNKNOWN (PR branch/title/body)
     if (vtid === 'UNKNOWN') {
       try {
         const pr = await githubService.getPullRequest(DEFAULT_REPO, prNumber);
