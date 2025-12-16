@@ -1,7 +1,7 @@
 // Vitana Dev Frontend Spec v2 Implementation - Task 3
 
 // VTID-0539: Operator Console Chat Experience Improvements
-console.log('🔥 COMMAND HUB BUNDLE: VTID-0539 LIVE 🔥');
+console.log('🔥 COMMAND HUB BUNDLE: DEV-COMHU-2025-0010-HEADER-FIX LIVE 🔥');
 
 // --- Configs ---
 
