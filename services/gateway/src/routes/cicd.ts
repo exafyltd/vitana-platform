@@ -958,7 +958,7 @@ router.post('/approvals/:id/approve', async (req: Request, res: Response) => {
 router.post('/approvals/:id/deny', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { reason } = req.body || {};
+    const { reason, vtid: vtidFromBody } = req.body || {};
 
     const prMatch = id.match(/^pr-(\d+)$/);
 
@@ -971,16 +971,27 @@ router.post('/approvals/:id/deny', async (req: Request, res: Response) => {
 
     const prNumber = parseInt(prMatch[1], 10);
 
-    // Get PR details for VTID extraction
+    // VTID-0602: Check body.vtid first
     let vtid = 'UNKNOWN';
-    try {
-      const pr = await githubService.getPullRequest(DEFAULT_REPO, prNumber);
-      const branchMatch = pr.head.ref.match(/VTID-\d+/i) || pr.title.match(/VTID-\d+/i);
-      if (branchMatch) {
-        vtid = branchMatch[0].toUpperCase();
+    if (
+      typeof vtidFromBody === 'string' &&
+      /^VTID-\d{4}$/i.test(vtidFromBody.trim())
+    ) {
+      vtid = vtidFromBody.trim().toUpperCase();
+    }
+
+    // VTID-0602: Fallback extraction ONLY if still UNKNOWN
+    if (vtid === 'UNKNOWN') {
+      try {
+        const pr = await githubService.getPullRequest(DEFAULT_REPO, prNumber);
+        const m =
+          pr.head.ref.match(/VTID-\d{4}/i) ||
+          pr.title.match(/VTID-\d{4}/i) ||
+          (pr.body ? pr.body.match(/VTID-\d{4}/i) : null);
+        if (m) vtid = m[0].toUpperCase();
+      } catch {
+        // keep UNKNOWN
       }
-    } catch {
-      // PR might not exist, continue with UNKNOWN VTID
     }
 
     // Emit denial event
