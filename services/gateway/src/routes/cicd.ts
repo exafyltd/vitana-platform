@@ -35,6 +35,8 @@ import {
   CicdDeployRequestSchema,
   CicdDeployResponse,
   ApprovalItem,
+  // VTID-0602: Approval action schema for deny endpoint
+  ApprovalActionRequestSchema,
 } from '../types/cicd';
 import githubService from '../services/github-service';
 import cicdEvents from '../services/oasis-event-service';
@@ -958,7 +960,11 @@ router.post('/approvals/:id/approve', async (req: Request, res: Response) => {
 router.post('/approvals/:id/deny', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { reason, vtid: vtidFromBody } = req.body || {};
+
+    // VTID-0602: Parse body using schema to ensure vtid is not stripped
+    const parsed = ApprovalActionRequestSchema.safeParse(req.body || {});
+    const reason = parsed.success ? parsed.data.reason : undefined;
+    const vtidFromBody = parsed.success ? parsed.data.vtid : undefined;
 
     const prMatch = id.match(/^pr-(\d+)$/);
 
