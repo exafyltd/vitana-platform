@@ -951,18 +951,21 @@ router.post('/approvals/:id/approve', async (req: Request, res: Response) => {
 });
 
 /**
- * VTID-0601: POST /approvals/:id/deny - Deny approval request
+ * VTID-0604: POST /approvals/:id/deny - Deny approval request
  *
  * This endpoint denies an approval request without taking action.
  * It emits an event for audit purposes.
+ *
+ * VTID-0604: body.vtid is the ONLY authoritative VTID source.
+ * NO fallback extraction from PR branch/title/body.
+ * If body.vtid is missing or invalid, use UNKNOWN.
  */
 router.post('/approvals/:id/deny', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    // VTID-0603: Read body.vtid DIRECTLY from req.body before any schema parsing
-    // This prevents vtid loss if schema validation fails or strips unknown fields
-    const { reason, vtid: vtidFromBody } = req.body || {};
+    // VTID-0604: Read vtid and reason DIRECTLY from req.body
+    const { vtid: rawVtid, reason } = req.body || {};
 
     const prMatch = id.match(/^pr-(\d+)$/);
 
@@ -975,25 +978,13 @@ router.post('/approvals/:id/deny', async (req: Request, res: Response) => {
 
     const prNumber = parseInt(prMatch[1], 10);
 
-    // VTID-0603: Validate body.vtid first - must read before any schema parse
+    // VTID-0604: Validate body.vtid strictly - NO fallback extraction
     let vtid = 'UNKNOWN';
-    if (typeof vtidFromBody === 'string' && /^VTID-\d{4}$/i.test(vtidFromBody.trim())) {
-      vtid = vtidFromBody.trim().toUpperCase();
+    if (typeof rawVtid === 'string' && /^VTID-\d{4}$/.test(rawVtid.trim())) {
+      vtid = rawVtid.trim().toUpperCase();
     }
 
-    // VTID-0603: Fallback extraction ONLY if still UNKNOWN (PR branch/title/body)
-    if (vtid === 'UNKNOWN') {
-      try {
-        const pr = await githubService.getPullRequest(DEFAULT_REPO, prNumber);
-        const m =
-          pr.head.ref.match(/VTID-\d{4}/i) ||
-          pr.title.match(/VTID-\d{4}/i) ||
-          (pr.body ? pr.body.match(/VTID-\d{4}/i) : null);
-        if (m) vtid = m[0].toUpperCase();
-      } catch {
-        // keep UNKNOWN
-      }
-    }
+    // NO OTHER VTID LOGIC ALLOWED - body.vtid is the only source
 
     // Emit denial event
     await cicdEvents.approvalDenied(vtid, id, 'merge', 'command-hub-user', reason);
