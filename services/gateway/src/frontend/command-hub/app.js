@@ -1936,6 +1936,12 @@ function renderTasksView() {
 
     container.appendChild(toolbar);
 
+    // DEV-COMHU-2025-0011: Fingerprint for deployment verification
+    var fingerprint = document.createElement('div');
+    fingerprint.className = 'view-fingerprint';
+    fingerprint.textContent = 'Data: VTID_LEDGER (DEV-COMHU-2025-0011)';
+    container.appendChild(fingerprint);
+
     // Golden Task Board
     const board = document.createElement('div');
     board.className = 'task-board';
@@ -2759,42 +2765,77 @@ function handleSplitScreenToggle(comboId) {
     renderApp();
 }
 
+/**
+ * DEV-COMHU-2025-0011: Status → Column mapping for VTID Ledger data.
+ * Maps VTID status values to the 3-column board layout.
+ */
 function mapStatusToColumn(status) {
-    if (!status) return 'Scheduled';
-    const s = status.toUpperCase();
-    if (['OPEN', 'PENDING', 'SCHEDULED', 'TODO'].includes(s)) return 'Scheduled';
-    if (['IN_PROGRESS', 'ACTIVE', 'RUNNING', 'IN PROGRESS'].includes(s)) return 'In Progress';
-    if (['COMPLETED', 'DONE', 'CLOSED', 'SUCCESS', 'FAILED'].includes(s)) return 'Completed';
+    var s = String(status || '').trim().toLowerCase();
+
+    // Scheduled column: scheduled, pending, created, registered
+    if (['scheduled', 'pending', 'created', 'registered'].includes(s)) return 'Scheduled';
+
+    // In Progress column: in_progress, executing, running
+    if (['in_progress', 'executing', 'running'].includes(s)) return 'In Progress';
+
+    // Completed column: deployed, completed, success, failed, blocked, cancelled
+    if (['deployed', 'completed', 'success', 'failed', 'blocked', 'cancelled'].includes(s)) return 'Completed';
+
+    // Fallback: unknown status → Scheduled (status label remains visible on card)
     return 'Scheduled';
 }
 
+/**
+ * DEV-COMHU-2025-0011: Fetch tasks from VTID Ledger API.
+ * Replaces previous /api/v1/oasis/tasks source with authoritative VTID Ledger.
+ * Data source: GET /api/v1/vtid/list (same as VTID Ledger UI)
+ */
 async function fetchTasks() {
     state.tasksLoading = true;
     renderApp();
 
     try {
-        const response = await fetch('/api/v1/oasis/tasks?limit=50');
-        if (!response.ok) throw new Error('Network response was not ok');
+        // DEV-COMHU-2025-0011: Use VTID Ledger as data source
+        var response = await fetch('/api/v1/vtid/list?limit=50');
+        if (!response.ok) throw new Error('VTID Ledger fetch failed: ' + response.status);
 
-        const json = await response.json();
-        const data = json.data || json;
+        var json = await response.json();
 
-        state.tasks = (Array.isArray(data) ? data : []).map(item => ({
-            id: item.id,
-            title: item.title,
-            status: item.status, // Raw status, mapped in UI
-            vtid: item.vtid,
-            summary: item.summary,
-            createdAt: item.created_at || item.createdAt // Capture date for filtering
-        }));
+        // Handle both array and wrapped response formats (same as fetchVtidLedger)
+        var items = [];
+        if (Array.isArray(json)) {
+            items = json;
+        } else if (json && Array.isArray(json.items)) {
+            items = json.items;
+        } else if (json && Array.isArray(json.vtids)) {
+            items = json.vtids;
+        } else if (json && Array.isArray(json.data)) {
+            items = json.data;
+        } else {
+            console.warn('[DEV-COMHU-2025-0011] Unexpected response format:', json);
+            items = [];
+        }
+
+        // Transform VTID ledger rows into task card model
+        state.tasks = items.map(function(item) {
+            return {
+                id: item.vtid,  // Use vtid as ID
+                title: item.title || item.vtid,  // Fallback to vtid if no title
+                status: item.status,  // Raw status, mapped in UI via mapStatusToColumn
+                vtid: item.vtid,
+                task_family: item.task_family,
+                layer: item.layer,
+                module: item.task_module,
+                summary: item.description || '',
+                createdAt: item.created_at  // Capture date for filtering
+            };
+        });
         state.tasksError = null;
+        console.log('[DEV-COMHU-2025-0011] Tasks loaded from VTID Ledger:', state.tasks.length, 'items');
     } catch (error) {
-        console.error('Failed to fetch tasks:', error);
+        console.error('[DEV-COMHU-2025-0011] Failed to fetch tasks from VTID Ledger:', error);
         state.tasksError = error.message;
-        // Fallback data for demo if API fails (optional, but good for dev)
-        state.tasks = [
-            { id: 1, title: 'Fallback Task 1', status: 'Scheduled', vtid: 'VTID-001', summary: 'Fallback data due to API error.', createdAt: '2023-10-27' }
-        ];
+        state.tasks = [];
     } finally {
         state.tasksLoading = false;
         renderApp();
