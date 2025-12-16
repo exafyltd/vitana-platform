@@ -2480,10 +2480,17 @@ function renderTaskModal() {
     titleGroup.innerHTML = '<label>Task Title</label><input type="text" class="form-control" placeholder="Enter title">';
     body.appendChild(titleGroup);
 
+    // VTID-0542: VTID is now auto-generated via allocator, show read-only preview
     const vtidGroup = document.createElement('div');
     vtidGroup.className = 'form-group';
-    vtidGroup.innerHTML = '<label>VTID</label><input type="text" class="form-control" placeholder="VTID-XXXX">';
+    vtidGroup.innerHTML = '<label>VTID</label><input type="text" class="form-control" placeholder="Auto-generated" readonly disabled style="background:#f5f5f5;color:#666;">';
     body.appendChild(vtidGroup);
+
+    const vtidNote = document.createElement('div');
+    vtidNote.className = 'form-note';
+    vtidNote.style.cssText = 'font-size:12px;color:#666;margin-top:-8px;margin-bottom:12px;';
+    vtidNote.textContent = 'VTID will be auto-allocated when you create the task (VTID-0542)';
+    body.appendChild(vtidNote);
 
     const statusGroup = document.createElement('div');
     statusGroup.className = 'form-group';
@@ -2518,20 +2525,14 @@ function renderTaskModal() {
         // Extract form values
         const titleInput = body.querySelector('.form-group:nth-child(1) input');
         const vtidInput = body.querySelector('.form-group:nth-child(2) input');
-        const statusSelect = body.querySelector('.form-group:nth-child(3) select');
+        const statusSelect = body.querySelector('.form-group:nth-child(4) select'); // Changed to 4th child due to note
 
         const title = titleInput.value.trim();
-        const vtid = vtidInput.value.trim();
         const status = statusSelect.value; // "Scheduled", "In Progress", "Completed"
 
         // Basic validation
         if (!title) {
             alert('Title is required');
-            return;
-        }
-
-        if (!vtid) {
-            alert('VTID is required');
             return;
         }
 
@@ -2545,38 +2546,79 @@ function renderTaskModal() {
             backendStatus = 'pending';
         }
 
-        // Prepare payload
-        const payload = {
-            title: title,
-            vtid: vtid,
-            status: backendStatus
-        };
-
         try {
             // Disable button to prevent double-submit
             createBtn.disabled = true;
-            createBtn.textContent = 'Creating...';
+            createBtn.textContent = 'Allocating VTID...';
 
-            const response = await fetch('/api/v1/oasis/tasks', {
+            // VTID-0542: Step 1 - Call the global allocator to get a VTID
+            const allocResponse = await fetch('/api/v1/vtid/allocate', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(payload)
+                body: JSON.stringify({
+                    source: 'command-hub',
+                    layer: 'DEV',
+                    module: 'COMHU'
+                })
             });
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                alert(`Error creating task: ${errorData.error || 'Unknown error'}`);
+            if (!allocResponse.ok) {
+                const errorData = await allocResponse.json();
+                if (errorData.error === 'allocator_disabled') {
+                    alert('VTID Allocator is not active yet. Contact administrator to enable VTID_ALLOCATOR_ENABLED.');
+                } else {
+                    alert(`Error allocating VTID: ${errorData.message || errorData.error || 'Unknown error'}`);
+                }
                 createBtn.disabled = false;
                 createBtn.textContent = 'Create';
                 return;
+            }
+
+            const allocResult = await allocResponse.json();
+            if (!allocResult.ok || !allocResult.vtid) {
+                alert('Failed to allocate VTID. Please try again.');
+                createBtn.disabled = false;
+                createBtn.textContent = 'Create';
+                return;
+            }
+
+            const vtid = allocResult.vtid;
+            console.log('[VTID-0542] Allocated VTID:', vtid, 'num:', allocResult.num);
+
+            // Update the VTID input to show allocated value
+            vtidInput.value = vtid;
+
+            createBtn.textContent = 'Creating task...';
+
+            // VTID-0542: Step 2 - Update the allocated task shell with title/status
+            const updatePayload = {
+                title: title,
+                status: backendStatus
+            };
+
+            const updateResponse = await fetch('/api/v1/oasis/tasks/' + encodeURIComponent(vtid), {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(updatePayload)
+            });
+
+            if (!updateResponse.ok) {
+                // Even if update fails, the task shell exists
+                console.warn('[VTID-0542] Task update failed, but VTID allocated:', vtid);
             }
 
             // Success! Close modal and refresh task list
             state.showTaskModal = false;
             fetchTasks(); // Refresh the task board
             renderApp();
+
+            // Show success message with allocated VTID
+            console.log('[VTID-0542] Task created successfully:', vtid);
+
         } catch (error) {
             console.error('Failed to create task:', error);
             alert(`Failed to create task: ${error.message}`);

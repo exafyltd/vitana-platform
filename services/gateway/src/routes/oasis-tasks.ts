@@ -4,6 +4,13 @@ import { randomUUID } from 'crypto';
 
 export const oasisTasksRouter = Router();
 
+// ===========================================================================
+// VTID-0542: Global VTID Allocator Feature Flags
+// ===========================================================================
+
+// When enabled, manual VTID creation is blocked - must use allocator
+const VTID_ALLOCATOR_ENABLED = process.env.VTID_ALLOCATOR_ENABLED === 'true';
+
 const TaskCreateSchema = z.object({
   title: z.string().min(1, "Title is required"),
   vtid: z.string().optional(),
@@ -66,6 +73,24 @@ oasisTasksRouter.post('/api/v1/oasis/tasks', async (req: Request, res: Response)
     const svcKey = process.env.SUPABASE_SERVICE_ROLE;
     const supabaseUrl = process.env.SUPABASE_URL;
     if (!svcKey || !supabaseUrl) return res.status(500).json({ error: 'Gateway misconfigured' });
+
+    // ===========================================================================
+    // VTID-0542 D5: Manual/CTO path rule enforcement guard
+    // When allocator is enabled, VTIDs MUST be allocated via /api/v1/vtid/allocate
+    // Manual VTID creation is blocked to prevent split-brain
+    // ===========================================================================
+    if (VTID_ALLOCATOR_ENABLED) {
+      console.log('[VTID-0542] D5 Guard: Allocator enabled, blocking manual task creation');
+      return res.status(403).json({
+        error: 'manual_vtid_blocked',
+        message: 'VTID must be allocated via POST /api/v1/vtid/allocate. Manual VTID creation is disabled when allocator is active.',
+        vtid: 'VTID-0542',
+        help: 'Use the Command Hub "+Task" button or Operator Console /task command to create tasks with auto-allocated VTIDs.'
+      });
+    }
+
+    // Legacy path: Only available when allocator is disabled
+    console.log('[VTID-0542] D5 Guard: Allocator disabled, allowing legacy manual creation');
 
     const vtid = body.vtid || `OASIS-TASK-${randomUUID().slice(0, 8).toUpperCase()}`;
     const payload = { vtid, title: body.title, summary: body.summary ?? null, layer: body.layer, module: body.module, status: body.status, assigned_to: body.assigned_to ?? null, metadata: body.metadata ?? null };

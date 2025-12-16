@@ -44,16 +44,20 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v2
 
       # =========================================================================
-      # VTID-0541: Orphan Deploy Prevention Gate (VTID Must Exist in OASIS)
+      # VTID-0541 + VTID-0542: Orphan Deploy Prevention Gate (HARD FAIL)
+      # VTID MUST exist in OASIS before deploy - no exceptions
       # =========================================================================
-      - name: VTID Existence Check (VTID-0541)
+      - name: VTID Existence Check (VTID-0541 + VTID-0542 HARD GATE)
         id: vtid_check
         run: |
           set -e
           VTID="${{ github.event.inputs.vtid }}"
           SERVICE="${{ github.event.inputs.service }}"
 
-          echo "VTID-0541: Checking if VTID $VTID exists in OASIS ledger"
+          echo "==========================================================================="
+          echo "VTID-0542: HARD GATE - VTID must exist in OASIS before deploy"
+          echo "==========================================================================="
+          echo "Checking if VTID $VTID exists in OASIS ledger..."
 
           # Resolve gateway URL (current deployed instance)
           GATEWAY_URL=$(gcloud run services describe gateway \
@@ -62,17 +66,18 @@ jobs:
             --format="value(status.url)" 2>/dev/null || echo "")
 
           if [ -z "$GATEWAY_URL" ]; then
-            echo "Warning: Could not resolve gateway URL. Skipping VTID existence check (first-time deploy scenario)."
-            echo "vtid_exists=skip" >> $GITHUB_OUTPUT
+            echo "::error::VTID-0542: HARD FAIL - Could not resolve gateway URL"
+            echo "Cannot verify VTID existence without gateway. Deploy blocked."
+            echo "vtid_exists=fail" >> $GITHUB_OUTPUT
             echo "vtid_gateway_url=" >> $GITHUB_OUTPUT
-            exit 0
+            exit 1
           fi
 
           echo "Using GATEWAY_URL=$GATEWAY_URL"
           echo "vtid_gateway_url=$GATEWAY_URL" >> $GITHUB_OUTPUT
 
           # Query VTID endpoint to check if task exists
-          RESPONSE=$(curl -s "$GATEWAY_URL/api/v1/vtid/$VTID" 2>&1 || echo '{"ok":false,"error":"request_failed"}')
+          RESPONSE=$(curl -s --max-time 30 "$GATEWAY_URL/api/v1/vtid/$VTID" 2>&1 || echo '{"ok":false,"error":"request_failed"}')
           echo "VTID query response: $RESPONSE"
 
           # Check if VTID exists
@@ -80,14 +85,26 @@ jobs:
           ERROR=$(echo "$RESPONSE" | jq -r '.error // empty')
 
           if [ "$OK" = "true" ]; then
-            echo "VTID-0541: ✓ VTID $VTID exists in OASIS ledger"
+            echo "VTID-0542: ✓ VTID $VTID exists in OASIS ledger - deploy allowed"
             echo "vtid_exists=true" >> $GITHUB_OUTPUT
           elif [ "$ERROR" = "not_found" ]; then
-            echo "::warning::VTID-0541: VTID $VTID not found in OASIS ledger (will be auto-registered post-deploy)"
+            echo "::error::VTID-0542: HARD FAIL - VTID $VTID not found in OASIS ledger"
+            echo ""
+            echo "Deploy blocked. VTID must be registered in OASIS before deploy."
+            echo ""
+            echo "To fix this issue:"
+            echo "  1. Create the VTID using POST /api/v1/vtid/allocate, OR"
+            echo "  2. Use Command Hub '+Task' button, OR"
+            echo "  3. Use Operator Console '/task' command"
+            echo ""
             echo "vtid_exists=false" >> $GITHUB_OUTPUT
+            exit 1
           else
-            echo "Warning: Could not verify VTID existence (response: $RESPONSE). Proceeding with deploy."
-            echo "vtid_exists=unknown" >> $GITHUB_OUTPUT
+            echo "::error::VTID-0542: HARD FAIL - OASIS unreachable or invalid response"
+            echo "Cannot verify VTID existence. Response: $RESPONSE"
+            echo "Deploy blocked until OASIS connectivity is restored."
+            echo "vtid_exists=error" >> $GITHUB_OUTPUT
+            exit 1
           fi
 
       # =========================================================================
