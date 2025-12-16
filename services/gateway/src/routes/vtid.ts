@@ -5,6 +5,129 @@ import { buildStageTimeline, defaultStageTimeline, type TimelineEvent, type Stag
 
 const router = Router();
 
+// ===========================================================================
+// VTID-0542: Global VTID Allocator Configuration
+// ===========================================================================
+
+// Feature flags for allocator activation
+// OFF until all 3 paths (Manual/CTO, Operator Console, Command Hub) are wired
+const VTID_ALLOCATOR_ENABLED = process.env.VTID_ALLOCATOR_ENABLED === 'true';
+const VTID_ALLOCATOR_START = parseInt(process.env.VTID_ALLOCATOR_START || '1000', 10);
+
+// Allocator response type
+interface AllocatorResponse {
+  ok: boolean;
+  vtid?: string;
+  num?: number;
+  id?: string;
+  error?: string;
+  message?: string;
+}
+
+/**
+ * POST /allocate → /api/v1/vtid/allocate
+ * VTID-0542: Global VTID Allocator
+ *
+ * Atomically allocates the next sequential VTID and creates a shell entry
+ * in the ledger. This ensures allocated == registered (no split-brain).
+ *
+ * Returns 409 if allocator is disabled (feature flag OFF).
+ */
+router.post("/allocate", async (req: Request, res: Response) => {
+  console.log(`[VTID-0542] Allocate request received, enabled=${VTID_ALLOCATOR_ENABLED}`);
+
+  // D2: Check feature flag - return 409 if disabled
+  if (!VTID_ALLOCATOR_ENABLED) {
+    console.log(`[VTID-0542] Allocator disabled, returning 409`);
+    return res.status(409).json({
+      ok: false,
+      error: 'allocator_disabled',
+      message: 'VTID allocator is not active. Enable VTID_ALLOCATOR_ENABLED=true after all 3 paths are wired.',
+      vtid: 'VTID-0542'
+    } as AllocatorResponse);
+  }
+
+  try {
+    const { supabaseUrl, svcKey } = getSupabaseConfig();
+
+    // Extract optional parameters from request body
+    const source = req.body?.source || 'api';
+    const layer = req.body?.layer || 'DEV';
+    const module = req.body?.module || 'TASK';
+
+    // Call the atomic allocation function
+    const resp = await fetch(supabaseUrl + "/rest/v1/rpc/allocate_global_vtid", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: svcKey,
+        Authorization: "Bearer " + svcKey
+      },
+      body: JSON.stringify({
+        p_source: source,
+        p_layer: layer,
+        p_module: module
+      }),
+    });
+
+    if (!resp.ok) {
+      const errorText = await resp.text();
+      console.error(`[VTID-0542] Allocation RPC failed: ${resp.status} - ${errorText}`);
+      return res.status(502).json({
+        ok: false,
+        error: 'allocation_failed',
+        message: `Database allocation failed: ${resp.statusText}`,
+      } as AllocatorResponse);
+    }
+
+    const result = await resp.json() as Array<{ vtid: string; num: number; id: string }>;
+
+    if (!result || result.length === 0) {
+      console.error(`[VTID-0542] Allocation returned empty result`);
+      return res.status(502).json({
+        ok: false,
+        error: 'allocation_empty',
+        message: 'Allocation function returned no result',
+      } as AllocatorResponse);
+    }
+
+    const allocated = result[0];
+    console.log(`[VTID-0542] Successfully allocated: ${allocated.vtid} (num=${allocated.num})`);
+
+    return res.status(201).json({
+      ok: true,
+      vtid: allocated.vtid,
+      num: allocated.num,
+      id: allocated.id,
+    } as AllocatorResponse);
+
+  } catch (e: any) {
+    console.error(`[VTID-0542] Allocation error:`, e);
+    return res.status(500).json({
+      ok: false,
+      error: 'internal_server_error',
+      message: e.message,
+    } as AllocatorResponse);
+  }
+});
+
+/**
+ * GET /allocator/status → /api/v1/vtid/allocator/status
+ * VTID-0542: Check allocator status and configuration
+ */
+router.get("/allocator/status", (_req: Request, res: Response) => {
+  return res.status(200).json({
+    ok: true,
+    enabled: VTID_ALLOCATOR_ENABLED,
+    start: VTID_ALLOCATOR_START,
+    format: 'VTID-XXXXX',
+    vtid: 'VTID-0542',
+    message: VTID_ALLOCATOR_ENABLED
+      ? 'Allocator is active. All task creation paths should use POST /api/v1/vtid/allocate.'
+      : 'Allocator is disabled. Set VTID_ALLOCATOR_ENABLED=true to activate.'
+  });
+});
+
 const VtidCreateSchema = z.object({
   task_family: z.enum(["DEV", "ADM", "GOVRN", "OASIS"]),
   task_module: z.string().min(1).max(10).transform((s) => s.toUpperCase()),

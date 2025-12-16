@@ -505,6 +505,7 @@ export async function getChatThreadHistory(threadId: string): Promise<ThreadHist
 }
 
 // ==================== VTID-0532: Task Extractor + Planner Handoff ====================
+// ==================== VTID-0542: Global VTID Allocator Integration ====================
 
 /**
  * Task creation result
@@ -513,6 +514,91 @@ export interface CreatedTask {
   vtid: string;
   title: string;
   mode: 'plan-only';
+}
+
+/**
+ * VTID-0542: Allocator response type
+ */
+interface AllocatorResponse {
+  ok: boolean;
+  vtid?: string;
+  num?: number;
+  id?: string;
+  error?: string;
+  message?: string;
+}
+
+/**
+ * VTID-0542: Allocate a VTID using the global allocator API
+ * Calls POST /api/v1/vtid/allocate internally via the gateway
+ *
+ * @param source - Source of the allocation (e.g., 'operator-chat', 'command-hub', 'manual')
+ * @param layer - Task layer (e.g., 'DEV', 'ADM', 'GOVRN')
+ * @param module - Task module (e.g., 'COMHU', 'TASK')
+ * @returns Allocator response with VTID if successful
+ */
+export async function allocateVtid(
+  source: string,
+  layer: string = 'DEV',
+  module: string = 'TASK'
+): Promise<AllocatorResponse> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    console.warn('[VTID-0542] Supabase not configured for allocator');
+    return { ok: false, error: 'not_configured', message: 'Supabase not configured' };
+  }
+
+  try {
+    // Call the allocate_global_vtid RPC directly
+    const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/allocate_global_vtid`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_SERVICE_ROLE,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`
+      },
+      body: JSON.stringify({
+        p_source: source,
+        p_layer: layer,
+        p_module: module
+      })
+    });
+
+    if (!resp.ok) {
+      const errorText = await resp.text();
+      console.warn(`[VTID-0542] Allocator RPC failed: ${resp.status} - ${errorText}`);
+
+      // Check if it's a "function not found" error (allocator not yet deployed)
+      if (resp.status === 404 || errorText.includes('function') || errorText.includes('does not exist')) {
+        return {
+          ok: false,
+          error: 'allocator_not_deployed',
+          message: 'Global allocator function not yet deployed. Run migration 20251216_vtid_0542_global_allocator.sql'
+        };
+      }
+
+      return { ok: false, error: 'allocation_failed', message: errorText };
+    }
+
+    const result = await resp.json() as Array<{ vtid: string; num: number; id: string }>;
+
+    if (!result || result.length === 0) {
+      console.warn('[VTID-0542] Allocator returned empty result');
+      return { ok: false, error: 'allocation_empty', message: 'No result from allocator' };
+    }
+
+    const allocated = result[0];
+    console.log(`[VTID-0542] Allocated VTID: ${allocated.vtid} (num=${allocated.num}, source=${source})`);
+
+    return {
+      ok: true,
+      vtid: allocated.vtid,
+      num: allocated.num,
+      id: allocated.id
+    };
+  } catch (error: any) {
+    console.warn(`[VTID-0542] Allocator error: ${error.message}`);
+    return { ok: false, error: 'internal_error', message: error.message };
+  }
 }
 
 /**
@@ -728,7 +814,63 @@ export async function emitTaskSpecEvent(params: {
 }
 
 /**
+ * VTID-0542: Update an allocated task shell with actual task data
+ * Updates the existing row created by the allocator
+ */
+async function updateAllocatedTaskEntry(params: {
+  vtid: string;
+  title: string;
+  summary: string;
+  status: string;
+  metadata: Record<string, unknown>;
+}): Promise<boolean> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    console.warn('[VTID-0542] Supabase not configured');
+    return false;
+  }
+
+  try {
+    const updatePayload = {
+      title: params.title,
+      description: params.summary,
+      summary: params.summary,
+      description_md: params.summary,
+      status: params.status,
+      metadata: params.metadata,
+      updated_at: new Date().toISOString()
+    };
+
+    const resp = await fetch(
+      `${SUPABASE_URL}/rest/v1/VtidLedger?vtid=eq.${encodeURIComponent(params.vtid)}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_SERVICE_ROLE,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+          Prefer: 'return=minimal'
+        },
+        body: JSON.stringify(updatePayload)
+      }
+    );
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.warn(`[VTID-0542] Task update failed: ${resp.status} - ${text}`);
+      return false;
+    }
+
+    console.log(`[VTID-0542] Task entry updated: ${params.vtid}`);
+    return true;
+  } catch (error: any) {
+    console.warn(`[VTID-0542] Task update error: ${error.message}`);
+    return false;
+  }
+}
+
+/**
  * Create VTID + Task entry + Task Spec event for an operator task request
+ * VTID-0542: Now uses the global allocator for VTID generation
  * @returns CreatedTask if successful, undefined otherwise
  */
 export async function createOperatorTask(params: {
@@ -742,34 +884,67 @@ export async function createOperatorTask(params: {
   const layer = 'DEV';
   const module = 'COMHU';
 
-  // Generate VTID
-  const vtid = await generateVtid(layer, module);
-  if (!vtid) {
-    console.warn('[VTID-0532] Failed to generate VTID');
-    return undefined;
-  }
-
   // Extract title from description
   const title = extractTitle(rawDescription);
 
-  // Insert task entry
-  const inserted = await insertTaskEntry({
-    vtid,
-    layer,
-    module,
-    title,
-    summary: rawDescription,
-    status: 'pending',
-    metadata: {
-      source: 'operator-chat',
-      threadId: sourceThreadId,
-      createdVia: 'task-extractor'
-    }
-  });
+  // VTID-0542: Use global allocator instead of legacy generateVtid
+  const allocResult = await allocateVtid('operator-chat', layer, module);
 
-  if (!inserted) {
-    console.warn(`[VTID-0532] Failed to insert task entry for ${vtid}`);
-    return undefined;
+  let vtid: string;
+
+  if (allocResult.ok && allocResult.vtid) {
+    // Allocator succeeded - update the shell entry with actual task data
+    vtid = allocResult.vtid;
+    console.log(`[VTID-0542] Using allocated VTID: ${vtid}`);
+
+    const updated = await updateAllocatedTaskEntry({
+      vtid,
+      title,
+      summary: rawDescription,
+      status: 'pending',
+      metadata: {
+        source: 'operator-chat',
+        threadId: sourceThreadId,
+        createdVia: 'vtid-0542-allocator',
+        allocatedNum: allocResult.num
+      }
+    });
+
+    if (!updated) {
+      console.warn(`[VTID-0542] Failed to update allocated task entry for ${vtid}`);
+      // Continue anyway since the shell entry exists
+    }
+  } else {
+    // Allocator failed - fall back to legacy method for backwards compatibility
+    console.warn(`[VTID-0542] Allocator failed (${allocResult.error}), falling back to legacy generateVtid`);
+
+    const legacyVtid = await generateVtid(layer, module);
+    if (!legacyVtid) {
+      console.warn('[VTID-0532] Failed to generate VTID via legacy method');
+      return undefined;
+    }
+
+    vtid = legacyVtid;
+
+    // Insert task entry via legacy method
+    const inserted = await insertTaskEntry({
+      vtid,
+      layer,
+      module,
+      title,
+      summary: rawDescription,
+      status: 'pending',
+      metadata: {
+        source: 'operator-chat',
+        threadId: sourceThreadId,
+        createdVia: 'legacy-fallback'
+      }
+    });
+
+    if (!inserted) {
+      console.warn(`[VTID-0532] Failed to insert task entry for ${vtid}`);
+      return undefined;
+    }
   }
 
   // Emit task spec event
@@ -787,7 +962,7 @@ export async function createOperatorTask(params: {
     // Task was still created, so return it
   }
 
-  console.log(`[VTID-0532] Operator task created: ${vtid} - "${title}"`);
+  console.log(`[VTID-0542] Operator task created: ${vtid} - "${title}"`);
 
   return {
     vtid,
