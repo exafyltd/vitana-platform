@@ -705,21 +705,33 @@ router.get('/approvals', async (_req: Request, res: Response) => {
   try {
     const approvals: ApprovalItem[] = [];
 
-    // Fetch open PRs targeting main
-    const prsResponse = await fetch(`https://api.github.com/repos/${DEFAULT_REPO}/pulls?state=open&base=main&per_page=20`, {
+    // VTID-0601: Token resolution order - GITHUB_TOKEN first, then GH_TOKEN
+    const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+
+    if (!token) {
+      console.error('[VTID-0601] GitHub token not found in env');
+      return res.status(200).json({
+        ok: true,
+        approvals: [],
+        error: 'GitHub token not configured - cannot fetch PRs',
+      });
+    }
+
+    // VTID-0601: Fetch open PRs targeting main
+    const apiUrl = `https://api.github.com/repos/${DEFAULT_REPO}/pulls?state=open`;
+    const prsResponse = await fetch(apiUrl, {
       headers: {
-        'Accept': 'application/vnd.github+json',
-        'Authorization': `Bearer ${process.env.GITHUB_SAFE_MERGE_TOKEN}`,
-        'X-GitHub-Api-Version': '2022-11-28',
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json'
       },
     });
 
     if (!prsResponse.ok) {
-      console.error(`[VTID-0601] Failed to fetch PRs: ${prsResponse.status}`);
+      console.error(`[VTID-0601] GitHub PR fetch failed: ${prsResponse.status} ${apiUrl}`);
       return res.status(200).json({
         ok: true,
         approvals: [],
-        error: 'Failed to fetch PRs from GitHub',
+        error: `GitHub PR fetch failed: ${prsResponse.status}`,
       });
     }
 
