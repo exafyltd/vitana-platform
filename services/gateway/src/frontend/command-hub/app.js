@@ -1432,30 +1432,17 @@ function renderHeader() {
     const header = document.createElement('div');
     header.className = 'header-toolbar';
 
-    // --- Left Section: Heartbeat, Autopilot, Operator, Clock (VTID-0517) ---
+    // --- Left Section: Autopilot, Operator, Clock (DEV-COMHU-2025-0010: Heartbeat removed) ---
     const left = document.createElement('div');
     left.className = 'header-toolbar-left';
 
-    // 1. Heartbeat button (status button style) - VTID-0509/0517: Toggle between Standby/Live
-    const heartbeatBtn = document.createElement('button');
-    heartbeatBtn.className = state.operatorHeartbeatActive
-        ? 'header-button header-button--status header-button--active'
-        : 'header-button header-button--status';
-    heartbeatBtn.innerHTML = state.operatorHeartbeatActive
-        ? '<span class="header-button__label">Heartbeat</span><span class="header-button__state">Live</span>'
-        : '<span class="header-button__label">Heartbeat</span><span class="header-button__state">Standby</span>';
-    heartbeatBtn.onclick = () => {
-        toggleHeartbeatSession();
-    };
-    left.appendChild(heartbeatBtn);
-
-    // 2. Autopilot button (same style as Heartbeat)
+    // 1. Autopilot pill (neutral styling, no Standby text)
     const autopilotBtn = document.createElement('button');
-    autopilotBtn.className = 'header-button header-button--status';
-    autopilotBtn.innerHTML = '<span class="header-button__label">Autopilot</span><span class="header-button__state">Standby</span>';
+    autopilotBtn.className = 'header-pill header-pill--neutral';
+    autopilotBtn.textContent = 'Autopilot';
     left.appendChild(autopilotBtn);
 
-    // 3. Operator button (primary action style)
+    // 2. Operator button (primary action style)
     const operatorBtn = document.createElement('button');
     operatorBtn.className = 'header-button header-button--primary header-button--operator';
     operatorBtn.textContent = 'Operator';
@@ -1470,7 +1457,7 @@ function renderHeader() {
     };
     left.appendChild(operatorBtn);
 
-    // 4. Clock / Version History icon button (VTID-0524)
+    // 3. Clock / Version History icon button (VTID-0524) - neutral color
     const versionBtn = document.createElement('button');
     versionBtn.className = 'header-icon-button';
     versionBtn.title = 'Version History';
@@ -1501,12 +1488,33 @@ function renderHeader() {
 
     header.appendChild(left);
 
-    // --- Center Section: Publish button (VTID-0517) ---
+    // --- Center Section: Empty (Publish moved to right) ---
     const center = document.createElement('div');
     center.className = 'header-toolbar-center';
+    header.appendChild(center);
 
+    // --- Right Section: LIVE/OFFLINE pill + Publish (DEV-COMHU-2025-0010) ---
+    const right = document.createElement('div');
+    right.className = 'header-toolbar-right';
+
+    // DEV-COMHU-2025-0010: LIVE/OFFLINE pill replaces the green heart icon
+    // Uses same live state as the removed Heartbeat button (operatorHeartbeatActive)
+    const hasStageCounters = state.stageCounters && (state.stageCounters.PLANNER > 0 || state.stageCounters.WORKER > 0 || state.stageCounters.VALIDATOR > 0 || state.stageCounters.DEPLOY > 0 || state.lastTelemetryRefresh);
+    const isLive = state.operatorHeartbeatActive || hasStageCounters;
+
+    const statusPill = document.createElement('div');
+    if (isLive) {
+        statusPill.className = 'header-pill header-pill--live';
+        statusPill.innerHTML = '<span class="header-pill__dot"></span>LIVE';
+    } else {
+        statusPill.className = 'header-pill header-pill--offline';
+        statusPill.innerHTML = '<span class="header-pill__dot"></span>OFFLINE';
+    }
+    right.appendChild(statusPill);
+
+    // Publish pill (same size as LIVE/OFFLINE, only color differs)
     const publishBtn = document.createElement('button');
-    publishBtn.className = 'header-button header-button--publish';
+    publishBtn.className = 'header-pill header-pill--publish';
     publishBtn.textContent = 'Publish';
     publishBtn.onclick = async () => {
         state.showPublishModal = true;
@@ -1523,157 +1531,7 @@ function renderHeader() {
             }
         }
     };
-    center.appendChild(publishBtn);
-
-    header.appendChild(center);
-
-    // --- Right Section: CI/CD Health + LIVE status pill (VTID-0517/0520) ---
-    const right = document.createElement('div');
-    right.className = 'header-toolbar-right';
-
-    // CI/CD Health Indicator (VTID-0520 + VTID-0541 D4)
-    const cicdHealthIndicator = document.createElement('div');
-    cicdHealthIndicator.className = 'cicd-health-indicator';
-
-    // VTID-0541 D4: Determine health status with proper distinction
-    // - 'ok': Fully healthy (green)
-    // - 'ok_governance_limited': Runtime OK but governance limited (yellow)
-    // - 'degraded': Runtime broken (red)
-    const healthStatus = state.cicdHealth?.status;
-    const isFullyHealthy = state.cicdHealth && state.cicdHealth.ok === true && healthStatus === 'ok';
-    const isGovernanceLimited = healthStatus === 'ok_governance_limited';
-    const isDegraded = healthStatus === 'degraded' || (state.cicdHealth && state.cicdHealth.ok === false);
-    const hasError = state.cicdHealthError !== null || isDegraded;
-    const isLoading = state.cicdHealthLoading && !state.cicdHealth;
-
-    // Create heartbeat icon button
-    const cicdBtn = document.createElement('button');
-    if (isLoading) {
-        cicdBtn.className = 'cicd-health-btn cicd-health-btn--loading';
-        cicdBtn.title = 'CI/CD: Loading...';
-    } else if (hasError) {
-        cicdBtn.className = 'cicd-health-btn cicd-health-btn--error';
-        cicdBtn.title = state.cicdHealthError || 'CI/CD Runtime Degraded';
-    } else if (isGovernanceLimited) {
-        // VTID-0541 D4: Yellow state for governance limited (runtime OK)
-        cicdBtn.className = 'cicd-health-btn cicd-health-btn--warning';
-        cicdBtn.title = 'CI/CD OK (Governance Limited)';
-    } else if (isFullyHealthy) {
-        cicdBtn.className = 'cicd-health-btn cicd-health-btn--healthy';
-        cicdBtn.title = 'CI/CD Healthy';
-    } else {
-        cicdBtn.className = 'cicd-health-btn cicd-health-btn--unknown';
-        cicdBtn.title = 'CI/CD: Unknown';
-    }
-
-    // Heartbeat icon (Unicode heart with pulse effect via CSS)
-    const heartIcon = document.createElement('span');
-    heartIcon.className = 'cicd-health-icon';
-    // Using Unicode heart character (CSP compliant)
-    heartIcon.innerHTML = '&#9829;'; // ♥
-    cicdBtn.appendChild(heartIcon);
-
-    // Click handler to show tooltip/popup
-    cicdBtn.onclick = (e) => {
-        e.stopPropagation();
-        state.cicdHealthTooltipOpen = !state.cicdHealthTooltipOpen;
-        renderApp();
-    };
-
-    cicdHealthIndicator.appendChild(cicdBtn);
-
-    // Tooltip/popup with full status (VTID-0520)
-    if (state.cicdHealthTooltipOpen) {
-        const tooltip = document.createElement('div');
-        tooltip.className = 'cicd-health-tooltip';
-
-        // Header - VTID-0541 D4: Show proper status distinction
-        const tooltipHeader = document.createElement('div');
-        tooltipHeader.className = 'cicd-health-tooltip__header';
-        if (isDegraded) {
-            tooltipHeader.innerHTML = '<span class="cicd-health-tooltip__status cicd-health-tooltip__status--error">&#9829; CI/CD Degraded</span>';
-        } else if (isGovernanceLimited) {
-            tooltipHeader.innerHTML = '<span class="cicd-health-tooltip__status cicd-health-tooltip__status--warning">&#9829; CI/CD OK (Governance Limited)</span>';
-        } else if (isFullyHealthy) {
-            tooltipHeader.innerHTML = '<span class="cicd-health-tooltip__status cicd-health-tooltip__status--healthy">&#9829; CI/CD Healthy</span>';
-        } else {
-            tooltipHeader.innerHTML = '<span class="cicd-health-tooltip__status">&#9829; CI/CD Status</span>';
-        }
-        tooltip.appendChild(tooltipHeader);
-
-        // Status details
-        if (state.cicdHealth) {
-            const details = document.createElement('div');
-            details.className = 'cicd-health-tooltip__details';
-
-            // Status line
-            const statusLine = document.createElement('div');
-            statusLine.className = 'cicd-health-tooltip__row';
-            statusLine.innerHTML = '<span class="cicd-health-tooltip__label">Status:</span>' +
-                '<span class="cicd-health-tooltip__value">' + (state.cicdHealth.status || 'unknown') + '</span>';
-            details.appendChild(statusLine);
-
-            // Capabilities
-            if (state.cicdHealth.capabilities) {
-                const capsHeader = document.createElement('div');
-                capsHeader.className = 'cicd-health-tooltip__caps-header';
-                capsHeader.textContent = 'Capabilities';
-                details.appendChild(capsHeader);
-
-                for (const [key, value] of Object.entries(state.cicdHealth.capabilities)) {
-                    const capRow = document.createElement('div');
-                    capRow.className = 'cicd-health-tooltip__row';
-                    const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-                    capRow.innerHTML = '<span class="cicd-health-tooltip__label">' + label + ':</span>' +
-                        '<span class="cicd-health-tooltip__value cicd-health-tooltip__value--' + (value ? 'yes' : 'no') + '">' +
-                        (value ? 'Yes' : 'No') + '</span>';
-                    details.appendChild(capRow);
-                }
-            }
-
-            tooltip.appendChild(details);
-        } else if (state.cicdHealthError) {
-            const errorDetails = document.createElement('div');
-            errorDetails.className = 'cicd-health-tooltip__error';
-            errorDetails.textContent = 'Error: ' + state.cicdHealthError;
-            tooltip.appendChild(errorDetails);
-        } else {
-            const loadingDetails = document.createElement('div');
-            loadingDetails.className = 'cicd-health-tooltip__loading';
-            loadingDetails.textContent = 'Loading...';
-            tooltip.appendChild(loadingDetails);
-        }
-
-        // Last updated timestamp
-        const footer = document.createElement('div');
-        footer.className = 'cicd-health-tooltip__footer';
-        footer.textContent = 'Updated: ' + new Date().toLocaleTimeString();
-        tooltip.appendChild(footer);
-
-        cicdHealthIndicator.appendChild(tooltip);
-
-        // Click-outside handler
-        setTimeout(() => {
-            const closeTooltip = (e) => {
-                const tooltipEl = document.querySelector('.cicd-health-tooltip');
-                const btnEl = document.querySelector('.cicd-health-btn');
-                if (tooltipEl && !tooltipEl.contains(e.target) && btnEl && !btnEl.contains(e.target)) {
-                    state.cicdHealthTooltipOpen = false;
-                    document.removeEventListener('click', closeTooltip);
-                    renderApp();
-                }
-            };
-            document.addEventListener('click', closeTooltip);
-        }, 0);
-    }
-
-    right.appendChild(cicdHealthIndicator);
-
-    // LIVE pill (status indicator, not a button)
-    const livePill = document.createElement('div');
-    livePill.className = 'header-live-pill';
-    livePill.innerHTML = '<span class="header-live-pill__dot"></span>LIVE';
-    right.appendChild(livePill);
+    right.appendChild(publishBtn);
 
     header.appendChild(right);
 
@@ -2769,6 +2627,9 @@ function getRouteFromPath(pathname) {
 
 function formatTabLabel(key) {
     if (!key) return '';
+    // DEV-COMHU-2025-0010: Special case handling for VTID labels
+    if (key === 'vtid-ledger') return 'VTID Ledger';
+    if (key === 'vtids') return 'VTID´s';
     return key.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
 }
 
