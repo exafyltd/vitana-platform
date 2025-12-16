@@ -271,10 +271,13 @@ export interface CicdDeployResponse {
 
 /**
  * VTID-0601: Approval action request schema
+ * VTID-0602: Added optional vtid and reason fields with passthrough
  */
 export const ApprovalActionRequestSchema = z.object({
-  action: z.enum(['merge', 'deploy', 'merge+deploy']),
-});
+  action: z.enum(['merge', 'deploy', 'merge+deploy']).optional(),
+  reason: z.string().optional(),
+  vtid: z.string().optional(),
+}).passthrough();
 
 export type ApprovalActionRequest = z.infer<typeof ApprovalActionRequestSchema>;
 
