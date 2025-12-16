@@ -16,9 +16,10 @@ const PROTECTED_PATH = 'services/gateway/src/frontend/command-hub/';
 // VTID-0302: Original guard VTID
 // VTID-0539: Operator Console Chat Experience Improvements
 // VTID-0541: OASIS + CI/CD Alignment Repair (includes Publish modal semantics fix)
+// VTID-0542: Global VTID Allocator + 3-Path Cutover (includes +Task modal allocator wiring)
 // VTID-0600: Operational visibility foundation
 // VTID-0601: Autonomous Safe Merge & Deploy Control (includes Approvals UI)
-const ALLOWED_VTID_PATTERN = /DEV-COMHU-\d+|VTID-0302|VTID-0539|VTID-0541|VTID-0600|VTID-0601/i;
+const ALLOWED_VTID_PATTERN = /DEV-COMHU-\d+|VTID-0302|VTID-0539|VTID-0541|VTID-0542|VTID-0600|VTID-0601/i;
 
 function getChangedFiles() {
   try {
