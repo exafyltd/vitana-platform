@@ -5378,6 +5378,40 @@ body {
 .vtid-layer-adm { background: rgba(249, 115, 22, 0.15); color: #f97316; }
 .vtid-layer-unk { background: rgba(107, 114, 128, 0.15); color: #6b7280; }
 
+/* DEV-COMHU-2025-0008: VTID Ledger Error Banner & Status Line */
+.vtid-ledger-error-banner {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #ef4444;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+}
+
+.vtid-ledger-status-line {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  margin-bottom: 1rem;
+  padding: 0.25rem 0;
+}
+
+/* DEV-COMHU-2025-0008: VTID Status Badges */
+.vtid-status-badge {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.vtid-status-active { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+.vtid-status-completed { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+.vtid-status-pending { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.vtid-status-blocked { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+.vtid-status-unknown { background: rgba(107, 114, 128, 0.15); color: #6b7280; }
+
 /* --- Approvals View --- */
 .approvals-container {
   padding: 1.5rem;

@@ -434,6 +434,14 @@ const state = {
         selectedVtid: null
     },
 
+    // DEV-COMHU-2025-0008: VTID Ledger from authoritative API
+    vtidLedger: {
+        items: [],
+        loading: false,
+        error: null,
+        fetched: false
+    },
+
     // VTID-0600: Approvals UI Scaffolding
     approvals: {
         items: [],
@@ -854,6 +862,54 @@ function extractLayer(vtid) {
         return prefix;
     }
     return 'UNK';
+}
+
+/**
+ * DEV-COMHU-2025-0008: Fetch VTIDs from authoritative ledger API.
+ * Uses GET /api/v1/vtid/list - the canonical source of truth for VTIDs.
+ * Shows ledger-only VTIDs (0 events) immediately in UI.
+ */
+const VTID_LEDGER_LIMIT = 50;
+
+async function fetchVtidLedger() {
+    console.log('[DEV-COMHU-2025-0008] Fetching VTID ledger...');
+    state.vtidLedger.loading = true;
+    state.vtidLedger.error = null;
+    renderApp();
+
+    try {
+        var response = await fetch('/api/v1/vtid/list?limit=' + VTID_LEDGER_LIMIT);
+        if (!response.ok) {
+            throw new Error('VTID ledger fetch failed: ' + response.status);
+        }
+
+        var data = await response.json();
+
+        // Handle both array and wrapped response formats
+        var items = [];
+        if (Array.isArray(data)) {
+            items = data;
+        } else if (data && Array.isArray(data.items)) {
+            items = data.items;
+        } else if (data && Array.isArray(data.vtids)) {
+            items = data.vtids;
+        } else {
+            console.warn('[DEV-COMHU-2025-0008] Unexpected response format:', data);
+            items = [];
+        }
+
+        console.log('[DEV-COMHU-2025-0008] VTID ledger loaded:', items.length, 'VTIDs');
+        state.vtidLedger.items = items;
+        state.vtidLedger.error = null;
+        state.vtidLedger.fetched = true;
+    } catch (error) {
+        console.error('[DEV-COMHU-2025-0008] Failed to fetch VTID ledger:', error);
+        state.vtidLedger.error = error.message;
+        state.vtidLedger.items = [];
+    } finally {
+        state.vtidLedger.loading = false;
+        renderApp();
+    }
 }
 
 /**
@@ -1834,6 +1890,9 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'oasis' && tab === 'events') {
         // VTID-0600: OASIS Events View
         container.appendChild(renderOasisEventsView());
+    } else if (moduleKey === 'oasis' && tab === 'vtid-ledger') {
+        // DEV-COMHU-2025-0008: OASIS VTID Ledger View
+        container.appendChild(renderOasisVtidLedgerView());
     } else if (moduleKey === 'docs' && tab === 'screens') {
         container.appendChild(renderDocsScreensView());
     } else if (moduleKey === 'governance' && tab === 'rules') {
@@ -4812,15 +4871,92 @@ function renderCommandHubEventsView() {
 }
 
 /**
- * VTID-0600: Renders the Command Hub > VTIDs lifecycle view.
+ * DEV-COMHU-2025-0008: Shared VTID Ledger Table Renderer.
+ * Creates a table from ledger API data with standardized columns.
+ * Used by both Command Hub > VTIDs and OASIS > VTID Ledger views.
+ *
+ * @param {Array} items - VTID ledger items from API
+ * @returns {HTMLTableElement} The rendered table
+ */
+function renderVtidLedgerTable(items) {
+    var table = document.createElement('table');
+    table.className = 'vtids-table';
+
+    // Header row with required columns
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    ['VTID', 'Task Family', 'Module', 'Title', 'Status', 'Created', 'Last Event'].forEach(function(h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    // Body rows
+    var tbody = document.createElement('tbody');
+    items.forEach(function(item) {
+        var row = document.createElement('tr');
+        row.className = 'vtid-row';
+
+        // VTID column
+        var vtidCell = document.createElement('td');
+        vtidCell.className = 'vtid-cell';
+        vtidCell.textContent = item.vtid || '—';
+        row.appendChild(vtidCell);
+
+        // Task Family column
+        var familyCell = document.createElement('td');
+        familyCell.textContent = item.task_family || '—';
+        row.appendChild(familyCell);
+
+        // Module column
+        var moduleCell = document.createElement('td');
+        moduleCell.textContent = item.task_module || '—';
+        row.appendChild(moduleCell);
+
+        // Title column
+        var titleCell = document.createElement('td');
+        titleCell.textContent = item.title || '—';
+        row.appendChild(titleCell);
+
+        // Status column
+        var statusCell = document.createElement('td');
+        var statusBadge = document.createElement('span');
+        var statusVal = (item.status || 'unknown').toLowerCase();
+        statusBadge.className = 'vtid-status-badge vtid-status-' + statusVal;
+        statusBadge.textContent = item.status || 'unknown';
+        statusCell.appendChild(statusBadge);
+        row.appendChild(statusCell);
+
+        // Created column
+        var createdCell = document.createElement('td');
+        createdCell.textContent = item.created_at ? formatEventTimestamp(item.created_at) : '—';
+        row.appendChild(createdCell);
+
+        // Last Event column (show "—" if null)
+        var lastEventCell = document.createElement('td');
+        lastEventCell.textContent = item.last_event_at ? formatEventTimestamp(item.last_event_at) : '—';
+        row.appendChild(lastEventCell);
+
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+
+    return table;
+}
+
+/**
+ * DEV-COMHU-2025-0008: Renders the Command Hub > VTIDs view.
+ * Uses authoritative VTID Ledger API instead of events-based grouping.
  */
 function renderVtidsView() {
     var container = document.createElement('div');
     container.className = 'vtids-container';
 
-    // Auto-fetch VTIDs if not yet fetched
-    if (!state.vtidsList.fetched && !state.vtidsList.loading) {
-        fetchVtidsList();
+    // Auto-fetch VTIDs from ledger if not yet fetched
+    if (!state.vtidLedger.fetched && !state.vtidLedger.loading) {
+        fetchVtidLedger();
     }
 
     // Header
@@ -4828,29 +4964,17 @@ function renderVtidsView() {
     header.className = 'vtids-header';
 
     var title = document.createElement('h2');
-    title.textContent = 'VTID Lifecycle Overview';
+    title.textContent = 'VTIDs';
     header.appendChild(title);
 
     var subtitle = document.createElement('p');
     subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Track all VTIDs through their lifecycle stages: Planning, Working, Validation, and Deployment.';
+    subtitle.textContent = 'All VTIDs from the authoritative ledger. Includes ledger-only VTIDs with no events.';
     header.appendChild(subtitle);
 
     container.appendChild(header);
 
-    // Status legend
-    var legend = document.createElement('div');
-    legend.className = 'vtid-status-legend';
-    ['PL:Planner', 'WO:Worker', 'VA:Validator', 'DE:Deploy'].forEach(function(item) {
-        var parts = item.split(':');
-        var badge = document.createElement('span');
-        badge.className = 'vtid-stage-badge vtid-stage-' + parts[0].toLowerCase();
-        badge.textContent = parts[0] + ' = ' + parts[1];
-        legend.appendChild(badge);
-    });
-    container.appendChild(legend);
-
-    // Toolbar
+    // Toolbar with Refresh button
     var toolbar = document.createElement('div');
     toolbar.className = 'vtids-toolbar';
 
@@ -4858,82 +4982,125 @@ function renderVtidsView() {
     refreshBtn.className = 'btn';
     refreshBtn.textContent = 'Refresh';
     refreshBtn.onclick = function() {
-        fetchVtidsList();
+        state.vtidLedger.fetched = false;
+        fetchVtidLedger();
     };
     toolbar.appendChild(refreshBtn);
 
     container.appendChild(toolbar);
 
+    // Error banner (visible error, not console-only)
+    if (state.vtidLedger.error) {
+        var errorBanner = document.createElement('div');
+        errorBanner.className = 'vtid-ledger-error-banner';
+        errorBanner.textContent = 'Error loading VTIDs: ' + state.vtidLedger.error;
+        container.appendChild(errorBanner);
+    }
+
+    // Status line: "Loaded N VTIDs from Ledger"
+    var statusLine = document.createElement('div');
+    statusLine.className = 'vtid-ledger-status-line';
+    if (state.vtidLedger.loading) {
+        statusLine.textContent = 'Loading VTIDs from Ledger...';
+    } else if (state.vtidLedger.fetched && !state.vtidLedger.error) {
+        statusLine.textContent = 'Loaded ' + state.vtidLedger.items.length + ' VTIDs from Ledger';
+    } else if (!state.vtidLedger.fetched) {
+        statusLine.textContent = 'VTIDs not yet loaded';
+    }
+    container.appendChild(statusLine);
+
     // Content
     var content = document.createElement('div');
     content.className = 'vtids-content';
 
-    if (state.vtidsList.loading) {
-        content.innerHTML = '<div class="placeholder-content">Loading VTIDs...</div>';
-    } else if (state.vtidsList.error) {
-        content.innerHTML = '<div class="placeholder-content error-text">Error: ' + state.vtidsList.error + '</div>';
-    } else if (state.vtidsList.items.length === 0) {
-        content.innerHTML = '<div class="placeholder-content">No VTIDs found.</div>';
-    } else {
-        var table = document.createElement('table');
-        table.className = 'vtids-table';
+    if (state.vtidLedger.loading) {
+        content.innerHTML = '<div class="placeholder-content">Loading VTIDs from Ledger...</div>';
+    } else if (state.vtidLedger.items.length === 0 && !state.vtidLedger.error) {
+        content.innerHTML = '<div class="placeholder-content">No VTIDs found in ledger.</div>';
+    } else if (state.vtidLedger.items.length > 0) {
+        // Use shared table renderer
+        content.appendChild(renderVtidLedgerTable(state.vtidLedger.items));
+    }
 
-        var thead = document.createElement('thead');
-        var headerRow = document.createElement('tr');
-        ['VTID', 'Layer', 'Status', 'Services', 'Events', 'Last Activity'].forEach(function(h) {
-            var th = document.createElement('th');
-            th.textContent = h;
-            headerRow.appendChild(th);
-        });
-        thead.appendChild(headerRow);
-        table.appendChild(thead);
+    container.appendChild(content);
 
-        var tbody = document.createElement('tbody');
-        state.vtidsList.items.forEach(function(vtidEntry) {
-            var row = document.createElement('tr');
-            row.className = 'vtid-row';
+    return container;
+}
 
-            // VTID
-            var vtidCell = document.createElement('td');
-            vtidCell.className = 'vtid-cell';
-            vtidCell.textContent = vtidEntry.vtid;
-            row.appendChild(vtidCell);
+/**
+ * DEV-COMHU-2025-0008: Renders the OASIS > VTID Ledger view.
+ * Uses the same authoritative VTID Ledger API as Command Hub > VTIDs.
+ */
+function renderOasisVtidLedgerView() {
+    var container = document.createElement('div');
+    container.className = 'vtids-container';
 
-            // Layer
-            var layerCell = document.createElement('td');
-            var layerBadge = document.createElement('span');
-            layerBadge.className = 'vtid-layer-badge vtid-layer-' + vtidEntry.layer.toLowerCase();
-            layerBadge.textContent = vtidEntry.layer;
-            layerCell.appendChild(layerBadge);
-            row.appendChild(layerCell);
+    // Auto-fetch VTIDs from ledger if not yet fetched
+    if (!state.vtidLedger.fetched && !state.vtidLedger.loading) {
+        fetchVtidLedger();
+    }
 
-            // Status
-            var statusCell = document.createElement('td');
-            var statusBadge = document.createElement('span');
-            statusBadge.className = 'vtid-stage-badge vtid-stage-' + vtidEntry.status.toLowerCase();
-            statusBadge.textContent = vtidEntry.status;
-            statusCell.appendChild(statusBadge);
-            row.appendChild(statusCell);
+    // Header
+    var header = document.createElement('div');
+    header.className = 'vtids-header';
 
-            // Services
-            var servicesCell = document.createElement('td');
-            servicesCell.textContent = vtidEntry.services.join(', ') || '-';
-            row.appendChild(servicesCell);
+    var title = document.createElement('h2');
+    title.textContent = 'VTID Ledger';
+    header.appendChild(title);
 
-            // Events count
-            var eventsCell = document.createElement('td');
-            eventsCell.textContent = vtidEntry.events.length;
-            row.appendChild(eventsCell);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Authoritative VTID registry from OASIS. Shows all registered VTIDs including those with no events.';
+    header.appendChild(subtitle);
 
-            // Last activity
-            var lastCell = document.createElement('td');
-            lastCell.textContent = vtidEntry.latestEvent ? formatEventTimestamp(vtidEntry.latestEvent.created_at) : '-';
-            row.appendChild(lastCell);
+    container.appendChild(header);
 
-            tbody.appendChild(row);
-        });
-        table.appendChild(tbody);
-        content.appendChild(table);
+    // Toolbar with Refresh button
+    var toolbar = document.createElement('div');
+    toolbar.className = 'vtids-toolbar';
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn';
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.onclick = function() {
+        state.vtidLedger.fetched = false;
+        fetchVtidLedger();
+    };
+    toolbar.appendChild(refreshBtn);
+
+    container.appendChild(toolbar);
+
+    // Error banner (visible error, not console-only)
+    if (state.vtidLedger.error) {
+        var errorBanner = document.createElement('div');
+        errorBanner.className = 'vtid-ledger-error-banner';
+        errorBanner.textContent = 'Error loading VTID Ledger: ' + state.vtidLedger.error;
+        container.appendChild(errorBanner);
+    }
+
+    // Status line: "Loaded N VTIDs from Ledger"
+    var statusLine = document.createElement('div');
+    statusLine.className = 'vtid-ledger-status-line';
+    if (state.vtidLedger.loading) {
+        statusLine.textContent = 'Loading VTID Ledger...';
+    } else if (state.vtidLedger.fetched && !state.vtidLedger.error) {
+        statusLine.textContent = 'Loaded ' + state.vtidLedger.items.length + ' VTIDs from Ledger';
+    } else if (!state.vtidLedger.fetched) {
+        statusLine.textContent = 'VTID Ledger not yet loaded';
+    }
+    container.appendChild(statusLine);
+
+    // Content
+    var content = document.createElement('div');
+    content.className = 'vtids-content';
+
+    if (state.vtidLedger.loading) {
+        content.innerHTML = '<div class="placeholder-content">Loading VTID Ledger...</div>';
+    } else if (state.vtidLedger.items.length === 0 && !state.vtidLedger.error) {
+        content.innerHTML = '<div class="placeholder-content">No VTIDs found in ledger.</div>';
+    } else if (state.vtidLedger.items.length > 0) {
+        // Use shared table renderer
+        content.appendChild(renderVtidLedgerTable(state.vtidLedger.items));
     }
 
     container.appendChild(content);
