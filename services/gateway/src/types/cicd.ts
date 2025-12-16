@@ -272,6 +272,7 @@ export interface CicdDeployResponse {
 /**
  * VTID-0601: Approval action request schema
  * VTID-0602: Added optional vtid and reason fields with passthrough
+ * VTID-0603: Schema accepts vtid/reason; handler reads directly from req.body
  */
 export const ApprovalActionRequestSchema = z.object({
   action: z.enum(['merge', 'deploy', 'merge+deploy']).optional(),
