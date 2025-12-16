@@ -1,7 +1,7 @@
 // Vitana Dev Frontend Spec v2 Implementation - Task 3
 
 // VTID-0539: Operator Console Chat Experience Improvements
-console.log('🔥 COMMAND HUB BUNDLE: VTID-0539 LIVE 🔥');
+console.log('🔥 COMMAND HUB BUNDLE: DEV-COMHU-2025-0010-HEADER-FIX LIVE 🔥');
 
 // --- Configs ---
 
@@ -1436,16 +1436,16 @@ function renderHeader() {
     const left = document.createElement('div');
     left.className = 'header-toolbar-left';
 
-    // 1. Autopilot pill (neutral styling, no Standby text)
+    // 1. Autopilot pill (neutral styling, uppercase)
     const autopilotBtn = document.createElement('button');
     autopilotBtn.className = 'header-pill header-pill--neutral';
-    autopilotBtn.textContent = 'Autopilot';
+    autopilotBtn.textContent = 'AUTOPILOT';
     left.appendChild(autopilotBtn);
 
-    // 2. Operator button (primary action style)
+    // 2. Operator pill (same size as Autopilot, uppercase, orange accent)
     const operatorBtn = document.createElement('button');
-    operatorBtn.className = 'header-button header-button--primary header-button--operator';
-    operatorBtn.textContent = 'Operator';
+    operatorBtn.className = 'header-pill header-pill--operator';
+    operatorBtn.textContent = 'OPERATOR';
     operatorBtn.onclick = () => {
         state.operatorActiveTab = 'chat';
         state.isOperatorOpen = true;
@@ -1493,29 +1493,14 @@ function renderHeader() {
     center.className = 'header-toolbar-center';
     header.appendChild(center);
 
-    // --- Right Section: LIVE/OFFLINE pill + Publish (DEV-COMHU-2025-0010) ---
+    // --- Right Section: Publish + LIVE/OFFLINE with CI/CD dropdown ---
     const right = document.createElement('div');
     right.className = 'header-toolbar-right';
 
-    // DEV-COMHU-2025-0010: LIVE/OFFLINE pill replaces the green heart icon
-    // Uses same live state as the removed Heartbeat button (operatorHeartbeatActive)
-    const hasStageCounters = state.stageCounters && (state.stageCounters.PLANNER > 0 || state.stageCounters.WORKER > 0 || state.stageCounters.VALIDATOR > 0 || state.stageCounters.DEPLOY > 0 || state.lastTelemetryRefresh);
-    const isLive = state.operatorHeartbeatActive || hasStageCounters;
-
-    const statusPill = document.createElement('div');
-    if (isLive) {
-        statusPill.className = 'header-pill header-pill--live';
-        statusPill.innerHTML = '<span class="header-pill__dot"></span>LIVE';
-    } else {
-        statusPill.className = 'header-pill header-pill--offline';
-        statusPill.innerHTML = '<span class="header-pill__dot"></span>OFFLINE';
-    }
-    right.appendChild(statusPill);
-
-    // Publish pill (same size as LIVE/OFFLINE, only color differs)
+    // Publish pill (LEFT of LIVE, same size as LIVE/OFFLINE)
     const publishBtn = document.createElement('button');
     publishBtn.className = 'header-pill header-pill--publish';
-    publishBtn.textContent = 'Publish';
+    publishBtn.textContent = 'PUBLISH';
     publishBtn.onclick = async () => {
         state.showPublishModal = true;
         renderApp(); // Show modal immediately with loading state
@@ -1533,9 +1518,125 @@ function renderHeader() {
     };
     right.appendChild(publishBtn);
 
+    // LIVE/OFFLINE pill with CI/CD dropdown (restored from pre-0010)
+    const hasStageCounters = state.stageCounters && (state.stageCounters.PLANNER > 0 || state.stageCounters.WORKER > 0 || state.stageCounters.VALIDATOR > 0 || state.stageCounters.DEPLOY > 0 || state.lastTelemetryRefresh);
+    const isLive = state.operatorHeartbeatActive || hasStageCounters;
+
+    // CI/CD Health Indicator container (holds pill + dropdown)
+    const cicdHealthIndicator = document.createElement('div');
+    cicdHealthIndicator.className = 'cicd-health-indicator';
+
+    // VTID-0541 D4: Determine health status with proper distinction
+    const healthStatus = state.cicdHealth?.status;
+    const isFullyHealthy = state.cicdHealth && state.cicdHealth.ok === true && healthStatus === 'ok';
+    const isGovernanceLimited = healthStatus === 'ok_governance_limited';
+    const isDegraded = healthStatus === 'degraded' || (state.cicdHealth && state.cicdHealth.ok === false);
+
+    // LIVE/OFFLINE status pill (clickable to show CI/CD dropdown)
+    const statusPill = document.createElement('button');
+    if (isLive) {
+        statusPill.className = 'header-pill header-pill--live';
+        statusPill.innerHTML = '<span class="header-pill__dot"></span>LIVE';
+    } else {
+        statusPill.className = 'header-pill header-pill--offline';
+        statusPill.innerHTML = '<span class="header-pill__dot"></span>OFFLINE';
+    }
+    statusPill.onclick = (e) => {
+        e.stopPropagation();
+        state.cicdHealthTooltipOpen = !state.cicdHealthTooltipOpen;
+        renderApp();
+    };
+    cicdHealthIndicator.appendChild(statusPill);
+
+    // CI/CD Health Tooltip/Dropdown (restored from pre-0010)
+    if (state.cicdHealthTooltipOpen) {
+        const tooltip = document.createElement('div');
+        tooltip.className = 'cicd-health-tooltip';
+
+        // Header - VTID-0541 D4: Show proper status distinction
+        const tooltipHeader = document.createElement('div');
+        tooltipHeader.className = 'cicd-health-tooltip__header';
+        if (isDegraded) {
+            tooltipHeader.innerHTML = '<span class="cicd-health-tooltip__status cicd-health-tooltip__status--error">&#9829; CI/CD Degraded</span>';
+        } else if (isGovernanceLimited) {
+            tooltipHeader.innerHTML = '<span class="cicd-health-tooltip__status cicd-health-tooltip__status--warning">&#9829; CI/CD OK (Governance Limited)</span>';
+        } else if (isFullyHealthy) {
+            tooltipHeader.innerHTML = '<span class="cicd-health-tooltip__status cicd-health-tooltip__status--healthy">&#9829; CI/CD Healthy</span>';
+        } else {
+            tooltipHeader.innerHTML = '<span class="cicd-health-tooltip__status">&#9829; CI/CD Status</span>';
+        }
+        tooltip.appendChild(tooltipHeader);
+
+        // Status details
+        if (state.cicdHealth) {
+            const details = document.createElement('div');
+            details.className = 'cicd-health-tooltip__details';
+
+            // Status line
+            const statusLine = document.createElement('div');
+            statusLine.className = 'cicd-health-tooltip__row';
+            statusLine.innerHTML = '<span class="cicd-health-tooltip__label">Status:</span>' +
+                '<span class="cicd-health-tooltip__value">' + (state.cicdHealth.status || 'unknown') + '</span>';
+            details.appendChild(statusLine);
+
+            // Capabilities
+            if (state.cicdHealth.capabilities) {
+                const capsHeader = document.createElement('div');
+                capsHeader.className = 'cicd-health-tooltip__caps-header';
+                capsHeader.textContent = 'Capabilities';
+                details.appendChild(capsHeader);
+
+                for (const [key, value] of Object.entries(state.cicdHealth.capabilities)) {
+                    const capRow = document.createElement('div');
+                    capRow.className = 'cicd-health-tooltip__row';
+                    const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                    capRow.innerHTML = '<span class="cicd-health-tooltip__label">' + label + ':</span>' +
+                        '<span class="cicd-health-tooltip__value cicd-health-tooltip__value--' + (value ? 'yes' : 'no') + '">' +
+                        (value ? 'Yes' : 'No') + '</span>';
+                    details.appendChild(capRow);
+                }
+            }
+
+            tooltip.appendChild(details);
+        } else if (state.cicdHealthError) {
+            const errorDetails = document.createElement('div');
+            errorDetails.className = 'cicd-health-tooltip__error';
+            errorDetails.textContent = 'Error: ' + state.cicdHealthError;
+            tooltip.appendChild(errorDetails);
+        } else {
+            const loadingDetails = document.createElement('div');
+            loadingDetails.className = 'cicd-health-tooltip__loading';
+            loadingDetails.textContent = 'Loading...';
+            tooltip.appendChild(loadingDetails);
+        }
+
+        // Last updated timestamp
+        const footer = document.createElement('div');
+        footer.className = 'cicd-health-tooltip__footer';
+        footer.textContent = 'Updated: ' + new Date().toLocaleTimeString();
+        tooltip.appendChild(footer);
+
+        cicdHealthIndicator.appendChild(tooltip);
+
+        // Click-outside handler for CI/CD tooltip
+        setTimeout(() => {
+            const closeTooltip = (e) => {
+                const tooltipEl = document.querySelector('.cicd-health-tooltip');
+                const pillEl = document.querySelector('.header-pill--live, .header-pill--offline');
+                if (tooltipEl && !tooltipEl.contains(e.target) && pillEl && !pillEl.contains(e.target)) {
+                    state.cicdHealthTooltipOpen = false;
+                    document.removeEventListener('click', closeTooltip);
+                    renderApp();
+                }
+            };
+            document.addEventListener('click', closeTooltip);
+        }, 0);
+    }
+
+    right.appendChild(cicdHealthIndicator);
     header.appendChild(right);
 
-    // Add click-outside handler for dropdown
+    // Add click-outside handler for version dropdown
     if (state.isVersionDropdownOpen) {
         setTimeout(() => {
             const closeDropdown = (e) => {
