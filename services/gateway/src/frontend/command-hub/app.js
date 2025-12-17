@@ -1,7 +1,92 @@
 // Vitana Dev Frontend Spec v2 Implementation - Task 3
 
 // VTID-0539: Operator Console Chat Experience Improvements
-console.log('🔥 COMMAND HUB BUNDLE: DEV-COMHU-2025-0010-HEADER-FIX LIVE 🔥');
+// DEV-COMHU-2025-0012: Task Management v1 - Persisted Specs + Lifecycle + Approvals
+console.log('🔥 COMMAND HUB BUNDLE: DEV-COMHU-2025-0012-TASK-MGMT-V1 LIVE 🔥');
+
+// --- DEV-COMHU-2025-0012: LocalStorage Helpers for Task Management v1 ---
+
+/**
+ * DEV-COMHU-2025-0012: Get task spec from localStorage.
+ * Key: vitana.taskSpec.<VTID>
+ */
+function getTaskSpec(vtid) {
+    if (!vtid) return '';
+    try {
+        return localStorage.getItem('vitana.taskSpec.' + vtid) || '';
+    } catch (e) {
+        console.warn('[DEV-COMHU-2025-0012] localStorage read error:', e);
+        return '';
+    }
+}
+
+/**
+ * DEV-COMHU-2025-0012: Save task spec to localStorage.
+ */
+function saveTaskSpec(vtid, spec) {
+    if (!vtid) return false;
+    try {
+        localStorage.setItem('vitana.taskSpec.' + vtid, spec);
+        return true;
+    } catch (e) {
+        console.warn('[DEV-COMHU-2025-0012] localStorage write error:', e);
+        return false;
+    }
+}
+
+/**
+ * DEV-COMHU-2025-0012: Get task status override from localStorage.
+ * Key: vitana.taskStatusOverride.<VTID>
+ */
+function getTaskStatusOverride(vtid) {
+    if (!vtid) return null;
+    try {
+        return localStorage.getItem('vitana.taskStatusOverride.' + vtid);
+    } catch (e) {
+        console.warn('[DEV-COMHU-2025-0012] localStorage read error:', e);
+        return null;
+    }
+}
+
+/**
+ * DEV-COMHU-2025-0012: Save task status override to localStorage.
+ */
+function setTaskStatusOverride(vtid, status) {
+    if (!vtid) return false;
+    try {
+        localStorage.setItem('vitana.taskStatusOverride.' + vtid, status);
+        return true;
+    } catch (e) {
+        console.warn('[DEV-COMHU-2025-0012] localStorage write error:', e);
+        return false;
+    }
+}
+
+/**
+ * DEV-COMHU-2025-0012: Check if an approval is dismissed (localStorage suppression).
+ * Key: vitana.approvalsDismissed.<repo>#<pr>
+ */
+function isApprovalDismissed(repo, prNumber) {
+    if (!repo || !prNumber) return false;
+    try {
+        return localStorage.getItem('vitana.approvalsDismissed.' + repo + '#' + prNumber) === 'true';
+    } catch (e) {
+        return false;
+    }
+}
+
+/**
+ * DEV-COMHU-2025-0012: Dismiss an approval (store in localStorage).
+ */
+function dismissApproval(repo, prNumber) {
+    if (!repo || !prNumber) return false;
+    try {
+        localStorage.setItem('vitana.approvalsDismissed.' + repo + '#' + prNumber, 'true');
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
 
 // --- Configs ---
 
@@ -1942,6 +2027,12 @@ function renderTasksView() {
     fingerprint.textContent = 'Data: VTID_LEDGER (DEV-COMHU-2025-0011)';
     container.appendChild(fingerprint);
 
+    // DEV-COMHU-2025-0012: Task Management v1 fingerprint
+    var fingerprint2 = document.createElement('div');
+    fingerprint2.className = 'view-fingerprint';
+    fingerprint2.textContent = 'Task Mgmt v1: LOCAL (DEV-COMHU-2025-0012)';
+    container.appendChild(fingerprint2);
+
     // Golden Task Board
     const board = document.createElement('div');
     board.className = 'task-board';
@@ -1973,9 +2064,10 @@ function renderTasksView() {
         content.className = 'column-content';
 
         // Filter tasks
+        // DEV-COMHU-2025-0012: Use override-aware column mapping for local status transitions
         const colTasks = state.tasks.filter(t => {
-            // Status match
-            if (mapStatusToColumn(t.status) !== colName) return false;
+            // Status match (with local override support)
+            if (mapStatusToColumnWithOverride(t.vtid, t.status) !== colName) return false;
 
             // Search query
             if (state.taskSearchQuery) {
@@ -2004,10 +2096,21 @@ function renderTasksView() {
     return container;
 }
 
+/**
+ * DEV-COMHU-2025-0012: Enhanced task card with richer design.
+ * Matches VTID-0540 style: Title (larger) + VTID line (blue) + Status pill + Stage badges.
+ * GOLDEN-MARKER: Base class 'task-card' preserved for VTID-0302 fingerprint check.
+ */
 function createTaskCard(task) {
+    // DEV-COMHU-2025-0012: Get effective status with local override support
+    var effectiveStatus = getEffectiveStatus(task.vtid, task.status);
+    var columnStatus = mapStatusToColumn(effectiveStatus);
+
     const card = document.createElement('div');
+    // VTID-0302: Golden fingerprint requires 'task-card' class pattern
     card.className = 'task-card';
-    card.dataset.status = mapStatusToColumn(task.status).toLowerCase().replace(' ', '-');
+    card.classList.add('task-card-enhanced');
+    card.dataset.status = columnStatus.toLowerCase().replace(' ', '-');
     card.onclick = () => {
         state.selectedTask = task;
         state.selectedTaskDetail = null;
@@ -2017,26 +2120,38 @@ function createTaskCard(task) {
         fetchVtidDetail(task.vtid);
     };
 
+    // DEV-COMHU-2025-0012: Title (larger, prominent)
     const title = document.createElement('div');
-    title.className = 'title';
-    title.textContent = task.title;
+    title.className = 'task-card-title';
+    title.textContent = task.title || task.vtid;
     card.appendChild(title);
 
-    const meta = document.createElement('div');
-    meta.className = 'meta';
+    // DEV-COMHU-2025-0012: VTID line (blue label)
+    const vtidLine = document.createElement('div');
+    vtidLine.className = 'task-card-vtid-line';
+    const vtidLabel = document.createElement('span');
+    vtidLabel.className = 'task-card-vtid-label';
+    vtidLabel.textContent = task.vtid;
+    vtidLine.appendChild(vtidLabel);
+    card.appendChild(vtidLine);
 
-    const vtid = document.createElement('span');
-    vtid.className = 'vtid';
-    vtid.textContent = task.vtid;
-    meta.appendChild(vtid);
+    // DEV-COMHU-2025-0012: Status pill row
+    const statusRow = document.createElement('div');
+    statusRow.className = 'task-card-status-row';
 
-    const status = document.createElement('span');
-    status.textContent = task.status;
-    meta.appendChild(status);
+    const statusPill = document.createElement('span');
+    statusPill.className = 'task-card-status-pill task-card-status-pill-' + columnStatus.toLowerCase().replace(' ', '-');
+    // Show effective status (with indicator if overridden locally)
+    var statusText = effectiveStatus;
+    if (getTaskStatusOverride(task.vtid)) {
+        statusText = effectiveStatus + ' (local)';
+    }
+    statusPill.textContent = statusText;
+    statusRow.appendChild(statusPill);
 
-    card.appendChild(meta);
+    card.appendChild(statusRow);
 
-    // VTID-0527: Add stage timeline pills
+    // DEV-COMHU-2025-0012: Stage badges row (PL / WO / VA / DE)
     const stageTimeline = createTaskStageTimeline(task);
     card.appendChild(stageTimeline);
 
@@ -2083,18 +2198,23 @@ function createTaskStageTimeline(task) {
     return timeline;
 }
 
+/**
+ * DEV-COMHU-2025-0012: Task drawer with editable spec, lifecycle buttons.
+ */
 function renderTaskDrawer() {
     const drawer = document.createElement('div');
     drawer.className = `task-drawer ${state.selectedTask ? 'open' : ''}`;
 
     if (!state.selectedTask) return drawer;
 
+    const vtid = state.selectedTask.vtid;
+
     const header = document.createElement('div');
     header.className = 'drawer-header';
 
     const title = document.createElement('h2');
     title.className = 'drawer-title-text';
-    title.textContent = state.selectedTask.vtid;
+    title.textContent = vtid;
     header.appendChild(title);
 
     const closeBtn = document.createElement('button');
@@ -2113,6 +2233,14 @@ function renderTaskDrawer() {
     const content = document.createElement('div');
     content.className = 'drawer-content';
 
+    // DEV-COMHU-2025-0012: Show effective status (with local override indicator)
+    var effectiveStatus = getEffectiveStatus(vtid, state.selectedTask.status);
+    var statusDisplay = effectiveStatus;
+    var isLocalOverride = getTaskStatusOverride(vtid) !== null;
+    if (isLocalOverride) {
+        statusDisplay = effectiveStatus + ' (local override)';
+    }
+
     const summary = document.createElement('p');
     summary.className = 'task-summary-text';
     summary.textContent = state.selectedTask.summary;
@@ -2120,12 +2248,83 @@ function renderTaskDrawer() {
 
     const details = document.createElement('div');
     details.className = 'task-details-block';
-    details.innerHTML = `
-        <p><strong>Status:</strong> ${state.selectedTask.status}</p>
-        <p><strong>Title:</strong> ${state.selectedTask.title}</p>
-        <p><strong>Created:</strong> ${state.selectedTask.createdAt || 'N/A'}</p>
-    `;
+    details.innerHTML = '<p><strong>Status:</strong> ' + statusDisplay + '</p>' +
+        '<p><strong>Title:</strong> ' + (state.selectedTask.title || 'N/A') + '</p>' +
+        '<p><strong>Created:</strong> ' + (state.selectedTask.createdAt || 'N/A') + '</p>';
     content.appendChild(details);
+
+    // DEV-COMHU-2025-0012: Task Spec Editor Section
+    var specSection = document.createElement('div');
+    specSection.className = 'task-spec-section';
+
+    var specHeading = document.createElement('h3');
+    specHeading.className = 'task-spec-heading';
+    specHeading.textContent = 'Task Spec (editable)';
+    specSection.appendChild(specHeading);
+
+    var specTextarea = document.createElement('textarea');
+    specTextarea.className = 'task-spec-textarea';
+    specTextarea.placeholder = 'Enter task specification here...';
+    specTextarea.value = getTaskSpec(vtid);
+    specTextarea.id = 'task-spec-editor-' + vtid.replace(/[^a-zA-Z0-9]/g, '-');
+    specSection.appendChild(specTextarea);
+
+    // DEV-COMHU-2025-0012: Spec action buttons
+    var specActions = document.createElement('div');
+    specActions.className = 'task-spec-actions';
+
+    var saveBtn = document.createElement('button');
+    saveBtn.className = 'btn btn-primary task-spec-btn';
+    saveBtn.textContent = 'Save';
+    saveBtn.onclick = function() {
+        var textarea = document.getElementById('task-spec-editor-' + vtid.replace(/[^a-zA-Z0-9]/g, '-'));
+        if (textarea && saveTaskSpec(vtid, textarea.value)) {
+            showToast('Spec saved locally (DEV-COMHU-2025-0012)', 'success');
+        } else {
+            showToast('Failed to save spec', 'error');
+        }
+    };
+    specActions.appendChild(saveBtn);
+
+    var resetBtn = document.createElement('button');
+    resetBtn.className = 'btn task-spec-btn';
+    resetBtn.textContent = 'Reset';
+    resetBtn.onclick = function() {
+        var textarea = document.getElementById('task-spec-editor-' + vtid.replace(/[^a-zA-Z0-9]/g, '-'));
+        if (textarea) {
+            textarea.value = getTaskSpec(vtid);
+            showToast('Spec reset to last saved', 'info');
+        }
+    };
+    specActions.appendChild(resetBtn);
+
+    // DEV-COMHU-2025-0012: Activate button (Scheduled → In Progress)
+    var currentColumn = mapStatusToColumnWithOverride(vtid, state.selectedTask.status);
+    if (currentColumn === 'Scheduled') {
+        var activateBtn = document.createElement('button');
+        activateBtn.className = 'btn btn-success task-spec-btn task-activate-btn';
+        activateBtn.textContent = 'Activate';
+        activateBtn.title = 'Move task from Scheduled to In Progress';
+        activateBtn.onclick = function() {
+            if (setTaskStatusOverride(vtid, 'in_progress')) {
+                showToast('Task activated: ' + vtid + ' → In Progress (local)', 'success');
+                renderApp();
+            } else {
+                showToast('Failed to activate task', 'error');
+            }
+        };
+        specActions.appendChild(activateBtn);
+    }
+
+    specSection.appendChild(specActions);
+
+    // DEV-COMHU-2025-0012: Local persistence banner
+    var localBanner = document.createElement('div');
+    localBanner.className = 'task-spec-local-banner';
+    localBanner.textContent = 'Persistence: localStorage (DEV-COMHU-2025-0012)';
+    specSection.appendChild(localBanner);
+
+    content.appendChild(specSection);
 
     // VTID-0527: Add detailed stage timeline view
     const stageDetail = renderTaskStageDetail(state.selectedTask);
@@ -2767,6 +2966,7 @@ function handleSplitScreenToggle(comboId) {
 
 /**
  * DEV-COMHU-2025-0011: Status → Column mapping for VTID Ledger data.
+ * DEV-COMHU-2025-0012: Added local override support via localStorage.
  * Maps VTID status values to the 3-column board layout.
  */
 function mapStatusToColumn(status) {
@@ -2783,6 +2983,27 @@ function mapStatusToColumn(status) {
 
     // Fallback: unknown status → Scheduled (status label remains visible on card)
     return 'Scheduled';
+}
+
+/**
+ * DEV-COMHU-2025-0012: Get effective status for a task (check local overrides first).
+ * Returns the local override if set, otherwise the API status.
+ */
+function getEffectiveStatus(vtid, apiStatus) {
+    var localOverride = getTaskStatusOverride(vtid);
+    if (localOverride) {
+        return localOverride;
+    }
+    return apiStatus;
+}
+
+/**
+ * DEV-COMHU-2025-0012: Map status to column with local override check.
+ * Used for column filtering in the task board.
+ */
+function mapStatusToColumnWithOverride(vtid, apiStatus) {
+    var effectiveStatus = getEffectiveStatus(vtid, apiStatus);
+    return mapStatusToColumn(effectiveStatus);
 }
 
 /**
@@ -5128,6 +5349,9 @@ function renderOasisVtidLedgerView() {
  * VTID-0601: Renders the Command Hub > Approvals view.
  * Shows pending PRs from Claude branches that can be merged/deployed.
  */
+/**
+ * DEV-COMHU-2025-0012: Approvals view with local suppression + UNKNOWN VTID handling.
+ */
 function renderApprovalsView() {
     var container = document.createElement('div');
     container.className = 'approvals-container';
@@ -5150,11 +5374,16 @@ function renderApprovalsView() {
     subtitle.textContent = 'Review and approve pending PRs for merge and deploy. VTID-0601: No GitHub UI required.';
     header.appendChild(subtitle);
 
+    // DEV-COMHU-2025-0012: Decisions mode label
+    var decisionsLabel = document.createElement('div');
+    decisionsLabel.className = 'approvals-decisions-label';
+    decisionsLabel.textContent = 'Decisions: Local (DEV-COMHU-2025-0012)';
+    header.appendChild(decisionsLabel);
+
     // Refresh button
     var refreshBtn = document.createElement('button');
     refreshBtn.className = 'btn btn-secondary';
     refreshBtn.textContent = 'Refresh';
-    refreshBtn.style.marginTop = '8px';
     refreshBtn.onclick = function() {
         state.approvals.fetched = false;
         fetchApprovals();
@@ -5163,14 +5392,26 @@ function renderApprovalsView() {
 
     container.appendChild(header);
 
+    // DEV-COMHU-2025-0012: Fingerprint for deployment verification
+    var fingerprint = document.createElement('div');
+    fingerprint.className = 'view-fingerprint';
+    fingerprint.textContent = 'Task Mgmt v1: LOCAL (DEV-COMHU-2025-0012)';
+    container.appendChild(fingerprint);
+
     // Error display
     if (state.approvals.error) {
         var errorDiv = document.createElement('div');
         errorDiv.className = 'approvals-error';
-        errorDiv.style.cssText = 'background: #3b1515; border: 1px solid #ef4444; padding: 12px; border-radius: 6px; margin-bottom: 16px; color: #fca5a5;';
         errorDiv.textContent = 'Error: ' + state.approvals.error;
         container.appendChild(errorDiv);
     }
+
+    // DEV-COMHU-2025-0012: Filter out dismissed items using localStorage suppression
+    var visibleItems = state.approvals.items.filter(function(item) {
+        var repo = item.repo || 'unknown';
+        var prNumber = item.pr_number;
+        return !isApprovalDismissed(repo, prNumber);
+    });
 
     // Pending Approvals Section
     var pendingSection = document.createElement('div');
@@ -5178,7 +5419,7 @@ function renderApprovalsView() {
 
     var pendingHeader = document.createElement('div');
     pendingHeader.className = 'approvals-section-header';
-    pendingHeader.innerHTML = '<span>⏳</span> Pending Approvals (' + state.approvals.items.length + ')';
+    pendingHeader.innerHTML = '<span>⏳</span> Pending Approvals (' + visibleItems.length + ')';
     pendingSection.appendChild(pendingHeader);
 
     var pendingContent = document.createElement('div');
@@ -5186,14 +5427,13 @@ function renderApprovalsView() {
 
     if (state.approvals.loading) {
         pendingContent.innerHTML = '<div class="placeholder-content">Loading approvals from GitHub...</div>';
-    } else if (state.approvals.items.length === 0) {
+    } else if (visibleItems.length === 0) {
         // Empty state
         var emptyState = document.createElement('div');
         emptyState.className = 'approvals-empty-state';
-        emptyState.style.cssText = 'text-align: center; padding: 40px 20px; color: #888;';
-        emptyState.innerHTML = '<div style="font-size: 48px; margin-bottom: 16px;">✓</div>' +
-            '<div style="font-size: 18px; margin-bottom: 8px;">No pending approvals</div>' +
-            '<div style="font-size: 14px;">All PRs from Claude branches have been processed.</div>';
+        emptyState.innerHTML = '<div class="approvals-empty-icon">✓</div>' +
+            '<div class="approvals-empty-title">No pending approvals</div>' +
+            '<div class="approvals-empty-subtitle">All PRs from Claude branches have been processed.</div>';
         pendingContent.appendChild(emptyState);
     } else {
         // Real approvals table
@@ -5205,7 +5445,6 @@ function renderApprovalsView() {
         ['VTID', 'PR', 'Branch', 'Service', 'CI', 'Gov', 'Action', 'Actions'].forEach(function(h) {
             var th = document.createElement('th');
             th.textContent = h;
-            th.style.textAlign = h === 'Actions' ? 'center' : 'left';
             headerRow.appendChild(th);
         });
         thead.appendChild(headerRow);
@@ -5213,15 +5452,20 @@ function renderApprovalsView() {
 
         var tbody = document.createElement('tbody');
 
-        state.approvals.items.forEach(function(item) {
+        visibleItems.forEach(function(item) {
             var row = document.createElement('tr');
+            var repo = item.repo || 'unknown';
+            var prNumber = item.pr_number;
+
+            // DEV-COMHU-2025-0012: Check if VTID is UNKNOWN
+            var vtidValue = item.vtid || 'UNKNOWN';
+            var isUnknownVtid = vtidValue === 'UNKNOWN' || vtidValue === '' || !vtidValue;
 
             // VTID
             var vtidCell = document.createElement('td');
             var vtidBadge = document.createElement('span');
-            vtidBadge.className = 'vtid-badge';
-            vtidBadge.style.cssText = 'background: #1e3a5f; color: #60a5fa; padding: 2px 8px; border-radius: 4px; font-family: monospace;';
-            vtidBadge.textContent = item.vtid;
+            vtidBadge.className = 'vtid-badge' + (isUnknownVtid ? ' vtid-badge-unknown' : '');
+            vtidBadge.textContent = vtidValue;
             vtidCell.appendChild(vtidBadge);
             row.appendChild(vtidCell);
 
@@ -5230,16 +5474,15 @@ function renderApprovalsView() {
             var prLink = document.createElement('a');
             prLink.href = item.pr_url || '#';
             prLink.target = '_blank';
-            prLink.style.color = '#60a5fa';
-            prLink.textContent = '#' + item.pr_number;
+            prLink.className = 'approvals-pr-link';
+            prLink.textContent = '#' + prNumber;
             prLink.title = item.pr_title || '';
             prCell.appendChild(prLink);
             row.appendChild(prCell);
 
             // Branch
             var branchCell = document.createElement('td');
-            branchCell.style.fontFamily = 'monospace';
-            branchCell.style.fontSize = '12px';
+            branchCell.className = 'approvals-branch-cell';
             branchCell.textContent = item.branch ? (item.branch.length > 30 ? item.branch.substring(0, 30) + '...' : item.branch) : '-';
             branchCell.title = item.branch || '';
             row.appendChild(branchCell);
@@ -5248,7 +5491,7 @@ function renderApprovalsView() {
             var serviceCell = document.createElement('td');
             if (item.service) {
                 var serviceBadge = document.createElement('span');
-                serviceBadge.style.cssText = 'background: #1e3a3f; color: #34d399; padding: 2px 6px; border-radius: 4px; font-size: 11px;';
+                serviceBadge.className = 'approvals-service-badge';
                 serviceBadge.textContent = item.service;
                 serviceCell.appendChild(serviceBadge);
             } else {
@@ -5259,15 +5502,15 @@ function renderApprovalsView() {
             // CI Status
             var ciCell = document.createElement('td');
             var ciIndicator = document.createElement('span');
-            ciIndicator.style.cssText = 'display: inline-flex; align-items: center; gap: 4px;';
+            ciIndicator.className = 'approvals-status-indicator';
             if (item.ci_status === 'pass') {
-                ciIndicator.innerHTML = '<span style="color: #22c55e;">✓</span> Pass';
+                ciIndicator.innerHTML = '<span class="status-pass">✓</span> Pass';
             } else if (item.ci_status === 'fail') {
-                ciIndicator.innerHTML = '<span style="color: #ef4444;">✗</span> Fail';
+                ciIndicator.innerHTML = '<span class="status-fail">✗</span> Fail';
             } else if (item.ci_status === 'pending') {
-                ciIndicator.innerHTML = '<span style="color: #f59e0b;">⋯</span> Pending';
+                ciIndicator.innerHTML = '<span class="status-pending">⋯</span> Pending';
             } else {
-                ciIndicator.innerHTML = '<span style="color: #888;">?</span> Unknown';
+                ciIndicator.innerHTML = '<span class="status-unknown">?</span> Unknown';
             }
             ciCell.appendChild(ciIndicator);
             row.appendChild(ciCell);
@@ -5275,13 +5518,13 @@ function renderApprovalsView() {
             // Governance Status
             var govCell = document.createElement('td');
             var govIndicator = document.createElement('span');
-            govIndicator.style.cssText = 'display: inline-flex; align-items: center; gap: 4px;';
+            govIndicator.className = 'approvals-status-indicator';
             if (item.governance_status === 'pass') {
-                govIndicator.innerHTML = '<span style="color: #22c55e;">✓</span> Pass';
+                govIndicator.innerHTML = '<span class="status-pass">✓</span> Pass';
             } else if (item.governance_status === 'fail') {
-                govIndicator.innerHTML = '<span style="color: #ef4444;">✗</span> Blocked';
+                govIndicator.innerHTML = '<span class="status-fail">✗</span> Blocked';
             } else {
-                govIndicator.innerHTML = '<span style="color: #888;">?</span> Unknown';
+                govIndicator.innerHTML = '<span class="status-unknown">?</span> Unknown';
             }
             govCell.appendChild(govIndicator);
             row.appendChild(govCell);
@@ -5290,13 +5533,13 @@ function renderApprovalsView() {
             var actionCell = document.createElement('td');
             var actionBadge = document.createElement('span');
             if (item.type === 'merge+deploy') {
-                actionBadge.style.cssText = 'background: #4c1d95; color: #c4b5fd; padding: 2px 6px; border-radius: 4px; font-size: 11px;';
+                actionBadge.className = 'approvals-action-badge approvals-action-merge-deploy';
                 actionBadge.textContent = 'MERGE+DEPLOY';
             } else if (item.type === 'deploy') {
-                actionBadge.style.cssText = 'background: #1e3a3f; color: #34d399; padding: 2px 6px; border-radius: 4px; font-size: 11px;';
+                actionBadge.className = 'approvals-action-badge approvals-action-deploy';
                 actionBadge.textContent = 'DEPLOY';
             } else {
-                actionBadge.style.cssText = 'background: #1e3a5f; color: #60a5fa; padding: 2px 6px; border-radius: 4px; font-size: 11px;';
+                actionBadge.className = 'approvals-action-badge approvals-action-merge';
                 actionBadge.textContent = 'MERGE';
             }
             actionCell.appendChild(actionBadge);
@@ -5304,32 +5547,48 @@ function renderApprovalsView() {
 
             // Actions buttons
             var actionsCell = document.createElement('td');
-            actionsCell.style.textAlign = 'center';
+            actionsCell.className = 'approvals-actions-cell';
 
-            var canApprove = item.ci_status === 'pass' && item.governance_status === 'pass';
+            // DEV-COMHU-2025-0012: Disable Approve if UNKNOWN VTID
+            var canApprove = item.ci_status === 'pass' && item.governance_status === 'pass' && !isUnknownVtid;
 
             var approveBtn = document.createElement('button');
             approveBtn.className = 'btn btn-success btn-sm';
             approveBtn.textContent = '✓ Approve';
-            approveBtn.style.cssText = 'padding: 4px 12px; font-size: 12px; margin-right: 8px;';
             approveBtn.disabled = !canApprove || state.approvals.loading;
-            approveBtn.title = canApprove ? 'Merge PR' + (item.service ? ' and trigger deploy' : '') : 'CI or Governance not passed';
+            if (isUnknownVtid) {
+                approveBtn.title = 'Cannot approve: VTID is UNKNOWN';
+            } else {
+                approveBtn.title = canApprove ? 'Merge PR' + (item.service ? ' and trigger deploy' : '') : 'CI or Governance not passed';
+            }
             approveBtn.onclick = function() {
-                if (confirm('Approve PR #' + item.pr_number + '?\n\nThis will merge the PR' + (item.service ? ' and trigger a deploy to ' + item.service : '') + '.')) {
+                if (confirm('Approve PR #' + prNumber + '?\n\nThis will merge the PR' + (item.service ? ' and trigger a deploy to ' + item.service : '') + '.')) {
                     approveApprovalItem(item.id);
                 }
             };
             actionsCell.appendChild(approveBtn);
 
+            // DEV-COMHU-2025-0012: Deny button becomes Dismiss for local suppression
             var denyBtn = document.createElement('button');
             denyBtn.className = 'btn btn-danger btn-sm';
-            denyBtn.textContent = '✗ Deny';
-            denyBtn.style.cssText = 'padding: 4px 12px; font-size: 12px;';
+            denyBtn.textContent = isUnknownVtid ? 'Dismiss' : '✗ Deny';
             denyBtn.disabled = state.approvals.loading;
+            denyBtn.title = isUnknownVtid ? 'Dismiss this item (hides locally)' : 'Deny this PR';
             denyBtn.onclick = function() {
-                var reason = prompt('Reason for denial (optional):');
-                if (reason !== null) {
-                    denyApprovalItem(item.id, reason);
+                if (isUnknownVtid) {
+                    // Local dismiss only - no backend call
+                    if (confirm('Dismiss this item?\n\nThis will hide the item locally (localStorage suppression).')) {
+                        dismissApproval(repo, prNumber);
+                        showToast('Item dismissed locally (DEV-COMHU-2025-0012)', 'info');
+                        renderApp();
+                    }
+                } else {
+                    var reason = prompt('Reason for denial (optional):');
+                    if (reason !== null) {
+                        // Also dismiss locally to prevent zombie returns
+                        dismissApproval(repo, prNumber);
+                        denyApprovalItem(item.id, reason);
+                    }
                 }
             };
             actionsCell.appendChild(denyBtn);
@@ -5348,13 +5607,12 @@ function renderApprovalsView() {
     // Info section
     var infoSection = document.createElement('div');
     infoSection.className = 'approvals-info';
-    infoSection.style.cssText = 'margin-top: 24px; padding: 16px; background: #1a1a2e; border-radius: 8px; border: 1px solid #333;';
-    infoSection.innerHTML = '<div style="font-weight: 600; margin-bottom: 8px;">VTID-0601 Workflow</div>' +
-        '<div style="font-size: 13px; color: #888; line-height: 1.6;">' +
-        '1. Claude creates PR on <code style="background: #2a2a3e; padding: 2px 6px; border-radius: 4px;">claude/*</code> branch<br>' +
+    infoSection.innerHTML = '<div class="approvals-info-title">VTID-0601 Workflow</div>' +
+        '<div class="approvals-info-content">' +
+        '1. Claude creates PR on <code>claude/*</code> branch<br>' +
         '2. CI runs automatically<br>' +
         '3. Governance evaluation runs<br>' +
-        '4. <strong style="color: #fff;">You approve here</strong> → Vitana merges + deploys<br>' +
+        '4. <strong>You approve here</strong> → Vitana merges + deploys<br>' +
         '5. No GitHub UI or Cloud Shell required</div>';
     container.appendChild(infoSection);
 

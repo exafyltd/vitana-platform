@@ -5751,3 +5751,337 @@ body {
   color: white;
   border-color: var(--color-accent);
 }
+
+/* --- DEV-COMHU-2025-0012: Task Management v1 Styles --- */
+
+/* Enhanced Task Card Design */
+.task-card-enhanced {
+  position: relative;
+}
+
+.task-card-title {
+  font-weight: 600;
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+  line-height: 1.4;
+  color: var(--color-text-primary);
+}
+
+.task-card-vtid-line {
+  margin-bottom: 0.5rem;
+}
+
+.task-card-vtid-label {
+  font-family: monospace;
+  font-size: 0.8rem;
+  color: #60a5fa;
+  background: rgba(96, 165, 250, 0.1);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.task-card-status-row {
+  margin-bottom: 0.5rem;
+}
+
+.task-card-status-pill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.task-card-status-pill-scheduled {
+  background: rgba(96, 165, 250, 0.15);
+  color: var(--color-task-scheduled);
+  box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.2);
+}
+
+.task-card-status-pill-in-progress {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--color-task-progress);
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.2);
+}
+
+.task-card-status-pill-completed {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--color-task-completed);
+  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.2);
+}
+
+/* Task Spec Editor in Drawer */
+.task-spec-section {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.task-spec-heading {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: 0.75rem;
+}
+
+.task-spec-textarea {
+  width: 100%;
+  min-height: 150px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text-primary);
+  font-family: monospace;
+  font-size: 0.85rem;
+  padding: 0.75rem;
+  resize: vertical;
+  margin-bottom: 0.75rem;
+}
+
+.task-spec-textarea:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.task-spec-textarea::placeholder {
+  color: var(--color-text-secondary);
+}
+
+.task-spec-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.task-spec-btn {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+}
+
+.task-activate-btn {
+  background: #10b981;
+  border-color: #10b981;
+  color: white;
+}
+
+.task-activate-btn:hover {
+  background: #059669;
+  border-color: #059669;
+}
+
+.task-spec-local-banner {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  font-style: italic;
+  padding: 0.5rem;
+  background: rgba(59, 130, 246, 0.05);
+  border-radius: 4px;
+  text-align: center;
+}
+
+/* Approvals View Enhancements */
+.approvals-decisions-label {
+  font-size: 0.75rem;
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  padding: 4px 10px;
+  border-radius: 4px;
+  margin-top: 8px;
+  display: inline-block;
+}
+
+.approvals-error {
+  background: #3b1515;
+  border: 1px solid #ef4444;
+  padding: 12px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  color: #fca5a5;
+}
+
+.approvals-empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: #888;
+}
+
+.approvals-empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.approvals-empty-title {
+  font-size: 18px;
+  margin-bottom: 8px;
+}
+
+.approvals-empty-subtitle {
+  font-size: 14px;
+}
+
+.approvals-pr-link {
+  color: #60a5fa;
+}
+
+.approvals-branch-cell {
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.approvals-service-badge {
+  background: #1e3a3f;
+  color: #34d399;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.approvals-status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.status-pass {
+  color: #22c55e;
+}
+
+.status-fail {
+  color: #ef4444;
+}
+
+.status-pending {
+  color: #f59e0b;
+}
+
+.status-unknown {
+  color: #888;
+}
+
+.approvals-action-badge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.approvals-action-merge-deploy {
+  background: #4c1d95;
+  color: #c4b5fd;
+}
+
+.approvals-action-deploy {
+  background: #1e3a3f;
+  color: #34d399;
+}
+
+.approvals-action-merge {
+  background: #1e3a5f;
+  color: #60a5fa;
+}
+
+.approvals-actions-cell {
+  text-align: center;
+}
+
+.approvals-actions-cell .btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  margin-right: 8px;
+}
+
+.approvals-actions-cell .btn:last-child {
+  margin-right: 0;
+}
+
+.vtid-badge {
+  background: #1e3a5f;
+  color: #60a5fa;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: monospace;
+}
+
+.vtid-badge-unknown {
+  background: #3b2f1f;
+  color: #f59e0b;
+}
+
+.approvals-info {
+  margin-top: 24px;
+  padding: 16px;
+  background: #1a1a2e;
+  border-radius: 8px;
+  border: 1px solid #333;
+}
+
+.approvals-info-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.approvals-info-content {
+  font-size: 13px;
+  color: #888;
+  line-height: 1.6;
+}
+
+.approvals-info-content code {
+  background: #2a2a3e;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.approvals-info-content strong {
+  color: #fff;
+}
+
+/* btn-success and btn-danger for Approvals */
+.btn-success {
+  background: #10b981;
+  border-color: #10b981;
+  color: white;
+}
+
+.btn-success:hover:not(:disabled) {
+  background: #059669;
+  border-color: #059669;
+}
+
+.btn-success:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-danger {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #dc2626;
+  border-color: #dc2626;
+}
+
+.btn-danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: var(--color-sidebar-bg);
+  border-color: var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--color-text-primary);
+}
