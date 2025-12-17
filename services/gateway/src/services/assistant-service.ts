@@ -9,28 +9,30 @@
  * - Safe, concise answers oriented to help developers understand the system
  * - OASIS event logging for assistant.session.started and assistant.turn
  *
- * VTID-0151-C: Updated to use Vertex AI with ADC (Application Default Credentials)
- * via Cloud Run service account instead of API key.
+ * VTID-0151-C: Updated to use Gemini API (AI Studio) with API key.
+ * Uses gemini-3-pro-preview with fallback to gemini-2.5-pro.
  */
 
-import { VertexAI } from '@google-cloud/vertexai';
+import { GoogleGenerativeAI, GenerateContentResult } from '@google/generative-ai';
 import { randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
 import { AssistantContext, AssistantChatResponse } from '../types/assistant';
 
-// Vertex AI configuration (ADC via Cloud Run SA)
-const VERTEX_PROJECT =
-  process.env.GOOGLE_CLOUD_PROJECT ||
-  process.env.PROJECT_ID ||
-  'lovable-vitana-vers1';
+// Gemini API configuration (AI Studio API key)
+const GEMINI_API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
+if (!GEMINI_API_KEY) {
+  throw new Error('GOOGLE_GEMINI_API_KEY missing - required for Gemini API access');
+}
 
-const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'us-central1';
+// Model configuration with fallback
+const PRIMARY_MODEL = 'gemini-3-pro-preview';
+const FALLBACK_MODEL = 'gemini-2.5-pro';
 
-// Model to use - gemini-1.5-flash-002 for fast, cost-effective responses
-const VERTEX_MODEL = process.env.VERTEX_MODEL || 'gemini-1.5-flash-002';
+// Singleton Gemini API client
+const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-// Singleton Vertex AI client (uses ADC automatically on Cloud Run)
-const vertex = new VertexAI({ project: VERTEX_PROJECT, location: VERTEX_LOCATION });
+// Track which model was used in the last request (for metadata)
+let lastUsedModel = PRIMARY_MODEL;
 
 // Track sessions to detect first turn
 const activeSessions = new Set<string>();
@@ -72,21 +74,17 @@ Answer the developer's question with clarity and precision.`;
 }
 
 /**
- * VTID-0150-B/VTID-0151-C: Call Vertex AI Gemini for assistant response
- * Uses ADC (Application Default Credentials) via Cloud Run service account.
+ * VTID-0151-C: Generate content with model fallback
+ * Tries PRIMARY_MODEL first, falls back to FALLBACK_MODEL on error.
  */
-async function callGemini(
-  message: string,
-  context: AssistantContext
-): Promise<{ reply: string; tokens_in: number; tokens_out: number }> {
-  const systemPrompt = buildSystemPrompt(context);
-
+async function generateWithFallback(
+  prompt: string,
+  systemPrompt: string
+): Promise<GenerateContentResult> {
   try {
-    console.log(`[VTID-0151-C] Calling Vertex AI model=${VERTEX_MODEL}, project=${VERTEX_PROJECT}, location=${VERTEX_LOCATION}`);
-
-    // Get the generative model from Vertex AI
-    const model = vertex.getGenerativeModel({
-      model: VERTEX_MODEL,
+    console.log(`[VTID-0151-C] Trying primary model: ${PRIMARY_MODEL}`);
+    const model = genAI.getGenerativeModel({
+      model: PRIMARY_MODEL,
       systemInstruction: systemPrompt,
       generationConfig: {
         temperature: 0.7,
@@ -95,11 +93,40 @@ async function callGemini(
         topK: 40
       }
     });
-
-    // Generate content
-    const result = await model.generateContent({
-      contents: [{ role: 'user', parts: [{ text: message }] }]
+    lastUsedModel = PRIMARY_MODEL;
+    return await model.generateContent(prompt);
+  } catch (err: any) {
+    console.warn(`[VTID-0151-C] Primary model (${PRIMARY_MODEL}) failed, falling back to ${FALLBACK_MODEL}:`, err.message);
+    const fallback = genAI.getGenerativeModel({
+      model: FALLBACK_MODEL,
+      systemInstruction: systemPrompt,
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 1024,
+        topP: 0.95,
+        topK: 40
+      }
     });
+    lastUsedModel = FALLBACK_MODEL;
+    return await fallback.generateContent(prompt);
+  }
+}
+
+/**
+ * VTID-0150-B/VTID-0151-C: Call Gemini API for assistant response
+ * Uses API key authentication with model fallback.
+ */
+async function callGemini(
+  message: string,
+  context: AssistantContext
+): Promise<{ reply: string; tokens_in: number; tokens_out: number; model: string }> {
+  const systemPrompt = buildSystemPrompt(context);
+
+  try {
+    console.log(`[VTID-0151-C] Calling Gemini API (primary=${PRIMARY_MODEL}, fallback=${FALLBACK_MODEL})`);
+
+    // Generate content with fallback
+    const result = await generateWithFallback(message, systemPrompt);
 
     const response = result.response;
     const candidate = response?.candidates?.[0];
@@ -109,7 +136,8 @@ async function callGemini(
       return {
         reply: 'I apologize, but I could not generate a response. Please try again.',
         tokens_in: 0,
-        tokens_out: 0
+        tokens_out: 0,
+        model: lastUsedModel
       };
     }
 
@@ -123,17 +151,18 @@ async function callGemini(
     const tokens_in = usageMetadata?.promptTokenCount || 0;
     const tokens_out = usageMetadata?.candidatesTokenCount || 0;
 
-    console.log(`[VTID-0151-C] Vertex AI response received, tokens_in=${tokens_in}, tokens_out=${tokens_out}`);
+    console.log(`[VTID-0151-C] Gemini API response received (model=${lastUsedModel}), tokens_in=${tokens_in}, tokens_out=${tokens_out}`);
 
-    return { reply, tokens_in, tokens_out };
+    return { reply, tokens_in, tokens_out, model: lastUsedModel };
   } catch (error: any) {
-    console.error(`[VTID-0151-C] Vertex AI call failed:`, error.message);
+    console.error(`[VTID-0151-C] Gemini API call failed:`, error.message);
     return {
       reply: `I encountered an error while processing your request. Please try again.
 
 Error: ${error.message}`,
       tokens_in: 0,
-      tokens_out: 0
+      tokens_out: 0,
+      model: 'error'
     };
   }
 }
@@ -234,11 +263,11 @@ export async function processAssistantMessage(
       console.log(`[VTID-0150-B] New session started: ${finalSessionId}`);
     }
 
-    // Call Gemini
+    // Call Gemini API with fallback
     const geminiResult = await callGemini(message, context);
 
     const latency_ms = Date.now() - startTime;
-    const model = VERTEX_MODEL; // VTID-0151-C: Now using Vertex AI
+    const model = geminiResult.model; // VTID-0151-C: Now using Gemini API with fallback
 
     // Log the turn
     const turnEventId = await logAssistantTurn(
