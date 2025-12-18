@@ -1,4 +1,5 @@
 // Vitana Dev Frontend Spec v2 Implementation - Task 3
+// AUTODEPLOY-TRIGGER: 2025-12-18T22:00:00Z
 
 // VTID-0539: Operator Console Chat Experience Improvements
 // DEV-COMHU-2025-0012: Task Management v1 - Persisted Specs + Lifecycle + Approvals
