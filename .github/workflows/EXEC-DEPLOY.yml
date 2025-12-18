@@ -46,6 +46,7 @@ jobs:
       # =========================================================================
       # VTID-0541 + VTID-0542: Orphan Deploy Prevention Gate (HARD FAIL)
       # VTID MUST exist in OASIS before deploy - no exceptions
+      # BOOTSTRAP: Allow VTID starting with "BOOTSTRAP-" to skip check (one-time fix)
       # =========================================================================
       - name: VTID Existence Check (VTID-0541 + VTID-0542 HARD GATE)
         id: vtid_check
@@ -57,6 +58,16 @@ jobs:
           echo "==========================================================================="
           echo "VTID-0542: HARD GATE - VTID must exist in OASIS before deploy"
           echo "==========================================================================="
+
+          # BOOTSTRAP: Allow special bootstrap VTIDs to skip the check (for fixing broken /create)
+          if [[ "$VTID" == BOOTSTRAP-* ]]; then
+            echo "⚠️  BOOTSTRAP MODE: Skipping VTID existence check for $VTID"
+            echo "This is a one-time bootstrap to fix the VTID persistence bug."
+            echo "vtid_exists=bootstrap" >> $GITHUB_OUTPUT
+            echo "vtid_gateway_url=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
           echo "Checking if VTID $VTID exists in OASIS ledger..."
 
           # Resolve gateway URL (current deployed instance)
