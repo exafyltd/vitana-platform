@@ -38,6 +38,8 @@ jobs:
   gateway-test:
     name: Gateway Service Tests
     runs-on: ubuntu-latest
+    # Only run with secrets when PR is from same repo (not forks)
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     # DEV-CICDL-2025-0001: Inject all required secrets at job level for gateway tests
     env:
       NODE_ENV: test
