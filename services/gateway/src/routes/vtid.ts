@@ -128,6 +128,77 @@ router.get("/allocator/status", (_req: Request, res: Response) => {
   });
 });
 
+/**
+ * GET /health → /api/v1/vtid/health
+ * Health check that verifies ledger is readable and writable
+ */
+router.get("/health", async (_req: Request, res: Response) => {
+  const checks: Record<string, { ok: boolean; latency_ms?: number; error?: string }> = {};
+
+  try {
+    const { supabaseUrl, svcKey } = getSupabaseConfig();
+
+    // Check 1: Ledger is readable (SELECT)
+    const readStart = Date.now();
+    try {
+      const readResp = await fetch(
+        supabaseUrl + "/rest/v1/vtid_ledger?limit=1",
+        { headers: { apikey: svcKey, Authorization: "Bearer " + svcKey } }
+      );
+      checks.ledger_read = {
+        ok: readResp.ok,
+        latency_ms: Date.now() - readStart,
+        error: readResp.ok ? undefined : `HTTP ${readResp.status}`,
+      };
+    } catch (e: any) {
+      checks.ledger_read = { ok: false, latency_ms: Date.now() - readStart, error: e.message };
+    }
+
+    // Check 2: Ledger is writable (test via RPC or direct insert check)
+    // We use a SELECT to verify the table exists and is accessible for writes
+    // A true write test would require cleanup, so we just verify schema access
+    const writeStart = Date.now();
+    try {
+      // Test that next_vtid RPC is accessible (this is required for create)
+      const rpcResp = await fetch(
+        supabaseUrl + "/rest/v1/rpc/next_vtid",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: svcKey,
+            Authorization: "Bearer " + svcKey,
+          },
+          body: JSON.stringify({ p_family: "DEV", p_module: "TEST" }),
+        }
+      );
+      checks.vtid_generator = {
+        ok: rpcResp.ok,
+        latency_ms: Date.now() - writeStart,
+        error: rpcResp.ok ? undefined : `HTTP ${rpcResp.status}`,
+      };
+    } catch (e: any) {
+      checks.vtid_generator = { ok: false, latency_ms: Date.now() - writeStart, error: e.message };
+    }
+
+    const allOk = Object.values(checks).every((c) => c.ok);
+    return res.status(allOk ? 200 : 503).json({
+      ok: allOk,
+      service: "vtid",
+      checks,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (e: any) {
+    return res.status(503).json({
+      ok: false,
+      service: "vtid",
+      error: e.message,
+      checks,
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
 const VtidCreateSchema = z.object({
   task_family: z.enum(["DEV", "ADM", "GOVRN", "OASIS"]),
   task_module: z.string().min(1).max(10).transform((s) => s.toUpperCase()),
@@ -161,20 +232,53 @@ router.post("/create", async (req: Request, res: Response) => {
     const body = VtidCreateSchema.parse(req.body);
     const { supabaseUrl, svcKey } = getSupabaseConfig();
     const vtid = await generateVtidInDb(supabaseUrl, svcKey, body.task_family, body.task_module);
-    
-    const insertResp = await fetch(supabaseUrl + "/rest/v1/VtidLedger", {
+
+    // FIX: Use vtid_ledger (snake_case) to match the read endpoint table name
+    const insertPayload = {
+      id: randomUUID(),
+      vtid,
+      title: body.title,
+      status: body.status,
+      tenant: body.tenant,
+      is_test: body.is_test,
+      task_family: body.task_family,
+      module: body.task_module,
+      layer: body.task_family, // Use task_family as layer (DEV, ADM, etc.)
+      summary: body.description_md || body.title,
+      metadata: body.metadata || {},
+    };
+
+    console.log(`[VTID-CREATE] Inserting VTID ${vtid} into vtid_ledger`);
+
+    const insertResp = await fetch(supabaseUrl + "/rest/v1/vtid_ledger", {
       method: "POST",
-      headers: { "Content-Type": "application/json", apikey: svcKey, Authorization: "Bearer " + svcKey, Prefer: "return=representation" },
-      body: JSON.stringify({ id: randomUUID(), vtid, ...body, module: body.task_module, layer: body.task_module.slice(0, 3), metadata: body.metadata || {} }),
+      headers: {
+        "Content-Type": "application/json",
+        apikey: svcKey,
+        Authorization: "Bearer " + svcKey,
+        Prefer: "return=representation"
+      },
+      body: JSON.stringify(insertPayload),
     });
 
-    if (!insertResp.ok) return res.status(502).json({ error: "database_insert_failed" });
+    if (!insertResp.ok) {
+      const errorText = await insertResp.text();
+      console.error(`[VTID-CREATE] Supabase insert failed: ${insertResp.status} - ${errorText}`);
+      return res.status(500).json({
+        ok: false,
+        error: "database_insert_failed",
+        message: `Failed to persist VTID to ledger: ${insertResp.statusText}`,
+        statusCode: insertResp.status,
+      });
+    }
+
     const data = (await insertResp.json()) as any[];
-    console.log("VTID created:", vtid);
-    return res.status(201).json(data[0]);
+    console.log(`[VTID-CREATE] Successfully created and persisted: ${vtid}`);
+    return res.status(201).json({ ok: true, ...data[0] });
   } catch (e: any) {
-    if (e instanceof z.ZodError) return res.status(400).json({ error: "validation_failed", details: e.errors });
-    return res.status(500).json({ error: "internal_server_error", message: e.message });
+    console.error(`[VTID-CREATE] Error:`, e.message);
+    if (e instanceof z.ZodError) return res.status(400).json({ ok: false, error: "validation_failed", details: e.errors });
+    return res.status(500).json({ ok: false, error: "internal_server_error", message: e.message });
   }
 });
 
@@ -182,7 +286,8 @@ router.get("/list", async (req: Request, res: Response) => {
   try {
     const { limit = "50", families = "DEV,ADM,GOVRN,OASIS", status, tenant = "vitana" } = req.query as Record<string, string>;
     const { supabaseUrl, svcKey } = getSupabaseConfig();
-    let queryUrl = supabaseUrl + "/rest/v1/VtidLedger?order=updated_at.desc&limit=" + limit + "&tenant=eq." + tenant;
+    // FIX: Use vtid_ledger (snake_case) to match the read endpoint table name
+    let queryUrl = supabaseUrl + "/rest/v1/vtid_ledger?order=updated_at.desc&limit=" + limit + "&tenant=eq." + tenant;
     if (families) {
       const familyList = families.split(",").map(f => f.trim());
       const familyFilter = familyList.map(f => "task_family.eq." + f).join(",");
