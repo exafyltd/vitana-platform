@@ -233,8 +233,25 @@ router.post("/create", async (req: Request, res: Response) => {
     const { supabaseUrl, svcKey } = getSupabaseConfig();
     const vtid = await generateVtidInDb(supabaseUrl, svcKey, body.task_family, body.task_module);
 
-    // FIX: Use vtid_ledger (snake_case) to match the read endpoint table name
-    const insertPayload = {
+    // VTID-0540: Dynamic schema discovery - fetch allowed columns from vtid_ledger
+    let allowedColumns: string[] = [];
+    try {
+      const sampleResp = await fetch(supabaseUrl + "/rest/v1/vtid_ledger?limit=1", {
+        headers: { apikey: svcKey, Authorization: "Bearer " + svcKey },
+      });
+      if (sampleResp.ok) {
+        const sampleData = await sampleResp.json() as any[];
+        if (sampleData.length > 0) {
+          allowedColumns = Object.keys(sampleData[0]);
+          console.log(`[VTID-CREATE] Discovered ${allowedColumns.length} columns: ${allowedColumns.join(', ')}`);
+        }
+      }
+    } catch (schemaErr: any) {
+      console.warn(`[VTID-CREATE] Schema discovery failed: ${schemaErr.message}`);
+    }
+
+    // Build desired insert payload
+    const desiredPayload: Record<string, any> = {
       id: randomUUID(),
       vtid,
       title: body.title,
@@ -248,7 +265,32 @@ router.post("/create", async (req: Request, res: Response) => {
       metadata: body.metadata || {},
     };
 
-    console.log(`[VTID-CREATE] Inserting VTID ${vtid} into vtid_ledger`);
+    // VTID-0540: Filter to allowed columns if schema was discovered
+    let insertPayload: Record<string, any>;
+    if (allowedColumns.length > 0) {
+      insertPayload = {};
+      for (const key of Object.keys(desiredPayload)) {
+        if (allowedColumns.includes(key)) {
+          insertPayload[key] = desiredPayload[key];
+        } else {
+          console.warn(`[VTID-CREATE] Dropping column '${key}' - not in vtid_ledger schema`);
+        }
+      }
+    } else {
+      // Fallback: use minimal safe columns if schema discovery failed
+      insertPayload = {
+        id: desiredPayload.id,
+        vtid: desiredPayload.vtid,
+        title: desiredPayload.title,
+        status: desiredPayload.status,
+        tenant: desiredPayload.tenant,
+        layer: desiredPayload.layer,
+        summary: desiredPayload.summary,
+      };
+      console.warn(`[VTID-CREATE] Using minimal payload (schema discovery failed)`);
+    }
+
+    console.log(`[VTID-CREATE] Inserting VTID ${vtid} into vtid_ledger with keys: ${Object.keys(insertPayload).join(', ')}`);
 
     const insertResp = await fetch(supabaseUrl + "/rest/v1/vtid_ledger", {
       method: "POST",
@@ -263,12 +305,31 @@ router.post("/create", async (req: Request, res: Response) => {
 
     if (!insertResp.ok) {
       const errorText = await insertResp.text();
-      console.error(`[VTID-CREATE] Supabase insert failed: ${insertResp.status} - ${errorText}`);
-      return res.status(500).json({
+      // VTID-0540: Parse and log full Supabase error details
+      let supabaseError: { code?: string; message?: string; details?: string; hint?: string } = {};
+      try {
+        supabaseError = JSON.parse(errorText);
+      } catch {
+        supabaseError = { message: errorText };
+      }
+      console.error(`[VTID-CREATE] Supabase insert FAILED:`);
+      console.error(`  HTTP Status: ${insertResp.status} ${insertResp.statusText}`);
+      console.error(`  Error Code: ${supabaseError.code || 'N/A'}`);
+      console.error(`  Message: ${supabaseError.message || 'N/A'}`);
+      console.error(`  Details: ${supabaseError.details || 'N/A'}`);
+      console.error(`  Hint: ${supabaseError.hint || 'N/A'}`);
+      console.error(`  Payload keys: ${Object.keys(insertPayload).join(', ')}`);
+
+      return res.status(400).json({
         ok: false,
         error: "database_insert_failed",
-        message: `Failed to persist VTID to ledger: ${insertResp.statusText}`,
+        message: supabaseError.message || `Failed to persist VTID to ledger: ${insertResp.statusText}`,
         statusCode: insertResp.status,
+        supabase_error: {
+          code: supabaseError.code,
+          details: supabaseError.details,
+          hint: supabaseError.hint,
+        },
       });
     }
 
