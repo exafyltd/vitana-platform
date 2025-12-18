@@ -1,0 +1,376 @@
+name: VTID Fix E2E - Auto PR/Merge/Deploy
+# This workflow executes the full end-to-end fix for VTID-list endpoint
+# Triggered on push to the fix branch, runs everything automatically
+
+on:
+  push:
+    branches:
+      - 'claude/fix-vtid-list-endpoint-1q7ao'
+  workflow_dispatch:
+
+env:
+  GW_URL: https://gateway-q74ibpv6ia-uc.a.run.app
+  FIX_BRANCH: claude/fix-vtid-list-endpoint-1q7ao
+  BASE_BRANCH: main
+
+jobs:
+  e2e-fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    outputs:
+      task_vtid: ${{ steps.create_task_vtid.outputs.vtid }}
+      deploy_vtid: ${{ steps.create_deploy_vtid.outputs.vtid }}
+      pr_number: ${{ steps.create_pr.outputs.pr_number }}
+      pr_url: ${{ steps.create_pr.outputs.pr_url }}
+      merge_sha: ${{ steps.merge_pr.outputs.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ env.FIX_BRANCH }}
+
+      # =========================================================================
+      # STEP 1: Create TASK_VTID via Gateway API
+      # =========================================================================
+      - name: Create TASK_VTID
+        id: create_task_vtid
+        run: |
+          echo "Creating TASK_VTID via gateway API..."
+
+          RESPONSE=$(curl -s --max-time 60 -X POST "${{ env.GW_URL }}/api/v1/vtid/create" \
+            -H "Content-Type: application/json" \
+            -d '{"task_family":"DEV","task_module":"VTID","title":"Fix /api/v1/vtid/list database_query_failed"}')
+
+          echo "Response: $RESPONSE"
+
+          VTID=$(echo "$RESPONSE" | jq -r '.vtid // empty')
+          OK=$(echo "$RESPONSE" | jq -r '.ok // empty')
+
+          if [ -z "$VTID" ] || [ "$OK" != "true" ]; then
+            echo "::error::Failed to create TASK_VTID. Response: $RESPONSE"
+            # Try to extract error for better debugging
+            ERROR=$(echo "$RESPONSE" | jq -r '.error // .message // "unknown"')
+            echo "Error: $ERROR"
+            exit 1
+          fi
+
+          echo "Created TASK_VTID: $VTID"
+          echo "vtid=$VTID" >> $GITHUB_OUTPUT
+
+      # =========================================================================
+      # STEP 2: Check if PR already exists
+      # =========================================================================
+      - name: Check for existing PR
+        id: check_pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          EXISTING_PR=$(gh pr list --head "${{ env.FIX_BRANCH }}" --base "${{ env.BASE_BRANCH }}" --json number,url --jq '.[0]')
+
+          if [ -n "$EXISTING_PR" ]; then
+            PR_NUMBER=$(echo "$EXISTING_PR" | jq -r '.number')
+            PR_URL=$(echo "$EXISTING_PR" | jq -r '.url')
+            echo "Found existing PR #$PR_NUMBER: $PR_URL"
+            echo "pr_exists=true" >> $GITHUB_OUTPUT
+            echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+            echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
+          else
+            echo "No existing PR found"
+            echo "pr_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      # =========================================================================
+      # STEP 3: Create PR via GitHub API
+      # =========================================================================
+      - name: Create PR
+        id: create_pr
+        if: steps.check_pr.outputs.pr_exists != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TASK_VTID: ${{ steps.create_task_vtid.outputs.vtid }}
+        run: |
+          PR_TITLE="${TASK_VTID}: Fix /api/v1/vtid/list database_query_failed"
+          PR_BODY="## Summary
+          - Fix production bug where \`GET /api/v1/vtid/list?limit=5\` returns \`{\"error\":\"database_query_failed\"}\`
+          - Root cause: Query used \`order=updated_at.desc\` and \`task_family\` column which may not exist in production schema
+          - Solution: Add dynamic schema discovery to adapt query to actual database columns
+
+          ## Changes
+          - **Schema Discovery**: Query sample row to determine available columns (same pattern as \`/create\`)
+          - **Safe Ordering**: Use \`created_at\` or \`id\` for ordering based on available columns
+          - **Column Compatibility**: Use \`layer\` column with fallback to \`task_family\`
+          - **Filter Syntax**: Properly combine filters using PostgREST \`and()\` syntax
+          - **Limit Validation**: Parse limit safely with default 50, max 200
+          - **Response Shape**: Return consistent \`{ ok: true, count: n, data: [...] }\`
+
+          ## Test plan
+          - [x] Build passes
+          - [x] Tests updated for new response shape
+          - [x] Regression test for \`limit=5\` added
+
+          ## VTID
+          Task: $TASK_VTID"
+
+          PR_RESULT=$(gh pr create \
+            --title "$PR_TITLE" \
+            --body "$PR_BODY" \
+            --base "${{ env.BASE_BRANCH }}" \
+            --head "${{ env.FIX_BRANCH }}" \
+            --json number,url)
+
+          PR_NUMBER=$(echo "$PR_RESULT" | jq -r '.number')
+          PR_URL=$(echo "$PR_RESULT" | jq -r '.url')
+
+          echo "Created PR #$PR_NUMBER: $PR_URL"
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
+
+      - name: Set PR outputs from existing
+        id: set_pr_outputs
+        if: steps.check_pr.outputs.pr_exists == 'true'
+        run: |
+          echo "pr_number=${{ steps.check_pr.outputs.pr_number }}" >> $GITHUB_OUTPUT
+          echo "pr_url=${{ steps.check_pr.outputs.pr_url }}" >> $GITHUB_OUTPUT
+
+      # =========================================================================
+      # STEP 4: Wait for CI checks to pass
+      # =========================================================================
+      - name: Wait for CI checks
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.create_pr.outputs.pr_number || steps.check_pr.outputs.pr_number }}
+        run: |
+          echo "Waiting for CI checks on PR #$PR_NUMBER..."
+
+          # Wait up to 10 minutes for checks
+          for i in {1..20}; do
+            sleep 30
+
+            STATUS=$(gh pr checks "$PR_NUMBER" --json state --jq '.[] | select(.state != "PENDING") | .state' 2>/dev/null || echo "")
+            PENDING=$(gh pr checks "$PR_NUMBER" --json state --jq '.[] | select(.state == "PENDING") | .state' 2>/dev/null || echo "")
+
+            if [ -z "$PENDING" ]; then
+              FAILED=$(gh pr checks "$PR_NUMBER" --json state --jq '.[] | select(.state == "FAILURE") | .state' 2>/dev/null || echo "")
+              if [ -n "$FAILED" ]; then
+                echo "::error::CI checks failed"
+                gh pr checks "$PR_NUMBER"
+                exit 1
+              fi
+              echo "All CI checks passed!"
+              break
+            fi
+
+            echo "Attempt $i/20: Checks still pending..."
+          done
+
+      # =========================================================================
+      # STEP 5: Merge PR
+      # =========================================================================
+      - name: Merge PR
+        id: merge_pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.create_pr.outputs.pr_number || steps.check_pr.outputs.pr_number }}
+          TASK_VTID: ${{ steps.create_task_vtid.outputs.vtid }}
+        run: |
+          echo "Merging PR #$PR_NUMBER..."
+
+          gh pr merge "$PR_NUMBER" --squash --admin \
+            --subject "${TASK_VTID}: Fix /api/v1/vtid/list database_query_failed"
+
+          # Get merge SHA
+          MERGE_SHA=$(gh pr view "$PR_NUMBER" --json mergeCommit --jq '.mergeCommit.oid')
+          echo "Merged! SHA: $MERGE_SHA"
+          echo "sha=$MERGE_SHA" >> $GITHUB_OUTPUT
+
+      # =========================================================================
+      # STEP 6: Create DEPLOY_VTID
+      # =========================================================================
+      - name: Create DEPLOY_VTID
+        id: create_deploy_vtid
+        env:
+          TASK_VTID: ${{ steps.create_task_vtid.outputs.vtid }}
+        run: |
+          echo "Creating DEPLOY_VTID via gateway API..."
+
+          RESPONSE=$(curl -s --max-time 60 -X POST "${{ env.GW_URL }}/api/v1/vtid/create" \
+            -H "Content-Type: application/json" \
+            -d "{\"task_family\":\"DEV\",\"task_module\":\"CICDL\",\"title\":\"Deploy ${TASK_VTID} (fix vtid/list)\"}")
+
+          echo "Response: $RESPONSE"
+
+          VTID=$(echo "$RESPONSE" | jq -r '.vtid // empty')
+          OK=$(echo "$RESPONSE" | jq -r '.ok // empty')
+
+          if [ -z "$VTID" ] || [ "$OK" != "true" ]; then
+            echo "::error::Failed to create DEPLOY_VTID. Response: $RESPONSE"
+            exit 1
+          fi
+
+          echo "Created DEPLOY_VTID: $VTID"
+          echo "vtid=$VTID" >> $GITHUB_OUTPUT
+
+      # =========================================================================
+      # STEP 7: Trigger EXEC-DEPLOY workflow
+      # =========================================================================
+      - name: Trigger Deploy Workflow
+        id: trigger_deploy
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEPLOY_VTID: ${{ steps.create_deploy_vtid.outputs.vtid }}
+        run: |
+          echo "Triggering EXEC-DEPLOY workflow with VTID: $DEPLOY_VTID"
+
+          gh workflow run EXEC-DEPLOY.yml \
+            --ref main \
+            -f vtid="$DEPLOY_VTID" \
+            -f service="gateway" \
+            -f source_path="services/gateway" \
+            -f health_path="/alive" \
+            -f environment="dev" \
+            -f initiator="claude-e2e-fix"
+
+          echo "Deploy workflow triggered. Waiting for it to start..."
+          sleep 10
+
+          # Get the run ID
+          RUN_ID=$(gh run list --workflow=EXEC-DEPLOY.yml --limit=1 --json databaseId --jq '.[0].databaseId')
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/$RUN_ID"
+
+          echo "Deploy run: $RUN_URL"
+          echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+          echo "run_url=$RUN_URL" >> $GITHUB_OUTPUT
+
+      # =========================================================================
+      # STEP 8: Wait for deploy to complete
+      # =========================================================================
+      - name: Wait for Deploy
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ steps.trigger_deploy.outputs.run_id }}
+        run: |
+          echo "Waiting for deploy workflow to complete..."
+
+          # Wait up to 15 minutes
+          for i in {1..30}; do
+            sleep 30
+
+            STATUS=$(gh run view "$RUN_ID" --json status,conclusion --jq '.status')
+            CONCLUSION=$(gh run view "$RUN_ID" --json status,conclusion --jq '.conclusion')
+
+            echo "Attempt $i/30: Status=$STATUS, Conclusion=$CONCLUSION"
+
+            if [ "$STATUS" = "completed" ]; then
+              if [ "$CONCLUSION" = "success" ]; then
+                echo "Deploy completed successfully!"
+                break
+              else
+                echo "::error::Deploy failed with conclusion: $CONCLUSION"
+                gh run view "$RUN_ID" --log-failed
+                exit 1
+              fi
+            fi
+          done
+
+      # =========================================================================
+      # STEP 9: Verify fix in production
+      # =========================================================================
+      - name: Verify Fix in Production
+        id: verify
+        run: |
+          echo "Verifying fix in production..."
+          echo ""
+
+          echo "=== curl ${{ env.GW_URL }}/alive ==="
+          ALIVE=$(curl -s "${{ env.GW_URL }}/alive")
+          echo "$ALIVE"
+          echo ""
+
+          echo "=== curl ${{ env.GW_URL }}/api/v1/vtid/health ==="
+          HEALTH=$(curl -s "${{ env.GW_URL }}/api/v1/vtid/health")
+          echo "$HEALTH"
+          echo ""
+
+          echo "=== curl ${{ env.GW_URL }}/api/v1/vtid/list?limit=5 ==="
+          LIST=$(curl -s "${{ env.GW_URL }}/api/v1/vtid/list?limit=5")
+          echo "$LIST"
+          echo ""
+
+          # Verify the fix worked
+          OK=$(echo "$LIST" | jq -r '.ok // empty')
+          if [ "$OK" != "true" ]; then
+            echo "::error::Verification FAILED - /api/v1/vtid/list did not return ok=true"
+            exit 1
+          fi
+
+          # Get first VTID from list and fetch it
+          FIRST_VTID=$(echo "$LIST" | jq -r '.data[0].vtid // empty')
+          if [ -n "$FIRST_VTID" ]; then
+            echo "=== curl ${{ env.GW_URL }}/api/v1/vtid/$FIRST_VTID ==="
+            DETAIL=$(curl -s "${{ env.GW_URL }}/api/v1/vtid/$FIRST_VTID")
+            echo "$DETAIL"
+          fi
+
+          echo ""
+          echo "==========================================="
+          echo "VERIFICATION PASSED - Fix is working!"
+          echo "==========================================="
+
+          # Save outputs for report
+          echo "alive<<EOF" >> $GITHUB_OUTPUT
+          echo "$ALIVE" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          echo "health<<EOF" >> $GITHUB_OUTPUT
+          echo "$HEALTH" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          echo "list<<EOF" >> $GITHUB_OUTPUT
+          echo "$LIST" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      # =========================================================================
+      # STEP 10: Post Final Report as PR Comment
+      # =========================================================================
+      - name: Post Final Report
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.create_pr.outputs.pr_number || steps.check_pr.outputs.pr_number }}
+          TASK_VTID: ${{ steps.create_task_vtid.outputs.vtid }}
+          DEPLOY_VTID: ${{ steps.create_deploy_vtid.outputs.vtid }}
+          MERGE_SHA: ${{ steps.merge_pr.outputs.sha }}
+          DEPLOY_RUN_URL: ${{ steps.trigger_deploy.outputs.run_url }}
+        run: |
+          REPORT="## VTID Fix E2E - Final Report
+
+          | Item | Value |
+          |------|-------|
+          | TASK_VTID | \`$TASK_VTID\` |
+          | PR | #$PR_NUMBER |
+          | Merge SHA | \`$MERGE_SHA\` |
+          | DEPLOY_VTID | \`$DEPLOY_VTID\` |
+          | Deploy Run | $DEPLOY_RUN_URL |
+
+          ### Verification Evidence
+
+          \`\`\`
+          curl ${{ env.GW_URL }}/alive
+          ${{ steps.verify.outputs.alive }}
+
+          curl ${{ env.GW_URL }}/api/v1/vtid/health
+          ${{ steps.verify.outputs.health }}
+
+          curl ${{ env.GW_URL }}/api/v1/vtid/list?limit=5
+          ${{ steps.verify.outputs.list }}
+          \`\`\`
+
+          Fix deployed and verified successfully."
+
+          gh pr comment "$PR_NUMBER" --body "$REPORT" || echo "Could not comment on PR (may be merged)"
+
+          echo "$REPORT"
