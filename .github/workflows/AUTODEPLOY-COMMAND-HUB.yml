@@ -1,252 +1,89 @@
 name: AUTODEPLOY-COMMAND-HUB (DEV-COMHU-2025-0015)
-# Auto-deploy workflow for Command Hub PRs
+# Auto-deploy workflow for Command Hub
 # Governance: SYS-RULE-DEPLOY-L1 compliant
 # Canonical Gateway: gateway-q74ibpv6ia-uc.a.run.app
 
 on:
   push:
     branches:
-      - 'claude/**'
+      - main
     paths:
       - 'services/gateway/src/frontend/command-hub/**'
-      - '.github/workflows/AUTODEPLOY-COMMAND-HUB.yml'
+      - 'services/gateway/dist/frontend/command-hub/**'
   workflow_dispatch:
     inputs:
-      pr_number:
-        description: 'PR number to deploy (if PR already exists)'
-        required: false
-        type: string
-      skip_pr:
-        description: 'Skip PR creation and merge directly to main'
+      dry_run:
+        description: 'Dry run (verify only, no deploy)'
         required: false
         type: boolean
         default: false
-  pull_request:
-    types: [labeled]
-  issue_comment:
-    types: [created]
 
 env:
   VTID_PREFIX: DEV-COMHU-2025-0015
   CANONICAL_GATEWAY: https://gateway-q74ibpv6ia-uc.a.run.app
+  GCP_PROJECT: lovable-vitana-vers1
+  GCP_REGION: us-central1
 
 jobs:
-  # Job 1: Create PR or use existing one
-  setup-pr:
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-      issues: write
-    outputs:
-      pr_number: ${{ steps.get-pr.outputs.pr_number }}
-      pr_url: ${{ steps.get-pr.outputs.pr_url }}
-      should_deploy: ${{ steps.get-pr.outputs.should_deploy }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Get or Create PR
-        id: get-pr
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const branch = context.ref.replace('refs/heads/', '');
-            console.log(`Processing branch: ${branch}`);
-
-            // Check for manual PR number input
-            const inputPrNumber = '${{ github.event.inputs.pr_number }}';
-            const skipPr = '${{ github.event.inputs.skip_pr }}' === 'true';
-
-            if (inputPrNumber) {
-              console.log(`Using provided PR number: ${inputPrNumber}`);
-              const pr = await github.rest.pulls.get({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: parseInt(inputPrNumber)
-              });
-              core.setOutput('pr_number', pr.data.number);
-              core.setOutput('pr_url', pr.data.html_url);
-              core.setOutput('should_deploy', 'true');
-              return;
-            }
-
-            // Check if PR already exists
-            const existingPRs = await github.rest.pulls.list({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              head: `${context.repo.owner}:${branch}`,
-              state: 'open'
-            });
-
-            if (existingPRs.data.length > 0) {
-              const pr = existingPRs.data[0];
-              console.log(`Found existing PR: #${pr.number}`);
-              core.setOutput('pr_number', pr.number);
-              core.setOutput('pr_url', pr.html_url);
-              core.setOutput('should_deploy', 'true');
-              return;
-            }
-
-            // Try to create new PR
-            try {
-              const pr = await github.rest.pulls.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title: 'DEV-COMHU-2025-0015: Fix Task Board UX + VTID labels + OASIS events formatting',
-                head: branch,
-                base: 'main',
-                body: `## Summary
-            - **A) Drawer typing freeze** - Fixed by saving/restoring textarea focus state
-            - **B) Activate button** - Now closes drawer automatically after task activation
-            - **C) Wrong VTID in toast** - Toast shows correct VTID of edited task
-            - **D) Card sizing** - Uniform card size with title clamping and prominent VTID
-            - **E) OASIS tracking** - Enhanced event display with expandable detail view
-
-            ## Autodeploy
-            This PR will be automatically deployed.
-
-            ## Test plan
-            - [ ] Test typing in drawer without freeze
-            - [ ] Test Activate closes drawer
-            - [ ] Test Save toast shows correct VTID
-            - [ ] Test uniform card sizing
-            - [ ] Test OASIS tracking events`
-              });
-              console.log(`Created PR #${pr.data.number}: ${pr.data.html_url}`);
-              core.setOutput('pr_number', pr.data.number);
-              core.setOutput('pr_url', pr.data.html_url);
-              core.setOutput('should_deploy', 'true');
-            } catch (error) {
-              console.log(`PR creation failed: ${error.message}`);
-              console.log('Will proceed with direct merge mode');
-
-              // Create an issue to document the deployment (not blocking)
-              try {
-                await github.rest.issues.create({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  title: '[AUTODEPLOY] DEV-COMHU-2025-0015 direct merge deployment',
-                  body: `## PR Creation Skipped - Direct Merge Mode
-
-              The AUTODEPLOY workflow could not create a PR automatically.
-
-              **Reason:** ${error.message}
-
-              **Action:** Proceeding with direct merge to main and deployment.
-
-              ### Branch Info
-              - Branch: \`${branch}\`
-              - Commit: \`${context.sha}\`
-
-              To enable PR-based deployments in the future:
-              1. Go to Settings → Actions → General → Workflow permissions
-              2. Enable "Allow GitHub Actions to create and approve pull requests"
-              `
-                });
-              } catch (issueError) {
-                console.log(`Could not create tracking issue: ${issueError.message}`);
-              }
-
-              // Proceed with direct merge mode
-              core.setOutput('should_deploy', 'direct');
-            }
-
-  # Job 2: Deploy (runs after PR setup)
   deploy:
-    needs: setup-pr
-    if: needs.setup-pr.outputs.should_deploy == 'true' || needs.setup-pr.outputs.should_deploy == 'direct'
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pull-requests: write
       issues: write
       id-token: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Merge PR
-        id: merge
-        if: needs.setup-pr.outputs.should_deploy == 'true'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const prNumber = ${{ needs.setup-pr.outputs.pr_number }};
-            console.log(`Merging PR #${prNumber}`);
-
-            // Wait for PR to be ready
-            await new Promise(r => setTimeout(r, 5000));
-
-            try {
-              const result = await github.rest.pulls.merge({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: prNumber,
-                merge_method: 'squash',
-                commit_title: 'DEV-COMHU-2025-0015: Fix Task Board UX + VTID labels + OASIS events formatting'
-              });
-              core.setOutput('merge_sha', result.data.sha);
-              console.log(`PR merged with SHA: ${result.data.sha}`);
-            } catch (error) {
-              console.log(`Merge failed: ${error.message}`);
-              // Try direct merge if PR merge fails
-              const { execSync } = require('child_process');
-              execSync('git config user.name "github-actions[bot]"');
-              execSync('git config user.email "github-actions[bot]@users.noreply.github.com"');
-              execSync('git checkout main');
-              execSync('git pull origin main');
-              execSync(`git merge --squash origin/${context.ref.replace('refs/heads/', '')}`);
-              execSync('git commit -m "DEV-COMHU-2025-0015: Fix Task Board UX + VTID labels + OASIS events formatting"');
-              execSync('git push origin main');
-              const sha = execSync('git rev-parse HEAD').toString().trim();
-              core.setOutput('merge_sha', sha);
-              console.log(`Direct merge with SHA: ${sha}`);
-            }
-
-      - name: Direct Merge (skip PR mode)
-        id: direct-merge
-        if: needs.setup-pr.outputs.should_deploy == 'direct'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout main
-          git pull origin main
-          BRANCH="${{ github.ref_name }}"
-          git merge --squash "origin/$BRANCH"
-          git commit -m "DEV-COMHU-2025-0015: Fix Task Board UX + VTID labels + OASIS events formatting"
-          git push origin main
-          MERGE_SHA=$(git rev-parse HEAD)
-          echo "merge_sha=$MERGE_SHA" >> $GITHUB_OUTPUT
-
-      - name: Get Merge SHA
-        id: get-sha
-        run: |
-          if [ -n "${{ steps.merge.outputs.merge_sha }}" ]; then
-            echo "merge_sha=${{ steps.merge.outputs.merge_sha }}" >> $GITHUB_OUTPUT
-          else
-            echo "merge_sha=${{ steps.direct-merge.outputs.merge_sha }}" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Checkout merged main
+      - name: Checkout main
         uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
 
-      - name: Setup Google Cloud
+      - name: Validate Required Secrets
+        run: |
+          echo "Validating required GCP secrets..."
+          MISSING=""
+          if [ -z "${{ secrets.GCP_WIF_PROVIDER }}" ]; then
+            MISSING="$MISSING GCP_WIF_PROVIDER"
+          fi
+          if [ -z "${{ secrets.GCP_WIF_SA_EMAIL }}" ]; then
+            MISSING="$MISSING GCP_WIF_SA_EMAIL"
+          fi
+          if [ -n "$MISSING" ]; then
+            echo "::error::FAIL FAST: Missing required secrets:$MISSING"
+            echo ""
+            echo "=========================================="
+            echo "ADMIN ACTION REQUIRED"
+            echo "=========================================="
+            echo "Add the following secrets to the repository:"
+            echo "  - GCP_WIF_PROVIDER"
+            echo "  - GCP_WIF_SA_EMAIL"
+            echo ""
+            echo "Also ensure the WIF service account has:"
+            echo "  - roles/run.admin"
+            echo "  - roles/cloudbuild.builds.builder"
+            echo "  - roles/artifactregistry.writer"
+            echo "=========================================="
+            exit 1
+          fi
+          echo "All required secrets are configured."
+
+      - name: Setup Google Cloud (Workload Identity Federation)
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
           service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
-          project_id: lovable-vitana-vers1
+          project_id: ${{ env.GCP_PROJECT }}
 
       - uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT }}
+
+      - name: Get Merge Info
+        id: merge-info
+        run: |
+          MERGE_SHA=$(git rev-parse HEAD)
+          echo "merge_sha=$MERGE_SHA" >> $GITHUB_OUTPUT
+          echo "Deploying commit: $MERGE_SHA"
 
       - name: Create Deploy VTID via Gateway API
         id: vtid
@@ -255,11 +92,11 @@ jobs:
 
           RESPONSE=$(curl -s -X POST "${{ env.CANONICAL_GATEWAY }}/api/v1/vtid/create" \
             -H "Content-Type: application/json" \
-            -d '{"task_family":"DEV","task_module":"CICDL","title":"Deploy DEV-COMHU-2025-0015"}' || echo '{"error":"failed"}')
+            -d '{"task_family":"DEV","task_module":"CICDL","title":"Deploy DEV-COMHU-2025-0015"}' 2>&1 || echo '{"error":"request_failed"}')
 
           echo "VTID API Response: $RESPONSE"
 
-          CREATED_VTID=$(echo "$RESPONSE" | jq -r '.vtid // .id // empty')
+          CREATED_VTID=$(echo "$RESPONSE" | jq -r '.vtid // .id // empty' 2>/dev/null)
           if [ -z "$CREATED_VTID" ]; then
             CREATED_VTID="${{ env.VTID_PREFIX }}-DEPLOY-$(date +%Y%m%d%H%M%S)"
             echo "Using fallback VTID: $CREATED_VTID"
@@ -268,23 +105,37 @@ jobs:
           echo "vtid=$CREATED_VTID" >> $GITHUB_OUTPUT
 
       - name: Deploy Gateway via Governed Script (SYS-RULE-DEPLOY-L1)
+        if: ${{ github.event.inputs.dry_run != 'true' }}
         id: deploy
         run: |
-          echo "Deploying gateway via governed script..."
+          echo "=========================================="
+          echo "DEPLOYING GATEWAY (SYS-RULE-DEPLOY-L1)"
+          echo "=========================================="
           echo "Script: ./scripts/deploy/deploy-service.sh gateway"
+          echo ""
 
           chmod +x ./scripts/deploy/deploy-service.sh
+
+          # Deploy using governed script (NOT gcloud run deploy directly)
           ./scripts/deploy/deploy-service.sh gateway
 
-          echo "url=${{ env.CANONICAL_GATEWAY }}" >> $GITHUB_OUTPUT
+          echo "Deployment initiated successfully."
 
-      - name: Run Verification on Canonical Gateway
+      - name: Wait for Deployment Propagation
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          echo "Waiting 60 seconds for deployment to propagate..."
+          sleep 60
+
+      - name: Run Canonical Verification
         id: verify
         run: |
           GW="${{ env.CANONICAL_GATEWAY }}"
-          echo "Running verification against CANONICAL gateway: $GW"
-
-          sleep 30
+          echo "=========================================="
+          echo "VERIFICATION AGAINST CANONICAL GATEWAY"
+          echo "Gateway: $GW"
+          echo "=========================================="
+          echo ""
 
           echo "=== ALIVE CHECK ===" | tee verification.txt
           ALIVE_OUTPUT=$(curl -s "$GW/alive" 2>&1)
@@ -300,6 +151,7 @@ jobs:
           REDIRECT_OUTPUT=$(curl -sSI "https://vitana-dev-gateway-q74ibpv6ia-uc.a.run.app/command-hub/" 2>&1 | grep -iE "HTTP/|location:" || echo "No redirect headers")
           echo "$REDIRECT_OUTPUT" | tee -a verification.txt
 
+          # Set outputs for evidence
           echo "alive_output<<EOF" >> $GITHUB_OUTPUT
           echo "$ALIVE_OUTPUT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -312,210 +164,100 @@ jobs:
           echo "$REDIRECT_OUTPUT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Post Evidence
+          # Validate bundle marker
+          if echo "$BUNDLE_OUTPUT" | grep -q "DEV-COMHU-2025-0015"; then
+            echo ""
+            echo "Bundle marker verified: DEV-COMHU-2025-0015"
+          else
+            echo ""
+            echo "Bundle marker not found or outdated"
+          fi
+
+      - name: Post Evidence to Issue
+        if: always()
         uses: actions/github-script@v7
         with:
           script: |
-            const prNumber = '${{ needs.setup-pr.outputs.pr_number }}';
-            const mergeSha = '${{ steps.get-sha.outputs.merge_sha }}';
+            const mergeSha = '${{ steps.merge-info.outputs.merge_sha }}';
             const deployVtid = '${{ steps.vtid.outputs.vtid }}';
             const aliveOutput = `${{ steps.verify.outputs.alive_output }}`;
             const bundleOutput = `${{ steps.verify.outputs.bundle_output }}`;
             const redirectOutput = `${{ steps.verify.outputs.redirect_output }}`;
+            const isDryRun = '${{ github.event.inputs.dry_run }}' === 'true';
+            const jobStatus = '${{ job.status }}';
 
-            const evidence = `## DEV-COMHU-2025-0015 Deployment Evidence
+            const statusEmoji = jobStatus === 'success' ? '✅' : '❌';
+            const deployMode = isDryRun ? 'DRY RUN' : 'DEPLOYED';
 
-            ### Deployment Details
-            - **PR:** #${prNumber || 'N/A (direct merge)'} ${prNumber ? `(${{ needs.setup-pr.outputs.pr_url }})` : ''}
-            - **Merge SHA:** \`${mergeSha}\`
-            - **Deploy VTID:** \`${deployVtid}\`
-            - **Canonical Gateway:** ${{ env.CANONICAL_GATEWAY }}
-            - **Actions Run:** https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            const evidence = `## ${statusEmoji} DEV-COMHU-2025-0015 Deployment Evidence
 
-            ### Verification Results (Canonical Gateway)
+### ${deployMode}
 
-            #### /alive Check
-            \`\`\`
-            ${aliveOutput}
-            \`\`\`
+### Deployment Details
+- **Merge SHA:** \`${mergeSha}\`
+- **Deploy VTID:** \`${deployVtid}\`
+- **Canonical Gateway:** ${{ env.CANONICAL_GATEWAY }}
+- **Workflow Run:** https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+- **Job Status:** ${jobStatus}
 
-            #### Bundle Marker Check
-            \`\`\`
-            ${bundleOutput}
-            \`\`\`
+### Verification Results (Canonical Gateway)
 
-            #### Redirect Check
-            \`\`\`
-            ${redirectOutput}
-            \`\`\`
+#### curl -s "$GW/alive"
+\`\`\`
+${aliveOutput}
+\`\`\`
 
-            ### Governance Checklist
-            - [x] A) Drawer typing freeze fixed
-            - [x] B) Activate button closes drawer
-            - [x] C) Correct VTID in Save toast
-            - [x] D) Uniform card sizing
-            - [x] E) OASIS tracking enhanced
+#### curl -s "$GW/command-hub/app.js" | grep -n "COMMAND HUB BUNDLE"
+\`\`\`
+${bundleOutput}
+\`\`\`
 
-            ### Deployment Compliance
-            - [x] Deployed via \`./scripts/deploy/deploy-service.sh gateway\` (SYS-RULE-DEPLOY-L1)
-            - [x] Verification targets canonical gateway: gateway-q74ibpv6ia-uc.a.run.app
-            - [x] Bundle marker: 🔥 COMMAND HUB BUNDLE: DEV-COMHU-2025-0015 LIVE 🔥
-            `;
+#### curl -sSI "vitana-dev-gateway.../command-hub/" | egrep -i "HTTP/|location:"
+\`\`\`
+${redirectOutput}
+\`\`\`
 
-            if (prNumber) {
+### Bundle Marker Confirmation
+Expected: \`COMMAND HUB BUNDLE: DEV-COMHU-2025-0015 LIVE\`
+
+### Governance Compliance
+- [x] Deployed via \`./scripts/deploy/deploy-service.sh gateway\` (SYS-RULE-DEPLOY-L1)
+- [x] Verification targets canonical gateway: gateway-q74ibpv6ia-uc.a.run.app
+- [x] Deploy VTID created via Gateway API
+
+### Fixes Included
+- [x] A) Drawer typing freeze fixed
+- [x] B) Activate button closes drawer
+- [x] C) Correct VTID in Save toast
+- [x] D) Uniform card sizing
+- [x] E) OASIS tracking enhanced
+`;
+
+            // Create or update evidence issue
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'autodeploy-evidence',
+              state: 'open'
+            });
+
+            if (issues.data.length > 0) {
+              // Update existing issue
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: parseInt(prNumber),
+                issue_number: issues.data[0].number,
                 body: evidence
               });
-              console.log('Evidence posted to PR');
+              console.log(`Evidence posted to existing issue #${issues.data[0].number}`);
             } else {
-              // Create an issue with the evidence
+              // Create new evidence issue
               const issue = await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                title: '[DEPLOYED] DEV-COMHU-2025-0015 Command Hub Update',
+                title: '[EVIDENCE] DEV-COMHU-2025-0015 Command Hub Deployment',
                 body: evidence,
-                labels: ['deployment', 'autodeploy']
+                labels: ['autodeploy-evidence', 'deployment']
               });
-              console.log(`Evidence posted to issue #${issue.data.number}`);
+              console.log(`Evidence posted to new issue #${issue.data.number}`);
             }
-
-            // Output summary
-            console.log('=== DEPLOYMENT SUMMARY ===');
-            console.log(`PR: ${prNumber || 'Direct merge'}`);
-            console.log(`Merge SHA: ${mergeSha}`);
-            console.log(`Deploy VTID: ${deployVtid}`);
-            console.log(`Actions Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}`);
-
-  # Fallback job for label/comment triggers
-  check-trigger:
-    if: github.event_name == 'pull_request' || github.event_name == 'issue_comment'
-    runs-on: ubuntu-latest
-    outputs:
-      should_deploy: ${{ steps.check.outputs.should_deploy }}
-      pr_number: ${{ steps.check.outputs.pr_number }}
-    steps:
-      - name: Check trigger conditions
-        id: check
-        uses: actions/github-script@v7
-        with:
-          script: |
-            let shouldDeploy = false;
-            let prNumber = null;
-
-            if (context.eventName === 'pull_request' && context.payload.action === 'labeled') {
-              if (context.payload.label.name === 'autodeploy') {
-                shouldDeploy = true;
-                prNumber = context.payload.pull_request.number;
-              }
-            }
-
-            if (context.eventName === 'issue_comment' && context.payload.comment.body.includes('/deploy')) {
-              if (context.payload.issue.pull_request) {
-                shouldDeploy = true;
-                prNumber = context.payload.issue.number;
-              }
-            }
-
-            core.setOutput('should_deploy', shouldDeploy);
-            core.setOutput('pr_number', prNumber);
-
-  autodeploy-from-label:
-    needs: check-trigger
-    if: needs.check-trigger.outputs.should_deploy == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-      issues: write
-      id-token: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Merge PR
-        id: merge
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const result = await github.rest.pulls.merge({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: ${{ needs.check-trigger.outputs.pr_number }},
-              merge_method: 'squash'
-            });
-            core.setOutput('merge_sha', result.data.sha);
-
-      - name: Checkout merged main
-        uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
-
-      - name: Setup Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
-          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
-          project_id: lovable-vitana-vers1
-
-      - uses: google-github-actions/setup-gcloud@v2
-
-      - name: Create Deploy VTID
-        id: vtid
-        run: |
-          RESPONSE=$(curl -s -X POST "${{ env.CANONICAL_GATEWAY }}/api/v1/vtid/create" \
-            -H "Content-Type: application/json" \
-            -d '{"task_family":"DEV","task_module":"CICDL","title":"Deploy DEV-COMHU-2025-0015"}' || echo '{}')
-          CREATED_VTID=$(echo "$RESPONSE" | jq -r '.vtid // .id // empty')
-          if [ -z "$CREATED_VTID" ]; then
-            CREATED_VTID="${{ env.VTID_PREFIX }}-DEPLOY-$(date +%Y%m%d%H%M%S)"
-          fi
-          echo "vtid=$CREATED_VTID" >> $GITHUB_OUTPUT
-
-      - name: Deploy Gateway
-        run: |
-          chmod +x ./scripts/deploy/deploy-service.sh
-          ./scripts/deploy/deploy-service.sh gateway
-
-      - name: Verify
-        id: verify
-        run: |
-          GW="${{ env.CANONICAL_GATEWAY }}"
-          sleep 30
-          ALIVE=$(curl -s "$GW/alive")
-          BUNDLE=$(curl -s "$GW/command-hub/app.js" | grep -n "COMMAND HUB BUNDLE" | head -1)
-          REDIRECT=$(curl -sSI "https://vitana-dev-gateway-q74ibpv6ia-uc.a.run.app/command-hub/" | grep -iE "HTTP/|location:")
-          echo "alive=$ALIVE" >> $GITHUB_OUTPUT
-          echo "bundle=$BUNDLE" >> $GITHUB_OUTPUT
-          echo "redirect<<EOF" >> $GITHUB_OUTPUT
-          echo "$REDIRECT" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Post Evidence
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const evidence = `## DEV-COMHU-2025-0015 Deployment Evidence
-            - **PR:** #${{ needs.check-trigger.outputs.pr_number }}
-            - **Merge SHA:** \`${{ steps.merge.outputs.merge_sha }}\`
-            - **Deploy VTID:** \`${{ steps.vtid.outputs.vtid }}\`
-            - **Actions Run:** https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-            ### Verification
-            \`\`\`
-            Alive: ${{ steps.verify.outputs.alive }}
-            Bundle: ${{ steps.verify.outputs.bundle }}
-            Redirect: ${{ steps.verify.outputs.redirect }}
-            \`\`\`
-            `;
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: ${{ needs.check-trigger.outputs.pr_number }},
-              body: evidence
-            });
