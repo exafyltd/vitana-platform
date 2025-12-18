@@ -2,7 +2,8 @@
 
 // VTID-0539: Operator Console Chat Experience Improvements
 // DEV-COMHU-2025-0012: Task Management v1 - Persisted Specs + Lifecycle + Approvals
-console.log('🔥 COMMAND HUB BUNDLE: DEV-COMHU-2025-0012-TASK-MGMT-V1 LIVE 🔥');
+// DEV-COMHU-2025-0013: UX fixes - fingerprint style, textarea stability, dismiss toast
+console.log('🔥 COMMAND HUB BUNDLE: DEV-COMHU-2025-0013-TASK-MGMT-UX LIVE 🔥');
 
 // --- DEV-COMHU-2025-0012: LocalStorage Helpers for Task Management v1 ---
 
@@ -328,6 +329,9 @@ const state = {
     selectedTaskDetailLoading: false,
     taskSearchQuery: '',
     taskDateFilter: '',
+    // DEV-COMHU-2025-0013: Drawer spec state for stable textarea editing
+    drawerSpecVtid: null,   // Which task's spec is being edited
+    drawerSpecText: '',     // Live text during editing (not persisted until Save)
 
     // Split Screen
     isSplitScreen: false,
@@ -2045,9 +2049,9 @@ function renderTasksView() {
     fingerprint.textContent = 'Data: VTID_LEDGER (DEV-COMHU-2025-0011)';
     container.appendChild(fingerprint);
 
-    // DEV-COMHU-2025-0012: Task Management v1 fingerprint
+    // DEV-COMHU-2025-0013: Task Management v1 fingerprint (muted line, non-disruptive)
     var fingerprint2 = document.createElement('div');
-    fingerprint2.className = 'view-fingerprint';
+    fingerprint2.className = 'view-fingerprint-muted';
     fingerprint2.textContent = 'Task Mgmt v1: LOCAL (DEV-COMHU-2025-0012)';
     container.appendChild(fingerprint2);
 
@@ -2218,6 +2222,7 @@ function createTaskStageTimeline(task) {
 
 /**
  * DEV-COMHU-2025-0012: Task drawer with editable spec, lifecycle buttons.
+ * DEV-COMHU-2025-0013: Stable textarea editing (load once, edit locally, save explicitly).
  */
 function renderTaskDrawer() {
     const drawer = document.createElement('div');
@@ -2226,6 +2231,12 @@ function renderTaskDrawer() {
     if (!state.selectedTask) return drawer;
 
     const vtid = state.selectedTask.vtid;
+
+    // DEV-COMHU-2025-0013: Initialize drawer spec state when opening for a new task
+    if (state.drawerSpecVtid !== vtid) {
+        state.drawerSpecVtid = vtid;
+        state.drawerSpecText = getTaskSpec(vtid);
+    }
 
     const header = document.createElement('div');
     header.className = 'drawer-header';
@@ -2242,6 +2253,9 @@ function renderTaskDrawer() {
         state.selectedTask = null;
         state.selectedTaskDetail = null;
         state.selectedTaskDetailLoading = false;
+        // DEV-COMHU-2025-0013: Clear drawer spec state on close
+        state.drawerSpecVtid = null;
+        state.drawerSpecText = '';
         renderApp();
     };
     header.appendChild(closeBtn);
@@ -2283,8 +2297,13 @@ function renderTaskDrawer() {
     var specTextarea = document.createElement('textarea');
     specTextarea.className = 'task-spec-textarea';
     specTextarea.placeholder = 'Enter task specification here...';
-    specTextarea.value = getTaskSpec(vtid);
+    // DEV-COMHU-2025-0013: Use stable state value (not localStorage on every render)
+    specTextarea.value = state.drawerSpecText;
     specTextarea.id = 'task-spec-editor-' + vtid.replace(/[^a-zA-Z0-9]/g, '-');
+    // DEV-COMHU-2025-0013: Update state on input without re-rendering (stable typing)
+    specTextarea.oninput = function(e) {
+        state.drawerSpecText = e.target.value;
+    };
     specSection.appendChild(specTextarea);
 
     // DEV-COMHU-2025-0012: Spec action buttons
@@ -2295,9 +2314,9 @@ function renderTaskDrawer() {
     saveBtn.className = 'btn btn-primary task-spec-btn';
     saveBtn.textContent = 'Save';
     saveBtn.onclick = function() {
-        var textarea = document.getElementById('task-spec-editor-' + vtid.replace(/[^a-zA-Z0-9]/g, '-'));
-        if (textarea && saveTaskSpec(vtid, textarea.value)) {
-            showToast('Spec saved locally (DEV-COMHU-2025-0012)', 'success');
+        // DEV-COMHU-2025-0013: Save from stable state, not DOM query
+        if (saveTaskSpec(vtid, state.drawerSpecText)) {
+            showToast('Spec saved locally (DEV-COMHU-2025-0013)', 'success');
         } else {
             showToast('Failed to save spec', 'error');
         }
@@ -2308,11 +2327,13 @@ function renderTaskDrawer() {
     resetBtn.className = 'btn task-spec-btn';
     resetBtn.textContent = 'Reset';
     resetBtn.onclick = function() {
+        // DEV-COMHU-2025-0013: Reset from localStorage and update stable state
+        state.drawerSpecText = getTaskSpec(vtid);
         var textarea = document.getElementById('task-spec-editor-' + vtid.replace(/[^a-zA-Z0-9]/g, '-'));
         if (textarea) {
-            textarea.value = getTaskSpec(vtid);
-            showToast('Spec reset to last saved', 'info');
+            textarea.value = state.drawerSpecText;
         }
+        showToast('Spec reset to last saved', 'info');
     };
     specActions.appendChild(resetBtn);
 
@@ -5410,9 +5431,9 @@ function renderApprovalsView() {
 
     container.appendChild(header);
 
-    // DEV-COMHU-2025-0012: Fingerprint for deployment verification
+    // DEV-COMHU-2025-0013: Fingerprint for deployment verification (muted style)
     var fingerprint = document.createElement('div');
-    fingerprint.className = 'view-fingerprint';
+    fingerprint.className = 'view-fingerprint-muted';
     fingerprint.textContent = 'Task Mgmt v1: LOCAL (DEV-COMHU-2025-0012)';
     container.appendChild(fingerprint);
 
@@ -5597,7 +5618,8 @@ function renderApprovalsView() {
                     // Local dismiss only - no backend call
                     if (confirm('Dismiss this item?\n\nThis will hide the item locally (localStorage suppression).')) {
                         dismissApproval(repo, prNumber);
-                        showToast('Item dismissed locally (DEV-COMHU-2025-0012)', 'info');
+                        // DEV-COMHU-2025-0013: Clear toast confirmation for dismiss
+                        showToast('Dismissed locally (DEV-COMHU-2025-0012)', 'info');
                         renderApp();
                     }
                 } else {

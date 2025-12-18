@@ -6180,3 +6180,14 @@ body {
   background: rgba(255, 255, 255, 0.1);
   color: var(--color-text-primary);
 }
+
+/* DEV-COMHU-2025-0013: Muted fingerprint line (non-disruptive) */
+.view-fingerprint-muted {
+  display: block;
+  font-size: 0.65rem;
+  color: var(--color-text-secondary);
+  opacity: 0.7;
+  font-family: 'Courier New', monospace;
+  margin-top: 0.25rem;
+  margin-left: 1rem;
+}
