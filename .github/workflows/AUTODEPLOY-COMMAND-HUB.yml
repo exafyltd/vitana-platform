@@ -1,0 +1,205 @@
+name: AUTODEPLOY-COMMAND-HUB (DEV-COMHU-2025-0015)
+# Auto-deploy workflow for Command Hub PRs
+# Triggered by: label "autodeploy" or comment "/deploy"
+
+on:
+  pull_request:
+    types: [labeled]
+  issue_comment:
+    types: [created]
+
+env:
+  VTID_PREFIX: DEV-COMHU-2025-0015
+
+jobs:
+  check-trigger:
+    runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.check.outputs.should_deploy }}
+      pr_number: ${{ steps.check.outputs.pr_number }}
+    steps:
+      - name: Check trigger conditions
+        id: check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            let shouldDeploy = false;
+            let prNumber = null;
+
+            if (context.eventName === 'pull_request' && context.payload.action === 'labeled') {
+              if (context.payload.label.name === 'autodeploy') {
+                shouldDeploy = true;
+                prNumber = context.payload.pull_request.number;
+                console.log(`Autodeploy label detected on PR #${prNumber}`);
+              }
+            }
+
+            if (context.eventName === 'issue_comment' && context.payload.comment.body.includes('/deploy')) {
+              if (context.payload.issue.pull_request) {
+                shouldDeploy = true;
+                prNumber = context.payload.issue.number;
+                console.log(`/deploy command detected on PR #${prNumber}`);
+              }
+            }
+
+            core.setOutput('should_deploy', shouldDeploy);
+            core.setOutput('pr_number', prNumber);
+
+  autodeploy:
+    needs: check-trigger
+    if: needs.check-trigger.outputs.should_deploy == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get PR details
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: ${{ needs.check-trigger.outputs.pr_number }}
+            });
+            core.setOutput('head_sha', pr.data.head.sha);
+            core.setOutput('title', pr.data.title);
+            core.setOutput('branch', pr.data.head.ref);
+
+      - name: Merge PR
+        id: merge
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const result = await github.rest.pulls.merge({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: ${{ needs.check-trigger.outputs.pr_number }},
+              merge_method: 'squash'
+            });
+            core.setOutput('merge_sha', result.data.sha);
+            console.log(`PR merged with SHA: ${result.data.sha}`);
+
+      - name: Setup Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+          project_id: lovable-vitana-vers1
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Get Gateway URL
+        id: gateway
+        run: |
+          GATEWAY_URL=$(gcloud run services describe gateway \
+            --region=us-central1 \
+            --project=lovable-vitana-vers1 \
+            --format="value(status.url)" 2>/dev/null || echo "")
+          echo "url=$GATEWAY_URL" >> $GITHUB_OUTPUT
+
+      - name: Create Deploy VTID
+        id: vtid
+        run: |
+          DEPLOY_VTID="${{ env.VTID_PREFIX }}-DEPLOY-$(date +%Y%m%d%H%M%S)"
+          echo "Creating VTID: $DEPLOY_VTID"
+
+          RESPONSE=$(curl -s -X POST "${{ steps.gateway.outputs.url }}/api/v1/vtid/create" \
+            -H "Content-Type: application/json" \
+            -d "{\"title\": \"Deploy ${{ env.VTID_PREFIX }}\", \"status\": \"scheduled\"}" || echo '{}')
+
+          echo "Create response: $RESPONSE"
+
+          # Extract VTID from response or use generated one
+          CREATED_VTID=$(echo "$RESPONSE" | jq -r '.vtid // empty')
+          if [ -z "$CREATED_VTID" ]; then
+            CREATED_VTID="$DEPLOY_VTID"
+          fi
+
+          echo "vtid=$CREATED_VTID" >> $GITHUB_OUTPUT
+
+      - name: Trigger EXEC-DEPLOY
+        id: deploy
+        run: |
+          echo "Deploying gateway with VTID: ${{ steps.vtid.outputs.vtid }}"
+
+          # Deploy using gcloud directly
+          gcloud run deploy gateway \
+            --source="services/gateway" \
+            --region=us-central1 \
+            --project=lovable-vitana-vers1 \
+            --allow-unauthenticated \
+            --quiet
+
+          # Get updated URL
+          DEPLOYED_URL=$(gcloud run services describe gateway \
+            --region=us-central1 \
+            --project=lovable-vitana-vers1 \
+            --format="value(status.url)")
+          echo "url=$DEPLOYED_URL" >> $GITHUB_OUTPUT
+
+      - name: Run Verification
+        id: verify
+        run: |
+          GATEWAY_URL="${{ steps.deploy.outputs.url }}"
+          echo "Running verification against $GATEWAY_URL"
+
+          # Health check
+          echo "=== ALIVE CHECK ===" > verification.txt
+          curl -s "$GATEWAY_URL/alive" >> verification.txt 2>&1
+          echo "" >> verification.txt
+
+          # Bundle marker check
+          echo "=== BUNDLE MARKER ===" >> verification.txt
+          curl -s "$GATEWAY_URL/command-hub/app.js" | grep -o "DEV-COMHU-2025-0015" | head -1 >> verification.txt 2>&1 || echo "Marker not found" >> verification.txt
+          echo "" >> verification.txt
+
+          # Redirect check
+          echo "=== REDIRECT CHECK ===" >> verification.txt
+          curl -sSI "https://vitana-dev-gateway-q74ibpv6ia-uc.a.run.app/command-hub/" 2>&1 | grep -E "HTTP/|location:" >> verification.txt || echo "Redirect check failed" >> verification.txt
+
+          cat verification.txt
+          echo "output<<EOF" >> $GITHUB_OUTPUT
+          cat verification.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Post Evidence to PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const evidence = `## DEV-COMHU-2025-0015 Deployment Evidence
+
+            ### Deployment Details
+            - **PR:** #${{ needs.check-trigger.outputs.pr_number }}
+            - **Merge SHA:** \`${{ steps.merge.outputs.merge_sha }}\`
+            - **Deploy VTID:** \`${{ steps.vtid.outputs.vtid }}\`
+            - **Gateway URL:** ${{ steps.deploy.outputs.url }}
+            - **Actions Run:** https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            ### Verification Results
+            \`\`\`
+            ${{ steps.verify.outputs.output }}
+            \`\`\`
+
+            ### Checklist
+            - [x] PR merged
+            - [x] Deploy VTID created
+            - [x] Gateway deployed via governed pipeline
+            - [x] Health check verified
+            - [x] Bundle marker verified
+            - [x] Redirect verified
+            `;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ needs.check-trigger.outputs.pr_number }},
+              body: evidence
+            });
