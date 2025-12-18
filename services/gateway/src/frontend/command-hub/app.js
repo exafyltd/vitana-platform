@@ -3,7 +3,8 @@
 // VTID-0539: Operator Console Chat Experience Improvements
 // DEV-COMHU-2025-0012: Task Management v1 - Persisted Specs + Lifecycle + Approvals
 // DEV-COMHU-2025-0013: UX fixes - fingerprint style, textarea stability, dismiss toast
-console.log('🔥 COMMAND HUB BUNDLE: DEV-COMHU-2025-0013-TASK-MGMT-UX LIVE 🔥');
+// DEV-COMHU-2025-0015: Fix Task Board UX + VTID labels + OASIS events formatting
+console.log('🔥 COMMAND HUB BUNDLE: DEV-COMHU-2025-0015 LIVE 🔥');
 
 // --- DEV-COMHU-2025-0012: LocalStorage Helpers for Task Management v1 ---
 
@@ -332,6 +333,8 @@ const state = {
     // DEV-COMHU-2025-0013: Drawer spec state for stable textarea editing
     drawerSpecVtid: null,   // Which task's spec is being edited
     drawerSpecText: '',     // Live text during editing (not persisted until Save)
+    // DEV-COMHU-2025-0015: Guard against re-render while editing spec textarea
+    drawerSpecEditing: false,
 
     // Split Screen
     isSplitScreen: false,
@@ -1302,6 +1305,17 @@ function renderApp() {
         };
     }
 
+    // DEV-COMHU-2025-0015: Save task spec textarea focus state before destroying DOM
+    var specTextarea = document.querySelector('.task-spec-textarea');
+    var savedSpecFocus = null;
+    if (specTextarea && document.activeElement === specTextarea) {
+        savedSpecFocus = {
+            value: specTextarea.value,
+            selectionStart: specTextarea.selectionStart,
+            selectionEnd: specTextarea.selectionEnd
+        };
+    }
+
     // VTID-0539: Save chat scroll position for scroll anchoring
     var messagesContainer = document.querySelector('.chat-messages');
     var savedChatScroll = null;
@@ -1381,6 +1395,18 @@ function renderApp() {
                 newTextarea.focus();
                 // Restore cursor position
                 newTextarea.setSelectionRange(savedChatFocus.selectionStart, savedChatFocus.selectionEnd);
+            }
+        });
+    }
+
+    // DEV-COMHU-2025-0015: Restore task spec textarea focus after render
+    if (savedSpecFocus) {
+        requestAnimationFrame(function() {
+            var newSpecTextarea = document.querySelector('.task-spec-textarea');
+            if (newSpecTextarea) {
+                newSpecTextarea.focus();
+                // Restore cursor position
+                newSpecTextarea.setSelectionRange(savedSpecFocus.selectionStart, savedSpecFocus.selectionEnd);
             }
         });
     }
@@ -2300,9 +2326,18 @@ function renderTaskDrawer() {
     // DEV-COMHU-2025-0013: Use stable state value (not localStorage on every render)
     specTextarea.value = state.drawerSpecText;
     specTextarea.id = 'task-spec-editor-' + vtid.replace(/[^a-zA-Z0-9]/g, '-');
+    // DEV-COMHU-2025-0015: Track editing state to prevent re-render interruptions
+    specTextarea.onfocus = function() {
+        state.drawerSpecEditing = true;
+    };
     // DEV-COMHU-2025-0013: Update state on input without re-rendering (stable typing)
     specTextarea.oninput = function(e) {
         state.drawerSpecText = e.target.value;
+        state.drawerSpecEditing = true;
+    };
+    specTextarea.onblur = function() {
+        // Reset editing flag when user leaves the input
+        state.drawerSpecEditing = false;
     };
     specSection.appendChild(specTextarea);
 
@@ -2315,10 +2350,11 @@ function renderTaskDrawer() {
     saveBtn.textContent = 'Save';
     saveBtn.onclick = function() {
         // DEV-COMHU-2025-0013: Save from stable state, not DOM query
+        // DEV-COMHU-2025-0015: Show correct VTID in toast message
         if (saveTaskSpec(vtid, state.drawerSpecText)) {
-            showToast('Spec saved locally (DEV-COMHU-2025-0013)', 'success');
+            showToast('Saved task ' + vtid, 'success');
         } else {
-            showToast('Failed to save spec', 'error');
+            showToast('Failed to save spec for ' + vtid, 'error');
         }
     };
     specActions.appendChild(saveBtn);
@@ -2346,7 +2382,13 @@ function renderTaskDrawer() {
         activateBtn.title = 'Move task from Scheduled to In Progress';
         activateBtn.onclick = function() {
             if (setTaskStatusOverride(vtid, 'in_progress')) {
-                showToast('Task activated: ' + vtid + ' → In Progress (local)', 'success');
+                showToast('Task activated: ' + vtid + ' → In Progress', 'success');
+                // DEV-COMHU-2025-0015: Close drawer after activation
+                state.selectedTask = null;
+                state.selectedTaskDetail = null;
+                state.drawerSpecVtid = null;
+                state.drawerSpecText = '';
+                state.drawerSpecEditing = false;
                 renderApp();
             } else {
                 showToast('Failed to activate task', 'error');
@@ -2390,6 +2432,7 @@ function getEventsForVtid(vtid) {
 
 /**
  * DEV-COMHU-0202: Render event history for a VTID in the task drawer.
+ * DEV-COMHU-2025-0015: Improved formatting with structured detail view.
  * Shows last deploy, governance, and other events for correlation.
  */
 function renderTaskEventHistory(vtid) {
@@ -2398,15 +2441,24 @@ function renderTaskEventHistory(vtid) {
 
     const heading = document.createElement('h3');
     heading.className = 'task-event-history-heading';
-    heading.textContent = 'Event History';
+    heading.textContent = 'OASIS Event Tracking';
     container.appendChild(heading);
 
     const events = getEventsForVtid(vtid);
 
-    if (!events || events.length === 0) {
+    // DEV-COMHU-2025-0015: Filter out noise events (internal/debug)
+    var filteredEvents = events.filter(function(e) {
+        // Skip internal system events and noise
+        if (!e.topic) return false;
+        if (e.topic.startsWith('internal.')) return false;
+        if (e.topic.startsWith('debug.')) return false;
+        return true;
+    });
+
+    if (!filteredEvents || filteredEvents.length === 0) {
         const emptyDiv = document.createElement('div');
         emptyDiv.className = 'task-event-history-empty';
-        emptyDiv.textContent = 'No recent events for this VTID.';
+        emptyDiv.textContent = 'No tracked events for ' + vtid;
         container.appendChild(emptyDiv);
         return container;
     }
@@ -2415,47 +2467,130 @@ function renderTaskEventHistory(vtid) {
     list.className = 'task-event-history-list';
 
     // Show last 5 events, sorted by timestamp (newest first)
-    var sortedEvents = events.slice().sort(function(a, b) {
-        if (!a.createdAt || !b.createdAt) return 0;
-        return new Date(b.createdAt) - new Date(a.createdAt);
+    var sortedEvents = filteredEvents.slice().sort(function(a, b) {
+        var dateA = a.createdAt || a.created_at || '';
+        var dateB = b.createdAt || b.created_at || '';
+        if (!dateA || !dateB) return 0;
+        return new Date(dateB) - new Date(dateA);
     });
 
-    sortedEvents.slice(0, 5).forEach(function(event) {
+    sortedEvents.slice(0, 5).forEach(function(event, index) {
         const item = document.createElement('div');
         item.className = 'task-event-history-item';
+        item.dataset.eventIndex = index;
 
-        // Status-based styling
-        if (event.topic && event.topic.includes('.success')) {
+        // DEV-COMHU-2025-0015: Status-based styling
+        var status = event.status || '';
+        if (status === 'success' || (event.topic && event.topic.includes('.success'))) {
             item.classList.add('task-event-history-item-success');
-        } else if (event.topic && (event.topic.includes('.failed') || event.topic.includes('.blocked'))) {
+        } else if (status === 'error' || (event.topic && (event.topic.includes('.failed') || event.topic.includes('.blocked')))) {
             item.classList.add('task-event-history-item-error');
+        } else if (status === 'warning') {
+            item.classList.add('task-event-history-item-warning');
         }
 
-        const timestamp = event.createdAt ? new Date(event.createdAt).toLocaleTimeString() : '';
+        // DEV-COMHU-2025-0015: Header row with timestamp, type, vtid
+        const headerRow = document.createElement('div');
+        headerRow.className = 'task-event-history-header';
 
+        // Timestamp (clear format)
+        var eventDate = event.createdAt || event.created_at;
+        var timestamp = eventDate ? new Date(eventDate).toLocaleString('en-US', {
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+        }) : '';
         const timeSpan = document.createElement('span');
         timeSpan.className = 'task-event-history-time';
         timeSpan.textContent = timestamp;
-        item.appendChild(timeSpan);
+        headerRow.appendChild(timeSpan);
 
+        // Type/Topic (abbreviated)
         const topicSpan = document.createElement('span');
         topicSpan.className = 'task-event-history-topic';
-        topicSpan.textContent = event.topic || 'unknown';
-        item.appendChild(topicSpan);
+        var topicText = event.topic || 'event';
+        // Shorten long topics
+        if (topicText.length > 25) {
+            topicText = topicText.split('.').slice(-2).join('.');
+        }
+        topicSpan.textContent = topicText;
+        headerRow.appendChild(topicSpan);
 
-        if (event.swv) {
-            const swvSpan = document.createElement('span');
-            swvSpan.className = 'task-event-history-swv';
-            swvSpan.textContent = event.swv;
-            item.appendChild(swvSpan);
+        // Status badge
+        if (status) {
+            const statusBadge = document.createElement('span');
+            statusBadge.className = 'task-event-history-status task-event-status-' + status;
+            statusBadge.textContent = status;
+            headerRow.appendChild(statusBadge);
         }
 
+        item.appendChild(headerRow);
+
+        // Short message
         if (event.message) {
             const msgDiv = document.createElement('div');
             msgDiv.className = 'task-event-history-message';
-            msgDiv.textContent = event.message;
+            var msgText = event.message;
+            if (msgText.length > 80) {
+                msgText = msgText.substring(0, 77) + '...';
+            }
+            msgDiv.textContent = msgText;
             item.appendChild(msgDiv);
         }
+
+        // DEV-COMHU-2025-0015: Expandable detail view (click to toggle)
+        const detailDiv = document.createElement('div');
+        detailDiv.className = 'task-event-history-detail';
+        detailDiv.style.display = 'none';
+
+        // Build structured key/value pairs
+        var detailFields = [
+            { label: 'Event ID', value: event.id },
+            { label: 'VTID', value: event.vtid },
+            { label: 'Topic', value: event.topic },
+            { label: 'Status', value: event.status },
+            { label: 'Service', value: event.service },
+            { label: 'Role', value: event.role },
+            { label: 'Model', value: event.model },
+            { label: 'SWV', value: event.swv },
+            { label: 'Full Message', value: event.message }
+        ];
+
+        detailFields.forEach(function(field) {
+            if (field.value) {
+                const row = document.createElement('div');
+                row.className = 'task-event-detail-row';
+                row.innerHTML = '<span class="task-event-detail-label">' + field.label + ':</span>' +
+                    '<span class="task-event-detail-value">' + field.value + '</span>';
+                detailDiv.appendChild(row);
+            }
+        });
+
+        // Metadata JSON if present
+        if (event.metadata && Object.keys(event.metadata).length > 0) {
+            const metaRow = document.createElement('div');
+            metaRow.className = 'task-event-detail-row task-event-detail-meta';
+            const metaLabel = document.createElement('div');
+            metaLabel.className = 'task-event-detail-label';
+            metaLabel.textContent = 'Metadata:';
+            metaRow.appendChild(metaLabel);
+            const metaPre = document.createElement('pre');
+            metaPre.className = 'task-event-detail-json';
+            metaPre.textContent = JSON.stringify(event.metadata, null, 2);
+            metaRow.appendChild(metaPre);
+            detailDiv.appendChild(metaRow);
+        }
+
+        item.appendChild(detailDiv);
+
+        // Click handler to expand/collapse
+        item.onclick = function() {
+            var detail = this.querySelector('.task-event-history-detail');
+            if (detail) {
+                var isOpen = detail.style.display !== 'none';
+                detail.style.display = isOpen ? 'none' : 'block';
+                this.classList.toggle('task-event-history-item-expanded', !isOpen);
+            }
+        };
+        item.style.cursor = 'pointer';
 
         list.appendChild(item);
     });
