@@ -217,114 +217,74 @@ function getSupabaseConfig() {
   return { supabaseUrl, svcKey };
 }
 
-async function generateVtidInDb(supabaseUrl: string, svcKey: string, family: string, module: string): Promise<string> {
-  const resp = await fetch(supabaseUrl + "/rest/v1/rpc/next_vtid", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", apikey: svcKey, Authorization: "Bearer " + svcKey },
-    body: JSON.stringify({ p_family: family, p_module: module }),
-  });
-  if (!resp.ok) throw new Error("VTID generation failed: " + resp.statusText);
-  return (await resp.json()) as string;
+/**
+ * VTID-0543: Atomic VTID creation via RPC
+ * This replaces the non-atomic next_vtid + separate INSERT pattern
+ */
+interface AtomicCreateResult {
+  id: string;
+  vtid: string;
+  title: string;
+  status: string;
+  tenant: string;
+  layer: string;
+  module: string;
+  created_at: string;
 }
 
 router.post("/create", async (req: Request, res: Response) => {
   try {
     const body = VtidCreateSchema.parse(req.body);
     const { supabaseUrl, svcKey } = getSupabaseConfig();
-    const vtid = await generateVtidInDb(supabaseUrl, svcKey, body.task_family, body.task_module);
 
-    // VTID-0540: Dynamic schema discovery - fetch allowed columns from vtid_ledger
-    let allowedColumns: string[] = [];
-    try {
-      const sampleResp = await fetch(supabaseUrl + "/rest/v1/vtid_ledger?limit=1", {
-        headers: { apikey: svcKey, Authorization: "Bearer " + svcKey },
-      });
-      if (sampleResp.ok) {
-        const sampleData = await sampleResp.json() as any[];
-        if (sampleData.length > 0) {
-          allowedColumns = Object.keys(sampleData[0]);
-          console.log(`[VTID-CREATE] Discovered ${allowedColumns.length} columns: ${allowedColumns.join(', ')}`);
-        }
-      }
-    } catch (schemaErr: any) {
-      console.warn(`[VTID-CREATE] Schema discovery failed: ${schemaErr.message}`);
-    }
+    console.log(`[VTID-0543] Creating VTID atomically: family=${body.task_family}, module=${body.task_module}`);
 
-    // Build desired insert payload
-    const desiredPayload: Record<string, any> = {
-      id: randomUUID(),
-      vtid,
-      title: body.title,
-      status: body.status,
-      tenant: body.tenant,
-      is_test: body.is_test,
-      task_family: body.task_family,
-      module: body.task_module,
-      layer: body.task_family, // Use task_family as layer (DEV, ADM, etc.)
-      summary: body.description_md || body.title,
-      metadata: body.metadata || {},
-    };
-
-    // VTID-0540: Filter to allowed columns if schema was discovered
-    let insertPayload: Record<string, any>;
-    if (allowedColumns.length > 0) {
-      insertPayload = {};
-      for (const key of Object.keys(desiredPayload)) {
-        if (allowedColumns.includes(key)) {
-          insertPayload[key] = desiredPayload[key];
-        } else {
-          console.warn(`[VTID-CREATE] Dropping column '${key}' - not in vtid_ledger schema`);
-        }
-      }
-    } else {
-      // Fallback: use minimal safe columns if schema discovery failed
-      insertPayload = {
-        id: desiredPayload.id,
-        vtid: desiredPayload.vtid,
-        title: desiredPayload.title,
-        status: desiredPayload.status,
-        tenant: desiredPayload.tenant,
-        layer: desiredPayload.layer,
-        summary: desiredPayload.summary,
-      };
-      console.warn(`[VTID-CREATE] Using minimal payload (schema discovery failed)`);
-    }
-
-    console.log(`[VTID-CREATE] Inserting VTID ${vtid} into vtid_ledger with keys: ${Object.keys(insertPayload).join(', ')}`);
-
-    const insertResp = await fetch(supabaseUrl + "/rest/v1/vtid_ledger", {
+    // VTID-0543: Use atomic RPC that generates VTID + inserts in one transaction
+    const rpcResp = await fetch(supabaseUrl + "/rest/v1/rpc/create_vtid_atomic", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         apikey: svcKey,
         Authorization: "Bearer " + svcKey,
-        Prefer: "return=representation"
       },
-      body: JSON.stringify(insertPayload),
+      body: JSON.stringify({
+        p_family: body.task_family,
+        p_module: body.task_module,
+        p_title: body.title,
+        p_status: body.status,
+        p_tenant: body.tenant,
+        p_is_test: body.is_test,
+        p_summary: body.description_md || body.title,
+        p_metadata: body.metadata || {},
+      }),
     });
 
-    if (!insertResp.ok) {
-      const errorText = await insertResp.text();
-      // VTID-0540: Parse and log full Supabase error details
+    if (!rpcResp.ok) {
+      const errorText = await rpcResp.text();
       let supabaseError: { code?: string; message?: string; details?: string; hint?: string } = {};
       try {
         supabaseError = JSON.parse(errorText);
       } catch {
         supabaseError = { message: errorText };
       }
-      console.error(`[VTID-CREATE] Supabase insert FAILED:`);
-      console.error(`  HTTP Status: ${insertResp.status} ${insertResp.statusText}`);
+
+      console.error(`[VTID-0543] Atomic create FAILED:`);
+      console.error(`  HTTP Status: ${rpcResp.status} ${rpcResp.statusText}`);
       console.error(`  Error Code: ${supabaseError.code || 'N/A'}`);
       console.error(`  Message: ${supabaseError.message || 'N/A'}`);
       console.error(`  Details: ${supabaseError.details || 'N/A'}`);
-      console.error(`  Hint: ${supabaseError.hint || 'N/A'}`);
-      console.error(`  Payload keys: ${Object.keys(insertPayload).join(', ')}`);
 
-      return res.status(400).json({
+      // Check if RPC doesn't exist (function not deployed yet) - fall back to legacy method
+      if (rpcResp.status === 404 || (supabaseError.message && supabaseError.message.includes('does not exist'))) {
+        console.warn(`[VTID-0543] Atomic RPC not found, falling back to legacy method`);
+        return await legacyCreate(req, res, body, supabaseUrl, svcKey);
+      }
+
+      return res.status(rpcResp.status >= 400 && rpcResp.status < 500 ? rpcResp.status : 502).json({
         ok: false,
         error: "database_insert_failed",
-        message: supabaseError.message || `Failed to persist VTID to ledger: ${insertResp.statusText}`,
-        statusCode: insertResp.status,
+        message: supabaseError.message || `Atomic VTID creation failed: ${rpcResp.statusText}`,
+        statusCode: rpcResp.status,
         supabase_error: {
           code: supabaseError.code,
           details: supabaseError.details,
@@ -333,15 +293,102 @@ router.post("/create", async (req: Request, res: Response) => {
       });
     }
 
-    const data = (await insertResp.json()) as any[];
-    console.log(`[VTID-CREATE] Successfully created and persisted: ${vtid}`);
-    return res.status(201).json({ ok: true, ...data[0] });
+    const result = await rpcResp.json() as AtomicCreateResult[];
+
+    if (!result || result.length === 0) {
+      console.error(`[VTID-0543] Atomic create returned empty result`);
+      return res.status(502).json({
+        ok: false,
+        error: "database_insert_failed",
+        message: "Atomic VTID creation returned no result",
+      });
+    }
+
+    const created = result[0];
+    console.log(`[VTID-0543] Successfully created atomically: ${created.vtid}`);
+
+    return res.status(201).json({
+      ok: true,
+      id: created.id,
+      vtid: created.vtid,
+      title: created.title,
+      status: created.status,
+      tenant: created.tenant,
+      layer: created.layer,
+      module: created.module,
+      created_at: created.created_at,
+    });
   } catch (e: any) {
-    console.error(`[VTID-CREATE] Error:`, e.message);
+    console.error(`[VTID-0543] Error:`, e.message);
     if (e instanceof z.ZodError) return res.status(400).json({ ok: false, error: "validation_failed", details: e.errors });
     return res.status(500).json({ ok: false, error: "internal_server_error", message: e.message });
   }
 });
+
+/**
+ * Legacy create method - fallback when atomic RPC is not available
+ * This is the old non-atomic pattern for backwards compatibility during migration
+ */
+async function legacyCreate(
+  _req: Request,
+  res: Response,
+  body: z.infer<typeof VtidCreateSchema>,
+  supabaseUrl: string,
+  svcKey: string
+) {
+  // Generate VTID via old RPC
+  const vtidResp = await fetch(supabaseUrl + "/rest/v1/rpc/next_vtid", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", apikey: svcKey, Authorization: "Bearer " + svcKey },
+    body: JSON.stringify({ p_family: body.task_family, p_module: body.task_module }),
+  });
+  if (!vtidResp.ok) {
+    return res.status(502).json({ ok: false, error: "vtid_generation_failed", message: vtidResp.statusText });
+  }
+  const vtid = await vtidResp.json() as string;
+
+  // Insert separately (non-atomic - race condition possible)
+  const insertPayload = {
+    id: randomUUID(),
+    vtid,
+    title: body.title,
+    status: body.status,
+    tenant: body.tenant,
+    is_test: body.is_test,
+    layer: body.task_family,
+    module: body.task_module,
+    task_family: body.task_family,
+    task_type: body.task_module,
+    summary: body.description_md || body.title,
+    description: body.description_md || body.title,
+    metadata: body.metadata || {},
+  };
+
+  const insertResp = await fetch(supabaseUrl + "/rest/v1/vtid_ledger", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: svcKey,
+      Authorization: "Bearer " + svcKey,
+      Prefer: "return=representation"
+    },
+    body: JSON.stringify(insertPayload),
+  });
+
+  if (!insertResp.ok) {
+    const errorText = await insertResp.text();
+    console.error(`[VTID-CREATE-LEGACY] Insert failed: ${errorText}`);
+    return res.status(insertResp.status >= 400 && insertResp.status < 500 ? insertResp.status : 502).json({
+      ok: false,
+      error: "database_insert_failed",
+      message: errorText,
+    });
+  }
+
+  const data = (await insertResp.json()) as any[];
+  console.log(`[VTID-CREATE-LEGACY] Created: ${vtid}`);
+  return res.status(201).json({ ok: true, ...data[0] });
+}
 
 router.get("/list", async (req: Request, res: Response) => {
   try {

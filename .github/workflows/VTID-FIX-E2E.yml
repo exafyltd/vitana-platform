@@ -1,5 +1,5 @@
 name: VTID Fix E2E - Auto PR/Merge/Deploy
-# Runs end-to-end: VTID create -> PR -> Merge -> Deploy -> Verify
+# Runs end-to-end: Migration -> VTID create -> PR -> Merge -> Deploy -> Verify
 
 on:
   push:
@@ -19,12 +19,46 @@ jobs:
       contents: write
       pull-requests: write
       actions: write
+      id-token: write
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # Step 0: Apply VTID-0543 atomic migration to Supabase
+      - name: Apply VTID-0543 Migration
+        id: migration
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          echo "Applying VTID-0543 atomic create migration..."
+
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::warning::SUPABASE_DB_URL not set - migration will be applied via APPLY-MIGRATIONS workflow"
+            echo "applied=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Install postgres client
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+
+          # Apply the specific migration
+          MIGRATION_FILE="supabase/migrations/20251218000000_vtid_0543_atomic_create.sql"
+          if [ -f "$MIGRATION_FILE" ]; then
+            echo "Applying $MIGRATION_FILE..."
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f "$MIGRATION_FILE" && {
+              echo "Migration applied successfully"
+              echo "applied=true" >> $GITHUB_OUTPUT
+            } || {
+              echo "::warning::Migration failed - function may already exist or will use fallback"
+              echo "applied=false" >> $GITHUB_OUTPUT
+            }
+          else
+            echo "Migration file not found - skipping"
+            echo "applied=false" >> $GITHUB_OUTPUT
+          fi
 
       # Step 1: Create TASK_VTID (with retry, fallback to BOOTSTRAP)
       - name: Create TASK_VTID

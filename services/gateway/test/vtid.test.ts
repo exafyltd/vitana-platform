@@ -84,4 +84,76 @@ describe("VTID API - DEV-OASIS-0101", () => {
       expect([200, 204]).toContain(res.status);
     });
   });
+
+  // VTID-0543: Regression test for atomic allocator
+  // Ensures consecutive creates get incremented sequence numbers (no collisions)
+  describe("vtid.allocator_atomic_increment_regression", () => {
+    it("should increment sequence for consecutive creates (no 409 collision)", async () => {
+      // Create first VTID
+      const res1 = await request(app).post("/api/v1/vtid/create").send({
+        task_family: "DEV",
+        task_module: "REGTEST",
+        title: "Allocator regression test 1",
+        tenant: "vitana",
+        is_test: true,
+      });
+      expect([201, 200]).toContain(res1.status);
+      expect(res1.body.ok).toBe(true);
+      const vtid1 = res1.body.vtid;
+      expect(vtid1).toBeDefined();
+
+      // Create second VTID immediately (same family/module)
+      const res2 = await request(app).post("/api/v1/vtid/create").send({
+        task_family: "DEV",
+        task_module: "REGTEST",
+        title: "Allocator regression test 2",
+        tenant: "vitana",
+        is_test: true,
+      });
+      // VTID-0543: Must NOT be 409 (duplicate key)
+      expect(res2.status).not.toBe(409);
+      expect([201, 200]).toContain(res2.status);
+      expect(res2.body.ok).toBe(true);
+      const vtid2 = res2.body.vtid;
+      expect(vtid2).toBeDefined();
+
+      // VTIDs must be different
+      expect(vtid2).not.toBe(vtid1);
+
+      // Extract sequence numbers from VTIDs
+      // Format: DEV-REGTEST-2025-0001, DEV-REGTEST-2025-0002
+      const seq1 = parseInt(vtid1.split("-").pop() || "0", 10);
+      const seq2 = parseInt(vtid2.split("-").pop() || "0", 10);
+
+      // Second sequence should be greater (not equal - that would cause 409)
+      expect(seq2).toBeGreaterThan(seq1);
+    });
+
+    it("should handle concurrent creates without collision", async () => {
+      // Fire off 3 concurrent creates
+      const promises = [1, 2, 3].map((n) =>
+        request(app).post("/api/v1/vtid/create").send({
+          task_family: "DEV",
+          task_module: "CONC",
+          title: `Concurrent test ${n}`,
+          tenant: "vitana",
+          is_test: true,
+        })
+      );
+
+      const results = await Promise.all(promises);
+
+      // All should succeed (no 409s)
+      results.forEach((res, i) => {
+        expect(res.status).not.toBe(409);
+        expect([201, 200]).toContain(res.status);
+        expect(res.body.ok).toBe(true);
+      });
+
+      // All VTIDs should be unique
+      const vtids = results.map((r) => r.body.vtid);
+      const uniqueVtids = new Set(vtids);
+      expect(uniqueVtids.size).toBe(vtids.length);
+    });
+  });
 });
