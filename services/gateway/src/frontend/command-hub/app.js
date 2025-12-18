@@ -466,6 +466,7 @@ const state = {
 
     // VTID-0150-A: ORB UI State (Global Assistant Overlay)
     // VTID-0150-B: Added sessionId for Assistant Core integration
+    // DEV-COMHU-2025-0014: Added live voice session state
     orb: {
         overlayVisible: false,
         chatDrawerOpen: false,
@@ -478,7 +479,17 @@ const state = {
             // Initial assistant greeting
             { id: 1, role: 'assistant', content: 'Hello! I\'m your Vitana assistant. How can I help you today?', timestamp: new Date().toISOString() }
         ],
-        chatInputValue: ''
+        chatInputValue: '',
+        // DEV-COMHU-2025-0014: Live voice session state
+        liveSessionId: null,
+        liveConnected: false,
+        liveTranscript: [],
+        liveMuted: false,
+        liveError: null,
+        liveAudioStream: null,
+        liveAudioContext: null,
+        liveAudioProcessor: null,
+        liveEventSource: null
     },
 
     // VTID-0600: Operational Visibility Foundation State
@@ -1494,19 +1505,26 @@ function renderOrbIdleElement() {
     orb.setAttribute('aria-label', 'Open Vitana Assistant');
     orb.setAttribute('tabindex', '0');
 
-    // Click handler
+    // Click handler - DEV-COMHU-2025-0014: Starts live voice session
     orb.addEventListener('click', function() {
         console.log('[ORB] Opening overlay...');
         state.orb.overlayVisible = true;
+        state.orb.liveTranscript = []; // Reset transcript
+        state.orb.liveError = null;
         renderApp();
+        // Start live voice session immediately
+        orbLiveStart();
     });
 
-    // Keyboard accessibility
+    // Keyboard accessibility - DEV-COMHU-2025-0014: Starts live voice session
     orb.addEventListener('keydown', function(e) {
         if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
             state.orb.overlayVisible = true;
+            state.orb.liveTranscript = [];
+            state.orb.liveError = null;
             renderApp();
+            orbLiveStart();
         }
     });
 
@@ -7887,6 +7905,7 @@ const ORB_ICONS = {
 
 /**
  * VTID-0150-A: Renders the ORB Overlay (full-screen mode)
+ * DEV-COMHU-2025-0014: Enhanced with live voice session support
  * @returns {HTMLElement}
  */
 function renderOrbOverlay() {
@@ -7896,32 +7915,79 @@ function renderOrbOverlay() {
     overlay.setAttribute('aria-modal', 'true');
     overlay.setAttribute('aria-label', 'Vitana Assistant');
 
-    // Block background clicks
+    // Block background clicks - DEV-COMHU-2025-0014: Stop live session on close
     overlay.addEventListener('click', function(e) {
         if (e.target === overlay) {
             // Close overlay when clicking backdrop
+            orbLiveStop();
             state.orb.overlayVisible = false;
             state.orb.chatDrawerOpen = false;
             renderApp();
         }
     });
 
-    // Large centered ORB
+    // DEV-COMHU-2025-0014: Live transcript area (above orb)
+    var transcriptArea = document.createElement('div');
+    transcriptArea.className = 'orb-live-transcript';
+
+    if (state.orb.liveError) {
+        var errorMsg = document.createElement('div');
+        errorMsg.className = 'orb-live-error';
+        errorMsg.textContent = state.orb.liveError;
+        transcriptArea.appendChild(errorMsg);
+    } else if (state.orb.liveTranscript.length > 0) {
+        state.orb.liveTranscript.forEach(function(item) {
+            var msgEl = document.createElement('div');
+            msgEl.className = 'orb-live-message orb-live-message-' + item.role;
+            msgEl.textContent = item.text;
+            transcriptArea.appendChild(msgEl);
+        });
+    } else if (state.orb.liveConnected) {
+        var listeningMsg = document.createElement('div');
+        listeningMsg.className = 'orb-live-listening';
+        listeningMsg.textContent = state.orb.liveMuted ? 'Microphone muted' : 'Listening...';
+        transcriptArea.appendChild(listeningMsg);
+    } else if (!state.orb.liveSessionId) {
+        var connectingMsg = document.createElement('div');
+        connectingMsg.className = 'orb-live-connecting';
+        connectingMsg.textContent = 'Connecting...';
+        transcriptArea.appendChild(connectingMsg);
+    }
+
+    overlay.appendChild(transcriptArea);
+
+    // Large centered ORB - DEV-COMHU-2025-0014: Show listening state
     var largeOrb = document.createElement('div');
-    largeOrb.className = 'orb-large' + (state.orb.isThinking ? ' orb-large-thinking' : ' orb-large-idle');
+    var orbClass = 'orb-large';
+    if (state.orb.isThinking) {
+        orbClass += ' orb-large-thinking';
+    } else if (state.orb.liveConnected && !state.orb.liveMuted) {
+        orbClass += ' orb-large-listening';
+    } else {
+        orbClass += ' orb-large-idle';
+    }
+    largeOrb.className = orbClass;
     overlay.appendChild(largeOrb);
 
-    // Status text
+    // Status text - DEV-COMHU-2025-0014: Show live status
     var statusText = document.createElement('div');
     statusText.className = 'orb-status-text';
-    statusText.textContent = state.orb.isThinking ? 'Thinking...' : 'How can I help you?';
+    if (state.orb.isThinking) {
+        statusText.textContent = 'Processing...';
+    } else if (state.orb.liveConnected && !state.orb.liveMuted) {
+        statusText.textContent = 'Speak now...';
+    } else if (state.orb.liveMuted) {
+        statusText.textContent = 'Muted';
+    } else {
+        statusText.textContent = 'Connecting...';
+    }
     overlay.appendChild(statusText);
 
     // Control row
     var controls = document.createElement('div');
     controls.className = 'orb-controls';
 
-    // Close button
+    // Close button - DEV-COMHU-2025-0014: Stop live session on close
     var closeWrapper = document.createElement('div');
     closeWrapper.className = 'orb-control-wrapper';
     var closeBtn = document.createElement('button');
@@ -7930,6 +7996,7 @@ function renderOrbOverlay() {
     closeBtn.innerHTML = ORB_ICONS.close;
     closeBtn.addEventListener('click', function() {
         console.log('[ORB] Closing overlay...');
+        orbLiveStop();
         state.orb.overlayVisible = false;
         state.orb.chatDrawerOpen = false;
         renderApp();
@@ -7941,7 +8008,7 @@ function renderOrbOverlay() {
     closeWrapper.appendChild(closeLabel);
     controls.appendChild(closeWrapper);
 
-    // Mic toggle
+    // Mic toggle - DEV-COMHU-2025-0014: Use orbLiveToggleMute
     var micWrapper = document.createElement('div');
     micWrapper.className = 'orb-control-wrapper';
     var micBtn = document.createElement('button');
@@ -7950,9 +8017,7 @@ function renderOrbOverlay() {
     micBtn.setAttribute('aria-pressed', state.orb.micActive ? 'true' : 'false');
     micBtn.innerHTML = state.orb.micActive ? ORB_ICONS.mic : ORB_ICONS.micOff;
     micBtn.addEventListener('click', function() {
-        console.log('[ORB] Mic toggle:', !state.orb.micActive);
-        state.orb.micActive = !state.orb.micActive;
-        renderApp();
+        orbLiveToggleMute();
     });
     var micLabel = document.createElement('span');
     micLabel.className = 'orb-control-label';
@@ -7961,7 +8026,7 @@ function renderOrbOverlay() {
     micWrapper.appendChild(micLabel);
     controls.appendChild(micWrapper);
 
-    // Screen share toggle
+    // Screen share toggle (stub for DEV-COMHU-2025-0014)
     var screenWrapper = document.createElement('div');
     screenWrapper.className = 'orb-control-wrapper';
     var screenBtn = document.createElement('button');
@@ -7970,7 +8035,7 @@ function renderOrbOverlay() {
     screenBtn.setAttribute('aria-pressed', state.orb.screenShareActive ? 'true' : 'false');
     screenBtn.innerHTML = ORB_ICONS.screen;
     screenBtn.addEventListener('click', function() {
-        console.log('[ORB] Screen share toggle:', !state.orb.screenShareActive);
+        console.log('[ORB] Screen share toggle (stub):', !state.orb.screenShareActive);
         state.orb.screenShareActive = !state.orb.screenShareActive;
         renderApp();
     });
@@ -7981,7 +8046,7 @@ function renderOrbOverlay() {
     screenWrapper.appendChild(screenLabel);
     controls.appendChild(screenWrapper);
 
-    // Camera toggle
+    // Camera toggle (stub for DEV-COMHU-2025-0014)
     var cameraWrapper = document.createElement('div');
     cameraWrapper.className = 'orb-control-wrapper';
     var cameraBtn = document.createElement('button');
@@ -7990,7 +8055,7 @@ function renderOrbOverlay() {
     cameraBtn.setAttribute('aria-pressed', state.orb.cameraActive ? 'true' : 'false');
     cameraBtn.innerHTML = state.orb.cameraActive ? ORB_ICONS.camera : ORB_ICONS.cameraOff;
     cameraBtn.addEventListener('click', function() {
-        console.log('[ORB] Camera toggle:', !state.orb.cameraActive);
+        console.log('[ORB] Camera toggle (stub):', !state.orb.cameraActive);
         state.orb.cameraActive = !state.orb.cameraActive;
         renderApp();
     });
@@ -8164,6 +8229,344 @@ function renderOrbChatDrawer() {
     drawer.appendChild(inputContainer);
 
     return drawer;
+}
+
+// ==========================================================================
+// DEV-COMHU-2025-0014: ORB Live Voice Session Functions
+// ==========================================================================
+
+/**
+ * DEV-COMHU-2025-0014: Start the ORB live voice session
+ * Opens mic, connects SSE, starts audio streaming
+ */
+async function orbLiveStart() {
+    console.log('[ORB-LIVE] Starting live voice session...');
+
+    // Reset error state
+    state.orb.liveError = null;
+
+    try {
+        // 1. Start the backend session
+        var startRes = await fetch('/api/v1/orb/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                type: 'start',
+                tenant: 'Vitana-Dev',
+                role: 'DEV',
+                route: window.location.pathname,
+                selectedId: '',
+                response: { modalities: ['TEXT'] }
+            })
+        });
+
+        var startData = await startRes.json();
+        if (!startData.ok) {
+            throw new Error(startData.error || 'Failed to start session');
+        }
+
+        state.orb.liveSessionId = startData.sessionId;
+        console.log('[ORB-LIVE] Session created:', startData.sessionId);
+
+        // 2. Connect to SSE stream
+        var sseUrl = '/api/v1/orb/live?sessionId=' + encodeURIComponent(startData.sessionId);
+        var eventSource = new EventSource(sseUrl);
+
+        eventSource.onopen = function() {
+            console.log('[ORB-LIVE] SSE connected');
+            state.orb.liveConnected = true;
+            renderApp();
+        };
+
+        eventSource.onmessage = function(event) {
+            try {
+                var msg = JSON.parse(event.data);
+                console.log('[ORB-LIVE] SSE message:', msg.type);
+
+                if (msg.type === 'ready') {
+                    console.log('[ORB-LIVE] Session ready, model:', msg.meta?.model);
+                } else if (msg.type === 'assistant_text') {
+                    // Add to transcript
+                    state.orb.liveTranscript.push({
+                        id: Date.now(),
+                        role: 'assistant',
+                        text: msg.text,
+                        timestamp: new Date().toISOString()
+                    });
+                    state.orb.isThinking = false;
+                    renderApp();
+                    scrollOrbLiveTranscript();
+                } else if (msg.type === 'error') {
+                    console.error('[ORB-LIVE] Error:', msg.message);
+                    state.orb.liveError = msg.message;
+                    state.orb.isThinking = false;
+                    renderApp();
+                } else if (msg.type === 'session_ended') {
+                    console.log('[ORB-LIVE] Session ended by server');
+                    orbLiveCleanup();
+                }
+            } catch (e) {
+                console.error('[ORB-LIVE] Failed to parse SSE message:', e);
+            }
+        };
+
+        eventSource.onerror = function(e) {
+            console.error('[ORB-LIVE] SSE error:', e);
+            state.orb.liveConnected = false;
+            state.orb.liveError = 'Connection lost';
+            renderApp();
+        };
+
+        state.orb.liveEventSource = eventSource;
+
+        // 3. Request microphone access
+        var stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+                sampleRate: 16000
+            }
+        });
+
+        state.orb.liveAudioStream = stream;
+        state.orb.micActive = true;
+
+        // 4. Setup audio processing (PCM16, 16kHz, mono)
+        var audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+        state.orb.liveAudioContext = audioContext;
+
+        var source = audioContext.createMediaStreamSource(stream);
+        var processor = audioContext.createScriptProcessor(640, 1, 1); // 640 samples = 40ms at 16kHz
+
+        // Energy threshold for VAD (silence gating)
+        var energyThreshold = 0.005;
+        var silenceFrames = 0;
+        var maxSilenceFrames = 25; // ~1 second of silence
+        var isSpeaking = false;
+        var audioBuffer = [];
+
+        processor.onaudioprocess = function(e) {
+            if (state.orb.liveMuted || !state.orb.liveSessionId) return;
+
+            var inputData = e.inputBuffer.getChannelData(0);
+
+            // Calculate energy for VAD
+            var energy = 0;
+            for (var i = 0; i < inputData.length; i++) {
+                energy += inputData[i] * inputData[i];
+            }
+            energy = energy / inputData.length;
+
+            // Voice Activity Detection
+            if (energy > energyThreshold) {
+                silenceFrames = 0;
+                if (!isSpeaking) {
+                    isSpeaking = true;
+                    console.log('[ORB-LIVE] Speech detected');
+                }
+            } else {
+                silenceFrames++;
+            }
+
+            // Only send audio when speaking (silence gating)
+            if (isSpeaking) {
+                // Convert Float32 to PCM16
+                var pcm16 = new Int16Array(inputData.length);
+                for (var j = 0; j < inputData.length; j++) {
+                    var s = Math.max(-1, Math.min(1, inputData[j]));
+                    pcm16[j] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                }
+
+                // Accumulate audio buffer
+                audioBuffer.push(pcm16);
+
+                // Send when we have enough data (320 samples = 20ms chunks)
+                if (audioBuffer.length >= 8) { // ~160ms of audio
+                    var totalLength = audioBuffer.reduce(function(sum, arr) { return sum + arr.length; }, 0);
+                    var combined = new Int16Array(totalLength);
+                    var offset = 0;
+                    for (var k = 0; k < audioBuffer.length; k++) {
+                        combined.set(audioBuffer[k], offset);
+                        offset += audioBuffer[k].length;
+                    }
+
+                    // Convert to base64
+                    var uint8 = new Uint8Array(combined.buffer);
+                    var binary = '';
+                    for (var l = 0; l < uint8.length; l++) {
+                        binary += String.fromCharCode(uint8[l]);
+                    }
+                    var base64 = btoa(binary);
+
+                    // Send audio chunk
+                    orbLiveSendAudio(base64);
+
+                    audioBuffer = [];
+                }
+
+                // End of speech detection
+                if (silenceFrames > maxSilenceFrames) {
+                    isSpeaking = false;
+                    console.log('[ORB-LIVE] Speech ended');
+
+                    // Send any remaining audio
+                    if (audioBuffer.length > 0) {
+                        var remainingLength = audioBuffer.reduce(function(sum, arr) { return sum + arr.length; }, 0);
+                        var remainingCombined = new Int16Array(remainingLength);
+                        var remainingOffset = 0;
+                        for (var m = 0; m < audioBuffer.length; m++) {
+                            remainingCombined.set(audioBuffer[m], remainingOffset);
+                            remainingOffset += audioBuffer[m].length;
+                        }
+
+                        var remainingUint8 = new Uint8Array(remainingCombined.buffer);
+                        var remainingBinary = '';
+                        for (var n = 0; n < remainingUint8.length; n++) {
+                            remainingBinary += String.fromCharCode(remainingUint8[n]);
+                        }
+                        var remainingBase64 = btoa(remainingBinary);
+                        orbLiveSendAudio(remainingBase64);
+                        audioBuffer = [];
+                    }
+                }
+            }
+        };
+
+        source.connect(processor);
+        processor.connect(audioContext.destination);
+        state.orb.liveAudioProcessor = processor;
+
+        console.log('[ORB-LIVE] Audio capture started');
+        renderApp();
+
+    } catch (error) {
+        console.error('[ORB-LIVE] Failed to start:', error);
+        state.orb.liveError = error.message || 'Failed to start voice session';
+        state.orb.micActive = false;
+        renderApp();
+    }
+}
+
+/**
+ * DEV-COMHU-2025-0014: Send audio chunk to backend
+ */
+function orbLiveSendAudio(base64Data) {
+    if (!state.orb.liveSessionId || state.orb.liveMuted) return;
+
+    state.orb.isThinking = true;
+    renderApp();
+
+    fetch('/api/v1/orb/audio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            type: 'audio_chunk',
+            sessionId: state.orb.liveSessionId,
+            mime: 'audio/pcm;rate=16000',
+            data_b64: base64Data
+        })
+    }).then(function(res) {
+        return res.json();
+    }).then(function(data) {
+        if (!data.ok) {
+            console.warn('[ORB-LIVE] Audio processing warning:', data.error);
+        }
+    }).catch(function(error) {
+        console.error('[ORB-LIVE] Failed to send audio:', error);
+    });
+}
+
+/**
+ * DEV-COMHU-2025-0014: Toggle mute state
+ */
+function orbLiveToggleMute() {
+    state.orb.liveMuted = !state.orb.liveMuted;
+    state.orb.micActive = !state.orb.liveMuted;
+
+    console.log('[ORB-LIVE] Mute toggled:', state.orb.liveMuted);
+
+    // Notify backend
+    if (state.orb.liveSessionId) {
+        fetch('/api/v1/orb/mute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                type: 'mute',
+                sessionId: state.orb.liveSessionId,
+                muted: state.orb.liveMuted
+            })
+        }).catch(function(e) {
+            console.error('[ORB-LIVE] Failed to sync mute state:', e);
+        });
+    }
+
+    renderApp();
+}
+
+/**
+ * DEV-COMHU-2025-0014: Stop the live voice session
+ */
+function orbLiveStop() {
+    console.log('[ORB-LIVE] Stopping live voice session...');
+
+    // Notify backend
+    if (state.orb.liveSessionId) {
+        fetch('/api/v1/orb/stop', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                type: 'stop',
+                sessionId: state.orb.liveSessionId
+            })
+        }).catch(function(e) {
+            console.error('[ORB-LIVE] Failed to notify stop:', e);
+        });
+    }
+
+    orbLiveCleanup();
+}
+
+/**
+ * DEV-COMHU-2025-0014: Cleanup live session resources
+ */
+function orbLiveCleanup() {
+    // Close SSE connection
+    if (state.orb.liveEventSource) {
+        state.orb.liveEventSource.close();
+        state.orb.liveEventSource = null;
+    }
+
+    // Stop audio stream
+    if (state.orb.liveAudioStream) {
+        state.orb.liveAudioStream.getTracks().forEach(function(track) {
+            track.stop();
+        });
+        state.orb.liveAudioStream = null;
+    }
+
+    // Close audio context
+    if (state.orb.liveAudioContext) {
+        state.orb.liveAudioContext.close().catch(function() {});
+        state.orb.liveAudioContext = null;
+    }
+
+    state.orb.liveAudioProcessor = null;
+    state.orb.liveSessionId = null;
+    state.orb.liveConnected = false;
+    state.orb.micActive = false;
+    state.orb.liveMuted = false;
+
+    console.log('[ORB-LIVE] Cleanup complete');
+}
+
+/**
+ * DEV-COMHU-2025-0014: Scroll live transcript to bottom
+ */
+function scrollOrbLiveTranscript() {
+    var container = document.querySelector('.orb-live-transcript');
+    if (!container) return;
+    container.scrollTop = container.scrollHeight;
 }
 
 /**

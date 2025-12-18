@@ -18,6 +18,7 @@ import operatorRouter from './routes/operator';  // VTID-0509 + VTID-0510: Opera
 import { router as telemetryRouter } from './routes/telemetry';  // VTID-0526-D: Telemetry with stage counters
 import autopilotRouter from './routes/autopilot';  // VTID-0532: Autopilot Task Extractor & Planner Handoff
 import assistantRouter from './routes/assistant';  // VTID-0150-B + VTID-0151 + VTID-0538: Assistant Core + Knowledge Hub
+import orbLiveRouter from './routes/orb-live';  // DEV-COMHU-2025-0014: ORB Multimodal v1 - Live Voice Session
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -196,6 +197,9 @@ app.use('/api/v1/autopilot', autopilotRouter);
 // VTID-0150-B + VTID-0151 + VTID-0538: Assistant Core + Knowledge Hub
 // Routes: /api/v1/assistant/chat, /live/init, /live/frame, /live/audio, /knowledge/search, /knowledge/health, /health
 app.use('/api/v1/assistant', assistantRouter);
+// DEV-COMHU-2025-0014: ORB Multimodal v1 - Live Voice Session (Gemini API, SSE)
+// Routes: /api/v1/orb/live (SSE), /start, /audio, /text, /mute, /stop, /health
+app.use('/api/v1/orb', orbLiveRouter);
 app.use('/api/v1/commandhub', commandhub);
 // Board adapter for commandhub
 app.use("/api/v1/commandhub/board", boardAdapter);

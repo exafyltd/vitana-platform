@@ -4403,9 +4403,104 @@ body {
   }
 }
 
-/* Status text below orb - hidden in overlay mode per screenshot */
-.orb-status-text {
+/* DEV-COMHU-2025-0014: Listening animation for live voice */
+.orb-large-listening {
+  animation: orb-large-listening 2s ease-in-out infinite;
+}
+
+@keyframes orb-large-listening {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow:
+      0 20px 80px rgba(59, 130, 246, 0.4),
+      0 0 150px rgba(59, 130, 246, 0.2),
+      inset 0 -20px 50px rgba(0, 0, 0, 0.4),
+      inset 0 20px 40px rgba(255, 255, 255, 0.08);
+  }
+  50% {
+    transform: scale(1.03);
+    box-shadow:
+      0 20px 100px rgba(59, 130, 246, 0.6),
+      0 0 180px rgba(59, 130, 246, 0.4),
+      inset 0 -20px 50px rgba(0, 0, 0, 0.4),
+      inset 0 20px 40px rgba(255, 255, 255, 0.1);
+  }
+}
+
+/* DEV-COMHU-2025-0014: Live transcript area */
+.orb-live-transcript {
+  position: fixed;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 90%;
+  max-width: 600px;
+  max-height: 200px;
+  overflow-y: auto;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 16px;
+  padding: 16px 20px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  z-index: 10002;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.orb-live-transcript:empty {
   display: none;
+}
+
+.orb-live-message {
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: #1e293b;
+}
+
+.orb-live-message-assistant {
+  background: #f1f5f9;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border-left: 3px solid #3b82f6;
+}
+
+.orb-live-message-user {
+  background: #e0f2fe;
+  padding: 12px 16px;
+  border-radius: 12px;
+  text-align: right;
+}
+
+.orb-live-listening,
+.orb-live-connecting {
+  font-size: 0.9rem;
+  color: #64748b;
+  text-align: center;
+  padding: 8px;
+  animation: orb-live-pulse 2s ease-in-out infinite;
+}
+
+@keyframes orb-live-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+.orb-live-error {
+  font-size: 0.9rem;
+  color: #ef4444;
+  text-align: center;
+  padding: 12px;
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 8px;
+}
+
+/* DEV-COMHU-2025-0014: Status text below orb - show for live mode */
+.orb-status-text {
+  margin-top: 24px;
+  font-size: 1rem;
+  font-weight: 500;
+  color: #475569;
+  text-align: center;
 }
 
 /* --- ORB Control Row (Fixed at bottom center) --- */
