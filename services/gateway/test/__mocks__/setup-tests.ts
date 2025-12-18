@@ -17,6 +17,7 @@ global.fetch = mockFetch as any;
 process.env.DATABASE_URL = 'postgresql://postgres:postgres@localhost:5432/vitana_test';
 process.env.SUPABASE_URL = 'http://localhost:54321';
 process.env.SUPABASE_SERVICE_ROLE = 'test-service-role-key-mock';
+process.env.GOOGLE_GEMINI_API_KEY = 'test-gemini-api-key-mock';
 process.env.NODE_ENV = 'test';
 
 // Mock VTID state management
@@ -285,6 +286,38 @@ beforeEach(() => {
 
     // Mock vtid_ledger queries for /api/v1/tasks endpoint
     if (urlString.includes('/rest/v1/vtid_ledger')) {
+      // POST - Create new VTID record (used by /api/v1/vtid/create)
+      if (method === 'POST' && body) {
+        const mockRecord = {
+          id: crypto.randomUUID ? crypto.randomUUID() : 'test-vtid-id',
+          vtid: body.vtid, // Use the vtid from the request body
+          title: body.title,
+          status: body.status || 'pending',
+          tenant: body.tenant,
+          layer: body.layer,
+          module: body.module,
+          summary: body.summary,
+          metadata: body.metadata || null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+
+        mockVtidStore.push(mockRecord);
+        console.log("📦 Mock vtid_ledger: Created", mockRecord.vtid);
+
+        return Promise.resolve({
+          ok: true,
+          status: 201,
+          statusText: 'Created',
+          headers: new Headers(),
+          json: async () => [mockRecord],
+          text: async () => JSON.stringify([mockRecord]),
+          blob: async () => new Blob(),
+          arrayBuffer: async () => new ArrayBuffer(0),
+          formData: async () => new FormData(),
+        } as any);
+      }
+
       if (method === 'GET') {
         // Return mock tasks data
         const mockTasks = [
