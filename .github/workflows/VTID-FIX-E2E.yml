@@ -26,27 +26,36 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Step 1: Create TASK_VTID
+      # Step 1: Create TASK_VTID (with retry)
       - name: Create TASK_VTID
         id: task_vtid
         run: |
-          set -e
           echo "Creating TASK_VTID..."
 
-          RESP=$(curl -sf --max-time 60 -X POST "$GW_URL/api/v1/vtid/create" \
-            -H "Content-Type: application/json" \
-            -d '{"task_family":"DEV","task_module":"VTID","title":"Fix /api/v1/vtid/list database_query_failed"}')
+          for attempt in 1 2 3; do
+            echo "Attempt $attempt..."
 
-          echo "Response: $RESP"
-          VTID=$(echo "$RESP" | jq -r '.vtid')
+            RESP=$(curl -s --max-time 60 -X POST "$GW_URL/api/v1/vtid/create" \
+              -H "Content-Type: application/json" \
+              -d '{"task_family":"DEV","task_module":"VTID","title":"Fix /api/v1/vtid/list database_query_failed"}' || echo '{"error":"curl_failed"}')
 
-          if [ -z "$VTID" ] || [ "$VTID" = "null" ]; then
-            echo "::error::Failed to create TASK_VTID"
-            exit 1
-          fi
+            echo "Response: $RESP"
 
-          echo "TASK_VTID=$VTID"
-          echo "vtid=$VTID" >> $GITHUB_OUTPUT
+            VTID=$(echo "$RESP" | jq -r '.vtid // empty')
+            OK=$(echo "$RESP" | jq -r '.ok // empty')
+
+            if [ -n "$VTID" ] && [ "$OK" = "true" ]; then
+              echo "TASK_VTID=$VTID"
+              echo "vtid=$VTID" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+
+            echo "Attempt $attempt failed, waiting 5s..."
+            sleep 5
+          done
+
+          echo "::error::Failed to create TASK_VTID after 3 attempts"
+          exit 1
 
       # Step 2: Create or find PR
       - name: Create PR
@@ -146,29 +155,38 @@ jobs:
           echo "Merged! SHA: $SHA"
           echo "sha=$SHA" >> $GITHUB_OUTPUT
 
-      # Step 5: Create DEPLOY_VTID
+      # Step 5: Create DEPLOY_VTID (with retry)
       - name: Create DEPLOY_VTID
         id: deploy_vtid
         env:
           TASK_VTID: ${{ steps.task_vtid.outputs.vtid }}
         run: |
-          set -e
           echo "Creating DEPLOY_VTID..."
 
-          RESP=$(curl -sf --max-time 60 -X POST "$GW_URL/api/v1/vtid/create" \
-            -H "Content-Type: application/json" \
-            -d "{\"task_family\":\"DEV\",\"task_module\":\"CICDL\",\"title\":\"Deploy $TASK_VTID (fix vtid/list)\"}")
+          for attempt in 1 2 3; do
+            echo "Attempt $attempt..."
 
-          echo "Response: $RESP"
-          VTID=$(echo "$RESP" | jq -r '.vtid')
+            RESP=$(curl -s --max-time 60 -X POST "$GW_URL/api/v1/vtid/create" \
+              -H "Content-Type: application/json" \
+              -d "{\"task_family\":\"DEV\",\"task_module\":\"CICDL\",\"title\":\"Deploy $TASK_VTID (fix vtid/list)\"}" || echo '{"error":"curl_failed"}')
 
-          if [ -z "$VTID" ] || [ "$VTID" = "null" ]; then
-            echo "::error::Failed to create DEPLOY_VTID"
-            exit 1
-          fi
+            echo "Response: $RESP"
 
-          echo "DEPLOY_VTID=$VTID"
-          echo "vtid=$VTID" >> $GITHUB_OUTPUT
+            VTID=$(echo "$RESP" | jq -r '.vtid // empty')
+            OK=$(echo "$RESP" | jq -r '.ok // empty')
+
+            if [ -n "$VTID" ] && [ "$OK" = "true" ]; then
+              echo "DEPLOY_VTID=$VTID"
+              echo "vtid=$VTID" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+
+            echo "Attempt $attempt failed, waiting 5s..."
+            sleep 5
+          done
+
+          echo "::error::Failed to create DEPLOY_VTID after 3 attempts"
+          exit 1
 
       # Step 6: Trigger deploy
       - name: Trigger Deploy
