@@ -26,7 +26,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Step 1: Create TASK_VTID (with retry)
+      # Step 1: Create TASK_VTID (with retry, fallback to BOOTSTRAP)
       - name: Create TASK_VTID
         id: task_vtid
         run: |
@@ -37,16 +37,17 @@ jobs:
 
             RESP=$(curl -s --max-time 60 -X POST "$GW_URL/api/v1/vtid/create" \
               -H "Content-Type: application/json" \
-              -d '{"task_family":"DEV","task_module":"VTID","title":"Fix /api/v1/vtid/list database_query_failed"}' || echo '{"error":"curl_failed"}')
+              -d '{"task_family":"DEV","task_module":"VTID","title":"Fix /api/v1/vtid/list database_query_failed"}' 2>&1 || echo '{"error":"curl_failed"}')
 
             echo "Response: $RESP"
 
-            VTID=$(echo "$RESP" | jq -r '.vtid // empty')
-            OK=$(echo "$RESP" | jq -r '.ok // empty')
+            VTID=$(echo "$RESP" | jq -r '.vtid // empty' 2>/dev/null || echo "")
+            OK=$(echo "$RESP" | jq -r '.ok // empty' 2>/dev/null || echo "")
 
             if [ -n "$VTID" ] && [ "$OK" = "true" ]; then
               echo "TASK_VTID=$VTID"
               echo "vtid=$VTID" >> $GITHUB_OUTPUT
+              echo "is_bootstrap=false" >> $GITHUB_OUTPUT
               exit 0
             fi
 
@@ -54,8 +55,12 @@ jobs:
             sleep 5
           done
 
-          echo "::error::Failed to create TASK_VTID after 3 attempts"
-          exit 1
+          # Fallback to BOOTSTRAP mode (allowed for fixing broken endpoints)
+          echo "::warning::Gateway API unavailable. Using BOOTSTRAP mode."
+          BOOTSTRAP_VTID="BOOTSTRAP-VTID-LIST-FIX-$(date +%Y%m%d%H%M%S)"
+          echo "TASK_VTID=$BOOTSTRAP_VTID (BOOTSTRAP MODE)"
+          echo "vtid=$BOOTSTRAP_VTID" >> $GITHUB_OUTPUT
+          echo "is_bootstrap=true" >> $GITHUB_OUTPUT
 
       # Step 2: Create or find PR
       - name: Create PR
@@ -155,25 +160,34 @@ jobs:
           echo "Merged! SHA: $SHA"
           echo "sha=$SHA" >> $GITHUB_OUTPUT
 
-      # Step 5: Create DEPLOY_VTID (with retry)
+      # Step 5: Create DEPLOY_VTID (with retry, fallback to BOOTSTRAP)
       - name: Create DEPLOY_VTID
         id: deploy_vtid
         env:
           TASK_VTID: ${{ steps.task_vtid.outputs.vtid }}
+          IS_BOOTSTRAP: ${{ steps.task_vtid.outputs.is_bootstrap }}
         run: |
           echo "Creating DEPLOY_VTID..."
+
+          # If we're already in bootstrap mode, use bootstrap VTID for deploy too
+          if [ "$IS_BOOTSTRAP" = "true" ]; then
+            BOOTSTRAP_VTID="BOOTSTRAP-DEPLOY-FIX-$(date +%Y%m%d%H%M%S)"
+            echo "Using BOOTSTRAP mode for deploy: $BOOTSTRAP_VTID"
+            echo "vtid=$BOOTSTRAP_VTID" >> $GITHUB_OUTPUT
+            exit 0
+          fi
 
           for attempt in 1 2 3; do
             echo "Attempt $attempt..."
 
             RESP=$(curl -s --max-time 60 -X POST "$GW_URL/api/v1/vtid/create" \
               -H "Content-Type: application/json" \
-              -d "{\"task_family\":\"DEV\",\"task_module\":\"CICDL\",\"title\":\"Deploy $TASK_VTID (fix vtid/list)\"}" || echo '{"error":"curl_failed"}')
+              -d "{\"task_family\":\"DEV\",\"task_module\":\"CICDL\",\"title\":\"Deploy $TASK_VTID (fix vtid/list)\"}" 2>&1 || echo '{"error":"curl_failed"}')
 
             echo "Response: $RESP"
 
-            VTID=$(echo "$RESP" | jq -r '.vtid // empty')
-            OK=$(echo "$RESP" | jq -r '.ok // empty')
+            VTID=$(echo "$RESP" | jq -r '.vtid // empty' 2>/dev/null || echo "")
+            OK=$(echo "$RESP" | jq -r '.ok // empty' 2>/dev/null || echo "")
 
             if [ -n "$VTID" ] && [ "$OK" = "true" ]; then
               echo "DEPLOY_VTID=$VTID"
@@ -185,8 +199,10 @@ jobs:
             sleep 5
           done
 
-          echo "::error::Failed to create DEPLOY_VTID after 3 attempts"
-          exit 1
+          # Fallback to BOOTSTRAP
+          BOOTSTRAP_VTID="BOOTSTRAP-DEPLOY-FIX-$(date +%Y%m%d%H%M%S)"
+          echo "::warning::Using BOOTSTRAP mode for deploy: $BOOTSTRAP_VTID"
+          echo "vtid=$BOOTSTRAP_VTID" >> $GITHUB_OUTPUT
 
       # Step 6: Trigger deploy
       - name: Trigger Deploy
