@@ -1,4 +1,7 @@
 name: OASIS Persistence CI
+# VTID: DEV-CICDL-2025-0001
+# Purpose: CI for OASIS persistence layer and Gateway Service Tests
+# Last updated: 2025-12-18 - Added env var injection for SUPABASE and GOOGLE_GEMINI_API_KEY
 
 on:
   pull_request:
@@ -8,6 +11,7 @@ on:
       - 'services/gateway/**'
       - 'scripts/report.sh'
       - '.github/workflows/oasis-persistence.yml'
+      - '.github/workflows/OASIS-PERSISTENCE.yml'
   push:
     branches:
       - main
@@ -36,23 +40,48 @@ jobs:
     runs-on: ubuntu-latest
     # Only run with secrets when PR is from same repo (not forks)
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    # DEV-CICDL-2025-0001: Inject all required secrets at job level for gateway tests
+    env:
+      NODE_ENV: test
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+      GOOGLE_GEMINI_API_KEY: ${{ secrets.GOOGLE_GEMINI_API_KEY }}
     steps:
       - uses: actions/checkout@v4
+
+      # DEV-CICDL-2025-0001: Preflight check - fail fast if required env vars are missing
+      - name: Preflight - Validate Required Env Vars
+        run: |
+          echo "🔍 Checking required environment variables..."
+          MISSING=""
+          test -n "$SUPABASE_URL" || MISSING="${MISSING} SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_ROLE" || MISSING="${MISSING} SUPABASE_SERVICE_ROLE"
+          test -n "$GOOGLE_GEMINI_API_KEY" || MISSING="${MISSING} GOOGLE_GEMINI_API_KEY"
+          if [ -n "$MISSING" ]; then
+            echo "❌ Missing required environment variables:${MISSING}"
+            echo "Please ensure these secrets are configured in GitHub repository settings."
+            exit 1
+          fi
+          echo "✅ All required environment variables are set"
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - working-directory: ./services/gateway
+
+      - name: Install dependencies
+        working-directory: ./services/gateway
         run: npm install
-      - working-directory: ./services/gateway
+
+      - name: Type check
+        working-directory: ./services/gateway
         run: npm run typecheck
-      - working-directory: ./services/gateway
+
+      - name: Run tests
+        working-directory: ./services/gateway
         run: npm test
-        env:
-          NODE_ENV: test
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-          GOOGLE_GEMINI_API_KEY: ${{ secrets.GOOGLE_GEMINI_API_KEY }}
-      - working-directory: ./services/gateway
+
+      - name: Build
+        working-directory: ./services/gateway
         run: npm run build
 
   reporter-test:
