@@ -208,6 +208,16 @@ app.use(eventsApiRouter);
 app.use(eventsRouter);
 app.use(oasisTasksRouter); // OASIS Tasks API
 
+// DEV-COMHU-2025-0013: Redirect /command-hub to canonical gateway when running on vitana-dev-gateway
+// This ensures users always get the latest Command Hub bundle from the main gateway
+const CANONICAL_GATEWAY_URL = 'https://gateway-q74ibpv6ia-uc.a.run.app';
+if (process.env.K_SERVICE === 'vitana-dev-gateway') {
+  app.use('/command-hub', (req, res, next) => {
+    const redirectUrl = CANONICAL_GATEWAY_URL + req.originalUrl;
+    res.redirect(302, redirectUrl);
+  });
+}
+
 // VTID-0529-C: Static files MUST be served BEFORE the router
 // Otherwise, router's catch-all /* intercepts static file requests
 // and next() doesn't properly reach express.static mounted at the same path.
