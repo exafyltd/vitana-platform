@@ -97,27 +97,32 @@ jobs:
       - name: Post Evidence
         if: always()
         uses: actions/github-script@v7
+        env:
+          MERGE_SHA: ${{ steps.sha.outputs.sha }}
+          DEPLOY_VTID: ${{ steps.vtid.outputs.vtid }}
+          VERIFY_OUTPUT: ${{ steps.verify.outputs.output }}
+          JOB_STATUS: ${{ job.status }}
         with:
           script: |
             const body = `## DEV-COMHU-2025-0015 Deployment Evidence
 
-**Merge SHA:** \`${{ steps.sha.outputs.sha }}\`
-**Deploy VTID:** \`${{ steps.vtid.outputs.vtid }}\`
-**Workflow Run:** https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-**Status:** ${{ job.status }}
+            **Merge SHA:** \`${process.env.MERGE_SHA}\`
+            **Deploy VTID:** \`${process.env.DEPLOY_VTID}\`
+            **Workflow Run:** https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}
+            **Status:** ${process.env.JOB_STATUS}
 
-### Curl Outputs
-\`\`\`
-${{ steps.verify.outputs.output }}
-\`\`\`
+            ### Curl Outputs
+            \`\`\`
+            ${process.env.VERIFY_OUTPUT}
+            \`\`\`
 
-### Bundle Marker
-Expected: \`🔥 COMMAND HUB BUNDLE: DEV-COMHU-2025-0015 LIVE 🔥\`
+            ### Bundle Marker
+            Expected: \`🔥 COMMAND HUB BUNDLE: DEV-COMHU-2025-0015 LIVE 🔥\`
 
-### Compliance
-- [x] SYS-RULE-DEPLOY-L1: ./scripts/deploy/deploy-service.sh gateway services/gateway
-- [x] Canonical target: gateway-q74ibpv6ia-uc.a.run.app
-`;
+            ### Compliance
+            - [x] SYS-RULE-DEPLOY-L1: ./scripts/deploy/deploy-service.sh gateway services/gateway
+            - [x] Canonical target: gateway-q74ibpv6ia-uc.a.run.app
+            `;
             const issues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
