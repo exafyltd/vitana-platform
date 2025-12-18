@@ -17,6 +17,7 @@ global.fetch = mockFetch as any;
 process.env.DATABASE_URL = 'postgresql://postgres:postgres@localhost:5432/vitana_test';
 process.env.SUPABASE_URL = 'http://localhost:54321';
 process.env.SUPABASE_SERVICE_ROLE = 'test-service-role-key-mock';
+process.env.GOOGLE_GEMINI_API_KEY = 'test-gemini-api-key-mock';
 process.env.NODE_ENV = 'test';
 
 // Mock VTID state management
