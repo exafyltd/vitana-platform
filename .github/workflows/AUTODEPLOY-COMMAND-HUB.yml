@@ -1,8 +1,17 @@
 name: AUTODEPLOY-COMMAND-HUB (DEV-COMHU-2025-0015)
 # Auto-deploy workflow for Command Hub PRs
-# Triggered by: label "autodeploy" or comment "/deploy"
+# Triggered by:
+#   - Push to claude/* branches (auto-creates PR and deploys)
+#   - Label "autodeploy" on PR
+#   - Comment "/deploy" on PR
 
 on:
+  push:
+    branches:
+      - 'claude/**'
+    paths:
+      - 'services/gateway/src/frontend/command-hub/**'
+      - '.github/workflows/AUTODEPLOY-COMMAND-HUB.yml'
   pull_request:
     types: [labeled]
   issue_comment:
@@ -12,7 +21,85 @@ env:
   VTID_PREFIX: DEV-COMHU-2025-0015
 
 jobs:
+  # Job 1: Auto-create PR on push to claude/* branch
+  auto-create-pr:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      pr_number: ${{ steps.create-pr.outputs.pr_number }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create Pull Request
+        id: create-pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const branch = context.ref.replace('refs/heads/', '');
+            console.log(`Creating PR for branch: ${branch}`);
+
+            // Check if PR already exists
+            const existingPRs = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head: `${context.repo.owner}:${branch}`,
+              state: 'open'
+            });
+
+            if (existingPRs.data.length > 0) {
+              const pr = existingPRs.data[0];
+              console.log(`PR already exists: #${pr.number}`);
+              core.setOutput('pr_number', pr.number);
+              core.setOutput('pr_url', pr.html_url);
+              return;
+            }
+
+            // Create new PR
+            const pr = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'DEV-COMHU-2025-0015: Fix Task Board UX + VTID labels + OASIS events formatting',
+              head: branch,
+              base: 'main',
+              body: `## Summary
+            - **A) Drawer typing freeze** - Fixed by saving/restoring textarea focus state
+            - **B) Activate button** - Now closes drawer automatically after task activation
+            - **C) Wrong VTID in toast** - Toast shows correct VTID of edited task
+            - **D) Card sizing** - Uniform card size with title clamping and prominent VTID
+            - **E) OASIS tracking** - Enhanced event display with expandable detail view
+
+            ## Autodeploy
+            This PR will be automatically deployed. Add label \`autodeploy\` or comment \`/deploy\` to trigger.
+
+            ## Test plan
+            - [ ] Test typing in drawer without freeze
+            - [ ] Test Activate closes drawer
+            - [ ] Test Save toast shows correct VTID
+            - [ ] Test uniform card sizing
+            - [ ] Test OASIS tracking events`
+            });
+
+            console.log(`Created PR #${pr.data.number}: ${pr.data.html_url}`);
+            core.setOutput('pr_number', pr.data.number);
+            core.setOutput('pr_url', pr.data.html_url);
+
+            // Add autodeploy label to trigger deployment
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.data.number,
+              labels: ['autodeploy']
+            });
+            console.log('Added autodeploy label to trigger deployment');
+
   check-trigger:
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     outputs:
       should_deploy: ${{ steps.check.outputs.should_deploy }}
@@ -45,9 +132,10 @@ jobs:
             core.setOutput('should_deploy', shouldDeploy);
             core.setOutput('pr_number', prNumber);
 
-  autodeploy:
+  # Deploy job for label/comment triggers
+  autodeploy-from-label:
     needs: check-trigger
-    if: needs.check-trigger.outputs.should_deploy == 'true'
+    if: github.event_name != 'push' && needs.check-trigger.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
