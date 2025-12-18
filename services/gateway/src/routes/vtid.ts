@@ -345,25 +345,93 @@ router.post("/create", async (req: Request, res: Response) => {
 
 router.get("/list", async (req: Request, res: Response) => {
   try {
-    const { limit = "50", families = "DEV,ADM,GOVRN,OASIS", status, tenant = "vitana" } = req.query as Record<string, string>;
+    const { limit: limitParam = "50", families, status, tenant = "vitana" } = req.query as Record<string, string>;
     const { supabaseUrl, svcKey } = getSupabaseConfig();
-    // FIX: Use vtid_ledger (snake_case) to match the read endpoint table name
-    let queryUrl = supabaseUrl + "/rest/v1/vtid_ledger?order=updated_at.desc&limit=" + limit + "&tenant=eq." + tenant;
-    if (families) {
-      const familyList = families.split(",").map(f => f.trim());
-      const familyFilter = familyList.map(f => "task_family.eq." + f).join(",");
-      queryUrl += "&or=(" + familyFilter + ")";
+
+    // VTID-0543: Parse limit safely (default 50, max 200)
+    let limit = parseInt(limitParam, 10);
+    if (isNaN(limit) || limit < 1) limit = 50;
+    if (limit > 200) limit = 200;
+
+    // VTID-0543: First discover actual columns to avoid schema mismatch errors
+    let allowedColumns: string[] = [];
+    try {
+      const schemaResp = await fetch(supabaseUrl + "/rest/v1/vtid_ledger?limit=1", {
+        headers: { apikey: svcKey, Authorization: "Bearer " + svcKey },
+      });
+      if (schemaResp.ok) {
+        const sampleData = await schemaResp.json() as any[];
+        if (sampleData.length > 0) {
+          allowedColumns = Object.keys(sampleData[0]);
+        }
+      }
+    } catch (schemaErr: any) {
+      console.warn(`[VTID-LIST] Schema discovery failed: ${schemaErr.message}`);
     }
-    if (status) {
-      const statusList = status.split(",").map(s => s.trim());
-      const statusFilter = statusList.map(s => "status.eq." + s).join(",");
-      queryUrl += "&or=(" + statusFilter + ")";
+
+    // VTID-0543: Determine order column - prefer created_at, fallback to id
+    const hasCreatedAt = allowedColumns.includes('created_at');
+    const orderCol = hasCreatedAt ? 'created_at' : 'id';
+
+    // Build base query with safe ordering
+    let queryUrl = `${supabaseUrl}/rest/v1/vtid_ledger?order=${orderCol}.desc&limit=${limit}`;
+
+    // VTID-0543: Add tenant filter only if column exists
+    if (allowedColumns.length === 0 || allowedColumns.includes('tenant')) {
+      queryUrl += `&tenant=eq.${encodeURIComponent(tenant)}`;
     }
+
+    // VTID-0543: Build filters using columns that actually exist
+    // Use 'layer' column (current schema) with fallback to 'task_family' (legacy)
+    const hasLayer = allowedColumns.includes('layer');
+    const hasTaskFamily = allowedColumns.includes('task_family');
+    const familyColumn = hasLayer ? 'layer' : (hasTaskFamily ? 'task_family' : null);
+
+    // Build combined AND filter conditions
+    const andConditions: string[] = [];
+
+    // Add family filter if families param provided and column exists
+    if (families && familyColumn) {
+      const familyList = families.split(",").map(f => f.trim().toUpperCase()).filter(f => f);
+      if (familyList.length > 0) {
+        const familyFilter = familyList.map(f => `${familyColumn}.eq.${encodeURIComponent(f)}`).join(",");
+        andConditions.push(`or(${familyFilter})`);
+      }
+    }
+
+    // Add status filter if status param provided and column exists
+    const hasStatus = allowedColumns.length === 0 || allowedColumns.includes('status');
+    if (status && hasStatus) {
+      const statusList = status.split(",").map(s => s.trim()).filter(s => s);
+      if (statusList.length > 0) {
+        const statusFilter = statusList.map(s => `status.eq.${encodeURIComponent(s)}`).join(",");
+        andConditions.push(`or(${statusFilter})`);
+      }
+    }
+
+    // VTID-0543: Combine filters properly using PostgREST and() syntax
+    if (andConditions.length > 0) {
+      queryUrl += `&and=(${andConditions.join(",")})`;
+    }
+
+    console.log(`[VTID-LIST] Query: ${queryUrl.replace(svcKey, '***')}`);
+
     const resp = await fetch(queryUrl, { headers: { apikey: svcKey, Authorization: "Bearer " + svcKey } });
-    if (!resp.ok) return res.status(502).json({ error: "database_query_failed" });
-    return res.status(200).json((await resp.json()) as any[]);
+
+    if (!resp.ok) {
+      const errorText = await resp.text();
+      console.error(`[VTID-LIST] Database query failed: ${resp.status} - ${errorText}`);
+      return res.status(502).json({ ok: false, error: "database_query_failed", message: `HTTP ${resp.status}` });
+    }
+
+    const data = await resp.json() as any[];
+    console.log(`[VTID-LIST] Returned ${data.length} rows`);
+
+    // VTID-0543: Return consistent shape matching API style
+    return res.status(200).json({ ok: true, count: data.length, data });
   } catch (e: any) {
-    return res.status(500).json({ error: "internal_server_error" });
+    console.error(`[VTID-LIST] Error:`, e.message);
+    return res.status(500).json({ ok: false, error: "internal_server_error", message: e.message });
   }
 });
 

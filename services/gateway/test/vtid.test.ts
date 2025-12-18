@@ -34,15 +34,47 @@ describe("VTID API - DEV-OASIS-0101", () => {
   });
 
   describe("vtid.list_should_include_oasis_family_and_sort_by_updated_desc", () => {
-    it("should include OASIS", async () => {
+    it("should return ok=true and data array", async () => {
       const res = await request(app).get("/api/v1/vtid/list").expect(200);
-      expect(Array.isArray(res.body)).toBe(true);
+      // VTID-0543: Response is now { ok: true, count: n, data: [...] }
+      expect(res.body.ok).toBe(true);
+      expect(typeof res.body.count).toBe("number");
+      expect(Array.isArray(res.body.data)).toBe(true);
     });
   });
 
   describe("vtid.list_should_map_statuses_for_board_columns", () => {
     it("should filter by status", async () => {
-      await request(app).get("/api/v1/vtid/list?status=scheduled").expect(200);
+      const res = await request(app).get("/api/v1/vtid/list?status=scheduled").expect(200);
+      // VTID-0543: Response is now { ok: true, count: n, data: [...] }
+      expect(res.body.ok).toBe(true);
+      expect(Array.isArray(res.body.data)).toBe(true);
+    });
+  });
+
+  // VTID-0543: Regression test for limit parameter
+  describe("vtid.list_regression_limit_parameter", () => {
+    it("should handle limit=5 and return ok=true with data array", async () => {
+      const res = await request(app).get("/api/v1/vtid/list?limit=5").expect(200);
+      expect(res.body.ok).toBe(true);
+      expect(typeof res.body.count).toBe("number");
+      expect(Array.isArray(res.body.data)).toBe(true);
+      // Verify limit is respected (count <= 5)
+      expect(res.body.data.length).toBeLessThanOrEqual(5);
+    });
+
+    it("should enforce max limit of 200", async () => {
+      const res = await request(app).get("/api/v1/vtid/list?limit=500").expect(200);
+      expect(res.body.ok).toBe(true);
+      expect(Array.isArray(res.body.data)).toBe(true);
+      // Should be capped at 200
+      expect(res.body.data.length).toBeLessThanOrEqual(200);
+    });
+
+    it("should handle invalid limit gracefully", async () => {
+      const res = await request(app).get("/api/v1/vtid/list?limit=abc").expect(200);
+      expect(res.body.ok).toBe(true);
+      expect(Array.isArray(res.body.data)).toBe(true);
     });
   });
 
