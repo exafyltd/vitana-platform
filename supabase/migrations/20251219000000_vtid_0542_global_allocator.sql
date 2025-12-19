@@ -1,0 +1,104 @@
+-- Migration: 20251219000000_vtid_0542_global_allocator.sql
+-- Purpose: VTID-0542 Global VTID Allocator for /api/v1/vtid/allocate endpoint
+-- Date: 2025-12-19
+--
+-- Creates the allocate_global_vtid RPC function that atomically:
+-- 1. Gets next sequence number
+-- 2. Formats as VTID-XXXXX (5-digit zero-padded)
+-- 3. Inserts shell entry into vtid_ledger
+-- 4. Returns allocated VTID info
+
+-- ===========================================================================
+-- Ensure global VTID sequence exists (starts at 1000 for VTID-01000 format)
+-- ===========================================================================
+
+CREATE SEQUENCE IF NOT EXISTS global_vtid_seq START 1000 INCREMENT 1;
+GRANT USAGE, SELECT ON SEQUENCE global_vtid_seq TO service_role;
+
+-- ===========================================================================
+-- Atomic VTID Allocation Function
+-- ===========================================================================
+
+CREATE OR REPLACE FUNCTION allocate_global_vtid(
+    p_source TEXT DEFAULT 'api',
+    p_layer TEXT DEFAULT 'DEV',
+    p_module TEXT DEFAULT 'TASK'
+)
+RETURNS TABLE(vtid TEXT, num BIGINT, id TEXT)
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_num BIGINT;
+    v_vtid TEXT;
+    v_id TEXT;
+    v_layer TEXT;
+    v_module TEXT;
+BEGIN
+    -- Normalize inputs
+    v_layer := UPPER(COALESCE(p_layer, 'DEV'));
+    v_module := UPPER(COALESCE(p_module, 'TASK'));
+
+    -- Step 1: Get next sequence number atomically
+    v_num := nextval('global_vtid_seq');
+
+    -- Step 2: Format as VTID-XXXXX (5-digit zero-padded)
+    v_vtid := 'VTID-' || LPAD(v_num::TEXT, 5, '0');
+
+    -- Step 3: Generate UUID for the row
+    v_id := gen_random_uuid()::TEXT;
+
+    -- Step 4: Insert shell entry into vtid_ledger
+    -- Uses same column names as create_vtid_atomic for consistency
+    INSERT INTO vtid_ledger (
+        id,
+        vtid,
+        title,
+        status,
+        tenant,
+        layer,
+        module,
+        task_family,
+        task_type,
+        summary,
+        description,
+        is_test,
+        metadata,
+        created_at,
+        updated_at
+    ) VALUES (
+        v_id,
+        v_vtid,
+        'Allocated - Pending Title',  -- placeholder title
+        'allocated',                   -- special status for shell entries
+        'vitana',                      -- default tenant
+        v_layer,                       -- layer
+        v_module,                      -- module
+        v_layer,                       -- task_family for backwards compat
+        v_module,                      -- task_type for backwards compat
+        '',                            -- empty summary
+        '',                            -- empty description
+        false,                         -- not a test
+        jsonb_build_object(
+            'source', p_source,
+            'allocated_at', NOW()::TEXT,
+            'allocator_version', 'VTID-0542'
+        ),
+        NOW(),
+        NOW()
+    );
+
+    -- Return the allocated VTID info
+    RETURN QUERY SELECT v_vtid, v_num, v_id;
+END;
+$$;
+
+-- Grant execute permission
+GRANT EXECUTE ON FUNCTION allocate_global_vtid(TEXT, TEXT, TEXT) TO service_role;
+
+-- ===========================================================================
+-- Comments
+-- ===========================================================================
+
+COMMENT ON SEQUENCE global_vtid_seq IS 'VTID-0542: Global VTID sequence for atomic allocation (starts at 1000 for VTID-01000)';
+COMMENT ON FUNCTION allocate_global_vtid IS 'VTID-0542: Atomically allocates next VTID and creates shell entry in vtid_ledger';
