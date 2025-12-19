@@ -1,12 +1,12 @@
-name: Deploy MCP Gateway
+# DEPRECATED — DO NOT USE
+# Canonical deployment is:
+#   main → .github/workflows/auto-deploy.yml → dispatches EXEC-DEPLOY.yml
+# This workflow is MANUAL-ONLY (break-glass).
 
 on:
-  push:
-    branches: [main, develop]
-    paths:
-      - 'services/mcp/gateway/**'
-      - '.github/workflows/DEPLOY-MCP-GATEWAY.yml'
   workflow_dispatch:
+
+name: Deploy MCP Gateway
 
 jobs:
   deploy:
