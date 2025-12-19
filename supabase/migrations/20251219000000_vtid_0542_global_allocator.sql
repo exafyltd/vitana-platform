@@ -9,6 +9,44 @@
 -- 4. Returns allocated VTID info
 
 -- ===========================================================================
+-- Ensure vtid_ledger table exists (required for allocator function)
+-- ===========================================================================
+
+CREATE TABLE IF NOT EXISTS vtid_ledger (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    vtid TEXT UNIQUE NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'scheduled',
+    tenant TEXT NOT NULL DEFAULT 'vitana',
+    layer TEXT,
+    module TEXT,
+    task_family TEXT,
+    task_type TEXT,
+    summary TEXT DEFAULT '',
+    description TEXT DEFAULT '',
+    is_test BOOLEAN DEFAULT false,
+    metadata JSONB DEFAULT '{}',
+    assigned_to TEXT,
+    parent_vtid TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create indexes if they don't exist
+CREATE INDEX IF NOT EXISTS idx_vtid_ledger_vtid ON vtid_ledger(vtid);
+CREATE INDEX IF NOT EXISTS idx_vtid_ledger_status ON vtid_ledger(status);
+CREATE INDEX IF NOT EXISTS idx_vtid_ledger_created_at ON vtid_ledger(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_vtid_ledger_tenant ON vtid_ledger(tenant);
+
+-- Grant permissions
+GRANT ALL ON vtid_ledger TO service_role;
+
+-- Enable RLS but allow service_role full access
+ALTER TABLE vtid_ledger ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS vtid_ledger_service_role_all ON vtid_ledger;
+CREATE POLICY vtid_ledger_service_role_all ON vtid_ledger FOR ALL TO service_role USING (true);
+
+-- ===========================================================================
 -- Ensure global VTID sequence exists (starts at 1000 for VTID-01000 format)
 -- ===========================================================================
 
