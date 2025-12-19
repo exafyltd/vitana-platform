@@ -36,6 +36,13 @@ jobs:
             exit 0
           fi
 
+          # DEV-* VTIDs are CI/CD task identifiers (not registered in OASIS).
+          # Prepend BOOTSTRAP- to skip VTID existence check in EXEC-DEPLOY.
+          if [[ "$VTID" == DEV-* ]]; then
+            VTID="BOOTSTRAP-$VTID"
+            echo "CI/CD task ID detected → using BOOTSTRAP prefix: $VTID"
+          fi
+
           echo "Found VTID=$VTID"
           echo "found=true" >> "$GITHUB_OUTPUT"
           echo "vtid=$VTID" >> "$GITHUB_OUTPUT"
