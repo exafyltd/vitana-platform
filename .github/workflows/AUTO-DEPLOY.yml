@@ -1,0 +1,67 @@
+name: Auto Deploy (Canonical → EXEC-DEPLOY)
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "services/gateway/**"
+      - ".github/workflows/**"
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: auto-deploy-main
+  cancel-in-progress: true
+
+jobs:
+  dispatch_exec_deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract VTID from merge commit message
+        id: vtid
+        shell: bash
+        run: |
+          MSG="${{ github.event.head_commit.message }}"
+          echo "Commit message:"
+          echo "$MSG"
+
+          # Accept: DEV-XXXX-YYYY-NNNN, VTID-NNNN, BOOTSTRAP-...
+          VTID="$(echo "$MSG" | grep -Eo '(DEV-[A-Z0-9]+-[0-9]{4}-[0-9]{4}|VTID-[0-9]{4}|BOOTSTRAP-[A-Z0-9\-]+)' | head -n 1 || true)"
+
+          if [ -z "$VTID" ]; then
+            echo "No VTID found → skip deploy."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Found VTID=$VTID"
+          echo "found=true" >> "$GITHUB_OUTPUT"
+          echo "vtid=$VTID" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch governed deploy (EXEC-DEPLOY)
+        if: steps.vtid.outputs.found == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const vtid = "${{ steps.vtid.outputs.vtid }}";
+            // Canonical defaults (adjust later ONLY under a dedicated VTID)
+            const service = "gateway";
+            const environment = "dev";
+
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: "EXEC-DEPLOY.yml",
+              ref: "main",
+              inputs: {
+                vtid,
+                service,
+                environment,
+                health_path: "/alive",
+                initiator: "auto"
+              }
+            });
+
+            core.info(`✅ Dispatched EXEC-DEPLOY.yml for VTID=${vtid} service=${service} env=${environment}`);
