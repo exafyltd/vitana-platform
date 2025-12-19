@@ -10,27 +10,35 @@
 
 -- ===========================================================================
 -- Ensure vtid_ledger table exists (required for allocator function)
+-- Use DO block to handle table creation more gracefully
 -- ===========================================================================
 
-CREATE TABLE IF NOT EXISTS vtid_ledger (
-    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
-    vtid TEXT UNIQUE NOT NULL,
-    title TEXT NOT NULL DEFAULT '',
-    status TEXT NOT NULL DEFAULT 'scheduled',
-    tenant TEXT NOT NULL DEFAULT 'vitana',
-    layer TEXT,
-    module TEXT,
-    task_family TEXT,
-    task_type TEXT,
-    summary TEXT DEFAULT '',
-    description TEXT DEFAULT '',
-    is_test BOOLEAN DEFAULT false,
-    metadata JSONB DEFAULT '{}',
-    assigned_to TEXT,
-    parent_vtid TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+DO $$
+BEGIN
+    -- Create vtid_ledger table if it doesn't exist
+    CREATE TABLE IF NOT EXISTS vtid_ledger (
+        id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+        vtid TEXT UNIQUE NOT NULL,
+        title TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'scheduled',
+        tenant TEXT NOT NULL DEFAULT 'vitana',
+        layer TEXT,
+        module TEXT,
+        task_family TEXT,
+        task_type TEXT,
+        summary TEXT DEFAULT '',
+        description TEXT DEFAULT '',
+        is_test BOOLEAN DEFAULT false,
+        metadata JSONB DEFAULT '{}',
+        assigned_to TEXT,
+        parent_vtid TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+EXCEPTION WHEN duplicate_table THEN
+    -- Table already exists, that's fine
+    NULL;
+END $$;
 
 -- Create indexes if they don't exist
 CREATE INDEX IF NOT EXISTS idx_vtid_ledger_vtid ON vtid_ledger(vtid);
@@ -38,8 +46,10 @@ CREATE INDEX IF NOT EXISTS idx_vtid_ledger_status ON vtid_ledger(status);
 CREATE INDEX IF NOT EXISTS idx_vtid_ledger_created_at ON vtid_ledger(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_vtid_ledger_tenant ON vtid_ledger(tenant);
 
--- Grant permissions
+-- Grant permissions (idempotent)
 GRANT ALL ON vtid_ledger TO service_role;
+GRANT ALL ON vtid_ledger TO anon;
+GRANT ALL ON vtid_ledger TO authenticated;
 
 -- Enable RLS but allow service_role full access
 ALTER TABLE vtid_ledger ENABLE ROW LEVEL SECURITY;
@@ -50,8 +60,17 @@ CREATE POLICY vtid_ledger_service_role_all ON vtid_ledger FOR ALL TO service_rol
 -- Ensure global VTID sequence exists (starts at 1000 for VTID-01000 format)
 -- ===========================================================================
 
-CREATE SEQUENCE IF NOT EXISTS global_vtid_seq START 1000 INCREMENT 1;
+DO $$
+BEGIN
+    CREATE SEQUENCE global_vtid_seq START WITH 1000 INCREMENT BY 1;
+EXCEPTION WHEN duplicate_table THEN
+    -- Sequence already exists, that's fine
+    NULL;
+END $$;
+
 GRANT USAGE, SELECT ON SEQUENCE global_vtid_seq TO service_role;
+GRANT USAGE, SELECT ON SEQUENCE global_vtid_seq TO anon;
+GRANT USAGE, SELECT ON SEQUENCE global_vtid_seq TO authenticated;
 
 -- ===========================================================================
 -- Atomic VTID Allocation Function
