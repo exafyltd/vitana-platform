@@ -76,6 +76,9 @@ GRANT USAGE, SELECT ON SEQUENCE global_vtid_seq TO authenticated;
 -- Atomic VTID Allocation Function
 -- ===========================================================================
 
+-- Drop existing function first to allow return type change
+DROP FUNCTION IF EXISTS allocate_global_vtid(text, text, text);
+
 CREATE OR REPLACE FUNCTION allocate_global_vtid(
     p_source TEXT DEFAULT 'api',
     p_layer TEXT DEFAULT 'DEV',
