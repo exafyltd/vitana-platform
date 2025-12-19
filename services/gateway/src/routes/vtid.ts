@@ -475,6 +475,176 @@ router.get("/list", async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * VTID-01001: Projection endpoint for decision-grade VTID visibility
+ * GET /api/v1/vtid/projection?limit=50
+ *
+ * Returns a computed projection with derived fields:
+ * - vtid: The VTID identifier
+ * - title: Title (fallback to "")
+ * - current_stage: Planner/Worker/Validator/Deploy/Done
+ * - status: Moving/Blocked/Done/Failed
+ * - attention_required: AUTO or HUMAN
+ * - last_update: ISO timestamp of last activity
+ * - last_decision: Most recent governance decision (optional)
+ */
+interface VtidProjectionItem {
+  vtid: string;
+  title: string;
+  current_stage: 'Planner' | 'Worker' | 'Validator' | 'Deploy' | 'Done';
+  status: 'Moving' | 'Blocked' | 'Done' | 'Failed';
+  attention_required: 'AUTO' | 'HUMAN';
+  last_update: string | null;
+  last_decision: string | null;
+}
+
+router.get("/projection", async (req: Request, res: Response) => {
+  try {
+    const { limit: limitParam = "50" } = req.query as Record<string, string>;
+    const { supabaseUrl, svcKey } = getSupabaseConfig();
+
+    let limit = parseInt(limitParam, 10);
+    if (isNaN(limit) || limit < 1) limit = 50;
+    if (limit > 200) limit = 200;
+
+    console.log(`[VTID-01001] Projection request, limit=${limit}`);
+
+    // Step 1: Fetch VTIDs from ledger
+    const vtidResp = await fetch(
+      `${supabaseUrl}/rest/v1/vtid_ledger?order=created_at.desc&limit=${limit}`,
+      { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } }
+    );
+
+    if (!vtidResp.ok) {
+      const errText = await vtidResp.text();
+      console.error(`[VTID-01001] Ledger query failed: ${vtidResp.status} - ${errText}`);
+      return res.status(502).json({ ok: false, error: "database_query_failed" });
+    }
+
+    const vtidRows = await vtidResp.json() as any[];
+    console.log(`[VTID-01001] Fetched ${vtidRows.length} VTIDs from ledger`);
+
+    if (vtidRows.length === 0) {
+      return res.status(200).json({ ok: true, count: 0, data: [] });
+    }
+
+    // Step 2: Fetch recent events for all these VTIDs (batch query)
+    // We fetch the last 500 events and filter client-side for efficiency
+    const eventsResp = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_events?order=created_at.desc&limit=500`,
+      { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } }
+    );
+
+    let allEvents: any[] = [];
+    if (eventsResp.ok) {
+      allEvents = await eventsResp.json() as any[];
+      console.log(`[VTID-01001] Fetched ${allEvents.length} events for projection`);
+    } else {
+      console.warn(`[VTID-01001] Events query failed, proceeding without events`);
+    }
+
+    // Step 3: Build projection for each VTID
+    const projections: VtidProjectionItem[] = vtidRows.map((row: any) => {
+      const vtid = row.vtid;
+      const vtidEvents = allEvents.filter((e: any) => e.vtid === vtid);
+
+      // Derive current_stage from events using stage-mapping logic
+      let currentStage: VtidProjectionItem['current_stage'] = 'Planner';
+      let derivedStatus: VtidProjectionItem['status'] = 'Moving';
+      let attentionRequired: VtidProjectionItem['attention_required'] = 'AUTO';
+      let lastUpdate: string | null = row.updated_at || row.created_at || null;
+      let lastDecision: string | null = null;
+
+      if (vtidEvents.length > 0) {
+        // Get the most recent event
+        const latestEvent = vtidEvents[0]; // Already sorted desc
+        lastUpdate = latestEvent.created_at || lastUpdate;
+
+        // Determine stage from latest event
+        const eventTopic = (latestEvent.topic || latestEvent.kind || '').toLowerCase();
+        const eventStatus = (latestEvent.status || '').toLowerCase();
+        const eventMessage = (latestEvent.message || '').toLowerCase();
+        const combined = `${eventTopic} ${eventStatus} ${eventMessage}`;
+
+        // Stage detection (priority: later stages first)
+        if (combined.includes('deploy') || combined.includes('release') || combined.includes('publish')) {
+          currentStage = 'Deploy';
+        } else if (combined.includes('validat') || combined.includes('test') || combined.includes('verify') || combined.includes('check')) {
+          currentStage = 'Validator';
+        } else if (combined.includes('worker') || combined.includes('execut') || combined.includes('run') || combined.includes('build') || combined.includes('process')) {
+          currentStage = 'Worker';
+        } else if (combined.includes('plan') || combined.includes('schedul') || combined.includes('queue')) {
+          currentStage = 'Planner';
+        }
+
+        // Check for terminal states
+        if (combined.includes('done') || combined.includes('complete') || combined.includes('success') || combined.includes('merged') || combined.includes('deployed')) {
+          if (currentStage === 'Deploy') {
+            currentStage = 'Done';
+          }
+          derivedStatus = 'Done';
+        }
+
+        // Check for failure/blocked states
+        if (eventStatus === 'error' || eventStatus === 'fail' || eventStatus === 'failure' ||
+            combined.includes('failed') || combined.includes('error') || combined.includes('exception')) {
+          derivedStatus = 'Failed';
+          attentionRequired = 'HUMAN';
+        }
+
+        if (eventStatus === 'blocked' || combined.includes('blocked') || combined.includes('rejected')) {
+          derivedStatus = 'Blocked';
+          attentionRequired = 'HUMAN';
+        }
+
+        // Check for governance decisions
+        const governanceEvent = vtidEvents.find((e: any) =>
+          (e.topic || '').includes('governance') ||
+          (e.kind || '').includes('governance') ||
+          (e.message || '').includes('governance')
+        );
+        if (governanceEvent) {
+          lastDecision = governanceEvent.message || 'Governance decision recorded';
+          if ((governanceEvent.status || '').toLowerCase() === 'rejected') {
+            attentionRequired = 'HUMAN';
+          }
+        }
+      }
+
+      // Use ledger status as fallback/override
+      const ledgerStatus = (row.status || '').toLowerCase();
+      if (ledgerStatus === 'done' || ledgerStatus === 'closed' || ledgerStatus === 'deployed' || ledgerStatus === 'merged') {
+        derivedStatus = 'Done';
+        if (currentStage !== 'Done') {
+          currentStage = 'Done';
+        }
+      } else if (ledgerStatus === 'failed' || ledgerStatus === 'error') {
+        derivedStatus = 'Failed';
+        attentionRequired = 'HUMAN';
+      } else if (ledgerStatus === 'blocked') {
+        derivedStatus = 'Blocked';
+        attentionRequired = 'HUMAN';
+      }
+
+      return {
+        vtid,
+        title: row.title || '',
+        current_stage: currentStage,
+        status: derivedStatus,
+        attention_required: attentionRequired,
+        last_update: lastUpdate,
+        last_decision: lastDecision,
+      };
+    });
+
+    console.log(`[VTID-01001] Built projection for ${projections.length} VTIDs`);
+    return res.status(200).json({ ok: true, count: projections.length, data: projections });
+  } catch (e: any) {
+    console.error(`[VTID-01001] Projection error:`, e.message);
+    return res.status(500).json({ ok: false, error: "internal_server_error", message: e.message });
+  }
+});
+
 router.get("/:vtid", async (req: Request, res: Response) => {
   try {
     const { vtid } = req.params;
