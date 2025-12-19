@@ -243,6 +243,12 @@ jobs:
           echo "Deploying $CLOUD_RUN_SERVICE from $SOURCE_PATH"
 
           # Source deploy (builds container from source)
+            # VTID allocator enablement (gateway-only)
+            EXTRA_ENV_ARGS=()
+            if [ \"$CLOUD_RUN_SERVICE\" = \"gateway\" ]; then
+              EXTRA_ENV_ARGS+=(--update-env-vars=\"VTID_ALLOCATOR_ENABLED=true\")
+            fi
+
           # DEV-CICDL-2025-0003: Gateway-specific env var injection for VTID allocator
           if [ "$CLOUD_RUN_SERVICE" = "gateway" ]; then
             echo "Enabling VTID allocator env flag on gateway"
@@ -259,6 +265,7 @@ jobs:
               --region=us-central1 \
               --project=lovable-vitana-vers1 \
               --allow-unauthenticated \
+              \"${EXTRA_ENV_ARGS[@]}\" \
               --quiet
           fi
 
