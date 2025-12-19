@@ -1,6 +1,5 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
-import { randomUUID } from "crypto";
 import { buildStageTimeline, defaultStageTimeline, type TimelineEvent, type StageTimelineEntry } from '../lib/stage-mapping';
 
 const router = Router();
@@ -348,20 +347,14 @@ async function legacyCreate(
   const vtid = await vtidResp.json() as string;
 
   // Insert separately (non-atomic - race condition possible)
+  // VTID-0544: Use only valid vtid_ledger columns to avoid PGRST204 schema mismatch
   const insertPayload = {
-    id: randomUUID(),
     vtid,
-    title: body.title,
-    status: body.status,
-    tenant: body.tenant,
-    is_test: body.is_test,
     layer: body.task_family,
     module: body.task_module,
-    task_family: body.task_family,
-    task_type: body.task_module,
+    status: body.status,
+    title: body.title,
     summary: body.description_md || body.title,
-    description: body.description_md || body.title,
-    metadata: body.metadata || {},
   };
 
   const insertResp = await fetch(supabaseUrl + "/rest/v1/vtid_ledger", {
