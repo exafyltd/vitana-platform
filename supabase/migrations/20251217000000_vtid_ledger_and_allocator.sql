@@ -1,6 +1,6 @@
--- Migration: 20251219000000_vtid_0542_global_allocator.sql
--- Purpose: VTID-0542 Global VTID Allocator for /api/v1/vtid/allocate endpoint
--- Date: 2025-12-19
+-- Migration: 20251217000000_vtid_ledger_and_allocator.sql
+-- Purpose: VTID-0542 Create vtid_ledger table and allocate_global_vtid RPC
+-- Date: 2025-12-17 (must run before 20251218 which depends on vtid_ledger)
 --
 -- Creates the allocate_global_vtid RPC function that atomically:
 -- 1. Gets next sequence number
