@@ -241,22 +241,22 @@ jobs:
           esac
 
           echo "Deploying $CLOUD_RUN_SERVICE from $SOURCE_PATH"
-            # Source deploy (builds container from source)
-            # VTID allocator enablement (gateway-only)
-            EXTRA_ENV_ARGS=()
-            if [ "$CLOUD_RUN_SERVICE" = "gateway" ]; then
-              EXTRA_ENV_ARGS+=(--update-env-vars=VTID_ALLOCATOR_ENABLED=true)
-            fi
 
-            gcloud run deploy "$CLOUD_RUN_SERVICE" \
-              --source="$SOURCE_PATH" \
-              --region=us-central1 \
-              --project=lovable-vitana-vers1 \
-              --allow-unauthenticated \
-              "${EXTRA_ENV_ARGS[@]}" \
-              --quiet
+          # VTID allocator enablement (gateway-only)
+          EXTRA_ENV_ARGS=()
+          if [ "$CLOUD_RUN_SERVICE" = "gateway" ]; then
+            EXTRA_ENV_ARGS+=(--update-env-vars=VTID_ALLOCATOR_ENABLED=true)
+          fi
 
-            # Get service URL
+          gcloud run deploy "$CLOUD_RUN_SERVICE" \
+            --source="$SOURCE_PATH" \
+            --region=us-central1 \
+            --project=lovable-vitana-vers1 \
+            --allow-unauthenticated \
+            "${EXTRA_ENV_ARGS[@]}" \
+            --quiet
+
+          # Get service URL
           URL=$(gcloud run services describe "$CLOUD_RUN_SERVICE" --region=us-central1 --format='value(status.url)')
           echo "service_url=$URL" >> $GITHUB_OUTPUT
           echo "cloud_run_service=$CLOUD_RUN_SERVICE" >> $GITHUB_OUTPUT
