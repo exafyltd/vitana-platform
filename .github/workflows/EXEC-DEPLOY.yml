@@ -243,12 +243,24 @@ jobs:
           echo "Deploying $CLOUD_RUN_SERVICE from $SOURCE_PATH"
 
           # Source deploy (builds container from source)
-          gcloud run deploy "$CLOUD_RUN_SERVICE" \
-            --source="$SOURCE_PATH" \
-            --region=us-central1 \
-            --project=lovable-vitana-vers1 \
-            --allow-unauthenticated \
-            --quiet
+          # DEV-CICDL-2025-0003: Gateway-specific env var injection for VTID allocator
+          if [ "$CLOUD_RUN_SERVICE" = "gateway" ]; then
+            echo "Enabling VTID allocator env flag on gateway"
+            gcloud run deploy "$CLOUD_RUN_SERVICE" \
+              --source="$SOURCE_PATH" \
+              --region=us-central1 \
+              --project=lovable-vitana-vers1 \
+              --allow-unauthenticated \
+              --update-env-vars="VTID_ALLOCATOR_ENABLED=true" \
+              --quiet
+          else
+            gcloud run deploy "$CLOUD_RUN_SERVICE" \
+              --source="$SOURCE_PATH" \
+              --region=us-central1 \
+              --project=lovable-vitana-vers1 \
+              --allow-unauthenticated \
+              --quiet
+          fi
 
           # Get service URL
           URL=$(gcloud run services describe "$CLOUD_RUN_SERVICE" --region=us-central1 --format='value(status.url)')
