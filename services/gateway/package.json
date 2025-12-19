@@ -1,6 +1,6 @@
 {
   "name": "@vitana/gateway",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "VITANA API Gateway with OASIS event persistence",
   "main": "dist/index.js",
   "scripts": {
