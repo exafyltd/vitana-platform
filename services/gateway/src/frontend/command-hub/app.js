@@ -1,12 +1,12 @@
 // Vitana Dev Frontend Spec v2 Implementation - Task 3
-// AUTODEPLOY-TRIGGER: 2025-12-20T12:00:00Z
+// AUTODEPLOY-TRIGGER: 2025-12-20T14:00:00Z
 
 // VTID-0539: Operator Console Chat Experience Improvements
 // DEV-COMHU-2025-0012: Task Management v1 - Persisted Specs + Lifecycle + Approvals
 // DEV-COMHU-2025-0013: UX fixes - fingerprint style, textarea stability, dismiss toast
 // DEV-COMHU-2025-0015: Fix Task Board UX + VTID labels + OASIS events formatting
-// DEV-COMHU-2025-0016: Global Scroll Retention Guard - preserve scroll positions across re-renders
-console.log('🔥 COMMAND HUB BUNDLE: DEV-COMHU-2025-0016 LIVE 🔥');
+// VTID-01002: Global Scroll Retention Guard - polling uses incremental updates, not renderApp()
+console.log('🔥 COMMAND HUB BUNDLE: VTID-01002 LIVE 🔥');
 
 // --- DEV-COMHU-2025-0012: LocalStorage Helpers for Task Management v1 ---
 
@@ -92,20 +92,21 @@ function dismissApproval(repo, prNumber) {
     }
 }
 
-// --- DEV-COMHU-2025-0016: Global Scroll Retention Guard ---
-// Maintains scroll positions across renderApp() re-renders to prevent scroll resets during polling
+// --- VTID-01002: Global Scroll Retention Guard ---
+// Preserves scroll positions across re-renders. Polling uses incremental updates, not renderApp().
+// Primary discovery: data-scroll-retain="true" attribute. Fallback: legacy selector list.
 
 /**
  * Scroll positions Map keyed by route + containerId.
- * Format: Map<routeKey, Map<containerSelector, scrollTop>>
+ * Format: Map<routeKey, Map<containerKey, scrollTop>>
  */
 var scrollPositions = new Map();
 
 /**
- * List of scrollable container selectors to track.
- * These containers have overflow-y: auto/scroll in styles.css.
+ * VTID-01002: Fallback selector list for containers not yet marked with data-scroll-retain.
+ * Primary mechanism is attribute discovery; this list exists for backwards compatibility.
  */
-var SCROLLABLE_SELECTORS = [
+var SCROLLABLE_SELECTORS_FALLBACK = [
     '.column-content',
     '.drawer-content',
     '.overlay-content',
@@ -150,40 +151,88 @@ function getScrollRouteKey() {
 }
 
 /**
+ * VTID-01002: Gets a unique key for a scroll container.
+ * Uses data-scroll-key if available, otherwise falls back to id or generated key.
+ * @param {HTMLElement} container - The scroll container
+ * @param {number} index - Index among similar containers
+ * @returns {string} Unique container key
+ */
+function getContainerKey(container, index) {
+    if (container.dataset.scrollKey) {
+        return container.dataset.scrollKey;
+    }
+    if (container.id) {
+        return '#' + container.id;
+    }
+    // Fallback: use className + index
+    var className = container.className.split(' ')[0] || 'container';
+    return '.' + className + '[' + index + ']';
+}
+
+/**
+ * VTID-01002: Discovers all scrollable containers via data-scroll-retain attribute.
+ * Falls back to legacy selector list for containers not yet marked.
+ * @returns {HTMLElement[]} Array of scrollable containers
+ */
+function discoverScrollContainers() {
+    var containers = [];
+    var seen = new Set();
+
+    // Primary: discover via data-scroll-retain attribute
+    var attributed = document.querySelectorAll('[data-scroll-retain="true"]');
+    attributed.forEach(function(el) {
+        if (!seen.has(el)) {
+            seen.add(el);
+            containers.push(el);
+        }
+    });
+
+    // Fallback: legacy selector list for unmarked containers
+    SCROLLABLE_SELECTORS_FALLBACK.forEach(function(selector) {
+        var elements = document.querySelectorAll(selector);
+        elements.forEach(function(el) {
+            if (!seen.has(el)) {
+                seen.add(el);
+                containers.push(el);
+            }
+        });
+    });
+
+    return containers;
+}
+
+/**
  * Saves scroll position for a specific container.
  * Called on scroll events (throttled).
- * @param {string} selector - Container CSS selector
+ * @param {string} key - Container key
  * @param {number} scrollTop - Current scroll position
  */
-function saveScrollPosition(selector, scrollTop) {
+function saveScrollPosition(key, scrollTop) {
     var routeKey = getScrollRouteKey();
     if (!scrollPositions.has(routeKey)) {
         scrollPositions.set(routeKey, new Map());
     }
-    scrollPositions.get(routeKey).set(selector, scrollTop);
+    scrollPositions.get(routeKey).set(key, scrollTop);
 }
 
 /**
- * Captures scroll positions for all scrollable containers before DOM destruction.
+ * VTID-01002: Captures scroll positions for all scrollable containers before DOM destruction.
  * Called at the start of renderApp().
- * @returns {Map<string, number>} Map of selector to scrollTop for current containers
+ * @returns {Map<string, number>} Map of containerKey to scrollTop
  */
 function captureAllScrollPositions() {
     var positions = new Map();
     var routeKey = getScrollRouteKey();
 
-    SCROLLABLE_SELECTORS.forEach(function(selector) {
-        var containers = document.querySelectorAll(selector);
-        containers.forEach(function(container, index) {
-            // Use selector + index for uniqueness when multiple containers match
-            var key = containers.length > 1 ? selector + '[' + index + ']' : selector;
-            if (container.scrollTop > 0) {
-                positions.set(key, container.scrollTop);
-            }
-        });
+    var containers = discoverScrollContainers();
+    containers.forEach(function(container, index) {
+        var key = getContainerKey(container, index);
+        if (container.scrollTop > 0) {
+            positions.set(key, container.scrollTop);
+        }
     });
 
-    // Also save to persistent storage for tab-switching
+    // Save to persistent storage for tab-switching
     if (!scrollPositions.has(routeKey)) {
         scrollPositions.set(routeKey, new Map());
     }
@@ -195,7 +244,7 @@ function captureAllScrollPositions() {
 }
 
 /**
- * Restores scroll positions for all scrollable containers after DOM rebuild.
+ * VTID-01002: Restores scroll positions for all scrollable containers after DOM rebuild.
  * Uses requestAnimationFrame to ensure DOM is ready.
  * @param {Map<string, number>} positions - Captured positions from captureAllScrollPositions
  */
@@ -203,17 +252,11 @@ function restoreAllScrollPositions(positions) {
     if (!positions || positions.size === 0) return;
 
     requestAnimationFrame(function() {
-        positions.forEach(function(scrollTop, key) {
-            // Parse indexed selectors like '.column-content[0]'
-            var match = key.match(/^(.+)\[(\d+)\]$/);
-            var selector = match ? match[1] : key;
-            var index = match ? parseInt(match[2], 10) : 0;
-
-            var containers = document.querySelectorAll(selector);
-            var container = containers[index];
-
-            if (container) {
-                container.scrollTop = scrollTop;
+        var containers = discoverScrollContainers();
+        containers.forEach(function(container, index) {
+            var key = getContainerKey(container, index);
+            if (positions.has(key)) {
+                container.scrollTop = positions.get(key);
             }
         });
     });
@@ -231,24 +274,441 @@ function restoreScrollPositionsForRoute(routeKey) {
 }
 
 /**
- * Attaches throttled scroll listeners to all scrollable containers.
+ * VTID-01002: Attaches throttled scroll listeners to all scrollable containers.
  * Called after renderApp() to set up tracking.
  */
 function attachScrollListeners() {
-    SCROLLABLE_SELECTORS.forEach(function(selector) {
-        var containers = document.querySelectorAll(selector);
-        containers.forEach(function(container, index) {
-            // Skip if already has listener (marker attribute)
-            if (container.dataset.scrollTracked) return;
-            container.dataset.scrollTracked = 'true';
+    var containers = discoverScrollContainers();
+    containers.forEach(function(container, index) {
+        // Skip if already has listener (marker attribute)
+        if (container.dataset.scrollTracked) return;
+        container.dataset.scrollTracked = 'true';
 
-            var key = containers.length > 1 ? selector + '[' + index + ']' : selector;
+        var key = getContainerKey(container, index);
 
-            container.addEventListener('scroll', throttle(function() {
-                saveScrollPosition(key, container.scrollTop);
-            }, 100), { passive: true });
-        });
+        container.addEventListener('scroll', throttle(function() {
+            saveScrollPosition(key, container.scrollTop);
+        }, 100), { passive: true });
     });
+}
+
+/**
+ * VTID-01002: Refreshes only the active view's data region without full DOM rebuild.
+ * Called by polling handlers instead of renderApp() to preserve scroll positions.
+ */
+function refreshActiveViewData() {
+    var moduleKey = state.currentModuleKey;
+    var tab = state.currentTab;
+
+    // Determine which view is active and refresh only its data region
+    if (moduleKey === 'oasis' && tab === 'events') {
+        refreshOasisEventsContent();
+    } else if (moduleKey === 'command-hub' && tab === 'events') {
+        refreshCommandHubEventsContent();
+    } else if (moduleKey === 'command-hub' && tab === 'vtids') {
+        refreshVtidsContent();
+    } else if (moduleKey === 'oasis' && tab === 'vtid-ledger') {
+        refreshVtidLedgerContent();
+    } else if (state.isOperatorOpen) {
+        // Operator console overlays - refresh ticker/counters
+        refreshOperatorContent();
+    }
+    // For other views or when specific view not active, skip refresh to avoid unnecessary work
+}
+
+/**
+ * VTID-01002: Incremental refresh for OASIS events content.
+ * Updates table body only, keeps scroll container stable.
+ */
+function refreshOasisEventsContent() {
+    var content = document.querySelector('.oasis-events-content');
+    if (!content) return;
+
+    var tbody = content.querySelector('tbody');
+    if (tbody && state.oasisEvents.items) {
+        // Update table rows without replacing container
+        updateOasisEventsTableBody(tbody, state.oasisEvents.items);
+    }
+}
+
+/**
+ * VTID-01002: Incremental refresh for Command Hub events content.
+ */
+function refreshCommandHubEventsContent() {
+    var content = document.querySelector('.command-hub-events-content');
+    if (!content) return;
+
+    var tbody = content.querySelector('tbody');
+    if (tbody && state.commandHubEvents.items) {
+        updateCommandHubEventsTableBody(tbody, state.commandHubEvents.items);
+    }
+}
+
+/**
+ * VTID-01002: Incremental refresh for VTIDs list content.
+ */
+function refreshVtidsContent() {
+    var content = document.querySelector('.vtids-content');
+    if (!content) return;
+
+    var tbody = content.querySelector('tbody');
+    if (tbody && state.vtidsList.items) {
+        updateVtidsTableBody(tbody, state.vtidsList.items);
+    }
+}
+
+/**
+ * VTID-01002: Incremental refresh for VTID Ledger content.
+ */
+function refreshVtidLedgerContent() {
+    var listPane = document.querySelector('.ledger-list-pane');
+    if (!listPane) return;
+
+    var list = listPane.querySelector('.ledger-vtid-list');
+    if (list && state.vtidLedger.items) {
+        updateVtidLedgerList(list, state.vtidLedger.items);
+    }
+}
+
+/**
+ * VTID-01002: Incremental refresh for Operator console content (ticker, counters).
+ */
+function refreshOperatorContent() {
+    // Update stage counters display
+    var counterElements = document.querySelectorAll('.stage-counter-value');
+    if (counterElements.length >= 4 && state.stageCounters) {
+        var stages = ['PLANNER', 'WORKER', 'VALIDATOR', 'DEPLOY'];
+        stages.forEach(function(stage, i) {
+            if (counterElements[i]) {
+                counterElements[i].textContent = state.stageCounters[stage] || 0;
+            }
+        });
+    }
+
+    // Update ticker events if visible
+    var tickerList = document.querySelector('.ticker-events-list');
+    if (tickerList && state.tickerEvents) {
+        updateTickerEventsList(tickerList, state.tickerEvents);
+    }
+}
+
+/**
+ * VTID-01002: Updates OASIS events table body incrementally.
+ */
+function updateOasisEventsTableBody(tbody, items) {
+    // Clear and rebuild rows (but NOT the parent container)
+    while (tbody.firstChild) {
+        tbody.removeChild(tbody.firstChild);
+    }
+
+    var filtered = filterOasisEvents(items);
+    filtered.forEach(function(event) {
+        var row = createOasisEventRow(event);
+        tbody.appendChild(row);
+    });
+}
+
+/**
+ * VTID-01002: Updates Command Hub events table body incrementally.
+ */
+function updateCommandHubEventsTableBody(tbody, items) {
+    while (tbody.firstChild) {
+        tbody.removeChild(tbody.firstChild);
+    }
+
+    var filtered = filterCommandHubEvents(items);
+    filtered.forEach(function(event) {
+        var row = createCommandHubEventRow(event);
+        tbody.appendChild(row);
+    });
+}
+
+/**
+ * VTID-01002: Updates VTIDs table body incrementally.
+ */
+function updateVtidsTableBody(tbody, items) {
+    while (tbody.firstChild) {
+        tbody.removeChild(tbody.firstChild);
+    }
+
+    items.forEach(function(vtid) {
+        var row = createVtidRow(vtid);
+        tbody.appendChild(row);
+    });
+}
+
+/**
+ * VTID-01002: Updates VTID Ledger list incrementally.
+ */
+function updateVtidLedgerList(list, items) {
+    while (list.firstChild) {
+        list.removeChild(list.firstChild);
+    }
+
+    items.forEach(function(item) {
+        var el = createVtidLedgerItem(item);
+        list.appendChild(el);
+    });
+}
+
+/**
+ * VTID-01002: Updates ticker events list incrementally.
+ */
+function updateTickerEventsList(list, events) {
+    while (list.firstChild) {
+        list.removeChild(list.firstChild);
+    }
+
+    events.forEach(function(event) {
+        var item = createTickerEventItem(event);
+        list.appendChild(item);
+    });
+}
+
+/**
+ * VTID-01002: Filters OASIS events based on current filter state.
+ * @param {Array} items - Raw event items
+ * @returns {Array} Filtered items
+ */
+function filterOasisEvents(items) {
+    if (!items) return [];
+    var filters = state.oasisEvents.filters || {};
+    return items.filter(function(event) {
+        if (filters.topic && !(event.topic || '').toLowerCase().includes(filters.topic.toLowerCase())) {
+            return false;
+        }
+        if (filters.service && event.service !== filters.service) {
+            return false;
+        }
+        if (filters.status && event.status !== filters.status) {
+            return false;
+        }
+        return true;
+    });
+}
+
+/**
+ * VTID-01002: Filters Command Hub events based on current filter state.
+ * @param {Array} items - Raw event items
+ * @returns {Array} Filtered items
+ */
+function filterCommandHubEvents(items) {
+    if (!items) return [];
+    var filters = state.commandHubEvents.filters || {};
+    return items.filter(function(event) {
+        if (filters.topic && !(event.topic || '').toLowerCase().includes(filters.topic.toLowerCase())) {
+            return false;
+        }
+        if (filters.service && event.service !== filters.service) {
+            return false;
+        }
+        if (filters.status && event.status !== filters.status) {
+            return false;
+        }
+        return true;
+    });
+}
+
+/**
+ * VTID-01002: Creates an OASIS event table row element.
+ * Uses the same structure as renderOasisEventsView for consistency.
+ * @param {Object} event - Event data
+ * @returns {HTMLElement} Table row element
+ */
+function createOasisEventRow(event) {
+    var row = document.createElement('tr');
+    row.className = 'oasis-event-row';
+    var severity = getEventSeverity(event);
+    row.dataset.severity = severity;
+    row.onclick = function() {
+        state.oasisEvents.selectedEvent = event;
+        renderApp();
+    };
+
+    // Severity indicator
+    var severityCell = document.createElement('td');
+    var severityDot = document.createElement('span');
+    severityDot.className = 'severity-dot severity-' + severity;
+    severityCell.appendChild(severityDot);
+    row.appendChild(severityCell);
+
+    // Timestamp
+    var tsCell = document.createElement('td');
+    tsCell.className = 'event-timestamp';
+    tsCell.textContent = formatEventTimestamp(event.created_at);
+    row.appendChild(tsCell);
+
+    // Topic
+    var topicCell = document.createElement('td');
+    topicCell.className = 'event-topic';
+    topicCell.textContent = event.topic || '-';
+    row.appendChild(topicCell);
+
+    // VTID
+    var vtidCell = document.createElement('td');
+    vtidCell.className = 'event-vtid';
+    vtidCell.textContent = event.vtid || '-';
+    row.appendChild(vtidCell);
+
+    // Service
+    var serviceCell = document.createElement('td');
+    serviceCell.className = 'event-service';
+    serviceCell.textContent = event.service || '-';
+    row.appendChild(serviceCell);
+
+    // Status
+    var statusCell = document.createElement('td');
+    var statusBadge = document.createElement('span');
+    statusBadge.className = 'status-badge status-' + (event.status || 'info');
+    statusBadge.textContent = event.status || '-';
+    statusCell.appendChild(statusBadge);
+    row.appendChild(statusCell);
+
+    // Message
+    var msgCell = document.createElement('td');
+    msgCell.className = 'event-message';
+    msgCell.textContent = (event.message || '').substring(0, 60) + ((event.message || '').length > 60 ? '...' : '');
+    row.appendChild(msgCell);
+
+    return row;
+}
+
+/**
+ * VTID-01002: Creates a Command Hub event table row element.
+ * @param {Object} event - Event data
+ * @returns {HTMLElement} Table row element
+ */
+function createCommandHubEventRow(event) {
+    var row = document.createElement('tr');
+    row.className = 'command-hub-event-row';
+    row.onclick = function() {
+        state.commandHubEvents.selectedEvent = event;
+        renderApp();
+    };
+
+    // Timestamp
+    var tsCell = document.createElement('td');
+    tsCell.textContent = formatEventTimestamp(event.created_at);
+    row.appendChild(tsCell);
+
+    // Topic
+    var topicCell = document.createElement('td');
+    topicCell.textContent = event.topic || '-';
+    row.appendChild(topicCell);
+
+    // VTID
+    var vtidCell = document.createElement('td');
+    vtidCell.textContent = event.vtid || '-';
+    row.appendChild(vtidCell);
+
+    // Service
+    var serviceCell = document.createElement('td');
+    serviceCell.textContent = event.service || '-';
+    row.appendChild(serviceCell);
+
+    // Status
+    var statusCell = document.createElement('td');
+    var statusBadge = document.createElement('span');
+    statusBadge.className = 'status-badge status-' + (event.status || 'info');
+    statusBadge.textContent = event.status || '-';
+    statusCell.appendChild(statusBadge);
+    row.appendChild(statusCell);
+
+    // Message
+    var msgCell = document.createElement('td');
+    msgCell.textContent = (event.message || '').substring(0, 50) + ((event.message || '').length > 50 ? '...' : '');
+    row.appendChild(msgCell);
+
+    return row;
+}
+
+/**
+ * VTID-01002: Creates a VTID list table row element.
+ * @param {Object} vtid - VTID data
+ * @returns {HTMLElement} Table row element
+ */
+function createVtidRow(vtid) {
+    var row = document.createElement('tr');
+    row.className = 'vtid-row';
+
+    // VTID
+    var vtidCell = document.createElement('td');
+    vtidCell.textContent = vtid.vtid || '-';
+    row.appendChild(vtidCell);
+
+    // Title
+    var titleCell = document.createElement('td');
+    titleCell.textContent = vtid.title || '-';
+    row.appendChild(titleCell);
+
+    // Status
+    var statusCell = document.createElement('td');
+    var statusBadge = document.createElement('span');
+    statusBadge.className = 'status-badge status-' + (vtid.status || 'pending');
+    statusBadge.textContent = vtid.status || 'pending';
+    statusCell.appendChild(statusBadge);
+    row.appendChild(statusCell);
+
+    return row;
+}
+
+/**
+ * VTID-01002: Creates a VTID Ledger list item element.
+ * @param {Object} item - Ledger item data
+ * @returns {HTMLElement} List item element
+ */
+function createVtidLedgerItem(item) {
+    var el = document.createElement('div');
+    el.className = 'ledger-vtid-item';
+    if (state.vtidLedger.selectedVtid === item.vtid) {
+        el.classList.add('selected');
+    }
+    el.onclick = function() {
+        state.vtidLedger.selectedVtid = item.vtid;
+        fetchVtidDetail(item.vtid);
+        renderApp();
+    };
+
+    var vtidLabel = document.createElement('span');
+    vtidLabel.className = 'ledger-vtid-label';
+    vtidLabel.textContent = item.vtid || '-';
+    el.appendChild(vtidLabel);
+
+    var statusBadge = document.createElement('span');
+    statusBadge.className = 'ledger-vtid-status status-' + (item.status || 'pending');
+    statusBadge.textContent = item.status || 'pending';
+    el.appendChild(statusBadge);
+
+    return el;
+}
+
+/**
+ * VTID-01002: Creates a ticker event item element.
+ * @param {Object} event - Ticker event data
+ * @returns {HTMLElement} Ticker item element
+ */
+function createTickerEventItem(event) {
+    var item = document.createElement('div');
+    item.className = 'ticker-event-item ticker-event-' + (event.type || 'info');
+
+    var timestamp = document.createElement('span');
+    timestamp.className = 'ticker-timestamp';
+    timestamp.textContent = event.timestamp || '';
+    item.appendChild(timestamp);
+
+    var content = document.createElement('span');
+    content.className = 'ticker-content';
+    content.textContent = event.content || '';
+    item.appendChild(content);
+
+    if (event.task_stage) {
+        var stage = document.createElement('span');
+        stage.className = 'ticker-stage ticker-stage-' + event.task_stage.toLowerCase();
+        stage.textContent = event.task_stage;
+        item.appendChild(stage);
+    }
+
+    return item;
 }
 
 // --- Configs ---
@@ -903,12 +1363,18 @@ function formatEventTimestamp(isoString) {
 
 /**
  * VTID-0600: Fetch OASIS events from the API
+ * VTID-01002: Added silentRefresh parameter for polling - uses incremental updates instead of renderApp()
  * @param {Object} filters - Optional filters (topic, service, status)
+ * @param {boolean} silentRefresh - If true, skip renderApp() and use incremental update
  */
-async function fetchOasisEvents(filters) {
-    console.log('[VTID-0600] Fetching OASIS events...');
-    state.oasisEvents.loading = true;
-    renderApp();
+async function fetchOasisEvents(filters, silentRefresh) {
+    console.log('[VTID-0600] Fetching OASIS events...', silentRefresh ? '(silent)' : '');
+
+    // VTID-01002: Only show loading state for initial load, not polling refreshes
+    if (!silentRefresh) {
+        state.oasisEvents.loading = true;
+        renderApp();
+    }
 
     try {
         var queryParams = 'limit=100';
@@ -935,12 +1401,18 @@ async function fetchOasisEvents(filters) {
         state.oasisEvents.items = [];
     } finally {
         state.oasisEvents.loading = false;
-        renderApp();
+        // VTID-01002: Use incremental update for polling, full render for initial load
+        if (silentRefresh) {
+            refreshActiveViewData();
+        } else {
+            renderApp();
+        }
     }
 }
 
 /**
  * VTID-0600: Start auto-refresh for OASIS events (5 second interval)
+ * VTID-01002: Uses silentRefresh to avoid full DOM rebuild during polling
  */
 function startOasisEventsAutoRefresh() {
     if (state.oasisEvents.autoRefreshInterval) {
@@ -949,10 +1421,11 @@ function startOasisEventsAutoRefresh() {
     state.oasisEvents.autoRefreshEnabled = true;
     state.oasisEvents.autoRefreshInterval = setInterval(function() {
         if (state.oasisEvents.autoRefreshEnabled) {
-            fetchOasisEvents(state.oasisEvents.filters);
+            // VTID-01002: Use silentRefresh=true to preserve scroll positions
+            fetchOasisEvents(state.oasisEvents.filters, true);
         }
     }, 5000);
-    console.log('[VTID-0600] OASIS events auto-refresh started (5s interval)');
+    console.log('[VTID-0600] OASIS events auto-refresh started (5s interval, scroll-safe)');
 }
 
 /**
@@ -1551,7 +2024,7 @@ function renderApp() {
         };
     }
 
-    // DEV-COMHU-2025-0016: Capture all scroll positions before DOM destruction
+    // VTID-01002: Capture all scroll positions before DOM destruction
     var savedScrollPositions = captureAllScrollPositions();
 
     root.innerHTML = '';
@@ -1658,7 +2131,7 @@ function renderApp() {
         });
     }
 
-    // DEV-COMHU-2025-0016: Restore scroll positions after DOM rebuild and attach listeners
+    // VTID-01002: Restore scroll positions after DOM rebuild and attach listeners
     restoreAllScrollPositions(savedScrollPositions);
     attachScrollListeners();
 }
@@ -2337,6 +2810,9 @@ function renderTasksView() {
 
         const content = document.createElement('div');
         content.className = 'column-content';
+        // VTID-01002: Mark as scroll-retaining container
+        content.dataset.scrollRetain = 'true';
+        content.dataset.scrollKey = 'tasks-' + colName.toLowerCase().replace(/\s+/g, '-');
 
         // Filter tasks
         // DEV-COMHU-2025-0012: Use override-aware column mapping for local status transitions
@@ -3264,7 +3740,7 @@ function handleModuleClick(sectionKey) {
     const section = NAVIGATION_CONFIG.find(s => s.section === sectionKey);
     if (!section) return;
 
-    // DEV-COMHU-2025-0016: Capture scroll positions BEFORE changing route state
+    // VTID-01002: Capture scroll positions BEFORE changing route state
     captureAllScrollPositions();
 
     state.currentModuleKey = sectionKey;
@@ -3288,7 +3764,7 @@ function handleModuleClick(sectionKey) {
     state.selectedGovernanceRule = null;
     renderApp();
 
-    // DEV-COMHU-2025-0016: Restore scroll positions for new route from persistent storage
+    // VTID-01002: Restore scroll positions for new route from persistent storage
     restoreScrollPositionsForRoute(getScrollRouteKey());
 }
 
@@ -3299,7 +3775,7 @@ function handleTabClick(tabKey) {
     const tab = section.tabs.find(t => t.key === tabKey);
     if (!tab) return;
 
-    // DEV-COMHU-2025-0016: Capture scroll positions BEFORE changing route state
+    // VTID-01002: Capture scroll positions BEFORE changing route state
     captureAllScrollPositions();
 
     state.currentTab = tabKey;
@@ -3309,7 +3785,7 @@ function handleTabClick(tabKey) {
 
     renderApp();
 
-    // DEV-COMHU-2025-0016: Restore scroll positions for new route from persistent storage
+    // VTID-01002: Restore scroll positions for new route from persistent storage
     restoreScrollPositionsForRoute(getScrollRouteKey());
 }
 
@@ -3353,7 +3829,7 @@ function formatTabLabel(key) {
 }
 
 window.onpopstate = () => {
-    // DEV-COMHU-2025-0016: Capture scroll positions BEFORE changing route state
+    // VTID-01002: Capture scroll positions BEFORE changing route state
     captureAllScrollPositions();
 
     const route = getRouteFromPath(window.location.pathname);
@@ -3361,7 +3837,7 @@ window.onpopstate = () => {
     state.currentTab = route.tab;
     renderApp();
 
-    // DEV-COMHU-2025-0016: Restore scroll positions for new route from persistent storage
+    // VTID-01002: Restore scroll positions for new route from persistent storage
     restoreScrollPositionsForRoute(getScrollRouteKey());
 };
 
@@ -5175,6 +5651,9 @@ function renderOasisEventsView() {
     // Events table
     var content = document.createElement('div');
     content.className = 'oasis-events-content';
+    // VTID-01002: Mark as scroll-retaining container
+    content.dataset.scrollRetain = 'true';
+    content.dataset.scrollKey = 'oasis-events';
 
     if (state.oasisEvents.loading && state.oasisEvents.items.length === 0) {
         content.innerHTML = '<div class="placeholder-content">Loading OASIS events...</div>';
@@ -5443,6 +5922,9 @@ function renderCommandHubEventsView() {
     // Events list
     var content = document.createElement('div');
     content.className = 'command-hub-events-content';
+    // VTID-01002: Mark as scroll-retaining container
+    content.dataset.scrollRetain = 'true';
+    content.dataset.scrollKey = 'command-hub-events';
 
     if (state.commandHubEvents.loading) {
         content.innerHTML = '<div class="placeholder-content">Loading operational events...</div>';
@@ -5737,6 +6219,9 @@ function renderVtidsView() {
     // Content
     var content = document.createElement('div');
     content.className = 'vtids-content';
+    // VTID-01002: Mark as scroll-retaining container
+    content.dataset.scrollRetain = 'true';
+    content.dataset.scrollKey = 'vtids-list';
 
     if (state.vtidProjection.loading) {
         content.innerHTML = '<div class="placeholder-content">Loading VTIDs...</div>';
@@ -8331,10 +8816,11 @@ let telemetryAutoRefreshInterval = null;
 /**
  * VTID-0526-D: Fetch telemetry snapshot with stage counters.
  * VTID-0527: Also populates telemetryEvents for task stage timelines.
- * This populates the stageCounters state and optionally the tickerEvents.
+ * VTID-01002: Added silentRefresh parameter for polling - uses incremental updates instead of renderApp()
+ * @param {boolean} silentRefresh - If true, skip renderApp() and use incremental update
  */
-async function fetchTelemetrySnapshot() {
-    console.log('[VTID-0527] Fetching telemetry snapshot...');
+async function fetchTelemetrySnapshot(silentRefresh) {
+    console.log('[VTID-0527] Fetching telemetry snapshot...', silentRefresh ? '(silent)' : '');
     state.stageCountersLoading = true;
 
     try {
@@ -8395,13 +8881,19 @@ async function fetchTelemetrySnapshot() {
         state.telemetrySnapshotError = error.message;
     } finally {
         state.stageCountersLoading = false;
-        renderApp();
+        // VTID-01002: Use incremental update for polling, full render for initial load
+        if (silentRefresh) {
+            refreshActiveViewData();
+        } else {
+            renderApp();
+        }
     }
 }
 
 /**
  * VTID-0526-D: Start auto-refresh for telemetry (during active execution).
  * Polls every 3 seconds while the operator console is open.
+ * VTID-01002: Uses silentRefresh to avoid full DOM rebuild during polling
  */
 function startTelemetryAutoRefresh() {
     if (telemetryAutoRefreshInterval) {
@@ -8409,11 +8901,12 @@ function startTelemetryAutoRefresh() {
         return;
     }
 
-    console.log('[VTID-0526-D] Starting telemetry auto-refresh (3s interval)');
+    console.log('[VTID-0526-D] Starting telemetry auto-refresh (3s interval, scroll-safe)');
 
     telemetryAutoRefreshInterval = setInterval(function() {
         if (state.telemetryAutoRefreshEnabled && state.isOperatorOpen) {
-            fetchTelemetrySnapshot();
+            // VTID-01002: Use silentRefresh=true to preserve scroll positions
+            fetchTelemetrySnapshot(true);
         }
     }, 3000);
 }
@@ -8557,9 +9050,11 @@ let cicdHealthPollInterval = null;
 /**
  * Fetches CI/CD health status from the backend API.
  * Updates state.cicdHealth with the response.
+ * VTID-01002: Added silentRefresh parameter for polling - skips renderApp() if true
+ * @param {boolean} silentRefresh - If true, skip renderApp() (CI/CD health updates header only)
  */
-async function fetchCicdHealth() {
-    console.log('[CICD] Fetching health status...');
+async function fetchCicdHealth(silentRefresh) {
+    console.log('[CICD] Fetching health status...', silentRefresh ? '(silent)' : '');
     state.cicdHealthLoading = true;
 
     try {
@@ -8580,15 +9075,40 @@ async function fetchCicdHealth() {
         state.cicdHealth = null;
     } finally {
         state.cicdHealthLoading = false;
-        renderApp();
+        // VTID-01002: For CI/CD health, update header indicator incrementally if possible
+        if (silentRefresh) {
+            updateCicdHealthIndicator();
+        } else {
+            renderApp();
+        }
+    }
+}
+
+/**
+ * VTID-01002: Updates CI/CD health indicator in header incrementally without full render.
+ */
+function updateCicdHealthIndicator() {
+    var indicator = document.querySelector('.cicd-health-indicator');
+    if (!indicator) return;
+
+    var health = state.cicdHealth;
+    if (!health) return;
+
+    // Update indicator class based on health status
+    indicator.className = 'cicd-health-indicator';
+    if (health.ok) {
+        indicator.classList.add('healthy');
+    } else {
+        indicator.classList.add('degraded');
     }
 }
 
 /**
  * Starts polling for CI/CD health every 10 seconds.
+ * VTID-01002: Uses silentRefresh to avoid full DOM rebuild during polling
  */
 function startCicdHealthPolling() {
-    // Fetch immediately on start
+    // Fetch immediately on start (full render for initial state)
     fetchCicdHealth();
 
     // Clear any existing interval
@@ -8596,12 +9116,13 @@ function startCicdHealthPolling() {
         clearInterval(cicdHealthPollInterval);
     }
 
-    // Poll every 10 seconds
+    // Poll every 10 seconds with silent refresh
     cicdHealthPollInterval = setInterval(() => {
-        fetchCicdHealth();
+        // VTID-01002: Use silentRefresh=true to preserve scroll positions
+        fetchCicdHealth(true);
     }, 10000);
 
-    console.log('[CICD] Health polling started (10s interval)');
+    console.log('[CICD] Health polling started (10s interval, scroll-safe)');
 }
 
 /**
