@@ -1,11 +1,12 @@
 // Vitana Dev Frontend Spec v2 Implementation - Task 3
-// AUTODEPLOY-TRIGGER: 2025-12-18T22:00:00Z
+// AUTODEPLOY-TRIGGER: 2025-12-20T12:00:00Z
 
 // VTID-0539: Operator Console Chat Experience Improvements
 // DEV-COMHU-2025-0012: Task Management v1 - Persisted Specs + Lifecycle + Approvals
 // DEV-COMHU-2025-0013: UX fixes - fingerprint style, textarea stability, dismiss toast
 // DEV-COMHU-2025-0015: Fix Task Board UX + VTID labels + OASIS events formatting
-console.log('🔥 COMMAND HUB BUNDLE: DEV-COMHU-2025-0015 LIVE 🔥');
+// DEV-COMHU-2025-0016: Global Scroll Retention Guard - preserve scroll positions across re-renders
+console.log('🔥 COMMAND HUB BUNDLE: DEV-COMHU-2025-0016 LIVE 🔥');
 
 // --- DEV-COMHU-2025-0012: LocalStorage Helpers for Task Management v1 ---
 
@@ -89,6 +90,165 @@ function dismissApproval(repo, prNumber) {
     } catch (e) {
         return false;
     }
+}
+
+// --- DEV-COMHU-2025-0016: Global Scroll Retention Guard ---
+// Maintains scroll positions across renderApp() re-renders to prevent scroll resets during polling
+
+/**
+ * Scroll positions Map keyed by route + containerId.
+ * Format: Map<routeKey, Map<containerSelector, scrollTop>>
+ */
+var scrollPositions = new Map();
+
+/**
+ * List of scrollable container selectors to track.
+ * These containers have overflow-y: auto/scroll in styles.css.
+ */
+var SCROLLABLE_SELECTORS = [
+    '.column-content',
+    '.drawer-content',
+    '.overlay-content',
+    '.oasis-events-content',
+    '.command-hub-events-content',
+    '.vtids-content',
+    '.history-content',
+    '.ticker-events-list',
+    '.ticker-container',
+    '.gov-history-drawer-content',
+    '.governance-content',
+    '.tasks-container',
+    '.ledger-list-pane',
+    '.approvals-list',
+    '.version-dropdown__list',
+    '.split-pane-content'
+];
+
+/**
+ * Throttle helper for scroll listeners.
+ * @param {Function} fn - Function to throttle
+ * @param {number} wait - Throttle interval in ms
+ * @returns {Function} Throttled function
+ */
+function throttle(fn, wait) {
+    var lastTime = 0;
+    return function() {
+        var now = Date.now();
+        if (now - lastTime >= wait) {
+            lastTime = now;
+            fn.apply(this, arguments);
+        }
+    };
+}
+
+/**
+ * Gets the current route key for scroll position storage.
+ * @returns {string} Route key combining module and tab
+ */
+function getScrollRouteKey() {
+    return (state.currentModuleKey || 'unknown') + '/' + (state.currentTab || 'unknown');
+}
+
+/**
+ * Saves scroll position for a specific container.
+ * Called on scroll events (throttled).
+ * @param {string} selector - Container CSS selector
+ * @param {number} scrollTop - Current scroll position
+ */
+function saveScrollPosition(selector, scrollTop) {
+    var routeKey = getScrollRouteKey();
+    if (!scrollPositions.has(routeKey)) {
+        scrollPositions.set(routeKey, new Map());
+    }
+    scrollPositions.get(routeKey).set(selector, scrollTop);
+}
+
+/**
+ * Captures scroll positions for all scrollable containers before DOM destruction.
+ * Called at the start of renderApp().
+ * @returns {Map<string, number>} Map of selector to scrollTop for current containers
+ */
+function captureAllScrollPositions() {
+    var positions = new Map();
+    var routeKey = getScrollRouteKey();
+
+    SCROLLABLE_SELECTORS.forEach(function(selector) {
+        var containers = document.querySelectorAll(selector);
+        containers.forEach(function(container, index) {
+            // Use selector + index for uniqueness when multiple containers match
+            var key = containers.length > 1 ? selector + '[' + index + ']' : selector;
+            if (container.scrollTop > 0) {
+                positions.set(key, container.scrollTop);
+            }
+        });
+    });
+
+    // Also save to persistent storage for tab-switching
+    if (!scrollPositions.has(routeKey)) {
+        scrollPositions.set(routeKey, new Map());
+    }
+    positions.forEach(function(value, key) {
+        scrollPositions.get(routeKey).set(key, value);
+    });
+
+    return positions;
+}
+
+/**
+ * Restores scroll positions for all scrollable containers after DOM rebuild.
+ * Uses requestAnimationFrame to ensure DOM is ready.
+ * @param {Map<string, number>} positions - Captured positions from captureAllScrollPositions
+ */
+function restoreAllScrollPositions(positions) {
+    if (!positions || positions.size === 0) return;
+
+    requestAnimationFrame(function() {
+        positions.forEach(function(scrollTop, key) {
+            // Parse indexed selectors like '.column-content[0]'
+            var match = key.match(/^(.+)\[(\d+)\]$/);
+            var selector = match ? match[1] : key;
+            var index = match ? parseInt(match[2], 10) : 0;
+
+            var containers = document.querySelectorAll(selector);
+            var container = containers[index];
+
+            if (container) {
+                container.scrollTop = scrollTop;
+            }
+        });
+    });
+}
+
+/**
+ * Restores scroll positions from persistent storage for a route (for tab switching).
+ * @param {string} routeKey - Route key to restore from
+ */
+function restoreScrollPositionsForRoute(routeKey) {
+    var positions = scrollPositions.get(routeKey);
+    if (positions) {
+        restoreAllScrollPositions(positions);
+    }
+}
+
+/**
+ * Attaches throttled scroll listeners to all scrollable containers.
+ * Called after renderApp() to set up tracking.
+ */
+function attachScrollListeners() {
+    SCROLLABLE_SELECTORS.forEach(function(selector) {
+        var containers = document.querySelectorAll(selector);
+        containers.forEach(function(container, index) {
+            // Skip if already has listener (marker attribute)
+            if (container.dataset.scrollTracked) return;
+            container.dataset.scrollTracked = 'true';
+
+            var key = containers.length > 1 ? selector + '[' + index + ']' : selector;
+
+            container.addEventListener('scroll', throttle(function() {
+                saveScrollPosition(key, container.scrollTop);
+            }, 100), { passive: true });
+        });
+    });
 }
 
 // --- Configs ---
@@ -1391,6 +1551,9 @@ function renderApp() {
         };
     }
 
+    // DEV-COMHU-2025-0016: Capture all scroll positions before DOM destruction
+    var savedScrollPositions = captureAllScrollPositions();
+
     root.innerHTML = '';
 
     const container = document.createElement('div');
@@ -1494,6 +1657,10 @@ function renderApp() {
             }
         });
     }
+
+    // DEV-COMHU-2025-0016: Restore scroll positions after DOM rebuild and attach listeners
+    restoreAllScrollPositions(savedScrollPositions);
+    attachScrollListeners();
 }
 
 function renderSidebar() {
@@ -3097,6 +3264,9 @@ function handleModuleClick(sectionKey) {
     const section = NAVIGATION_CONFIG.find(s => s.section === sectionKey);
     if (!section) return;
 
+    // DEV-COMHU-2025-0016: Capture scroll positions BEFORE changing route state
+    captureAllScrollPositions();
+
     state.currentModuleKey = sectionKey;
     // Default to first tab
     const firstTab = section.tabs[0];
@@ -3117,6 +3287,9 @@ function handleModuleClick(sectionKey) {
     state.selectedTaskDetailLoading = false;
     state.selectedGovernanceRule = null;
     renderApp();
+
+    // DEV-COMHU-2025-0016: Restore scroll positions for new route from persistent storage
+    restoreScrollPositionsForRoute(getScrollRouteKey());
 }
 
 function handleTabClick(tabKey) {
@@ -3126,12 +3299,18 @@ function handleTabClick(tabKey) {
     const tab = section.tabs.find(t => t.key === tabKey);
     if (!tab) return;
 
+    // DEV-COMHU-2025-0016: Capture scroll positions BEFORE changing route state
+    captureAllScrollPositions();
+
     state.currentTab = tabKey;
 
     // Update URL
     history.pushState(null, '', tab.path);
 
     renderApp();
+
+    // DEV-COMHU-2025-0016: Restore scroll positions for new route from persistent storage
+    restoreScrollPositionsForRoute(getScrollRouteKey());
 }
 
 // Router Logic
@@ -3174,10 +3353,16 @@ function formatTabLabel(key) {
 }
 
 window.onpopstate = () => {
+    // DEV-COMHU-2025-0016: Capture scroll positions BEFORE changing route state
+    captureAllScrollPositions();
+
     const route = getRouteFromPath(window.location.pathname);
     state.currentModuleKey = route.section;
     state.currentTab = route.tab;
     renderApp();
+
+    // DEV-COMHU-2025-0016: Restore scroll positions for new route from persistent storage
+    restoreScrollPositionsForRoute(getScrollRouteKey());
 };
 
 function handleSplitScreenToggle(comboId) {
