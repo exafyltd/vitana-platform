@@ -22,7 +22,8 @@ const PROTECTED_PATH = 'services/gateway/src/frontend/command-hub/';
 // VTID-0601: Autonomous Safe Merge & Deploy Control (includes Approvals UI)
 // VTID-01001: VTID Ledger Visibility + Decision View (Command Hub + OASIS)
 //             Branch pattern: vtid-ledger-visibility (for claude/vtid-ledger-visibility-* branches)
-const ALLOWED_VTID_PATTERN = /DEV-COMHU-\d+|VTID-0302|VTID-0539|VTID-0541|VTID-0542|VTID-0600|VTID-0601|VTID-01001|global-vtid-allocator|vtid-ledger-visibility/i;
+// VTID-01002: Global Dev UI Scroll Retention (polling-safe, permanent)
+const ALLOWED_VTID_PATTERN = /DEV-COMHU-\d+|VTID-0302|VTID-0539|VTID-0541|VTID-0542|VTID-0600|VTID-0601|VTID-01001|VTID-01002|global-vtid-allocator|vtid-ledger-visibility/i;
 
 function getChangedFiles() {
   try {
