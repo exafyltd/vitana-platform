@@ -27,8 +27,9 @@ jobs:
           echo "Commit message:"
           echo "$MSG"
 
-          # Accept: DEV-XXXX-YYYY-NNNN, VTID-NNNN, BOOTSTRAP-...
-          VTID="$(echo "$MSG" | grep -Eo '(DEV-[A-Z0-9]+-[0-9]{4}-[0-9]{4}|VTID-[0-9]{4}|BOOTSTRAP-[A-Z0-9\-]+)' | head -n 1 || true)"
+          # Accept: DEV-XXXX-YYYY-NNNN, VTID-NNNN(N), BOOTSTRAP-...
+          # VTID-01005: Updated regex to support 4-5 digit VTIDs
+          VTID="$(echo "$MSG" | grep -Eo '(DEV-[A-Z0-9]+-[0-9]{4}-[0-9]{4}|VTID-[0-9]{4,5}|BOOTSTRAP-[A-Z0-9\-]+)' | head -n 1 || true)"
 
           if [ -z "$VTID" ]; then
             echo "No VTID found → skip deploy."
