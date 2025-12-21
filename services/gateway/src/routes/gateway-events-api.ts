@@ -82,11 +82,12 @@ router.get('/api/v1/gateway-events', async (req: Request, res: Response) => {
 });
 
 // Operator channel event types for filtering
+// VTID-01004: Removed 'operator.heartbeat' - telemetry events are blocked from OASIS
 const OPERATOR_CHANNEL_TYPES = [
   'gateway.health',
   'deploy',
   'operator.chat',
-  'operator.heartbeat',
+  // 'operator.heartbeat',  // VTID-01004: Removed - telemetry blocked at ingestion
   'operator.upload',
   'cicd'
 ];

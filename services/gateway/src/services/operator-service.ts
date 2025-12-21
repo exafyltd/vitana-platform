@@ -1,14 +1,74 @@
 /**
- * VTID-0509 + VTID-0531 + VTID-0532 + VTID-0533: Operator Service
+ * VTID-0509 + VTID-0531 + VTID-0532 + VTID-0533 + VTID-01004: Operator Service
  * Business logic for operator console - aggregates data from OASIS/CICD
  *
  * VTID-0531: Added OASIS integration for chat messages with thread/vtid support
  * VTID-0532: Added task extraction, VTID/Task creation, and planner handoff
  * VTID-0533: Added Planner execution pipeline (plan submission, worker/validator events)
+ * VTID-01004: Event classification to prevent telemetry from polluting OASIS
  */
 
 import fetch from 'node-fetch';
 import { randomUUID } from 'crypto';
+
+// ==================== VTID-01004: Event Classification ====================
+// Event categories for OASIS ingestion control
+// Only operational, decision, and governance events enter OASIS
+// Telemetry events are blocked at ingestion level
+
+export type EventClassification = 'telemetry' | 'operational' | 'decision' | 'governance';
+
+/**
+ * VTID-01004: Telemetry event patterns that must NOT enter OASIS
+ * These are periodic keep-alive, heartbeat, and diagnostic events
+ */
+const TELEMETRY_PATTERNS: RegExp[] = [
+  /^operator\.heartbeat\./,       // operator.heartbeat.started, operator.heartbeat.snapshot, operator.heartbeat.stopped
+  /^operator\.heartbeat$/,        // operator.heartbeat (base)
+  /^gateway\.health\.ping$/,      // health check pings
+  /^system\.keepalive$/,          // keep-alive events
+  /^diagnostics\./,               // diagnostic events
+];
+
+/**
+ * VTID-01004: Classify an event type
+ * Returns 'telemetry' for heartbeat/diagnostic events that should NOT enter OASIS
+ */
+export function classifyEventType(eventType: string): EventClassification {
+  // Check if event matches any telemetry pattern
+  for (const pattern of TELEMETRY_PATTERNS) {
+    if (pattern.test(eventType)) {
+      return 'telemetry';
+    }
+  }
+
+  // Governance events
+  if (eventType.startsWith('governance.')) {
+    return 'governance';
+  }
+
+  // Decision events (approvals, validations, blocking decisions)
+  if (eventType.includes('.approved') ||
+      eventType.includes('.rejected') ||
+      eventType.includes('.blocked') ||
+      eventType.includes('.decision') ||
+      eventType.startsWith('autopilot.validation.')) {
+    return 'decision';
+  }
+
+  // Everything else is operational
+  return 'operational';
+}
+
+/**
+ * VTID-01004: Check if an event type is allowed to enter OASIS
+ * Only operational, decision, and governance events are allowed
+ * Telemetry events are blocked
+ */
+export function isOasisAllowed(eventType: string): boolean {
+  const classification = classifyEventType(eventType);
+  return classification !== 'telemetry';
+}
 import {
   OperatorChatRole,
   OperatorChatMode,
@@ -64,8 +124,19 @@ export interface HistoryEvent {
 
 /**
  * Ingest an operator event to OASIS via /api/v1/events/ingest
+ * VTID-01004: Blocks telemetry events from entering OASIS
  */
 export async function ingestOperatorEvent(input: OperatorEventInput): Promise<void> {
+  // VTID-01004: Check event classification before ingestion
+  const classification = classifyEventType(input.type);
+
+  if (classification === 'telemetry') {
+    // VTID-01004: Telemetry events are blocked from OASIS
+    // Log to console for diagnostics visibility only
+    console.log(`[Operator Service] [TELEMETRY] ${input.type} - ${input.message} (blocked from OASIS)`);
+    return;
+  }
+
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
     console.warn('[Operator Service] Supabase not configured, skipping event ingest');
     return;
@@ -86,7 +157,11 @@ export async function ingestOperatorEvent(input: OperatorEventInput): Promise<vo
       status: input.status,
       message: input.message,
       link: null,
-      metadata: input.payload || {}
+      metadata: {
+        ...input.payload,
+        // VTID-01004: Include classification for audit trail
+        event_classification: classification
+      }
     };
 
     const resp = await fetch(`${SUPABASE_URL}/rest/v1/oasis_events`, {
@@ -104,7 +179,7 @@ export async function ingestOperatorEvent(input: OperatorEventInput): Promise<vo
       const text = await resp.text();
       console.warn(`[Operator Service] Event ingest failed: ${resp.status} - ${text}`);
     } else {
-      console.log(`[Operator Service] Event ingested: ${input.type}`);
+      console.log(`[Operator Service] Event ingested: ${input.type} [${classification}]`);
     }
   } catch (error: any) {
     console.warn(`[Operator Service] Event ingest error: ${error.message}`);
@@ -235,7 +310,8 @@ export async function getCicdHealth(): Promise<CicdHealth> {
 
 /**
  * Get operator history - filtered events from OASIS
- * Filters: operator.chat.*, operator.heartbeat.*, operator.upload, deploy.*, cicd.*
+ * VTID-01004: Excludes telemetry events (heartbeat, health pings) from history
+ * Filters: operator.chat.*, operator.upload, deploy.*, cicd.* (NOT operator.heartbeat.*)
  */
 export async function getOperatorHistory(limit: number = 50): Promise<HistoryEvent[]> {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
@@ -244,8 +320,8 @@ export async function getOperatorHistory(limit: number = 50): Promise<HistoryEve
   }
 
   try {
-    // Query events with topic filter using 'or' for multiple patterns
-    // Supabase PostgREST supports 'or' operator for multiple conditions
+    // VTID-01004: Query events with topic filter - excludes heartbeat/telemetry
+    // We fetch operator.% events but filter out heartbeat in memory
     const topicPatterns = [
       'topic.like.operator.%',
       'topic.like.deploy.%',
@@ -254,7 +330,7 @@ export async function getOperatorHistory(limit: number = 50): Promise<HistoryEve
     ].join(',');
 
     const resp = await fetch(
-      `${SUPABASE_URL}/rest/v1/oasis_events?select=id,topic,status,vtid,created_at,message&or=(${topicPatterns})&order=created_at.desc&limit=${limit}`,
+      `${SUPABASE_URL}/rest/v1/oasis_events?select=id,topic,status,vtid,created_at,message&or=(${topicPatterns})&order=created_at.desc&limit=${limit * 2}`,
       {
         headers: {
           'Content-Type': 'application/json',
@@ -268,7 +344,7 @@ export async function getOperatorHistory(limit: number = 50): Promise<HistoryEve
       // Fallback: get all recent events if filter fails
       console.warn('[Operator Service] Filtered history query failed, falling back to unfiltered');
       const fallbackResp = await fetch(
-        `${SUPABASE_URL}/rest/v1/oasis_events?select=id,topic,status,vtid,created_at,message&order=created_at.desc&limit=${limit}`,
+        `${SUPABASE_URL}/rest/v1/oasis_events?select=id,topic,status,vtid,created_at,message&order=created_at.desc&limit=${limit * 2}`,
         {
           headers: {
             'Content-Type': 'application/json',
@@ -285,12 +361,15 @@ export async function getOperatorHistory(limit: number = 50): Promise<HistoryEve
 
       const allEvents = await fallbackResp.json() as any[];
 
-      // Filter in memory
+      // VTID-01004: Filter in memory - include operational types, exclude telemetry
       const operatorTypes = ['operator', 'deploy', 'cicd', 'gateway.health'];
-      const filtered = allEvents.filter(e => {
-        const topic = e.topic || '';
-        return operatorTypes.some(t => topic.startsWith(t));
-      });
+      const filtered = allEvents
+        .filter(e => {
+          const topic = e.topic || '';
+          // Must match an operator type AND not be telemetry
+          return operatorTypes.some(t => topic.startsWith(t)) && isOasisAllowed(topic);
+        })
+        .slice(0, limit);
 
       return filtered.map(e => ({
         id: e.id,
@@ -304,7 +383,12 @@ export async function getOperatorHistory(limit: number = 50): Promise<HistoryEve
 
     const events = await resp.json() as any[];
 
-    return events.map(e => ({
+    // VTID-01004: Filter out any telemetry events (legacy heartbeats that may exist)
+    const filtered = events
+      .filter(e => isOasisAllowed(e.topic || ''))
+      .slice(0, limit);
+
+    return filtered.map(e => ({
       id: e.id,
       type: e.topic || 'unknown',
       status: e.status || 'info',

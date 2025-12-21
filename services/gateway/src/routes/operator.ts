@@ -315,12 +315,14 @@ router.get('/health', (_req: Request, res: Response) => {
 
 /**
  * GET /heartbeat → /api/v1/operator/heartbeat
+ * VTID-01004: Heartbeat events are now diagnostics-only (not persisted to OASIS)
  */
 router.get('/heartbeat', async (_req: Request, res: Response) => {
   console.log('[Operator Heartbeat] Snapshot requested');
 
   try {
-    // Log heartbeat snapshot event
+    // VTID-01004: Heartbeat event is logged for diagnostics only
+    // The ingestOperatorEvent function will block this from OASIS ingestion
     await ingestOperatorEvent({
       vtid: 'VTID-0509',
       type: 'operator.heartbeat.snapshot',
@@ -398,6 +400,7 @@ router.get('/history', async (req: Request, res: Response) => {
 
 /**
  * POST /heartbeat/session → /api/v1/operator/heartbeat/session
+ * VTID-01004: Heartbeat session events are diagnostics-only (not persisted to OASIS)
  */
 router.post('/heartbeat/session', async (req: Request, res: Response) => {
   console.log('[Operator Session] Request received');
@@ -415,7 +418,8 @@ router.post('/heartbeat/session', async (req: Request, res: Response) => {
     const { status } = validation.data;
     const sessionId = randomUUID();
 
-    // Log session event
+    // VTID-01004: Heartbeat session event is logged for diagnostics only
+    // The ingestOperatorEvent function will block this from OASIS ingestion
     const eventType = status === 'live'
       ? 'operator.heartbeat.started'
       : 'operator.heartbeat.stopped';
