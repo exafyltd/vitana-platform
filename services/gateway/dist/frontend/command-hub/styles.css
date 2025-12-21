@@ -638,6 +638,22 @@ body {
   border-color: var(--color-accent);
 }
 
+/* VTID-01003: Form note styling */
+.form-note {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-top: -8px;
+  margin-bottom: 12px;
+}
+
+/* VTID-01003: Modal task spec textarea */
+.task-spec-modal-textarea {
+  min-height: 100px;
+  resize: vertical;
+  font-family: monospace;
+  font-size: 0.9rem;
+}
+
 /* Drawer */
 .task-drawer {
   position: fixed;

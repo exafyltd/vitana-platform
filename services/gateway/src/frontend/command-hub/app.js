@@ -6,7 +6,8 @@
 // DEV-COMHU-2025-0013: UX fixes - fingerprint style, textarea stability, dismiss toast
 // DEV-COMHU-2025-0015: Fix Task Board UX + VTID labels + OASIS events formatting
 // VTID-01002: Global Scroll Retention Guard - polling uses incremental updates, not renderApp()
-console.log('🔥 COMMAND HUB BUNDLE: VTID-01002 LIVE 🔥');
+// VTID-01003: Fix Create Task modal (input reset), add Task Spec field, drawer metadata order + timestamp format
+console.log('🔥 COMMAND HUB BUNDLE: VTID-01003 LIVE 🔥');
 
 // --- DEV-COMHU-2025-0012: LocalStorage Helpers for Task Management v1 ---
 
@@ -966,6 +967,11 @@ const state = {
     // Modals
     showProfileModal: false,
     showTaskModal: false,
+    // VTID-01003: Modal draft state for stable input editing (prevents reset on re-render)
+    modalDraftTitle: '',
+    modalDraftStatus: 'Scheduled',
+    modalDraftSpec: '',
+    modalDraftEditing: false, // Guard against re-render while editing
 
     // Global Overlays (VTID-0508 / VTID-0509)
     isHeartbeatOpen: false,
@@ -3007,11 +3013,31 @@ function renderTaskDrawer() {
     summary.textContent = state.selectedTask.summary;
     content.appendChild(summary);
 
+    // VTID-01003: Format timestamp as "YYYY-MM-DD at HH:MM" (no seconds, no timezone)
+    var createdDisplay = 'N/A';
+    if (state.selectedTask.createdAt) {
+        try {
+            var dt = new Date(state.selectedTask.createdAt);
+            if (!isNaN(dt.getTime())) {
+                var yyyy = dt.getFullYear();
+                var mm = String(dt.getMonth() + 1).padStart(2, '0');
+                var dd = String(dt.getDate()).padStart(2, '0');
+                var hh = String(dt.getHours()).padStart(2, '0');
+                var mi = String(dt.getMinutes()).padStart(2, '0');
+                createdDisplay = yyyy + '-' + mm + '-' + dd + ' at ' + hh + ':' + mi;
+            } else {
+                createdDisplay = state.selectedTask.createdAt;
+            }
+        } catch (e) {
+            createdDisplay = state.selectedTask.createdAt;
+        }
+    }
+
+    // VTID-01003: Drawer metadata - show Created first, then Status. Remove Title row (already shown in summary)
     const details = document.createElement('div');
     details.className = 'task-details-block';
-    details.innerHTML = '<p><strong>Status:</strong> ' + statusDisplay + '</p>' +
-        '<p><strong>Title:</strong> ' + (state.selectedTask.title || 'N/A') + '</p>' +
-        '<p><strong>Created:</strong> ' + (state.selectedTask.createdAt || 'N/A') + '</p>';
+    details.innerHTML = '<p><strong>Created:</strong> ' + createdDisplay + '</p>' +
+        '<p><strong>Status:</strong> ' + statusDisplay + '</p>';
     content.appendChild(details);
 
     // DEV-COMHU-2025-0012: Task Spec Editor Section
@@ -3559,7 +3585,12 @@ function renderTaskModal() {
     overlay.className = 'modal-overlay';
     overlay.onclick = (e) => {
         if (e.target === overlay) {
+            // VTID-01003: Clear draft state when closing modal
             state.showTaskModal = false;
+            state.modalDraftTitle = '';
+            state.modalDraftStatus = 'Scheduled';
+            state.modalDraftSpec = '';
+            state.modalDraftEditing = false;
             renderApp();
         }
     };
@@ -3575,34 +3606,89 @@ function renderTaskModal() {
     const body = document.createElement('div');
     body.className = 'modal-body';
 
+    // VTID-01003: Title input with controlled state
     const titleGroup = document.createElement('div');
     titleGroup.className = 'form-group';
-    titleGroup.innerHTML = '<label>Task Title</label><input type="text" class="form-control" placeholder="Enter title">';
+    const titleLabel = document.createElement('label');
+    titleLabel.textContent = 'Task Title';
+    titleGroup.appendChild(titleLabel);
+    const titleInput = document.createElement('input');
+    titleInput.type = 'text';
+    titleInput.className = 'form-control';
+    titleInput.placeholder = 'Enter title';
+    titleInput.value = state.modalDraftTitle;
+    titleInput.onfocus = function() {
+        state.modalDraftEditing = true;
+    };
+    titleInput.oninput = function(e) {
+        state.modalDraftTitle = e.target.value;
+        state.modalDraftEditing = true;
+    };
+    titleInput.onblur = function() {
+        state.modalDraftEditing = false;
+    };
+    titleGroup.appendChild(titleInput);
     body.appendChild(titleGroup);
 
     // VTID-0542: VTID is now auto-generated via allocator, show read-only preview
     const vtidGroup = document.createElement('div');
     vtidGroup.className = 'form-group';
-    vtidGroup.innerHTML = '<label>VTID</label><input type="text" class="form-control" placeholder="Auto-generated" readonly disabled style="background:#f5f5f5;color:#666;">';
+    const vtidLabel = document.createElement('label');
+    vtidLabel.textContent = 'VTID';
+    vtidGroup.appendChild(vtidLabel);
+    const vtidInput = document.createElement('input');
+    vtidInput.type = 'text';
+    vtidInput.className = 'form-control';
+    vtidInput.placeholder = 'Auto-generated';
+    vtidInput.readOnly = true;
+    vtidInput.disabled = true;
+    vtidGroup.appendChild(vtidInput);
     body.appendChild(vtidGroup);
 
     const vtidNote = document.createElement('div');
     vtidNote.className = 'form-note';
-    vtidNote.style.cssText = 'font-size:12px;color:#666;margin-top:-8px;margin-bottom:12px;';
     vtidNote.textContent = 'VTID will be auto-allocated when you create the task (VTID-0542)';
     body.appendChild(vtidNote);
 
+    // VTID-01003: Status select with controlled state
     const statusGroup = document.createElement('div');
     statusGroup.className = 'form-group';
-    statusGroup.innerHTML = `
-        <label>Status</label>
-        <select class="form-control">
-            <option value="Scheduled">Scheduled</option>
-            <option value="In Progress">In Progress</option>
-            <option value="Completed">Completed</option>
-        </select>
-    `;
+    const statusLabel = document.createElement('label');
+    statusLabel.textContent = 'Status';
+    statusGroup.appendChild(statusLabel);
+    const statusSelect = document.createElement('select');
+    statusSelect.className = 'form-control';
+    statusSelect.innerHTML = '<option value="Scheduled">Scheduled</option><option value="In Progress">In Progress</option><option value="Completed">Completed</option>';
+    statusSelect.value = state.modalDraftStatus;
+    statusSelect.onchange = function(e) {
+        state.modalDraftStatus = e.target.value;
+    };
+    statusGroup.appendChild(statusSelect);
     body.appendChild(statusGroup);
+
+    // VTID-01003: Task Spec textarea with controlled state (same pattern as drawer)
+    const specGroup = document.createElement('div');
+    specGroup.className = 'form-group';
+    const specLabel = document.createElement('label');
+    specLabel.textContent = 'Task Spec (editable)';
+    specGroup.appendChild(specLabel);
+    const specTextarea = document.createElement('textarea');
+    specTextarea.className = 'form-control task-spec-modal-textarea';
+    specTextarea.placeholder = 'Enter task specification here...';
+    specTextarea.rows = 4;
+    specTextarea.value = state.modalDraftSpec;
+    specTextarea.onfocus = function() {
+        state.modalDraftEditing = true;
+    };
+    specTextarea.oninput = function(e) {
+        state.modalDraftSpec = e.target.value;
+        state.modalDraftEditing = true;
+    };
+    specTextarea.onblur = function() {
+        state.modalDraftEditing = false;
+    };
+    specGroup.appendChild(specTextarea);
+    body.appendChild(specGroup);
 
     modal.appendChild(body);
 
@@ -3613,7 +3699,12 @@ function renderTaskModal() {
     cancelBtn.className = 'btn';
     cancelBtn.textContent = 'Cancel';
     cancelBtn.onclick = () => {
+        // VTID-01003: Clear draft state when canceling
         state.showTaskModal = false;
+        state.modalDraftTitle = '';
+        state.modalDraftStatus = 'Scheduled';
+        state.modalDraftSpec = '';
+        state.modalDraftEditing = false;
         renderApp();
     };
     footer.appendChild(cancelBtn);
@@ -3622,13 +3713,10 @@ function renderTaskModal() {
     createBtn.className = 'btn btn-primary';
     createBtn.textContent = 'Create';
     createBtn.onclick = async () => {
-        // Extract form values
-        const titleInput = body.querySelector('.form-group:nth-child(1) input');
-        const vtidInput = body.querySelector('.form-group:nth-child(2) input');
-        const statusSelect = body.querySelector('.form-group:nth-child(4) select'); // Changed to 4th child due to note
-
-        const title = titleInput.value.trim();
-        const status = statusSelect.value; // "Scheduled", "In Progress", "Completed"
+        // VTID-01003: Use controlled state values instead of DOM queries
+        const title = state.modalDraftTitle.trim();
+        const status = state.modalDraftStatus; // "Scheduled", "In Progress", "Completed"
+        const spec = state.modalDraftSpec;
 
         // Basic validation
         if (!title) {
@@ -3687,8 +3775,11 @@ function renderTaskModal() {
             const vtid = allocResult.vtid;
             console.log('[VTID-0542] Allocated VTID:', vtid, 'num:', allocResult.num);
 
-            // Update the VTID input to show allocated value
-            vtidInput.value = vtid;
+            // VTID-01003: Update the VTID input to show allocated value (query from modal)
+            var vtidDisplayInput = modal.querySelector('input[placeholder="Auto-generated"]');
+            if (vtidDisplayInput) {
+                vtidDisplayInput.value = vtid;
+            }
 
             createBtn.textContent = 'Creating task...';
 
@@ -3711,8 +3802,19 @@ function renderTaskModal() {
                 console.warn('[VTID-0542] Task update failed, but VTID allocated:', vtid);
             }
 
+            // VTID-01003: Save the task spec to localStorage if provided
+            if (spec && spec.trim()) {
+                saveTaskSpec(vtid, spec);
+                console.log('[VTID-01003] Task spec saved for:', vtid);
+            }
+
             // Success! Close modal and refresh task list
             state.showTaskModal = false;
+            // VTID-01003: Clear draft state after successful creation
+            state.modalDraftTitle = '';
+            state.modalDraftStatus = 'Scheduled';
+            state.modalDraftSpec = '';
+            state.modalDraftEditing = false;
             fetchTasks(); // Refresh the task board
             renderApp();
 
