@@ -5,20 +5,25 @@ export const router = Router();
 
 /**
  * GET /api/v1/tasks
- * 
+ *
+ * VTID-01005: Enhanced task adapter that derives terminal state from OASIS events.
+ * OASIS is the SINGLE SOURCE OF TRUTH for task completion.
+ *
  * Adapter endpoint that reads from vtid_ledger and transforms rows
  * into task objects compatible with Command Hub Task Board UI.
- * 
+ *
  * Database columns (vtid_ledger):
  * - vtid, layer, module, status, title, summary, created_at, updated_at
- * 
+ *
+ * VTID-01005 ENHANCEMENTS:
+ * - is_terminal: derived from OASIS events (authoritative)
+ * - terminal_outcome: 'success' | 'failed' | null
+ * - column: 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED'
+ *
  * TEMPORARY COMPATIBILITY FIELDS:
  * - task_family: mirrors module (for existing UI code)
  * - task_type: mirrors module (for existing UI code)
  * - description: uses summary if available, otherwise title
- * 
- * These compatibility fields exist because the current Task Board UI
- * expects them. Future governance work may refactor this adapter.
  */
 router.get('/api/v1/tasks', async (req: Request, res: Response) => {
   try {
@@ -41,41 +46,136 @@ router.get('/api/v1/tasks', async (req: Request, res: Response) => {
     if (!resp.ok) return res.status(502).json({ error: "Query failed" });
 
     const data = await resp.json() as any[];
-    
-    // Transform database rows into task objects
-    const tasks = data.map(row => ({
-      // Core fields from vtid_ledger
-      vtid: row.vtid,
-      layer: row.layer,
-      module: row.module,
-      status: row.status,
-      
-      // Primary display fields
-      title: row.title,
-      description: row.summary ?? row.title, // Prefer summary, fallback to title
-      summary: row.summary,
-      
-      // TEMPORARY compatibility fields for existing Task Board UI
-      // TODO: Future governance work may refactor these
-      task_family: row.module,  // TEMP: mirror module
-      task_type: row.module,    // TEMP: mirror module
-      
-      // Metadata
-      assigned_to: row.assigned_to ?? null,
-      metadata: row.metadata ?? null,
-      
-      // Timestamps
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-    }));
 
-    return res.json({ 
-      data: tasks, 
-      meta: { 
-        count: tasks.length, 
-        limit: parseInt(limit as string), 
-        has_more: false 
-      } 
+    // VTID-01005: Fetch OASIS events for terminal state derivation
+    const eventsResp = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_events?order=created_at.desc&limit=500`,
+      { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } }
+    );
+
+    let allEvents: any[] = [];
+    if (eventsResp.ok) {
+      allEvents = await eventsResp.json() as any[];
+    }
+
+    // Transform database rows into task objects with OASIS-derived terminal states
+    const tasks = data.map(row => {
+      const vtid = row.vtid;
+      const vtidEvents = allEvents.filter((e: any) => e.vtid === vtid);
+
+      // VTID-01005: Derive terminal state from OASIS events (AUTHORITATIVE)
+      let isTerminal = false;
+      let terminalOutcome: 'success' | 'failed' | null = null;
+      let column: 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' = 'SCHEDULED';
+      let derivedStatus = row.status || 'scheduled';
+
+      // Check for terminal lifecycle events FIRST (highest authority)
+      const terminalCompletedEvent = vtidEvents.find((e: any) =>
+        (e.topic || '').toLowerCase() === 'vtid.lifecycle.completed'
+      );
+      const terminalFailedEvent = vtidEvents.find((e: any) =>
+        (e.topic || '').toLowerCase() === 'vtid.lifecycle.failed'
+      );
+
+      if (terminalCompletedEvent) {
+        isTerminal = true;
+        terminalOutcome = 'success';
+        column = 'COMPLETED';
+        derivedStatus = 'completed';
+      } else if (terminalFailedEvent) {
+        isTerminal = true;
+        terminalOutcome = 'failed';
+        column = 'COMPLETED';
+        derivedStatus = 'failed';
+      }
+
+      // If not terminal from lifecycle events, check other OASIS patterns
+      if (!isTerminal) {
+        const hasDeploySuccess = vtidEvents.some((e: any) => {
+          const topic = (e.topic || '').toLowerCase();
+          return topic === 'deploy.gateway.success' ||
+                 topic === 'cicd.deploy.service.succeeded' ||
+                 topic === 'cicd.github.safe_merge.executed';
+        });
+
+        const hasDeployFailed = vtidEvents.some((e: any) => {
+          const topic = (e.topic || '').toLowerCase();
+          return topic === 'deploy.gateway.failed' ||
+                 topic === 'cicd.deploy.service.failed';
+        });
+
+        if (hasDeploySuccess) {
+          isTerminal = true;
+          terminalOutcome = 'success';
+          column = 'COMPLETED';
+          derivedStatus = 'completed';
+        } else if (hasDeployFailed) {
+          isTerminal = true;
+          terminalOutcome = 'failed';
+          column = 'COMPLETED';
+          derivedStatus = 'failed';
+        }
+      }
+
+      // If still not terminal, check ledger status as fallback
+      if (!isTerminal) {
+        const ledgerStatus = (row.status || '').toLowerCase();
+
+        if (['done', 'closed', 'deployed', 'merged', 'complete'].includes(ledgerStatus)) {
+          isTerminal = true;
+          terminalOutcome = 'success';
+          column = 'COMPLETED';
+          derivedStatus = 'completed';
+        } else if (['failed', 'error'].includes(ledgerStatus)) {
+          isTerminal = true;
+          terminalOutcome = 'failed';
+          column = 'COMPLETED';
+          derivedStatus = 'failed';
+        } else if (['in_progress', 'running', 'active', 'todo', 'validating', 'blocked'].includes(ledgerStatus)) {
+          column = 'IN_PROGRESS';
+        } else {
+          column = 'SCHEDULED';
+        }
+      }
+
+      return {
+        // Core fields from vtid_ledger
+        vtid: row.vtid,
+        layer: row.layer,
+        module: row.module,
+        status: derivedStatus, // VTID-01005: Use OASIS-derived status
+
+        // Primary display fields
+        title: row.title,
+        description: row.summary ?? row.title,
+        summary: row.summary,
+
+        // TEMPORARY compatibility fields for existing Task Board UI
+        task_family: row.module,
+        task_type: row.module,
+
+        // VTID-01005: Terminal state fields (OASIS-derived)
+        is_terminal: isTerminal,
+        terminal_outcome: terminalOutcome,
+        column: column,
+
+        // Metadata
+        assigned_to: row.assigned_to ?? null,
+        metadata: row.metadata ?? null,
+
+        // Timestamps
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      };
+    });
+
+    return res.json({
+      data: tasks,
+      meta: {
+        count: tasks.length,
+        limit: parseInt(limit as string),
+        has_more: false
+      }
     });
   } catch (e: any) {
     return res.status(500).json({ error: e.message });
