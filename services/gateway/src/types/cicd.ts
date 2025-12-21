@@ -186,7 +186,10 @@ export type CicdEventType =
   | 'cicd.deploy.started'
   | 'cicd.approval.created'
   | 'cicd.approval.approved'
-  | 'cicd.approval.denied';
+  | 'cicd.approval.denied'
+  // VTID-01005: Terminal Lifecycle Events (MANDATORY for governance compliance)
+  | 'vtid.lifecycle.completed'
+  | 'vtid.lifecycle.failed';
 
 export interface CicdOasisEvent {
   vtid: string;

@@ -687,3 +687,310 @@ router.get("/api/v1/events/stream", async (req: Request, res: Response) => {
     res.end();
   });
 });
+
+/**
+ * VTID-01005: Terminal Lifecycle Event Schema
+ * Ensures mandatory terminal lifecycle events are emitted for governance compliance
+ */
+const TerminalLifecycleEventSchema = z.object({
+  vtid: z.string().min(1, "vtid required"),
+  outcome: z.enum(["success", "failed"], {
+    errorMap: () => ({ message: "outcome must be: success or failed" }),
+  }),
+  source: z.enum(["claude", "cicd", "operator"], {
+    errorMap: () => ({ message: "source must be: claude, cicd, or operator" }),
+  }),
+  summary: z.string().optional(),
+});
+
+/**
+ * POST /api/v1/vtid/lifecycle/complete
+ * VTID-01005: Emit terminal lifecycle event for a VTID
+ *
+ * This is the MANDATORY endpoint for marking a VTID as terminally complete.
+ * OASIS is the single source of truth for task completion.
+ *
+ * Body:
+ * - vtid: The VTID to mark as complete (required)
+ * - outcome: "success" or "failed" (required)
+ * - source: "claude", "cicd", or "operator" (required)
+ * - summary: Optional summary message
+ *
+ * Idempotency: If a terminal lifecycle event already exists for this VTID,
+ * this endpoint returns 200 OK with a note that the event already exists.
+ */
+router.post("/api/v1/vtid/lifecycle/complete", async (req: Request, res: Response) => {
+  try {
+    const validation = TerminalLifecycleEventSchema.safeParse(req.body);
+
+    if (!validation.success) {
+      console.error("[VTID-01005] Validation error:", validation.error.errors);
+      return res.status(400).json({
+        ok: false,
+        error: validation.error.errors
+          .map((e) => `${e.path.join(".")}: ${e.message}`)
+          .join(", "),
+      });
+    }
+
+    const body = validation.data;
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+
+    if (!svcKey || !supabaseUrl) {
+      console.error("[VTID-01005] Gateway misconfigured: Missing Supabase credentials");
+      return res.status(500).json({
+        ok: false,
+        error: "Gateway misconfigured",
+      });
+    }
+
+    // Check for existing terminal lifecycle event (idempotency)
+    const existingResp = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_events?vtid=eq.${body.vtid}&or=(topic.eq.vtid.lifecycle.completed,topic.eq.vtid.lifecycle.failed)&limit=1`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+      }
+    );
+
+    if (existingResp.ok) {
+      const existingEvents = await existingResp.json() as any[];
+      if (existingEvents.length > 0) {
+        console.log(`[VTID-01005] Terminal lifecycle event already exists for ${body.vtid}`);
+        return res.status(200).json({
+          ok: true,
+          vtid: body.vtid,
+          already_exists: true,
+          existing_event_id: existingEvents[0].id,
+          message: `Terminal lifecycle event already exists for ${body.vtid}`,
+        });
+      }
+    }
+
+    // Emit the terminal lifecycle event
+    const eventId = randomUUID();
+    const timestamp = new Date().toISOString();
+    const topic = body.outcome === "success" ? "vtid.lifecycle.completed" : "vtid.lifecycle.failed";
+    const eventStatus = body.outcome === "success" ? "success" : "error";
+    const defaultMessage = body.outcome === "success"
+      ? `VTID ${body.vtid} completed successfully`
+      : `VTID ${body.vtid} failed`;
+
+    const payload = {
+      id: eventId,
+      created_at: timestamp,
+      vtid: body.vtid,
+      topic: topic,
+      service: `vtid-lifecycle-${body.source}`,
+      role: "GOVERNANCE",
+      model: "vtid-01005-terminal-lifecycle",
+      status: eventStatus,
+      message: body.summary || defaultMessage,
+      link: null,
+      metadata: {
+        vtid: body.vtid,
+        outcome: body.outcome,
+        source: body.source,
+        terminal: true,
+        completed_at: timestamp,
+      },
+    };
+
+    const insertResp = await fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+        Prefer: "return=representation",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!insertResp.ok) {
+      const text = await insertResp.text();
+      console.error(`[VTID-01005] OASIS insert failed: ${insertResp.status} - ${text}`);
+      return res.status(502).json({
+        ok: false,
+        error: "Database insert failed",
+      });
+    }
+
+    const data = await insertResp.json();
+    const insertedEvent = Array.isArray(data) ? data[0] : data;
+
+    console.log(`[VTID-01005] Terminal lifecycle event emitted: ${eventId} - ${body.vtid} (${body.outcome})`);
+
+    // Also update the vtid_ledger status
+    const ledgerStatus = body.outcome === "success" ? "complete" : "failed";
+    const ledgerUpdateResp = await fetch(
+      `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${body.vtid}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+        body: JSON.stringify({
+          status: ledgerStatus,
+          updated_at: timestamp,
+        }),
+      }
+    );
+
+    if (!ledgerUpdateResp.ok) {
+      console.warn(`[VTID-01005] Ledger update failed for ${body.vtid}, but lifecycle event was emitted`);
+    }
+
+    return res.status(200).json({
+      ok: true,
+      event_id: insertedEvent.id,
+      vtid: body.vtid,
+      outcome: body.outcome,
+      topic: topic,
+      message: `Terminal lifecycle event emitted for ${body.vtid}`,
+    });
+  } catch (e: any) {
+    console.error("[VTID-01005] Unexpected error:", e);
+    return res.status(500).json({
+      ok: false,
+      error: "Internal server error",
+    });
+  }
+});
+
+/**
+ * POST /api/v1/vtid/lifecycle/backfill
+ * VTID-01005: Backfill terminal lifecycle events for VTIDs that are already complete
+ *
+ * This endpoint scans VTIDs that have terminal states (from ledger or events)
+ * but don't have explicit terminal lifecycle events, and creates them.
+ *
+ * Query params:
+ * - limit: Max VTIDs to process (default 50)
+ * - dry_run: If true, don't actually emit events (default false)
+ */
+router.post("/api/v1/vtid/lifecycle/backfill", async (req: Request, res: Response) => {
+  try {
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+
+    if (!svcKey || !supabaseUrl) {
+      return res.status(500).json({ ok: false, error: "Gateway misconfigured" });
+    }
+
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+    const dryRun = req.query.dry_run === "true";
+
+    console.log(`[VTID-01005] Backfill request: limit=${limit}, dry_run=${dryRun}`);
+
+    // Step 1: Get all VTIDs with terminal ledger status
+    const ledgerResp = await fetch(
+      `${supabaseUrl}/rest/v1/vtid_ledger?or=(status.eq.done,status.eq.complete,status.eq.deployed,status.eq.merged,status.eq.closed,status.eq.failed,status.eq.error)&limit=${limit}`,
+      { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } }
+    );
+
+    if (!ledgerResp.ok) {
+      return res.status(502).json({ ok: false, error: "Failed to fetch ledger" });
+    }
+
+    const terminalVtids = await ledgerResp.json() as any[];
+
+    // Step 2: Get existing terminal lifecycle events
+    const eventsResp = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_events?or=(topic.eq.vtid.lifecycle.completed,topic.eq.vtid.lifecycle.failed)`,
+      { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } }
+    );
+
+    let existingTerminalEvents: any[] = [];
+    if (eventsResp.ok) {
+      existingTerminalEvents = await eventsResp.json() as any[];
+    }
+
+    const vtidsWithTerminalEvents = new Set(existingTerminalEvents.map((e: any) => e.vtid));
+
+    // Step 3: Find VTIDs that need backfill
+    const vtidsToBackfill = terminalVtids.filter((v: any) => !vtidsWithTerminalEvents.has(v.vtid));
+
+    console.log(`[VTID-01005] Found ${vtidsToBackfill.length} VTIDs needing backfill`);
+
+    if (dryRun) {
+      return res.status(200).json({
+        ok: true,
+        dry_run: true,
+        vtids_to_backfill: vtidsToBackfill.map((v: any) => ({
+          vtid: v.vtid,
+          current_status: v.status,
+          proposed_outcome: ['done', 'complete', 'deployed', 'merged', 'closed'].includes(v.status.toLowerCase()) ? 'success' : 'failed',
+        })),
+        count: vtidsToBackfill.length,
+      });
+    }
+
+    // Step 4: Emit terminal lifecycle events for each
+    const results: any[] = [];
+    for (const vtidRow of vtidsToBackfill) {
+      const outcome = ['done', 'complete', 'deployed', 'merged', 'closed'].includes(vtidRow.status.toLowerCase())
+        ? 'success'
+        : 'failed';
+      const topic = outcome === 'success' ? 'vtid.lifecycle.completed' : 'vtid.lifecycle.failed';
+      const eventId = randomUUID();
+      const timestamp = new Date().toISOString();
+
+      const payload = {
+        id: eventId,
+        created_at: timestamp,
+        vtid: vtidRow.vtid,
+        topic: topic,
+        service: 'vtid-lifecycle-backfill',
+        role: 'GOVERNANCE',
+        model: 'vtid-01005-backfill',
+        status: outcome === 'success' ? 'success' : 'error',
+        message: `VTID ${vtidRow.vtid} marked ${outcome} (backfilled)`,
+        link: null,
+        metadata: {
+          vtid: vtidRow.vtid,
+          outcome: outcome,
+          source: 'backfill',
+          terminal: true,
+          original_status: vtidRow.status,
+          backfilled_at: timestamp,
+        },
+      };
+
+      const insertResp = await fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      results.push({
+        vtid: vtidRow.vtid,
+        outcome,
+        event_id: eventId,
+        success: insertResp.ok,
+      });
+    }
+
+    console.log(`[VTID-01005] Backfill complete: ${results.filter(r => r.success).length}/${results.length} events emitted`);
+
+    return res.status(200).json({
+      ok: true,
+      backfilled: results,
+      count: results.filter(r => r.success).length,
+    });
+  } catch (e: any) {
+    console.error("[VTID-01005] Backfill error:", e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});

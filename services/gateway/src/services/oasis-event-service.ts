@@ -469,6 +469,61 @@ export const cicdEvents = {
       message: `Approval denied: ${type}${reason ? ` - ${reason}` : ''}`,
       payload: { approval_id: approvalId, approval_type: type, denied_by: deniedBy, reason, denied_at: new Date().toISOString() },
     }),
+
+  // ==================== VTID-01005: Terminal Lifecycle Events ====================
+  // These are the MANDATORY terminal events that must be emitted for every VTID
+  // that reaches a terminal state. OASIS is the single source of truth.
+
+  /**
+   * VTID-01005: Emit terminal COMPLETED lifecycle event
+   * This MUST be emitted when a VTID reaches successful completion.
+   * MANDATORY for governance contract compliance.
+   */
+  vtidLifecycleCompleted: (
+    vtid: string,
+    source: 'claude' | 'cicd' | 'operator',
+    summary?: string
+  ) =>
+    emitOasisEvent({
+      vtid,
+      type: 'vtid.lifecycle.completed',
+      source: `vtid-lifecycle-${source}`,
+      status: 'success',
+      message: summary || `VTID ${vtid} completed successfully`,
+      payload: {
+        vtid,
+        outcome: 'success',
+        source,
+        terminal: true,
+        completed_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * VTID-01005: Emit terminal FAILED lifecycle event
+   * This MUST be emitted when a VTID fails terminally.
+   * MANDATORY for governance contract compliance.
+   */
+  vtidLifecycleFailed: (
+    vtid: string,
+    source: 'claude' | 'cicd' | 'operator',
+    reason?: string
+  ) =>
+    emitOasisEvent({
+      vtid,
+      type: 'vtid.lifecycle.failed',
+      source: `vtid-lifecycle-${source}`,
+      status: 'error',
+      message: reason || `VTID ${vtid} failed`,
+      payload: {
+        vtid,
+        outcome: 'failed',
+        source,
+        terminal: true,
+        reason,
+        failed_at: new Date().toISOString(),
+      },
+    }),
 };
 
 /**

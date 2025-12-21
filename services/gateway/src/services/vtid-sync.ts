@@ -21,6 +21,7 @@ interface VtidStatusMapping {
 }
 
 // Event topic to VTID status mappings
+// VTID-01005: Added terminal lifecycle events as authoritative terminal states
 const STATUS_MAPPINGS: VtidStatusMapping = {
   'task.started': 'active',
   'task.in_progress': 'active',
@@ -37,16 +38,26 @@ const STATUS_MAPPINGS: VtidStatusMapping = {
   'pr.opened': 'review',
   'pr.merged': 'complete',
   'pr.closed': 'cancelled',
+  // VTID-01005: Terminal lifecycle events (MANDATORY - highest authority)
+  'vtid.lifecycle.completed': 'complete',
+  'vtid.lifecycle.failed': 'failed',
+  // VTID-01005: Also handle deploy success/failed from CICD
+  'cicd.deploy.service.succeeded': 'complete',
+  'cicd.deploy.service.failed': 'blocked',
+  'deploy.gateway.success': 'complete',
+  'deploy.gateway.failed': 'blocked',
 };
 
 // Status hierarchy (prevent downgrading)
+// VTID-01005: Added 'failed' status and increased 'complete' priority
 const STATUS_PRIORITY: Record<string, number> = {
   'pending': 1,
   'active': 2,
   'review': 3,
   'blocked': 4,
   'cancelled': 4,
-  'complete': 5,
+  'failed': 5,    // VTID-01005: Terminal failure state
+  'complete': 6,  // VTID-01005: Terminal success state (highest priority)
 };
 
 export class VtidSyncService {
@@ -116,10 +127,11 @@ export class VtidSyncService {
 
   /**
    * Get VTID record from ledger
+   * VTID-01005: Fixed table name from VtidLedger to vtid_ledger
    */
   private async getVtid(vtid: string): Promise<any | null> {
     const resp = await fetch(
-      `${this.supabaseUrl}/rest/v1/VtidLedger?vtid=eq.${vtid}`,
+      `${this.supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}`,
       {
         method: "GET",
         headers: {
@@ -139,6 +151,7 @@ export class VtidSyncService {
 
   /**
    * Update VTID status in ledger
+   * VTID-01005: Fixed table name from VtidLedger to vtid_ledger
    */
   private async updateVtidStatus(vtid: string, status: string, metadata: any): Promise<void> {
     const updatePayload = {
@@ -148,7 +161,7 @@ export class VtidSyncService {
     };
 
     const resp = await fetch(
-      `${this.supabaseUrl}/rest/v1/VtidLedger?vtid=eq.${vtid}`,
+      `${this.supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}`,
       {
         method: "PATCH",
         headers: {

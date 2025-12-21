@@ -477,6 +477,7 @@ router.get("/list", async (req: Request, res: Response) => {
 
 /**
  * VTID-01001: Projection endpoint for decision-grade VTID visibility
+ * VTID-01005: Enhanced with terminal state fields (is_terminal, terminal_outcome)
  * GET /api/v1/vtid/projection?limit=50
  *
  * Returns a computed projection with derived fields:
@@ -487,6 +488,8 @@ router.get("/list", async (req: Request, res: Response) => {
  * - attention_required: AUTO or HUMAN
  * - last_update: ISO timestamp of last activity
  * - last_decision: Most recent governance decision (optional)
+ * - is_terminal: VTID-01005 - Boolean indicating if VTID has reached terminal state
+ * - terminal_outcome: VTID-01005 - 'success' | 'failed' | null
  */
 interface VtidProjectionItem {
   vtid: string;
@@ -496,6 +499,9 @@ interface VtidProjectionItem {
   attention_required: 'AUTO' | 'HUMAN';
   last_update: string | null;
   last_decision: string | null;
+  // VTID-01005: Terminal state fields
+  is_terminal: boolean;
+  terminal_outcome: 'success' | 'failed' | null;
 }
 
 router.get("/projection", async (req: Request, res: Response) => {
@@ -544,6 +550,7 @@ router.get("/projection", async (req: Request, res: Response) => {
     }
 
     // Step 3: Build projection for each VTID
+    // VTID-01005: OASIS is the SINGLE SOURCE OF TRUTH for terminal states
     const projections: VtidProjectionItem[] = vtidRows.map((row: any) => {
       const vtid = row.vtid;
       const vtidEvents = allEvents.filter((e: any) => e.vtid === vtid);
@@ -555,46 +562,114 @@ router.get("/projection", async (req: Request, res: Response) => {
       let lastUpdate: string | null = row.updated_at || row.created_at || null;
       let lastDecision: string | null = null;
 
+      // VTID-01005: Terminal state detection from OASIS events (AUTHORITATIVE)
+      let isTerminal = false;
+      let terminalOutcome: 'success' | 'failed' | null = null;
+
       if (vtidEvents.length > 0) {
         // Get the most recent event
         const latestEvent = vtidEvents[0]; // Already sorted desc
         lastUpdate = latestEvent.created_at || lastUpdate;
 
-        // Determine stage from latest event
-        const eventTopic = (latestEvent.topic || latestEvent.kind || '').toLowerCase();
-        const eventStatus = (latestEvent.status || '').toLowerCase();
-        const eventMessage = (latestEvent.message || '').toLowerCase();
-        const combined = `${eventTopic} ${eventStatus} ${eventMessage}`;
+        // VTID-01005: Check for terminal lifecycle events FIRST (highest authority)
+        const terminalCompletedEvent = vtidEvents.find((e: any) =>
+          (e.topic || '').toLowerCase() === 'vtid.lifecycle.completed'
+        );
+        const terminalFailedEvent = vtidEvents.find((e: any) =>
+          (e.topic || '').toLowerCase() === 'vtid.lifecycle.failed'
+        );
 
-        // Stage detection (priority: later stages first)
-        if (combined.includes('deploy') || combined.includes('release') || combined.includes('publish')) {
-          currentStage = 'Deploy';
-        } else if (combined.includes('validat') || combined.includes('test') || combined.includes('verify') || combined.includes('check')) {
-          currentStage = 'Validator';
-        } else if (combined.includes('worker') || combined.includes('execut') || combined.includes('run') || combined.includes('build') || combined.includes('process')) {
-          currentStage = 'Worker';
-        } else if (combined.includes('plan') || combined.includes('schedul') || combined.includes('queue')) {
-          currentStage = 'Planner';
-        }
-
-        // Check for terminal states
-        if (combined.includes('done') || combined.includes('complete') || combined.includes('success') || combined.includes('merged') || combined.includes('deployed')) {
-          if (currentStage === 'Deploy') {
-            currentStage = 'Done';
-          }
+        if (terminalCompletedEvent) {
+          isTerminal = true;
+          terminalOutcome = 'success';
           derivedStatus = 'Done';
-        }
-
-        // Check for failure/blocked states
-        if (eventStatus === 'error' || eventStatus === 'fail' || eventStatus === 'failure' ||
-            combined.includes('failed') || combined.includes('error') || combined.includes('exception')) {
+          currentStage = 'Done';
+        } else if (terminalFailedEvent) {
+          isTerminal = true;
+          terminalOutcome = 'failed';
           derivedStatus = 'Failed';
           attentionRequired = 'HUMAN';
         }
 
-        if (eventStatus === 'blocked' || combined.includes('blocked') || combined.includes('rejected')) {
-          derivedStatus = 'Blocked';
-          attentionRequired = 'HUMAN';
+        // If not determined by terminal lifecycle events, check other patterns
+        if (!isTerminal) {
+          // Determine stage from latest event
+          const eventTopic = (latestEvent.topic || latestEvent.kind || '').toLowerCase();
+          const eventStatus = (latestEvent.status || '').toLowerCase();
+          const eventMessage = (latestEvent.message || '').toLowerCase();
+          const combined = `${eventTopic} ${eventStatus} ${eventMessage}`;
+
+          // Stage detection (priority: later stages first)
+          if (combined.includes('deploy') || combined.includes('release') || combined.includes('publish')) {
+            currentStage = 'Deploy';
+          } else if (combined.includes('validat') || combined.includes('test') || combined.includes('verify') || combined.includes('check')) {
+            currentStage = 'Validator';
+          } else if (combined.includes('worker') || combined.includes('execut') || combined.includes('run') || combined.includes('build') || combined.includes('process')) {
+            currentStage = 'Worker';
+          } else if (combined.includes('plan') || combined.includes('schedul') || combined.includes('queue')) {
+            currentStage = 'Planner';
+          }
+
+          // VTID-01005: Check for terminal success patterns in events
+          // These patterns indicate completion even without explicit lifecycle event
+          const hasDeploySuccess = vtidEvents.some((e: any) => {
+            const topic = (e.topic || '').toLowerCase();
+            return topic === 'deploy.gateway.success' ||
+                   topic === 'cicd.deploy.service.succeeded' ||
+                   topic === 'cicd.github.safe_merge.executed';
+          });
+
+          const hasCompletionEvent = vtidEvents.some((e: any) => {
+            const topic = (e.topic || '').toLowerCase();
+            const status = (e.status || '').toLowerCase();
+            return topic.includes('completed') || topic.includes('success') ||
+                   (status === 'success' && (topic.includes('deploy') || topic.includes('merge')));
+          });
+
+          if (hasDeploySuccess || hasCompletionEvent) {
+            isTerminal = true;
+            terminalOutcome = 'success';
+            derivedStatus = 'Done';
+            currentStage = 'Done';
+          }
+
+          // VTID-01005: Check for terminal failure patterns
+          const hasDeployFailed = vtidEvents.some((e: any) => {
+            const topic = (e.topic || '').toLowerCase();
+            return topic === 'deploy.gateway.failed' ||
+                   topic === 'cicd.deploy.service.failed';
+          });
+
+          if (hasDeployFailed) {
+            isTerminal = true;
+            terminalOutcome = 'failed';
+            derivedStatus = 'Failed';
+            attentionRequired = 'HUMAN';
+          }
+
+          // Non-terminal status checks
+          if (!isTerminal) {
+            if (combined.includes('done') || combined.includes('complete') || combined.includes('success') || combined.includes('merged') || combined.includes('deployed')) {
+              if (currentStage === 'Deploy') {
+                currentStage = 'Done';
+                isTerminal = true;
+                terminalOutcome = 'success';
+              }
+              derivedStatus = 'Done';
+            }
+
+            // Check for failure/blocked states
+            if (eventStatus === 'error' || eventStatus === 'fail' || eventStatus === 'failure' ||
+                combined.includes('failed') || combined.includes('error') || combined.includes('exception')) {
+              derivedStatus = 'Failed';
+              attentionRequired = 'HUMAN';
+            }
+
+            if (eventStatus === 'blocked' || combined.includes('blocked') || combined.includes('rejected')) {
+              derivedStatus = 'Blocked';
+              attentionRequired = 'HUMAN';
+            }
+          }
         }
 
         // Check for governance decisions
@@ -611,19 +686,24 @@ router.get("/projection", async (req: Request, res: Response) => {
         }
       }
 
-      // Use ledger status as fallback/override
-      const ledgerStatus = (row.status || '').toLowerCase();
-      if (ledgerStatus === 'done' || ledgerStatus === 'closed' || ledgerStatus === 'deployed' || ledgerStatus === 'merged') {
-        derivedStatus = 'Done';
-        if (currentStage !== 'Done') {
+      // VTID-01005: Use ledger status ONLY if no terminal OASIS event exists
+      // OASIS events take precedence over local ledger state
+      if (!isTerminal) {
+        const ledgerStatus = (row.status || '').toLowerCase();
+        if (ledgerStatus === 'done' || ledgerStatus === 'closed' || ledgerStatus === 'deployed' || ledgerStatus === 'merged' || ledgerStatus === 'complete') {
+          derivedStatus = 'Done';
           currentStage = 'Done';
+          isTerminal = true;
+          terminalOutcome = 'success';
+        } else if (ledgerStatus === 'failed' || ledgerStatus === 'error') {
+          derivedStatus = 'Failed';
+          attentionRequired = 'HUMAN';
+          isTerminal = true;
+          terminalOutcome = 'failed';
+        } else if (ledgerStatus === 'blocked') {
+          derivedStatus = 'Blocked';
+          attentionRequired = 'HUMAN';
         }
-      } else if (ledgerStatus === 'failed' || ledgerStatus === 'error') {
-        derivedStatus = 'Failed';
-        attentionRequired = 'HUMAN';
-      } else if (ledgerStatus === 'blocked') {
-        derivedStatus = 'Blocked';
-        attentionRequired = 'HUMAN';
       }
 
       return {
@@ -634,6 +714,9 @@ router.get("/projection", async (req: Request, res: Response) => {
         attention_required: attentionRequired,
         last_update: lastUpdate,
         last_decision: lastDecision,
+        // VTID-01005: Terminal state fields
+        is_terminal: isTerminal,
+        terminal_outcome: terminalOutcome,
       };
     });
 
