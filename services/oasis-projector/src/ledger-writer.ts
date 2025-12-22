@@ -400,8 +400,9 @@ export class LedgerWriter {
     }
 
     // Check message for VTID pattern
+    // VTID-01007: Updated to match 4-5 digit VTIDs (canonical format is VTID-##### from VTID-01000+)
     if (event.message) {
-      const match = event.message.match(/VTID-\d{4}(-\d+)?/);
+      const match = event.message.match(/VTID-\d{4,5}(-\d+)?/);
       if (match) {
         return match[0];
       }
@@ -412,10 +413,11 @@ export class LedgerWriter {
 
   /**
    * Validate VTID format
+   * VTID-01007: Updated to accept 4-5 digit VTIDs (canonical format is VTID-##### from VTID-01000+)
    */
   private isValidVtid(vtid: string): boolean {
-    // Matches patterns like: VTID-0521, VTID-2025-0001, DEV-OASIS-0010
-    return /^[A-Z]+-[A-Z0-9]+-?\d+$/i.test(vtid) || /^VTID-\d{4}(-\d+)?$/i.test(vtid);
+    // Matches patterns like: VTID-0521, VTID-01006, VTID-2025-0001, DEV-OASIS-0010
+    return /^[A-Z]+-[A-Z0-9]+-?\d+$/i.test(vtid) || /^VTID-\d{4,5}(-\d+)?$/i.test(vtid);
   }
 
   /**

@@ -520,11 +520,12 @@ async function executeGetStatus(
   console.log(`[VTID-0536] get_status called for: ${args.vtid}`);
 
   // Step 1: Validate VTID format
-  const vtidRegex = /^(VTID-\d{4}(-[A-Za-z0-9]+)?|[A-Z]+-[A-Z0-9]+-\d{4}-\d{4})$/;
+  // VTID-01007: Accept 4-5 digit VTIDs (canonical format is VTID-##### from VTID-01000+)
+  const vtidRegex = /^(VTID-\d{4,5}(-[A-Za-z0-9]+)?|[A-Z]+-[A-Z0-9]+-\d{4}-\d{4})$/;
   if (!vtidRegex.test(args.vtid)) {
     return {
       ok: false,
-      error: `Invalid VTID format: ${args.vtid}. Expected format like VTID-0533 or DEV-COMHU-2024-0001`
+      error: `Invalid VTID format: ${args.vtid}. Expected format like VTID-0533, VTID-01006 or DEV-COMHU-2024-0001`
     };
   }
 
@@ -1115,13 +1116,14 @@ async function processLocalRouting(text: string, threadId: string): Promise<Gemi
   }
 
   // Detect status requests
+  // VTID-01007: Updated to match 4-5 digit VTIDs
   else if (
     lowerText.includes('status') ||
     lowerText.match(/what.*vtid/i) ||
-    lowerText.match(/vtid-\d{4}/i)
+    lowerText.match(/vtid-\d{4,5}/i)
   ) {
-    // Extract VTID
-    const vtidMatch = text.match(/VTID-\d{4}/i);
+    // Extract VTID (supports 4-5 digit formats)
+    const vtidMatch = text.match(/VTID-\d{4,5}/i);
     if (vtidMatch) {
       const result = await executeTool('autopilot_get_status', { vtid: vtidMatch[0].toUpperCase() }, threadId);
       toolResults.push({
