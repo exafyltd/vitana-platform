@@ -2778,13 +2778,13 @@ function renderTasksView() {
     // DEV-COMHU-2025-0011: Fingerprint for deployment verification
     var fingerprint = document.createElement('div');
     fingerprint.className = 'view-fingerprint';
-    fingerprint.textContent = 'Data: VTID_LEDGER (DEV-COMHU-2025-0011)';
+    fingerprint.textContent = 'Data: OASIS_EVENTS (VTID-01005)';
     container.appendChild(fingerprint);
 
     // DEV-COMHU-2025-0013: Task Management v1 fingerprint (muted line, non-disruptive)
     var fingerprint2 = document.createElement('div');
     fingerprint2.className = 'view-fingerprint-muted';
-    fingerprint2.textContent = 'Task Mgmt v1: LOCAL (DEV-COMHU-2025-0012)';
+    fingerprint2.textContent = 'Task Mgmt v2: OASIS (VTID-01005)';
     container.appendChild(fingerprint2);
 
     // Golden Task Board
@@ -2821,10 +2821,10 @@ function renderTasksView() {
         content.dataset.scrollKey = 'tasks-' + colName.toLowerCase().replace(/\s+/g, '-');
 
         // Filter tasks
-        // DEV-COMHU-2025-0012: Use override-aware column mapping for local status transitions
+        // VTID-01005: Use OASIS-derived column for task placement (single source of truth)
         const colTasks = state.tasks.filter(t => {
-            // Status match (with local override support)
-            if (mapStatusToColumnWithOverride(t.vtid, t.status) !== colName) return false;
+            // VTID-01005: Use OASIS-derived column as authoritative source
+            if (mapStatusToColumnWithOverride(t.vtid, t.status, t.oasisColumn) !== colName) return false;
 
             // Search query
             if (state.taskSearchQuery) {
@@ -2859,15 +2859,19 @@ function renderTasksView() {
  * GOLDEN-MARKER: Base class 'task-card' preserved for VTID-0302 fingerprint check.
  */
 function createTaskCard(task) {
-    // DEV-COMHU-2025-0012: Get effective status with local override support
-    var effectiveStatus = getEffectiveStatus(task.vtid, task.status);
-    var columnStatus = mapStatusToColumn(effectiveStatus);
+    // VTID-01005: Use OASIS-derived column for task placement (single source of truth)
+    var columnStatus = mapStatusToColumnWithOverride(task.vtid, task.status, task.oasisColumn);
 
     const card = document.createElement('div');
     // VTID-0302: Golden fingerprint requires 'task-card' class pattern
     card.className = 'task-card';
     card.classList.add('task-card-enhanced');
     card.dataset.status = columnStatus.toLowerCase().replace(' ', '-');
+    // VTID-01005: Add terminal state data attributes for styling
+    if (task.is_terminal) {
+        card.dataset.terminal = 'true';
+        card.dataset.outcome = task.terminal_outcome || '';
+    }
     card.onclick = () => {
         state.selectedTask = task;
         state.selectedTaskDetail = null;
@@ -2877,13 +2881,13 @@ function createTaskCard(task) {
         fetchVtidDetail(task.vtid);
     };
 
-    // DEV-COMHU-2025-0012: Title (larger, prominent)
+    // VTID-01005: Title (larger, prominent)
     const title = document.createElement('div');
     title.className = 'task-card-title';
     title.textContent = task.title || task.vtid;
     card.appendChild(title);
 
-    // DEV-COMHU-2025-0012: VTID line (blue label)
+    // VTID-01005: VTID line (blue label)
     const vtidLine = document.createElement('div');
     vtidLine.className = 'task-card-vtid-line';
     const vtidLabel = document.createElement('span');
@@ -2892,16 +2896,21 @@ function createTaskCard(task) {
     vtidLine.appendChild(vtidLabel);
     card.appendChild(vtidLine);
 
-    // DEV-COMHU-2025-0012: Status pill row
+    // VTID-01005: Status pill row (OASIS-derived status)
     const statusRow = document.createElement('div');
     statusRow.className = 'task-card-status-row';
 
     const statusPill = document.createElement('span');
     statusPill.className = 'task-card-status-pill task-card-status-pill-' + columnStatus.toLowerCase().replace(' ', '-');
-    // Show effective status (with indicator if overridden locally)
-    var statusText = effectiveStatus;
-    if (getTaskStatusOverride(task.vtid)) {
-        statusText = effectiveStatus + ' (local)';
+    // VTID-01005: Show OASIS-derived status (uppercase for terminal states)
+    var statusText = task.status ? task.status.toUpperCase() : columnStatus.toUpperCase();
+    // Add terminal outcome indicator
+    if (task.is_terminal && task.terminal_outcome === 'failed') {
+        statusPill.classList.add('task-card-status-pill-failed');
+        statusText = 'FAILED';
+    } else if (task.is_terminal && task.terminal_outcome === 'success') {
+        statusPill.classList.add('task-card-status-pill-success');
+        statusText = 'SUCCESS';
     }
     statusPill.textContent = statusText;
     statusRow.appendChild(statusPill);
@@ -3102,8 +3111,8 @@ function renderTaskDrawer() {
     };
     specActions.appendChild(resetBtn);
 
-    // DEV-COMHU-2025-0012: Activate button (Scheduled → In Progress)
-    var currentColumn = mapStatusToColumnWithOverride(vtid, state.selectedTask.status);
+    // VTID-01005: Activate button (Scheduled → In Progress)
+    var currentColumn = mapStatusToColumnWithOverride(vtid, state.selectedTask.status, state.selectedTask.oasisColumn);
     if (currentColumn === 'Scheduled') {
         var activateBtn = document.createElement('button');
         activateBtn.className = 'btn btn-success task-spec-btn task-activate-btn';
@@ -3995,63 +4004,76 @@ function getEffectiveStatus(vtid, apiStatus) {
 }
 
 /**
- * DEV-COMHU-2025-0012: Map status to column with local override check.
+ * VTID-01005: Map status to column with OASIS-derived column as authoritative source.
+ * Priority: OASIS column > local override > status-based mapping
  * Used for column filtering in the task board.
  */
-function mapStatusToColumnWithOverride(vtid, apiStatus) {
+function mapStatusToColumnWithOverride(vtid, apiStatus, oasisColumn) {
+    // VTID-01005: OASIS-derived column takes precedence (single source of truth)
+    if (oasisColumn) {
+        // Normalize OASIS column names to UI column names
+        if (oasisColumn === 'COMPLETED') return 'Completed';
+        if (oasisColumn === 'IN_PROGRESS') return 'In Progress';
+        if (oasisColumn === 'SCHEDULED') return 'Scheduled';
+    }
+    // Fallback to local override or status-based mapping
     var effectiveStatus = getEffectiveStatus(vtid, apiStatus);
     return mapStatusToColumn(effectiveStatus);
 }
 
 /**
- * DEV-COMHU-2025-0011: Fetch tasks from VTID Ledger API.
- * Replaces previous /api/v1/oasis/tasks source with authoritative VTID Ledger.
- * Data source: GET /api/v1/vtid/list (same as VTID Ledger UI)
+ * VTID-01005: Fetch tasks from OASIS-derived Command Hub Board API.
+ * Uses /api/v1/commandhub/board which derives column placement from OASIS events.
+ * OASIS is the SINGLE SOURCE OF TRUTH for task completion.
  */
 async function fetchTasks() {
     state.tasksLoading = true;
     renderApp();
 
     try {
-        // DEV-COMHU-2025-0011: Use VTID Ledger as data source
-        var response = await fetch('/api/v1/vtid/list?limit=50');
-        if (!response.ok) throw new Error('VTID Ledger fetch failed: ' + response.status);
+        // VTID-01005: Use OASIS-derived board endpoint (single source of truth)
+        var response = await fetch('/api/v1/commandhub/board?limit=50');
+        if (!response.ok) throw new Error('Command Hub board fetch failed: ' + response.status);
 
         var json = await response.json();
 
-        // Handle both array and wrapped response formats (same as fetchVtidLedger)
+        // Handle both array and wrapped response formats
         var items = [];
         if (Array.isArray(json)) {
             items = json;
         } else if (json && Array.isArray(json.items)) {
             items = json.items;
-        } else if (json && Array.isArray(json.vtids)) {
-            items = json.vtids;
         } else if (json && Array.isArray(json.data)) {
             items = json.data;
         } else {
-            console.warn('[DEV-COMHU-2025-0011] Unexpected response format:', json);
+            console.warn('[VTID-01005] Unexpected response format:', json);
             items = [];
         }
 
-        // Transform VTID ledger rows into task card model
+        // VTID-01005: Transform board items into task card model
+        // Use OASIS-derived column directly instead of local mapping
         state.tasks = items.map(function(item) {
             return {
-                id: item.vtid,  // Use vtid as ID
-                title: item.title || item.vtid,  // Fallback to vtid if no title
-                status: item.status,  // Raw status, mapped in UI via mapStatusToColumn
+                id: item.vtid,
+                title: item.title || item.vtid,
+                // VTID-01005: Use OASIS-derived status and column
+                status: item.status,
                 vtid: item.vtid,
+                // VTID-01005: Preserve OASIS-derived column for board placement
+                oasisColumn: item.column,
+                is_terminal: item.is_terminal,
+                terminal_outcome: item.terminal_outcome,
                 task_family: item.task_family,
                 layer: item.layer,
                 module: item.task_module,
                 summary: item.description || '',
-                createdAt: item.created_at  // Capture date for filtering
+                createdAt: item.updated_at || item.created_at
             };
         });
         state.tasksError = null;
-        console.log('[DEV-COMHU-2025-0011] Tasks loaded from VTID Ledger:', state.tasks.length, 'items');
+        console.log('[VTID-01005] Tasks loaded from OASIS-derived board:', state.tasks.length, 'items');
     } catch (error) {
-        console.error('[DEV-COMHU-2025-0011] Failed to fetch tasks from VTID Ledger:', error);
+        console.error('[VTID-01005] Failed to fetch tasks from Command Hub board:', error);
         state.tasksError = error.message;
         state.tasks = [];
     } finally {
@@ -6754,7 +6776,7 @@ function renderApprovalsView() {
     // DEV-COMHU-2025-0013: Fingerprint for deployment verification (muted style)
     var fingerprint = document.createElement('div');
     fingerprint.className = 'view-fingerprint-muted';
-    fingerprint.textContent = 'Task Mgmt v1: LOCAL (DEV-COMHU-2025-0012)';
+    fingerprint.textContent = 'Task Mgmt v2: OASIS (VTID-01005)';
     container.appendChild(fingerprint);
 
     // Error display

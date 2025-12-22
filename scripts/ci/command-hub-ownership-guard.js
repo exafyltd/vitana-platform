@@ -24,7 +24,8 @@ const PROTECTED_PATH = 'services/gateway/src/frontend/command-hub/';
 //             Branch pattern: vtid-ledger-visibility (for claude/vtid-ledger-visibility-* branches)
 // VTID-01002: Global Dev UI Scroll Retention (polling-safe, permanent)
 // VTID-01003: Fix Create Task modal + add Task Spec field + drawer metadata formatting
-const ALLOWED_VTID_PATTERN = /DEV-COMHU-\d+|VTID-0302|VTID-0539|VTID-0541|VTID-0542|VTID-0600|VTID-0601|VTID-01001|VTID-01002|VTID-01003|global-vtid-allocator|vtid-ledger-visibility/i;
+// VTID-01005: Task Completion Authority & Board Sync (OASIS → Command Hub)
+const ALLOWED_VTID_PATTERN = /DEV-COMHU-\d+|VTID-0302|VTID-0539|VTID-0541|VTID-0542|VTID-0600|VTID-0601|VTID-01001|VTID-01002|VTID-01003|VTID-01005|global-vtid-allocator|vtid-ledger-visibility/i;
 
 function getChangedFiles() {
   try {
