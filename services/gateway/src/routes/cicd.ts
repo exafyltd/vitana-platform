@@ -978,9 +978,10 @@ router.post('/approvals/:id/deny', async (req: Request, res: Response) => {
 
     const prNumber = parseInt(prMatch[1], 10);
 
-    // VTID-0604: Validate body.vtid strictly - NO fallback extraction
+    // VTID-0604 + VTID-01007: Validate body.vtid strictly - NO fallback extraction
+    // Updated to accept 4-5 digit VTIDs (canonical format is VTID-##### from VTID-01000+)
     let vtid = 'UNKNOWN';
-    if (typeof rawVtid === 'string' && /^VTID-\d{4}$/.test(rawVtid.trim())) {
+    if (typeof rawVtid === 'string' && /^VTID-\d{4,5}$/.test(rawVtid.trim())) {
       vtid = rawVtid.trim().toUpperCase();
     }
 

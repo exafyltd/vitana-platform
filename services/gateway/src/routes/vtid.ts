@@ -731,13 +731,13 @@ router.get("/projection", async (req: Request, res: Response) => {
 router.get("/:vtid", async (req: Request, res: Response) => {
   try {
     const { vtid } = req.params;
-    // VTID-0527-C: Accept both formats:
-    // - Simple: VTID-0516, VTID-0527-B
+    // VTID-0527-C + VTID-01007: Accept both formats with 4-5 digit support:
+    // - Simple: VTID-0516, VTID-01006, VTID-0527-B
     // - Complex: DEV-ABC-0001-0002
-    const VTID_REGEX = /^(VTID-\d{4}(-[A-Za-z0-9]+)?|[A-Z]+-[A-Z0-9]+-\d{4}-\d{4})$/;
+    const VTID_REGEX = /^(VTID-\d{4,5}(-[A-Za-z0-9]+)?|[A-Z]+-[A-Z0-9]+-\d{4}-\d{4})$/;
     if (!VTID_REGEX.test(vtid)) {
-      console.log(`[VTID-0527-C] Invalid VTID format: ${vtid}`);
-      return res.status(400).json({ error: "invalid_format", vtid, expected: "VTID-#### or XXX-YYY-####-####" });
+      console.log(`[VTID-01007] Invalid VTID format: ${vtid}`);
+      return res.status(400).json({ error: "invalid_format", vtid, expected: "VTID-#### or VTID-##### or XXX-YYY-####-####" });
     }
     const { supabaseUrl, svcKey } = getSupabaseConfig();
 

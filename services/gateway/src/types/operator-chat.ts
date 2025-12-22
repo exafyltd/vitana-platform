@@ -118,9 +118,10 @@ export interface OperatorChatEventPayload {
 // ==================== VTID Validation ====================
 
 /**
- * VTID format regex - matches patterns like VTID-0516, VTID-0527-B, DEV-ABC-0001-0002
+ * VTID format regex - matches patterns like VTID-0516, VTID-01006, VTID-0527-B, DEV-ABC-0001-0002
+ * VTID-01007: Updated to accept 4-5 digit VTIDs (canonical format is VTID-##### from VTID-01000+)
  */
-export const VTID_REGEX = /^(VTID-\d{4}(-[A-Za-z0-9]+)?|[A-Z]+-[A-Z0-9]+-\d{4}-\d{4})$/;
+export const VTID_REGEX = /^(VTID-\d{4,5}(-[A-Za-z0-9]+)?|[A-Z]+-[A-Z0-9]+-\d{4}-\d{4})$/;
 
 /**
  * Validate VTID format
