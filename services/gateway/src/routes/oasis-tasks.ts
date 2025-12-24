@@ -148,6 +148,8 @@ oasisTasksRouter.patch('/api/v1/oasis/tasks/:id', async (req: Request, res: Resp
     if (body.title !== undefined) payload.title = body.title;
     if (body.status !== undefined) payload.status = body.status;
     if (body.summary !== undefined) payload.summary = body.summary;
+    // VTID-01010: Support metadata update (including target_roles)
+    if (body.metadata !== undefined) payload.metadata = body.metadata;
 
     const resp = await fetch(`${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${id}`, {
       method: 'PATCH',

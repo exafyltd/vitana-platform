@@ -7,7 +7,22 @@
 // DEV-COMHU-2025-0015: Fix Task Board UX + VTID labels + OASIS events formatting
 // VTID-01002: Global Scroll Retention Guard - polling uses incremental updates, not renderApp()
 // VTID-01003: Fix Create Task modal (input reset), add Task Spec field, drawer metadata order + timestamp format
-console.log('🔥 COMMAND HUB BUNDLE: VTID-01003 LIVE 🔥');
+// VTID-01010: Target Role as Mandatory Task Contract
+console.log('🔥 COMMAND HUB BUNDLE: VTID-01010 LIVE 🔥');
+
+// ===========================================================================
+// VTID-01010: Target Role Constants (canonical)
+// ===========================================================================
+const TARGET_ROLES = ['DEV', 'COM', 'ADM', 'PRO', 'ERP', 'PAT', 'INFRA'];
+const TARGET_ROLE_LABELS = {
+    'DEV': 'Vitana Developer',
+    'COM': 'Community',
+    'ADM': 'Admin',
+    'PRO': 'Professional',
+    'ERP': 'Staff',
+    'PAT': 'Patient',
+    'INFRA': 'Infrastructure'
+};
 
 // --- DEV-COMHU-2025-0012: LocalStorage Helpers for Task Management v1 ---
 
@@ -106,6 +121,23 @@ function dismissApproval(repo, prNumber) {
     } catch (e) {
         return false;
     }
+}
+
+/**
+ * VTID-01010: Get target roles from task metadata.
+ * Returns array of role strings or empty array if none set.
+ */
+function getTaskTargetRoles(task) {
+    if (!task) return [];
+    // Check metadata.target_roles (authoritative storage)
+    if (task.metadata && Array.isArray(task.metadata.target_roles)) {
+        return task.metadata.target_roles;
+    }
+    // Check direct target_roles property (API response)
+    if (Array.isArray(task.target_roles)) {
+        return task.target_roles;
+    }
+    return [];
 }
 
 // --- VTID-01002: Global Scroll Retention Guard ---
@@ -987,6 +1019,9 @@ const state = {
     modalDraftStatus: 'Scheduled',
     modalDraftSpec: '',
     modalDraftEditing: false, // Guard against re-render while editing
+    // VTID-01010: Target Role state for task creation and filtering
+    modalDraftTargetRoles: [], // Array of selected role strings
+    taskRoleFilter: 'ALL', // 'ALL' or one of TARGET_ROLES
 
     // Global Overlays (VTID-0508 / VTID-0509)
     isHeartbeatOpen: false,
@@ -2802,6 +2837,38 @@ function renderTasksView() {
     fingerprint2.textContent = 'Task Mgmt v2: OASIS (VTID-01005)';
     container.appendChild(fingerprint2);
 
+    // VTID-01010: Role filter chips
+    const roleFilterBar = document.createElement('div');
+    roleFilterBar.className = 'role-filter-bar';
+
+    // Add "All" filter chip
+    const allChip = document.createElement('button');
+    allChip.className = 'role-filter-chip' + (state.taskRoleFilter === 'ALL' ? ' role-filter-chip-active' : '');
+    allChip.textContent = 'All';
+    allChip.onclick = function() {
+        state.taskRoleFilter = 'ALL';
+        renderApp();
+    };
+    roleFilterBar.appendChild(allChip);
+
+    // Add chip for each role
+    TARGET_ROLES.forEach(function(role) {
+        const chip = document.createElement('button');
+        chip.className = 'role-filter-chip role-filter-chip-' + role.toLowerCase();
+        if (state.taskRoleFilter === role) {
+            chip.classList.add('role-filter-chip-active');
+        }
+        chip.textContent = role;
+        chip.title = TARGET_ROLE_LABELS[role] || role;
+        chip.onclick = function() {
+            state.taskRoleFilter = role;
+            renderApp();
+        };
+        roleFilterBar.appendChild(chip);
+    });
+
+    container.appendChild(roleFilterBar);
+
     // Golden Task Board
     const board = document.createElement('div');
     board.className = 'task-board';
@@ -2850,6 +2917,12 @@ function renderTasksView() {
             // Date filter (assuming createdAt exists and is YYYY-MM-DD compatible or ISO)
             if (state.taskDateFilter && t.createdAt) {
                 if (!t.createdAt.startsWith(state.taskDateFilter)) return false;
+            }
+
+            // VTID-01010: Role filter
+            if (state.taskRoleFilter && state.taskRoleFilter !== 'ALL') {
+                const taskRoles = getTaskTargetRoles(t);
+                if (!taskRoles || !taskRoles.includes(state.taskRoleFilter)) return false;
             }
 
             return true;
@@ -2929,6 +3002,30 @@ function createTaskCard(task) {
     }
     statusPill.textContent = statusText;
     statusRow.appendChild(statusPill);
+
+    // VTID-01010: Target Role badge(s)
+    const targetRoles = getTaskTargetRoles(task);
+    if (targetRoles && targetRoles.length > 0) {
+        const roleBadge = document.createElement('span');
+        roleBadge.className = 'task-card-role-badge';
+        if (targetRoles.length === 1) {
+            roleBadge.textContent = targetRoles[0];
+            roleBadge.classList.add('task-card-role-badge-' + targetRoles[0].toLowerCase());
+        } else {
+            // Show first role + count for multiple
+            roleBadge.textContent = targetRoles[0] + '+' + (targetRoles.length - 1);
+            roleBadge.classList.add('task-card-role-badge-multi');
+        }
+        roleBadge.title = 'Target: ' + targetRoles.join(', ');
+        statusRow.appendChild(roleBadge);
+    } else {
+        // VTID-01010: Show UNKNOWN for tasks without roles
+        const unknownBadge = document.createElement('span');
+        unknownBadge.className = 'task-card-role-badge task-card-role-badge-unknown';
+        unknownBadge.textContent = 'UNKNOWN';
+        unknownBadge.title = 'No target role set';
+        statusRow.appendChild(unknownBadge);
+    }
 
     card.appendChild(statusRow);
 
@@ -3054,6 +3151,25 @@ function renderTaskDrawer() {
     title.className = 'drawer-title-text';
     title.textContent = vtid;
     header.appendChild(title);
+
+    // VTID-01010: Add target role badge(s) to drawer header
+    const drawerTargetRoles = getTaskTargetRoles(task);
+    if (drawerTargetRoles && drawerTargetRoles.length > 0) {
+        drawerTargetRoles.forEach(function(role) {
+            const roleBadge = document.createElement('span');
+            roleBadge.className = 'drawer-role-badge drawer-role-badge-' + role.toLowerCase();
+            roleBadge.textContent = role;
+            roleBadge.title = TARGET_ROLE_LABELS[role] || role;
+            header.appendChild(roleBadge);
+        });
+    } else {
+        // VTID-01010: Show UNKNOWN badge for tasks without roles
+        const unknownBadge = document.createElement('span');
+        unknownBadge.className = 'drawer-role-badge drawer-role-badge-unknown';
+        unknownBadge.textContent = 'UNKNOWN';
+        unknownBadge.title = 'No target role set';
+        header.appendChild(unknownBadge);
+    }
 
     // VTID-01006: Add mode indicator badge
     if (isFinalMode) {
@@ -3813,6 +3929,8 @@ function renderTaskModal() {
             state.modalDraftStatus = 'Scheduled';
             state.modalDraftSpec = '';
             state.modalDraftEditing = false;
+            // VTID-01010: Clear target roles state
+            state.modalDraftTargetRoles = [];
             renderApp();
         }
     };
@@ -3888,6 +4006,70 @@ function renderTaskModal() {
     statusGroup.appendChild(statusSelect);
     body.appendChild(statusGroup);
 
+    // VTID-01010: Target Role multi-select (required)
+    const roleGroup = document.createElement('div');
+    roleGroup.className = 'form-group';
+    const roleLabel = document.createElement('label');
+    roleLabel.textContent = 'Target Role (required)';
+    roleGroup.appendChild(roleLabel);
+
+    const roleContainer = document.createElement('div');
+    roleContainer.className = 'target-role-selector';
+
+    // Create checkbox for each role
+    TARGET_ROLES.forEach(function(role) {
+        const roleOption = document.createElement('label');
+        roleOption.className = 'target-role-option';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = role;
+        checkbox.checked = state.modalDraftTargetRoles.includes(role);
+        checkbox.onchange = function(e) {
+            if (e.target.checked) {
+                // VTID-01010: INFRA is exclusive - clear others if INFRA selected
+                if (role === 'INFRA') {
+                    state.modalDraftTargetRoles = ['INFRA'];
+                } else {
+                    // Clear INFRA if another role is selected
+                    state.modalDraftTargetRoles = state.modalDraftTargetRoles.filter(function(r) { return r !== 'INFRA'; });
+                    if (!state.modalDraftTargetRoles.includes(role)) {
+                        state.modalDraftTargetRoles.push(role);
+                    }
+                }
+            } else {
+                state.modalDraftTargetRoles = state.modalDraftTargetRoles.filter(function(r) { return r !== role; });
+            }
+            // Re-render to update checkbox states
+            renderApp();
+        };
+
+        const labelText = document.createElement('span');
+        labelText.className = 'target-role-label';
+        labelText.textContent = role;
+        labelText.title = TARGET_ROLE_LABELS[role] || role;
+
+        roleOption.appendChild(checkbox);
+        roleOption.appendChild(labelText);
+        roleContainer.appendChild(roleOption);
+    });
+
+    roleGroup.appendChild(roleContainer);
+
+    // Validation hint
+    const roleHint = document.createElement('div');
+    roleHint.className = 'form-note';
+    if (state.modalDraftTargetRoles.length === 0) {
+        roleHint.textContent = 'Select at least one target role';
+        roleHint.classList.add('form-note-error');
+    } else if (state.modalDraftTargetRoles.includes('INFRA')) {
+        roleHint.textContent = 'INFRA: Backend/CICD/MCP/API with no UI scope';
+    } else {
+        roleHint.textContent = 'Selected: ' + state.modalDraftTargetRoles.join(', ');
+    }
+    roleGroup.appendChild(roleHint);
+    body.appendChild(roleGroup);
+
     // VTID-01003: Task Spec textarea with controlled state (same pattern as drawer)
     const specGroup = document.createElement('div');
     specGroup.className = 'form-group';
@@ -3927,6 +4109,8 @@ function renderTaskModal() {
         state.modalDraftStatus = 'Scheduled';
         state.modalDraftSpec = '';
         state.modalDraftEditing = false;
+        // VTID-01010: Clear target roles state
+        state.modalDraftTargetRoles = [];
         renderApp();
     };
     footer.appendChild(cancelBtn);
@@ -3939,10 +4123,18 @@ function renderTaskModal() {
         const title = state.modalDraftTitle.trim();
         const status = state.modalDraftStatus; // "Scheduled", "In Progress", "Completed"
         const spec = state.modalDraftSpec;
+        // VTID-01010: Get target roles from state
+        const targetRoles = state.modalDraftTargetRoles;
 
         // Basic validation
         if (!title) {
             alert('Title is required');
+            return;
+        }
+
+        // VTID-01010: Target role validation (required)
+        if (!targetRoles || targetRoles.length === 0) {
+            alert('At least one target role is required');
             return;
         }
 
@@ -4005,10 +4197,14 @@ function renderTaskModal() {
 
             createBtn.textContent = 'Creating task...';
 
-            // VTID-0542: Step 2 - Update the allocated task shell with title/status
+            // VTID-01010: Step 2 - Update the allocated task shell with title/status/target_roles
             const updatePayload = {
                 title: title,
-                status: backendStatus
+                status: backendStatus,
+                // VTID-01010: Store target_roles in metadata
+                metadata: {
+                    target_roles: targetRoles
+                }
             };
 
             const updateResponse = await fetch('/api/v1/oasis/tasks/' + encodeURIComponent(vtid), {
@@ -4021,14 +4217,19 @@ function renderTaskModal() {
 
             if (!updateResponse.ok) {
                 // Even if update fails, the task shell exists
-                console.warn('[VTID-0542] Task update failed, but VTID allocated:', vtid);
+                console.warn('[VTID-01010] Task update failed, but VTID allocated:', vtid);
+            } else {
+                console.log('[VTID-01010] Task updated with target_roles:', targetRoles.join(','));
             }
 
+            // VTID-01010: Build TARGET_ROLE_CONTRACT line for spec
+            const roleContract = 'TARGET_ROLE_CONTRACT: [' + targetRoles.join(',') + ']';
+
             // VTID-01003: Save the task spec to localStorage if provided
-            if (spec && spec.trim()) {
-                saveTaskSpec(vtid, spec);
-                console.log('[VTID-01003] Task spec saved for:', vtid);
-            }
+            // VTID-01010: Prepend TARGET_ROLE_CONTRACT to spec
+            var fullSpec = roleContract + '\n\n' + (spec || '');
+            saveTaskSpec(vtid, fullSpec);
+            console.log('[VTID-01010] Task spec saved with TARGET_ROLE_CONTRACT for:', vtid);
 
             // Success! Close modal and refresh task list
             state.showTaskModal = false;
@@ -4037,6 +4238,8 @@ function renderTaskModal() {
             state.modalDraftStatus = 'Scheduled';
             state.modalDraftSpec = '';
             state.modalDraftEditing = false;
+            // VTID-01010: Clear target roles state
+            state.modalDraftTargetRoles = [];
             fetchTasks(); // Refresh the task board
             renderApp();
 
