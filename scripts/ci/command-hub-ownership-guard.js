@@ -26,7 +26,8 @@ const PROTECTED_PATH = 'services/gateway/src/frontend/command-hub/';
 // VTID-01003: Fix Create Task modal + add Task Spec field + drawer metadata formatting
 // VTID-01005: Task Completion Authority & Board Sync (OASIS → Command Hub)
 // VTID-01006: Task Lifecycle Authority & Drawer Lock Enforcement
-const ALLOWED_VTID_PATTERN = /DEV-COMHU-\d+|VTID-0302|VTID-0539|VTID-0541|VTID-0542|VTID-0600|VTID-0601|VTID-01001|VTID-01002|VTID-01003|VTID-01005|VTID-01006|global-vtid-allocator|vtid-ledger-visibility/i;
+// VTID-01009: Activate emits authoritative OASIS lifecycle.started event
+const ALLOWED_VTID_PATTERN = /DEV-COMHU-\d+|VTID-0302|VTID-0539|VTID-0541|VTID-0542|VTID-0600|VTID-0601|VTID-01001|VTID-01002|VTID-01003|VTID-01005|VTID-01006|VTID-01009|global-vtid-allocator|vtid-ledger-visibility/i;
 
 function getChangedFiles() {
   try {
