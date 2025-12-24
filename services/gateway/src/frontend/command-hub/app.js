@@ -3096,12 +3096,27 @@ function renderTaskDrawer() {
         content.classList.add('drawer-content-final');
     }
 
-    // DEV-COMHU-2025-0012: Show effective status (with local override indicator)
-    var effectiveStatus = getEffectiveStatus(vtid, state.selectedTask.status);
-    var statusDisplay = effectiveStatus;
-    var isLocalOverride = getTaskStatusOverride(vtid) !== null;
-    if (isLocalOverride) {
-        statusDisplay = effectiveStatus + ' (local override)';
+    // VTID-01009: Show OASIS-derived status as authoritative (no "local override" label)
+    // Priority: OASIS column > localStorage > API status
+    var oasisColumn = state.selectedTask.oasisColumn;
+    var statusDisplay;
+    if (oasisColumn === 'IN_PROGRESS') {
+        // OASIS confirms in_progress via lifecycle.started event - authoritative
+        statusDisplay = 'in_progress';
+        // Clear any stale local override now that OASIS is authoritative
+        clearTaskStatusOverride(vtid);
+    } else if (oasisColumn === 'COMPLETED') {
+        // OASIS confirms completed via lifecycle.completed/failed - authoritative
+        statusDisplay = state.selectedTask.status || 'completed';
+        clearTaskStatusOverride(vtid);
+    } else {
+        // No OASIS lifecycle event - use effective status
+        var effectiveStatus = getEffectiveStatus(vtid, state.selectedTask.status);
+        statusDisplay = effectiveStatus;
+        var isLocalOverride = getTaskStatusOverride(vtid) !== null;
+        if (isLocalOverride) {
+            statusDisplay = effectiveStatus + ' (local override)';
+        }
     }
 
     const summary = document.createElement('p');
@@ -3245,25 +3260,53 @@ function renderTaskDrawer() {
         };
         specActions.appendChild(resetBtn);
 
-        // VTID-01005: Activate button (Scheduled → In Progress)
+        // VTID-01009: Activate button (Scheduled → In Progress)
+        // Emits authoritative OASIS lifecycle.started event
         var currentColumn = mapStatusToColumnWithOverride(vtid, state.selectedTask.status, state.selectedTask.oasisColumn);
         if (currentColumn === 'Scheduled') {
             var activateBtn = document.createElement('button');
             activateBtn.className = 'btn btn-success task-spec-btn task-activate-btn';
             activateBtn.textContent = 'Activate';
             activateBtn.title = 'Move task from Scheduled to In Progress';
-            activateBtn.onclick = function() {
-                if (setTaskStatusOverride(vtid, 'in_progress')) {
-                    showToast('Task activated: ' + vtid + ' → In Progress', 'success');
-                    // DEV-COMHU-2025-0015: Close drawer after activation
-                    state.selectedTask = null;
-                    state.selectedTaskDetail = null;
-                    state.drawerSpecVtid = null;
-                    state.drawerSpecText = '';
-                    state.drawerSpecEditing = false;
-                    renderApp();
-                } else {
-                    showToast('Failed to activate task', 'error');
+            activateBtn.onclick = async function() {
+                // VTID-01009: Emit lifecycle.started to OASIS (authoritative)
+                activateBtn.disabled = true;
+                activateBtn.textContent = 'Activating...';
+                try {
+                    var response = await fetch('/api/v1/vtid/lifecycle/start', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            vtid: vtid,
+                            source: 'command-hub',
+                            summary: vtid + ': Activated from Command Hub'
+                        })
+                    });
+                    var result = await response.json();
+                    if (result.ok) {
+                        // VTID-01009: Clear any stale local override since OASIS is now authoritative
+                        clearTaskStatusOverride(vtid);
+                        showToast('Task activated: ' + vtid + ' → In Progress', 'success');
+                        // Close drawer and refresh authoritative data
+                        state.selectedTask = null;
+                        state.selectedTaskDetail = null;
+                        state.drawerSpecVtid = null;
+                        state.drawerSpecText = '';
+                        state.drawerSpecEditing = false;
+                        // Refresh tasks from OASIS-derived board endpoint
+                        await fetchTasks();
+                    } else {
+                        // VTID-01009: API failed - show error, do NOT fake local override
+                        showToast('Activation failed: ' + (result.error || 'Unknown error'), 'error');
+                        activateBtn.disabled = false;
+                        activateBtn.textContent = 'Activate';
+                    }
+                } catch (e) {
+                    // VTID-01009: Network/server error - show error, do NOT fake local override
+                    console.error('[VTID-01009] Activate failed:', e);
+                    showToast('Activation failed: Network error', 'error');
+                    activateBtn.disabled = false;
+                    activateBtn.textContent = 'Activate';
                 }
             };
             specActions.appendChild(activateBtn);

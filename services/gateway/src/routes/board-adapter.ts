@@ -118,6 +118,19 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
         derivedStatus = 'failed';
       }
 
+      // VTID-01009: Check for lifecycle.started event → IN_PROGRESS
+      // This is authoritative: if OASIS has a started event and no terminal event,
+      // the task is IN_PROGRESS regardless of ledger status or local overrides
+      if (!isTerminal) {
+        const lifecycleStartedEvent = vtidEvents.find((e: any) =>
+          (e.topic || '').toLowerCase() === 'vtid.lifecycle.started'
+        );
+        if (lifecycleStartedEvent) {
+          column = 'IN_PROGRESS';
+          derivedStatus = 'in_progress';
+        }
+      }
+
       // If not terminal from lifecycle events, check other OASIS patterns
       if (!isTerminal) {
         const hasDeploySuccess = vtidEvents.some((e: any) => {

@@ -1029,6 +1029,172 @@ router.post("/api/v1/vtid/lifecycle/complete", async (req: Request, res: Respons
 });
 
 /**
+ * VTID-01009: Lifecycle Start Event Schema
+ * Emits authoritative lifecycle.started event when task is activated
+ */
+const LifecycleStartEventSchema = z.object({
+  vtid: z.string().min(1, "vtid required"),
+  source: z.enum(["claude", "cicd", "operator", "command-hub"], {
+    errorMap: () => ({ message: "source must be: claude, cicd, operator, or command-hub" }),
+  }),
+  summary: z.string().optional(),
+});
+
+/**
+ * POST /api/v1/vtid/lifecycle/start
+ * VTID-01009: Emit lifecycle.started event when task is activated
+ *
+ * This endpoint emits an authoritative OASIS event when a task transitions
+ * from SCHEDULED to IN_PROGRESS. OASIS is the single source of truth.
+ *
+ * Body:
+ * - vtid: The VTID to mark as started (required)
+ * - source: "claude", "cicd", "operator", or "command-hub" (required)
+ * - summary: Optional summary message
+ *
+ * Idempotency: If a lifecycle.started event already exists for this VTID,
+ * this endpoint returns 200 OK with a note that the event already exists.
+ */
+router.post("/api/v1/vtid/lifecycle/start", async (req: Request, res: Response) => {
+  try {
+    const validation = LifecycleStartEventSchema.safeParse(req.body);
+
+    if (!validation.success) {
+      console.error("[VTID-01009] Validation error:", validation.error.errors);
+      return res.status(400).json({
+        ok: false,
+        error: validation.error.errors
+          .map((e) => `${e.path.join(".")}: ${e.message}`)
+          .join(", "),
+      });
+    }
+
+    const body = validation.data;
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+
+    if (!svcKey || !supabaseUrl) {
+      console.error("[VTID-01009] Gateway misconfigured: Missing Supabase credentials");
+      return res.status(500).json({
+        ok: false,
+        error: "Gateway misconfigured",
+      });
+    }
+
+    // Check for existing started event (idempotency)
+    const existingResp = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_events?vtid=eq.${body.vtid}&topic=eq.vtid.lifecycle.started&limit=1`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+      }
+    );
+
+    if (existingResp.ok) {
+      const existingEvents = await existingResp.json() as any[];
+      if (existingEvents.length > 0) {
+        console.log(`[VTID-01009] Lifecycle started event already exists for ${body.vtid}`);
+        return res.status(200).json({
+          ok: true,
+          vtid: body.vtid,
+          already_exists: true,
+          existing_event_id: existingEvents[0].id,
+          message: `Lifecycle started event already exists for ${body.vtid}`,
+        });
+      }
+    }
+
+    // Emit the lifecycle.started event
+    const eventId = randomUUID();
+    const timestamp = new Date().toISOString();
+    const topic = "vtid.lifecycle.started";
+    const defaultMessage = `${body.vtid}: Activated from Command Hub`;
+
+    const payload = {
+      id: eventId,
+      created_at: timestamp,
+      vtid: body.vtid,
+      topic: topic,
+      service: `vtid-lifecycle-${body.source}`,
+      role: "GOVERNANCE",
+      model: "vtid-01009-lifecycle-start",
+      status: "in_progress",
+      message: body.summary || defaultMessage,
+      link: null,
+      metadata: {
+        vtid: body.vtid,
+        source: body.source,
+        started_at: timestamp,
+      },
+    };
+
+    const insertResp = await fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+        Prefer: "return=representation",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!insertResp.ok) {
+      const text = await insertResp.text();
+      console.error(`[VTID-01009] OASIS insert failed: ${insertResp.status} - ${text}`);
+      return res.status(502).json({
+        ok: false,
+        error: "Database insert failed",
+      });
+    }
+
+    const data = await insertResp.json();
+    const insertedEvent = Array.isArray(data) ? data[0] : data;
+
+    console.log(`[VTID-01009] Lifecycle started event emitted: ${eventId} - ${body.vtid}`);
+
+    // Also update the vtid_ledger status to in_progress
+    const ledgerUpdateResp = await fetch(
+      `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${body.vtid}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+        body: JSON.stringify({
+          status: "in_progress",
+          updated_at: timestamp,
+        }),
+      }
+    );
+
+    if (!ledgerUpdateResp.ok) {
+      console.warn(`[VTID-01009] Ledger update failed for ${body.vtid}, but lifecycle event was emitted`);
+    }
+
+    return res.status(200).json({
+      ok: true,
+      event_id: insertedEvent.id,
+      vtid: body.vtid,
+      topic: topic,
+      message: `Lifecycle started event emitted for ${body.vtid}`,
+    });
+  } catch (e: any) {
+    console.error("[VTID-01009] Unexpected error:", e);
+    return res.status(500).json({
+      ok: false,
+      error: "Internal server error",
+    });
+  }
+});
+
+/**
  * POST /api/v1/vtid/lifecycle/backfill
  * VTID-01005: Backfill terminal lifecycle events for VTIDs that are already complete
  *
