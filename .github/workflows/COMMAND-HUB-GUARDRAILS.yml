@@ -1,9 +1,10 @@
 name: Command Hub Guardrails (VTID-0302)
 # VTID-0302: Command Hub Golden Shield & Regression Guard
 #
-# This workflow enforces two critical guardrails:
+# This workflow enforces three critical guardrails:
 # 1. Path Ownership Guard - Only DEV-COMHU-* VTIDs may modify Command Hub frontend
 # 2. Golden Fingerprint Check - Ensures the bundle contains all required markers
+# 3. Bundle Syntax Gate (VTID-01011) - Blocks deploy if app.js has JS parse errors
 
 on:
   pull_request:
@@ -64,3 +65,55 @@ jobs:
 
       - name: Verify Golden Fingerprint
         run: node scripts/ci/command-hub-golden-fingerprint.js
+
+  bundle-syntax-gate:
+    name: Bundle Syntax Gate (VTID-01011)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Command Hub Bundle Syntax Check
+        run: |
+          echo "🔍 VTID-01011: Command Hub Bundle Syntax Gate"
+          echo "============================================="
+          echo ""
+          FAILED=0
+
+          # Check dist bundle (required - this is what gets deployed)
+          echo "📦 Checking dist bundle: services/gateway/dist/frontend/command-hub/app.js"
+          if node --check services/gateway/dist/frontend/command-hub/app.js 2>&1; then
+            echo "✅ dist/frontend/command-hub/app.js: VALID JavaScript syntax"
+          else
+            echo "❌ dist/frontend/command-hub/app.js: SYNTAX ERROR DETECTED"
+            FAILED=1
+          fi
+          echo ""
+
+          # Check src bundle (if present)
+          if [ -f "services/gateway/src/frontend/command-hub/app.js" ]; then
+            echo "📄 Checking src bundle: services/gateway/src/frontend/command-hub/app.js"
+            if node --check services/gateway/src/frontend/command-hub/app.js 2>&1; then
+              echo "✅ src/frontend/command-hub/app.js: VALID JavaScript syntax"
+            else
+              echo "❌ src/frontend/command-hub/app.js: SYNTAX ERROR DETECTED"
+              FAILED=1
+            fi
+            echo ""
+          fi
+
+          # Final verdict
+          echo "============================================="
+          if [ $FAILED -eq 1 ]; then
+            echo "❌ VTID-01011: Bundle Syntax Gate FAILED"
+            echo "   JavaScript parse errors detected - PR blocked"
+            exit 1
+          else
+            echo "✅ VTID-01011: Bundle Syntax Gate PASSED"
+            echo "   All Command Hub bundles have valid JavaScript syntax"
+          fi
