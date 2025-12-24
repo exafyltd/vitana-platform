@@ -689,6 +689,147 @@ router.get("/api/v1/events/stream", async (req: Request, res: Response) => {
 });
 
 /**
+ * VTID-01008: Stage Event Backfill Helper
+ * Emits stage success events (PLANNER, WORKER, VALIDATOR, DEPLOY) when a VTID completes successfully.
+ * Ensures stage timeline is complete and OASIS tracked events are present.
+ *
+ * Rules:
+ * - Only emit for stages that don't already have a success event
+ * - Never override stages that have a FAILED event
+ * - Idempotent: safe to call multiple times
+ *
+ * @param vtid - The VTID to backfill stages for
+ * @param source - The source of the completion (claude, cicd, operator)
+ * @param supabaseUrl - Supabase URL
+ * @param svcKey - Supabase service role key
+ * @returns Array of emitted stage events (may be empty if all already exist)
+ */
+async function backfillStageSuccessEvents(
+  vtid: string,
+  source: string,
+  supabaseUrl: string,
+  svcKey: string
+): Promise<{ stage: string; event_id: string; already_exists?: boolean; has_failure?: boolean }[]> {
+  const stages = ['PLANNER', 'WORKER', 'VALIDATOR', 'DEPLOY'] as const;
+  const results: { stage: string; event_id: string; already_exists?: boolean; has_failure?: boolean }[] = [];
+  const timestamp = new Date().toISOString();
+
+  // Fetch existing stage events for this VTID to check idempotency
+  const existingResp = await fetch(
+    `${supabaseUrl}/rest/v1/oasis_events?vtid=eq.${encodeURIComponent(vtid)}&or=(topic.like.vtid.stage.%,task_stage.in.(PLANNER,WORKER,VALIDATOR,DEPLOY))&limit=100`,
+    {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+      },
+    }
+  );
+
+  let existingStageEvents: any[] = [];
+  if (existingResp.ok) {
+    existingStageEvents = await existingResp.json() as any[];
+  }
+
+  // Build a map of existing stage statuses
+  const stageStatusMap: Map<string, { hasSuccess: boolean; hasFailure: boolean }> = new Map();
+  for (const stage of stages) {
+    stageStatusMap.set(stage, { hasSuccess: false, hasFailure: false });
+  }
+
+  for (const event of existingStageEvents) {
+    const stage = event.task_stage || extractStageFromTopic(event.topic);
+    if (stage && stageStatusMap.has(stage)) {
+      const status = stageStatusMap.get(stage)!;
+      if (event.status === 'success' || (event.topic && event.topic.endsWith('.success'))) {
+        status.hasSuccess = true;
+      }
+      if (event.status === 'error' || event.status === 'failure' ||
+          (event.topic && (event.topic.endsWith('.failed') || event.topic.endsWith('.error')))) {
+        status.hasFailure = true;
+      }
+    }
+  }
+
+  // Emit stage success events for stages without success (unless they have failure)
+  for (const stage of stages) {
+    const status = stageStatusMap.get(stage)!;
+
+    // Skip if stage already has a success event
+    if (status.hasSuccess) {
+      results.push({ stage, event_id: '', already_exists: true });
+      continue;
+    }
+
+    // Skip if stage has a failure event (don't override failures)
+    if (status.hasFailure) {
+      console.log(`[VTID-01008] Skipping ${stage} for ${vtid} - has existing failure event`);
+      results.push({ stage, event_id: '', has_failure: true });
+      continue;
+    }
+
+    // Emit stage success event
+    const eventId = randomUUID();
+    const payload = {
+      id: eventId,
+      created_at: timestamp,
+      vtid: vtid,
+      topic: `vtid.stage.${stage.toLowerCase()}.success`,
+      task_stage: stage,
+      service: `vtid-stage-backfill-${source}`,
+      role: "GOVERNANCE",
+      model: "vtid-01008-stage-backfill",
+      status: "success",
+      message: `${stage} stage completed successfully for ${vtid}`,
+      kind: `${stage.toLowerCase()}.completed`,
+      title: `${stage} Complete`,
+      link: null,
+      metadata: {
+        vtid: vtid,
+        stage: stage,
+        source: source,
+        backfilled: true,
+        completed_at: timestamp,
+      },
+    };
+
+    const insertResp = await fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (insertResp.ok) {
+      console.log(`[VTID-01008] Emitted stage success event: ${stage} for ${vtid}`);
+      results.push({ stage, event_id: eventId });
+    } else {
+      console.error(`[VTID-01008] Failed to emit stage success event: ${stage} for ${vtid}`);
+      results.push({ stage, event_id: '', already_exists: false });
+    }
+  }
+
+  return results;
+}
+
+/**
+ * VTID-01008: Helper to extract stage from topic string
+ * e.g., "vtid.stage.planner.success" -> "PLANNER"
+ */
+function extractStageFromTopic(topic: string | null | undefined): string | null {
+  if (!topic) return null;
+  const match = topic.match(/vtid\.stage\.(\w+)\./i);
+  if (match) {
+    return match[1].toUpperCase();
+  }
+  return null;
+}
+
+/**
  * VTID-01005: Terminal Lifecycle Event Schema
  * Ensures mandatory terminal lifecycle events are emitted for governance compliance
  */
@@ -762,12 +903,24 @@ router.post("/api/v1/vtid/lifecycle/complete", async (req: Request, res: Respons
       const existingEvents = await existingResp.json() as any[];
       if (existingEvents.length > 0) {
         console.log(`[VTID-01005] Terminal lifecycle event already exists for ${body.vtid}`);
+
+        // VTID-01008: Still trigger stage backfill even if lifecycle event exists
+        // This ensures stages are complete for VTIDs that were completed before stage backfill was implemented
+        let stageBackfillResults: { stage: string; event_id: string; already_exists?: boolean; has_failure?: boolean }[] = [];
+        if (body.outcome === "success") {
+          console.log(`[VTID-01008] Backfilling stage success events for existing complete VTID ${body.vtid}`);
+          stageBackfillResults = await backfillStageSuccessEvents(body.vtid, body.source, supabaseUrl, svcKey);
+          const emittedCount = stageBackfillResults.filter(r => r.event_id && !r.already_exists).length;
+          console.log(`[VTID-01008] Stage backfill complete for ${body.vtid}: ${emittedCount} new events emitted`);
+        }
+
         return res.status(200).json({
           ok: true,
           vtid: body.vtid,
           already_exists: true,
           existing_event_id: existingEvents[0].id,
           message: `Terminal lifecycle event already exists for ${body.vtid}`,
+          stage_backfill: body.outcome === "success" ? stageBackfillResults : undefined,
         });
       }
     }
@@ -848,6 +1001,15 @@ router.post("/api/v1/vtid/lifecycle/complete", async (req: Request, res: Respons
       console.warn(`[VTID-01005] Ledger update failed for ${body.vtid}, but lifecycle event was emitted`);
     }
 
+    // VTID-01008: Backfill stage success events when terminal completion is success
+    let stageBackfillResults: { stage: string; event_id: string; already_exists?: boolean; has_failure?: boolean }[] = [];
+    if (body.outcome === "success") {
+      console.log(`[VTID-01008] Backfilling stage success events for ${body.vtid}`);
+      stageBackfillResults = await backfillStageSuccessEvents(body.vtid, body.source, supabaseUrl, svcKey);
+      const emittedCount = stageBackfillResults.filter(r => r.event_id && !r.already_exists).length;
+      console.log(`[VTID-01008] Stage backfill complete for ${body.vtid}: ${emittedCount} new events emitted`);
+    }
+
     return res.status(200).json({
       ok: true,
       event_id: insertedEvent.id,
@@ -855,6 +1017,7 @@ router.post("/api/v1/vtid/lifecycle/complete", async (req: Request, res: Respons
       outcome: body.outcome,
       topic: topic,
       message: `Terminal lifecycle event emitted for ${body.vtid}`,
+      stage_backfill: body.outcome === "success" ? stageBackfillResults : undefined,
     });
   } catch (e: any) {
     console.error("[VTID-01005] Unexpected error:", e);
@@ -974,15 +1137,23 @@ router.post("/api/v1/vtid/lifecycle/backfill", async (req: Request, res: Respons
         body: JSON.stringify(payload),
       });
 
+      // VTID-01008: Also backfill stage success events for successful VTIDs
+      let stageBackfillResults: { stage: string; event_id: string; already_exists?: boolean; has_failure?: boolean }[] = [];
+      if (insertResp.ok && outcome === 'success') {
+        stageBackfillResults = await backfillStageSuccessEvents(vtidRow.vtid, 'backfill', supabaseUrl, svcKey);
+      }
+
       results.push({
         vtid: vtidRow.vtid,
         outcome,
         event_id: eventId,
         success: insertResp.ok,
+        stage_backfill: outcome === 'success' ? stageBackfillResults : undefined,
       });
     }
 
-    console.log(`[VTID-01005] Backfill complete: ${results.filter(r => r.success).length}/${results.length} events emitted`);
+    console.log(`[VTID-01005] Backfill complete: ${results.filter(r => r.success).length}/${results.length} lifecycle events emitted`);
+    console.log(`[VTID-01008] Stage backfill complete for bulk operation`);
 
     return res.status(200).json({
       ok: true,
