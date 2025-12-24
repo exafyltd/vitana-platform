@@ -6530,3 +6530,219 @@ body {
   align-items: center;
   gap: 8px;
 }
+
+/* ===========================================================================
+   VTID-01010: Target Role Styles
+   =========================================================================== */
+
+/* --- Target Role Selector (Modal) --- */
+.target-role-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+}
+
+.target-role-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.target-role-option:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.target-role-option input[type="checkbox"] {
+  cursor: pointer;
+}
+
+.target-role-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.form-note-error {
+  color: #f87171 !important;
+}
+
+/* --- Role Filter Bar --- */
+.role-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 0;
+  margin-bottom: 8px;
+}
+
+.role-filter-chip {
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid var(--color-border);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--color-text-secondary);
+}
+
+.role-filter-chip:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--color-text-primary);
+}
+
+.role-filter-chip-active {
+  background: var(--color-primary) !important;
+  color: white !important;
+  border-color: var(--color-primary) !important;
+}
+
+/* Role-specific chip colors */
+.role-filter-chip-dev { border-color: rgba(59, 130, 246, 0.5); }
+.role-filter-chip-com { border-color: rgba(16, 185, 129, 0.5); }
+.role-filter-chip-adm { border-color: rgba(239, 68, 68, 0.5); }
+.role-filter-chip-pro { border-color: rgba(139, 92, 246, 0.5); }
+.role-filter-chip-erp { border-color: rgba(245, 158, 11, 0.5); }
+.role-filter-chip-pat { border-color: rgba(236, 72, 153, 0.5); }
+.role-filter-chip-infra { border-color: rgba(100, 116, 139, 0.5); }
+
+/* --- Task Card Role Badge --- */
+.task-card-role-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  margin-left: 6px;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* Role-specific badge colors */
+.task-card-role-badge-dev {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+}
+
+.task-card-role-badge-com {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.task-card-role-badge-adm {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.task-card-role-badge-pro {
+  background: rgba(139, 92, 246, 0.2);
+  color: #a78bfa;
+  border: 1px solid rgba(139, 92, 246, 0.4);
+}
+
+.task-card-role-badge-erp {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.task-card-role-badge-pat {
+  background: rgba(236, 72, 153, 0.2);
+  color: #f472b6;
+  border: 1px solid rgba(236, 72, 153, 0.4);
+}
+
+.task-card-role-badge-infra {
+  background: rgba(100, 116, 139, 0.2);
+  color: #94a3b8;
+  border: 1px solid rgba(100, 116, 139, 0.4);
+}
+
+.task-card-role-badge-multi {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+}
+
+.task-card-role-badge-unknown {
+  background: rgba(100, 100, 100, 0.2);
+  color: #888;
+  border: 1px solid rgba(100, 100, 100, 0.3);
+  font-style: italic;
+}
+
+/* --- Drawer Role Badge --- */
+.drawer-role-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  margin-left: 8px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.drawer-role-badge-dev {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+}
+
+.drawer-role-badge-com {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.drawer-role-badge-adm {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.drawer-role-badge-pro {
+  background: rgba(139, 92, 246, 0.2);
+  color: #a78bfa;
+  border: 1px solid rgba(139, 92, 246, 0.4);
+}
+
+.drawer-role-badge-erp {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.drawer-role-badge-pat {
+  background: rgba(236, 72, 153, 0.2);
+  color: #f472b6;
+  border: 1px solid rgba(236, 72, 153, 0.4);
+}
+
+.drawer-role-badge-infra {
+  background: rgba(100, 116, 139, 0.2);
+  color: #94a3b8;
+  border: 1px solid rgba(100, 116, 139, 0.4);
+}
+
+.drawer-role-badge-unknown {
+  background: rgba(100, 100, 100, 0.2);
+  color: #888;
+  border: 1px solid rgba(100, 100, 100, 0.3);
+  font-style: italic;
+}

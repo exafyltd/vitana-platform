@@ -5,6 +5,12 @@ import { buildStageTimeline, defaultStageTimeline, type TimelineEvent, type Stag
 const router = Router();
 
 // ===========================================================================
+// VTID-01010: Target Role Enum (canonical)
+// ===========================================================================
+const TARGET_ROLES_ENUM = ['DEV', 'COM', 'ADM', 'PRO', 'ERP', 'PAT', 'INFRA'] as const;
+type TargetRole = typeof TARGET_ROLES_ENUM[number];
+
+// ===========================================================================
 // VTID-0542: Global VTID Allocator Configuration
 // ===========================================================================
 
@@ -198,6 +204,9 @@ router.get("/health", async (_req: Request, res: Response) => {
   }
 });
 
+// VTID-01010: Target roles validation helper
+const TargetRolesSchema = z.array(z.enum(TARGET_ROLES_ENUM)).min(1, "At least one target role is required");
+
 const VtidCreateSchema = z.object({
   task_family: z.enum(["DEV", "ADM", "GOVRN", "OASIS"]),
   task_module: z.string().min(1).max(10).transform((s) => s.toUpperCase()),
@@ -207,6 +216,8 @@ const VtidCreateSchema = z.object({
   is_test: z.boolean().default(false),
   description_md: z.string().default(""),
   metadata: z.record(z.any()).optional(),
+  // VTID-01010: Target roles - mandatory for all tasks
+  target_roles: TargetRolesSchema,
 });
 
 function getSupabaseConfig() {
@@ -236,7 +247,24 @@ router.post("/create", async (req: Request, res: Response) => {
     const body = VtidCreateSchema.parse(req.body);
     const { supabaseUrl, svcKey } = getSupabaseConfig();
 
-    console.log(`[VTID-0543] Creating VTID atomically: family=${body.task_family}, module=${body.task_module}`);
+    // VTID-01010: Validate INFRA exclusivity - if INFRA is selected, it must be the only role
+    let targetRoles = body.target_roles;
+    if (targetRoles.includes('INFRA') && targetRoles.length > 1) {
+      return res.status(400).json({
+        ok: false,
+        error: "validation_failed",
+        message: "INFRA role is exclusive and cannot be combined with other roles",
+        details: [{ path: ["target_roles"], message: "INFRA must be the only role when selected" }]
+      });
+    }
+
+    console.log(`[VTID-01010] Creating VTID atomically: family=${body.task_family}, module=${body.task_module}, target_roles=${targetRoles.join(',')}`);
+
+    // VTID-01010: Merge target_roles into metadata
+    const metadata = {
+      ...(body.metadata || {}),
+      target_roles: targetRoles
+    };
 
     // VTID-0543: Use atomic RPC that generates VTID + inserts in one transaction
     const rpcResp = await fetch(supabaseUrl + "/rest/v1/rpc/create_vtid_atomic", {
@@ -254,7 +282,7 @@ router.post("/create", async (req: Request, res: Response) => {
         p_tenant: body.tenant,
         p_is_test: body.is_test,
         p_summary: body.description_md || body.title,
-        p_metadata: body.metadata || {},
+        p_metadata: metadata,
       }),
     });
 
@@ -304,8 +332,9 @@ router.post("/create", async (req: Request, res: Response) => {
     }
 
     const created = result[0];
-    console.log(`[VTID-0543] Successfully created atomically: ${created.vtid}`);
+    console.log(`[VTID-01010] Successfully created atomically: ${created.vtid} with target_roles=${targetRoles.join(',')}`);
 
+    // VTID-01010: Include target_roles in response
     return res.status(201).json({
       ok: true,
       id: created.id,
@@ -316,9 +345,10 @@ router.post("/create", async (req: Request, res: Response) => {
       layer: created.layer,
       module: created.module,
       created_at: created.created_at,
+      target_roles: targetRoles,
     });
   } catch (e: any) {
-    console.error(`[VTID-0543] Error:`, e.message);
+    console.error(`[VTID-01010] Error:`, e.message);
     if (e instanceof z.ZodError) return res.status(400).json({ ok: false, error: "validation_failed", details: e.errors });
     return res.status(500).json({ ok: false, error: "internal_server_error", message: e.message });
   }
@@ -346,6 +376,12 @@ async function legacyCreate(
   }
   const vtid = await vtidResp.json() as string;
 
+  // VTID-01010: Merge target_roles into metadata (same as atomic path)
+  const metadata = {
+    ...(body.metadata || {}),
+    target_roles: body.target_roles
+  };
+
   // Insert separately (non-atomic - race condition possible)
   // VTID-0544: Use only valid vtid_ledger columns to avoid PGRST204 schema mismatch
   const insertPayload = {
@@ -355,6 +391,7 @@ async function legacyCreate(
     status: body.status,
     title: body.title,
     summary: body.description_md || body.title,
+    metadata: metadata,
   };
 
   const insertResp = await fetch(supabaseUrl + "/rest/v1/vtid_ledger", {
@@ -379,8 +416,9 @@ async function legacyCreate(
   }
 
   const data = (await insertResp.json()) as any[];
-  console.log(`[VTID-CREATE-LEGACY] Created: ${vtid}`);
-  return res.status(201).json({ ok: true, ...data[0] });
+  console.log(`[VTID-01010-LEGACY] Created: ${vtid} with target_roles=${body.target_roles.join(',')}`);
+  // VTID-01010: Include target_roles in legacy response
+  return res.status(201).json({ ok: true, ...data[0], target_roles: body.target_roles });
 }
 
 router.get("/list", async (req: Request, res: Response) => {

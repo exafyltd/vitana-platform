@@ -8,8 +8,11 @@ describe("VTID API - DEV-OASIS-0101", () => {
     it("should create VTID using sequence", async () => {
       const res = await request(app).post("/api/v1/vtid/create").send({
         task_family: "OASIS", task_module: "TEST", title: "Test VTID allocation", tenant: "vitana", is_test: true,
+        target_roles: ["DEV"], // VTID-01010: Required field
       }).expect(201);
       expect(res.body.vtid).toMatch(/^(OASIS-TEST-\d{4}-\d{4}|DEV-OASIS-\d{4})$/);
+      // VTID-01010: Verify target_roles in response
+      expect(res.body.target_roles).toEqual(["DEV"]);
       createdVtid = res.body.vtid;
     });
   });
@@ -96,6 +99,7 @@ describe("VTID API - DEV-OASIS-0101", () => {
         title: "Allocator regression test 1",
         tenant: "vitana",
         is_test: true,
+        target_roles: ["DEV"], // VTID-01010: Required field
       });
       expect([201, 200]).toContain(res1.status);
       expect(res1.body.ok).toBe(true);
@@ -109,6 +113,7 @@ describe("VTID API - DEV-OASIS-0101", () => {
         title: "Allocator regression test 2",
         tenant: "vitana",
         is_test: true,
+        target_roles: ["DEV"], // VTID-01010: Required field
       });
       // VTID-0543: Must NOT be 409 (duplicate key)
       expect(res2.status).not.toBe(409);
@@ -138,6 +143,7 @@ describe("VTID API - DEV-OASIS-0101", () => {
           title: `Concurrent test ${n}`,
           tenant: "vitana",
           is_test: true,
+          target_roles: ["DEV"], // VTID-01010: Required field
         })
       );
 
@@ -154,6 +160,86 @@ describe("VTID API - DEV-OASIS-0101", () => {
       const vtids = results.map((r) => r.body.vtid);
       const uniqueVtids = new Set(vtids);
       expect(uniqueVtids.size).toBe(vtids.length);
+    });
+  });
+
+  // VTID-01010: Target role validation tests
+  describe("vtid.target_role_validation", () => {
+    it("should reject create without target_roles", async () => {
+      const res = await request(app).post("/api/v1/vtid/create").send({
+        task_family: "DEV",
+        task_module: "TEST",
+        title: "Test without roles",
+        tenant: "vitana",
+        is_test: true,
+      }).expect(400);
+      expect(res.body.ok).toBe(false);
+      expect(res.body.error).toBe("validation_failed");
+    });
+
+    it("should reject create with empty target_roles array", async () => {
+      const res = await request(app).post("/api/v1/vtid/create").send({
+        task_family: "DEV",
+        task_module: "TEST",
+        title: "Test with empty roles",
+        tenant: "vitana",
+        is_test: true,
+        target_roles: [],
+      }).expect(400);
+      expect(res.body.ok).toBe(false);
+      expect(res.body.error).toBe("validation_failed");
+    });
+
+    it("should reject create with invalid role", async () => {
+      const res = await request(app).post("/api/v1/vtid/create").send({
+        task_family: "DEV",
+        task_module: "TEST",
+        title: "Test with invalid role",
+        tenant: "vitana",
+        is_test: true,
+        target_roles: ["INVALID"],
+      }).expect(400);
+      expect(res.body.ok).toBe(false);
+      expect(res.body.error).toBe("validation_failed");
+    });
+
+    it("should reject INFRA combined with other roles", async () => {
+      const res = await request(app).post("/api/v1/vtid/create").send({
+        task_family: "DEV",
+        task_module: "TEST",
+        title: "Test INFRA with others",
+        tenant: "vitana",
+        is_test: true,
+        target_roles: ["INFRA", "DEV"],
+      }).expect(400);
+      expect(res.body.ok).toBe(false);
+      expect(res.body.message).toContain("INFRA role is exclusive");
+    });
+
+    it("should accept INFRA alone", async () => {
+      const res = await request(app).post("/api/v1/vtid/create").send({
+        task_family: "DEV",
+        task_module: "TEST",
+        title: "Test INFRA alone",
+        tenant: "vitana",
+        is_test: true,
+        target_roles: ["INFRA"],
+      }).expect(201);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.target_roles).toEqual(["INFRA"]);
+    });
+
+    it("should accept multiple non-INFRA roles", async () => {
+      const res = await request(app).post("/api/v1/vtid/create").send({
+        task_family: "DEV",
+        task_module: "TEST",
+        title: "Test multiple roles",
+        tenant: "vitana",
+        is_test: true,
+        target_roles: ["DEV", "ADM"],
+      }).expect(201);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.target_roles).toEqual(["DEV", "ADM"]);
     });
   });
 });
