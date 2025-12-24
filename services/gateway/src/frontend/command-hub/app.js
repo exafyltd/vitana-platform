@@ -68,6 +68,21 @@ function setTaskStatusOverride(vtid, status) {
 }
 
 /**
+ * VTID-01006: Clear task status override from localStorage.
+ * Called when OASIS indicates terminal state - local overrides are no longer valid.
+ */
+function clearTaskStatusOverride(vtid) {
+    if (!vtid) return false;
+    try {
+        localStorage.removeItem('vitana.taskStatusOverride.' + vtid);
+        return true;
+    } catch (e) {
+        console.warn('[VTID-01006] localStorage clear error:', e);
+        return false;
+    }
+}
+
+/**
  * DEV-COMHU-2025-0012: Check if an approval is dismissed (localStorage suppression).
  * Key: vitana.approvalsDismissed.<repo>#<pr>
  */
@@ -2978,16 +2993,36 @@ function renderTaskDrawer() {
     const task = state.selectedTask;
 
     // VTID-01006: Determine drawer mode based on task lifecycle state
-    // OASIS-derived terminal state is AUTHORITATIVE
+    // OASIS-derived terminal state is AUTHORITATIVE - oasisColumn is the source of truth
     const isTerminal = task.is_terminal === true;
     const terminalOutcome = task.terminal_outcome; // 'success' | 'failed' | null
     const taskStatus = (task.status || '').toLowerCase();
+    // VTID-01006 FIX: oasisColumn from API is the SINGLE SOURCE OF TRUTH
+    const oasisColumn = (task.oasisColumn || '').toUpperCase();
+    const isOasisTerminal = oasisColumn === 'COMPLETED';
 
-    // VTID-01006: Task is FINAL if terminal OR status indicates completion
-    const isFinalMode = isTerminal ||
+    // VTID-01006: When OASIS says terminal, LOCAL OVERRIDES ARE INVALID
+    // Clear any stale local override that conflicts with OASIS authority
+    if (isOasisTerminal) {
+        const localOverride = getTaskStatusOverride(vtid);
+        if (localOverride) {
+            console.log('[VTID-01006] Clearing stale local override for terminal task:', vtid);
+            clearTaskStatusOverride(vtid);
+        }
+    }
+
+    // VTID-01006: Task is FINAL if ANY of these conditions are true:
+    // 1. oasisColumn is COMPLETED (AUTHORITATIVE - highest priority)
+    // 2. is_terminal flag from API
+    // 3. status indicates completion
+    const isFinalMode = isOasisTerminal ||
+        isTerminal ||
         taskStatus === 'completed' ||
         taskStatus === 'failed' ||
         taskStatus === 'cancelled';
+
+    // VTID-01006: Determine if task failed (for styling)
+    const isFailedTask = terminalOutcome === 'failed' || taskStatus === 'failed';
 
     // VTID-01006: Check OASIS authority for completed tasks
     const vtidEvents = getEventsForVtid(vtid);
@@ -3024,11 +3059,11 @@ function renderTaskDrawer() {
     if (isFinalMode) {
         const modeBadge = document.createElement('span');
         modeBadge.className = 'drawer-mode-badge';
-        if (terminalOutcome === 'failed' || taskStatus === 'failed') {
+        if (isFailedTask) {
             modeBadge.classList.add('drawer-mode-failed');
             modeBadge.textContent = 'FAILED';
         } else if (taskStatus === 'cancelled') {
-            modeBadge.classList.add('drawer-mode-failed'); // Use same styling for cancelled
+            modeBadge.classList.add('drawer-mode-failed');
             modeBadge.textContent = 'CANCELLED';
         } else {
             modeBadge.classList.add('drawer-mode-final');
@@ -3115,7 +3150,7 @@ function renderTaskDrawer() {
     if (isFinalMode && !isInconsistentState) {
         var finalizationBanner = document.createElement('div');
         finalizationBanner.className = 'task-finalization-banner';
-        if (terminalOutcome === 'failed') {
+        if (isFailedTask) {
             finalizationBanner.innerHTML = '<strong>This task has failed.</strong> ' +
                 'The spec is locked and cannot be modified. Any changes require a NEW VTID.';
             finalizationBanner.classList.add('task-finalization-banner-failed');
