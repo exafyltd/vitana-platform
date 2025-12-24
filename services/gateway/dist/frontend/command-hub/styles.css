@@ -6393,3 +6393,140 @@ body {
   overflow-x: auto;
   margin-top: 0.25rem;
 }
+
+/* ========================================
+ * VTID-01006: Task Lifecycle Lock Enforcement
+ * Styles for drawer mode separation and finalization
+ * ======================================== */
+
+/* Mode badge in drawer header */
+.drawer-mode-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-left: 10px;
+  letter-spacing: 0.5px;
+}
+
+.drawer-mode-final {
+  background: linear-gradient(135deg, #1e3a5f 0%, #0f1f36 100%);
+  color: #60a5fa;
+  border: 1px solid rgba(96, 165, 250, 0.4);
+}
+
+.drawer-mode-failed {
+  background: linear-gradient(135deg, #3b1515 0%, #1f0a0a 100%);
+  color: #f87171;
+  border: 1px solid rgba(248, 113, 113, 0.4);
+}
+
+/* Content styling for final mode */
+.drawer-content-final {
+  background: linear-gradient(180deg, rgba(30, 58, 95, 0.1) 0%, transparent 100%);
+}
+
+/* Finalization banner */
+.task-finalization-banner {
+  background: linear-gradient(135deg, #1e3a5f 0%, #0f1f36 100%);
+  border: 1px solid rgba(96, 165, 250, 0.4);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  color: #93c5fd;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.task-finalization-banner strong {
+  color: #60a5fa;
+}
+
+.task-finalization-banner-failed {
+  background: linear-gradient(135deg, #3b1515 0%, #1f0a0a 100%);
+  border-color: rgba(248, 113, 113, 0.4);
+  color: #fca5a5;
+}
+
+.task-finalization-banner-failed strong {
+  color: #f87171;
+}
+
+.task-finalization-banner-cancelled {
+  background: linear-gradient(135deg, #3d3317 0%, #1f1a0d 100%);
+  border-color: rgba(251, 191, 36, 0.4);
+  color: #fcd34d;
+}
+
+.task-finalization-banner-cancelled strong {
+  color: #f59e0b;
+}
+
+/* Inconsistent state warning */
+.task-inconsistent-state-warning {
+  background: linear-gradient(135deg, #3b1515 0%, #1f0a0a 100%);
+  border: 2px solid #ef4444;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  color: #fca5a5;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.task-inconsistent-state-warning strong {
+  color: #ef4444;
+}
+
+/* Stage inconsistency warning */
+.task-stage-inconsistent-warning {
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  color: #fcd34d;
+  font-size: 0.8rem;
+}
+
+.task-stage-inconsistent-warning strong {
+  color: #f59e0b;
+}
+
+/* Locked spec section */
+.task-spec-section-locked {
+  opacity: 0.85;
+}
+
+.task-spec-section-locked .task-spec-heading {
+  color: var(--color-text-secondary);
+}
+
+/* Locked textarea */
+.task-spec-textarea-locked {
+  background: rgba(0, 0, 0, 0.3) !important;
+  border-color: rgba(100, 100, 100, 0.3) !important;
+  cursor: not-allowed;
+  color: var(--color-text-secondary) !important;
+}
+
+.task-spec-textarea-locked::placeholder {
+  color: rgba(150, 150, 150, 0.5);
+}
+
+/* Locked stage list */
+.task-stage-detail-list-locked {
+  opacity: 0.9;
+}
+
+.task-stage-detail-list-locked .task-stage-detail-item {
+  cursor: default;
+}
+
+/* Stage detail heading for locked state */
+.task-stage-detail-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

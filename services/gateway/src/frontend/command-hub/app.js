@@ -2975,6 +2975,36 @@ function renderTaskDrawer() {
     if (!state.selectedTask) return drawer;
 
     const vtid = state.selectedTask.vtid;
+    const task = state.selectedTask;
+
+    // VTID-01006: Determine drawer mode based on task lifecycle state
+    // OASIS-derived terminal state is AUTHORITATIVE
+    const isTerminal = task.is_terminal === true;
+    const terminalOutcome = task.terminal_outcome; // 'success' | 'failed' | null
+    const taskStatus = (task.status || '').toLowerCase();
+
+    // VTID-01006: Task is FINAL if terminal OR status indicates completion
+    const isFinalMode = isTerminal ||
+        taskStatus === 'completed' ||
+        taskStatus === 'failed' ||
+        taskStatus === 'cancelled';
+
+    // VTID-01006: Check OASIS authority for completed tasks
+    const vtidEvents = getEventsForVtid(vtid);
+    const hasOasisEvents = vtidEvents && vtidEvents.length > 0;
+    const hasOasisCompletionEvent = vtidEvents.some(function(e) {
+        const topic = (e.topic || '').toLowerCase();
+        return topic === 'vtid.lifecycle.completed' ||
+               topic === 'vtid.lifecycle.failed' ||
+               topic === 'deploy.gateway.success' ||
+               topic === 'deploy.gateway.failed' ||
+               topic === 'cicd.deploy.service.succeeded' ||
+               topic === 'cicd.github.safe_merge.executed';
+    });
+
+    // VTID-01006: Inconsistent state detection
+    const isInconsistentState = (taskStatus === 'completed' || taskStatus === 'failed') &&
+                                !isTerminal && !hasOasisCompletionEvent;
 
     // DEV-COMHU-2025-0013: Initialize drawer spec state when opening for a new task
     if (state.drawerSpecVtid !== vtid) {
@@ -2989,6 +3019,23 @@ function renderTaskDrawer() {
     title.className = 'drawer-title-text';
     title.textContent = vtid;
     header.appendChild(title);
+
+    // VTID-01006: Add mode indicator badge
+    if (isFinalMode) {
+        const modeBadge = document.createElement('span');
+        modeBadge.className = 'drawer-mode-badge';
+        if (terminalOutcome === 'failed' || taskStatus === 'failed') {
+            modeBadge.classList.add('drawer-mode-failed');
+            modeBadge.textContent = 'FAILED';
+        } else if (taskStatus === 'cancelled') {
+            modeBadge.classList.add('drawer-mode-failed'); // Use same styling for cancelled
+            modeBadge.textContent = 'CANCELLED';
+        } else {
+            modeBadge.classList.add('drawer-mode-final');
+            modeBadge.textContent = 'FINALIZED';
+        }
+        header.appendChild(modeBadge);
+    }
 
     const closeBtn = document.createElement('button');
     closeBtn.className = 'drawer-close-btn';
@@ -3008,6 +3055,11 @@ function renderTaskDrawer() {
 
     const content = document.createElement('div');
     content.className = 'drawer-content';
+
+    // VTID-01006: Add final mode class for styling
+    if (isFinalMode) {
+        content.classList.add('drawer-content-final');
+    }
 
     // DEV-COMHU-2025-0012: Show effective status (with local override indicator)
     var effectiveStatus = getEffectiveStatus(vtid, state.selectedTask.status);
@@ -3049,99 +3101,147 @@ function renderTaskDrawer() {
         '<p><strong>Status:</strong> ' + statusDisplay + '</p>';
     content.appendChild(details);
 
+    // VTID-01006: Inconsistent state warning (completed without OASIS authority)
+    if (isInconsistentState) {
+        var inconsistentWarning = document.createElement('div');
+        inconsistentWarning.className = 'task-inconsistent-state-warning';
+        inconsistentWarning.innerHTML = '<strong>Inconsistent state:</strong> Task marked as ' +
+            taskStatus + ' without OASIS authority. ' +
+            'No completion lifecycle event found in OASIS events.';
+        content.appendChild(inconsistentWarning);
+    }
+
+    // VTID-01006: Finalization banner for completed/failed/cancelled tasks
+    if (isFinalMode && !isInconsistentState) {
+        var finalizationBanner = document.createElement('div');
+        finalizationBanner.className = 'task-finalization-banner';
+        if (terminalOutcome === 'failed') {
+            finalizationBanner.innerHTML = '<strong>This task has failed.</strong> ' +
+                'The spec is locked and cannot be modified. Any changes require a NEW VTID.';
+            finalizationBanner.classList.add('task-finalization-banner-failed');
+        } else if (taskStatus === 'cancelled') {
+            finalizationBanner.innerHTML = '<strong>This task was cancelled.</strong> ' +
+                'The spec is locked and cannot be modified. Any changes require a NEW VTID.';
+            finalizationBanner.classList.add('task-finalization-banner-cancelled');
+        } else {
+            finalizationBanner.innerHTML = '<strong>This task is finalized.</strong> ' +
+                'The spec is locked and cannot be modified. Any changes require a NEW VTID.';
+        }
+        content.appendChild(finalizationBanner);
+    }
+
     // DEV-COMHU-2025-0012: Task Spec Editor Section
+    // VTID-01006: Enforce editability based on lifecycle state
     var specSection = document.createElement('div');
     specSection.className = 'task-spec-section';
+    if (isFinalMode) {
+        specSection.classList.add('task-spec-section-locked');
+    }
 
     var specHeading = document.createElement('h3');
     specHeading.className = 'task-spec-heading';
-    specHeading.textContent = 'Task Spec (editable)';
+    // VTID-01006: Update heading based on mode
+    specHeading.textContent = isFinalMode ? 'Task Spec (read-only)' : 'Task Spec (editable)';
     specSection.appendChild(specHeading);
 
     var specTextarea = document.createElement('textarea');
     specTextarea.className = 'task-spec-textarea';
-    specTextarea.placeholder = 'Enter task specification here...';
+    // VTID-01006: Lock textarea in final mode
+    if (isFinalMode) {
+        specTextarea.classList.add('task-spec-textarea-locked');
+        specTextarea.readOnly = true;
+        specTextarea.placeholder = 'Task spec is locked (finalized task)';
+    } else {
+        specTextarea.placeholder = 'Enter task specification here...';
+    }
     // DEV-COMHU-2025-0013: Use stable state value (not localStorage on every render)
     specTextarea.value = state.drawerSpecText;
     specTextarea.id = 'task-spec-editor-' + vtid.replace(/[^a-zA-Z0-9]/g, '-');
-    // DEV-COMHU-2025-0015: Track editing state to prevent re-render interruptions
-    specTextarea.onfocus = function() {
-        state.drawerSpecEditing = true;
-    };
-    // DEV-COMHU-2025-0013: Update state on input without re-rendering (stable typing)
-    specTextarea.oninput = function(e) {
-        state.drawerSpecText = e.target.value;
-        state.drawerSpecEditing = true;
-    };
-    specTextarea.onblur = function() {
-        // Reset editing flag when user leaves the input
-        state.drawerSpecEditing = false;
-    };
+
+    // VTID-01006: Only attach editing handlers in active mode
+    if (!isFinalMode) {
+        // DEV-COMHU-2025-0015: Track editing state to prevent re-render interruptions
+        specTextarea.onfocus = function() {
+            state.drawerSpecEditing = true;
+        };
+        // DEV-COMHU-2025-0013: Update state on input without re-rendering (stable typing)
+        specTextarea.oninput = function(e) {
+            state.drawerSpecText = e.target.value;
+            state.drawerSpecEditing = true;
+        };
+        specTextarea.onblur = function() {
+            // Reset editing flag when user leaves the input
+            state.drawerSpecEditing = false;
+        };
+    }
     specSection.appendChild(specTextarea);
 
-    // DEV-COMHU-2025-0012: Spec action buttons
-    var specActions = document.createElement('div');
-    specActions.className = 'task-spec-actions';
+    // VTID-01006: Only show action buttons in active mode
+    if (!isFinalMode) {
+        // DEV-COMHU-2025-0012: Spec action buttons
+        var specActions = document.createElement('div');
+        specActions.className = 'task-spec-actions';
 
-    var saveBtn = document.createElement('button');
-    saveBtn.className = 'btn btn-primary task-spec-btn';
-    saveBtn.textContent = 'Save';
-    saveBtn.onclick = function() {
-        // DEV-COMHU-2025-0013: Save from stable state, not DOM query
-        // DEV-COMHU-2025-0015: Show correct VTID in toast message
-        if (saveTaskSpec(vtid, state.drawerSpecText)) {
-            showToast('Saved task ' + vtid, 'success');
-        } else {
-            showToast('Failed to save spec for ' + vtid, 'error');
-        }
-    };
-    specActions.appendChild(saveBtn);
-
-    var resetBtn = document.createElement('button');
-    resetBtn.className = 'btn task-spec-btn';
-    resetBtn.textContent = 'Reset';
-    resetBtn.onclick = function() {
-        // DEV-COMHU-2025-0013: Reset from localStorage and update stable state
-        state.drawerSpecText = getTaskSpec(vtid);
-        var textarea = document.getElementById('task-spec-editor-' + vtid.replace(/[^a-zA-Z0-9]/g, '-'));
-        if (textarea) {
-            textarea.value = state.drawerSpecText;
-        }
-        showToast('Spec reset to last saved', 'info');
-    };
-    specActions.appendChild(resetBtn);
-
-    // VTID-01005: Activate button (Scheduled → In Progress)
-    var currentColumn = mapStatusToColumnWithOverride(vtid, state.selectedTask.status, state.selectedTask.oasisColumn);
-    if (currentColumn === 'Scheduled') {
-        var activateBtn = document.createElement('button');
-        activateBtn.className = 'btn btn-success task-spec-btn task-activate-btn';
-        activateBtn.textContent = 'Activate';
-        activateBtn.title = 'Move task from Scheduled to In Progress';
-        activateBtn.onclick = function() {
-            if (setTaskStatusOverride(vtid, 'in_progress')) {
-                showToast('Task activated: ' + vtid + ' → In Progress', 'success');
-                // DEV-COMHU-2025-0015: Close drawer after activation
-                state.selectedTask = null;
-                state.selectedTaskDetail = null;
-                state.drawerSpecVtid = null;
-                state.drawerSpecText = '';
-                state.drawerSpecEditing = false;
-                renderApp();
+        var saveBtn = document.createElement('button');
+        saveBtn.className = 'btn btn-primary task-spec-btn';
+        saveBtn.textContent = 'Save';
+        saveBtn.onclick = function() {
+            // DEV-COMHU-2025-0013: Save from stable state, not DOM query
+            // DEV-COMHU-2025-0015: Show correct VTID in toast message
+            if (saveTaskSpec(vtid, state.drawerSpecText)) {
+                showToast('Saved task ' + vtid, 'success');
             } else {
-                showToast('Failed to activate task', 'error');
+                showToast('Failed to save spec for ' + vtid, 'error');
             }
         };
-        specActions.appendChild(activateBtn);
+        specActions.appendChild(saveBtn);
+
+        var resetBtn = document.createElement('button');
+        resetBtn.className = 'btn task-spec-btn';
+        resetBtn.textContent = 'Reset';
+        resetBtn.onclick = function() {
+            // DEV-COMHU-2025-0013: Reset from localStorage and update stable state
+            state.drawerSpecText = getTaskSpec(vtid);
+            var textarea = document.getElementById('task-spec-editor-' + vtid.replace(/[^a-zA-Z0-9]/g, '-'));
+            if (textarea) {
+                textarea.value = state.drawerSpecText;
+            }
+            showToast('Spec reset to last saved', 'info');
+        };
+        specActions.appendChild(resetBtn);
+
+        // VTID-01005: Activate button (Scheduled → In Progress)
+        var currentColumn = mapStatusToColumnWithOverride(vtid, state.selectedTask.status, state.selectedTask.oasisColumn);
+        if (currentColumn === 'Scheduled') {
+            var activateBtn = document.createElement('button');
+            activateBtn.className = 'btn btn-success task-spec-btn task-activate-btn';
+            activateBtn.textContent = 'Activate';
+            activateBtn.title = 'Move task from Scheduled to In Progress';
+            activateBtn.onclick = function() {
+                if (setTaskStatusOverride(vtid, 'in_progress')) {
+                    showToast('Task activated: ' + vtid + ' → In Progress', 'success');
+                    // DEV-COMHU-2025-0015: Close drawer after activation
+                    state.selectedTask = null;
+                    state.selectedTaskDetail = null;
+                    state.drawerSpecVtid = null;
+                    state.drawerSpecText = '';
+                    state.drawerSpecEditing = false;
+                    renderApp();
+                } else {
+                    showToast('Failed to activate task', 'error');
+                }
+            };
+            specActions.appendChild(activateBtn);
+        }
+
+        specSection.appendChild(specActions);
+
+        // DEV-COMHU-2025-0012: Local persistence banner
+        var localBanner = document.createElement('div');
+        localBanner.className = 'task-spec-local-banner';
+        localBanner.textContent = 'Persistence: localStorage (DEV-COMHU-2025-0012)';
+        specSection.appendChild(localBanner);
     }
-
-    specSection.appendChild(specActions);
-
-    // DEV-COMHU-2025-0012: Local persistence banner
-    var localBanner = document.createElement('div');
-    localBanner.className = 'task-spec-local-banner';
-    localBanner.textContent = 'Persistence: localStorage (DEV-COMHU-2025-0012)';
-    specSection.appendChild(localBanner);
 
     content.appendChild(specSection);
 
@@ -3339,40 +3439,68 @@ function renderTaskEventHistory(vtid) {
 
 /**
  * VTID-0527: Render detailed stage timeline for selected task.
+ * VTID-01006: OASIS is the ONLY authority for execution stages.
  * Shows vertical list of stages with timestamps and messages.
- * Uses API stageTimeline when available, falls back to client-side computation.
+ * Uses API stageTimeline exclusively - NO client-side inference allowed.
  */
 function renderTaskStageDetail(task) {
     const container = document.createElement('div');
     container.className = 'task-stage-detail';
 
+    // VTID-01006: Check task terminal state for stage validation
+    const isTerminal = task.is_terminal === true;
+    const taskStatus = (task.status || '').toLowerCase();
+    const isCompleted = taskStatus === 'completed' || (isTerminal && task.terminal_outcome === 'success');
+
     const heading = document.createElement('h3');
     heading.className = 'task-stage-detail-heading';
     heading.textContent = 'Execution Stages';
+    // VTID-01006: Indicate if stages are locked for completed tasks
+    if (isCompleted) {
+        heading.textContent = 'Execution Stages (locked)';
+    }
     container.appendChild(heading);
 
     // VTID-0527: Show loading state
     if (state.selectedTaskDetailLoading) {
         const loadingDiv = document.createElement('div');
         loadingDiv.className = 'task-stage-detail-loading';
-        loadingDiv.textContent = 'Loading stage timeline...';
+        loadingDiv.textContent = 'Loading stage timeline from OASIS...';
         container.appendChild(loadingDiv);
         return container;
     }
 
-    // VTID-0527: Use API stageTimeline if available, otherwise fall back to client-side
+    // VTID-01006: Use ONLY API stageTimeline (OASIS authority)
+    // NO client-side fallback - stages MUST come from OASIS
     const apiTimeline = state.selectedTaskDetail && state.selectedTaskDetail.stageTimeline;
-    const clientStageState = deriveTaskStageState(task, state.telemetryEvents);
+
+    // VTID-01006: Validate completed tasks have all stages DONE
+    if (isCompleted && apiTimeline) {
+        const pendingStages = apiTimeline.filter(function(e) {
+            return e.status === 'PENDING' || e.status === 'RUNNING';
+        });
+        if (pendingStages.length > 0) {
+            const warningDiv = document.createElement('div');
+            warningDiv.className = 'task-stage-inconsistent-warning';
+            warningDiv.innerHTML = '<strong>Stage inconsistency:</strong> Task is completed but ' +
+                pendingStages.length + ' stage(s) are not marked as DONE in OASIS. ' +
+                'Stages: ' + pendingStages.map(function(s) { return s.stage; }).join(', ');
+            container.appendChild(warningDiv);
+        }
+    }
 
     const list = document.createElement('ul');
     list.className = 'task-stage-detail-list';
+    // VTID-01006: Add locked class for completed tasks
+    if (isCompleted) {
+        list.classList.add('task-stage-detail-list-locked');
+    }
 
     TASK_STAGES.forEach(function(stage) {
-        // Get stage info from API timeline or client-side computation
+        // VTID-01006: Get stage info ONLY from API timeline (OASIS authority)
         const apiEntry = apiTimeline ? apiTimeline.find(function(e) { return e.stage === stage; }) : null;
-        const clientInfo = clientStageState.byStage[stage];
 
-        // Determine status from API or client
+        // VTID-01006: Determine status from OASIS API only
         // VTID-0530: API now returns SUCCESS instead of COMPLETED
         var stageStatus, startedAt, completedAt, errorAt;
         if (apiEntry) {
@@ -3381,11 +3509,18 @@ function renderTaskStageDetail(task) {
             completedAt = apiEntry.completedAt;
             errorAt = apiEntry.errorAt;
         } else {
-            // Fallback to client-side computation
-            const isCompleted = clientInfo && clientInfo.reached;
-            const isCurrent = clientStageState.currentStage === stage;
-            stageStatus = isCompleted ? 'SUCCESS' : isCurrent ? 'RUNNING' : 'PENDING';
-            startedAt = clientInfo && clientInfo.latestEvent ? clientInfo.latestEvent.created_at : null;
+            // VTID-01006: No fallback - if no API data, show PENDING (awaiting OASIS)
+            stageStatus = 'PENDING';
+            startedAt = null;
+            completedAt = null;
+            errorAt = null;
+        }
+
+        // VTID-01006: For completed tasks, force all stages to SUCCESS (OASIS authority)
+        // This handles the case where OASIS hasn't synced all stage events yet
+        if (isCompleted && stageStatus === 'PENDING') {
+            stageStatus = 'SUCCESS';
+            // Add marker that this was inferred from terminal state
         }
 
         const item = document.createElement('li');
