@@ -3098,7 +3098,7 @@ function renderTaskDrawer() {
 
     // VTID-01009: Show OASIS-derived status as authoritative (no "local override" label)
     // Priority: OASIS column > localStorage > API status
-    var oasisColumn = state.selectedTask.oasisColumn;
+    // Note: oasisColumn is already declared above at line 3001 (uppercased)
     var statusDisplay;
     if (oasisColumn === 'IN_PROGRESS') {
         // OASIS confirms in_progress via lifecycle.started event - authoritative
