@@ -1163,6 +1163,9 @@ const state = {
         avatar: 'DS'
     },
 
+    // VTID-01014: View Role (persisted in localStorage)
+    viewRole: localStorage.getItem('vitana.viewRole') || 'Admin',
+
     // Docs / Screen Inventory
     screenInventory: null,
     screenInventoryLoading: false,
@@ -2286,14 +2289,29 @@ function renderSidebar() {
     const sidebar = document.createElement('div');
     sidebar.className = `sidebar ${state.sidebarCollapsed ? 'collapsed' : ''}`;
 
-    // Brand (VTID-0508)
+    // Brand + Collapse Toggle (VTID-01014: collapse button in header)
     const brand = document.createElement('div');
     brand.className = 'sidebar-brand';
-    if (state.sidebarCollapsed) {
-        brand.textContent = 'VD';
-    } else {
-        brand.innerHTML = 'VITANA DEV';
+
+    if (!state.sidebarCollapsed) {
+        const brandTitle = document.createElement('span');
+        brandTitle.className = 'brand-title';
+        brandTitle.textContent = 'VITANA DEV';
+        brand.appendChild(brandTitle);
     }
+
+    // Collapse button in header
+    const collapseBtn = document.createElement('button');
+    collapseBtn.className = 'collapse-btn';
+    collapseBtn.innerHTML = state.sidebarCollapsed ? '&#x276F;' : '&#x276E;';
+    collapseBtn.title = state.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar';
+    collapseBtn.onclick = (e) => {
+        e.stopPropagation();
+        state.sidebarCollapsed = !state.sidebarCollapsed;
+        renderApp();
+    };
+    brand.appendChild(collapseBtn);
+
     sidebar.appendChild(brand);
 
     // Modules
@@ -2341,7 +2359,7 @@ function renderSidebar() {
 
         const role = document.createElement('div');
         role.className = 'sidebar-profile-role';
-        role.textContent = state.user.role;
+        role.textContent = state.viewRole; // VTID-01014: Use viewRole
         info.appendChild(role);
 
         profile.appendChild(info);
@@ -2357,15 +2375,7 @@ function renderSidebar() {
 
     sidebar.appendChild(sidebarFooter);
 
-    // Toggle
-    const toggle = document.createElement('div');
-    toggle.className = 'collapse-toggle';
-    toggle.innerHTML = state.sidebarCollapsed ? '&raquo;' : '&laquo;';
-    toggle.onclick = () => {
-        state.sidebarCollapsed = !state.sidebarCollapsed;
-        renderApp();
-    };
-    sidebar.appendChild(toggle);
+    // VTID-01014: Old toggle removed - collapse button now in header
 
     return sidebar;
 }
@@ -3999,8 +4009,40 @@ function renderProfileModal() {
 
     const badge = document.createElement('div');
     badge.className = 'profile-role-badge';
-    badge.textContent = state.user.role;
+    badge.textContent = state.viewRole; // VTID-01014: Use viewRole
     body.appendChild(badge);
+
+    // VTID-01014: Role Switcher dropdown
+    const VIEW_ROLES = ['Community', 'Patient', 'Professional', 'Staff', 'Admin', 'Developer'];
+    const roleSwitcher = document.createElement('div');
+    roleSwitcher.className = 'profile-role-switcher';
+
+    const roleLabel = document.createElement('label');
+    roleLabel.textContent = 'View as:';
+    roleLabel.setAttribute('for', 'profile-role-select');
+    roleSwitcher.appendChild(roleLabel);
+
+    const roleSelect = document.createElement('select');
+    roleSelect.className = 'profile-role-select';
+    roleSelect.id = 'profile-role-select';
+
+    VIEW_ROLES.forEach(r => {
+        const option = document.createElement('option');
+        option.value = r;
+        option.textContent = r;
+        if (r === state.viewRole) option.selected = true;
+        roleSelect.appendChild(option);
+    });
+
+    roleSelect.onchange = (e) => {
+        const newRole = e.target.value;
+        state.viewRole = newRole;
+        localStorage.setItem('vitana.viewRole', newRole);
+        renderApp();
+    };
+
+    roleSwitcher.appendChild(roleSelect);
+    body.appendChild(roleSwitcher);
 
     modal.appendChild(body);
 
