@@ -189,7 +189,11 @@ export type CicdEventType =
   | 'cicd.approval.denied'
   // VTID-01005: Terminal Lifecycle Events (MANDATORY for governance compliance)
   | 'vtid.lifecycle.completed'
-  | 'vtid.lifecycle.failed';
+  | 'vtid.lifecycle.failed'
+  // VTID-01018: Operator Action Lifecycle Events (MANDATORY for hard contract)
+  | 'operator.action.started'
+  | 'operator.action.completed'
+  | 'operator.action.failed';
 
 export interface CicdOasisEvent {
   vtid: string;
@@ -301,3 +305,90 @@ export const SENSITIVE_PATHS = [
   'prod/',
   '.github/workflows/',      // Workflow modifications need extra review
 ] as const;
+
+// ==================== VTID-01018: Operator Action Hard Contract ====================
+// Canonical event payload structure with MANDATORY fields.
+// Backend MUST reject any action if any required field is missing.
+
+/**
+ * VTID-01018: Operator action status - exactly one terminal state required
+ */
+export type OperatorActionStatus = 'started' | 'completed' | 'failed';
+
+/**
+ * VTID-01018: Operator action types for command classification
+ */
+export type OperatorActionType =
+  | 'deploy'
+  | 'chat'
+  | 'upload'
+  | 'task_create'
+  | 'command'
+  | 'repair'
+  | 'session';
+
+/**
+ * VTID-01018: Canonical operator action event payload
+ * ALL fields are MANDATORY unless explicitly marked nullable.
+ * Backend rejects the action if any required field is missing.
+ */
+export interface OperatorActionEventPayload {
+  /** VTID this action relates to (nullable if not task-bound) */
+  vtid: string | null;
+  /** Unique ID for this action execution */
+  operator_action_id: string;
+  /** ID of the operator performing the action */
+  operator_id: string;
+  /** Role of the operator */
+  operator_role: 'operator' | 'admin' | 'system';
+  /** Classification of the action */
+  action_type: OperatorActionType;
+  /** SHA-256 hash of the action payload for verification */
+  action_payload_hash: string;
+  /** Current action status */
+  status: OperatorActionStatus;
+  /** Source of this event - always 'operator' */
+  source: 'operator';
+  /** ISO 8601 timestamp */
+  timestamp: string;
+  /** Action-specific payload data */
+  payload?: Record<string, unknown>;
+}
+
+/**
+ * VTID-01018: Zod schema for hard validation of operator action events
+ */
+export const OperatorActionEventPayloadSchema = z.object({
+  vtid: z.string().nullable(),
+  operator_action_id: z.string().uuid('operator_action_id must be a valid UUID'),
+  operator_id: z.string().min(1, 'operator_id is required'),
+  operator_role: z.enum(['operator', 'admin', 'system']),
+  action_type: z.enum(['deploy', 'chat', 'upload', 'task_create', 'command', 'repair', 'session']),
+  action_payload_hash: z.string().min(64, 'action_payload_hash must be a valid SHA-256 hash').max(64),
+  status: z.enum(['started', 'completed', 'failed']),
+  source: z.literal('operator'),
+  timestamp: z.string().datetime('timestamp must be a valid ISO 8601 datetime'),
+  payload: z.record(z.unknown()).optional(),
+});
+
+/**
+ * VTID-01018: Structured error response for OASIS write failures
+ */
+export interface OasisWriteFailedError {
+  error: 'oasis_write_failed';
+  reason: string;
+  operator_action_id: string;
+  timestamp: string;
+}
+
+/**
+ * VTID-01018: Action execution result
+ */
+export interface OperatorActionResult<T = unknown> {
+  ok: boolean;
+  operator_action_id: string;
+  started_event_id?: string;
+  terminal_event_id?: string;
+  data?: T;
+  oasis_error?: OasisWriteFailedError;
+}

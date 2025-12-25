@@ -1,5 +1,5 @@
 /**
- * Operator Routes - VTID-0509 + VTID-0510 + VTID-0525 + VTID-0531 + VTID-0532 + VTID-0536
+ * Operator Routes - VTID-0509 + VTID-0510 + VTID-0525 + VTID-0531 + VTID-0532 + VTID-0536 + VTID-01018
  *
  * VTID-0509: Operator Console API (chat, heartbeat, history, upload, session)
  * VTID-0510: Software Version Tracking (deployments)
@@ -7,6 +7,11 @@
  * VTID-0531: Operator Chat → OASIS Integration & Thread/VTID Hardening
  * VTID-0532: Operator Task Extractor + VTID/Planner Handoff
  * VTID-0536: Gemini Operator Tools Bridge (autopilot.create_task, get_status, list_recent_tasks)
+ * VTID-01018: Operator → OASIS Reliability (Hard Contract Lock)
+ *             - Mandatory operator.action.started/completed/failed lifecycle
+ *             - Canonical payload validation with hard rejection
+ *             - Atomicity: started must persist before terminal event
+ *             - Failure enforcement: OASIS write failure = action failure
  *
  * Final API endpoints (after mounting at /api/v1/operator):
  * - POST /api/v1/operator/chat - Operator chat with AI (+ task extraction VTID-0532 + tools VTID-0536)
@@ -54,8 +59,24 @@ import {
   // ALLOWED_COMMAND_SERVICES,
 } from '../types/operator-command';
 import cicdEvents from '../services/oasis-event-service';
+// VTID-01018: Hard contract enforcement for operator actions
+import { executeWithOasisContract, OperatorActionContext } from '../services/operator-action-contract';
+import { OperatorActionResult, OasisWriteFailedError } from '../types/cicd';
 
 const router = Router();
+
+// VTID-01018: Helper to extract operator ID from request (default to 'system' for now)
+function getOperatorId(req: Request): string {
+  // TODO: Extract from auth headers when authentication is implemented
+  return (req.headers['x-operator-id'] as string) || 'system';
+}
+
+// VTID-01018: Helper to extract operator role from request
+function getOperatorRole(req: Request): 'operator' | 'admin' | 'system' {
+  const role = req.headers['x-operator-role'] as string;
+  if (role === 'admin' || role === 'operator') return role;
+  return 'system';
+}
 
 // ==================== VTID-0509 Schemas ====================
 
@@ -520,15 +541,16 @@ import { emitOasisEvent } from '../services/oasis-event-service';
  * POST /deploy → /api/v1/operator/deploy
  * Deploy orchestrator: uses the shared deploy service (same as Publish modal).
  * This is the single orchestrator that executes deployment workflows.
+ * VTID-01018: Updated with hard OASIS contract enforcement.
  */
 router.post('/deploy', async (req: Request, res: Response) => {
   const requestId = randomUUID();
-  console.log(`[Operator Deploy] Request ${requestId} started`);
+  console.log(`[VTID-01018] Operator Deploy ${requestId} started`);
 
   try {
     const validation = OperatorDeployRequestSchema.safeParse(req.body);
     if (!validation.success) {
-      console.warn(`[Operator Deploy] Validation failed:`, validation.error.errors);
+      console.warn(`[VTID-01018] Deploy validation failed:`, validation.error.errors);
       return res.status(400).json({
         ok: false,
         vtid: req.body?.vtid || 'UNKNOWN',
@@ -539,25 +561,71 @@ router.post('/deploy', async (req: Request, res: Response) => {
     }
 
     const { vtid, service, environment, source } = validation.data;
+    const operatorId = getOperatorId(req);
+    const operatorRole = getOperatorRole(req);
 
-    // Use the shared deploy orchestrator (same implementation as Publish modal)
-    const result = await deployOrchestrator.executeDeploy({
+    // VTID-01018: Execute deploy with hard OASIS contract
+    const actionContext: OperatorActionContext = {
+      vtid,
+      operatorId,
+      operatorRole,
+      actionType: 'deploy',
+      actionPayload: {
+        service,
+        environment,
+        source,
+        request_id: requestId,
+      },
+    };
+
+    const result = await executeWithOasisContract(actionContext, async () => {
+      // Use the shared deploy orchestrator (same implementation as Publish modal)
+      const deployResult = await deployOrchestrator.executeDeploy({
+        vtid,
+        service,
+        environment,
+        source,
+      });
+
+      if (!deployResult.ok) {
+        throw new Error(deployResult.error || 'Deploy execution failed');
+      }
+
+      return deployResult;
+    });
+
+    if (!result.ok) {
+      // VTID-01018: Return structured error with OASIS failure details
+      return res.status(500).json({
+        ok: false,
+        vtid,
+        service,
+        environment,
+        error: result.oasis_error?.reason || 'Deploy failed with OASIS contract violation',
+        operator_action_id: result.operator_action_id,
+      } as OperatorDeployResponse);
+    }
+
+    const deployData = result.data as { workflow_run_id?: number; workflow_url?: string };
+
+    return res.status(200).json({
+      ok: true,
       vtid,
       service,
       environment,
-      source,
-    });
-
-    return res.status(result.ok ? 200 : 500).json(result as OperatorDeployResponse);
+      workflow_run_id: deployData.workflow_run_id,
+      workflow_url: deployData.workflow_url,
+      operator_action_id: result.operator_action_id,
+    } as OperatorDeployResponse);
 
   } catch (error: any) {
-    console.warn(`[Operator Deploy] Error:`, error);
+    console.error(`[VTID-01018] Unhandled deploy error:`, error);
     return res.status(500).json({
       ok: false,
       vtid: req.body?.vtid || 'UNKNOWN',
       service: req.body?.service || 'UNKNOWN',
       environment: 'dev',
-      error: error.message
+      error: error.message,
     } as OperatorDeployResponse);
   }
 });
@@ -566,19 +634,22 @@ router.post('/deploy', async (req: Request, res: Response) => {
  * POST /command → /api/v1/operator/command
  *
  * VTID-0525-B: Simplified MVP command parser.
+ * VTID-01018: Updated with hard OASIS contract enforcement.
+ *
  * - Simple deterministic matching (no NL parsing for now)
  * - Only supports explicit deploy commands: "deploy gateway to dev", "deploy oasis-operator to dev"
  * - Uses placeholder VTID instead of auto-creating in vtid_ledger
  * - Uses existing CICD bridge (same as Publish modal)
+ * - MANDATORY: All actions emit started + terminal OASIS events
  */
 router.post('/command', async (req: Request, res: Response) => {
   const requestId = randomUUID();
-  console.log(`[VTID-0525-B] Operator Command ${requestId} started`);
+  console.log(`[VTID-01018] Operator Command ${requestId} started`);
 
   try {
     const validation = OperatorCommandRequestSchema.safeParse(req.body);
     if (!validation.success) {
-      console.warn(`[VTID-0525-B] Validation failed:`, validation.error.errors);
+      console.warn(`[VTID-01018] Validation failed:`, validation.error.errors);
       return res.status(400).json({
         ok: false,
         vtid: 'UNKNOWN',
@@ -589,148 +660,117 @@ router.post('/command', async (req: Request, res: Response) => {
 
     const { message, environment } = validation.data;
     const normalized = message.trim().toLowerCase();
+    const operatorId = getOperatorId(req);
+    const operatorRole = getOperatorRole(req);
 
     // VTID-0525-B: Generate a simple placeholder VTID
     const timestamp = Date.now().toString(36).toUpperCase();
     const vtid = `OASIS-CMD-${timestamp}`;
-    console.log(`[VTID-0525-B] Using placeholder VTID: ${vtid}`);
+    console.log(`[VTID-01018] Using placeholder VTID: ${vtid}`);
 
-    // VTID-0525-B: Simple deterministic command matching (MVP)
-    // Supported commands:
-    // - "deploy gateway to dev"
-    // - "deploy oasis-operator to dev"
-    // - "deploy oasis-projector to dev"
-
-    // Check for deploy gateway command
-    if (normalized === 'deploy gateway to dev' ||
-        normalized.startsWith('deploy gateway')) {
-      console.log(`[VTID-0525-B] Matched: deploy gateway`);
-
-      // Write operator event to OASIS
-      await emitOasisEvent({
+    // VTID-01018: Helper to execute deploy with hard contract
+    const executeDeployWithContract = async (service: 'gateway' | 'oasis-operator' | 'oasis-projector'): Promise<OperatorCommandResponse> => {
+      const actionContext: OperatorActionContext = {
         vtid,
-        type: 'operator.action.scheduled' as any,
-        source: 'operator.console.chat',
-        status: 'info',
-        message: `Scheduled deploy: gateway to dev`,
-        payload: {
-          action_type: 'deploy',
-          service: 'gateway',
+        operatorId,
+        operatorRole,
+        actionType: 'deploy',
+        actionPayload: {
+          service,
           environment: 'dev',
+          message,
+          request_id: requestId,
         },
-      }).catch(err => console.warn('[VTID-0525-B] Event emit failed:', err));
+      };
 
-      // Execute deploy using the shared orchestrator (same as Publish modal)
-      const deployResult = await deployOrchestrator.executeDeploy({
-        vtid,
-        service: 'gateway',
-        environment: 'dev',
-        source: 'operator.console.chat',
+      const result = await executeWithOasisContract(actionContext, async () => {
+        // Execute deploy using the shared orchestrator
+        const deployResult = await deployOrchestrator.executeDeploy({
+          vtid,
+          service,
+          environment: 'dev',
+          source: 'operator.console.chat',
+        });
+
+        if (!deployResult.ok) {
+          throw new Error(deployResult.error || 'Deploy execution failed');
+        }
+
+        return deployResult;
       });
 
-      const reply = deployResult.ok
-        ? `Deploy requested: gateway to dev. CI/CD pipeline started. ${deployResult.workflow_url ? `Workflow: ${deployResult.workflow_url}` : ''}`
-        : `Deploy failed for gateway: ${deployResult.error}`;
+      if (!result.ok) {
+        // VTID-01018: OASIS write failed OR action failed - return structured error
+        const errorResponse: OperatorCommandResponse = {
+          ok: false,
+          vtid,
+          reply: result.oasis_error
+            ? `Deploy blocked: OASIS event write failed - ${result.oasis_error.reason}`
+            : `Deploy failed for ${service}: unknown error`,
+          error: result.oasis_error?.reason || 'oasis_write_failed',
+          operator_action_id: result.operator_action_id,
+        };
+        return errorResponse;
+      }
 
-      return res.status(200).json({
-        ok: deployResult.ok,
+      const deployData = result.data as { workflow_url?: string };
+      return {
+        ok: true,
         vtid,
-        reply,
-        command: { action: 'deploy', service: 'gateway', environment: 'dev' },
-        workflow_url: deployResult.workflow_url,
-        error: deployResult.error,
-      } as OperatorCommandResponse);
+        reply: `Deploy requested: ${service} to dev. CI/CD pipeline started. ${deployData.workflow_url ? `Workflow: ${deployData.workflow_url}` : ''}`,
+        command: { action: 'deploy' as const, service, environment: 'dev' as const, vtid, branch: 'main', dry_run: false },
+        workflow_url: deployData.workflow_url,
+        operator_action_id: result.operator_action_id,
+      };
+    };
+
+    // VTID-0525-B: Simple deterministic command matching (MVP)
+    // Check for deploy gateway command
+    if (normalized === 'deploy gateway to dev' || normalized.startsWith('deploy gateway')) {
+      console.log(`[VTID-01018] Matched: deploy gateway`);
+      const response = await executeDeployWithContract('gateway');
+      return res.status(response.ok ? 200 : 500).json(response);
     }
 
     // Check for deploy oasis-operator command
-    if (normalized === 'deploy oasis-operator to dev' ||
-        normalized.startsWith('deploy oasis-operator')) {
-      console.log(`[VTID-0525-B] Matched: deploy oasis-operator`);
-
-      await emitOasisEvent({
-        vtid,
-        type: 'operator.action.scheduled' as any,
-        source: 'operator.console.chat',
-        status: 'info',
-        message: `Scheduled deploy: oasis-operator to dev`,
-        payload: {
-          action_type: 'deploy',
-          service: 'oasis-operator',
-          environment: 'dev',
-        },
-      }).catch(err => console.warn('[VTID-0525-B] Event emit failed:', err));
-
-      const deployResult = await deployOrchestrator.executeDeploy({
-        vtid,
-        service: 'oasis-operator',
-        environment: 'dev',
-        source: 'operator.console.chat',
-      });
-
-      const reply = deployResult.ok
-        ? `Deploy requested: oasis-operator to dev. CI/CD pipeline started. ${deployResult.workflow_url ? `Workflow: ${deployResult.workflow_url}` : ''}`
-        : `Deploy failed for oasis-operator: ${deployResult.error}`;
-
-      return res.status(200).json({
-        ok: deployResult.ok,
-        vtid,
-        reply,
-        command: { action: 'deploy', service: 'oasis-operator', environment: 'dev' },
-        workflow_url: deployResult.workflow_url,
-        error: deployResult.error,
-      } as OperatorCommandResponse);
+    if (normalized === 'deploy oasis-operator to dev' || normalized.startsWith('deploy oasis-operator')) {
+      console.log(`[VTID-01018] Matched: deploy oasis-operator`);
+      const response = await executeDeployWithContract('oasis-operator');
+      return res.status(response.ok ? 200 : 500).json(response);
     }
 
     // Check for deploy oasis-projector command
-    if (normalized === 'deploy oasis-projector to dev' ||
-        normalized.startsWith('deploy oasis-projector')) {
-      console.log(`[VTID-0525-B] Matched: deploy oasis-projector`);
-
-      await emitOasisEvent({
-        vtid,
-        type: 'operator.action.scheduled' as any,
-        source: 'operator.console.chat',
-        status: 'info',
-        message: `Scheduled deploy: oasis-projector to dev`,
-        payload: {
-          action_type: 'deploy',
-          service: 'oasis-projector',
-          environment: 'dev',
-        },
-      }).catch(err => console.warn('[VTID-0525-B] Event emit failed:', err));
-
-      const deployResult = await deployOrchestrator.executeDeploy({
-        vtid,
-        service: 'oasis-projector',
-        environment: 'dev',
-        source: 'operator.console.chat',
-      });
-
-      const reply = deployResult.ok
-        ? `Deploy requested: oasis-projector to dev. CI/CD pipeline started. ${deployResult.workflow_url ? `Workflow: ${deployResult.workflow_url}` : ''}`
-        : `Deploy failed for oasis-projector: ${deployResult.error}`;
-
-      return res.status(200).json({
-        ok: deployResult.ok,
-        vtid,
-        reply,
-        command: { action: 'deploy', service: 'oasis-projector', environment: 'dev' },
-        workflow_url: deployResult.workflow_url,
-        error: deployResult.error,
-      } as OperatorCommandResponse);
+    if (normalized === 'deploy oasis-projector to dev' || normalized.startsWith('deploy oasis-projector')) {
+      console.log(`[VTID-01018] Matched: deploy oasis-projector`);
+      const response = await executeDeployWithContract('oasis-projector');
+      return res.status(response.ok ? 200 : 500).json(response);
     }
 
-    // VTID-0525-B: Unrecognized command - return helpful message
-    console.log(`[VTID-0525-B] Unrecognized command: "${message}"`);
+    // VTID-01018: Unrecognized command - emit failed action event
+    console.log(`[VTID-01018] Unrecognized command: "${message}"`);
+
+    const actionContext: OperatorActionContext = {
+      vtid,
+      operatorId,
+      operatorRole,
+      actionType: 'command',
+      actionPayload: { message, request_id: requestId },
+    };
+
+    const result = await executeWithOasisContract(actionContext, async () => {
+      throw new Error('Command not recognized');
+    });
+
     return res.status(200).json({
       ok: false,
       vtid,
       reply: 'I currently only understand commands like "Deploy gateway to dev". Natural language commands will be added in a future update.',
       error: 'Command not recognized',
+      operator_action_id: result.operator_action_id,
     } as OperatorCommandResponse);
 
   } catch (error: any) {
-    console.warn(`[VTID-0525-B] Error:`, error);
+    console.error(`[VTID-01018] Unhandled error:`, error);
     return res.status(500).json({
       ok: false,
       vtid: 'UNKNOWN',

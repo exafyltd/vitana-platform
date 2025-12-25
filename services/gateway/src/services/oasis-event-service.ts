@@ -470,6 +470,105 @@ export const cicdEvents = {
       payload: { approval_id: approvalId, approval_type: type, denied_by: deniedBy, reason, denied_at: new Date().toISOString() },
     }),
 
+  // ==================== VTID-01018: Operator Action Lifecycle Events ====================
+  // These events enforce the hard contract for operator actions.
+  // Every operator action MUST emit started + exactly one terminal event.
+
+  /**
+   * VTID-01018: Emit operator.action.started event
+   * This MUST be emitted BEFORE any action execution begins.
+   * MANDATORY for hard contract compliance.
+   */
+  operatorActionStarted: (
+    vtid: string | null,
+    operatorActionId: string,
+    operatorId: string,
+    operatorRole: 'operator' | 'admin' | 'system',
+    actionType: string,
+    actionPayloadHash: string,
+    payload?: Record<string, unknown>
+  ) =>
+    emitOasisEvent({
+      vtid: vtid || 'VTID-01018',
+      type: 'operator.action.started',
+      source: 'operator-console',
+      status: 'info',
+      message: `Operator action started: ${actionType}`,
+      payload: {
+        operator_action_id: operatorActionId,
+        operator_id: operatorId,
+        operator_role: operatorRole,
+        action_type: actionType,
+        action_payload_hash: actionPayloadHash,
+        source: 'operator',
+        ...payload,
+      },
+    }),
+
+  /**
+   * VTID-01018: Emit operator.action.completed event
+   * This MUST be emitted when an action completes successfully.
+   * MANDATORY for hard contract compliance.
+   */
+  operatorActionCompleted: (
+    vtid: string | null,
+    operatorActionId: string,
+    operatorId: string,
+    operatorRole: 'operator' | 'admin' | 'system',
+    actionType: string,
+    actionPayloadHash: string,
+    payload?: Record<string, unknown>
+  ) =>
+    emitOasisEvent({
+      vtid: vtid || 'VTID-01018',
+      type: 'operator.action.completed',
+      source: 'operator-console',
+      status: 'success',
+      message: `Operator action completed: ${actionType}`,
+      payload: {
+        operator_action_id: operatorActionId,
+        operator_id: operatorId,
+        operator_role: operatorRole,
+        action_type: actionType,
+        action_payload_hash: actionPayloadHash,
+        source: 'operator',
+        ...payload,
+      },
+    }),
+
+  /**
+   * VTID-01018: Emit operator.action.failed event
+   * This MUST be emitted when an action fails.
+   * MANDATORY for hard contract compliance.
+   */
+  operatorActionFailed: (
+    vtid: string | null,
+    operatorActionId: string,
+    operatorId: string,
+    operatorRole: 'operator' | 'admin' | 'system',
+    actionType: string,
+    actionPayloadHash: string,
+    errorReason: string,
+    payload?: Record<string, unknown>
+  ) =>
+    emitOasisEvent({
+      vtid: vtid || 'VTID-01018',
+      type: 'operator.action.failed',
+      source: 'operator-console',
+      status: 'error',
+      message: `Operator action failed: ${actionType} - ${errorReason}`,
+      payload: {
+        operator_action_id: operatorActionId,
+        operator_id: operatorId,
+        operator_role: operatorRole,
+        action_type: actionType,
+        action_payload_hash: actionPayloadHash,
+        source: 'operator',
+        error_reason: errorReason,
+        ...payload,
+      },
+    }),
+
   // ==================== VTID-01005: Terminal Lifecycle Events ====================
   // These are the MANDATORY terminal events that must be emitted for every VTID
   // that reaches a terminal state. OASIS is the single source of truth.

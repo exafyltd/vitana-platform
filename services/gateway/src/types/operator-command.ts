@@ -80,6 +80,7 @@ export type OperatorCommandRequest = z.infer<typeof OperatorCommandRequestSchema
 
 /**
  * Response for POST /api/v1/operator/command
+ * VTID-01018: Added operator_action_id for OASIS event trail tracking
  */
 export interface OperatorCommandResponse {
   ok: boolean;
@@ -90,6 +91,8 @@ export interface OperatorCommandResponse {
   workflow_url?: string; // For deploy commands
   error?: string;
   details?: Record<string, unknown>;
+  /** VTID-01018: Unique ID for this action's OASIS event trail */
+  operator_action_id?: string;
 }
 
 // ==================== Operator Deploy Request ====================
@@ -110,6 +113,7 @@ export type OperatorDeployRequest = z.infer<typeof OperatorDeployRequestSchema>;
 
 /**
  * Response for POST /api/v1/operator/deploy
+ * VTID-01018: Added operator_action_id for OASIS event trail tracking
  */
 export interface OperatorDeployResponse {
   ok: boolean;
@@ -119,6 +123,8 @@ export interface OperatorDeployResponse {
   workflow_run_id?: number;
   workflow_url?: string;
   error?: string;
+  /** VTID-01018: Unique ID for this action's OASIS event trail */
+  operator_action_id?: string;
 }
 
 // ==================== Gemini Command Parsing ====================
