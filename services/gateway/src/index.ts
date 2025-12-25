@@ -71,6 +71,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const { setupCors, sseHeaders } = require('./middleware/cors');
   const governanceRouter = require('./routes/governance').default;
   const { oasisTasksRouter } = require('./routes/oasis-tasks');
+  const { oasisVtidLedgerRouter } = require('./routes/oasis-vtid-ledger');
   const cicdRouter = require('./routes/cicd').default;
   const operatorRouter = require('./routes/operator').default;
   const { router: telemetryRouter } = require('./routes/telemetry');
@@ -245,6 +246,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   app.use(eventsApiRouter);
   app.use(eventsRouter);
   app.use(oasisTasksRouter);
+  // VTID-01020: VTID Ledger JSON endpoint
+  app.use(oasisVtidLedgerRouter);
 
   // VTID-0529-C: Static files MUST be served BEFORE the router
   const staticPath = path.join(__dirname, 'frontend/command-hub');
