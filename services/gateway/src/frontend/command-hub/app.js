@@ -2825,50 +2825,6 @@ function renderTasksView() {
 
     container.appendChild(toolbar);
 
-    // DEV-COMHU-2025-0011: Fingerprint for deployment verification
-    var fingerprint = document.createElement('div');
-    fingerprint.className = 'view-fingerprint';
-    fingerprint.textContent = 'Data: OASIS_EVENTS (VTID-01005)';
-    container.appendChild(fingerprint);
-
-    // DEV-COMHU-2025-0013: Task Management v1 fingerprint (muted line, non-disruptive)
-    var fingerprint2 = document.createElement('div');
-    fingerprint2.className = 'view-fingerprint-muted';
-    fingerprint2.textContent = 'Task Mgmt v2: OASIS (VTID-01005)';
-    container.appendChild(fingerprint2);
-
-    // VTID-01010: Role filter chips
-    const roleFilterBar = document.createElement('div');
-    roleFilterBar.className = 'role-filter-bar';
-
-    // Add "All" filter chip
-    const allChip = document.createElement('button');
-    allChip.className = 'role-filter-chip' + (state.taskRoleFilter === 'ALL' ? ' role-filter-chip-active' : '');
-    allChip.textContent = 'All';
-    allChip.onclick = function() {
-        state.taskRoleFilter = 'ALL';
-        renderApp();
-    };
-    roleFilterBar.appendChild(allChip);
-
-    // Add chip for each role
-    TARGET_ROLES.forEach(function(role) {
-        const chip = document.createElement('button');
-        chip.className = 'role-filter-chip role-filter-chip-' + role.toLowerCase();
-        if (state.taskRoleFilter === role) {
-            chip.classList.add('role-filter-chip-active');
-        }
-        chip.textContent = role;
-        chip.title = TARGET_ROLE_LABELS[role] || role;
-        chip.onclick = function() {
-            state.taskRoleFilter = role;
-            renderApp();
-        };
-        roleFilterBar.appendChild(chip);
-    });
-
-    container.appendChild(roleFilterBar);
-
     // Golden Task Board
     const board = document.createElement('div');
     board.className = 'task-board';
@@ -3970,9 +3926,13 @@ function renderTaskModal() {
     titleGroup.appendChild(titleInput);
     body.appendChild(titleGroup);
 
+    // VTID-01012: VTID + Status in one row
+    const vtidStatusRow = document.createElement('div');
+    vtidStatusRow.className = 'form-row';
+
     // VTID-0542: VTID is now auto-generated via allocator, show read-only preview
     const vtidGroup = document.createElement('div');
-    vtidGroup.className = 'form-group';
+    vtidGroup.className = 'form-group form-group-half';
     const vtidLabel = document.createElement('label');
     vtidLabel.textContent = 'VTID';
     vtidGroup.appendChild(vtidLabel);
@@ -3983,16 +3943,11 @@ function renderTaskModal() {
     vtidInput.readOnly = true;
     vtidInput.disabled = true;
     vtidGroup.appendChild(vtidInput);
-    body.appendChild(vtidGroup);
-
-    const vtidNote = document.createElement('div');
-    vtidNote.className = 'form-note';
-    vtidNote.textContent = 'VTID will be auto-allocated when you create the task (VTID-0542)';
-    body.appendChild(vtidNote);
+    vtidStatusRow.appendChild(vtidGroup);
 
     // VTID-01003: Status select with controlled state
     const statusGroup = document.createElement('div');
-    statusGroup.className = 'form-group';
+    statusGroup.className = 'form-group form-group-half';
     const statusLabel = document.createElement('label');
     statusLabel.textContent = 'Status';
     statusGroup.appendChild(statusLabel);
@@ -4004,7 +3959,9 @@ function renderTaskModal() {
         state.modalDraftStatus = e.target.value;
     };
     statusGroup.appendChild(statusSelect);
-    body.appendChild(statusGroup);
+    vtidStatusRow.appendChild(statusGroup);
+
+    body.appendChild(vtidStatusRow);
 
     // VTID-01010: Target Role multi-select (required)
     const roleGroup = document.createElement('div');

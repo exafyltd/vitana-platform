@@ -616,6 +616,18 @@ body {
   margin-bottom: 1rem;
 }
 
+/* VTID-01012: Form row for side-by-side fields */
+.form-row {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.form-group-half {
+  flex: 1;
+  margin-bottom: 0;
+}
+
 .form-group label {
   display: block;
   margin-bottom: 0.5rem;
@@ -648,7 +660,7 @@ body {
 
 /* VTID-01003: Modal task spec textarea */
 .task-spec-modal-textarea {
-  min-height: 100px;
+  min-height: 280px;
   resize: vertical;
   font-family: monospace;
   font-size: 0.9rem;
@@ -6538,12 +6550,13 @@ body {
 /* --- Target Role Selector (Modal) --- */
 .target-role-selector {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
   padding: 8px;
   background: rgba(0, 0, 0, 0.2);
   border-radius: 6px;
   border: 1px solid var(--color-border);
+  overflow-x: auto;
 }
 
 .target-role-option {
