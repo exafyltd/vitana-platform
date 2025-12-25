@@ -10,7 +10,8 @@
 // VTID-01010: Target Role as Mandatory Task Contract
 // VTID-01016: OASIS Event Authority - Deterministic Stage/Status Derivation
 // VTID-01017: Scheduled Column Hard Eligibility + Remove Archive UI
-console.log('🔥 COMMAND HUB BUNDLE: VTID-01017 LIVE 🔥');
+// VTID-01019: Operator Console UI Binding to OASIS Truth - No optimistic UI
+console.log('🔥 COMMAND HUB BUNDLE: VTID-01019 LIVE 🔥');
 
 // ===========================================================================
 // VTID-01010: Target Role Constants (canonical)
@@ -1166,6 +1167,12 @@ const state = {
     // Operator Ticker State
     tickerEvents: [],
 
+    // VTID-01019: Pending Operator Actions (OASIS ACK Binding)
+    // Tracks actions awaiting OASIS confirmation - UI shows Loading until confirmed
+    pendingOperatorActions: [],
+    // Structure: { id, type, vtid, startedAt, timeoutMs, description }
+    // Types: 'deploy', 'approval', 'chat'
+
     // VTID-0526-D: Stage Counters State (4-stage model)
     stageCounters: {
         PLANNER: 0,
@@ -1925,6 +1932,7 @@ async function fetchApprovals() {
 
 /**
  * VTID-0601: Approve an approval item (merge + optional deploy)
+ * VTID-01019: Uses OASIS ACK binding - no optimistic UI
  */
 async function approveApprovalItem(approvalId) {
     console.log('[VTID-0601] Approving item:', approvalId);
@@ -1939,16 +1947,44 @@ async function approveApprovalItem(approvalId) {
         var data = await response.json();
 
         if (data.ok) {
-            showToast('Approval executed successfully! PR merged' + (data.deploy ? ' and deploy triggered.' : '.'), 'success');
-            // Refresh approvals list
+            // ===========================================================
+            // VTID-01019: OASIS ACK Binding - No optimistic success UI
+            // Register pending action and wait for OASIS confirmation
+            // ===========================================================
+            var vtid = data.vtid || ('VTID-APPROVE-' + approvalId);
+            var prTitle = data.pr_title || ('PR #' + (data.pr_number || approvalId));
+
+            registerPendingAction({
+                id: data.event_id || 'approve-' + approvalId,
+                type: 'approval',
+                vtid: vtid,
+                description: 'Approve ' + prTitle + (data.deploy ? ' + deploy' : '')
+            });
+
+            // VTID-01019: Show LOADING toast instead of SUCCESS
+            showToast('Approval submitted - awaiting confirmation...', 'info');
+
+            // Add to ticker with "requested" status
+            state.tickerEvents.unshift({
+                id: Date.now(),
+                timestamp: new Date().toLocaleTimeString(),
+                type: 'cicd',
+                topic: 'cicd.approval.requested',
+                content: 'Approval requested: ' + prTitle + ' - awaiting OASIS confirmation',
+                vtid: vtid
+            });
+
+            // Refresh approvals list (shows pending state)
             state.approvals.fetched = false;
             await fetchApprovals();
         } else {
+            // VTID-01019: Immediate backend failure
             showToast('Approval failed: ' + (data.error || 'Unknown error'), 'error');
             state.approvals.loading = false;
             renderApp();
         }
     } catch (err) {
+        // VTID-01019: Immediate network/backend error
         showToast('Approval failed: ' + err.message, 'error');
         state.approvals.loading = false;
         renderApp();
@@ -8178,6 +8214,16 @@ async function sendChatMessage() {
                 if (result.createdTask.title) {
                     replyContent += ` - ${result.createdTask.title}`;
                 }
+
+                // VTID-01019: Add task creation to Live Feed for consistency
+                state.tickerEvents.unshift({
+                    id: Date.now(),
+                    timestamp: new Date().toLocaleTimeString(),
+                    type: 'operator',
+                    topic: 'operator.chat.task.created',
+                    content: 'Task created via chat: ' + result.createdTask.vtid,
+                    vtid: result.createdTask.vtid
+                });
             }
 
             state.chatMessages.push({
@@ -9011,7 +9057,9 @@ function renderPublishModal() {
                     id: Date.now(),
                     timestamp: new Date().toLocaleTimeString(),
                     type: 'governance',
-                    content: 'governance.deploy.blocked: ' + selectedVersion.swv + ' deployment stopped'
+                    topic: 'governance.deploy.blocked',
+                    content: 'governance.deploy.blocked: ' + selectedVersion.swv + ' deployment stopped',
+                    vtid: payload.vtid
                 });
 
                 renderApp();
@@ -9023,23 +9071,45 @@ function renderPublishModal() {
             }
 
             console.log('[VTID-0523-B] Deploy queued:', result);
+
+            // ===========================================================
+            // VTID-01019: OASIS ACK Binding - No optimistic success UI
+            // Register pending action and wait for OASIS confirmation
+            // ===========================================================
+            const actionVtid = payload.vtid;
+            const commitShort = selectedVersion.commit ? selectedVersion.commit.substring(0, 7) : '';
+
+            registerPendingAction({
+                id: result.event_id || 'deploy-' + Date.now(),
+                type: 'deploy',
+                vtid: actionVtid,
+                description: 'Deploy ' + selectedVersion.swv + ' (' + commitShort + ')'
+            });
+
+            // Close modal but show LOADING state (not success)
             state.showPublishModal = false;
 
-            const commitShort = selectedVersion.commit ? selectedVersion.commit.substring(0, 7) : '';
-            showToast('Deployment started: ' + selectedVersion.swv + ' (' + commitShort + ')', 'success');
+            // VTID-01019: Show LOADING toast instead of SUCCESS
+            // Success will be shown when OASIS confirms via SSE
+            showToast('Deployment submitted - awaiting confirmation...', 'info');
 
-            // Add to ticker with full version details and governance allowed event
+            // Add to ticker with "requested" status (not "allowed" - that's optimistic)
             state.tickerEvents.unshift({
                 id: Date.now(),
                 timestamp: new Date().toLocaleTimeString(),
-                type: 'governance',
-                content: 'governance.deploy.allowed: ' + selectedVersion.swv + ' deployment started'
+                type: 'deploy',
+                topic: 'cicd.deploy.requested',
+                content: 'Deploy requested: ' + selectedVersion.swv + ' - awaiting OASIS confirmation',
+                vtid: actionVtid,
+                swv: selectedVersion.swv,
+                service: payload.service
             });
 
             renderApp();
 
         } catch (error) {
             console.error('[VTID-0523-B] Deploy error:', error);
+            // VTID-01019: Immediate failure is shown directly (backend error, not OASIS failure)
             showToast('Deploy failed: ' + error.message, 'error');
             deployBtn.disabled = false;
             deployBtn.textContent = 'Deploy ' + selectedVersion.swv;
@@ -9371,6 +9441,158 @@ async function fetchHeartbeatSnapshot() {
     }
 }
 
+// ===========================================================================
+// VTID-01019: OASIS ACK Binding - Pending Action Management
+// ===========================================================================
+
+/**
+ * VTID-01019: Action states for UI discipline
+ * ONLY these states are allowed in the UI.
+ */
+const OPERATOR_ACTION_STATE = {
+    LOADING: 'loading',
+    SUCCESS: 'success',
+    FAILURE: 'failure'
+};
+
+/**
+ * VTID-01019: Default timeout for pending actions (30 seconds)
+ */
+const PENDING_ACTION_TIMEOUT_MS = 30000;
+
+/**
+ * VTID-01019: Register a new pending operator action.
+ * The UI will show Loading state until OASIS confirms completion or failure.
+ * @param {Object} params - Action parameters
+ * @param {string} params.id - Unique action ID (usually from API response)
+ * @param {string} params.type - Action type: 'deploy', 'approval', 'chat'
+ * @param {string} params.vtid - Associated VTID (required for correlation)
+ * @param {string} params.description - Human-readable description for UI
+ * @param {number} [params.timeoutMs] - Timeout in ms (default: 30000)
+ * @returns {Object} The registered pending action
+ */
+function registerPendingAction(params) {
+    const action = {
+        id: params.id || 'action-' + Date.now(),
+        type: params.type,
+        vtid: params.vtid,
+        description: params.description,
+        startedAt: new Date().toISOString(),
+        timeoutMs: params.timeoutMs || PENDING_ACTION_TIMEOUT_MS,
+        state: OPERATOR_ACTION_STATE.LOADING
+    };
+
+    console.log('[VTID-01019] Registered pending action:', action);
+    state.pendingOperatorActions.push(action);
+
+    // Set up timeout handler
+    setTimeout(() => {
+        handlePendingActionTimeout(action.id);
+    }, action.timeoutMs);
+
+    return action;
+}
+
+/**
+ * VTID-01019: Handle timeout for a pending action.
+ * If action still pending after timeout, mark as failed.
+ */
+function handlePendingActionTimeout(actionId) {
+    const actionIndex = state.pendingOperatorActions.findIndex(a => a.id === actionId);
+    if (actionIndex === -1) {
+        // Already resolved
+        return;
+    }
+
+    const action = state.pendingOperatorActions[actionIndex];
+    console.warn('[VTID-01019] Pending action TIMEOUT:', action);
+
+    // Mark as failed due to timeout
+    resolvePendingAction(actionId, false, {
+        error: 'Backend timeout - no OASIS confirmation received',
+        event_id: null
+    });
+}
+
+/**
+ * VTID-01019: Resolve a pending action with success or failure.
+ * @param {string} actionId - The action ID to resolve
+ * @param {boolean} success - Whether the action succeeded
+ * @param {Object} [details] - Additional details for failure transparency
+ * @param {string} [details.event_id] - OASIS event ID (if available)
+ * @param {string} [details.error] - Error message (for failures)
+ */
+function resolvePendingAction(actionId, success, details = {}) {
+    const actionIndex = state.pendingOperatorActions.findIndex(a => a.id === actionId);
+    if (actionIndex === -1) {
+        console.warn('[VTID-01019] Cannot resolve unknown action:', actionId);
+        return;
+    }
+
+    const action = state.pendingOperatorActions[actionIndex];
+    action.state = success ? OPERATOR_ACTION_STATE.SUCCESS : OPERATOR_ACTION_STATE.FAILURE;
+    action.resolvedAt = new Date().toISOString();
+    action.event_id = details.event_id || null;
+    action.error = details.error || null;
+
+    console.log('[VTID-01019] Resolved pending action:', action);
+
+    // Remove from pending list
+    state.pendingOperatorActions.splice(actionIndex, 1);
+
+    // Show appropriate toast with failure transparency
+    if (success) {
+        showToast(action.description + ' completed', 'success');
+    } else {
+        // VTID-01019: Failure transparency - show event_id and reason
+        let failureMsg = action.description + ' failed';
+        if (details.error) {
+            failureMsg += ': ' + details.error;
+        }
+        if (details.event_id) {
+            failureMsg += ' [Event: ' + details.event_id + ']';
+        }
+        showToast(failureMsg, 'error');
+    }
+
+    // Add to ticker events for Live Feed consistency
+    state.tickerEvents.unshift({
+        id: details.event_id || Date.now(),
+        timestamp: new Date().toLocaleTimeString(),
+        type: success ? 'success' : 'error',
+        topic: 'operator.action.' + (success ? 'completed' : 'failed'),
+        content: action.description + (success ? ' succeeded' : ' failed'),
+        vtid: action.vtid,
+        event_id: details.event_id || null
+    });
+
+    renderApp();
+}
+
+/**
+ * VTID-01019: Find pending action by VTID.
+ * Used by SSE handler to correlate OASIS events with pending actions.
+ */
+function findPendingActionByVtid(vtid) {
+    return state.pendingOperatorActions.find(a => a.vtid === vtid);
+}
+
+/**
+ * VTID-01019: Check if there's a pending action for a given VTID.
+ */
+function hasPendingActionForVtid(vtid) {
+    return state.pendingOperatorActions.some(a => a.vtid === vtid);
+}
+
+/**
+ * VTID-01019: Get the current state of a pending action.
+ * Returns null if no pending action exists for the VTID.
+ */
+function getPendingActionState(vtid) {
+    const action = findPendingActionByVtid(vtid);
+    return action ? action.state : null;
+}
+
 /**
  * Start SSE stream for operator channel
  */
@@ -9403,6 +9625,57 @@ function startOperatorSse() {
             const topic = event.topic || event.type || 'unknown';
             const service = event.service || (event.payload && event.payload.service) || null;
             const message = event.message || (event.payload && event.payload.message) || '';
+
+            // ===========================================================
+            // VTID-01019: OASIS ACK Binding - Check for action confirmations
+            // UI success ONLY after OASIS confirmation, never optimistically
+            // ===========================================================
+            if (vtid && hasPendingActionForVtid(vtid)) {
+                const pendingAction = findPendingActionByVtid(vtid);
+                console.log('[VTID-01019] Checking event for pending action:', topic, vtid);
+
+                // Define success/failure event patterns
+                const successPatterns = [
+                    'cicd.deploy.service.succeeded',
+                    'cicd.deploy.service.accepted',
+                    'deploy.gateway.success',
+                    'cicd.github.safe_merge.executed',
+                    'cicd.merge.success',
+                    'vtid.lifecycle.completed',
+                    'operator.action.completed'
+                ];
+                const failurePatterns = [
+                    'cicd.deploy.service.failed',
+                    'cicd.deploy.service.blocked',
+                    'deploy.gateway.failed',
+                    'cicd.merge.failed',
+                    'governance.deploy.blocked',
+                    'vtid.lifecycle.failed',
+                    'operator.action.failed'
+                ];
+
+                const topicLower = topic.toLowerCase();
+                const isSuccess = successPatterns.some(p => topicLower === p.toLowerCase() ||
+                    topicLower.includes(p.toLowerCase()));
+                const isFailure = failurePatterns.some(p => topicLower === p.toLowerCase() ||
+                    topicLower.includes(p.toLowerCase()));
+
+                if (isSuccess) {
+                    console.log('[VTID-01019] OASIS confirmed SUCCESS for action:', pendingAction.id);
+                    resolvePendingAction(pendingAction.id, true, {
+                        event_id: event.id,
+                        message: message
+                    });
+                } else if (isFailure) {
+                    console.log('[VTID-01019] OASIS confirmed FAILURE for action:', pendingAction.id);
+                    resolvePendingAction(pendingAction.id, false, {
+                        event_id: event.id,
+                        error: message || topic.replace(/\./g, ' ')
+                    });
+                }
+                // Note: If neither success nor failure, action remains pending
+                // until timeout or another event resolves it
+            }
 
             // Build display content with deploy event info
             let displayContent = message || topic;
