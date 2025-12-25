@@ -11,7 +11,8 @@
 // VTID-01016: OASIS Event Authority - Deterministic Stage/Status Derivation
 // VTID-01017: Scheduled Column Hard Eligibility + Remove Archive UI
 // VTID-01019: Operator Console UI Binding to OASIS Truth - No optimistic UI
-console.log('🔥 COMMAND HUB BUNDLE: VTID-01019 LIVE 🔥');
+// VTID-01021: Board Column Placement + Status Normalization
+console.log('🔥 COMMAND HUB BUNDLE: VTID-01021 LIVE 🔥');
 
 // ===========================================================================
 // VTID-01010: Target Role Constants (canonical)
@@ -70,7 +71,8 @@ function deriveVtidStageStatus(item) {
     }
 
     // Priority 4: Map "Moving" and other non-terminal statuses
-    // Stage determines display, status becomes 'in_progress' for active work
+    // Stage determines display, status becomes 'in_progress' only for active work stages
+    // VTID-01021: Do NOT treat 'queued' or Planner stage as in_progress
     switch (backendStage) {
         case 'Done':
             return { stage: 'Done', status: 'success' };
@@ -81,8 +83,9 @@ function deriveVtidStageStatus(item) {
         case 'Worker':
             return { stage: 'Worker', status: 'in_progress' };
         case 'Planner':
-            // Planner stage with Moving → lifecycle started, queued for work
-            return { stage: 'Queued', status: 'in_progress' };
+            // VTID-01021: Planner stage means task is scheduled/queued, NOT in_progress
+            // Task remains in Scheduled column until explicitly started
+            return { stage: 'Scheduled', status: 'scheduled' };
         default:
             // Unknown stage → default to Scheduled
             return { stage: 'Scheduled', status: 'scheduled' };
@@ -214,12 +217,13 @@ function isEligibleScheduled(task) {
         return false;
     }
 
-    // Rule B: Only truly scheduled status
+    // Rule B: Scheduled or pending status (VTID-01021: pending = not activated yet)
     var statusNorm = String(task.status || '').toLowerCase();
     if (statusNorm === 'allocated') {
         return false;
     }
-    if (statusNorm !== 'scheduled') {
+    // VTID-01021: Allow both 'scheduled' and 'pending' in Scheduled column
+    if (statusNorm !== 'scheduled' && statusNorm !== 'pending') {
         return false;
     }
 
@@ -1117,6 +1121,8 @@ const state = {
     tasks: [],
     tasksLoading: false,
     tasksError: null,
+    // VTID-01021: Preserve last good data on API failure
+    lastGoodTasks: null,
     selectedTask: null,
     // VTID-0527: VTID detail with stageTimeline from API
     selectedTaskDetail: null,
@@ -1356,11 +1362,14 @@ const state = {
     },
 
     // VTID-01001: VTID Projection for decision-grade visibility
+    // VTID-01021: Uses /api/v1/oasis/vtid-ledger endpoint with error resilience
     vtidProjection: {
         items: [],
         loading: false,
         error: null,
-        fetched: false
+        fetched: false,
+        // VTID-01021: Preserve last good data on API failure
+        lastGoodItems: null
     },
 
     // VTID-0600: Approvals UI Scaffolding
@@ -1857,20 +1866,21 @@ async function fetchVtidLedger() {
 const VTID_PROJECTION_LIMIT = 50;
 
 async function fetchVtidProjection() {
-    console.log('[VTID-01001] Fetching VTID projection...');
+    console.log('[VTID-01021] Fetching VTID ledger...');
     state.vtidProjection.loading = true;
     state.vtidProjection.error = null;
     renderApp();
 
     try {
-        var response = await fetch('/api/v1/vtid/projection?limit=' + VTID_PROJECTION_LIMIT);
+        // VTID-01021: Use the authoritative OASIS VTID ledger endpoint
+        var response = await fetch('/api/v1/oasis/vtid-ledger?limit=' + VTID_PROJECTION_LIMIT);
         if (!response.ok) {
-            throw new Error('VTID projection fetch failed: ' + response.status);
+            throw new Error('VTID ledger fetch failed: ' + response.status);
         }
 
         var data = await response.json();
 
-        // Handle response format: { ok: true, count: N, data: [...] }
+        // VTID-01021: Robust JSON parsing - handle multiple response formats
         var items = [];
         if (Array.isArray(data)) {
             items = data;
@@ -1878,19 +1888,30 @@ async function fetchVtidProjection() {
             items = data.data;
         } else if (data && Array.isArray(data.items)) {
             items = data.items;
+        } else if (data && data.ok === true && Array.isArray(data.ledger)) {
+            items = data.ledger;
         } else {
-            console.warn('[VTID-01001] Unexpected response format:', data);
+            console.warn('[VTID-01021] Unexpected response format:', data);
             items = [];
         }
 
-        console.log('[VTID-01001] VTID projection loaded:', items.length, 'VTIDs');
+        console.log('[VTID-01021] VTID ledger loaded:', items.length, 'VTIDs');
         state.vtidProjection.items = items;
+        // VTID-01021: Save last good data for fallback on future failures
+        state.vtidProjection.lastGoodItems = items.slice();
         state.vtidProjection.error = null;
         state.vtidProjection.fetched = true;
     } catch (error) {
-        console.error('[VTID-01001] Failed to fetch VTID projection:', error);
+        console.error('[VTID-01021] Failed to fetch VTID ledger:', error);
         state.vtidProjection.error = error.message;
-        state.vtidProjection.items = [];
+        // VTID-01021: Preserve last good data on API failure - do NOT fabricate status
+        if (state.vtidProjection.lastGoodItems && state.vtidProjection.lastGoodItems.length > 0) {
+            state.vtidProjection.items = state.vtidProjection.lastGoodItems;
+            console.log('[VTID-01021] Using last good ledger data:', state.vtidProjection.items.length, 'items');
+        } else {
+            state.vtidProjection.items = [];
+        }
+        state.vtidProjection.fetched = true;
     } finally {
         state.vtidProjection.loading = false;
         renderApp();
@@ -3004,10 +3025,19 @@ function renderTasksView() {
         return container;
     }
 
+    // VTID-01021: Show error banner but continue rendering from last good data
     if (state.tasksError) {
-        board.innerHTML = `<div class="placeholder-content error-text">Error: ${state.tasksError}</div>`;
-        container.appendChild(board);
-        return container;
+        var errorBanner = document.createElement('div');
+        errorBanner.className = 'vtid-ledger-error-banner';
+        errorBanner.textContent = 'Data sync error: ' + state.tasksError + (state.tasks.length > 0 ? ' (showing last known data)' : '');
+        container.appendChild(errorBanner);
+
+        // If no data at all, show unavailable state
+        if (state.tasks.length === 0) {
+            board.innerHTML = '<div class="placeholder-content error-text">Board data unavailable. Please retry.</div>';
+            container.appendChild(board);
+            return container;
+        }
     }
 
     const columns = ['Scheduled', 'In Progress', 'Completed'];
@@ -4585,20 +4615,39 @@ function getEffectiveStatus(vtid, apiStatus) {
 
 /**
  * VTID-01005: Map status to column with OASIS-derived column as authoritative source.
- * Priority: OASIS column > local override > status-based mapping
+ * VTID-01021: Status-based validation for In Progress column.
+ * Priority: Status validation > OASIS column > local override > status-based mapping
  * Used for column filtering in the task board.
  */
 function mapStatusToColumnWithOverride(vtid, apiStatus, oasisColumn) {
-    // VTID-01005: OASIS-derived column takes precedence (single source of truth)
+    var effectiveStatus = getEffectiveStatus(vtid, apiStatus);
+    var statusNorm = String(effectiveStatus || '').toLowerCase();
+
+    // VTID-01021: Tasks appear in In Progress ONLY if status is explicitly in_progress
+    // Do NOT treat 'queued' or missing data as in_progress
+    if (['in_progress', 'executing', 'running'].includes(statusNorm)) {
+        return 'In Progress';
+    }
+
+    // VTID-01021: pending and scheduled both go to Scheduled column (pending = not activated yet)
+    if (['scheduled', 'pending', 'created', 'registered'].includes(statusNorm)) {
+        return 'Scheduled';
+    }
+
+    // Completed states (terminal)
+    if (['deployed', 'completed', 'success', 'failed', 'blocked', 'cancelled', 'done'].includes(statusNorm)) {
+        return 'Completed';
+    }
+
+    // VTID-01005: Fallback to OASIS column for unrecognized status
     if (oasisColumn) {
-        // Normalize OASIS column names to UI column names
         if (oasisColumn === 'COMPLETED') return 'Completed';
         if (oasisColumn === 'IN_PROGRESS') return 'In Progress';
         if (oasisColumn === 'SCHEDULED') return 'Scheduled';
     }
-    // Fallback to local override or status-based mapping
-    var effectiveStatus = getEffectiveStatus(vtid, apiStatus);
-    return mapStatusToColumn(effectiveStatus);
+
+    // Default fallback: unknown status → Scheduled
+    return 'Scheduled';
 }
 
 /**
@@ -4650,12 +4699,20 @@ async function fetchTasks() {
                 createdAt: item.updated_at || item.created_at
             };
         });
+        // VTID-01021: Save last good data for fallback on future failures
+        state.lastGoodTasks = state.tasks.slice();
         state.tasksError = null;
         console.log('[VTID-01005] Tasks loaded from OASIS-derived board:', state.tasks.length, 'items');
     } catch (error) {
-        console.error('[VTID-01005] Failed to fetch tasks from Command Hub board:', error);
+        console.error('[VTID-01021] Failed to fetch tasks from Command Hub board:', error);
         state.tasksError = error.message;
-        state.tasks = [];
+        // VTID-01021: Preserve last good data on API failure - do NOT fabricate status
+        if (state.lastGoodTasks && state.lastGoodTasks.length > 0) {
+            state.tasks = state.lastGoodTasks;
+            console.log('[VTID-01021] Using last good data:', state.tasks.length, 'items');
+        } else {
+            state.tasks = [];
+        }
     } finally {
         state.tasksLoading = false;
         renderApp();
@@ -6903,11 +6960,13 @@ function renderVtidsView() {
 
     container.appendChild(toolbar);
 
-    // Error banner (visible error, not console-only)
+    // VTID-01021: Error banner with indication of last good data
     if (state.vtidProjection.error) {
         var errorBanner = document.createElement('div');
         errorBanner.className = 'vtid-ledger-error-banner';
-        errorBanner.textContent = 'Error loading VTIDs: ' + state.vtidProjection.error;
+        var hasData = state.vtidProjection.items.length > 0;
+        errorBanner.textContent = 'Data sync error: ' + state.vtidProjection.error +
+            (hasData ? ' (showing last known data)' : '');
         container.appendChild(errorBanner);
     }
 
@@ -6918,6 +6977,9 @@ function renderVtidsView() {
         statusLine.textContent = 'Loading VTIDs...';
     } else if (state.vtidProjection.fetched && !state.vtidProjection.error) {
         statusLine.textContent = 'Loaded ' + state.vtidProjection.items.length + ' VTIDs';
+    } else if (state.vtidProjection.fetched && state.vtidProjection.error && state.vtidProjection.items.length > 0) {
+        // VTID-01021: Show count when displaying last good data on error
+        statusLine.textContent = 'Showing ' + state.vtidProjection.items.length + ' VTIDs (last known data)';
     } else if (!state.vtidProjection.fetched) {
         statusLine.textContent = 'VTIDs not yet loaded';
     }
@@ -6932,8 +6994,10 @@ function renderVtidsView() {
 
     if (state.vtidProjection.loading) {
         content.innerHTML = '<div class="placeholder-content">Loading VTIDs...</div>';
-    } else if (state.vtidProjection.items.length === 0 && !state.vtidProjection.error) {
-        content.innerHTML = '<div class="placeholder-content">No VTIDs found.</div>';
+    } else if (state.vtidProjection.items.length === 0) {
+        // VTID-01021: Show appropriate message based on error state
+        var msg = state.vtidProjection.error ? 'Data unavailable. Please retry.' : 'No VTIDs found.';
+        content.innerHTML = '<div class="placeholder-content">' + msg + '</div>';
     } else if (state.vtidProjection.items.length > 0) {
         // Use projection table renderer with 5 columns
         content.appendChild(renderVtidProjectionTable(state.vtidProjection.items));
@@ -7236,7 +7300,7 @@ function renderOasisVtidLedgerView() {
     // DEV-COMHU-2025-0009: Visible fingerprint for deployment proof
     var fingerprint = document.createElement('span');
     fingerprint.className = 'view-fingerprint';
-    fingerprint.textContent = 'View: OASIS_VTID_LEDGER_ACTIVE (VTID-01001)';
+    fingerprint.textContent = 'View: OASIS_VTID_LEDGER_ACTIVE (VTID-01021)';
     header.appendChild(fingerprint);
 
     var subtitle = document.createElement('p');
@@ -7264,11 +7328,13 @@ function renderOasisVtidLedgerView() {
 
     container.appendChild(toolbar);
 
-    // Error banner
+    // VTID-01021: Error banner with indication of last good data
     if (state.vtidProjection.error) {
         var errorBanner = document.createElement('div');
         errorBanner.className = 'vtid-ledger-error-banner';
-        errorBanner.textContent = 'Error loading VTID Ledger: ' + state.vtidProjection.error;
+        var hasData = state.vtidProjection.items.length > 0;
+        errorBanner.textContent = 'Ledger sync error: ' + state.vtidProjection.error +
+            (hasData ? ' (showing last known data)' : '');
         container.appendChild(errorBanner);
     }
 
@@ -7279,6 +7345,9 @@ function renderOasisVtidLedgerView() {
         statusLine.textContent = 'Loading VTID Ledger...';
     } else if (state.vtidProjection.fetched && !state.vtidProjection.error) {
         statusLine.textContent = 'Loaded ' + state.vtidProjection.items.length + ' VTIDs from Ledger';
+    } else if (state.vtidProjection.fetched && state.vtidProjection.error && state.vtidProjection.items.length > 0) {
+        // VTID-01021: Show count when displaying last good data on error
+        statusLine.textContent = 'Showing ' + state.vtidProjection.items.length + ' VTIDs (last known data)';
     } else if (!state.vtidProjection.fetched) {
         statusLine.textContent = 'Loading VTID Ledger...';
     }
@@ -7294,8 +7363,10 @@ function renderOasisVtidLedgerView() {
 
     if (state.vtidProjection.loading || (!state.vtidProjection.fetched && !state.vtidProjection.error)) {
         listPane.innerHTML = '<div class="placeholder-content">Loading VTID Ledger...</div>';
-    } else if (state.vtidProjection.items.length === 0 && !state.vtidProjection.error) {
-        listPane.innerHTML = '<div class="placeholder-content">No VTIDs found in ledger.</div>';
+    } else if (state.vtidProjection.items.length === 0) {
+        // VTID-01021: Show appropriate message based on error state
+        var msg = state.vtidProjection.error ? 'Ledger data unavailable. Please retry.' : 'No VTIDs found in ledger.';
+        listPane.innerHTML = '<div class="placeholder-content">' + msg + '</div>';
     } else if (state.vtidProjection.items.length > 0) {
         listPane.appendChild(renderOasisLedgerTableWithDrilldown(state.vtidProjection.items));
     }

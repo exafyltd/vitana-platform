@@ -10,7 +10,9 @@
 // VTID-01010: Target Role as Mandatory Task Contract
 // VTID-01016: OASIS Event Authority - Deterministic Stage/Status Derivation
 // VTID-01017: Scheduled Column Hard Eligibility + Remove Archive UI
-console.log('🔥 COMMAND HUB BUNDLE: VTID-01017 LIVE 🔥');
+// VTID-01019: Operator Console UI Binding to OASIS Truth - No optimistic UI
+// VTID-01021: Board Column Placement + Status Normalization
+console.log('🔥 COMMAND HUB BUNDLE: VTID-01021 LIVE 🔥');
 
 // ===========================================================================
 // VTID-01010: Target Role Constants (canonical)
@@ -69,7 +71,8 @@ function deriveVtidStageStatus(item) {
     }
 
     // Priority 4: Map "Moving" and other non-terminal statuses
-    // Stage determines display, status becomes 'in_progress' for active work
+    // Stage determines display, status becomes 'in_progress' only for active work stages
+    // VTID-01021: Do NOT treat 'queued' or Planner stage as in_progress
     switch (backendStage) {
         case 'Done':
             return { stage: 'Done', status: 'success' };
@@ -80,8 +83,9 @@ function deriveVtidStageStatus(item) {
         case 'Worker':
             return { stage: 'Worker', status: 'in_progress' };
         case 'Planner':
-            // Planner stage with Moving → lifecycle started, queued for work
-            return { stage: 'Queued', status: 'in_progress' };
+            // VTID-01021: Planner stage means task is scheduled/queued, NOT in_progress
+            // Task remains in Scheduled column until explicitly started
+            return { stage: 'Scheduled', status: 'scheduled' };
         default:
             // Unknown stage → default to Scheduled
             return { stage: 'Scheduled', status: 'scheduled' };
@@ -213,12 +217,13 @@ function isEligibleScheduled(task) {
         return false;
     }
 
-    // Rule B: Only truly scheduled status
+    // Rule B: Scheduled or pending status (VTID-01021: pending = not activated yet)
     var statusNorm = String(task.status || '').toLowerCase();
     if (statusNorm === 'allocated') {
         return false;
     }
-    if (statusNorm !== 'scheduled') {
+    // VTID-01021: Allow both 'scheduled' and 'pending' in Scheduled column
+    if (statusNorm !== 'scheduled' && statusNorm !== 'pending') {
         return false;
     }
 
@@ -1116,6 +1121,8 @@ const state = {
     tasks: [],
     tasksLoading: false,
     tasksError: null,
+    // VTID-01021: Preserve last good data on API failure
+    lastGoodTasks: null,
     selectedTask: null,
     // VTID-0527: VTID detail with stageTimeline from API
     selectedTaskDetail: null,
@@ -1165,6 +1172,12 @@ const state = {
 
     // Operator Ticker State
     tickerEvents: [],
+
+    // VTID-01019: Pending Operator Actions (OASIS ACK Binding)
+    // Tracks actions awaiting OASIS confirmation - UI shows Loading until confirmed
+    pendingOperatorActions: [],
+    // Structure: { id, type, vtid, startedAt, timeoutMs, description }
+    // Types: 'deploy', 'approval', 'chat'
 
     // VTID-0526-D: Stage Counters State (4-stage model)
     stageCounters: {
@@ -1349,11 +1362,14 @@ const state = {
     },
 
     // VTID-01001: VTID Projection for decision-grade visibility
+    // VTID-01021: Uses /api/v1/oasis/vtid-ledger endpoint with error resilience
     vtidProjection: {
         items: [],
         loading: false,
         error: null,
-        fetched: false
+        fetched: false,
+        // VTID-01021: Preserve last good data on API failure
+        lastGoodItems: null
     },
 
     // VTID-0600: Approvals UI Scaffolding
@@ -1850,20 +1866,21 @@ async function fetchVtidLedger() {
 const VTID_PROJECTION_LIMIT = 50;
 
 async function fetchVtidProjection() {
-    console.log('[VTID-01001] Fetching VTID projection...');
+    console.log('[VTID-01021] Fetching VTID ledger...');
     state.vtidProjection.loading = true;
     state.vtidProjection.error = null;
     renderApp();
 
     try {
-        var response = await fetch('/api/v1/vtid/projection?limit=' + VTID_PROJECTION_LIMIT);
+        // VTID-01021: Use the authoritative OASIS VTID ledger endpoint
+        var response = await fetch('/api/v1/oasis/vtid-ledger?limit=' + VTID_PROJECTION_LIMIT);
         if (!response.ok) {
-            throw new Error('VTID projection fetch failed: ' + response.status);
+            throw new Error('VTID ledger fetch failed: ' + response.status);
         }
 
         var data = await response.json();
 
-        // Handle response format: { ok: true, count: N, data: [...] }
+        // VTID-01021: Robust JSON parsing - handle multiple response formats
         var items = [];
         if (Array.isArray(data)) {
             items = data;
@@ -1871,19 +1888,30 @@ async function fetchVtidProjection() {
             items = data.data;
         } else if (data && Array.isArray(data.items)) {
             items = data.items;
+        } else if (data && data.ok === true && Array.isArray(data.ledger)) {
+            items = data.ledger;
         } else {
-            console.warn('[VTID-01001] Unexpected response format:', data);
+            console.warn('[VTID-01021] Unexpected response format:', data);
             items = [];
         }
 
-        console.log('[VTID-01001] VTID projection loaded:', items.length, 'VTIDs');
+        console.log('[VTID-01021] VTID ledger loaded:', items.length, 'VTIDs');
         state.vtidProjection.items = items;
+        // VTID-01021: Save last good data for fallback on future failures
+        state.vtidProjection.lastGoodItems = items.slice();
         state.vtidProjection.error = null;
         state.vtidProjection.fetched = true;
     } catch (error) {
-        console.error('[VTID-01001] Failed to fetch VTID projection:', error);
+        console.error('[VTID-01021] Failed to fetch VTID ledger:', error);
         state.vtidProjection.error = error.message;
-        state.vtidProjection.items = [];
+        // VTID-01021: Preserve last good data on API failure - do NOT fabricate status
+        if (state.vtidProjection.lastGoodItems && state.vtidProjection.lastGoodItems.length > 0) {
+            state.vtidProjection.items = state.vtidProjection.lastGoodItems;
+            console.log('[VTID-01021] Using last good ledger data:', state.vtidProjection.items.length, 'items');
+        } else {
+            state.vtidProjection.items = [];
+        }
+        state.vtidProjection.fetched = true;
     } finally {
         state.vtidProjection.loading = false;
         renderApp();
@@ -1925,6 +1953,7 @@ async function fetchApprovals() {
 
 /**
  * VTID-0601: Approve an approval item (merge + optional deploy)
+ * VTID-01019: Uses OASIS ACK binding - no optimistic UI
  */
 async function approveApprovalItem(approvalId) {
     console.log('[VTID-0601] Approving item:', approvalId);
@@ -1939,16 +1968,44 @@ async function approveApprovalItem(approvalId) {
         var data = await response.json();
 
         if (data.ok) {
-            showToast('Approval executed successfully! PR merged' + (data.deploy ? ' and deploy triggered.' : '.'), 'success');
-            // Refresh approvals list
+            // ===========================================================
+            // VTID-01019: OASIS ACK Binding - No optimistic success UI
+            // Register pending action and wait for OASIS confirmation
+            // ===========================================================
+            var vtid = data.vtid || ('VTID-APPROVE-' + approvalId);
+            var prTitle = data.pr_title || ('PR #' + (data.pr_number || approvalId));
+
+            registerPendingAction({
+                id: data.event_id || 'approve-' + approvalId,
+                type: 'approval',
+                vtid: vtid,
+                description: 'Approve ' + prTitle + (data.deploy ? ' + deploy' : '')
+            });
+
+            // VTID-01019: Show LOADING toast instead of SUCCESS
+            showToast('Approval submitted - awaiting confirmation...', 'info');
+
+            // Add to ticker with "requested" status
+            state.tickerEvents.unshift({
+                id: Date.now(),
+                timestamp: new Date().toLocaleTimeString(),
+                type: 'cicd',
+                topic: 'cicd.approval.requested',
+                content: 'Approval requested: ' + prTitle + ' - awaiting OASIS confirmation',
+                vtid: vtid
+            });
+
+            // Refresh approvals list (shows pending state)
             state.approvals.fetched = false;
             await fetchApprovals();
         } else {
+            // VTID-01019: Immediate backend failure
             showToast('Approval failed: ' + (data.error || 'Unknown error'), 'error');
             state.approvals.loading = false;
             renderApp();
         }
     } catch (err) {
+        // VTID-01019: Immediate network/backend error
         showToast('Approval failed: ' + err.message, 'error');
         state.approvals.loading = false;
         renderApp();
@@ -2968,10 +3025,19 @@ function renderTasksView() {
         return container;
     }
 
+    // VTID-01021: Show error banner but continue rendering from last good data
     if (state.tasksError) {
-        board.innerHTML = `<div class="placeholder-content error-text">Error: ${state.tasksError}</div>`;
-        container.appendChild(board);
-        return container;
+        var errorBanner = document.createElement('div');
+        errorBanner.className = 'vtid-ledger-error-banner';
+        errorBanner.textContent = 'Data sync error: ' + state.tasksError + (state.tasks.length > 0 ? ' (showing last known data)' : '');
+        container.appendChild(errorBanner);
+
+        // If no data at all, show unavailable state
+        if (state.tasks.length === 0) {
+            board.innerHTML = '<div class="placeholder-content error-text">Board data unavailable. Please retry.</div>';
+            container.appendChild(board);
+            return container;
+        }
     }
 
     const columns = ['Scheduled', 'In Progress', 'Completed'];
@@ -4549,20 +4615,39 @@ function getEffectiveStatus(vtid, apiStatus) {
 
 /**
  * VTID-01005: Map status to column with OASIS-derived column as authoritative source.
- * Priority: OASIS column > local override > status-based mapping
+ * VTID-01021: Status-based validation for In Progress column.
+ * Priority: Status validation > OASIS column > local override > status-based mapping
  * Used for column filtering in the task board.
  */
 function mapStatusToColumnWithOverride(vtid, apiStatus, oasisColumn) {
-    // VTID-01005: OASIS-derived column takes precedence (single source of truth)
+    var effectiveStatus = getEffectiveStatus(vtid, apiStatus);
+    var statusNorm = String(effectiveStatus || '').toLowerCase();
+
+    // VTID-01021: Tasks appear in In Progress ONLY if status is explicitly in_progress
+    // Do NOT treat 'queued' or missing data as in_progress
+    if (['in_progress', 'executing', 'running'].includes(statusNorm)) {
+        return 'In Progress';
+    }
+
+    // VTID-01021: pending and scheduled both go to Scheduled column (pending = not activated yet)
+    if (['scheduled', 'pending', 'created', 'registered'].includes(statusNorm)) {
+        return 'Scheduled';
+    }
+
+    // Completed states (terminal)
+    if (['deployed', 'completed', 'success', 'failed', 'blocked', 'cancelled', 'done'].includes(statusNorm)) {
+        return 'Completed';
+    }
+
+    // VTID-01005: Fallback to OASIS column for unrecognized status
     if (oasisColumn) {
-        // Normalize OASIS column names to UI column names
         if (oasisColumn === 'COMPLETED') return 'Completed';
         if (oasisColumn === 'IN_PROGRESS') return 'In Progress';
         if (oasisColumn === 'SCHEDULED') return 'Scheduled';
     }
-    // Fallback to local override or status-based mapping
-    var effectiveStatus = getEffectiveStatus(vtid, apiStatus);
-    return mapStatusToColumn(effectiveStatus);
+
+    // Default fallback: unknown status → Scheduled
+    return 'Scheduled';
 }
 
 /**
@@ -4614,12 +4699,20 @@ async function fetchTasks() {
                 createdAt: item.updated_at || item.created_at
             };
         });
+        // VTID-01021: Save last good data for fallback on future failures
+        state.lastGoodTasks = state.tasks.slice();
         state.tasksError = null;
         console.log('[VTID-01005] Tasks loaded from OASIS-derived board:', state.tasks.length, 'items');
     } catch (error) {
-        console.error('[VTID-01005] Failed to fetch tasks from Command Hub board:', error);
+        console.error('[VTID-01021] Failed to fetch tasks from Command Hub board:', error);
         state.tasksError = error.message;
-        state.tasks = [];
+        // VTID-01021: Preserve last good data on API failure - do NOT fabricate status
+        if (state.lastGoodTasks && state.lastGoodTasks.length > 0) {
+            state.tasks = state.lastGoodTasks;
+            console.log('[VTID-01021] Using last good data:', state.tasks.length, 'items');
+        } else {
+            state.tasks = [];
+        }
     } finally {
         state.tasksLoading = false;
         renderApp();
@@ -6867,11 +6960,13 @@ function renderVtidsView() {
 
     container.appendChild(toolbar);
 
-    // Error banner (visible error, not console-only)
+    // VTID-01021: Error banner with indication of last good data
     if (state.vtidProjection.error) {
         var errorBanner = document.createElement('div');
         errorBanner.className = 'vtid-ledger-error-banner';
-        errorBanner.textContent = 'Error loading VTIDs: ' + state.vtidProjection.error;
+        var hasData = state.vtidProjection.items.length > 0;
+        errorBanner.textContent = 'Data sync error: ' + state.vtidProjection.error +
+            (hasData ? ' (showing last known data)' : '');
         container.appendChild(errorBanner);
     }
 
@@ -6882,6 +6977,9 @@ function renderVtidsView() {
         statusLine.textContent = 'Loading VTIDs...';
     } else if (state.vtidProjection.fetched && !state.vtidProjection.error) {
         statusLine.textContent = 'Loaded ' + state.vtidProjection.items.length + ' VTIDs';
+    } else if (state.vtidProjection.fetched && state.vtidProjection.error && state.vtidProjection.items.length > 0) {
+        // VTID-01021: Show count when displaying last good data on error
+        statusLine.textContent = 'Showing ' + state.vtidProjection.items.length + ' VTIDs (last known data)';
     } else if (!state.vtidProjection.fetched) {
         statusLine.textContent = 'VTIDs not yet loaded';
     }
@@ -6896,8 +6994,10 @@ function renderVtidsView() {
 
     if (state.vtidProjection.loading) {
         content.innerHTML = '<div class="placeholder-content">Loading VTIDs...</div>';
-    } else if (state.vtidProjection.items.length === 0 && !state.vtidProjection.error) {
-        content.innerHTML = '<div class="placeholder-content">No VTIDs found.</div>';
+    } else if (state.vtidProjection.items.length === 0) {
+        // VTID-01021: Show appropriate message based on error state
+        var msg = state.vtidProjection.error ? 'Data unavailable. Please retry.' : 'No VTIDs found.';
+        content.innerHTML = '<div class="placeholder-content">' + msg + '</div>';
     } else if (state.vtidProjection.items.length > 0) {
         // Use projection table renderer with 5 columns
         content.appendChild(renderVtidProjectionTable(state.vtidProjection.items));
@@ -7200,7 +7300,7 @@ function renderOasisVtidLedgerView() {
     // DEV-COMHU-2025-0009: Visible fingerprint for deployment proof
     var fingerprint = document.createElement('span');
     fingerprint.className = 'view-fingerprint';
-    fingerprint.textContent = 'View: OASIS_VTID_LEDGER_ACTIVE (VTID-01001)';
+    fingerprint.textContent = 'View: OASIS_VTID_LEDGER_ACTIVE (VTID-01021)';
     header.appendChild(fingerprint);
 
     var subtitle = document.createElement('p');
@@ -7228,11 +7328,13 @@ function renderOasisVtidLedgerView() {
 
     container.appendChild(toolbar);
 
-    // Error banner
+    // VTID-01021: Error banner with indication of last good data
     if (state.vtidProjection.error) {
         var errorBanner = document.createElement('div');
         errorBanner.className = 'vtid-ledger-error-banner';
-        errorBanner.textContent = 'Error loading VTID Ledger: ' + state.vtidProjection.error;
+        var hasData = state.vtidProjection.items.length > 0;
+        errorBanner.textContent = 'Ledger sync error: ' + state.vtidProjection.error +
+            (hasData ? ' (showing last known data)' : '');
         container.appendChild(errorBanner);
     }
 
@@ -7243,6 +7345,9 @@ function renderOasisVtidLedgerView() {
         statusLine.textContent = 'Loading VTID Ledger...';
     } else if (state.vtidProjection.fetched && !state.vtidProjection.error) {
         statusLine.textContent = 'Loaded ' + state.vtidProjection.items.length + ' VTIDs from Ledger';
+    } else if (state.vtidProjection.fetched && state.vtidProjection.error && state.vtidProjection.items.length > 0) {
+        // VTID-01021: Show count when displaying last good data on error
+        statusLine.textContent = 'Showing ' + state.vtidProjection.items.length + ' VTIDs (last known data)';
     } else if (!state.vtidProjection.fetched) {
         statusLine.textContent = 'Loading VTID Ledger...';
     }
@@ -7258,8 +7363,10 @@ function renderOasisVtidLedgerView() {
 
     if (state.vtidProjection.loading || (!state.vtidProjection.fetched && !state.vtidProjection.error)) {
         listPane.innerHTML = '<div class="placeholder-content">Loading VTID Ledger...</div>';
-    } else if (state.vtidProjection.items.length === 0 && !state.vtidProjection.error) {
-        listPane.innerHTML = '<div class="placeholder-content">No VTIDs found in ledger.</div>';
+    } else if (state.vtidProjection.items.length === 0) {
+        // VTID-01021: Show appropriate message based on error state
+        var msg = state.vtidProjection.error ? 'Ledger data unavailable. Please retry.' : 'No VTIDs found in ledger.';
+        listPane.innerHTML = '<div class="placeholder-content">' + msg + '</div>';
     } else if (state.vtidProjection.items.length > 0) {
         listPane.appendChild(renderOasisLedgerTableWithDrilldown(state.vtidProjection.items));
     }
@@ -8178,6 +8285,16 @@ async function sendChatMessage() {
                 if (result.createdTask.title) {
                     replyContent += ` - ${result.createdTask.title}`;
                 }
+
+                // VTID-01019: Add task creation to Live Feed for consistency
+                state.tickerEvents.unshift({
+                    id: Date.now(),
+                    timestamp: new Date().toLocaleTimeString(),
+                    type: 'operator',
+                    topic: 'operator.chat.task.created',
+                    content: 'Task created via chat: ' + result.createdTask.vtid,
+                    vtid: result.createdTask.vtid
+                });
             }
 
             state.chatMessages.push({
@@ -9011,7 +9128,9 @@ function renderPublishModal() {
                     id: Date.now(),
                     timestamp: new Date().toLocaleTimeString(),
                     type: 'governance',
-                    content: 'governance.deploy.blocked: ' + selectedVersion.swv + ' deployment stopped'
+                    topic: 'governance.deploy.blocked',
+                    content: 'governance.deploy.blocked: ' + selectedVersion.swv + ' deployment stopped',
+                    vtid: payload.vtid
                 });
 
                 renderApp();
@@ -9023,23 +9142,45 @@ function renderPublishModal() {
             }
 
             console.log('[VTID-0523-B] Deploy queued:', result);
+
+            // ===========================================================
+            // VTID-01019: OASIS ACK Binding - No optimistic success UI
+            // Register pending action and wait for OASIS confirmation
+            // ===========================================================
+            const actionVtid = payload.vtid;
+            const commitShort = selectedVersion.commit ? selectedVersion.commit.substring(0, 7) : '';
+
+            registerPendingAction({
+                id: result.event_id || 'deploy-' + Date.now(),
+                type: 'deploy',
+                vtid: actionVtid,
+                description: 'Deploy ' + selectedVersion.swv + ' (' + commitShort + ')'
+            });
+
+            // Close modal but show LOADING state (not success)
             state.showPublishModal = false;
 
-            const commitShort = selectedVersion.commit ? selectedVersion.commit.substring(0, 7) : '';
-            showToast('Deployment started: ' + selectedVersion.swv + ' (' + commitShort + ')', 'success');
+            // VTID-01019: Show LOADING toast instead of SUCCESS
+            // Success will be shown when OASIS confirms via SSE
+            showToast('Deployment submitted - awaiting confirmation...', 'info');
 
-            // Add to ticker with full version details and governance allowed event
+            // Add to ticker with "requested" status (not "allowed" - that's optimistic)
             state.tickerEvents.unshift({
                 id: Date.now(),
                 timestamp: new Date().toLocaleTimeString(),
-                type: 'governance',
-                content: 'governance.deploy.allowed: ' + selectedVersion.swv + ' deployment started'
+                type: 'deploy',
+                topic: 'cicd.deploy.requested',
+                content: 'Deploy requested: ' + selectedVersion.swv + ' - awaiting OASIS confirmation',
+                vtid: actionVtid,
+                swv: selectedVersion.swv,
+                service: payload.service
             });
 
             renderApp();
 
         } catch (error) {
             console.error('[VTID-0523-B] Deploy error:', error);
+            // VTID-01019: Immediate failure is shown directly (backend error, not OASIS failure)
             showToast('Deploy failed: ' + error.message, 'error');
             deployBtn.disabled = false;
             deployBtn.textContent = 'Deploy ' + selectedVersion.swv;
@@ -9371,6 +9512,158 @@ async function fetchHeartbeatSnapshot() {
     }
 }
 
+// ===========================================================================
+// VTID-01019: OASIS ACK Binding - Pending Action Management
+// ===========================================================================
+
+/**
+ * VTID-01019: Action states for UI discipline
+ * ONLY these states are allowed in the UI.
+ */
+const OPERATOR_ACTION_STATE = {
+    LOADING: 'loading',
+    SUCCESS: 'success',
+    FAILURE: 'failure'
+};
+
+/**
+ * VTID-01019: Default timeout for pending actions (30 seconds)
+ */
+const PENDING_ACTION_TIMEOUT_MS = 30000;
+
+/**
+ * VTID-01019: Register a new pending operator action.
+ * The UI will show Loading state until OASIS confirms completion or failure.
+ * @param {Object} params - Action parameters
+ * @param {string} params.id - Unique action ID (usually from API response)
+ * @param {string} params.type - Action type: 'deploy', 'approval', 'chat'
+ * @param {string} params.vtid - Associated VTID (required for correlation)
+ * @param {string} params.description - Human-readable description for UI
+ * @param {number} [params.timeoutMs] - Timeout in ms (default: 30000)
+ * @returns {Object} The registered pending action
+ */
+function registerPendingAction(params) {
+    const action = {
+        id: params.id || 'action-' + Date.now(),
+        type: params.type,
+        vtid: params.vtid,
+        description: params.description,
+        startedAt: new Date().toISOString(),
+        timeoutMs: params.timeoutMs || PENDING_ACTION_TIMEOUT_MS,
+        state: OPERATOR_ACTION_STATE.LOADING
+    };
+
+    console.log('[VTID-01019] Registered pending action:', action);
+    state.pendingOperatorActions.push(action);
+
+    // Set up timeout handler
+    setTimeout(() => {
+        handlePendingActionTimeout(action.id);
+    }, action.timeoutMs);
+
+    return action;
+}
+
+/**
+ * VTID-01019: Handle timeout for a pending action.
+ * If action still pending after timeout, mark as failed.
+ */
+function handlePendingActionTimeout(actionId) {
+    const actionIndex = state.pendingOperatorActions.findIndex(a => a.id === actionId);
+    if (actionIndex === -1) {
+        // Already resolved
+        return;
+    }
+
+    const action = state.pendingOperatorActions[actionIndex];
+    console.warn('[VTID-01019] Pending action TIMEOUT:', action);
+
+    // Mark as failed due to timeout
+    resolvePendingAction(actionId, false, {
+        error: 'Backend timeout - no OASIS confirmation received',
+        event_id: null
+    });
+}
+
+/**
+ * VTID-01019: Resolve a pending action with success or failure.
+ * @param {string} actionId - The action ID to resolve
+ * @param {boolean} success - Whether the action succeeded
+ * @param {Object} [details] - Additional details for failure transparency
+ * @param {string} [details.event_id] - OASIS event ID (if available)
+ * @param {string} [details.error] - Error message (for failures)
+ */
+function resolvePendingAction(actionId, success, details = {}) {
+    const actionIndex = state.pendingOperatorActions.findIndex(a => a.id === actionId);
+    if (actionIndex === -1) {
+        console.warn('[VTID-01019] Cannot resolve unknown action:', actionId);
+        return;
+    }
+
+    const action = state.pendingOperatorActions[actionIndex];
+    action.state = success ? OPERATOR_ACTION_STATE.SUCCESS : OPERATOR_ACTION_STATE.FAILURE;
+    action.resolvedAt = new Date().toISOString();
+    action.event_id = details.event_id || null;
+    action.error = details.error || null;
+
+    console.log('[VTID-01019] Resolved pending action:', action);
+
+    // Remove from pending list
+    state.pendingOperatorActions.splice(actionIndex, 1);
+
+    // Show appropriate toast with failure transparency
+    if (success) {
+        showToast(action.description + ' completed', 'success');
+    } else {
+        // VTID-01019: Failure transparency - show event_id and reason
+        let failureMsg = action.description + ' failed';
+        if (details.error) {
+            failureMsg += ': ' + details.error;
+        }
+        if (details.event_id) {
+            failureMsg += ' [Event: ' + details.event_id + ']';
+        }
+        showToast(failureMsg, 'error');
+    }
+
+    // Add to ticker events for Live Feed consistency
+    state.tickerEvents.unshift({
+        id: details.event_id || Date.now(),
+        timestamp: new Date().toLocaleTimeString(),
+        type: success ? 'success' : 'error',
+        topic: 'operator.action.' + (success ? 'completed' : 'failed'),
+        content: action.description + (success ? ' succeeded' : ' failed'),
+        vtid: action.vtid,
+        event_id: details.event_id || null
+    });
+
+    renderApp();
+}
+
+/**
+ * VTID-01019: Find pending action by VTID.
+ * Used by SSE handler to correlate OASIS events with pending actions.
+ */
+function findPendingActionByVtid(vtid) {
+    return state.pendingOperatorActions.find(a => a.vtid === vtid);
+}
+
+/**
+ * VTID-01019: Check if there's a pending action for a given VTID.
+ */
+function hasPendingActionForVtid(vtid) {
+    return state.pendingOperatorActions.some(a => a.vtid === vtid);
+}
+
+/**
+ * VTID-01019: Get the current state of a pending action.
+ * Returns null if no pending action exists for the VTID.
+ */
+function getPendingActionState(vtid) {
+    const action = findPendingActionByVtid(vtid);
+    return action ? action.state : null;
+}
+
 /**
  * Start SSE stream for operator channel
  */
@@ -9403,6 +9696,57 @@ function startOperatorSse() {
             const topic = event.topic || event.type || 'unknown';
             const service = event.service || (event.payload && event.payload.service) || null;
             const message = event.message || (event.payload && event.payload.message) || '';
+
+            // ===========================================================
+            // VTID-01019: OASIS ACK Binding - Check for action confirmations
+            // UI success ONLY after OASIS confirmation, never optimistically
+            // ===========================================================
+            if (vtid && hasPendingActionForVtid(vtid)) {
+                const pendingAction = findPendingActionByVtid(vtid);
+                console.log('[VTID-01019] Checking event for pending action:', topic, vtid);
+
+                // Define success/failure event patterns
+                const successPatterns = [
+                    'cicd.deploy.service.succeeded',
+                    'cicd.deploy.service.accepted',
+                    'deploy.gateway.success',
+                    'cicd.github.safe_merge.executed',
+                    'cicd.merge.success',
+                    'vtid.lifecycle.completed',
+                    'operator.action.completed'
+                ];
+                const failurePatterns = [
+                    'cicd.deploy.service.failed',
+                    'cicd.deploy.service.blocked',
+                    'deploy.gateway.failed',
+                    'cicd.merge.failed',
+                    'governance.deploy.blocked',
+                    'vtid.lifecycle.failed',
+                    'operator.action.failed'
+                ];
+
+                const topicLower = topic.toLowerCase();
+                const isSuccess = successPatterns.some(p => topicLower === p.toLowerCase() ||
+                    topicLower.includes(p.toLowerCase()));
+                const isFailure = failurePatterns.some(p => topicLower === p.toLowerCase() ||
+                    topicLower.includes(p.toLowerCase()));
+
+                if (isSuccess) {
+                    console.log('[VTID-01019] OASIS confirmed SUCCESS for action:', pendingAction.id);
+                    resolvePendingAction(pendingAction.id, true, {
+                        event_id: event.id,
+                        message: message
+                    });
+                } else if (isFailure) {
+                    console.log('[VTID-01019] OASIS confirmed FAILURE for action:', pendingAction.id);
+                    resolvePendingAction(pendingAction.id, false, {
+                        event_id: event.id,
+                        error: message || topic.replace(/\./g, ' ')
+                    });
+                }
+                // Note: If neither success nor failure, action remains pending
+                // until timeout or another event resolves it
+            }
 
             // Build display content with deploy event info
             let displayContent = message || topic;
