@@ -29,7 +29,9 @@ const PROTECTED_PATH = 'services/gateway/src/frontend/command-hub/';
 // VTID-01009: Activate emits authoritative OASIS lifecycle.started event
 // VTID-01010: Target Role as Mandatory Task Contract (Command Hub + OASIS)
 // VTID-01012: Task UI cleanup + Create Modal layout fixes
-const ALLOWED_VTID_PATTERN = /DEV-COMHU-\d+|VTID-0302|VTID-0539|VTID-0541|VTID-0542|VTID-0600|VTID-0601|VTID-01001|VTID-01002|VTID-01003|VTID-01005|VTID-01006|VTID-01009|VTID-01010|VTID-01012|global-vtid-allocator|vtid-ledger-visibility/i;
+// VTID-01013: Scheduled Column Hygiene (Auto-Archive + Default Filters)
+// VTID-01015: Scheduled Eligibility Filter + UX Cleanup (Remove Counters)
+const ALLOWED_VTID_PATTERN = /DEV-COMHU-\d+|VTID-0302|VTID-0539|VTID-0541|VTID-0542|VTID-0600|VTID-0601|VTID-01001|VTID-01002|VTID-01003|VTID-01005|VTID-01006|VTID-01009|VTID-01010|VTID-01012|VTID-01013|VTID-01015|global-vtid-allocator|vtid-ledger-visibility/i;
 
 function getChangedFiles() {
   try {
