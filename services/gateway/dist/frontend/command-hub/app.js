@@ -7,7 +7,23 @@
 // DEV-COMHU-2025-0015: Fix Task Board UX + VTID labels + OASIS events formatting
 // VTID-01002: Global Scroll Retention Guard - polling uses incremental updates, not renderApp()
 // VTID-01003: Fix Create Task modal (input reset), add Task Spec field, drawer metadata order + timestamp format
-console.log('🔥 COMMAND HUB BUNDLE: VTID-01003 LIVE 🔥');
+// VTID-01010: Target Role as Mandatory Task Contract
+// VTID-01013: Scheduled Column Hygiene (Auto-Archive + Default Filters)
+console.log('🔥 COMMAND HUB BUNDLE: VTID-01013 LIVE 🔥');
+
+// ===========================================================================
+// VTID-01010: Target Role Constants (canonical)
+// ===========================================================================
+const TARGET_ROLES = ['DEV', 'COM', 'ADM', 'PRO', 'ERP', 'PAT', 'INFRA'];
+const TARGET_ROLE_LABELS = {
+    'DEV': 'Vitana Developer',
+    'COM': 'Community',
+    'ADM': 'Admin',
+    'PRO': 'Professional',
+    'ERP': 'Staff',
+    'PAT': 'Patient',
+    'INFRA': 'Infrastructure'
+};
 
 // --- DEV-COMHU-2025-0012: LocalStorage Helpers for Task Management v1 ---
 
@@ -106,6 +122,109 @@ function dismissApproval(repo, prNumber) {
     } catch (e) {
         return false;
     }
+}
+
+// ===========================================================================
+// VTID-01013: Scheduled Column Hygiene Helpers
+// ===========================================================================
+
+/**
+ * VTID-01013: Get show archived scheduled preference from localStorage.
+ * Key: cmdhub.showArchivedScheduled
+ */
+function getShowArchivedScheduled() {
+    try {
+        return localStorage.getItem('cmdhub.showArchivedScheduled') === 'true';
+    } catch (e) {
+        console.warn('[VTID-01013] localStorage read error:', e);
+        return false;
+    }
+}
+
+/**
+ * VTID-01013: Set show archived scheduled preference in localStorage.
+ */
+function setShowArchivedScheduled(show) {
+    try {
+        localStorage.setItem('cmdhub.showArchivedScheduled', show ? 'true' : 'false');
+        return true;
+    } catch (e) {
+        console.warn('[VTID-01013] localStorage write error:', e);
+        return false;
+    }
+}
+
+/**
+ * VTID-01013: Check if a scheduled task should be archived (hidden by default).
+ * Archive rules (ANY true = archived):
+ *   Rule A: OASIS terminal completion (oasisColumn === 'COMPLETED')
+ *   Rule B: Age cutoff (>14 days) + no progress (still in Scheduled column)
+ *   Rule C: Dummy/seed markers (vtid starts with OASIS-CMD- OR title contains seed/demo/dummy/test/example)
+ *   Rule D: Explicit archive flag (task.metadata?.archived === true)
+ *
+ * This is purely a visibility filter - does NOT mutate or delete tasks.
+ */
+function isArchivedScheduled(task) {
+    if (!task) return false;
+
+    // Rule A: OASIS terminal completion
+    // If task's authoritative OASIS column is COMPLETED, it shouldn't appear in Scheduled
+    var oasisCol = (task.oasisColumn || '').toUpperCase();
+    if (oasisCol === 'COMPLETED') {
+        return true;
+    }
+
+    // Rule B: Age cutoff + no progress
+    // Task is >14 days old AND still in Scheduled (no in-progress lifecycle)
+    var createdAt = task.createdAt || task.created_at;
+    if (createdAt) {
+        var createdDate = new Date(createdAt);
+        var now = new Date();
+        var ageMs = now.getTime() - createdDate.getTime();
+        var ageDays = ageMs / (1000 * 60 * 60 * 24);
+        // Only archive if >14 days AND still in Scheduled column (no progress)
+        var effectiveCol = mapStatusToColumnWithOverride(task.vtid, task.status, task.oasisColumn);
+        if (ageDays > 14 && effectiveCol === 'Scheduled') {
+            return true;
+        }
+    }
+
+    // Rule C: Dummy/seed markers
+    var vtid = (task.vtid || '').toUpperCase();
+    if (vtid.startsWith('OASIS-CMD-')) {
+        return true;
+    }
+    var title = (task.title || '').toLowerCase();
+    var seedMarkers = ['seed', 'demo', 'dummy', 'test', 'example'];
+    for (var i = 0; i < seedMarkers.length; i++) {
+        if (title.indexOf(seedMarkers[i]) !== -1) {
+            return true;
+        }
+    }
+
+    // Rule D: Explicit archive flag
+    if (task.metadata && task.metadata.archived === true) {
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * VTID-01010: Get target roles from task metadata.
+ * Returns array of role strings or empty array if none set.
+ */
+function getTaskTargetRoles(task) {
+    if (!task) return [];
+    // Check metadata.target_roles (authoritative storage)
+    if (task.metadata && Array.isArray(task.metadata.target_roles)) {
+        return task.metadata.target_roles;
+    }
+    // Check direct target_roles property (API response)
+    if (Array.isArray(task.target_roles)) {
+        return task.target_roles;
+    }
+    return [];
 }
 
 // --- VTID-01002: Global Scroll Retention Guard ---
@@ -987,6 +1106,12 @@ const state = {
     modalDraftStatus: 'Scheduled',
     modalDraftSpec: '',
     modalDraftEditing: false, // Guard against re-render while editing
+    // VTID-01010: Target Role state for task creation and filtering
+    modalDraftTargetRoles: [], // Array of selected role strings
+    taskRoleFilter: 'ALL', // 'ALL' or one of TARGET_ROLES
+
+    // VTID-01013: Scheduled Column Hygiene - show archived toggle
+    showArchivedScheduled: getShowArchivedScheduled(), // Load from localStorage on init
 
     // Global Overlays (VTID-0508 / VTID-0509)
     isHeartbeatOpen: false,
@@ -2790,18 +2915,6 @@ function renderTasksView() {
 
     container.appendChild(toolbar);
 
-    // DEV-COMHU-2025-0011: Fingerprint for deployment verification
-    var fingerprint = document.createElement('div');
-    fingerprint.className = 'view-fingerprint';
-    fingerprint.textContent = 'Data: OASIS_EVENTS (VTID-01005)';
-    container.appendChild(fingerprint);
-
-    // DEV-COMHU-2025-0013: Task Management v1 fingerprint (muted line, non-disruptive)
-    var fingerprint2 = document.createElement('div');
-    fingerprint2.className = 'view-fingerprint-muted';
-    fingerprint2.textContent = 'Task Mgmt v2: OASIS (VTID-01005)';
-    container.appendChild(fingerprint2);
-
     // Golden Task Board
     const board = document.createElement('div');
     board.className = 'task-board';
@@ -2820,13 +2933,66 @@ function renderTasksView() {
 
     const columns = ['Scheduled', 'In Progress', 'Completed'];
 
+    // VTID-01013: Pre-compute Scheduled column archive counts for counters
+    var scheduledActive = 0;
+    var scheduledArchived = 0;
+    state.tasks.forEach(function(t) {
+        var col = mapStatusToColumnWithOverride(t.vtid, t.status, t.oasisColumn);
+        if (col === 'Scheduled') {
+            if (isArchivedScheduled(t)) {
+                scheduledArchived++;
+            } else {
+                scheduledActive++;
+            }
+        }
+    });
+
     columns.forEach(colName => {
         const col = document.createElement('div');
         col.className = 'task-column';
 
         const header = document.createElement('div');
         header.className = 'column-header';
-        header.textContent = colName;
+
+        // VTID-01013: For Scheduled column, add wrapper with toggle and counters
+        if (colName === 'Scheduled') {
+            // Header title row with toggle
+            var headerTop = document.createElement('div');
+            headerTop.className = 'column-header-top';
+
+            var headerTitle = document.createElement('span');
+            headerTitle.textContent = colName;
+            headerTop.appendChild(headerTitle);
+
+            // Toggle: "Show archived (N)"
+            var toggleLabel = document.createElement('label');
+            toggleLabel.className = 'scheduled-archive-toggle';
+
+            var toggleInput = document.createElement('input');
+            toggleInput.type = 'checkbox';
+            toggleInput.checked = state.showArchivedScheduled;
+            toggleInput.onchange = function() {
+                state.showArchivedScheduled = toggleInput.checked;
+                setShowArchivedScheduled(toggleInput.checked);
+                renderApp();
+            };
+            toggleLabel.appendChild(toggleInput);
+
+            var toggleText = document.createElement('span');
+            toggleText.textContent = 'Show archived (' + scheduledArchived + ')';
+            toggleLabel.appendChild(toggleText);
+
+            headerTop.appendChild(toggleLabel);
+            header.appendChild(headerTop);
+
+            // Counters row: "Active: X • Archived: Y"
+            var counters = document.createElement('div');
+            counters.className = 'scheduled-counters';
+            counters.textContent = 'Active: ' + scheduledActive + ' • Archived: ' + scheduledArchived;
+            header.appendChild(counters);
+        } else {
+            header.textContent = colName;
+        }
         col.appendChild(header);
 
         const content = document.createElement('div');
@@ -2841,6 +3007,11 @@ function renderTasksView() {
             // VTID-01005: Use OASIS-derived column as authoritative source
             if (mapStatusToColumnWithOverride(t.vtid, t.status, t.oasisColumn) !== colName) return false;
 
+            // VTID-01013: For Scheduled column, filter archived tasks unless toggle is ON
+            if (colName === 'Scheduled' && !state.showArchivedScheduled) {
+                if (isArchivedScheduled(t)) return false;
+            }
+
             // Search query
             if (state.taskSearchQuery) {
                 const q = state.taskSearchQuery.toLowerCase();
@@ -2850,6 +3021,12 @@ function renderTasksView() {
             // Date filter (assuming createdAt exists and is YYYY-MM-DD compatible or ISO)
             if (state.taskDateFilter && t.createdAt) {
                 if (!t.createdAt.startsWith(state.taskDateFilter)) return false;
+            }
+
+            // VTID-01010: Role filter
+            if (state.taskRoleFilter && state.taskRoleFilter !== 'ALL') {
+                const taskRoles = getTaskTargetRoles(t);
+                if (!taskRoles || !taskRoles.includes(state.taskRoleFilter)) return false;
             }
 
             return true;
@@ -2929,6 +3106,30 @@ function createTaskCard(task) {
     }
     statusPill.textContent = statusText;
     statusRow.appendChild(statusPill);
+
+    // VTID-01010: Target Role badge(s)
+    const targetRoles = getTaskTargetRoles(task);
+    if (targetRoles && targetRoles.length > 0) {
+        const roleBadge = document.createElement('span');
+        roleBadge.className = 'task-card-role-badge';
+        if (targetRoles.length === 1) {
+            roleBadge.textContent = targetRoles[0];
+            roleBadge.classList.add('task-card-role-badge-' + targetRoles[0].toLowerCase());
+        } else {
+            // Show first role + count for multiple
+            roleBadge.textContent = targetRoles[0] + '+' + (targetRoles.length - 1);
+            roleBadge.classList.add('task-card-role-badge-multi');
+        }
+        roleBadge.title = 'Target: ' + targetRoles.join(', ');
+        statusRow.appendChild(roleBadge);
+    } else {
+        // VTID-01010: Show UNKNOWN for tasks without roles
+        const unknownBadge = document.createElement('span');
+        unknownBadge.className = 'task-card-role-badge task-card-role-badge-unknown';
+        unknownBadge.textContent = 'UNKNOWN';
+        unknownBadge.title = 'No target role set';
+        statusRow.appendChild(unknownBadge);
+    }
 
     card.appendChild(statusRow);
 
@@ -3055,6 +3256,25 @@ function renderTaskDrawer() {
     title.textContent = vtid;
     header.appendChild(title);
 
+    // VTID-01010: Add target role badge(s) to drawer header
+    const drawerTargetRoles = getTaskTargetRoles(task);
+    if (drawerTargetRoles && drawerTargetRoles.length > 0) {
+        drawerTargetRoles.forEach(function(role) {
+            const roleBadge = document.createElement('span');
+            roleBadge.className = 'drawer-role-badge drawer-role-badge-' + role.toLowerCase();
+            roleBadge.textContent = role;
+            roleBadge.title = TARGET_ROLE_LABELS[role] || role;
+            header.appendChild(roleBadge);
+        });
+    } else {
+        // VTID-01010: Show UNKNOWN badge for tasks without roles
+        const unknownBadge = document.createElement('span');
+        unknownBadge.className = 'drawer-role-badge drawer-role-badge-unknown';
+        unknownBadge.textContent = 'UNKNOWN';
+        unknownBadge.title = 'No target role set';
+        header.appendChild(unknownBadge);
+    }
+
     // VTID-01006: Add mode indicator badge
     if (isFinalMode) {
         const modeBadge = document.createElement('span');
@@ -3096,12 +3316,27 @@ function renderTaskDrawer() {
         content.classList.add('drawer-content-final');
     }
 
-    // DEV-COMHU-2025-0012: Show effective status (with local override indicator)
-    var effectiveStatus = getEffectiveStatus(vtid, state.selectedTask.status);
-    var statusDisplay = effectiveStatus;
-    var isLocalOverride = getTaskStatusOverride(vtid) !== null;
-    if (isLocalOverride) {
-        statusDisplay = effectiveStatus + ' (local override)';
+    // VTID-01009: Show OASIS-derived status as authoritative (no "local override" label)
+    // Priority: OASIS column > localStorage > API status
+    // Note: oasisColumn is already declared above at line 3001 (uppercased)
+    var statusDisplay;
+    if (oasisColumn === 'IN_PROGRESS') {
+        // OASIS confirms in_progress via lifecycle.started event - authoritative
+        statusDisplay = 'in_progress';
+        // Clear any stale local override now that OASIS is authoritative
+        clearTaskStatusOverride(vtid);
+    } else if (oasisColumn === 'COMPLETED') {
+        // OASIS confirms completed via lifecycle.completed/failed - authoritative
+        statusDisplay = state.selectedTask.status || 'completed';
+        clearTaskStatusOverride(vtid);
+    } else {
+        // No OASIS lifecycle event - use effective status
+        var effectiveStatus = getEffectiveStatus(vtid, state.selectedTask.status);
+        statusDisplay = effectiveStatus;
+        var isLocalOverride = getTaskStatusOverride(vtid) !== null;
+        if (isLocalOverride) {
+            statusDisplay = effectiveStatus + ' (local override)';
+        }
     }
 
     const summary = document.createElement('p');
@@ -3245,25 +3480,53 @@ function renderTaskDrawer() {
         };
         specActions.appendChild(resetBtn);
 
-        // VTID-01005: Activate button (Scheduled → In Progress)
+        // VTID-01009: Activate button (Scheduled → In Progress)
+        // Emits authoritative OASIS lifecycle.started event
         var currentColumn = mapStatusToColumnWithOverride(vtid, state.selectedTask.status, state.selectedTask.oasisColumn);
         if (currentColumn === 'Scheduled') {
             var activateBtn = document.createElement('button');
             activateBtn.className = 'btn btn-success task-spec-btn task-activate-btn';
             activateBtn.textContent = 'Activate';
             activateBtn.title = 'Move task from Scheduled to In Progress';
-            activateBtn.onclick = function() {
-                if (setTaskStatusOverride(vtid, 'in_progress')) {
-                    showToast('Task activated: ' + vtid + ' → In Progress', 'success');
-                    // DEV-COMHU-2025-0015: Close drawer after activation
-                    state.selectedTask = null;
-                    state.selectedTaskDetail = null;
-                    state.drawerSpecVtid = null;
-                    state.drawerSpecText = '';
-                    state.drawerSpecEditing = false;
-                    renderApp();
-                } else {
-                    showToast('Failed to activate task', 'error');
+            activateBtn.onclick = async function() {
+                // VTID-01009: Emit lifecycle.started to OASIS (authoritative)
+                activateBtn.disabled = true;
+                activateBtn.textContent = 'Activating...';
+                try {
+                    var response = await fetch('/api/v1/vtid/lifecycle/start', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            vtid: vtid,
+                            source: 'command-hub',
+                            summary: vtid + ': Activated from Command Hub'
+                        })
+                    });
+                    var result = await response.json();
+                    if (result.ok) {
+                        // VTID-01009: Clear any stale local override since OASIS is now authoritative
+                        clearTaskStatusOverride(vtid);
+                        showToast('Task activated: ' + vtid + ' → In Progress', 'success');
+                        // Close drawer and refresh authoritative data
+                        state.selectedTask = null;
+                        state.selectedTaskDetail = null;
+                        state.drawerSpecVtid = null;
+                        state.drawerSpecText = '';
+                        state.drawerSpecEditing = false;
+                        // Refresh tasks from OASIS-derived board endpoint
+                        await fetchTasks();
+                    } else {
+                        // VTID-01009: API failed - show error, do NOT fake local override
+                        showToast('Activation failed: ' + (result.error || 'Unknown error'), 'error');
+                        activateBtn.disabled = false;
+                        activateBtn.textContent = 'Activate';
+                    }
+                } catch (e) {
+                    // VTID-01009: Network/server error - show error, do NOT fake local override
+                    console.error('[VTID-01009] Activate failed:', e);
+                    showToast('Activation failed: Network error', 'error');
+                    activateBtn.disabled = false;
+                    activateBtn.textContent = 'Activate';
                 }
             };
             specActions.appendChild(activateBtn);
@@ -3770,6 +4033,8 @@ function renderTaskModal() {
             state.modalDraftStatus = 'Scheduled';
             state.modalDraftSpec = '';
             state.modalDraftEditing = false;
+            // VTID-01010: Clear target roles state
+            state.modalDraftTargetRoles = [];
             renderApp();
         }
     };
@@ -3809,9 +4074,13 @@ function renderTaskModal() {
     titleGroup.appendChild(titleInput);
     body.appendChild(titleGroup);
 
+    // VTID-01012: VTID + Status in one row
+    const vtidStatusRow = document.createElement('div');
+    vtidStatusRow.className = 'form-row';
+
     // VTID-0542: VTID is now auto-generated via allocator, show read-only preview
     const vtidGroup = document.createElement('div');
-    vtidGroup.className = 'form-group';
+    vtidGroup.className = 'form-group form-group-half';
     const vtidLabel = document.createElement('label');
     vtidLabel.textContent = 'VTID';
     vtidGroup.appendChild(vtidLabel);
@@ -3822,16 +4091,11 @@ function renderTaskModal() {
     vtidInput.readOnly = true;
     vtidInput.disabled = true;
     vtidGroup.appendChild(vtidInput);
-    body.appendChild(vtidGroup);
-
-    const vtidNote = document.createElement('div');
-    vtidNote.className = 'form-note';
-    vtidNote.textContent = 'VTID will be auto-allocated when you create the task (VTID-0542)';
-    body.appendChild(vtidNote);
+    vtidStatusRow.appendChild(vtidGroup);
 
     // VTID-01003: Status select with controlled state
     const statusGroup = document.createElement('div');
-    statusGroup.className = 'form-group';
+    statusGroup.className = 'form-group form-group-half';
     const statusLabel = document.createElement('label');
     statusLabel.textContent = 'Status';
     statusGroup.appendChild(statusLabel);
@@ -3843,7 +4107,73 @@ function renderTaskModal() {
         state.modalDraftStatus = e.target.value;
     };
     statusGroup.appendChild(statusSelect);
-    body.appendChild(statusGroup);
+    vtidStatusRow.appendChild(statusGroup);
+
+    body.appendChild(vtidStatusRow);
+
+    // VTID-01010: Target Role multi-select (required)
+    const roleGroup = document.createElement('div');
+    roleGroup.className = 'form-group';
+    const roleLabel = document.createElement('label');
+    roleLabel.textContent = 'Target Role (required)';
+    roleGroup.appendChild(roleLabel);
+
+    const roleContainer = document.createElement('div');
+    roleContainer.className = 'target-role-selector';
+
+    // Create checkbox for each role
+    TARGET_ROLES.forEach(function(role) {
+        const roleOption = document.createElement('label');
+        roleOption.className = 'target-role-option';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = role;
+        checkbox.checked = state.modalDraftTargetRoles.includes(role);
+        checkbox.onchange = function(e) {
+            if (e.target.checked) {
+                // VTID-01010: INFRA is exclusive - clear others if INFRA selected
+                if (role === 'INFRA') {
+                    state.modalDraftTargetRoles = ['INFRA'];
+                } else {
+                    // Clear INFRA if another role is selected
+                    state.modalDraftTargetRoles = state.modalDraftTargetRoles.filter(function(r) { return r !== 'INFRA'; });
+                    if (!state.modalDraftTargetRoles.includes(role)) {
+                        state.modalDraftTargetRoles.push(role);
+                    }
+                }
+            } else {
+                state.modalDraftTargetRoles = state.modalDraftTargetRoles.filter(function(r) { return r !== role; });
+            }
+            // Re-render to update checkbox states
+            renderApp();
+        };
+
+        const labelText = document.createElement('span');
+        labelText.className = 'target-role-label';
+        labelText.textContent = role;
+        labelText.title = TARGET_ROLE_LABELS[role] || role;
+
+        roleOption.appendChild(checkbox);
+        roleOption.appendChild(labelText);
+        roleContainer.appendChild(roleOption);
+    });
+
+    roleGroup.appendChild(roleContainer);
+
+    // Validation hint
+    const roleHint = document.createElement('div');
+    roleHint.className = 'form-note';
+    if (state.modalDraftTargetRoles.length === 0) {
+        roleHint.textContent = 'Select at least one target role';
+        roleHint.classList.add('form-note-error');
+    } else if (state.modalDraftTargetRoles.includes('INFRA')) {
+        roleHint.textContent = 'INFRA: Backend/CICD/MCP/API with no UI scope';
+    } else {
+        roleHint.textContent = 'Selected: ' + state.modalDraftTargetRoles.join(', ');
+    }
+    roleGroup.appendChild(roleHint);
+    body.appendChild(roleGroup);
 
     // VTID-01003: Task Spec textarea with controlled state (same pattern as drawer)
     const specGroup = document.createElement('div');
@@ -3884,6 +4214,8 @@ function renderTaskModal() {
         state.modalDraftStatus = 'Scheduled';
         state.modalDraftSpec = '';
         state.modalDraftEditing = false;
+        // VTID-01010: Clear target roles state
+        state.modalDraftTargetRoles = [];
         renderApp();
     };
     footer.appendChild(cancelBtn);
@@ -3896,10 +4228,18 @@ function renderTaskModal() {
         const title = state.modalDraftTitle.trim();
         const status = state.modalDraftStatus; // "Scheduled", "In Progress", "Completed"
         const spec = state.modalDraftSpec;
+        // VTID-01010: Get target roles from state
+        const targetRoles = state.modalDraftTargetRoles;
 
         // Basic validation
         if (!title) {
             alert('Title is required');
+            return;
+        }
+
+        // VTID-01010: Target role validation (required)
+        if (!targetRoles || targetRoles.length === 0) {
+            alert('At least one target role is required');
             return;
         }
 
@@ -3962,10 +4302,14 @@ function renderTaskModal() {
 
             createBtn.textContent = 'Creating task...';
 
-            // VTID-0542: Step 2 - Update the allocated task shell with title/status
+            // VTID-01010: Step 2 - Update the allocated task shell with title/status/target_roles
             const updatePayload = {
                 title: title,
-                status: backendStatus
+                status: backendStatus,
+                // VTID-01010: Store target_roles in metadata
+                metadata: {
+                    target_roles: targetRoles
+                }
             };
 
             const updateResponse = await fetch('/api/v1/oasis/tasks/' + encodeURIComponent(vtid), {
@@ -3978,14 +4322,19 @@ function renderTaskModal() {
 
             if (!updateResponse.ok) {
                 // Even if update fails, the task shell exists
-                console.warn('[VTID-0542] Task update failed, but VTID allocated:', vtid);
+                console.warn('[VTID-01010] Task update failed, but VTID allocated:', vtid);
+            } else {
+                console.log('[VTID-01010] Task updated with target_roles:', targetRoles.join(','));
             }
 
+            // VTID-01010: Build TARGET_ROLE_CONTRACT line for spec
+            const roleContract = 'TARGET_ROLE_CONTRACT: [' + targetRoles.join(',') + ']';
+
             // VTID-01003: Save the task spec to localStorage if provided
-            if (spec && spec.trim()) {
-                saveTaskSpec(vtid, spec);
-                console.log('[VTID-01003] Task spec saved for:', vtid);
-            }
+            // VTID-01010: Prepend TARGET_ROLE_CONTRACT to spec
+            var fullSpec = roleContract + '\n\n' + (spec || '');
+            saveTaskSpec(vtid, fullSpec);
+            console.log('[VTID-01010] Task spec saved with TARGET_ROLE_CONTRACT for:', vtid);
 
             // Success! Close modal and refresh task list
             state.showTaskModal = false;
@@ -3994,6 +4343,8 @@ function renderTaskModal() {
             state.modalDraftStatus = 'Scheduled';
             state.modalDraftSpec = '';
             state.modalDraftEditing = false;
+            // VTID-01010: Clear target roles state
+            state.modalDraftTargetRoles = [];
             fetchTasks(); // Refresh the task board
             renderApp();
 

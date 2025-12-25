@@ -406,6 +406,45 @@ body {
   letter-spacing: 0.5px;
 }
 
+/* VTID-01013: Scheduled Column Hygiene - Header with toggle and counters */
+.column-header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.scheduled-archive-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.65rem;
+  font-weight: 400;
+  text-transform: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.scheduled-archive-toggle input[type="checkbox"] {
+  width: 12px;
+  height: 12px;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+}
+
+.scheduled-archive-toggle:hover {
+  color: var(--color-text-secondary);
+}
+
+.scheduled-counters {
+  font-size: 0.65rem;
+  font-weight: 400;
+  text-transform: none;
+  color: var(--color-text-muted);
+  margin-top: 0.25rem;
+}
+
 .column-content {
   flex: 1;
   overflow-y: auto;
