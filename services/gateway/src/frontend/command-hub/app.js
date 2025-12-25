@@ -10,7 +10,8 @@
 // VTID-01010: Target Role as Mandatory Task Contract
 // VTID-01013: Scheduled Column Hygiene (Auto-Archive + Default Filters)
 // VTID-01015: Scheduled Eligibility Filter + UX Cleanup (Remove Counters)
-console.log('🔥 COMMAND HUB BUNDLE: VTID-01015 LIVE 🔥');
+// VTID-01016: OASIS Event Authority - Deterministic Stage/Status Derivation
+console.log('🔥 COMMAND HUB BUNDLE: VTID-01016 LIVE 🔥');
 
 // ===========================================================================
 // VTID-01010: Target Role Constants (canonical)
@@ -25,6 +26,68 @@ const TARGET_ROLE_LABELS = {
     'PAT': 'Patient',
     'INFRA': 'Infrastructure'
 };
+
+// ===========================================================================
+// VTID-01016: OASIS Event Authority - Deterministic Stage/Status Derivation
+// ===========================================================================
+/**
+ * Derives display Stage/Status from OASIS event-authority data.
+ * Maps backend projection values to deterministic display values.
+ * "Moving" is eliminated - replaced with scheduled/in_progress/success/failed.
+ *
+ * Precedence (highest → lowest):
+ * 1. Terminal lifecycle completed (success/failed) → Done / success|failed
+ * 2. Deploy success/fail → Deploy / success|failed
+ * 3. Validator success/fail → Validator / in_progress|failed
+ * 4. Worker success/fail → Worker / in_progress|failed
+ * 5. Planner success/fail → Planner / in_progress|failed
+ * 6. Lifecycle started → Queued / in_progress
+ * 7. Else → Scheduled / scheduled
+ *
+ * @param {Object} item - VTID projection item from API
+ * @returns {Object} { stage: string, status: string }
+ */
+function deriveVtidStageStatus(item) {
+    // Priority 1: Terminal states have highest precedence (OASIS authority)
+    if (item.is_terminal === true) {
+        return {
+            stage: 'Done',
+            status: item.terminal_outcome === 'success' ? 'success' : 'failed'
+        };
+    }
+
+    var backendStatus = (item.status || '').toLowerCase();
+    var backendStage = item.current_stage || 'Planner';
+
+    // Priority 2: Check for explicit Done status
+    if (backendStatus === 'done') {
+        return { stage: 'Done', status: 'success' };
+    }
+
+    // Priority 3: Check for Failed/Blocked status
+    if (backendStatus === 'failed' || backendStatus === 'blocked') {
+        return { stage: backendStage, status: 'failed' };
+    }
+
+    // Priority 4: Map "Moving" and other non-terminal statuses
+    // Stage determines display, status becomes 'in_progress' for active work
+    switch (backendStage) {
+        case 'Done':
+            return { stage: 'Done', status: 'success' };
+        case 'Deploy':
+            return { stage: 'Deploy', status: 'in_progress' };
+        case 'Validator':
+            return { stage: 'Validator', status: 'in_progress' };
+        case 'Worker':
+            return { stage: 'Worker', status: 'in_progress' };
+        case 'Planner':
+            // Planner stage with Moving → lifecycle started, queued for work
+            return { stage: 'Queued', status: 'in_progress' };
+        default:
+            // Unknown stage → default to Scheduled
+            return { stage: 'Scheduled', status: 'scheduled' };
+    }
+}
 
 // --- DEV-COMHU-2025-0012: LocalStorage Helpers for Task Management v1 ---
 
@@ -6855,21 +6918,24 @@ function renderVtidProjectionTable(items) {
         titleCell.textContent = item.title || '—';
         row.appendChild(titleCell);
 
-        // Stage column (Planner/Worker/Validator/Deploy/Done)
+        // VTID-01016: Derive Stage/Status from OASIS event authority
+        var derived = deriveVtidStageStatus(item);
+
+        // Stage column (Scheduled/Queued/Planner/Worker/Validator/Deploy/Done)
         var stageCell = document.createElement('td');
         var stageBadge = document.createElement('span');
-        var stageVal = (item.current_stage || 'Planner').toLowerCase();
+        var stageVal = derived.stage.toLowerCase();
         stageBadge.className = 'vtid-stage-badge vtid-stage-' + stageVal;
-        stageBadge.textContent = item.current_stage || 'Planner';
+        stageBadge.textContent = derived.stage;
         stageCell.appendChild(stageBadge);
         row.appendChild(stageCell);
 
-        // Status column (Moving/Blocked/Done/Failed)
+        // Status column (scheduled/in_progress/success/failed)
         var statusCell = document.createElement('td');
         var statusBadge = document.createElement('span');
-        var statusVal = (item.status || 'Moving').toLowerCase();
+        var statusVal = derived.status.toLowerCase();
         statusBadge.className = 'vtid-status-badge vtid-status-' + statusVal;
-        statusBadge.textContent = item.status || 'Moving';
+        statusBadge.textContent = derived.status;
         statusCell.appendChild(statusBadge);
         row.appendChild(statusCell);
 
@@ -7078,21 +7144,24 @@ function renderOasisLedgerTableWithDrilldown(items) {
         titleCell.textContent = item.title || '—';
         row.appendChild(titleCell);
 
-        // Stage column
+        // VTID-01016: Derive Stage/Status from OASIS event authority
+        var derived = deriveVtidStageStatus(item);
+
+        // Stage column (Scheduled/Queued/Planner/Worker/Validator/Deploy/Done)
         var stageCell = document.createElement('td');
         var stageBadge = document.createElement('span');
-        var stageVal = (item.current_stage || 'Planner').toLowerCase();
+        var stageVal = derived.stage.toLowerCase();
         stageBadge.className = 'vtid-stage-badge vtid-stage-' + stageVal;
-        stageBadge.textContent = item.current_stage || 'Planner';
+        stageBadge.textContent = derived.stage;
         stageCell.appendChild(stageBadge);
         row.appendChild(stageCell);
 
-        // Status column
+        // Status column (scheduled/in_progress/success/failed)
         var statusCell = document.createElement('td');
         var statusBadge = document.createElement('span');
-        var statusVal = (item.status || 'Moving').toLowerCase();
+        var statusVal = derived.status.toLowerCase();
         statusBadge.className = 'vtid-status-badge vtid-status-' + statusVal;
-        statusBadge.textContent = item.status || 'Moving';
+        statusBadge.textContent = derived.status;
         statusCell.appendChild(statusBadge);
         row.appendChild(statusCell);
 

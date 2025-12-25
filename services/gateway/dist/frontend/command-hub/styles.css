@@ -5746,6 +5746,21 @@ body {
 .vtid-status-blocked { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
 .vtid-status-unknown { background: rgba(107, 114, 128, 0.15); color: #6b7280; }
 
+/* VTID-01016: OASIS Event Authority - Deterministic Status Values */
+.vtid-status-scheduled { background: rgba(107, 114, 128, 0.15); color: #6b7280; }
+.vtid-status-in_progress { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+.vtid-status-success { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+.vtid-status-failed { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+
+/* VTID-01016: OASIS Event Authority - Deterministic Stage Values */
+.vtid-stage-scheduled { background: rgba(107, 114, 128, 0.15); color: #6b7280; }
+.vtid-stage-queued { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.vtid-stage-planner { background: rgba(139, 92, 246, 0.15); color: #8b5cf6; }
+.vtid-stage-worker { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+.vtid-stage-validator { background: rgba(247, 183, 49, 0.15); color: #f7b731; }
+.vtid-stage-deploy { background: rgba(46, 204, 113, 0.15); color: #2ecc71; }
+.vtid-stage-done { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+
 /* --- Approvals View --- */
 .approvals-container {
   padding: 1.5rem;
