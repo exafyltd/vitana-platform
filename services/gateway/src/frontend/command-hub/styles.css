@@ -436,13 +436,7 @@ body {
   color: var(--color-text-secondary);
 }
 
-.scheduled-counters {
-  font-size: 0.65rem;
-  font-weight: 400;
-  text-transform: none;
-  color: var(--color-text-muted);
-  margin-top: 0.25rem;
-}
+/* VTID-01015: .scheduled-counters removed - counter stamp no longer used */
 
 .column-content {
   flex: 1;
