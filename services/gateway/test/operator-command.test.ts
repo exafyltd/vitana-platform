@@ -101,6 +101,34 @@ jest.mock('../src/services/oasis-event-service', () => ({
     emitOasisEvent: jest.fn().mockResolvedValue({ ok: true, event_id: 'test-event-id' }),
 }));
 
+// VTID-01018: Mock operator action contract to bypass OASIS hard contract in tests
+jest.mock('../src/services/operator-action-contract', () => ({
+    executeWithOasisContract: jest.fn().mockImplementation(async (context, action) => {
+        try {
+            const result = await action();
+            return {
+                ok: true,
+                operator_action_id: 'test-action-id',
+                started_event_id: 'test-started-event-id',
+                terminal_event_id: 'test-terminal-event-id',
+                data: result,
+            };
+        } catch (error: any) {
+            return {
+                ok: false,
+                operator_action_id: 'test-action-id',
+                oasis_error: {
+                    error: 'oasis_write_failed',
+                    reason: error.message,
+                    operator_action_id: 'test-action-id',
+                    timestamp: new Date().toISOString(),
+                },
+            };
+        }
+    }),
+    OperatorActionContext: {},
+}));
+
 // Mock deploy orchestrator - use factory function to avoid hoisting issues
 jest.mock('../src/services/deploy-orchestrator', () => {
     return {
@@ -173,11 +201,17 @@ describe('Operator Command Hub - VTID-0525', () => {
             // VTID-0525-B: MVP generates timestamp-based VTID
             expect(response.body.vtid).toMatch(/^OASIS-CMD-[A-Z0-9]+$/);
             expect(response.body.reply).toBeDefined();
-            expect(response.body.command).toEqual({
+            // VTID-01018: Command object now includes full DeployCommand fields
+            expect(response.body.command).toMatchObject({
                 action: 'deploy',
                 service: 'gateway',
                 environment: 'dev',
+                branch: 'main',
+                dry_run: false,
             });
+            expect(response.body.command.vtid).toMatch(/^OASIS-CMD-[A-Z0-9]+$/);
+            // VTID-01018: Response includes operator_action_id for event trail tracking
+            expect(response.body.operator_action_id).toBe('test-action-id');
         });
 
         it('should auto-create VTID when not provided', async () => {
@@ -315,7 +349,10 @@ describe('Operator Command Hub - VTID-0525', () => {
                 .expect(200);
 
             expect(response.body.ok).toBe(true);
-            expect(response.body.vtid).toBe('VTID-TEST');
+            // VTID-01018: Response now returns the input vtid, not orchestrator's vtid
+            expect(response.body.vtid).toBe('VTID-0525-TEST-0010');
+            // VTID-01018: Response includes operator_action_id for event trail tracking
+            expect(response.body.operator_action_id).toBe('test-action-id');
 
             // Verify deploy orchestrator was called
             expect(mockExecuteDeploy).toHaveBeenCalledWith(
