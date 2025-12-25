@@ -8,10 +8,9 @@
 // VTID-01002: Global Scroll Retention Guard - polling uses incremental updates, not renderApp()
 // VTID-01003: Fix Create Task modal (input reset), add Task Spec field, drawer metadata order + timestamp format
 // VTID-01010: Target Role as Mandatory Task Contract
-// VTID-01013: Scheduled Column Hygiene (Auto-Archive + Default Filters)
-// VTID-01015: Scheduled Eligibility Filter + UX Cleanup (Remove Counters)
 // VTID-01016: OASIS Event Authority - Deterministic Stage/Status Derivation
-console.log('🔥 COMMAND HUB BUNDLE: VTID-01016 LIVE 🔥');
+// VTID-01017: Scheduled Column Hard Eligibility + Remove Archive UI
+console.log('🔥 COMMAND HUB BUNDLE: VTID-01017 LIVE 🔥');
 
 // ===========================================================================
 // VTID-01010: Target Role Constants (canonical)
@@ -189,138 +188,56 @@ function dismissApproval(repo, prNumber) {
 }
 
 // ===========================================================================
-// VTID-01013: Scheduled Column Hygiene Helpers
+// VTID-01017: Scheduled Column Hard Eligibility Filter
 // ===========================================================================
 
 /**
- * VTID-01013: Get show archived scheduled preference from localStorage.
- * Key: cmdhub.showArchivedScheduled
- */
-function getShowArchivedScheduled() {
-    try {
-        return localStorage.getItem('cmdhub.showArchivedScheduled') === 'true';
-    } catch (e) {
-        console.warn('[VTID-01013] localStorage read error:', e);
-        return false;
-    }
-}
-
-/**
- * VTID-01013: Set show archived scheduled preference in localStorage.
- */
-function setShowArchivedScheduled(show) {
-    try {
-        localStorage.setItem('cmdhub.showArchivedScheduled', show ? 'true' : 'false');
-        return true;
-    } catch (e) {
-        console.warn('[VTID-01013] localStorage write error:', e);
-        return false;
-    }
-}
-
-/**
- * VTID-01013: Check if a scheduled task should be archived (hidden by default).
- * Archive rules (ANY true = archived):
- *   Rule A: OASIS terminal completion (oasisColumn === 'COMPLETED')
- *   Rule B: Age cutoff (>14 days) + no progress (still in Scheduled column)
- *   Rule C: Dummy/seed markers (vtid starts with OASIS-CMD- OR title contains seed/demo/dummy/test/example)
- *   Rule D: Explicit archive flag (task.metadata?.archived === true)
+ * VTID-01017: Check if a task is eligible to appear in Scheduled column.
+ * Strict structural eligibility - only human-actionable scheduled VTIDs.
  *
- * This is purely a visibility filter - does NOT mutate or delete tasks.
- */
-function isArchivedScheduled(task) {
-    if (!task) return false;
-
-    // Rule A: OASIS terminal completion
-    // If task's authoritative OASIS column is COMPLETED, it shouldn't appear in Scheduled
-    var oasisCol = (task.oasisColumn || '').toUpperCase();
-    if (oasisCol === 'COMPLETED') {
-        return true;
-    }
-
-    // Rule B: Age cutoff + no progress
-    // Task is >14 days old AND still in Scheduled (no in-progress lifecycle)
-    var createdAt = task.createdAt || task.created_at;
-    if (createdAt) {
-        var createdDate = new Date(createdAt);
-        var now = new Date();
-        var ageMs = now.getTime() - createdDate.getTime();
-        var ageDays = ageMs / (1000 * 60 * 60 * 24);
-        // Only archive if >14 days AND still in Scheduled column (no progress)
-        var effectiveCol = mapStatusToColumnWithOverride(task.vtid, task.status, task.oasisColumn);
-        if (ageDays > 14 && effectiveCol === 'Scheduled') {
-            return true;
-        }
-    }
-
-    // Rule C: Dummy/seed markers
-    var vtid = (task.vtid || '').toUpperCase();
-    if (vtid.startsWith('OASIS-CMD-')) {
-        return true;
-    }
-    var title = (task.title || '').toLowerCase();
-    var seedMarkers = ['seed', 'demo', 'dummy', 'test', 'example'];
-    for (var i = 0; i < seedMarkers.length; i++) {
-        if (title.indexOf(seedMarkers[i]) !== -1) {
-            return true;
-        }
-    }
-
-    // Rule D: Explicit archive flag
-    if (task.metadata && task.metadata.archived === true) {
-        return true;
-    }
-
-    return false;
-}
-
-// ===========================================================================
-// VTID-01015: Scheduled Eligibility Filter
-// ===========================================================================
-
-/**
- * VTID-01015: Check if a task is eligible to appear in Scheduled column.
- * This is a hard filter that removes non-human-actionable system/pipeline artifacts.
+ * Requirements (ALL must pass):
+ *   A) Only classic VTIDs: must match pattern ^VTID-\d{4}$
+ *      (excludes all DEV-*, OASIS-CMD-*, etc.)
+ *   B) Only truly scheduled: status must be 'scheduled' (not 'allocated')
+ *   C) Title must be meaningful: not empty, not placeholder text
  *
- * A task is NOT eligible (hidden from Scheduled) if ANY of these are true:
- *   1. VTID prefix indicates system artifact:
- *      - DEV-CICDL-* (deploy artifacts)
- *      - DEV-TEST-* (test artifacts)
- *      - DEV-TMP-* (temporary artifacts)
- *      - OASIS-CMD-* (commands/dummy)
- *   2. Module field indicates system artifact: CICDL, TEST, TMP
- *   3. Title contains system/test keywords (case-insensitive):
- *      - deploy, probe, format, sanity check, test, tmp, seed, demo, dummy, example
- *
- * This filter is applied BEFORE archive filtering - ineligible tasks never appear
- * in Scheduled regardless of the "Show archived" toggle state.
+ * This is a hard filter - ineligible tasks never appear in Scheduled.
  */
 function isEligibleScheduled(task) {
     if (!task) return false;
 
-    // Check VTID prefix for system artifact indicators
-    var vtid = (task.vtid || '').toUpperCase();
-    var systemPrefixes = ['DEV-CICDL-', 'DEV-TEST-', 'DEV-TMP-', 'OASIS-CMD-'];
-    for (var i = 0; i < systemPrefixes.length; i++) {
-        if (vtid.startsWith(systemPrefixes[i])) {
-            return false;
-        }
+    // Rule A: Only classic VTIDs (VTID-NNNN format)
+    var vtid = (task.vtid || '');
+    var classicVtidPattern = /^VTID-\d{4}$/;
+    if (!classicVtidPattern.test(vtid)) {
+        return false;
     }
 
-    // Check module field for system artifact indicators
-    var taskModule = (task.task_module || task.module || '').toUpperCase();
-    var systemModules = ['CICDL', 'TEST', 'TMP'];
-    for (var j = 0; j < systemModules.length; j++) {
-        if (taskModule === systemModules[j]) {
-            return false;
-        }
+    // Rule B: Only truly scheduled status
+    var statusNorm = String(task.status || '').toLowerCase();
+    if (statusNorm === 'allocated') {
+        return false;
+    }
+    if (statusNorm !== 'scheduled') {
+        return false;
     }
 
-    // Check title for system/test keywords (case-insensitive)
-    var title = (task.title || '').toLowerCase();
-    var systemKeywords = ['deploy', 'probe', 'format', 'sanity check', 'test', 'tmp', 'seed', 'demo', 'dummy', 'example'];
-    for (var k = 0; k < systemKeywords.length; k++) {
-        if (title.indexOf(systemKeywords[k]) !== -1) {
+    // Rule C: Title must be meaningful (not placeholder)
+    var title = (task.title || '').trim();
+    if (!title || title.length < 3) {
+        return false;
+    }
+    // Placeholder patterns (case-insensitive)
+    var titleLower = title.toLowerCase();
+    var placeholderPatterns = [
+        /^allocated$/,
+        /^pending title$/,
+        /^allocated\s*[-–—]\s*pending title$/,
+        /^untitled$/,
+        /^tbd$/
+    ];
+    for (var i = 0; i < placeholderPatterns.length; i++) {
+        if (placeholderPatterns[i].test(titleLower)) {
             return false;
         }
     }
@@ -1228,9 +1145,6 @@ const state = {
     // VTID-01010: Target Role state for task creation and filtering
     modalDraftTargetRoles: [], // Array of selected role strings
     taskRoleFilter: 'ALL', // 'ALL' or one of TARGET_ROLES
-
-    // VTID-01013: Scheduled Column Hygiene - show archived toggle
-    showArchivedScheduled: getShowArchivedScheduled(), // Load from localStorage on init
 
     // Global Overlays (VTID-0508 / VTID-0509)
     isHeartbeatOpen: false,
@@ -3062,60 +2976,14 @@ function renderTasksView() {
 
     const columns = ['Scheduled', 'In Progress', 'Completed'];
 
-    // VTID-01015: Pre-compute Scheduled column archived count (for eligible tasks only)
-    var scheduledArchived = 0;
-    state.tasks.forEach(function(t) {
-        var col = mapStatusToColumnWithOverride(t.vtid, t.status, t.oasisColumn);
-        if (col === 'Scheduled') {
-            // VTID-01015: Only count eligible tasks
-            if (!isEligibleScheduled(t)) return;
-            if (isArchivedScheduled(t)) {
-                scheduledArchived++;
-            }
-        }
-    });
-
     columns.forEach(colName => {
         const col = document.createElement('div');
         col.className = 'task-column';
 
         const header = document.createElement('div');
         header.className = 'column-header';
-
-        // VTID-01013: For Scheduled column, add wrapper with toggle and counters
-        if (colName === 'Scheduled') {
-            // Header title row with toggle
-            var headerTop = document.createElement('div');
-            headerTop.className = 'column-header-top';
-
-            var headerTitle = document.createElement('span');
-            headerTitle.textContent = colName;
-            headerTop.appendChild(headerTitle);
-
-            // Toggle: "Show archived (N)"
-            var toggleLabel = document.createElement('label');
-            toggleLabel.className = 'scheduled-archive-toggle';
-
-            var toggleInput = document.createElement('input');
-            toggleInput.type = 'checkbox';
-            toggleInput.checked = state.showArchivedScheduled;
-            toggleInput.onchange = function() {
-                state.showArchivedScheduled = toggleInput.checked;
-                setShowArchivedScheduled(toggleInput.checked);
-                renderApp();
-            };
-            toggleLabel.appendChild(toggleInput);
-
-            var toggleText = document.createElement('span');
-            toggleText.textContent = 'Show archived (' + scheduledArchived + ')';
-            toggleLabel.appendChild(toggleText);
-
-            headerTop.appendChild(toggleLabel);
-            header.appendChild(headerTop);
-            // VTID-01015: Counter stamp removed - only toggle remains
-        } else {
-            header.textContent = colName;
-        }
+        // VTID-01017: Simple header text for all columns (archived UI removed)
+        header.textContent = colName;
         col.appendChild(header);
 
         const content = document.createElement('div');
@@ -3130,12 +2998,9 @@ function renderTasksView() {
             // VTID-01005: Use OASIS-derived column as authoritative source
             if (mapStatusToColumnWithOverride(t.vtid, t.status, t.oasisColumn) !== colName) return false;
 
-            // VTID-01015: For Scheduled column, apply eligibility filter first
+            // VTID-01017: For Scheduled column, apply strict eligibility filter
             if (colName === 'Scheduled') {
-                // Step 1: Filter out non-eligible (system/pipeline artifacts)
                 if (!isEligibleScheduled(t)) return false;
-                // Step 2: Filter archived tasks unless toggle is ON
-                if (!state.showArchivedScheduled && isArchivedScheduled(t)) return false;
             }
 
             // Search query
