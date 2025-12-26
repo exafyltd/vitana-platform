@@ -11,7 +11,8 @@
 // VTID-01016: OASIS Event Authority - Deterministic Stage/Status Derivation
 // VTID-01017: Scheduled Column Hard Eligibility + Remove Archive UI
 // VTID-01019: Operator Console UI Binding to OASIS Truth - No optimistic UI
-console.log('🔥 COMMAND HUB BUNDLE: VTID-01019 LIVE 🔥');
+// VTID-01022: Command Hub Governance - Human Task Only Filter
+console.log('🔥 COMMAND HUB BUNDLE: VTID-01022 LIVE 🔥');
 
 // ===========================================================================
 // VTID-01010: Target Role Constants (canonical)
@@ -245,6 +246,32 @@ function isEligibleScheduled(task) {
 
     // Task is eligible
     return true;
+}
+
+// ===========================================================================
+// VTID-01022: Command Hub Governance - Human Task Only Filter
+// ===========================================================================
+
+/**
+ * VTID-01022: Check if a task is a human task (NOT a system/CI/CD artifact).
+ * Human tasks have IDs matching the pattern: ^VTID-\d{4}$
+ *
+ * FORBIDDEN task prefixes (system artifacts):
+ *   - DEV-*
+ *   - DEV-CICDL-*
+ *   - DEV-COMHU-*
+ *   - AUTODEPLOY-*
+ *   - OASIS-CMD-*
+ *   - Any other non-VTID prefix
+ *
+ * This is a HARD governance filter - non-human tasks NEVER appear on the board.
+ */
+function isHumanTask(task) {
+    if (!task) return false;
+    var vtid = (task.vtid || '');
+    // Canonical human task pattern: VTID-NNNN (exactly 4 digits)
+    var humanTaskPattern = /^VTID-\d{4}$/;
+    return humanTaskPattern.test(vtid);
 }
 
 /**
@@ -3029,8 +3056,13 @@ function renderTasksView() {
         content.dataset.scrollKey = 'tasks-' + colName.toLowerCase().replace(/\s+/g, '-');
 
         // Filter tasks
+        // VTID-01022: Human task filter FIRST - exclude ALL system/CI/CD artifacts
         // VTID-01005: Use OASIS-derived column for task placement (single source of truth)
         const colTasks = state.tasks.filter(t => {
+            // VTID-01022: Hard governance filter - ONLY human tasks (VTID-NNNN) appear on board
+            // Excludes: DEV-*, DEV-CICDL-*, DEV-COMHU-*, AUTODEPLOY-*, OASIS-CMD-*, etc.
+            if (!isHumanTask(t)) return false;
+
             // VTID-01005: Use OASIS-derived column as authoritative source
             if (mapStatusToColumnWithOverride(t.vtid, t.status, t.oasisColumn) !== colName) return false;
 
