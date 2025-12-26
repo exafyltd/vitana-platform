@@ -1,8 +1,13 @@
 /**
  * VTID-0536: Gemini Operator Tools Bridge v1
+ * VTID-01023: Wire /api/v1/operator/chat to Vertex Gemini
  *
  * Provides Gemini function-calling tools for the Operator Chat.
  * Tools can trigger Autopilot and OASIS actions, governed by the 0400 Governance Engine.
+ *
+ * VTID-01023: Added Vertex AI support using ADC (Application Default Credentials).
+ * When running on Cloud Run, uses the service account for authentication.
+ * Priority: Vertex AI > Gemini API Key > Local Router
  *
  * Tools:
  * - autopilot.create_task: Create a new Autopilot task (with governance)
@@ -12,6 +17,7 @@
 
 import fetch from 'node-fetch';
 import { randomUUID } from 'crypto';
+import { VertexAI, GenerateContentResult, Content, Part, FunctionDeclaration, Tool } from '@google-cloud/vertexai';
 import {
   createOperatorTask,
   getAutopilotTaskStatus,
@@ -29,14 +35,31 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 const GOOGLE_GEMINI_API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
 
-// VTID-0541 D3: Vertex AI configuration (alternative to direct Gemini API)
-const VERTEX_MODEL = process.env.VERTEX_MODEL;
-const VERTEX_LOCATION = process.env.VERTEX_LOCATION;
+// VTID-01023: Vertex AI configuration - uses ADC (Application Default Credentials)
+// On Cloud Run, this automatically uses the service account
+const VERTEX_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || 'lovable-vitana-vers1';
+const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'us-central1';
+const VERTEX_MODEL = process.env.VERTEX_MODEL || 'gemini-2.5-pro';
 
-// VTID-0541 D3: Check if any AI backend is configured
+// VTID-01023: Check which AI backends are configured
 const hasGeminiConfig = !!GOOGLE_GEMINI_API_KEY;
-const hasVertexConfig = !!VERTEX_MODEL && !!VERTEX_LOCATION;
+// Vertex AI is available if we have project and location (uses ADC for auth)
+const hasVertexConfig = !!VERTEX_PROJECT && !!VERTEX_LOCATION;
 const hasAnyAIConfig = hasGeminiConfig || hasVertexConfig;
+
+// VTID-01023: Initialize Vertex AI client (uses ADC automatically on Cloud Run)
+let vertexAI: VertexAI | null = null;
+if (hasVertexConfig) {
+  try {
+    vertexAI = new VertexAI({
+      project: VERTEX_PROJECT,
+      location: VERTEX_LOCATION,
+    });
+    console.log(`[VTID-01023] Vertex AI initialized: project=${VERTEX_PROJECT}, location=${VERTEX_LOCATION}, model=${VERTEX_MODEL}`);
+  } catch (err: any) {
+    console.warn(`[VTID-01023] Failed to initialize Vertex AI: ${err.message}`);
+  }
+}
 
 // ==================== Types ====================
 
@@ -791,11 +814,199 @@ export async function executeTool(
 // ==================== Gemini Integration ====================
 
 /**
+ * VTID-01023: System prompt for Operator Chat Gemini/Vertex integration
+ */
+const OPERATOR_SYSTEM_PROMPT = `You are the Vitana Operator Assistant, helping operators manage the Autopilot system and answer questions about Vitana.
+
+When operators want to:
+- Create a new task: Use the autopilot_create_task function
+- Check task status: Use the autopilot_get_status function
+- See recent tasks: Use the autopilot_list_recent_tasks function
+- Ask "What/How/Explain/Why" questions about Vitana: Use the knowledge_search function
+
+For questions like "What is the Vitana Index?", "Explain OASIS", "What are the three tenants?", etc., ALWAYS use knowledge_search first to provide doc-grounded answers.
+
+For action commands like "Create a task", "Deploy gateway", use the autopilot tools.
+
+Be helpful and concise. When calling tools, explain what you're doing.
+If a task is blocked by governance, explain the reason clearly.`;
+
+/**
+ * VTID-01023: Convert tool definitions to Vertex AI format
+ * Uses explicit typing to match Vertex AI SDK requirements
+ */
+function getVertexToolDefinitions(): Tool[] {
+  // Convert our tool definitions to Vertex AI format
+  // The Vertex AI SDK expects a specific schema structure
+  const functionDeclarations: FunctionDeclaration[] = GEMINI_TOOL_DEFINITIONS.functionDeclarations.map(fd => ({
+    name: fd.name,
+    description: fd.description,
+    // Cast parameters through unknown to satisfy TypeScript
+    parameters: fd.parameters as unknown as FunctionDeclaration['parameters']
+  }));
+
+  return [{ functionDeclarations }];
+}
+
+/**
+ * VTID-01023: Call Vertex AI with tools using ADC
+ * Returns the model response with optional tool calls
+ */
+async function callVertexWithTools(text: string, threadId: string): Promise<{
+  reply: string;
+  toolCalls?: GeminiToolCall[];
+}> {
+  if (!vertexAI) {
+    throw new Error('Vertex AI not initialized');
+  }
+
+  const generativeModel = vertexAI.getGenerativeModel({
+    model: VERTEX_MODEL,
+    generationConfig: {
+      temperature: 0.7,
+      maxOutputTokens: 1024,
+      topP: 0.95,
+      topK: 40
+    },
+    systemInstruction: {
+      role: 'system',
+      parts: [{ text: `${OPERATOR_SYSTEM_PROMPT}\n\nCurrent thread: ${threadId}` }]
+    },
+    tools: getVertexToolDefinitions()
+  });
+
+  const request = {
+    contents: [{
+      role: 'user' as const,
+      parts: [{ text }]
+    }]
+  };
+
+  console.log(`[VTID-01023] Calling Vertex AI: model=${VERTEX_MODEL}`);
+  const response = await generativeModel.generateContent(request);
+
+  const candidate = response.response?.candidates?.[0];
+  const content = candidate?.content;
+
+  if (!content) {
+    return { reply: 'I apologize, but I could not generate a response. Please try again.' };
+  }
+
+  // Check for function calls
+  const functionCallParts = content.parts?.filter((part: Part) => 'functionCall' in part);
+
+  if (functionCallParts && functionCallParts.length > 0) {
+    const toolCalls: GeminiToolCall[] = functionCallParts.map((fc: Part) => {
+      const functionCall = (fc as any).functionCall;
+      return {
+        name: functionCall.name,
+        args: functionCall.args || {}
+      };
+    });
+    console.log(`[VTID-01023] Vertex AI returned ${toolCalls.length} tool call(s)`);
+    return { reply: '', toolCalls };
+  }
+
+  // Extract text response
+  const textPart = content.parts?.find((part: Part) => 'text' in part);
+  const reply = textPart ? (textPart as any).text : '';
+  console.log(`[VTID-01023] Vertex AI returned text response (${reply.length} chars)`);
+  return { reply };
+}
+
+/**
+ * VTID-01023: Send tool results back to Vertex AI for final response
+ */
+async function sendToolResultsToVertex(
+  originalText: string,
+  toolResults: GeminiToolResult[],
+  threadId: string
+): Promise<{ reply: string }> {
+  if (!vertexAI) {
+    // Fallback: format tool results as response
+    return formatToolResultsAsResponse(toolResults);
+  }
+
+  const generativeModel = vertexAI.getGenerativeModel({
+    model: VERTEX_MODEL,
+    generationConfig: {
+      temperature: 0.7,
+      maxOutputTokens: 1024,
+    },
+    systemInstruction: {
+      role: 'system',
+      parts: [{ text: `You are the Vitana Operator Assistant. Summarize the tool results for the operator in a clear, helpful way.
+If there were errors or governance blocks, explain them clearly.
+If successful, confirm what was done and any next steps.` }]
+    }
+  });
+
+  // Build conversation with tool results
+  const contents: Content[] = [
+    {
+      role: 'user',
+      parts: [{ text: originalText }]
+    },
+    {
+      role: 'model',
+      parts: toolResults.map(tr => ({
+        functionResponse: {
+          name: tr.name,
+          response: tr.response
+        }
+      })) as Part[]
+    }
+  ];
+
+  try {
+    const response = await generativeModel.generateContent({ contents });
+    const textPart = response.response?.candidates?.[0]?.content?.parts?.find((p: Part) => 'text' in p);
+    const reply = textPart ? (textPart as any).text : 'Operation completed.';
+    return { reply };
+  } catch (err: any) {
+    console.warn(`[VTID-01023] Vertex tool results call failed: ${err.message}`);
+    return formatToolResultsAsResponse(toolResults);
+  }
+}
+
+/**
+ * VTID-01023: Format tool results as a human-readable response
+ */
+function formatToolResultsAsResponse(toolResults: GeminiToolResult[]): { reply: string } {
+  const successResults = toolResults.filter(r => r.response.ok);
+  const failedResults = toolResults.filter(r => !r.response.ok);
+
+  let reply = '';
+
+  for (const result of successResults) {
+    // VTID-0538: Handle knowledge_search answer format
+    if (result.name === 'knowledge_search' && result.response.answer) {
+      reply += result.response.answer + '\n\n';
+      if (result.response.docs && (result.response.docs as any[]).length > 0) {
+        reply += '_Sources: ' + (result.response.docs as any[]).map((d: any) => d.title).join(', ') + '_\n\n';
+      }
+    } else if (result.response.message) {
+      reply += result.response.message + '\n\n';
+    }
+  }
+
+  for (const result of failedResults) {
+    if (result.response.governanceBlocked) {
+      reply += `**Governance Blocked:** ${result.response.error}\n\n`;
+    } else {
+      reply += `**Error:** ${result.response.error}\n\n`;
+    }
+  }
+
+  return { reply: reply.trim() || 'Operation completed.' };
+}
+
+/**
  * Process a message with Gemini, including function calling
- * VTID-0541 D3: Updated routing logic
- * - Uses Gemini API if GOOGLE_GEMINI_API_KEY is configured
- * - Falls back to local routing with conversational support if no AI backend
- * - Governance-limited status does NOT trigger fallback
+ * VTID-01023: Updated routing logic
+ * - Priority 1: Vertex AI (uses ADC, no API key needed on Cloud Run)
+ * - Priority 2: Gemini API if API key is configured
+ * - Priority 3: Local routing fallback
  * - Always includes provider/model metadata for transparency
  */
 export async function processWithGemini(input: {
@@ -806,76 +1017,127 @@ export async function processWithGemini(input: {
 }): Promise<GeminiOperatorResponse> {
   const { text, threadId, attachments = [], context = {} } = input;
 
-  console.log(`[VTID-0536] Processing message with Gemini: "${text.substring(0, 50)}..."`);
+  console.log(`[VTID-01023] Processing message: "${text.substring(0, 50)}..."`);
 
-  // VTID-0541 D3: Check if any AI backend is configured
-  // Note: Vertex AI is used by assistant-service.ts, not this file
-  // This file uses direct Gemini API calls, so check GOOGLE_GEMINI_API_KEY
-  if (!GOOGLE_GEMINI_API_KEY) {
-    console.log('[VTID-0541] No Gemini API key configured, using enhanced local routing');
-    return processLocalRouting(text, threadId);
-  }
+  // VTID-01023: Try Vertex AI first (uses ADC, works on Cloud Run without API key)
+  if (vertexAI) {
+    try {
+      console.log('[VTID-01023] Using Vertex AI with ADC');
+      const vertexResponse = await callVertexWithTools(text, threadId);
 
-  try {
-    // Call Gemini API with function calling
-    const geminiResponse = await callGeminiWithTools(text, threadId);
+      // Check if Vertex wants to call any tools
+      if (vertexResponse.toolCalls && vertexResponse.toolCalls.length > 0) {
+        const toolResults: GeminiToolResult[] = [];
 
-    // Check if Gemini wants to call any tools
-    if (geminiResponse.toolCalls && geminiResponse.toolCalls.length > 0) {
-      const toolResults: GeminiToolResult[] = [];
+        for (const toolCall of vertexResponse.toolCalls) {
+          const result = await executeTool(toolCall.name, toolCall.args, threadId);
+          toolResults.push({
+            name: toolCall.name,
+            response: {
+              ok: result.ok,
+              ...result.data,
+              error: result.error,
+              governanceBlocked: result.governanceBlocked
+            }
+          });
+        }
 
-      for (const toolCall of geminiResponse.toolCalls) {
-        const result = await executeTool(toolCall.name, toolCall.args, threadId);
-        toolResults.push({
-          name: toolCall.name,
-          response: {
-            ok: result.ok,
-            ...result.data,
-            error: result.error,
-            governanceBlocked: result.governanceBlocked
+        // Send tool results back to Vertex for final response
+        const finalResponse = await sendToolResultsToVertex(text, toolResults, threadId);
+
+        return {
+          reply: finalResponse.reply,
+          toolResults,
+          meta: {
+            provider: 'vertex',
+            model: VERTEX_MODEL,
+            mode: 'operator_vertex',
+            tool_calls: vertexResponse.toolCalls.length,
+            vtid: 'VTID-01023'
           }
-        });
+        };
       }
 
-      // Send tool results back to Gemini for final response
-      const finalResponse = await sendToolResultsToGemini(text, toolResults, threadId);
-
+      // No tool calls, return Vertex's direct response
       return {
-        reply: finalResponse.reply,
-        toolResults,
+        reply: vertexResponse.reply,
         meta: {
-          // VTID-0541: Explicit provider/model metadata for transparency
+          provider: 'vertex',
+          model: VERTEX_MODEL,
+          mode: 'operator_vertex',
+          tool_calls: 0,
+          vtid: 'VTID-01023'
+        }
+      };
+    } catch (error: any) {
+      console.warn(`[VTID-01023] Vertex AI error, trying fallback: ${error.message}`);
+      // Fall through to Gemini API or local routing
+    }
+  }
+
+  // VTID-01023: Fallback to Gemini API key if available
+  if (GOOGLE_GEMINI_API_KEY) {
+    try {
+      console.log('[VTID-01023] Falling back to Gemini API key');
+      // Call Gemini API with function calling
+      const geminiResponse = await callGeminiWithTools(text, threadId);
+
+      // Check if Gemini wants to call any tools
+      if (geminiResponse.toolCalls && geminiResponse.toolCalls.length > 0) {
+        const toolResults: GeminiToolResult[] = [];
+
+        for (const toolCall of geminiResponse.toolCalls) {
+          const result = await executeTool(toolCall.name, toolCall.args, threadId);
+          toolResults.push({
+            name: toolCall.name,
+            response: {
+              ok: result.ok,
+              ...result.data,
+              error: result.error,
+              governanceBlocked: result.governanceBlocked
+            }
+          });
+        }
+
+        // Send tool results back to Gemini for final response
+        const finalResponse = await sendToolResultsToGemini(text, toolResults, threadId);
+
+        return {
+          reply: finalResponse.reply,
+          toolResults,
+          meta: {
+            provider: 'gemini-api',
+            model: 'gemini-pro',
+            mode: 'operator_gemini',
+            tool_calls: geminiResponse.toolCalls.length,
+            vtid: 'VTID-01023'
+          }
+        };
+      }
+
+      // No tool calls, return Gemini's direct response
+      return {
+        reply: geminiResponse.reply,
+        meta: {
           provider: 'gemini-api',
           model: 'gemini-pro',
           mode: 'operator_gemini',
-          tool_calls: geminiResponse.toolCalls.length,
-          vtid: 'VTID-0541'
+          tool_calls: 0,
+          vtid: 'VTID-01023'
         }
       };
+    } catch (error: any) {
+      console.error(`[VTID-01023] Gemini API error:`, error.message);
     }
-
-    // No tool calls, return Gemini's direct response
-    return {
-      reply: geminiResponse.reply,
-      meta: {
-        // VTID-0541: Explicit provider/model metadata for transparency
-        provider: 'gemini-api',
-        model: 'gemini-pro',
-        mode: 'operator_gemini',
-        tool_calls: 0,
-        vtid: 'VTID-0541'
-      }
-    };
-  } catch (error: any) {
-    console.error(`[VTID-0536] Gemini processing error:`, error);
-    // Fallback to local routing on error
-    const fallbackResponse = await processLocalRouting(text, threadId);
-    // Mark that this was a fallback due to error
-    if (fallbackResponse.meta) {
-      fallbackResponse.meta.fallback_reason = 'gemini_error';
-    }
-    return fallbackResponse;
   }
+
+  // VTID-01023: Final fallback to local routing
+  console.log('[VTID-01023] Using local routing fallback');
+  const fallbackResponse = await processLocalRouting(text, threadId);
+  if (fallbackResponse.meta) {
+    fallbackResponse.meta.fallback_reason = vertexAI ? 'vertex_error' : 'no_ai_backend';
+  }
+  return fallbackResponse;
 }
 
 /**
