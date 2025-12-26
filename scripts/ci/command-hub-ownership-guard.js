@@ -36,7 +36,8 @@ const PROTECTED_PATH = 'services/gateway/src/frontend/command-hub/';
 // VTID-01017: Scheduled Column Hard Eligibility + Remove Archive UI
 // VTID-01019: Operator Console UI Binding to OASIS Truth (No optimistic UI)
 // VTID-01021: Board Column Placement + Status Normalization
-const ALLOWED_VTID_PATTERN = /DEV-COMHU-\d+|VTID-0302|VTID-0539|VTID-0541|VTID-0542|VTID-0600|VTID-0601|VTID-01001|VTID-01002|VTID-01003|VTID-01005|VTID-01006|VTID-01009|VTID-01010|VTID-01012|VTID-01013|VTID-01014|VTID-01015|VTID-01016|VTID-01017|VTID-01019|VTID-01021|global-vtid-allocator|vtid-ledger-visibility/i;
+// VTID-01022: Command Hub Governance - Eliminate CI/CD & System Task Pollution
+const ALLOWED_VTID_PATTERN = /DEV-COMHU-\d+|VTID-0302|VTID-0539|VTID-0541|VTID-0542|VTID-0600|VTID-0601|VTID-01001|VTID-01002|VTID-01003|VTID-01005|VTID-01006|VTID-01009|VTID-01010|VTID-01012|VTID-01013|VTID-01014|VTID-01015|VTID-01016|VTID-01017|VTID-01019|VTID-01021|VTID-01022|global-vtid-allocator|vtid-ledger-visibility/i;
 
 function getChangedFiles() {
   try {
