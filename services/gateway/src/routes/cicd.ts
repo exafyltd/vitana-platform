@@ -39,7 +39,12 @@ import {
   // Autonomous PR+Merge for Claude Worker integration
   AutonomousPrMergeRequestSchema,
   AutonomousPrMergeResponse,
+  // VTID-01032: Multi-service deploy targeting
+  DeploySelectionResult,
+  DeployTargetReason,
 } from '../types/cicd';
+import { readFileSync, existsSync } from 'fs';
+import { join } from 'path';
 import githubService from '../services/github-service';
 import cicdEvents from '../services/oasis-event-service';
 import { ZodError } from 'zod';
@@ -47,6 +52,134 @@ import { randomUUID } from 'crypto';
 
 const router = Router();
 const DEFAULT_REPO = 'exafyltd/vitana-platform';
+
+// ==================== VTID-01032: Service Path Mapping ====================
+
+interface ServicePathMapping {
+  paths: string[];
+  cloud_run_service: string | null;
+  deployable: boolean;
+}
+
+interface ServicePathMap {
+  version: string;
+  mappings: Record<string, ServicePathMapping>;
+  shared: { paths: string[]; description: string };
+  infrastructure: { paths: string[]; description: string };
+}
+
+/**
+ * Load service path map from config file
+ * Falls back to inline defaults if file doesn't exist
+ */
+function loadServicePathMap(): ServicePathMap {
+  const configPath = join(__dirname, '../../../../config/service-path-map.json');
+
+  try {
+    if (existsSync(configPath)) {
+      const content = readFileSync(configPath, 'utf-8');
+      return JSON.parse(content) as ServicePathMap;
+    }
+  } catch (error) {
+    console.warn('[VTID-01032] Failed to load service-path-map.json, using defaults:', error);
+  }
+
+  // Inline fallback if config file is unavailable
+  return {
+    version: '1.0.0',
+    mappings: {
+      'gateway': { paths: ['services/gateway/'], cloud_run_service: 'gateway', deployable: true },
+      'oasis-operator': { paths: ['services/oasis-operator/'], cloud_run_service: 'oasis-operator', deployable: true },
+      'oasis-projector': { paths: ['services/oasis-projector/'], cloud_run_service: 'oasis-projector', deployable: true },
+    },
+    shared: { paths: ['packages/', 'libs/', 'config/'], description: 'Shared paths' },
+    infrastructure: { paths: ['.github/workflows/', 'scripts/'], description: 'Infrastructure paths' },
+  };
+}
+
+/**
+ * VTID-01032: Detect services from changed files using path mapping
+ * Returns the detection result with reason code
+ */
+function detectServicesFromFiles(
+  files: string[],
+  explicitServices?: string[]
+): { services: string[]; reason: DeployTargetReason } {
+  // If explicit services provided, use them
+  if (explicitServices && explicitServices.length > 0) {
+    return {
+      services: [...explicitServices].sort(),
+      reason: 'deploy_target_explicit',
+    };
+  }
+
+  const pathMap = loadServicePathMap();
+  const detectedServices = new Set<string>();
+  let hasSharedOnly = false;
+  let hasServiceChanges = false;
+
+  for (const file of files) {
+    let matchedService = false;
+
+    // Check service mappings
+    for (const [serviceName, mapping] of Object.entries(pathMap.mappings)) {
+      if (mapping.deployable) {
+        for (const pathPrefix of mapping.paths) {
+          if (file.startsWith(pathPrefix)) {
+            detectedServices.add(serviceName);
+            matchedService = true;
+            hasServiceChanges = true;
+            break;
+          }
+        }
+      }
+      if (matchedService) break;
+    }
+
+    // Check shared paths
+    if (!matchedService) {
+      for (const sharedPath of pathMap.shared.paths) {
+        if (file.startsWith(sharedPath)) {
+          hasSharedOnly = true;
+          break;
+        }
+      }
+    }
+  }
+
+  const services = Array.from(detectedServices).sort();
+
+  // Determine reason based on detection results
+  if (services.length === 0) {
+    if (hasSharedOnly && !hasServiceChanges) {
+      return { services: [], reason: 'deploy_target_ambiguous_shared_only' };
+    }
+    return { services: [], reason: 'no_deploy_target' };
+  }
+
+  if (services.length === 1) {
+    return { services, reason: 'deploy_target_detected_single' };
+  }
+
+  return { services, reason: 'deploy_target_detected_multi' };
+}
+
+/**
+ * VTID-01032: Validate explicit services against known deployable services
+ */
+function validateExplicitServices(services: string[]): { valid: boolean; invalid: string[] } {
+  const pathMap = loadServicePathMap();
+  const invalid: string[] = [];
+
+  for (const service of services) {
+    const mapping = pathMap.mappings[service];
+    if (!mapping || !mapping.deployable) {
+      invalid.push(service);
+    }
+  }
+
+  return { valid: invalid.length === 0, invalid };
+}
 
 // ==================== Helper Functions ====================
 
@@ -1064,6 +1197,7 @@ router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
       merge_method,
       automerge,
       max_ci_wait_seconds,
+      deploy: deployConfig,  // VTID-01032: Deploy targeting configuration
     } = validation.data;
 
     // Validate repo is the allowed one
@@ -1293,10 +1427,12 @@ router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
     const mergeCommitTitle = `${normalizedTitle} (#${pr.number})`;
     console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Merging PR #${pr.number} (${merge_method})`);
     console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Merge commit title: "${mergeCommitTitle}"`);
+
+    let mergeResult: { sha: string };
     try {
       await cicdEvents.safeMergeApproved(vtid, pr.number);
 
-      const mergeResult = await githubService.mergePullRequest(
+      mergeResult = await githubService.mergePullRequest(
         repo,
         pr.number,
         mergeCommitTitle,
@@ -1304,20 +1440,7 @@ router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
       );
 
       await cicdEvents.safeMergeExecuted(vtid, pr.number, mergeResult.sha);
-
       console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: PR #${pr.number} merged successfully - SHA: ${mergeResult.sha}`);
-      console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Auto-deploy should trigger for commit with title containing "${vtid}"`);
-
-      return res.status(200).json({
-        ok: true,
-        vtid,
-        pr_number: pr.number,
-        pr_url: pr.html_url,
-        merged: true,
-        merge_sha: mergeResult.sha,
-        ci_status: 'success',
-        reason: prReused ? 'pr_reused_existing' : 'pr_created',
-      } as AutonomousPrMergeResponse);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       console.error(`[AUTONOMOUS-PR-MERGE] ${vtid}: Merge failed - ${errorMessage}`);
@@ -1335,6 +1458,160 @@ router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
         details: { error: errorMessage },
       } as AutonomousPrMergeResponse);
     }
+
+    // ==================== VTID-01032: Deploy Targeting ====================
+    // Step 5: Determine deploy targets (explicit or auto-detected)
+
+    const changedFiles = governance.files_touched;
+    const environment = deployConfig?.environment || 'dev';
+
+    // Validate explicit services if provided
+    if (deployConfig?.services && deployConfig.services.length > 0) {
+      const validation = validateExplicitServices(deployConfig.services);
+      if (!validation.valid) {
+        console.error(`[AUTONOMOUS-PR-MERGE] ${vtid}: Invalid explicit services: ${validation.invalid.join(', ')}`);
+        // Still return success for merge, but note the invalid services
+        const deployResult: DeploySelectionResult = {
+          services: [],
+          environment,
+          reason: 'no_deploy_target',
+          changed_files_count: changedFiles.length,
+          workflow_triggered: false,
+        };
+
+        await cicdEvents.deploySelection(
+          vtid,
+          [],
+          environment,
+          'no_deploy_target',
+          changedFiles.length,
+          pr.number,
+          mergeResult.sha
+        );
+
+        return res.status(200).json({
+          ok: true,
+          vtid,
+          pr_number: pr.number,
+          pr_url: pr.html_url,
+          merged: true,
+          merge_sha: mergeResult.sha,
+          ci_status: 'success',
+          deploy: deployResult,
+          details: { invalid_services: validation.invalid },
+        } as AutonomousPrMergeResponse);
+      }
+    }
+
+    // Detect services from changed files or use explicit services
+    const detection = detectServicesFromFiles(changedFiles, deployConfig?.services);
+    console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Deploy detection - services: [${detection.services.join(', ')}], reason: ${detection.reason}`);
+
+    // Handle shared-only case (ambiguous, requires explicit services)
+    if (detection.reason === 'deploy_target_ambiguous_shared_only') {
+      console.warn(`[AUTONOMOUS-PR-MERGE] ${vtid}: Shared-only changes require explicit deploy.services`);
+
+      await cicdEvents.deploySelection(
+        vtid,
+        [],
+        environment,
+        detection.reason,
+        changedFiles.length,
+        pr.number,
+        mergeResult.sha
+      );
+
+      return res.status(200).json({
+        ok: false,
+        vtid,
+        pr_number: pr.number,
+        pr_url: pr.html_url,
+        merged: true,
+        merge_sha: mergeResult.sha,
+        ci_status: 'success',
+        error: 'Changes only affect shared paths (packages/, libs/, config/). Please specify deploy.services explicitly.',
+        reason: 'deploy_target_ambiguous',
+        deploy: {
+          services: [],
+          environment,
+          reason: detection.reason,
+          changed_files_count: changedFiles.length,
+          workflow_triggered: false,
+        },
+      } as AutonomousPrMergeResponse);
+    }
+
+    // Step 6: Trigger deploy workflows for selected services
+    let workflowUrl: string | undefined;
+    let workflowTriggered = false;
+
+    if (detection.services.length > 0) {
+      console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Triggering deploy for services: [${detection.services.join(', ')}]`);
+
+      // Trigger workflow for each service (workflows handle multi-service via inputs)
+      for (const service of detection.services) {
+        try {
+          await githubService.triggerWorkflow(
+            DEFAULT_REPO,
+            'EXEC-DEPLOY.yml',
+            'main',
+            {
+              vtid,
+              service,
+              health_path: '/alive',
+              initiator: 'autonomous-pr-merge',
+              environment,
+            }
+          );
+
+          // Get workflow URL for the first service
+          if (!workflowUrl) {
+            const runs = await githubService.getWorkflowRuns(DEFAULT_REPO, 'EXEC-DEPLOY.yml');
+            workflowUrl = runs.workflow_runs[0]?.html_url;
+          }
+
+          workflowTriggered = true;
+          console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Deploy workflow triggered for ${service}`);
+        } catch (error) {
+          console.error(`[AUTONOMOUS-PR-MERGE] ${vtid}: Failed to trigger deploy for ${service}:`, error);
+          // Continue with other services
+        }
+      }
+    }
+
+    // Step 7: Emit deploy selection event
+    await cicdEvents.deploySelection(
+      vtid,
+      detection.services,
+      environment,
+      detection.reason,
+      changedFiles.length,
+      pr.number,
+      mergeResult.sha
+    );
+
+    // Step 8: Return success response with deploy info
+    const deployResult: DeploySelectionResult = {
+      services: detection.services,
+      environment,
+      reason: detection.reason,
+      changed_files_count: changedFiles.length,
+      workflow_triggered: workflowTriggered,
+      workflow_url: workflowUrl,
+    };
+
+    console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Complete - merged=${true}, deploy_services=[${detection.services.join(', ')}]`);
+
+    return res.status(200).json({
+      ok: true,
+      vtid,
+      pr_number: pr.number,
+      pr_url: pr.html_url,
+      merged: true,
+      merge_sha: mergeResult.sha,
+      ci_status: 'success',
+      deploy: deployResult,
+    } as AutonomousPrMergeResponse);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     const vtid = req.body?.vtid || 'UNKNOWN';

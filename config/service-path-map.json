@@ -1,0 +1,60 @@
+{
+  "$schema": "./service-path-map.schema.json",
+  "$comment": "VTID-01032: Service path mapping for multi-service auto-deploy detection",
+  "version": "1.0.0",
+  "mappings": {
+    "gateway": {
+      "paths": ["services/gateway/"],
+      "cloud_run_service": "gateway",
+      "deployable": true
+    },
+    "oasis-operator": {
+      "paths": ["services/oasis-operator/"],
+      "cloud_run_service": "oasis-operator",
+      "deployable": true
+    },
+    "oasis-projector": {
+      "paths": ["services/oasis-projector/"],
+      "cloud_run_service": "oasis-projector",
+      "deployable": true
+    },
+    "agents": {
+      "paths": ["services/agents/"],
+      "cloud_run_service": "agents",
+      "deployable": false
+    },
+    "mcp": {
+      "paths": ["services/mcp/"],
+      "cloud_run_service": "mcp",
+      "deployable": false
+    },
+    "mcp-gateway": {
+      "paths": ["services/mcp-gateway/"],
+      "cloud_run_service": "mcp-gateway",
+      "deployable": false
+    },
+    "deploy-watcher": {
+      "paths": ["services/deploy-watcher/"],
+      "cloud_run_service": "deploy-watcher",
+      "deployable": false
+    },
+    "oasis": {
+      "paths": ["services/oasis/"],
+      "cloud_run_service": null,
+      "deployable": false
+    },
+    "validators": {
+      "paths": ["services/validators/"],
+      "cloud_run_service": null,
+      "deployable": false
+    }
+  },
+  "shared": {
+    "paths": ["packages/", "libs/", "config/"],
+    "description": "Shared code paths - require explicit deploy.services when changed alone"
+  },
+  "infrastructure": {
+    "paths": [".github/workflows/", "scripts/"],
+    "description": "Infrastructure paths - typically no deploy needed"
+  }
+}

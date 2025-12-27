@@ -196,7 +196,9 @@ export type CicdEventType =
   // VTID-01018: Operator Action Lifecycle Events (MANDATORY for hard contract)
   | 'operator.action.started'
   | 'operator.action.completed'
-  | 'operator.action.failed';
+  | 'operator.action.failed'
+  // VTID-01032: Multi-service deploy selection event
+  | 'cicd.deploy.selection';
 
 export interface CicdOasisEvent {
   vtid: string;
@@ -377,9 +379,33 @@ export const OperatorActionEventPayloadSchema = z.object({
 // ==================== Autonomous PR+Merge (Claude Worker Integration) ====================
 
 /**
+ * VTID-01032: Deploy target selection reasons
+ * These codes indicate how deploy targets were determined.
+ */
+export type DeployTargetReason =
+  | 'deploy_target_explicit'              // Caller provided deploy.services explicitly
+  | 'deploy_target_detected_single'       // Auto-detected single service from changed files
+  | 'deploy_target_detected_multi'        // Auto-detected multiple services from changed files
+  | 'deploy_target_ambiguous_shared_only' // Only shared paths changed, requires explicit services
+  | 'no_deploy_target';                   // No deployable service found in changed files
+
+/**
+ * VTID-01032: Deploy configuration schema for autonomous PR+merge
+ * Allows explicit service targeting or auto-detection based on changed files.
+ */
+export const DeployConfigSchema = z.object({
+  environment: z.enum(['dev']).default('dev'),
+  services: z.array(z.string().min(1)).optional(),
+});
+
+export type DeployConfig = z.infer<typeof DeployConfigSchema>;
+
+/**
  * Autonomous PR+Merge Request Schema
  * Used by Claude workers to request PR creation and merge in a single call.
  * Gateway handles all GitHub API interactions using GITHUB_SAFE_MERGE_TOKEN.
+ *
+ * VTID-01032: Extended with deploy configuration for multi-service targeting.
  */
 export const AutonomousPrMergeRequestSchema = z.object({
   vtid: z.string().min(1, 'VTID is required'),
@@ -391,9 +417,23 @@ export const AutonomousPrMergeRequestSchema = z.object({
   merge_method: z.enum(['squash', 'merge', 'rebase']).default('squash'),
   automerge: z.boolean().default(true),
   max_ci_wait_seconds: z.number().int().min(30).max(600).default(300), // 5 min default, max 10 min
+  // VTID-01032: Deploy targeting configuration
+  deploy: DeployConfigSchema.optional(),
 });
 
 export type AutonomousPrMergeRequest = z.infer<typeof AutonomousPrMergeRequestSchema>;
+
+/**
+ * VTID-01032: Deploy selection result included in response
+ */
+export interface DeploySelectionResult {
+  services: string[];
+  environment: string;
+  reason: DeployTargetReason;
+  changed_files_count: number;
+  workflow_triggered: boolean;
+  workflow_url?: string;
+}
 
 export interface AutonomousPrMergeResponse {
   ok: boolean;
@@ -403,18 +443,21 @@ export interface AutonomousPrMergeResponse {
   merged?: boolean;
   merge_sha?: string | null;
   ci_status?: 'success' | 'failure' | 'pending' | 'timeout';
+  // VTID-01032: Deploy selection result
+  deploy?: DeploySelectionResult;
   error?: string;
-  // VTID-01031: Stable reason codes
+  // VTID-01031 + VTID-01032: Stable reason codes
   reason?:
-    | 'validation_failed'      // Request validation failed
-    | 'branch_not_found'       // Head branch doesn't exist on remote
-    | 'pr_created'             // New PR was created (success path)
-    | 'pr_reused_existing'     // Existing PR was reused (idempotent success path)
-    | 'ci_failed'              // CI checks failed
-    | 'ci_timeout'             // CI checks did not complete in time
-    | 'governance_rejected'    // Governance blocked the merge
-    | 'merge_failed'           // Merge operation failed
-    | 'github_api_error';      // GitHub API returned an error
+    | 'validation_failed'           // Request validation failed
+    | 'branch_not_found'            // Head branch doesn't exist on remote
+    | 'pr_created'                  // New PR was created (success path)
+    | 'pr_reused_existing'          // Existing PR was reused (idempotent success path)
+    | 'ci_failed'                   // CI checks failed
+    | 'ci_timeout'                  // CI checks did not complete in time
+    | 'governance_rejected'         // Governance blocked the merge
+    | 'merge_failed'                // Merge operation failed
+    | 'github_api_error'            // GitHub API returned an error
+    | 'deploy_target_ambiguous';    // VTID-01032: Only shared paths changed, requires explicit services
   details?: Record<string, unknown>;
 }
 
