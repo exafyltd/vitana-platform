@@ -1524,6 +1524,7 @@ const state = {
     // VTID-0150-A: ORB UI State (Global Assistant Overlay)
     // VTID-0150-B: Added sessionId for Assistant Core integration
     // DEV-COMHU-2025-0014: Added live voice session state
+    // VTID-0135: Added voice conversation state with Web Speech APIs
     orb: {
         overlayVisible: false,
         chatDrawerOpen: false,
@@ -1537,7 +1538,7 @@ const state = {
             { id: 1, role: 'assistant', content: 'Hello! I\'m your Vitana assistant. How can I help you today?', timestamp: new Date().toISOString() }
         ],
         chatInputValue: '',
-        // DEV-COMHU-2025-0014: Live voice session state
+        // DEV-COMHU-2025-0014: Live voice session state (legacy audio streaming)
         liveSessionId: null,
         liveConnected: false,
         liveTranscript: [],
@@ -1546,7 +1547,15 @@ const state = {
         liveAudioStream: null,
         liveAudioContext: null,
         liveAudioProcessor: null,
-        liveEventSource: null
+        liveEventSource: null,
+        // VTID-0135: Voice conversation state (Web Speech APIs)
+        voiceState: 'IDLE', // IDLE | LISTENING | THINKING | SPEAKING | MUTED
+        conversationId: null,
+        orbSessionId: null,
+        speechRecognition: null,
+        speechSynthesisUtterance: null,
+        interimTranscript: '',
+        voiceError: null
     },
 
     // VTID-0600: Operational Visibility Foundation State
@@ -2693,6 +2702,7 @@ function renderSidebar() {
 
 /**
  * VTID-0150-A: Creates the ORB idle element for the sidebar footer
+ * VTID-0135: Updated to use Web Speech APIs for voice conversation
  * @returns {HTMLElement}
  */
 function renderOrbIdleElement() {
@@ -2702,26 +2712,30 @@ function renderOrbIdleElement() {
     orb.setAttribute('aria-label', 'Open Vitana Assistant');
     orb.setAttribute('tabindex', '0');
 
-    // Click handler - DEV-COMHU-2025-0014: Starts live voice session
+    // VTID-0135: Click handler - Starts voice conversation session
     orb.addEventListener('click', function() {
         console.log('[ORB] Opening overlay...');
         state.orb.overlayVisible = true;
         state.orb.liveTranscript = []; // Reset transcript
         state.orb.liveError = null;
+        state.orb.voiceError = null;
+        state.orb.voiceState = 'IDLE';
         renderApp();
-        // Start live voice session immediately
-        orbLiveStart();
+        // VTID-0135: Start voice conversation with Web Speech APIs
+        orbVoiceStart();
     });
 
-    // Keyboard accessibility - DEV-COMHU-2025-0014: Starts live voice session
+    // VTID-0135: Keyboard accessibility
     orb.addEventListener('keydown', function(e) {
         if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
             state.orb.overlayVisible = true;
             state.orb.liveTranscript = [];
             state.orb.liveError = null;
+            state.orb.voiceError = null;
+            state.orb.voiceState = 'IDLE';
             renderApp();
-            orbLiveStart();
+            orbVoiceStart();
         }
     });
 
@@ -10436,7 +10450,7 @@ const ORB_ICONS = {
 
 /**
  * VTID-0150-A: Renders the ORB Overlay (full-screen mode)
- * DEV-COMHU-2025-0014: Enhanced with live voice session support
+ * VTID-0135: Updated with voice conversation (Web Speech APIs) and state pill
  * @returns {HTMLElement}
  */
 function renderOrbOverlay() {
@@ -10446,71 +10460,101 @@ function renderOrbOverlay() {
     overlay.setAttribute('aria-modal', 'true');
     overlay.setAttribute('aria-label', 'Vitana Assistant');
 
-    // Block background clicks - DEV-COMHU-2025-0014: Stop live session on close
+    // VTID-0135: Block background clicks - Stop voice session on close
     overlay.addEventListener('click', function(e) {
         if (e.target === overlay) {
             // Close overlay when clicking backdrop
-            orbLiveStop();
+            orbVoiceStop();
             state.orb.overlayVisible = false;
             state.orb.chatDrawerOpen = false;
             renderApp();
         }
     });
 
-    // DEV-COMHU-2025-0014: Live transcript area (above orb)
+    // VTID-0135: State pill (LISTENING / THINKING / SPEAKING / MUTED)
+    var statePill = document.createElement('div');
+    statePill.className = 'orb-state-pill ' + getVoiceStateClass(state.orb.voiceState);
+    statePill.textContent = getVoiceStateLabel(state.orb.voiceState);
+    overlay.appendChild(statePill);
+
+    // VTID-0135: Live transcript area (above orb)
     var transcriptArea = document.createElement('div');
     transcriptArea.className = 'orb-live-transcript';
 
-    if (state.orb.liveError) {
+    // Show errors first (voice error or legacy live error)
+    if (state.orb.voiceError || state.orb.liveError) {
         var errorMsg = document.createElement('div');
         errorMsg.className = 'orb-live-error';
-        errorMsg.textContent = state.orb.liveError;
+        errorMsg.textContent = state.orb.voiceError || state.orb.liveError;
         transcriptArea.appendChild(errorMsg);
     } else if (state.orb.liveTranscript.length > 0) {
+        // Show transcript messages
         state.orb.liveTranscript.forEach(function(item) {
             var msgEl = document.createElement('div');
             msgEl.className = 'orb-live-message orb-live-message-' + item.role;
             msgEl.textContent = item.text;
             transcriptArea.appendChild(msgEl);
         });
-    } else if (state.orb.liveConnected) {
-        var listeningMsg = document.createElement('div');
-        listeningMsg.className = 'orb-live-listening';
-        listeningMsg.textContent = state.orb.liveMuted ? 'Microphone muted' : 'Listening...';
-        transcriptArea.appendChild(listeningMsg);
-    } else if (!state.orb.liveSessionId) {
-        var connectingMsg = document.createElement('div');
-        connectingMsg.className = 'orb-live-connecting';
-        connectingMsg.textContent = 'Connecting...';
-        transcriptArea.appendChild(connectingMsg);
+    }
+
+    // VTID-0135: Show interim transcript while speaking
+    if (state.orb.interimTranscript) {
+        var interimEl = document.createElement('div');
+        interimEl.className = 'orb-live-message orb-live-message-user orb-live-interim';
+        interimEl.textContent = state.orb.interimTranscript + '...';
+        transcriptArea.appendChild(interimEl);
+    }
+
+    // Show listening/connecting message if transcript is empty
+    if (state.orb.liveTranscript.length === 0 && !state.orb.voiceError && !state.orb.interimTranscript) {
+        var statusMsg = document.createElement('div');
+        statusMsg.className = 'orb-live-listening';
+        if (state.orb.voiceState === 'LISTENING') {
+            statusMsg.textContent = 'Listening...';
+        } else if (state.orb.voiceState === 'MUTED') {
+            statusMsg.textContent = 'Microphone muted';
+        } else if (state.orb.voiceState === 'THINKING') {
+            statusMsg.textContent = 'Processing...';
+        } else if (state.orb.voiceState === 'SPEAKING') {
+            statusMsg.textContent = 'Speaking...';
+        } else {
+            statusMsg.textContent = 'Initializing...';
+        }
+        transcriptArea.appendChild(statusMsg);
     }
 
     overlay.appendChild(transcriptArea);
 
-    // Large centered ORB - DEV-COMHU-2025-0014: Show listening state
+    // VTID-0135: Large centered ORB - Show state based on voiceState
     var largeOrb = document.createElement('div');
     var orbClass = 'orb-large';
-    if (state.orb.isThinking) {
+    if (state.orb.voiceState === 'THINKING' || state.orb.isThinking) {
         orbClass += ' orb-large-thinking';
-    } else if (state.orb.liveConnected && !state.orb.liveMuted) {
+    } else if (state.orb.voiceState === 'SPEAKING') {
+        orbClass += ' orb-large-speaking';
+    } else if (state.orb.voiceState === 'LISTENING') {
         orbClass += ' orb-large-listening';
+    } else if (state.orb.voiceState === 'MUTED') {
+        orbClass += ' orb-large-muted';
     } else {
         orbClass += ' orb-large-idle';
     }
     largeOrb.className = orbClass;
     overlay.appendChild(largeOrb);
 
-    // Status text - DEV-COMHU-2025-0014: Show live status
+    // VTID-0135: Status text based on voiceState
     var statusText = document.createElement('div');
     statusText.className = 'orb-status-text';
-    if (state.orb.isThinking) {
+    if (state.orb.voiceState === 'THINKING') {
         statusText.textContent = 'Processing...';
-    } else if (state.orb.liveConnected && !state.orb.liveMuted) {
+    } else if (state.orb.voiceState === 'SPEAKING') {
+        statusText.textContent = 'Speaking...';
+    } else if (state.orb.voiceState === 'LISTENING') {
         statusText.textContent = 'Speak now...';
-    } else if (state.orb.liveMuted) {
+    } else if (state.orb.voiceState === 'MUTED') {
         statusText.textContent = 'Muted';
     } else {
-        statusText.textContent = 'Connecting...';
+        statusText.textContent = 'Ready';
     }
     overlay.appendChild(statusText);
 
@@ -10518,37 +10562,38 @@ function renderOrbOverlay() {
     var controls = document.createElement('div');
     controls.className = 'orb-controls';
 
-    // Close button - DEV-COMHU-2025-0014: Stop live session on close
-    var closeWrapper = document.createElement('div');
-    closeWrapper.className = 'orb-control-wrapper';
-    var closeBtn = document.createElement('button');
-    closeBtn.className = 'orb-control-btn orb-control-close';
-    closeBtn.setAttribute('aria-label', 'Close');
-    closeBtn.innerHTML = ORB_ICONS.close;
-    closeBtn.addEventListener('click', function() {
-        console.log('[ORB] Closing overlay...');
-        orbLiveStop();
+    // VTID-0135: End button (replaces Close - more prominent)
+    var endWrapper = document.createElement('div');
+    endWrapper.className = 'orb-control-wrapper';
+    var endBtn = document.createElement('button');
+    endBtn.className = 'orb-control-btn orb-control-end';
+    endBtn.setAttribute('aria-label', 'End conversation');
+    endBtn.innerHTML = ORB_ICONS.close;
+    endBtn.addEventListener('click', function() {
+        console.log('[ORB] Ending conversation...');
+        orbVoiceStop();
         state.orb.overlayVisible = false;
         state.orb.chatDrawerOpen = false;
         renderApp();
     });
-    var closeLabel = document.createElement('span');
-    closeLabel.className = 'orb-control-label';
-    closeLabel.textContent = 'Close';
-    closeWrapper.appendChild(closeBtn);
-    closeWrapper.appendChild(closeLabel);
-    controls.appendChild(closeWrapper);
+    var endLabel = document.createElement('span');
+    endLabel.className = 'orb-control-label';
+    endLabel.textContent = 'End';
+    endWrapper.appendChild(endBtn);
+    endWrapper.appendChild(endLabel);
+    controls.appendChild(endWrapper);
 
-    // Mic toggle - DEV-COMHU-2025-0014: Use orbLiveToggleMute
+    // VTID-0135: Mic toggle - Use orbVoiceToggleMute
     var micWrapper = document.createElement('div');
     micWrapper.className = 'orb-control-wrapper';
     var micBtn = document.createElement('button');
-    micBtn.className = 'orb-control-btn' + (state.orb.micActive ? ' orb-control-active' : '');
-    micBtn.setAttribute('aria-label', state.orb.micActive ? 'Mute microphone' : 'Unmute microphone');
-    micBtn.setAttribute('aria-pressed', state.orb.micActive ? 'true' : 'false');
-    micBtn.innerHTML = state.orb.micActive ? ORB_ICONS.mic : ORB_ICONS.micOff;
+    var isMuted = state.orb.voiceState === 'MUTED';
+    micBtn.className = 'orb-control-btn' + (!isMuted ? ' orb-control-active' : '');
+    micBtn.setAttribute('aria-label', isMuted ? 'Unmute microphone' : 'Mute microphone');
+    micBtn.setAttribute('aria-pressed', isMuted ? 'false' : 'true');
+    micBtn.innerHTML = isMuted ? ORB_ICONS.micOff : ORB_ICONS.mic;
     micBtn.addEventListener('click', function() {
-        orbLiveToggleMute();
+        orbVoiceToggleMute();
     });
     var micLabel = document.createElement('span');
     micLabel.className = 'orb-control-label';
@@ -11098,6 +11143,385 @@ function scrollOrbLiveTranscript() {
     var container = document.querySelector('.orb-live-transcript');
     if (!container) return;
     container.scrollTop = container.scrollHeight;
+}
+
+// ==========================================================================
+// VTID-0135: ORB Voice Conversation (Web Speech APIs)
+// ==========================================================================
+
+/**
+ * VTID-0135: Check if Web Speech APIs are supported
+ */
+function isWebSpeechSupported() {
+    var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    return !!SpeechRecognition && 'speechSynthesis' in window;
+}
+
+/**
+ * VTID-0135: Start voice conversation session
+ * Uses Web Speech APIs for STT and TTS
+ */
+function orbVoiceStart() {
+    console.log('[VTID-0135] Starting voice conversation...');
+
+    // Check browser support
+    if (!isWebSpeechSupported()) {
+        state.orb.voiceError = 'Speech recognition not supported in this browser. Please use Chrome or Edge.';
+        state.orb.voiceState = 'IDLE';
+        renderApp();
+        return;
+    }
+
+    // Reset state
+    state.orb.voiceError = null;
+    state.orb.liveTranscript = [];
+    state.orb.interimTranscript = '';
+
+    // Generate session ID if not exists
+    if (!state.orb.orbSessionId) {
+        state.orb.orbSessionId = 'orb-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+    }
+
+    // Initialize Speech Recognition
+    var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    var recognition = new SpeechRecognition();
+
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    recognition.onstart = function() {
+        console.log('[VTID-0135] Speech recognition started');
+        state.orb.voiceState = 'LISTENING';
+        state.orb.micActive = true;
+        renderApp();
+    };
+
+    recognition.onresult = function(event) {
+        var interimTranscript = '';
+        var finalTranscript = '';
+
+        for (var i = event.resultIndex; i < event.results.length; i++) {
+            var transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+                finalTranscript += transcript;
+            } else {
+                interimTranscript += transcript;
+            }
+        }
+
+        // VTID-0135: Barge-in - cancel TTS if user starts speaking
+        if (state.orb.voiceState === 'SPEAKING' && (interimTranscript || finalTranscript)) {
+            console.log('[VTID-0135] Barge-in detected, canceling TTS');
+            window.speechSynthesis.cancel();
+            state.orb.voiceState = 'LISTENING';
+        }
+
+        state.orb.interimTranscript = interimTranscript;
+
+        if (finalTranscript) {
+            console.log('[VTID-0135] Final transcript:', finalTranscript);
+            state.orb.interimTranscript = '';
+
+            // Add user message to transcript
+            state.orb.liveTranscript.push({
+                id: Date.now(),
+                role: 'user',
+                text: finalTranscript.trim(),
+                timestamp: new Date().toISOString()
+            });
+
+            renderApp();
+            scrollOrbLiveTranscript();
+
+            // Send to backend
+            orbVoiceSendText(finalTranscript.trim());
+        } else {
+            renderApp();
+        }
+    };
+
+    recognition.onerror = function(event) {
+        console.error('[VTID-0135] Speech recognition error:', event.error);
+
+        if (event.error === 'not-allowed') {
+            state.orb.voiceError = 'Microphone access denied. Please allow microphone access and try again.';
+            state.orb.voiceState = 'IDLE';
+            state.orb.micActive = false;
+        } else if (event.error === 'no-speech') {
+            // No speech detected, restart if still listening
+            if (state.orb.voiceState === 'LISTENING') {
+                console.log('[VTID-0135] No speech detected, continuing to listen...');
+            }
+        } else {
+            state.orb.voiceError = 'Speech recognition error: ' + event.error;
+        }
+
+        renderApp();
+    };
+
+    recognition.onend = function() {
+        console.log('[VTID-0135] Speech recognition ended');
+
+        // Restart if not intentionally stopped and not in error state
+        if (state.orb.overlayVisible && state.orb.voiceState !== 'MUTED' && !state.orb.voiceError) {
+            console.log('[VTID-0135] Restarting speech recognition...');
+            try {
+                recognition.start();
+            } catch (e) {
+                console.warn('[VTID-0135] Failed to restart recognition:', e);
+            }
+        } else {
+            state.orb.micActive = false;
+            if (state.orb.voiceState === 'LISTENING') {
+                state.orb.voiceState = 'IDLE';
+            }
+            renderApp();
+        }
+    };
+
+    state.orb.speechRecognition = recognition;
+
+    // Start listening
+    try {
+        recognition.start();
+    } catch (e) {
+        console.error('[VTID-0135] Failed to start speech recognition:', e);
+        state.orb.voiceError = 'Failed to start speech recognition: ' + e.message;
+        renderApp();
+    }
+}
+
+/**
+ * VTID-0135: Stop voice conversation session
+ */
+function orbVoiceStop() {
+    console.log('[VTID-0135] Stopping voice conversation...');
+
+    // Stop speech recognition
+    if (state.orb.speechRecognition) {
+        try {
+            state.orb.speechRecognition.stop();
+        } catch (e) {
+            // Ignore
+        }
+        state.orb.speechRecognition = null;
+    }
+
+    // Cancel any ongoing TTS
+    window.speechSynthesis.cancel();
+
+    // Notify backend session ended
+    if (state.orb.orbSessionId && state.orb.conversationId) {
+        fetch('/api/v1/orb/end-session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                orb_session_id: state.orb.orbSessionId,
+                conversation_id: state.orb.conversationId
+            })
+        }).catch(function(e) {
+            console.warn('[VTID-0135] Failed to notify session end:', e);
+        });
+    }
+
+    // Reset state
+    state.orb.voiceState = 'IDLE';
+    state.orb.micActive = false;
+    state.orb.orbSessionId = null;
+    state.orb.conversationId = null;
+    state.orb.interimTranscript = '';
+
+    console.log('[VTID-0135] Voice conversation stopped');
+}
+
+/**
+ * VTID-0135: Toggle mute state for voice conversation
+ */
+function orbVoiceToggleMute() {
+    if (state.orb.voiceState === 'MUTED') {
+        // Unmute - restart recognition
+        console.log('[VTID-0135] Unmuting...');
+        state.orb.voiceState = 'LISTENING';
+
+        if (state.orb.speechRecognition) {
+            try {
+                state.orb.speechRecognition.start();
+            } catch (e) {
+                console.warn('[VTID-0135] Recognition already running');
+            }
+        } else {
+            orbVoiceStart();
+        }
+    } else {
+        // Mute - stop recognition
+        console.log('[VTID-0135] Muting...');
+        state.orb.voiceState = 'MUTED';
+
+        if (state.orb.speechRecognition) {
+            try {
+                state.orb.speechRecognition.stop();
+            } catch (e) {
+                // Ignore
+            }
+        }
+
+        // Also cancel any ongoing TTS
+        window.speechSynthesis.cancel();
+    }
+
+    state.orb.micActive = state.orb.voiceState !== 'MUTED';
+    renderApp();
+}
+
+/**
+ * VTID-0135: Send text to backend via POST /api/v1/orb/chat
+ */
+async function orbVoiceSendText(text) {
+    if (!text || !text.trim()) return;
+
+    console.log('[VTID-0135] Sending to backend:', text);
+    state.orb.voiceState = 'THINKING';
+    state.orb.isThinking = true;
+    renderApp();
+
+    try {
+        var response = await fetch('/api/v1/orb/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                orb_session_id: state.orb.orbSessionId,
+                conversation_id: state.orb.conversationId,
+                input_text: text,
+                meta: {
+                    mode: 'orb_voice',
+                    source: 'command-hub',
+                    vtid: null
+                }
+            })
+        });
+
+        var data = await response.json();
+
+        if (data.ok) {
+            console.log('[VTID-0135] Response received:', data.reply_text);
+
+            // Update conversation ID for continuity
+            if (data.conversation_id) {
+                state.orb.conversationId = data.conversation_id;
+            }
+
+            // Add assistant response to transcript
+            state.orb.liveTranscript.push({
+                id: Date.now(),
+                role: 'assistant',
+                text: data.reply_text,
+                timestamp: new Date().toISOString(),
+                meta: data.meta
+            });
+
+            state.orb.isThinking = false;
+            renderApp();
+            scrollOrbLiveTranscript();
+
+            // Speak the response using TTS
+            orbVoiceSpeak(data.reply_text);
+        } else {
+            console.error('[VTID-0135] Backend error:', data.error);
+            state.orb.liveTranscript.push({
+                id: Date.now(),
+                role: 'assistant',
+                text: 'Sorry, I encountered an error: ' + (data.error || 'Unknown error'),
+                timestamp: new Date().toISOString()
+            });
+            state.orb.isThinking = false;
+            state.orb.voiceState = 'LISTENING';
+            renderApp();
+            scrollOrbLiveTranscript();
+        }
+    } catch (error) {
+        console.error('[VTID-0135] Network error:', error);
+        state.orb.liveTranscript.push({
+            id: Date.now(),
+            role: 'assistant',
+            text: 'Sorry, I could not connect to the server. Please try again.',
+            timestamp: new Date().toISOString()
+        });
+        state.orb.isThinking = false;
+        state.orb.voiceState = 'LISTENING';
+        renderApp();
+        scrollOrbLiveTranscript();
+    }
+}
+
+/**
+ * VTID-0135: Speak text using TTS (speechSynthesis)
+ * Implements barge-in: stops speaking when user starts talking
+ */
+function orbVoiceSpeak(text) {
+    if (!text || !window.speechSynthesis) return;
+
+    // Cancel any ongoing speech
+    window.speechSynthesis.cancel();
+
+    console.log('[VTID-0135] Speaking:', text.substring(0, 50) + '...');
+
+    var utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'en-US';
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+
+    utterance.onstart = function() {
+        console.log('[VTID-0135] TTS started');
+        state.orb.voiceState = 'SPEAKING';
+        renderApp();
+    };
+
+    utterance.onend = function() {
+        console.log('[VTID-0135] TTS ended');
+        // Return to listening state after speaking
+        if (state.orb.overlayVisible && state.orb.voiceState === 'SPEAKING') {
+            state.orb.voiceState = 'LISTENING';
+            renderApp();
+        }
+    };
+
+    utterance.onerror = function(event) {
+        console.error('[VTID-0135] TTS error:', event.error);
+        if (event.error !== 'interrupted' && event.error !== 'canceled') {
+            state.orb.voiceState = 'LISTENING';
+            renderApp();
+        }
+    };
+
+    state.orb.speechSynthesisUtterance = utterance;
+    window.speechSynthesis.speak(utterance);
+}
+
+/**
+ * VTID-0135: Get display label for voice state
+ */
+function getVoiceStateLabel(voiceState) {
+    switch (voiceState) {
+        case 'LISTENING': return 'LISTENING';
+        case 'THINKING': return 'THINKING';
+        case 'SPEAKING': return 'SPEAKING';
+        case 'MUTED': return 'MUTED';
+        default: return 'READY';
+    }
+}
+
+/**
+ * VTID-0135: Get CSS class for voice state
+ */
+function getVoiceStateClass(voiceState) {
+    switch (voiceState) {
+        case 'LISTENING': return 'orb-state-listening';
+        case 'THINKING': return 'orb-state-thinking';
+        case 'SPEAKING': return 'orb-state-speaking';
+        case 'MUTED': return 'orb-state-muted';
+        default: return 'orb-state-idle';
+    }
 }
 
 /**

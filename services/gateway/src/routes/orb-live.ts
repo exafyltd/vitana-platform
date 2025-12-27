@@ -1,5 +1,6 @@
 /**
  * DEV-COMHU-2025-0014: ORB Multimodal v1 - Live Voice Session
+ * VTID-0135: ORB Voice Conversation Enablement (Phase A)
  *
  * SSE endpoint for real-time voice interaction with Gemini API.
  *
@@ -9,17 +10,25 @@
  * - POST /api/v1/orb/start    - Start live session
  * - POST /api/v1/orb/stop     - Stop live session
  * - POST /api/v1/orb/mute     - Toggle mute state
+ * - POST /api/v1/orb/chat     - VTID-0135: Voice conversation chat (Vertex routing)
  * - GET  /api/v1/orb/health   - Health check
  *
+ * VTID-0135 Changes:
+ * - Added POST /api/v1/orb/chat endpoint using Vertex routing (same as Operator Console)
+ * - Added OASIS event emission for ORB sessions and turns
+ * - Added conversation_id continuity support
+ *
  * IMPORTANT:
- * - Gemini API ONLY (GOOGLE_GEMINI_API_KEY)
- * - NO Vertex, NO ADC, NO aiplatform
+ * - POST /orb/chat uses Vertex AI routing (same as Operator Console)
+ * - Other endpoints still use direct Gemini API
  * - READ-ONLY: No state mutation, no tool execution
  * - CSP compliant: No inline scripts/styles
  */
 
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
+import { processWithGemini } from '../services/gemini-operator';
+import { emitOasisEvent } from '../services/oasis-event-service';
 
 const router = Router();
 
@@ -92,6 +101,161 @@ const connectionCountByIP = new Map<string, number>();
 const GEMINI_API_KEY = process.env.GOOGLE_GEMINI_API_KEY || '';
 const GEMINI_MODEL = 'gemini-2.0-flash-exp';
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+
+// =============================================================================
+// VTID-0135: Voice Conversation Types & Stores
+// =============================================================================
+
+/**
+ * VTID-0135: ORB Chat Request (voice conversation)
+ */
+interface OrbChatRequest {
+  orb_session_id: string;
+  conversation_id: string | null;
+  input_text: string;
+  meta?: {
+    mode?: string;
+    source?: string;
+    vtid?: string | null;
+  };
+}
+
+/**
+ * VTID-0135: ORB Chat Response
+ */
+interface OrbChatResponse {
+  ok: boolean;
+  conversation_id: string;
+  reply_text: string;
+  meta: {
+    provider: string;
+    model: string;
+    mode: string;
+    vtid?: string;
+  };
+  error?: string;
+}
+
+/**
+ * VTID-0135: Conversation context for continuity
+ */
+interface OrbConversation {
+  conversationId: string;
+  orbSessionId: string;
+  history: Array<{ role: 'user' | 'assistant'; content: string }>;
+  createdAt: Date;
+  lastActivity: Date;
+}
+
+// VTID-0135: In-memory conversation store (session-scoped)
+const orbConversations = new Map<string, OrbConversation>();
+
+// VTID-0135: Conversation timeout: 30 minutes
+const CONVERSATION_TIMEOUT_MS = 30 * 60 * 1000;
+
+/**
+ * VTID-0135: Cleanup expired conversations
+ */
+function cleanupExpiredConversations(): void {
+  const now = Date.now();
+  for (const [convId, conv] of orbConversations.entries()) {
+    if (now - conv.lastActivity.getTime() > CONVERSATION_TIMEOUT_MS) {
+      console.log(`[VTID-0135] Conversation expired: ${convId}`);
+      orbConversations.delete(convId);
+    }
+  }
+}
+
+// Cleanup expired conversations every 5 minutes
+setInterval(cleanupExpiredConversations, 5 * 60 * 1000);
+
+// =============================================================================
+// VTID-0135: OASIS Event Emission for ORB
+// =============================================================================
+
+/**
+ * VTID-0135: Emit orb.session.started event
+ */
+async function emitOrbSessionStarted(orbSessionId: string, conversationId: string): Promise<void> {
+  await emitOasisEvent({
+    vtid: 'VTID-0135',
+    type: 'orb.session.started',
+    source: 'command-hub',
+    status: 'info',
+    message: `ORB voice session started: ${orbSessionId}`,
+    payload: {
+      orb_session_id: orbSessionId,
+      conversation_id: conversationId,
+      metadata: { mode: 'orb_voice' }
+    }
+  }).catch(err => console.warn('[VTID-0135] Failed to emit orb.session.started:', err.message));
+}
+
+/**
+ * VTID-0135: Emit orb.turn.received event
+ */
+async function emitOrbTurnReceived(
+  orbSessionId: string,
+  conversationId: string,
+  inputText: string
+): Promise<void> {
+  await emitOasisEvent({
+    vtid: 'VTID-0135',
+    type: 'orb.turn.received',
+    source: 'command-hub',
+    status: 'info',
+    message: `ORB turn received: ${inputText.substring(0, 50)}...`,
+    payload: {
+      orb_session_id: orbSessionId,
+      conversation_id: conversationId,
+      input_length: inputText.length,
+      metadata: { mode: 'orb_voice' }
+    }
+  }).catch(err => console.warn('[VTID-0135] Failed to emit orb.turn.received:', err.message));
+}
+
+/**
+ * VTID-0135: Emit orb.turn.responded event
+ */
+async function emitOrbTurnResponded(
+  orbSessionId: string,
+  conversationId: string,
+  replyText: string,
+  provider: string
+): Promise<void> {
+  await emitOasisEvent({
+    vtid: 'VTID-0135',
+    type: 'orb.turn.responded',
+    source: 'command-hub',
+    status: 'success',
+    message: `ORB turn responded via ${provider}`,
+    payload: {
+      orb_session_id: orbSessionId,
+      conversation_id: conversationId,
+      reply_length: replyText.length,
+      provider,
+      metadata: { mode: 'orb_voice' }
+    }
+  }).catch(err => console.warn('[VTID-0135] Failed to emit orb.turn.responded:', err.message));
+}
+
+/**
+ * VTID-0135: Emit orb.session.ended event
+ */
+async function emitOrbSessionEnded(orbSessionId: string, conversationId: string): Promise<void> {
+  await emitOasisEvent({
+    vtid: 'VTID-0135',
+    type: 'orb.session.ended',
+    source: 'command-hub',
+    status: 'info',
+    message: `ORB voice session ended: ${orbSessionId}`,
+    payload: {
+      orb_session_id: orbSessionId,
+      conversation_id: conversationId,
+      metadata: { mode: 'orb_voice' }
+    }
+  }).catch(err => console.warn('[VTID-0135] Failed to emit orb.session.ended:', err.message));
+}
 
 // =============================================================================
 // Helpers
@@ -597,6 +761,169 @@ router.post('/stop', (req: Request, res: Response) => {
 });
 
 /**
+ * VTID-0135: POST /chat - Voice conversation chat (Vertex routing)
+ *
+ * Request JSON:
+ * {
+ *   "orb_session_id": "uuid",
+ *   "conversation_id": "string|null",
+ *   "input_text": "string",
+ *   "meta": { "mode": "orb_voice", "source": "command-hub", "vtid": null }
+ * }
+ *
+ * Response JSON:
+ * {
+ *   "ok": true,
+ *   "conversation_id": "string",
+ *   "reply_text": "string",
+ *   "meta": { "provider": "vertex", "model": "gemini-*", "mode": "orb_voice" }
+ * }
+ */
+router.post('/chat', async (req: Request, res: Response) => {
+  const body = req.body as OrbChatRequest;
+
+  console.log('[VTID-0135] POST /orb/chat received');
+
+  // Validate required fields
+  if (!body.orb_session_id || !body.input_text) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Missing required fields: orb_session_id, input_text'
+    });
+  }
+
+  const orbSessionId = body.orb_session_id;
+  const inputText = body.input_text.trim();
+
+  if (!inputText) {
+    return res.status(400).json({
+      ok: false,
+      error: 'input_text cannot be empty'
+    });
+  }
+
+  // Get or create conversation
+  let conversationId = body.conversation_id;
+  let conversation: OrbConversation;
+  let isNewSession = false;
+
+  if (conversationId && orbConversations.has(conversationId)) {
+    // Continue existing conversation
+    conversation = orbConversations.get(conversationId)!;
+    conversation.lastActivity = new Date();
+    console.log(`[VTID-0135] Continuing conversation: ${conversationId}`);
+  } else {
+    // Create new conversation
+    conversationId = `orb-conv-${randomUUID()}`;
+    conversation = {
+      conversationId,
+      orbSessionId,
+      history: [],
+      createdAt: new Date(),
+      lastActivity: new Date()
+    };
+    orbConversations.set(conversationId, conversation);
+    isNewSession = true;
+    console.log(`[VTID-0135] Created new conversation: ${conversationId}`);
+
+    // Emit session started event
+    await emitOrbSessionStarted(orbSessionId, conversationId);
+  }
+
+  // Emit turn received event
+  await emitOrbTurnReceived(orbSessionId, conversationId, inputText);
+
+  try {
+    // Build thread ID for Gemini processing
+    const threadId = `orb-${orbSessionId}`;
+
+    // Process with Gemini using Vertex routing (same as Operator Console)
+    // VTID-0135: Uses processWithGemini which prioritizes Vertex AI > Gemini API > Local
+    const geminiResponse = await processWithGemini({
+      text: inputText,
+      threadId,
+      conversationHistory: conversation.history,
+      conversationId
+    });
+
+    const replyText = geminiResponse.reply || 'I apologize, but I could not generate a response.';
+    const provider = (geminiResponse.meta?.provider as string) || 'vertex';
+    const model = (geminiResponse.meta?.model as string) || 'gemini-2.5-pro';
+
+    // Update conversation history
+    conversation.history.push({ role: 'user', content: inputText });
+    conversation.history.push({ role: 'assistant', content: replyText });
+
+    // Limit history to last 20 turns (10 pairs) to avoid context overflow
+    if (conversation.history.length > 20) {
+      conversation.history = conversation.history.slice(-20);
+    }
+
+    // Emit turn responded event
+    await emitOrbTurnResponded(orbSessionId, conversationId, replyText, provider);
+
+    console.log(`[VTID-0135] Chat response generated via ${provider}`);
+
+    const response: OrbChatResponse = {
+      ok: true,
+      conversation_id: conversationId,
+      reply_text: replyText,
+      meta: {
+        provider,
+        model,
+        mode: 'orb_voice',
+        vtid: 'VTID-0135'
+      }
+    };
+
+    return res.status(200).json(response);
+
+  } catch (error: any) {
+    console.error('[VTID-0135] Chat processing error:', error);
+
+    return res.status(500).json({
+      ok: false,
+      conversation_id: conversationId,
+      reply_text: '',
+      error: error.message || 'Failed to process chat request',
+      meta: {
+        provider: 'error',
+        model: 'none',
+        mode: 'orb_voice',
+        vtid: 'VTID-0135'
+      }
+    });
+  }
+});
+
+/**
+ * VTID-0135: POST /end-session - End an ORB voice conversation session
+ * Emits orb.session.ended OASIS event
+ */
+router.post('/end-session', async (req: Request, res: Response) => {
+  const { orb_session_id, conversation_id } = req.body;
+
+  if (!orb_session_id) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Missing required field: orb_session_id'
+    });
+  }
+
+  console.log(`[VTID-0135] Ending session: ${orb_session_id}`);
+
+  // Find and remove conversation
+  if (conversation_id && orbConversations.has(conversation_id)) {
+    orbConversations.delete(conversation_id);
+  }
+
+  // Emit session ended event
+  await emitOrbSessionEnded(orb_session_id, conversation_id || 'unknown');
+
+  return res.status(200).json({ ok: true });
+});
+
+/**
  * GET /health - Health check
  */
 router.get('/health', (_req: Request, res: Response) => {
@@ -605,11 +932,13 @@ router.get('/health', (_req: Request, res: Response) => {
   return res.status(200).json({
     ok: true,
     service: 'orb-live',
-    vtid: 'DEV-COMHU-2025-0014',
+    vtid: ['DEV-COMHU-2025-0014', 'VTID-0135'],
     model: GEMINI_MODEL,
     transport: 'SSE',
     gemini_configured: hasGeminiKey,
     active_sessions: sessions.size,
+    active_conversations: orbConversations.size,
+    voice_conversation_enabled: true,
     timestamp: new Date().toISOString()
   });
 });

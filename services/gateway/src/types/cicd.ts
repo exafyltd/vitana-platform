@@ -197,6 +197,11 @@ export type CicdEventType =
   | 'operator.action.started'
   | 'operator.action.completed'
   | 'operator.action.failed'
+  // VTID-0135: ORB Voice Conversation Events
+  | 'orb.session.started'
+  | 'orb.turn.received'
+  | 'orb.turn.responded'
+  | 'orb.session.ended'
   // VTID-01032: Multi-service deploy selection event
   | 'cicd.deploy.selection'
   // VTID-01033: CICD Concurrency Lock Events
