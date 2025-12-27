@@ -297,6 +297,7 @@ Do NOT use this tool for action commands like "Create a task" or "Deploy gateway
 /**
  * Execute knowledge_search tool
  * Called by the Gemini operator when this tool is invoked
+ * VTID-01025: Added guard to reject non-Vitana queries
  */
 export async function executeKnowledgeSearch(
   args: { query: string },
@@ -307,6 +308,36 @@ export async function executeKnowledgeSearch(
   error?: string;
 }> {
   console.log(`[VTID-0538] knowledge_search tool called: "${args.query}"`);
+
+  const lowerQuery = args.query.toLowerCase().trim();
+
+  // VTID-01025: Detect non-Vitana queries and return guidance
+  // This prevents unhelpful "couldn't find documentation" responses
+  const vitanaKeywords = [
+    'vitana', 'oasis', 'autopilot', 'command hub', 'commandhub', 'vtid',
+    'maxina', 'alkalma', 'earthlings', 'tenant', 'governance', 'planner',
+    'worker', 'validator', 'gateway', 'ledger', 'spec', 'index'
+  ];
+
+  const isVitanaQuery = vitanaKeywords.some(kw => lowerQuery.includes(kw));
+
+  // Also check if it's a "what is/how does" question that might be about Vitana
+  const isExplanatoryQuestion = /^(what|how|explain|describe|tell me about)/i.test(lowerQuery);
+
+  // Reject clearly non-Vitana queries (greetings, math, general chat)
+  const isConversational = /^(hi|hello|hey|thanks|thank you|ok|okay|bye|yes|no|sure|fuck|shit|damn)/i.test(lowerQuery);
+  const isMathOrGeneral = /^\d|capital|president|weather|calculate|multiply|divide/i.test(lowerQuery);
+
+  if (!isVitanaQuery && (isConversational || isMathOrGeneral || !isExplanatoryQuestion)) {
+    console.log(`[VTID-01025] Rejecting non-Vitana query: "${args.query}"`);
+    return {
+      ok: true,
+      data: {
+        answer: `[NOT_VITANA_QUERY] This query is not about Vitana documentation. Respond naturally to the user's message "${args.query}" using your general knowledge. Do not mention documentation or searching.`,
+        docs: []
+      }
+    };
+  }
 
   const result = await searchKnowledge({
     query: args.query,
