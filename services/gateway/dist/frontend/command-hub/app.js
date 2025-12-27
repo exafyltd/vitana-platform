@@ -11910,6 +11910,10 @@ function orbVoiceStart() {
             if (state.orb.voiceState === 'LISTENING') {
                 console.log('[VTID-0135] No speech detected, continuing to listen...');
             }
+        } else if (event.error === 'aborted') {
+            // VTID-01043: Aborted is intentional (language change, TTS start) - not an error
+            console.log('[VTID-01043] Recognition aborted (intentional)');
+            // Don't set voiceError - let onend handler restart if needed
         } else if (event.error === 'language-not-supported' || event.error === 'service-not-allowed') {
             // VTID-01042: Language not supported - fall back to English (US)
             console.warn('[VTID-01042] Language not supported:', state.orb.orbLang, '- falling back to English (US)');
@@ -12328,10 +12332,21 @@ function orbSetLanguage(langCode) {
     localStorage.setItem(ORB_STT_LANG_KEY, langCode);
     localStorage.setItem(ORB_TTS_LANG_KEY, langCode);
 
-    // Update STT recognition if active
+    // VTID-01043: Web Speech API doesn't support changing lang on running recognition
+    // Must stop, update lang, then restart
     if (state.orb.speechRecognition) {
+        var wasListening = state.orb.voiceState === 'LISTENING';
+        console.log('[VTID-01042] Restarting STT with new language:', langCode);
+
+        try {
+            // Stop current recognition - this triggers onend which will restart
+            state.orb.speechRecognition.abort();
+        } catch (e) {
+            console.warn('[VTID-01042] Could not abort recognition:', e);
+        }
+
+        // Update lang for when it restarts in onend handler
         state.orb.speechRecognition.lang = langCode;
-        console.log('[VTID-01042] Updated active STT to:', langCode);
     }
 
     // Select best TTS voice for this language
