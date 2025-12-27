@@ -12,7 +12,8 @@
 // VTID-01017: Scheduled Column Hard Eligibility + Remove Archive UI
 // VTID-01019: Operator Console UI Binding to OASIS Truth - No optimistic UI
 // VTID-01022: Command Hub Governance - Human Task Only Filter
-console.log('🔥 COMMAND HUB BUNDLE: VTID-01022 LIVE 🔥');
+// VTID-01027: Operator Console Session Memory - client-side context + conversation_id
+console.log('🔥 COMMAND HUB BUNDLE: VTID-01027 LIVE 🔥');
 
 // ===========================================================================
 // VTID-01010: Target Role Constants (canonical)
@@ -186,6 +187,147 @@ function dismissApproval(repo, prNumber) {
         return true;
     } catch (e) {
         return false;
+    }
+}
+
+// --- VTID-01027: Operator Console Session Memory LocalStorage Helpers ---
+
+/**
+ * VTID-01027: Get or create a stable conversation_id for operator chat.
+ * Stored in localStorage under 'operator_console_conversation_id'.
+ * Returns a UUID that persists across page refreshes.
+ */
+function getOperatorConversationId() {
+    var key = 'operator_console_conversation_id';
+    try {
+        var existing = localStorage.getItem(key);
+        if (existing) {
+            return existing;
+        }
+        // Generate new UUID v4
+        var uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            var r = Math.random() * 16 | 0;
+            var v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+        localStorage.setItem(key, uuid);
+        console.log('[VTID-01027] Created new conversation_id:', uuid);
+        return uuid;
+    } catch (e) {
+        console.warn('[VTID-01027] localStorage error for conversation_id:', e);
+        // Fallback to session-only UUID
+        return 'session-' + Date.now();
+    }
+}
+
+/**
+ * VTID-01027: Get operator chat history from localStorage.
+ * Returns array of { role: 'user'|'assistant', content: string, ts: number }
+ */
+function getOperatorChatHistory() {
+    var key = 'operator_console_history';
+    try {
+        var stored = localStorage.getItem(key);
+        if (stored) {
+            var parsed = JSON.parse(stored);
+            if (Array.isArray(parsed)) {
+                return parsed;
+            }
+        }
+    } catch (e) {
+        console.warn('[VTID-01027] Error reading chat history:', e);
+    }
+    return [];
+}
+
+/**
+ * VTID-01027: Save operator chat history to localStorage.
+ * @param {Array} history - Array of { role, content, ts } objects
+ */
+function saveOperatorChatHistory(history) {
+    var key = 'operator_console_history';
+    try {
+        localStorage.setItem(key, JSON.stringify(history));
+    } catch (e) {
+        console.warn('[VTID-01027] Error saving chat history:', e);
+    }
+}
+
+/**
+ * VTID-01027: Clear operator chat session (both history and conversation_id).
+ * Called when user wants to start a fresh conversation.
+ */
+function clearOperatorChatSession() {
+    try {
+        localStorage.removeItem('operator_console_conversation_id');
+        localStorage.removeItem('operator_console_history');
+        console.log('[VTID-01027] Chat session cleared');
+    } catch (e) {
+        console.warn('[VTID-01027] Error clearing chat session:', e);
+    }
+}
+
+/**
+ * VTID-01027: Build context array for API request.
+ * Takes the last N messages (up to 20) or caps by character count (12k).
+ * @param {Array} history - Full chat history
+ * @returns {Array} - Context array for API { role, content }
+ */
+function buildOperatorChatContext(history) {
+    if (!history || history.length === 0) {
+        return [];
+    }
+
+    var MAX_MESSAGES = 20;
+    var MAX_CHARS = 12000;
+
+    // Start from newest messages
+    var context = [];
+    var totalChars = 0;
+
+    // Iterate from end (newest) to beginning (oldest)
+    for (var i = history.length - 1; i >= 0 && context.length < MAX_MESSAGES; i--) {
+        var msg = history[i];
+        var content = msg.content || '';
+
+        // Check if adding this message would exceed character limit
+        if (totalChars + content.length > MAX_CHARS) {
+            break;
+        }
+
+        context.unshift({
+            role: msg.role,
+            content: content
+        });
+        totalChars += content.length;
+    }
+
+    return context;
+}
+
+/**
+ * VTID-01027: Initialize operator chat session.
+ * Loads conversation_id and chat history from localStorage.
+ * Restores chatMessages for UI rendering from persisted history.
+ */
+function initOperatorChatSession() {
+    // Get or create conversation_id
+    state.operatorConversationId = getOperatorConversationId();
+
+    // Load persisted chat history
+    var history = getOperatorChatHistory();
+    state.operatorChatHistory = history;
+
+    // Convert history to chatMessages format for UI rendering
+    if (history.length > 0 && state.chatMessages.length === 0) {
+        state.chatMessages = history.map(function(msg) {
+            return {
+                type: msg.role === 'user' ? 'user' : 'system',
+                content: msg.content,
+                timestamp: new Date(msg.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+            };
+        });
+        console.log('[VTID-01027] Restored', history.length, 'messages from history');
     }
 }
 
@@ -1190,6 +1332,9 @@ const state = {
     chatAttachments: [], // Array of { oasis_ref, kind, name }
     chatSending: false,
     chatIsTyping: false, // VTID-0526-D: Guard against scroll/render during typing
+    // VTID-01027: Session Memory State
+    operatorChatHistory: [], // Array of { role: 'user'|'assistant', content, ts }
+    operatorConversationId: null, // UUID for conversation continuity
 
     // Operator Ticker State
     tickerEvents: [],
@@ -2534,6 +2679,10 @@ function renderHeader() {
     operatorBtn.onclick = () => {
         state.operatorActiveTab = 'chat';
         state.isOperatorOpen = true;
+
+        // VTID-01027: Initialize session memory on operator open
+        initOperatorChatSession();
+
         renderApp();
 
         // VTID-0526-B: Auto-start live ticker when opening Operator Console
@@ -8153,6 +8302,15 @@ async function sendChatMessage() {
 
     if (!messageText) return;
 
+    // VTID-01027: Add user message to session history
+    var userHistoryEntry = {
+        role: 'user',
+        content: messageText,
+        ts: now.getTime()
+    };
+    state.operatorChatHistory.push(userHistoryEntry);
+    saveOperatorChatHistory(state.operatorChatHistory);
+
     // Add user message
     state.chatMessages.push({
         type: 'user',
@@ -8166,6 +8324,10 @@ async function sendChatMessage() {
         oasis_ref: a.oasis_ref,
         kind: a.kind
     }));
+
+    // VTID-01027: Build context from history (excluding the message we just added)
+    var contextHistory = state.operatorChatHistory.slice(0, -1);
+    var context = buildOperatorChatContext(contextHistory);
 
     // Clear input and attachments
     state.chatInputValue = '';
@@ -8184,13 +8346,17 @@ async function sendChatMessage() {
     try {
         // VTID-01025: Route directly to operator/chat which handles both general questions
         // AND Vitana knowledge via the knowledge_search tool when appropriate
+        // VTID-01027: Include conversation_id and context for session memory
         console.log('[Operator] Sending message to operator chat:', messageText);
+        console.log('[VTID-01027] Sending with conversation_id:', state.operatorConversationId, 'context messages:', context.length);
 
         const response = await fetch('/api/v1/operator/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 message: messageText,
+                conversation_id: state.operatorConversationId,
+                context: context.length > 0 ? context : undefined,
                 attachments: attachments.length > 0 ? attachments : undefined
             })
         });
@@ -8225,6 +8391,15 @@ async function sendChatMessage() {
                 vtid: result.createdTask.vtid
             });
         }
+
+        // VTID-01027: Add assistant response to session history
+        var assistantHistoryEntry = {
+            role: 'assistant',
+            content: replyContent,
+            ts: Date.now()
+        };
+        state.operatorChatHistory.push(assistantHistoryEntry);
+        saveOperatorChatHistory(state.operatorChatHistory);
 
         state.chatMessages.push({
             type: 'system',
