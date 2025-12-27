@@ -118,7 +118,7 @@ router.post('/chat', async (req: Request, res: Response) => {
       });
     }
 
-    const { message, attachments, role, mode, metadata } = validation.data;
+    const { message, attachments, role, mode, metadata, conversation_id, context } = validation.data;
 
     // VTID-0531: Normalize threadId - generate if missing
     const threadId = validation.data.threadId || randomUUID();
@@ -187,6 +187,8 @@ router.post('/chat', async (req: Request, res: Response) => {
     // VTID-0536: Use Gemini Operator Tools Bridge for AI processing
     // This enables function calling for autopilot.create_task, get_status, and list_recent_tasks
     // Falls back to local routing if Gemini API is not configured
+    // VTID-01027: Pass conversation history for session memory
+    console.log(`[VTID-01027] Processing with conversation_id: ${conversation_id}, context messages: ${context?.length || 0}`);
     const geminiResult = await processWithGemini({
       text: message,
       threadId,
@@ -195,7 +197,10 @@ router.post('/chat', async (req: Request, res: Response) => {
         vtid: validatedVtid || 'VTID-0536',
         request_id: requestId,
         mode: mode
-      }
+      },
+      // VTID-01027: Conversation history for context
+      conversationHistory: context || [],
+      conversationId: conversation_id
     });
 
     // VTID-0536: Check if Gemini created a task via tools (in addition to explicit /task command)

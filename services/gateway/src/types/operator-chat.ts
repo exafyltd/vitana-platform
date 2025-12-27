@@ -19,6 +19,8 @@ export type OperatorChatMode = 'chat' | 'task' | 'control';
  * - role: Message role (defaults to 'operator')
  * - mode: Message mode (defaults to 'chat')
  * - metadata: Optional additional metadata
+ * - conversation_id: VTID-01027 - Stable UUID for session continuity
+ * - context: VTID-01027 - Array of previous messages for context
  */
 export const OperatorChatMessageSchema = z.object({
   message: z.string().min(1, "Message is required"),
@@ -32,6 +34,12 @@ export const OperatorChatMessageSchema = z.object({
   role: z.enum(['operator', 'assistant', 'system']).optional().default('operator'),
   mode: z.enum(['chat', 'task', 'control']).optional().default('chat'),
   metadata: z.record(z.unknown()).optional(),
+  // VTID-01027: Session memory fields
+  conversation_id: z.string().optional(),
+  context: z.array(z.object({
+    role: z.enum(['user', 'assistant']),
+    content: z.string()
+  })).optional().default([]),
 });
 
 export type OperatorChatMessageInput = z.infer<typeof OperatorChatMessageSchema>;
