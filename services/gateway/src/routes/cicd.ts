@@ -1019,14 +1019,18 @@ router.post('/approvals/:id/deny', async (req: Request, res: Response) => {
 /**
  * POST /autonomous-pr-merge - Create PR + Wait for CI + Merge
  *
+ * VTID-01031: Made idempotent - reuses existing PRs instead of failing
+ *
  * This endpoint is designed for Claude workers that cannot access GitHub API directly.
  * It performs the complete PR lifecycle:
- * 1. Create PR from head_branch to base_branch
- * 2. Emit OASIS event for PR creation
- * 3. Poll CI status until success/failure/timeout
- * 4. Run governance evaluation
- * 5. Merge PR using specified merge method
- * 6. Emit OASIS events for merge result
+ * 1. Validate branch exists on remote
+ * 2. Find existing PR for head_branch (idempotency)
+ * 3. Create PR if none exists
+ * 4. Emit OASIS events for PR creation/reuse
+ * 5. If automerge: Poll CI status until success/failure/timeout
+ * 6. Run governance evaluation
+ * 7. Merge PR using specified merge method
+ * 8. Emit OASIS events for merge result
  *
  * The caller (Claude) only needs to:
  * - Push commits to a branch
@@ -1040,7 +1044,14 @@ router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
   try {
     const validation = AutonomousPrMergeRequestSchema.safeParse(req.body);
     if (!validation.success) {
-      return handleZodError(validation.error, res);
+      const details = validation.error.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ');
+      return res.status(400).json({
+        ok: false,
+        vtid: req.body?.vtid || 'UNKNOWN',
+        error: `Invalid request payload: ${details}`,
+        reason: 'validation_failed',
+        details: { validation_errors: validation.error.errors },
+      } as AutonomousPrMergeResponse);
     }
 
     const {
@@ -1057,34 +1068,37 @@ router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
 
     // Validate repo is the allowed one
     if (repo !== DEFAULT_REPO) {
-      console.error(`[AUTONOMOUS-PR-MERGE] Rejected: unauthorized repo ${repo}`);
+      console.error(`[AUTONOMOUS-PR-MERGE] ${vtid}: Rejected - unauthorized repo ${repo}`);
       return res.status(403).json({
         ok: false,
         vtid,
         error: `Only ${DEFAULT_REPO} is allowed`,
-        reason: 'internal_error',
+        reason: 'validation_failed',
+        details: { repo, allowed_repo: DEFAULT_REPO },
       } as AutonomousPrMergeResponse);
     }
 
     // Validate base branch
     if (base_branch !== 'main') {
-      console.error(`[AUTONOMOUS-PR-MERGE] Rejected: base must be main, got ${base_branch}`);
+      console.error(`[AUTONOMOUS-PR-MERGE] ${vtid}: Rejected - base must be main, got ${base_branch}`);
       return res.status(400).json({
         ok: false,
         vtid,
         error: 'PRs must target main branch',
-        reason: 'internal_error',
+        reason: 'validation_failed',
+        details: { base_branch, required_base: 'main' },
       } as AutonomousPrMergeResponse);
     }
 
     // Validate head branch is not main
     if (head_branch === 'main' || head_branch === 'master') {
-      console.error(`[AUTONOMOUS-PR-MERGE] Rejected: cannot create PR from main/master`);
+      console.error(`[AUTONOMOUS-PR-MERGE] ${vtid}: Rejected - cannot create PR from main/master`);
       return res.status(400).json({
         ok: false,
         vtid,
         error: 'Cannot create PR from main/master branch',
-        reason: 'internal_error',
+        reason: 'validation_failed',
+        details: { head_branch },
       } as AutonomousPrMergeResponse);
     }
 
@@ -1094,42 +1108,90 @@ router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
     const titleWithoutVtid = title.replace(vtidPattern, '').trim();
     const normalizedTitle = `${vtid}: ${titleWithoutVtid}`;
 
-    console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Creating PR from ${head_branch} to ${base_branch}`);
-    console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Normalized title: "${normalizedTitle}"`);
+    console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Processing PR request for ${head_branch} -> ${base_branch}`);
 
-    // Step 1: Create PR
-    let pr: { number: number; html_url: string };
+    // VTID-01031 Step 1: Validate branch exists on remote
+    console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Checking if branch ${head_branch} exists...`);
     try {
-      await cicdEvents.createPrRequested(vtid, head_branch, base_branch);
-      pr = await githubService.createPullRequest(repo, normalizedTitle, body, head_branch, base_branch);
-      await cicdEvents.createPrSucceeded(vtid, pr.number, pr.html_url);
-      console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: PR #${pr.number} created - ${pr.html_url}`);
+      const branchFound = await githubService.branchExists(repo, head_branch);
+      if (!branchFound) {
+        console.error(`[AUTONOMOUS-PR-MERGE] ${vtid}: Branch ${head_branch} not found on remote`);
+        return res.status(400).json({
+          ok: false,
+          vtid,
+          error: `Branch '${head_branch}' does not exist on remote`,
+          reason: 'branch_not_found',
+          details: { head_branch, repo },
+        } as AutonomousPrMergeResponse);
+      }
+      console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Branch ${head_branch} exists`);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.error(`[AUTONOMOUS-PR-MERGE] ${vtid}: PR creation failed - ${errorMessage}`);
+      console.error(`[AUTONOMOUS-PR-MERGE] ${vtid}: GitHub API error checking branch - ${errorMessage}`);
+      return res.status(500).json({
+        ok: false,
+        vtid,
+        error: `GitHub API error: ${errorMessage}`,
+        reason: 'github_api_error',
+        details: { operation: 'branch_check', error: errorMessage },
+      } as AutonomousPrMergeResponse);
+    }
+
+    // VTID-01031 Step 2: Find existing PR for head_branch (idempotency)
+    let pr: { number: number; html_url: string };
+    let prReused = false;
+
+    console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Searching for existing PR...`);
+    await cicdEvents.findPrRequested(vtid, head_branch, base_branch);
+
+    try {
+      const existingPr = await githubService.findPrForBranch(repo, head_branch, base_branch);
+
+      if (existingPr) {
+        // VTID-01031: Reuse existing PR (idempotent path)
+        pr = { number: existingPr.number, html_url: existingPr.html_url };
+        prReused = true;
+        console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Found existing PR #${pr.number} - reusing`);
+        await cicdEvents.findPrSucceeded(vtid, pr.number, pr.html_url, head_branch);
+        await cicdEvents.createPrSkippedExisting(vtid, pr.number, pr.html_url, head_branch);
+      } else {
+        // VTID-01031 Step 3: Create PR (no existing PR found)
+        console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: No existing PR found, creating new one...`);
+        console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Normalized title: "${normalizedTitle}"`);
+        await cicdEvents.createPrRequested(vtid, head_branch, base_branch);
+        pr = await githubService.createPullRequest(repo, normalizedTitle, body, head_branch, base_branch);
+        await cicdEvents.createPrSucceeded(vtid, pr.number, pr.html_url);
+        console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: PR #${pr.number} created - ${pr.html_url}`);
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`[AUTONOMOUS-PR-MERGE] ${vtid}: GitHub API error - ${errorMessage}`);
       await cicdEvents.createPrFailed(vtid, errorMessage);
       return res.status(500).json({
         ok: false,
         vtid,
-        error: `PR creation failed: ${errorMessage}`,
-        reason: 'pr_creation_failed',
+        error: `GitHub API error: ${errorMessage}`,
+        reason: 'github_api_error',
+        details: { operation: 'find_or_create_pr', error: errorMessage },
       } as AutonomousPrMergeResponse);
     }
 
-    // If automerge is false, return now with PR info
+    // VTID-01031 Step 4: If automerge is false, return now with PR info
     if (!automerge) {
       console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: automerge=false, returning PR info only`);
-      return res.status(201).json({
+      return res.status(prReused ? 200 : 201).json({
         ok: true,
         vtid,
         pr_number: pr.number,
         pr_url: pr.html_url,
         merged: false,
+        merge_sha: null,
         ci_status: 'pending',
+        reason: prReused ? 'pr_reused_existing' : 'pr_created',
       } as AutonomousPrMergeResponse);
     }
 
-    // Step 2: Poll CI status
+    // VTID-01031 Step 5: Poll CI status (if automerge=true)
     console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Waiting for CI (max ${max_ci_wait_seconds}s)`);
     const pollIntervalMs = 10000; // 10 seconds
     const maxPolls = Math.ceil(max_ci_wait_seconds / 10);
@@ -1158,6 +1220,7 @@ router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
             pr_number: pr.number,
             pr_url: pr.html_url,
             merged: false,
+            merge_sha: null,
             ci_status: 'failure',
             error: `CI checks failed: ${failedChecks.map(c => c.name).join(', ')}`,
             reason: 'ci_failed',
@@ -1183,6 +1246,7 @@ router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
         pr_number: pr.number,
         pr_url: pr.html_url,
         merged: false,
+        merge_sha: null,
         ci_status: 'timeout',
         error: `CI did not complete within ${max_ci_wait_seconds} seconds`,
         reason: 'ci_timeout',
@@ -1190,7 +1254,7 @@ router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
       } as AutonomousPrMergeResponse);
     }
 
-    // Step 3: Governance evaluation
+    // Step 6: Governance evaluation
     console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Running governance evaluation`);
     const governance = await githubService.evaluateGovernance(repo, pr.number, vtid);
     await cicdEvents.safeMergeEvaluated(
@@ -1213,9 +1277,10 @@ router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
         pr_number: pr.number,
         pr_url: pr.html_url,
         merged: false,
+        merge_sha: null,
         ci_status: 'success',
         error: `Governance blocked: ${governance.blocked_reasons.join(', ')}`,
-        reason: 'governance_blocked',
+        reason: 'governance_rejected',
         details: {
           files_touched: governance.files_touched,
           blocked_reasons: governance.blocked_reasons,
@@ -1223,7 +1288,7 @@ router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
       } as AutonomousPrMergeResponse);
     }
 
-    // Step 4: Merge PR
+    // Step 7: Merge PR
     // CRITICAL: Merge commit title MUST contain VTID for auto-deploy to trigger
     const mergeCommitTitle = `${normalizedTitle} (#${pr.number})`;
     console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Merging PR #${pr.number} (${merge_method})`);
@@ -1243,7 +1308,6 @@ router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
       console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: PR #${pr.number} merged successfully - SHA: ${mergeResult.sha}`);
       console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Auto-deploy should trigger for commit with title containing "${vtid}"`);
 
-
       return res.status(200).json({
         ok: true,
         vtid,
@@ -1252,6 +1316,7 @@ router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
         merged: true,
         merge_sha: mergeResult.sha,
         ci_status: 'success',
+        reason: prReused ? 'pr_reused_existing' : 'pr_created',
       } as AutonomousPrMergeResponse);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -1263,9 +1328,11 @@ router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
         pr_number: pr.number,
         pr_url: pr.html_url,
         merged: false,
+        merge_sha: null,
         ci_status: 'success',
         error: `Merge failed: ${errorMessage}`,
         reason: 'merge_failed',
+        details: { error: errorMessage },
       } as AutonomousPrMergeResponse);
     }
   } catch (error) {
@@ -1276,7 +1343,9 @@ router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
       ok: false,
       vtid,
       error: `Internal error: ${errorMessage}`,
-      reason: 'internal_error',
+      reason: 'github_api_error',
+      merge_sha: null,
+      details: { error: errorMessage },
     } as AutonomousPrMergeResponse);
   }
 });
