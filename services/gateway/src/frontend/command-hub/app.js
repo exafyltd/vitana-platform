@@ -6483,9 +6483,13 @@ function renderOasisEventsView() {
         startOasisEventsAutoRefresh();
     }
 
-    // Toolbar
+    // Toolbar - single row compact layout
     var toolbar = document.createElement('div');
     toolbar.className = 'oasis-events-toolbar';
+
+    // Left cluster: Auto-refresh + dropdowns + LIVE pill
+    var leftCluster = document.createElement('div');
+    leftCluster.className = 'oasis-toolbar-left';
 
     // Auto-refresh toggle
     var refreshToggle = document.createElement('div');
@@ -6507,7 +6511,7 @@ function renderOasisEventsView() {
         renderApp();
     };
     refreshToggle.appendChild(refreshBtn);
-    toolbar.appendChild(refreshToggle);
+    leftCluster.appendChild(refreshToggle);
 
     // Topic filter
     var topicFilter = document.createElement('select');
@@ -6524,7 +6528,7 @@ function renderOasisEventsView() {
         state.oasisEvents.filters.topic = e.target.value;
         fetchOasisEvents(state.oasisEvents.filters);
     };
-    toolbar.appendChild(topicFilter);
+    leftCluster.appendChild(topicFilter);
 
     // Status filter
     var statusFilter = document.createElement('select');
@@ -6540,31 +6544,35 @@ function renderOasisEventsView() {
         state.oasisEvents.filters.status = e.target.value;
         fetchOasisEvents(state.oasisEvents.filters);
     };
-    toolbar.appendChild(statusFilter);
+    leftCluster.appendChild(statusFilter);
 
-    // Spacer
-    var spacer = document.createElement('div');
-    spacer.className = 'spacer';
-    toolbar.appendChild(spacer);
+    // Live indicator pill (inline in toolbar)
+    if (state.oasisEvents.autoRefreshEnabled) {
+        var liveIndicator = document.createElement('div');
+        liveIndicator.className = 'oasis-live-pill';
+        liveIndicator.innerHTML = '<span class="live-dot"></span> LIVE - Auto-refreshing';
+        leftCluster.appendChild(liveIndicator);
+    }
 
-    // Refresh button
+    toolbar.appendChild(leftCluster);
+
+    // Right cluster: Refresh icon button
+    var rightCluster = document.createElement('div');
+    rightCluster.className = 'oasis-toolbar-right';
+
+    // Refresh icon button
     var manualRefresh = document.createElement('button');
-    manualRefresh.className = 'btn';
-    manualRefresh.textContent = 'Refresh Now';
+    manualRefresh.className = 'btn oasis-refresh-icon-btn';
+    manualRefresh.title = 'Refresh now';
+    manualRefresh.setAttribute('aria-label', 'Refresh now');
+    manualRefresh.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M13.65 2.35A7.958 7.958 0 0 0 8 0a8 8 0 1 0 8 8h-2a6 6 0 1 1-1.76-4.24l-2.24 2.24h5V1l-1.35 1.35z" fill="currentColor"/></svg>';
     manualRefresh.onclick = function() {
         fetchOasisEvents(state.oasisEvents.filters);
     };
-    toolbar.appendChild(manualRefresh);
+    rightCluster.appendChild(manualRefresh);
 
+    toolbar.appendChild(rightCluster);
     container.appendChild(toolbar);
-
-    // Live indicator
-    if (state.oasisEvents.autoRefreshEnabled) {
-        var liveIndicator = document.createElement('div');
-        liveIndicator.className = 'oasis-live-indicator';
-        liveIndicator.innerHTML = '<span class="live-dot"></span> LIVE - Auto-refreshing every 5 seconds';
-        container.appendChild(liveIndicator);
-    }
 
     // Events table
     var content = document.createElement('div');
