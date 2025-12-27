@@ -685,14 +685,17 @@ function refreshCommandHubEventsContent() {
 
 /**
  * VTID-01002: Incremental refresh for VTIDs list content.
+ * VTID-01030: FIXED - Use vtidProjection (not vtidsList) to match renderVtidsView
  */
 function refreshVtidsContent() {
     var content = document.querySelector('.vtids-content');
     if (!content) return;
 
+    // VTID-01030: Use vtidProjection.items (same as renderVtidsView), NOT vtidsList.items
     var tbody = content.querySelector('tbody');
-    if (tbody && state.vtidsList.items) {
-        updateVtidsTableBody(tbody, state.vtidsList.items);
+    if (tbody && state.vtidProjection.items && state.vtidProjection.items.length > 0) {
+        // Only refresh if we have data - don't wipe with empty array
+        updateVtidsTableBodyFromProjection(tbody, state.vtidProjection.items);
     }
 }
 
@@ -773,6 +776,73 @@ function updateVtidsTableBody(tbody, items) {
     items.forEach(function(vtid) {
         var row = createVtidRow(vtid);
         tbody.appendChild(row);
+    });
+}
+
+/**
+ * VTID-01030: Updates VTIDs projection table body incrementally.
+ * Uses same row format as renderVtidProjectionTable (5 columns: VTID, Title, Stage, Status, Attention)
+ */
+function updateVtidsTableBodyFromProjection(tbody, items) {
+    if (!tbody || !items) return;
+
+    while (tbody.firstChild) {
+        tbody.removeChild(tbody.firstChild);
+    }
+
+    items.forEach(function(item) {
+        try {
+            if (!item) return;
+
+            var row = document.createElement('tr');
+            row.className = 'vtid-row vtid-projection-row';
+
+            // VTID column
+            var vtidCell = document.createElement('td');
+            vtidCell.className = 'vtid-cell';
+            vtidCell.textContent = item.vtid || '—';
+            row.appendChild(vtidCell);
+
+            // Title column
+            var titleCell = document.createElement('td');
+            titleCell.className = 'vtid-title-cell';
+            titleCell.textContent = item.title || '—';
+            row.appendChild(titleCell);
+
+            // Derive Stage/Status
+            var derived = deriveVtidStageStatus(item) || { stage: 'Scheduled', status: 'scheduled' };
+
+            // Stage column
+            var stageCell = document.createElement('td');
+            var stageBadge = document.createElement('span');
+            var stageVal = (derived.stage || 'scheduled').toLowerCase();
+            stageBadge.className = 'vtid-stage-badge vtid-stage-' + stageVal;
+            stageBadge.textContent = derived.stage || 'Scheduled';
+            stageCell.appendChild(stageBadge);
+            row.appendChild(stageCell);
+
+            // Status column
+            var statusCell = document.createElement('td');
+            var statusBadge = document.createElement('span');
+            var statusVal = (derived.status || 'scheduled').toLowerCase();
+            statusBadge.className = 'vtid-status-badge vtid-status-' + statusVal;
+            statusBadge.textContent = derived.status || 'scheduled';
+            statusCell.appendChild(statusBadge);
+            row.appendChild(statusCell);
+
+            // Attention column
+            var attentionCell = document.createElement('td');
+            var attentionBadge = document.createElement('span');
+            var attentionVal = item.attention_required || 'AUTO';
+            attentionBadge.className = 'vtid-attention-badge vtid-attention-' + attentionVal.toLowerCase();
+            attentionBadge.textContent = attentionVal === 'HUMAN' ? '⚠️ HUMAN' : 'AUTO';
+            attentionCell.appendChild(attentionBadge);
+            row.appendChild(attentionCell);
+
+            tbody.appendChild(row);
+        } catch (err) {
+            console.error('[VTID-01030] Failed to update VTID row:', item && item.vtid, err);
+        }
     });
 }
 
