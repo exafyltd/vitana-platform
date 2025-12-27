@@ -166,6 +166,60 @@ function clearTaskStatusOverride(vtid) {
 }
 
 /**
+ * VTID-01041: Get task title override from localStorage.
+ * Key: vitana.taskTitleOverride.<VTID>
+ */
+function getTaskTitleOverride(vtid) {
+    if (!vtid) return null;
+    try {
+        return localStorage.getItem('vitana.taskTitleOverride.' + vtid);
+    } catch (e) {
+        console.warn('[VTID-01041] localStorage read error:', e);
+        return null;
+    }
+}
+
+/**
+ * VTID-01041: Save task title override to localStorage.
+ */
+function setTaskTitleOverride(vtid, title) {
+    if (!vtid) return false;
+    try {
+        localStorage.setItem('vitana.taskTitleOverride.' + vtid, title);
+        return true;
+    } catch (e) {
+        console.warn('[VTID-01041] localStorage write error:', e);
+        return false;
+    }
+}
+
+/**
+ * VTID-01041: Get effective task title.
+ * Priority: localStorage override > server title > fallback
+ */
+function getEffectiveTaskTitle(task) {
+    if (!task || !task.vtid) return 'Allocated - Pending Title';
+    var override = getTaskTitleOverride(task.vtid);
+    if (override) return override;
+    if (task.title && task.title !== 'Pending Title' && task.title !== 'Allocated - Pending Title') {
+        return task.title;
+    }
+    return 'Allocated - Pending Title';
+}
+
+/**
+ * VTID-01041: Check if a task title is a placeholder.
+ */
+function isPlaceholderTitle(title) {
+    if (!title) return true;
+    var lowerTitle = title.toLowerCase();
+    return lowerTitle === 'pending title' ||
+           lowerTitle === 'allocated - pending title' ||
+           lowerTitle === '' ||
+           lowerTitle === 'untitled';
+}
+
+/**
  * DEV-COMHU-2025-0012: Check if an approval is dismissed (localStorage suppression).
  * Key: vitana.approvalsDismissed.<repo>#<pr>
  */
@@ -1403,6 +1457,10 @@ const state = {
     // VTID-01027: Session Memory State
     operatorChatHistory: [], // Array of { role: 'user'|'assistant', content, ts }
     operatorConversationId: null, // UUID for conversation continuity
+
+    // VTID-01041: Pending title capture state for ORB task creation
+    pendingTitleVtid: null, // VTID awaiting title input from user
+    pendingTitleRetryCount: 0, // Number of retry prompts sent
 
     // Operator Ticker State
     tickerEvents: [],
@@ -3417,9 +3475,23 @@ function createTaskCard(task) {
     };
 
     // VTID-01005: Title (larger, prominent)
+    // VTID-01041: Use effective title (localStorage override > server > fallback)
     const title = document.createElement('div');
     title.className = 'task-card-title';
-    title.textContent = task.title || task.vtid;
+    var effectiveTitle = getEffectiveTaskTitle(task);
+    title.textContent = effectiveTitle;
+    // VTID-01041: Mark placeholder titles for styling
+    if (isPlaceholderTitle(effectiveTitle)) {
+        title.classList.add('task-card-title-placeholder');
+    }
+    // VTID-01041: Make title editable for Scheduled column tasks
+    if (columnStatus === 'Scheduled') {
+        title.classList.add('task-card-title-editable');
+        title.onclick = function(e) {
+            e.stopPropagation();
+            startInlineTitleEdit(title, task);
+        };
+    }
     card.appendChild(title);
 
     // VTID-01005: VTID line (blue label)
@@ -3481,6 +3553,148 @@ function createTaskCard(task) {
     card.appendChild(stageTimeline);
 
     return card;
+}
+
+/**
+ * VTID-01041: Start inline title editing for a task card.
+ * Creates an input element to replace the title text.
+ */
+function startInlineTitleEdit(titleElement, task) {
+    if (!titleElement || !task || !task.vtid) return;
+
+    // Prevent multiple edit sessions
+    if (titleElement.querySelector('.task-card-title-input')) return;
+
+    var currentTitle = getEffectiveTaskTitle(task);
+    var isPlaceholder = isPlaceholderTitle(currentTitle);
+
+    // Create input element
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'task-card-title-input';
+    input.value = isPlaceholder ? '' : currentTitle;
+    input.placeholder = 'Enter task title...';
+
+    // Save original text for cancel
+    var originalText = titleElement.textContent;
+
+    // Clear title and add input
+    titleElement.textContent = '';
+    titleElement.appendChild(input);
+    input.focus();
+    input.select();
+
+    // Handle save
+    function saveTitle() {
+        var newTitle = input.value.trim();
+        if (newTitle && newTitle !== originalText) {
+            setTaskTitleOverride(task.vtid, newTitle);
+            console.log('[VTID-01041] Title saved for', task.vtid, ':', newTitle);
+        }
+        // Re-render to update both card and drawer
+        renderApp();
+    }
+
+    // Handle cancel
+    function cancelEdit() {
+        titleElement.textContent = originalText;
+    }
+
+    // Event handlers
+    input.onkeydown = function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            saveTitle();
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            cancelEdit();
+        }
+    };
+
+    input.onblur = function() {
+        // Small delay to allow click events to fire first
+        setTimeout(function() {
+            if (input.parentNode === titleElement) {
+                saveTitle();
+            }
+        }, 100);
+    };
+
+    // Prevent card click from triggering
+    input.onclick = function(e) {
+        e.stopPropagation();
+    };
+}
+
+/**
+ * VTID-01041: Start inline title editing in the drawer panel.
+ * Creates an input element to replace the title text.
+ */
+function startDrawerTitleEdit(titleValueElement, task) {
+    if (!titleValueElement || !task || !task.vtid) return;
+
+    // Prevent multiple edit sessions
+    if (titleValueElement.querySelector('.drawer-title-input')) return;
+
+    var currentTitle = getEffectiveTaskTitle(task);
+    var isPlaceholder = isPlaceholderTitle(currentTitle);
+
+    // Create input element
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'drawer-title-input';
+    input.value = isPlaceholder ? '' : currentTitle;
+    input.placeholder = 'Enter task title...';
+
+    // Save original text for cancel
+    var originalText = titleValueElement.textContent;
+
+    // Clear value and add input
+    titleValueElement.textContent = '';
+    titleValueElement.appendChild(input);
+    input.focus();
+    input.select();
+
+    // Handle save
+    function saveTitle() {
+        var newTitle = input.value.trim();
+        if (newTitle && newTitle !== originalText) {
+            setTaskTitleOverride(task.vtid, newTitle);
+            console.log('[VTID-01041] Drawer title saved for', task.vtid, ':', newTitle);
+        }
+        // Re-render to update both card and drawer
+        renderApp();
+    }
+
+    // Handle cancel
+    function cancelEdit() {
+        titleValueElement.textContent = originalText;
+    }
+
+    // Event handlers
+    input.onkeydown = function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            saveTitle();
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            cancelEdit();
+        }
+    };
+
+    input.onblur = function() {
+        // Small delay to allow click events to fire first
+        setTimeout(function() {
+            if (input.parentNode === titleValueElement) {
+                saveTitle();
+            }
+        }, 100);
+    };
+
+    // Prevent row click from triggering
+    input.onclick = function(e) {
+        e.stopPropagation();
+    };
 }
 
 /**
@@ -3594,10 +3808,44 @@ function renderTaskDrawer() {
     const header = document.createElement('div');
     header.className = 'drawer-header';
 
-    const title = document.createElement('h2');
-    title.className = 'drawer-title-text';
-    title.textContent = vtid;
-    header.appendChild(title);
+    // VTID-01041: Show VTID as the main heading
+    const vtidHeading = document.createElement('h2');
+    vtidHeading.className = 'drawer-title-text';
+    vtidHeading.textContent = vtid;
+    header.appendChild(vtidHeading);
+
+    // VTID-01041: Editable title row (below VTID heading)
+    var columnStatus = mapStatusToColumnWithOverride(vtid, task.status, task.oasisColumn) || 'Scheduled';
+    var isScheduled = columnStatus === 'Scheduled';
+    var drawerEffectiveTitle = getEffectiveTaskTitle(task);
+
+    const titleRow = document.createElement('div');
+    titleRow.className = 'drawer-title-row';
+    if (isPlaceholderTitle(drawerEffectiveTitle)) {
+        titleRow.classList.add('drawer-title-placeholder');
+    }
+    if (isScheduled && !isFinalMode) {
+        titleRow.classList.add('drawer-title-editable');
+    }
+
+    const titleLabel = document.createElement('span');
+    titleLabel.className = 'drawer-title-label';
+    titleLabel.textContent = 'Title: ';
+    titleRow.appendChild(titleLabel);
+
+    const titleValue = document.createElement('span');
+    titleValue.className = 'drawer-title-value';
+    titleValue.textContent = drawerEffectiveTitle;
+    titleRow.appendChild(titleValue);
+
+    // VTID-01041: Make title clickable for editing (Scheduled tasks only)
+    if (isScheduled && !isFinalMode) {
+        titleRow.onclick = function(e) {
+            e.stopPropagation();
+            startDrawerTitleEdit(titleValue, task);
+        };
+    }
+    header.appendChild(titleRow);
 
     // VTID-01010: Add target role badge(s) to drawer header
     const drawerTargetRoles = getTaskTargetRoles(task);
@@ -8659,6 +8907,67 @@ async function sendChatMessage() {
 
     if (!messageText) return;
 
+    // VTID-01041: Handle pending title capture (user is responding to "What should be the title?" prompt)
+    if (state.pendingTitleVtid) {
+        var titleInput = messageText.toLowerCase();
+        var skipKeywords = ['skip', 'cancel', 'no', 'none', 'never mind', 'nevermind'];
+        var isSkip = skipKeywords.some(function(kw) { return titleInput === kw; });
+
+        // Add user message to UI
+        state.chatMessages.push({
+            type: 'user',
+            content: messageText,
+            timestamp: timestamp
+        });
+
+        if (isSkip) {
+            // User chose to skip - keep placeholder
+            state.chatMessages.push({
+                type: 'system',
+                content: 'Title skipped. The task will keep its placeholder title.',
+                timestamp: timestamp
+            });
+            state.pendingTitleVtid = null;
+            state.pendingTitleRetryCount = 0;
+        } else if (messageText.trim() === '') {
+            // Empty input - retry once, then keep placeholder
+            if (state.pendingTitleRetryCount < 1) {
+                state.pendingTitleRetryCount++;
+                state.chatMessages.push({
+                    type: 'system',
+                    content: 'Please enter a title for **' + state.pendingTitleVtid + '**, or type "skip" to keep the placeholder.',
+                    timestamp: timestamp
+                });
+            } else {
+                state.chatMessages.push({
+                    type: 'system',
+                    content: 'No title provided. The task will keep its placeholder title.',
+                    timestamp: timestamp
+                });
+                state.pendingTitleVtid = null;
+                state.pendingTitleRetryCount = 0;
+            }
+        } else {
+            // Valid title - save it
+            setTaskTitleOverride(state.pendingTitleVtid, messageText.trim());
+            state.chatMessages.push({
+                type: 'system',
+                content: String.fromCodePoint(0x2705) + ' Title updated: **' + state.pendingTitleVtid + '** — "' + messageText.trim() + '"',
+                timestamp: timestamp
+            });
+            console.log('[VTID-01041] Title captured for', state.pendingTitleVtid, ':', messageText.trim());
+            state.pendingTitleVtid = null;
+            state.pendingTitleRetryCount = 0;
+            // Refresh the board to show the new title
+            fetchTasks();
+        }
+
+        // Clear input and re-render
+        state.chatInputValue = '';
+        renderApp();
+        return; // Don't send to backend - this was just title capture
+    }
+
     // VTID-01027: Add user message to session history
     var userHistoryEntry = {
         role: 'user',
@@ -8731,12 +9040,15 @@ async function sendChatMessage() {
         // VTID-0537: Check if a task was created via tools
         const hasCreatedTask = result.createdTask && result.createdTask.vtid;
 
-        // Build enhanced content if task was created
+        // VTID-01041: Build enhanced content with explicit success/failure confirmation
         if (hasCreatedTask) {
-            replyContent += `\n\n📋 Task Created: **${result.createdTask.vtid}**`;
-            if (result.createdTask.title) {
-                replyContent += ` - ${result.createdTask.title}`;
-            }
+            var createdVtid = result.createdTask.vtid;
+            var createdTitle = result.createdTask.title || '';
+            var effectiveCreatedTitle = getEffectiveTaskTitle(result.createdTask);
+            var needsTitlePrompt = isPlaceholderTitle(createdTitle);
+
+            // VTID-01041: Explicit success confirmation
+            replyContent += '\n\n' + String.fromCodePoint(0x2705) + ' Task created: **' + createdVtid + '** — "' + effectiveCreatedTitle + '" (Scheduled)';
 
             // VTID-01019: Add task creation to Live Feed for consistency
             state.tickerEvents.unshift({
@@ -8744,9 +9056,17 @@ async function sendChatMessage() {
                 timestamp: new Date().toLocaleTimeString(),
                 type: 'operator',
                 topic: 'operator.chat.task.created',
-                content: 'Task created via chat: ' + result.createdTask.vtid,
-                vtid: result.createdTask.vtid
+                content: 'Task created via chat: ' + createdVtid,
+                vtid: createdVtid
             });
+
+            // VTID-01041: If title is placeholder, prompt user for title
+            if (needsTitlePrompt) {
+                // Store the VTID awaiting title input
+                state.pendingTitleVtid = createdVtid;
+                state.pendingTitleRetryCount = 0;
+                replyContent += '\n\nWhat should be the title for **' + createdVtid + '**?';
+            }
         }
 
         // VTID-01027: Add assistant response to session history
@@ -8771,9 +9091,11 @@ async function sendChatMessage() {
 
     } catch (error) {
         console.error('[Operator] Chat error:', error);
+        // VTID-01041: Explicit failure confirmation with emoji
+        var errorContent = String.fromCodePoint(0x274C) + ' Task creation failed: ' + error.message;
         state.chatMessages.push({
             type: 'system',
-            content: `Error: ${error.message}`,
+            content: errorContent,
             timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
             isError: true
         });

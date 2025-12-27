@@ -47,7 +47,9 @@ const PROTECTED_PATH = 'services/gateway/src/frontend/command-hub/';
 // VTID-01038: ORB TTS Upgrade (Better Voice) - Phase A' (Local "Best Voice" + Selector)
 // VTID-01039: ORB Conversation Aggregation (Summary + Transcript display in drawer)
 //             Branch pattern: add-conversation-summary (for claude/add-conversation-summary-* branches)
-const ALLOWED_VTID_PATTERN = /DEV-COMHU-\d+|VTID-0302|VTID-0539|VTID-0541|VTID-0542|VTID-0600|VTID-0601|VTID-01001|VTID-01002|VTID-01003|VTID-01005|VTID-01006|VTID-01009|VTID-01010|VTID-01012|VTID-01013|VTID-01014|VTID-01015|VTID-01016|VTID-01017|VTID-01019|VTID-01021|VTID-01022|VTID-01025|VTID-01027|VTID-01028|VTID-01030|VTID-01034|VTID-0135|VTID-01037|VTID-01038|VTID-01039|global-vtid-allocator|vtid-ledger-visibility|add-conversation-summary/i;
+// VTID-01041: Editable Scheduled Card Title + Title Capture on ORB Create + Success Confirmation
+//             Branch pattern: editable-scheduled-card-title (for claude/editable-scheduled-card-title-* branches)
+const ALLOWED_VTID_PATTERN = /DEV-COMHU-\d+|VTID-0302|VTID-0539|VTID-0541|VTID-0542|VTID-0600|VTID-0601|VTID-01001|VTID-01002|VTID-01003|VTID-01005|VTID-01006|VTID-01009|VTID-01010|VTID-01012|VTID-01013|VTID-01014|VTID-01015|VTID-01016|VTID-01017|VTID-01019|VTID-01021|VTID-01022|VTID-01025|VTID-01027|VTID-01028|VTID-01030|VTID-01034|VTID-0135|VTID-01037|VTID-01038|VTID-01039|VTID-01041|global-vtid-allocator|vtid-ledger-visibility|add-conversation-summary|editable-scheduled-card-title/i;
 
 function getChangedFiles() {
   try {
