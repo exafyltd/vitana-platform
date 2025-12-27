@@ -7009,6 +7009,13 @@ function renderVtidLedgerTable(items) {
  * Displays ONLY 5 columns: VTID, Title, Stage, Status, Attention
  */
 function renderVtidProjectionTable(items) {
+    // VTID-01030: Validate items array before rendering
+    if (!items || !Array.isArray(items)) {
+        console.error('[VTID-01030] renderVtidProjectionTable called with invalid items:', typeof items, items);
+        items = [];
+    }
+    console.log('[VTID-01030] Rendering VTID projection table with', items.length, 'items');
+
     var table = document.createElement('table');
     table.className = 'vtids-table vtid-projection-table';
 
@@ -7090,6 +7097,7 @@ function renderVtidProjectionTable(items) {
             // Skip this row but continue rendering others
         }
     });
+    console.log('[VTID-01030] VTID table tbody created with', tbody.children.length, 'rows');
     table.appendChild(tbody);
 
     return table;
@@ -7241,6 +7249,13 @@ async function fetchOasisVtidDetail(vtid) {
  * VTID-01001: Renders clickable OASIS ledger table with drilldown
  */
 function renderOasisLedgerTableWithDrilldown(items) {
+    // VTID-01030: Validate items array before rendering
+    if (!items || !Array.isArray(items)) {
+        console.error('[VTID-01030] renderOasisLedgerTableWithDrilldown called with invalid items:', typeof items, items);
+        items = [];
+    }
+    console.log('[VTID-01030] Rendering OASIS ledger table with', items.length, 'items');
+
     var table = document.createElement('table');
     table.className = 'vtids-table oasis-ledger-table';
 
@@ -7330,6 +7345,7 @@ function renderOasisLedgerTableWithDrilldown(items) {
             // Skip this row but continue rendering others
         }
     });
+    console.log('[VTID-01030] OASIS ledger tbody created with', tbody.children.length, 'rows');
     table.appendChild(tbody);
 
     return table;
