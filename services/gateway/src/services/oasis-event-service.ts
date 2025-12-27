@@ -97,6 +97,37 @@ export const cicdEvents = {
       payload: { error },
     }),
 
+  // ==================== VTID-01031: Find PR Events (Idempotency) ====================
+  findPrRequested: (vtid: string, headBranch: string, baseBranch: string) =>
+    emitOasisEvent({
+      vtid,
+      type: 'cicd.github.find_pr.requested',
+      source: 'gateway-cicd',
+      status: 'info',
+      message: `Searching for existing PR: ${headBranch} -> ${baseBranch}`,
+      payload: { head_branch: headBranch, base_branch: baseBranch },
+    }),
+
+  findPrSucceeded: (vtid: string, prNumber: number, prUrl: string, headBranch: string) =>
+    emitOasisEvent({
+      vtid,
+      type: 'cicd.github.find_pr.succeeded',
+      source: 'gateway-cicd',
+      status: 'success',
+      message: `Found existing PR #${prNumber} for ${headBranch}`,
+      payload: { pr_number: prNumber, pr_url: prUrl, head_branch: headBranch },
+    }),
+
+  createPrSkippedExisting: (vtid: string, prNumber: number, prUrl: string, headBranch: string) =>
+    emitOasisEvent({
+      vtid,
+      type: 'cicd.github.create_pr.skipped_existing',
+      source: 'gateway-cicd',
+      status: 'info',
+      message: `PR creation skipped - reusing existing PR #${prNumber} for ${headBranch}`,
+      payload: { pr_number: prNumber, pr_url: prUrl, head_branch: headBranch, reused: true },
+    }),
+
   // ==================== Safe Merge Events ====================
   safeMergeRequested: (vtid: string, repo: string, prNumber: number) =>
     emitOasisEvent({

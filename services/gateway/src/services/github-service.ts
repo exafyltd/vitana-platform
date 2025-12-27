@@ -64,6 +64,62 @@ async function githubRequest<T>(
 }
 
 /**
+ * VTID-01031: Check if a branch exists on the remote repository
+ */
+export async function branchExists(
+  repo: string,
+  branch: string
+): Promise<boolean> {
+  try {
+    await githubRequest<{ ref: string }>(`/repos/${repo}/git/ref/heads/${encodeURIComponent(branch)}`);
+    return true;
+  } catch (error) {
+    // 404 means branch doesn't exist
+    if (error instanceof Error && error.message.includes('404')) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+/**
+ * VTID-01031: Find an existing open PR for a head branch targeting a base branch
+ * Returns the PR if found, null otherwise
+ */
+export async function findPrForBranch(
+  repo: string,
+  headBranch: string,
+  baseBranch: string = 'main'
+): Promise<{ number: number; html_url: string; title: string; state: string } | null> {
+  try {
+    // GitHub API: list PRs filtered by head branch
+    // head param format is "owner:branch" or just "branch" for same-repo PRs
+    const [owner] = repo.split('/');
+    const prs = await githubRequest<Array<{
+      number: number;
+      html_url: string;
+      title: string;
+      state: string;
+      base: { ref: string };
+      head: { ref: string };
+    }>>(`/repos/${repo}/pulls?state=open&head=${owner}:${headBranch}&base=${baseBranch}`);
+
+    if (prs.length > 0) {
+      return {
+        number: prs[0].number,
+        html_url: prs[0].html_url,
+        title: prs[0].title,
+        state: prs[0].state,
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error(`[GitHub] Error finding PR for branch ${headBranch}:`, error);
+    throw error;
+  }
+}
+
+/**
  * Get PR details from GitHub
  */
 export async function getPullRequest(
@@ -335,6 +391,8 @@ export function detectServiceFromFiles(files: string[]): string | null {
 }
 
 export const githubService = {
+  branchExists,
+  findPrForBranch,
   getPullRequest,
   getPrFiles,
   getCombinedStatus,

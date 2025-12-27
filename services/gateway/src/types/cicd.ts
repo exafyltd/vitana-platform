@@ -138,6 +138,9 @@ export type CicdEventType =
   | 'cicd.github.create_pr.requested'
   | 'cicd.github.create_pr.succeeded'
   | 'cicd.github.create_pr.failed'
+  | 'cicd.github.create_pr.skipped_existing' // VTID-01031: PR reuse path
+  | 'cicd.github.find_pr.requested'          // VTID-01031: Find existing PR
+  | 'cicd.github.find_pr.succeeded'          // VTID-01031: Existing PR found
   | 'cicd.github.safe_merge.requested'
   | 'cicd.github.safe_merge.evaluated'
   | 'cicd.github.safe_merge.approved'
@@ -398,10 +401,20 @@ export interface AutonomousPrMergeResponse {
   pr_number?: number;
   pr_url?: string;
   merged?: boolean;
-  merge_sha?: string;
+  merge_sha?: string | null;
   ci_status?: 'success' | 'failure' | 'pending' | 'timeout';
   error?: string;
-  reason?: 'pr_creation_failed' | 'ci_failed' | 'ci_timeout' | 'governance_blocked' | 'merge_failed' | 'internal_error';
+  // VTID-01031: Stable reason codes
+  reason?:
+    | 'validation_failed'      // Request validation failed
+    | 'branch_not_found'       // Head branch doesn't exist on remote
+    | 'pr_created'             // New PR was created (success path)
+    | 'pr_reused_existing'     // Existing PR was reused (idempotent success path)
+    | 'ci_failed'              // CI checks failed
+    | 'ci_timeout'             // CI checks did not complete in time
+    | 'governance_rejected'    // Governance blocked the merge
+    | 'merge_failed'           // Merge operation failed
+    | 'github_api_error';      // GitHub API returned an error
   details?: Record<string, unknown>;
 }
 
