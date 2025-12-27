@@ -688,6 +688,119 @@ export const cicdEvents = {
         failed_at: new Date().toISOString(),
       },
     }),
+
+  // ==================== VTID-01033: CICD Lock Events ====================
+
+  /**
+   * VTID-01033: Emit lock acquisition requested event
+   */
+  lockAcquireRequested: (
+    vtid: string,
+    keys: string[],
+    prNumber?: number
+  ) =>
+    emitOasisEvent({
+      vtid,
+      type: 'cicd.lock.acquire.requested',
+      source: 'cicd-lock-manager',
+      status: 'info',
+      message: `Lock acquisition requested for ${keys.length} key(s)`,
+      payload: {
+        requested_keys: keys,
+        pr_number: prNumber,
+        requested_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * VTID-01033: Emit lock acquisition succeeded event
+   */
+  lockAcquireSucceeded: (
+    vtid: string,
+    acquiredKeys: string[],
+    expiresAt: string,
+    prNumber?: number
+  ) =>
+    emitOasisEvent({
+      vtid,
+      type: 'cicd.lock.acquire.succeeded',
+      source: 'cicd-lock-manager',
+      status: 'success',
+      message: `Acquired ${acquiredKeys.length} lock(s): ${acquiredKeys.join(', ')}`,
+      payload: {
+        acquired_keys: acquiredKeys,
+        expires_at: expiresAt,
+        pr_number: prNumber,
+        acquired_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * VTID-01033: Emit lock acquisition blocked event
+   */
+  lockAcquireBlocked: (
+    vtid: string,
+    blockedKey: string,
+    heldBy: string,
+    heldSince?: string,
+    expiresAt?: string
+  ) =>
+    emitOasisEvent({
+      vtid,
+      type: 'cicd.lock.acquire.blocked',
+      source: 'cicd-lock-manager',
+      status: 'warning',
+      message: `Lock acquisition blocked: ${blockedKey} held by ${heldBy}`,
+      payload: {
+        blocked_key: blockedKey,
+        held_by: heldBy,
+        held_since: heldSince,
+        expires_at: expiresAt,
+        blocked_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * VTID-01033: Emit lock released event
+   */
+  lockReleased: (
+    vtid: string,
+    releasedKeys: string[],
+    reason: 'success' | 'failure' | 'timeout' | 'explicit'
+  ) =>
+    emitOasisEvent({
+      vtid,
+      type: 'cicd.lock.released',
+      source: 'cicd-lock-manager',
+      status: 'info',
+      message: `Released ${releasedKeys.length} lock(s): ${releasedKeys.join(', ')}`,
+      payload: {
+        released_keys: releasedKeys,
+        reason,
+        released_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * VTID-01033: Emit lock expired event
+   */
+  lockExpired: (
+    vtid: string,
+    expiredKey: string,
+    heldSince: string
+  ) =>
+    emitOasisEvent({
+      vtid,
+      type: 'cicd.lock.expired',
+      source: 'cicd-lock-manager',
+      status: 'warning',
+      message: `Lock expired: ${expiredKey}`,
+      payload: {
+        expired_key: expiredKey,
+        held_since: heldSince,
+        expired_at: new Date().toISOString(),
+      },
+    }),
 };
 
 /**

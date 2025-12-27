@@ -198,7 +198,13 @@ export type CicdEventType =
   | 'operator.action.completed'
   | 'operator.action.failed'
   // VTID-01032: Multi-service deploy selection event
-  | 'cicd.deploy.selection';
+  | 'cicd.deploy.selection'
+  // VTID-01033: CICD Concurrency Lock Events
+  | 'cicd.lock.acquire.requested'
+  | 'cicd.lock.acquire.succeeded'
+  | 'cicd.lock.acquire.blocked'
+  | 'cicd.lock.released'
+  | 'cicd.lock.expired';
 
 export interface CicdOasisEvent {
   vtid: string;
@@ -482,3 +488,100 @@ export interface OperatorActionResult<T = unknown> {
   data?: T;
   oasis_error?: OasisWriteFailedError;
 }
+
+// ==================== VTID-01033: CICD Concurrency Lock Management ====================
+
+/**
+ * VTID-01033: Lock key types for concurrency control
+ */
+export type LockKeyType = 'global' | 'service' | 'path';
+
+/**
+ * VTID-01033: Lock entry representing a held lock
+ */
+export interface CicdLockEntry {
+  /** Full lock key (e.g., "service:gateway", "path:.github/workflows/") */
+  key: string;
+  /** Type of lock */
+  type: LockKeyType;
+  /** VTID holding the lock */
+  held_by: string;
+  /** PR number associated with this lock */
+  pr_number?: number;
+  /** When the lock was acquired */
+  acquired_at: string;
+  /** When the lock will expire (for timeout enforcement) */
+  expires_at: string;
+}
+
+/**
+ * VTID-01033: Lock acquisition request
+ */
+export interface LockAcquisitionRequest {
+  vtid: string;
+  pr_number?: number;
+  /** Services to lock (from deploy targeting) */
+  services: string[];
+  /** Changed paths that require locking */
+  changed_paths: string[];
+}
+
+/**
+ * VTID-01033: Lock acquisition result
+ */
+export interface LockAcquisitionResult {
+  ok: boolean;
+  vtid: string;
+  /** Keys that were successfully acquired */
+  acquired_keys?: string[];
+  /** If blocked, which key caused the block */
+  blocked_by_key?: string;
+  /** If blocked, which VTID holds the blocking lock */
+  blocked_by_vtid?: string;
+  /** Error message if blocked */
+  error?: string;
+}
+
+/**
+ * VTID-01033: Concurrency blocked response for API
+ */
+export interface ConcurrencyBlockedResponse {
+  ok: false;
+  vtid: string;
+  reason: 'concurrency_blocked';
+  error: string;
+  details: {
+    lock_key: string;
+    held_by: string;
+    pr_number?: number;
+    acquired_at?: string;
+    expires_at?: string;
+  };
+}
+
+/**
+ * VTID-01033: Concurrency configuration loaded from config file
+ */
+export interface CicdConcurrencyConfig {
+  concurrency: {
+    maxParallelMerges: number;
+    lockTimeoutMinutes: number;
+  };
+  criticalPaths: string[];
+  strictPaths?: string[];
+  lockKeyPrefixes: {
+    global: string;
+    service: string;
+    path: string;
+  };
+}
+
+/**
+ * VTID-01033: Lock event types for OASIS
+ */
+export type CicdLockEventType =
+  | 'cicd.lock.acquire.requested'
+  | 'cicd.lock.acquire.succeeded'
+  | 'cicd.lock.acquire.blocked'
+  | 'cicd.lock.released'
+  | 'cicd.lock.expired';

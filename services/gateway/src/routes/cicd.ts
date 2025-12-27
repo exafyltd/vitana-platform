@@ -14,10 +14,17 @@
  * - POST /api/v1/cicd/approvals/:id/approve - Approve and execute
  * - POST /api/v1/cicd/approvals/:id/deny    - Deny approval request
  *
+ * Autonomous PR+Merge (Claude Worker):
+ * - POST /api/v1/github/autonomous-pr-merge - Create PR + Wait for CI + Merge (with VTID-01033 concurrency control)
+ *
+ * VTID-01033 Concurrency Control Endpoints:
+ * - GET  /api/v1/cicd/lock-status    - Get current lock status and configuration
+ * - POST /api/v1/cicd/lock-release   - Force release locks for a VTID (admin)
+ *
  * Mounting (in index.ts):
  * - app.use('/api/v1/github', cicdRouter);  // GitHub operations
  * - app.use('/api/v1/deploy', cicdRouter);  // Deploy operations
- * - app.use('/api/v1/cicd', cicdRouter);    // CICD health + VTID-0601 endpoints
+ * - app.use('/api/v1/cicd', cicdRouter);    // CICD health + VTID-0601 endpoints + VTID-01033 lock endpoints
  */
 
 import { Router, Request, Response } from 'express';
@@ -42,11 +49,14 @@ import {
   // VTID-01032: Multi-service deploy targeting
   DeploySelectionResult,
   DeployTargetReason,
+  // VTID-01033: Concurrency control types
+  ConcurrencyBlockedResponse,
 } from '../types/cicd';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import githubService from '../services/github-service';
 import cicdEvents from '../services/oasis-event-service';
+import cicdLockManager from '../services/cicd-lock-manager';
 import { ZodError } from 'zod';
 import { randomUUID } from 'crypto';
 
@@ -1388,6 +1398,59 @@ router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
       } as AutonomousPrMergeResponse);
     }
 
+    // VTID-01033 Step 5.5: Acquire concurrency locks before merge
+    // Get PR files for service and critical path detection
+    console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Acquiring concurrency locks`);
+    let prFiles: Array<{ filename: string }>;
+    try {
+      prFiles = await githubService.getPrFiles(repo, pr.number);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`[AUTONOMOUS-PR-MERGE] ${vtid}: Failed to get PR files - ${errorMessage}`);
+      return res.status(500).json({
+        ok: false,
+        vtid,
+        pr_number: pr.number,
+        pr_url: pr.html_url,
+        merged: false,
+        merge_sha: null,
+        ci_status: 'success',
+        error: `Failed to get PR files: ${errorMessage}`,
+        reason: 'github_api_error',
+        details: { operation: 'get_pr_files', error: errorMessage },
+      } as AutonomousPrMergeResponse);
+    }
+
+    const changedPaths = prFiles.map(f => f.filename);
+    const services = [...new Set(
+      changedPaths
+        .map(p => p.match(/^services\/([^/]+)/)?.[1])
+        .filter((s): s is string => !!s)
+    )];
+
+    const lockResult = await cicdLockManager.acquireLocks({
+      vtid,
+      pr_number: pr.number,
+      services,
+      changed_paths: changedPaths,
+    });
+
+    if (!lockResult.ok) {
+      console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Concurrency blocked by ${lockResult.blocked_by_vtid} on ${lockResult.blocked_by_key}`);
+      return res.status(409).json({
+        ok: false,
+        vtid,
+        reason: 'concurrency_blocked',
+        error: lockResult.error || `Lock held for ${lockResult.blocked_by_key} by ${lockResult.blocked_by_vtid}`,
+        details: {
+          lock_key: lockResult.blocked_by_key || '',
+          held_by: lockResult.blocked_by_vtid || '',
+        },
+      } as ConcurrencyBlockedResponse);
+    }
+
+    console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Locks acquired: ${lockResult.acquired_keys?.join(', ') || 'none'}`);
+
     // Step 6: Governance evaluation
     console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Running governance evaluation`);
     const governance = await githubService.evaluateGovernance(repo, pr.number, vtid);
@@ -1405,6 +1468,8 @@ router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
       await cicdEvents.safeMergeBlocked(vtid, pr.number, 'governance_blocked', {
         blocked_reasons: governance.blocked_reasons,
       });
+      // VTID-01033: Release locks on governance failure
+      await cicdLockManager.releaseLocks(vtid, 'failure');
       return res.status(403).json({
         ok: false,
         vtid,
@@ -1440,11 +1505,17 @@ router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
       );
 
       await cicdEvents.safeMergeExecuted(vtid, pr.number, mergeResult.sha);
+
+      // VTID-01033: Release locks on successful merge
+      await cicdLockManager.releaseLocks(vtid, 'success');
+
       console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: PR #${pr.number} merged successfully - SHA: ${mergeResult.sha}`);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       console.error(`[AUTONOMOUS-PR-MERGE] ${vtid}: Merge failed - ${errorMessage}`);
       await cicdEvents.safeMergeBlocked(vtid, pr.number, 'merge_failed', { error: errorMessage });
+      // VTID-01033: Release locks on merge failure
+      await cicdLockManager.releaseLocks(vtid, 'failure');
       return res.status(500).json({
         ok: false,
         vtid,
@@ -1616,6 +1687,10 @@ router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     const vtid = req.body?.vtid || 'UNKNOWN';
     console.error(`[AUTONOMOUS-PR-MERGE] ${vtid}: Internal error - ${errorMessage}`);
+    // VTID-01033: Ensure locks are released on unexpected errors
+    if (vtid !== 'UNKNOWN') {
+      await cicdLockManager.releaseLocks(vtid, 'failure');
+    }
     return res.status(500).json({
       ok: false,
       vtid,
@@ -1624,6 +1699,70 @@ router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
       merge_sha: null,
       details: { error: errorMessage },
     } as AutonomousPrMergeResponse);
+  }
+});
+
+// ==================== VTID-01033: Lock Status Diagnostic Endpoint ====================
+
+/**
+ * GET /lock-status - Get current lock status for debugging/monitoring
+ *
+ * This endpoint returns:
+ * - Active merges count and VTIDs
+ * - Current locks held
+ * - Concurrency configuration
+ */
+router.get('/lock-status', (_req: Request, res: Response) => {
+  try {
+    const status = cicdLockManager.getLockStatus();
+    return res.status(200).json({
+      ok: true,
+      timestamp: new Date().toISOString(),
+      vtid: 'VTID-01033',
+      ...status,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[VTID-01033] Lock status error: ${errorMessage}`);
+    return res.status(500).json({
+      ok: false,
+      error: errorMessage,
+    });
+  }
+});
+
+/**
+ * POST /lock-release - Force release locks for a VTID (admin use)
+ *
+ * Body: { vtid: string, reason?: string }
+ */
+router.post('/lock-release', async (req: Request, res: Response) => {
+  try {
+    const { vtid, reason } = req.body;
+
+    if (!vtid || typeof vtid !== 'string') {
+      return res.status(400).json({
+        ok: false,
+        error: 'vtid is required',
+      });
+    }
+
+    const releasedKeys = await cicdLockManager.releaseLocks(vtid, 'explicit');
+    console.log(`[VTID-01033] Admin force release for ${vtid}: ${releasedKeys.length} locks`);
+
+    return res.status(200).json({
+      ok: true,
+      vtid,
+      released_keys: releasedKeys,
+      reason: reason || 'admin_release',
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[VTID-01033] Lock release error: ${errorMessage}`);
+    return res.status(500).json({
+      ok: false,
+      error: errorMessage,
+    });
   }
 });
 
