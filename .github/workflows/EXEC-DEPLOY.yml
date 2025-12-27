@@ -1,7 +1,21 @@
 name: Exec Deploy (VTID Bridge)
 # VTID-0416: Gateway Deploy Governance Lockdown
+# VTID-01032: Extended for multi-service autonomous merge→deploy
+#
 # This is the CANONICAL deployment workflow for gateway and other services.
 # All deploys must go through this governed, validated CI pipeline.
+#
+# Multi-service support (VTID-01032):
+# - Gateway triggers this workflow once per service when autonomous-pr-merge detects multiple services
+# - Each invocation deploys a single service using the 'service' input
+# - Services are deployed in the order they are triggered (parallel execution possible)
+# - OASIS events track each service deployment separately: deploy.<service>.success/failed
+#
+# Supported services (from config/service-path-map.json):
+# - gateway: services/gateway/ -> Cloud Run 'gateway'
+# - oasis-operator: services/oasis-operator/ -> Cloud Run 'oasis-operator'
+# - oasis-projector: services/oasis-projector/ -> Cloud Run 'oasis-projector'
+#
 on:
   workflow_dispatch:
     inputs:

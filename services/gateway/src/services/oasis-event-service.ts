@@ -470,6 +470,40 @@ export const cicdEvents = {
       payload: { approval_id: approvalId, approval_type: type, denied_by: deniedBy, reason, denied_at: new Date().toISOString() },
     }),
 
+  // ==================== VTID-01032: Multi-Service Deploy Selection ====================
+
+  /**
+   * VTID-01032: Emit deploy selection event
+   * This event records which services were selected for deployment and how.
+   */
+  deploySelection: (
+    vtid: string,
+    services: string[],
+    environment: string,
+    reason: string,
+    changedFilesCount: number,
+    prNumber?: number,
+    mergeSha?: string
+  ) =>
+    emitOasisEvent({
+      vtid,
+      type: 'cicd.deploy.selection',
+      source: 'autonomous-pr-merge',
+      status: services.length > 0 ? 'info' : 'warning',
+      message: services.length > 0
+        ? `Deploy selection: ${services.join(', ')} to ${environment} (${reason})`
+        : `No deploy target: ${reason}`,
+      payload: {
+        services,
+        environment,
+        reason,
+        changed_files_count: changedFilesCount,
+        pr_number: prNumber,
+        merge_sha: mergeSha,
+        selected_at: new Date().toISOString(),
+      },
+    }),
+
   // ==================== VTID-01018: Operator Action Lifecycle Events ====================
   // These events enforce the hard contract for operator actions.
   // Every operator action MUST emit started + exactly one terminal event.
