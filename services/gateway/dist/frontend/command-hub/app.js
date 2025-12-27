@@ -1580,7 +1580,11 @@ const state = {
             status: ''
         },
         autoRefreshEnabled: true,
-        autoRefreshInterval: null
+        autoRefreshInterval: null,
+        // VTID-01039: ORB Session Transcript State
+        orbTranscript: null,
+        orbTranscriptLoading: false,
+        orbTranscriptError: null
     },
 
     // VTID-0600: Command Hub Events (Curated Operational View)
@@ -6771,7 +6775,36 @@ function renderOasisEventsView() {
 }
 
 /**
+ * VTID-01039: Fetch ORB session transcript for display
+ */
+function fetchOrbSessionTranscript(orbSessionId) {
+    if (!orbSessionId) return;
+
+    state.oasisEvents.orbTranscriptLoading = true;
+    state.oasisEvents.orbTranscriptError = null;
+    renderApp();
+
+    fetch('/api/v1/orb/session/' + orbSessionId)
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            state.oasisEvents.orbTranscriptLoading = false;
+            if (data.ok) {
+                state.oasisEvents.orbTranscript = data;
+            } else {
+                state.oasisEvents.orbTranscriptError = data.error || 'Failed to load transcript';
+            }
+            renderApp();
+        })
+        .catch(function(err) {
+            state.oasisEvents.orbTranscriptLoading = false;
+            state.oasisEvents.orbTranscriptError = err.message || 'Network error';
+            renderApp();
+        });
+}
+
+/**
  * VTID-0600: Renders the OASIS Event Detail Drawer.
+ * VTID-01039: Extended to display ORB session transcripts for orb.session.summary events.
  */
 function renderOasisEventDrawer() {
     var drawer = document.createElement('div');
@@ -6784,12 +6817,21 @@ function renderOasisEventDrawer() {
     var event = state.oasisEvents.selectedEvent;
     var severity = getEventSeverity(event);
 
+    // VTID-01039: Check if this is an ORB session summary event
+    var isOrbSummary = event.topic === 'orb.session.summary';
+    var orbSessionId = isOrbSummary && event.metadata ? event.metadata.orb_session_id : null;
+
+    // VTID-01039: Auto-fetch transcript when opening ORB summary event
+    if (isOrbSummary && orbSessionId && !state.oasisEvents.orbTranscript && !state.oasisEvents.orbTranscriptLoading) {
+        fetchOrbSessionTranscript(orbSessionId);
+    }
+
     // Header
     var header = document.createElement('div');
     header.className = 'drawer-header';
 
     var title = document.createElement('h3');
-    title.textContent = 'Event Details';
+    title.textContent = isOrbSummary ? 'ORB Session Transcript' : 'Event Details';
     header.appendChild(title);
 
     var closeBtn = document.createElement('button');
@@ -6797,6 +6839,8 @@ function renderOasisEventDrawer() {
     closeBtn.innerHTML = '&times;';
     closeBtn.onclick = function() {
         state.oasisEvents.selectedEvent = null;
+        state.oasisEvents.orbTranscript = null;
+        state.oasisEvents.orbTranscriptError = null;
         renderApp();
     };
     header.appendChild(closeBtn);
@@ -6806,59 +6850,189 @@ function renderOasisEventDrawer() {
     var content = document.createElement('div');
     content.className = 'drawer-content';
 
-    // Severity banner
-    var severityBanner = document.createElement('div');
-    severityBanner.className = 'severity-banner severity-banner-' + severity;
-    severityBanner.textContent = severity.toUpperCase() + ' SEVERITY';
-    content.appendChild(severityBanner);
+    // VTID-01039: Special rendering for ORB session summary
+    if (isOrbSummary) {
+        // Summary section at top
+        var summarySection = document.createElement('div');
+        summarySection.className = 'drawer-section orb-summary-section';
 
-    // Fields
-    var fields = [
-        { label: 'Event ID', value: event.id },
-        { label: 'Timestamp', value: formatEventTimestamp(event.created_at) },
-        { label: 'Topic', value: event.topic },
-        { label: 'VTID', value: event.vtid },
-        { label: 'Service', value: event.service },
-        { label: 'Status', value: event.status },
-        { label: 'Role', value: event.role },
-        { label: 'Model', value: event.model },
-        { label: 'Message', value: event.message }
-    ];
+        var summaryTitle = document.createElement('h4');
+        summaryTitle.textContent = 'Session Summary';
+        summarySection.appendChild(summaryTitle);
 
-    fields.forEach(function(field) {
-        if (field.value) {
-            var row = document.createElement('div');
-            row.className = 'drawer-field';
+        var summary = event.metadata && event.metadata.summary ? event.metadata.summary : null;
 
-            var label = document.createElement('div');
-            label.className = 'drawer-field-label';
-            label.textContent = field.label;
-            row.appendChild(label);
+        if (summary) {
+            // Title
+            var titleDiv = document.createElement('div');
+            titleDiv.className = 'orb-summary-title';
+            titleDiv.textContent = summary.title || event.message;
+            summarySection.appendChild(titleDiv);
 
-            var value = document.createElement('div');
-            value.className = 'drawer-field-value';
-            value.textContent = field.value;
-            row.appendChild(value);
+            // Stats row
+            var statsDiv = document.createElement('div');
+            statsDiv.className = 'orb-summary-stats';
+            var turnsCount = event.metadata.turns_count || 0;
+            var durationSec = event.metadata.duration_sec || 0;
+            var durationMin = Math.floor(durationSec / 60);
+            var durationSecRem = durationSec % 60;
+            statsDiv.textContent = turnsCount + ' turns | ' + durationMin + 'm ' + durationSecRem + 's';
+            summarySection.appendChild(statsDiv);
 
-            content.appendChild(row);
+            // Bullets
+            if (summary.bullets && summary.bullets.length > 0) {
+                var bulletsDiv = document.createElement('div');
+                bulletsDiv.className = 'orb-summary-bullets';
+                var bulletsList = document.createElement('ul');
+                summary.bullets.forEach(function(bullet) {
+                    var li = document.createElement('li');
+                    li.textContent = bullet;
+                    bulletsList.appendChild(li);
+                });
+                bulletsDiv.appendChild(bulletsList);
+                summarySection.appendChild(bulletsDiv);
+            }
+
+            // Actions
+            if (summary.actions && summary.actions.length > 0) {
+                var actionsDiv = document.createElement('div');
+                actionsDiv.className = 'orb-summary-actions';
+                var actionsTitle = document.createElement('strong');
+                actionsTitle.textContent = 'Suggested Actions:';
+                actionsDiv.appendChild(actionsTitle);
+                var actionsList = document.createElement('ul');
+                summary.actions.forEach(function(action) {
+                    var li = document.createElement('li');
+                    li.textContent = action;
+                    actionsList.appendChild(li);
+                });
+                actionsDiv.appendChild(actionsList);
+                summarySection.appendChild(actionsDiv);
+            }
+        } else {
+            var noSummary = document.createElement('p');
+            noSummary.textContent = event.message || 'No summary available';
+            summarySection.appendChild(noSummary);
         }
-    });
 
-    // Metadata section
-    if (event.metadata && Object.keys(event.metadata).length > 0) {
-        var metaSection = document.createElement('div');
-        metaSection.className = 'drawer-section';
+        content.appendChild(summarySection);
 
-        var metaTitle = document.createElement('h4');
-        metaTitle.textContent = 'Metadata';
-        metaSection.appendChild(metaTitle);
+        // Transcript section
+        var transcriptSection = document.createElement('div');
+        transcriptSection.className = 'drawer-section orb-transcript-section';
 
-        var metaPre = document.createElement('pre');
-        metaPre.className = 'drawer-metadata';
-        metaPre.textContent = JSON.stringify(event.metadata, null, 2);
-        metaSection.appendChild(metaPre);
+        var transcriptTitle = document.createElement('h4');
+        transcriptTitle.textContent = 'Conversation Transcript';
+        transcriptSection.appendChild(transcriptTitle);
 
-        content.appendChild(metaSection);
+        if (state.oasisEvents.orbTranscriptLoading) {
+            var loadingDiv = document.createElement('div');
+            loadingDiv.className = 'orb-transcript-loading';
+            loadingDiv.textContent = 'Loading transcript...';
+            transcriptSection.appendChild(loadingDiv);
+        } else if (state.oasisEvents.orbTranscriptError) {
+            var errorDiv = document.createElement('div');
+            errorDiv.className = 'orb-transcript-error';
+            errorDiv.textContent = 'Error: ' + state.oasisEvents.orbTranscriptError;
+            transcriptSection.appendChild(errorDiv);
+        } else if (state.oasisEvents.orbTranscript && state.oasisEvents.orbTranscript.turns) {
+            var turnsContainer = document.createElement('div');
+            turnsContainer.className = 'orb-transcript-turns';
+
+            state.oasisEvents.orbTranscript.turns.forEach(function(turn) {
+                var turnDiv = document.createElement('div');
+                turnDiv.className = 'orb-transcript-turn orb-transcript-turn-' + turn.role;
+
+                var turnHeader = document.createElement('div');
+                turnHeader.className = 'orb-transcript-turn-header';
+
+                var roleSpan = document.createElement('span');
+                roleSpan.className = 'orb-transcript-role';
+                roleSpan.textContent = turn.role === 'user' ? 'You' : 'ORB';
+                turnHeader.appendChild(roleSpan);
+
+                var tsSpan = document.createElement('span');
+                tsSpan.className = 'orb-transcript-ts';
+                tsSpan.textContent = formatEventTimestamp(turn.ts);
+                turnHeader.appendChild(tsSpan);
+
+                turnDiv.appendChild(turnHeader);
+
+                var textDiv = document.createElement('div');
+                textDiv.className = 'orb-transcript-text';
+                textDiv.textContent = turn.text;
+                turnDiv.appendChild(textDiv);
+
+                turnsContainer.appendChild(turnDiv);
+            });
+
+            transcriptSection.appendChild(turnsContainer);
+        } else {
+            var noTranscript = document.createElement('div');
+            noTranscript.className = 'orb-transcript-empty';
+            noTranscript.textContent = 'No transcript available';
+            transcriptSection.appendChild(noTranscript);
+        }
+
+        content.appendChild(transcriptSection);
+
+    } else {
+        // Standard event rendering
+
+        // Severity banner
+        var severityBanner = document.createElement('div');
+        severityBanner.className = 'severity-banner severity-banner-' + severity;
+        severityBanner.textContent = severity.toUpperCase() + ' SEVERITY';
+        content.appendChild(severityBanner);
+
+        // Fields
+        var fields = [
+            { label: 'Event ID', value: event.id },
+            { label: 'Timestamp', value: formatEventTimestamp(event.created_at) },
+            { label: 'Topic', value: event.topic },
+            { label: 'VTID', value: event.vtid },
+            { label: 'Service', value: event.service },
+            { label: 'Status', value: event.status },
+            { label: 'Role', value: event.role },
+            { label: 'Model', value: event.model },
+            { label: 'Message', value: event.message }
+        ];
+
+        fields.forEach(function(field) {
+            if (field.value) {
+                var row = document.createElement('div');
+                row.className = 'drawer-field';
+
+                var label = document.createElement('div');
+                label.className = 'drawer-field-label';
+                label.textContent = field.label;
+                row.appendChild(label);
+
+                var value = document.createElement('div');
+                value.className = 'drawer-field-value';
+                value.textContent = field.value;
+                row.appendChild(value);
+
+                content.appendChild(row);
+            }
+        });
+
+        // Metadata section
+        if (event.metadata && Object.keys(event.metadata).length > 0) {
+            var metaSection = document.createElement('div');
+            metaSection.className = 'drawer-section';
+
+            var metaTitle = document.createElement('h4');
+            metaTitle.textContent = 'Metadata';
+            metaSection.appendChild(metaTitle);
+
+            var metaPre = document.createElement('pre');
+            metaPre.className = 'drawer-metadata';
+            metaPre.textContent = JSON.stringify(event.metadata, null, 2);
+            metaSection.appendChild(metaPre);
+
+            content.appendChild(metaSection);
+        }
     }
 
     drawer.appendChild(content);

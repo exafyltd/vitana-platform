@@ -202,6 +202,8 @@ export type CicdEventType =
   | 'orb.turn.received'
   | 'orb.turn.responded'
   | 'orb.session.ended'
+  // VTID-01039: ORB Conversation Aggregation
+  | 'orb.session.summary'
   // VTID-01032: Multi-service deploy selection event
   | 'cicd.deploy.selection'
   // VTID-01033: CICD Concurrency Lock Events
