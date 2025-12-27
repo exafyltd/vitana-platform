@@ -859,7 +859,11 @@ function getVertexToolDefinitions(): Tool[] {
  * VTID-01023: Call Vertex AI with tools using ADC
  * Returns the model response with optional tool calls
  */
-async function callVertexWithTools(text: string, threadId: string): Promise<{
+async function callVertexWithTools(
+  text: string,
+  threadId: string,
+  conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = []
+): Promise<{
   reply: string;
   toolCalls?: GeminiToolCall[];
 }> {
@@ -882,14 +886,26 @@ async function callVertexWithTools(text: string, threadId: string): Promise<{
     tools: getVertexToolDefinitions()
   });
 
-  const request = {
-    contents: [{
-      role: 'user' as const,
-      parts: [{ text }]
-    }]
-  };
+  // VTID-01027: Build contents array with conversation history
+  const contents: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
 
-  console.log(`[VTID-01023] Calling Vertex AI: model=${VERTEX_MODEL}`);
+  // Add conversation history (map 'assistant' to 'model' for Vertex AI)
+  for (const msg of conversationHistory) {
+    contents.push({
+      role: msg.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: msg.content }]
+    });
+  }
+
+  // Add current user message
+  contents.push({
+    role: 'user',
+    parts: [{ text }]
+  });
+
+  const request = { contents };
+
+  console.log(`[VTID-01023] Calling Vertex AI: model=${VERTEX_MODEL}, history_messages=${conversationHistory.length}`);
   const response = await generativeModel.generateContent(request);
 
   const candidate = response.response?.candidates?.[0];
@@ -1028,16 +1044,22 @@ export async function processWithGemini(input: {
   threadId: string;
   attachments?: Array<{ oasis_ref: string; kind: string }>;
   context?: Record<string, unknown>;
+  // VTID-01027: Conversation history for session memory
+  conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  conversationId?: string;
 }): Promise<GeminiOperatorResponse> {
-  const { text, threadId, attachments = [], context = {} } = input;
+  const { text, threadId, attachments = [], context = {}, conversationHistory = [], conversationId } = input;
 
   console.log(`[VTID-01023] Processing message: "${text.substring(0, 50)}..."`);
+  if (conversationHistory.length > 0) {
+    console.log(`[VTID-01027] Including ${conversationHistory.length} context messages from conversation ${conversationId}`);
+  }
 
   // VTID-01023: Try Vertex AI first (uses ADC, works on Cloud Run without API key)
   if (vertexAI) {
     try {
       console.log('[VTID-01023] Using Vertex AI with ADC');
-      const vertexResponse = await callVertexWithTools(text, threadId);
+      const vertexResponse = await callVertexWithTools(text, threadId, conversationHistory);
 
       // Check if Vertex wants to call any tools
       if (vertexResponse.toolCalls && vertexResponse.toolCalls.length > 0) {
@@ -1094,7 +1116,8 @@ export async function processWithGemini(input: {
     try {
       console.log('[VTID-01023] Falling back to Gemini API key');
       // Call Gemini API with function calling
-      const geminiResponse = await callGeminiWithTools(text, threadId);
+      // VTID-01027: Pass conversation history
+      const geminiResponse = await callGeminiWithTools(text, threadId, conversationHistory);
 
       // Check if Gemini wants to call any tools
       if (geminiResponse.toolCalls && geminiResponse.toolCalls.length > 0) {
@@ -1156,8 +1179,13 @@ export async function processWithGemini(input: {
 
 /**
  * Call Gemini API with tool definitions
+ * VTID-01027: Added conversation history support
  */
-async function callGeminiWithTools(text: string, threadId: string): Promise<{
+async function callGeminiWithTools(
+  text: string,
+  threadId: string,
+  conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = []
+): Promise<{
   reply: string;
   toolCalls?: GeminiToolCall[];
 }> {
@@ -1165,13 +1193,25 @@ async function callGeminiWithTools(text: string, threadId: string): Promise<{
     throw new Error('GOOGLE_GEMINI_API_KEY not configured');
   }
 
+  // VTID-01027: Build contents array with conversation history
+  const contents: Array<{ role: string; parts: Array<{ text: string }> }> = [];
+
+  // Add conversation history (map 'assistant' to 'model' for Gemini API)
+  for (const msg of conversationHistory) {
+    contents.push({
+      role: msg.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: msg.content }]
+    });
+  }
+
+  // Add current user message
+  contents.push({
+    role: 'user',
+    parts: [{ text }]
+  });
+
   const requestBody = {
-    contents: [
-      {
-        role: 'user',
-        parts: [{ text }]
-      }
-    ],
+    contents,
     tools: [GEMINI_TOOL_DEFINITIONS],
     systemInstruction: {
       parts: [{
@@ -1185,6 +1225,8 @@ Current thread: ${threadId}`
       maxOutputTokens: 1024
     }
   };
+
+  console.log(`[VTID-01027] Calling Gemini API with ${conversationHistory.length} history messages`);
 
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GOOGLE_GEMINI_API_KEY}`,
