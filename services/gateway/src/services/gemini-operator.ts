@@ -179,19 +179,22 @@ export const GEMINI_TOOL_DEFINITIONS = {
       }
     },
     // VTID-0538: Knowledge Hub search tool
+    // VTID-01025: Clarified - only for Vitana-specific questions, not general knowledge
     {
       name: 'knowledge_search',
-      description: `Search the Vitana documentation and knowledge base to answer questions about Vitana concepts, architecture, features, and specifications.
+      description: `Search the Vitana documentation and knowledge base. Use ONLY for Vitana-specific questions.
 
-Use this tool when the user asks:
+Use this tool ONLY when the user asks about Vitana concepts:
 - "What is the Vitana Index?"
 - "Explain the Command Hub architecture"
 - "What is OASIS?"
 - "How does the Autopilot system work?"
 - "What are the three tenants (Maxina, AlKalma, Earthlings)?"
-- Any "What", "How", "Explain", "Why" questions about Vitana
 
-Do NOT use this tool for action commands like "Create a task" or "Deploy gateway" - use autopilot tools for those.`,
+Do NOT use this tool for:
+- General knowledge questions (math, geography, science, etc.)
+- Task management commands (use autopilot tools instead)
+- Programming questions unrelated to Vitana`,
       parameters: {
         type: 'object',
         properties: {
@@ -815,21 +818,25 @@ export async function executeTool(
 
 /**
  * VTID-01023: System prompt for Operator Chat Gemini/Vertex integration
+ * VTID-01025: Open chat mode - general knowledge + task operations
  */
-const OPERATOR_SYSTEM_PROMPT = `You are the Vitana Operator Assistant, helping operators manage the Autopilot system and answer questions about Vitana.
+const OPERATOR_SYSTEM_PROMPT = `You are a helpful AI assistant with access to the Vitana Autopilot system. You can answer any question and also help manage Vitana tasks.
 
-When operators want to:
-- Create a new task: Use the autopilot_create_task function
-- Check task status: Use the autopilot_get_status function
-- See recent tasks: Use the autopilot_list_recent_tasks function
-- Ask "What/How/Explain/Why" questions about Vitana: Use the knowledge_search function
+**Available tools (use when appropriate):**
+- autopilot_create_task: Create a new Autopilot task
+- autopilot_get_status: Check the status of an existing task by VTID
+- autopilot_list_recent_tasks: List recent tasks
+- knowledge_search: Search Vitana documentation (use for Vitana-specific questions like "What is OASIS?", "Explain the Vitana Index", etc.)
 
-For questions like "What is the Vitana Index?", "Explain OASIS", "What are the three tenants?", etc., ALWAYS use knowledge_search first to provide doc-grounded answers.
+**When to use tools:**
+- Task creation requests (e.g., "Create a task to deploy gateway") → use autopilot_create_task
+- Status checks (e.g., "Status of VTID-0540") → use autopilot_get_status
+- Task listing (e.g., "Show recent tasks") → use autopilot_list_recent_tasks
+- Vitana-specific questions → use knowledge_search
 
-For action commands like "Create a task", "Deploy gateway", use the autopilot tools.
+**For all other questions** (math, general knowledge, coding, etc.), answer directly without using tools.
 
-Be helpful and concise. When calling tools, explain what you're doing.
-If a task is blocked by governance, explain the reason clearly.`;
+Be helpful, accurate, and concise. If a task is blocked by governance, explain the reason clearly.`;
 
 /**
  * VTID-01023: Convert tool definitions to Vertex AI format
@@ -1161,20 +1168,7 @@ async function callGeminiWithTools(text: string, threadId: string): Promise<{
     tools: [GEMINI_TOOL_DEFINITIONS],
     systemInstruction: {
       parts: [{
-        text: `You are the Vitana Operator Assistant, helping operators manage the Autopilot system and answer questions about Vitana.
-
-When operators want to:
-- Create a new task: Use the autopilot_create_task function
-- Check task status: Use the autopilot_get_status function
-- See recent tasks: Use the autopilot_list_recent_tasks function
-- Ask "What/How/Explain/Why" questions about Vitana: Use the knowledge_search function
-
-For questions like "What is the Vitana Index?", "Explain OASIS", "What are the three tenants?", etc., ALWAYS use knowledge_search first to provide doc-grounded answers.
-
-For action commands like "Create a task", "Deploy gateway", use the autopilot tools.
-
-Be helpful and concise. When calling tools, explain what you're doing.
-If a task is blocked by governance, explain the reason clearly.
+        text: `${OPERATOR_SYSTEM_PROMPT}
 
 Current thread: ${threadId}`
       }]
@@ -1312,6 +1306,7 @@ If successful, confirm what was done and any next steps.`
 /**
  * Local routing fallback when Gemini is not available
  * VTID-0541 D3: Enhanced to support natural conversation
+ * VTID-01025: Fallback only handles task operations; general questions need AI backend
  * Uses keyword matching to determine tool calls
  * Always includes provider/model/mode metadata for transparency
  */
@@ -1324,7 +1319,7 @@ async function processLocalRouting(text: string, threadId: string): Promise<Gemi
     provider: 'local-router',
     model: 'keyword-matcher',
     mode: 'operator_local',
-    vtid: 'VTID-0541'
+    vtid: 'VTID-01025'
   };
 
   // VTID-0541 D3: Handle conversational messages first (greetings, thanks, etc.)
@@ -1455,34 +1450,32 @@ async function processLocalRouting(text: string, threadId: string): Promise<Gemi
     });
   }
 
-  // No tool matched - return helpful conversational message
-  // VTID-0541 D3: Make this more conversational, not just a help menu
+  // No tool matched - return helpful message
+  // VTID-01025: Fallback mode can only handle specific operations, not general questions
   if (toolResults.length === 0) {
-    // Check if it looks like a general question or statement
+    // Check if it looks like a general question
     const looksLikeQuestion = lowerText.includes('?') || lowerText.match(/^(can|could|would|will|do|does|is|are|how|what|when|where|why|who)/i);
-    const looksLikeStatement = lowerText.length > 50; // Longer text might be a statement/request
 
-    if (looksLikeQuestion || looksLikeStatement) {
-      // Provide a conversational response that acknowledges the input
+    if (looksLikeQuestion) {
+      // VTID-01025: In fallback mode, explain limitation for general questions
       return {
-        reply: `I understand you're asking about something, but I'm not sure exactly how to help with that. Here's what I can do:
+        reply: `I'm currently running in fallback mode (AI backend temporarily unavailable). In this mode, I can handle:
 
-**Task Management:**
+**Task Operations:**
 - Create tasks: "Create a task to fix the health check"
 - Check status: "What is the status of VTID-0540?"
 - List tasks: "Show recent tasks"
 
 **Vitana Knowledge:**
-- "What is the Vitana Index?"
-- "Explain the OASIS architecture"
-- "How does governance work?"
+- "What is OASIS?"
+- "Explain the Vitana Index"
 
-Could you rephrase your request, or let me know which of these you'd like help with?`,
-        meta: { ...localRoutingMeta, conversational: true }
+For general questions, please try again in a moment when the AI service is available.`,
+        meta: { ...localRoutingMeta, limited_mode: true }
       };
     }
 
-    // Simple fallback for short unrecognized input
+    // Simple greeting fallback
     return {
       reply: `Hello! I'm the Vitana Operator Assistant. I can help you with:
 
