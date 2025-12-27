@@ -4818,6 +4818,76 @@ body {
   opacity: 0.7;
 }
 
+/* VTID-01038: Voice Settings Row */
+.orb-voice-settings {
+  position: absolute;
+  bottom: 140px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: rgba(30, 40, 55, 0.8);
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+}
+
+.orb-voice-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.orb-voice-select {
+  min-width: 180px;
+  max-width: 280px;
+  padding: 6px 10px;
+  font-size: 0.875rem;
+  color: var(--color-text-primary);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+}
+
+.orb-voice-select:hover {
+  border-color: var(--color-text-secondary);
+}
+
+.orb-voice-select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.orb-voice-preview {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.orb-voice-preview:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--color-text-secondary);
+}
+
+.orb-voice-preview svg {
+  width: 16px;
+  height: 16px;
+}
+
 /* Chat button in overlay - hidden per design, chat accessed via control */
 .orb-chat-btn {
   display: none;

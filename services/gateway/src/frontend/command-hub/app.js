@@ -1560,7 +1560,11 @@ const state = {
         speaking: false,           // true while TTS is actively speaking
         ignoreSTTUntil: 0,         // timestamp (ms) - ignore STT results until this time
         lastTTSText: '',           // last TTS text for echo similarity filtering
-        transcriptNearBottom: true // track if user was near bottom for scroll anchoring
+        transcriptNearBottom: true, // track if user was near bottom for scroll anchoring
+        // VTID-01038: TTS voice selection state
+        ttsVoices: [],
+        ttsSelectedVoiceUri: null,
+        ttsVoicesLoaded: false
     },
 
     // VTID-0600: Operational Visibility Foundation State
@@ -10455,7 +10459,9 @@ const ORB_ICONS = {
     camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>',
     cameraOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"/><path d="M21 21H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3m3-3h6l2 3h4a2 2 0 0 1 2 2v9.34m-7.72-2.06a4 4 0 1 1-5.56-5.56"/></svg>',
     chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
-    send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>'
+    send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>',
+    // VTID-01038: Speaker icon for TTS voice preview
+    speaker: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>'
 };
 
 // VTID-0150-A: ORB Idle is now rendered via renderOrbIdleElement() inside sidebar footer
@@ -10655,6 +10661,55 @@ function renderOrbOverlay() {
     controls.appendChild(cameraWrapper);
 
     overlay.appendChild(controls);
+
+    // VTID-01038: Voice settings row (Voice dropdown + Preview button)
+    var voiceSettings = document.createElement('div');
+    voiceSettings.className = 'orb-voice-settings';
+
+    var voiceLabel = document.createElement('label');
+    voiceLabel.className = 'orb-voice-label';
+    voiceLabel.textContent = 'Voice';
+    voiceLabel.setAttribute('for', 'orb-voice-select');
+    voiceSettings.appendChild(voiceLabel);
+
+    var voiceSelect = document.createElement('select');
+    voiceSelect.className = 'orb-voice-select';
+    voiceSelect.id = 'orb-voice-select';
+    voiceSelect.setAttribute('aria-label', 'Select TTS voice');
+
+    // Populate voice options
+    if (state.orb.ttsVoices.length > 0) {
+        state.orb.ttsVoices.forEach(function(voice) {
+            var option = document.createElement('option');
+            option.value = voice.voiceURI;
+            option.textContent = voice.name + ' (' + voice.lang + ')';
+            if (voice.voiceURI === state.orb.ttsSelectedVoiceUri) {
+                option.selected = true;
+            }
+            voiceSelect.appendChild(option);
+        });
+    } else {
+        var defaultOption = document.createElement('option');
+        defaultOption.value = '';
+        defaultOption.textContent = 'Loading voices...';
+        voiceSelect.appendChild(defaultOption);
+    }
+
+    voiceSelect.addEventListener('change', function(e) {
+        orbSetTtsVoice(e.target.value);
+    });
+    voiceSettings.appendChild(voiceSelect);
+
+    var previewBtn = document.createElement('button');
+    previewBtn.className = 'orb-voice-preview';
+    previewBtn.setAttribute('aria-label', 'Preview selected voice');
+    previewBtn.innerHTML = ORB_ICONS.speaker + ' <span>Preview</span>';
+    previewBtn.addEventListener('click', function() {
+        orbPreviewTtsVoice();
+    });
+    voiceSettings.appendChild(previewBtn);
+
+    overlay.appendChild(voiceSettings);
 
     // Chat button
     var chatBtn = document.createElement('button');
@@ -11552,6 +11607,133 @@ async function orbVoiceSendText(text) {
     }
 }
 
+// VTID-01038: TTS Voice Selection - localStorage key
+const ORB_TTS_VOICE_KEY = 'orb_tts_voice';
+
+/**
+ * VTID-01038: Score a voice for quality selection
+ * Higher scores are preferred.
+ */
+function orbScoreVoice(voice) {
+    var score = 0;
+    var nameLower = voice.name.toLowerCase();
+
+    // Language match: prefer en-* voices
+    if (voice.lang.startsWith('en')) {
+        score += 100;
+    }
+
+    // Premium voice indicators (case-insensitive)
+    if (nameLower.includes('neural')) score += 50;
+    if (nameLower.includes('enhanced')) score += 40;
+    if (nameLower.includes('natural')) score += 30;
+    if (nameLower.includes('premium')) score += 30;
+
+    // Deprioritize low-quality voices
+    if (nameLower.includes('compact')) score -= 50;
+    if (nameLower.includes('basic')) score -= 30;
+
+    // Prefer local voices over remote (local tend to be more responsive)
+    if (voice.localService) score += 10;
+
+    return score;
+}
+
+/**
+ * VTID-01038: Load available TTS voices and select the best default
+ */
+function orbLoadTtsVoices() {
+    if (!window.speechSynthesis) {
+        console.warn('[VTID-01038] speechSynthesis not available');
+        return;
+    }
+
+    var loadVoices = function() {
+        var voices = window.speechSynthesis.getVoices();
+        if (voices.length === 0) return;
+
+        state.orb.ttsVoices = voices;
+        state.orb.ttsVoicesLoaded = true;
+
+        console.log('[VTID-01038] Loaded', voices.length, 'TTS voices');
+
+        // Check localStorage for saved voice preference
+        var savedVoiceUri = localStorage.getItem(ORB_TTS_VOICE_KEY);
+        if (savedVoiceUri) {
+            var savedVoice = voices.find(function(v) { return v.voiceURI === savedVoiceUri; });
+            if (savedVoice) {
+                state.orb.ttsSelectedVoiceUri = savedVoiceUri;
+                console.log('[VTID-01038] Restored saved voice:', savedVoice.name);
+                return;
+            }
+        }
+
+        // Auto-select best voice based on scoring
+        var scoredVoices = voices.map(function(voice) {
+            return { voice: voice, score: orbScoreVoice(voice) };
+        }).sort(function(a, b) { return b.score - a.score; });
+
+        if (scoredVoices.length > 0) {
+            var bestVoice = scoredVoices[0].voice;
+            state.orb.ttsSelectedVoiceUri = bestVoice.voiceURI;
+            localStorage.setItem(ORB_TTS_VOICE_KEY, bestVoice.voiceURI);
+            console.log('[VTID-01038] Auto-selected best voice:', bestVoice.name, '(score:', scoredVoices[0].score + ')');
+        }
+    };
+
+    // Voices may load asynchronously in some browsers
+    loadVoices();
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+        window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+}
+
+/**
+ * VTID-01038: Get the selected TTS voice object
+ */
+function orbGetSelectedVoice() {
+    if (!state.orb.ttsSelectedVoiceUri || state.orb.ttsVoices.length === 0) {
+        return null;
+    }
+    return state.orb.ttsVoices.find(function(v) {
+        return v.voiceURI === state.orb.ttsSelectedVoiceUri;
+    }) || null;
+}
+
+/**
+ * VTID-01038: Set the TTS voice and persist to localStorage
+ */
+function orbSetTtsVoice(voiceUri) {
+    state.orb.ttsSelectedVoiceUri = voiceUri;
+    localStorage.setItem(ORB_TTS_VOICE_KEY, voiceUri);
+    var voice = state.orb.ttsVoices.find(function(v) { return v.voiceURI === voiceUri; });
+    console.log('[VTID-01038] Voice changed to:', voice ? voice.name : voiceUri);
+}
+
+/**
+ * VTID-01038: Preview the selected TTS voice
+ */
+function orbPreviewTtsVoice() {
+    if (!window.speechSynthesis) return;
+
+    // Cancel any ongoing speech (including previews)
+    window.speechSynthesis.cancel();
+
+    var previewText = 'Hello, I am your Vitana assistant.';
+    var utterance = new SpeechSynthesisUtterance(previewText);
+    utterance.lang = 'en-US';
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+
+    var selectedVoice = orbGetSelectedVoice();
+    if (selectedVoice) {
+        utterance.voice = selectedVoice;
+    }
+
+    console.log('[VTID-01038] Previewing voice:', selectedVoice ? selectedVoice.name : 'default');
+    window.speechSynthesis.speak(utterance);
+}
+
 /**
  * VTID-01037: Normalize text for echo comparison
  * Removes punctuation, lowercases, and trims
@@ -11615,6 +11797,7 @@ function restartRecognitionAfterTTS() {
 /**
  * VTID-0135: Speak text using TTS (speechSynthesis)
  * VTID-01037: Implements TTS/STT coordination to prevent feedback loop
+ * VTID-01038: Updated to use selected voice
  * Implements barge-in: stops speaking when user starts talking
  */
 function orbVoiceSpeak(text) {
@@ -11644,6 +11827,13 @@ function orbVoiceSpeak(text) {
     utterance.lang = 'en-US';
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
+
+    // VTID-01038: Apply selected voice
+    var selectedVoice = orbGetSelectedVoice();
+    if (selectedVoice) {
+        utterance.voice = selectedVoice;
+        console.log('[VTID-01038] Using voice:', selectedVoice.name);
+    }
 
     utterance.onstart = function() {
         console.log('[VTID-0135] TTS started');
@@ -11818,6 +12008,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         renderApp();
         fetchTasks();
+
+        // VTID-01038: Load TTS voices for ORB
+        orbLoadTtsVoices();
 
         // VTID-0527: Fetch telemetry snapshot for task stage timelines
         fetchTelemetrySnapshot();
