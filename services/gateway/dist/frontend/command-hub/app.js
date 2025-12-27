@@ -1619,6 +1619,8 @@ const state = {
         ignoreSTTUntil: 0,         // timestamp (ms) - ignore STT results until this time
         lastTTSText: '',           // last TTS text for echo similarity filtering
         transcriptNearBottom: true, // track if user was near bottom for scroll anchoring
+        // VTID-01044: Flag to prevent auto-restart when aborting for TTS
+        abortedForTTS: false,      // true when recognition aborted to start TTS
         // VTID-01038: TTS voice selection state
         ttsVoices: [],
         ttsSelectedVoiceUri: null,
@@ -11911,8 +11913,8 @@ function orbVoiceStart() {
                 console.log('[VTID-0135] No speech detected, continuing to listen...');
             }
         } else if (event.error === 'aborted') {
-            // VTID-01043: Aborted is intentional (language change, TTS start) - not an error
-            console.log('[VTID-01043] Recognition aborted (intentional)');
+            // VTID-01044: Aborted is intentional (language change, TTS start) - not an error
+            console.log('[VTID-01044] Recognition aborted (intentional)');
             // Don't set voiceError - let onend handler restart if needed
         } else if (event.error === 'language-not-supported' || event.error === 'service-not-allowed') {
             // VTID-01042: Language not supported - fall back to English (US)
@@ -11927,6 +11929,14 @@ function orbVoiceStart() {
 
     recognition.onend = function() {
         console.log('[VTID-0135] Speech recognition ended');
+
+        // VTID-01044: If aborted for TTS, don't auto-restart here
+        // Let restartRecognitionAfterTTS() handle it when TTS ends
+        if (state.orb.abortedForTTS) {
+            console.log('[VTID-01044] Recognition ended for TTS start, will restart after TTS');
+            state.orb.abortedForTTS = false; // Reset flag
+            return; // Don't restart or change state - TTS flow will handle it
+        }
 
         // Restart if not intentionally stopped and not in error state
         if (state.orb.overlayVisible && state.orb.voiceState !== 'MUTED' && !state.orb.voiceError) {
@@ -12332,7 +12342,7 @@ function orbSetLanguage(langCode) {
     localStorage.setItem(ORB_STT_LANG_KEY, langCode);
     localStorage.setItem(ORB_TTS_LANG_KEY, langCode);
 
-    // VTID-01043: Web Speech API doesn't support changing lang on running recognition
+    // VTID-01044: Web Speech API doesn't support changing lang on running recognition
     // Must stop, update lang, then restart
     if (state.orb.speechRecognition) {
         var wasListening = state.orb.voiceState === 'LISTENING';
@@ -12506,12 +12516,15 @@ function orbVoiceSpeak(text) {
     state.orb.lastTTSText = text;
 
     // VTID-01037: Stop recognition cleanly before TTS to prevent self-hearing
+    // VTID-01044: Set flag so onend doesn't auto-restart (restartRecognitionAfterTTS will handle it)
     if (state.orb.speechRecognition) {
+        state.orb.abortedForTTS = true; // VTID-01044: Signal that this abort is for TTS
         try {
             state.orb.speechRecognition.abort();
             console.log('[VTID-01037] Recognition aborted before TTS');
         } catch (e) {
             console.warn('[VTID-01037] Could not abort recognition:', e);
+            state.orb.abortedForTTS = false; // Reset if abort failed
         }
     }
 
