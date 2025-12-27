@@ -5721,6 +5721,125 @@ body {
   font-family: monospace;
 }
 
+/* --- VTID-01039: ORB Session Transcript Styles --- */
+.orb-summary-section {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.orb-summary-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.orb-summary-stats {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  margin-bottom: 1rem;
+}
+
+.orb-summary-bullets {
+  margin-bottom: 1rem;
+}
+
+.orb-summary-bullets ul,
+.orb-summary-actions ul {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+.orb-summary-bullets li,
+.orb-summary-actions li {
+  margin-bottom: 0.25rem;
+  font-size: 0.9rem;
+  color: var(--color-text-primary);
+}
+
+.orb-summary-actions {
+  background: rgba(59, 130, 246, 0.1);
+  border-radius: 6px;
+  padding: 0.75rem;
+}
+
+.orb-summary-actions strong {
+  font-size: 0.8rem;
+  color: var(--color-accent);
+}
+
+.orb-transcript-section {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.orb-transcript-loading,
+.orb-transcript-error,
+.orb-transcript-empty {
+  padding: 2rem;
+  text-align: center;
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+}
+
+.orb-transcript-error {
+  color: #ff4d4f;
+}
+
+.orb-transcript-turns {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.orb-transcript-turn {
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: var(--color-sidebar-bg);
+}
+
+.orb-transcript-turn-user {
+  background: rgba(59, 130, 246, 0.1);
+  border-left: 3px solid var(--color-accent);
+}
+
+.orb-transcript-turn-assistant {
+  background: rgba(16, 185, 129, 0.1);
+  border-left: 3px solid #10b981;
+}
+
+.orb-transcript-turn-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.orb-transcript-role {
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+}
+
+.orb-transcript-turn-user .orb-transcript-role {
+  color: var(--color-accent);
+}
+
+.orb-transcript-turn-assistant .orb-transcript-role {
+  color: #10b981;
+}
+
+.orb-transcript-ts {
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+}
+
+.orb-transcript-text {
+  font-size: 0.9rem;
+  color: var(--color-text-primary);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
 /* --- Command Hub Events View --- */
 .command-hub-events-container {
   padding: 1.5rem;

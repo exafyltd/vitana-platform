@@ -153,6 +153,61 @@ const orbConversations = new Map<string, OrbConversation>();
 // VTID-0135: Conversation timeout: 30 minutes
 const CONVERSATION_TIMEOUT_MS = 30 * 60 * 1000;
 
+// =============================================================================
+// VTID-01039: ORB Session Transcript Store
+// =============================================================================
+
+/**
+ * VTID-01039: Transcript turn for persisted storage
+ */
+interface OrbTranscriptTurn {
+  role: 'user' | 'assistant';
+  text: string;
+  ts: string;
+}
+
+/**
+ * VTID-01039: Persisted transcript for ORB session
+ */
+interface OrbSessionTranscript {
+  orb_session_id: string;
+  conversation_id: string | null;
+  turns: OrbTranscriptTurn[];
+  started_at: string;
+  finalized: boolean;
+  summary?: {
+    title: string;
+    bullets: string[];
+    actions: string[];
+    turns_count: number;
+    duration_sec: number;
+  };
+}
+
+// VTID-01039: In-memory transcript store
+const orbTranscripts = new Map<string, OrbSessionTranscript>();
+
+/**
+ * VTID-01039: Cleanup expired transcripts (retain for 1 hour after finalization)
+ */
+function cleanupExpiredTranscripts(): void {
+  const now = Date.now();
+  const TRANSCRIPT_RETENTION_MS = 60 * 60 * 1000; // 1 hour
+
+  for (const [sessionId, transcript] of orbTranscripts.entries()) {
+    if (transcript.finalized) {
+      const startedAt = new Date(transcript.started_at).getTime();
+      if (now - startedAt > TRANSCRIPT_RETENTION_MS) {
+        console.log(`[VTID-01039] Transcript expired: ${sessionId}`);
+        orbTranscripts.delete(sessionId);
+      }
+    }
+  }
+}
+
+// Cleanup expired transcripts every 10 minutes
+setInterval(cleanupExpiredTranscripts, 10 * 60 * 1000);
+
 /**
  * VTID-0135: Cleanup expired conversations
  */
@@ -830,8 +885,27 @@ router.post('/chat', async (req: Request, res: Response) => {
     await emitOrbSessionStarted(orbSessionId, conversationId);
   }
 
-  // Emit turn received event
-  await emitOrbTurnReceived(orbSessionId, conversationId, inputText);
+  // VTID-01039: Append user turn to transcript (replaces per-turn OASIS event)
+  // Get or create transcript for this session
+  let transcript = orbTranscripts.get(orbSessionId);
+  if (!transcript) {
+    transcript = {
+      orb_session_id: orbSessionId,
+      conversation_id: conversationId,
+      turns: [],
+      started_at: new Date().toISOString(),
+      finalized: false
+    };
+    orbTranscripts.set(orbSessionId, transcript);
+    console.log(`[VTID-01039] Transcript created via /chat: ${orbSessionId}`);
+  }
+
+  // Append user turn
+  transcript.turns.push({
+    role: 'user',
+    text: inputText,
+    ts: new Date().toISOString()
+  });
 
   try {
     // Build thread ID for Gemini processing
@@ -859,8 +933,14 @@ router.post('/chat', async (req: Request, res: Response) => {
       conversation.history = conversation.history.slice(-20);
     }
 
-    // Emit turn responded event
-    await emitOrbTurnResponded(orbSessionId, conversationId, replyText, provider);
+    // VTID-01039: Append assistant turn to transcript (replaces per-turn OASIS event)
+    if (transcript) {
+      transcript.turns.push({
+        role: 'assistant',
+        text: replyText,
+        ts: new Date().toISOString()
+      });
+    }
 
     console.log(`[VTID-0135] Chat response generated via ${provider}`);
 
@@ -898,7 +978,7 @@ router.post('/chat', async (req: Request, res: Response) => {
 
 /**
  * VTID-0135: POST /end-session - End an ORB voice conversation session
- * Emits orb.session.ended OASIS event
+ * VTID-01039: Now finalizes session and emits ONE orb.session.summary event
  */
 router.post('/end-session', async (req: Request, res: Response) => {
   const { orb_session_id, conversation_id } = req.body;
@@ -910,17 +990,323 @@ router.post('/end-session', async (req: Request, res: Response) => {
     });
   }
 
-  console.log(`[VTID-0135] Ending session: ${orb_session_id}`);
+  console.log(`[VTID-01039] Ending session: ${orb_session_id}`);
 
   // Find and remove conversation
   if (conversation_id && orbConversations.has(conversation_id)) {
     orbConversations.delete(conversation_id);
   }
 
-  // Emit session ended event
-  await emitOrbSessionEnded(orb_session_id, conversation_id || 'unknown');
+  // VTID-01039: Finalize transcript and emit summary instead of orb.session.ended
+  const transcript = orbTranscripts.get(orb_session_id);
+  if (transcript && !transcript.finalized) {
+    // Generate summary
+    const summaryContent = generateSessionSummary(transcript.turns);
+
+    // Calculate duration
+    const durationSec = Math.round(
+      (Date.now() - new Date(transcript.started_at).getTime()) / 1000
+    );
+
+    // Store summary
+    transcript.summary = {
+      ...summaryContent,
+      turns_count: transcript.turns.length,
+      duration_sec: durationSec
+    };
+    transcript.finalized = true;
+
+    // Emit ONE orb.session.summary event to OASIS
+    await emitOasisEvent({
+      vtid: 'VTID-01039',
+      type: 'orb.session.summary',
+      source: 'command-hub',
+      status: 'success',
+      message: summaryContent.title,
+      payload: {
+        orb_session_id,
+        conversation_id: transcript.conversation_id || conversation_id || null,
+        turns_count: transcript.summary.turns_count,
+        duration_sec: transcript.summary.duration_sec,
+        summary: {
+          title: summaryContent.title,
+          bullets: summaryContent.bullets,
+          actions: summaryContent.actions
+        },
+        metadata: { mode: 'orb_voice' }
+      }
+    }).catch(err => console.warn('[VTID-01039] Failed to emit orb.session.summary:', err.message));
+
+    console.log(`[VTID-01039] Session finalized: ${orb_session_id} (${transcript.summary.turns_count} turns, ${durationSec}s)`);
+  }
 
   return res.status(200).json({ ok: true });
+});
+
+// =============================================================================
+// VTID-01039: ORB Session Aggregation Endpoints
+// =============================================================================
+
+/**
+ * VTID-01039: Generate summary from transcript turns
+ * Creates title (max 80 chars), bullets (max 3), actions (max 3)
+ */
+function generateSessionSummary(turns: OrbTranscriptTurn[]): {
+  title: string;
+  bullets: string[];
+  actions: string[];
+} {
+  if (turns.length === 0) {
+    return {
+      title: 'Empty ORB session',
+      bullets: [],
+      actions: []
+    };
+  }
+
+  // Extract key topics from user turns
+  const userTurns = turns.filter(t => t.role === 'user').map(t => t.text);
+  const assistantTurns = turns.filter(t => t.role === 'assistant').map(t => t.text);
+
+  // Generate title from first user message (truncated to 80 chars)
+  let title = 'ORB voice conversation';
+  if (userTurns.length > 0) {
+    const firstQuery = userTurns[0].substring(0, 70);
+    title = userTurns.length > 1
+      ? `${firstQuery}... (+${userTurns.length - 1} more)`
+      : firstQuery;
+    if (title.length > 80) {
+      title = title.substring(0, 77) + '...';
+    }
+  }
+
+  // Generate bullets from assistant responses (max 3)
+  const bullets: string[] = [];
+  for (let i = 0; i < Math.min(3, assistantTurns.length); i++) {
+    const response = assistantTurns[i];
+    // Extract first sentence or first 100 chars
+    const firstSentence = response.split(/[.!?]/)[0];
+    const bullet = firstSentence.length > 100
+      ? firstSentence.substring(0, 97) + '...'
+      : firstSentence;
+    if (bullet.trim()) {
+      bullets.push(bullet.trim());
+    }
+  }
+
+  // Generate actions from assistant responses (look for action keywords)
+  const actions: string[] = [];
+  const actionKeywords = ['you can', 'you should', 'try', 'consider', 'recommend', 'suggest'];
+  for (const response of assistantTurns) {
+    if (actions.length >= 3) break;
+    const lowerResponse = response.toLowerCase();
+    for (const keyword of actionKeywords) {
+      if (lowerResponse.includes(keyword) && actions.length < 3) {
+        // Extract the sentence containing the action keyword
+        const sentences = response.split(/[.!?]/);
+        for (const sentence of sentences) {
+          if (sentence.toLowerCase().includes(keyword) && actions.length < 3) {
+            const action = sentence.trim().substring(0, 100);
+            if (action && !actions.includes(action)) {
+              actions.push(action);
+              break;
+            }
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  return { title, bullets, actions };
+}
+
+/**
+ * VTID-01039: POST /session/append - Append a turn to transcript
+ *
+ * Request:
+ * {
+ *   "orb_session_id": "uuid",
+ *   "conversation_id": "string|null",
+ *   "role": "user|assistant",
+ *   "text": "string",
+ *   "ts": "iso"
+ * }
+ */
+router.post('/session/append', (req: Request, res: Response) => {
+  const { orb_session_id, conversation_id, role, text, ts } = req.body;
+
+  if (!orb_session_id || !role || !text) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Missing required fields: orb_session_id, role, text'
+    });
+  }
+
+  if (role !== 'user' && role !== 'assistant') {
+    return res.status(400).json({
+      ok: false,
+      error: 'role must be "user" or "assistant"'
+    });
+  }
+
+  // Get or create transcript
+  let transcript = orbTranscripts.get(orb_session_id);
+  if (!transcript) {
+    transcript = {
+      orb_session_id,
+      conversation_id: conversation_id || null,
+      turns: [],
+      started_at: new Date().toISOString(),
+      finalized: false
+    };
+    orbTranscripts.set(orb_session_id, transcript);
+    console.log(`[VTID-01039] Transcript created: ${orb_session_id}`);
+  }
+
+  if (transcript.finalized) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Session already finalized'
+    });
+  }
+
+  // Update conversation_id if provided and not set
+  if (conversation_id && !transcript.conversation_id) {
+    transcript.conversation_id = conversation_id;
+  }
+
+  // Append turn
+  transcript.turns.push({
+    role,
+    text,
+    ts: ts || new Date().toISOString()
+  });
+
+  console.log(`[VTID-01039] Turn appended to ${orb_session_id}: ${role} (${text.length} chars)`);
+
+  return res.status(200).json({
+    ok: true,
+    orb_session_id,
+    turns_count: transcript.turns.length
+  });
+});
+
+/**
+ * VTID-01039: POST /session/finalize - Finalize session and emit summary event
+ *
+ * Request:
+ * {
+ *   "orb_session_id": "uuid",
+ *   "conversation_id": "string|null",
+ *   "turns_count": 12,
+ *   "duration_sec": 180
+ * }
+ */
+router.post('/session/finalize', async (req: Request, res: Response) => {
+  const { orb_session_id, conversation_id, turns_count, duration_sec } = req.body;
+
+  if (!orb_session_id) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Missing required field: orb_session_id'
+    });
+  }
+
+  // Get transcript
+  const transcript = orbTranscripts.get(orb_session_id);
+  if (!transcript) {
+    return res.status(404).json({
+      ok: false,
+      error: 'Session transcript not found'
+    });
+  }
+
+  if (transcript.finalized) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Session already finalized'
+    });
+  }
+
+  // Generate summary
+  const summaryContent = generateSessionSummary(transcript.turns);
+
+  // Calculate duration if not provided
+  const actualDuration = duration_sec || (
+    transcript.turns.length > 0
+      ? Math.round((Date.now() - new Date(transcript.started_at).getTime()) / 1000)
+      : 0
+  );
+
+  // Store summary
+  transcript.summary = {
+    ...summaryContent,
+    turns_count: turns_count || transcript.turns.length,
+    duration_sec: actualDuration
+  };
+  transcript.finalized = true;
+
+  // Emit ONE orb.session.summary event to OASIS
+  await emitOasisEvent({
+    vtid: 'VTID-01039',
+    type: 'orb.session.summary',
+    source: 'command-hub',
+    status: 'success',
+    message: summaryContent.title,
+    payload: {
+      orb_session_id,
+      conversation_id: transcript.conversation_id || conversation_id || null,
+      turns_count: transcript.summary.turns_count,
+      duration_sec: transcript.summary.duration_sec,
+      summary: {
+        title: summaryContent.title,
+        bullets: summaryContent.bullets,
+        actions: summaryContent.actions
+      },
+      metadata: { mode: 'orb_voice' }
+    }
+  }).catch(err => console.warn('[VTID-01039] Failed to emit orb.session.summary:', err.message));
+
+  console.log(`[VTID-01039] Session finalized: ${orb_session_id} (${transcript.summary.turns_count} turns, ${transcript.summary.duration_sec}s)`);
+
+  return res.status(200).json({
+    ok: true,
+    orb_session_id,
+    summary: transcript.summary
+  });
+});
+
+/**
+ * VTID-01039: GET /session/:orb_session_id - Get full transcript + summary
+ */
+router.get('/session/:orb_session_id', (req: Request, res: Response) => {
+  const { orb_session_id } = req.params;
+
+  if (!orb_session_id) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Missing orb_session_id parameter'
+    });
+  }
+
+  const transcript = orbTranscripts.get(orb_session_id);
+  if (!transcript) {
+    return res.status(404).json({
+      ok: false,
+      error: 'Session transcript not found'
+    });
+  }
+
+  return res.status(200).json({
+    ok: true,
+    orb_session_id: transcript.orb_session_id,
+    conversation_id: transcript.conversation_id,
+    started_at: transcript.started_at,
+    finalized: transcript.finalized,
+    turns: transcript.turns,
+    summary: transcript.summary || null
+  });
 });
 
 /**
@@ -932,12 +1318,13 @@ router.get('/health', (_req: Request, res: Response) => {
   return res.status(200).json({
     ok: true,
     service: 'orb-live',
-    vtid: ['DEV-COMHU-2025-0014', 'VTID-0135'],
+    vtid: ['DEV-COMHU-2025-0014', 'VTID-0135', 'VTID-01039'],
     model: GEMINI_MODEL,
     transport: 'SSE',
     gemini_configured: hasGeminiKey,
     active_sessions: sessions.size,
     active_conversations: orbConversations.size,
+    active_transcripts: orbTranscripts.size,
     voice_conversation_enabled: true,
     timestamp: new Date().toISOString()
   });
