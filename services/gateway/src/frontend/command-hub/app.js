@@ -13,7 +13,8 @@
 // VTID-01019: Operator Console UI Binding to OASIS Truth - No optimistic UI
 // VTID-01022: Command Hub Governance - Human Task Only Filter
 // VTID-01027: Operator Console Session Memory - client-side context + conversation_id
-console.log('🔥 COMMAND HUB BUNDLE: VTID-01027 LIVE 🔥');
+// VTID-01028: Task Board Rendering Fix - Restore Visibility & Authority
+console.log('🔥 COMMAND HUB BUNDLE: VTID-01028 LIVE 🔥');
 
 // ===========================================================================
 // VTID-01010: Target Role Constants (canonical)
@@ -333,57 +334,52 @@ function initOperatorChatSession() {
 
 // ===========================================================================
 // VTID-01017: Scheduled Column Hard Eligibility Filter
+// VTID-01028: Relaxed to prevent hiding human-created tasks
 // ===========================================================================
 
 /**
  * VTID-01017: Check if a task is eligible to appear in Scheduled column.
- * Strict structural eligibility - only human-actionable scheduled VTIDs.
+ * VTID-01028: RELAXED - Task Board must never hide human-created tasks.
  *
- * Requirements (ALL must pass):
+ * Governance Rules (VTID-01028):
+ * - "Scheduled column is creation-authoritative"
+ * - "No heuristics that can zero out the board"
+ * - "If data exists → it must render"
+ *
+ * The backend (commandhub.ts) is now authoritative for column placement.
+ * This filter only performs minimal validation.
+ *
+ * Requirements:
  *   A) Only classic VTIDs: must match pattern ^VTID-\d{4}$
- *      (excludes all DEV-*, OASIS-CMD-*, etc.)
- *   B) Only truly scheduled: status must be 'scheduled' (not 'allocated')
- *   C) Title must be meaningful: not empty, not placeholder text
- *
- * This is a hard filter - ineligible tasks never appear in Scheduled.
+ *      (isHumanTask already checks this before this function is called)
+ *   B) REMOVED: Status check removed - backend normalizes to 'scheduled'
+ *   C) RELAXED: Title can be short/empty - task still renders with VTID
  */
 function isEligibleScheduled(task) {
     if (!task) return false;
 
     // Rule A: Only classic VTIDs (VTID-NNNN format)
+    // Note: This is redundant with isHumanTask check but kept for safety
     var vtid = (task.vtid || '');
     var classicVtidPattern = /^VTID-\d{4}$/;
     if (!classicVtidPattern.test(vtid)) {
         return false;
     }
 
-    // Rule B: Only truly scheduled status
-    var statusNorm = String(task.status || '').toLowerCase();
-    if (statusNorm === 'allocated') {
-        return false;
-    }
-    if (statusNorm !== 'scheduled') {
-        return false;
-    }
+    // VTID-01028: Rule B REMOVED
+    // Previous: Rejected status !== 'scheduled' (including 'allocated')
+    // Now: Backend normalizes all SCHEDULED column tasks to status='scheduled'
+    // If backend sends a task with column=SCHEDULED, we trust it.
 
-    // Rule C: Title must be meaningful (not placeholder)
+    // VTID-01028: Rule C RELAXED
+    // Previous: Rejected titles < 3 chars or placeholder patterns
+    // Now: Tasks with short/empty titles still render (VTID shown as fallback)
+    // Governance: "If data exists → it must render"
+
+    // VTID-01028 diagnostic logging for visibility
     var title = (task.title || '').trim();
-    if (!title || title.length < 3) {
-        return false;
-    }
-    // Placeholder patterns (case-insensitive)
-    var titleLower = title.toLowerCase();
-    var placeholderPatterns = [
-        /^allocated$/,
-        /^pending title$/,
-        /^allocated\s*[-–—]\s*pending title$/,
-        /^untitled$/,
-        /^tbd$/
-    ];
-    for (var i = 0; i < placeholderPatterns.length; i++) {
-        if (placeholderPatterns[i].test(titleLower)) {
-            return false;
-        }
+    if (!title) {
+        console.log('[VTID-01028] Task ' + vtid + ' has empty title - will render with VTID');
     }
 
     // Task is eligible
@@ -3206,6 +3202,19 @@ function renderTasksView() {
 
         // Filter tasks
         // VTID-01022: Human task filter FIRST - exclude ALL system/CI/CD artifacts
+        // VTID-01028: Diagnostic logging for board visibility
+        // This helps trace filtering issues - log once per render
+        if (colName === 'Scheduled' && !state._boardDiagLogged) {
+            console.log('[VTID-01028] Board render diagnostic:', {
+                totalTasks: state.tasks.length,
+                humanTasks: state.tasks.filter(t => isHumanTask(t)).length,
+                sampleStatuses: state.tasks.slice(0, 5).map(t => ({ vtid: t.vtid, status: t.status, oasisColumn: t.oasisColumn }))
+            });
+            state._boardDiagLogged = true;
+            // Reset after 5 seconds to allow re-logging on next render cycle
+            setTimeout(() => { state._boardDiagLogged = false; }, 5000);
+        }
+
         // VTID-01005: Use OASIS-derived column for task placement (single source of truth)
         const colTasks = state.tasks.filter(t => {
             // VTID-01022: Hard governance filter - ONLY human tasks (VTID-NNNN) appear on board
@@ -3215,7 +3224,7 @@ function renderTasksView() {
             // VTID-01005: Use OASIS-derived column as authoritative source
             if (mapStatusToColumnWithOverride(t.vtid, t.status, t.oasisColumn) !== colName) return false;
 
-            // VTID-01017: For Scheduled column, apply strict eligibility filter
+            // VTID-01017/01028: For Scheduled column, apply eligibility filter (now relaxed)
             if (colName === 'Scheduled') {
                 if (!isEligibleScheduled(t)) return false;
             }

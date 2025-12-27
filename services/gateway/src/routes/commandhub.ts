@@ -169,9 +169,12 @@ commandhub.get("/board", async (req, res) => {
           derivedStatus = 'blocked';
         }
         // Scheduled/allocated states
+        // VTID-01028: Always normalize status to 'scheduled' for SCHEDULED column
+        // This ensures frontend isEligibleScheduled filter accepts these tasks
+        // Previously: derivedStatus = ledgerStatus || 'scheduled' passed 'allocated' through
         else {
           column = 'SCHEDULED';
-          derivedStatus = ledgerStatus || 'scheduled';
+          derivedStatus = 'scheduled';
         }
       }
 
