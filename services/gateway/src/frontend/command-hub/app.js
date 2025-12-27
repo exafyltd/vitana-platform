@@ -1555,7 +1555,12 @@ const state = {
         speechRecognition: null,
         speechSynthesisUtterance: null,
         interimTranscript: '',
-        voiceError: null
+        voiceError: null,
+        // VTID-01037: TTS/STT feedback loop prevention state
+        speaking: false,           // true while TTS is actively speaking
+        ignoreSTTUntil: 0,         // timestamp (ms) - ignore STT results until this time
+        lastTTSText: '',           // last TTS text for echo similarity filtering
+        transcriptNearBottom: true // track if user was near bottom for scroll anchoring
     },
 
     // VTID-0600: Operational Visibility Foundation State
@@ -2551,6 +2556,13 @@ function renderApp() {
     // Note: ORB idle is now rendered inside sidebar footer via renderOrbIdleElement()
     root.appendChild(renderOrbOverlay());
     root.appendChild(renderOrbChatDrawer());
+
+    // VTID-01037: Setup scroll listener for transcript after overlay is rendered
+    if (state.orb.overlayVisible) {
+        requestAnimationFrame(function() {
+            setupTranscriptScrollListener();
+        });
+    }
 
     // VTID-0526-E: Restore chat textarea focus after render
     if (savedChatFocus) {
@@ -10862,6 +10874,8 @@ async function orbLiveStart() {
                 if (msg.type === 'ready') {
                     console.log('[ORB-LIVE] Session ready, model:', msg.meta?.model);
                 } else if (msg.type === 'assistant_text') {
+                    // VTID-01037: Track scroll position before adding message
+                    updateTranscriptNearBottom();
                     // Add to transcript
                     state.orb.liveTranscript.push({
                         id: Date.now(),
@@ -11138,11 +11152,47 @@ function orbLiveCleanup() {
 
 /**
  * DEV-COMHU-2025-0014: Scroll live transcript to bottom
+ * VTID-01037: Smart scroll - only auto-scroll if user was near bottom
  */
 function scrollOrbLiveTranscript() {
     var container = document.querySelector('.orb-live-transcript');
     if (!container) return;
-    container.scrollTop = container.scrollHeight;
+
+    // VTID-01037: Only scroll to bottom if user was near bottom
+    // This prevents jumping when user is reading older messages
+    if (state.orb.transcriptNearBottom) {
+        container.scrollTop = container.scrollHeight;
+    }
+}
+
+/**
+ * VTID-01037: Check and update near-bottom tracking for transcript
+ * Call this before operations that might trigger scroll
+ */
+function updateTranscriptNearBottom() {
+    var container = document.querySelector('.orb-live-transcript');
+    if (!container) {
+        state.orb.transcriptNearBottom = true;
+        return;
+    }
+
+    // Near bottom if within 40px of the bottom
+    var distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    state.orb.transcriptNearBottom = distanceFromBottom < 40;
+}
+
+/**
+ * VTID-01037: Setup scroll listener for transcript container
+ * Must be called after the container is rendered
+ */
+function setupTranscriptScrollListener() {
+    var container = document.querySelector('.orb-live-transcript');
+    if (!container || container.dataset.scrollListenerAttached) return;
+
+    container.addEventListener('scroll', function() {
+        updateTranscriptNearBottom();
+    });
+    container.dataset.scrollListenerAttached = 'true';
 }
 
 // ==========================================================================
@@ -11222,18 +11272,47 @@ function orbVoiceStart() {
             }
         }
 
-        // VTID-0135: Barge-in - cancel TTS if user starts speaking
+        // VTID-01037: Echo filter - check if this is likely TTS echo
+        var currentTranscript = finalTranscript || interimTranscript;
+        var isWithinIgnoreWindow = Date.now() < state.orb.ignoreSTTUntil;
+        var isSpeakingState = state.orb.speaking || state.orb.voiceState === 'SPEAKING';
+        var looksLikeEcho = isLikelyEcho(currentTranscript, state.orb.lastTTSText);
+
+        // If within ignore window and looks like echo, ignore completely
+        if ((isWithinIgnoreWindow || isSpeakingState) && looksLikeEcho) {
+            console.log('[VTID-01037] Ignoring likely echo:', currentTranscript.substring(0, 30));
+            return; // Ignore this result entirely
+        }
+
+        // VTID-01037: Barge-in - only if NOT echo (real user speech during TTS)
         if (state.orb.voiceState === 'SPEAKING' && (interimTranscript || finalTranscript)) {
-            console.log('[VTID-0135] Barge-in detected, canceling TTS');
-            window.speechSynthesis.cancel();
-            state.orb.voiceState = 'LISTENING';
+            // Only trigger barge-in if this is NOT an echo
+            if (!looksLikeEcho) {
+                console.log('[VTID-01037] Real barge-in detected, canceling TTS');
+                window.speechSynthesis.cancel();
+                state.orb.speaking = false;
+                state.orb.voiceState = 'LISTENING';
+            } else {
+                // It's echo during speaking, ignore
+                console.log('[VTID-01037] Ignoring echo during TTS:', currentTranscript.substring(0, 30));
+                return;
+            }
         }
 
         state.orb.interimTranscript = interimTranscript;
 
         if (finalTranscript) {
+            // VTID-01037: Final check - don't process if still looks like echo
+            if (isSpeakingState && looksLikeEcho) {
+                console.log('[VTID-01037] Ignoring final echo transcript');
+                return;
+            }
+
             console.log('[VTID-0135] Final transcript:', finalTranscript);
             state.orb.interimTranscript = '';
+
+            // VTID-01037: Track scroll position before adding message
+            updateTranscriptNearBottom();
 
             // Add user message to transcript
             state.orb.liveTranscript.push({
@@ -11423,6 +11502,9 @@ async function orbVoiceSendText(text) {
                 state.orb.conversationId = data.conversation_id;
             }
 
+            // VTID-01037: Track scroll position before adding message
+            updateTranscriptNearBottom();
+
             // Add assistant response to transcript
             state.orb.liveTranscript.push({
                 id: Date.now(),
@@ -11440,6 +11522,8 @@ async function orbVoiceSendText(text) {
             orbVoiceSpeak(data.reply_text);
         } else {
             console.error('[VTID-0135] Backend error:', data.error);
+            // VTID-01037: Track scroll position before adding message
+            updateTranscriptNearBottom();
             state.orb.liveTranscript.push({
                 id: Date.now(),
                 role: 'assistant',
@@ -11453,6 +11537,8 @@ async function orbVoiceSendText(text) {
         }
     } catch (error) {
         console.error('[VTID-0135] Network error:', error);
+        // VTID-01037: Track scroll position before adding message
+        updateTranscriptNearBottom();
         state.orb.liveTranscript.push({
             id: Date.now(),
             role: 'assistant',
@@ -11467,7 +11553,68 @@ async function orbVoiceSendText(text) {
 }
 
 /**
+ * VTID-01037: Normalize text for echo comparison
+ * Removes punctuation, lowercases, and trims
+ */
+function normalizeTextForEchoCheck(text) {
+    if (!text) return '';
+    return text.toLowerCase().trim().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ');
+}
+
+/**
+ * VTID-01037: Check if transcript is likely an echo of TTS output
+ * Returns true if it should be ignored (is echo)
+ */
+function isLikelyEcho(transcript, lastTTSText) {
+    if (!transcript || !lastTTSText) return false;
+
+    var normTranscript = normalizeTextForEchoCheck(transcript);
+    var normTTS = normalizeTextForEchoCheck(lastTTSText);
+
+    if (!normTranscript || !normTTS) return false;
+
+    // Check if transcript is a substring of TTS or vice versa
+    if (normTTS.indexOf(normTranscript) !== -1) return true;
+    if (normTranscript.indexOf(normTTS) !== -1) return true;
+
+    // Short transcripts that match common fillers during TTS playback
+    if (normTranscript.length < 6) {
+        var fillers = ['um', 'uh', 'ah', 'oh', 'hmm', 'the', 'a', 'i', 'is', 'it'];
+        if (fillers.indexOf(normTranscript) !== -1) return true;
+    }
+
+    return false;
+}
+
+/**
+ * VTID-01037: Restart speech recognition after TTS ends
+ */
+function restartRecognitionAfterTTS() {
+    state.orb.speaking = false;
+    state.orb.voiceState = 'LISTENING';
+
+    // Scroll to bottom after TTS ends if user was near bottom
+    scrollOrbLiveTranscript();
+
+    // Restart recognition with a small delay to avoid catching TTS tail
+    setTimeout(function() {
+        if (state.orb.overlayVisible && state.orb.speechRecognition &&
+            state.orb.voiceState !== 'MUTED' && !state.orb.voiceError) {
+            try {
+                state.orb.speechRecognition.start();
+                console.log('[VTID-01037] Recognition restarted after TTS');
+            } catch (e) {
+                console.warn('[VTID-01037] Recognition already running:', e);
+            }
+        }
+    }, 250);
+
+    renderApp();
+}
+
+/**
  * VTID-0135: Speak text using TTS (speechSynthesis)
+ * VTID-01037: Implements TTS/STT coordination to prevent feedback loop
  * Implements barge-in: stops speaking when user starts talking
  */
 function orbVoiceSpeak(text) {
@@ -11478,6 +11625,21 @@ function orbVoiceSpeak(text) {
 
     console.log('[VTID-0135] Speaking:', text.substring(0, 50) + '...');
 
+    // VTID-01037: Set feedback prevention state BEFORE TTS starts
+    state.orb.speaking = true;
+    state.orb.ignoreSTTUntil = Date.now() + 800; // Guard against immediate echo
+    state.orb.lastTTSText = text;
+
+    // VTID-01037: Stop recognition cleanly before TTS to prevent self-hearing
+    if (state.orb.speechRecognition) {
+        try {
+            state.orb.speechRecognition.abort();
+            console.log('[VTID-01037] Recognition aborted before TTS');
+        } catch (e) {
+            console.warn('[VTID-01037] Could not abort recognition:', e);
+        }
+    }
+
     var utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'en-US';
     utterance.rate = 1.0;
@@ -11486,24 +11648,27 @@ function orbVoiceSpeak(text) {
     utterance.onstart = function() {
         console.log('[VTID-0135] TTS started');
         state.orb.voiceState = 'SPEAKING';
+        state.orb.speaking = true;
         renderApp();
     };
 
     utterance.onend = function() {
         console.log('[VTID-0135] TTS ended');
-        // Return to listening state after speaking
+        // VTID-01037: Restart recognition after TTS completes
         if (state.orb.overlayVisible && state.orb.voiceState === 'SPEAKING') {
-            state.orb.voiceState = 'LISTENING';
-            renderApp();
+            restartRecognitionAfterTTS();
         }
     };
 
     utterance.onerror = function(event) {
         console.error('[VTID-0135] TTS error:', event.error);
+        // VTID-01037: Handle both normal cancellation (barge-in) and real errors
+        state.orb.speaking = false;
         if (event.error !== 'interrupted' && event.error !== 'canceled') {
             state.orb.voiceState = 'LISTENING';
             renderApp();
         }
+        // For interrupted/canceled (barge-in), voiceState is already set by barge-in handler
     };
 
     state.orb.speechSynthesisUtterance = utterance;
