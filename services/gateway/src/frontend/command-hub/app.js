@@ -11190,10 +11190,16 @@ function orbVoiceStart() {
     recognition.interimResults = true;
     recognition.lang = 'en-US';
 
+    // VTID-0135: Track processed results to prevent re-processing on restart
+    // When recognition restarts, old results may persist in event.results
+    var lastProcessedResultIndex = -1;
+
     recognition.onstart = function() {
         console.log('[VTID-0135] Speech recognition started');
         state.orb.voiceState = 'LISTENING';
         state.orb.micActive = true;
+        // Reset the processed index when recognition starts fresh
+        lastProcessedResultIndex = -1;
         renderApp();
     };
 
@@ -11201,10 +11207,16 @@ function orbVoiceStart() {
         var interimTranscript = '';
         var finalTranscript = '';
 
-        for (var i = event.resultIndex; i < event.results.length; i++) {
+        // VTID-0135 FIX: Skip already-processed results to prevent duplicate messages
+        // When recognition restarts, event.resultIndex may be 0 but old results persist
+        var startIndex = Math.max(event.resultIndex, lastProcessedResultIndex + 1);
+
+        for (var i = startIndex; i < event.results.length; i++) {
             var transcript = event.results[i][0].transcript;
             if (event.results[i].isFinal) {
                 finalTranscript += transcript;
+                // Mark this result as processed
+                lastProcessedResultIndex = i;
             } else {
                 interimTranscript += transcript;
             }
