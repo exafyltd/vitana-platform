@@ -978,6 +978,7 @@ If successful, confirm what was done and any next steps.` }]
 
 /**
  * VTID-01023: Format tool results as a human-readable response
+ * VTID-01025: Handle NOT_VITANA_QUERY marker for non-Vitana queries
  */
 function formatToolResultsAsResponse(toolResults: GeminiToolResult[]): { reply: string } {
   const successResults = toolResults.filter(r => r.response.ok);
@@ -988,9 +989,15 @@ function formatToolResultsAsResponse(toolResults: GeminiToolResult[]): { reply: 
   for (const result of successResults) {
     // VTID-0538: Handle knowledge_search answer format
     if (result.name === 'knowledge_search' && result.response.answer) {
-      reply += result.response.answer + '\n\n';
-      if (result.response.docs && (result.response.docs as any[]).length > 0) {
-        reply += '_Sources: ' + (result.response.docs as any[]).map((d: any) => d.title).join(', ') + '_\n\n';
+      const answer = result.response.answer as string;
+      // VTID-01025: Don't show NOT_VITANA_QUERY marker in fallback mode
+      if (answer.startsWith('[NOT_VITANA_QUERY]')) {
+        reply += 'I can help with that! However, I\'m currently in limited mode. Please try again.\n\n';
+      } else {
+        reply += answer + '\n\n';
+        if (result.response.docs && (result.response.docs as any[]).length > 0) {
+          reply += '_Sources: ' + (result.response.docs as any[]).map((d: any) => d.title).join(', ') + '_\n\n';
+        }
       }
     } else if (result.response.message) {
       reply += result.response.message + '\n\n';
@@ -1498,10 +1505,16 @@ What would you like to do?`,
   for (const result of successResults) {
     // VTID-0538: Handle knowledge_search answer format
     if (result.name === 'knowledge_search' && result.response.answer) {
-      reply += result.response.answer + '\n\n';
-      // Add sources if docs were found
-      if (result.response.docs && (result.response.docs as any[]).length > 0) {
-        reply += '_Sources: ' + (result.response.docs as any[]).map((d: any) => d.title).join(', ') + '_\n\n';
+      const answer = result.response.answer as string;
+      // VTID-01025: Don't show NOT_VITANA_QUERY marker
+      if (answer.startsWith('[NOT_VITANA_QUERY]')) {
+        reply += 'I can help with that! However, I\'m currently in limited mode. Please try again.\n\n';
+      } else {
+        reply += answer + '\n\n';
+        // Add sources if docs were found
+        if (result.response.docs && (result.response.docs as any[]).length > 0) {
+          reply += '_Sources: ' + (result.response.docs as any[]).map((d: any) => d.title).join(', ') + '_\n\n';
+        }
       }
     } else if (result.response.message) {
       reply += result.response.message + '\n\n';
