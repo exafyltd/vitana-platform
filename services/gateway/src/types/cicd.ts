@@ -371,6 +371,40 @@ export const OperatorActionEventPayloadSchema = z.object({
   payload: z.record(z.unknown()).optional(),
 });
 
+// ==================== Autonomous PR+Merge (Claude Worker Integration) ====================
+
+/**
+ * Autonomous PR+Merge Request Schema
+ * Used by Claude workers to request PR creation and merge in a single call.
+ * Gateway handles all GitHub API interactions using GITHUB_SAFE_MERGE_TOKEN.
+ */
+export const AutonomousPrMergeRequestSchema = z.object({
+  vtid: z.string().min(1, 'VTID is required'),
+  repo: z.string().default('exafyltd/vitana-platform'),
+  head_branch: z.string().min(1, 'Head branch is required'),
+  base_branch: z.string().default('main'),
+  title: z.string().min(1, 'PR title is required'),
+  body: z.string().min(1, 'PR body is required'),
+  merge_method: z.enum(['squash', 'merge', 'rebase']).default('squash'),
+  automerge: z.boolean().default(true),
+  max_ci_wait_seconds: z.number().int().min(30).max(600).default(300), // 5 min default, max 10 min
+});
+
+export type AutonomousPrMergeRequest = z.infer<typeof AutonomousPrMergeRequestSchema>;
+
+export interface AutonomousPrMergeResponse {
+  ok: boolean;
+  vtid: string;
+  pr_number?: number;
+  pr_url?: string;
+  merged?: boolean;
+  merge_sha?: string;
+  ci_status?: 'success' | 'failure' | 'pending' | 'timeout';
+  error?: string;
+  reason?: 'pr_creation_failed' | 'ci_failed' | 'ci_timeout' | 'governance_blocked' | 'merge_failed' | 'internal_error';
+  details?: Record<string, unknown>;
+}
+
 /**
  * VTID-01018: Structured error response for OASIS write failures
  */

@@ -36,6 +36,9 @@ import {
   CicdDeployResponse,
   ApprovalItem,
   // VTID-0603: Schema import removed - handler reads directly from req.body
+  // Autonomous PR+Merge for Claude Worker integration
+  AutonomousPrMergeRequestSchema,
+  AutonomousPrMergeResponse,
 } from '../types/cicd';
 import githubService from '../services/github-service';
 import cicdEvents from '../services/oasis-event-service';
@@ -1008,6 +1011,261 @@ router.post('/approvals/:id/deny', async (req: Request, res: Response) => {
       ok: false,
       error: errorMessage,
     });
+  }
+});
+
+// ==================== Autonomous PR+Merge (Claude Worker Integration) ====================
+
+/**
+ * POST /autonomous-pr-merge - Create PR + Wait for CI + Merge
+ *
+ * This endpoint is designed for Claude workers that cannot access GitHub API directly.
+ * It performs the complete PR lifecycle:
+ * 1. Create PR from head_branch to base_branch
+ * 2. Emit OASIS event for PR creation
+ * 3. Poll CI status until success/failure/timeout
+ * 4. Run governance evaluation
+ * 5. Merge PR using specified merge method
+ * 6. Emit OASIS events for merge result
+ *
+ * The caller (Claude) only needs to:
+ * - Push commits to a branch
+ * - Call this endpoint with branch name and PR details
+ * - Gateway handles all GitHub API calls using GITHUB_SAFE_MERGE_TOKEN
+ */
+router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
+  const requestId = randomUUID();
+  console.log(`[AUTONOMOUS-PR-MERGE] Request ${requestId} started`);
+
+  try {
+    const validation = AutonomousPrMergeRequestSchema.safeParse(req.body);
+    if (!validation.success) {
+      return handleZodError(validation.error, res);
+    }
+
+    const {
+      vtid,
+      repo,
+      head_branch,
+      base_branch,
+      title,
+      body,
+      merge_method,
+      automerge,
+      max_ci_wait_seconds,
+    } = validation.data;
+
+    // Validate repo is the allowed one
+    if (repo !== DEFAULT_REPO) {
+      console.error(`[AUTONOMOUS-PR-MERGE] Rejected: unauthorized repo ${repo}`);
+      return res.status(403).json({
+        ok: false,
+        vtid,
+        error: `Only ${DEFAULT_REPO} is allowed`,
+        reason: 'internal_error',
+      } as AutonomousPrMergeResponse);
+    }
+
+    // Validate base branch
+    if (base_branch !== 'main') {
+      console.error(`[AUTONOMOUS-PR-MERGE] Rejected: base must be main, got ${base_branch}`);
+      return res.status(400).json({
+        ok: false,
+        vtid,
+        error: 'PRs must target main branch',
+        reason: 'internal_error',
+      } as AutonomousPrMergeResponse);
+    }
+
+    // Validate head branch is not main
+    if (head_branch === 'main' || head_branch === 'master') {
+      console.error(`[AUTONOMOUS-PR-MERGE] Rejected: cannot create PR from main/master`);
+      return res.status(400).json({
+        ok: false,
+        vtid,
+        error: 'Cannot create PR from main/master branch',
+        reason: 'internal_error',
+      } as AutonomousPrMergeResponse);
+    }
+
+    console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Creating PR from ${head_branch} to ${base_branch}`);
+
+    // Step 1: Create PR
+    let pr: { number: number; html_url: string };
+    try {
+      await cicdEvents.createPrRequested(vtid, head_branch, base_branch);
+      pr = await githubService.createPullRequest(repo, title, body, head_branch, base_branch);
+      await cicdEvents.createPrSucceeded(vtid, pr.number, pr.html_url);
+      console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: PR #${pr.number} created - ${pr.html_url}`);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`[AUTONOMOUS-PR-MERGE] ${vtid}: PR creation failed - ${errorMessage}`);
+      await cicdEvents.createPrFailed(vtid, errorMessage);
+      return res.status(500).json({
+        ok: false,
+        vtid,
+        error: `PR creation failed: ${errorMessage}`,
+        reason: 'pr_creation_failed',
+      } as AutonomousPrMergeResponse);
+    }
+
+    // If automerge is false, return now with PR info
+    if (!automerge) {
+      console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: automerge=false, returning PR info only`);
+      return res.status(201).json({
+        ok: true,
+        vtid,
+        pr_number: pr.number,
+        pr_url: pr.html_url,
+        merged: false,
+        ci_status: 'pending',
+      } as AutonomousPrMergeResponse);
+    }
+
+    // Step 2: Poll CI status
+    console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Waiting for CI (max ${max_ci_wait_seconds}s)`);
+    const pollIntervalMs = 10000; // 10 seconds
+    const maxPolls = Math.ceil(max_ci_wait_seconds / 10);
+    let ciPassed = false;
+    let lastChecks: any[] = [];
+
+    for (let poll = 0; poll < maxPolls; poll++) {
+      try {
+        const prStatus = await githubService.getPrStatus(repo, pr.number);
+        lastChecks = prStatus.checks;
+
+        if (prStatus.allPassed) {
+          ciPassed = true;
+          console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: CI passed after ${poll * 10}s`);
+          break;
+        }
+
+        // Check if any check failed (not just pending)
+        const hasFailure = prStatus.checks.some(c => c.status === 'failure');
+        if (hasFailure) {
+          const failedChecks = prStatus.checks.filter(c => c.status === 'failure');
+          console.error(`[AUTONOMOUS-PR-MERGE] ${vtid}: CI failed - ${failedChecks.map(c => c.name).join(', ')}`);
+          return res.status(400).json({
+            ok: false,
+            vtid,
+            pr_number: pr.number,
+            pr_url: pr.html_url,
+            merged: false,
+            ci_status: 'failure',
+            error: `CI checks failed: ${failedChecks.map(c => c.name).join(', ')}`,
+            reason: 'ci_failed',
+            details: { failed_checks: failedChecks },
+          } as AutonomousPrMergeResponse);
+        }
+
+        // Wait before next poll
+        if (poll < maxPolls - 1) {
+          await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+        }
+      } catch (error) {
+        console.error(`[AUTONOMOUS-PR-MERGE] ${vtid}: CI poll error - ${error}`);
+        // Continue polling on transient errors
+      }
+    }
+
+    if (!ciPassed) {
+      console.error(`[AUTONOMOUS-PR-MERGE] ${vtid}: CI timeout after ${max_ci_wait_seconds}s`);
+      return res.status(408).json({
+        ok: false,
+        vtid,
+        pr_number: pr.number,
+        pr_url: pr.html_url,
+        merged: false,
+        ci_status: 'timeout',
+        error: `CI did not complete within ${max_ci_wait_seconds} seconds`,
+        reason: 'ci_timeout',
+        details: { pending_checks: lastChecks.filter(c => c.status === 'pending') },
+      } as AutonomousPrMergeResponse);
+    }
+
+    // Step 3: Governance evaluation
+    console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Running governance evaluation`);
+    const governance = await githubService.evaluateGovernance(repo, pr.number, vtid);
+    await cicdEvents.safeMergeEvaluated(
+      vtid,
+      pr.number,
+      governance.decision,
+      governance.files_touched,
+      governance.services_impacted,
+      governance.blocked_reasons
+    );
+
+    if (governance.decision === 'blocked') {
+      console.error(`[AUTONOMOUS-PR-MERGE] ${vtid}: Governance blocked - ${governance.blocked_reasons.join(', ')}`);
+      await cicdEvents.safeMergeBlocked(vtid, pr.number, 'governance_blocked', {
+        blocked_reasons: governance.blocked_reasons,
+      });
+      return res.status(403).json({
+        ok: false,
+        vtid,
+        pr_number: pr.number,
+        pr_url: pr.html_url,
+        merged: false,
+        ci_status: 'success',
+        error: `Governance blocked: ${governance.blocked_reasons.join(', ')}`,
+        reason: 'governance_blocked',
+        details: {
+          files_touched: governance.files_touched,
+          blocked_reasons: governance.blocked_reasons,
+        },
+      } as AutonomousPrMergeResponse);
+    }
+
+    // Step 4: Merge PR
+    console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Merging PR #${pr.number} (${merge_method})`);
+    try {
+      await cicdEvents.safeMergeApproved(vtid, pr.number);
+
+      const mergeResult = await githubService.mergePullRequest(
+        repo,
+        pr.number,
+        `${title} (#${pr.number})`,
+        merge_method
+      );
+
+      await cicdEvents.safeMergeExecuted(vtid, pr.number, mergeResult.sha);
+
+      console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: PR #${pr.number} merged successfully - ${mergeResult.sha}`);
+
+      return res.status(200).json({
+        ok: true,
+        vtid,
+        pr_number: pr.number,
+        pr_url: pr.html_url,
+        merged: true,
+        merge_sha: mergeResult.sha,
+        ci_status: 'success',
+      } as AutonomousPrMergeResponse);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`[AUTONOMOUS-PR-MERGE] ${vtid}: Merge failed - ${errorMessage}`);
+      await cicdEvents.safeMergeBlocked(vtid, pr.number, 'merge_failed', { error: errorMessage });
+      return res.status(500).json({
+        ok: false,
+        vtid,
+        pr_number: pr.number,
+        pr_url: pr.html_url,
+        merged: false,
+        ci_status: 'success',
+        error: `Merge failed: ${errorMessage}`,
+        reason: 'merge_failed',
+      } as AutonomousPrMergeResponse);
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const vtid = req.body?.vtid || 'UNKNOWN';
+    console.error(`[AUTONOMOUS-PR-MERGE] ${vtid}: Internal error - ${errorMessage}`);
+    return res.status(500).json({
+      ok: false,
+      vtid,
+      error: `Internal error: ${errorMessage}`,
+      reason: 'internal_error',
+    } as AutonomousPrMergeResponse);
   }
 });
 
