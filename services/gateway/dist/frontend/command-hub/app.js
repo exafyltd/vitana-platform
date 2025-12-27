@@ -2058,7 +2058,9 @@ async function fetchVtidProjection() {
     } catch (error) {
         console.error('[VTID-01001] Failed to fetch VTID projection:', error);
         state.vtidProjection.error = error.message;
-        state.vtidProjection.items = [];
+        // VTID-01030: Preserve last known good data on refresh failure
+        // Do NOT wipe state.vtidProjection.items - keep existing data visible
+        console.warn('[VTID-01030] Keeping', state.vtidProjection.items.length, 'cached VTIDs visible after fetch error');
     } finally {
         state.vtidProjection.loading = false;
         renderApp();
@@ -3230,9 +3232,12 @@ function renderTasksView() {
             }
 
             // Search query
+            // VTID-01030: Null-safe search - handle missing title/vtid
             if (state.taskSearchQuery) {
                 const q = state.taskSearchQuery.toLowerCase();
-                if (!t.title.toLowerCase().includes(q) && !t.vtid.toLowerCase().includes(q)) return false;
+                const title = (t.title || '').toLowerCase();
+                const vtid = (t.vtid || '').toLowerCase();
+                if (!title.includes(q) && !vtid.includes(q)) return false;
             }
 
             // Date filter (assuming createdAt exists and is YYYY-MM-DD compatible or ISO)
@@ -3249,8 +3254,14 @@ function renderTasksView() {
             return true;
         });
 
+        // VTID-01030: Try/catch per-task to prevent one bad row from crashing board
         colTasks.forEach(task => {
-            content.appendChild(createTaskCard(task));
+            try {
+                content.appendChild(createTaskCard(task));
+            } catch (err) {
+                console.error('[VTID-01030] Failed to render task card:', task.vtid, err);
+                // Skip this task but continue rendering others
+            }
         });
 
         col.appendChild(content);
@@ -3268,8 +3279,17 @@ function renderTasksView() {
  * GOLDEN-MARKER: Base class 'task-card' preserved for VTID-0302 fingerprint check.
  */
 function createTaskCard(task) {
+    // VTID-01030: Null-safe task handling
+    if (!task) {
+        console.warn('[VTID-01030] createTaskCard called with null/undefined task');
+        var emptyCard = document.createElement('div');
+        emptyCard.className = 'task-card task-card-error';
+        return emptyCard;
+    }
+
     // VTID-01005: Use OASIS-derived column for task placement (single source of truth)
-    var columnStatus = mapStatusToColumnWithOverride(task.vtid, task.status, task.oasisColumn);
+    // VTID-01030: Null-safe fallback to 'Scheduled' if mapping fails
+    var columnStatus = mapStatusToColumnWithOverride(task.vtid, task.status, task.oasisColumn) || 'Scheduled';
 
     const card = document.createElement('div');
     // VTID-0302: Golden fingerprint requires 'task-card' class pattern
@@ -4845,7 +4865,9 @@ async function fetchTasks() {
     } catch (error) {
         console.error('[VTID-01005] Failed to fetch tasks from Command Hub board:', error);
         state.tasksError = error.message;
-        state.tasks = [];
+        // VTID-01030: Preserve last known good data on refresh failure
+        // Do NOT wipe state.tasks - keep existing data visible
+        console.warn('[VTID-01030] Keeping', state.tasks.length, 'cached tasks visible after fetch error');
     } finally {
         state.tasksLoading = false;
         renderApp();
@@ -6992,58 +7014,71 @@ function renderVtidProjectionTable(items) {
     table.appendChild(thead);
 
     // Body rows
+    // VTID-01030: Try/catch per-row to prevent one bad VTID from crashing table
     var tbody = document.createElement('tbody');
     items.forEach(function(item) {
-        var row = document.createElement('tr');
-        row.className = 'vtid-row vtid-projection-row';
+        try {
+            // VTID-01030: Skip null/undefined items
+            if (!item) {
+                console.warn('[VTID-01030] Skipping null/undefined VTID item');
+                return;
+            }
 
-        // VTID column
-        var vtidCell = document.createElement('td');
-        vtidCell.className = 'vtid-cell';
-        vtidCell.textContent = item.vtid || '—';
-        row.appendChild(vtidCell);
+            var row = document.createElement('tr');
+            row.className = 'vtid-row vtid-projection-row';
 
-        // Title column
-        var titleCell = document.createElement('td');
-        titleCell.className = 'vtid-title-cell';
-        titleCell.textContent = item.title || '—';
-        row.appendChild(titleCell);
+            // VTID column
+            var vtidCell = document.createElement('td');
+            vtidCell.className = 'vtid-cell';
+            vtidCell.textContent = item.vtid || '—';
+            row.appendChild(vtidCell);
 
-        // VTID-01016: Derive Stage/Status from OASIS event authority
-        var derived = deriveVtidStageStatus(item);
+            // Title column
+            var titleCell = document.createElement('td');
+            titleCell.className = 'vtid-title-cell';
+            titleCell.textContent = item.title || '—';
+            row.appendChild(titleCell);
 
-        // Stage column (Scheduled/Queued/Planner/Worker/Validator/Deploy/Done)
-        var stageCell = document.createElement('td');
-        var stageBadge = document.createElement('span');
-        var stageVal = derived.stage.toLowerCase();
-        stageBadge.className = 'vtid-stage-badge vtid-stage-' + stageVal;
-        stageBadge.textContent = derived.stage;
-        stageCell.appendChild(stageBadge);
-        row.appendChild(stageCell);
+            // VTID-01016: Derive Stage/Status from OASIS event authority
+            // VTID-01030: Null-safe derivation with fallback defaults
+            var derived = deriveVtidStageStatus(item) || { stage: 'Scheduled', status: 'scheduled' };
 
-        // Status column (scheduled/in_progress/success/failed)
-        var statusCell = document.createElement('td');
-        var statusBadge = document.createElement('span');
-        var statusVal = derived.status.toLowerCase();
-        statusBadge.className = 'vtid-status-badge vtid-status-' + statusVal;
-        statusBadge.textContent = derived.status;
-        statusCell.appendChild(statusBadge);
-        row.appendChild(statusCell);
+            // Stage column (Scheduled/Queued/Planner/Worker/Validator/Deploy/Done)
+            var stageCell = document.createElement('td');
+            var stageBadge = document.createElement('span');
+            var stageVal = (derived.stage || 'scheduled').toLowerCase();
+            stageBadge.className = 'vtid-stage-badge vtid-stage-' + stageVal;
+            stageBadge.textContent = derived.stage || 'Scheduled';
+            stageCell.appendChild(stageBadge);
+            row.appendChild(stageCell);
 
-        // Attention column (AUTO / HUMAN)
-        var attentionCell = document.createElement('td');
-        var attentionBadge = document.createElement('span');
-        var attentionVal = item.attention_required || 'AUTO';
-        attentionBadge.className = 'vtid-attention-badge vtid-attention-' + attentionVal.toLowerCase();
-        if (attentionVal === 'HUMAN') {
-            attentionBadge.textContent = '⚠️ HUMAN';
-        } else {
-            attentionBadge.textContent = 'AUTO';
+            // Status column (scheduled/in_progress/success/failed)
+            var statusCell = document.createElement('td');
+            var statusBadge = document.createElement('span');
+            var statusVal = (derived.status || 'scheduled').toLowerCase();
+            statusBadge.className = 'vtid-status-badge vtid-status-' + statusVal;
+            statusBadge.textContent = derived.status || 'scheduled';
+            statusCell.appendChild(statusBadge);
+            row.appendChild(statusCell);
+
+            // Attention column (AUTO / HUMAN)
+            var attentionCell = document.createElement('td');
+            var attentionBadge = document.createElement('span');
+            var attentionVal = item.attention_required || 'AUTO';
+            attentionBadge.className = 'vtid-attention-badge vtid-attention-' + attentionVal.toLowerCase();
+            if (attentionVal === 'HUMAN') {
+                attentionBadge.textContent = '⚠️ HUMAN';
+            } else {
+                attentionBadge.textContent = 'AUTO';
+            }
+            attentionCell.appendChild(attentionBadge);
+            row.appendChild(attentionCell);
+
+            tbody.appendChild(row);
+        } catch (err) {
+            console.error('[VTID-01030] Failed to render VTID row:', item && item.vtid, err);
+            // Skip this row but continue rendering others
         }
-        attentionCell.appendChild(attentionBadge);
-        row.appendChild(attentionCell);
-
-        tbody.appendChild(row);
     });
     table.appendChild(tbody);
 
@@ -7211,66 +7246,79 @@ function renderOasisLedgerTableWithDrilldown(items) {
     table.appendChild(thead);
 
     // Body rows
+    // VTID-01030: Try/catch per-row to prevent one bad VTID from crashing table
     var tbody = document.createElement('tbody');
     items.forEach(function(item) {
-        var row = document.createElement('tr');
-        row.className = 'vtid-row oasis-vtid-row clickable-row';
-        if (oasisVtidDetail.selectedVtid === item.vtid) {
-            row.className += ' selected';
+        try {
+            // VTID-01030: Skip null/undefined items
+            if (!item) {
+                console.warn('[VTID-01030] Skipping null/undefined OASIS VTID item');
+                return;
+            }
+
+            var row = document.createElement('tr');
+            row.className = 'vtid-row oasis-vtid-row clickable-row';
+            if (oasisVtidDetail.selectedVtid === item.vtid) {
+                row.className += ' selected';
+            }
+
+            // Click to show drilldown
+            row.onclick = function() {
+                fetchOasisVtidDetail(item.vtid);
+            };
+
+            // VTID column
+            var vtidCell = document.createElement('td');
+            vtidCell.className = 'vtid-cell';
+            vtidCell.textContent = item.vtid || '—';
+            row.appendChild(vtidCell);
+
+            // Title column
+            var titleCell = document.createElement('td');
+            titleCell.textContent = item.title || '—';
+            row.appendChild(titleCell);
+
+            // VTID-01016: Derive Stage/Status from OASIS event authority
+            // VTID-01030: Null-safe derivation with fallback defaults
+            var derived = deriveVtidStageStatus(item) || { stage: 'Scheduled', status: 'scheduled' };
+
+            // Stage column (Scheduled/Queued/Planner/Worker/Validator/Deploy/Done)
+            var stageCell = document.createElement('td');
+            var stageBadge = document.createElement('span');
+            var stageVal = (derived.stage || 'scheduled').toLowerCase();
+            stageBadge.className = 'vtid-stage-badge vtid-stage-' + stageVal;
+            stageBadge.textContent = derived.stage || 'Scheduled';
+            stageCell.appendChild(stageBadge);
+            row.appendChild(stageCell);
+
+            // Status column (scheduled/in_progress/success/failed)
+            var statusCell = document.createElement('td');
+            var statusBadge = document.createElement('span');
+            var statusVal = (derived.status || 'scheduled').toLowerCase();
+            statusBadge.className = 'vtid-status-badge vtid-status-' + statusVal;
+            statusBadge.textContent = derived.status || 'scheduled';
+            statusCell.appendChild(statusBadge);
+            row.appendChild(statusCell);
+
+            // Attention column
+            var attentionCell = document.createElement('td');
+            var attentionBadge = document.createElement('span');
+            var attentionVal = item.attention_required || 'AUTO';
+            attentionBadge.className = 'vtid-attention-badge vtid-attention-' + attentionVal.toLowerCase();
+            attentionBadge.textContent = attentionVal === 'HUMAN' ? '⚠️ HUMAN' : 'AUTO';
+            attentionCell.appendChild(attentionBadge);
+            row.appendChild(attentionCell);
+
+            // Last Update column
+            var updateCell = document.createElement('td');
+            updateCell.textContent = item.last_update ? formatEventTimestamp(item.last_update) : '—';
+            row.appendChild(updateCell);
+
+            tbody.appendChild(row);
+        } catch (err) {
+            console.error('[VTID-01030] Failed to render OASIS VTID row:', item && item.vtid, err);
+            // Skip this row but continue rendering others
         }
-
-        // Click to show drilldown
-        row.onclick = function() {
-            fetchOasisVtidDetail(item.vtid);
-        };
-
-        // VTID column
-        var vtidCell = document.createElement('td');
-        vtidCell.className = 'vtid-cell';
-        vtidCell.textContent = item.vtid || '—';
-        row.appendChild(vtidCell);
-
-        // Title column
-        var titleCell = document.createElement('td');
-        titleCell.textContent = item.title || '—';
-        row.appendChild(titleCell);
-
-        // VTID-01016: Derive Stage/Status from OASIS event authority
-        var derived = deriveVtidStageStatus(item);
-
-        // Stage column (Scheduled/Queued/Planner/Worker/Validator/Deploy/Done)
-        var stageCell = document.createElement('td');
-        var stageBadge = document.createElement('span');
-        var stageVal = derived.stage.toLowerCase();
-        stageBadge.className = 'vtid-stage-badge vtid-stage-' + stageVal;
-        stageBadge.textContent = derived.stage;
-        stageCell.appendChild(stageBadge);
-        row.appendChild(stageCell);
-
-        // Status column (scheduled/in_progress/success/failed)
-        var statusCell = document.createElement('td');
-        var statusBadge = document.createElement('span');
-        var statusVal = derived.status.toLowerCase();
-        statusBadge.className = 'vtid-status-badge vtid-status-' + statusVal;
-        statusBadge.textContent = derived.status;
-        statusCell.appendChild(statusBadge);
-        row.appendChild(statusCell);
-
-        // Attention column
-        var attentionCell = document.createElement('td');
-        var attentionBadge = document.createElement('span');
-        var attentionVal = item.attention_required || 'AUTO';
-        attentionBadge.className = 'vtid-attention-badge vtid-attention-' + attentionVal.toLowerCase();
-        attentionBadge.textContent = attentionVal === 'HUMAN' ? '⚠️ HUMAN' : 'AUTO';
-        attentionCell.appendChild(attentionBadge);
-        row.appendChild(attentionCell);
-
-        // Last Update column
-        var updateCell = document.createElement('td');
-        updateCell.textContent = item.last_update ? formatEventTimestamp(item.last_update) : '—';
-        row.appendChild(updateCell);
-
-        tbody.appendChild(row);
     });
     table.appendChild(tbody);
 

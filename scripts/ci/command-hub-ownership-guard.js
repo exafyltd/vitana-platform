@@ -40,7 +40,8 @@ const PROTECTED_PATH = 'services/gateway/src/frontend/command-hub/';
 // VTID-01025: Operator Chat - Open chat mode (frontend routing fix)
 // VTID-01027: Operator Console Session Memory - client-side context + conversation_id
 // VTID-01028: Task Board Rendering Fix - Restore Visibility & Authority
-const ALLOWED_VTID_PATTERN = /DEV-COMHU-\d+|VTID-0302|VTID-0539|VTID-0541|VTID-0542|VTID-0600|VTID-0601|VTID-01001|VTID-01002|VTID-01003|VTID-01005|VTID-01006|VTID-01009|VTID-01010|VTID-01012|VTID-01013|VTID-01014|VTID-01015|VTID-01016|VTID-01017|VTID-01019|VTID-01021|VTID-01022|VTID-01025|VTID-01027|VTID-01028|global-vtid-allocator|vtid-ledger-visibility/i;
+// VTID-01030: Fix VTIDs/Tasks disappearing - render crash & refresh wipe
+const ALLOWED_VTID_PATTERN = /DEV-COMHU-\d+|VTID-0302|VTID-0539|VTID-0541|VTID-0542|VTID-0600|VTID-0601|VTID-01001|VTID-01002|VTID-01003|VTID-01005|VTID-01006|VTID-01009|VTID-01010|VTID-01012|VTID-01013|VTID-01014|VTID-01015|VTID-01016|VTID-01017|VTID-01019|VTID-01021|VTID-01022|VTID-01025|VTID-01027|VTID-01028|VTID-01030|global-vtid-allocator|vtid-ledger-visibility/i;
 
 function getChangedFiles() {
   try {
