@@ -358,10 +358,11 @@ function initOperatorChatSession() {
 function isEligibleScheduled(task) {
     if (!task) return false;
 
-    // Rule A: Only classic VTIDs (VTID-NNNN format)
+    // Rule A: Only classic VTIDs (VTID-NNNN or VTID-NNNNN format)
     // Note: This is redundant with isHumanTask check but kept for safety
+    // VTID-01028: Updated to support 5-digit VTIDs (e.g., VTID-01028, VTID-01029)
     var vtid = (task.vtid || '');
-    var classicVtidPattern = /^VTID-\d{4}$/;
+    var classicVtidPattern = /^VTID-\d{4,5}$/;
     if (!classicVtidPattern.test(vtid)) {
         return false;
     }
@@ -407,8 +408,9 @@ function isEligibleScheduled(task) {
 function isHumanTask(task) {
     if (!task) return false;
     var vtid = (task.vtid || '');
-    // Canonical human task pattern: VTID-NNNN (exactly 4 digits)
-    var humanTaskPattern = /^VTID-\d{4}$/;
+    // Canonical human task pattern: VTID-NNNN or VTID-NNNNN (4-5 digits)
+    // VTID-01028: Updated to support 5-digit VTIDs (e.g., VTID-01028, VTID-01029)
+    var humanTaskPattern = /^VTID-\d{4,5}$/;
     return humanTaskPattern.test(vtid);
 }
 
