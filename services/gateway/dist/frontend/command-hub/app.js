@@ -1622,7 +1622,10 @@ const state = {
         // VTID-01038: TTS voice selection state
         ttsVoices: [],
         ttsSelectedVoiceUri: null,
-        ttsVoicesLoaded: false
+        ttsVoicesLoaded: false,
+        // VTID-01042: Unified Language selector state
+        orbLang: 'en-US', // Single source of truth for STT + TTS language
+        orbLangWarning: null // Warning message for voice fallback
     },
 
     // VTID-0600: Operational Visibility Foundation State
@@ -11158,54 +11161,65 @@ function renderOrbOverlay() {
 
     overlay.appendChild(controls);
 
-    // VTID-01038: Voice settings row (Voice dropdown + Preview button)
-    var voiceSettings = document.createElement('div');
-    voiceSettings.className = 'orb-voice-settings';
+    // VTID-01042: Unified Language selector (replaces VTID-01038 voice-only dropdown)
+    var langSettings = document.createElement('div');
+    langSettings.className = 'orb-lang-settings';
 
-    var voiceLabel = document.createElement('label');
-    voiceLabel.className = 'orb-voice-label';
-    voiceLabel.textContent = 'Voice';
-    voiceLabel.setAttribute('for', 'orb-voice-select');
-    voiceSettings.appendChild(voiceLabel);
+    var langLabelRow = document.createElement('div');
+    langLabelRow.className = 'orb-lang-label-row';
 
-    var voiceSelect = document.createElement('select');
-    voiceSelect.className = 'orb-voice-select';
-    voiceSelect.id = 'orb-voice-select';
-    voiceSelect.setAttribute('aria-label', 'Select TTS voice');
+    var langLabel = document.createElement('label');
+    langLabel.className = 'orb-lang-label';
+    langLabel.textContent = 'Language';
+    langLabel.setAttribute('for', 'orb-lang-select');
+    langLabelRow.appendChild(langLabel);
 
-    // Populate voice options
-    if (state.orb.ttsVoices.length > 0) {
-        state.orb.ttsVoices.forEach(function(voice) {
-            var option = document.createElement('option');
-            option.value = voice.voiceURI;
-            option.textContent = voice.name + ' (' + voice.lang + ')';
-            if (voice.voiceURI === state.orb.ttsSelectedVoiceUri) {
-                option.selected = true;
-            }
-            voiceSelect.appendChild(option);
-        });
-    } else {
-        var defaultOption = document.createElement('option');
-        defaultOption.value = '';
-        defaultOption.textContent = 'Loading voices...';
-        voiceSelect.appendChild(defaultOption);
+    var langHelper = document.createElement('span');
+    langHelper.className = 'orb-lang-helper';
+    langHelper.textContent = 'Sets listening and voice output together';
+    langLabelRow.appendChild(langHelper);
+
+    langSettings.appendChild(langLabelRow);
+
+    var langSelect = document.createElement('select');
+    langSelect.className = 'orb-lang-select';
+    langSelect.id = 'orb-lang-select';
+    langSelect.setAttribute('aria-label', 'Select language for speech recognition and voice output');
+
+    // VTID-01042: Available languages (exact list per spec)
+    var availableLanguages = [
+        { code: 'en-US', label: 'English (US)' },
+        { code: 'de-DE', label: 'German' },
+        { code: 'fr-FR', label: 'French' },
+        { code: 'es-ES', label: 'Spanish' },
+        { code: 'ar-AE', label: 'Arabic' },
+        { code: 'zh-CN', label: 'Chinese' }
+    ];
+
+    availableLanguages.forEach(function(lang) {
+        var option = document.createElement('option');
+        option.value = lang.code;
+        option.textContent = lang.label;
+        if (lang.code === state.orb.orbLang) {
+            option.selected = true;
+        }
+        langSelect.appendChild(option);
+    });
+
+    langSelect.addEventListener('change', function(e) {
+        orbSetLanguage(e.target.value);
+    });
+    langSettings.appendChild(langSelect);
+
+    // VTID-01042: Warning message for voice fallback
+    if (state.orb.orbLangWarning) {
+        var warningEl = document.createElement('div');
+        warningEl.className = 'orb-lang-warning';
+        warningEl.textContent = state.orb.orbLangWarning;
+        langSettings.appendChild(warningEl);
     }
 
-    voiceSelect.addEventListener('change', function(e) {
-        orbSetTtsVoice(e.target.value);
-    });
-    voiceSettings.appendChild(voiceSelect);
-
-    var previewBtn = document.createElement('button');
-    previewBtn.className = 'orb-voice-preview';
-    previewBtn.setAttribute('aria-label', 'Preview selected voice');
-    previewBtn.innerHTML = ORB_ICONS.speaker + ' <span>Preview</span>';
-    previewBtn.addEventListener('click', function() {
-        orbPreviewTtsVoice();
-    });
-    voiceSettings.appendChild(previewBtn);
-
-    overlay.appendChild(voiceSettings);
+    overlay.appendChild(langSettings);
 
     // Chat button
     var chatBtn = document.createElement('button');
@@ -11789,7 +11803,8 @@ function orbVoiceStart() {
 
     recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.lang = 'en-US';
+    // VTID-01042: Use unified language setting for STT
+    recognition.lang = state.orb.orbLang;
 
     // VTID-0135: Track processed results to prevent re-processing on restart
     // When recognition restarts, old results may persist in event.results
@@ -11895,6 +11910,10 @@ function orbVoiceStart() {
             if (state.orb.voiceState === 'LISTENING') {
                 console.log('[VTID-0135] No speech detected, continuing to listen...');
             }
+        } else if (event.error === 'language-not-supported' || event.error === 'service-not-allowed') {
+            // VTID-01042: Language not supported - fall back to English (US)
+            console.warn('[VTID-01042] Language not supported:', state.orb.orbLang, '- falling back to English (US)');
+            orbFallbackToEnglish();
         } else {
             state.orb.voiceError = 'Speech recognition error: ' + event.error;
         }
@@ -12103,19 +12122,34 @@ async function orbVoiceSendText(text) {
     }
 }
 
-// VTID-01038: TTS Voice Selection - localStorage key
+// VTID-01038: TTS Voice Selection - localStorage key (legacy, kept for backward compat)
 const ORB_TTS_VOICE_KEY = 'orb_tts_voice';
 
+// VTID-01042: Unified Language selector - localStorage keys
+const ORB_LANG_KEY = 'orb_lang';          // Single source of truth
+const ORB_STT_LANG_KEY = 'orb_stt_lang';  // Kept for clarity/backward compat
+const ORB_TTS_LANG_KEY = 'orb_tts_lang';  // Kept for clarity/backward compat
+const ORB_TTS_VOICE_URI_KEY = 'orb_tts_voice_uri'; // Selected voice URI
+
+// VTID-01042: Supported languages list
+const ORB_SUPPORTED_LANGUAGES = ['en-US', 'de-DE', 'fr-FR', 'es-ES', 'ar-AE', 'zh-CN'];
+
 /**
- * VTID-01038: Score a voice for quality selection
+ * VTID-01042: Score a voice for quality selection based on target language
  * Higher scores are preferred.
+ * @param {SpeechSynthesisVoice} voice - The voice to score
+ * @param {string} targetLang - The target language code (e.g., 'de-DE')
  */
-function orbScoreVoice(voice) {
+function orbScoreVoice(voice, targetLang) {
     var score = 0;
     var nameLower = voice.name.toLowerCase();
+    var langPrefix = targetLang.split('-')[0]; // e.g., 'de' from 'de-DE'
 
-    // Language match: prefer en-* voices
-    if (voice.lang.startsWith('en')) {
+    // VTID-01042: Exact locale match (highest priority)
+    if (voice.lang === targetLang) {
+        score += 200;
+    } else if (voice.lang.startsWith(langPrefix + '-') || voice.lang === langPrefix) {
+        // Language match (e.g., voice.lang starts with 'de-')
         score += 100;
     }
 
@@ -12128,6 +12162,7 @@ function orbScoreVoice(voice) {
     // Deprioritize low-quality voices
     if (nameLower.includes('compact')) score -= 50;
     if (nameLower.includes('basic')) score -= 30;
+    if (nameLower.includes('standard')) score -= 10;
 
     // Prefer local voices over remote (local tend to be more responsive)
     if (voice.localService) score += 10;
@@ -12136,13 +12171,47 @@ function orbScoreVoice(voice) {
 }
 
 /**
- * VTID-01038: Load available TTS voices and select the best default
+ * VTID-01042: Select the best voice for the given language
+ * @param {string} targetLang - The target language code
+ * @returns {{ voice: SpeechSynthesisVoice|null, isMatch: boolean }}
+ */
+function orbSelectBestVoiceForLanguage(targetLang) {
+    var voices = state.orb.ttsVoices;
+    if (!voices || voices.length === 0) {
+        return { voice: null, isMatch: false };
+    }
+
+    var langPrefix = targetLang.split('-')[0];
+
+    // Score all voices for this language
+    var scoredVoices = voices.map(function(voice) {
+        return { voice: voice, score: orbScoreVoice(voice, targetLang) };
+    }).sort(function(a, b) { return b.score - a.score; });
+
+    if (scoredVoices.length === 0) {
+        return { voice: null, isMatch: false };
+    }
+
+    var bestVoice = scoredVoices[0].voice;
+    // Check if best voice actually matches the target language
+    var isMatch = bestVoice.lang === targetLang ||
+                  bestVoice.lang.startsWith(langPrefix + '-') ||
+                  bestVoice.lang === langPrefix;
+
+    return { voice: bestVoice, isMatch: isMatch };
+}
+
+/**
+ * VTID-01042: Load available TTS voices and apply language settings
  */
 function orbLoadTtsVoices() {
     if (!window.speechSynthesis) {
-        console.warn('[VTID-01038] speechSynthesis not available');
+        console.warn('[VTID-01042] speechSynthesis not available');
         return;
     }
+
+    // VTID-01042: Migrate legacy keys and load saved language
+    orbMigrateLegacyLanguageSettings();
 
     var loadVoices = function() {
         var voices = window.speechSynthesis.getVoices();
@@ -12151,30 +12220,10 @@ function orbLoadTtsVoices() {
         state.orb.ttsVoices = voices;
         state.orb.ttsVoicesLoaded = true;
 
-        console.log('[VTID-01038] Loaded', voices.length, 'TTS voices');
+        console.log('[VTID-01042] Loaded', voices.length, 'TTS voices');
 
-        // Check localStorage for saved voice preference
-        var savedVoiceUri = localStorage.getItem(ORB_TTS_VOICE_KEY);
-        if (savedVoiceUri) {
-            var savedVoice = voices.find(function(v) { return v.voiceURI === savedVoiceUri; });
-            if (savedVoice) {
-                state.orb.ttsSelectedVoiceUri = savedVoiceUri;
-                console.log('[VTID-01038] Restored saved voice:', savedVoice.name);
-                return;
-            }
-        }
-
-        // Auto-select best voice based on scoring
-        var scoredVoices = voices.map(function(voice) {
-            return { voice: voice, score: orbScoreVoice(voice) };
-        }).sort(function(a, b) { return b.score - a.score; });
-
-        if (scoredVoices.length > 0) {
-            var bestVoice = scoredVoices[0].voice;
-            state.orb.ttsSelectedVoiceUri = bestVoice.voiceURI;
-            localStorage.setItem(ORB_TTS_VOICE_KEY, bestVoice.voiceURI);
-            console.log('[VTID-01038] Auto-selected best voice:', bestVoice.name, '(score:', scoredVoices[0].score + ')');
-        }
+        // VTID-01042: Select best voice for the current language
+        orbApplyLanguageVoiceSelection();
     };
 
     // Voices may load asynchronously in some browsers
@@ -12182,6 +12231,138 @@ function orbLoadTtsVoices() {
     if (window.speechSynthesis.onvoiceschanged !== undefined) {
         window.speechSynthesis.onvoiceschanged = loadVoices;
     }
+}
+
+/**
+ * VTID-01042: Migrate legacy language settings to unified orb_lang
+ */
+function orbMigrateLegacyLanguageSettings() {
+    var savedLang = localStorage.getItem(ORB_LANG_KEY);
+    if (savedLang && ORB_SUPPORTED_LANGUAGES.indexOf(savedLang) !== -1) {
+        // Already have valid saved language
+        state.orb.orbLang = savedLang;
+        console.log('[VTID-01042] Restored saved language:', savedLang);
+        return;
+    }
+
+    // Check for legacy voice key to determine language
+    var legacyVoiceUri = localStorage.getItem(ORB_TTS_VOICE_KEY);
+    if (legacyVoiceUri) {
+        // Legacy key exists but we'll just default to en-US
+        console.log('[VTID-01042] Migrating from legacy voice key, defaulting to en-US');
+    }
+
+    // Default to English (US)
+    state.orb.orbLang = 'en-US';
+    localStorage.setItem(ORB_LANG_KEY, 'en-US');
+    localStorage.setItem(ORB_STT_LANG_KEY, 'en-US');
+    localStorage.setItem(ORB_TTS_LANG_KEY, 'en-US');
+    console.log('[VTID-01042] Initialized default language: en-US');
+}
+
+/**
+ * VTID-01042: Apply voice selection based on current language
+ */
+function orbApplyLanguageVoiceSelection() {
+    var currentLang = state.orb.orbLang;
+
+    // Check for previously saved voice URI for this language
+    var savedVoiceUri = localStorage.getItem(ORB_TTS_VOICE_URI_KEY);
+    if (savedVoiceUri) {
+        var savedVoice = state.orb.ttsVoices.find(function(v) {
+            return v.voiceURI === savedVoiceUri;
+        });
+        // Only use saved voice if it matches current language
+        if (savedVoice) {
+            var langPrefix = currentLang.split('-')[0];
+            var voiceMatchesLang = savedVoice.lang === currentLang ||
+                                   savedVoice.lang.startsWith(langPrefix + '-') ||
+                                   savedVoice.lang === langPrefix;
+            if (voiceMatchesLang) {
+                state.orb.ttsSelectedVoiceUri = savedVoiceUri;
+                state.orb.orbLangWarning = null;
+                console.log('[VTID-01042] Restored saved voice for', currentLang + ':', savedVoice.name);
+                return;
+            }
+        }
+    }
+
+    // Auto-select best voice for current language
+    var result = orbSelectBestVoiceForLanguage(currentLang);
+    if (result.voice) {
+        state.orb.ttsSelectedVoiceUri = result.voice.voiceURI;
+        localStorage.setItem(ORB_TTS_VOICE_URI_KEY, result.voice.voiceURI);
+
+        if (result.isMatch) {
+            state.orb.orbLangWarning = null;
+            console.log('[VTID-01042] Auto-selected voice for', currentLang + ':', result.voice.name);
+        } else {
+            state.orb.orbLangWarning = 'Matching voice not available on this device; using default voice.';
+            console.warn('[VTID-01042] No matching voice for', currentLang + ', using:', result.voice.name);
+        }
+    } else {
+        state.orb.orbLangWarning = 'Matching voice not available on this device; using default voice.';
+        console.warn('[VTID-01042] No voices available for', currentLang);
+    }
+    renderApp();
+}
+
+/**
+ * VTID-01042: Set the unified language (STT + TTS together)
+ * @param {string} langCode - Language code (e.g., 'de-DE')
+ */
+function orbSetLanguage(langCode) {
+    if (ORB_SUPPORTED_LANGUAGES.indexOf(langCode) === -1) {
+        console.error('[VTID-01042] Unsupported language:', langCode);
+        return;
+    }
+
+    console.log('[VTID-01042] Setting language to:', langCode);
+
+    // Update state
+    state.orb.orbLang = langCode;
+    state.orb.orbLangWarning = null;
+
+    // Persist to localStorage (all keys for backward compat)
+    localStorage.setItem(ORB_LANG_KEY, langCode);
+    localStorage.setItem(ORB_STT_LANG_KEY, langCode);
+    localStorage.setItem(ORB_TTS_LANG_KEY, langCode);
+
+    // Update STT recognition if active
+    if (state.orb.speechRecognition) {
+        state.orb.speechRecognition.lang = langCode;
+        console.log('[VTID-01042] Updated active STT to:', langCode);
+    }
+
+    // Select best TTS voice for this language
+    orbApplyLanguageVoiceSelection();
+}
+
+/**
+ * VTID-01042: Fall back to English (US) when selected language is not supported
+ * Used when STT reports language-not-supported error
+ */
+function orbFallbackToEnglish() {
+    console.log('[VTID-01042] Falling back to English (US)');
+
+    // Show warning to user
+    state.orb.orbLangWarning = 'Selected language not supported here; switched to English (US).';
+
+    // Set language to English (US)
+    state.orb.orbLang = 'en-US';
+
+    // Persist to localStorage
+    localStorage.setItem(ORB_LANG_KEY, 'en-US');
+    localStorage.setItem(ORB_STT_LANG_KEY, 'en-US');
+    localStorage.setItem(ORB_TTS_LANG_KEY, 'en-US');
+
+    // Update active STT recognition
+    if (state.orb.speechRecognition) {
+        state.orb.speechRecognition.lang = 'en-US';
+    }
+
+    // Select best voice for English
+    orbApplyLanguageVoiceSelection();
 }
 
 /**
@@ -12320,7 +12501,8 @@ function orbVoiceSpeak(text) {
     }
 
     var utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'en-US';
+    // VTID-01042: Use unified language setting for TTS
+    utterance.lang = state.orb.orbLang;
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
 
