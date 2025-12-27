@@ -1088,13 +1088,20 @@ router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
       } as AutonomousPrMergeResponse);
     }
 
+    // Normalize title to always include VTID prefix (required for auto-deploy)
+    // Strip any existing VTID prefix to avoid duplication, then prepend
+    const vtidPattern = /^VTID-\d{4,5}:\s*/i;
+    const titleWithoutVtid = title.replace(vtidPattern, '').trim();
+    const normalizedTitle = `${vtid}: ${titleWithoutVtid}`;
+
     console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Creating PR from ${head_branch} to ${base_branch}`);
+    console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Normalized title: "${normalizedTitle}"`);
 
     // Step 1: Create PR
     let pr: { number: number; html_url: string };
     try {
       await cicdEvents.createPrRequested(vtid, head_branch, base_branch);
-      pr = await githubService.createPullRequest(repo, title, body, head_branch, base_branch);
+      pr = await githubService.createPullRequest(repo, normalizedTitle, body, head_branch, base_branch);
       await cicdEvents.createPrSucceeded(vtid, pr.number, pr.html_url);
       console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: PR #${pr.number} created - ${pr.html_url}`);
     } catch (error) {
@@ -1217,20 +1224,25 @@ router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
     }
 
     // Step 4: Merge PR
+    // CRITICAL: Merge commit title MUST contain VTID for auto-deploy to trigger
+    const mergeCommitTitle = `${normalizedTitle} (#${pr.number})`;
     console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Merging PR #${pr.number} (${merge_method})`);
+    console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Merge commit title: "${mergeCommitTitle}"`);
     try {
       await cicdEvents.safeMergeApproved(vtid, pr.number);
 
       const mergeResult = await githubService.mergePullRequest(
         repo,
         pr.number,
-        `${title} (#${pr.number})`,
+        mergeCommitTitle,
         merge_method
       );
 
       await cicdEvents.safeMergeExecuted(vtid, pr.number, mergeResult.sha);
 
-      console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: PR #${pr.number} merged successfully - ${mergeResult.sha}`);
+      console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: PR #${pr.number} merged successfully - SHA: ${mergeResult.sha}`);
+      console.log(`[AUTONOMOUS-PR-MERGE] ${vtid}: Auto-deploy should trigger for commit with title containing "${vtid}"`);
+
 
       return res.status(200).json({
         ok: true,
