@@ -31,6 +31,130 @@ const TARGET_ROLE_LABELS = {
 };
 
 // ===========================================================================
+// VTID-01049: Me Context State (Authoritative Role from Gateway)
+// ===========================================================================
+const MeState = {
+    loaded: false,
+    me: null // { user_id, email, tenant_id, roles[], active_role }
+};
+
+// VTID-01049: Valid view roles for POST /api/v1/me/active-role
+const VALID_VIEW_ROLES = ['community', 'patient', 'professional', 'staff', 'admin', 'developer'];
+
+/**
+ * VTID-01049: Fetch Me Context from Gateway
+ * Called on app boot to load authoritative role from server.
+ * @returns {Promise<{ok: boolean, me?: object, error?: string}>}
+ */
+async function fetchMeContext() {
+    try {
+        var response = await fetch('/api/v1/me');
+        if (response.status === 401) {
+            // Not signed in - keep UI usable
+            MeState.loaded = true;
+            MeState.me = null;
+            return { ok: false, error: 'Not signed in' };
+        }
+        if (!response.ok) {
+            // 404/500 - show toast but don't break UI
+            MeState.loaded = true;
+            return { ok: false, error: 'Role context unavailable (Gateway /me)' };
+        }
+        var data = await response.json();
+        if (data.ok && data.me) {
+            MeState.loaded = true;
+            MeState.me = data.me;
+            // Sync viewRole with authoritative active_role
+            if (data.me.active_role) {
+                // Capitalize first letter for display
+                var displayRole = data.me.active_role.charAt(0).toUpperCase() + data.me.active_role.slice(1);
+                state.viewRole = displayRole;
+                localStorage.setItem('vitana.viewRole', displayRole);
+            }
+            return { ok: true, me: data.me };
+        }
+        MeState.loaded = true;
+        return { ok: false, error: 'Invalid response from /me' };
+    } catch (err) {
+        console.error('[VTID-01049] fetchMeContext error:', err);
+        MeState.loaded = true;
+        return { ok: false, error: 'Network error loading role context' };
+    }
+}
+
+/**
+ * VTID-01049: Set Active Role via Gateway API
+ * Called when user changes role in Profile dropdown.
+ * @param {string} role - Role to set (lowercase: community, patient, professional, staff, admin, developer)
+ * @returns {Promise<{ok: boolean, error?: string}>}
+ */
+async function setActiveRole(role) {
+    var lowerRole = role.toLowerCase();
+
+    // Validate role client-side
+    if (VALID_VIEW_ROLES.indexOf(lowerRole) === -1) {
+        return { ok: false, error: 'Invalid role: ' + role };
+    }
+
+    try {
+        var response = await fetch('/api/v1/me/active-role', {
+            method: 'POST',
+            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ role: lowerRole })
+        });
+
+        if (response.status === 401) {
+            return { ok: false, error: 'Not signed in.', code: 'UNAUTHENTICATED' };
+        }
+        if (response.status === 403) {
+            return { ok: false, error: "You don't have access to that role.", code: 'FORBIDDEN' };
+        }
+        if (response.status === 400) {
+            var errData = await response.json().catch(function() { return {}; });
+            return { ok: false, error: errData.message || 'Invalid role', code: 'INVALID_ROLE' };
+        }
+        if (!response.ok) {
+            return { ok: false, error: 'Failed to set role' };
+        }
+
+        var data = await response.json();
+        if (data.ok) {
+            // Update MeState with new active_role
+            if (MeState.me) {
+                MeState.me.active_role = lowerRole;
+            }
+            return { ok: true };
+        }
+        return { ok: false, error: data.message || 'Failed to set role' };
+    } catch (err) {
+        console.error('[VTID-01049] setActiveRole error:', err);
+        return { ok: false, error: 'Network error setting role' };
+    }
+}
+
+/**
+ * VTID-01049: Add Vitana context headers to fetch requests
+ * Adds X-Vitana-Active-Role, X-Vitana-Tenant, X-Vitana-User if MeState.me exists.
+ * @param {Object} headers - Existing headers object
+ * @returns {Object} Headers with Vitana context added
+ */
+function withVitanaContextHeaders(headers) {
+    var h = Object.assign({}, headers || {});
+    if (MeState.me) {
+        if (MeState.me.active_role) {
+            h['X-Vitana-Active-Role'] = MeState.me.active_role;
+        }
+        if (MeState.me.tenant_id) {
+            h['X-Vitana-Tenant'] = MeState.me.tenant_id;
+        }
+        if (MeState.me.user_id) {
+            h['X-Vitana-User'] = MeState.me.user_id;
+        }
+    }
+    return h;
+}
+
+// ===========================================================================
 // VTID-01016: OASIS Event Authority - Deterministic Stage/Status Derivation
 // ===========================================================================
 /**
@@ -2467,7 +2591,7 @@ async function approveApprovalItem(approvalId) {
     try {
         var response = await fetch('/api/v1/cicd/approvals/' + approvalId + '/approve', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
+            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' })
         });
         var data = await response.json();
 
@@ -2527,7 +2651,7 @@ async function denyApprovalItem(approvalId, reason) {
     try {
         var response = await fetch('/api/v1/cicd/approvals/' + approvalId + '/deny', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ reason: reason || 'Denied by user' })
         });
         var data = await response.json();
@@ -4333,7 +4457,7 @@ function renderTaskDrawer() {
                 try {
                     var response = await fetch('/api/v1/vtid/lifecycle/start', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
                         body: JSON.stringify({
                             vtid: vtid,
                             source: 'command-hub',
@@ -4837,7 +4961,16 @@ function renderProfileModal() {
 
     const badge = document.createElement('div');
     badge.className = 'profile-role-badge';
-    badge.textContent = state.viewRole; // VTID-01014: Use viewRole
+    // VTID-01049: Use authoritative role from MeState, fallback to state.viewRole
+    if (MeState.me && MeState.me.active_role) {
+        badge.textContent = MeState.me.active_role.charAt(0).toUpperCase() + MeState.me.active_role.slice(1);
+    } else if (!MeState.loaded) {
+        badge.textContent = 'Loading...';
+    } else if (MeState.loaded && !MeState.me) {
+        badge.textContent = 'Not signed in';
+    } else {
+        badge.textContent = state.viewRole; // Fallback
+    }
     body.appendChild(badge);
 
     // VTID-01014: Role Switcher dropdown
@@ -4862,33 +4995,29 @@ function renderProfileModal() {
         roleSelect.appendChild(option);
     });
 
-    // VTID-01049: Wire role switcher to Gateway API
+    // VTID-01049: Wire dropdown to POST /api/v1/me/active-role
     roleSelect.onchange = async (e) => {
         const newRole = e.target.value;
         const previousRole = state.viewRole;
 
-        // VTID-01049: If authenticated, persist role change via API
-        if (state.authToken) {
-            // Optimistically update UI
-            state.viewRole = newRole;
-            renderApp();
+        // Optimistically update UI
+        state.viewRole = newRole;
+        renderApp();
 
-            // Call API to persist
-            const result = await setActiveRole(newRole);
-
-            if (!result) {
-                // API failed - revert to previous role
-                state.viewRole = previousRole;
-                localStorage.setItem('vitana.viewRole', previousRole);
-                // Reset select to previous value
-                roleSelect.value = previousRole;
-                renderApp();
-            }
-        } else {
-            // No auth - fall back to localStorage-only (legacy behavior)
-            state.viewRole = newRole;
+        // Call API to persist role
+        var result = await setActiveRole(newRole);
+        if (result.ok) {
+            // Success - update localStorage and show toast
             localStorage.setItem('vitana.viewRole', newRole);
+            showToast('Role set to ' + newRole, 'success');
+        } else {
+            // Failure - revert to previous role
+            state.viewRole = previousRole;
+            if (MeState.me) {
+                MeState.me.active_role = previousRole.toLowerCase();
+            }
             renderApp();
+            showToast(result.error || 'Failed to change role', 'error');
         }
     };
 
@@ -5154,9 +5283,9 @@ function renderTaskModal() {
             // VTID-0542: Step 1 - Call the global allocator to get a VTID
             const allocResponse = await fetch('/api/v1/vtid/allocate', {
                 method: 'POST',
-                headers: {
+                headers: withVitanaContextHeaders({
                     'Content-Type': 'application/json'
-                },
+                }),
                 body: JSON.stringify({
                     source: 'command-hub',
                     layer: 'DEV',
@@ -5207,9 +5336,9 @@ function renderTaskModal() {
 
             const updateResponse = await fetch('/api/v1/oasis/tasks/' + encodeURIComponent(vtid), {
                 method: 'PATCH',
-                headers: {
+                headers: withVitanaContextHeaders({
                     'Content-Type': 'application/json'
-                },
+                }),
                 body: JSON.stringify(updatePayload)
             });
 
@@ -9288,7 +9417,7 @@ async function sendChatMessage() {
 
         const response = await fetch('/api/v1/operator/chat', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 message: messageText,
                 conversation_id: state.operatorConversationId,
@@ -10137,7 +10266,7 @@ function renderPublishModal() {
 
             const response = await fetch('/api/v1/operator/deploy', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify(payload)
             });
 
@@ -10477,7 +10606,7 @@ async function toggleHeartbeatSession() {
     try {
         const response = await fetch('/api/v1/operator/heartbeat/session', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ status: newStatus })
         });
 
@@ -10992,7 +11121,7 @@ async function startOperatorLiveTicker() {
         // Start heartbeat session
         const response = await fetch('/api/v1/operator/heartbeat/session', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ status: 'live' })
         });
 
@@ -11064,7 +11193,7 @@ async function uploadOperatorFile(file, kind) {
     try {
         const response = await fetch('/api/v1/operator/upload', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 name: file.name,
                 kind: kind,
@@ -12978,6 +13107,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         renderApp();
+
+        // VTID-01049: Load Me Context (authoritative role) on boot
+        fetchMeContext().then(function(result) {
+            if (!result.ok && result.error) {
+                // Only show toast for 404/500 errors, not for 401 (not signed in)
+                if (result.error !== 'Not signed in') {
+                    showToast(result.error, 'error');
+                }
+            }
+            // Re-render to update profile badge with authoritative role
+            renderApp();
+        }).catch(function(err) {
+            console.error('[VTID-01049] fetchMeContext failed:', err);
+        });
+
         fetchTasks();
 
         // VTID-01049: Initialize me context (authoritative role + identity)
