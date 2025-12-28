@@ -7318,3 +7318,182 @@ body {
   color: var(--color-text-secondary);
   font-style: italic;
 }
+
+/* --- VTID-01045: Compact Task Cards + Date Filter Icon --- */
+
+/* Compact card density: reduce padding and height */
+.task-card {
+  padding: 0.625rem 0.75rem;
+}
+
+.task-card-enhanced {
+  min-height: 72px;
+  max-height: 100px;
+}
+
+/* Reduce title font size and margins */
+.task-card-title {
+  font-size: 0.875rem;
+  margin-bottom: 0.25rem;
+  line-height: 1.3;
+}
+
+.task-card-enhanced .task-card-title {
+  min-height: 2.4em;
+  max-height: 2.4em;
+}
+
+/* VTID line: reduce margin */
+.task-card-vtid-line {
+  margin-bottom: 0.25rem;
+}
+
+/* Smaller VTID chip */
+.task-card-vtid-label {
+  font-size: 0.7rem;
+  padding: 1px 6px;
+}
+
+.task-card-enhanced .task-card-vtid-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 1px 6px;
+}
+
+/* Status row: single line flex, no wrap */
+.task-card-status-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  margin-bottom: 0.25rem;
+}
+
+/* Smaller status pills */
+.task-card-status-pill {
+  padding: 1px 6px;
+  font-size: 0.6rem;
+  height: 18px;
+  line-height: 16px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Smaller role badges */
+.task-card-role-badge {
+  padding: 1px 5px;
+  font-size: 0.55rem;
+  height: 16px;
+  line-height: 14px;
+  white-space: nowrap;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Stage timeline compact */
+.task-card-enhanced .task-stage-timeline {
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+.task-stage-timeline {
+  gap: 3px;
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+/* Reduce column content gap */
+.column-content {
+  gap: 0.5rem;
+}
+
+/* --- Date Filter Calendar Icon Button --- */
+
+/* Hidden date input (visually hidden but accessible) */
+.date-hidden-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+  opacity: 0;
+}
+
+/* Calendar icon button container */
+.date-filter-btn-container {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 0.5rem;
+}
+
+/* Calendar icon button */
+.date-filter-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  background: var(--color-sidebar-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.date-filter-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--color-text-secondary);
+  color: var(--color-text-primary);
+}
+
+.date-filter-icon-btn.date-filter-active {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+/* Calendar SVG icon */
+.date-filter-icon-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+/* Active date indicator (compact text next to icon) */
+.date-filter-indicator {
+  font-size: 0.7rem;
+  color: var(--color-accent);
+  font-family: monospace;
+  white-space: nowrap;
+}
+
+/* Clear date button (small X) */
+.date-filter-clear-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: all 0.15s;
+  padding: 0;
+}
+
+.date-filter-clear-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
