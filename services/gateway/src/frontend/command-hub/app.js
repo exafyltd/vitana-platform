@@ -387,6 +387,196 @@ function initOperatorChatSession() {
 }
 
 // ===========================================================================
+// VTID-01049: Me Context API - Authoritative Role + Identity
+// ===========================================================================
+
+/**
+ * VTID-01049: Build headers with role context for API requests.
+ * Attaches these headers to requests that send auth:
+ *   - Authorization: Bearer <token>
+ *   - X-Vitana-Active-Role: <active_role>
+ *   - X-Vitana-Tenant: <tenant_id>
+ *   - X-Vitana-User: <user_id>
+ *
+ * This is the stepping stone for memory keying in Operator/ORB.
+ *
+ * @param {Object} additionalHeaders - Extra headers to merge
+ * @returns {Object} Headers object with context headers added
+ */
+function buildContextHeaders(additionalHeaders) {
+    var headers = additionalHeaders || {};
+
+    // Add auth token if available
+    if (state.authToken) {
+        headers['Authorization'] = 'Bearer ' + state.authToken;
+    }
+
+    // Add role context headers if me context is loaded
+    if (state.meContext) {
+        if (state.meContext.active_role) {
+            headers['X-Vitana-Active-Role'] = state.meContext.active_role;
+        }
+        if (state.meContext.tenant_id) {
+            headers['X-Vitana-Tenant'] = state.meContext.tenant_id;
+        }
+        if (state.meContext.user_id) {
+            headers['X-Vitana-User'] = state.meContext.user_id;
+        }
+    }
+
+    return headers;
+}
+
+/**
+ * VTID-01049: Fetch me context from Gateway API.
+ * Calls GET /api/v1/me to get authoritative identity + role context.
+ *
+ * @param {boolean} silentRefresh - If true, don't update loading state
+ * @returns {Promise<Object|null>} The me context object or null on error
+ */
+async function fetchMeContext(silentRefresh) {
+    if (!state.authToken) {
+        console.log('[VTID-01049] No auth token, skipping me context fetch');
+        return null;
+    }
+
+    if (!silentRefresh) {
+        state.meContextLoading = true;
+        state.meContextError = null;
+    }
+
+    try {
+        var response = await fetch('/api/v1/me', {
+            method: 'GET',
+            headers: buildContextHeaders()
+        });
+
+        var data = await response.json();
+
+        if (!response.ok || !data.ok) {
+            var errorMsg = data.error || 'Failed to fetch me context';
+            console.error('[VTID-01049] fetchMeContext error:', errorMsg);
+
+            if (response.status === 401) {
+                // Clear invalid auth token
+                state.authToken = null;
+                localStorage.removeItem('vitana.authToken');
+            }
+
+            state.meContextError = errorMsg;
+            state.meContextLoading = false;
+            return null;
+        }
+
+        console.log('[VTID-01049] fetchMeContext success:', data.me);
+        state.meContext = data.me;
+        state.meContextLoading = false;
+        state.meContextError = null;
+
+        // VTID-01049: Sync viewRole with authoritative active_role
+        if (data.me.active_role) {
+            // Capitalize first letter to match UI format (e.g., 'developer' -> 'Developer')
+            var capitalizedRole = data.me.active_role.charAt(0).toUpperCase() + data.me.active_role.slice(1);
+            state.viewRole = capitalizedRole;
+            localStorage.setItem('vitana.viewRole', capitalizedRole);
+        }
+
+        return data.me;
+    } catch (err) {
+        console.error('[VTID-01049] fetchMeContext exception:', err);
+        state.meContextError = err.message || 'Network error';
+        state.meContextLoading = false;
+        return null;
+    }
+}
+
+/**
+ * VTID-01049: Set active role via Gateway API.
+ * Calls POST /api/v1/me/active-role to persist role change server-side.
+ *
+ * @param {string} role - The role to set (lowercase: developer, admin, etc.)
+ * @returns {Promise<Object|null>} The updated me context or null on error
+ */
+async function setActiveRole(role) {
+    if (!state.authToken) {
+        console.error('[VTID-01049] No auth token, cannot set active role');
+        showToast('Not authenticated', 'error');
+        return null;
+    }
+
+    // Normalize role to lowercase for API
+    var normalizedRole = (role || '').toLowerCase();
+    var validRoles = ['community', 'patient', 'professional', 'staff', 'admin', 'developer'];
+
+    if (!validRoles.includes(normalizedRole)) {
+        console.error('[VTID-01049] Invalid role:', role);
+        showToast('Invalid role: ' + role, 'error');
+        return null;
+    }
+
+    try {
+        var response = await fetch('/api/v1/me/active-role', {
+            method: 'POST',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ role: normalizedRole })
+        });
+
+        var data = await response.json();
+
+        if (!response.ok || !data.ok) {
+            var errorMsg = data.error || 'Failed to set active role';
+            console.error('[VTID-01049] setActiveRole error:', errorMsg);
+
+            // Show appropriate toast based on error type
+            if (response.status === 401) {
+                showToast('Session expired. Please log in again.', 'error');
+                state.authToken = null;
+                localStorage.removeItem('vitana.authToken');
+            } else if (response.status === 403) {
+                showToast('You do not have permission to use this role.', 'error');
+            } else if (data.error === 'INVALID_ROLE') {
+                showToast('Invalid role: ' + role, 'error');
+            } else {
+                showToast('Failed to switch role: ' + errorMsg, 'error');
+            }
+
+            return null;
+        }
+
+        console.log('[VTID-01049] setActiveRole success:', data.me);
+        state.meContext = data.me;
+
+        // Update viewRole to match (capitalized for UI)
+        if (data.me.active_role) {
+            var capitalizedRole = data.me.active_role.charAt(0).toUpperCase() + data.me.active_role.slice(1);
+            state.viewRole = capitalizedRole;
+            localStorage.setItem('vitana.viewRole', capitalizedRole);
+        }
+
+        showToast('Switched to ' + state.viewRole + ' role', 'success');
+        return data.me;
+    } catch (err) {
+        console.error('[VTID-01049] setActiveRole exception:', err);
+        showToast('Network error switching role', 'error');
+        return null;
+    }
+}
+
+/**
+ * VTID-01049: Initialize me context on app boot.
+ * Fetches me context from Gateway if auth token is available.
+ */
+async function initMeContext() {
+    if (state.authToken) {
+        console.log('[VTID-01049] Auth token found, fetching me context...');
+        await fetchMeContext();
+        renderApp();
+    } else {
+        console.log('[VTID-01049] No auth token, me context not available');
+    }
+}
+
+// ===========================================================================
 // VTID-01017: Scheduled Column Hard Eligibility Filter
 // VTID-01028: Relaxed to prevent hiding human-created tasks
 // ===========================================================================
@@ -1503,6 +1693,14 @@ const state = {
 
     // VTID-01014: View Role (persisted in localStorage)
     viewRole: localStorage.getItem('vitana.viewRole') || 'Admin',
+
+    // VTID-01049: Authoritative Me Context from Gateway API
+    // This is the single source of truth for user identity and role
+    meContext: null, // { user_id, email, tenant_id, roles, active_role, active_role_source, ts }
+    meContextLoading: false,
+    meContextError: null,
+    // Auth token for API calls (set via dev-auth or Supabase session)
+    authToken: localStorage.getItem('vitana.authToken') || null,
 
     // Docs / Screen Inventory
     screenInventory: null,
@@ -4664,11 +4862,34 @@ function renderProfileModal() {
         roleSelect.appendChild(option);
     });
 
-    roleSelect.onchange = (e) => {
+    // VTID-01049: Wire role switcher to Gateway API
+    roleSelect.onchange = async (e) => {
         const newRole = e.target.value;
-        state.viewRole = newRole;
-        localStorage.setItem('vitana.viewRole', newRole);
-        renderApp();
+        const previousRole = state.viewRole;
+
+        // VTID-01049: If authenticated, persist role change via API
+        if (state.authToken) {
+            // Optimistically update UI
+            state.viewRole = newRole;
+            renderApp();
+
+            // Call API to persist
+            const result = await setActiveRole(newRole);
+
+            if (!result) {
+                // API failed - revert to previous role
+                state.viewRole = previousRole;
+                localStorage.setItem('vitana.viewRole', previousRole);
+                // Reset select to previous value
+                roleSelect.value = previousRole;
+                renderApp();
+            }
+        } else {
+            // No auth - fall back to localStorage-only (legacy behavior)
+            state.viewRole = newRole;
+            localStorage.setItem('vitana.viewRole', newRole);
+            renderApp();
+        }
     };
 
     roleSwitcher.appendChild(roleSelect);
@@ -12758,6 +12979,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         renderApp();
         fetchTasks();
+
+        // VTID-01049: Initialize me context (authoritative role + identity)
+        initMeContext();
 
         // VTID-01038: Load TTS voices for ORB
         orbLoadTtsVoices();
