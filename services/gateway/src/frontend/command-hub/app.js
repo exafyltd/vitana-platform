@@ -3302,15 +3302,59 @@ function renderTasksView() {
     };
     toolbar.appendChild(search);
 
-    const dateFilter = document.createElement('input');
-    dateFilter.type = 'date';
-    dateFilter.className = 'form-control date-filter-input';
-    dateFilter.value = state.taskDateFilter;
-    dateFilter.onchange = (e) => {
+    // VTID-01045: Calendar icon button for date filter (replaces visible date input)
+    const dateFilterContainer = document.createElement('div');
+    dateFilterContainer.className = 'date-filter-btn-container';
+
+    // Hidden date input (for native picker)
+    const dateInput = document.createElement('input');
+    dateInput.type = 'date';
+    dateInput.className = 'date-hidden-input';
+    dateInput.value = state.taskDateFilter;
+    dateInput.onchange = (e) => {
         state.taskDateFilter = e.target.value;
         renderApp();
     };
-    toolbar.appendChild(dateFilter);
+    dateFilterContainer.appendChild(dateInput);
+
+    // Calendar icon button
+    const dateIconBtn = document.createElement('button');
+    dateIconBtn.className = 'date-filter-icon-btn' + (state.taskDateFilter ? ' date-filter-active' : '');
+    dateIconBtn.title = state.taskDateFilter ? 'Filter: ' + state.taskDateFilter : 'Filter by date';
+    dateIconBtn.setAttribute('aria-label', 'Open date picker');
+    // Calendar SVG icon (CSP-compliant, no inline styles)
+    dateIconBtn.innerHTML = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z"/></svg>';
+    dateIconBtn.onclick = () => {
+        // Try showPicker() first (modern browsers), fallback to click()
+        if (typeof dateInput.showPicker === 'function') {
+            dateInput.showPicker();
+        } else {
+            dateInput.click();
+        }
+    };
+    dateFilterContainer.appendChild(dateIconBtn);
+
+    // Show date indicator and clear button when date is set
+    if (state.taskDateFilter) {
+        const dateIndicator = document.createElement('span');
+        dateIndicator.className = 'date-filter-indicator';
+        dateIndicator.textContent = state.taskDateFilter;
+        dateFilterContainer.appendChild(dateIndicator);
+
+        const clearBtn = document.createElement('button');
+        clearBtn.className = 'date-filter-clear-btn';
+        clearBtn.title = 'Clear date filter';
+        clearBtn.setAttribute('aria-label', 'Clear date filter');
+        clearBtn.textContent = '\u00D7'; // × symbol
+        clearBtn.onclick = (e) => {
+            e.stopPropagation();
+            state.taskDateFilter = '';
+            renderApp();
+        };
+        dateFilterContainer.appendChild(clearBtn);
+    }
+
+    toolbar.appendChild(dateFilterContainer);
 
     const spacer = document.createElement('div');
     spacer.className = 'spacer';
