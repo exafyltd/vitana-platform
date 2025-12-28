@@ -1,5 +1,6 @@
 /**
  * VTID-01047: Dev Token Mint Endpoint (Cloud-Shell Friendly)
+ * VTID-01050: Dev Auth Bootstrap (break the NULL-role deadlock)
  *
  * Purpose: Enable fully automated Cloud Shell testing by minting a short-lived JWT
  * for a Supabase user without copying tokens from the browser.
@@ -9,8 +10,9 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { createClient } from '@supabase/supabase-js';
+import { SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'crypto';
+import { getSupabase } from '../lib/supabase';
 
 const router = Router();
 
@@ -82,6 +84,144 @@ function validateBody(body: any): { error: string } | { email: string; role: Val
 }
 
 /**
+ * VTID-01050: Bootstrap request context for dev auth.
+ * Calls the dev_bootstrap_request_context RPC using service_role to bypass
+ * the is_platform_admin() deadlock where current_active_role() is NULL.
+ *
+ * @param supabase - Service role Supabase client
+ * @param tenantId - The tenant ID to set in request context
+ * @param activeRole - The active role to set (must be developer, admin, or staff)
+ * @returns Result object with ok status
+ */
+async function bootstrapRequestContext(
+  supabase: SupabaseClient,
+  tenantId: string,
+  activeRole: string
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const { data, error } = await supabase.rpc('dev_bootstrap_request_context', {
+      p_tenant_id: tenantId,
+      p_active_role: activeRole,
+    });
+
+    if (error) {
+      console.error('[VTID-01050] Bootstrap RPC error:', error.message);
+      return { ok: false, error: error.message };
+    }
+
+    // Handle RPC-level errors (function returns {ok: false, error: ...})
+    if (data && typeof data === 'object' && data.ok === false) {
+      console.error('[VTID-01050] Bootstrap failed:', data.error);
+      return { ok: false, error: data.error };
+    }
+
+    console.log('[VTID-01050] Request context bootstrapped:', data);
+    return { ok: true };
+  } catch (err: any) {
+    console.error('[VTID-01050] Bootstrap exception:', err.message);
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * VTID-01050: Look up user by email and generate a session token using admin API.
+ * Uses magic link generation + verification to mint a token without knowing the password.
+ *
+ * @param supabase - Service role Supabase client
+ * @param email - The user's email
+ * @returns The session data or error
+ */
+async function mintTokenForUser(
+  supabase: SupabaseClient,
+  email: string
+): Promise<{ ok: true; token: string; user_id: string } | { ok: false; error: string; status: number }> {
+  // Step 1: Look up user by email to verify they exist
+  // Use GoTrue admin API directly as supabase-js doesn't have getUserByEmail
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+
+  if (!supabaseUrl || !supabaseServiceKey) {
+    console.error('[VTID-01050] Missing Supabase configuration');
+    return { ok: false, error: 'INTERNAL_ERROR', status: 500 };
+  }
+
+  const userLookupResponse = await fetch(`${supabaseUrl}/auth/v1/admin/users?email=${encodeURIComponent(email)}`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${supabaseServiceKey}`,
+      'apikey': supabaseServiceKey,
+    },
+  });
+
+  if (!userLookupResponse.ok) {
+    const errorText = await userLookupResponse.text();
+    console.error('[VTID-01050] Error looking up user:', errorText);
+    return { ok: false, error: 'INTERNAL_ERROR', status: 500 };
+  }
+
+  const usersResult = await userLookupResponse.json() as { users?: any[] } | any[];
+  const users = Array.isArray(usersResult) ? usersResult : (usersResult.users || []);
+
+  if (!Array.isArray(users) || users.length === 0) {
+    console.warn('[VTID-01050] User not found:', email);
+    return { ok: false, error: 'USER_NOT_FOUND', status: 404 };
+  }
+
+  const user = users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
+  if (!user) {
+    console.warn('[VTID-01050] User not found (email mismatch):', email);
+    return { ok: false, error: 'USER_NOT_FOUND', status: 404 };
+  }
+
+  const userId = user.id;
+  console.log('[VTID-01050] Found user:', userId);
+
+  // Step 2: Generate a magic link for the user
+  const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
+    type: 'magiclink',
+    email: email,
+    options: {
+      redirectTo: 'http://localhost:3000/auth/callback', // Dummy redirect, won't be used
+    },
+  });
+
+  if (linkError) {
+    console.error('[VTID-01050] Error generating magic link:', linkError.message);
+    return { ok: false, error: 'INTERNAL_ERROR', status: 500 };
+  }
+
+  if (!linkData?.properties?.hashed_token) {
+    console.error('[VTID-01050] No hashed_token in link response');
+    return { ok: false, error: 'INTERNAL_ERROR', status: 500 };
+  }
+
+  // Step 3: Verify the OTP to get a session
+  // The hashed_token from generateLink is the OTP we need to verify
+  const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
+    email: email,
+    token: linkData.properties.hashed_token,
+    type: 'magiclink',
+  });
+
+  if (verifyError) {
+    console.error('[VTID-01050] Error verifying OTP:', verifyError.message);
+    return { ok: false, error: 'INTERNAL_ERROR', status: 500 };
+  }
+
+  if (!verifyData?.session?.access_token) {
+    console.error('[VTID-01050] No access_token in verify response');
+    return { ok: false, error: 'INTERNAL_ERROR', status: 500 };
+  }
+
+  console.log('[VTID-01050] Token minted successfully for user:', userId);
+  return {
+    ok: true,
+    token: verifyData.session.access_token,
+    user_id: userId,
+  };
+}
+
+/**
  * Emit OASIS event for token issuance (minimal implementation).
  * Uses direct fetch to OASIS events table.
  */
@@ -142,15 +282,16 @@ async function emitTokenIssuedEvent(email: string, role: string, expiresIn: numb
 /**
  * POST /token
  *
- * Mints a 15-minute Bearer token for the dedicated dev test user.
- * The email in the request body is used for logging only.
+ * VTID-01047 + VTID-01050: Mints a Bearer token for a specific user.
+ * Uses admin API to look up user and generate a session token.
+ * Bootstraps request context to break the NULL-role deadlock.
  *
  * Headers required:
  * - X-DEV-SECRET: <value matching DEV_AUTH_SECRET env var>
  *
  * Body:
  * {
- *   "email": "user@example.com",  // Label for logging
+ *   "email": "user@example.com",  // The user's actual email
  *   "role": "patient|community|professional|staff|admin|developer",
  *   "tenant_id": "uuid (optional)"
  * }
@@ -167,7 +308,7 @@ async function emitTokenIssuedEvent(email: string, role: string, expiresIn: numb
 router.post('/token', async (req: Request, res: Response) => {
   // Gate 1: Check if running in dev-sandbox
   if (!isDevSandbox()) {
-    console.warn('[VTID-01047] POST /dev/auth/token - Rejected: not in dev-sandbox environment');
+    console.warn('[VTID-01050] POST /dev/auth/token - Rejected: not in dev-sandbox environment');
     return res.status(403).json({
       ok: false,
       error: 'DEV_AUTH_DISABLED',
@@ -178,7 +319,7 @@ router.post('/token', async (req: Request, res: Response) => {
   // Gate 2: Validate X-DEV-SECRET header
   const secretError = validateDevSecret(req);
   if (secretError) {
-    console.warn(`[VTID-01047] POST /dev/auth/token - Rejected: ${secretError.code}`);
+    console.warn(`[VTID-01050] POST /dev/auth/token - Rejected: ${secretError.code}`);
     return res.status(secretError.status).json({
       ok: false,
       error: secretError.code,
@@ -188,7 +329,7 @@ router.post('/token', async (req: Request, res: Response) => {
   // Gate 3: Validate request body
   const bodyValidation = validateBody(req.body);
   if ('error' in bodyValidation) {
-    console.warn(`[VTID-01047] POST /dev/auth/token - Invalid body: ${bodyValidation.error}`);
+    console.warn(`[VTID-01050] POST /dev/auth/token - Invalid body: ${bodyValidation.error}`);
     return res.status(400).json({
       ok: false,
       error: 'INVALID_INPUT',
@@ -196,25 +337,12 @@ router.post('/token', async (req: Request, res: Response) => {
     });
   }
 
-  const { email, role } = bodyValidation;
+  const { email, role, tenant_id } = bodyValidation;
 
-  // Get dev test user credentials from environment
-  const devEmail = process.env.DEV_TEST_USER_EMAIL;
-  const devPassword = process.env.DEV_TEST_USER_PASSWORD;
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
-
-  if (!devEmail || !devPassword) {
-    console.error('[VTID-01047] DEV_TEST_USER_EMAIL or DEV_TEST_USER_PASSWORD not configured');
-    return res.status(500).json({
-      ok: false,
-      error: 'INTERNAL_ERROR',
-      message: 'Dev test user credentials not configured',
-    });
-  }
-
-  if (!supabaseUrl || !supabaseAnonKey) {
-    console.error('[VTID-01047] SUPABASE_URL or SUPABASE_ANON_KEY not configured');
+  // Gate 4: Get service role Supabase client
+  const supabase = getSupabase();
+  if (!supabase) {
+    console.error('[VTID-01050] Service role Supabase client not available');
     return res.status(500).json({
       ok: false,
       error: 'INTERNAL_ERROR',
@@ -223,57 +351,61 @@ router.post('/token', async (req: Request, res: Response) => {
   }
 
   try {
-    // Create Supabase client with anon key for auth
-    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-      },
-    });
+    // VTID-01050: Bootstrap request context to break the NULL-role deadlock
+    // This allows subsequent RPC calls to work even when current_active_role() is NULL
+    // We use a deterministic tenant_id: from request, env, or generate one for dev
+    const defaultTenantId = process.env.DEV_TENANT_ID || '00000000-0000-0000-0000-000000000001';
+    const tenantId = tenant_id || defaultTenantId;
 
-    // Sign in with the dev test user credentials
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: devEmail,
-      password: devPassword,
-    });
+    // Only bootstrap for platform roles (developer, admin, staff)
+    const bootstrapRoles = ['developer', 'admin', 'staff'];
+    if (bootstrapRoles.includes(role)) {
+      const bootstrapResult = await bootstrapRequestContext(supabase, tenantId, role);
+      if (!bootstrapResult.ok) {
+        console.warn(`[VTID-01050] Bootstrap failed (non-fatal): ${bootstrapResult.error}`);
+        // Continue anyway - the RPC might not be deployed yet
+      }
+    }
 
-    if (error) {
-      console.error('[VTID-01047] Supabase auth error:', error.message);
+    // VTID-01050: Mint token for the actual user (not a generic dev test user)
+    const mintResult = await mintTokenForUser(supabase, email);
 
-      // Check for specific error types
-      if (error.message.includes('Invalid login credentials')) {
+    if (!mintResult.ok) {
+      console.error(`[VTID-01050] Token mint failed: ${mintResult.error}`);
+
+      // Return appropriate HTTP status based on error type
+      if (mintResult.error === 'USER_NOT_FOUND') {
         return res.status(404).json({
           ok: false,
           error: 'USER_NOT_FOUND',
-          message: 'Dev test user not found or invalid credentials',
+          message: `User with email ${email} not found`,
         });
       }
 
-      return res.status(500).json({
+      if (mintResult.error === 'FORBIDDEN') {
+        return res.status(403).json({
+          ok: false,
+          error: 'FORBIDDEN',
+          message: 'Permission denied',
+        });
+      }
+
+      return res.status(mintResult.status).json({
         ok: false,
-        error: 'INTERNAL_ERROR',
-        message: 'Authentication failed',
+        error: mintResult.error,
+        message: 'Failed to mint token',
       });
     }
 
-    if (!data.session?.access_token) {
-      console.error('[VTID-01047] No access token in session response');
-      return res.status(500).json({
-        ok: false,
-        error: 'INTERNAL_ERROR',
-        message: 'Failed to obtain access token',
-      });
-    }
-
-    const token = data.session.access_token;
-    const expiresIn = 900; // 15 minutes (Supabase default, but we document it as 15 min)
+    const token = mintResult.token;
+    const expiresIn = 3600; // 1 hour (Supabase default for session tokens)
 
     // Emit OASIS event (async, non-blocking)
     emitTokenIssuedEvent(email, role, expiresIn).catch((err) => {
-      console.warn('[VTID-01047] OASIS event emission failed:', err);
+      console.warn('[VTID-01050] OASIS event emission failed:', err);
     });
 
-    console.log(`[VTID-01047] Token issued for label="${email}" role="${role}" (token: ${token.substring(0, 15)}...)`);
+    console.log(`[VTID-01050] Token issued for email="${email}" role="${role}" user_id="${mintResult.user_id}" (token: ${token.substring(0, 15)}...)`);
 
     return res.status(200).json({
       ok: true,
@@ -281,9 +413,10 @@ router.post('/token', async (req: Request, res: Response) => {
       expires_in: expiresIn,
       email,
       role,
+      user_id: mintResult.user_id,
     });
   } catch (err: any) {
-    console.error('[VTID-01047] Unexpected error:', err.message);
+    console.error('[VTID-01050] Unexpected error:', err.message);
     return res.status(500).json({
       ok: false,
       error: 'INTERNAL_ERROR',
