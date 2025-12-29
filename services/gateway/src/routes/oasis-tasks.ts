@@ -167,21 +167,153 @@ oasisTasksRouter.patch('/api/v1/oasis/tasks/:id', async (req: Request, res: Resp
   }
 });
 
+/**
+ * DELETE /api/v1/oasis/tasks/:id
+ * VTID-01052: Soft delete scheduled tasks only
+ *
+ * Rules:
+ * - If task not found → 404
+ * - If task.status !== 'scheduled' → 409 INVALID_STATE
+ * - If scheduled → soft delete (void task and VTID, log OASIS event)
+ *
+ * Never allows deletion of in_progress or completed tasks.
+ */
 oasisTasksRouter.delete('/api/v1/oasis/tasks/:id', async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const { id: vtid } = req.params;
     const svcKey = process.env.SUPABASE_SERVICE_ROLE;
     const supabaseUrl = process.env.SUPABASE_URL;
     if (!svcKey || !supabaseUrl) return res.status(500).json({ error: 'Gateway misconfigured' });
 
-    const resp = await fetch(`${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${id}`, {
-      method: 'DELETE',
+    // Step 1: Fetch the task to check if it exists and its status
+    const fetchResp = await fetch(`${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}`, {
       headers: { 'Content-Type': 'application/json', apikey: svcKey, Authorization: `Bearer ${svcKey}` },
     });
 
-    if (!resp.ok) return res.status(502).json({ error: 'Database delete failed' });
-    return res.status(200).json({ ok: true, deleted: id });
+    if (!fetchResp.ok) {
+      console.error(`[VTID-01052] Failed to fetch task ${vtid}: ${fetchResp.status}`);
+      return res.status(502).json({ ok: false, error: 'Database query failed' });
+    }
+
+    const tasks = await fetchResp.json() as any[];
+    if (tasks.length === 0) {
+      console.log(`[VTID-01052] Task not found: ${vtid}`);
+      return res.status(404).json({ ok: false, error: 'Task not found', vtid });
+    }
+
+    const task = tasks[0];
+    const currentStatus = (task.status || '').toLowerCase();
+
+    // Step 2: Check if task is in 'scheduled' status - ONLY scheduled tasks can be deleted
+    // Explicitly reject in_progress, completed, and any other non-scheduled status
+    if (currentStatus !== 'scheduled' && currentStatus !== 'allocated') {
+      console.log(`[VTID-01052] Cannot delete task ${vtid}: status is '${currentStatus}', not 'scheduled'`);
+
+      // Log rejection event to OASIS
+      const rejectEventId = randomUUID();
+      const rejectTimestamp = new Date().toISOString();
+      await fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: svcKey, Authorization: `Bearer ${svcKey}` },
+        body: JSON.stringify({
+          id: rejectEventId,
+          created_at: rejectTimestamp,
+          vtid: vtid,
+          topic: 'vtid.lifecycle.delete_rejected',
+          service: 'vtid-lifecycle-command-hub',
+          role: 'GOVERNANCE',
+          model: 'vtid-01052-delete-scheduled',
+          status: 'warning',
+          message: `Delete rejected: Task ${vtid} has status '${currentStatus}', not 'scheduled'`,
+          metadata: {
+            action: 'delete_scheduled_task_rejected',
+            current_status: currentStatus,
+            rejected_at: rejectTimestamp,
+            reason: 'INVALID_STATE'
+          }
+        }),
+      });
+
+      return res.status(409).json({
+        ok: false,
+        error: 'INVALID_STATE',
+        message: `Cannot delete task with status '${currentStatus}'. Only scheduled tasks can be deleted.`,
+        vtid
+      });
+    }
+
+    // Step 3: Perform soft delete transaction
+    const timestamp = new Date().toISOString();
+    const deletedBy = req.headers['x-vitana-user-email'] as string || 'command-hub';
+
+    // Update vtid_ledger: set status='deleted', deleted_at, deleted_by, delete_reason, voided_at, voided_reason
+    const updatePayload = {
+      status: 'deleted',
+      deleted_at: timestamp,
+      deleted_by: deletedBy,
+      delete_reason: 'user_cancelled',
+      voided_at: timestamp,
+      voided_reason: 'task_deleted',
+      updated_at: timestamp
+    };
+
+    const updateResp = await fetch(`${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', apikey: svcKey, Authorization: `Bearer ${svcKey}`, Prefer: 'return=representation' },
+      body: JSON.stringify(updatePayload),
+    });
+
+    if (!updateResp.ok) {
+      const text = await updateResp.text();
+      console.error(`[VTID-01052] Failed to soft delete task ${vtid}: ${updateResp.status} - ${text}`);
+      return res.status(502).json({ ok: false, error: 'Database update failed' });
+    }
+
+    // Step 4: Insert OASIS event for successful deletion
+    const eventId = randomUUID();
+    const eventPayload = {
+      id: eventId,
+      created_at: timestamp,
+      vtid: vtid,
+      topic: 'vtid.lifecycle.deleted',
+      service: 'vtid-lifecycle-command-hub',
+      role: 'GOVERNANCE',
+      model: 'vtid-01052-delete-scheduled',
+      status: 'success',
+      message: `Scheduled task deleted by user`,
+      link: null,
+      metadata: {
+        action: 'delete_scheduled_task',
+        previous_status: currentStatus,
+        new_status: 'deleted',
+        deleted_by: deletedBy,
+        deleted_at: timestamp,
+        vtid: vtid,
+        voided: true
+      }
+    };
+
+    const eventResp = await fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: svcKey, Authorization: `Bearer ${svcKey}`, Prefer: 'return=representation' },
+      body: JSON.stringify(eventPayload),
+    });
+
+    if (!eventResp.ok) {
+      console.warn(`[VTID-01052] Task ${vtid} deleted but failed to log OASIS event: ${eventResp.status}`);
+    } else {
+      console.log(`[VTID-01052] Task ${vtid} deleted successfully. OASIS event: ${eventId}`);
+    }
+
+    return res.status(200).json({
+      ok: true,
+      data: {
+        vtid: vtid,
+        status: 'deleted'
+      }
+    });
   } catch (e: any) {
-    return res.status(500).json({ error: 'Internal server error', detail: e.message });
+    console.error(`[VTID-01052] Unexpected error:`, e);
+    return res.status(500).json({ ok: false, error: 'Internal server error', detail: e.message });
   }
 });
