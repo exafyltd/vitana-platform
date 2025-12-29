@@ -211,7 +211,9 @@ export type CicdEventType =
   | 'cicd.lock.acquire.succeeded'
   | 'cicd.lock.acquire.blocked'
   | 'cicd.lock.released'
-  | 'cicd.lock.expired';
+  | 'cicd.lock.expired'
+  // VTID-01063: Route Guard Events
+  | 'governance.route.duplicate.detected';
 
 export interface CicdOasisEvent {
   vtid: string;
