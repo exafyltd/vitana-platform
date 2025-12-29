@@ -75,8 +75,11 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
 
     const vtidRowsRaw = await vtidResp.json() as any[];
 
-    // VTID-01058: Post-fetch filter: exclude rows with metadata.deleted or metadata.voided
+    // VTID-01058: Post-fetch filter: exclude rows with deleted/voided status or metadata flags
     const vtidRows = vtidRowsRaw.filter((row: any) => {
+      const status = (row.status || '').toLowerCase();
+      if (status === 'deleted' || status === 'voided') return false;
+      if (row.deleted_at || row.voided_at) return false;
       const meta = row.metadata || {};
       if (meta.deleted === true || meta.voided === true) return false;
       return true;
