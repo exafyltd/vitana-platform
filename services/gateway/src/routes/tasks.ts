@@ -35,7 +35,7 @@ router.get('/api/v1/tasks', async (req: Request, res: Response) => {
     const layer = req.query.layer as string;
     const status = req.query.status as string;
 
-    let url = `${supabaseUrl}/rest/v1/vtid_ledger?order=updated_at.desc&limit=${limit}`;
+    let url = `${supabaseUrl}/rest/v1/vtid_ledger?order=updated_at.desc&limit=${limit}&status=neq.deleted`;
     if (layer) url += `&layer=eq.${layer}`;
     if (status) url += `&status=eq.${status}`;
 
