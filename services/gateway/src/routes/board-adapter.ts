@@ -76,6 +76,14 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
 
     const vtidRowsRaw = await vtidResp.json() as any[];
 
+    // VTID-01058: DEBUG - log raw data for investigation
+    const debugVtids = ['VTID-01059', 'VTID-01060', 'VTID-01061'];
+    vtidRowsRaw.forEach((row: any) => {
+      if (debugVtids.includes(row.vtid)) {
+        console.log(`[VTID-01058-DEBUG] Raw row ${row.vtid}: status="${row.status}", deleted_at=${row.deleted_at}, voided_at=${row.voided_at}`);
+      }
+    });
+
     // VTID-01058: Post-fetch filter: exclude rows with deleted/voided status or metadata flags
     const vtidRows = vtidRowsRaw.filter((row: any) => {
       const status = (row.status || '').toLowerCase();
