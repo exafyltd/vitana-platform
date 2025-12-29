@@ -41,7 +41,8 @@ oasisTasksRouter.get('/api/v1/oasis/tasks', async (req: Request, res: Response) 
     const status = req.query.status as string;
     const layer = req.query.layer as string;
 
-    let queryParams = `limit=${limit}&offset=${offset}&order=updated_at.desc`;
+    // VTID-01052: Exclude deleted tasks by default
+    let queryParams = `limit=${limit}&offset=${offset}&order=updated_at.desc&status=neq.deleted`;
     if (status) queryParams += `&status=eq.${status}`;
     if (layer) queryParams += `&layer=eq.${layer}`;
 
