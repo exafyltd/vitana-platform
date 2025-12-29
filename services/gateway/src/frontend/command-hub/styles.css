@@ -4293,6 +4293,16 @@ body {
   --orb-z-idle: 850;
   --orb-z-overlay: 2500;
   --orb-z-drawer: 2600;
+  /* VTID-01064: ORB Status Aura Variables */
+  --orb-glow-ready: rgba(20, 184, 166, 0.6);
+  --orb-glow-listening: rgba(59, 130, 246, 0.6);
+  --orb-glow-thinking: rgba(139, 92, 246, 0.6);
+  --orb-glow-speaking: rgba(245, 158, 11, 0.6);
+  --orb-glow-paused: rgba(107, 114, 128, 0.4);
+  --orb-glow-connecting: rgba(226, 232, 240, 0.6);
+  --orb-glow-error: rgba(239, 68, 68, 0.5);
+  --orb-aura-opacity-base: 0.4;
+  --orb-aura-opacity-active: 0.8;
 }
 
 /* --- ORB Container (Global Overlay Layer) --- */
@@ -4723,6 +4733,222 @@ body {
 .orb-large-muted {
   opacity: 0.6;
   filter: grayscale(30%);
+}
+
+/* ==========================================================================
+   VTID-01064: ORB Status Aura System
+   ========================================================================== */
+
+/* --- ORB Shell Wrapper (contains ORB + aura layers) --- */
+.orb-shell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- Aura Layer (behind ORB via ::before) --- */
+.orb-shell::before {
+  content: '';
+  position: absolute;
+  width: 140%;
+  height: 140%;
+  border-radius: 50%;
+  opacity: var(--orb-aura-opacity-base);
+  transition: opacity 300ms ease, box-shadow 300ms ease, background 300ms ease;
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* --- Secondary Aura Glow (::after for depth) --- */
+.orb-shell::after {
+  content: '';
+  position: absolute;
+  width: 160%;
+  height: 160%;
+  border-radius: 50%;
+  opacity: calc(var(--orb-aura-opacity-base) * 0.5);
+  transition: opacity 300ms ease, box-shadow 300ms ease, background 300ms ease;
+  pointer-events: none;
+  z-index: -2;
+}
+
+/* --- Ready State (Teal/Cyan - slow breathe) --- */
+.orb-shell.orb--ready::before {
+  background: radial-gradient(circle, var(--orb-glow-ready) 0%, transparent 70%);
+  box-shadow: 0 0 60px var(--orb-glow-ready), 0 0 120px var(--orb-glow-ready);
+  animation: orb-aura-breathe 4s ease-in-out infinite;
+}
+.orb-shell.orb--ready::after {
+  background: radial-gradient(circle, var(--orb-glow-ready) 0%, transparent 60%);
+}
+
+@keyframes orb-aura-breathe {
+  0%, 100% {
+    opacity: var(--orb-aura-opacity-base);
+    transform: scale(1);
+  }
+  50% {
+    opacity: var(--orb-aura-opacity-active);
+    transform: scale(1.05);
+  }
+}
+
+/* --- Listening State (Blue - subtle ripple) --- */
+.orb-shell.orb--listening::before {
+  background: radial-gradient(circle, var(--orb-glow-listening) 0%, transparent 70%);
+  box-shadow: 0 0 80px var(--orb-glow-listening), 0 0 150px var(--orb-glow-listening);
+  animation: orb-aura-ripple 2s ease-in-out infinite;
+}
+.orb-shell.orb--listening::after {
+  background: radial-gradient(circle, var(--orb-glow-listening) 0%, transparent 60%);
+  animation: orb-aura-ripple-outer 2s ease-in-out infinite 0.3s;
+}
+
+@keyframes orb-aura-ripple {
+  0%, 100% {
+    opacity: var(--orb-aura-opacity-base);
+    transform: scale(1);
+  }
+  50% {
+    opacity: var(--orb-aura-opacity-active);
+    transform: scale(1.08);
+  }
+}
+
+@keyframes orb-aura-ripple-outer {
+  0%, 100% {
+    opacity: calc(var(--orb-aura-opacity-base) * 0.4);
+    transform: scale(1);
+  }
+  50% {
+    opacity: calc(var(--orb-aura-opacity-base) * 0.6);
+    transform: scale(1.1);
+  }
+}
+
+/* --- Thinking State (Purple - slow swirl) --- */
+.orb-shell.orb--thinking::before {
+  background: radial-gradient(circle, var(--orb-glow-thinking) 0%, transparent 70%);
+  box-shadow: 0 0 100px var(--orb-glow-thinking), 0 0 180px var(--orb-glow-thinking);
+  animation: orb-aura-swirl 3s ease-in-out infinite;
+}
+.orb-shell.orb--thinking::after {
+  background: radial-gradient(circle, var(--orb-glow-thinking) 0%, transparent 60%);
+  animation: orb-aura-swirl-counter 3s ease-in-out infinite;
+}
+
+@keyframes orb-aura-swirl {
+  0% {
+    opacity: var(--orb-aura-opacity-base);
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    opacity: var(--orb-aura-opacity-active);
+    transform: scale(1.06) rotate(180deg);
+  }
+  100% {
+    opacity: var(--orb-aura-opacity-base);
+    transform: scale(1) rotate(360deg);
+  }
+}
+
+@keyframes orb-aura-swirl-counter {
+  0% {
+    opacity: calc(var(--orb-aura-opacity-base) * 0.5);
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    opacity: calc(var(--orb-aura-opacity-base) * 0.7);
+    transform: scale(1.08) rotate(-180deg);
+  }
+  100% {
+    opacity: calc(var(--orb-aura-opacity-base) * 0.5);
+    transform: scale(1) rotate(-360deg);
+  }
+}
+
+/* --- Speaking State (Gold/Amber - rhythmic pulse) --- */
+.orb-shell.orb--speaking::before {
+  background: radial-gradient(circle, var(--orb-glow-speaking) 0%, transparent 70%);
+  box-shadow: 0 0 80px var(--orb-glow-speaking), 0 0 140px var(--orb-glow-speaking);
+  animation: orb-aura-pulse 1s ease-in-out infinite;
+}
+.orb-shell.orb--speaking::after {
+  background: radial-gradient(circle, var(--orb-glow-speaking) 0%, transparent 60%);
+  animation: orb-aura-pulse-outer 1s ease-in-out infinite 0.15s;
+}
+
+@keyframes orb-aura-pulse {
+  0%, 100% {
+    opacity: var(--orb-aura-opacity-base);
+    transform: scale(1);
+  }
+  50% {
+    opacity: var(--orb-aura-opacity-active);
+    transform: scale(1.04);
+  }
+}
+
+@keyframes orb-aura-pulse-outer {
+  0%, 100% {
+    opacity: calc(var(--orb-aura-opacity-base) * 0.4);
+    transform: scale(1);
+  }
+  50% {
+    opacity: calc(var(--orb-aura-opacity-base) * 0.7);
+    transform: scale(1.06);
+  }
+}
+
+/* --- Paused/Muted State (Gray - no animation) --- */
+.orb-shell.orb--paused::before {
+  background: radial-gradient(circle, var(--orb-glow-paused) 0%, transparent 70%);
+  box-shadow: 0 0 40px var(--orb-glow-paused);
+  opacity: var(--orb-aura-opacity-base);
+  animation: none;
+}
+.orb-shell.orb--paused::after {
+  background: radial-gradient(circle, var(--orb-glow-paused) 0%, transparent 60%);
+  opacity: calc(var(--orb-aura-opacity-base) * 0.3);
+  animation: none;
+}
+
+/* --- Connecting/Loading State (Silver/White - fade loop) --- */
+.orb-shell.orb--connecting::before {
+  background: radial-gradient(circle, var(--orb-glow-connecting) 0%, transparent 70%);
+  box-shadow: 0 0 60px var(--orb-glow-connecting), 0 0 100px var(--orb-glow-connecting);
+  animation: orb-aura-fade 2s ease-in-out infinite;
+}
+.orb-shell.orb--connecting::after {
+  background: radial-gradient(circle, var(--orb-glow-connecting) 0%, transparent 60%);
+  animation: orb-aura-fade 2s ease-in-out infinite 0.5s;
+}
+
+@keyframes orb-aura-fade {
+  0%, 100% {
+    opacity: calc(var(--orb-aura-opacity-base) * 0.3);
+  }
+  50% {
+    opacity: var(--orb-aura-opacity-active);
+  }
+}
+
+/* --- Error/Blocked State (Soft Red - static, tighter radius) --- */
+.orb-shell.orb--error::before {
+  background: radial-gradient(circle, var(--orb-glow-error) 0%, transparent 60%);
+  box-shadow: 0 0 40px var(--orb-glow-error);
+  opacity: var(--orb-aura-opacity-active);
+  animation: none;
+  width: 120%;
+  height: 120%;
+}
+.orb-shell.orb--error::after {
+  background: radial-gradient(circle, var(--orb-glow-error) 0%, transparent 50%);
+  opacity: calc(var(--orb-aura-opacity-base) * 0.5);
+  animation: none;
+  width: 130%;
+  height: 130%;
 }
 
 /* VTID-0135: End button styling (red) */
