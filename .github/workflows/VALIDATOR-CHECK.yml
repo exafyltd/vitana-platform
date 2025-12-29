@@ -1,11 +1,12 @@
-name: validator-check
+name: VALIDATOR-CHECK
+run-name: 'Validator Check [${{ github.head_ref || github.ref_name }}]'
 
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened, ready_for_review]
 
 jobs:
-  validator-check:
+  validate-pr:
     runs-on: ubuntu-latest
     permissions:
       contents: read
