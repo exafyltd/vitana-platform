@@ -782,6 +782,59 @@ function isHumanTask(task) {
     return humanTaskPattern.test(vtid);
 }
 
+// ===========================================================================
+// VTID-01055: Deleted/Voided Task Filter (Client-Side Safety Net)
+// ===========================================================================
+
+/**
+ * VTID-01055: Check if a task should be rendered (not deleted/voided).
+ * This is a client-side safety net to suppress cards that are known invalid
+ * even if the backend board endpoint returns them.
+ *
+ * A task is NOT renderable if:
+ *   - status === "deleted"
+ *   - deleted_at is set (non-null/non-empty)
+ *   - metadata.deleted === true
+ *   - is_terminal === true AND column is not COMPLETED (misplaced terminal task)
+ *
+ * @param {Object} task - The task object from API
+ * @returns {boolean} - true if task should be rendered, false if suppressed
+ */
+function isTaskRenderable(task) {
+    if (!task) return false;
+
+    var vtid = task.vtid || '';
+    var status = (task.status || '').toLowerCase();
+    var oasisColumn = (task.oasisColumn || '').toUpperCase();
+
+    // Rule 1: status === "deleted" → never render
+    if (status === 'deleted' || status === 'voided') {
+        console.log('[VTID-01055] Suppressing deleted/voided task:', vtid, 'status=' + status);
+        return false;
+    }
+
+    // Rule 2: deleted_at is set → never render
+    if (task.deleted_at) {
+        console.log('[VTID-01055] Suppressing task with deleted_at:', vtid);
+        return false;
+    }
+
+    // Rule 3: metadata.deleted === true → never render
+    if (task.metadata && task.metadata.deleted === true) {
+        console.log('[VTID-01055] Suppressing task with metadata.deleted:', vtid);
+        return false;
+    }
+
+    // Rule 4: is_terminal but not in COMPLETED column → misplaced, suppress
+    if (task.is_terminal === true && oasisColumn !== 'COMPLETED' && oasisColumn !== '') {
+        console.log('[VTID-01055] Suppressing misplaced terminal task:', vtid, 'column=' + oasisColumn);
+        return false;
+    }
+
+    return true;
+}
+
+
 /**
  * VTID-01010: Get target roles from task metadata.
  * Returns array of role strings or empty array if none set.
@@ -3764,6 +3817,9 @@ function renderTasksView() {
             // Excludes: DEV-*, DEV-CICDL-*, DEV-COMHU-*, AUTODEPLOY-*, OASIS-CMD-*, etc.
             if (!isHumanTask(t)) return false;
 
+            // VTID-01055: Suppress deleted/voided tasks (client-side safety net)
+            if (!isTaskRenderable(t)) return false;
+
             // VTID-01005: Use OASIS-derived column as authoritative source
             if (mapStatusToColumnWithOverride(t.vtid, t.status, t.oasisColumn) !== colName) return false;
 
@@ -5693,7 +5749,10 @@ async function fetchTasks() {
                 layer: item.layer,
                 module: item.task_module,
                 summary: item.description || '',
-                createdAt: item.updated_at || item.created_at
+                createdAt: item.updated_at || item.created_at,
+                // VTID-01055: Capture deleted/metadata for client-side filtering
+                deleted_at: item.deleted_at,
+                metadata: item.metadata
             };
             byVtid.set(item.vtid, task);
         });
@@ -5720,7 +5779,30 @@ async function fetchTasks() {
                 }
             });
             console.log('[VTID-01055] Board reconcile: total=' + state.tasks.length + ' scheduled=' + scheduled + ' in_progress=' + inProgress + ' completed=' + completed);
-            console.log('[VTID-01055] API VTIDs:', Array.from(lastApiVtids).join(', '));
+
+            // VTID-01055: Board/Tasks consistency debug log - compare both endpoints
+            var boardVtids = Array.from(lastApiVtids);
+            fetch('/api/v1/tasks?limit=500')
+                .then(function(r) { return r.json(); })
+                .then(function(tasksJson) {
+                    var tasksData = tasksJson.data || tasksJson.items || tasksJson || [];
+                    var tasksVtidSet = new Set(tasksData.map(function(t) { return t.vtid; }).filter(Boolean));
+
+                    // Find phantom cards: in board but not in tasks
+                    var phantomVtids = boardVtids.filter(function(vtid) {
+                        return !tasksVtidSet.has(vtid);
+                    });
+
+                    if (phantomVtids.length > 0) {
+                        console.warn('[VTID-01055] board/tasks mismatch: phantom=' + JSON.stringify(phantomVtids));
+                    } else {
+                        console.log('[VTID-01055] board/tasks consistent - no phantom cards');
+                    }
+                })
+                .catch(function(err) {
+                    console.error('[VTID-01055] Failed to compare board/tasks:', err);
+                });
+
             isManualRefresh = false;
         }
     } catch (error) {
