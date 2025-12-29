@@ -3008,9 +3008,17 @@ function renderApp() {
     root.appendChild(renderOrbChatDrawer());
 
     // VTID-01037: Setup scroll listener for transcript after overlay is rendered
+    // VTID-01064: Enhanced transcript auto-follow - scroll to bottom after render
     if (state.orb.overlayVisible) {
         requestAnimationFrame(function() {
             setupTranscriptScrollListener();
+            // Always scroll to bottom after initial render or when user was near bottom
+            if (state.orb.transcriptNearBottom) {
+                var transcriptContainer = document.querySelector('.orb-live-transcript');
+                if (transcriptContainer) {
+                    transcriptContainer.scrollTop = transcriptContainer.scrollHeight;
+                }
+            }
         });
     }
 
@@ -11628,6 +11636,25 @@ function renderOrbOverlay() {
 
     overlay.appendChild(transcriptArea);
 
+    // VTID-01064: ORB Shell wrapper (contains orb + aura)
+    var orbShell = document.createElement('div');
+    // Determine initial aura state based on voiceState
+    var auraState = 'ready';
+    if (state.orb.voiceError || state.orb.liveError) {
+        auraState = 'error';
+    } else if (state.orb.voiceState === 'THINKING' || state.orb.isThinking) {
+        auraState = 'thinking';
+    } else if (state.orb.voiceState === 'SPEAKING') {
+        auraState = 'speaking';
+    } else if (state.orb.voiceState === 'LISTENING') {
+        auraState = 'listening';
+    } else if (state.orb.voiceState === 'MUTED') {
+        auraState = 'paused';
+    } else if (state.orb.voiceState === 'IDLE') {
+        auraState = 'connecting';
+    }
+    orbShell.className = 'orb-shell orb--' + auraState;
+
     // VTID-0135: Large centered ORB - Show state based on voiceState
     var largeOrb = document.createElement('div');
     var orbClass = 'orb-large';
@@ -11643,7 +11670,8 @@ function renderOrbOverlay() {
         orbClass += ' orb-large-idle';
     }
     largeOrb.className = orbClass;
-    overlay.appendChild(largeOrb);
+    orbShell.appendChild(largeOrb);
+    overlay.appendChild(orbShell);
 
     // VTID-0135: Status text based on voiceState
     var statusText = document.createElement('div');
@@ -12365,10 +12393,15 @@ function isWebSpeechSupported() {
 function orbVoiceStart() {
     console.log('[VTID-0135] Starting voice conversation...');
 
+    // VTID-01064: Set connecting state during initialization
+    setOrbState('connecting');
+
     // Check browser support
     if (!isWebSpeechSupported()) {
         state.orb.voiceError = 'Speech recognition not supported in this browser. Please use Chrome or Edge.';
         state.orb.voiceState = 'IDLE';
+        // VTID-01064: Update ORB aura to error state
+        setOrbState('error');
         renderApp();
         return;
     }
@@ -12402,6 +12435,8 @@ function orbVoiceStart() {
         state.orb.micActive = true;
         // Reset the processed index when recognition starts fresh
         lastProcessedResultIndex = -1;
+        // VTID-01064: Update ORB aura to listening state
+        setOrbState('listening');
         renderApp();
     };
 
@@ -12491,6 +12526,8 @@ function orbVoiceStart() {
             state.orb.voiceError = 'Microphone access denied. Please allow microphone access and try again.';
             state.orb.voiceState = 'IDLE';
             state.orb.micActive = false;
+            // VTID-01064: Update ORB aura to error state
+            setOrbState('error');
         } else if (event.error === 'no-speech') {
             // No speech detected, restart if still listening
             if (state.orb.voiceState === 'LISTENING') {
@@ -12547,6 +12584,8 @@ function orbVoiceStart() {
     } catch (e) {
         console.error('[VTID-0135] Failed to start speech recognition:', e);
         state.orb.voiceError = 'Failed to start speech recognition: ' + e.message;
+        // VTID-01064: Update ORB aura to error state
+        setOrbState('error');
         renderApp();
     }
 }
@@ -12602,6 +12641,8 @@ function orbVoiceToggleMute() {
         // Unmute - restart recognition
         console.log('[VTID-0135] Unmuting...');
         state.orb.voiceState = 'LISTENING';
+        // VTID-01064: Update ORB aura to listening state
+        setOrbState('listening');
 
         if (state.orb.speechRecognition) {
             try {
@@ -12616,6 +12657,8 @@ function orbVoiceToggleMute() {
         // Mute - stop recognition
         console.log('[VTID-0135] Muting...');
         state.orb.voiceState = 'MUTED';
+        // VTID-01064: Update ORB aura to paused state
+        setOrbState('paused');
 
         if (state.orb.speechRecognition) {
             try {
@@ -12642,6 +12685,8 @@ async function orbVoiceSendText(text) {
     console.log('[VTID-0135] Sending to backend:', text);
     state.orb.voiceState = 'THINKING';
     state.orb.isThinking = true;
+    // VTID-01064: Update ORB aura to thinking state
+    setOrbState('thinking');
     renderApp();
 
     try {
@@ -13060,6 +13105,8 @@ function isLikelyEcho(transcript, lastTTSText) {
 function restartRecognitionAfterTTS() {
     state.orb.speaking = false;
     state.orb.voiceState = 'LISTENING';
+    // VTID-01064: Update ORB aura to ready state after TTS ends
+    setOrbState('ready');
 
     // Scroll to bottom after TTS ends if user was near bottom
     scrollOrbLiveTranscript();
@@ -13129,6 +13176,8 @@ function orbVoiceSpeak(text) {
         console.log('[VTID-0135] TTS started');
         state.orb.voiceState = 'SPEAKING';
         state.orb.speaking = true;
+        // VTID-01064: Update ORB aura to speaking state
+        setOrbState('speaking');
         renderApp();
     };
 
@@ -13179,6 +13228,35 @@ function getVoiceStateClass(voiceState) {
         case 'MUTED': return 'orb-state-muted';
         default: return 'orb-state-idle';
     }
+}
+
+/**
+ * VTID-01064: Set ORB aura state
+ * Single source of truth for ORB visual state.
+ * Valid states: ready | listening | thinking | speaking | paused | connecting | error
+ * @param {string} newState - The new ORB state
+ */
+function setOrbState(newState) {
+    var validStates = ['ready', 'listening', 'thinking', 'speaking', 'paused', 'connecting', 'error'];
+    if (validStates.indexOf(newState) === -1) {
+        console.warn('[VTID-01064] Invalid ORB state:', newState);
+        return;
+    }
+
+    var shell = document.querySelector('.orb-shell');
+    if (!shell) {
+        console.warn('[VTID-01064] ORB shell not found');
+        return;
+    }
+
+    // Remove any existing orb-- class
+    validStates.forEach(function(s) {
+        shell.classList.remove('orb--' + s);
+    });
+
+    // Add the new state class
+    shell.classList.add('orb--' + newState);
+    console.log('[VTID-01064] ORB state changed to:', newState);
 }
 
 /**
