@@ -61,9 +61,10 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
 
     console.log(`[VTID-01005] Board adapter request, limit=${limit}`);
 
-    // VTID-01058: Step 1: Fetch VTIDs from ledger (exclude deleted/voided at database level)
+    // VTID-01058: Step 1: Fetch VTIDs from ledger
+    // Note: PostgREST not.in filter is unreliable, so we fetch all and filter in post-fetch
     const vtidResp = await fetch(
-      `${supaUrl}/rest/v1/vtid_ledger?deleted_at=is.null&voided_at=is.null&status=not.in.(deleted,voided)&order=updated_at.desc&limit=${limit}`,
+      `${supaUrl}/rest/v1/vtid_ledger?order=updated_at.desc&limit=${limit * 2}`,
       { headers: { apikey: supaKey, Authorization: `Bearer ${supaKey}` } }
     );
 
@@ -75,16 +76,38 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
 
     const vtidRowsRaw = await vtidResp.json() as any[];
 
-    // VTID-01058: Post-fetch filter: exclude rows with metadata.deleted or metadata.voided
+    // VTID-01058: DEBUG - log raw data for investigation
+    const debugVtids = ['VTID-01059', 'VTID-01060', 'VTID-01061'];
+    vtidRowsRaw.forEach((row: any) => {
+      if (debugVtids.includes(row.vtid)) {
+        console.log(`[VTID-01058-DEBUG] Raw row ${row.vtid}: status="${row.status}", deleted_at=${row.deleted_at}, voided_at=${row.voided_at}`);
+      }
+    });
+
+    // VTID-01058: Post-fetch filter: exclude rows with deleted/voided status or metadata flags
     const vtidRows = vtidRowsRaw.filter((row: any) => {
+      const status = (row.status || '').toLowerCase();
+      const isDeleted = status === 'deleted' || status === 'voided';
+      const hasDeletedAt = !!row.deleted_at;
+      const hasVoidedAt = !!row.voided_at;
       const meta = row.metadata || {};
-      if (meta.deleted === true || meta.voided === true) return false;
+      const metaDeleted = meta.deleted === true || meta.voided === true;
+
+      if (isDeleted || hasDeletedAt || hasVoidedAt || metaDeleted) {
+        console.log(`[VTID-01058] Filtering out ${row.vtid}: status=${status}, deleted_at=${row.deleted_at}, voided_at=${row.voided_at}`);
+        return false;
+      }
       return true;
     });
+
+    console.log(`[VTID-01058] Fetched ${vtidRowsRaw.length} rows, filtered to ${vtidRows.length} after removing deleted/voided`);
 
     if (vtidRows.length === 0) {
       return res.json([]);
     }
+
+    // Limit to requested amount after filtering
+    const limitedRows = vtidRows.slice(0, limit);
 
     // Step 2: Fetch recent OASIS events for terminal state detection
     const eventsResp = await fetch(
@@ -98,7 +121,7 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
     }
 
     // Step 3: Build board items with OASIS-derived column placement
-    const boardItems: BoardItem[] = vtidRows.map((row: any) => {
+    const boardItems: BoardItem[] = limitedRows.map((row: any) => {
       const vtid = row.vtid;
       const vtidEvents = allEvents.filter((e: any) => e.vtid === vtid);
 
