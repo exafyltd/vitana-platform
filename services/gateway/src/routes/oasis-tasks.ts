@@ -204,9 +204,10 @@ oasisTasksRouter.delete('/api/v1/oasis/tasks/:id', async (req: Request, res: Res
     const task = tasks[0];
     const currentStatus = (task.status || '').toLowerCase();
 
-    // Step 2: Check if task is in 'scheduled' status - ONLY scheduled tasks can be deleted
-    // Explicitly reject in_progress, completed, and any other non-scheduled status
-    if (currentStatus !== 'scheduled' && currentStatus !== 'allocated') {
+    // Step 2: Check if task is in a pre-start status - ONLY pre-start tasks can be deleted
+    // Explicitly reject in_progress, completed, and any other active/terminal status
+    const deletableStatuses = ['scheduled', 'allocated', 'pending'];
+    if (!deletableStatuses.includes(currentStatus)) {
       console.log(`[VTID-01052] Cannot delete task ${vtid}: status is '${currentStatus}', not 'scheduled'`);
 
       // Log rejection event to OASIS
