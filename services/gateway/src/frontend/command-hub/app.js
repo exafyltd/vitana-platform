@@ -4492,6 +4492,61 @@ function renderTaskDrawer() {
                 }
             };
             specActions.appendChild(activateBtn);
+
+            // VTID-01052: Delete button (Scheduled tasks only)
+            // Soft deletes the task, voids the VTID, logs OASIS event
+            var deleteBtn = document.createElement('button');
+            deleteBtn.className = 'btn btn-danger task-spec-btn task-delete-btn';
+            deleteBtn.textContent = 'Delete';
+            deleteBtn.title = 'Delete scheduled task (voids VTID permanently)';
+            deleteBtn.onclick = async function() {
+                // VTID-01052: Confirm before deletion - this action is irreversible
+                var confirmMsg = 'Delete scheduled task ' + vtid + '?\n\n' +
+                    'This will:\n' +
+                    '• Remove the task from the Scheduled column\n' +
+                    '• Void the VTID permanently (cannot be reused)\n' +
+                    '• Log the deletion in OASIS\n\n' +
+                    'This action cannot be undone.';
+
+                if (!confirm(confirmMsg)) {
+                    return;
+                }
+
+                deleteBtn.disabled = true;
+                deleteBtn.textContent = 'Deleting...';
+                try {
+                    var response = await fetch('/api/v1/oasis/tasks/' + vtid, {
+                        method: 'DELETE',
+                        headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' })
+                    });
+                    var result = await response.json();
+                    if (result.ok) {
+                        // VTID-01052: Clear local storage spec for this task
+                        localStorage.removeItem('vitana.taskSpec.' + vtid);
+                        clearTaskStatusOverride(vtid);
+                        showToast('Task deleted: ' + vtid, 'success');
+                        // Close drawer and refresh
+                        state.selectedTask = null;
+                        state.selectedTaskDetail = null;
+                        state.drawerSpecVtid = null;
+                        state.drawerSpecText = '';
+                        state.drawerSpecEditing = false;
+                        await fetchTasks();
+                    } else {
+                        // VTID-01052: Handle errors (e.g., INVALID_STATE for non-scheduled tasks)
+                        var errorMsg = result.message || result.error || 'Unknown error';
+                        showToast('Delete failed: ' + errorMsg, 'error');
+                        deleteBtn.disabled = false;
+                        deleteBtn.textContent = 'Delete';
+                    }
+                } catch (e) {
+                    console.error('[VTID-01052] Delete failed:', e);
+                    showToast('Delete failed: Network error', 'error');
+                    deleteBtn.disabled = false;
+                    deleteBtn.textContent = 'Delete';
+                }
+            };
+            specActions.appendChild(deleteBtn);
         }
 
         specSection.appendChild(specActions);
