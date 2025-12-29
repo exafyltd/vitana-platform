@@ -1,0 +1,123 @@
+# gov/validator-rules.yaml
+# Vitana Validator-Agent Ruleset (YAML-friendly, deterministic)
+# Purpose: Auto-reject partial work before merge.
+
+version: 1
+ruleset_id: GOV-Validator-R.1
+mode: strict
+fail_fast: true
+
+required_pr_metadata:
+  vtid:
+    pattern: '^VTID-\d{4,5}$'          # allow 4–5 digits (your system uses 4, legacy might be 5)
+    must_appear_in:
+      - pr_title
+      - pr_body
+  scope_declaration:
+    must_appear_in_pr_body: true
+    marker: "SCOPE_ALLOWLIST:"
+  acceptance_criteria:
+    must_appear_in_pr_body: true
+    marker: "ACCEPTANCE:"
+  evidence_pack:
+    required: true
+    path: "docs/validation/${VTID}/"
+    required_files:
+      - "acceptance.md"
+      - "commands.log"
+    required_dirs:
+      - "outputs"
+
+guards:
+  path_ownership:
+    enabled: true
+    policy: "allowlist_only"
+    # The Worker must declare which profile applies in PR body:
+    # VALIDATION_PROFILE: command_hub_frontend | gateway_backend | other
+    profiles:
+      command_hub_frontend:
+        allow:
+          - "services/gateway/src/frontend/command-hub/**"
+          - "services/gateway/dist/frontend/command-hub/**"
+        deny:
+          - "**/package-lock.json"
+          - "**/pnpm-lock.yaml"
+          - "**/yarn.lock"
+          - "**/*.env"
+      gateway_backend:
+        allow:
+          - "services/gateway/src/**"
+          - "services/gateway/dist/**"
+          - "services/gateway/openapi/**"
+          - "docs/validation/**"
+        deny:
+          - "**/*.env"
+          - "**/package-lock.json"
+
+build_gate:
+  enabled: true
+  per_profile:
+    command_hub_frontend:
+      workdir: "services/gateway"
+      commands:
+        - "npm ci"
+        - "npm run build"
+      require_src_and_dist_both_changed: true
+    gateway_backend:
+      workdir: "services/gateway"
+      commands:
+        - "npm ci"
+        - "npm run build"
+
+csp_gate:
+  enabled: true
+  scan_changed_files_only: true
+  reject_patterns:
+    - "<script(?![^>]*\\bsrc=)"          # inline script tags
+    - "style\\s*="                        # inline styles
+    - "\\.style\\b"                       # element.style usage
+    - "\\beval\\s*\\("
+    - "new\\s+Function\\s*\\("
+    - "https?://[^\\s\"']+\\.(js|css)"    # CDN refs (basic)
+    - "unsafe-inline"
+
+route_mount_gate:
+  enabled: true
+  applies_when_path_matches:
+    - "services/gateway/src/routes/**"
+    - "services/gateway/src/index.ts"
+    - "services/gateway/src/app.ts"
+  evidence_requirements:
+    must_exist_in: "docs/validation/${VTID}/acceptance.md"
+    must_contain_all_markers:
+      - "ROUTE_MOUNT:"
+      - "FINAL_URL:"
+      - "CURL_PROOF:"
+
+oasis_traceability_gate:
+  enabled: true
+  # Worker must declare one of:
+  # OASIS_IMPACT: yes | no
+  pr_body_marker: "OASIS_IMPACT:"
+  if_yes_require_in_acceptance_md:
+    - "OASIS_PROOF:"
+
+merge_deploy_gate:
+  enabled: true
+  # Enforces the autodeploy requirement: VTID must be included in merge title/message
+  require_merge_title_contains_vtid: true
+  # If you use the gateway merge endpoint, the validator checks for a marker in PR body:
+  require_merge_payload_marker: "MERGE_PAYLOAD_PREVIEW:"
+
+reporting:
+  on_fail:
+    max_listed_paths: 25
+    include_rule_ids: true
+  on_pass:
+    summarize:
+      - vtid
+      - profile
+      - changed_files_count
+      - evidence_pack_path
+      - build_status
+      - csp_scan_status

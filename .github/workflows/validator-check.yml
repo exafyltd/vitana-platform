@@ -1,0 +1,229 @@
+name: validator-check
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+jobs:
+  validator-check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Load ruleset
+        id: rules
+        run: |
+          test -f gov/validator-rules.yaml || (echo "REJECTED: missing gov/validator-rules.yaml" && exit 2)
+
+      - name: Collect PR text (title/body)
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          printf "%s" "$PR_TITLE" > /tmp/pr_title.txt
+          printf "%s" "$PR_BODY"  > /tmp/pr_body.txt
+          test -s /tmp/pr_title.txt || (echo "REJECTED: empty PR title" && exit 2)
+          test -s /tmp/pr_body.txt  || (echo "REJECTED: empty PR body" && exit 2)
+
+      - name: Extract VTID + Validation Profile
+        id: meta
+        run: |
+          VTID="$(grep -Eo 'VTID-[0-9]{4,5}' /tmp/pr_title.txt | head -n 1)"
+          test -n "$VTID" || VTID="$(grep -Eo 'VTID-[0-9]{4,5}' /tmp/pr_body.txt | head -n 1)"
+          test -n "$VTID" || (echo "REJECTED: VTID missing from title/body" && exit 10)
+
+          PROFILE="$(grep -Eo 'VALIDATION_PROFILE:\s*[a-zA-Z0-9_/-]+' /tmp/pr_body.txt | head -n 1 | awk '{print $2}')"
+          test -n "$PROFILE" || (echo "REJECTED: VALIDATION_PROFILE missing in PR body" && exit 11)
+
+          echo "VTID=$VTID" >> $GITHUB_OUTPUT
+          echo "PROFILE=$PROFILE" >> $GITHUB_OUTPUT
+          echo "Detected VTID=$VTID PROFILE=$PROFILE"
+
+      - name: Require PR markers (scope + acceptance + merge payload + oasis impact)
+        run: |
+          grep -q "SCOPE_ALLOWLIST:" /tmp/pr_body.txt || (echo "REJECTED: missing SCOPE_ALLOWLIST:" && exit 12)
+          grep -q "ACCEPTANCE:"     /tmp/pr_body.txt || (echo "REJECTED: missing ACCEPTANCE:" && exit 13)
+          grep -q "MERGE_PAYLOAD_PREVIEW:" /tmp/pr_body.txt || (echo "REJECTED: missing MERGE_PAYLOAD_PREVIEW:" && exit 14)
+          grep -q "OASIS_IMPACT:"   /tmp/pr_body.txt || (echo "REJECTED: missing OASIS_IMPACT:" && exit 15)
+
+      - name: Compute changed files
+        id: diff
+        run: |
+          BASE="${{ github.base_ref }}"
+          git fetch origin "$BASE" --depth=1
+          git diff --name-only "origin/$BASE"...HEAD > /tmp/changed_files.txt
+          COUNT="$(wc -l < /tmp/changed_files.txt | tr -d ' ')"
+          echo "Changed files: $COUNT"
+          test "$COUNT" -gt 0 || (echo "REJECTED: no changes detected" && exit 16)
+
+      - name: Enforce Path Ownership Guard (profile-based)
+        env:
+          PROFILE: ${{ steps.meta.outputs.PROFILE }}
+        run: |
+          deny_common='(^|/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$|\.env$'
+          if grep -Eqi "$deny_common" /tmp/changed_files.txt; then
+            echo "REJECTED: lockfile/.env change not allowed"
+            grep -Ein "$deny_common" /tmp/changed_files.txt | head -n 25
+            exit 20
+          fi
+
+          if [ "$PROFILE" = "command_hub_frontend" ]; then
+            # allow only the two command-hub frontend trees + docs/validation for evidence
+            awk '
+              !(
+                $0 ~ "^services/gateway/src/frontend/command-hub/" ||
+                $0 ~ "^services/gateway/dist/frontend/command-hub/" ||
+                $0 ~ "^docs/validation/"
+              )
+            ' /tmp/changed_files.txt > /tmp/violations.txt
+          elif [ "$PROFILE" = "gateway_backend" ]; then
+            awk '
+              !(
+                $0 ~ "^services/gateway/src/" ||
+                $0 ~ "^services/gateway/dist/" ||
+                $0 ~ "^services/gateway/openapi/" ||
+                $0 ~ "^docs/validation/"
+              )
+            ' /tmp/changed_files.txt > /tmp/violations.txt
+          else
+            echo "REJECTED: unknown VALIDATION_PROFILE=$PROFILE"
+            exit 21
+          fi
+
+          if [ -s /tmp/violations.txt ]; then
+            echo "REJECTED: files outside allowlist (showing first 25)"
+            head -n 25 /tmp/violations.txt
+            exit 22
+          fi
+
+      - name: Evidence Pack Gate
+        env:
+          VTID: ${{ steps.meta.outputs.VTID }}
+        run: |
+          EVID="docs/validation/$VTID"
+          test -d "$EVID" || (echo "REJECTED: missing evidence dir $EVID" && exit 30)
+          test -f "$EVID/acceptance.md" || (echo "REJECTED: missing $EVID/acceptance.md" && exit 31)
+          test -f "$EVID/commands.log"  || (echo "REJECTED: missing $EVID/commands.log" && exit 32)
+          test -d "$EVID/outputs"       || (echo "REJECTED: missing $EVID/outputs/" && exit 33)
+
+      - name: Acceptance Mapping Gate (no unmapped ACs)
+        env:
+          VTID: ${{ steps.meta.outputs.VTID }}
+        run: |
+          A="docs/validation/$VTID/acceptance.md"
+          # Require at least 1 AC block and require each AC line to include a Verification token.
+          grep -qE '^AC-' "$A" || (echo "REJECTED: acceptance.md has no AC- entries" && exit 40)
+          # Every AC- line must be followed somewhere (within next 12 lines) by one of TEST:/CURL:/UI:
+          python3 - << 'PY'
+          import re, sys
+          path="docs/validation/${VTID}/acceptance.md"
+          # GitHub expands env vars in runner shell; we re-read from env:
+          import os
+          path=os.path.expandvars(path)
+          txt=open(path,encoding="utf-8").read().splitlines()
+          ac_idx=[i for i,l in enumerate(txt) if re.match(r'^AC-\d+', l.strip())]
+          if not ac_idx:
+            print("REJECTED: no AC- entries"); sys.exit(40)
+          for i in ac_idx:
+            window=txt[i+1:i+13]
+            if not any(re.match(r'^(TEST:|CURL:|UI:)', w.strip()) for w in window):
+              print(f"REJECTED: AC at line {i+1} has no TEST:/CURL:/UI: mapping within 12 lines")
+              sys.exit(41)
+          print("Acceptance mapping OK")
+          PY
+
+      - name: CSP Governance Gate (scan changed files)
+        run: |
+          # Scan only changed files for forbidden patterns
+          PATTERNS=(
+            "<script(?![^>]*\\bsrc=)"
+            "style\\s*="
+            "\\.style\\b"
+            "\\beval\\s*\\("
+            "new\\s+Function\\s*\\("
+            "unsafe-inline"
+            "https?://[^\\s\"']+\\.(js|css)"
+          )
+          FAIL=0
+          while IFS= read -r f; do
+            [ -f "$f" ] || continue
+            for p in "${PATTERNS[@]}"; do
+              if python3 - <<PY
+import re,sys
+p=re.compile(r'''$p''', re.IGNORECASE)
+data=open("$f","rb").read()
+try: s=data.decode("utf-8", errors="ignore")
+except: s=str(data)
+sys.exit(0 if not p.search(s) else 1)
+PY
+              then : ; else
+                echo "REJECTED: CSP pattern hit in $f :: /$p/"
+                FAIL=1
+              fi
+            done
+          done < /tmp/changed_files.txt
+          [ "$FAIL" -eq 0 ] || exit 50
+
+      - name: Build Gate (profile-based)
+        env:
+          PROFILE: ${{ steps.meta.outputs.PROFILE }}
+        run: |
+          cd services/gateway
+          npm ci
+          npm run build
+
+          if [ "$PROFILE" = "command_hub_frontend" ]; then
+            # Require that src and dist both changed (your mirroring governance)
+            SRC_CHANGED="$(grep -c '^services/gateway/src/frontend/command-hub/' /tmp/changed_files.txt || true)"
+            DIST_CHANGED="$(grep -c '^services/gateway/dist/frontend/command-hub/' /tmp/changed_files.txt || true)"
+            if [ "$SRC_CHANGED" -eq 0 ] || [ "$DIST_CHANGED" -eq 0 ]; then
+              echo "REJECTED: command_hub_frontend requires src+dist both updated"
+              exit 60
+            fi
+          fi
+
+      - name: Route Mount Evidence Gate (conditional)
+        env:
+          VTID: ${{ steps.meta.outputs.VTID }}
+        run: |
+          # If routes touched, enforce markers in acceptance.md
+          if grep -qE '^services/gateway/src/routes/|^services/gateway/src/(index|app)\.ts' /tmp/changed_files.txt; then
+            A="docs/validation/$VTID/acceptance.md"
+            grep -q "ROUTE_MOUNT:" "$A" || (echo "REJECTED: missing ROUTE_MOUNT:" && exit 70)
+            grep -q "FINAL_URL:"   "$A" || (echo "REJECTED: missing FINAL_URL:" && exit 71)
+            grep -q "CURL_PROOF:"  "$A" || (echo "REJECTED: missing CURL_PROOF:" && exit 72)
+          fi
+
+      - name: OASIS Traceability Gate (conditional)
+        env:
+          VTID: ${{ steps.meta.outputs.VTID }}
+        run: |
+          IMPACT="$(grep -Eo 'OASIS_IMPACT:\s*(yes|no)' /tmp/pr_body.txt | head -n 1 | awk '{print $2}')"
+          test -n "$IMPACT" || (echo "REJECTED: invalid OASIS_IMPACT value" && exit 80)
+          if [ "$IMPACT" = "yes" ]; then
+            grep -q "OASIS_PROOF:" "docs/validation/$VTID/acceptance.md" || (echo "REJECTED: missing OASIS_PROOF:" && exit 81)
+          fi
+
+      - name: Merge Deploy Gate (VTID must be in merge title/message)
+        env:
+          VTID: ${{ steps.meta.outputs.VTID }}
+        run: |
+          # Enforce the intent: PR title already contains VTID; also require merge preview marker exists.
+          grep -q "$VTID" /tmp/pr_title.txt || (echo "REJECTED: PR title must contain VTID for autodeploy gate" && exit 90)
+          grep -q "MERGE_PAYLOAD_PREVIEW:" /tmp/pr_body.txt || (echo "REJECTED: missing MERGE_PAYLOAD_PREVIEW:" && exit 91)
+
+      - name: PASS summary
+        env:
+          VTID: ${{ steps.meta.outputs.VTID }}
+          PROFILE: ${{ steps.meta.outputs.PROFILE }}
+        run: |
+          echo "APPROVED"
+          echo "VTID=$VTID"
+          echo "PROFILE=$PROFILE"
+          echo "Evidence=docs/validation/$VTID/"
