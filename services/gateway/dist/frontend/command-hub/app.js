@@ -5648,10 +5648,12 @@ async function fetchTasks() {
             items = [];
         }
 
-        // VTID-01005: Transform board items into task card model
-        // Use OASIS-derived column directly instead of local mapping
-        state.tasks = items.map(function(item) {
-            return {
+        // VTID-01055: Reconcile by VTID to eliminate ghost cards
+        // Build a Map keyed by VTID (latest entry wins; overwrites duplicates)
+        var byVtid = new Map();
+        items.forEach(function(item) {
+            if (!item.vtid) return; // Skip items without VTID
+            var task = {
                 id: item.vtid,
                 title: item.title || item.vtid,
                 // VTID-01005: Use OASIS-derived status and column
@@ -5667,9 +5669,26 @@ async function fetchTasks() {
                 summary: item.description || '',
                 createdAt: item.updated_at || item.created_at
             };
+            byVtid.set(item.vtid, task);
         });
+
+        // VTID-01055: Rebuild state.tasks from deduplicated Map (deterministic reconciliation)
+        state.tasks = Array.from(byVtid.values());
         state.tasksError = null;
-        console.log('[VTID-01005] Tasks loaded from OASIS-derived board:', state.tasks.length, 'items');
+
+        // VTID-01055: Count tasks per column for debug logging
+        var scheduled = 0, inProgress = 0, completed = 0;
+        state.tasks.forEach(function(t) {
+            var col = (t.oasisColumn || '').toUpperCase();
+            if (col === 'COMPLETED') {
+                completed++;
+            } else if (col === 'IN_PROGRESS') {
+                inProgress++;
+            } else {
+                scheduled++;
+            }
+        });
+        console.log('[VTID-01055] Board reconcile: total=' + state.tasks.length + ' scheduled=' + scheduled + ' in_progress=' + inProgress + ' completed=' + completed);
     } catch (error) {
         console.error('[VTID-01005] Failed to fetch tasks from Command Hub board:', error);
         state.tasksError = error.message;
