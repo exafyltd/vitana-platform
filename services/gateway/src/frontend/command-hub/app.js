@@ -3011,13 +3011,15 @@ function renderApp() {
     // VTID-01064: Enhanced transcript auto-follow - scroll to bottom after render
     if (state.orb.overlayVisible) {
         requestAnimationFrame(function() {
-            setupTranscriptScrollListener();
-            // Always scroll to bottom after initial render or when user was near bottom
-            if (state.orb.transcriptNearBottom) {
-                var transcriptContainer = document.querySelector('.orb-live-transcript');
-                if (transcriptContainer) {
+            var transcriptContainer = document.querySelector('.orb-live-transcript');
+            if (transcriptContainer) {
+                // VTID-01064: Always scroll to bottom first if auto-follow is enabled
+                // This ensures new container starts at bottom, not top
+                if (state.orb.transcriptNearBottom) {
                     transcriptContainer.scrollTop = transcriptContainer.scrollHeight;
                 }
+                // Setup scroll listener AFTER initial scroll
+                setupTranscriptScrollListener();
             }
         });
     }
@@ -3190,6 +3192,8 @@ function renderOrbIdleElement() {
         state.orb.liveError = null;
         state.orb.voiceError = null;
         state.orb.voiceState = 'IDLE';
+        // VTID-01064: Reset auto-follow to enabled when opening ORB
+        state.orb.transcriptNearBottom = true;
         renderApp();
         // VTID-0135: Start voice conversation with Web Speech APIs
         orbVoiceStart();
@@ -3204,6 +3208,8 @@ function renderOrbIdleElement() {
             state.orb.liveError = null;
             state.orb.voiceError = null;
             state.orb.voiceState = 'IDLE';
+            // VTID-01064: Reset auto-follow to enabled when opening ORB
+            state.orb.transcriptNearBottom = true;
             renderApp();
             orbVoiceStart();
         }
@@ -12346,6 +12352,7 @@ function scrollOrbLiveTranscript() {
 
 /**
  * VTID-01037: Check and update near-bottom tracking for transcript
+ * VTID-01064: Fixed to handle initial scroll state correctly
  * Call this before operations that might trigger scroll
  */
 function updateTranscriptNearBottom() {
@@ -12355,21 +12362,43 @@ function updateTranscriptNearBottom() {
         return;
     }
 
-    // Near bottom if within 40px of the bottom
+    // VTID-01064: If scrollTop is 0 and there's content, user hasn't scrolled yet
+    // This means we haven't scrolled to bottom yet, NOT that user scrolled to top
+    // Keep transcriptNearBottom true so next scroll-to-bottom will work
+    var hasContent = container.scrollHeight > container.clientHeight;
+    if (container.scrollTop === 0 && hasContent) {
+        // Don't change transcriptNearBottom - keep it true for auto-scroll
+        return;
+    }
+
+    // VTID-01064: Use 80px threshold as specified
+    var THRESHOLD_PX = 80;
     var distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-    state.orb.transcriptNearBottom = distanceFromBottom < 40;
+    state.orb.transcriptNearBottom = distanceFromBottom < THRESHOLD_PX;
 }
 
 /**
  * VTID-01037: Setup scroll listener for transcript container
+ * VTID-01064: Enhanced to properly track user scroll intent
  * Must be called after the container is rendered
  */
 function setupTranscriptScrollListener() {
     var container = document.querySelector('.orb-live-transcript');
     if (!container || container.dataset.scrollListenerAttached) return;
 
+    var THRESHOLD_PX = 80;
+
     container.addEventListener('scroll', function() {
-        updateTranscriptNearBottom();
+        // VTID-01064: Check if user scrolled away from bottom
+        var distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+
+        // If user scrolled up beyond threshold, disable auto-follow
+        if (distanceFromBottom > THRESHOLD_PX) {
+            state.orb.transcriptNearBottom = false;
+        } else {
+            // User scrolled back near bottom, re-enable auto-follow
+            state.orb.transcriptNearBottom = true;
+        }
     });
     container.dataset.scrollListenerAttached = 'true';
 }
