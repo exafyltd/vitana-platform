@@ -121,7 +121,7 @@ router.get('/api/v1/tasks', async (req: Request, res: Response) => {
       if (!isTerminal) {
         const ledgerStatus = (row.status || '').toLowerCase();
 
-        if (['done', 'closed', 'deployed', 'merged', 'complete'].includes(ledgerStatus)) {
+        if (['done', 'closed', 'deployed', 'merged', 'complete', 'completed'].includes(ledgerStatus)) {
           isTerminal = true;
           terminalOutcome = 'success';
           column = 'COMPLETED';
