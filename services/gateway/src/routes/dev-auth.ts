@@ -196,10 +196,10 @@ async function mintTokenForUser(
   }
 
   // Step 3: Verify the OTP to get a session
-  // The hashed_token from generateLink is the OTP we need to verify
+  // The hashed_token from generateLink must be passed as token_hash (not token)
   const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
     email: email,
-    token: linkData.properties.hashed_token,
+    token_hash: linkData.properties.hashed_token,
     type: 'magiclink',
   });
 
