@@ -59,6 +59,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // =============================================================================
   // Only import heavy routes here to avoid loading them on vitana-dev-gateway
 
+  // VTID-01063: Route Guard for duplicate route detection
+  const { mountRouterSync, logStartupSummary } = require('./governance/route-guard');
+
   // Lazy imports - only loaded for main gateway
   const boardAdapter = require('./routes/board-adapter').default;
   const { commandhub } = require('./routes/commandhub');
@@ -225,37 +228,58 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
     });
   });
 
-  // Mount routes
-  app.use('/api/v1/governance', governanceRouter);
-  app.use('/api/v1/vtid', vtidRouter);
+  // =============================================================================
+  // VTID-01063: Mount routes with Route Guard protection
+  // Platform invariant: One endpoint = one authoritative handler
+  // =============================================================================
+
+  // Core API routes
+  mountRouterSync(app, '/api/v1/governance', governanceRouter, { owner: 'governance' });
+  mountRouterSync(app, '/api/v1/vtid', vtidRouter, { owner: 'vtid' });
 
   // VTID-0516: Autonomous Safe-Merge Layer - CICD routes
-  app.use('/api/v1/github', cicdRouter);
-  app.use('/api/v1/deploy', cicdRouter);
-  app.use('/api/v1/cicd', cicdRouter);
+  // Note: Same router mounted at multiple paths is allowed (different effective routes)
+  mountRouterSync(app, '/api/v1/github', cicdRouter, { owner: 'cicd-github' });
+  mountRouterSync(app, '/api/v1/deploy', cicdRouter, { owner: 'cicd-deploy' });
+  mountRouterSync(app, '/api/v1/cicd', cicdRouter, { owner: 'cicd' });
+
   // VTID-0509 + VTID-0510: Operator Console & Version Tracking
-  app.use('/api/v1/operator', operatorRouter);
+  mountRouterSync(app, '/api/v1/operator', operatorRouter, { owner: 'operator' });
+
   // VTID-0526-D: Telemetry routes with stage counters
-  app.use('/api/v1/telemetry', telemetryRouter);
+  mountRouterSync(app, '/api/v1/telemetry', telemetryRouter, { owner: 'telemetry' });
+
   // VTID-0532: Autopilot Task Extractor & Planner Handoff
-  app.use('/api/v1/autopilot', autopilotRouter);
+  mountRouterSync(app, '/api/v1/autopilot', autopilotRouter, { owner: 'autopilot' });
+
   // VTID-0150-B + VTID-0151 + VTID-0538: Assistant Core + Knowledge Hub
-  app.use('/api/v1/assistant', assistantRouter);
+  mountRouterSync(app, '/api/v1/assistant', assistantRouter, { owner: 'assistant' });
+
   // DEV-COMHU-2025-0014: ORB Multimodal v1 - Live Voice Session (Gemini API, SSE)
-  app.use('/api/v1/orb', orbLiveRouter);
+  mountRouterSync(app, '/api/v1/orb', orbLiveRouter, { owner: 'orb-live' });
+
   // VTID-01046: Me Context - role context and active role switching
-  app.use('/api/v1/me', meRouter);
+  mountRouterSync(app, '/api/v1/me', meRouter, { owner: 'me-context' });
+
   // VTID-01047: Dev Token Mint Endpoint (dev-sandbox only)
-  app.use('/api/v1/dev/auth', devAuthRouter);
-  app.use('/api/v1/commandhub', commandhub);
-  // Board adapter for commandhub
-  app.use("/api/v1/commandhub/board", boardAdapter);
-  app.use("/", tasksRouter);
-  app.use(eventsApiRouter);
-  app.use(eventsRouter);
-  app.use(oasisTasksRouter);
+  mountRouterSync(app, '/api/v1/dev/auth', devAuthRouter, { owner: 'dev-auth' });
+
+  // VTID-01063: commandhub router (note: /board route REMOVED, use board-adapter)
+  mountRouterSync(app, '/api/v1/commandhub', commandhub, { owner: 'commandhub' });
+
+  // VTID-01058: Board adapter - SINGLE SOURCE OF TRUTH for board data
+  mountRouterSync(app, '/api/v1/commandhub/board', boardAdapter, { owner: 'board-adapter' });
+
+  // Tasks router (root path)
+  mountRouterSync(app, '/', tasksRouter, { owner: 'tasks' });
+
+  // Event routers (these define their own paths internally)
+  mountRouterSync(app, '/', eventsApiRouter, { owner: 'events-api' });
+  mountRouterSync(app, '/', eventsRouter, { owner: 'events' });
+  mountRouterSync(app, '/', oasisTasksRouter, { owner: 'oasis-tasks' });
+
   // VTID-01020: VTID Ledger JSON endpoint
-  app.use(oasisVtidLedgerRouter);
+  mountRouterSync(app, '/', oasisVtidLedgerRouter, { owner: 'oasis-vtid-ledger' });
 
   // VTID-0529-C: Static files MUST be served BEFORE the router
   const staticPath = path.join(__dirname, 'frontend/command-hub');
@@ -268,9 +292,18 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   }));
 
   // Command Hub router handles HTML routes and API (after static files)
-  app.use('/command-hub', commandHubRouter);
-  app.use(sseService.router);
-  app.use('/api/v1/board', boardAdapter);
+  mountRouterSync(app, '/command-hub', commandHubRouter, { owner: 'command-hub-ui' });
+
+  // VTID-01063: SSE service router NOT mounted - duplicate of /api/v1/events/stream in events.ts
+  // The sseService.broadcast() method is still available for real-time push (used by auto-logger)
+  // but the canonical SSE endpoint is the database-polling route in events.ts
+  // sseService.router is intentionally NOT mounted to avoid duplicate route
+
+  // VTID-01058: Board adapter also available at /api/v1/board for backward compat
+  mountRouterSync(app, '/api/v1/board', boardAdapter, { owner: 'board-adapter-legacy' });
+
+  // VTID-01063: Log route guard summary
+  logStartupSummary();
 
   // Start server
   if (process.env.NODE_ENV !== 'test') {
