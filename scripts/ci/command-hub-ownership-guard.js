@@ -61,7 +61,9 @@ const PROTECTED_PATH = 'services/gateway/src/frontend/command-hub/';
 //             Branch pattern: gateway-me-context-api (for claude/gateway-me-context-api-* branches)
 // VTID-01052: Delete button for scheduled tasks (void VTID, log OASIS event)
 //             Branch pattern: delete-scheduled-tasks (for claude/delete-scheduled-tasks-* branches)
-const ALLOWED_VTID_PATTERN = /DEV-COMHU-\d+|VTID-0302|VTID-0539|VTID-0541|VTID-0542|VTID-0600|VTID-0601|VTID-01001|VTID-01002|VTID-01003|VTID-01005|VTID-01006|VTID-01009|VTID-01010|VTID-01012|VTID-01013|VTID-01014|VTID-01015|VTID-01016|VTID-01017|VTID-01019|VTID-01021|VTID-01022|VTID-01025|VTID-01027|VTID-01028|VTID-01030|VTID-01034|VTID-0135|VTID-01037|VTID-01038|VTID-01039|VTID-01041|VTID-01042|VTID-01043|VTID-01044|VTID-01045|VTID-01049|VTID-01052|global-vtid-allocator|vtid-ledger-visibility|add-conversation-summary|editable-scheduled-card-title|unified-language-selector|fix-stt-abort-error|fix-tts-feedback|compact-cards-date-filter|gateway-me-context-api|delete-scheduled-tasks/i;
+// VTID-01055: Reconcile task board by VTID on refresh (remove ghost cards)
+//             Branch pattern: fix-ghost-cards (for claude/fix-ghost-cards-* branches)
+const ALLOWED_VTID_PATTERN = /DEV-COMHU-\d+|VTID-0302|VTID-0539|VTID-0541|VTID-0542|VTID-0600|VTID-0601|VTID-01001|VTID-01002|VTID-01003|VTID-01005|VTID-01006|VTID-01009|VTID-01010|VTID-01012|VTID-01013|VTID-01014|VTID-01015|VTID-01016|VTID-01017|VTID-01019|VTID-01021|VTID-01022|VTID-01025|VTID-01027|VTID-01028|VTID-01030|VTID-01034|VTID-0135|VTID-01037|VTID-01038|VTID-01039|VTID-01041|VTID-01042|VTID-01043|VTID-01044|VTID-01045|VTID-01049|VTID-01052|VTID-01055|global-vtid-allocator|vtid-ledger-visibility|add-conversation-summary|editable-scheduled-card-title|unified-language-selector|fix-stt-abort-error|fix-tts-feedback|compact-cards-date-filter|gateway-me-context-api|delete-scheduled-tasks|fix-ghost-cards/i;
 
 function getChangedFiles() {
   try {
