@@ -1713,6 +1713,10 @@ const splitScreenCombos = [
 
 // --- State ---
 
+// VTID-01055: Track VTIDs from last API response for ghost card detection
+var lastApiVtids = new Set();
+var isManualRefresh = false;
+
 const state = {
     currentModuleKey: 'command-hub', // Will be overwritten by router
     currentTab: 'tasks', // Will be overwritten by router
@@ -3695,6 +3699,8 @@ function renderTasksView() {
     refreshBtn.className = 'btn refresh-btn-margin';
     refreshBtn.textContent = '↻';
     refreshBtn.onclick = () => {
+        // VTID-01055: Enable debug logging for manual refresh
+        isManualRefresh = true;
         fetchTasks();
         // VTID-0527: Also refresh telemetry for stage timelines
         fetchTelemetrySnapshot();
@@ -3789,6 +3795,14 @@ function renderTasksView() {
             return true;
         });
 
+        // VTID-01055: Ghost card detection - check if any rendered task is NOT in API response
+        colTasks.forEach(task => {
+            // VTID-01055: Detect ghost cards (tasks not in last API response)
+            if (lastApiVtids.size > 0 && task.vtid && !lastApiVtids.has(task.vtid)) {
+                console.error('[VTID-01055] GHOST-CARD-DETECTED vtid=' + task.vtid + ' column=' + colName + ' (not in API response)');
+            }
+        });
+
         // VTID-01030: Try/catch per-task to prevent one bad row from crashing board
         colTasks.forEach(task => {
             try {
@@ -3802,6 +3816,18 @@ function renderTasksView() {
         col.appendChild(content);
         board.appendChild(col);
     });
+
+    // VTID-01055: Log API vs DOM card count for ghost detection (on manual refresh)
+    if (isManualRefresh || state._logGhostCheck) {
+        var domCards = board.querySelectorAll('.task-card');
+        var domVtids = Array.from(domCards).map(function(card) {
+            // Try to find VTID from card content
+            var vtidLine = card.querySelector('.task-card-vtid');
+            return vtidLine ? vtidLine.textContent.trim() : null;
+        }).filter(Boolean);
+        console.log('[VTID-01055] DOM cards: ' + domVtids.length + ', API VTIDs: ' + lastApiVtids.size);
+        state._logGhostCheck = false;
+    }
 
     container.appendChild(board);
 
@@ -5673,22 +5699,30 @@ async function fetchTasks() {
         });
 
         // VTID-01055: Rebuild state.tasks from deduplicated Map (deterministic reconciliation)
+        // CRITICAL: This is the ONLY assignment to state.tasks - complete overwrite, no merge
         state.tasks = Array.from(byVtid.values());
         state.tasksError = null;
 
-        // VTID-01055: Count tasks per column for debug logging
-        var scheduled = 0, inProgress = 0, completed = 0;
-        state.tasks.forEach(function(t) {
-            var col = (t.oasisColumn || '').toUpperCase();
-            if (col === 'COMPLETED') {
-                completed++;
-            } else if (col === 'IN_PROGRESS') {
-                inProgress++;
-            } else {
-                scheduled++;
-            }
-        });
-        console.log('[VTID-01055] Board reconcile: total=' + state.tasks.length + ' scheduled=' + scheduled + ' in_progress=' + inProgress + ' completed=' + completed);
+        // VTID-01055: Track which VTIDs came from API for ghost detection
+        lastApiVtids = new Set(byVtid.keys());
+
+        // VTID-01055: Count tasks per column for debug logging (manual refresh only)
+        if (isManualRefresh) {
+            var scheduled = 0, inProgress = 0, completed = 0;
+            state.tasks.forEach(function(t) {
+                var col = (t.oasisColumn || '').toUpperCase();
+                if (col === 'COMPLETED') {
+                    completed++;
+                } else if (col === 'IN_PROGRESS') {
+                    inProgress++;
+                } else {
+                    scheduled++;
+                }
+            });
+            console.log('[VTID-01055] Board reconcile: total=' + state.tasks.length + ' scheduled=' + scheduled + ' in_progress=' + inProgress + ' completed=' + completed);
+            console.log('[VTID-01055] API VTIDs:', Array.from(lastApiVtids).join(', '));
+            isManualRefresh = false;
+        }
     } catch (error) {
         console.error('[VTID-01005] Failed to fetch tasks from Command Hub board:', error);
         state.tasksError = error.message;
