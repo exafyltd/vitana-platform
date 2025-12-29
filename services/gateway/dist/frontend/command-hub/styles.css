@@ -6480,6 +6480,23 @@ body {
   border-color: #059669;
 }
 
+/* VTID-01052: Delete button styling for scheduled tasks */
+.task-delete-btn {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: white;
+}
+
+.task-delete-btn:hover:not(:disabled) {
+  background: #dc2626;
+  border-color: #dc2626;
+}
+
+.task-delete-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .task-spec-local-banner {
   font-size: 0.75rem;
   color: var(--color-text-secondary);
