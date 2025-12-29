@@ -5,6 +5,7 @@ const router = Router();
 
 /**
  * VTID-01005: Board Column Derivation (OASIS-based)
+ * VTID-01058: Exclude deleted/voided tasks, treat 'completed' as terminal success
  *
  * OASIS is the SINGLE SOURCE OF TRUTH for task completion.
  * Column placement is derived from OASIS events, NOT local ledger status.
@@ -44,6 +45,7 @@ router.options('/', cors(corsOptions));
 
 /**
  * VTID-01005: Board adapter endpoint - derives from OASIS events (single source of truth)
+ * VTID-01058: Excludes deleted/voided tasks, treats 'completed' as terminal success
  * Does NOT use commandhub_board_v1 view which reads from local ledger.
  */
 router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
@@ -59,9 +61,9 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
 
     console.log(`[VTID-01005] Board adapter request, limit=${limit}`);
 
-    // Step 1: Fetch VTIDs from ledger
+    // VTID-01058: Step 1: Fetch VTIDs from ledger (exclude deleted/voided at database level)
     const vtidResp = await fetch(
-      `${supaUrl}/rest/v1/vtid_ledger?order=updated_at.desc&limit=${limit}`,
+      `${supaUrl}/rest/v1/vtid_ledger?deleted_at=is.null&voided_at=is.null&status=not.in.(deleted,voided)&order=updated_at.desc&limit=${limit}`,
       { headers: { apikey: supaKey, Authorization: `Bearer ${supaKey}` } }
     );
 
@@ -71,7 +73,14 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Database query failed', details: errText });
     }
 
-    const vtidRows = await vtidResp.json() as any[];
+    const vtidRowsRaw = await vtidResp.json() as any[];
+
+    // VTID-01058: Post-fetch filter: exclude rows with metadata.deleted or metadata.voided
+    const vtidRows = vtidRowsRaw.filter((row: any) => {
+      const meta = row.metadata || {};
+      if (meta.deleted === true || meta.voided === true) return false;
+      return true;
+    });
 
     if (vtidRows.length === 0) {
       return res.json([]);
@@ -163,7 +172,8 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
       if (!isTerminal) {
         const ledgerStatus = (row.status || '').toLowerCase();
 
-        if (['done', 'closed', 'deployed', 'merged', 'complete'].includes(ledgerStatus)) {
+        // VTID-01058: Added 'completed' to terminal success statuses
+        if (['done', 'closed', 'deployed', 'merged', 'complete', 'completed'].includes(ledgerStatus)) {
           isTerminal = true;
           terminalOutcome = 'success';
           column = 'COMPLETED';
