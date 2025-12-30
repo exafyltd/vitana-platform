@@ -67,11 +67,13 @@ const PROTECTED_PATH = 'services/gateway/src/frontend/command-hub/';
 //             Branch pattern: security-audit-review (for claude/security-audit-review-* branches)
 // VTID-01079: Command Hub Board Determinism (Status→Column Map + One-Row-Per-VTID + DEV Filter)
 //             Branch pattern: fix-vtid-board-mapping (for claude/fix-vtid-board-mapping-* branches)
+// VTID-01066: ORB Conversation Stream v1: Voice-First Live Flow (Follow, Speak Cursor, Interrupt)
+//             Branch pattern: orb-conversation-stream (for claude/orb-conversation-stream-* branches)
 // VTID-01067: ORB Aura v2 - Context Badges + Intensity + Speech Sync
 //             Branch pattern: orb-presence-layer (for claude/orb-presence-layer-* branches)
 // VTID-01069: ORB Input Surface v2 - Auto-Growing Chatbox with Symmetric Layout
 //             Branch pattern: auto-growing-chatbox (for claude/auto-growing-chatbox-* branches)
-const ALLOWED_VTID_PATTERN = /DEV-COMHU-\d+|VTID-0302|VTID-0539|VTID-0541|VTID-0542|VTID-0600|VTID-0601|VTID-01001|VTID-01002|VTID-01003|VTID-01005|VTID-01006|VTID-01009|VTID-01010|VTID-01012|VTID-01013|VTID-01014|VTID-01015|VTID-01016|VTID-01017|VTID-01019|VTID-01021|VTID-01022|VTID-01025|VTID-01027|VTID-01028|VTID-01030|VTID-01034|VTID-0135|VTID-01037|VTID-01038|VTID-01039|VTID-01041|VTID-01042|VTID-01043|VTID-01044|VTID-01045|VTID-01049|VTID-01052|VTID-01055|VTID-01064|VTID-01079|VTID-01067|VTID-01069|global-vtid-allocator|vtid-ledger-visibility|add-conversation-summary|editable-scheduled-card-title|unified-language-selector|fix-stt-abort-error|fix-tts-feedback|compact-cards-date-filter|gateway-me-context-api|delete-scheduled-tasks|fix-ghost-cards|security-audit-review|fix-vtid-board-mapping|orb-presence-layer|auto-growing-chatbox/i;
+const ALLOWED_VTID_PATTERN = /DEV-COMHU-\d+|VTID-0302|VTID-0539|VTID-0541|VTID-0542|VTID-0600|VTID-0601|VTID-01001|VTID-01002|VTID-01003|VTID-01005|VTID-01006|VTID-01009|VTID-01010|VTID-01012|VTID-01013|VTID-01014|VTID-01015|VTID-01016|VTID-01017|VTID-01019|VTID-01021|VTID-01022|VTID-01025|VTID-01027|VTID-01028|VTID-01030|VTID-01034|VTID-0135|VTID-01037|VTID-01038|VTID-01039|VTID-01041|VTID-01042|VTID-01043|VTID-01044|VTID-01045|VTID-01049|VTID-01052|VTID-01055|VTID-01064|VTID-01066|VTID-01067|VTID-01069|VTID-01079|global-vtid-allocator|vtid-ledger-visibility|add-conversation-summary|editable-scheduled-card-title|unified-language-selector|fix-stt-abort-error|fix-tts-feedback|compact-cards-date-filter|gateway-me-context-api|delete-scheduled-tasks|fix-ghost-cards|security-audit-review|fix-vtid-board-mapping|orb-conversation-stream|orb-presence-layer|auto-growing-chatbox/i;
 
 function getChangedFiles() {
   try {
