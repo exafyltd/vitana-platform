@@ -2008,7 +2008,12 @@ const state = {
         ttsVoicesLoaded: false,
         // VTID-01042: Unified Language selector state
         orbLang: 'en-US', // Single source of truth for STT + TTS language
-        orbLangWarning: null // Warning message for voice fallback
+        orbLangWarning: null, // Warning message for voice fallback
+        // VTID-01067: ORB Presence Layer state
+        speakingBeatTimer: null, // Interval for speaking pulse beat
+        microStatusText: '', // Current micro-status message
+        microStatusTimer: null, // Auto-clear timer for micro-status
+        micShimmerActive: false // Whether mic shimmer is active
     },
 
     // VTID-0600: Operational Visibility Foundation State
@@ -11568,7 +11573,13 @@ const ORB_ICONS = {
     chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
     send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>',
     // VTID-01038: Speaker icon for TTS voice preview
-    speaker: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>'
+    speaker: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>',
+    // VTID-01067: Badge icons for ORB presence layer
+    badgeMic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>',
+    badgeMicOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/></svg>',
+    badgeScreen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>',
+    badgeCamera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>',
+    badgeLang: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>'
 };
 
 // VTID-0150-A: ORB Idle is now rendered via renderOrbIdleElement() inside sidebar footer
@@ -11685,6 +11696,50 @@ function renderOrbOverlay() {
     }
     largeOrb.className = orbClass;
     orbShell.appendChild(largeOrb);
+
+    // VTID-01067: Badge rail (positioned relative to orbShell)
+    var badgesContainer = document.createElement('div');
+    badgesContainer.className = 'orb-badges';
+
+    // Mic active badge
+    var micBadge = document.createElement('div');
+    micBadge.className = 'orb-badge orb-badge--mic' + (state.orb.micActive && state.orb.voiceState !== 'MUTED' ? ' orb-badge--active' : '');
+    micBadge.innerHTML = '<span class="orb-badge-icon">' + ORB_ICONS.badgeMic + '</span>';
+    badgesContainer.appendChild(micBadge);
+
+    // Mic muted badge
+    var micMutedBadge = document.createElement('div');
+    micMutedBadge.className = 'orb-badge orb-badge--mic-muted' + (state.orb.voiceState === 'MUTED' || !state.orb.micActive ? ' orb-badge--active' : '');
+    micMutedBadge.innerHTML = '<span class="orb-badge-icon">' + ORB_ICONS.badgeMicOff + '</span>';
+    badgesContainer.appendChild(micMutedBadge);
+
+    // Screen share badge (only show when active)
+    var screenBadge = document.createElement('div');
+    screenBadge.className = 'orb-badge orb-badge--screen' + (state.orb.screenShareActive ? ' orb-badge--active' : '');
+    screenBadge.innerHTML = '<span class="orb-badge-icon">' + ORB_ICONS.badgeScreen + '</span>';
+    badgesContainer.appendChild(screenBadge);
+
+    // Camera badge (only show when active)
+    var cameraBadge = document.createElement('div');
+    cameraBadge.className = 'orb-badge orb-badge--camera' + (state.orb.cameraActive ? ' orb-badge--active' : '');
+    cameraBadge.innerHTML = '<span class="orb-badge-icon">' + ORB_ICONS.badgeCamera + '</span>';
+    badgesContainer.appendChild(cameraBadge);
+
+    // Language indicator badge
+    var langCode = state.orb.orbLang ? state.orb.orbLang.split('-')[0].toUpperCase() : 'EN';
+    var langBadge = document.createElement('div');
+    langBadge.className = 'orb-badge orb-badge--lang orb-badge--active';
+    langBadge.innerHTML = '<span class="orb-badge-icon">' + ORB_ICONS.badgeLang + '</span><span class="orb-badge-text">' + langCode + '</span>';
+    badgesContainer.appendChild(langBadge);
+
+    orbShell.appendChild(badgesContainer);
+
+    // VTID-01067: Micro-status line
+    var microStatus = document.createElement('div');
+    microStatus.className = 'orb-micro-status' + (state.orb.microStatusText ? ' orb-micro-status--visible' : '');
+    microStatus.textContent = state.orb.microStatusText || '';
+    orbShell.appendChild(microStatus);
+
     overlay.appendChild(orbShell);
 
     // VTID-0135: Status text based on voiceState
@@ -11758,6 +11813,8 @@ function renderOrbOverlay() {
     screenBtn.addEventListener('click', function() {
         console.log('[ORB] Screen share toggle (stub):', !state.orb.screenShareActive);
         state.orb.screenShareActive = !state.orb.screenShareActive;
+        // VTID-01067: Update badges after screen share state change
+        renderOrbBadges();
         renderApp();
     });
     var screenLabel = document.createElement('span');
@@ -11778,6 +11835,8 @@ function renderOrbOverlay() {
     cameraBtn.addEventListener('click', function() {
         console.log('[ORB] Camera toggle (stub):', !state.orb.cameraActive);
         state.orb.cameraActive = !state.orb.cameraActive;
+        // VTID-01067: Update badges after camera state change
+        renderOrbBadges();
         renderApp();
     });
     var cameraLabel = document.createElement('span');
@@ -12474,7 +12533,26 @@ function orbVoiceStart() {
         lastProcessedResultIndex = -1;
         // VTID-01064: Update ORB aura to listening state
         setOrbState('listening');
+        // VTID-01067: Update micro-status and badges
+        setOrbMicroStatus('Listening...', 0); // No auto-clear while listening
+        renderOrbBadges();
         renderApp();
+    };
+
+    // VTID-01067: Mic-reactive shimmer on audio/speech events
+    recognition.onaudiostart = function() {
+        console.log('[VTID-01067] Audio capture started');
+        triggerMicShimmer();
+    };
+
+    recognition.onspeechstart = function() {
+        console.log('[VTID-01067] Speech detected');
+        triggerMicShimmer();
+    };
+
+    recognition.onspeechend = function() {
+        console.log('[VTID-01067] Speech ended');
+        // Return intensity to normal (handled by animation end)
     };
 
     recognition.onresult = function(event) {
@@ -12563,6 +12641,8 @@ function orbVoiceStart() {
             state.orb.voiceError = 'Microphone access denied. Please allow microphone access and try again.';
             state.orb.voiceState = 'IDLE';
             state.orb.micActive = false;
+            // VTID-01067: Update micro-status for permission error
+            setOrbMicroStatus('Permission blocked');
             // VTID-01064: Update ORB aura to error state
             setOrbState('error');
         } else if (event.error === 'no-speech') {
@@ -12680,6 +12760,8 @@ function orbVoiceToggleMute() {
         state.orb.voiceState = 'LISTENING';
         // VTID-01064: Update ORB aura to listening state
         setOrbState('listening');
+        // VTID-01067: Update micro-status and badges
+        setOrbMicroStatus('Listening...', 0);
 
         if (state.orb.speechRecognition) {
             try {
@@ -12696,6 +12778,8 @@ function orbVoiceToggleMute() {
         state.orb.voiceState = 'MUTED';
         // VTID-01064: Update ORB aura to paused state
         setOrbState('paused');
+        // VTID-01067: Update micro-status
+        setOrbMicroStatus('Mic muted');
 
         if (state.orb.speechRecognition) {
             try {
@@ -12707,9 +12791,13 @@ function orbVoiceToggleMute() {
 
         // Also cancel any ongoing TTS
         window.speechSynthesis.cancel();
+        // VTID-01067: Stop speaking beat if it was running
+        stopSpeakingBeat();
     }
 
     state.orb.micActive = state.orb.voiceState !== 'MUTED';
+    // VTID-01067: Update badges after mic state change
+    renderOrbBadges();
     renderApp();
 }
 
@@ -12724,6 +12812,8 @@ async function orbVoiceSendText(text) {
     state.orb.isThinking = true;
     // VTID-01064: Update ORB aura to thinking state
     setOrbState('thinking');
+    // VTID-01067: Update micro-status
+    setOrbMicroStatus('Thinking...', 0); // No auto-clear while thinking
     renderApp();
 
     try {
@@ -13215,11 +13305,18 @@ function orbVoiceSpeak(text) {
         state.orb.speaking = true;
         // VTID-01064: Update ORB aura to speaking state
         setOrbState('speaking');
+        // VTID-01067: Start speaking beat timer and update micro-status
+        startSpeakingBeat();
+        setOrbMicroStatus('Speaking...', 0); // No auto-clear while speaking
+        renderOrbBadges();
         renderApp();
     };
 
     utterance.onend = function() {
         console.log('[VTID-0135] TTS ended');
+        // VTID-01067: Stop speaking beat timer
+        stopSpeakingBeat();
+        setOrbMicroStatus(''); // Clear micro-status
         // VTID-01037: Restart recognition after TTS completes
         if (state.orb.overlayVisible && state.orb.voiceState === 'SPEAKING') {
             restartRecognitionAfterTTS();
@@ -13228,6 +13325,9 @@ function orbVoiceSpeak(text) {
 
     utterance.onerror = function(event) {
         console.error('[VTID-0135] TTS error:', event.error);
+        // VTID-01067: Stop speaking beat timer on error
+        stopSpeakingBeat();
+        setOrbMicroStatus(''); // Clear micro-status
         // VTID-01037: Handle both normal cancellation (barge-in) and real errors
         state.orb.speaking = false;
         if (event.error !== 'interrupted' && event.error !== 'canceled') {
@@ -13294,6 +13394,182 @@ function setOrbState(newState) {
     // Add the new state class
     shell.classList.add('orb--' + newState);
     console.log('[VTID-01064] ORB state changed to:', newState);
+}
+
+/**
+ * VTID-01067: Render ORB context badges
+ * Updates badge visibility via class toggles only.
+ */
+function renderOrbBadges() {
+    var badgesContainer = document.querySelector('.orb-badges');
+    if (!badgesContainer) return;
+
+    // Get current state
+    var isMuted = state.orb.voiceState === 'MUTED';
+    var micActive = state.orb.micActive && !isMuted;
+    var screenActive = state.orb.screenShareActive;
+    var cameraActive = state.orb.cameraActive;
+    var langCode = state.orb.orbLang ? state.orb.orbLang.split('-')[0].toUpperCase() : 'EN';
+
+    // Update mic badge (always show one or the other)
+    var micBadge = badgesContainer.querySelector('.orb-badge--mic');
+    var micMutedBadge = badgesContainer.querySelector('.orb-badge--mic-muted');
+
+    if (micBadge) {
+        if (micActive) {
+            micBadge.classList.add('orb-badge--active');
+            micBadge.classList.remove('orb-badge--hidden');
+        } else {
+            micBadge.classList.remove('orb-badge--active');
+        }
+    }
+    if (micMutedBadge) {
+        if (isMuted || !state.orb.micActive) {
+            micMutedBadge.classList.add('orb-badge--active');
+            micMutedBadge.classList.remove('orb-badge--hidden');
+        } else {
+            micMutedBadge.classList.remove('orb-badge--active');
+        }
+    }
+
+    // Update screen share badge (only show when active)
+    var screenBadge = badgesContainer.querySelector('.orb-badge--screen');
+    if (screenBadge) {
+        if (screenActive) {
+            screenBadge.classList.add('orb-badge--active');
+            screenBadge.classList.remove('orb-badge--hidden');
+        } else {
+            screenBadge.classList.remove('orb-badge--active');
+        }
+    }
+
+    // Update camera badge (only show when active)
+    var cameraBadge = badgesContainer.querySelector('.orb-badge--camera');
+    if (cameraBadge) {
+        if (cameraActive) {
+            cameraBadge.classList.add('orb-badge--active');
+            cameraBadge.classList.remove('orb-badge--hidden');
+        } else {
+            cameraBadge.classList.remove('orb-badge--active');
+        }
+    }
+
+    // Update language badge (always show)
+    var langBadge = badgesContainer.querySelector('.orb-badge--lang');
+    if (langBadge) {
+        var langText = langBadge.querySelector('.orb-badge-text');
+        if (langText) {
+            langText.textContent = langCode;
+        }
+        langBadge.classList.add('orb-badge--active');
+    }
+}
+
+/**
+ * VTID-01067: Set micro-status line text
+ * Auto-clears after TTL. Overwrites any existing message.
+ * @param {string} text - The status text to display
+ * @param {number} ttlMs - Time to live in milliseconds (default 1500)
+ */
+function setOrbMicroStatus(text, ttlMs) {
+    if (ttlMs === undefined) ttlMs = 1500;
+
+    // Clear any existing timer
+    if (state.orb.microStatusTimer) {
+        clearTimeout(state.orb.microStatusTimer);
+        state.orb.microStatusTimer = null;
+    }
+
+    state.orb.microStatusText = text || '';
+
+    var statusEl = document.querySelector('.orb-micro-status');
+    if (!statusEl) return;
+
+    if (text) {
+        statusEl.textContent = text;
+        statusEl.classList.add('orb-micro-status--visible');
+
+        // Determine status color class based on current voice state
+        statusEl.classList.remove('orb-micro-status--listening', 'orb-micro-status--thinking',
+            'orb-micro-status--speaking', 'orb-micro-status--muted', 'orb-micro-status--error');
+
+        if (state.orb.voiceError || state.orb.liveError) {
+            statusEl.classList.add('orb-micro-status--error');
+        } else if (state.orb.voiceState === 'SPEAKING') {
+            statusEl.classList.add('orb-micro-status--speaking');
+        } else if (state.orb.voiceState === 'THINKING') {
+            statusEl.classList.add('orb-micro-status--thinking');
+        } else if (state.orb.voiceState === 'MUTED') {
+            statusEl.classList.add('orb-micro-status--muted');
+        } else if (state.orb.voiceState === 'LISTENING') {
+            statusEl.classList.add('orb-micro-status--listening');
+        }
+
+        // Set auto-clear timer
+        if (ttlMs > 0) {
+            state.orb.microStatusTimer = setTimeout(function() {
+                state.orb.microStatusText = '';
+                statusEl.classList.remove('orb-micro-status--visible');
+                state.orb.microStatusTimer = null;
+            }, ttlMs);
+        }
+    } else {
+        statusEl.classList.remove('orb-micro-status--visible');
+    }
+}
+
+/**
+ * VTID-01067: Start speaking beat timer
+ * Pulses every ~420ms while TTS is active.
+ */
+function startSpeakingBeat() {
+    // Clear any existing timer
+    stopSpeakingBeat();
+
+    var shell = document.querySelector('.orb-shell');
+    if (!shell) return;
+
+    state.orb.speakingBeatTimer = setInterval(function() {
+        shell.classList.toggle('orb-speak-beat');
+    }, 420);
+
+    console.log('[VTID-01067] Speaking beat started');
+}
+
+/**
+ * VTID-01067: Stop speaking beat timer
+ */
+function stopSpeakingBeat() {
+    if (state.orb.speakingBeatTimer) {
+        clearInterval(state.orb.speakingBeatTimer);
+        state.orb.speakingBeatTimer = null;
+    }
+
+    var shell = document.querySelector('.orb-shell');
+    if (shell) {
+        shell.classList.remove('orb-speak-beat');
+    }
+
+    console.log('[VTID-01067] Speaking beat stopped');
+}
+
+/**
+ * VTID-01067: Trigger mic-reactive shimmer
+ * Called on speech recognition audio events.
+ */
+function triggerMicShimmer() {
+    var shell = document.querySelector('.orb-shell');
+    if (!shell) return;
+
+    // Add shimmer class briefly
+    shell.classList.add('orb-mic-active');
+    state.orb.micShimmerActive = true;
+
+    // Remove after animation completes
+    setTimeout(function() {
+        shell.classList.remove('orb-mic-active');
+        state.orb.micShimmerActive = false;
+    }, 300);
 }
 
 /**
