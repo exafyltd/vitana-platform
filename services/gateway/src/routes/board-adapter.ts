@@ -149,15 +149,24 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
     // Limit to requested amount after filtering
     const limitedRows = vtidRows.slice(0, limit);
 
-    // Step 2: Fetch recent OASIS events for terminal state detection
-    const eventsResp = await fetch(
-      `${supaUrl}/rest/v1/oasis_events?order=created_at.desc&limit=500`,
-      { headers: { apikey: supaKey, Authorization: `Bearer ${supaKey}` } }
-    );
+    // VTID-01079: Extract VTIDs we need events for
+    const vtidList = limitedRows.map((row: any) => row.vtid).filter(Boolean);
 
+    // Step 2: Fetch OASIS events ONLY for the VTIDs we're displaying
+    // CRITICAL FIX: Previously we fetched limit=500 globally, which caused old events
+    // to fall off when new events were created. Now we query specifically for our VTIDs.
     let allEvents: any[] = [];
-    if (eventsResp.ok) {
-      allEvents = await eventsResp.json() as any[];
+    if (vtidList.length > 0) {
+      // PostgREST IN filter: vtid=in.(VTID-01020,VTID-01021,...)
+      const vtidFilter = `vtid=in.(${vtidList.join(',')})`;
+      const eventsResp = await fetch(
+        `${supaUrl}/rest/v1/oasis_events?${vtidFilter}&order=created_at.desc`,
+        { headers: { apikey: supaKey, Authorization: `Bearer ${supaKey}` } }
+      );
+      if (eventsResp.ok) {
+        allEvents = await eventsResp.json() as any[];
+        console.log(`[VTID-01079] Fetched ${allEvents.length} OASIS events for ${vtidList.length} VTIDs`);
+      }
     }
 
     // Step 3: Build board items with OASIS-derived column placement
