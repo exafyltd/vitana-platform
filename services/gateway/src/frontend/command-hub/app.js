@@ -2009,6 +2009,10 @@ const state = {
         // VTID-01042: Unified Language selector state
         orbLang: 'en-US', // Single source of truth for STT + TTS language
         orbLangWarning: null, // Warning message for voice fallback
+        // VTID-01066: ORB Conversation Stream v1 state
+        thinkingPlaceholderId: null, // ID of thinking placeholder message
+        speakingMessageId: null,     // ID of currently speaking message
+        speakingDurationClass: null, // speak-dur-1..4 class for progress animation
         // VTID-01067: ORB Presence Layer state
         speakingBeatTimer: null, // Interval for speaking pulse beat
         microStatusText: '', // Current micro-status message
@@ -11675,7 +11679,12 @@ function orbOverlaySendMessage() {
  */
 function renderOrbOverlay() {
     var overlay = document.createElement('div');
-    overlay.className = 'orb-overlay orb-overlay-twocol' + (state.orb.overlayVisible ? ' orb-overlay-visible' : '');
+    // VTID-01066: Add orb-speaking class when TTS is active (for stop button visibility)
+    // VTID-01069: Add orb-overlay-twocol for two-column layout
+    var overlayClasses = ['orb-overlay', 'orb-overlay-twocol'];
+    if (state.orb.overlayVisible) overlayClasses.push('orb-overlay-visible');
+    if (state.orb.voiceState === 'SPEAKING' || state.orb.speaking) overlayClasses.push('orb-speaking');
+    overlay.className = overlayClasses.join(' ');
     overlay.setAttribute('role', 'dialog');
     overlay.setAttribute('aria-modal', 'true');
     overlay.setAttribute('aria-label', 'Vitana Assistant');
@@ -11850,11 +11859,52 @@ function renderOrbOverlay() {
         errorMsg.textContent = state.orb.voiceError || state.orb.liveError;
         transcriptArea.appendChild(errorMsg);
     } else if (state.orb.liveTranscript.length > 0) {
-        // Show transcript messages
+        // VTID-01066: Show transcript messages with type modifiers
         state.orb.liveTranscript.forEach(function(item) {
             var msgEl = document.createElement('div');
-            msgEl.className = 'orb-live-message orb-live-message-' + item.role;
-            msgEl.textContent = item.text;
+            var classes = ['orb-live-message', 'orb-live-message-' + item.role];
+
+            // VTID-01066: Add message type modifiers
+            if (item.role === 'user') {
+                if (item.mode === 'voice') {
+                    classes.push('orb-live-message--voice');
+                } else {
+                    classes.push('orb-live-message--text');
+                }
+            } else if (item.role === 'assistant') {
+                if (item.isThinking) {
+                    classes.push('orb-live-message--thinking');
+                } else {
+                    classes.push('orb-live-message--spoken');
+                }
+            } else if (item.role === 'system') {
+                classes.push('orb-live-message--system');
+            }
+
+            // VTID-01066: Add speaking state classes
+            if (state.orb.speakingMessageId === item.id) {
+                classes.push('is-speaking');
+                classes.push('speak-progress');
+                if (state.orb.speakingDurationClass) {
+                    classes.push(state.orb.speakingDurationClass);
+                }
+            }
+
+            msgEl.className = classes.join(' ');
+            msgEl.setAttribute('data-msg-id', item.id);
+
+            // VTID-01066: Thinking placeholder shows animated dots
+            if (item.isThinking) {
+                var thinkingText = document.createElement('span');
+                thinkingText.textContent = 'Thinking';
+                msgEl.appendChild(thinkingText);
+                var dots = document.createElement('span');
+                dots.className = 'orb-thinking-dots';
+                msgEl.appendChild(dots);
+            } else {
+                msgEl.textContent = item.text;
+            }
+
             transcriptArea.appendChild(msgEl);
         });
     }
@@ -12078,6 +12128,17 @@ function renderOrbOverlay() {
 
     layoutWrapper.appendChild(rightColumn);
     overlay.appendChild(layoutWrapper);
+
+    // VTID-01066: Stop TTS button (visible only when speaking via CSS)
+    var stopBtn = document.createElement('button');
+    stopBtn.className = 'orb-stop-tts';
+    stopBtn.textContent = 'Stop';
+    stopBtn.setAttribute('aria-label', 'Stop speaking');
+    stopBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        orbStopTTS('user');
+    });
+    overlay.appendChild(stopBtn);
 
     return overlay;
 }
@@ -12747,13 +12808,12 @@ function orbVoiceStart() {
         }
 
         // VTID-01037: Barge-in - only if NOT echo (real user speech during TTS)
+        // VTID-01066: Updated to use orbStopTTS for proper interrupt handling
         if (state.orb.voiceState === 'SPEAKING' && (interimTranscript || finalTranscript)) {
             // Only trigger barge-in if this is NOT an echo
             if (!looksLikeEcho) {
-                console.log('[VTID-01037] Real barge-in detected, canceling TTS');
-                window.speechSynthesis.cancel();
-                state.orb.speaking = false;
-                state.orb.voiceState = 'LISTENING';
+                console.log('[VTID-01037] Real barge-in detected, triggering voice interrupt');
+                orbStopTTS('voice_interrupt');
             } else {
                 // It's echo during speaking, ignore
                 console.log('[VTID-01037] Ignoring echo during TTS:', currentTranscript.substring(0, 30));
@@ -12776,11 +12836,12 @@ function orbVoiceStart() {
             // VTID-01037: Track scroll position before adding message
             updateTranscriptNearBottom();
 
-            // Add user message to transcript
+            // VTID-01066: Add user message to transcript with voice mode
             state.orb.liveTranscript.push({
                 id: Date.now(),
                 role: 'user',
                 text: finalTranscript.trim(),
+                mode: 'voice',
                 timestamp: new Date().toISOString()
             });
 
@@ -12963,6 +13024,7 @@ function orbVoiceToggleMute() {
 
 /**
  * VTID-0135: Send text to backend via POST /api/v1/orb/chat
+ * VTID-01066: Updated to insert thinking placeholder immediately
  */
 async function orbVoiceSendText(text) {
     if (!text || !text.trim()) return;
@@ -12974,7 +13036,19 @@ async function orbVoiceSendText(text) {
     setOrbState('thinking');
     // VTID-01067: Update micro-status
     setOrbMicroStatus('Thinking...', 0); // No auto-clear while thinking
+
+    // VTID-01066: Insert thinking placeholder immediately
+    var thinkingId = Date.now();
+    state.orb.thinkingPlaceholderId = thinkingId;
+    state.orb.liveTranscript.push({
+        id: thinkingId,
+        role: 'assistant',
+        text: '',
+        isThinking: true,
+        timestamp: new Date().toISOString()
+    });
     renderApp();
+    scrollOrbLiveTranscript();
 
     try {
         var response = await fetch('/api/v1/orb/chat', {
@@ -13005,14 +13079,31 @@ async function orbVoiceSendText(text) {
             // VTID-01037: Track scroll position before adding message
             updateTranscriptNearBottom();
 
-            // Add assistant response to transcript
-            state.orb.liveTranscript.push({
-                id: Date.now(),
-                role: 'assistant',
-                text: data.reply_text,
-                timestamp: new Date().toISOString(),
-                meta: data.meta
+            // VTID-01066: Replace thinking placeholder with actual response
+            var responseId = Date.now();
+            var placeholderIdx = state.orb.liveTranscript.findIndex(function(m) {
+                return m.id === state.orb.thinkingPlaceholderId;
             });
+            if (placeholderIdx !== -1) {
+                state.orb.liveTranscript[placeholderIdx] = {
+                    id: responseId,
+                    role: 'assistant',
+                    text: data.reply_text,
+                    isThinking: false,
+                    timestamp: new Date().toISOString(),
+                    meta: data.meta
+                };
+            } else {
+                // Fallback: add as new message
+                state.orb.liveTranscript.push({
+                    id: responseId,
+                    role: 'assistant',
+                    text: data.reply_text,
+                    timestamp: new Date().toISOString(),
+                    meta: data.meta
+                });
+            }
+            state.orb.thinkingPlaceholderId = null;
 
             state.orb.isThinking = false;
             renderApp();
@@ -13024,12 +13115,28 @@ async function orbVoiceSendText(text) {
             console.error('[VTID-0135] Backend error:', data.error);
             // VTID-01037: Track scroll position before adding message
             updateTranscriptNearBottom();
-            state.orb.liveTranscript.push({
-                id: Date.now(),
-                role: 'assistant',
-                text: 'Sorry, I encountered an error: ' + (data.error || 'Unknown error'),
-                timestamp: new Date().toISOString()
+
+            // VTID-01066: Replace thinking placeholder with error
+            var placeholderIdx = state.orb.liveTranscript.findIndex(function(m) {
+                return m.id === state.orb.thinkingPlaceholderId;
             });
+            if (placeholderIdx !== -1) {
+                state.orb.liveTranscript[placeholderIdx] = {
+                    id: Date.now(),
+                    role: 'assistant',
+                    text: 'Sorry, I encountered an error: ' + (data.error || 'Unknown error'),
+                    isThinking: false,
+                    timestamp: new Date().toISOString()
+                };
+            } else {
+                state.orb.liveTranscript.push({
+                    id: Date.now(),
+                    role: 'assistant',
+                    text: 'Sorry, I encountered an error: ' + (data.error || 'Unknown error'),
+                    timestamp: new Date().toISOString()
+                });
+            }
+            state.orb.thinkingPlaceholderId = null;
             state.orb.isThinking = false;
             state.orb.voiceState = 'LISTENING';
             renderApp();
@@ -13039,12 +13146,28 @@ async function orbVoiceSendText(text) {
         console.error('[VTID-0135] Network error:', error);
         // VTID-01037: Track scroll position before adding message
         updateTranscriptNearBottom();
-        state.orb.liveTranscript.push({
-            id: Date.now(),
-            role: 'assistant',
-            text: 'Sorry, I could not connect to the server. Please try again.',
-            timestamp: new Date().toISOString()
+
+        // VTID-01066: Replace thinking placeholder with error
+        var placeholderIdx = state.orb.liveTranscript.findIndex(function(m) {
+            return m.id === state.orb.thinkingPlaceholderId;
         });
+        if (placeholderIdx !== -1) {
+            state.orb.liveTranscript[placeholderIdx] = {
+                id: Date.now(),
+                role: 'assistant',
+                text: "Couldn't respond. Try again.",
+                isThinking: false,
+                timestamp: new Date().toISOString()
+            };
+        } else {
+            state.orb.liveTranscript.push({
+                id: Date.now(),
+                role: 'assistant',
+                text: "Couldn't respond. Try again.",
+                timestamp: new Date().toISOString()
+            });
+        }
+        state.orb.thinkingPlaceholderId = null;
         state.orb.isThinking = false;
         state.orb.voiceState = 'LISTENING';
         renderApp();
@@ -13391,6 +13514,9 @@ function isLikelyEcho(transcript, lastTTSText) {
  */
 function restartRecognitionAfterTTS() {
     state.orb.speaking = false;
+    // VTID-01066: Clear speaking message state
+    state.orb.speakingMessageId = null;
+    state.orb.speakingDurationClass = null;
     state.orb.voiceState = 'LISTENING';
     // VTID-01064: Update ORB aura to ready state after TTS ends
     setOrbState('ready');
@@ -13415,9 +13541,62 @@ function restartRecognitionAfterTTS() {
 }
 
 /**
+ * VTID-01066: Stop TTS playback and clear speaking state
+ * @param {string} reason - 'user' | 'voice_interrupt' | 'error'
+ */
+function orbStopTTS(reason) {
+    console.log('[VTID-01066] Stopping TTS, reason:', reason);
+
+    // Cancel any ongoing TTS
+    if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+    }
+
+    // Clear speaking state
+    state.orb.speaking = false;
+    state.orb.speakingMessageId = null;
+    state.orb.speakingDurationClass = null;
+
+    // VTID-01066: Add system message only once per interrupt (not for errors)
+    if (reason === 'user' || reason === 'voice_interrupt') {
+        // Check if last message is already an interrupted system message
+        var lastMsg = state.orb.liveTranscript[state.orb.liveTranscript.length - 1];
+        if (!lastMsg || lastMsg.role !== 'system' || lastMsg.text !== 'Interrupted.') {
+            state.orb.liveTranscript.push({
+                id: Date.now(),
+                role: 'system',
+                text: 'Interrupted.',
+                timestamp: new Date().toISOString()
+            });
+        }
+    }
+
+    // Update voice state
+    state.orb.voiceState = 'LISTENING';
+    setOrbState('ready');
+
+    // Re-render to update UI
+    renderApp();
+
+    // Restart recognition after a short delay
+    setTimeout(function() {
+        if (state.orb.overlayVisible && state.orb.speechRecognition &&
+            state.orb.voiceState !== 'MUTED' && !state.orb.voiceError) {
+            try {
+                state.orb.speechRecognition.start();
+                console.log('[VTID-01066] Recognition restarted after TTS stop');
+            } catch (e) {
+                console.warn('[VTID-01066] Recognition already running:', e);
+            }
+        }
+    }, 250);
+}
+
+/**
  * VTID-0135: Speak text using TTS (speechSynthesis)
  * VTID-01037: Implements TTS/STT coordination to prevent feedback loop
  * VTID-01038: Updated to use selected voice
+ * VTID-01066: Updated to track speaking message and duration class
  * Implements barge-in: stops speaking when user starts talking
  */
 function orbVoiceSpeak(text) {
@@ -13432,6 +13611,35 @@ function orbVoiceSpeak(text) {
     state.orb.speaking = true;
     state.orb.ignoreSTTUntil = Date.now() + 800; // Guard against immediate echo
     state.orb.lastTTSText = text;
+
+    // VTID-01066: Calculate duration bucket from text length
+    // durationMs = clamp(lenChars * 35ms, 1200, 12000)
+    var lenChars = text.length;
+    var durationMs = Math.max(1200, Math.min(lenChars * 35, 12000));
+    var durClass;
+    if (durationMs <= 1500) {
+        durClass = 'speak-dur-1'; // 1.5s
+    } else if (durationMs <= 3000) {
+        durClass = 'speak-dur-2'; // 3s
+    } else if (durationMs <= 6000) {
+        durClass = 'speak-dur-3'; // 6s
+    } else {
+        durClass = 'speak-dur-4'; // 10s
+    }
+    state.orb.speakingDurationClass = durClass;
+
+    // VTID-01066: Find the most recent assistant message to mark as speaking
+    var recentAssistantMsg = null;
+    for (var i = state.orb.liveTranscript.length - 1; i >= 0; i--) {
+        if (state.orb.liveTranscript[i].role === 'assistant' && !state.orb.liveTranscript[i].isThinking) {
+            recentAssistantMsg = state.orb.liveTranscript[i];
+            break;
+        }
+    }
+    if (recentAssistantMsg) {
+        state.orb.speakingMessageId = recentAssistantMsg.id;
+        console.log('[VTID-01066] Marking message as speaking:', recentAssistantMsg.id, 'duration:', durClass);
+    }
 
     // VTID-01037: Stop recognition cleanly before TTS to prevent self-hearing
     // VTID-01044: Set flag so onend doesn't auto-restart (restartRecognitionAfterTTS will handle it)

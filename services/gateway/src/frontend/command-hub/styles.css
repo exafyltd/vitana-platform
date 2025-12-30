@@ -4664,6 +4664,162 @@ body {
 }
 
 /* ==========================================================================
+   VTID-01066: ORB Conversation Stream - Voice-First Live Flow
+   ========================================================================== */
+
+/* A) Message type modifiers */
+.orb-live-message--voice::before {
+  content: '';
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  vertical-align: middle;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233b82f6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z'/%3E%3Cpath d='M19 10v2a7 7 0 0 1-14 0v-2'/%3E%3Cline x1='12' y1='19' x2='12' y2='23'/%3E%3Cline x1='8' y1='23' x2='16' y2='23'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+}
+
+.orb-live-message--voice .orb-live-voice-label {
+  font-size: 0.7rem;
+  color: #64748b;
+  margin-left: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.orb-live-message--text {
+  /* Text messages get no special styling - default bubble */
+}
+
+.orb-live-message--spoken {
+  /* Spoken assistant messages - default styling */
+}
+
+/* B) Thinking placeholder with animated dots */
+.orb-live-message--thinking {
+  color: #64748b;
+  font-style: italic;
+}
+
+.orb-live-message--thinking .orb-thinking-dots::after {
+  content: '';
+  animation: thinkingDots 1.5s infinite;
+}
+
+@keyframes thinkingDots {
+  0% { content: ''; }
+  25% { content: '.'; }
+  50% { content: '..'; }
+  75% { content: '...'; }
+  100% { content: ''; }
+}
+
+/* C) System messages - lighter, compact */
+.orb-live-message--system {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  background: transparent;
+  padding: 4px 8px;
+  border-left: 2px solid #cbd5e1;
+  text-align: left;
+}
+
+/* D) Speaking cursor + progress highlight */
+.orb-live-message.is-speaking {
+  position: relative;
+}
+
+/* Blinking caret at end of speaking message */
+.orb-live-message.is-speaking::after {
+  content: '';
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: #22c55e;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: blinkCaret 0.8s step-end infinite;
+}
+
+@keyframes blinkCaret {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Left-edge progress bar */
+.orb-live-message.is-speaking.speak-progress::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 3px;
+  height: 0%;
+  background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%);
+  border-radius: 3px 0 0 3px;
+  animation-name: speakProgress;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+/* Duration classes for progress animation */
+.orb-live-message.speak-dur-1.speak-progress::before {
+  animation-duration: 1.5s;
+}
+
+.orb-live-message.speak-dur-2.speak-progress::before {
+  animation-duration: 3s;
+}
+
+.orb-live-message.speak-dur-3.speak-progress::before {
+  animation-duration: 6s;
+}
+
+.orb-live-message.speak-dur-4.speak-progress::before {
+  animation-duration: 10s;
+}
+
+@keyframes speakProgress {
+  0% { height: 0%; }
+  100% { height: 100%; }
+}
+
+/* E) Stop TTS button */
+.orb-stop-tts {
+  display: none;
+  position: fixed;
+  bottom: 180px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 20px;
+  background: rgba(239, 68, 68, 0.9);
+  color: white;
+  border: none;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  z-index: 10003;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 10px rgba(239, 68, 68, 0.3);
+}
+
+.orb-stop-tts:hover {
+  background: rgba(220, 38, 38, 1);
+  transform: translateX(-50%) scale(1.05);
+}
+
+/* Show stop button only when speaking */
+.orb-overlay.orb-speaking .orb-stop-tts {
+  display: block;
+}
+
+/* F) Speaking container state (for stop button visibility) */
+.orb-overlay.orb-speaking {
+  /* Container marker when TTS is active */
+}
+
+/* ==========================================================================
    VTID-0135: ORB State Pill (Voice Conversation State)
    ========================================================================== */
 
