@@ -57,6 +57,10 @@ oasisTasksRouter.get('/api/v1/oasis/tasks', async (req: Request, res: Response) 
       id: row.vtid, vtid: row.vtid, title: row.title, description: row.summary ?? row.title,
       status: row.status, layer: row.layer, module: row.module, assigned_to: row.assigned_to,
       metadata: row.metadata, created_at: row.created_at, updated_at: row.updated_at,
+      // VTID-01080: Terminal completion fields
+      is_terminal: row.is_terminal ?? false,
+      terminal_outcome: row.terminal_outcome ?? null,
+      completed_at: row.completed_at ?? null,
     }));
 
     return res.status(200).json(tasks);
@@ -128,7 +132,14 @@ oasisTasksRouter.get('/api/v1/oasis/tasks/:id', async (req: Request, res: Respon
     if (data.length === 0) return res.status(404).json({ error: 'Task not found', id });
 
     const row = data[0];
-    return res.status(200).json({ id: row.vtid, vtid: row.vtid, title: row.title, status: row.status, layer: row.layer, module: row.module, created_at: row.created_at, updated_at: row.updated_at });
+    return res.status(200).json({
+      id: row.vtid, vtid: row.vtid, title: row.title, status: row.status, layer: row.layer, module: row.module,
+      created_at: row.created_at, updated_at: row.updated_at,
+      // VTID-01080: Terminal completion fields
+      is_terminal: row.is_terminal ?? false,
+      terminal_outcome: row.terminal_outcome ?? null,
+      completed_at: row.completed_at ?? null,
+    });
   } catch (e: any) {
     return res.status(500).json({ error: 'Internal server error', detail: e.message });
   }
@@ -317,5 +328,171 @@ oasisTasksRouter.delete('/api/v1/oasis/tasks/:id', async (req: Request, res: Res
   } catch (e: any) {
     console.error(`[VTID-01052] Unexpected error:`, e);
     return res.status(500).json({ ok: false, error: 'Internal server error', detail: e.message });
+  }
+});
+
+// ===========================================================================
+// VTID-01080: Terminal Completion Endpoint (CI/CD Hard Gate)
+// ===========================================================================
+// POST /api/v1/oasis/tasks/:vtid/complete
+//
+// A task is ONLY "done" if the CI/CD pipeline writes a terminal completion
+// update via this endpoint. This is the hard gate for deployment success.
+//
+// Request body:
+//   { "terminal_outcome": "success" | "failed" | "cancelled" }
+//
+// Behavior:
+//   - Validates VTID format (VTID-\d{4,})
+//   - Updates vtid_ledger: status=completed, is_terminal=true, terminal_outcome, completed_at
+//   - Idempotent: if already completed+terminal, returns ok with already_completed: true
+//   - Emits OASIS event: vtid.lifecycle.terminal_completion
+// ===========================================================================
+
+const TerminalCompletionSchema = z.object({
+  terminal_outcome: z.enum(['success', 'failed', 'cancelled']).default('success'),
+});
+
+oasisTasksRouter.post('/api/v1/oasis/tasks/:vtid/complete', async (req: Request, res: Response) => {
+  try {
+    const { vtid } = req.params;
+
+    // Validate VTID format: VTID-XXXXX (4+ digits)
+    if (!vtid || !/^VTID-\d{4,}$/.test(vtid)) {
+      console.log(`[VTID-01080] Invalid VTID format: ${vtid}`);
+      return res.status(400).json({
+        ok: false,
+        error: 'INVALID_VTID_FORMAT',
+        message: 'VTID must match format VTID-XXXXX (4+ digits)',
+        vtid
+      });
+    }
+
+    // Parse request body
+    const validation = TerminalCompletionSchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({
+        ok: false,
+        error: 'VALIDATION_FAILED',
+        message: 'Invalid request body',
+        details: validation.error.errors
+      });
+    }
+
+    const { terminal_outcome } = validation.data;
+
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+    if (!svcKey || !supabaseUrl) {
+      console.error('[VTID-01080] Gateway misconfigured - missing Supabase credentials');
+      return res.status(500).json({ ok: false, error: 'Gateway misconfigured' });
+    }
+
+    // Step 1: Fetch the task to check current state
+    const fetchResp = await fetch(`${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}`, {
+      headers: { 'Content-Type': 'application/json', apikey: svcKey, Authorization: `Bearer ${svcKey}` },
+    });
+
+    if (!fetchResp.ok) {
+      console.error(`[VTID-01080] Failed to fetch task ${vtid}: ${fetchResp.status}`);
+      return res.status(502).json({ ok: false, error: 'DATABASE_ERROR', message: 'Failed to query database' });
+    }
+
+    const tasks = await fetchResp.json() as any[];
+    if (tasks.length === 0) {
+      console.log(`[VTID-01080] Task not found: ${vtid}`);
+      return res.status(404).json({ ok: false, error: 'NOT_FOUND', message: `VTID ${vtid} not found in ledger`, vtid });
+    }
+
+    const task = tasks[0];
+
+    // Step 2: Check if already terminal (idempotent)
+    if (task.is_terminal === true && task.status === 'completed') {
+      console.log(`[VTID-01080] Task ${vtid} already completed+terminal (idempotent response)`);
+      return res.status(200).json({
+        ok: true,
+        vtid,
+        already_completed: true,
+        status: task.status,
+        is_terminal: task.is_terminal,
+        terminal_outcome: task.terminal_outcome,
+        completed_at: task.completed_at
+      });
+    }
+
+    // Step 3: Update task to terminal completion state
+    const timestamp = new Date().toISOString();
+    const updatePayload = {
+      status: 'completed',
+      is_terminal: true,
+      terminal_outcome: terminal_outcome,
+      completed_at: timestamp,
+      updated_at: timestamp
+    };
+
+    const updateResp = await fetch(`${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', apikey: svcKey, Authorization: `Bearer ${svcKey}`, Prefer: 'return=representation' },
+      body: JSON.stringify(updatePayload),
+    });
+
+    if (!updateResp.ok) {
+      const text = await updateResp.text();
+      console.error(`[VTID-01080] Failed to update task ${vtid}: ${updateResp.status} - ${text}`);
+      return res.status(502).json({ ok: false, error: 'DATABASE_ERROR', message: 'Failed to update task' });
+    }
+
+    const updatedTasks = await updateResp.json() as any[];
+    const updated = updatedTasks[0];
+
+    // Step 4: Emit OASIS event for terminal completion
+    const eventId = randomUUID();
+    const eventPayload = {
+      id: eventId,
+      created_at: timestamp,
+      vtid: vtid,
+      topic: 'vtid.lifecycle.terminal_completion',
+      service: 'cicd-terminal-gate',
+      role: 'DEPLOY',
+      model: 'vtid-01080-terminal-gate',
+      status: 'success',
+      message: `Task ${vtid} marked as terminal with outcome: ${terminal_outcome}`,
+      link: null,
+      metadata: {
+        action: 'terminal_completion',
+        previous_status: task.status,
+        previous_is_terminal: task.is_terminal,
+        new_status: 'completed',
+        is_terminal: true,
+        terminal_outcome: terminal_outcome,
+        completed_at: timestamp,
+        vtid: vtid
+      }
+    };
+
+    const eventResp = await fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: svcKey, Authorization: `Bearer ${svcKey}` },
+      body: JSON.stringify(eventPayload),
+    });
+
+    if (!eventResp.ok) {
+      console.warn(`[VTID-01080] Task ${vtid} completed but failed to log OASIS event: ${eventResp.status}`);
+    } else {
+      console.log(`[VTID-01080] Task ${vtid} terminal completion recorded. Event: ${eventId}`);
+    }
+
+    return res.status(200).json({
+      ok: true,
+      vtid,
+      already_completed: false,
+      status: updated.status,
+      is_terminal: updated.is_terminal,
+      terminal_outcome: updated.terminal_outcome,
+      completed_at: updated.completed_at
+    });
+  } catch (e: any) {
+    console.error(`[VTID-01080] Unexpected error:`, e);
+    return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR', message: e.message });
   }
 });

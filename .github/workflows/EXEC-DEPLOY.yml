@@ -387,6 +387,104 @@ jobs:
           echo "VTID-0416: Deploy completed successfully via governed pipeline"
 
       # =========================================================================
+      # VTID-01080: OASIS Terminal Completion Gate (HARD FAIL)
+      # A task is ONLY "done" if the pipeline writes a terminal completion update.
+      # If this write fails, the entire workflow FAILS.
+      # =========================================================================
+      - name: OASIS Terminal Completion Gate (VTID-01080 HARD GATE)
+        id: terminal_completion
+        if: success()
+        env:
+          GATEWAY_URL: ${{ steps.deploy.outputs.service_url }}
+        run: |
+          set -e
+          VTID="${{ github.event.inputs.vtid }}"
+          SERVICE="${{ steps.deploy.outputs.cloud_run_service }}"
+
+          echo "==========================================================================="
+          echo "VTID-01080: HARD GATE - Terminal Completion Write Required"
+          echo "==========================================================================="
+
+          # Skip terminal completion for BOOTSTRAP VTIDs
+          if [[ "$VTID" == BOOTSTRAP-* ]]; then
+            echo "⚠️  BOOTSTRAP MODE: Skipping terminal completion for $VTID"
+            echo "terminal_completion=skipped" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Writing terminal completion for VTID: $VTID"
+
+          # Step 1: Call terminal completion endpoint
+          RESPONSE=$(curl -sS --max-time 30 -X POST "${GATEWAY_URL}/api/v1/oasis/tasks/${VTID}/complete" \
+            -H "Content-Type: application/json" \
+            -H "X-VTID: $VTID" \
+            -d '{"terminal_outcome":"success"}' 2>&1 || echo '{"ok":false,"error":"request_failed"}')
+
+          echo "Terminal completion response: $RESPONSE"
+
+          # Parse response
+          OK=$(echo "$RESPONSE" | jq -r '.ok // empty')
+          ERROR=$(echo "$RESPONSE" | jq -r '.error // empty')
+          ALREADY_COMPLETED=$(echo "$RESPONSE" | jq -r '.already_completed // empty')
+
+          if [ "$OK" != "true" ]; then
+            echo "::error::VTID-01080: HARD FAIL - Terminal completion write failed"
+            echo "Error: $ERROR"
+            echo "Response: $RESPONSE"
+
+            # Emit failure event
+            curl -s -X POST "${GATEWAY_URL}/api/v1/oasis/events" \
+              -H "Content-Type: application/json" \
+              -H "X-VTID: $VTID" \
+              -d "{
+                \"type\": \"vtid.lifecycle.completion_gate.failed\",
+                \"vtid\": \"$VTID\",
+                \"service\": \"$SERVICE\",
+                \"source\": \"ci_cd\",
+                \"status\": \"error\",
+                \"message\": \"Terminal completion gate failed for $VTID\",
+                \"details\": {
+                  \"error\": \"$ERROR\",
+                  \"workflow_run_id\": \"${{ github.run_id }}\"
+                }
+              }" 2>/dev/null || true
+
+            echo "terminal_completion=failed" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+          echo "terminal_completion=success" >> $GITHUB_OUTPUT
+
+          # Step 2: Verify terminal completion state
+          echo "Verifying terminal completion state..."
+          VERIFY_RESPONSE=$(curl -sS --max-time 30 "${GATEWAY_URL}/api/v1/oasis/tasks?limit=2000" 2>&1 || echo '[]')
+
+          TASK_STATE=$(echo "$VERIFY_RESPONSE" | jq --arg v "$VTID" '.[] | select(.vtid==$v) | {vtid,status,is_terminal,terminal_outcome}' 2>/dev/null || echo '{}')
+          echo "Task state: $TASK_STATE"
+
+          STATUS=$(echo "$TASK_STATE" | jq -r '.status // empty')
+          IS_TERMINAL=$(echo "$TASK_STATE" | jq -r '.is_terminal // empty')
+          TERMINAL_OUTCOME=$(echo "$TASK_STATE" | jq -r '.terminal_outcome // empty')
+
+          if [ "$STATUS" != "completed" ] || [ "$IS_TERMINAL" != "true" ] || [ "$TERMINAL_OUTCOME" != "success" ]; then
+            echo "::error::VTID-01080: HARD FAIL - Terminal state verification failed"
+            echo "Expected: status=completed, is_terminal=true, terminal_outcome=success"
+            echo "Got: status=$STATUS, is_terminal=$IS_TERMINAL, terminal_outcome=$TERMINAL_OUTCOME"
+            exit 1
+          fi
+
+          if [ "$ALREADY_COMPLETED" = "true" ]; then
+            echo "VTID-01080: ✓ Task $VTID already terminal (idempotent)"
+          else
+            echo "VTID-01080: ✓ Task $VTID marked as terminal completion SUCCESS"
+          fi
+
+          echo ""
+          echo "==========================================================================="
+          echo "VTID-01080: Terminal Completion Gate PASSED"
+          echo "==========================================================================="
+
+      # =========================================================================
       # VTID-0416: Emit OASIS Event for Deploy Failure
       # =========================================================================
       - name: Emit OASIS Deploy Failure Event (VTID-0416)
