@@ -11583,7 +11583,9 @@ const ORB_ICONS = {
     badgeMicOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/></svg>',
     badgeScreen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>',
     badgeCamera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>',
-    badgeLang: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>'
+    badgeLang: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
+    // VTID-01069-C: Plus icon for attachment button
+    plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>'
 };
 
 // VTID-0150-A: ORB Idle is now rendered via renderOrbIdleElement() inside sidebar footer
@@ -11675,12 +11677,11 @@ function orbOverlaySendMessage() {
  * VTID-0150-A: Renders the ORB Overlay (full-screen mode)
  * VTID-0135: Updated with voice conversation (Web Speech APIs) and state pill
  * VTID-01069: Two-column layout with auto-growing chatbox and symmetric spacing
+ * VTID-01069-C: Geometry Lock - 40/60 split, ORB 62vh, input centered
  * @returns {HTMLElement}
  */
 function renderOrbOverlay() {
     var overlay = document.createElement('div');
-    // VTID-01066: Add orb-speaking class when TTS is active (for stop button visibility)
-    // VTID-01069: Add orb-overlay-twocol for two-column layout
     var overlayClasses = ['orb-overlay', 'orb-overlay-twocol'];
     if (state.orb.overlayVisible) overlayClasses.push('orb-overlay-visible');
     if (state.orb.voiceState === 'SPEAKING' || state.orb.speaking) overlayClasses.push('orb-speaking');
@@ -11689,65 +11690,54 @@ function renderOrbOverlay() {
     overlay.setAttribute('aria-modal', 'true');
     overlay.setAttribute('aria-label', 'Vitana Assistant');
 
-    // VTID-0135: Block background clicks - Stop voice session on close
-    overlay.addEventListener('click', function(e) {
-        if (e.target === overlay) {
-            // Close overlay when clicking backdrop
-            orbVoiceStop();
-            state.orb.overlayVisible = false;
-            state.orb.chatDrawerOpen = false;
-            renderApp();
-        }
-    });
-
-    // VTID-01069: Two-column layout wrapper
+    // VTID-01069-C: Two-column layout wrapper
     var layoutWrapper = document.createElement('div');
     layoutWrapper.className = 'orb-overlay-layout';
 
     // ==========================================================================
-    // VTID-01069: LEFT COLUMN - Conversation Stream + Input Zone (Symmetric)
+    // VTID-01069-C: LEFT COLUMN (40vw) - Input Zone Only (vertically centered)
     // ==========================================================================
     var leftColumn = document.createElement('div');
     leftColumn.className = 'orb-left';
 
-    // Top spacer for symmetry
+    // Top spacer for vertical centering
     var topSpacer = document.createElement('div');
     topSpacer.className = 'orb-left-topspacer';
     leftColumn.appendChild(topSpacer);
-
-    // Conversation stream
-    var conversationStream = document.createElement('div');
-    conversationStream.className = 'orb-conversation';
-
-    if (state.orb.chatMessages.length === 0) {
-        var emptyMsg = document.createElement('div');
-        emptyMsg.className = 'orb-conversation-empty';
-        emptyMsg.textContent = 'Start a conversation with Vitana';
-        conversationStream.appendChild(emptyMsg);
-    } else {
-        state.orb.chatMessages.forEach(function(msg) {
-            var msgEl = document.createElement('div');
-            msgEl.className = 'orb-conversation-message orb-conversation-message-' + msg.role;
-            msgEl.textContent = msg.content;
-            conversationStream.appendChild(msgEl);
-        });
-    }
-
-    leftColumn.appendChild(conversationStream);
 
     // Input zone wrapper
     var inputZoneWrap = document.createElement('div');
     inputZoneWrap.className = 'orb-inputzone-wrap';
 
-    // Input bar (controls + textarea + send)
+    // Input bar: [ + ] [ mic ] [ screen ] [ camera ] [ text area ] [ language ▼ ] [ send ]
     var inputBar = document.createElement('div');
     inputBar.className = 'orb-inputbar';
 
-    // Control rail (left of textarea)
+    // Control rail
     var inputControls = document.createElement('div');
     inputControls.className = 'orb-input-controls';
 
-    // Mic toggle in input rail
+    // VTID-01069-C: Attachment button (+)
+    var attachBtn = document.createElement('button');
+    attachBtn.className = 'orb-input-control-btn';
+    attachBtn.setAttribute('aria-label', 'Attach file');
+    attachBtn.innerHTML = ORB_ICONS.plus;
+    attachBtn.addEventListener('click', function() {
+        // Create hidden file input and trigger click
+        var fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = 'image/*,.pdf,.doc,.docx,.txt';
+        fileInput.addEventListener('change', function(e) {
+            if (e.target.files && e.target.files.length > 0) {
+                console.log('[ORB] File selected:', e.target.files[0].name);
+                // TODO: Handle file upload
+            }
+        });
+        fileInput.click();
+    });
+    inputControls.appendChild(attachBtn);
+
+    // Mic toggle
     var isMuted = state.orb.voiceState === 'MUTED';
     var micBtn = document.createElement('button');
     micBtn.className = 'orb-input-control-btn' + (!isMuted ? ' orb-input-control-active' : '');
@@ -11758,28 +11748,24 @@ function renderOrbOverlay() {
     });
     inputControls.appendChild(micBtn);
 
-    // Screen share toggle in input rail
+    // Screen share toggle
     var screenBtn = document.createElement('button');
     screenBtn.className = 'orb-input-control-btn' + (state.orb.screenShareActive ? ' orb-input-control-active' : '');
     screenBtn.setAttribute('aria-label', state.orb.screenShareActive ? 'Stop screen share' : 'Start screen share');
     screenBtn.innerHTML = ORB_ICONS.screen;
     screenBtn.addEventListener('click', function() {
         state.orb.screenShareActive = !state.orb.screenShareActive;
-        // VTID-01067: Update badges after screen share state change
-        renderOrbBadges();
         renderApp();
     });
     inputControls.appendChild(screenBtn);
 
-    // Camera toggle in input rail
+    // Camera toggle
     var cameraBtn = document.createElement('button');
     cameraBtn.className = 'orb-input-control-btn' + (state.orb.cameraActive ? ' orb-input-control-active' : '');
     cameraBtn.setAttribute('aria-label', state.orb.cameraActive ? 'Turn off camera' : 'Turn on camera');
     cameraBtn.innerHTML = state.orb.cameraActive ? ORB_ICONS.camera : ORB_ICONS.cameraOff;
     cameraBtn.addEventListener('click', function() {
         state.orb.cameraActive = !state.orb.cameraActive;
-        // VTID-01067: Update badges after camera state change
-        renderOrbBadges();
         renderApp();
     });
     inputControls.appendChild(cameraBtn);
@@ -11797,23 +11783,49 @@ function renderOrbOverlay() {
     textarea.value = state.orb.chatInputValue;
     textarea.setAttribute('rows', '1');
 
-    // VTID-01069: Input event for auto-grow (class-based, no inline styles)
     textarea.addEventListener('input', function(e) {
         state.orb.chatInputValue = e.target.value;
         updateInputHeightBucket(e.target, textareaWrap);
     });
 
-    // VTID-01069: Keydown for Enter/Shift+Enter handling
     textarea.addEventListener('keydown', function(e) {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             orbOverlaySendMessage();
         }
-        // Shift+Enter naturally inserts newline (default behavior)
     });
 
     textareaWrap.appendChild(textarea);
     inputBar.appendChild(textareaWrap);
+
+    // VTID-01069-C: Inline language dropdown
+    var langDropdown = document.createElement('select');
+    langDropdown.className = 'orb-input-lang';
+    langDropdown.setAttribute('aria-label', 'Select language');
+
+    var availableLanguages = [
+        { code: 'en-US', label: 'EN' },
+        { code: 'de-DE', label: 'DE' },
+        { code: 'fr-FR', label: 'FR' },
+        { code: 'es-ES', label: 'ES' },
+        { code: 'ar-AE', label: 'AR' },
+        { code: 'zh-CN', label: 'ZH' }
+    ];
+
+    availableLanguages.forEach(function(lang) {
+        var option = document.createElement('option');
+        option.value = lang.code;
+        option.textContent = lang.label;
+        if (lang.code === state.orb.orbLang) {
+            option.selected = true;
+        }
+        langDropdown.appendChild(option);
+    });
+
+    langDropdown.addEventListener('change', function(e) {
+        orbSetLanguage(e.target.value);
+    });
+    inputBar.appendChild(langDropdown);
 
     // Send button
     var sendBtn = document.createElement('button');
@@ -11829,7 +11841,7 @@ function renderOrbOverlay() {
     inputZoneWrap.appendChild(inputBar);
     leftColumn.appendChild(inputZoneWrap);
 
-    // Bottom spacer for symmetry
+    // Bottom spacer for vertical centering
     var bottomSpacer = document.createElement('div');
     bottomSpacer.className = 'orb-left-bottomspacer';
     leftColumn.appendChild(bottomSpacer);
@@ -11837,109 +11849,13 @@ function renderOrbOverlay() {
     layoutWrapper.appendChild(leftColumn);
 
     // ==========================================================================
-    // VTID-01069: RIGHT COLUMN - ORB + Aura + Controls
+    // VTID-01069-C: RIGHT COLUMN (60vw) - ORB Only (centered, 62vh diameter)
     // ==========================================================================
     var rightColumn = document.createElement('div');
     rightColumn.className = 'orb-right';
 
-    // VTID-0135: State pill (LISTENING / THINKING / SPEAKING / MUTED)
-    var statePill = document.createElement('div');
-    statePill.className = 'orb-state-pill ' + getVoiceStateClass(state.orb.voiceState);
-    statePill.textContent = getVoiceStateLabel(state.orb.voiceState);
-    rightColumn.appendChild(statePill);
-
-    // VTID-0135: Live transcript area
-    var transcriptArea = document.createElement('div');
-    transcriptArea.className = 'orb-live-transcript';
-
-    // Show errors first (voice error or legacy live error)
-    if (state.orb.voiceError || state.orb.liveError) {
-        var errorMsg = document.createElement('div');
-        errorMsg.className = 'orb-live-error';
-        errorMsg.textContent = state.orb.voiceError || state.orb.liveError;
-        transcriptArea.appendChild(errorMsg);
-    } else if (state.orb.liveTranscript.length > 0) {
-        // VTID-01066: Show transcript messages with type modifiers
-        state.orb.liveTranscript.forEach(function(item) {
-            var msgEl = document.createElement('div');
-            var classes = ['orb-live-message', 'orb-live-message-' + item.role];
-
-            // VTID-01066: Add message type modifiers
-            if (item.role === 'user') {
-                if (item.mode === 'voice') {
-                    classes.push('orb-live-message--voice');
-                } else {
-                    classes.push('orb-live-message--text');
-                }
-            } else if (item.role === 'assistant') {
-                if (item.isThinking) {
-                    classes.push('orb-live-message--thinking');
-                } else {
-                    classes.push('orb-live-message--spoken');
-                }
-            } else if (item.role === 'system') {
-                classes.push('orb-live-message--system');
-            }
-
-            // VTID-01066: Add speaking state classes
-            if (state.orb.speakingMessageId === item.id) {
-                classes.push('is-speaking');
-                classes.push('speak-progress');
-                if (state.orb.speakingDurationClass) {
-                    classes.push(state.orb.speakingDurationClass);
-                }
-            }
-
-            msgEl.className = classes.join(' ');
-            msgEl.setAttribute('data-msg-id', item.id);
-
-            // VTID-01066: Thinking placeholder shows animated dots
-            if (item.isThinking) {
-                var thinkingText = document.createElement('span');
-                thinkingText.textContent = 'Thinking';
-                msgEl.appendChild(thinkingText);
-                var dots = document.createElement('span');
-                dots.className = 'orb-thinking-dots';
-                msgEl.appendChild(dots);
-            } else {
-                msgEl.textContent = item.text;
-            }
-
-            transcriptArea.appendChild(msgEl);
-        });
-    }
-
-    // VTID-0135: Show interim transcript while speaking
-    if (state.orb.interimTranscript) {
-        var interimEl = document.createElement('div');
-        interimEl.className = 'orb-live-message orb-live-message-user orb-live-interim';
-        interimEl.textContent = state.orb.interimTranscript + '...';
-        transcriptArea.appendChild(interimEl);
-    }
-
-    // Show listening/connecting message if transcript is empty
-    if (state.orb.liveTranscript.length === 0 && !state.orb.voiceError && !state.orb.interimTranscript) {
-        var statusMsg = document.createElement('div');
-        statusMsg.className = 'orb-live-listening';
-        if (state.orb.voiceState === 'LISTENING') {
-            statusMsg.textContent = 'Listening...';
-        } else if (state.orb.voiceState === 'MUTED') {
-            statusMsg.textContent = 'Microphone muted';
-        } else if (state.orb.voiceState === 'THINKING') {
-            statusMsg.textContent = 'Processing...';
-        } else if (state.orb.voiceState === 'SPEAKING') {
-            statusMsg.textContent = 'Speaking...';
-        } else {
-            statusMsg.textContent = 'Initializing...';
-        }
-        transcriptArea.appendChild(statusMsg);
-    }
-
-    rightColumn.appendChild(transcriptArea);
-
-    // VTID-01064: ORB Shell wrapper (contains orb + aura)
+    // ORB Shell wrapper (contains orb + aura only)
     var orbShell = document.createElement('div');
-    // Determine initial aura state based on voiceState
     var auraState = 'ready';
     if (state.orb.voiceError || state.orb.liveError) {
         auraState = 'error';
@@ -11956,7 +11872,7 @@ function renderOrbOverlay() {
     }
     orbShell.className = 'orb-shell orb--' + auraState;
 
-    // VTID-0135: Large centered ORB - Show state based on voiceState
+    // Large ORB
     var largeOrb = document.createElement('div');
     var orbClass = 'orb-large';
     if (state.orb.voiceState === 'THINKING' || state.orb.isThinking) {
@@ -11973,172 +11889,25 @@ function renderOrbOverlay() {
     largeOrb.className = orbClass;
     orbShell.appendChild(largeOrb);
 
-    // VTID-01067: Badge rail (positioned relative to orbShell)
-    var badgesContainer = document.createElement('div');
-    badgesContainer.className = 'orb-badges';
-
-    // Mic active badge
-    var micBadge = document.createElement('div');
-    micBadge.className = 'orb-badge orb-badge--mic' + (state.orb.micActive && state.orb.voiceState !== 'MUTED' ? ' orb-badge--active' : '');
-    micBadge.innerHTML = '<span class="orb-badge-icon">' + ORB_ICONS.badgeMic + '</span>';
-    badgesContainer.appendChild(micBadge);
-
-    // Mic muted badge
-    var micMutedBadge = document.createElement('div');
-    micMutedBadge.className = 'orb-badge orb-badge--mic-muted' + (state.orb.voiceState === 'MUTED' || !state.orb.micActive ? ' orb-badge--active' : '');
-    micMutedBadge.innerHTML = '<span class="orb-badge-icon">' + ORB_ICONS.badgeMicOff + '</span>';
-    badgesContainer.appendChild(micMutedBadge);
-
-    // Screen share badge (only show when active)
-    var screenBadge = document.createElement('div');
-    screenBadge.className = 'orb-badge orb-badge--screen' + (state.orb.screenShareActive ? ' orb-badge--active' : '');
-    screenBadge.innerHTML = '<span class="orb-badge-icon">' + ORB_ICONS.badgeScreen + '</span>';
-    badgesContainer.appendChild(screenBadge);
-
-    // Camera badge (only show when active)
-    var cameraBadge = document.createElement('div');
-    cameraBadge.className = 'orb-badge orb-badge--camera' + (state.orb.cameraActive ? ' orb-badge--active' : '');
-    cameraBadge.innerHTML = '<span class="orb-badge-icon">' + ORB_ICONS.badgeCamera + '</span>';
-    badgesContainer.appendChild(cameraBadge);
-
-    // Language indicator badge
-    var langCode = state.orb.orbLang ? state.orb.orbLang.split('-')[0].toUpperCase() : 'EN';
-    var langBadge = document.createElement('div');
-    langBadge.className = 'orb-badge orb-badge--lang orb-badge--active';
-    langBadge.innerHTML = '<span class="orb-badge-icon">' + ORB_ICONS.badgeLang + '</span><span class="orb-badge-text">' + langCode + '</span>';
-    badgesContainer.appendChild(langBadge);
-
-    orbShell.appendChild(badgesContainer);
-
-    // VTID-01067: Micro-status line
-    var microStatus = document.createElement('div');
-    microStatus.className = 'orb-micro-status' + (state.orb.microStatusText ? ' orb-micro-status--visible' : '');
-    microStatus.textContent = state.orb.microStatusText || '';
-    orbShell.appendChild(microStatus);
-
-    // VTID-01069: Append to rightColumn in two-column layout
     rightColumn.appendChild(orbShell);
+    layoutWrapper.appendChild(rightColumn);
+    overlay.appendChild(layoutWrapper);
 
-    // VTID-0135: Status text based on voiceState
-    var statusText = document.createElement('div');
-    statusText.className = 'orb-status-text';
-    if (state.orb.voiceState === 'THINKING') {
-        statusText.textContent = 'Processing...';
-    } else if (state.orb.voiceState === 'SPEAKING') {
-        statusText.textContent = 'Speaking...';
-    } else if (state.orb.voiceState === 'LISTENING') {
-        statusText.textContent = 'Speak now...';
-    } else if (state.orb.voiceState === 'MUTED') {
-        statusText.textContent = 'Muted';
-    } else {
-        statusText.textContent = 'Ready';
-    }
-    rightColumn.appendChild(statusText);
-
-    // Control row
-    var controls = document.createElement('div');
-    controls.className = 'orb-controls';
-
-    // VTID-0135: End button (replaces Close - more prominent)
-    var endWrapper = document.createElement('div');
-    endWrapper.className = 'orb-control-wrapper';
-    var endBtn = document.createElement('button');
-    endBtn.className = 'orb-control-btn orb-control-end';
-    endBtn.setAttribute('aria-label', 'End conversation');
-    endBtn.innerHTML = ORB_ICONS.close;
-    endBtn.addEventListener('click', function() {
-        console.log('[ORB] Ending conversation...');
+    // ==========================================================================
+    // VTID-01069-C: Close button - 64px, bottom center, 24px offset
+    // ==========================================================================
+    var closeBtn = document.createElement('button');
+    closeBtn.className = 'orb-close-btn';
+    closeBtn.innerHTML = ORB_ICONS.close;
+    closeBtn.setAttribute('aria-label', 'Close');
+    closeBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
         orbVoiceStop();
         state.orb.overlayVisible = false;
         state.orb.chatDrawerOpen = false;
         renderApp();
     });
-    var endLabel = document.createElement('span');
-    endLabel.className = 'orb-control-label';
-    endLabel.textContent = 'End';
-    endWrapper.appendChild(endBtn);
-    endWrapper.appendChild(endLabel);
-    controls.appendChild(endWrapper);
-
-    // Note: Mic/Screen/Camera controls are now in input rail (left column)
-    // Keep End control here for easy session termination
-
-    // VTID-01069: Append controls to rightColumn in two-column layout
-    rightColumn.appendChild(controls);
-
-    // VTID-01042: Unified Language selector (replaces VTID-01038 voice-only dropdown)
-    var langSettings = document.createElement('div');
-    langSettings.className = 'orb-lang-settings';
-
-    var langLabelRow = document.createElement('div');
-    langLabelRow.className = 'orb-lang-label-row';
-
-    var langLabel = document.createElement('label');
-    langLabel.className = 'orb-lang-label';
-    langLabel.textContent = 'Language';
-    langLabel.setAttribute('for', 'orb-lang-select');
-    langLabelRow.appendChild(langLabel);
-
-    var langHelper = document.createElement('span');
-    langHelper.className = 'orb-lang-helper';
-    langHelper.textContent = 'Sets listening and voice output together';
-    langLabelRow.appendChild(langHelper);
-
-    langSettings.appendChild(langLabelRow);
-
-    var langSelect = document.createElement('select');
-    langSelect.className = 'orb-lang-select';
-    langSelect.id = 'orb-lang-select';
-    langSelect.setAttribute('aria-label', 'Select language for speech recognition and voice output');
-
-    // VTID-01042: Available languages (exact list per spec)
-    var availableLanguages = [
-        { code: 'en-US', label: 'English (US)' },
-        { code: 'de-DE', label: 'German' },
-        { code: 'fr-FR', label: 'French' },
-        { code: 'es-ES', label: 'Spanish' },
-        { code: 'ar-AE', label: 'Arabic' },
-        { code: 'zh-CN', label: 'Chinese' }
-    ];
-
-    availableLanguages.forEach(function(lang) {
-        var option = document.createElement('option');
-        option.value = lang.code;
-        option.textContent = lang.label;
-        if (lang.code === state.orb.orbLang) {
-            option.selected = true;
-        }
-        langSelect.appendChild(option);
-    });
-
-    langSelect.addEventListener('change', function(e) {
-        orbSetLanguage(e.target.value);
-    });
-    langSettings.appendChild(langSelect);
-
-    // VTID-01042: Warning message for voice fallback
-    if (state.orb.orbLangWarning) {
-        var warningEl = document.createElement('div');
-        warningEl.className = 'orb-lang-warning';
-        warningEl.textContent = state.orb.orbLangWarning;
-        langSettings.appendChild(warningEl);
-    }
-
-    rightColumn.appendChild(langSettings);
-
-    layoutWrapper.appendChild(rightColumn);
-    overlay.appendChild(layoutWrapper);
-
-    // VTID-01066: Stop TTS button (visible only when speaking via CSS)
-    var stopBtn = document.createElement('button');
-    stopBtn.className = 'orb-stop-tts';
-    stopBtn.textContent = 'Stop';
-    stopBtn.setAttribute('aria-label', 'Stop speaking');
-    stopBtn.addEventListener('click', function(e) {
-        e.stopPropagation();
-        orbStopTTS('user');
-    });
-    overlay.appendChild(stopBtn);
+    overlay.appendChild(closeBtn);
 
     return overlay;
 }
