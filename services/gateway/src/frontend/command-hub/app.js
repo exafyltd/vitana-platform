@@ -1785,6 +1785,8 @@ const state = {
     selectedTaskDetailLoading: false,
     taskSearchQuery: '',
     taskDateFilter: '',
+    // VTID-01079: Board metadata for "Load More" completed tasks
+    boardMeta: null,
     // DEV-COMHU-2025-0013: Drawer spec state for stable textarea editing
     drawerSpecVtid: null,   // Which task's spec is being edited
     drawerSpecText: '',     // Live text during editing (not persisted until Save)
@@ -5725,7 +5727,8 @@ async function fetchTasks() {
     renderApp();
 
     try {
-        // VTID-01005: Use OASIS-derived board endpoint (single source of truth)
+        // VTID-01079: Use OASIS-derived board endpoint
+        // limit param only affects COMPLETED column (SCHEDULED/IN_PROGRESS are unlimited)
         var response = await fetch('/api/v1/commandhub/board?limit=50');
         if (!response.ok) throw new Error('Command Hub board fetch failed: ' + response.status);
 
@@ -5733,16 +5736,21 @@ async function fetchTasks() {
 
         // Handle both array and wrapped response formats
         var items = [];
+        var boardMeta = null;
         if (Array.isArray(json)) {
             items = json;
         } else if (json && Array.isArray(json.items)) {
             items = json.items;
+            boardMeta = json.meta || null;
         } else if (json && Array.isArray(json.data)) {
             items = json.data;
         } else {
             console.warn('[VTID-01005] Unexpected response format:', json);
             items = [];
         }
+
+        // VTID-01079: Store board metadata for "Load More" functionality
+        state.boardMeta = boardMeta;
 
         // VTID-01055: Reconcile by VTID to eliminate ghost cards
         // Build a Map keyed by VTID (latest entry wins; overwrites duplicates)
