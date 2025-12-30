@@ -8129,25 +8129,27 @@ body {
 }
 
 /* VTID-01069-D: Left column - 40vw, flex column with stream + input */
+/* VTID-01069-E: Improved gutters for symmetry (28px sides, 28px top) */
 .orb-left {
   width: 40vw;
   flex: 0 0 40vw;
   display: flex;
   flex-direction: column;
   height: 100vh;
-  padding: 24px 24px 32px 24px;
+  padding: 28px 28px 0 28px;
   box-sizing: border-box;
 }
 
 /* VTID-01069-D: Conversation stream - fills available height, scrollable */
+/* VTID-01069-E: Tighter gap (8px), better top padding */
 .orb-chat-stream {
   flex: 1 1 auto;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 8px 0;
-  margin-bottom: 16px;
+  gap: 8px;
+  padding: 4px 0 20px 0;
+  margin-bottom: 12px;
 }
 
 /* VTID-01069-D: Empty state for conversation stream */
@@ -8182,11 +8184,12 @@ body {
   align-self: flex-start;
 }
 
+/* VTID-01069-E: Compressed typography (14px, 1.35 line-height, tighter padding) */
 .orb-stream-bubble {
-  padding: 10px 14px;
+  padding: 10px 12px;
   border-radius: 16px;
-  font-size: 0.9rem;
-  line-height: 1.45;
+  font-size: 14px;
+  line-height: 1.35;
   word-wrap: break-word;
 }
 
@@ -8213,22 +8216,18 @@ body {
   font-style: italic;
 }
 
+/* VTID-01069-E: Timestamps hidden entirely */
 .orb-stream-time {
-  font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.5);
-  margin-top: 4px;
-  padding: 0 4px;
-}
-
-.orb-stream-msg-user .orb-stream-time {
-  text-align: right;
+  display: none;
 }
 
 /* VTID-01069-D: Input zone wrapper - docked at bottom */
+/* VTID-01069-E: Bottom safe area (28px from viewport bottom) */
 .orb-inputzone-wrap {
   flex: 0 0 auto;
   display: flex;
   justify-content: center;
+  padding-bottom: 28px;
 }
 
 /* VTID-01069-D: Input bar - full width, flex row */
