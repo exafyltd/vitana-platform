@@ -8115,99 +8115,62 @@ body {
 
 /* ==========================================================================
    VTID-01069: ORB Input Surface v2 (Auto-Growing Chatbox, Symmetric Layout)
+   VTID-01069-C: Geometry Lock - Exact proportions, no creativity
    ========================================================================== */
 
-/* VTID-01069: Two-column layout for ORB overlay */
+/* VTID-01069-C: Two-column layout for ORB overlay - LOCKED GEOMETRY */
 .orb-overlay-layout {
   display: flex;
-  width: 100%;
-  height: 100%;
-  gap: 40px;
-  padding: 40px;
+  width: 100vw;
+  height: 100vh;
+  gap: 0;
+  padding: 0;
   box-sizing: border-box;
 }
 
-/* VTID-01069: Left column - Conversation + Input with symmetric spacing */
+/* VTID-01069-C: Left column - 40vw EXACTLY */
 .orb-left {
-  flex: 1;
+  width: 40vw;
+  flex: 0 0 40vw;
   display: flex;
   flex-direction: column;
   height: 100%;
-  max-width: 600px;
-  min-width: 320px;
 }
 
-/* VTID-01069: Top spacer for symmetry */
+/* VTID-01069-C: Top spacer for vertical centering */
 .orb-left-topspacer {
   flex: 1;
-  min-height: 20px;
 }
 
-/* VTID-01069: Conversation stream area */
+/* VTID-01069-C: Conversation stream - hidden, does not affect input position */
 .orb-conversation {
-  flex: 0 1 auto;
-  max-height: 50vh;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 16px;
-  background: rgba(255, 255, 255, 0.95);
-  border-radius: 16px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-}
-
-.orb-conversation:empty {
   display: none;
 }
 
-.orb-conversation-empty {
-  text-align: center;
-  color: var(--color-text-secondary);
-  font-size: 0.9rem;
-  padding: 24px;
-}
-
-.orb-conversation-message {
-  padding: 12px 16px;
-  border-radius: 12px;
-  font-size: 0.95rem;
-  line-height: 1.5;
-  max-width: 90%;
-}
-
-.orb-conversation-message-user {
-  align-self: flex-end;
-  background: var(--orb-primary);
-  color: #fff;
-}
-
-.orb-conversation-message-assistant {
-  align-self: flex-start;
-  background: #f1f5f9;
-  color: #1e293b;
-  border-left: 3px solid #3b82f6;
-}
-
-/* VTID-01069: Input zone wrapper */
+/* VTID-01069-C: Input zone wrapper - fixed height container at center */
 .orb-inputzone-wrap {
   flex: 0 0 auto;
-  padding: 16px 0;
+  display: flex;
+  justify-content: center;
+  padding: 0 24px;
 }
 
-/* VTID-01069: Input bar container (controls + textarea + send) */
+/* VTID-01069-C: Input bar - 75% of previous width */
 .orb-inputbar {
   display: flex;
-  align-items: flex-end;
-  gap: 12px;
+  align-items: center;
+  gap: 8px;
   background: rgba(255, 255, 255, 0.98);
-  border-radius: 24px;
-  padding: 12px 16px;
+  border-radius: 28px;
+  padding: 8px 12px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
   border: 1px solid rgba(0, 0, 0, 0.08);
+  width: 75%;
+  min-height: 56px;
+  max-height: 40vh;
 }
 
-/* VTID-01069: Control rail (left of textarea) */
+/* VTID-01069-C: Control rail - [ + ] [ mic ] [ screen ] [ camera ] */
 .orb-input-controls {
   display: flex;
   flex-direction: row;
@@ -8246,17 +8209,17 @@ body {
   height: 18px;
 }
 
-/* VTID-01069: Textarea container */
+/* VTID-01069-C: Textarea container */
 .orb-textarea-wrap {
   flex: 1;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
 }
 
-/* VTID-01069: Base textarea styles */
+/* VTID-01069-C: Base textarea styles */
 .orb-textarea {
   width: 100%;
-  padding: 10px 14px;
+  padding: 8px 12px;
   font-size: 0.95rem;
   font-family: inherit;
   line-height: 1.5;
@@ -8277,44 +8240,68 @@ body {
   outline: none;
 }
 
-/* VTID-01069: Focus ring on input bar */
+/* VTID-01069-C: Focus ring on input bar */
 .orb-inputbar:focus-within {
   border-color: var(--orb-primary);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12), 0 0 0 3px rgba(139, 92, 246, 0.15);
 }
 
-/* VTID-01069: Height bucket classes (class-based, no inline styles) */
-/* h1: 1-2 lines (~48px) */
+/* VTID-01069-C: Height bucket classes (class-based, no inline styles) */
+/* h1: 1-2 lines */
 .input-h1 .orb-textarea {
-  height: 3rem;
+  height: 2.5rem;
   overflow-y: hidden;
 }
 
-/* h2: 3-5 lines (~80px) */
+/* h2: 3-5 lines */
 .input-h2 .orb-textarea {
-  height: 5rem;
+  height: 4.5rem;
   overflow-y: hidden;
 }
 
-/* h3: 6-9 lines (~120px) */
+/* h3: 6-9 lines */
 .input-h3 .orb-textarea {
-  height: 7.5rem;
+  height: 7rem;
   overflow-y: hidden;
 }
 
-/* h4: 10-14 lines (~168px) */
+/* h4: 10-14 lines */
 .input-h4 .orb-textarea {
-  height: 10.5rem;
+  height: 10rem;
   overflow-y: hidden;
 }
 
-/* h5: 15+ lines (MAX ~224px with scroll) */
+/* h5: 15+ lines (MAX with scroll) */
 .input-h5 .orb-textarea {
   height: 14rem;
   overflow-y: auto;
 }
 
-/* VTID-01069: Send button in input bar */
+/* VTID-01069-C: Inline language dropdown in input bar */
+.orb-input-lang {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #64748b;
+  background: transparent;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.orb-input-lang:hover {
+  border-color: rgba(0, 0, 0, 0.2);
+  color: #334155;
+}
+
+.orb-input-lang:focus {
+  outline: none;
+  border-color: var(--orb-primary);
+}
+
+/* VTID-01069-C: Send button in input bar */
 .orb-input-send {
   width: 40px;
   height: 40px;
@@ -8346,86 +8333,120 @@ body {
   height: 18px;
 }
 
-/* VTID-01069: Bottom spacer for symmetry */
+/* VTID-01069-C: Bottom spacer for vertical centering */
 .orb-left-bottomspacer {
   flex: 1;
-  min-height: 20px;
 }
 
-/* VTID-01069: Right column - ORB + aura container */
+/* VTID-01069-C: Right column - 60vw EXACTLY, ORB centered */
 .orb-right {
-  flex: 0 0 auto;
+  width: 60vw;
+  flex: 0 0 60vw;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-width: 300px;
-  padding: 40px;
-}
-
-/* VTID-01069: Override overlay for two-column layout */
-.orb-overlay.orb-overlay-twocol {
-  flex-direction: row;
-  align-items: stretch;
-  justify-content: center;
   padding: 0;
 }
 
-/* VTID-01069: Move controls into right column */
-.orb-overlay.orb-overlay-twocol .orb-controls {
-  position: relative;
-  bottom: auto;
-  left: auto;
-  transform: none;
-  margin-top: 32px;
+/* VTID-01069-C: ORB size = 62% of column height */
+.orb-overlay.orb-overlay-twocol .orb-shell {
+  width: calc(62vh);
+  height: calc(62vh);
 }
 
-/* VTID-01069: Move state pill into right column */
-.orb-overlay.orb-overlay-twocol .orb-state-pill {
-  position: relative;
-  top: auto;
-  left: auto;
-  transform: none;
-  margin-bottom: 24px;
-}
-
-/* VTID-01069: Move transcript into right column */
-.orb-overlay.orb-overlay-twocol .orb-live-transcript {
-  position: relative;
-  top: auto;
-  left: auto;
-  transform: none;
+.orb-overlay.orb-overlay-twocol .orb-large {
   width: 100%;
-  max-width: 400px;
-  margin-bottom: 24px;
+  height: 100%;
 }
 
-/* VTID-01069: Language settings in right column */
-.orb-overlay.orb-overlay-twocol .orb-lang-settings {
-  position: relative;
-  bottom: auto;
-  left: auto;
-  transform: none;
-  margin-top: 24px;
+/* VTID-01069-C: Hide all ORB-adjacent controls in twocol mode */
+.orb-overlay.orb-overlay-twocol .orb-state-pill,
+.orb-overlay.orb-overlay-twocol .orb-live-transcript,
+.orb-overlay.orb-overlay-twocol .orb-status-text,
+.orb-overlay.orb-overlay-twocol .orb-controls,
+.orb-overlay.orb-overlay-twocol .orb-lang-settings,
+.orb-overlay.orb-overlay-twocol .orb-badges,
+.orb-overlay.orb-overlay-twocol .orb-micro-status,
+.orb-overlay.orb-overlay-twocol .orb-stop-tts {
+  display: none;
 }
 
-/* VTID-01069: Status text in right column */
-.orb-overlay.orb-overlay-twocol .orb-status-text {
-  margin-top: 16px;
+/* VTID-01069-C: Override overlay for two-column layout */
+.orb-overlay.orb-overlay-twocol {
+  flex-direction: row;
+  align-items: stretch;
+  justify-content: flex-start;
+  padding: 0;
 }
 
-/* VTID-01069: Responsive adjustments */
+/* VTID-01069-C: Close button - 64px, bottom center, 24px offset */
+.orb-close-btn {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.95);
+  color: #64748b;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  transition: all 0.2s ease;
+  z-index: 10;
+}
+
+.orb-close-btn:hover {
+  background: #fff;
+  color: #ef4444;
+  transform: translateX(-50%) scale(1.05);
+}
+
+.orb-close-btn svg {
+  width: 28px;
+  height: 28px;
+}
+
+/* VTID-01069-C: Responsive - stack vertically on narrow screens */
 @media (max-width: 900px) {
   .orb-overlay-layout {
     flex-direction: column-reverse;
-    padding: 20px;
-    gap: 20px;
   }
 
   .orb-left {
-    max-width: 100%;
-    min-width: 0;
+    width: 100vw;
+    flex: 0 0 auto;
+    height: auto;
+    padding: 24px;
   }
+
+  .orb-right {
+    width: 100vw;
+    flex: 1;
+  }
+
+  .orb-overlay.orb-overlay-twocol .orb-shell {
+    width: calc(50vw);
+    height: calc(50vw);
+    max-width: 300px;
+    max-height: 300px;
+  }
+
+  .orb-inputbar {
+    width: 100%;
+  }
+
+  .orb-close-btn {
+    bottom: 16px;
+    width: 56px;
+    height: 56px;
+  }
+}
 
   .orb-right {
     min-width: 0;
