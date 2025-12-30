@@ -6,11 +6,13 @@ const router = Router();
 /**
  * VTID-01005: Board Column Derivation (OASIS-based)
  * VTID-01058: Exclude deleted/voided tasks, treat 'completed' as terminal success
+ * VTID-01079: Deterministic status→column mapping, one-row-per-VTID, DEV filter
  *
  * OASIS is the SINGLE SOURCE OF TRUTH for task completion.
  * Column placement is derived from OASIS events, NOT local ledger status.
  */
 type BoardColumn = 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED';
+type IdNamespace = 'VTID' | 'DEV' | 'OTHER';
 
 interface BoardItem {
   vtid: string;
@@ -20,6 +22,37 @@ interface BoardItem {
   is_terminal: boolean;
   terminal_outcome: 'success' | 'failed' | null;
   updated_at: string;
+  id_namespace: IdNamespace;
+}
+
+/**
+ * VTID-01079: Canonical status→column mapping (LOCKED)
+ * This is the SINGLE source of truth for status-to-column conversion.
+ * Hard invariants:
+ *   - `completed` → `COMPLETED`
+ *   - `in_progress` → `IN_PROGRESS`
+ *   - `pending` → `SCHEDULED`
+ *   - `scheduled` → `SCHEDULED`
+ */
+function mapStatusToColumn(status: string): BoardColumn {
+  const s = (status || '').toLowerCase();
+  if (s === 'completed' || s === 'done' || s === 'closed' || s === 'deployed' || s === 'merged' || s === 'complete' || s === 'failed' || s === 'error') {
+    return 'COMPLETED';
+  }
+  if (s === 'in_progress' || s === 'running' || s === 'active' || s === 'todo' || s === 'validating' || s === 'blocked') {
+    return 'IN_PROGRESS';
+  }
+  // pending, scheduled, or anything else → SCHEDULED
+  return 'SCHEDULED';
+}
+
+/**
+ * VTID-01079: Derive namespace from VTID prefix
+ */
+function deriveNamespace(vtid: string): IdNamespace {
+  if (vtid.startsWith('VTID-')) return 'VTID';
+  if (vtid.startsWith('DEV-')) return 'DEV';
+  return 'OTHER';
 }
 
 const allowedOriginRegex = /^https:\/\/vitana-app-[a-z0-9-]+\.web\.app$/;
@@ -46,10 +79,17 @@ router.options('/', cors(corsOptions));
 /**
  * VTID-01005: Board adapter endpoint - derives from OASIS events (single source of truth)
  * VTID-01058: Excludes deleted/voided tasks, treats 'completed' as terminal success
+ * VTID-01079: Deterministic status→column mapping, one-row-per-VTID, DEV filter
  * Does NOT use commandhub_board_v1 view which reads from local ledger.
+ *
+ * Query params:
+ *   - limit: max items to return (default 50, max 200)
+ *   - include_dev: include DEV-* items (default true for backward compatibility)
  */
 router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
   const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+  // VTID-01079: Default true to avoid breaking existing UI
+  const includeDev = req.query.include_dev !== 'false';
 
   try {
     const supaUrl = process.env.SUPABASE_URL;
@@ -59,7 +99,7 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Missing Supabase configuration' });
     }
 
-    console.log(`[VTID-01005] Board adapter request, limit=${limit}`);
+    console.log(`[VTID-01079] Board adapter request, limit=${limit}, include_dev=${includeDev}`);
 
     // VTID-01058: Step 1: Fetch VTIDs from ledger
     // Note: PostgREST not.in filter is unreliable, so we fetch all and filter in post-fetch
@@ -215,21 +255,44 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
         }
       }
 
+      // VTID-01079: Use canonical mapping function for deterministic column placement
+      // The derivedStatus may come from OASIS events, but column MUST use mapStatusToColumn
+      const finalColumn = mapStatusToColumn(derivedStatus);
+
       return {
         vtid,
         title: row.title || '',
         status: derivedStatus,
-        column,
+        column: finalColumn,
         is_terminal: isTerminal,
         terminal_outcome: terminalOutcome,
         updated_at: row.updated_at || row.created_at,
+        id_namespace: deriveNamespace(vtid),
       };
     });
 
-    console.log(`[VTID-01005] Board adapter built ${boardItems.length} items`);
-    res.json(boardItems);
+    // VTID-01079: Deduplicate - keep only one row per VTID (latest updated_at)
+    const vtidMap = new Map<string, BoardItem>();
+    for (const item of boardItems) {
+      const existing = vtidMap.get(item.vtid);
+      if (!existing || new Date(item.updated_at) > new Date(existing.updated_at)) {
+        vtidMap.set(item.vtid, item);
+      }
+    }
+    let dedupedItems = Array.from(vtidMap.values());
+
+    // VTID-01079: Apply DEV filter if include_dev=false
+    if (!includeDev) {
+      dedupedItems = dedupedItems.filter(item => item.id_namespace !== 'DEV');
+    }
+
+    // Sort by updated_at descending (maintain original order)
+    dedupedItems.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+
+    console.log(`[VTID-01079] Board adapter built ${boardItems.length} items, deduped to ${dedupedItems.length}, include_dev=${includeDev}`);
+    res.json(dedupedItems);
   } catch (err) {
-    console.error('[VTID-01005] Board adapter error:', err);
+    console.error('[VTID-01079] Board adapter error:', err);
     res.status(500).json({
       error: 'Internal server error',
       details: err instanceof Error ? err.message : 'Unknown error'
