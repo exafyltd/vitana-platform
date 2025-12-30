@@ -1970,6 +1970,9 @@ const state = {
         micActive: false,
         cameraActive: false,
         screenShareActive: false,
+        // VTID-01069-D: Media stream handles for camera/screen
+        cameraStream: null,
+        screenStream: null,
         isThinking: false,
         sessionId: null, // VTID-0150-B: Tracks Assistant Core session
         chatMessages: [
@@ -11678,6 +11681,7 @@ function orbOverlaySendMessage() {
  * VTID-0135: Updated with voice conversation (Web Speech APIs) and state pill
  * VTID-01069: Two-column layout with auto-growing chatbox and symmetric spacing
  * VTID-01069-C: Geometry Lock - 40/60 split, ORB 62vh, input centered
+ * VTID-01069-D: Corrective patch - conversation stream, ORB 50vh, camera/screen actions
  * @returns {HTMLElement}
  */
 function renderOrbOverlay() {
@@ -11695,15 +11699,54 @@ function renderOrbOverlay() {
     layoutWrapper.className = 'orb-overlay-layout';
 
     // ==========================================================================
-    // VTID-01069-C: LEFT COLUMN (40vw) - Input Zone Only (vertically centered)
+    // VTID-01069-D: LEFT COLUMN (40vw) - Conversation Stream + Input (docked bottom)
     // ==========================================================================
     var leftColumn = document.createElement('div');
     leftColumn.className = 'orb-left';
 
-    // Top spacer for vertical centering
-    var topSpacer = document.createElement('div');
-    topSpacer.className = 'orb-left-topspacer';
-    leftColumn.appendChild(topSpacer);
+    // VTID-01069-D: Conversation stream - renders liveTranscript messages
+    var chatStream = document.createElement('div');
+    chatStream.className = 'orb-chat-stream';
+    chatStream.id = 'orb-chat-stream';
+
+    if (state.orb.liveTranscript.length === 0) {
+        // Empty state
+        var emptyState = document.createElement('div');
+        emptyState.className = 'orb-chat-stream-empty';
+        var emptyText = document.createElement('p');
+        emptyText.className = 'orb-chat-stream-empty-text';
+        emptyText.textContent = 'Start a conversation';
+        emptyState.appendChild(emptyText);
+        chatStream.appendChild(emptyState);
+    } else {
+        // Render messages from liveTranscript
+        state.orb.liveTranscript.forEach(function(msg) {
+            var msgEl = document.createElement('div');
+            var msgClasses = ['orb-stream-msg', 'orb-stream-msg-' + msg.role];
+            if (msg.isThinking) {
+                msgClasses.push('orb-stream-msg-thinking');
+            }
+            if (state.orb.speakingMessageId === msg.id) {
+                msgClasses.push('orb-stream-msg-speaking');
+            }
+            msgEl.className = msgClasses.join(' ');
+
+            var bubble = document.createElement('div');
+            bubble.className = 'orb-stream-bubble';
+            bubble.textContent = msg.text || msg.content || '';
+            msgEl.appendChild(bubble);
+
+            if (msg.timestamp) {
+                var time = document.createElement('span');
+                time.className = 'orb-stream-time';
+                time.textContent = formatOrbChatTime(msg.timestamp);
+                msgEl.appendChild(time);
+            }
+
+            chatStream.appendChild(msgEl);
+        });
+    }
+    leftColumn.appendChild(chatStream);
 
     // Input zone wrapper
     var inputZoneWrap = document.createElement('div');
@@ -11748,25 +11791,23 @@ function renderOrbOverlay() {
     });
     inputControls.appendChild(micBtn);
 
-    // Screen share toggle
+    // VTID-01069-D: Screen share toggle - opens OS screen picker
     var screenBtn = document.createElement('button');
     screenBtn.className = 'orb-input-control-btn' + (state.orb.screenShareActive ? ' orb-input-control-active' : '');
     screenBtn.setAttribute('aria-label', state.orb.screenShareActive ? 'Stop screen share' : 'Start screen share');
     screenBtn.innerHTML = ORB_ICONS.screen;
     screenBtn.addEventListener('click', function() {
-        state.orb.screenShareActive = !state.orb.screenShareActive;
-        renderApp();
+        orbToggleScreenShare();
     });
     inputControls.appendChild(screenBtn);
 
-    // Camera toggle
+    // VTID-01069-D: Camera toggle - opens device camera
     var cameraBtn = document.createElement('button');
     cameraBtn.className = 'orb-input-control-btn' + (state.orb.cameraActive ? ' orb-input-control-active' : '');
     cameraBtn.setAttribute('aria-label', state.orb.cameraActive ? 'Turn off camera' : 'Turn on camera');
     cameraBtn.innerHTML = state.orb.cameraActive ? ORB_ICONS.camera : ORB_ICONS.cameraOff;
     cameraBtn.addEventListener('click', function() {
-        state.orb.cameraActive = !state.orb.cameraActive;
-        renderApp();
+        orbToggleCamera();
     });
     inputControls.appendChild(cameraBtn);
 
@@ -11841,15 +11882,10 @@ function renderOrbOverlay() {
     inputZoneWrap.appendChild(inputBar);
     leftColumn.appendChild(inputZoneWrap);
 
-    // Bottom spacer for vertical centering
-    var bottomSpacer = document.createElement('div');
-    bottomSpacer.className = 'orb-left-bottomspacer';
-    leftColumn.appendChild(bottomSpacer);
-
     layoutWrapper.appendChild(leftColumn);
 
     // ==========================================================================
-    // VTID-01069-C: RIGHT COLUMN (60vw) - ORB Only (centered, 62vh diameter)
+    // VTID-01069-D: RIGHT COLUMN (60vw) - ORB Only (centered, 50vh diameter)
     // ==========================================================================
     var rightColumn = document.createElement('div');
     rightColumn.className = 'orb-right';
@@ -12395,9 +12431,11 @@ function orbLiveCleanup() {
 /**
  * DEV-COMHU-2025-0014: Scroll live transcript to bottom
  * VTID-01037: Smart scroll - only auto-scroll if user was near bottom
+ * VTID-01069-D: Updated to also handle orb-chat-stream
  */
 function scrollOrbLiveTranscript() {
-    var container = document.querySelector('.orb-live-transcript');
+    // Try both selectors - legacy and new VTID-01069-D stream
+    var container = document.querySelector('.orb-live-transcript') || document.querySelector('.orb-chat-stream');
     if (!container) return;
 
     // VTID-01037: Only scroll to bottom if user was near bottom
@@ -12410,10 +12448,11 @@ function scrollOrbLiveTranscript() {
 /**
  * VTID-01037: Check and update near-bottom tracking for transcript
  * VTID-01064: Fixed to handle initial scroll state correctly
+ * VTID-01069-D: Updated to also handle orb-chat-stream
  * Call this before operations that might trigger scroll
  */
 function updateTranscriptNearBottom() {
-    var container = document.querySelector('.orb-live-transcript');
+    var container = document.querySelector('.orb-live-transcript') || document.querySelector('.orb-chat-stream');
     if (!container) {
         state.orb.transcriptNearBottom = true;
         return;
@@ -12789,6 +12828,113 @@ function orbVoiceToggleMute() {
     // VTID-01067: Update badges after mic state change
     renderOrbBadges();
     renderApp();
+}
+
+/**
+ * VTID-01069-D: Toggle camera - opens device camera with getUserMedia
+ * On stop: stops all tracks and clears stream handle
+ */
+function orbToggleCamera() {
+    if (state.orb.cameraActive && state.orb.cameraStream) {
+        // Stop camera
+        console.log('[VTID-01069-D] Stopping camera...');
+        state.orb.cameraStream.getTracks().forEach(function(track) {
+            track.stop();
+        });
+        state.orb.cameraStream = null;
+        state.orb.cameraActive = false;
+        renderApp();
+    } else {
+        // Start camera
+        console.log('[VTID-01069-D] Starting camera...');
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            // Add system message about unsupported browser
+            state.orb.liveTranscript.push({
+                id: Date.now(),
+                role: 'assistant',
+                text: 'Camera is not supported in this browser.',
+                timestamp: new Date().toISOString()
+            });
+            renderApp();
+            return;
+        }
+        navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+            .then(function(stream) {
+                console.log('[VTID-01069-D] Camera stream acquired');
+                state.orb.cameraStream = stream;
+                state.orb.cameraActive = true;
+                renderApp();
+            })
+            .catch(function(err) {
+                console.error('[VTID-01069-D] Camera error:', err);
+                // Add system message about permission denial
+                state.orb.liveTranscript.push({
+                    id: Date.now(),
+                    role: 'assistant',
+                    text: 'Camera access denied or unavailable: ' + err.message,
+                    timestamp: new Date().toISOString()
+                });
+                state.orb.cameraActive = false;
+                renderApp();
+            });
+    }
+}
+
+/**
+ * VTID-01069-D: Toggle screen share - opens OS screen picker with getDisplayMedia
+ * On stop: stops all tracks and clears stream handle
+ */
+function orbToggleScreenShare() {
+    if (state.orb.screenShareActive && state.orb.screenStream) {
+        // Stop screen share
+        console.log('[VTID-01069-D] Stopping screen share...');
+        state.orb.screenStream.getTracks().forEach(function(track) {
+            track.stop();
+        });
+        state.orb.screenStream = null;
+        state.orb.screenShareActive = false;
+        renderApp();
+    } else {
+        // Start screen share
+        console.log('[VTID-01069-D] Starting screen share...');
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+            // Add system message about unsupported browser
+            state.orb.liveTranscript.push({
+                id: Date.now(),
+                role: 'assistant',
+                text: 'Screen sharing is not supported in this browser.',
+                timestamp: new Date().toISOString()
+            });
+            renderApp();
+            return;
+        }
+        navigator.mediaDevices.getDisplayMedia({ video: true, audio: false })
+            .then(function(stream) {
+                console.log('[VTID-01069-D] Screen share stream acquired');
+                state.orb.screenStream = stream;
+                state.orb.screenShareActive = true;
+                // Listen for user stopping share via browser UI
+                stream.getVideoTracks()[0].addEventListener('ended', function() {
+                    console.log('[VTID-01069-D] Screen share ended by user');
+                    state.orb.screenStream = null;
+                    state.orb.screenShareActive = false;
+                    renderApp();
+                });
+                renderApp();
+            })
+            .catch(function(err) {
+                console.error('[VTID-01069-D] Screen share error:', err);
+                // Add system message about permission denial
+                state.orb.liveTranscript.push({
+                    id: Date.now(),
+                    role: 'assistant',
+                    text: 'Screen sharing denied or unavailable: ' + err.message,
+                    timestamp: new Date().toISOString()
+                });
+                state.orb.screenShareActive = false;
+                renderApp();
+            });
+    }
 }
 
 /**

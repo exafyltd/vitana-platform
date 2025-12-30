@@ -8128,34 +8128,110 @@ body {
   box-sizing: border-box;
 }
 
-/* VTID-01069-C: Left column - 40vw EXACTLY */
+/* VTID-01069-D: Left column - 40vw, flex column with stream + input */
 .orb-left {
   width: 40vw;
   flex: 0 0 40vw;
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: 100vh;
+  padding: 24px 24px 32px 24px;
+  box-sizing: border-box;
 }
 
-/* VTID-01069-C: Top spacer for vertical centering */
-.orb-left-topspacer {
+/* VTID-01069-D: Conversation stream - fills available height, scrollable */
+.orb-chat-stream {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px 0;
+  margin-bottom: 16px;
+}
+
+/* VTID-01069-D: Empty state for conversation stream */
+.orb-chat-stream-empty {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.5);
+  text-align: center;
+  padding: 32px;
 }
 
-/* VTID-01069-C: Conversation stream - hidden, does not affect input position */
-.orb-conversation {
-  display: none;
+.orb-chat-stream-empty-text {
+  font-size: 0.95rem;
+  margin: 0;
 }
 
-/* VTID-01069-C: Input zone wrapper - fixed height container at center */
+/* VTID-01069-D: Message bubbles in conversation stream */
+.orb-stream-msg {
+  display: flex;
+  flex-direction: column;
+  max-width: 85%;
+}
+
+.orb-stream-msg-user {
+  align-self: flex-end;
+}
+
+.orb-stream-msg-assistant {
+  align-self: flex-start;
+}
+
+.orb-stream-bubble {
+  padding: 10px 14px;
+  border-radius: 16px;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  word-wrap: break-word;
+}
+
+.orb-stream-msg-user .orb-stream-bubble {
+  background: rgba(139, 92, 246, 0.9);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+
+.orb-stream-msg-assistant .orb-stream-bubble {
+  background: rgba(255, 255, 255, 0.95);
+  color: #1e293b;
+  border-bottom-left-radius: 4px;
+}
+
+.orb-stream-msg-assistant.orb-stream-msg-speaking .orb-stream-bubble {
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.orb-stream-msg-thinking .orb-stream-bubble {
+  background: rgba(255, 255, 255, 0.6);
+  color: #64748b;
+  font-style: italic;
+}
+
+.orb-stream-time {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 4px;
+  padding: 0 4px;
+}
+
+.orb-stream-msg-user .orb-stream-time {
+  text-align: right;
+}
+
+/* VTID-01069-D: Input zone wrapper - docked at bottom */
 .orb-inputzone-wrap {
   flex: 0 0 auto;
   display: flex;
   justify-content: center;
-  padding: 0 24px;
 }
 
-/* VTID-01069-C: Input bar - 75% of previous width */
+/* VTID-01069-D: Input bar - full width, flex row */
 .orb-inputbar {
   display: flex;
   align-items: center;
@@ -8165,17 +8241,18 @@ body {
   padding: 8px 12px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
   border: 1px solid rgba(0, 0, 0, 0.08);
-  width: 75%;
+  width: 100%;
   min-height: 56px;
   max-height: 40vh;
 }
 
-/* VTID-01069-C: Control rail - [ + ] [ mic ] [ screen ] [ camera ] */
+/* VTID-01069-D: Control rail - fixed width, no shrink */
 .orb-input-controls {
   display: flex;
   flex-direction: row;
   gap: 4px;
-  flex-shrink: 0;
+  flex: 0 0 auto;
+  white-space: nowrap;
   align-items: center;
 }
 
@@ -8209,9 +8286,10 @@ body {
   height: 18px;
 }
 
-/* VTID-01069-C: Textarea container */
+/* VTID-01069-D: Textarea container - expands to fill available space */
 .orb-textarea-wrap {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 200px;
   display: flex;
   align-items: center;
 }
@@ -8349,10 +8427,10 @@ body {
   padding: 0;
 }
 
-/* VTID-01069-C: ORB size = 62% of column height */
+/* VTID-01069-D: ORB size = 50vh (20% reduction from 62vh) */
 .orb-overlay.orb-overlay-twocol .orb-shell {
-  width: calc(62vh);
-  height: calc(62vh);
+  width: 50vh;
+  height: 50vh;
 }
 
 .orb-overlay.orb-overlay-twocol .orb-large {
@@ -8360,14 +8438,12 @@ body {
   height: 100%;
 }
 
-/* VTID-01069-C: Hide all ORB-adjacent controls in twocol mode */
+/* VTID-01069-D: Hide ORB-adjacent controls in twocol mode (stream is separate) */
 .orb-overlay.orb-overlay-twocol .orb-state-pill,
 .orb-overlay.orb-overlay-twocol .orb-live-transcript,
-.orb-overlay.orb-overlay-twocol .orb-status-text,
 .orb-overlay.orb-overlay-twocol .orb-controls,
 .orb-overlay.orb-overlay-twocol .orb-lang-settings,
 .orb-overlay.orb-overlay-twocol .orb-badges,
-.orb-overlay.orb-overlay-twocol .orb-micro-status,
 .orb-overlay.orb-overlay-twocol .orb-stop-tts {
   display: none;
 }
@@ -8446,14 +8522,8 @@ body {
     width: 56px;
     height: 56px;
   }
-}
 
-  .orb-right {
-    min-width: 0;
-    padding: 20px;
-  }
-
-  .orb-conversation {
-    max-height: 30vh;
+  .orb-chat-stream {
+    max-height: 40vh;
   }
 }
