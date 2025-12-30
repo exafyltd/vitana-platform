@@ -83,11 +83,12 @@ router.options('/', cors(corsOptions));
  * Does NOT use commandhub_board_v1 view which reads from local ledger.
  *
  * Query params:
- *   - limit: max items to return (default 50, max 200)
+ *   - limit: max COMPLETED items to return (default 20, max 100). SCHEDULED/IN_PROGRESS are unlimited.
  *   - include_dev: include DEV-* items (default true for backward compatibility)
  */
 router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
-  const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+  // VTID-01079: Limit only applies to COMPLETED column. SCHEDULED/IN_PROGRESS are always unlimited.
+  const completedLimit = Math.min(parseInt(req.query.limit as string) || 20, 100);
   // VTID-01079: Default true to avoid breaking existing UI
   const includeDev = req.query.include_dev !== 'false';
 
@@ -99,12 +100,12 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Missing Supabase configuration' });
     }
 
-    console.log(`[VTID-01079] Board adapter request, limit=${limit}, include_dev=${includeDev}`);
+    console.log(`[VTID-01079] Board adapter request, completedLimit=${completedLimit}, include_dev=${includeDev}`);
 
-    // VTID-01058: Step 1: Fetch VTIDs from ledger
+    // VTID-01058: Step 1: Fetch ALL VTIDs from ledger (no limit - we filter by column later)
     // Note: PostgREST not.in filter is unreliable, so we fetch all and filter in post-fetch
     const vtidResp = await fetch(
-      `${supaUrl}/rest/v1/vtid_ledger?order=updated_at.desc&limit=${limit * 2}`,
+      `${supaUrl}/rest/v1/vtid_ledger?order=updated_at.desc&limit=1000`,
       { headers: { apikey: supaKey, Authorization: `Bearer ${supaKey}` } }
     );
 
@@ -146,11 +147,11 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
       return res.json([]);
     }
 
-    // Limit to requested amount after filtering
-    const limitedRows = vtidRows.slice(0, limit);
+    // VTID-01079: No limit here - we process all rows and limit COMPLETED at the end
+    const allRows = vtidRows;
 
     // VTID-01079: Extract VTIDs we need events for
-    const vtidList = limitedRows.map((row: any) => row.vtid).filter(Boolean);
+    const vtidList = allRows.map((row: any) => row.vtid).filter(Boolean);
 
     // Step 2: Fetch OASIS events ONLY for the VTIDs we're displaying
     // CRITICAL FIX: Previously we fetched limit=500 globally, which caused old events
@@ -170,7 +171,7 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
     }
 
     // Step 3: Build board items with OASIS-derived column placement
-    const boardItems: BoardItem[] = limitedRows.map((row: any) => {
+    const boardItems: BoardItem[] = allRows.map((row: any) => {
       const vtid = row.vtid;
       const vtidEvents = allEvents.filter((e: any) => e.vtid === vtid);
 
@@ -298,8 +299,32 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
     // Sort by updated_at descending (maintain original order)
     dedupedItems.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
 
-    console.log(`[VTID-01079] Board adapter built ${boardItems.length} items, deduped to ${dedupedItems.length}, include_dev=${includeDev}`);
-    res.json(dedupedItems);
+    // VTID-01079: Separate by column - SCHEDULED/IN_PROGRESS unlimited, COMPLETED limited
+    const scheduledItems = dedupedItems.filter(item => item.column === 'SCHEDULED');
+    const inProgressItems = dedupedItems.filter(item => item.column === 'IN_PROGRESS');
+    const completedItems = dedupedItems.filter(item => item.column === 'COMPLETED');
+
+    // Apply limit only to COMPLETED items
+    const limitedCompletedItems = completedItems.slice(0, completedLimit);
+    const totalCompleted = completedItems.length;
+    const hasMoreCompleted = totalCompleted > completedLimit;
+
+    // Combine: all SCHEDULED + all IN_PROGRESS + limited COMPLETED
+    const finalItems = [...scheduledItems, ...inProgressItems, ...limitedCompletedItems];
+
+    console.log(`[VTID-01079] Board: scheduled=${scheduledItems.length}, in_progress=${inProgressItems.length}, completed=${limitedCompletedItems.length}/${totalCompleted}, include_dev=${includeDev}`);
+
+    // Return with metadata about completed pagination
+    res.json({
+      items: finalItems,
+      meta: {
+        scheduled_count: scheduledItems.length,
+        in_progress_count: inProgressItems.length,
+        completed_count: limitedCompletedItems.length,
+        completed_total: totalCompleted,
+        has_more_completed: hasMoreCompleted
+      }
+    });
   } catch (err) {
     console.error('[VTID-01079] Board adapter error:', err);
     res.status(500).json({
