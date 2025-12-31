@@ -1,5 +1,5 @@
--- Migration: 20251231000000_vtid_01073_phase_a_bootstrap.sql
--- Purpose: VTID-01073 Phase A-Fix: Multi-Tenant + User Bootstrap for Memory (DB only)
+-- Migration: 20251231000000_vtid_01101_phase_a_bootstrap.sql
+-- Purpose: VTID-01101 Phase A-Fix: Multi-Tenant + User Bootstrap for Memory (DB only)
 -- Date: 2025-12-31
 --
 -- This migration establishes the canonical bootstrap primitives for multi-tenant
@@ -14,7 +14,7 @@
 --
 -- OASIS Registration Commands (run manually if gateway accessible):
 --   curl -sS -X POST "$GATEWAY_URL/api/v1/events/ingest" -H "Content-Type: application/json" -d '{
---     "vtid":"VTID-01073",
+--     "vtid":"VTID-01101",
 --     "type":"vtid.lifecycle.start",
 --     "source":"claude.worker",
 --     "status":"in_progress",
@@ -48,7 +48,7 @@ DROP POLICY IF EXISTS tenants_all_service_role ON public.tenants;
 CREATE POLICY tenants_all_service_role ON public.tenants
     FOR ALL TO service_role USING (true) WITH CHECK (true);
 
-COMMENT ON TABLE public.tenants IS 'VTID-01073: Registry of all tenants in the Vitana platform';
+COMMENT ON TABLE public.tenants IS 'VTID-01101: Registry of all tenants in the Vitana platform';
 
 -- ===========================================================================
 -- 2. APP_USERS TABLE
@@ -81,7 +81,7 @@ DROP POLICY IF EXISTS app_users_all_service_role ON public.app_users;
 CREATE POLICY app_users_all_service_role ON public.app_users
     FOR ALL TO service_role USING (true) WITH CHECK (true);
 
-COMMENT ON TABLE public.app_users IS 'VTID-01073: Registry of application users (mirrors or pre-provisions auth.users)';
+COMMENT ON TABLE public.app_users IS 'VTID-01101: Registry of application users (mirrors or pre-provisions auth.users)';
 
 -- ===========================================================================
 -- 3. USER_TENANTS TABLE (M:N with active_role)
@@ -121,7 +121,7 @@ DROP POLICY IF EXISTS user_tenants_all_service_role ON public.user_tenants;
 CREATE POLICY user_tenants_all_service_role ON public.user_tenants
     FOR ALL TO service_role USING (true) WITH CHECK (true);
 
-COMMENT ON TABLE public.user_tenants IS 'VTID-01073: M:N mapping of users to tenants with active_role per membership';
+COMMENT ON TABLE public.user_tenants IS 'VTID-01101: M:N mapping of users to tenants with active_role per membership';
 
 -- ===========================================================================
 -- 4. DETERMINISTIC CONTEXT HELPER: current_user_id()
@@ -185,7 +185,7 @@ $$;
 GRANT EXECUTE ON FUNCTION public.current_user_id() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.current_user_id() TO service_role;
 
-COMMENT ON FUNCTION public.current_user_id IS 'VTID-01073: Get user_id from request context, auth.uid(), or JWT claims';
+COMMENT ON FUNCTION public.current_user_id IS 'VTID-01101: Get user_id from request context, auth.uid(), or JWT claims';
 
 -- ===========================================================================
 -- 5. DEV HELPER: dev_set_request_context (SQL Editor / testing)
@@ -259,7 +259,7 @@ REVOKE EXECUTE ON FUNCTION public.dev_set_request_context(UUID, UUID, TEXT) FROM
 REVOKE EXECUTE ON FUNCTION public.dev_set_request_context(UUID, UUID, TEXT) FROM authenticated;
 GRANT EXECUTE ON FUNCTION public.dev_set_request_context(UUID, UUID, TEXT) TO service_role;
 
-COMMENT ON FUNCTION public.dev_set_request_context IS 'VTID-01073: Dev helper to set full request context (tenant_id, user_id, active_role). Only callable by service_role.';
+COMMENT ON FUNCTION public.dev_set_request_context IS 'VTID-01101: Dev helper to set full request context (tenant_id, user_id, active_role). Only callable by service_role.';
 
 -- ===========================================================================
 -- 6. SEED DATA: Canonical Tenants
@@ -394,12 +394,12 @@ END $$;
 -- 9. OASIS SUCCESS EVENT (run manually if gateway accessible)
 -- ===========================================================================
 -- curl -sS -X POST "$GATEWAY_URL/api/v1/events/ingest" -H "Content-Type: application/json" -d '{
---   "vtid":"VTID-01073",
+--   "vtid":"VTID-01101",
 --   "type":"vtid.stage.worker.success",
 --   "source":"claude.worker",
 --   "status":"success",
 --   "message":"Phase A-Fix complete: bootstrap tables + deterministic current_* context helpers committed (DB-only).",
---   "payload":{"deliverables":["VTID-01073 migration SQL committed","current_tenant_id/current_user_id/current_active_role helpers","dev_set_request_context helper"]}
+--   "payload":{"deliverables":["VTID-01101 migration SQL committed","current_tenant_id/current_user_id/current_active_role helpers","dev_set_request_context helper"]}
 -- }'
 
 -- ===========================================================================
