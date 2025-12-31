@@ -194,7 +194,7 @@ export async function fetchDevMemoryContext(
     await supabase.rpc('dev_bootstrap_request_context', {
       p_tenant_id: DEV_IDENTITY.TENANT_ID,
       p_active_role: DEV_IDENTITY.ACTIVE_ROLE
-    }).catch(err => {
+    }).catch((err: Error) => {
       console.warn('[VTID-01106] Bootstrap context failed (non-fatal):', err.message);
     });
 
