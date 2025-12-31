@@ -11957,6 +11957,14 @@ function renderOrbOverlay() {
     });
     overlay.appendChild(closeBtn);
 
+    // VTID-01069-F: Auto-scroll to newest messages after render
+    setTimeout(function() {
+        var stream = document.querySelector('.orb-chat-stream');
+        if (stream) {
+            stream.scrollTop = stream.scrollHeight;
+        }
+    }, 50);
+
     return overlay;
 }
 
@@ -12450,11 +12458,9 @@ function scrollOrbLiveTranscript() {
     var container = document.querySelector('.orb-live-transcript') || document.querySelector('.orb-chat-stream');
     if (!container) return;
 
-    // VTID-01037: Only scroll to bottom if user was near bottom
-    // This prevents jumping when user is reading older messages
-    if (state.orb.transcriptNearBottom) {
-        container.scrollTop = container.scrollHeight;
-    }
+    // VTID-01069-F: Always scroll to bottom for new messages
+    // Use smooth scroll for better UX
+    container.scrollTop = container.scrollHeight;
 }
 
 /**

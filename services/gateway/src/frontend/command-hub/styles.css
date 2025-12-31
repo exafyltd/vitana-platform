@@ -8129,37 +8129,40 @@ body {
 }
 
 /* VTID-01069-D: Left column - 40vw, flex column with stream + input */
-/* VTID-01069-F: Simplified padding, centering handled by stage */
+/* VTID-01069-F: Centering handled by stage */
 .orb-left {
   width: 40vw;
   flex: 0 0 40vw;
   display: flex;
   flex-direction: column;
+  justify-content: center;
   align-items: center;
   height: 100vh;
-  padding: 20px 12px 0 12px;
+  padding: 0;
   box-sizing: border-box;
 }
 
-/* VTID-01069-F: Chat stage - centered column with max-width */
+/* VTID-01069-F: Chat stage - TRUE center between left edge and X button */
 .orb-chat-stage {
   display: flex;
   flex-direction: column;
-  width: 100%;
-  max-width: 420px;
-  height: 100%;
-  margin: 0 auto;
+  width: 380px;
+  max-width: calc(100% - 40px);
+  height: calc(100vh - 40px);
+  margin: 20px auto;
 }
 
 /* VTID-01069-D: Conversation stream - fills available height, scrollable */
 /* VTID-01069-F: Tighter gap (6px), reduced scale */
+/* Newest messages at bottom, auto-scroll to bottom */
 .orb-chat-stream {
   flex: 1 1 auto;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  justify-content: flex-end;
   gap: 6px;
-  padding: 8px 0 12px 0;
+  padding: 12px 0;
 }
 
 /* VTID-01069-F: Bottom safe spacer - 120px desktop */
