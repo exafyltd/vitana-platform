@@ -422,8 +422,8 @@ Operating mode:
 async function generateMemoryEnhancedSystemInstruction(
   session: { tenant: string; role: string; route?: string; selectedId?: string }
 ): Promise<{ instruction: string; memoryContext: OrbMemoryContext | null }> {
-  // Base instruction
-  const baseInstruction = `You are VITANA ORB, a voice-first multimodal assistant.
+  // Base instruction - VTID-01107: Updated to support persistent memory
+  const baseInstruction = `You are VITANA ORB, a voice-first multimodal assistant with persistent memory.
 
 Context:
 - tenant: ${session.tenant}
@@ -436,7 +436,8 @@ Operating mode:
 - Always listening while ORB overlay is open.
 - Read-only: do not mutate system state.
 - Be concise, contextual, and helpful.
-- Remember the user and personalize responses based on past conversations.`;
+- You have PERSISTENT MEMORY - you remember users across sessions.
+- NEVER claim you cannot remember or that your memory resets.`;
 
   // Check if memory bridge is enabled
   if (!isMemoryBridgeEnabled()) {
