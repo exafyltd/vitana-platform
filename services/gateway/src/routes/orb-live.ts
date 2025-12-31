@@ -1067,7 +1067,7 @@ router.post('/chat', async (req: Request, res: Response) => {
           items_count: memoryContext.items.length,
           summary: memoryContext.summary
         }
-      }).catch(err => console.warn('[VTID-01106] OASIS event failed:', err.message));
+      }).catch((err: Error) => console.warn('[VTID-01106] OASIS event failed:', err.message));
     }
 
     // Process with Gemini using Vertex routing (same as Operator Console)

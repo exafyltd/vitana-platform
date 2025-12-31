@@ -257,7 +257,7 @@ export async function fetchDevMemoryContext(
         categories: categoryFilter,
         since: sinceTimestamp
       }
-    }).catch(err => console.warn('[VTID-01106] OASIS event failed:', err.message));
+    }).catch((err: Error) => console.warn('[VTID-01106] OASIS event failed:', err.message));
 
     return {
       ok: true,
