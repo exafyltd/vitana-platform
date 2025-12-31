@@ -85,6 +85,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const meRouter = require('./routes/me').default;
   // VTID-01047: Dev Token Mint Endpoint (Cloud-Shell Friendly)
   const devAuthRouter = require('./routes/dev-auth').default;
+  // VTID-01081: Health Brain Gateway Endpoints (Phase C2)
+  const healthRouter = require('./routes/health').default;
   // VTID-01105: Memory Gateway Routes - memory write/context for ORB
   const memoryRouter = require('./routes/memory').default;
 
@@ -265,6 +267,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01047: Dev Token Mint Endpoint (dev-sandbox only)
   mountRouterSync(app, '/api/v1/dev/auth', devAuthRouter, { owner: 'dev-auth' });
+
+  // VTID-01081: Health Brain Gateway Endpoints (Phase C2)
+  mountRouterSync(app, '/api/v1/health', healthRouter, { owner: 'health' });
 
   // VTID-01105: Memory Gateway - write/context endpoints for ORB memory
   mountRouterSync(app, '/api/v1/memory', memoryRouter, { owner: 'memory' });
