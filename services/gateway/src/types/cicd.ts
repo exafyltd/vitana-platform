@@ -233,7 +233,14 @@ export type CicdEventType =
   // VTID-01086: Memory Garden Events
   | 'memory.garden.progress.read'
   | 'memory.garden.ui.refreshed'
-  | 'memory.garden.longevity_panel.read';
+  | 'memory.garden.longevity_panel.read'
+  // VTID-01087: Relationship Graph Memory Events
+  | 'relationship.edge.created'
+  | 'relationship.edge.strengthened'
+  | 'relationship.graph.read'
+  | 'relationship.recommendation.generated'
+  | 'relationship.signal.updated'
+  | 'relationship.node.created';
 
 export interface CicdOasisEvent {
   vtid: string;
