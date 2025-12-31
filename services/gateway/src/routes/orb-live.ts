@@ -1,6 +1,7 @@
 /**
  * DEV-COMHU-2025-0014: ORB Multimodal v1 - Live Voice Session
  * VTID-0135: ORB Voice Conversation Enablement (Phase A)
+ * VTID-01106: ORB Memory Bridge (Dev Sandbox)
  *
  * SSE endpoint for real-time voice interaction with Gemini API.
  *
@@ -18,6 +19,11 @@
  * - Added OASIS event emission for ORB sessions and turns
  * - Added conversation_id continuity support
  *
+ * VTID-01106 Changes:
+ * - ORB Memory Bridge integration for dev sandbox
+ * - Memory context injection into system instructions
+ * - User identity and conversation context persistence
+ *
  * IMPORTANT:
  * - POST /orb/chat uses Vertex AI routing (same as Operator Console)
  * - Other endpoints still use direct Gemini API
@@ -31,6 +37,14 @@ import { processWithGemini } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
 // VTID-01105: Memory auto-write for ORB conversations
 import { writeMemoryItem, classifyCategory } from './memory';
+// VTID-01106: ORB Memory Bridge (Dev Sandbox)
+import {
+  isMemoryBridgeEnabled,
+  fetchDevMemoryContext,
+  buildMemoryEnhancedInstruction,
+  DEV_IDENTITY,
+  OrbMemoryContext
+} from '../services/orb-memory-bridge';
 
 const router = Router();
 
@@ -387,6 +401,56 @@ Operating mode:
 - Always listening while ORB overlay is open.
 - Read-only: do not mutate system state.
 - Be concise, contextual, and helpful.`;
+}
+
+/**
+ * VTID-01106: Generate memory-enhanced system instruction for ORB chat
+ * Fetches user memory context and injects it into the system prompt
+ */
+async function generateMemoryEnhancedSystemInstruction(
+  session: { tenant: string; role: string; route?: string; selectedId?: string }
+): Promise<{ instruction: string; memoryContext: OrbMemoryContext | null }> {
+  // Base instruction
+  const baseInstruction = `You are VITANA ORB, a voice-first multimodal assistant.
+
+Context:
+- tenant: ${session.tenant}
+- role: ${session.role}
+- route: ${session.route || 'unknown'}
+- selectedId: ${session.selectedId || 'none'}
+
+Operating mode:
+- Voice conversation is primary.
+- Always listening while ORB overlay is open.
+- Read-only: do not mutate system state.
+- Be concise, contextual, and helpful.
+- Remember the user and personalize responses based on past conversations.`;
+
+  // Check if memory bridge is enabled
+  if (!isMemoryBridgeEnabled()) {
+    console.log('[VTID-01106] Memory bridge disabled, using base instruction');
+    return { instruction: baseInstruction, memoryContext: null };
+  }
+
+  try {
+    // Fetch memory context for dev user
+    const memoryContext = await fetchDevMemoryContext();
+
+    if (!memoryContext.ok || memoryContext.items.length === 0) {
+      console.log(`[VTID-01106] No memory context available: ${memoryContext.error || 'no items'}`);
+      return { instruction: baseInstruction, memoryContext };
+    }
+
+    // Build memory-enhanced instruction
+    const enhancedInstruction = buildMemoryEnhancedInstruction(baseInstruction, memoryContext);
+
+    console.log(`[VTID-01106] Memory-enhanced instruction generated with ${memoryContext.items.length} items`);
+
+    return { instruction: enhancedInstruction, memoryContext };
+  } catch (err: any) {
+    console.warn('[VTID-01106] Failed to fetch memory context:', err.message);
+    return { instruction: baseInstruction, memoryContext: null };
+  }
 }
 
 function cleanupExpiredSessions(): void {
@@ -978,13 +1042,43 @@ router.post('/chat', async (req: Request, res: Response) => {
     // Build thread ID for Gemini processing
     const threadId = `orb-${orbSessionId}`;
 
+    // VTID-01106: Fetch memory context and build enhanced system instruction
+    // Extract context from meta (cast to any for dev sandbox flexibility)
+    const meta = body.meta as Record<string, unknown> | undefined;
+    const { instruction: systemInstruction, memoryContext } = await generateMemoryEnhancedSystemInstruction({
+      tenant: (meta?.tenant as string) || 'vitana',
+      role: (meta?.role as string) || 'developer',
+      route: meta?.route as string | undefined,
+      selectedId: meta?.selectedId as string | undefined
+    });
+
+    // VTID-01106: Emit memory context injection event
+    if (memoryContext && memoryContext.ok && memoryContext.items.length > 0) {
+      emitOasisEvent({
+        vtid: 'VTID-01106',
+        type: 'orb.memory.context_injected',
+        source: 'orb-memory-bridge',
+        status: 'success',
+        message: `Memory context injected: ${memoryContext.items.length} items`,
+        payload: {
+          orb_session_id: orbSessionId,
+          conversation_id: conversationId,
+          user_id: DEV_IDENTITY.USER_ID,
+          items_count: memoryContext.items.length,
+          summary: memoryContext.summary
+        }
+      }).catch(err => console.warn('[VTID-01106] OASIS event failed:', err.message));
+    }
+
     // Process with Gemini using Vertex routing (same as Operator Console)
     // VTID-0135: Uses processWithGemini which prioritizes Vertex AI > Gemini API > Local
+    // VTID-01106: Pass memory-enhanced system instruction
     const geminiResponse = await processWithGemini({
       text: inputText,
       threadId,
       conversationHistory: conversation.history,
-      conversationId
+      conversationId,
+      systemInstruction
     });
 
     const replyText = geminiResponse.reply || 'I apologize, but I could not generate a response.';
@@ -1414,14 +1508,16 @@ router.get('/session/:orb_session_id', (req: Request, res: Response) => {
 
 /**
  * GET /health - Health check
+ * VTID-01106: Added memory bridge status
  */
 router.get('/health', (_req: Request, res: Response) => {
   const hasGeminiKey = !!GEMINI_API_KEY;
+  const memoryBridgeEnabled = isMemoryBridgeEnabled();
 
   return res.status(200).json({
     ok: true,
     service: 'orb-live',
-    vtid: ['DEV-COMHU-2025-0014', 'VTID-0135', 'VTID-01039'],
+    vtid: ['DEV-COMHU-2025-0014', 'VTID-0135', 'VTID-01039', 'VTID-01106'],
     model: GEMINI_MODEL,
     transport: 'SSE',
     gemini_configured: hasGeminiKey,
@@ -1429,6 +1525,12 @@ router.get('/health', (_req: Request, res: Response) => {
     active_conversations: orbConversations.size,
     active_transcripts: orbTranscripts.size,
     voice_conversation_enabled: true,
+    // VTID-01106: Memory bridge status
+    memory_bridge: {
+      enabled: memoryBridgeEnabled,
+      dev_user_id: memoryBridgeEnabled ? DEV_IDENTITY.USER_ID : null,
+      dev_tenant_id: memoryBridgeEnabled ? DEV_IDENTITY.TENANT_ID : null
+    },
     timestamp: new Date().toISOString()
   });
 });
