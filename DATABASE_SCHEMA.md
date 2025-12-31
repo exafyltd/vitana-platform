@@ -81,6 +81,42 @@ CREATE TABLE oasis_events (
 
 ---
 
+### personalization_audit
+**Purpose:** Audit log for cross-domain personalization decisions (VTID-01096)
+**Used by:**
+- `services/gateway/src/services/personalization-service.ts` (Write audit entries)
+- `services/gateway/src/routes/personalization.ts` (Trigger audit writes)
+
+**Schema:**
+```sql
+CREATE TABLE personalization_audit (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  user_id UUID NOT NULL,
+  endpoint TEXT NOT NULL,                  -- API endpoint where personalization was applied
+  snapshot JSONB NOT NULL DEFAULT '{}',    -- Non-sensitive summary (no raw diary text)
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+**Important:** The `snapshot` column stores ONLY non-sensitive summaries:
+- `snapshot_id` - Reference ID for the personalization snapshot
+- `weaknesses` - Array of detected weakness types
+- `top_topics` - Array of topic scores (key + score only)
+- `recommendation_count` - Number of recommendations generated
+- `generated_at` - Timestamp
+
+**API Endpoints:**
+- `GET /api/v1/personalization/snapshot` - Generates and logs audit entry
+- `GET /api/v1/personalization/health` - Health check
+
+**OASIS Events:**
+- `personalization.snapshot.read` - Snapshot generated
+- `personalization.applied` - Personalization applied to response
+- `personalization.audit.written` - Audit entry recorded
+
+---
+
 ## ⚠️ DEPRECATED / DO NOT USE
 
 ### VtidLedger (PascalCase)
@@ -138,6 +174,7 @@ CREATE TABLE my_new_table (
 |------|--------|--------|------|
 | 2025-11-11 | Initial schema documentation | Claude | DEV-COMMU-0055 |
 | 2025-11-11 | Fixed vtid_ledger vs VtidLedger mismatch | Claude | DEV-COMMU-0055 |
+| 2025-12-31 | Added personalization_audit table for cross-domain personalization | Claude | VTID-01096 |
 
 ---
 
