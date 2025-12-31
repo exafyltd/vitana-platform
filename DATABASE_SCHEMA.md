@@ -89,6 +89,129 @@ CREATE TABLE oasis_events (
 
 ---
 
+### services_catalog
+**Purpose:** Catalog of services available to users (coaches, doctors, labs, etc.)
+**Used by:** `services/gateway/src/routes/offers.ts` (CRUD operations)
+
+**Schema:**
+```sql
+CREATE TABLE services_catalog (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  name TEXT NOT NULL,
+  service_type TEXT NOT NULL,  -- Values: coach, doctor, lab, wellness, nutrition, fitness, therapy, other
+  topic_keys TEXT[] NOT NULL DEFAULT '{}',
+  provider_name TEXT NULL,
+  metadata JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+**API Endpoints:**
+- `POST /api/v1/catalog/services` - Add service to catalog
+
+---
+
+### products_catalog
+**Purpose:** Catalog of products available to users (supplements, devices, apps, etc.)
+**Used by:** `services/gateway/src/routes/offers.ts` (CRUD operations)
+
+**Schema:**
+```sql
+CREATE TABLE products_catalog (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  name TEXT NOT NULL,
+  product_type TEXT NOT NULL,  -- Values: supplement, device, food, wearable, app, other
+  topic_keys TEXT[] NOT NULL DEFAULT '{}',
+  metadata JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+**API Endpoints:**
+- `POST /api/v1/catalog/products` - Add product to catalog
+
+---
+
+### user_offers_memory
+**Purpose:** Tracks user relationship to services/products (viewed, saved, used, dismissed, rated)
+**Used by:** `services/gateway/src/routes/offers.ts` (CRUD operations)
+
+**Schema:**
+```sql
+CREATE TABLE user_offers_memory (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  user_id UUID NOT NULL,
+  target_type TEXT NOT NULL,  -- Values: service, product
+  target_id UUID NOT NULL,
+  state TEXT NOT NULL,  -- Values: viewed, saved, used, dismissed, rated
+  trust_score INT NULL,  -- 0-100
+  notes TEXT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (tenant_id, user_id, target_type, target_id)
+);
+```
+
+**API Endpoints:**
+- `POST /api/v1/offers/state` - Set user state for service/product
+- `GET /api/v1/offers/memory` - Get user offers memory
+
+---
+
+### usage_outcomes
+**Purpose:** User-stated outcomes from using services/products (deterministic, non-medical)
+**Used by:** `services/gateway/src/routes/offers.ts` (CRUD operations)
+
+**Schema:**
+```sql
+CREATE TABLE usage_outcomes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  user_id UUID NOT NULL,
+  target_type TEXT NOT NULL,  -- Values: service, product
+  target_id UUID NOT NULL,
+  outcome_date DATE NOT NULL,
+  outcome_type TEXT NOT NULL,  -- Values: sleep, stress, movement, nutrition, social, energy, other
+  perceived_impact TEXT NOT NULL,  -- Values: better, same, worse
+  evidence JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+**API Endpoints:**
+- `POST /api/v1/offers/outcome` - Record usage outcome
+
+---
+
+### relationship_edges
+**Purpose:** Graph edges representing user relationships to entities (services, products, people)
+**Used by:** `services/gateway/src/routes/offers.ts` (relationship graph)
+
+**Schema:**
+```sql
+CREATE TABLE relationship_edges (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  user_id UUID NOT NULL,
+  target_type TEXT NOT NULL,  -- Values: service, product, person, community
+  target_id UUID NOT NULL,
+  relationship_type TEXT NOT NULL,  -- Values: using, trusted, saved, dismissed, connected, following
+  strength INT NOT NULL DEFAULT 0,  -- -100 to 100
+  context JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (tenant_id, user_id, target_type, target_id)
+);
+```
+
+**API Endpoints:**
+- `GET /api/v1/offers/recommendations` - Get recommendations (uses relationship strength)
+
+---
+
 ## 🎯 ADDING A NEW TABLE
 
 When adding a new table, follow this checklist:
@@ -138,6 +261,7 @@ CREATE TABLE my_new_table (
 |------|--------|--------|------|
 | 2025-11-11 | Initial schema documentation | Claude | DEV-COMMU-0055 |
 | 2025-11-11 | Fixed vtid_ledger vs VtidLedger mismatch | Claude | DEV-COMMU-0055 |
+| 2025-12-31 | Added services_catalog, products_catalog, user_offers_memory, usage_outcomes, relationship_edges | Claude | VTID-01092 |
 
 ---
 
