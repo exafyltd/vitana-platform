@@ -226,7 +226,10 @@ export type CicdEventType =
   | 'memory.write.assistant_message'
   // VTID-01106: ORB Memory Bridge Events
   | 'orb.memory.context_fetched'
-  | 'orb.memory.context_injected';
+  | 'orb.memory.context_injected'
+  // VTID-01107: ORB Memory Debug Events
+  | 'orb.memory.debug_requested'
+  | 'orb.memory.debug_snapshot';
 
 export interface CicdOasisEvent {
   vtid: string;

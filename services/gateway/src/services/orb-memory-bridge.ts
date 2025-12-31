@@ -459,6 +459,101 @@ export async function getMemoryEnhancedInstruction(
 }
 
 // =============================================================================
+// VTID-01107: Debug Snapshot for Memory Endpoint
+// =============================================================================
+
+/**
+ * Debug snapshot response for /api/v1/orb/debug/memory endpoint
+ */
+export interface OrbMemoryDebugSnapshot {
+  ok: boolean;
+  enabled: boolean;
+  dev_user_id: string;
+  dev_tenant_id: string;
+  lookback_hours: number;
+  items_count: number;
+  items_preview: string[];
+  injected_chars: number;
+  injected_preview: string;
+  timestamp: string;
+  error?: string;
+}
+
+/**
+ * VTID-01107: Get debug snapshot of current ORB memory state
+ * Returns the exact data being injected into ORB system instructions
+ *
+ * This function is designed for the /api/v1/orb/debug/memory endpoint
+ * to prove what memory context ORB is using.
+ */
+export async function getDebugSnapshot(): Promise<OrbMemoryDebugSnapshot> {
+  const timestamp = new Date().toISOString();
+  const enabled = isMemoryBridgeEnabled();
+
+  // If not enabled, return minimal snapshot
+  if (!enabled) {
+    return {
+      ok: false,
+      enabled: false,
+      dev_user_id: DEV_IDENTITY.USER_ID,
+      dev_tenant_id: DEV_IDENTITY.TENANT_ID,
+      lookback_hours: MEMORY_CONFIG.MAX_AGE_HOURS,
+      items_count: 0,
+      items_preview: [],
+      injected_chars: 0,
+      injected_preview: '',
+      timestamp,
+      error: 'Memory bridge not enabled (requires dev-sandbox environment)'
+    };
+  }
+
+  // Fetch memory context
+  const memoryContext = await fetchDevMemoryContext();
+
+  if (!memoryContext.ok) {
+    return {
+      ok: false,
+      enabled: true,
+      dev_user_id: DEV_IDENTITY.USER_ID,
+      dev_tenant_id: DEV_IDENTITY.TENANT_ID,
+      lookback_hours: MEMORY_CONFIG.MAX_AGE_HOURS,
+      items_count: 0,
+      items_preview: [],
+      injected_chars: 0,
+      injected_preview: '',
+      timestamp,
+      error: memoryContext.error || 'Failed to fetch memory context'
+    };
+  }
+
+  // Build items preview (truncate each to ~200 chars)
+  const itemsPreview = memoryContext.items.map(item => {
+    const content = item.content;
+    return content.length > 200 ? content.substring(0, 197) + '...' : content;
+  });
+
+  // Build injected preview (the actual memory context block)
+  // Use the VITANA_MEMORY_CONTEXT format that would be injected
+  const fullInjectedBlock = `VITANA_MEMORY_CONTEXT\n---\n${memoryContext.formatted_context}\n---`;
+  const injectedPreview = fullInjectedBlock.length > 800
+    ? fullInjectedBlock.substring(0, 797) + '...'
+    : fullInjectedBlock;
+
+  return {
+    ok: true,
+    enabled: true,
+    dev_user_id: DEV_IDENTITY.USER_ID,
+    dev_tenant_id: DEV_IDENTITY.TENANT_ID,
+    lookback_hours: MEMORY_CONFIG.MAX_AGE_HOURS,
+    items_count: memoryContext.items.length,
+    items_preview: itemsPreview,
+    injected_chars: memoryContext.formatted_context.length,
+    injected_preview: injectedPreview,
+    timestamp
+  };
+}
+
+// =============================================================================
 // VTID-01106: Exports
 // =============================================================================
 
