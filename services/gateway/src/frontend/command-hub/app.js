@@ -11700,9 +11700,14 @@ function renderOrbOverlay() {
 
     // ==========================================================================
     // VTID-01069-D: LEFT COLUMN (40vw) - Conversation Stream + Input (docked bottom)
+    // VTID-01069-F: Chat stage wrapper for centering
     // ==========================================================================
     var leftColumn = document.createElement('div');
     leftColumn.className = 'orb-left';
+
+    // VTID-01069-F: Chat stage wrapper - centers content with max-width
+    var chatStage = document.createElement('div');
+    chatStage.className = 'orb-chat-stage';
 
     // VTID-01069-D: Conversation stream - renders liveTranscript messages
     var chatStream = document.createElement('div');
@@ -11746,7 +11751,6 @@ function renderOrbOverlay() {
             chatStream.appendChild(msgEl);
         });
     }
-    leftColumn.appendChild(chatStream);
 
     // Input zone wrapper
     var inputZoneWrap = document.createElement('div');
@@ -11880,7 +11884,15 @@ function renderOrbOverlay() {
     inputBar.appendChild(sendBtn);
 
     inputZoneWrap.appendChild(inputBar);
-    leftColumn.appendChild(inputZoneWrap);
+    chatStage.appendChild(chatStream);
+    chatStage.appendChild(inputZoneWrap);
+
+    // VTID-01069-F: Bottom safe spacer (120px desktop, 80px mobile)
+    var bottomSafe = document.createElement('div');
+    bottomSafe.className = 'orb-bottom-safe';
+    chatStage.appendChild(bottomSafe);
+
+    leftColumn.appendChild(chatStage);
 
     layoutWrapper.appendChild(leftColumn);
 
@@ -11944,6 +11956,14 @@ function renderOrbOverlay() {
         renderApp();
     });
     overlay.appendChild(closeBtn);
+
+    // VTID-01069-F: Auto-scroll to newest messages after render
+    setTimeout(function() {
+        var stream = document.querySelector('.orb-chat-stream');
+        if (stream) {
+            stream.scrollTop = stream.scrollHeight;
+        }
+    }, 50);
 
     return overlay;
 }
@@ -12438,11 +12458,9 @@ function scrollOrbLiveTranscript() {
     var container = document.querySelector('.orb-live-transcript') || document.querySelector('.orb-chat-stream');
     if (!container) return;
 
-    // VTID-01037: Only scroll to bottom if user was near bottom
-    // This prevents jumping when user is reading older messages
-    if (state.orb.transcriptNearBottom) {
-        container.scrollTop = container.scrollHeight;
-    }
+    // VTID-01069-F: Always scroll to bottom for new messages
+    // Use smooth scroll for better UX
+    container.scrollTop = container.scrollHeight;
 }
 
 /**

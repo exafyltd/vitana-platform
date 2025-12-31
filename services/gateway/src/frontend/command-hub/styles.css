@@ -8129,27 +8129,46 @@ body {
 }
 
 /* VTID-01069-D: Left column - 40vw, flex column with stream + input */
-/* VTID-01069-E: Improved gutters for symmetry (28px sides, 28px top) */
+/* VTID-01069-F: Centering handled by stage */
 .orb-left {
   width: 40vw;
   flex: 0 0 40vw;
   display: flex;
   flex-direction: column;
+  justify-content: center;
+  align-items: center;
   height: 100vh;
-  padding: 28px 28px 0 28px;
+  padding: 0;
   box-sizing: border-box;
 }
 
+/* VTID-01069-F: Chat stage - TRUE center between left edge and X button */
+.orb-chat-stage {
+  display: flex;
+  flex-direction: column;
+  width: 380px;
+  max-width: calc(100% - 40px);
+  height: calc(100vh - 40px);
+  margin: 20px auto;
+}
+
 /* VTID-01069-D: Conversation stream - fills available height, scrollable */
-/* VTID-01069-E: Tighter gap (8px), better top padding */
+/* VTID-01069-F: Tighter gap (6px), reduced scale */
+/* Newest messages at bottom, auto-scroll to bottom */
 .orb-chat-stream {
   flex: 1 1 auto;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 4px 0 20px 0;
-  margin-bottom: 12px;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 12px 0;
+}
+
+/* VTID-01069-F: Bottom safe spacer - 120px desktop */
+.orb-bottom-safe {
+  flex: 0 0 120px;
+  height: 120px;
 }
 
 /* VTID-01069-D: Empty state for conversation stream */
@@ -8184,12 +8203,12 @@ body {
   align-self: flex-start;
 }
 
-/* VTID-01069-E: Compressed typography (14px, 1.35 line-height, tighter padding) */
+/* VTID-01069-F: Premium scale typography (13px, 1.28 line-height, compact padding) */
 .orb-stream-bubble {
-  padding: 10px 12px;
-  border-radius: 16px;
-  font-size: 14px;
-  line-height: 1.35;
+  padding: 8px 11px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.28;
   word-wrap: break-word;
 }
 
@@ -8222,42 +8241,44 @@ body {
 }
 
 /* VTID-01069-D: Input zone wrapper - docked at bottom */
-/* VTID-01069-E: Bottom safe area (28px from viewport bottom) */
+/* VTID-01069-F: Bottom spacing handled by .orb-bottom-safe */
 .orb-inputzone-wrap {
   flex: 0 0 auto;
   display: flex;
   justify-content: center;
-  padding-bottom: 28px;
 }
 
 /* VTID-01069-D: Input bar - full width, flex row */
+/* VTID-01069-F: Reduced scale (10-15% smaller) */
 .orb-inputbar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   background: rgba(255, 255, 255, 0.98);
-  border-radius: 28px;
-  padding: 8px 12px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 24px;
+  padding: 6px 10px;
+  box-shadow: 0 3px 16px rgba(0, 0, 0, 0.10);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   width: 100%;
-  min-height: 56px;
-  max-height: 40vh;
+  min-height: 48px;
+  max-height: 35vh;
 }
 
 /* VTID-01069-D: Control rail - fixed width, no shrink */
+/* VTID-01069-F: Tighter gap */
 .orb-input-controls {
   display: flex;
   flex-direction: row;
-  gap: 4px;
+  gap: 2px;
   flex: 0 0 auto;
   white-space: nowrap;
   align-items: center;
 }
 
+/* VTID-01069-F: Smaller control buttons */
 .orb-input-control-btn {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   border: none;
   background: transparent;
@@ -8280,26 +8301,29 @@ body {
   background: rgba(59, 130, 246, 0.1);
 }
 
+/* VTID-01069-F: Smaller icons */
 .orb-input-control-btn svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 /* VTID-01069-D: Textarea container - expands to fill available space */
+/* VTID-01069-F: Reduced min-width for compact layout */
 .orb-textarea-wrap {
   flex: 1 1 auto;
-  min-width: 200px;
+  min-width: 140px;
   display: flex;
   align-items: center;
 }
 
 /* VTID-01069-C: Base textarea styles */
+/* VTID-01069-F: Smaller font and padding */
 .orb-textarea {
   width: 100%;
-  padding: 8px 12px;
-  font-size: 0.95rem;
+  padding: 6px 10px;
+  font-size: 13px;
   font-family: inherit;
-  line-height: 1.5;
+  line-height: 1.4;
   color: #1e293b;
   background: transparent;
   border: none;
@@ -8488,6 +8512,7 @@ body {
 }
 
 /* VTID-01069-C: Responsive - stack vertically on narrow screens */
+/* VTID-01069-F: Mobile-ready with centered stage */
 @media (max-width: 900px) {
   .orb-overlay-layout {
     flex-direction: column-reverse;
@@ -8497,7 +8522,13 @@ body {
     width: 100vw;
     flex: 0 0 auto;
     height: auto;
-    padding: 24px;
+    padding: 16px;
+  }
+
+  /* VTID-01069-F: Chat stage stays centered on mobile */
+  .orb-chat-stage {
+    max-width: 100%;
+    padding: 0 8px;
   }
 
   .orb-right {
@@ -8506,10 +8537,10 @@ body {
   }
 
   .orb-overlay.orb-overlay-twocol .orb-shell {
-    width: calc(50vw);
-    height: calc(50vw);
-    max-width: 300px;
-    max-height: 300px;
+    width: calc(45vw);
+    height: calc(45vw);
+    max-width: 280px;
+    max-height: 280px;
   }
 
   .orb-inputbar {
@@ -8518,11 +8549,22 @@ body {
 
   .orb-close-btn {
     bottom: 16px;
-    width: 56px;
-    height: 56px;
+    width: 52px;
+    height: 52px;
+  }
+
+  .orb-close-btn svg {
+    width: 24px;
+    height: 24px;
   }
 
   .orb-chat-stream {
-    max-height: 40vh;
+    max-height: 35vh;
+  }
+
+  /* VTID-01069-F: Smaller bottom safe on mobile (80px) */
+  .orb-bottom-safe {
+    flex: 0 0 80px;
+    height: 80px;
   }
 }
