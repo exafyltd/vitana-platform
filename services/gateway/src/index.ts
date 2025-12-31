@@ -85,6 +85,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const meRouter = require('./routes/me').default;
   // VTID-01047: Dev Token Mint Endpoint (Cloud-Shell Friendly)
   const devAuthRouter = require('./routes/dev-auth').default;
+  // VTID-01103: Health Compute Engine - Daily recompute pipeline
+  const healthRouter = require('./routes/health').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -263,6 +265,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01047: Dev Token Mint Endpoint (dev-sandbox only)
   mountRouterSync(app, '/api/v1/dev/auth', devAuthRouter, { owner: 'dev-auth' });
+
+  // VTID-01103: Health Compute Engine - Daily recompute pipeline
+  mountRouterSync(app, '/api/v1/health', healthRouter, { owner: 'health-compute' });
 
   // VTID-01063: commandhub router (note: /board route REMOVED, use board-adapter)
   mountRouterSync(app, '/api/v1/commandhub', commandhub, { owner: 'commandhub' });
