@@ -139,6 +139,103 @@ function createMemoryClient(): SupabaseClient | null {
 // =============================================================================
 
 /**
+ * VTID-01107: Write memory item for dev user (dev-sandbox only)
+ * Uses service role to bypass RLS with fixed dev identity.
+ * This is the write counterpart to fetchDevMemoryContext.
+ */
+export async function writeDevMemoryItem(params: {
+  source: 'orb_text' | 'orb_voice' | 'system';
+  content: string;
+  content_json?: Record<string, unknown>;
+  importance?: number;
+  category_key?: string;
+  occurred_at?: string;
+}): Promise<{ ok: boolean; id?: string; category_key?: string; error?: string }> {
+  // Check if memory bridge is enabled
+  if (!isMemoryBridgeEnabled()) {
+    return { ok: false, error: 'Memory bridge not enabled (requires dev-sandbox)' };
+  }
+
+  const supabase = createMemoryClient();
+  if (!supabase) {
+    return { ok: false, error: 'Supabase not configured' };
+  }
+
+  try {
+    const occurredAt = params.occurred_at || new Date().toISOString();
+    const importance = params.importance || 10;
+    const contentJson = params.content_json || {};
+
+    // Auto-classify category if not provided
+    const categoryKey = params.category_key || classifyDevCategory(params.content);
+
+    // Insert directly into memory_items table using service role
+    const { data, error } = await supabase
+      .from('memory_items')
+      .insert({
+        tenant_id: DEV_IDENTITY.TENANT_ID,
+        user_id: DEV_IDENTITY.USER_ID,
+        category_key: categoryKey,
+        source: params.source,
+        content: params.content,
+        content_json: contentJson,
+        importance,
+        occurred_at: occurredAt
+      })
+      .select('id, category_key')
+      .single();
+
+    if (error) {
+      // Check if table doesn't exist
+      if (error.message.includes('does not exist') || error.code === '42P01') {
+        console.warn('[VTID-01107] memory_items table not found (VTID-01104 dependency)');
+        return { ok: false, error: 'Memory Core not available' };
+      }
+      console.error('[VTID-01107] Memory write error:', error.message);
+      return { ok: false, error: error.message };
+    }
+
+    console.log(`[VTID-01107] Dev memory written: ${data?.id} (${categoryKey})`);
+    return { ok: true, id: data?.id, category_key: categoryKey };
+
+  } catch (err: any) {
+    console.error('[VTID-01107] Memory write exception:', err.message);
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Simple category classification for dev memory writes
+ */
+function classifyDevCategory(content: string): string {
+  const lower = content.toLowerCase();
+
+  // Health-related keywords
+  if (/\b(health|fitness|exercise|sleep|diet|weight|medication|doctor|symptom|pain)\b/.test(lower)) {
+    return 'health';
+  }
+  // Relationship keywords
+  if (/\b(family|friend|partner|wife|husband|child|parent|colleague|relationship)\b/.test(lower)) {
+    return 'relationships';
+  }
+  // Preference keywords
+  if (/\b(prefer|like|love|hate|favorite|always|never|want|need)\b/.test(lower)) {
+    return 'preferences';
+  }
+  // Goal keywords
+  if (/\b(goal|plan|want to|going to|will|target|achieve|objective)\b/.test(lower)) {
+    return 'goals';
+  }
+  // Remember/identity keywords
+  if (/\b(remember|my name|i am|call me|i'm called)\b/.test(lower)) {
+    return 'preferences';
+  }
+
+  // Default to conversation
+  return 'conversation';
+}
+
+/**
  * Fetch memory context for the dev user
  * Uses fixed dev identity and service role access
  *

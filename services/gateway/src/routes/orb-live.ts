@@ -45,13 +45,14 @@ import { emitOasisEvent } from '../services/oasis-event-service';
 // VTID-01105: Memory auto-write for ORB conversations
 import { writeMemoryItem, classifyCategory } from './memory';
 // VTID-01106: ORB Memory Bridge (Dev Sandbox)
-// VTID-01107: ORB Memory Debug Endpoint
+// VTID-01107: ORB Memory Debug Endpoint + Dev Memory Write
 import {
   isMemoryBridgeEnabled,
   isDevSandbox,
   fetchDevMemoryContext,
   buildMemoryEnhancedInstruction,
   getDebugSnapshot,
+  writeDevMemoryItem,
   DEV_IDENTITY,
   MEMORY_CONFIG,
   OrbMemoryContext
@@ -1013,13 +1014,14 @@ router.post('/chat', async (req: Request, res: Response) => {
   });
 
   // VTID-01105: Auto-write user message to memory
+  // VTID-01107: Support dev-sandbox mode without token
   const userToken = getBearerToken(req);
   const isVoice = body.meta?.mode === 'orb_voice';
   const memorySource = isVoice ? 'orb_voice' : 'orb_text';
   const requestId = randomUUID();
 
   if (userToken) {
-    // Write user message to memory (fire-and-forget, don't block response)
+    // Write user message to memory with JWT (fire-and-forget, don't block response)
     writeMemoryItem(userToken, {
       source: memorySource as 'orb_text' | 'orb_voice',
       content: inputText,
@@ -1046,6 +1048,36 @@ router.post('/chat', async (req: Request, res: Response) => {
       }
     }).catch(err => {
       console.warn('[VTID-01105] User message memory write error:', err.message);
+    });
+  } else if (isDevSandbox()) {
+    // VTID-01107: Dev-sandbox mode - write with dev identity (no token required)
+    writeDevMemoryItem({
+      source: memorySource,
+      content: inputText,
+      content_json: {
+        direction: 'user',
+        channel: 'orb',
+        mode: isVoice ? 'voice' : 'text',
+        request_id: requestId,
+        orb_session_id: orbSessionId,
+        conversation_id: conversationId
+      }
+    }).then(result => {
+      if (result.ok) {
+        console.log(`[VTID-01107] Dev user message written to memory: ${result.id} (${result.category_key})`);
+        emitMemoryWriteEvent('memory.write.user_message', {
+          memory_id: result.id,
+          category_key: result.category_key,
+          orb_session_id: orbSessionId,
+          conversation_id: conversationId,
+          source: memorySource,
+          dev_sandbox: true
+        });
+      } else {
+        console.warn('[VTID-01107] Dev user message memory write failed:', result.error);
+      }
+    }).catch(err => {
+      console.warn('[VTID-01107] Dev user message memory write error:', err.message);
     });
   }
 
@@ -1115,8 +1147,9 @@ router.post('/chat', async (req: Request, res: Response) => {
     }
 
     // VTID-01105: Auto-write assistant message to memory (fire-and-forget)
+    // VTID-01107: Support dev-sandbox mode without token
+    const latencyMs = geminiResponse.meta?.latency_ms as number || 0;
     if (userToken) {
-      const latencyMs = geminiResponse.meta?.latency_ms as number || 0;
       writeMemoryItem(userToken, {
         source: memorySource as 'orb_text' | 'orb_voice',
         content: replyText,
@@ -1147,6 +1180,40 @@ router.post('/chat', async (req: Request, res: Response) => {
         }
       }).catch(err => {
         console.warn('[VTID-01105] Assistant message memory write error:', err.message);
+      });
+    } else if (isDevSandbox()) {
+      // VTID-01107: Dev-sandbox mode - write with dev identity (no token required)
+      writeDevMemoryItem({
+        source: memorySource,
+        content: replyText,
+        content_json: {
+          direction: 'assistant',
+          channel: 'orb',
+          model,
+          provider,
+          latency_ms: latencyMs,
+          request_id: requestId,
+          orb_session_id: orbSessionId,
+          conversation_id: conversationId
+        }
+      }).then(result => {
+        if (result.ok) {
+          console.log(`[VTID-01107] Dev assistant message written to memory: ${result.id} (${result.category_key})`);
+          emitMemoryWriteEvent('memory.write.assistant_message', {
+            memory_id: result.id,
+            category_key: result.category_key,
+            orb_session_id: orbSessionId,
+            conversation_id: conversationId,
+            source: memorySource,
+            model,
+            latency_ms: latencyMs,
+            dev_sandbox: true
+          });
+        } else {
+          console.warn('[VTID-01107] Dev assistant message memory write failed:', result.error);
+        }
+      }).catch(err => {
+        console.warn('[VTID-01107] Dev assistant message memory write error:', err.message);
       });
     }
 
