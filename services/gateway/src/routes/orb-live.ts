@@ -29,6 +29,8 @@ import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { processWithGemini } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
+// VTID-01105: Memory auto-write for ORB conversations
+import { writeMemoryItem, classifyCategory } from './memory';
 
 const router = Router();
 
@@ -320,6 +322,34 @@ function validateOrigin(req: Request): boolean {
   const origin = req.get('origin') || req.get('referer') || '';
   if (!origin) return true; // Allow requests without origin (e.g., curl)
   return ALLOWED_ORIGINS.some(allowed => origin.startsWith(allowed));
+}
+
+/**
+ * VTID-01105: Extract Bearer token from Authorization header
+ */
+function getBearerToken(req: Request): string | null {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+  return authHeader.slice(7);
+}
+
+/**
+ * VTID-01105: Emit memory write OASIS event
+ */
+async function emitMemoryWriteEvent(
+  eventType: 'memory.write.user_message' | 'memory.write.assistant_message',
+  payload: Record<string, unknown>
+): Promise<void> {
+  await emitOasisEvent({
+    vtid: 'VTID-01105',
+    type: eventType as any,
+    source: 'orb-memory-auto',
+    status: 'success',
+    message: `ORB ${eventType.includes('user') ? 'user' : 'assistant'} message written to memory`,
+    payload
+  }).catch(err => console.warn(`[VTID-01105] Failed to emit ${eventType}:`, err.message));
 }
 
 function getClientIP(req: Request): string {
@@ -907,6 +937,43 @@ router.post('/chat', async (req: Request, res: Response) => {
     ts: new Date().toISOString()
   });
 
+  // VTID-01105: Auto-write user message to memory
+  const userToken = getBearerToken(req);
+  const isVoice = body.meta?.mode === 'orb_voice';
+  const memorySource = isVoice ? 'orb_voice' : 'orb_text';
+  const requestId = randomUUID();
+
+  if (userToken) {
+    // Write user message to memory (fire-and-forget, don't block response)
+    writeMemoryItem(userToken, {
+      source: memorySource as 'orb_text' | 'orb_voice',
+      content: inputText,
+      content_json: {
+        direction: 'user',
+        channel: 'orb',
+        mode: isVoice ? 'voice' : 'text',
+        request_id: requestId,
+        orb_session_id: orbSessionId,
+        conversation_id: conversationId
+      }
+    }).then(result => {
+      if (result.ok) {
+        console.log(`[VTID-01105] User message written to memory: ${result.id} (${result.category_key})`);
+        emitMemoryWriteEvent('memory.write.user_message', {
+          memory_id: result.id,
+          category_key: result.category_key,
+          orb_session_id: orbSessionId,
+          conversation_id: conversationId,
+          source: memorySource
+        });
+      } else {
+        console.warn('[VTID-01105] User message memory write failed:', result.error);
+      }
+    }).catch(err => {
+      console.warn('[VTID-01105] User message memory write error:', err.message);
+    });
+  }
+
   try {
     // Build thread ID for Gemini processing
     const threadId = `orb-${orbSessionId}`;
@@ -939,6 +1006,42 @@ router.post('/chat', async (req: Request, res: Response) => {
         role: 'assistant',
         text: replyText,
         ts: new Date().toISOString()
+      });
+    }
+
+    // VTID-01105: Auto-write assistant message to memory (fire-and-forget)
+    if (userToken) {
+      const latencyMs = geminiResponse.meta?.latency_ms as number || 0;
+      writeMemoryItem(userToken, {
+        source: memorySource as 'orb_text' | 'orb_voice',
+        content: replyText,
+        content_json: {
+          direction: 'assistant',
+          channel: 'orb',
+          model,
+          provider,
+          latency_ms: latencyMs,
+          request_id: requestId,
+          orb_session_id: orbSessionId,
+          conversation_id: conversationId
+        }
+      }).then(result => {
+        if (result.ok) {
+          console.log(`[VTID-01105] Assistant message written to memory: ${result.id} (${result.category_key})`);
+          emitMemoryWriteEvent('memory.write.assistant_message', {
+            memory_id: result.id,
+            category_key: result.category_key,
+            orb_session_id: orbSessionId,
+            conversation_id: conversationId,
+            source: memorySource,
+            model,
+            latency_ms: latencyMs
+          });
+        } else {
+          console.warn('[VTID-01105] Assistant message memory write failed:', result.error);
+        }
+      }).catch(err => {
+        console.warn('[VTID-01105] Assistant message memory write error:', err.message);
       });
     }
 
