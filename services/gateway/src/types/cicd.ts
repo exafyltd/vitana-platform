@@ -229,7 +229,19 @@ export type CicdEventType =
   | 'orb.memory.context_injected'
   // VTID-01107: ORB Memory Debug Events
   | 'orb.memory.debug_requested'
-  | 'orb.memory.debug_snapshot';
+  | 'orb.memory.debug_snapshot'
+  // VTID-01095: Daily Scheduler Events
+  | 'vtid.daily_recompute.started'
+  | 'vtid.stage.longevity.success'
+  | 'vtid.stage.longevity.failed'
+  | 'vtid.stage.topics.success'
+  | 'vtid.stage.topics.failed'
+  | 'vtid.stage.community_recs.success'
+  | 'vtid.stage.community_recs.failed'
+  | 'vtid.stage.matches.success'
+  | 'vtid.stage.matches.failed'
+  | 'vtid.daily_recompute.completed'  // Terminal success
+  | 'vtid.daily_recompute.failed';    // Terminal failure
 
 export interface CicdOasisEvent {
   vtid: string;
