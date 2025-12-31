@@ -50,7 +50,7 @@ type CategoryKey = typeof CATEGORY_KEYS[number];
 /**
  * Valid source types for memory items
  */
-const SOURCE_TYPES = ['orb_text', 'orb_voice', 'system'] as const;
+const SOURCE_TYPES = ['orb_text', 'orb_voice', 'diary', 'upload', 'system'] as const;
 type SourceType = typeof SOURCE_TYPES[number];
 
 /**
@@ -235,6 +235,25 @@ async function emitMemoryEvent(
     message,
     payload
   }).catch(err => console.warn(`[VTID-01105] Failed to emit ${type}:`, err.message));
+}
+
+/**
+ * VTID-01086: Emit a Memory Garden OASIS event
+ */
+async function emitGardenEvent(
+  type: 'memory.garden.progress.read' | 'memory.garden.ui.refreshed' | 'memory.garden.longevity_panel.read',
+  status: 'info' | 'success' | 'warning' | 'error',
+  message: string,
+  payload: Record<string, unknown>
+): Promise<void> {
+  await emitOasisEvent({
+    vtid: 'VTID-01086',
+    type: type as any,
+    source: 'memory-gateway',
+    status,
+    message,
+    payload
+  }).catch(err => console.warn(`[VTID-01086] Failed to emit ${type}:`, err.message));
 }
 
 // =============================================================================
@@ -498,6 +517,112 @@ router.get('/context', async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     console.error('[VTID-01105] memory_get_context error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+// =============================================================================
+// VTID-01086: Memory Garden Progress Endpoint
+// =============================================================================
+
+/**
+ * GET /garden/progress -> GET /api/v1/memory/garden/progress
+ *
+ * Returns counts and progress per Memory Garden category.
+ * Progress = min(1, count / target_count)
+ */
+router.get('/garden/progress', async (req: Request, res: Response) => {
+  console.log('[VTID-01086] GET /memory/garden/progress');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Call memory_get_garden_progress RPC
+    const { data, error } = await supabase.rpc('memory_get_garden_progress');
+
+    if (error) {
+      // Check if RPC doesn't exist (migration not deployed yet)
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01086] memory_get_garden_progress RPC not found (migration not deployed yet)');
+        // Return placeholder data for development
+        return res.status(200).json({
+          ok: true,
+          totals: { memories: 0 },
+          categories: {
+            personal_identity: { count: 0, progress: 0.00, label: 'Personal Identity' },
+            health_wellness: { count: 0, progress: 0.00, label: 'Health & Wellness' },
+            lifestyle_routines: { count: 0, progress: 0.00, label: 'Lifestyle & Routines' },
+            network_relationships: { count: 0, progress: 0.00, label: 'Network & Relationships' },
+            learning_knowledge: { count: 0, progress: 0.00, label: 'Learning & Knowledge' },
+            business_projects: { count: 0, progress: 0.00, label: 'Business & Projects' },
+            finance_assets: { count: 0, progress: 0.00, label: 'Finance & Assets' },
+            location_environment: { count: 0, progress: 0.00, label: 'Location & Environment' },
+            digital_footprint: { count: 0, progress: 0.00, label: 'Digital Footprint' },
+            values_aspirations: { count: 0, progress: 0.00, label: 'Values & Aspirations' },
+            autopilot_context: { count: 0, progress: 0.00, label: 'Autopilot Context' },
+            future_plans: { count: 0, progress: 0.00, label: 'Future Plans' },
+            uncategorized: { count: 0, progress: 0.00, label: 'Uncategorized' }
+          },
+          _placeholder: true
+        });
+      }
+      console.error('[VTID-01086] memory_get_garden_progress RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    // Get user context for OASIS event
+    const { data: meData } = await supabase.rpc('me_context');
+    const tenantId = meData?.tenant_id || null;
+    const userId = meData?.user_id || meData?.id || null;
+    const activeRole = meData?.active_role || null;
+
+    // Emit OASIS event
+    await emitGardenEvent(
+      'memory.garden.progress.read',
+      'success',
+      `Memory Garden progress fetched: ${data?.totals?.memories || 0} total memories`,
+      {
+        tenant_id: tenantId,
+        user_id: userId,
+        active_role: activeRole,
+        total_memories: data?.totals?.memories || 0,
+        category_count: Object.keys(data?.categories || {}).length
+      }
+    );
+
+    console.log(`[VTID-01086] Memory Garden progress fetched: ${data?.totals?.memories || 0} memories`);
+
+    return res.status(200).json({
+      ok: data?.ok ?? true,
+      totals: data?.totals || { memories: 0 },
+      categories: data?.categories || {}
+    });
+  } catch (err: any) {
+    console.error('[VTID-01086] memory_get_garden_progress error:', err.message);
     return res.status(502).json({
       ok: false,
       error: err.message
