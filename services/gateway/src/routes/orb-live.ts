@@ -488,6 +488,7 @@ setInterval(cleanupExpiredSessions, 5 * 60 * 1000);
 /**
  * Call Gemini API with audio transcription request
  * Uses Gemini API directly (NOT Vertex)
+ * VTID-01107: Now includes memory context injection for dev-sandbox
  */
 async function callGeminiWithAudio(
   session: OrbLiveSession,
@@ -499,7 +500,22 @@ async function callGeminiWithAudio(
   }
 
   try {
-    const systemInstruction = generateSystemInstruction(session);
+    // VTID-01107: Use memory-enhanced system instruction in dev-sandbox
+    let systemInstruction: string;
+    if (isDevSandbox()) {
+      const { instruction, memoryContext } = await generateMemoryEnhancedSystemInstruction({
+        tenant: session.tenant,
+        role: session.role,
+        route: session.route,
+        selectedId: session.selectedId
+      });
+      systemInstruction = instruction;
+      if (memoryContext && memoryContext.ok && memoryContext.items.length > 0) {
+        console.log(`[VTID-01107] Memory injected into /audio: ${memoryContext.items.length} items`);
+      }
+    } else {
+      systemInstruction = generateSystemInstruction(session);
+    }
 
     // Build request for Gemini API
     const requestBody = {
@@ -561,6 +577,7 @@ async function callGeminiWithAudio(
 
 /**
  * Call Gemini API with text input (for testing/fallback)
+ * VTID-01107: Now includes memory context injection for dev-sandbox
  */
 async function callGeminiWithText(
   session: OrbLiveSession,
@@ -571,7 +588,22 @@ async function callGeminiWithText(
   }
 
   try {
-    const systemInstruction = generateSystemInstruction(session);
+    // VTID-01107: Use memory-enhanced system instruction in dev-sandbox
+    let systemInstruction: string;
+    if (isDevSandbox()) {
+      const { instruction, memoryContext } = await generateMemoryEnhancedSystemInstruction({
+        tenant: session.tenant,
+        role: session.role,
+        route: session.route,
+        selectedId: session.selectedId
+      });
+      systemInstruction = instruction;
+      if (memoryContext && memoryContext.ok && memoryContext.items.length > 0) {
+        console.log(`[VTID-01107] Memory injected into /text: ${memoryContext.items.length} items`);
+      }
+    } else {
+      systemInstruction = generateSystemInstruction(session);
+    }
 
     const requestBody = {
       contents: [
