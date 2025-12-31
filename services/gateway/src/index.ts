@@ -102,6 +102,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01090: Live Rooms + Events as Relationship Nodes
   const liveRouter = require('./routes/live').default;
   const { communityMeetupRouter } = require('./routes/live');
+  // VTID-01094: Match Quality Feedback Loop
+  const matchFeedbackRouter = require('./routes/match-feedback').default;
+  const { personalizationRouter } = require('./routes/match-feedback');
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -292,6 +295,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01088: Matchmaking Engine v1 - deterministic matching for longevity community
   mountRouterSync(app, '/api/v1/match', matchmakingRouter, { owner: 'matchmaking' });
+
+  // VTID-01094: Match Quality Feedback Loop - feedback on matches (mounted after matchmaking for /:id/feedback)
+  mountRouterSync(app, '/api/v1/match', matchFeedbackRouter, { owner: 'match-feedback' });
+  mountRouterSync(app, '/api/v1/personalization', personalizationRouter, { owner: 'personalization' });
 
   // VTID-01083: Longevity Signal Layer - diary/memory to health signals bridge
   mountRouterSync(app, '/api/v1/longevity', longevityRouter, { owner: 'longevity' });
