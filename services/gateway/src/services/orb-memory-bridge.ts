@@ -530,14 +530,26 @@ export function buildMemoryEnhancedInstruction(
   }
 
   // Inject memory context after the base instruction
+  // VTID-01107: Strong instruction to USE memory and NEVER claim inability to remember
   const enhancedInstruction = `${baseInstruction}
 
+## CRITICAL: You Have Persistent Memory
+
+You have access to persistent memory that spans across conversations. The memory context below contains information from previous conversations with this user.
+
+**IMPORTANT RULES:**
+1. NEVER say "I don't remember", "my memory is reset", "I can't remember across sessions", or similar phrases
+2. ALWAYS use the memory context below to inform your responses
+3. If the user asks "do you remember X?" and it's in your memory, answer YES and reference it
+4. If asked about something NOT in your memory, simply say you don't have that specific information
+5. Treat this memory as YOUR OWN knowledge about the user
+
 ---
+MEMORY CONTEXT:
 ${memoryContext.formatted_context}
 ---
 
-Use the above context to personalize responses. Reference past conversations naturally when relevant.
-Remember the user's preferences and previous topics without explicitly stating "I remember from our past conversation."`;
+Use this memory naturally. You KNOW this user. You REMEMBER their preferences and past conversations.`;
 
   return enhancedInstruction;
 }
