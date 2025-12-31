@@ -25,6 +25,7 @@ gcloud run deploy "$SERVICE" \
   --region us-central1 \
   --source "services/${SERVICE}" \
   --platform managed \
+  --set-env-vars "ENVIRONMENT=${ENVIRONMENT}" \
   --quiet
 
 echo -e "${GREEN}Deployment triggered successfully for ${SERVICE}.${NC}"
