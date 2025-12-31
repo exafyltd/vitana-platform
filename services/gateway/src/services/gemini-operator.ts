@@ -857,12 +857,14 @@ function getVertexToolDefinitions(): Tool[] {
 
 /**
  * VTID-01023: Call Vertex AI with tools using ADC
+ * VTID-01106: Added optional custom system instruction for ORB memory context
  * Returns the model response with optional tool calls
  */
 async function callVertexWithTools(
   text: string,
   threadId: string,
-  conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = []
+  conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
+  customSystemInstruction?: string
 ): Promise<{
   reply: string;
   toolCalls?: GeminiToolCall[];
@@ -870,6 +872,9 @@ async function callVertexWithTools(
   if (!vertexAI) {
     throw new Error('Vertex AI not initialized');
   }
+
+  // VTID-01106: Use custom system instruction if provided (for ORB memory context)
+  const systemPrompt = customSystemInstruction || `${OPERATOR_SYSTEM_PROMPT}\n\nCurrent thread: ${threadId}`;
 
   const generativeModel = vertexAI.getGenerativeModel({
     model: VERTEX_MODEL,
@@ -881,7 +886,7 @@ async function callVertexWithTools(
     },
     systemInstruction: {
       role: 'system',
-      parts: [{ text: `${OPERATOR_SYSTEM_PROMPT}\n\nCurrent thread: ${threadId}` }]
+      parts: [{ text: systemPrompt }]
     },
     tools: getVertexToolDefinitions()
   });
@@ -1038,6 +1043,8 @@ function formatToolResultsAsResponse(toolResults: GeminiToolResult[]): { reply: 
  * - Priority 2: Gemini API if API key is configured
  * - Priority 3: Local routing fallback
  * - Always includes provider/model metadata for transparency
+ *
+ * VTID-01106: Added optional systemInstruction override for ORB memory context
  */
 export async function processWithGemini(input: {
   text: string;
@@ -1047,8 +1054,10 @@ export async function processWithGemini(input: {
   // VTID-01027: Conversation history for session memory
   conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
   conversationId?: string;
+  // VTID-01106: Optional system instruction override (for ORB memory context)
+  systemInstruction?: string;
 }): Promise<GeminiOperatorResponse> {
-  const { text, threadId, attachments = [], context = {}, conversationHistory = [], conversationId } = input;
+  const { text, threadId, attachments = [], context = {}, conversationHistory = [], conversationId, systemInstruction } = input;
 
   console.log(`[VTID-01023] Processing message: "${text.substring(0, 50)}..."`);
   if (conversationHistory.length > 0) {
@@ -1059,7 +1068,8 @@ export async function processWithGemini(input: {
   if (vertexAI) {
     try {
       console.log('[VTID-01023] Using Vertex AI with ADC');
-      const vertexResponse = await callVertexWithTools(text, threadId, conversationHistory);
+      // VTID-01106: Pass custom system instruction if provided (for ORB memory context)
+      const vertexResponse = await callVertexWithTools(text, threadId, conversationHistory, systemInstruction);
 
       // Check if Vertex wants to call any tools
       if (vertexResponse.toolCalls && vertexResponse.toolCalls.length > 0) {
@@ -1117,7 +1127,8 @@ export async function processWithGemini(input: {
       console.log('[VTID-01023] Falling back to Gemini API key');
       // Call Gemini API with function calling
       // VTID-01027: Pass conversation history
-      const geminiResponse = await callGeminiWithTools(text, threadId, conversationHistory);
+      // VTID-01106: Pass custom system instruction if provided (for ORB memory context)
+      const geminiResponse = await callGeminiWithTools(text, threadId, conversationHistory, systemInstruction);
 
       // Check if Gemini wants to call any tools
       if (geminiResponse.toolCalls && geminiResponse.toolCalls.length > 0) {
@@ -1180,11 +1191,13 @@ export async function processWithGemini(input: {
 /**
  * Call Gemini API with tool definitions
  * VTID-01027: Added conversation history support
+ * VTID-01106: Added optional custom system instruction for ORB memory context
  */
 async function callGeminiWithTools(
   text: string,
   threadId: string,
-  conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = []
+  conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
+  customSystemInstruction?: string
 ): Promise<{
   reply: string;
   toolCalls?: GeminiToolCall[];
@@ -1210,14 +1223,15 @@ async function callGeminiWithTools(
     parts: [{ text }]
   });
 
+  // VTID-01106: Use custom system instruction if provided (for ORB memory context)
+  const systemPrompt = customSystemInstruction || `${OPERATOR_SYSTEM_PROMPT}\n\nCurrent thread: ${threadId}`;
+
   const requestBody = {
     contents,
     tools: [GEMINI_TOOL_DEFINITIONS],
     systemInstruction: {
       parts: [{
-        text: `${OPERATOR_SYSTEM_PROMPT}
-
-Current thread: ${threadId}`
+        text: systemPrompt
       }]
     },
     generationConfig: {

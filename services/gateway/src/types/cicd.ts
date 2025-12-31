@@ -218,7 +218,15 @@ export type CicdEventType =
   | 'health.compute.features_daily'
   | 'health.compute.vitana_index'
   | 'health.recommendations.refresh'
-  | 'health.compute.error';
+  | 'health.compute.error'
+  // VTID-01105: Memory Write Events
+  | 'memory.write'
+  | 'memory.read'
+  | 'memory.write.user_message'
+  | 'memory.write.assistant_message'
+  // VTID-01106: ORB Memory Bridge Events
+  | 'orb.memory.context_fetched'
+  | 'orb.memory.context_injected';
 
 export interface CicdOasisEvent {
   vtid: string;
