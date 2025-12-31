@@ -11588,7 +11588,9 @@ const ORB_ICONS = {
     badgeCamera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>',
     badgeLang: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
     // VTID-01069-C: Plus icon for attachment button
-    plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>'
+    plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+    // VTID-01069-F: Screen off icon (crossed out)
+    screenOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"/><path d="M21 15V5a2 2 0 0 0-2-2H5"/><path d="M3 7v10a2 2 0 0 0 2 2h14"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>'
 };
 
 // VTID-0150-A: ORB Idle is now rendered via renderOrbIdleElement() inside sidebar footer
@@ -11660,9 +11662,21 @@ function orbOverlaySendMessage() {
     var message = state.orb.chatInputValue;
     if (!message || !message.trim()) return;
 
-    orbSendMessage(message);
+    // VTID-01069-F: Add user message to liveTranscript (overlay uses this, not chatMessages)
+    state.orb.liveTranscript.push({
+        id: Date.now(),
+        role: 'user',
+        text: message.trim(),
+        timestamp: new Date().toISOString()
+    });
 
-    // Reset input value (orbSendMessage already does this)
+    // Clear input value
+    state.orb.chatInputValue = '';
+
+    // Render immediately to show user message
+    renderApp();
+    scrollOrbLiveTranscript();
+
     // Reset height bucket
     var wrapper = document.querySelector('.orb-textarea-wrap');
     if (wrapper) {
@@ -11674,6 +11688,9 @@ function orbOverlaySendMessage() {
     if (textarea) {
         textarea.focus();
     }
+
+    // VTID-01069-F: Use orbVoiceSendText for backend call + TTS response
+    orbVoiceSendText(message.trim());
 }
 
 /**
@@ -11752,6 +11769,17 @@ function renderOrbOverlay() {
         });
     }
 
+    // VTID-01069-F: Show interim speech recognition results (word-by-word typing effect)
+    if (state.orb.interimTranscript) {
+        var interimEl = document.createElement('div');
+        interimEl.className = 'orb-stream-msg orb-stream-msg-user orb-stream-msg-interim';
+        var interimBubble = document.createElement('div');
+        interimBubble.className = 'orb-stream-bubble';
+        interimBubble.textContent = state.orb.interimTranscript;
+        interimEl.appendChild(interimBubble);
+        chatStream.appendChild(interimEl);
+    }
+
     // Input zone wrapper
     var inputZoneWrap = document.createElement('div');
     inputZoneWrap.className = 'orb-inputzone-wrap';
@@ -11799,7 +11827,8 @@ function renderOrbOverlay() {
     var screenBtn = document.createElement('button');
     screenBtn.className = 'orb-input-control-btn' + (state.orb.screenShareActive ? ' orb-input-control-active' : '');
     screenBtn.setAttribute('aria-label', state.orb.screenShareActive ? 'Stop screen share' : 'Start screen share');
-    screenBtn.innerHTML = ORB_ICONS.screen;
+    // VTID-01069-F: Use crossed icon when inactive
+    screenBtn.innerHTML = state.orb.screenShareActive ? ORB_ICONS.screen : ORB_ICONS.screenOff;
     screenBtn.addEventListener('click', function() {
         orbToggleScreenShare();
     });
@@ -11874,10 +11903,12 @@ function renderOrbOverlay() {
 
     // Send button
     var sendBtn = document.createElement('button');
-    sendBtn.className = 'orb-input-send';
+    var hasText = state.orb.chatInputValue && state.orb.chatInputValue.trim();
+    // VTID-01069-F: Add active class when text is entered
+    sendBtn.className = 'orb-input-send' + (hasText ? ' orb-input-send-active' : '');
     sendBtn.innerHTML = ORB_ICONS.send;
     sendBtn.setAttribute('aria-label', 'Send message');
-    sendBtn.disabled = !state.orb.chatInputValue.trim();
+    sendBtn.disabled = !hasText;
     sendBtn.addEventListener('click', function() {
         orbOverlaySendMessage();
     });
@@ -12677,7 +12708,9 @@ function orbVoiceStart() {
             // Send to backend
             orbVoiceSendText(finalTranscript.trim());
         } else {
+            // VTID-01069-F: Render interim transcript and scroll to show it
             renderApp();
+            scrollOrbLiveTranscript();
         }
     };
 
