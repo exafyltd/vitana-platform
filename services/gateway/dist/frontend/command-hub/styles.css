@@ -8142,27 +8142,31 @@ body {
   box-sizing: border-box;
 }
 
-/* VTID-01069-F: Chat stage - TRUE center between left edge and X button */
+/* VTID-01069-F: Chat stage - centered, 2cm (~75px) more from left edge */
 .orb-chat-stage {
   display: flex;
   flex-direction: column;
   width: 380px;
   max-width: calc(100% - 40px);
   height: calc(100vh - 40px);
-  margin: 20px auto;
+  margin: 20px auto 20px calc(50% - 190px + 40px);
 }
 
 /* VTID-01069-D: Conversation stream - fills available height, scrollable */
-/* VTID-01069-F: Tighter gap (6px), reduced scale */
-/* Newest messages at bottom, auto-scroll to bottom */
+/* VTID-01069-F: Scrollable without visible scrollbar */
 .orb-chat-stream {
   flex: 1 1 auto;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
   gap: 6px;
   padding: 12px 0;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+
+.orb-chat-stream::-webkit-scrollbar {
+  display: none; /* Chrome/Safari */
 }
 
 /* VTID-01069-F: Bottom safe spacer - 120px desktop */
@@ -8233,6 +8237,13 @@ body {
   background: rgba(255, 255, 255, 0.6);
   color: #64748b;
   font-style: italic;
+}
+
+/* VTID-01069-F: Interim speech recognition message (typing effect) */
+.orb-stream-msg-interim .orb-stream-bubble {
+  background: rgba(139, 92, 246, 0.15);
+  border: 1px dashed rgba(139, 92, 246, 0.4);
+  color: #64748b;
 }
 
 /* VTID-01069-E: Timestamps hidden entirely */
@@ -8427,6 +8438,12 @@ body {
   background: #cbd5e1;
   cursor: not-allowed;
   transform: none;
+}
+
+/* VTID-01069-F: Active send button when text is entered */
+.orb-input-send-active {
+  background: var(--orb-secondary);
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.5);
 }
 
 .orb-input-send svg {
