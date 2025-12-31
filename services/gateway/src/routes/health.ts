@@ -10,6 +10,7 @@
 import { Router, Request, Response } from 'express';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { CicdEventType } from '../types/cicd';
 
 const router = Router();
 
@@ -31,7 +32,7 @@ function getBearerToken(req: Request): string | null {
  * Emit a health compute event to OASIS
  */
 async function emitHealthEvent(
-  eventType: string,
+  eventType: CicdEventType,
   status: 'info' | 'success' | 'warning' | 'error',
   message: string,
   payload: Record<string, unknown>
