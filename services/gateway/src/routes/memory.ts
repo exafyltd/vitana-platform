@@ -1,11 +1,13 @@
 /**
  * VTID-01105: ORB Memory Wiring v1 (Gateway)
+ * VTID-01085: Memory Retrieve Router v1 (Unified Memory Access)
  *
  * Memory write/read endpoints and auto-write hooks for ORB conversations.
  *
  * Endpoints:
  * - POST /api/v1/memory/write    - Write a memory item
  * - GET  /api/v1/memory/context  - Fetch memory context
+ * - POST /api/v1/memory/retrieve - Unified memory retrieval gateway (VTID-01085)
  * - GET  /api/v1/memory/health   - Health check
  *
  * Internal helpers:
@@ -15,6 +17,7 @@
  * Dependencies:
  * - VTID-01102 (context bridge)
  * - VTID-01104 (memory RPC)
+ * - VTID-01085 (memory retrieve RPC)
  */
 
 import { Router, Request, Response } from 'express';
@@ -88,6 +91,81 @@ interface MemoryItem {
   importance: number;
   occurred_at: string;
   created_at: string;
+}
+
+// =============================================================================
+// VTID-01085: Memory Retrieve Router Constants & Types
+// =============================================================================
+
+/**
+ * Valid intent types for memory retrieve
+ */
+const RETRIEVE_INTENTS = [
+  'health',
+  'longevity',
+  'community',
+  'lifestyle',
+  'planner',
+  'general'
+] as const;
+
+type RetrieveIntent = typeof RETRIEVE_INTENTS[number];
+
+/**
+ * Valid mode types for memory retrieve
+ */
+const RETRIEVE_MODES = ['summary', 'detail'] as const;
+type RetrieveMode = typeof RETRIEVE_MODES[number];
+
+/**
+ * Memory retrieve request schema (VTID-01085)
+ */
+const MemoryRetrieveRequestSchema = z.object({
+  intent: z.enum(RETRIEVE_INTENTS).default('general'),
+  mode: z.enum(RETRIEVE_MODES).default('summary'),
+  query: z.string().nullable().optional(),
+  time_range: z.object({
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD format').optional(),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD format').optional()
+  }).optional(),
+  include: z.object({
+    diary: z.boolean().default(true),
+    garden: z.boolean().default(true),
+    longevity: z.boolean().default(true),
+    community: z.boolean().default(true)
+  }).optional()
+});
+
+type MemoryRetrieveRequest = z.infer<typeof MemoryRetrieveRequestSchema>;
+
+/**
+ * Memory retrieve response structure (VTID-01085)
+ */
+interface MemoryRetrieveResponse {
+  ok: boolean;
+  intent: RetrieveIntent;
+  mode: RetrieveMode;
+  time_range: { from: string; to: string };
+  data: {
+    garden_summary: Record<string, unknown>;
+    longevity_summary: Record<string, unknown>;
+    community_recommendations: unknown[];
+    diary_highlights: unknown[];
+  };
+  meta: {
+    tenant_id: string;
+    user_id: string;
+    active_role: string;
+    redacted: boolean;
+    redactions: Array<{ field: string; reason: string }>;
+    sources: {
+      diary_entries: number;
+      garden_nodes: number;
+      longevity_days: number;
+      community_recs: number;
+    };
+    audit_id: string;
+  };
 }
 
 // =============================================================================
@@ -222,19 +300,21 @@ function getBearerToken(req: Request): string | null {
  * Emit a memory-related OASIS event
  */
 async function emitMemoryEvent(
-  type: 'memory.write' | 'memory.read' | 'memory.write.user_message' | 'memory.write.assistant_message',
+  type: 'memory.write' | 'memory.read' | 'memory.write.user_message' | 'memory.write.assistant_message' |
+        'memory.retrieve.requested' | 'memory.retrieve.denied' | 'memory.retrieve.completed',
   status: 'info' | 'success' | 'warning' | 'error',
   message: string,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
+  vtid: string = 'VTID-01105'
 ): Promise<void> {
   await emitOasisEvent({
-    vtid: 'VTID-01105',
+    vtid,
     type: type as any, // Cast to bypass strict type check (we're extending event types)
     source: 'memory-gateway',
     status,
     message,
     payload
-  }).catch(err => console.warn(`[VTID-01105] Failed to emit ${type}:`, err.message));
+  }).catch(err => console.warn(`[${vtid}] Failed to emit ${type}:`, err.message));
 }
 
 // =============================================================================
@@ -505,6 +585,175 @@ router.get('/context', async (req: Request, res: Response) => {
   }
 });
 
+// =============================================================================
+// VTID-01085: Memory Retrieve Router
+// =============================================================================
+
+/**
+ * POST /retrieve -> POST /api/v1/memory/retrieve
+ *
+ * Unified memory retrieval gateway for the assistant (ORB / AI Assistant / Autopilot).
+ * Returns diary entries, Memory Garden summary, longevity signals, and community recommendations.
+ *
+ * Role-aware access control:
+ * - Patient: can retrieve own full memory
+ * - Professional/Staff/Admin: default deny for diary + garden unless explicit grant exists
+ *
+ * OASIS Events:
+ * - memory.retrieve.requested: When retrieval is initiated
+ * - memory.retrieve.denied: If access is denied
+ * - memory.retrieve.completed: When retrieval succeeds
+ */
+router.post('/retrieve', async (req: Request, res: Response) => {
+  console.log('[VTID-01085] POST /memory/retrieve');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Validate request body
+  const validation = MemoryRetrieveRequestSchema.safeParse(req.body);
+  if (!validation.success) {
+    console.warn('[VTID-01085] Validation failed:', validation.error.errors);
+    return res.status(400).json({
+      ok: false,
+      error: 'Validation failed',
+      details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const { intent, mode, query, time_range, include } = validation.data;
+
+  // Build payload for RPC
+  const rpcPayload = {
+    intent,
+    mode,
+    query: query || null,
+    time_range: time_range || {},
+    include: include || { diary: true, garden: true, longevity: true, community: true }
+  };
+
+  // Emit 'requested' event
+  await emitMemoryEvent(
+    'memory.retrieve.requested',
+    'info',
+    `Memory retrieve requested: intent=${intent}, mode=${mode}`,
+    {
+      intent,
+      mode,
+      query: query || null,
+      time_range: time_range || null,
+      include: rpcPayload.include
+    },
+    'VTID-01085'
+  );
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Call memory_retrieve RPC
+    const { data, error } = await supabase.rpc('memory_retrieve', {
+      p_payload: rpcPayload
+    });
+
+    if (error) {
+      // Check if RPC doesn't exist
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01085] memory_retrieve RPC not found (migration not deployed yet)');
+        return res.status(503).json({
+          ok: false,
+          error: 'Memory retrieve RPC not available (VTID-01085 migration required)'
+        });
+      }
+      console.error('[VTID-01085] memory_retrieve RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    // Check if access was denied
+    if (data?.meta?.redacted && data.meta.redactions.length > 0) {
+      // Partial denial - some data was redacted
+      await emitMemoryEvent(
+        'memory.retrieve.denied',
+        'warning',
+        `Memory retrieve partially denied: ${data.meta.redactions.length} redactions`,
+        {
+          intent,
+          mode,
+          redactions: data.meta.redactions,
+          audit_id: data.meta.audit_id
+        },
+        'VTID-01085'
+      );
+    }
+
+    // Check if completely denied (decision was 'deny')
+    const totalSources =
+      (data?.meta?.sources?.diary_entries || 0) +
+      (data?.meta?.sources?.garden_nodes || 0) +
+      (data?.meta?.sources?.longevity_days || 0) +
+      (data?.meta?.sources?.community_recs || 0);
+
+    if (totalSources === 0 && data?.meta?.redacted) {
+      await emitMemoryEvent(
+        'memory.retrieve.denied',
+        'error',
+        `Memory retrieve denied: no access grants`,
+        {
+          intent,
+          mode,
+          active_role: data.meta.active_role,
+          redactions: data.meta.redactions,
+          audit_id: data.meta.audit_id
+        },
+        'VTID-01085'
+      );
+
+      return res.status(403).json({
+        ok: false,
+        error: 'ACCESS_DENIED',
+        message: 'No memory access grants for the requested data',
+        redactions: data.meta.redactions,
+        audit_id: data.meta.audit_id
+      });
+    }
+
+    // Success - emit completed event
+    await emitMemoryEvent(
+      'memory.retrieve.completed',
+      'success',
+      `Memory retrieve completed: ${totalSources} total items`,
+      {
+        intent,
+        mode,
+        sources: data.meta.sources,
+        redacted: data.meta.redacted,
+        redactions_count: data.meta.redactions?.length || 0,
+        audit_id: data.meta.audit_id
+      },
+      'VTID-01085'
+    );
+
+    console.log(`[VTID-01085] Memory retrieve completed: ${totalSources} items, audit_id=${data.meta.audit_id}`);
+
+    // Return the response from RPC
+    return res.status(200).json(data);
+
+  } catch (err: any) {
+    console.error('[VTID-01085] memory_retrieve error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
 /**
  * GET /health -> GET /api/v1/memory/health
  *
@@ -526,12 +775,16 @@ router.get('/health', (_req: Request, res: Response) => {
     capabilities: {
       write: hasSupabaseUrl && hasSupabaseKey,
       read: hasSupabaseUrl && hasSupabaseKey,
+      retrieve: hasSupabaseUrl && hasSupabaseKey,
       auto_classify: true,
-      category_keys: CATEGORY_KEYS
+      category_keys: CATEGORY_KEYS,
+      retrieve_intents: RETRIEVE_INTENTS,
+      retrieve_modes: RETRIEVE_MODES
     },
     dependencies: {
       'VTID-01102': 'context_bridge',
-      'VTID-01104': 'memory_rpc'
+      'VTID-01104': 'memory_rpc',
+      'VTID-01085': 'memory_retrieve_router'
     }
   });
 });
