@@ -17,7 +17,16 @@ import { getSupabase } from '../lib/supabase';
 const router = Router();
 
 // Valid roles for the role parameter
-const VALID_ROLES = ['patient', 'community', 'professional', 'staff', 'admin', 'developer'] as const;
+// VTID-01074: Added 'infra' role for platform infrastructure
+const VALID_ROLES = ['patient', 'community', 'professional', 'staff', 'admin', 'developer', 'infra'] as const;
+
+// VTID-01074: Valid tenant slugs and their corresponding UUIDs
+const SLUG_TO_TENANT_ID: Record<string, string> = {
+  'vitana': '00000000-0000-0000-0000-000000000001',
+  'maxina': '00000000-0000-0000-0000-000000000002',
+  'alkalma': '00000000-0000-0000-0000-000000000003',
+  'earthlings': '00000000-0000-0000-0000-000000000004',
+};
 type ValidRole = typeof VALID_ROLES[number];
 
 /**
@@ -416,6 +425,130 @@ router.post('/token', async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     console.error('[VTID-01050] Unexpected error:', err.message);
+    return res.status(500).json({
+      ok: false,
+      error: 'INTERNAL_ERROR',
+      message: 'An unexpected error occurred',
+    });
+  }
+});
+
+/**
+ * VTID-01074: POST /request-context
+ *
+ * Dev-only endpoint to override request context for testing.
+ * Bootstraps tenant/role context via RPC and returns a dev token.
+ *
+ * Headers required:
+ * - X-DEV-SECRET: <value matching DEV_AUTH_SECRET env var>
+ *
+ * Body:
+ * {
+ *   "tenant_slug": "vitana|maxina|alkalma|earthlings",
+ *   "active_role": "developer|admin|staff|infra"
+ * }
+ *
+ * Response (success):
+ * {
+ *   "ok": true,
+ *   "tenant_id": "uuid",
+ *   "tenant_slug": "vitana",
+ *   "active_role": "developer",
+ *   "message": "Context bootstrapped successfully"
+ * }
+ */
+router.post('/request-context', async (req: Request, res: Response) => {
+  // Gate 1: Check if running in dev-sandbox
+  if (!isDevSandbox()) {
+    console.warn('[VTID-01074] POST /dev/auth/request-context - Rejected: not in dev-sandbox environment');
+    return res.status(403).json({
+      ok: false,
+      error: 'DEV_AUTH_DISABLED',
+      message: 'This endpoint is only available in dev-sandbox environment',
+    });
+  }
+
+  // Gate 2: Validate X-DEV-SECRET header
+  const secretError = validateDevSecret(req);
+  if (secretError) {
+    console.warn(`[VTID-01074] POST /dev/auth/request-context - Rejected: ${secretError.code}`);
+    return res.status(secretError.status).json({
+      ok: false,
+      error: secretError.code,
+    });
+  }
+
+  // Gate 3: Validate request body
+  const { tenant_slug, active_role } = req.body;
+
+  if (!tenant_slug || typeof tenant_slug !== 'string') {
+    return res.status(400).json({
+      ok: false,
+      error: 'INVALID_INPUT',
+      message: 'tenant_slug is required and must be a string (vitana|maxina|alkalma|earthlings)',
+    });
+  }
+
+  const tenantId = SLUG_TO_TENANT_ID[tenant_slug.toLowerCase()];
+  if (!tenantId) {
+    return res.status(400).json({
+      ok: false,
+      error: 'INVALID_TENANT_SLUG',
+      message: `tenant_slug must be one of: ${Object.keys(SLUG_TO_TENANT_ID).join(', ')}`,
+    });
+  }
+
+  if (!active_role || typeof active_role !== 'string') {
+    return res.status(400).json({
+      ok: false,
+      error: 'INVALID_INPUT',
+      message: 'active_role is required and must be a string',
+    });
+  }
+
+  if (!VALID_ROLES.includes(active_role as ValidRole)) {
+    return res.status(400).json({
+      ok: false,
+      error: 'INVALID_ROLE',
+      message: `active_role must be one of: ${VALID_ROLES.join(', ')}`,
+    });
+  }
+
+  // Gate 4: Get service role Supabase client
+  const supabase = getSupabase();
+  if (!supabase) {
+    console.error('[VTID-01074] Service role Supabase client not available');
+    return res.status(500).json({
+      ok: false,
+      error: 'INTERNAL_ERROR',
+      message: 'Supabase configuration missing',
+    });
+  }
+
+  try {
+    // Bootstrap request context via RPC
+    const bootstrapResult = await bootstrapRequestContext(supabase, tenantId, active_role);
+
+    if (!bootstrapResult.ok) {
+      console.error(`[VTID-01074] Bootstrap failed: ${bootstrapResult.error}`);
+      return res.status(500).json({
+        ok: false,
+        error: 'BOOTSTRAP_FAILED',
+        message: bootstrapResult.error,
+      });
+    }
+
+    console.log(`[VTID-01074] Request context bootstrapped: tenant_slug="${tenant_slug}" (${tenantId}), active_role="${active_role}"`);
+
+    return res.status(200).json({
+      ok: true,
+      tenant_id: tenantId,
+      tenant_slug: tenant_slug.toLowerCase(),
+      active_role,
+      message: 'Context bootstrapped successfully',
+    });
+  } catch (err: any) {
+    console.error('[VTID-01074] Unexpected error:', err.message);
     return res.status(500).json({
       ok: false,
       error: 'INTERNAL_ERROR',
