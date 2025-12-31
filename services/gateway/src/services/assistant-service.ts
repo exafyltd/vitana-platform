@@ -19,17 +19,31 @@ import { emitOasisEvent } from './oasis-event-service';
 import { AssistantContext, AssistantChatResponse } from '../types/assistant';
 
 // Gemini API configuration (AI Studio API key)
+// NOTE: Lazy initialization - do NOT throw at import time!
+// This allows the gateway to start even if Gemini is not configured.
 const GEMINI_API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
-if (!GEMINI_API_KEY) {
-  throw new Error('GOOGLE_GEMINI_API_KEY missing - required for Gemini API access');
-}
 
 // Model configuration with fallback
 const PRIMARY_MODEL = 'gemini-3-pro-preview';
 const FALLBACK_MODEL = 'gemini-2.5-pro';
 
-// Singleton Gemini API client
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+// Lazy-initialized Gemini API client (created on first use)
+let genAI: GoogleGenerativeAI | null = null;
+
+/**
+ * Get or create the Gemini API client (lazy initialization)
+ * Throws only when Gemini is actually needed, not at startup
+ */
+function getGeminiClient(): GoogleGenerativeAI {
+  if (!GEMINI_API_KEY) {
+    throw new Error('GOOGLE_GEMINI_API_KEY not configured - Gemini API unavailable');
+  }
+  if (!genAI) {
+    genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+    console.log('[VTID-0150-B] Gemini API client initialized (lazy)');
+  }
+  return genAI;
+}
 
 // Track which model was used in the last request (for metadata)
 let lastUsedModel = PRIMARY_MODEL;
@@ -81,9 +95,12 @@ async function generateWithFallback(
   prompt: string,
   systemPrompt: string
 ): Promise<GenerateContentResult> {
+  // Get Gemini client (lazy init - throws if not configured)
+  const client = getGeminiClient();
+
   try {
     console.log(`[VTID-0151-C] Trying primary model: ${PRIMARY_MODEL}`);
-    const model = genAI.getGenerativeModel({
+    const model = client.getGenerativeModel({
       model: PRIMARY_MODEL,
       systemInstruction: systemPrompt,
       generationConfig: {
@@ -97,7 +114,7 @@ async function generateWithFallback(
     return await model.generateContent(prompt);
   } catch (err: any) {
     console.warn(`[VTID-0151-C] Primary model (${PRIMARY_MODEL}) failed, falling back to ${FALLBACK_MODEL}:`, err.message);
-    const fallback = genAI.getGenerativeModel({
+    const fallback = client.getGenerativeModel({
       model: FALLBACK_MODEL,
       systemInstruction: systemPrompt,
       generationConfig: {
