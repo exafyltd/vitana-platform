@@ -2,17 +2,19 @@
  * DEV-COMHU-2025-0014: ORB Multimodal v1 - Live Voice Session
  * VTID-0135: ORB Voice Conversation Enablement (Phase A)
  * VTID-01106: ORB Memory Bridge (Dev Sandbox)
+ * VTID-01107: ORB Memory Debug Endpoint (Dev Sandbox)
  *
  * SSE endpoint for real-time voice interaction with Gemini API.
  *
  * Endpoints:
- * - GET  /api/v1/orb/live     - SSE stream for real-time responses
- * - POST /api/v1/orb/audio    - Audio chunk submission
- * - POST /api/v1/orb/start    - Start live session
- * - POST /api/v1/orb/stop     - Stop live session
- * - POST /api/v1/orb/mute     - Toggle mute state
- * - POST /api/v1/orb/chat     - VTID-0135: Voice conversation chat (Vertex routing)
- * - GET  /api/v1/orb/health   - Health check
+ * - GET  /api/v1/orb/live         - SSE stream for real-time responses
+ * - POST /api/v1/orb/audio        - Audio chunk submission
+ * - POST /api/v1/orb/start        - Start live session
+ * - POST /api/v1/orb/stop         - Stop live session
+ * - POST /api/v1/orb/mute         - Toggle mute state
+ * - POST /api/v1/orb/chat         - VTID-0135: Voice conversation chat (Vertex routing)
+ * - GET  /api/v1/orb/debug/memory - VTID-01107: Memory debug endpoint (dev-sandbox only)
+ * - GET  /api/v1/orb/health       - Health check
  *
  * VTID-0135 Changes:
  * - Added POST /api/v1/orb/chat endpoint using Vertex routing (same as Operator Console)
@@ -23,6 +25,11 @@
  * - ORB Memory Bridge integration for dev sandbox
  * - Memory context injection into system instructions
  * - User identity and conversation context persistence
+ *
+ * VTID-01107 Changes:
+ * - Added GET /api/v1/orb/debug/memory endpoint for memory debugging
+ * - Dev-sandbox only (returns 404 in other environments)
+ * - Emits orb.memory.debug_requested and orb.memory.debug_snapshot events
  *
  * IMPORTANT:
  * - POST /orb/chat uses Vertex AI routing (same as Operator Console)
@@ -38,11 +45,15 @@ import { emitOasisEvent } from '../services/oasis-event-service';
 // VTID-01105: Memory auto-write for ORB conversations
 import { writeMemoryItem, classifyCategory } from './memory';
 // VTID-01106: ORB Memory Bridge (Dev Sandbox)
+// VTID-01107: ORB Memory Debug Endpoint
 import {
   isMemoryBridgeEnabled,
+  isDevSandbox,
   fetchDevMemoryContext,
   buildMemoryEnhancedInstruction,
+  getDebugSnapshot,
   DEV_IDENTITY,
+  MEMORY_CONFIG,
   OrbMemoryContext
 } from '../services/orb-memory-bridge';
 
@@ -1507,6 +1518,96 @@ router.get('/session/:orb_session_id', (req: Request, res: Response) => {
 });
 
 /**
+ * VTID-01107: GET /debug/memory - ORB Memory Debug Endpoint (Dev Sandbox Only)
+ *
+ * Returns detailed debug information about what memory context ORB is using.
+ * Only available in dev-sandbox environment - returns 404 in other environments.
+ *
+ * Response:
+ * {
+ *   "ok": true,
+ *   "enabled": true,
+ *   "dev_user_id": "000...099",
+ *   "dev_tenant_id": "000...001",
+ *   "lookback_hours": 24,
+ *   "items_count": 7,
+ *   "items_preview": ["Remember: my name is...", "Preference: German..."],
+ *   "injected_chars": 1834,
+ *   "injected_preview": "VITANA_MEMORY_CONTEXT...",
+ *   "timestamp": "ISO"
+ * }
+ */
+router.get('/debug/memory', async (_req: Request, res: Response) => {
+  // Dev-sandbox gate: return 404 in non-dev environments
+  if (!isDevSandbox()) {
+    console.log('[VTID-01107] Debug endpoint accessed in non-dev environment, returning 404');
+    return res.status(404).json({
+      ok: false,
+      error: 'Not found'
+    });
+  }
+
+  console.log('[VTID-01107] Debug memory endpoint accessed');
+
+  // Emit orb.memory.debug_requested event
+  await emitOasisEvent({
+    vtid: 'VTID-01107',
+    type: 'orb.memory.debug_requested',
+    source: 'orb-memory-debug',
+    status: 'info',
+    message: 'ORB memory debug endpoint accessed',
+    payload: {
+      dev_user_id: DEV_IDENTITY.USER_ID,
+      dev_tenant_id: DEV_IDENTITY.TENANT_ID,
+      lookback_hours: MEMORY_CONFIG.MAX_AGE_HOURS
+    }
+  }).catch((err: Error) => console.warn('[VTID-01107] Failed to emit debug_requested event:', err.message));
+
+  try {
+    // Get debug snapshot from orb-memory-bridge
+    const snapshot = await getDebugSnapshot();
+
+    // Emit orb.memory.debug_snapshot event with results
+    await emitOasisEvent({
+      vtid: 'VTID-01107',
+      type: 'orb.memory.debug_snapshot',
+      source: 'orb-memory-debug',
+      status: snapshot.ok ? 'success' : 'warning',
+      message: snapshot.ok
+        ? `Debug snapshot: ${snapshot.items_count} items, ${snapshot.injected_chars} chars`
+        : `Debug snapshot failed: ${snapshot.error}`,
+      payload: {
+        items_count: snapshot.items_count,
+        injected_chars: snapshot.injected_chars,
+        lookback_hours: snapshot.lookback_hours,
+        enabled: snapshot.enabled,
+        ok: snapshot.ok
+      }
+    }).catch((err: Error) => console.warn('[VTID-01107] Failed to emit debug_snapshot event:', err.message));
+
+    console.log(`[VTID-01107] Debug snapshot: items=${snapshot.items_count}, chars=${snapshot.injected_chars}`);
+
+    return res.status(200).json(snapshot);
+
+  } catch (err: any) {
+    console.error('[VTID-01107] Debug endpoint error:', err.message);
+    return res.status(500).json({
+      ok: false,
+      enabled: isMemoryBridgeEnabled(),
+      dev_user_id: DEV_IDENTITY.USER_ID,
+      dev_tenant_id: DEV_IDENTITY.TENANT_ID,
+      lookback_hours: MEMORY_CONFIG.MAX_AGE_HOURS,
+      items_count: 0,
+      items_preview: [],
+      injected_chars: 0,
+      injected_preview: '',
+      timestamp: new Date().toISOString(),
+      error: err.message
+    });
+  }
+});
+
+/**
  * GET /health - Health check
  * VTID-01106: Added memory bridge status
  */
@@ -1517,7 +1618,7 @@ router.get('/health', (_req: Request, res: Response) => {
   return res.status(200).json({
     ok: true,
     service: 'orb-live',
-    vtid: ['DEV-COMHU-2025-0014', 'VTID-0135', 'VTID-01039', 'VTID-01106'],
+    vtid: ['DEV-COMHU-2025-0014', 'VTID-0135', 'VTID-01039', 'VTID-01106', 'VTID-01107'],
     model: GEMINI_MODEL,
     transport: 'SSE',
     gemini_configured: hasGeminiKey,
