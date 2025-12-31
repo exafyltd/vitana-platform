@@ -1,24 +1,27 @@
 /**
- * VTID-01081: Phase C2 - Gateway Health Endpoints
+ * VTID-01081 + VTID-01103: Health Gateway Routes
  *
- * Thin RPC wrappers around Supabase Health Brain RPCs.
- * Emits OASIS events for every write/access operation.
+ * Phase C2 (VTID-01081): Gateway Health Endpoints - RPC wrappers
+ * Phase C3 (VTID-01103): Daily Compute Engine (Features -> Vitana Index -> Recommendations)
  *
  * Endpoints:
- * - POST /lab-reports/ingest - Ingest lab report data
- * - POST /wearables/ingest - Ingest wearable samples
- * - GET /summary - Get health summary for date range
- * - POST /recompute/daily - Trigger daily recompute
+ * - POST /lab-reports/ingest - Ingest lab report data (C2)
+ * - POST /wearables/ingest - Ingest wearable samples (C2)
+ * - GET /summary - Get health summary for a date (C3)
+ * - POST /recompute/daily - Trigger daily recompute pipeline (C3)
  */
 
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { createUserSupabaseClient } from '../lib/supabase-user';
+import { emitOasisEvent } from '../services/oasis-event-service';
+import { CicdEventType } from '../types/cicd';
 
 const router = Router();
 
-// VTID for all health-related OASIS events
-const VTID = 'VTID-01081';
+// VTID for health-related OASIS events
+const VTID_C2 = 'VTID-01081';
+const VTID_C3 = 'VTID-01103';
 
 /**
  * Extract Bearer token from Authorization header.
@@ -32,9 +35,32 @@ function getBearerToken(req: Request): string | null {
 }
 
 /**
- * Emit OASIS event for health operations.
+ * Emit a health compute event to OASIS (C3 style - typed)
  */
-async function emitHealthEvent(
+async function emitHealthComputeEvent(
+  eventType: CicdEventType,
+  status: 'info' | 'success' | 'warning' | 'error',
+  message: string,
+  payload: Record<string, unknown>
+): Promise<void> {
+  try {
+    await emitOasisEvent({
+      vtid: VTID_C3,
+      type: eventType,
+      source: 'gateway-health-compute',
+      status,
+      message,
+      payload,
+    });
+  } catch (err) {
+    console.error(`[${VTID_C3}] Failed to emit OASIS event:`, err);
+  }
+}
+
+/**
+ * Emit OASIS event for health ingest operations (C2 style - direct to DB)
+ */
+async function emitHealthIngestEvent(
   eventType: string,
   status: 'info' | 'success' | 'warning' | 'error',
   message: string,
@@ -54,7 +80,7 @@ async function emitHealthEvent(
   const eventPayload = {
     id: eventId,
     created_at: timestamp,
-    vtid: VTID,
+    vtid: VTID_C2,
     topic: eventType,
     service: 'gateway-health',
     role: 'HEALTH',
@@ -88,7 +114,6 @@ async function emitHealthEvent(
 
 /**
  * Get user context from me_context RPC.
- * Returns tenant_id, user_id, and active_role.
  */
 async function getUserContext(token: string): Promise<{
   ok: boolean;
@@ -116,33 +141,23 @@ async function getUserContext(token: string): Promise<{
   }
 }
 
+// =============================================================================
+// PHASE C2: INGEST ENDPOINTS (VTID-01081)
+// =============================================================================
+
 /**
  * POST /lab-reports/ingest
  *
  * Ingest a lab report with biomarkers.
  * Calls RPC: health_ingest_lab_report(payload)
- *
- * Request body:
- * {
- *   provider: string,
- *   report_date: string (YYYY-MM-DD),
- *   biomarkers: Array<{ name: string, value: number, unit: string, ... }>
- * }
- *
- * Response:
- * { ok: true, lab_report_id: string, biomarker_count: number }
  */
 router.post('/lab-reports/ingest', async (req: Request, res: Response) => {
   const token = getBearerToken(req);
   if (!token) {
     console.warn('[VTID-01081] POST /lab-reports/ingest - Missing bearer token');
-    return res.status(401).json({
-      ok: false,
-      error: 'UNAUTHORIZED',
-    });
+    return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
   }
 
-  // Resolve user context
   const ctx = await getUserContext(token);
   if (!ctx.ok) {
     console.error('[VTID-01081] POST /lab-reports/ingest - Context error:', ctx.error);
@@ -152,10 +167,9 @@ router.post('/lab-reports/ingest', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: ctx.error });
   }
 
-  // Validate request body
   const { provider, report_date, biomarkers } = req.body;
   if (!provider || !report_date || !Array.isArray(biomarkers)) {
-    await emitHealthEvent(
+    await emitHealthIngestEvent(
       'health.ingest.lab_report.error',
       'error',
       'Invalid input for lab report ingest',
@@ -171,7 +185,6 @@ router.post('/lab-reports/ingest', async (req: Request, res: Response) => {
   try {
     const supabase = createUserSupabaseClient(token);
 
-    // Build RPC payload
     const rpcPayload = {
       p_provider: provider,
       p_report_date: report_date,
@@ -182,29 +195,23 @@ router.post('/lab-reports/ingest', async (req: Request, res: Response) => {
 
     if (error) {
       console.error('[VTID-01081] POST /lab-reports/ingest - RPC error:', error.message);
-      await emitHealthEvent(
+      await emitHealthIngestEvent(
         'health.ingest.lab_report.error',
         'error',
         `Lab report ingest failed: ${error.message}`,
         { tenant_id: ctx.tenant_id, user_id: ctx.user_id, active_role: ctx.active_role, error: error.message, provider }
       );
 
-      // Check for specific error types
       if (error.code === 'PGRST301' || error.message.includes('JWT')) {
         return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
       }
-      return res.status(502).json({
-        ok: false,
-        error: 'UPSTREAM_ERROR',
-        message: error.message,
-      });
+      return res.status(502).json({ ok: false, error: 'UPSTREAM_ERROR', message: error.message });
     }
 
     const labReportId = data?.lab_report_id || data?.id || null;
     const biomarkerCount = data?.biomarker_count ?? biomarkers.length;
 
-    // Emit success event
-    await emitHealthEvent(
+    await emitHealthIngestEvent(
       'health.ingest.lab_report',
       'success',
       `Lab report ingested: ${biomarkerCount} biomarkers from ${provider}`,
@@ -220,23 +227,16 @@ router.post('/lab-reports/ingest', async (req: Request, res: Response) => {
     );
 
     console.log(`[VTID-01081] POST /lab-reports/ingest - Success: ${biomarkerCount} biomarkers`);
-    return res.status(200).json({
-      ok: true,
-      lab_report_id: labReportId,
-      biomarker_count: biomarkerCount,
-    });
+    return res.status(200).json({ ok: true, lab_report_id: labReportId, biomarker_count: biomarkerCount });
   } catch (err: any) {
     console.error('[VTID-01081] POST /lab-reports/ingest - Unexpected error:', err.message);
-    await emitHealthEvent(
+    await emitHealthIngestEvent(
       'health.ingest.lab_report.error',
       'error',
       `Lab report ingest error: ${err.message}`,
       { tenant_id: ctx.tenant_id, user_id: ctx.user_id, active_role: ctx.active_role, error: err.message }
     );
-    return res.status(500).json({
-      ok: false,
-      error: err.message,
-    });
+    return res.status(500).json({ ok: false, error: err.message });
   }
 });
 
@@ -245,27 +245,14 @@ router.post('/lab-reports/ingest', async (req: Request, res: Response) => {
  *
  * Ingest wearable samples (heart rate, steps, sleep, etc.)
  * Calls RPC: health_ingest_wearable_samples(payload)
- *
- * Request body:
- * {
- *   provider: string,
- *   samples: Array<{ metric: string, value: number, timestamp: string, ... }>
- * }
- *
- * Response:
- * { ok: true, inserted_count: number }
  */
 router.post('/wearables/ingest', async (req: Request, res: Response) => {
   const token = getBearerToken(req);
   if (!token) {
     console.warn('[VTID-01081] POST /wearables/ingest - Missing bearer token');
-    return res.status(401).json({
-      ok: false,
-      error: 'UNAUTHORIZED',
-    });
+    return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
   }
 
-  // Resolve user context
   const ctx = await getUserContext(token);
   if (!ctx.ok) {
     console.error('[VTID-01081] POST /wearables/ingest - Context error:', ctx.error);
@@ -275,10 +262,9 @@ router.post('/wearables/ingest', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: ctx.error });
   }
 
-  // Validate request body
   const { provider, samples } = req.body;
   if (!provider || !Array.isArray(samples)) {
-    await emitHealthEvent(
+    await emitHealthIngestEvent(
       'health.ingest.wearable.error',
       'error',
       'Invalid input for wearable ingest',
@@ -294,7 +280,6 @@ router.post('/wearables/ingest', async (req: Request, res: Response) => {
   try {
     const supabase = createUserSupabaseClient(token);
 
-    // Build RPC payload
     const rpcPayload = {
       p_provider: provider,
       p_samples: samples,
@@ -304,7 +289,7 @@ router.post('/wearables/ingest', async (req: Request, res: Response) => {
 
     if (error) {
       console.error('[VTID-01081] POST /wearables/ingest - RPC error:', error.message);
-      await emitHealthEvent(
+      await emitHealthIngestEvent(
         'health.ingest.wearable.error',
         'error',
         `Wearable ingest failed: ${error.message}`,
@@ -314,17 +299,12 @@ router.post('/wearables/ingest', async (req: Request, res: Response) => {
       if (error.code === 'PGRST301' || error.message.includes('JWT')) {
         return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
       }
-      return res.status(502).json({
-        ok: false,
-        error: 'UPSTREAM_ERROR',
-        message: error.message,
-      });
+      return res.status(502).json({ ok: false, error: 'UPSTREAM_ERROR', message: error.message });
     }
 
     const insertedCount = data?.inserted_count ?? data?.count ?? samples.length;
 
-    // Emit success event
-    await emitHealthEvent(
+    await emitHealthIngestEvent(
       'health.ingest.wearable',
       'success',
       `Wearable samples ingested: ${insertedCount} samples from ${provider}`,
@@ -339,348 +319,364 @@ router.post('/wearables/ingest', async (req: Request, res: Response) => {
     );
 
     console.log(`[VTID-01081] POST /wearables/ingest - Success: ${insertedCount} samples`);
-    return res.status(200).json({
-      ok: true,
-      inserted_count: insertedCount,
-    });
+    return res.status(200).json({ ok: true, inserted_count: insertedCount });
   } catch (err: any) {
     console.error('[VTID-01081] POST /wearables/ingest - Unexpected error:', err.message);
-    await emitHealthEvent(
+    await emitHealthIngestEvent(
       'health.ingest.wearable.error',
       'error',
       `Wearable ingest error: ${err.message}`,
       { tenant_id: ctx.tenant_id, user_id: ctx.user_id, active_role: ctx.active_role, error: err.message }
     );
-    return res.status(500).json({
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// =============================================================================
+// PHASE C3: COMPUTE ENDPOINTS (VTID-01103)
+// =============================================================================
+
+/**
+ * POST /recompute/daily
+ *
+ * Triggers the daily recompute pipeline:
+ *   1. health_compute_features_daily(date)
+ *   2. health_compute_vitana_index(date, model_version)
+ *   3. health_generate_recommendations(date, date, model_version)
+ *
+ * Request body: { "date": "YYYY-MM-DD", "model_version": "v1" }
+ *
+ * Response:
+ * {
+ *   "ok": true,
+ *   "date": "YYYY-MM-DD",
+ *   "features": { ... },
+ *   "index": { ... },
+ *   "recommendations": { ... }
+ * }
+ */
+router.post('/recompute/daily', async (req: Request, res: Response) => {
+  const token = getBearerToken(req);
+  if (!token) {
+    console.warn(`[${VTID_C3}] POST /health/recompute/daily - Missing bearer token`);
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  const { date, model_version = 'v1' } = req.body;
+
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    console.warn(`[${VTID_C3}] POST /health/recompute/daily - Invalid date format:`, date);
+    return res.status(400).json({
       ok: false,
-      error: err.message,
+      error: 'INVALID_DATE',
+      message: 'Date must be in YYYY-MM-DD format',
     });
+  }
+
+  const startTime = Date.now();
+  console.log(`[${VTID_C3}] POST /health/recompute/daily - Starting pipeline for date: ${date}`);
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Step 1: Compute daily features
+    const { data: featuresResult, error: featuresError } = await supabase.rpc(
+      'health_compute_features_daily',
+      { p_date: date }
+    );
+
+    if (featuresError) {
+      console.error(`[${VTID_C3}] health_compute_features_daily failed:`, featuresError.message);
+      await emitHealthComputeEvent(
+        'health.compute.features_daily',
+        'error',
+        `Features computation failed: ${featuresError.message}`,
+        { date, error: featuresError.message }
+      );
+      return res.status(400).json({
+        ok: false,
+        error: 'FEATURES_COMPUTE_FAILED',
+        message: featuresError.message,
+      });
+    }
+
+    if (!featuresResult?.ok) {
+      console.error(`[${VTID_C3}] health_compute_features_daily returned error:`, featuresResult);
+      await emitHealthComputeEvent(
+        'health.compute.features_daily',
+        'error',
+        `Features computation failed: ${featuresResult?.error || 'Unknown error'}`,
+        { date, result: featuresResult }
+      );
+      return res.status(400).json({
+        ok: false,
+        error: featuresResult?.error || 'FEATURES_COMPUTE_FAILED',
+        message: featuresResult?.message || 'Failed to compute features',
+      });
+    }
+
+    console.log(`[${VTID_C3}] Features computed: upserted_count=${featuresResult.upserted_count}`);
+    await emitHealthComputeEvent(
+      'health.compute.features_daily',
+      'success',
+      `Features computed for ${date}: ${featuresResult.upserted_count} features`,
+      {
+        date,
+        upserted_count: featuresResult.upserted_count,
+        tenant_id: featuresResult.tenant_id,
+        user_id: featuresResult.user_id,
+      }
+    );
+
+    // Step 2: Compute Vitana Index
+    const { data: indexResult, error: indexError } = await supabase.rpc(
+      'health_compute_vitana_index',
+      { p_date: date, p_model_version: model_version }
+    );
+
+    if (indexError) {
+      console.error(`[${VTID_C3}] health_compute_vitana_index failed:`, indexError.message);
+      await emitHealthComputeEvent(
+        'health.compute.vitana_index',
+        'error',
+        `Vitana Index computation failed: ${indexError.message}`,
+        { date, model_version, error: indexError.message }
+      );
+      return res.status(400).json({
+        ok: false,
+        error: 'INDEX_COMPUTE_FAILED',
+        message: indexError.message,
+      });
+    }
+
+    if (!indexResult?.ok) {
+      console.error(`[${VTID_C3}] health_compute_vitana_index returned error:`, indexResult);
+      await emitHealthComputeEvent(
+        'health.compute.vitana_index',
+        'error',
+        `Vitana Index computation failed: ${indexResult?.error || 'Unknown error'}`,
+        { date, model_version, result: indexResult }
+      );
+      return res.status(400).json({
+        ok: false,
+        error: indexResult?.error || 'INDEX_COMPUTE_FAILED',
+        message: indexResult?.message || 'Failed to compute Vitana Index',
+      });
+    }
+
+    console.log(`[${VTID_C3}] Vitana Index computed: score_total=${indexResult.score_total}`);
+    await emitHealthComputeEvent(
+      'health.compute.vitana_index',
+      'success',
+      `Vitana Index computed for ${date}: score=${indexResult.score_total}`,
+      {
+        date,
+        model_version: indexResult.model_version,
+        score_total: indexResult.score_total,
+        score_physical: indexResult.score_physical,
+        score_mental: indexResult.score_mental,
+        score_nutritional: indexResult.score_nutritional,
+        score_social: indexResult.score_social,
+        score_environmental: indexResult.score_environmental,
+        confidence: indexResult.confidence,
+        tenant_id: indexResult.tenant_id,
+        user_id: indexResult.user_id,
+      }
+    );
+
+    // Step 3: Generate recommendations
+    const { data: recsResult, error: recsError } = await supabase.rpc(
+      'health_generate_recommendations',
+      { p_from: date, p_to: date, p_model_version: model_version }
+    );
+
+    if (recsError) {
+      console.error(`[${VTID_C3}] health_generate_recommendations failed:`, recsError.message);
+      await emitHealthComputeEvent(
+        'health.recommendations.refresh',
+        'error',
+        `Recommendations generation failed: ${recsError.message}`,
+        { date, model_version, error: recsError.message }
+      );
+      return res.status(400).json({
+        ok: false,
+        error: 'RECOMMENDATIONS_FAILED',
+        message: recsError.message,
+      });
+    }
+
+    if (!recsResult?.ok) {
+      console.error(`[${VTID_C3}] health_generate_recommendations returned error:`, recsResult);
+      await emitHealthComputeEvent(
+        'health.recommendations.refresh',
+        'error',
+        `Recommendations generation failed: ${recsResult?.error || 'Unknown error'}`,
+        { date, model_version, result: recsResult }
+      );
+      return res.status(400).json({
+        ok: false,
+        error: recsResult?.error || 'RECOMMENDATIONS_FAILED',
+        message: recsResult?.message || 'Failed to generate recommendations',
+      });
+    }
+
+    console.log(`[${VTID_C3}] Recommendations generated: created_count=${recsResult.created_count}`);
+    await emitHealthComputeEvent(
+      'health.recommendations.refresh',
+      'success',
+      `Recommendations generated for ${date}: ${recsResult.created_count} recommendations`,
+      {
+        date,
+        model_version: recsResult.model_version,
+        created_count: recsResult.created_count,
+        tenant_id: recsResult.tenant_id,
+        user_id: recsResult.user_id,
+      }
+    );
+
+    const elapsed = Date.now() - startTime;
+    console.log(`[${VTID_C3}] Daily recompute pipeline completed in ${elapsed}ms`);
+
+    return res.status(200).json({
+      ok: true,
+      date,
+      features: {
+        ok: true,
+        upserted_count: featuresResult.upserted_count,
+      },
+      index: {
+        ok: true,
+        score_total: indexResult.score_total,
+        score_physical: indexResult.score_physical,
+        score_mental: indexResult.score_mental,
+        score_nutritional: indexResult.score_nutritional,
+        score_social: indexResult.score_social,
+        score_environmental: indexResult.score_environmental,
+        model_version: indexResult.model_version,
+        confidence: indexResult.confidence,
+      },
+      recommendations: {
+        ok: true,
+        created_count: recsResult.created_count,
+        model_version: recsResult.model_version,
+      },
+      elapsed_ms: elapsed,
+    });
+  } catch (err: any) {
+    console.error(`[${VTID_C3}] POST /health/recompute/daily - Unexpected error:`, err.message);
+    await emitHealthComputeEvent(
+      'health.compute.error',
+      'error',
+      `Recompute pipeline failed unexpectedly: ${err.message}`,
+      { date, error: err.message }
+    );
+    return res.status(500).json({ ok: false, error: err.message });
   }
 });
 
 /**
  * GET /summary
  *
- * Get health summary for a date range.
- * Calls RPC: health_get_summary(from, to)
- *
- * Query params:
- * - from: YYYY-MM-DD (required)
- * - to: YYYY-MM-DD (required)
- *
- * Response: RPC output (deterministic)
+ * Returns health summary for a specific date.
+ * Query params: ?date=YYYY-MM-DD
  */
 router.get('/summary', async (req: Request, res: Response) => {
   const token = getBearerToken(req);
   if (!token) {
-    console.warn('[VTID-01081] GET /summary - Missing bearer token');
-    return res.status(401).json({
-      ok: false,
-      error: 'UNAUTHORIZED',
-    });
+    console.warn(`[${VTID_C3}] GET /health/summary - Missing bearer token`);
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   }
 
-  // Resolve user context
-  const ctx = await getUserContext(token);
-  if (!ctx.ok) {
-    console.error('[VTID-01081] GET /summary - Context error:', ctx.error);
-    if (ctx.error?.includes('JWT') || ctx.error?.includes('auth')) {
-      return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
-    }
-    return res.status(400).json({ ok: false, error: ctx.error });
-  }
+  const date = req.query.date as string;
 
-  // Validate query params
-  const from = req.query.from as string;
-  const to = req.query.to as string;
-
-  if (!from || !to) {
-    await emitHealthEvent(
-      'health.access.summary.error',
-      'error',
-      'Invalid input for health summary',
-      { tenant_id: ctx.tenant_id, user_id: ctx.user_id, active_role: ctx.active_role, error: 'INVALID_INPUT' }
-    );
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    console.warn(`[${VTID_C3}] GET /health/summary - Invalid date format:`, date);
     return res.status(400).json({
       ok: false,
-      error: 'INVALID_INPUT',
-      message: 'Required query params: from, to (YYYY-MM-DD)',
-    });
-  }
-
-  // Validate date format
-  const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-  if (!dateRegex.test(from) || !dateRegex.test(to)) {
-    await emitHealthEvent(
-      'health.access.summary.error',
-      'error',
-      'Invalid date format for health summary',
-      { tenant_id: ctx.tenant_id, user_id: ctx.user_id, active_role: ctx.active_role, error: 'INVALID_INPUT', from, to }
-    );
-    return res.status(400).json({
-      ok: false,
-      error: 'INVALID_INPUT',
-      message: 'Date format must be YYYY-MM-DD',
+      error: 'INVALID_DATE',
+      message: 'Date must be in YYYY-MM-DD format (query param: ?date=YYYY-MM-DD)',
     });
   }
 
   try {
     const supabase = createUserSupabaseClient(token);
 
-    const { data, error } = await supabase.rpc('health_get_summary', {
-      p_from: from,
-      p_to: to,
-    });
+    // Fetch Vitana Index for the date
+    const { data: indexData, error: indexError } = await supabase
+      .from('vitana_index_scores')
+      .select('*')
+      .eq('date', date)
+      .single();
 
-    if (error) {
-      console.error('[VTID-01081] GET /summary - RPC error:', error.message);
-      await emitHealthEvent(
-        'health.access.summary.error',
-        'error',
-        `Health summary access failed: ${error.message}`,
-        { tenant_id: ctx.tenant_id, user_id: ctx.user_id, active_role: ctx.active_role, error: error.message, from, to }
-      );
-
-      if (error.code === 'PGRST301' || error.message.includes('JWT')) {
-        return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
-      }
-      return res.status(502).json({
-        ok: false,
-        error: 'UPSTREAM_ERROR',
-        message: error.message,
-      });
+    if (indexError && indexError.code !== 'PGRST116') {
+      console.error(`[${VTID_C3}] GET /health/summary - Index query error:`, indexError.message);
     }
 
-    // Emit access event
-    await emitHealthEvent(
-      'health.access.summary',
-      'success',
-      `Health summary accessed: ${from} to ${to}`,
-      {
-        tenant_id: ctx.tenant_id,
-        user_id: ctx.user_id,
-        active_role: ctx.active_role,
-        from,
-        to,
-      }
-    );
+    // Fetch recommendations for the date
+    const { data: recsData, error: recsError } = await supabase
+      .from('recommendations')
+      .select('*')
+      .eq('date', date)
+      .order('priority', { ascending: false });
 
-    console.log(`[VTID-01081] GET /summary - Success: ${from} to ${to}`);
-    return res.status(200).json(data);
-  } catch (err: any) {
-    console.error('[VTID-01081] GET /summary - Unexpected error:', err.message);
-    await emitHealthEvent(
-      'health.access.summary.error',
-      'error',
-      `Health summary error: ${err.message}`,
-      { tenant_id: ctx.tenant_id, user_id: ctx.user_id, active_role: ctx.active_role, error: err.message }
-    );
-    return res.status(500).json({
-      ok: false,
-      error: err.message,
+    if (recsError) {
+      console.error(`[${VTID_C3}] GET /health/summary - Recommendations query error:`, recsError.message);
+    }
+
+    console.log(`[${VTID_C3}] GET /health/summary - Success for date: ${date}`);
+
+    return res.status(200).json({
+      ok: true,
+      date,
+      index: indexData
+        ? {
+            score_total: indexData.score_total,
+            score_physical: indexData.score_physical,
+            score_mental: indexData.score_mental,
+            score_nutritional: indexData.score_nutritional,
+            score_social: indexData.score_social,
+            score_environmental: indexData.score_environmental,
+            model_version: indexData.model_version,
+            confidence: indexData.confidence,
+          }
+        : null,
+      recommendations: (recsData || []).map((rec: any) => ({
+        id: rec.id,
+        type: rec.recommendation_type,
+        priority: rec.priority,
+        title: rec.title,
+        description: rec.description,
+        action_items: rec.action_items,
+        safety_checked: rec.safety_checked,
+        expires_at: rec.expires_at,
+      })),
+      recommendation_count: (recsData || []).length,
     });
+  } catch (err: any) {
+    console.error(`[${VTID_C3}] GET /health/summary - Unexpected error:`, err.message);
+    return res.status(500).json({ ok: false, error: err.message });
   }
 });
 
 /**
- * POST /recompute/daily
+ * GET /
  *
- * Trigger daily recompute of health features and Vitana Index.
- * Calls RPCs if they exist:
- * - health_compute_features_daily
- * - health_compute_vitana_index
- * - health_generate_recommendations
- *
- * If compute RPCs don't exist (VTID-01103 not complete), returns 503 DEPENDENCY_MISSING.
- *
- * Request body:
- * { date: "YYYY-MM-DD" }
- *
- * Response:
- * { ok: true, compute_results: {...} } or
- * { ok: false, error: "DEPENDENCY_MISSING", message: "Missing RPC: ..." }
+ * Health router status endpoint
  */
-router.post('/recompute/daily', async (req: Request, res: Response) => {
-  const token = getBearerToken(req);
-  if (!token) {
-    console.warn('[VTID-01081] POST /recompute/daily - Missing bearer token');
-    return res.status(401).json({
-      ok: false,
-      error: 'UNAUTHORIZED',
-    });
-  }
-
-  // Resolve user context
-  const ctx = await getUserContext(token);
-  if (!ctx.ok) {
-    console.error('[VTID-01081] POST /recompute/daily - Context error:', ctx.error);
-    if (ctx.error?.includes('JWT') || ctx.error?.includes('auth')) {
-      return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
-    }
-    return res.status(400).json({ ok: false, error: ctx.error });
-  }
-
-  // Validate request body
-  const { date } = req.body;
-  if (!date) {
-    await emitHealthEvent(
-      'health.compute.error',
-      'error',
-      'Invalid input for daily recompute',
-      { tenant_id: ctx.tenant_id, user_id: ctx.user_id, active_role: ctx.active_role, error: 'INVALID_INPUT' }
-    );
-    return res.status(400).json({
-      ok: false,
-      error: 'INVALID_INPUT',
-      message: 'Required field: date (YYYY-MM-DD)',
-    });
-  }
-
-  // Validate date format
-  const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-  if (!dateRegex.test(date)) {
-    await emitHealthEvent(
-      'health.compute.error',
-      'error',
-      'Invalid date format for daily recompute',
-      { tenant_id: ctx.tenant_id, user_id: ctx.user_id, active_role: ctx.active_role, error: 'INVALID_INPUT', date }
-    );
-    return res.status(400).json({
-      ok: false,
-      error: 'INVALID_INPUT',
-      message: 'Date format must be YYYY-MM-DD',
-    });
-  }
-
-  // Emit compute requested event (even if dependency missing)
-  await emitHealthEvent(
-    'health.compute.requested',
-    'info',
-    `Daily recompute requested for ${date}`,
-    {
-      tenant_id: ctx.tenant_id,
-      user_id: ctx.user_id,
-      active_role: ctx.active_role,
-      date,
-    }
-  );
-
-  try {
-    const supabase = createUserSupabaseClient(token);
-
-    // Try to call compute RPCs - these may not exist yet (VTID-01103)
-    const missingRpcs: string[] = [];
-    const computeResults: Record<string, unknown> = {};
-
-    // 1. health_compute_features_daily
-    const { data: featuresData, error: featuresError } = await supabase.rpc('health_compute_features_daily', {
-      p_date: date,
-    });
-
-    if (featuresError) {
-      if (featuresError.message.includes('function') && featuresError.message.includes('does not exist')) {
-        missingRpcs.push('health_compute_features_daily');
-      } else if (featuresError.code === 'PGRST301' || featuresError.message.includes('JWT')) {
-        return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
-      } else {
-        console.warn('[VTID-01081] health_compute_features_daily error:', featuresError.message);
-        missingRpcs.push('health_compute_features_daily');
-      }
-    } else {
-      computeResults.features = featuresData;
-    }
-
-    // 2. health_compute_vitana_index
-    const { data: indexData, error: indexError } = await supabase.rpc('health_compute_vitana_index', {
-      p_date: date,
-    });
-
-    if (indexError) {
-      if (indexError.message.includes('function') && indexError.message.includes('does not exist')) {
-        missingRpcs.push('health_compute_vitana_index');
-      } else {
-        console.warn('[VTID-01081] health_compute_vitana_index error:', indexError.message);
-        missingRpcs.push('health_compute_vitana_index');
-      }
-    } else {
-      computeResults.vitana_index = indexData;
-    }
-
-    // 3. health_generate_recommendations
-    const { data: recsData, error: recsError } = await supabase.rpc('health_generate_recommendations', {
-      p_date: date,
-    });
-
-    if (recsError) {
-      if (recsError.message.includes('function') && recsError.message.includes('does not exist')) {
-        missingRpcs.push('health_generate_recommendations');
-      } else {
-        console.warn('[VTID-01081] health_generate_recommendations error:', recsError.message);
-        missingRpcs.push('health_generate_recommendations');
-      }
-    } else {
-      computeResults.recommendations = recsData;
-    }
-
-    // If any RPCs are missing, return DEPENDENCY_MISSING
-    if (missingRpcs.length > 0) {
-      const missingList = missingRpcs.join(' / ');
-      await emitHealthEvent(
-        'health.compute.error',
-        'warning',
-        `Compute dependency missing: ${missingList}`,
-        {
-          tenant_id: ctx.tenant_id,
-          user_id: ctx.user_id,
-          active_role: ctx.active_role,
-          date,
-          missing_rpcs: missingRpcs,
-          dependency: 'VTID-01103',
-        }
-      );
-
-      console.log(`[VTID-01081] POST /recompute/daily - Dependency missing: ${missingList}`);
-      return res.status(503).json({
-        ok: false,
-        error: 'DEPENDENCY_MISSING',
-        message: `Missing RPC: ${missingList}`,
-      });
-    }
-
-    // All RPCs succeeded
-    await emitHealthEvent(
-      'health.compute.success',
-      'success',
-      `Daily recompute completed for ${date}`,
-      {
-        tenant_id: ctx.tenant_id,
-        user_id: ctx.user_id,
-        active_role: ctx.active_role,
-        date,
-        features: computeResults.features ? 'computed' : 'skipped',
-        vitana_index: computeResults.vitana_index ? 'computed' : 'skipped',
-        recommendations: computeResults.recommendations ? 'computed' : 'skipped',
-      }
-    );
-
-    console.log(`[VTID-01081] POST /recompute/daily - Success for ${date}`);
-    return res.status(200).json({
-      ok: true,
-      compute_results: computeResults,
-    });
-  } catch (err: any) {
-    console.error('[VTID-01081] POST /recompute/daily - Unexpected error:', err.message);
-    await emitHealthEvent(
-      'health.compute.error',
-      'error',
-      `Daily recompute error: ${err.message}`,
-      { tenant_id: ctx.tenant_id, user_id: ctx.user_id, active_role: ctx.active_role, error: err.message, date }
-    );
-    return res.status(500).json({
-      ok: false,
-      error: err.message,
-    });
-  }
+router.get('/', (_req: Request, res: Response) => {
+  return res.status(200).json({
+    ok: true,
+    service: 'health-gateway',
+    vtid: [VTID_C2, VTID_C3],
+    version: 'v1',
+    endpoints: [
+      'POST /api/v1/health/lab-reports/ingest',
+      'POST /api/v1/health/wearables/ingest',
+      'POST /api/v1/health/recompute/daily',
+      'GET /api/v1/health/summary?date=YYYY-MM-DD',
+    ],
+    timestamp: new Date().toISOString(),
+  });
 });
 
 export default router;

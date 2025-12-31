@@ -213,7 +213,12 @@ export type CicdEventType =
   | 'cicd.lock.released'
   | 'cicd.lock.expired'
   // VTID-01063: Route Guard Events
-  | 'governance.route.duplicate.detected';
+  | 'governance.route.duplicate.detected'
+  // VTID-01103: Health Compute Engine Events
+  | 'health.compute.features_daily'
+  | 'health.compute.vitana_index'
+  | 'health.recommendations.refresh'
+  | 'health.compute.error';
 
 export interface CicdOasisEvent {
   vtid: string;
