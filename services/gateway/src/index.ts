@@ -79,6 +79,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const operatorRouter = require('./routes/operator').default;
   const { router: telemetryRouter } = require('./routes/telemetry');
   const autopilotRouter = require('./routes/autopilot').default;
+  // VTID-01089: Autopilot Matchmaking Prompts (One-Tap Consent + Rate Limits + Opt-out)
+  const autopilotPromptsRouter = require('./routes/autopilot-prompts').default;
   const assistantRouter = require('./routes/assistant').default;
   const orbLiveRouter = require('./routes/orb-live').default;
   // VTID-01046: Me Context Routes - role context and role switching
@@ -255,6 +257,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-0532: Autopilot Task Extractor & Planner Handoff
   mountRouterSync(app, '/api/v1/autopilot', autopilotRouter, { owner: 'autopilot' });
+
+  // VTID-01089: Autopilot Matchmaking Prompts (prefs, prompts/today, prompts/generate, prompts/:id/action)
+  mountRouterSync(app, '/api/v1/autopilot', autopilotPromptsRouter, { owner: 'autopilot-prompts' });
 
   // VTID-0150-B + VTID-0151 + VTID-0538: Assistant Core + Knowledge Hub
   mountRouterSync(app, '/api/v1/assistant', assistantRouter, { owner: 'assistant' });
