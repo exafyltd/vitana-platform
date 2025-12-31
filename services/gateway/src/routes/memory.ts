@@ -1,12 +1,15 @@
 /**
  * VTID-01105: ORB Memory Wiring v1 (Gateway)
+ * VTID-01100: Memory Quality Metrics & Confidence Scoring
  *
  * Memory write/read endpoints and auto-write hooks for ORB conversations.
  *
  * Endpoints:
- * - POST /api/v1/memory/write    - Write a memory item
- * - GET  /api/v1/memory/context  - Fetch memory context
- * - GET  /api/v1/memory/health   - Health check
+ * - POST /api/v1/memory/write           - Write a memory item
+ * - GET  /api/v1/memory/context         - Fetch memory context
+ * - GET  /api/v1/memory/health          - Health check
+ * - POST /api/v1/memory/quality/compute - Compute quality metrics
+ * - GET  /api/v1/memory/quality         - Get latest quality snapshot
  *
  * Internal helpers:
  * - writeMemoryItem()            - Direct memory write (for ORB auto-write)
@@ -15,6 +18,7 @@
  * Dependencies:
  * - VTID-01102 (context bridge)
  * - VTID-01104 (memory RPC)
+ * - VTID-01100 (quality metrics RPC)
  */
 
 import { Router, Request, Response } from 'express';
@@ -527,13 +531,264 @@ router.get('/health', (_req: Request, res: Response) => {
       write: hasSupabaseUrl && hasSupabaseKey,
       read: hasSupabaseUrl && hasSupabaseKey,
       auto_classify: true,
-      category_keys: CATEGORY_KEYS
+      category_keys: CATEGORY_KEYS,
+      quality_metrics: hasSupabaseUrl && hasSupabaseKey
     },
     dependencies: {
       'VTID-01102': 'context_bridge',
-      'VTID-01104': 'memory_rpc'
+      'VTID-01104': 'memory_rpc',
+      'VTID-01100': 'quality_metrics_rpc'
     }
   });
+});
+
+// =============================================================================
+// VTID-01100: Quality Metrics Endpoints
+// =============================================================================
+
+/**
+ * Confidence band definitions for user-facing display
+ */
+const CONFIDENCE_BANDS = {
+  'Low': { min: 0, max: 39, behavior: 'Minimal personalization, prompts suppressed' },
+  'Medium': { min: 40, max: 69, behavior: 'Conservative recommendations' },
+  'High': { min: 70, max: 85, behavior: 'Full personalization' },
+  'Very High': { min: 86, max: 100, behavior: 'Confident cross-domain suggestions' }
+} as const;
+
+type ConfidenceBand = keyof typeof CONFIDENCE_BANDS;
+
+/**
+ * Quality compute request schema
+ */
+const QualityComputeRequestSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format').optional()
+});
+
+/**
+ * Emit quality-related OASIS events
+ */
+async function emitQualityEvent(
+  type: 'memory.quality.computed' | 'memory.quality.read',
+  status: 'info' | 'success' | 'warning' | 'error',
+  message: string,
+  payload: Record<string, unknown>
+): Promise<void> {
+  await emitOasisEvent({
+    vtid: 'VTID-01100',
+    type: type as any,
+    source: 'memory-gateway',
+    status,
+    message,
+    payload
+  }).catch(err => console.warn(`[VTID-01100] Failed to emit ${type}:`, err.message));
+}
+
+/**
+ * POST /quality/compute -> POST /api/v1/memory/quality/compute
+ *
+ * Compute quality metrics for the current user.
+ * Upserts a snapshot for the specified date (default: today).
+ */
+router.post('/quality/compute', async (req: Request, res: Response) => {
+  console.log('[VTID-01100] POST /memory/quality/compute');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Validate request body
+  const validation = QualityComputeRequestSchema.safeParse(req.body);
+  if (!validation.success) {
+    console.warn('[VTID-01100] Validation failed:', validation.error.errors);
+    return res.status(400).json({
+      ok: false,
+      error: 'Validation failed',
+      details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const { date } = validation.data;
+  const computeDate = date || new Date().toISOString().split('T')[0];
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Call memory_compute_quality RPC
+    const { data, error } = await supabase.rpc('memory_compute_quality', {
+      p_user_id: null, // Use authenticated user
+      p_date: computeDate
+    });
+
+    if (error) {
+      // Check if RPC doesn't exist
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01100] memory_compute_quality RPC not found (VTID-01100 not deployed yet)');
+        return res.status(503).json({
+          ok: false,
+          error: 'Quality metrics RPC not available (VTID-01100 dependency)'
+        });
+      }
+      console.error('[VTID-01100] memory_compute_quality RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    const result = data as {
+      ok: boolean;
+      snapshot_id?: string;
+      overall_quality_score?: number;
+      confidence_band?: ConfidenceBand;
+      error?: string;
+      message?: string;
+    };
+
+    if (!result.ok) {
+      return res.status(400).json({
+        ok: false,
+        error: result.error,
+        message: result.message
+      });
+    }
+
+    // Emit OASIS event
+    await emitQualityEvent(
+      'memory.quality.computed',
+      'success',
+      `Memory quality computed: ${result.overall_quality_score}/100 (${result.confidence_band})`,
+      {
+        snapshot_id: result.snapshot_id,
+        score: result.overall_quality_score,
+        band: result.confidence_band,
+        date: computeDate
+      }
+    );
+
+    console.log(`[VTID-01100] Quality computed: ${result.overall_quality_score}/100 (${result.confidence_band})`);
+
+    return res.status(200).json(result);
+  } catch (err: any) {
+    console.error('[VTID-01100] memory_compute_quality error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * GET /quality -> GET /api/v1/memory/quality
+ *
+ * Get the latest quality snapshot for the current user.
+ */
+router.get('/quality', async (req: Request, res: Response) => {
+  console.log('[VTID-01100] GET /memory/quality');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Call memory_get_quality RPC
+    const { data, error } = await supabase.rpc('memory_get_quality', {
+      p_user_id: null // Use authenticated user
+    });
+
+    if (error) {
+      // Check if RPC doesn't exist
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01100] memory_get_quality RPC not found (VTID-01100 not deployed yet)');
+        return res.status(503).json({
+          ok: false,
+          error: 'Quality metrics RPC not available (VTID-01100 dependency)'
+        });
+      }
+      console.error('[VTID-01100] memory_get_quality RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    const result = data as {
+      ok: boolean;
+      has_snapshot?: boolean;
+      overall_quality_score?: number;
+      confidence_band?: ConfidenceBand;
+      error?: string;
+      message?: string;
+    };
+
+    if (!result.ok) {
+      return res.status(400).json({
+        ok: false,
+        error: result.error,
+        message: result.message
+      });
+    }
+
+    // Emit OASIS event
+    await emitQualityEvent(
+      'memory.quality.read',
+      'success',
+      result.has_snapshot
+        ? `Memory quality read: ${result.overall_quality_score}/100 (${result.confidence_band})`
+        : 'Memory quality read: no snapshot available',
+      {
+        has_snapshot: result.has_snapshot,
+        score: result.overall_quality_score || 0,
+        band: result.confidence_band || 'Low'
+      }
+    );
+
+    console.log(`[VTID-01100] Quality read: ${result.has_snapshot ? `${result.overall_quality_score}/100` : 'no snapshot'}`);
+
+    // Add band definitions to response for UI consumption
+    const response = {
+      ...result,
+      band_definitions: CONFIDENCE_BANDS
+    };
+
+    return res.status(200).json(response);
+  } catch (err: any) {
+    console.error('[VTID-01100] memory_get_quality error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
 });
 
 export default router;
