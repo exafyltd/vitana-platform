@@ -10,63 +10,15 @@
 --   - VTID-01101 (Phase A-Fix) - tenant/user/role helpers
 --   - VTID-01102 (Phase B-Fix) - runtime context bridge
 --   - VTID-01104 (Memory Core v1) - memory_items table
---   - VTID-01082 (Diary + Memory Garden) - creates dependency tables here if missing
+--   - VTID-01082 (Memory Garden + Diary) - memory_diary_entries, memory_garden_nodes tables
+--
+-- NOTE: This migration does NOT create memory_diary_entries or memory_garden_nodes.
+-- Those tables are created by VTID-01082. This migration only creates:
+--   - longevity_signals_daily
+--   - longevity_signal_rules
 
 -- ===========================================================================
--- 2.A: memory_diary_entries (Dependency - VTID-01082)
--- Structured diary entries with mood, energy, and tags
--- ===========================================================================
-
-CREATE TABLE IF NOT EXISTS public.memory_diary_entries (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL,
-    user_id UUID NOT NULL,
-    entry_date DATE NOT NULL,
-    raw_text TEXT NOT NULL CHECK (raw_text != ''),
-    mood TEXT NULL CHECK (mood IN ('happy', 'calm', 'neutral', 'anxious', 'sad', 'stressed', 'angry', 'tired', 'energetic')),
-    energy_level INT NULL CHECK (energy_level >= 0 AND energy_level <= 100),
-    tags TEXT[] DEFAULT '{}',
-    metadata JSONB DEFAULT '{}'::JSONB,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT memory_diary_entries_unique UNIQUE (tenant_id, user_id, entry_date, id)
-);
-
--- Index for efficient daily queries
-CREATE INDEX IF NOT EXISTS idx_memory_diary_entries_tenant_user_date
-    ON public.memory_diary_entries (tenant_id, user_id, entry_date DESC);
-
--- ===========================================================================
--- 2.B: memory_garden_nodes (Dependency - VTID-01082)
--- Graph-like knowledge nodes extracted from diary/memory
--- ===========================================================================
-
-CREATE TABLE IF NOT EXISTS public.memory_garden_nodes (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL,
-    user_id UUID NOT NULL,
-    node_type TEXT NOT NULL CHECK (node_type IN ('habit', 'goal', 'person', 'place', 'event', 'preference', 'value', 'health', 'activity')),
-    label TEXT NOT NULL,
-    source TEXT NOT NULL CHECK (source IN ('diary', 'orb', 'upload', 'system')),
-    source_id UUID NULL, -- Reference to source record (diary entry, memory item, etc.)
-    attributes JSONB DEFAULT '{}'::JSONB,
-    confidence NUMERIC DEFAULT 1.0 CHECK (confidence >= 0 AND confidence <= 1),
-    first_seen DATE NOT NULL DEFAULT CURRENT_DATE,
-    last_seen DATE NOT NULL DEFAULT CURRENT_DATE,
-    occurrence_count INT DEFAULT 1,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- Index for efficient node queries
-CREATE INDEX IF NOT EXISTS idx_memory_garden_nodes_tenant_user_type
-    ON public.memory_garden_nodes (tenant_id, user_id, node_type);
-
-CREATE INDEX IF NOT EXISTS idx_memory_garden_nodes_source
-    ON public.memory_garden_nodes (tenant_id, user_id, source, last_seen DESC);
-
--- ===========================================================================
--- 2.C: longevity_signals_daily (NEW - VTID-01083)
+-- 1. longevity_signals_daily (NEW - VTID-01083)
 -- One row per user per day with computed health signals
 -- ===========================================================================
 
@@ -94,7 +46,7 @@ CREATE INDEX IF NOT EXISTS idx_longevity_signals_daily_tenant_user_date
     ON public.longevity_signals_daily (tenant_id, user_id, signal_date DESC);
 
 -- ===========================================================================
--- 2.D: longevity_signal_rules (NEW - VTID-01083)
+-- 2. longevity_signal_rules (NEW - VTID-01083)
 -- Deterministic rule registry for signal computation
 -- ===========================================================================
 
@@ -176,7 +128,7 @@ INSERT INTO public.longevity_signal_rules (rule_key, rule_version, domain, logic
      '{"type": "tag_match", "tags": ["exercise", "fitness", "active", "sports"], "effect": "increase", "delta": 20}'::JSONB,
      70, true),
     ('movement.v1.garden_activity', 1, 'movement',
-     '{"type": "garden_node_match", "node_types": ["activity"], "labels": ["gym", "running", "yoga", "walking", "cycling"], "effect": "increase", "delta": 15}'::JSONB,
+     '{"type": "garden_node_match", "domains": ["health", "lifestyle"], "node_types": ["habit", "pattern"], "keywords": ["gym", "running", "yoga", "walking", "cycling"], "effect": "increase", "delta": 15}'::JSONB,
      60, true),
 
     -- Social rules
@@ -186,8 +138,8 @@ INSERT INTO public.longevity_signal_rules (rule_key, rule_version, domain, logic
     ('social.v1.keyword_negative', 1, 'social',
      '{"type": "keyword_match", "keywords": ["lonely", "isolated", "alone all day", "no one to talk", "missed event"], "effect": "decrease", "delta": 20}'::JSONB,
      70, true),
-    ('social.v1.garden_person', 1, 'social',
-     '{"type": "garden_node_match", "node_types": ["person", "event"], "effect": "increase", "delta": 10}'::JSONB,
+    ('social.v1.garden_social', 1, 'social',
+     '{"type": "garden_node_match", "domains": ["community"], "node_types": ["habit", "pattern", "goal"], "effect": "increase", "delta": 10}'::JSONB,
      50, true),
     ('social.v1.mood_positive', 1, 'social',
      '{"type": "mood_match", "moods": ["happy", "energetic"], "effect": "increase", "delta": 10}'::JSONB,
@@ -195,47 +147,11 @@ INSERT INTO public.longevity_signal_rules (rule_key, rule_version, domain, logic
 ON CONFLICT (rule_key) DO NOTHING;
 
 -- ===========================================================================
--- 4. Enable RLS on all tables
+-- 4. Enable RLS on longevity tables
 -- ===========================================================================
 
-ALTER TABLE public.memory_diary_entries ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.memory_garden_nodes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.longevity_signals_daily ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.longevity_signal_rules ENABLE ROW LEVEL SECURITY;
-
--- memory_diary_entries RLS
-DROP POLICY IF EXISTS memory_diary_entries_select ON public.memory_diary_entries;
-CREATE POLICY memory_diary_entries_select ON public.memory_diary_entries
-    FOR SELECT TO authenticated
-    USING (tenant_id = public.current_tenant_id() AND user_id = auth.uid());
-
-DROP POLICY IF EXISTS memory_diary_entries_insert ON public.memory_diary_entries;
-CREATE POLICY memory_diary_entries_insert ON public.memory_diary_entries
-    FOR INSERT TO authenticated
-    WITH CHECK (tenant_id = public.current_tenant_id() AND user_id = auth.uid());
-
-DROP POLICY IF EXISTS memory_diary_entries_update ON public.memory_diary_entries;
-CREATE POLICY memory_diary_entries_update ON public.memory_diary_entries
-    FOR UPDATE TO authenticated
-    USING (tenant_id = public.current_tenant_id() AND user_id = auth.uid())
-    WITH CHECK (tenant_id = public.current_tenant_id() AND user_id = auth.uid());
-
--- memory_garden_nodes RLS
-DROP POLICY IF EXISTS memory_garden_nodes_select ON public.memory_garden_nodes;
-CREATE POLICY memory_garden_nodes_select ON public.memory_garden_nodes
-    FOR SELECT TO authenticated
-    USING (tenant_id = public.current_tenant_id() AND user_id = auth.uid());
-
-DROP POLICY IF EXISTS memory_garden_nodes_insert ON public.memory_garden_nodes;
-CREATE POLICY memory_garden_nodes_insert ON public.memory_garden_nodes
-    FOR INSERT TO authenticated
-    WITH CHECK (tenant_id = public.current_tenant_id() AND user_id = auth.uid());
-
-DROP POLICY IF EXISTS memory_garden_nodes_update ON public.memory_garden_nodes;
-CREATE POLICY memory_garden_nodes_update ON public.memory_garden_nodes
-    FOR UPDATE TO authenticated
-    USING (tenant_id = public.current_tenant_id() AND user_id = auth.uid())
-    WITH CHECK (tenant_id = public.current_tenant_id() AND user_id = auth.uid());
 
 -- longevity_signals_daily RLS
 DROP POLICY IF EXISTS longevity_signals_daily_select ON public.longevity_signals_daily;
@@ -263,6 +179,7 @@ CREATE POLICY longevity_signal_rules_select ON public.longevity_signal_rules
 -- ===========================================================================
 -- 5. RPC: longevity_compute_daily(p_user_id uuid, p_date date)
 -- Deterministic computation of daily longevity signals from diary + garden
+-- Uses VTID-01082's schema: memory_diary_entries, memory_garden_nodes
 -- ===========================================================================
 
 CREATE OR REPLACE FUNCTION public.longevity_compute_daily(
@@ -333,7 +250,8 @@ BEGIN
     v_active_role := public.current_active_role();
 
     -- ===========================================================================
-    -- Process diary entries for the date
+    -- Process diary entries for the date (VTID-01082 schema)
+    -- Schema: id, tenant_id, user_id, entry_date, entry_type, raw_text, mood, energy_level, tags
     -- ===========================================================================
     FOR v_diary_entry IN
         SELECT id, raw_text, mood, energy_level, tags
@@ -422,7 +340,7 @@ BEGIN
 
             -- Mood match rule
             IF (v_rule.logic->>'type') = 'mood_match' AND v_diary_entry.mood IS NOT NULL THEN
-                IF v_diary_entry.mood = ANY(ARRAY(SELECT jsonb_array_elements_text(v_rule.logic->'moods'))) THEN
+                IF LOWER(v_diary_entry.mood) = ANY(ARRAY(SELECT LOWER(jsonb_array_elements_text(v_rule.logic->'moods')))) THEN
                     v_matched := true;
                     v_match_detail := jsonb_build_object(
                         'rule', v_rule.rule_key,
@@ -485,10 +403,11 @@ BEGIN
     END LOOP;
 
     -- ===========================================================================
-    -- Process garden nodes updated on this date
+    -- Process garden nodes updated on this date (VTID-01082 schema)
+    -- Schema: id, tenant_id, user_id, domain, source, node_type, title, summary, confidence, first_seen, last_seen
     -- ===========================================================================
     FOR v_garden_node IN
-        SELECT id, node_type, label, attributes
+        SELECT id, domain, node_type, title, summary
         FROM public.memory_garden_nodes
         WHERE tenant_id = v_tenant_id
           AND user_id = v_user_id
@@ -503,8 +422,9 @@ BEGIN
             '{garden_nodes}',
             COALESCE(v_evidence->'garden_nodes', '[]'::JSONB) || jsonb_build_object(
                 'id', v_garden_node.id,
+                'domain', v_garden_node.domain,
                 'node_type', v_garden_node.node_type,
-                'label', v_garden_node.label
+                'title', v_garden_node.title
             )
         );
 
@@ -518,24 +438,47 @@ BEGIN
             v_matched := false;
             v_delta := COALESCE((v_rule.logic->>'delta')::INT, 10);
 
-            -- Check node type match
-            IF v_garden_node.node_type = ANY(ARRAY(SELECT jsonb_array_elements_text(v_rule.logic->'node_types'))) THEN
-                -- If labels specified, check label match; otherwise match on type alone
-                IF v_rule.logic->'labels' IS NULL OR
-                   LOWER(v_garden_node.label) = ANY(ARRAY(SELECT LOWER(jsonb_array_elements_text(v_rule.logic->'labels')))) THEN
-                    v_matched := true;
-                    v_match_detail := jsonb_build_object(
-                        'rule', v_rule.rule_key,
-                        'type', 'garden_node_match',
-                        'matched_node_type', v_garden_node.node_type,
-                        'matched_label', v_garden_node.label,
-                        'node_id', v_garden_node.id
-                    );
-                    v_evidence := jsonb_set(
-                        v_evidence,
-                        '{garden_matches}',
-                        COALESCE(v_evidence->'garden_matches', '[]'::JSONB) || v_match_detail
-                    );
+            -- Check domain match (using VTID-01082's domain field)
+            IF v_garden_node.domain = ANY(ARRAY(SELECT jsonb_array_elements_text(v_rule.logic->'domains'))) THEN
+                -- Check node_type match if specified
+                IF v_rule.logic->'node_types' IS NULL OR
+                   v_garden_node.node_type = ANY(ARRAY(SELECT jsonb_array_elements_text(v_rule.logic->'node_types'))) THEN
+                    -- If keywords specified, check title/summary match
+                    IF v_rule.logic->'keywords' IS NULL THEN
+                        v_matched := true;
+                    ELSE
+                        DECLARE
+                            v_keyword TEXT;
+                            v_title_lower TEXT := LOWER(v_garden_node.title);
+                            v_summary_lower TEXT := LOWER(COALESCE(v_garden_node.summary, ''));
+                        BEGIN
+                            FOR v_keyword IN
+                                SELECT jsonb_array_elements_text(v_rule.logic->'keywords')
+                            LOOP
+                                IF v_title_lower LIKE '%' || LOWER(v_keyword) || '%' OR
+                                   v_summary_lower LIKE '%' || LOWER(v_keyword) || '%' THEN
+                                    v_matched := true;
+                                    EXIT;
+                                END IF;
+                            END LOOP;
+                        END;
+                    END IF;
+
+                    IF v_matched THEN
+                        v_match_detail := jsonb_build_object(
+                            'rule', v_rule.rule_key,
+                            'type', 'garden_node_match',
+                            'matched_domain', v_garden_node.domain,
+                            'matched_node_type', v_garden_node.node_type,
+                            'matched_title', v_garden_node.title,
+                            'node_id', v_garden_node.id
+                        );
+                        v_evidence := jsonb_set(
+                            v_evidence,
+                            '{garden_matches}',
+                            COALESCE(v_evidence->'garden_matches', '[]'::JSONB) || v_match_detail
+                        );
+                    END IF;
                 END IF;
             END IF;
 
@@ -557,7 +500,6 @@ BEGIN
                             v_social_score := LEAST(100, v_social_score + v_delta);
                         END IF;
                     ELSE
-                        -- Handle other domains if needed
                         NULL;
                 END CASE;
             END IF;
@@ -783,7 +725,7 @@ BEGIN
         );
     END IF;
 
-    -- Get full diary entries for the date
+    -- Get full diary entries for the date (VTID-01082 schema)
     SELECT COALESCE(
         jsonb_agg(
             jsonb_build_object(
@@ -792,6 +734,7 @@ BEGIN
                 'mood', mood,
                 'energy_level', energy_level,
                 'tags', tags,
+                'entry_type', entry_type,
                 'created_at', created_at
             )
         ),
@@ -803,16 +746,16 @@ BEGIN
       AND user_id = v_user_id
       AND entry_date = p_date;
 
-    -- Get garden nodes for the date
+    -- Get garden nodes for the date (VTID-01082 schema)
     SELECT COALESCE(
         jsonb_agg(
             jsonb_build_object(
                 'id', id,
+                'domain', domain,
                 'node_type', node_type,
-                'label', label,
-                'attributes', attributes,
-                'confidence', confidence,
-                'occurrence_count', occurrence_count
+                'title', title,
+                'summary', summary,
+                'confidence', confidence
             )
         ),
         '[]'::JSONB
@@ -873,8 +816,6 @@ GRANT EXECUTE ON FUNCTION public.longevity_get_daily(DATE, DATE) TO authenticate
 GRANT EXECUTE ON FUNCTION public.longevity_explain_daily(DATE) TO authenticated;
 
 -- Grant table access (RLS enforces row-level security)
-GRANT SELECT, INSERT, UPDATE ON public.memory_diary_entries TO authenticated;
-GRANT SELECT, INSERT, UPDATE ON public.memory_garden_nodes TO authenticated;
 GRANT SELECT ON public.longevity_signals_daily TO authenticated;
 GRANT SELECT ON public.longevity_signal_rules TO authenticated;
 
@@ -882,11 +823,9 @@ GRANT SELECT ON public.longevity_signal_rules TO authenticated;
 -- 9. Comments
 -- ===========================================================================
 
-COMMENT ON TABLE public.memory_diary_entries IS 'VTID-01082/01083: Structured diary entries with mood, energy, and tags for longevity signal extraction';
-COMMENT ON TABLE public.memory_garden_nodes IS 'VTID-01082/01083: Graph-like knowledge nodes extracted from diary and memory for longevity signals';
 COMMENT ON TABLE public.longevity_signals_daily IS 'VTID-01083: Daily computed longevity signals (sleep, stress, hydration, nutrition, movement, social)';
 COMMENT ON TABLE public.longevity_signal_rules IS 'VTID-01083: Deterministic rule registry for longevity signal computation';
 
-COMMENT ON FUNCTION public.longevity_compute_daily IS 'VTID-01083: Compute daily longevity signals from diary entries and garden nodes. Idempotent.';
+COMMENT ON FUNCTION public.longevity_compute_daily IS 'VTID-01083: Compute daily longevity signals from diary entries and garden nodes. Idempotent. Depends on VTID-01082 tables.';
 COMMENT ON FUNCTION public.longevity_get_daily IS 'VTID-01083: Retrieve daily longevity signals for a date range.';
 COMMENT ON FUNCTION public.longevity_explain_daily IS 'VTID-01083: Get detailed evidence and rules for a specific date''s longevity signals.';
