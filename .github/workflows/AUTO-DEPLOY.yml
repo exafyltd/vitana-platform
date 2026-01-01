@@ -1,5 +1,12 @@
 name: Auto Deploy (Canonical → EXEC-DEPLOY)
 
+# VTID-01082-FIX: Fixed VTID extraction from truncated merge commit messages
+# GitHub truncates commit messages in merge commits, causing VTID extraction to fail.
+# This workflow now:
+# 1. Checks out the repo to get full commit message via git
+# 2. Searches the full commit body (not just subject line)
+# 3. Falls back to branch name extraction if commit message fails
+
 on:
   push:
     branches: [ "main" ]
@@ -19,20 +26,65 @@ jobs:
   dispatch_exec_deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Extract VTID from merge commit message
+      # VTID-01082-FIX: Checkout repo to get full commit message
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # Need parent commit for merge commit analysis
+
+      - name: Extract VTID from commit (robust)
         id: vtid
         shell: bash
         run: |
-          MSG="${{ github.event.head_commit.message }}"
-          echo "Commit message:"
-          echo "$MSG"
+          echo "==========================================================================="
+          echo "VTID Extraction (VTID-01082-FIX: Robust extraction for merge commits)"
+          echo "==========================================================================="
+
+          # Method 1: Get FULL commit message via git (not truncated like github.event)
+          FULL_MSG="$(git log -1 --format='%B' HEAD)"
+          echo "Full commit message:"
+          echo "$FULL_MSG"
+          echo ""
 
           # Accept: DEV-XXXX-YYYY-NNNN, VTID-NNNN(N), BOOTSTRAP-...
           # VTID-01005: Updated regex to support 4-5 digit VTIDs
-          VTID="$(echo "$MSG" | grep -Eo '(DEV-[A-Z0-9]+-[0-9]{4}-[0-9]{4}|VTID-[0-9]{4,5}|BOOTSTRAP-[A-Z0-9\-]+)' | head -n 1 || true)"
+          VTID="$(echo "$FULL_MSG" | grep -Eo '(DEV-[A-Z0-9]+-[0-9]{4}-[0-9]{4}|VTID-[0-9]{4,5}|BOOTSTRAP-[A-Z0-9\-]+)' | head -n 1 || true)"
+
+          # Method 2: If not found in commit message, try the branch name from merge commit
+          if [ -z "$VTID" ]; then
+            echo "No VTID in commit message. Trying branch name extraction..."
+
+            # Extract branch name from merge commit message (e.g., "Merge pull request #123 from org/branch-name")
+            BRANCH_NAME="$(echo "$FULL_MSG" | grep -oP 'from [^/]+/\K[^\s]+' | head -n 1 || true)"
+            echo "Extracted branch name: $BRANCH_NAME"
+
+            # Look for VTID pattern in branch name (some branches have vtid in name)
+            if [ -n "$BRANCH_NAME" ]; then
+              VTID="$(echo "$BRANCH_NAME" | grep -Eo '(VTID-[0-9]{4,5})' | head -n 1 || true)"
+            fi
+          fi
+
+          # Method 3: If still not found, check the parent commit (the actual feature commit)
+          if [ -z "$VTID" ]; then
+            echo "No VTID in branch name. Checking parent commit..."
+
+            # For merge commits, get the second parent (the feature branch commit)
+            PARENT_MSG="$(git log -1 --format='%B' HEAD^2 2>/dev/null || true)"
+            if [ -n "$PARENT_MSG" ]; then
+              echo "Parent commit message:"
+              echo "$PARENT_MSG"
+              VTID="$(echo "$PARENT_MSG" | grep -Eo '(DEV-[A-Z0-9]+-[0-9]{4}-[0-9]{4}|VTID-[0-9]{4,5}|BOOTSTRAP-[A-Z0-9\-]+)' | head -n 1 || true)"
+            fi
+          fi
+
+          echo ""
+          echo "==========================================================================="
 
           if [ -z "$VTID" ]; then
-            echo "No VTID found → skip deploy."
+            echo "❌ No VTID found in commit message, branch name, or parent commit."
+            echo "   Deploy will be skipped."
+            echo ""
+            echo "   To fix: Ensure commit messages include VTID (e.g., 'feat: add feature (VTID-01234)')"
             echo "found=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -44,7 +96,7 @@ jobs:
             echo "CI/CD task ID detected → using BOOTSTRAP prefix: $VTID"
           fi
 
-          echo "Found VTID=$VTID"
+          echo "✅ Found VTID=$VTID"
           echo "found=true" >> "$GITHUB_OUTPUT"
           echo "vtid=$VTID" >> "$GITHUB_OUTPUT"
 

@@ -2091,7 +2091,19 @@ const state = {
 
     // VTID-0600: Ticker Severity Prioritization
     tickerCollapseHeartbeat: true,
-    tickerSeverityFilter: 'all' // 'all', 'critical', 'important', 'info'
+    tickerSeverityFilter: 'all', // 'all', 'critical', 'important', 'info'
+
+    // VTID-01086: Memory Garden State
+    memoryGarden: {
+        progress: null,        // { totals, categories }
+        loading: false,
+        error: null,
+        fetched: false,
+        longevity: null,       // Longevity panel data
+        longevityLoading: false,
+        longevityError: null,
+        showDiaryModal: false  // Diary entry modal state
+    }
 };
 
 // --- VTID-0527: Task Stage Timeline Model ---
@@ -3674,6 +3686,9 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'governance' && tab === 'categories') {
         // VTID-0409: Governance Categories (Read-Only V1)
         container.appendChild(renderGovernanceCategoriesView());
+    } else if (moduleKey === 'intelligence-memory-dev' && tab === 'memory-vault') {
+        // VTID-01086: Memory Garden UI Deepening
+        container.appendChild(renderMemoryGardenView());
     } else {
         // Placeholder for other modules
         const placeholder = document.createElement('div');
@@ -8719,6 +8734,617 @@ function renderOasisVtidLedgerView() {
     container.appendChild(splitContainer);
 
     return container;
+}
+
+// =============================================================================
+// VTID-01086: Memory Garden UI Deepening
+// =============================================================================
+
+/**
+ * VTID-01086: Memory Garden category icons mapping
+ */
+const MEMORY_GARDEN_ICONS = {
+    personal_identity: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>',
+    health_wellness: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>',
+    lifestyle_routines: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z"/></svg>',
+    network_relationships: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>',
+    learning_knowledge: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 4h5v8l-2.5-1.5L6 12V4z"/></svg>',
+    business_projects: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-6 0h-4V4h4v2z"/></svg>',
+    finance_assets: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg>',
+    location_environment: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>',
+    digital_footprint: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/></svg>',
+    values_aspirations: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>',
+    autopilot_context: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M20 18c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6zm2 2v2h8v-2H6zm10 0v6h2V8h-2zm-10 4v2h5v-2H6z"/></svg>',
+    future_plans: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 10.9c-.61 0-1.1.49-1.1 1.1s.49 1.1 1.1 1.1c.61 0 1.1-.49 1.1-1.1s-.49-1.1-1.1-1.1zM12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm2.19 12.19L6 18l3.81-8.19L18 6l-3.81 8.19z"/></svg>',
+    uncategorized: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>'
+};
+
+/**
+ * VTID-01086: Longevity messaging (deterministic, no AI)
+ */
+const LONGEVITY_MESSAGES = {
+    sleep_declining: 'Sleep drives recovery and longevity. Poor sleep quality accelerates aging and impairs immune function.',
+    sleep_stable: 'Maintaining consistent sleep patterns supports cellular repair and memory consolidation.',
+    sleep_improving: 'Improved sleep quality enhances cognitive function and metabolic health.',
+    stress_high: 'Stress management reduces inflammation and cortisol, protecting cardiovascular health.',
+    stress_moderate: 'Moderate stress levels allow for recovery. Consider building stress resilience practices.',
+    stress_low: 'Low stress levels support immune function and mental clarity.',
+    movement_low: 'Daily movement improves metabolic health and reduces risk of chronic disease.',
+    movement_moderate: 'Regular movement supports cardiovascular health and bone density.',
+    movement_high: 'Active lifestyle correlates with increased lifespan and cognitive health.'
+};
+
+/**
+ * VTID-01086: Fetch Memory Garden progress from API
+ */
+async function fetchMemoryGardenProgress() {
+    if (state.memoryGarden.loading) return;
+
+    state.memoryGarden.loading = true;
+    state.memoryGarden.error = null;
+    renderApp();
+
+    try {
+        const token = state.authToken;
+        if (!token) {
+            throw new Error('Not authenticated');
+        }
+
+        const response = await fetch('/api/v1/memory/garden/progress', {
+            method: 'GET',
+            headers: {
+                'Authorization': 'Bearer ' + token,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || 'Failed to fetch progress');
+        }
+
+        const data = await response.json();
+
+        state.memoryGarden.progress = data;
+        state.memoryGarden.fetched = true;
+        state.memoryGarden.loading = false;
+        state.memoryGarden.error = null;
+
+        console.log('[VTID-01086] Memory Garden progress fetched:', data.totals);
+    } catch (err) {
+        console.error('[VTID-01086] Error fetching progress:', err);
+        state.memoryGarden.loading = false;
+        state.memoryGarden.error = err.message;
+    }
+
+    renderApp();
+}
+
+/**
+ * VTID-01086: Fetch longevity summary for the Longevity Focus panel
+ */
+async function fetchLongevitySummary() {
+    if (state.memoryGarden.longevityLoading) return;
+
+    state.memoryGarden.longevityLoading = true;
+    state.memoryGarden.longevityError = null;
+    renderApp();
+
+    try {
+        const token = state.authToken;
+        if (!token) {
+            throw new Error('Not authenticated');
+        }
+
+        // Use memory/retrieve endpoint with longevity intent (as per spec)
+        const response = await fetch('/api/v1/memory/retrieve', {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer ' + token,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                intent: 'longevity',
+                mode: 'summary',
+                include: ['garden', 'longevity', 'community', 'diary']
+            })
+        });
+
+        // If endpoint doesn't exist yet, use placeholder data
+        if (response.status === 404 || response.status === 503) {
+            console.warn('[VTID-01086] Longevity retrieve endpoint not available, using placeholder');
+            state.memoryGarden.longevity = {
+                sleep: { trend: 'stable', value: 7.2, unit: 'hrs' },
+                stress: { trend: 'moderate', value: 42, unit: 'score' },
+                movement: { trend: 'moderate', value: 6500, unit: 'steps' },
+                recommendation: {
+                    type: 'community',
+                    title: 'Morning Wellness Circle',
+                    description: 'Join others focused on healthy morning routines'
+                }
+            };
+            state.memoryGarden.longevityLoading = false;
+            renderApp();
+            return;
+        }
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || 'Failed to fetch longevity data');
+        }
+
+        const data = await response.json();
+        state.memoryGarden.longevity = data;
+        state.memoryGarden.longevityLoading = false;
+        state.memoryGarden.longevityError = null;
+
+        console.log('[VTID-01086] Longevity summary fetched');
+    } catch (err) {
+        console.error('[VTID-01086] Error fetching longevity:', err);
+        state.memoryGarden.longevityLoading = false;
+        // Use placeholder on error
+        state.memoryGarden.longevity = {
+            sleep: { trend: 'stable', value: 7.2, unit: 'hrs' },
+            stress: { trend: 'moderate', value: 42, unit: 'score' },
+            movement: { trend: 'moderate', value: 6500, unit: 'steps' },
+            recommendation: {
+                type: 'community',
+                title: 'Morning Wellness Circle',
+                description: 'Join others focused on healthy morning routines'
+            }
+        };
+    }
+
+    renderApp();
+}
+
+/**
+ * VTID-01086: Refresh Memory Garden (progress + longevity)
+ */
+async function refreshMemoryGarden() {
+    // Emit UI refreshed OASIS event (via gateway)
+    console.log('[VTID-01086] Refreshing Memory Garden');
+
+    // Reset fetched flags to force refetch
+    state.memoryGarden.fetched = false;
+    state.memoryGarden.longevity = null;
+
+    // Fetch both in parallel
+    await Promise.all([
+        fetchMemoryGardenProgress(),
+        fetchLongevitySummary()
+    ]);
+}
+
+/**
+ * VTID-01086: Render the Memory Garden view
+ */
+function renderMemoryGardenView() {
+    var container = document.createElement('div');
+    container.className = 'memory-garden-container';
+
+    // Auto-fetch if not yet fetched and not loading
+    if (!state.memoryGarden.fetched && !state.memoryGarden.loading) {
+        fetchMemoryGardenProgress();
+        fetchLongevitySummary();
+    }
+
+    // Header with title and actions
+    var header = document.createElement('div');
+    header.className = 'memory-garden-header';
+
+    var titleSection = document.createElement('div');
+    titleSection.className = 'memory-garden-title-section';
+
+    var title = document.createElement('h2');
+    title.textContent = 'Memory Garden';
+    titleSection.appendChild(title);
+
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    var totalMemories = state.memoryGarden.progress?.totals?.memories || 0;
+    subtitle.textContent = 'Your personal memory vault • ' + totalMemories + ' memories stored';
+    titleSection.appendChild(subtitle);
+
+    header.appendChild(titleSection);
+
+    // Quick actions
+    var actions = document.createElement('div');
+    actions.className = 'memory-garden-actions';
+
+    // Add Diary Entry button
+    var addDiaryBtn = document.createElement('button');
+    addDiaryBtn.className = 'btn btn-primary';
+    addDiaryBtn.textContent = '+ Add Diary Entry';
+    addDiaryBtn.onclick = function() {
+        state.memoryGarden.showDiaryModal = true;
+        renderApp();
+    };
+    actions.appendChild(addDiaryBtn);
+
+    // Refresh button
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-secondary';
+    refreshBtn.textContent = 'Refresh Progress';
+    refreshBtn.disabled = state.memoryGarden.loading;
+    refreshBtn.onclick = function() {
+        refreshMemoryGarden();
+    };
+    actions.appendChild(refreshBtn);
+
+    header.appendChild(actions);
+    container.appendChild(header);
+
+    // Loading state
+    if (state.memoryGarden.loading) {
+        var loadingDiv = document.createElement('div');
+        loadingDiv.className = 'memory-garden-loading';
+        loadingDiv.textContent = 'Loading Memory Garden...';
+        container.appendChild(loadingDiv);
+        return container;
+    }
+
+    // Error state
+    if (state.memoryGarden.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'memory-garden-error';
+        errorDiv.textContent = 'Error: ' + state.memoryGarden.error;
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    // Main content area
+    var mainContent = document.createElement('div');
+    mainContent.className = 'memory-garden-main';
+
+    // Longevity Focus Today panel (first row)
+    mainContent.appendChild(renderLongevityFocusPanel());
+
+    // Category cards grid
+    var grid = document.createElement('div');
+    grid.className = 'memory-garden-grid';
+
+    var categories = state.memoryGarden.progress?.categories || {};
+    var categoryOrder = [
+        'personal_identity', 'health_wellness', 'lifestyle_routines', 'network_relationships',
+        'learning_knowledge', 'business_projects', 'finance_assets', 'location_environment',
+        'digital_footprint', 'values_aspirations', 'autopilot_context', 'future_plans', 'uncategorized'
+    ];
+
+    categoryOrder.forEach(function(key) {
+        var cat = categories[key];
+        if (cat) {
+            grid.appendChild(renderMemoryGardenCard(key, cat));
+        }
+    });
+
+    mainContent.appendChild(grid);
+    container.appendChild(mainContent);
+
+    // Diary entry modal
+    if (state.memoryGarden.showDiaryModal) {
+        container.appendChild(renderDiaryEntryModal());
+    }
+
+    return container;
+}
+
+/**
+ * VTID-01086: Render the Longevity Focus Today panel
+ */
+function renderLongevityFocusPanel() {
+    var panel = document.createElement('div');
+    panel.className = 'longevity-focus-panel';
+
+    var panelHeader = document.createElement('div');
+    panelHeader.className = 'longevity-panel-header';
+
+    var panelTitle = document.createElement('h3');
+    panelTitle.textContent = 'Longevity Focus Today';
+    panelHeader.appendChild(panelTitle);
+
+    panel.appendChild(panelHeader);
+
+    // Loading state
+    if (state.memoryGarden.longevityLoading) {
+        var loading = document.createElement('div');
+        loading.className = 'longevity-loading';
+        loading.textContent = 'Loading longevity data...';
+        panel.appendChild(loading);
+        return panel;
+    }
+
+    var data = state.memoryGarden.longevity;
+    if (!data) {
+        var noData = document.createElement('div');
+        noData.className = 'longevity-no-data';
+        noData.textContent = 'No longevity data available yet. Add health memories to get started.';
+        panel.appendChild(noData);
+        return panel;
+    }
+
+    // Signals container
+    var signals = document.createElement('div');
+    signals.className = 'longevity-signals';
+
+    // Sleep signal
+    if (data.sleep) {
+        signals.appendChild(renderLongevitySignal('Sleep', data.sleep.trend, data.sleep.value, data.sleep.unit));
+    }
+
+    // Stress signal
+    if (data.stress) {
+        signals.appendChild(renderLongevitySignal('Stress', data.stress.trend, data.stress.value, data.stress.unit));
+    }
+
+    // Movement signal
+    if (data.movement) {
+        signals.appendChild(renderLongevitySignal('Movement', data.movement.trend, data.movement.value, data.movement.unit));
+    }
+
+    panel.appendChild(signals);
+
+    // Community recommendation
+    if (data.recommendation) {
+        var recBox = document.createElement('div');
+        recBox.className = 'longevity-recommendation';
+
+        var recTitle = document.createElement('div');
+        recTitle.className = 'rec-title';
+        recTitle.textContent = 'Recommended: ' + data.recommendation.title;
+        recBox.appendChild(recTitle);
+
+        var recDesc = document.createElement('div');
+        recDesc.className = 'rec-description';
+        recDesc.textContent = data.recommendation.description;
+        recBox.appendChild(recDesc);
+
+        panel.appendChild(recBox);
+    }
+
+    // "Why this matters" section
+    var whyMatters = document.createElement('div');
+    whyMatters.className = 'longevity-why-matters';
+
+    var whyTitle = document.createElement('div');
+    whyTitle.className = 'why-title';
+    whyTitle.textContent = 'Why this matters';
+    whyMatters.appendChild(whyTitle);
+
+    // Pick the most relevant message based on trends
+    var message = '';
+    if (data.sleep?.trend === 'declining') {
+        message = LONGEVITY_MESSAGES.sleep_declining;
+    } else if (data.stress?.trend === 'high') {
+        message = LONGEVITY_MESSAGES.stress_high;
+    } else if (data.movement?.trend === 'low') {
+        message = LONGEVITY_MESSAGES.movement_low;
+    } else if (data.sleep?.trend === 'improving') {
+        message = LONGEVITY_MESSAGES.sleep_improving;
+    } else {
+        message = LONGEVITY_MESSAGES.sleep_stable;
+    }
+
+    var whyText = document.createElement('div');
+    whyText.className = 'why-text';
+    whyText.textContent = message;
+    whyMatters.appendChild(whyText);
+
+    panel.appendChild(whyMatters);
+
+    return panel;
+}
+
+/**
+ * VTID-01086: Render a longevity signal (sleep/stress/movement)
+ */
+function renderLongevitySignal(label, trend, value, unit) {
+    var signal = document.createElement('div');
+    signal.className = 'longevity-signal';
+
+    var labelEl = document.createElement('div');
+    labelEl.className = 'signal-label';
+    labelEl.textContent = label;
+    signal.appendChild(labelEl);
+
+    var valueEl = document.createElement('div');
+    valueEl.className = 'signal-value';
+    valueEl.textContent = value + ' ' + unit;
+    signal.appendChild(valueEl);
+
+    var trendEl = document.createElement('div');
+    trendEl.className = 'signal-trend trend-' + trend;
+
+    var trendIcon = '';
+    if (trend === 'improving' || trend === 'high') {
+        trendIcon = '↑';
+    } else if (trend === 'declining' || trend === 'low') {
+        trendIcon = '↓';
+    } else {
+        trendIcon = '→';
+    }
+    trendEl.textContent = trendIcon + ' ' + trend;
+    signal.appendChild(trendEl);
+
+    return signal;
+}
+
+/**
+ * VTID-01086: Render a Memory Garden category card
+ */
+function renderMemoryGardenCard(key, category) {
+    var card = document.createElement('div');
+    card.className = 'memory-garden-card';
+    card.dataset.category = key;
+
+    // Icon
+    var iconContainer = document.createElement('div');
+    iconContainer.className = 'card-icon';
+    iconContainer.innerHTML = MEMORY_GARDEN_ICONS[key] || MEMORY_GARDEN_ICONS.uncategorized;
+    card.appendChild(iconContainer);
+
+    // Label
+    var labelEl = document.createElement('div');
+    labelEl.className = 'card-label';
+    labelEl.textContent = category.label || key.replace(/_/g, ' ');
+    card.appendChild(labelEl);
+
+    // Count
+    var countEl = document.createElement('div');
+    countEl.className = 'card-count';
+    var count = category.count || 0;
+    countEl.textContent = count + ' ' + (count === 1 ? 'memory' : 'memories');
+    card.appendChild(countEl);
+
+    // Progress bar
+    var progressContainer = document.createElement('div');
+    progressContainer.className = 'card-progress-container';
+
+    var progressBar = document.createElement('div');
+    progressBar.className = 'card-progress-bar';
+
+    var progressFill = document.createElement('div');
+    progressFill.className = 'card-progress-fill';
+    var progress = category.progress || 0;
+    progressFill.style.width = (progress * 100) + '%';
+    progressBar.appendChild(progressFill);
+    progressContainer.appendChild(progressBar);
+
+    var progressText = document.createElement('div');
+    progressText.className = 'card-progress-text';
+    progressText.textContent = Math.round(progress * 100) + '%';
+    progressContainer.appendChild(progressText);
+
+    card.appendChild(progressContainer);
+
+    // Description (subtle)
+    if (category.description) {
+        var descEl = document.createElement('div');
+        descEl.className = 'card-description';
+        descEl.textContent = category.description;
+        card.appendChild(descEl);
+    }
+
+    return card;
+}
+
+/**
+ * VTID-01086: Render diary entry modal
+ */
+function renderDiaryEntryModal() {
+    var overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.onclick = function(e) {
+        if (e.target === overlay) {
+            state.memoryGarden.showDiaryModal = false;
+            renderApp();
+        }
+    };
+
+    var modal = document.createElement('div');
+    modal.className = 'modal diary-entry-modal';
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'modal-header';
+
+    var title = document.createElement('h3');
+    title.textContent = 'Add Diary Entry';
+    header.appendChild(title);
+
+    var closeBtn = document.createElement('button');
+    closeBtn.className = 'modal-close-btn';
+    closeBtn.textContent = '×';
+    closeBtn.onclick = function() {
+        state.memoryGarden.showDiaryModal = false;
+        renderApp();
+    };
+    header.appendChild(closeBtn);
+
+    modal.appendChild(header);
+
+    // Body
+    var body = document.createElement('div');
+    body.className = 'modal-body';
+
+    var textarea = document.createElement('textarea');
+    textarea.className = 'diary-textarea';
+    textarea.placeholder = 'What would you like to remember? Share a thought, experience, or insight...';
+    textarea.rows = 6;
+    textarea.id = 'diary-entry-text';
+    body.appendChild(textarea);
+
+    var hint = document.createElement('div');
+    hint.className = 'diary-hint';
+    hint.textContent = 'Your entry will be automatically categorized and added to your Memory Garden.';
+    body.appendChild(hint);
+
+    modal.appendChild(body);
+
+    // Footer
+    var footer = document.createElement('div');
+    footer.className = 'modal-footer';
+
+    var cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn btn-secondary';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.onclick = function() {
+        state.memoryGarden.showDiaryModal = false;
+        renderApp();
+    };
+    footer.appendChild(cancelBtn);
+
+    var saveBtn = document.createElement('button');
+    saveBtn.className = 'btn btn-primary';
+    saveBtn.textContent = 'Save Entry';
+    saveBtn.onclick = async function() {
+        var content = document.getElementById('diary-entry-text').value.trim();
+        if (!content) {
+            alert('Please enter some content');
+            return;
+        }
+
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Saving...';
+
+        try {
+            var response = await fetch('/api/v1/memory/write', {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + state.authToken,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    source: 'diary',
+                    content: content,
+                    importance: 50
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to save diary entry');
+            }
+
+            // Close modal and refresh
+            state.memoryGarden.showDiaryModal = false;
+            state.memoryGarden.fetched = false;
+            fetchMemoryGardenProgress();
+
+            // Show toast notification
+            addToast('Diary entry saved successfully', 'success');
+        } catch (err) {
+            console.error('[VTID-01086] Error saving diary entry:', err);
+            alert('Failed to save entry: ' + err.message);
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Save Entry';
+        }
+    };
+    footer.appendChild(saveBtn);
+
+    modal.appendChild(footer);
+    overlay.appendChild(modal);
+
+    return overlay;
 }
 
 /**

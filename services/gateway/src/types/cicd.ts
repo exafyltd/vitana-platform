@@ -241,7 +241,26 @@ export type CicdEventType =
   | 'vtid.stage.matches.success'
   | 'vtid.stage.matches.failed'
   | 'vtid.daily_recompute.completed'  // Terminal success
-  | 'vtid.daily_recompute.failed';    // Terminal failure
+  | 'vtid.daily_recompute.failed'     // Terminal failure
+  // VTID-01086: Memory Garden Events
+  | 'memory.garden.progress.read'
+  | 'memory.garden.ui.refreshed'
+  | 'memory.garden.longevity_panel.read'
+  // VTID-01087: Relationship Graph Memory Events
+  | 'relationship.edge.created'
+  | 'relationship.edge.strengthened'
+  | 'relationship.graph.read'
+  | 'relationship.recommendation.generated'
+  | 'relationship.signal.updated'
+  | 'relationship.node.created'
+  // VTID-01090: Live Rooms + Events as Relationship Nodes
+  | 'live.room.created'
+  | 'live.room.started'
+  | 'live.room.joined'
+  | 'live.room.left'
+  | 'live.room.ended'
+  | 'live.highlight.created'
+  | 'meetup.rsvp.updated';
 
 export interface CicdOasisEvent {
   vtid: string;
