@@ -91,6 +91,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const healthRouter = require('./routes/health').default;
   // VTID-01105: Memory Gateway Routes - memory write/context for ORB
   const memoryRouter = require('./routes/memory').default;
+  // VTID-01099: Memory Governance Routes - visibility, lock, delete, export
+  const memoryGovernanceRouter = require('./routes/memory-governance').default;
   // VTID-01096: Cross-Domain Personalization v1 - snapshot endpoint
   const personalizationSnapshotRouter = require('./routes/personalization').default;
   // VTID-01095: Daily Scheduler Routes - daily recompute pipeline
@@ -305,6 +307,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01105: Memory Gateway - write/context endpoints for ORB memory
   mountRouterSync(app, '/api/v1/memory', memoryRouter, { owner: 'memory' });
+  // VTID-01099: Memory Governance - visibility, lock, delete, export endpoints
+  mountRouterSync(app, '/api/v1/memory', memoryGovernanceRouter, { owner: 'memory-governance' });
 
   // VTID-01095: Daily Scheduler - daily recompute pipeline
   mountRouterSync(app, '/api/v1/scheduler', schedulerRouter, { owner: 'scheduler' });

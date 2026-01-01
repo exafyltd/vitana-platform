@@ -818,6 +818,183 @@ export const GOVERNANCE_EVENT_TYPES = [
 ] as const;
 
 /**
+ * VTID-01099: Memory Governance Event Types
+ * These are the event types for memory governance user controls.
+ */
+export const MEMORY_GOVERNANCE_EVENT_TYPES = [
+    'memory.visibility.updated',
+    'memory.locked',
+    'memory.unlocked',
+    'memory.deleted',
+    'memory.export.requested',
+    'memory.export.ready'
+] as const;
+
+/**
+ * VTID-01099: Memory Governance Event Helpers
+ * Helper functions for emitting memory governance events.
+ */
+export const memoryGovernanceEvents = {
+  /**
+   * Emit visibility updated event
+   */
+  visibilityUpdated: (
+    tenantId: string,
+    userId: string,
+    domain: string,
+    visibility: string,
+    hasCustomRules: boolean
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01099',
+      type: 'memory.visibility.updated',
+      source: 'memory-governance',
+      status: 'success',
+      message: `Visibility set for ${domain}: ${visibility}`,
+      payload: {
+        tenant_id: tenantId,
+        user_id: userId,
+        domain,
+        visibility,
+        has_custom_rules: hasCustomRules,
+        updated_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit entity locked event
+   */
+  locked: (
+    tenantId: string,
+    userId: string,
+    entityType: string,
+    entityId: string,
+    reason?: string
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01099',
+      type: 'memory.locked',
+      source: 'memory-governance',
+      status: 'success',
+      message: `Entity locked: ${entityType}/${entityId}`,
+      payload: {
+        tenant_id: tenantId,
+        user_id: userId,
+        entity_type: entityType,
+        entity_id: entityId,
+        reason,
+        locked_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit entity unlocked event
+   */
+  unlocked: (
+    tenantId: string,
+    userId: string,
+    entityType: string,
+    entityId: string
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01099',
+      type: 'memory.unlocked',
+      source: 'memory-governance',
+      status: 'success',
+      message: `Entity unlocked: ${entityType}/${entityId}`,
+      payload: {
+        tenant_id: tenantId,
+        user_id: userId,
+        entity_type: entityType,
+        entity_id: entityId,
+        unlocked_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit entity deleted event
+   */
+  deleted: (
+    tenantId: string,
+    userId: string,
+    entityType: string,
+    entityId: string,
+    cascade?: Record<string, unknown>
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01099',
+      type: 'memory.deleted',
+      source: 'memory-governance',
+      status: 'success',
+      message: `Entity deleted: ${entityType}/${entityId}`,
+      payload: {
+        tenant_id: tenantId,
+        user_id: userId,
+        entity_type: entityType,
+        entity_id: entityId,
+        cascade,
+        deleted_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit export requested event
+   */
+  exportRequested: (
+    tenantId: string,
+    userId: string,
+    exportId: string,
+    domains: string[],
+    format: string
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01099',
+      type: 'memory.export.requested',
+      source: 'memory-governance',
+      status: 'info',
+      message: `Export requested: ${domains.join(', ')} (${format})`,
+      payload: {
+        tenant_id: tenantId,
+        user_id: userId,
+        export_id: exportId,
+        domains,
+        format,
+        requested_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit export ready event
+   */
+  exportReady: (
+    tenantId: string,
+    userId: string,
+    exportId: string,
+    domains: string[],
+    format: string,
+    fileUrl: string,
+    fileSizeBytes: number
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01099',
+      type: 'memory.export.ready',
+      source: 'memory-governance',
+      status: 'success',
+      message: `Export ready: ${domains.join(', ')} (${format})`,
+      payload: {
+        tenant_id: tenantId,
+        user_id: userId,
+        export_id: exportId,
+        domains,
+        format,
+        file_url: fileUrl,
+        file_size_bytes: fileSizeBytes,
+        ready_at: new Date().toISOString(),
+      },
+    }),
+};
+
+/**
  * VTID-0408: Governance History Event DTO
  */
 export interface GovernanceHistoryEvent {

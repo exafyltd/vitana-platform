@@ -272,7 +272,14 @@ export type CicdEventType =
   // VTID-01097: Diary Template Events
   | 'diary.template.shown'
   | 'diary.template.submitted'
-  | 'memory.garden.extract.triggered';
+  | 'memory.garden.extract.triggered'
+  // VTID-01099: Memory Governance Events
+  | 'memory.visibility.updated'
+  | 'memory.locked'
+  | 'memory.unlocked'
+  | 'memory.deleted'
+  | 'memory.export.requested'
+  | 'memory.export.ready';
 
 export interface CicdOasisEvent {
   vtid: string;
