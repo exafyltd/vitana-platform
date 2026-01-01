@@ -200,7 +200,8 @@ export function shouldStoreInMemory(content: string, direction: 'user' | 'assist
   // Skip very short messages (less than 3 words) unless they contain key info
   if (wordCount < 3) {
     // Check if it contains important keywords despite being short
-    const hasImportantInfo = /\b(name|heiß|heiss|bin|from|aus|jahre|old|live|wohne|email|phone)\b/i.test(lower);
+    // VTID-01109 rev3: Added heimatstadt, wohnort, herkunft
+    const hasImportantInfo = /\b(name|heiß|heiss|bin|from|aus|jahre|old|live|wohne|wohnort|heimatstadt|herkunft|email|phone)\b/i.test(lower);
     if (!hasImportantInfo) {
       console.log(`[VTID-01109] Skipping trivial message (${wordCount} words): "${lower.substring(0, 30)}..."`);
       return false;
@@ -238,9 +239,10 @@ export function shouldStoreInMemory(content: string, direction: 'user' | 'assist
   }
 
   // Check if message contains meaningful personal/contextual information
+  // VTID-01109 rev3: Added heimatstadt, wohnort, herkunft, lebe
   const hasMeaningfulContent =
     // Personal info patterns
-    /\b(name|heiß|heiss|ich bin|i am|from|aus|born|geboren|live|wohne|work|arbeit|email|phone|address|adresse)\b/i.test(lower) ||
+    /\b(name|heiß|heiss|ich bin|i am|from|aus|born|geboren|live|wohne|wohnort|heimatstadt|herkunft|lebe|work|arbeit|email|phone|address|adresse)\b/i.test(lower) ||
     // Preference patterns
     /\b(like|mag|love|liebe|prefer|bevorzuge|favorite|liebling|hate|hasse|always|immer|never|nie)\b/i.test(lower) ||
     // Relationship patterns
@@ -383,15 +385,27 @@ function classifyDevCategory(content: string): string {
     /\bdu kannst mich.*nennen\b/i,
     /\bsie können mich.*nennen\b/i,
     // Location/origin patterns (fixed: removed trailing space from "from")
+    // VTID-01109 rev3: Added missing German location words
     /\bi'm from\b/i,
     /\bi am from\b/i,
     /\bi come from\b/i,
     /\bborn in\b/i,
     /\bhometown\b/i,
     /\bi live in\b/i,
+    /\bi live\b/i,
     /\bich komme aus\b/i,
+    /\bkomme aus\b/i,              // without "ich" prefix
     /\bich wohne in\b/i,
+    /\bich wohne\b/i,              // without "in" suffix
+    /\bwohne in\b/i,               // without "ich" prefix
     /\bgeboren in\b/i,
+    /\bheimatstadt\b/i,            // German: hometown
+    /\bmeine heimatstadt\b/i,      // my hometown
+    /\bwohnort\b/i,                // German: residence/place of living
+    /\bmein wohnort\b/i,           // my residence
+    /\bich lebe in\b/i,            // I live in
+    /\blebe in\b/i,                // live in
+    /\bherkunft\b/i,               // origin
     // Age/birthday patterns
     /\bmy age\b/i,
     /\byears old\b/i,
