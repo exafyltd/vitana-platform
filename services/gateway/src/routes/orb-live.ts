@@ -178,8 +178,9 @@ interface OrbConversation {
 // VTID-0135: In-memory conversation store (session-scoped)
 const orbConversations = new Map<string, OrbConversation>();
 
-// VTID-0135: Conversation timeout: 30 minutes
-const CONVERSATION_TIMEOUT_MS = 30 * 60 * 1000;
+// VTID-0135: Conversation timeout
+// VTID-01109: Extended from 30 minutes to 24 hours for better conversation continuity
+const CONVERSATION_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 // =============================================================================
 // VTID-01039: ORB Session Transcript Store
@@ -1322,6 +1323,7 @@ router.post('/chat', async (req: Request, res: Response) => {
 /**
  * VTID-0135: POST /end-session - End an ORB voice conversation session
  * VTID-01039: Now finalizes session and emits ONE orb.session.summary event
+ * VTID-01109: Don't delete conversation - it should persist for memory continuity
  */
 router.post('/end-session', async (req: Request, res: Response) => {
   const { orb_session_id, conversation_id } = req.body;
@@ -1335,9 +1337,12 @@ router.post('/end-session', async (req: Request, res: Response) => {
 
   console.log(`[VTID-01039] Ending session: ${orb_session_id}`);
 
-  // Find and remove conversation
+  // VTID-01109: Don't delete conversation - keep it for memory continuity
+  // The conversation should persist until it expires naturally (30 min timeout)
+  // or until the user explicitly logs out
+  // REMOVED: orbConversations.delete(conversation_id);
   if (conversation_id && orbConversations.has(conversation_id)) {
-    orbConversations.delete(conversation_id);
+    console.log(`[VTID-01109] Keeping conversation ${conversation_id} for memory continuity`);
   }
 
   // VTID-01039: Finalize transcript and emit summary instead of orb.session.ended
