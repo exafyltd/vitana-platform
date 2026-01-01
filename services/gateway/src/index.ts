@@ -91,6 +91,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const memoryRouter = require('./routes/memory').default;
   // VTID-01088: Matchmaking Engine v1 - People <-> People/Groups/Events/Services/Products/Locations/Live Rooms
   const matchmakingRouter = require('./routes/matchmaking').default;
+  // VTID-01083: Longevity Signal Layer - diary/memory to health signals bridge
+  const longevityRouter = require('./routes/longevity').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -278,6 +280,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01088: Matchmaking Engine v1 - deterministic matching for longevity community
   mountRouterSync(app, '/api/v1/match', matchmakingRouter, { owner: 'matchmaking' });
+
+  // VTID-01083: Longevity Signal Layer - diary/memory to health signals bridge
+  mountRouterSync(app, '/api/v1/longevity', longevityRouter, { owner: 'longevity' });
 
   // VTID-01063: commandhub router (note: /board route REMOVED, use board-adapter)
   mountRouterSync(app, '/api/v1/commandhub', commandhub, { owner: 'commandhub' });
