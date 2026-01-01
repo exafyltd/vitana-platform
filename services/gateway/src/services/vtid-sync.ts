@@ -22,6 +22,7 @@ interface VtidStatusMapping {
 
 // Event topic to VTID status mappings
 // VTID-01005: Added terminal lifecycle events as authoritative terminal states
+// VTID-01111: Added deploy.success/failed from CI/CD telemetry action
 const STATUS_MAPPINGS: VtidStatusMapping = {
   'task.started': 'active',
   'task.in_progress': 'active',
@@ -46,6 +47,11 @@ const STATUS_MAPPINGS: VtidStatusMapping = {
   'cicd.deploy.service.failed': 'blocked',
   'deploy.gateway.success': 'complete',
   'deploy.gateway.failed': 'blocked',
+  // VTID-01111: CI/CD telemetry action events
+  'deploy.success': 'complete',
+  'deploy.failed': 'blocked',
+  'cicd.merge.success': 'complete',
+  'cicd.merge.failed': 'blocked',
 };
 
 // Status hierarchy (prevent downgrading)

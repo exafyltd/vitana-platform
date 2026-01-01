@@ -220,19 +220,27 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
         }
       }
 
-      // If not terminal from lifecycle events, check other OASIS patterns
+      // VTID-01111: If not terminal from lifecycle events, check other OASIS patterns
+      // Check deploy events BEFORE checking lifecycle.started so deploy success
+      // takes priority over started status
       if (!isTerminal) {
         const hasDeploySuccess = vtidEvents.some((e: any) => {
           const topic = (e.topic || '').toLowerCase();
+          // VTID-01111: Added 'deploy.success' which is emitted by CI/CD telemetry action
           return topic === 'deploy.gateway.success' ||
+                 topic === 'deploy.success' ||
                  topic === 'cicd.deploy.service.succeeded' ||
-                 topic === 'cicd.github.safe_merge.executed';
+                 topic === 'cicd.github.safe_merge.executed' ||
+                 topic === 'cicd.merge.success';
         });
 
         const hasDeployFailed = vtidEvents.some((e: any) => {
           const topic = (e.topic || '').toLowerCase();
+          // VTID-01111: Added 'deploy.failed' which is emitted by CI/CD telemetry action
           return topic === 'deploy.gateway.failed' ||
-                 topic === 'cicd.deploy.service.failed';
+                 topic === 'deploy.failed' ||
+                 topic === 'cicd.deploy.service.failed' ||
+                 topic === 'cicd.merge.failed';
         });
 
         if (hasDeploySuccess) {
