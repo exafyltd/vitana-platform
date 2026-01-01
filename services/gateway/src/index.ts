@@ -89,6 +89,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const healthRouter = require('./routes/health').default;
   // VTID-01105: Memory Gateway Routes - memory write/context for ORB
   const memoryRouter = require('./routes/memory').default;
+  // VTID-01083: Longevity Signal Layer - diary/memory to health signals bridge
+  const longevityRouter = require('./routes/longevity').default;
   // VTID-01084: Community Personalization v1 - longevity-focused groups/meetups
   const communityRouter = require('./routes/community').default;
 
@@ -275,6 +277,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01105: Memory Gateway - write/context endpoints for ORB memory
   mountRouterSync(app, '/api/v1/memory', memoryRouter, { owner: 'memory' });
+
+  // VTID-01083: Longevity Signal Layer - diary/memory to health signals bridge
+  mountRouterSync(app, '/api/v1/longevity', longevityRouter, { owner: 'longevity' });
 
   // VTID-01084: Community Personalization v1 - groups, meetups, recommendations
   mountRouterSync(app, '/api/v1/community', communityRouter, { owner: 'community' });

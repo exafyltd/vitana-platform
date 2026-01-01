@@ -422,8 +422,8 @@ Operating mode:
 async function generateMemoryEnhancedSystemInstruction(
   session: { tenant: string; role: string; route?: string; selectedId?: string }
 ): Promise<{ instruction: string; memoryContext: OrbMemoryContext | null }> {
-  // Base instruction
-  const baseInstruction = `You are VITANA ORB, a voice-first multimodal assistant.
+  // Base instruction - VTID-01107: Updated to support persistent memory
+  const baseInstruction = `You are VITANA ORB, a voice-first multimodal assistant with persistent memory.
 
 Context:
 - tenant: ${session.tenant}
@@ -436,7 +436,8 @@ Operating mode:
 - Always listening while ORB overlay is open.
 - Read-only: do not mutate system state.
 - Be concise, contextual, and helpful.
-- Remember the user and personalize responses based on past conversations.`;
+- You have PERSISTENT MEMORY - you remember users across sessions.
+- NEVER claim you cannot remember or that your memory resets.`;
 
   // Check if memory bridge is enabled
   if (!isMemoryBridgeEnabled()) {
@@ -488,6 +489,7 @@ setInterval(cleanupExpiredSessions, 5 * 60 * 1000);
 /**
  * Call Gemini API with audio transcription request
  * Uses Gemini API directly (NOT Vertex)
+ * VTID-01107: Now includes memory context injection for dev-sandbox
  */
 async function callGeminiWithAudio(
   session: OrbLiveSession,
@@ -499,7 +501,22 @@ async function callGeminiWithAudio(
   }
 
   try {
-    const systemInstruction = generateSystemInstruction(session);
+    // VTID-01107: Use memory-enhanced system instruction in dev-sandbox
+    let systemInstruction: string;
+    if (isDevSandbox()) {
+      const { instruction, memoryContext } = await generateMemoryEnhancedSystemInstruction({
+        tenant: session.tenant,
+        role: session.role,
+        route: session.route,
+        selectedId: session.selectedId
+      });
+      systemInstruction = instruction;
+      if (memoryContext && memoryContext.ok && memoryContext.items.length > 0) {
+        console.log(`[VTID-01107] Memory injected into /audio: ${memoryContext.items.length} items`);
+      }
+    } else {
+      systemInstruction = generateSystemInstruction(session);
+    }
 
     // Build request for Gemini API
     const requestBody = {
@@ -561,6 +578,7 @@ async function callGeminiWithAudio(
 
 /**
  * Call Gemini API with text input (for testing/fallback)
+ * VTID-01107: Now includes memory context injection for dev-sandbox
  */
 async function callGeminiWithText(
   session: OrbLiveSession,
@@ -571,7 +589,22 @@ async function callGeminiWithText(
   }
 
   try {
-    const systemInstruction = generateSystemInstruction(session);
+    // VTID-01107: Use memory-enhanced system instruction in dev-sandbox
+    let systemInstruction: string;
+    if (isDevSandbox()) {
+      const { instruction, memoryContext } = await generateMemoryEnhancedSystemInstruction({
+        tenant: session.tenant,
+        role: session.role,
+        route: session.route,
+        selectedId: session.selectedId
+      });
+      systemInstruction = instruction;
+      if (memoryContext && memoryContext.ok && memoryContext.items.length > 0) {
+        console.log(`[VTID-01107] Memory injected into /text: ${memoryContext.items.length} items`);
+      }
+    } else {
+      systemInstruction = generateSystemInstruction(session);
+    }
 
     const requestBody = {
       contents: [
