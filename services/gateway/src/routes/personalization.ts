@@ -202,8 +202,8 @@ router.get('/snapshot', async (req: Request, res: Response) => {
     'success',
     `Personalization snapshot generated with ${snapshot.weaknesses.length} weaknesses`,
     {
-      tenant_id: ctx.tenant_id,
-      user_id: ctx.user_id,
+      tenant_id: ctx.tenant_id ?? undefined,
+      user_id: ctx.user_id ?? undefined,
       weaknesses: snapshot.weaknesses,
       top_topics: snapshot.top_topics,
       snapshot_id: snapshot.snapshot_id
