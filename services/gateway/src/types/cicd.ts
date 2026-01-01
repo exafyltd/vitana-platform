@@ -229,7 +229,11 @@ export type CicdEventType =
   | 'orb.memory.context_injected'
   // VTID-01107: ORB Memory Debug Events
   | 'orb.memory.debug_requested'
-  | 'orb.memory.debug_snapshot';
+  | 'orb.memory.debug_snapshot'
+  // VTID-01086: Memory Garden Events
+  | 'memory.garden.progress.read'
+  | 'memory.garden.ui.refreshed'
+  | 'memory.garden.longevity_panel.read';
 
 export interface CicdOasisEvent {
   vtid: string;
