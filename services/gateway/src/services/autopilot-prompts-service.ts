@@ -435,7 +435,7 @@ export async function generatePrompts(
     let matches: MatchDaily[] = [];
 
     if (matchesResp.ok) {
-      matches = await matchesResp.json();
+      matches = await matchesResp.json() as MatchDaily[];
     } else {
       // matches_daily table might not exist yet (VTID-01088 dependency)
       console.warn(`[VTID-01089] matches_daily query failed (table may not exist yet): ${matchesResp.status}`);
@@ -461,8 +461,8 @@ export async function generatePrompts(
       });
 
       if (existingResp.ok) {
-        const existing = await existingResp.json();
-        const existingMatchIds = new Set(existing.map((e: any) => e.match_id));
+        const existing = await existingResp.json() as Array<{ match_id: string }>;
+        const existingMatchIds = new Set(existing.map((e) => e.match_id));
         matches = matches.filter(m => !existingMatchIds.has(m.id));
       }
     }
@@ -645,7 +645,7 @@ export async function getTodayPrompts(
       };
     }
 
-    const prompts = await promptsResp.json();
+    const prompts = await promptsResp.json() as AutopilotPrompt[];
 
     return {
       ok: true,
@@ -704,7 +704,7 @@ export async function executePromptAction(
       return { ok: false, prompt_id: promptId, action: action.action, new_state: 'shown', error: 'Failed to get prompt' };
     }
 
-    const prompts = await promptResp.json();
+    const prompts = await promptResp.json() as AutopilotPrompt[];
     if (!prompts || prompts.length === 0) {
       return { ok: false, prompt_id: promptId, action: action.action, new_state: 'shown', error: 'Prompt not found' };
     }
@@ -894,9 +894,9 @@ async function getTopCandidates(
       return [];
     }
 
-    const matches = await matchesResp.json();
+    const matches = await matchesResp.json() as MatchDaily[];
 
-    return matches.map((m: MatchDaily) => ({
+    return matches.map((m) => ({
       id: m.id,
       type: m.match_type,
       title: m.target_title,
