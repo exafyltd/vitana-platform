@@ -230,6 +230,10 @@ export type CicdEventType =
   // VTID-01107: ORB Memory Debug Events
   | 'orb.memory.debug_requested'
   | 'orb.memory.debug_snapshot'
+  // VTID-01096: Cross-Domain Personalization Events
+  | 'personalization.snapshot.read'
+  | 'personalization.applied'
+  | 'personalization.audit.written'
   // VTID-01095: Daily Scheduler Events
   | 'vtid.daily_recompute.started'
   | 'vtid.stage.longevity.success'

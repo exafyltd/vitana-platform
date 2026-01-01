@@ -91,6 +91,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const healthRouter = require('./routes/health').default;
   // VTID-01105: Memory Gateway Routes - memory write/context for ORB
   const memoryRouter = require('./routes/memory').default;
+  // VTID-01096: Cross-Domain Personalization v1 - snapshot endpoint
+  const personalizationSnapshotRouter = require('./routes/personalization').default;
   // VTID-01095: Daily Scheduler Routes - daily recompute pipeline
   const schedulerRouter = require('./routes/scheduler').default;
   // VTID-01093: Unified Interest Topics Layer - topic registry + user profile
@@ -321,7 +323,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01094: Match Quality Feedback Loop - feedback on matches (mounted after matchmaking for /:id/feedback)
   mountRouterSync(app, '/api/v1/match', matchFeedbackRouter, { owner: 'match-feedback' });
-  mountRouterSync(app, '/api/v1/personalization', personalizationRouter, { owner: 'personalization' });
+  mountRouterSync(app, '/api/v1/personalization', personalizationRouter, { owner: 'personalization-changes' });
+
+  // VTID-01096: Cross-Domain Personalization v1 (snapshot endpoint)
+  mountRouterSync(app, '/api/v1/personalization', personalizationSnapshotRouter, { owner: 'personalization-snapshot' });
 
   // VTID-01083: Longevity Signal Layer - diary/memory to health signals bridge
   mountRouterSync(app, '/api/v1/longevity', longevityRouter, { owner: 'longevity' });
