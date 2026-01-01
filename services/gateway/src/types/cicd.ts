@@ -234,6 +234,22 @@ export type CicdEventType =
   | 'personalization.snapshot.read'
   | 'personalization.applied'
   | 'personalization.audit.written'
+  // VTID-01095: Daily Scheduler Events
+  | 'vtid.daily_recompute.started'
+  | 'vtid.stage.longevity.success'
+  | 'vtid.stage.longevity.failed'
+  | 'vtid.stage.topics.success'
+  | 'vtid.stage.topics.failed'
+  | 'vtid.stage.community_recs.success'
+  | 'vtid.stage.community_recs.failed'
+  | 'vtid.stage.matches.success'
+  | 'vtid.stage.matches.failed'
+  | 'vtid.daily_recompute.completed'  // Terminal success
+  | 'vtid.daily_recompute.failed'     // Terminal failure
+  // VTID-01109: ORB Conversation Persistence Events
+  | 'orb.conversation.restored'
+  | 'orb.conversation.saved'
+  | 'orb.conversation.cleared'
   // VTID-01086: Memory Garden Events
   | 'memory.garden.progress.read'
   | 'memory.garden.ui.refreshed'

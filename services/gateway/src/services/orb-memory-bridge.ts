@@ -87,25 +87,59 @@ export interface OrbMemoryContext {
 
 /**
  * Check if running in dev-sandbox environment
+ * VTID-01106: Now accepts flexible dev environment naming
  */
 export function isDevSandbox(): boolean {
-  const env = process.env.ENVIRONMENT || process.env.VITANA_ENV;
-  return env === 'dev-sandbox';
+  const env = (process.env.ENVIRONMENT || process.env.VITANA_ENV || '').toLowerCase();
+  // Accept: dev-sandbox, dev, development, sandbox, or any env containing 'dev' or 'sandbox'
+  const isDevEnv = env === 'dev-sandbox' ||
+                   env === 'dev' ||
+                   env === 'development' ||
+                   env === 'sandbox' ||
+                   env.includes('dev') ||
+                   env.includes('sandbox');
+  return isDevEnv;
 }
+
+// Cache for memory bridge status (to avoid repeated logging)
+let _memoryBridgeStatusLogged = false;
+let _cachedMemoryBridgeEnabled: boolean | null = null;
 
 /**
  * Check if Memory Bridge is enabled
  * Only active in dev-sandbox mode
  */
 export function isMemoryBridgeEnabled(): boolean {
+  // Return cached result if available
+  if (_cachedMemoryBridgeEnabled !== null) {
+    return _cachedMemoryBridgeEnabled;
+  }
+
+  const env = process.env.ENVIRONMENT || process.env.VITANA_ENV || '(not set)';
+
   // Only enable in dev-sandbox
   if (!isDevSandbox()) {
+    if (!_memoryBridgeStatusLogged) {
+      console.log(`[VTID-01106] Memory bridge DISABLED: ENVIRONMENT='${env}' is not a dev environment`);
+      _memoryBridgeStatusLogged = true;
+    }
+    _cachedMemoryBridgeEnabled = false;
     return false;
   }
   // Check if explicitly disabled
   if (process.env.ORB_MEMORY_BRIDGE_DISABLED === 'true') {
+    if (!_memoryBridgeStatusLogged) {
+      console.log(`[VTID-01106] Memory bridge DISABLED: ORB_MEMORY_BRIDGE_DISABLED=true`);
+      _memoryBridgeStatusLogged = true;
+    }
+    _cachedMemoryBridgeEnabled = false;
     return false;
   }
+  if (!_memoryBridgeStatusLogged) {
+    console.log(`[VTID-01106] Memory bridge ENABLED for env='${env}'`);
+    _memoryBridgeStatusLogged = true;
+  }
+  _cachedMemoryBridgeEnabled = true;
   return true;
 }
 
