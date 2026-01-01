@@ -99,6 +99,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const communityRouter = require('./routes/community').default;
   // VTID-01087: Relationship Graph Memory Routes
   const relationshipsRouter = require('./routes/relationships').default;
+  // VTID-01090: Live Rooms + Events as Relationship Nodes
+  const liveRouter = require('./routes/live').default;
+  const { communityMeetupRouter } = require('./routes/live');
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -298,6 +301,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01087: Relationship Graph Memory - matchmaking spine
   mountRouterSync(app, '/api/v1/relationships', relationshipsRouter, { owner: 'relationships' });
+
+  // VTID-01090: Live Rooms + Events as Relationship Nodes
+  mountRouterSync(app, '/api/v1/live', liveRouter, { owner: 'live' });
 
   // VTID-01063: commandhub router (note: /board route REMOVED, use board-adapter)
   mountRouterSync(app, '/api/v1/commandhub', commandhub, { owner: 'commandhub' });
