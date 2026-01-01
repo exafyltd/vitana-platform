@@ -79,6 +79,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const operatorRouter = require('./routes/operator').default;
   const { router: telemetryRouter } = require('./routes/telemetry');
   const autopilotRouter = require('./routes/autopilot').default;
+  // VTID-01089: Autopilot Matchmaking Prompts (One-Tap Consent + Rate Limits + Opt-out)
+  const autopilotPromptsRouter = require('./routes/autopilot-prompts').default;
   const assistantRouter = require('./routes/assistant').default;
   const orbLiveRouter = require('./routes/orb-live').default;
   // VTID-01046: Me Context Routes - role context and role switching
@@ -91,6 +93,17 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const memoryRouter = require('./routes/memory').default;
   // VTID-01093: Unified Interest Topics Layer - topic registry + user profile
   const topicsRouter = require('./routes/topics').default;
+  // VTID-01088: Matchmaking Engine v1 - People <-> People/Groups/Events/Services/Products/Locations/Live Rooms
+  const matchmakingRouter = require('./routes/matchmaking').default;
+  // VTID-01083: Longevity Signal Layer - diary/memory to health signals bridge
+  const longevityRouter = require('./routes/longevity').default;
+  // VTID-01084: Community Personalization v1 - longevity-focused groups/meetups
+  const communityRouter = require('./routes/community').default;
+  // VTID-01087: Relationship Graph Memory Routes
+  const relationshipsRouter = require('./routes/relationships').default;
+  // VTID-01090: Live Rooms + Events as Relationship Nodes
+  const liveRouter = require('./routes/live').default;
+  const { communityMeetupRouter } = require('./routes/live');
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -258,6 +271,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-0532: Autopilot Task Extractor & Planner Handoff
   mountRouterSync(app, '/api/v1/autopilot', autopilotRouter, { owner: 'autopilot' });
 
+  // VTID-01089: Autopilot Matchmaking Prompts (prefs, prompts/today, prompts/generate, prompts/:id/action)
+  mountRouterSync(app, '/api/v1/autopilot', autopilotPromptsRouter, { owner: 'autopilot-prompts' });
+
   // VTID-0150-B + VTID-0151 + VTID-0538: Assistant Core + Knowledge Hub
   mountRouterSync(app, '/api/v1/assistant', assistantRouter, { owner: 'assistant' });
 
@@ -278,6 +294,21 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01093: Unified Interest Topics Layer - topic registry + user profile
   mountRouterSync(app, '/api/v1/topics', topicsRouter, { owner: 'topics' });
+
+  // VTID-01088: Matchmaking Engine v1 - deterministic matching for longevity community
+  mountRouterSync(app, '/api/v1/match', matchmakingRouter, { owner: 'matchmaking' });
+
+  // VTID-01083: Longevity Signal Layer - diary/memory to health signals bridge
+  mountRouterSync(app, '/api/v1/longevity', longevityRouter, { owner: 'longevity' });
+
+  // VTID-01084: Community Personalization v1 - groups, meetups, recommendations
+  mountRouterSync(app, '/api/v1/community', communityRouter, { owner: 'community' });
+
+  // VTID-01087: Relationship Graph Memory - matchmaking spine
+  mountRouterSync(app, '/api/v1/relationships', relationshipsRouter, { owner: 'relationships' });
+
+  // VTID-01090: Live Rooms + Events as Relationship Nodes
+  mountRouterSync(app, '/api/v1/live', liveRouter, { owner: 'live' });
 
   // VTID-01063: commandhub router (note: /board route REMOVED, use board-adapter)
   mountRouterSync(app, '/api/v1/commandhub', commandhub, { owner: 'commandhub' });
