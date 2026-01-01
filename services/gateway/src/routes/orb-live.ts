@@ -418,12 +418,30 @@ Operating mode:
 /**
  * VTID-01106: Generate memory-enhanced system instruction for ORB chat
  * Fetches user memory context and injects it into the system prompt
+ *
+ * BUG FIX: Now returns different base instructions depending on whether memory is available.
+ * Previously claimed "persistent memory" even when none was available, confusing the LLM.
  */
 async function generateMemoryEnhancedSystemInstruction(
   session: { tenant: string; role: string; route?: string; selectedId?: string }
 ): Promise<{ instruction: string; memoryContext: OrbMemoryContext | null }> {
-  // Base instruction - VTID-01107: Updated to support persistent memory
-  const baseInstruction = `You are VITANA ORB, a voice-first multimodal assistant with persistent memory.
+  // Base instruction WITHOUT memory claims (used when memory is unavailable)
+  const baseInstructionNoMemory = `You are VITANA ORB, a voice-first multimodal assistant.
+
+Context:
+- tenant: ${session.tenant}
+- role: ${session.role}
+- route: ${session.route || 'unknown'}
+- selectedId: ${session.selectedId || 'none'}
+
+Operating mode:
+- Voice conversation is primary.
+- Always listening while ORB overlay is open.
+- Read-only: do not mutate system state.
+- Be concise, contextual, and helpful.`;
+
+  // Base instruction WITH memory claims (used when memory IS available)
+  const baseInstructionWithMemory = `You are VITANA ORB, a voice-first multimodal assistant with persistent memory.
 
 Context:
 - tenant: ${session.tenant}
@@ -441,28 +459,36 @@ Operating mode:
 
   // Check if memory bridge is enabled
   if (!isMemoryBridgeEnabled()) {
-    console.log('[VTID-01106] Memory bridge disabled, using base instruction');
-    return { instruction: baseInstruction, memoryContext: null };
+    console.log('[VTID-01106] Memory bridge disabled, using base instruction (no memory claims)');
+    return { instruction: baseInstructionNoMemory, memoryContext: null };
   }
 
   try {
     // Fetch memory context for dev user
     const memoryContext = await fetchDevMemoryContext();
 
-    if (!memoryContext.ok || memoryContext.items.length === 0) {
-      console.log(`[VTID-01106] No memory context available: ${memoryContext.error || 'no items'}`);
-      return { instruction: baseInstruction, memoryContext };
+    if (!memoryContext.ok) {
+      console.log(`[VTID-01106] Memory fetch failed: ${memoryContext.error}`);
+      // Return instruction WITHOUT memory claims since we couldn't fetch memory
+      return { instruction: baseInstructionNoMemory, memoryContext };
     }
 
-    // Build memory-enhanced instruction
-    const enhancedInstruction = buildMemoryEnhancedInstruction(baseInstruction, memoryContext);
+    if (memoryContext.items.length === 0) {
+      console.log('[VTID-01106] No memory items found for user');
+      // Return instruction WITHOUT memory claims since there's nothing to remember
+      return { instruction: baseInstructionNoMemory, memoryContext };
+    }
+
+    // Build memory-enhanced instruction (WITH memory claims + actual memory content)
+    const enhancedInstruction = buildMemoryEnhancedInstruction(baseInstructionWithMemory, memoryContext);
 
     console.log(`[VTID-01106] Memory-enhanced instruction generated with ${memoryContext.items.length} items`);
 
     return { instruction: enhancedInstruction, memoryContext };
   } catch (err: any) {
     console.warn('[VTID-01106] Failed to fetch memory context:', err.message);
-    return { instruction: baseInstruction, memoryContext: null };
+    // Return instruction WITHOUT memory claims on error
+    return { instruction: baseInstructionNoMemory, memoryContext: null };
   }
 }
 
@@ -1252,6 +1278,14 @@ router.post('/chat', async (req: Request, res: Response) => {
 
     console.log(`[VTID-0135] Chat response generated via ${provider}`);
 
+    // VTID-01106: Add memory debug info to response for debugging
+    const memoryDebug = {
+      memory_bridge_enabled: isMemoryBridgeEnabled(),
+      memory_context_ok: memoryContext?.ok ?? false,
+      memory_items_count: memoryContext?.items?.length ?? 0,
+      memory_injected: Boolean(memoryContext?.ok && memoryContext?.items?.length > 0)
+    };
+
     const response: OrbChatResponse = {
       ok: true,
       conversation_id: conversationId,
@@ -1260,7 +1294,8 @@ router.post('/chat', async (req: Request, res: Response) => {
         provider,
         model,
         mode: 'orb_voice',
-        vtid: 'VTID-0135'
+        vtid: 'VTID-0135',
+        ...memoryDebug // Include memory debug info in response
       }
     };
 
