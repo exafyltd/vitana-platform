@@ -230,6 +230,26 @@ export type CicdEventType =
   // VTID-01107: ORB Memory Debug Events
   | 'orb.memory.debug_requested'
   | 'orb.memory.debug_snapshot'
+  // VTID-01096: Cross-Domain Personalization Events
+  | 'personalization.snapshot.read'
+  | 'personalization.applied'
+  | 'personalization.audit.written'
+  // VTID-01095: Daily Scheduler Events
+  | 'vtid.daily_recompute.started'
+  | 'vtid.stage.longevity.success'
+  | 'vtid.stage.longevity.failed'
+  | 'vtid.stage.topics.success'
+  | 'vtid.stage.topics.failed'
+  | 'vtid.stage.community_recs.success'
+  | 'vtid.stage.community_recs.failed'
+  | 'vtid.stage.matches.success'
+  | 'vtid.stage.matches.failed'
+  | 'vtid.daily_recompute.completed'  // Terminal success
+  | 'vtid.daily_recompute.failed'     // Terminal failure
+  // VTID-01109: ORB Conversation Persistence Events
+  | 'orb.conversation.restored'
+  | 'orb.conversation.saved'
+  | 'orb.conversation.cleared'
   // VTID-01086: Memory Garden Events
   | 'memory.garden.progress.read'
   | 'memory.garden.ui.refreshed'
@@ -248,7 +268,11 @@ export type CicdEventType =
   | 'live.room.left'
   | 'live.room.ended'
   | 'live.highlight.created'
-  | 'meetup.rsvp.updated';
+  | 'meetup.rsvp.updated'
+  // VTID-01097: Diary Template Events
+  | 'diary.template.shown'
+  | 'diary.template.submitted'
+  | 'memory.garden.extract.triggered';
 
 export interface CicdOasisEvent {
   vtid: string;

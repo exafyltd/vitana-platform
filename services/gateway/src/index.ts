@@ -91,6 +91,17 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const healthRouter = require('./routes/health').default;
   // VTID-01105: Memory Gateway Routes - memory write/context for ORB
   const memoryRouter = require('./routes/memory').default;
+  // VTID-01096: Cross-Domain Personalization v1 - snapshot endpoint
+  const personalizationSnapshotRouter = require('./routes/personalization').default;
+  // VTID-01095: Daily Scheduler Routes - daily recompute pipeline
+  const schedulerRouter = require('./routes/scheduler').default;
+  // VTID-01093: Unified Interest Topics Layer - topic registry + user profile
+  const topicsRouter = require('./routes/topics').default;
+  // VTID-01092: Services + Products as Relationship Memory
+  const offersRouter = require('./routes/offers').default;
+  // VTID-01091: Locations Memory (Places + Habits + Meetups) + Discovery
+  const locationsRouter = require('./routes/locations').default;
+  const { discoveryRouter, locationPrefsRouter } = require('./routes/locations');
   // VTID-01088: Matchmaking Engine v1 - People <-> People/Groups/Events/Services/Products/Locations/Live Rooms
   const matchmakingRouter = require('./routes/matchmaking').default;
   // VTID-01083: Longevity Signal Layer - diary/memory to health signals bridge
@@ -102,6 +113,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01090: Live Rooms + Events as Relationship Nodes
   const liveRouter = require('./routes/live').default;
   const { communityMeetupRouter } = require('./routes/live');
+  // VTID-01094: Match Quality Feedback Loop
+  const matchFeedbackRouter = require('./routes/match-feedback').default;
+  const { personalizationRouter } = require('./routes/match-feedback');
+  // VTID-01097: Diary Templates Gateway - guided diary templates
+  const diaryRouter = require('./routes/diary').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -290,8 +306,29 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01105: Memory Gateway - write/context endpoints for ORB memory
   mountRouterSync(app, '/api/v1/memory', memoryRouter, { owner: 'memory' });
 
+  // VTID-01095: Daily Scheduler - daily recompute pipeline
+  mountRouterSync(app, '/api/v1/scheduler', schedulerRouter, { owner: 'scheduler' });
+
+  // VTID-01093: Unified Interest Topics Layer - topic registry + user profile
+  mountRouterSync(app, '/api/v1/topics', topicsRouter, { owner: 'topics' });
+
+  // VTID-01092: Services + Products as Relationship Memory (catalog + offers)
+  mountRouterSync(app, '/api/v1', offersRouter, { owner: 'offers' });
+
+  // VTID-01091: Locations Memory + Discovery + Preferences
+  mountRouterSync(app, '/api/v1/locations', locationsRouter, { owner: 'locations' });
+  mountRouterSync(app, '/api/v1/discover', discoveryRouter, { owner: 'discovery' });
+  mountRouterSync(app, '/api/v1/location', locationPrefsRouter, { owner: 'location-prefs' });
+
   // VTID-01088: Matchmaking Engine v1 - deterministic matching for longevity community
   mountRouterSync(app, '/api/v1/match', matchmakingRouter, { owner: 'matchmaking' });
+
+  // VTID-01094: Match Quality Feedback Loop - feedback on matches (mounted after matchmaking for /:id/feedback)
+  mountRouterSync(app, '/api/v1/match', matchFeedbackRouter, { owner: 'match-feedback' });
+  mountRouterSync(app, '/api/v1/personalization', personalizationRouter, { owner: 'personalization-changes' });
+
+  // VTID-01096: Cross-Domain Personalization v1 (snapshot endpoint)
+  mountRouterSync(app, '/api/v1/personalization', personalizationSnapshotRouter, { owner: 'personalization-snapshot' });
 
   // VTID-01083: Longevity Signal Layer - diary/memory to health signals bridge
   mountRouterSync(app, '/api/v1/longevity', longevityRouter, { owner: 'longevity' });
@@ -304,6 +341,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01090: Live Rooms + Events as Relationship Nodes
   mountRouterSync(app, '/api/v1/live', liveRouter, { owner: 'live' });
+
+  // VTID-01097: Diary Templates - guided diary templates for memory quality
+  mountRouterSync(app, '/api/v1/diary', diaryRouter, { owner: 'diary' });
 
   // VTID-01063: commandhub router (note: /board route REMOVED, use board-adapter)
   mountRouterSync(app, '/api/v1/commandhub', commandhub, { owner: 'commandhub' });

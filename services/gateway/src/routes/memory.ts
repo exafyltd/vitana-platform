@@ -2,6 +2,7 @@
  * VTID-01105: ORB Memory Wiring v1 (Gateway)
  * VTID-01082: Memory Garden Core + Daily Diary Ingestion (Phase D Foundation)
  * VTID-01085: Memory Retrieve Router v1 (Unified Memory Access)
+ * VTID-01098: Memory Timeline & Life-Change Causality
  * VTID-01100: Memory Quality Metrics & Confidence Scoring
  *
  * Memory write/read endpoints and auto-write hooks for ORB conversations.
@@ -16,6 +17,8 @@
  * - POST /api/v1/memory/garden/extract - Extract garden nodes from diary entry (VTID-01082)
  * - GET  /api/v1/memory/garden/summary - Get garden summary (VTID-01082)
  * - POST /api/v1/memory/retrieve     - Unified memory retrieval gateway (VTID-01085)
+ * - GET  /api/v1/memory/timeline     - Get timeline (cached or computed) (VTID-01098)
+ * - POST /api/v1/memory/timeline/rebuild - Rebuild timeline snapshot (VTID-01098)
  * - POST /api/v1/memory/quality/compute - Compute quality metrics (VTID-01100)
  * - GET  /api/v1/memory/quality         - Get latest quality snapshot (VTID-01100)
  *
@@ -27,6 +30,7 @@
  * - VTID-01102 (context bridge)
  * - VTID-01104 (memory RPC)
  * - VTID-01085 (memory retrieve RPC)
+ * - VTID-01098 (timeline RPC)
  * - VTID-01100 (quality metrics RPC)
  */
 
@@ -35,6 +39,8 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
+// VTID-01091: Location extraction from diary entries
+import { processLocationMentionsFromDiary } from './locations';
 
 const router = Router();
 
@@ -63,7 +69,7 @@ type CategoryKey = typeof CATEGORY_KEYS[number];
 /**
  * Valid source types for memory items
  */
-const SOURCE_TYPES = ['orb_text', 'orb_voice', 'system'] as const;
+const SOURCE_TYPES = ['orb_text', 'orb_voice', 'diary', 'upload', 'system'] as const;
 type SourceType = typeof SOURCE_TYPES[number];
 
 /**
@@ -216,6 +222,40 @@ interface MemoryRetrieveResponse {
     };
     audit_id: string;
   };
+}
+
+// =============================================================================
+// VTID-01098: Timeline Constants & Types
+// =============================================================================
+
+/**
+ * Timeline query parameters
+ */
+const TimelineQuerySchema = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'from must be YYYY-MM-DD format'),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'to must be YYYY-MM-DD format'),
+  type: z.enum(['health', 'relationships', 'community', 'all']).optional().default('all')
+});
+
+/**
+ * Timeline entry type (matches RPC output)
+ */
+interface TimelineEntry {
+  date: string;
+  type: 'diary' | 'meetup' | 'live' | 'service' | 'relationship' | 'habit';
+  title: string;
+  evidence: {
+    sources: string[];
+    related_topics: string[];
+    related_people: number;
+  };
+  observed_changes: Array<{
+    metric: string;
+    delta: string;
+    window?: string;
+  }>;
+  confidence: number;
+  memory_item_id?: string;
 }
 
 // =============================================================================
@@ -430,6 +470,25 @@ async function emitGardenEvent(
 }
 
 /**
+ * VTID-01098: Emit a timeline-related OASIS event
+ */
+async function emitTimelineEvent(
+  type: 'memory.timeline.built' | 'memory.timeline.read',
+  status: 'info' | 'success' | 'warning' | 'error',
+  message: string,
+  payload: Record<string, unknown>
+): Promise<void> {
+  await emitOasisEvent({
+    vtid: 'VTID-01098',
+    type: type as any, // Cast to bypass strict type check (we're extending event types)
+    source: 'memory-timeline-gateway',
+    status,
+    message,
+    payload
+  }).catch(err => console.warn(`[VTID-01098] Failed to emit ${type}:`, err.message));
+}
+
+/**
  * Emit quality-related OASIS events (VTID-01100)
  */
 async function emitQualityEvent(
@@ -596,11 +655,34 @@ router.post('/write', async (req: Request, res: Response) => {
     }
   );
 
+  // VTID-01091: Extract location mentions from diary entries
+  let locationExtractionResult = null;
+  if (source === 'diary') {
+    try {
+      locationExtractionResult = await processLocationMentionsFromDiary(
+        token,
+        content,
+        occurred_at
+      );
+      if (locationExtractionResult.locations_created > 0 || locationExtractionResult.visits_created > 0) {
+        console.log(`[VTID-01091] Diary location extraction: ${locationExtractionResult.locations_created} locations, ${locationExtractionResult.visits_created} visits`);
+      }
+    } catch (err: any) {
+      console.warn('[VTID-01091] Diary location extraction failed (non-blocking):', err.message);
+    }
+  }
+
   return res.status(200).json({
     ok: true,
     id: result.id,
     category_key: result.category_key,
-    occurred_at: result.occurred_at
+    occurred_at: result.occurred_at,
+    ...(locationExtractionResult && {
+      location_extraction: {
+        locations_created: locationExtractionResult.locations_created,
+        visits_created: locationExtractionResult.visits_created
+      }
+    })
   });
 });
 
@@ -991,6 +1073,242 @@ router.get('/garden/progress', async (req: Request, res: Response) => {
   }
 });
 
+// =============================================================================
+// VTID-01098: Timeline Endpoints
+// =============================================================================
+
+/**
+ * GET /timeline -> GET /api/v1/memory/timeline?from=&to=
+ *
+ * Get timeline for the current user (cached or computed on-the-fly).
+ */
+router.get('/timeline', async (req: Request, res: Response) => {
+  console.log('[VTID-01098] GET /memory/timeline');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Validate query parameters
+  const queryValidation = TimelineQuerySchema.safeParse(req.query);
+  if (!queryValidation.success) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Invalid query parameters',
+      details: queryValidation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const { from, to, type } = queryValidation.data;
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Get user ID from token
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData?.user?.id) {
+      console.error('[VTID-01098] Failed to get user:', userError?.message);
+      return res.status(401).json({
+        ok: false,
+        error: 'UNAUTHENTICATED',
+        message: 'Failed to verify user'
+      });
+    }
+
+    const userId = userData.user.id;
+
+    // Call memory_get_timeline RPC
+    const { data, error } = await supabase.rpc('memory_get_timeline', {
+      p_user_id: userId,
+      p_from: from,
+      p_to: to
+    });
+
+    if (error) {
+      // Check if RPC doesn't exist
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01098] memory_get_timeline RPC not found (VTID-01098 migration not deployed yet)');
+        return res.status(503).json({
+          ok: false,
+          error: 'Timeline RPC not available (VTID-01098 dependency)'
+        });
+      }
+      console.error('[VTID-01098] memory_get_timeline RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    // Filter entries by type if specified
+    let entries = (data?.entries || []) as TimelineEntry[];
+    if (type !== 'all') {
+      const typeFilter: Record<string, string[]> = {
+        health: ['habit'],
+        relationships: ['relationship'],
+        community: ['meetup', 'live']
+      };
+      const allowedTypes = typeFilter[type] || [];
+      entries = entries.filter(entry => allowedTypes.includes(entry.type));
+    }
+
+    // Emit OASIS event
+    await emitTimelineEvent(
+      'memory.timeline.read',
+      'success',
+      `Timeline fetched: ${entries.length} entries`,
+      {
+        tenant_id: data?.tenant_id,
+        user_id: userId,
+        window: { from, to },
+        entry_count: entries.length,
+        type_filter: type,
+        cached: data?.cached || false
+      }
+    );
+
+    console.log(`[VTID-01098] Timeline fetched: ${entries.length} entries (cached: ${data?.cached || false})`);
+
+    return res.status(200).json({
+      ok: true,
+      entries,
+      entry_count: entries.length,
+      window: { from, to },
+      cached: data?.cached || false,
+      snapshot_date: data?.snapshot_date
+    });
+  } catch (err: any) {
+    console.error('[VTID-01098] memory_get_timeline error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * POST /timeline/rebuild -> POST /api/v1/memory/timeline/rebuild
+ *
+ * Force rebuild of timeline snapshot.
+ */
+router.post('/timeline/rebuild', async (req: Request, res: Response) => {
+  console.log('[VTID-01098] POST /memory/timeline/rebuild');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Validate request body (same as query params for timeline)
+  const bodyValidation = TimelineQuerySchema.safeParse(req.body);
+  if (!bodyValidation.success) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Invalid request body',
+      details: bodyValidation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const { from, to } = bodyValidation.data;
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Get user ID from token
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData?.user?.id) {
+      console.error('[VTID-01098] Failed to get user:', userError?.message);
+      return res.status(401).json({
+        ok: false,
+        error: 'UNAUTHENTICATED',
+        message: 'Failed to verify user'
+      });
+    }
+
+    const userId = userData.user.id;
+
+    // Call memory_build_timeline RPC (forces rebuild)
+    const { data, error } = await supabase.rpc('memory_build_timeline', {
+      p_user_id: userId,
+      p_from: from,
+      p_to: to
+    });
+
+    if (error) {
+      // Check if RPC doesn't exist
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01098] memory_build_timeline RPC not found (VTID-01098 migration not deployed yet)');
+        return res.status(503).json({
+          ok: false,
+          error: 'Timeline RPC not available (VTID-01098 dependency)'
+        });
+      }
+      console.error('[VTID-01098] memory_build_timeline RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    // Emit OASIS event
+    await emitTimelineEvent(
+      'memory.timeline.built',
+      'success',
+      `Timeline rebuilt: ${data?.entries || 0} entries`,
+      {
+        tenant_id: data?.tenant_id,
+        user_id: userId,
+        window: { from, to },
+        entry_count: data?.entries || 0,
+        snapshot_date: data?.snapshot_date
+      }
+    );
+
+    console.log(`[VTID-01098] Timeline rebuilt: ${data?.entries || 0} entries`);
+
+    return res.status(200).json({
+      ok: true,
+      entries: data?.entries || 0,
+      window: { from, to },
+      snapshot_date: data?.snapshot_date,
+      message: 'Timeline rebuilt successfully'
+    });
+  } catch (err: any) {
+    console.error('[VTID-01098] memory_build_timeline error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
 /**
  * GET /health -> GET /api/v1/memory/health
  *
@@ -1006,8 +1324,8 @@ router.get('/health', (_req: Request, res: Response) => {
     ok: true,
     status,
     service: 'memory-gateway',
-    version: '1.0.0',
-    vtid: 'VTID-01105',
+    version: '1.2.0',
+    vtids: ['VTID-01105', 'VTID-01082', 'VTID-01085', 'VTID-01086', 'VTID-01098'],
     timestamp: new Date().toISOString(),
     capabilities: {
       write: hasSupabaseUrl && hasSupabaseKey,
@@ -1019,6 +1337,9 @@ router.get('/health', (_req: Request, res: Response) => {
       retrieve_modes: RETRIEVE_MODES,
       diary: hasSupabaseUrl && hasSupabaseKey,
       garden: hasSupabaseUrl && hasSupabaseKey,
+      timeline: hasSupabaseUrl && hasSupabaseKey,
+      timeline_rebuild: hasSupabaseUrl && hasSupabaseKey,
+      timeline_types: ['health', 'relationships', 'community', 'all'],
       quality_metrics: hasSupabaseUrl && hasSupabaseKey
     },
     dependencies: {
@@ -1026,6 +1347,7 @@ router.get('/health', (_req: Request, res: Response) => {
       'VTID-01104': 'memory_rpc',
       'VTID-01082': 'memory_garden_diary',
       'VTID-01085': 'memory_retrieve_router',
+      'VTID-01098': 'timeline_rpc',
       'VTID-01100': 'quality_metrics_rpc'
     }
   });

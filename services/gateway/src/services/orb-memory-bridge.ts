@@ -37,16 +37,21 @@ export const DEV_IDENTITY = {
 
 /**
  * Memory context configuration
+ * VTID-01109: Increased limits to prevent losing personal details
  */
 const MEMORY_CONFIG = {
-  // Max items to fetch for context
-  DEFAULT_CONTEXT_LIMIT: 10,
-  // Categories relevant for ORB context
-  CONTEXT_CATEGORIES: ['conversation', 'preferences', 'goals', 'health', 'relationships'],
-  // Max age of memory items to include (24 hours)
-  MAX_AGE_HOURS: 24,
-  // Max characters for memory context in system prompt
-  MAX_CONTEXT_CHARS: 2000
+  // Max items to fetch for context (increased from 10 to allow per-category limits)
+  DEFAULT_CONTEXT_LIMIT: 30,
+  // Per-category limit for formatting (new)
+  ITEMS_PER_CATEGORY: 5,
+  // Categories relevant for ORB context (added 'personal' for identity info)
+  CONTEXT_CATEGORIES: ['personal', 'conversation', 'preferences', 'goals', 'health', 'relationships'],
+  // Max age of memory items to include (7 days instead of 24 hours)
+  MAX_AGE_HOURS: 168,
+  // Max characters for memory context in system prompt (increased from 2000)
+  MAX_CONTEXT_CHARS: 6000,
+  // Max characters per individual item (increased from 150)
+  MAX_ITEM_CHARS: 300
 };
 
 // =============================================================================
@@ -87,25 +92,59 @@ export interface OrbMemoryContext {
 
 /**
  * Check if running in dev-sandbox environment
+ * VTID-01106: Now accepts flexible dev environment naming
  */
 export function isDevSandbox(): boolean {
-  const env = process.env.ENVIRONMENT || process.env.VITANA_ENV;
-  return env === 'dev-sandbox';
+  const env = (process.env.ENVIRONMENT || process.env.VITANA_ENV || '').toLowerCase();
+  // Accept: dev-sandbox, dev, development, sandbox, or any env containing 'dev' or 'sandbox'
+  const isDevEnv = env === 'dev-sandbox' ||
+                   env === 'dev' ||
+                   env === 'development' ||
+                   env === 'sandbox' ||
+                   env.includes('dev') ||
+                   env.includes('sandbox');
+  return isDevEnv;
 }
+
+// Cache for memory bridge status (to avoid repeated logging)
+let _memoryBridgeStatusLogged = false;
+let _cachedMemoryBridgeEnabled: boolean | null = null;
 
 /**
  * Check if Memory Bridge is enabled
  * Only active in dev-sandbox mode
  */
 export function isMemoryBridgeEnabled(): boolean {
+  // Return cached result if available
+  if (_cachedMemoryBridgeEnabled !== null) {
+    return _cachedMemoryBridgeEnabled;
+  }
+
+  const env = process.env.ENVIRONMENT || process.env.VITANA_ENV || '(not set)';
+
   // Only enable in dev-sandbox
   if (!isDevSandbox()) {
+    if (!_memoryBridgeStatusLogged) {
+      console.log(`[VTID-01106] Memory bridge DISABLED: ENVIRONMENT='${env}' is not a dev environment`);
+      _memoryBridgeStatusLogged = true;
+    }
+    _cachedMemoryBridgeEnabled = false;
     return false;
   }
   // Check if explicitly disabled
   if (process.env.ORB_MEMORY_BRIDGE_DISABLED === 'true') {
+    if (!_memoryBridgeStatusLogged) {
+      console.log(`[VTID-01106] Memory bridge DISABLED: ORB_MEMORY_BRIDGE_DISABLED=true`);
+      _memoryBridgeStatusLogged = true;
+    }
+    _cachedMemoryBridgeEnabled = false;
     return false;
   }
+  if (!_memoryBridgeStatusLogged) {
+    console.log(`[VTID-01106] Memory bridge ENABLED for env='${env}'`);
+    _memoryBridgeStatusLogged = true;
+  }
+  _cachedMemoryBridgeEnabled = true;
   return true;
 }
 
@@ -206,29 +245,40 @@ export async function writeDevMemoryItem(params: {
 
 /**
  * Simple category classification for dev memory writes
+ * VTID-01109: Enhanced to better classify personal identity and relationships
  */
 function classifyDevCategory(content: string): string {
   const lower = content.toLowerCase();
 
+  // VTID-01109: Personal identity keywords - NEW CATEGORY (highest priority)
+  // Captures: name, hometown, birthday, age, location, occupation, etc.
+  if (/\b(my name|i am|call me|i'm called|i'm |ich bin|ich heiße|mein name|born in|from |hometown|my age|years old|my birthday|i live|i work|my job|my occupation|my email|my phone|my address)\b/i.test(lower)) {
+    return 'personal';
+  }
+
   // Health-related keywords
-  if (/\b(health|fitness|exercise|sleep|diet|weight|medication|doctor|symptom|pain)\b/.test(lower)) {
+  if (/\b(health|fitness|exercise|sleep|diet|weight|medication|doctor|symptom|pain|illness|sick|medical)\b/.test(lower)) {
     return 'health';
   }
-  // Relationship keywords
-  if (/\b(family|friend|partner|wife|husband|child|parent|colleague|relationship)\b/.test(lower)) {
+
+  // VTID-01109: Relationship keywords - EXPANDED to include fiancée, girlfriend, etc.
+  if (/\b(family|friend|partner|wife|husband|fiancée|fiancee|fiance|spouse|girlfriend|boyfriend|significant other|child|children|son|daughter|parent|mother|father|mom|dad|brother|sister|colleague|relationship|married|engaged|dating|verlobte|verlobter)\b/i.test(lower)) {
     return 'relationships';
   }
-  // Preference keywords
-  if (/\b(prefer|like|love|hate|favorite|always|never|want|need)\b/.test(lower)) {
+
+  // Preference keywords (likes, dislikes, favorites)
+  if (/\b(prefer|like|love|hate|favorite|favourite|always|never|want|need|enjoy|dislike)\b/.test(lower)) {
     return 'preferences';
   }
+
   // Goal keywords
-  if (/\b(goal|plan|want to|going to|will|target|achieve|objective)\b/.test(lower)) {
+  if (/\b(goal|plan|want to|going to|will|target|achieve|objective|aspire|dream|hope to)\b/.test(lower)) {
     return 'goals';
   }
-  // Remember/identity keywords
-  if (/\b(remember|my name|i am|call me|i'm called)\b/.test(lower)) {
-    return 'preferences';
+
+  // Remember requests (user asking to remember something specific)
+  if (/\b(remember|don't forget|keep in mind|note that|wichtig|merken)\b/.test(lower)) {
+    return 'personal';  // Store as personal since user explicitly wants it remembered
   }
 
   // Default to conversation
@@ -410,6 +460,7 @@ function generateMemorySummary(items: MemoryItem[]): string {
 /**
  * Format memory items for injection into system prompt
  * Creates a structured, concise representation for LLM context
+ * VTID-01109: Uses config values, prioritizes personal category
  */
 function formatMemoryForPrompt(items: MemoryItem[]): string {
   if (items.length === 0) {
@@ -417,7 +468,7 @@ function formatMemoryForPrompt(items: MemoryItem[]): string {
   }
 
   const lines: string[] = [];
-  lines.push('## Recent User Context (from Memory)');
+  lines.push('## User Context (from Memory)');
   lines.push('');
 
   // Group by category for better organization
@@ -429,13 +480,25 @@ function formatMemoryForPrompt(items: MemoryItem[]): string {
     byCategory[item.category_key].push(item);
   }
 
+  // VTID-01109: Process categories in priority order (personal first!)
+  const categoryOrder = ['personal', 'relationships', 'preferences', 'health', 'goals', 'conversation'];
+  const sortedCategories = Object.keys(byCategory).sort((a, b) => {
+    const aIdx = categoryOrder.indexOf(a);
+    const bIdx = categoryOrder.indexOf(b);
+    return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx);
+  });
+
   // Format each category
-  for (const [category, catItems] of Object.entries(byCategory)) {
+  for (const category of sortedCategories) {
+    const catItems = byCategory[category];
     lines.push(`### ${formatCategoryName(category)}`);
 
-    for (const item of catItems.slice(0, 3)) { // Max 3 per category
+    // VTID-01109: Use config for items per category limit
+    const itemLimit = MEMORY_CONFIG.ITEMS_PER_CATEGORY || 5;
+    for (const item of catItems.slice(0, itemLimit)) {
       const timestamp = formatRelativeTime(item.occurred_at);
-      const content = truncateContent(item.content, 150);
+      // VTID-01109: Use config for content truncation limit
+      const content = truncateContent(item.content, MEMORY_CONFIG.MAX_ITEM_CHARS || 300);
       const direction = item.content_json?.direction as string | undefined;
 
       if (direction === 'user') {
@@ -447,8 +510,8 @@ function formatMemoryForPrompt(items: MemoryItem[]): string {
       }
     }
 
-    if (catItems.length > 3) {
-      lines.push(`  (+ ${catItems.length - 3} more ${category} items)`);
+    if (catItems.length > itemLimit) {
+      lines.push(`  (+ ${catItems.length - itemLimit} more ${category} items)`);
     }
     lines.push('');
   }
@@ -464,14 +527,16 @@ function formatMemoryForPrompt(items: MemoryItem[]): string {
 
 /**
  * Format category key as readable name
+ * VTID-01109: Added 'personal' category
  */
 function formatCategoryName(category: string): string {
   const names: Record<string, string> = {
+    personal: 'Personal Identity (IMPORTANT - User\'s Name, Location, etc.)',
     conversation: 'Recent Conversations',
     preferences: 'User Preferences',
     goals: 'Goals & Plans',
     health: 'Health & Wellness',
-    relationships: 'Relationships',
+    relationships: 'Relationships & Family',
     tasks: 'Tasks & Work',
     community: 'Community',
     products_services: 'Products & Services',
@@ -515,6 +580,7 @@ function truncateContent(content: string, maxLength: number): string {
 /**
  * Build enhanced system instruction with memory context
  * Injects user memory/history into the ORB system prompt
+ * VTID-01109: Enhanced with stronger directives to use personal information
  *
  * @param baseInstruction - The base system instruction
  * @param memoryContext - Memory context to inject
@@ -529,27 +595,44 @@ export function buildMemoryEnhancedInstruction(
     return baseInstruction;
   }
 
+  // Extract key personal details for explicit mention
+  const personalItems = memoryContext.items.filter(i => i.category_key === 'personal');
+  const relationshipItems = memoryContext.items.filter(i => i.category_key === 'relationships');
+
+  // VTID-01109: Create a quick-reference section for personal details
+  let quickReference = '';
+  if (personalItems.length > 0 || relationshipItems.length > 0) {
+    quickReference = '\n### QUICK REFERENCE - KEY FACTS ABOUT THIS USER:\n';
+    for (const item of personalItems.slice(0, 5)) {
+      quickReference += `• ${item.content}\n`;
+    }
+    for (const item of relationshipItems.slice(0, 3)) {
+      quickReference += `• ${item.content}\n`;
+    }
+  }
+
   // Inject memory context after the base instruction
-  // VTID-01107: Strong instruction to USE memory and NEVER claim inability to remember
+  // VTID-01107 + VTID-01109: Strong instruction to USE memory and NEVER claim inability to remember
   const enhancedInstruction = `${baseInstruction}
 
-## CRITICAL: You Have Persistent Memory
+## CRITICAL: You Have Persistent Memory About This User
 
-You have access to persistent memory that spans across conversations. The memory context below contains information from previous conversations with this user.
-
-**IMPORTANT RULES:**
-1. NEVER say "I don't remember", "my memory is reset", "I can't remember across sessions", or similar phrases
-2. ALWAYS use the memory context below to inform your responses
-3. If the user asks "do you remember X?" and it's in your memory, answer YES and reference it
-4. If asked about something NOT in your memory, simply say you don't have that specific information
-5. Treat this memory as YOUR OWN knowledge about the user
+You have access to PERSISTENT MEMORY that contains REAL information from previous conversations with THIS SPECIFIC USER. This is NOT hypothetical - this is ACTUAL stored data about them.
+${quickReference}
+**MANDATORY RULES - FOLLOW THESE EXACTLY:**
+1. NEVER say "I don't remember", "ich erinnere mich nicht", "I don't have information about your name/hometown/etc."
+2. When the user asks about their name, hometown, fiancée, or ANY personal detail - CHECK THE MEMORY BELOW FIRST
+3. If the information IS in your memory context, ANSWER WITH THAT INFORMATION
+4. The "Personal Identity" section below contains their name, location, and key facts - USE IT
+5. The "Relationships & Family" section contains info about family/partners - USE IT
+6. Only say "I don't have that information yet" if it's truly NOT in the memory context below
 
 ---
-MEMORY CONTEXT:
+MEMORY CONTEXT (This is REAL data - USE IT when answering):
 ${memoryContext.formatted_context}
 ---
 
-Use this memory naturally. You KNOW this user. You REMEMBER their preferences and past conversations.`;
+You KNOW this user. You REMEMBER their name, their hometown, their family. Answer their questions using the memory above.`;
 
   return enhancedInstruction;
 }

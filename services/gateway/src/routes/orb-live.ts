@@ -178,8 +178,9 @@ interface OrbConversation {
 // VTID-0135: In-memory conversation store (session-scoped)
 const orbConversations = new Map<string, OrbConversation>();
 
-// VTID-0135: Conversation timeout: 30 minutes
-const CONVERSATION_TIMEOUT_MS = 30 * 60 * 1000;
+// VTID-0135: Conversation timeout
+// VTID-01109: Extended from 30 minutes to 24 hours for better conversation continuity
+const CONVERSATION_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 // =============================================================================
 // VTID-01039: ORB Session Transcript Store
@@ -418,12 +419,30 @@ Operating mode:
 /**
  * VTID-01106: Generate memory-enhanced system instruction for ORB chat
  * Fetches user memory context and injects it into the system prompt
+ *
+ * BUG FIX: Now returns different base instructions depending on whether memory is available.
+ * Previously claimed "persistent memory" even when none was available, confusing the LLM.
  */
 async function generateMemoryEnhancedSystemInstruction(
   session: { tenant: string; role: string; route?: string; selectedId?: string }
 ): Promise<{ instruction: string; memoryContext: OrbMemoryContext | null }> {
-  // Base instruction - VTID-01107: Updated to support persistent memory
-  const baseInstruction = `You are VITANA ORB, a voice-first multimodal assistant with persistent memory.
+  // Base instruction WITHOUT memory claims (used when memory is unavailable)
+  const baseInstructionNoMemory = `You are VITANA ORB, a voice-first multimodal assistant.
+
+Context:
+- tenant: ${session.tenant}
+- role: ${session.role}
+- route: ${session.route || 'unknown'}
+- selectedId: ${session.selectedId || 'none'}
+
+Operating mode:
+- Voice conversation is primary.
+- Always listening while ORB overlay is open.
+- Read-only: do not mutate system state.
+- Be concise, contextual, and helpful.`;
+
+  // Base instruction WITH memory claims (used when memory IS available)
+  const baseInstructionWithMemory = `You are VITANA ORB, a voice-first multimodal assistant with persistent memory.
 
 Context:
 - tenant: ${session.tenant}
@@ -441,28 +460,36 @@ Operating mode:
 
   // Check if memory bridge is enabled
   if (!isMemoryBridgeEnabled()) {
-    console.log('[VTID-01106] Memory bridge disabled, using base instruction');
-    return { instruction: baseInstruction, memoryContext: null };
+    console.log('[VTID-01106] Memory bridge disabled, using base instruction (no memory claims)');
+    return { instruction: baseInstructionNoMemory, memoryContext: null };
   }
 
   try {
     // Fetch memory context for dev user
     const memoryContext = await fetchDevMemoryContext();
 
-    if (!memoryContext.ok || memoryContext.items.length === 0) {
-      console.log(`[VTID-01106] No memory context available: ${memoryContext.error || 'no items'}`);
-      return { instruction: baseInstruction, memoryContext };
+    if (!memoryContext.ok) {
+      console.log(`[VTID-01106] Memory fetch failed: ${memoryContext.error}`);
+      // Return instruction WITHOUT memory claims since we couldn't fetch memory
+      return { instruction: baseInstructionNoMemory, memoryContext };
     }
 
-    // Build memory-enhanced instruction
-    const enhancedInstruction = buildMemoryEnhancedInstruction(baseInstruction, memoryContext);
+    if (memoryContext.items.length === 0) {
+      console.log('[VTID-01106] No memory items found for user');
+      // Return instruction WITHOUT memory claims since there's nothing to remember
+      return { instruction: baseInstructionNoMemory, memoryContext };
+    }
+
+    // Build memory-enhanced instruction (WITH memory claims + actual memory content)
+    const enhancedInstruction = buildMemoryEnhancedInstruction(baseInstructionWithMemory, memoryContext);
 
     console.log(`[VTID-01106] Memory-enhanced instruction generated with ${memoryContext.items.length} items`);
 
     return { instruction: enhancedInstruction, memoryContext };
   } catch (err: any) {
     console.warn('[VTID-01106] Failed to fetch memory context:', err.message);
-    return { instruction: baseInstruction, memoryContext: null };
+    // Return instruction WITHOUT memory claims on error
+    return { instruction: baseInstructionNoMemory, memoryContext: null };
   }
 }
 
@@ -1252,6 +1279,14 @@ router.post('/chat', async (req: Request, res: Response) => {
 
     console.log(`[VTID-0135] Chat response generated via ${provider}`);
 
+    // VTID-01106: Add memory debug info to response for debugging
+    const memoryDebug = {
+      memory_bridge_enabled: isMemoryBridgeEnabled(),
+      memory_context_ok: memoryContext?.ok ?? false,
+      memory_items_count: memoryContext?.items?.length ?? 0,
+      memory_injected: Boolean(memoryContext?.ok && memoryContext?.items?.length > 0)
+    };
+
     const response: OrbChatResponse = {
       ok: true,
       conversation_id: conversationId,
@@ -1260,7 +1295,8 @@ router.post('/chat', async (req: Request, res: Response) => {
         provider,
         model,
         mode: 'orb_voice',
-        vtid: 'VTID-0135'
+        vtid: 'VTID-0135',
+        ...memoryDebug // Include memory debug info in response
       }
     };
 
@@ -1287,6 +1323,7 @@ router.post('/chat', async (req: Request, res: Response) => {
 /**
  * VTID-0135: POST /end-session - End an ORB voice conversation session
  * VTID-01039: Now finalizes session and emits ONE orb.session.summary event
+ * VTID-01109: Don't delete conversation - it should persist for memory continuity
  */
 router.post('/end-session', async (req: Request, res: Response) => {
   const { orb_session_id, conversation_id } = req.body;
@@ -1300,9 +1337,12 @@ router.post('/end-session', async (req: Request, res: Response) => {
 
   console.log(`[VTID-01039] Ending session: ${orb_session_id}`);
 
-  // Find and remove conversation
+  // VTID-01109: Don't delete conversation - keep it for memory continuity
+  // The conversation should persist until it expires naturally (30 min timeout)
+  // or until the user explicitly logs out
+  // REMOVED: orbConversations.delete(conversation_id);
   if (conversation_id && orbConversations.has(conversation_id)) {
-    orbConversations.delete(conversation_id);
+    console.log(`[VTID-01109] Keeping conversation ${conversation_id} for memory continuity`);
   }
 
   // VTID-01039: Finalize transcript and emit summary instead of orb.session.ended
