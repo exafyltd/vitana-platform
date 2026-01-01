@@ -27,15 +27,22 @@ interface BoardItem {
 
 /**
  * VTID-01079: Canonical status→column mapping (LOCKED)
+ * VTID-01111: Added 'allocated' handling - shell entries excluded from board
  * This is the SINGLE source of truth for status-to-column conversion.
  * Hard invariants:
  *   - `completed` → `COMPLETED`
  *   - `in_progress` → `IN_PROGRESS`
  *   - `pending` → `SCHEDULED`
  *   - `scheduled` → `SCHEDULED`
+ *   - `allocated` → null (excluded - shell entry not yet filled in)
  */
-function mapStatusToColumn(status: string): BoardColumn {
+function mapStatusToColumn(status: string): BoardColumn | null {
   const s = (status || '').toLowerCase();
+  // VTID-01111: 'allocated' is a shell entry from the allocator - exclude from board
+  // These are placeholder entries awaiting actual task data
+  if (s === 'allocated') {
+    return null;
+  }
   if (s === 'completed' || s === 'done' || s === 'closed' || s === 'deployed' || s === 'merged' || s === 'complete' || s === 'failed' || s === 'error') {
     return 'COMPLETED';
   }
@@ -269,6 +276,11 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
       // The derivedStatus may come from OASIS events, but column MUST use mapStatusToColumn
       const finalColumn = mapStatusToColumn(derivedStatus);
 
+      // VTID-01111: If mapStatusToColumn returns null, this is a shell entry to exclude
+      if (finalColumn === null) {
+        return null;
+      }
+
       return {
         vtid,
         title: row.title || '',
@@ -279,7 +291,7 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
         updated_at: row.updated_at || row.created_at,
         id_namespace: deriveNamespace(vtid),
       };
-    });
+    }).filter((item): item is BoardItem => item !== null);  // VTID-01111: Filter out null entries
 
     // VTID-01079: Deduplicate - keep only one row per VTID (latest updated_at)
     const vtidMap = new Map<string, BoardItem>();
