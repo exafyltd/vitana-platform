@@ -89,6 +89,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const healthRouter = require('./routes/health').default;
   // VTID-01105: Memory Gateway Routes - memory write/context for ORB
   const memoryRouter = require('./routes/memory').default;
+  // VTID-01088: Matchmaking Engine v1 - People <-> People/Groups/Events/Services/Products/Locations/Live Rooms
+  const matchmakingRouter = require('./routes/matchmaking').default;
   // VTID-01083: Longevity Signal Layer - diary/memory to health signals bridge
   const longevityRouter = require('./routes/longevity').default;
   // VTID-01084: Community Personalization v1 - longevity-focused groups/meetups
@@ -279,6 +281,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01105: Memory Gateway - write/context endpoints for ORB memory
   mountRouterSync(app, '/api/v1/memory', memoryRouter, { owner: 'memory' });
+
+  // VTID-01088: Matchmaking Engine v1 - deterministic matching for longevity community
+  mountRouterSync(app, '/api/v1/match', matchmakingRouter, { owner: 'matchmaking' });
 
   // VTID-01083: Longevity Signal Layer - diary/memory to health signals bridge
   mountRouterSync(app, '/api/v1/longevity', longevityRouter, { owner: 'longevity' });
