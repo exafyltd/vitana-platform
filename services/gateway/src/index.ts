@@ -91,6 +91,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const healthRouter = require('./routes/health').default;
   // VTID-01105: Memory Gateway Routes - memory write/context for ORB
   const memoryRouter = require('./routes/memory').default;
+  // VTID-01093: Unified Interest Topics Layer - topic registry + user profile
+  const topicsRouter = require('./routes/topics').default;
   // VTID-01092: Services + Products as Relationship Memory
   const offersRouter = require('./routes/offers').default;
   // VTID-01091: Locations Memory (Places + Habits + Meetups) + Discovery
@@ -294,6 +296,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01105: Memory Gateway - write/context endpoints for ORB memory
   mountRouterSync(app, '/api/v1/memory', memoryRouter, { owner: 'memory' });
+
+  // VTID-01093: Unified Interest Topics Layer - topic registry + user profile
+  mountRouterSync(app, '/api/v1/topics', topicsRouter, { owner: 'topics' });
 
   // VTID-01092: Services + Products as Relationship Memory (catalog + offers)
   mountRouterSync(app, '/api/v1', offersRouter, { owner: 'offers' });
