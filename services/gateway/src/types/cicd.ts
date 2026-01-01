@@ -240,7 +240,15 @@ export type CicdEventType =
   | 'relationship.graph.read'
   | 'relationship.recommendation.generated'
   | 'relationship.signal.updated'
-  | 'relationship.node.created';
+  | 'relationship.node.created'
+  // VTID-01090: Live Rooms + Events as Relationship Nodes
+  | 'live.room.created'
+  | 'live.room.started'
+  | 'live.room.joined'
+  | 'live.room.left'
+  | 'live.room.ended'
+  | 'live.highlight.created'
+  | 'meetup.rsvp.updated';
 
 export interface CicdOasisEvent {
   vtid: string;
