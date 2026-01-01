@@ -91,6 +91,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const memoryRouter = require('./routes/memory').default;
   // VTID-01083: Longevity Signal Layer - diary/memory to health signals bridge
   const longevityRouter = require('./routes/longevity').default;
+  // VTID-01084: Community Personalization v1 - longevity-focused groups/meetups
+  const communityRouter = require('./routes/community').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -278,6 +280,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01083: Longevity Signal Layer - diary/memory to health signals bridge
   mountRouterSync(app, '/api/v1/longevity', longevityRouter, { owner: 'longevity' });
+
+  // VTID-01084: Community Personalization v1 - groups, meetups, recommendations
+  mountRouterSync(app, '/api/v1/community', communityRouter, { owner: 'community' });
 
   // VTID-01063: commandhub router (note: /board route REMOVED, use board-adapter)
   mountRouterSync(app, '/api/v1/commandhub', commandhub, { owner: 'commandhub' });
