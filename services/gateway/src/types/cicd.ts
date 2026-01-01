@@ -233,7 +233,26 @@ export type CicdEventType =
   // VTID-01096: Cross-Domain Personalization Events
   | 'personalization.snapshot.read'
   | 'personalization.applied'
-  | 'personalization.audit.written';
+  | 'personalization.audit.written'
+  // VTID-01086: Memory Garden Events
+  | 'memory.garden.progress.read'
+  | 'memory.garden.ui.refreshed'
+  | 'memory.garden.longevity_panel.read'
+  // VTID-01087: Relationship Graph Memory Events
+  | 'relationship.edge.created'
+  | 'relationship.edge.strengthened'
+  | 'relationship.graph.read'
+  | 'relationship.recommendation.generated'
+  | 'relationship.signal.updated'
+  | 'relationship.node.created'
+  // VTID-01090: Live Rooms + Events as Relationship Nodes
+  | 'live.room.created'
+  | 'live.room.started'
+  | 'live.room.joined'
+  | 'live.room.left'
+  | 'live.room.ended'
+  | 'live.highlight.created'
+  | 'meetup.rsvp.updated';
 
 export interface CicdOasisEvent {
   vtid: string;
