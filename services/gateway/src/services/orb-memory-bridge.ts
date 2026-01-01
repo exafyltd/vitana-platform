@@ -148,6 +148,16 @@ export function isMemoryBridgeEnabled(): boolean {
   return true;
 }
 
+/**
+ * VTID-01109 rev2: Reset memory bridge cache
+ * Call this if environment variables change or for testing
+ */
+export function resetMemoryBridgeCache(): void {
+  _cachedMemoryBridgeEnabled = null;
+  _memoryBridgeStatusLogged = false;
+  console.log('[VTID-01109] Memory bridge cache reset');
+}
+
 // =============================================================================
 // VTID-01106: Supabase Client for Memory Access
 // =============================================================================
@@ -178,9 +188,84 @@ function createMemoryClient(): SupabaseClient | null {
 // =============================================================================
 
 /**
+ * VTID-01109 rev2: Check if a message is worth storing in memory
+ * Filters out trivial messages to prevent memory flooding
+ *
+ * Returns true if the message should be stored, false if it should be skipped.
+ */
+export function shouldStoreInMemory(content: string, direction: 'user' | 'assistant'): boolean {
+  const lower = content.toLowerCase().trim();
+  const wordCount = lower.split(/\s+/).filter(w => w.length > 0).length;
+
+  // Skip very short messages (less than 3 words) unless they contain key info
+  if (wordCount < 3) {
+    // Check if it contains important keywords despite being short
+    const hasImportantInfo = /\b(name|heiß|heiss|bin|from|aus|jahre|old|live|wohne|email|phone)\b/i.test(lower);
+    if (!hasImportantInfo) {
+      console.log(`[VTID-01109] Skipping trivial message (${wordCount} words): "${lower.substring(0, 30)}..."`);
+      return false;
+    }
+  }
+
+  // Skip common trivial responses
+  const trivialPatterns = [
+    /^(ok|okay|yes|no|ja|nein|gut|alles klar|danke|thanks|thank you|bitte|please|sure|klar|genau|aha|hmm|uh|oh|ah)\.?$/i,
+    /^(hallo|hello|hi|hey|guten tag|guten morgen|guten abend)\.?$/i,
+    /^(tschüss|tschüs|bye|goodbye|auf wiedersehen|bis dann|ciao)\.?$/i,
+    /^(what|was|wie|warum|why|when|wann|where|wo)\?$/i,  // Single word questions
+  ];
+
+  for (const pattern of trivialPatterns) {
+    if (pattern.test(lower)) {
+      console.log(`[VTID-01109] Skipping trivial ${direction} message: "${lower}"`);
+      return false;
+    }
+  }
+
+  // For assistant messages, skip generic acknowledgments
+  if (direction === 'assistant') {
+    const assistantTrivial = [
+      /^(verstanden|understood|got it|alright|i see|ich verstehe)/i,
+      /^(wie kann ich.*helfen|how can i help)/i,
+      /^(gerne|gern geschehen|you're welcome|no problem)/i,
+    ];
+    for (const pattern of assistantTrivial) {
+      if (pattern.test(lower)) {
+        console.log(`[VTID-01109] Skipping trivial assistant response: "${lower.substring(0, 50)}..."`);
+        return false;
+      }
+    }
+  }
+
+  // Check if message contains meaningful personal/contextual information
+  const hasMeaningfulContent =
+    // Personal info patterns
+    /\b(name|heiß|heiss|ich bin|i am|from|aus|born|geboren|live|wohne|work|arbeit|email|phone|address|adresse)\b/i.test(lower) ||
+    // Preference patterns
+    /\b(like|mag|love|liebe|prefer|bevorzuge|favorite|liebling|hate|hasse|always|immer|never|nie)\b/i.test(lower) ||
+    // Relationship patterns
+    /\b(family|familie|friend|freund|partner|wife|frau|husband|mann|child|kind|mother|mutter|father|vater)\b/i.test(lower) ||
+    // Goal patterns
+    /\b(want|will|möchte|plane|goal|ziel|hope|hoffe|dream|traum)\b/i.test(lower) ||
+    // Remember requests
+    /\b(remember|merk|vergiss nicht|don't forget|wichtig|important)\b/i.test(lower) ||
+    // Substantive content (longer messages are more likely meaningful)
+    wordCount >= 8;
+
+  if (!hasMeaningfulContent) {
+    console.log(`[VTID-01109] Skipping low-value ${direction} message (no meaningful keywords)`);
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * VTID-01107: Write memory item for dev user (dev-sandbox only)
  * Uses service role to bypass RLS with fixed dev identity.
  * This is the write counterpart to fetchDevMemoryContext.
+ *
+ * VTID-01109 rev2: Added filtering to prevent memory flooding
  */
 export async function writeDevMemoryItem(params: {
   source: 'orb_text' | 'orb_voice' | 'system';
@@ -189,10 +274,17 @@ export async function writeDevMemoryItem(params: {
   importance?: number;
   category_key?: string;
   occurred_at?: string;
-}): Promise<{ ok: boolean; id?: string; category_key?: string; error?: string }> {
+  skipFiltering?: boolean;  // Set to true to bypass shouldStoreInMemory check
+}): Promise<{ ok: boolean; id?: string; category_key?: string; error?: string; skipped?: boolean }> {
   // Check if memory bridge is enabled
   if (!isMemoryBridgeEnabled()) {
     return { ok: false, error: 'Memory bridge not enabled (requires dev-sandbox)' };
+  }
+
+  // VTID-01109 rev2: Filter trivial messages to prevent memory flooding
+  const direction = params.content_json?.direction as 'user' | 'assistant' | undefined;
+  if (!params.skipFiltering && direction && !shouldStoreInMemory(params.content, direction)) {
+    return { ok: true, skipped: true };  // Successfully skipped (not an error)
   }
 
   const supabase = createMemoryClient();
@@ -208,6 +300,14 @@ export async function writeDevMemoryItem(params: {
     // Auto-classify category if not provided
     const categoryKey = params.category_key || classifyDevCategory(params.content);
 
+    // VTID-01109 rev2: Boost importance for personal/relationship categories
+    let adjustedImportance = importance;
+    if (categoryKey === 'personal') {
+      adjustedImportance = Math.max(importance, 50);  // Personal info is high priority
+    } else if (categoryKey === 'relationships') {
+      adjustedImportance = Math.max(importance, 40);  // Relationships are important
+    }
+
     // Insert directly into memory_items table using service role
     const { data, error } = await supabase
       .from('memory_items')
@@ -218,7 +318,7 @@ export async function writeDevMemoryItem(params: {
         source: params.source,
         content: params.content,
         content_json: contentJson,
-        importance,
+        importance: adjustedImportance,
         occurred_at: occurredAt
       })
       .select('id, category_key')
@@ -234,7 +334,7 @@ export async function writeDevMemoryItem(params: {
       return { ok: false, error: error.message };
     }
 
-    console.log(`[VTID-01107] Dev memory written: ${data?.id} (${categoryKey})`);
+    console.log(`[VTID-01107] Dev memory written: ${data?.id} (${categoryKey}, importance=${adjustedImportance})`);
     return { ok: true, id: data?.id, category_key: categoryKey };
 
   } catch (err: any) {
@@ -246,38 +346,103 @@ export async function writeDevMemoryItem(params: {
 /**
  * Simple category classification for dev memory writes
  * VTID-01109: Enhanced to better classify personal identity and relationships
+ *
+ * BUG FIXES (VTID-01109 revision 2):
+ * - Fixed regex patterns with trailing spaces that broke \b word boundary
+ * - Added German ß/ss variants (speech-to-text may normalize ß to ss)
+ * - Added more German name patterns (nenn mich, man nennt mich, etc.)
+ * - Added English contractions properly (my name's, I'm)
  */
 function classifyDevCategory(content: string): string {
   const lower = content.toLowerCase();
 
-  // VTID-01109: Personal identity keywords - NEW CATEGORY (highest priority)
-  // Captures: name, hometown, birthday, age, location, occupation, etc.
-  if (/\b(my name|i am|call me|i'm called|i'm |ich bin|ich heiße|mein name|born in|from |hometown|my age|years old|my birthday|i live|i work|my job|my occupation|my email|my phone|my address)\b/i.test(lower)) {
-    return 'personal';
+  // VTID-01109 rev2: Personal identity keywords - FIXED REGEX
+  // Fixed: removed trailing spaces from patterns, added German ß/ss variants
+  // Added: more natural language patterns for name introduction
+  const personalPatterns = [
+    // English name patterns
+    /\bmy name\b/i,
+    /\bmy name's\b/i,
+    /\bi am\b/i,
+    /\bi'm\b/i,
+    /\bcall me\b/i,
+    /\byou can call me\b/i,
+    /\bpeople call me\b/i,
+    /\beveryone calls me\b/i,
+    /\bi go by\b/i,
+    // German name patterns (with ß and ss variants for speech-to-text)
+    /\bich bin\b/i,
+    /\bich heiße\b/i,
+    /\bich heisse\b/i,           // speech-to-text may convert ß to ss
+    /\bich bin der\b/i,
+    /\bich bin die\b/i,
+    /\bmein name\b/i,
+    /\bnenn mich\b/i,
+    /\bnennen sie mich\b/i,
+    /\bman nennt mich\b/i,
+    /\bdu kannst mich.*nennen\b/i,
+    /\bsie können mich.*nennen\b/i,
+    // Location/origin patterns (fixed: removed trailing space from "from")
+    /\bi'm from\b/i,
+    /\bi am from\b/i,
+    /\bi come from\b/i,
+    /\bborn in\b/i,
+    /\bhometown\b/i,
+    /\bi live in\b/i,
+    /\bich komme aus\b/i,
+    /\bich wohne in\b/i,
+    /\bgeboren in\b/i,
+    // Age/birthday patterns
+    /\bmy age\b/i,
+    /\byears old\b/i,
+    /\bmy birthday\b/i,
+    /\bich bin \d+ jahre\b/i,
+    /\bmein geburtstag\b/i,
+    // Occupation patterns
+    /\bi work\b/i,
+    /\bmy job\b/i,
+    /\bmy occupation\b/i,
+    /\bi'm a\b/i,
+    /\bich arbeite\b/i,
+    /\bmein beruf\b/i,
+    /\bich bin.*von beruf\b/i,
+    // Contact patterns
+    /\bmy email\b/i,
+    /\bmy phone\b/i,
+    /\bmy address\b/i,
+    /\bmeine email\b/i,
+    /\bmeine telefon\b/i,
+    /\bmeine adresse\b/i
+  ];
+
+  for (const pattern of personalPatterns) {
+    if (pattern.test(lower)) {
+      return 'personal';
+    }
   }
 
   // Health-related keywords
-  if (/\b(health|fitness|exercise|sleep|diet|weight|medication|doctor|symptom|pain|illness|sick|medical)\b/.test(lower)) {
+  if (/\b(health|fitness|exercise|sleep|diet|weight|medication|doctor|symptom|pain|illness|sick|medical|gesundheit|arzt|medizin|schmerz|krank)\b/i.test(lower)) {
     return 'health';
   }
 
-  // VTID-01109: Relationship keywords - EXPANDED to include fiancée, girlfriend, etc.
-  if (/\b(family|friend|partner|wife|husband|fiancée|fiancee|fiance|spouse|girlfriend|boyfriend|significant other|child|children|son|daughter|parent|mother|father|mom|dad|brother|sister|colleague|relationship|married|engaged|dating|verlobte|verlobter)\b/i.test(lower)) {
+  // VTID-01109: Relationship keywords - EXPANDED with German
+  if (/\b(family|friend|partner|wife|husband|fiancée|fiancee|fiance|spouse|girlfriend|boyfriend|significant other|child|children|son|daughter|parent|mother|father|mom|dad|brother|sister|colleague|relationship|married|engaged|dating|verlobte|verlobter|frau|mann|freundin|freund|kind|kinder|mutter|vater|schwester|bruder|familie)\b/i.test(lower)) {
     return 'relationships';
   }
 
   // Preference keywords (likes, dislikes, favorites)
-  if (/\b(prefer|like|love|hate|favorite|favourite|always|never|want|need|enjoy|dislike)\b/.test(lower)) {
+  if (/\b(prefer|like|love|hate|favorite|favourite|always|never|want|need|enjoy|dislike|mag|liebe|hasse|bevorzuge|liebling)\b/i.test(lower)) {
     return 'preferences';
   }
 
   // Goal keywords
-  if (/\b(goal|plan|want to|going to|will|target|achieve|objective|aspire|dream|hope to)\b/.test(lower)) {
+  if (/\b(goal|plan|want to|going to|will|target|achieve|objective|aspire|dream|hope to|ziel|plane|vorhaben|erreichen|traum)\b/i.test(lower)) {
     return 'goals';
   }
 
   // Remember requests (user asking to remember something specific)
-  if (/\b(remember|don't forget|keep in mind|note that|wichtig|merken)\b/.test(lower)) {
+  if (/\b(remember|don't forget|keep in mind|note that|wichtig|merken|vergiss nicht|merk dir)\b/i.test(lower)) {
     return 'personal';  // Store as personal since user explicitly wants it remembered
   }
 
@@ -346,7 +511,8 @@ export async function fetchDevMemoryContext(
       console.warn('[VTID-01106] Bootstrap context failed (non-fatal):', bootstrapError.message);
     }
 
-    // Query memory items directly with service role (bypasses RLS)
+    // VTID-01109 rev2: Query more items, then sort by importance + time in code
+    // This ensures high-importance personal info isn't pushed out by recent trivial messages
     const { data: memoryItems, error } = await supabase
       .from('memory_items')
       .select('id, category_key, source, content, content_json, importance, occurred_at, created_at')
@@ -354,8 +520,8 @@ export async function fetchDevMemoryContext(
       .eq('user_id', DEV_IDENTITY.USER_ID)
       .in('category_key', categoryFilter)
       .gte('occurred_at', sinceTimestamp)
-      .order('occurred_at', { ascending: false })
-      .limit(limit);
+      .order('importance', { ascending: false })  // High importance first
+      .limit(limit * 2);  // Fetch more, then filter in code
 
     if (error) {
       // Check if table doesn't exist (VTID-01104 not deployed)
@@ -385,7 +551,36 @@ export async function fetchDevMemoryContext(
       };
     }
 
-    const items = (memoryItems || []) as MemoryItem[];
+    // VTID-01109 rev2: Smart sorting - prioritize personal/relationships, then by importance + recency
+    let items = (memoryItems || []) as MemoryItem[];
+
+    // Sort by: category priority, then importance, then recency
+    const categoryPriority: Record<string, number> = {
+      personal: 0,
+      relationships: 1,
+      health: 2,
+      goals: 3,
+      preferences: 4,
+      conversation: 5
+    };
+
+    items.sort((a, b) => {
+      // First by category priority
+      const catA = categoryPriority[a.category_key] ?? 99;
+      const catB = categoryPriority[b.category_key] ?? 99;
+      if (catA !== catB) return catA - catB;
+
+      // Then by importance (higher first)
+      if (a.importance !== b.importance) return b.importance - a.importance;
+
+      // Then by recency (newer first)
+      return new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime();
+    });
+
+    // Limit to requested amount after sorting
+    items = items.slice(0, limit);
+
+    console.log(`[VTID-01109] Memory items after smart sort: ${items.length} (personal: ${items.filter(i => i.category_key === 'personal').length}, relationships: ${items.filter(i => i.category_key === 'relationships').length})`);
     const summary = generateMemorySummary(items);
     const formattedContext = formatMemoryForPrompt(items);
 
@@ -747,6 +942,7 @@ export async function getDebugSnapshot(): Promise<OrbMemoryDebugSnapshot> {
 
 // =============================================================================
 // VTID-01106: Exports
+// Note: shouldStoreInMemory, resetMemoryBridgeCache already exported inline
 // =============================================================================
 
 export {
