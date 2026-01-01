@@ -585,6 +585,8 @@ async function fetchMeContext(silentRefresh) {
                 // Clear invalid auth token
                 state.authToken = null;
                 localStorage.removeItem('vitana.authToken');
+                // VTID-01109: Clear ORB conversation on logout/auth failure
+                orbClearConversationState();
             }
 
             state.meContextError = errorMsg;
@@ -656,6 +658,8 @@ async function setActiveRole(role) {
                 showToast('Session expired. Please log in again.', 'error');
                 state.authToken = null;
                 localStorage.removeItem('vitana.authToken');
+                // VTID-01109: Clear ORB conversation on logout/auth failure
+                orbClearConversationState();
             } else if (response.status === 403) {
                 showToast('You do not have permission to use this role.', 'error');
             } else if (data.error === 'INVALID_ROLE') {
@@ -3211,13 +3215,22 @@ function renderOrbIdleElement() {
     orb.setAttribute('tabindex', '0');
 
     // VTID-0135: Click handler - Starts voice conversation session
+    // VTID-01109: Restore conversation state from localStorage if available
     orb.addEventListener('click', function() {
         console.log('[ORB] Opening overlay...');
         state.orb.overlayVisible = true;
-        state.orb.liveTranscript = []; // Reset transcript
         state.orb.liveError = null;
         state.orb.voiceError = null;
         state.orb.voiceState = 'IDLE';
+
+        // VTID-01109: Restore conversation from localStorage instead of resetting
+        var restored = orbRestoreConversationState();
+        if (!restored) {
+            // Only reset transcript if no conversation to restore
+            state.orb.liveTranscript = [];
+            console.log('[VTID-01109] No previous conversation to restore, starting fresh');
+        }
+
         // VTID-01064: Reset auto-follow to enabled when opening ORB
         state.orb.transcriptNearBottom = true;
         renderApp();
@@ -3226,14 +3239,21 @@ function renderOrbIdleElement() {
     });
 
     // VTID-0135: Keyboard accessibility
+    // VTID-01109: Restore conversation state from localStorage if available
     orb.addEventListener('keydown', function(e) {
         if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
             state.orb.overlayVisible = true;
-            state.orb.liveTranscript = [];
             state.orb.liveError = null;
             state.orb.voiceError = null;
             state.orb.voiceState = 'IDLE';
+
+            // VTID-01109: Restore conversation from localStorage instead of resetting
+            var restored = orbRestoreConversationState();
+            if (!restored) {
+                state.orb.liveTranscript = [];
+            }
+
             // VTID-01064: Reset auto-follow to enabled when opening ORB
             state.orb.transcriptNearBottom = true;
             renderApp();
@@ -13415,6 +13435,7 @@ function orbVoiceStart() {
 
 /**
  * VTID-0135: Stop voice conversation session
+ * VTID-01109: Don't clear conversationId - it persists until logout
  */
 function orbVoiceStop() {
     console.log('[VTID-0135] Stopping voice conversation...');
@@ -13432,28 +13453,23 @@ function orbVoiceStop() {
     // Cancel any ongoing TTS
     window.speechSynthesis.cancel();
 
-    // Notify backend session ended
-    if (state.orb.orbSessionId && state.orb.conversationId) {
-        fetch('/api/v1/orb/end-session', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                orb_session_id: state.orb.orbSessionId,
-                conversation_id: state.orb.conversationId
-            })
-        }).catch(function(e) {
-            console.warn('[VTID-0135] Failed to notify session end:', e);
-        });
-    }
+    // VTID-01109: Save conversation state before stopping
+    // This ensures conversation persists across overlay close/open
+    orbSaveConversationState();
 
-    // Reset state
+    // VTID-01109: Don't notify backend of session end on overlay close
+    // Conversation should persist until logout. Only send end-session on actual logout.
+    // The backend conversation and memory will remain available for when user reopens orb.
+
+    // Reset transient state only - keep conversationId and orbSessionId for continuity
     state.orb.voiceState = 'IDLE';
     state.orb.micActive = false;
-    state.orb.orbSessionId = null;
-    state.orb.conversationId = null;
     state.orb.interimTranscript = '';
+    // VTID-01109: Don't clear conversationId or orbSessionId - they persist until logout
+    // state.orb.orbSessionId = null;  // REMOVED
+    // state.orb.conversationId = null;  // REMOVED
 
-    console.log('[VTID-0135] Voice conversation stopped');
+    console.log('[VTID-0135] Voice conversation stopped (conversation preserved)');
 }
 
 /**
@@ -13703,6 +13719,9 @@ async function orbVoiceSendText(text) {
 
             // Speak the response using TTS
             orbVoiceSpeak(data.reply_text);
+
+            // VTID-01109: Save conversation state after each successful response
+            orbSaveConversationState();
         } else {
             console.error('[VTID-0135] Backend error:', data.error);
             // VTID-01037: Track scroll position before adding message
@@ -13775,6 +13794,85 @@ const ORB_LANG_KEY = 'orb_lang';          // Single source of truth
 const ORB_STT_LANG_KEY = 'orb_stt_lang';  // Kept for clarity/backward compat
 const ORB_TTS_LANG_KEY = 'orb_tts_lang';  // Kept for clarity/backward compat
 const ORB_TTS_VOICE_URI_KEY = 'orb_tts_voice_uri'; // Selected voice URI
+
+// VTID-01109: ORB Conversation Persistence Keys
+// Conversation state persists until logout, not just until overlay closes
+const ORB_CONVERSATION_ID_KEY = 'orb_conversation_id';
+const ORB_TRANSCRIPT_KEY = 'orb_transcript';
+const ORB_SESSION_ID_KEY = 'orb_session_id';
+
+/**
+ * VTID-01109: Save ORB conversation state to localStorage
+ * Called after each message to persist conversation across overlay close/open
+ */
+function orbSaveConversationState() {
+    try {
+        if (state.orb.conversationId) {
+            localStorage.setItem(ORB_CONVERSATION_ID_KEY, state.orb.conversationId);
+        }
+        if (state.orb.orbSessionId) {
+            localStorage.setItem(ORB_SESSION_ID_KEY, state.orb.orbSessionId);
+        }
+        if (state.orb.liveTranscript && state.orb.liveTranscript.length > 0) {
+            // Only save last 50 messages to avoid localStorage limits
+            var transcriptToSave = state.orb.liveTranscript.slice(-50);
+            localStorage.setItem(ORB_TRANSCRIPT_KEY, JSON.stringify(transcriptToSave));
+        }
+        console.log('[VTID-01109] Conversation state saved to localStorage');
+    } catch (e) {
+        console.warn('[VTID-01109] Failed to save conversation state:', e);
+    }
+}
+
+/**
+ * VTID-01109: Restore ORB conversation state from localStorage
+ * Called when opening overlay to restore previous conversation
+ * @returns {boolean} true if conversation was restored
+ */
+function orbRestoreConversationState() {
+    try {
+        var savedConversationId = localStorage.getItem(ORB_CONVERSATION_ID_KEY);
+        var savedSessionId = localStorage.getItem(ORB_SESSION_ID_KEY);
+        var savedTranscript = localStorage.getItem(ORB_TRANSCRIPT_KEY);
+
+        if (savedConversationId) {
+            state.orb.conversationId = savedConversationId;
+            state.orb.orbSessionId = savedSessionId || null;
+
+            if (savedTranscript) {
+                try {
+                    state.orb.liveTranscript = JSON.parse(savedTranscript);
+                } catch (e) {
+                    state.orb.liveTranscript = [];
+                }
+            }
+
+            console.log('[VTID-01109] Conversation restored:', savedConversationId, 'with', state.orb.liveTranscript.length, 'messages');
+            return true;
+        }
+    } catch (e) {
+        console.warn('[VTID-01109] Failed to restore conversation state:', e);
+    }
+    return false;
+}
+
+/**
+ * VTID-01109: Clear ORB conversation state from localStorage
+ * Called on logout or when user explicitly clears conversation
+ */
+function orbClearConversationState() {
+    try {
+        localStorage.removeItem(ORB_CONVERSATION_ID_KEY);
+        localStorage.removeItem(ORB_SESSION_ID_KEY);
+        localStorage.removeItem(ORB_TRANSCRIPT_KEY);
+        state.orb.conversationId = null;
+        state.orb.orbSessionId = null;
+        state.orb.liveTranscript = [];
+        console.log('[VTID-01109] Conversation state cleared');
+    } catch (e) {
+        console.warn('[VTID-01109] Failed to clear conversation state:', e);
+    }
+}
 
 // VTID-01042: Supported languages list
 const ORB_SUPPORTED_LANGUAGES = ['en-US', 'de-DE', 'fr-FR', 'es-ES', 'ar-AE', 'zh-CN'];

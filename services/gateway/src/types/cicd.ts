@@ -242,6 +242,10 @@ export type CicdEventType =
   | 'vtid.stage.matches.failed'
   | 'vtid.daily_recompute.completed'  // Terminal success
   | 'vtid.daily_recompute.failed'     // Terminal failure
+  // VTID-01109: ORB Conversation Persistence Events
+  | 'orb.conversation.restored'
+  | 'orb.conversation.saved'
+  | 'orb.conversation.cleared'
   // VTID-01086: Memory Garden Events
   | 'memory.garden.progress.read'
   | 'memory.garden.ui.refreshed'

@@ -31,6 +31,8 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
+// VTID-01091: Location extraction from diary entries
+import { processLocationMentionsFromDiary } from './locations';
 
 const router = Router();
 
@@ -59,7 +61,7 @@ type CategoryKey = typeof CATEGORY_KEYS[number];
 /**
  * Valid source types for memory items
  */
-const SOURCE_TYPES = ['orb_text', 'orb_voice', 'system'] as const;
+const SOURCE_TYPES = ['orb_text', 'orb_voice', 'diary', 'upload', 'system'] as const;
 type SourceType = typeof SOURCE_TYPES[number];
 
 /**
@@ -550,11 +552,34 @@ router.post('/write', async (req: Request, res: Response) => {
     }
   );
 
+  // VTID-01091: Extract location mentions from diary entries
+  let locationExtractionResult = null;
+  if (source === 'diary') {
+    try {
+      locationExtractionResult = await processLocationMentionsFromDiary(
+        token,
+        content,
+        occurred_at
+      );
+      if (locationExtractionResult.locations_created > 0 || locationExtractionResult.visits_created > 0) {
+        console.log(`[VTID-01091] Diary location extraction: ${locationExtractionResult.locations_created} locations, ${locationExtractionResult.visits_created} visits`);
+      }
+    } catch (err: any) {
+      console.warn('[VTID-01091] Diary location extraction failed (non-blocking):', err.message);
+    }
+  }
+
   return res.status(200).json({
     ok: true,
     id: result.id,
     category_key: result.category_key,
-    occurred_at: result.occurred_at
+    occurred_at: result.occurred_at,
+    ...(locationExtractionResult && {
+      location_extraction: {
+        locations_created: locationExtractionResult.locations_created,
+        visits_created: locationExtractionResult.visits_created
+      }
+    })
   });
 });
 
