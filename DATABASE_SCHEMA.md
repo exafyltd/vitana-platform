@@ -108,7 +108,6 @@ CREATE TABLE personalization_audit (
 
 **API Endpoints:**
 - `GET /api/v1/personalization/snapshot` - Generates and logs audit entry
-- `GET /api/v1/personalization/health` - Health check
 
 **OASIS Events:**
 - `personalization.snapshot.read` - Snapshot generated

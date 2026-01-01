@@ -224,50 +224,6 @@ router.get('/snapshot', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /health -> GET /api/v1/personalization/health
- *
- * Health check for personalization service.
- */
-router.get('/health', (_req: Request, res: Response) => {
-  const hasSupabaseUrl = !!process.env.SUPABASE_URL;
-  const hasSupabaseKey = !!process.env.SUPABASE_ANON_KEY;
-
-  const status = hasSupabaseUrl && hasSupabaseKey ? 'ok' : 'degraded';
-
-  return res.status(200).json({
-    ok: true,
-    status,
-    service: 'personalization-gateway',
-    version: '1.0.0',
-    vtid: VTID,
-    timestamp: new Date().toISOString(),
-    capabilities: {
-      snapshot: hasSupabaseUrl && hasSupabaseKey,
-      weakness_detection: true,
-      topic_scoring: true,
-      audit_logging: hasSupabaseUrl && hasSupabaseKey
-    },
-    rules: {
-      weakness_types: [
-        'movement_low',
-        'sleep_declining',
-        'stress_high',
-        'nutrition_low',
-        'low_sodium_constraint',
-        'social_low'
-      ]
-    },
-    dependencies: {
-      'VTID-01083': 'longevity_signals',
-      'VTID-01084': 'community_recs',
-      'VTID-01092': 'offers',
-      'VTID-01091': 'locations',
-      'VTID-01093': 'topics'
-    }
-  });
-});
-
-/**
  * GET / -> GET /api/v1/personalization
  *
  * Root endpoint - returns service info.
