@@ -230,6 +230,10 @@ export type CicdEventType =
   // VTID-01107: ORB Memory Debug Events
   | 'orb.memory.debug_requested'
   | 'orb.memory.debug_snapshot'
+  // VTID-01109: ORB Conversation Persistence Events
+  | 'orb.conversation.restored'
+  | 'orb.conversation.saved'
+  | 'orb.conversation.cleared'
   // VTID-01086: Memory Garden Events
   | 'memory.garden.progress.read'
   | 'memory.garden.ui.refreshed'
