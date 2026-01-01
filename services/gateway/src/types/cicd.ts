@@ -268,7 +268,11 @@ export type CicdEventType =
   | 'live.room.left'
   | 'live.room.ended'
   | 'live.highlight.created'
-  | 'meetup.rsvp.updated';
+  | 'meetup.rsvp.updated'
+  // VTID-01097: Diary Template Events
+  | 'diary.template.shown'
+  | 'diary.template.submitted'
+  | 'memory.garden.extract.triggered';
 
 export interface CicdOasisEvent {
   vtid: string;

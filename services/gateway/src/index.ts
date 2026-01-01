@@ -116,6 +116,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01094: Match Quality Feedback Loop
   const matchFeedbackRouter = require('./routes/match-feedback').default;
   const { personalizationRouter } = require('./routes/match-feedback');
+  // VTID-01097: Diary Templates Gateway - guided diary templates
+  const diaryRouter = require('./routes/diary').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -339,6 +341,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01090: Live Rooms + Events as Relationship Nodes
   mountRouterSync(app, '/api/v1/live', liveRouter, { owner: 'live' });
+
+  // VTID-01097: Diary Templates - guided diary templates for memory quality
+  mountRouterSync(app, '/api/v1/diary', diaryRouter, { owner: 'diary' });
 
   // VTID-01063: commandhub router (note: /board route REMOVED, use board-adapter)
   mountRouterSync(app, '/api/v1/commandhub', commandhub, { owner: 'commandhub' });
