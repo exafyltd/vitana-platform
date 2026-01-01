@@ -93,6 +93,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const longevityRouter = require('./routes/longevity').default;
   // VTID-01084: Community Personalization v1 - longevity-focused groups/meetups
   const communityRouter = require('./routes/community').default;
+  // VTID-01087: Relationship Graph Memory Routes
+  const relationshipsRouter = require('./routes/relationships').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -283,6 +285,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01084: Community Personalization v1 - groups, meetups, recommendations
   mountRouterSync(app, '/api/v1/community', communityRouter, { owner: 'community' });
+
+  // VTID-01087: Relationship Graph Memory - matchmaking spine
+  mountRouterSync(app, '/api/v1/relationships', relationshipsRouter, { owner: 'relationships' });
 
   // VTID-01063: commandhub router (note: /board route REMOVED, use board-adapter)
   mountRouterSync(app, '/api/v1/commandhub', commandhub, { owner: 'commandhub' });
