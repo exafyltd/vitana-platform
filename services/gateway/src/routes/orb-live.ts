@@ -3,6 +3,7 @@
  * VTID-0135: ORB Voice Conversation Enablement (Phase A)
  * VTID-01106: ORB Memory Bridge (Dev Sandbox)
  * VTID-01107: ORB Memory Debug Endpoint (Dev Sandbox)
+ * VTID-01118: Cross-Turn State & Continuity Engine (D26)
  *
  * SSE endpoint for real-time voice interaction with Gemini API.
  *
@@ -57,6 +58,16 @@ import {
   MEMORY_CONFIG,
   OrbMemoryContext
 } from '../services/orb-memory-bridge';
+// VTID-01118: Cross-Turn State & Continuity Engine
+import {
+  getStateEngine,
+  removeStateEngine,
+  detectIntentType,
+  detectDomainType,
+  extractVtidMentions,
+  CrossTurnStateEngine,
+  StateUpdateInput
+} from '../services/cross-turn-state-engine';
 
 const router = Router();
 
@@ -166,6 +177,7 @@ interface OrbChatResponse {
 
 /**
  * VTID-0135: Conversation context for continuity
+ * VTID-01118: Added turn_count for cross-turn state tracking
  */
 interface OrbConversation {
   conversationId: string;
@@ -173,6 +185,7 @@ interface OrbConversation {
   history: Array<{ role: 'user' | 'assistant'; content: string }>;
   createdAt: Date;
   lastActivity: Date;
+  turn_count: number;  // VTID-01118: Track turns for state engine
 }
 
 // VTID-0135: In-memory conversation store (session-scoped)
@@ -1032,6 +1045,10 @@ router.post('/chat', async (req: Request, res: Response) => {
     // Continue existing conversation
     conversation = orbConversations.get(conversationId)!;
     conversation.lastActivity = new Date();
+    // VTID-01118: Ensure turn_count exists for older conversations
+    if (conversation.turn_count === undefined) {
+      conversation.turn_count = Math.floor(conversation.history.length / 2);
+    }
     console.log(`[VTID-0135] Continuing conversation: ${conversationId}`);
   } else {
     // Create new conversation
@@ -1041,7 +1058,8 @@ router.post('/chat', async (req: Request, res: Response) => {
       orbSessionId,
       history: [],
       createdAt: new Date(),
-      lastActivity: new Date()
+      lastActivity: new Date(),
+      turn_count: 0  // VTID-01118: Initialize turn counter
     };
     orbConversations.set(conversationId, conversation);
     isNewSession = true;
@@ -1145,15 +1163,32 @@ router.post('/chat', async (req: Request, res: Response) => {
     // Build thread ID for Gemini processing
     const threadId = `orb-${orbSessionId}`;
 
+    // VTID-01118: Get state engine and increment turn count
+    conversation.turn_count = (conversation.turn_count || 0) + 1;
+    const stateEngine = getStateEngine(orbSessionId, conversationId);
+
+    // VTID-01118: Pre-detect intent, domain, and VTIDs from user message
+    const detectedIntent = detectIntentType(inputText);
+    const detectedDomain = detectDomainType(inputText);
+    const vtidMentions = extractVtidMentions(inputText);
+
+    console.log(`[VTID-01118] Turn ${conversation.turn_count}: intent=${detectedIntent}, domain=${detectedDomain}, vtids=${vtidMentions.join(',') || 'none'}`);
+
     // VTID-01106: Fetch memory context and build enhanced system instruction
     // Extract context from meta (cast to any for dev sandbox flexibility)
     const meta = body.meta as Record<string, unknown> | undefined;
-    const { instruction: systemInstruction, memoryContext } = await generateMemoryEnhancedSystemInstruction({
+    const { instruction: baseSystemInstruction, memoryContext } = await generateMemoryEnhancedSystemInstruction({
       tenant: (meta?.tenant as string) || 'vitana',
       role: (meta?.role as string) || 'developer',
       route: meta?.route as string | undefined,
       selectedId: meta?.selectedId as string | undefined
     });
+
+    // VTID-01118: Inject cross-turn state context into system instruction
+    const stateContext = stateEngine.generateContextString();
+    const systemInstruction = stateContext
+      ? `${baseSystemInstruction}\n\n${stateContext}`
+      : baseSystemInstruction;
 
     // VTID-01106: Emit memory context injection event
     if (memoryContext && memoryContext.ok && memoryContext.items.length > 0) {
@@ -1196,6 +1231,36 @@ router.post('/chat', async (req: Request, res: Response) => {
     if (conversation.history.length > 20) {
       conversation.history = conversation.history.slice(-20);
     }
+
+    // VTID-01118: Update cross-turn state with turn results
+    // Extract tool calls from response for state tracking
+    const toolCalls = (geminiResponse.toolResults || []).map(tr => ({
+      name: tr.name,
+      args: {},
+      result: tr.response
+    }));
+
+    // Build state update input
+    const stateUpdateInput: StateUpdateInput = {
+      turn_number: conversation.turn_count,
+      user_message: inputText,
+      assistant_response: replyText,
+      detected_intent: detectedIntent,
+      detected_domain: detectedDomain,
+      tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
+      vtid_mentioned: vtidMentions.length > 0 ? vtidMentions : undefined,
+      is_correction: detectedIntent === 'correction',
+      is_clarification: detectedIntent === 'clarification',
+    };
+
+    // Update state (async, fire-and-forget for performance)
+    stateEngine.updateState(stateUpdateInput)
+      .then(snapshot => {
+        console.log(`[VTID-01118] State updated: focus="${snapshot.focus_summary}", confidence=${snapshot.continuity_confidence.toFixed(2)}`);
+      })
+      .catch(err => {
+        console.warn('[VTID-01118] State update error:', err.message);
+      });
 
     // VTID-01039: Append assistant turn to transcript (replaces per-turn OASIS event)
     if (transcript) {
@@ -1287,6 +1352,16 @@ router.post('/chat', async (req: Request, res: Response) => {
       memory_injected: Boolean(memoryContext?.ok && memoryContext?.items?.length > 0)
     };
 
+    // VTID-01118: Add state debug info to response
+    const currentState = stateEngine.getState();
+    const stateDebug = {
+      state_turn: conversation.turn_count,
+      state_focus_vtid: currentState.focus_vtid,
+      state_active_intents: currentState.active_intents.length,
+      state_open_tasks: currentState.open_tasks.length,
+      state_continuity_confidence: currentState.continuity_confidence
+    };
+
     const response: OrbChatResponse = {
       ok: true,
       conversation_id: conversationId,
@@ -1296,7 +1371,8 @@ router.post('/chat', async (req: Request, res: Response) => {
         model,
         mode: 'orb_voice',
         vtid: 'VTID-0135',
-        ...memoryDebug // Include memory debug info in response
+        ...memoryDebug, // Include memory debug info in response
+        ...stateDebug   // VTID-01118: Include state debug info in response
       }
     };
 
@@ -1336,6 +1412,13 @@ router.post('/end-session', async (req: Request, res: Response) => {
   }
 
   console.log(`[VTID-01039] Ending session: ${orb_session_id}`);
+
+  // VTID-01118: Expire cross-turn state when session ends
+  if (conversation_id) {
+    removeStateEngine(orb_session_id, conversation_id)
+      .then(() => console.log(`[VTID-01118] State engine removed for session: ${orb_session_id}`))
+      .catch(err => console.warn('[VTID-01118] State engine removal error:', err.message));
+  }
 
   // VTID-01109: Don't delete conversation - keep it for memory continuity
   // The conversation should persist until it expires naturally (30 min timeout)
@@ -1750,6 +1833,7 @@ router.get('/debug/memory', async (_req: Request, res: Response) => {
 /**
  * GET /health - Health check
  * VTID-01106: Added memory bridge status
+ * VTID-01118: Added cross-turn state engine status
  */
 router.get('/health', (_req: Request, res: Response) => {
   const hasGeminiKey = !!GEMINI_API_KEY;
@@ -1758,7 +1842,7 @@ router.get('/health', (_req: Request, res: Response) => {
   return res.status(200).json({
     ok: true,
     service: 'orb-live',
-    vtid: ['DEV-COMHU-2025-0014', 'VTID-0135', 'VTID-01039', 'VTID-01106', 'VTID-01107'],
+    vtid: ['DEV-COMHU-2025-0014', 'VTID-0135', 'VTID-01039', 'VTID-01106', 'VTID-01107', 'VTID-01118'],
     model: GEMINI_MODEL,
     transport: 'SSE',
     gemini_configured: hasGeminiKey,
@@ -1771,6 +1855,11 @@ router.get('/health', (_req: Request, res: Response) => {
       enabled: memoryBridgeEnabled,
       dev_user_id: memoryBridgeEnabled ? DEV_IDENTITY.USER_ID : null,
       dev_tenant_id: memoryBridgeEnabled ? DEV_IDENTITY.TENANT_ID : null
+    },
+    // VTID-01118: Cross-turn state engine status
+    cross_turn_state_engine: {
+      enabled: true,
+      version: 'D26-v1'
     },
     timestamp: new Date().toISOString()
   });

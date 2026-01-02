@@ -279,7 +279,9 @@ export type CicdEventType =
   | 'memory.unlocked'
   | 'memory.deleted'
   | 'memory.export.requested'
-  | 'memory.export.ready';
+  | 'memory.export.ready'
+  // VTID-01118: Cross-Turn State & Continuity Engine Events
+  | 'orb.state.snapshot';
 
 export interface CicdOasisEvent {
   vtid: string;
