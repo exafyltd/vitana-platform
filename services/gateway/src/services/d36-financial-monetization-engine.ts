@@ -229,10 +229,14 @@ export async function inferFinancialSensitivity(
 
     // Bootstrap dev context if needed
     if (useDevIdentity) {
-      await supabase.rpc('dev_bootstrap_request_context', {
-        p_tenant_id: DEV_IDENTITY.TENANT_ID,
-        p_active_role: 'developer'
-      }).catch(() => {});
+      try {
+        await supabase.rpc('dev_bootstrap_request_context', {
+          p_tenant_id: DEV_IDENTITY.TENANT_ID,
+          p_active_role: 'developer'
+        });
+      } catch {
+        // Ignore bootstrap errors in dev mode
+      }
     }
 
     // Fetch recent financial signals (last 30 days)
