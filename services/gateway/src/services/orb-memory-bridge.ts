@@ -83,7 +83,14 @@ const MEMORY_CONFIG = {
   // Max characters for memory context in system prompt (increased from 2000)
   MAX_CONTEXT_CHARS: 6000,
   // Max characters per individual item (increased from 150)
-  MAX_ITEM_CHARS: 300
+  MAX_ITEM_CHARS: 300,
+  /**
+   * VTID-DEBUG-01: Categories that should NEVER be time-filtered.
+   * Personal identity information (name, birthday, hometown, family members)
+   * must be available regardless of when it was stored.
+   * These are fundamental facts about the user that don't expire.
+   */
+  PERSISTENT_CATEGORIES: ['personal', 'relationships']
 };
 
 // =============================================================================
@@ -561,44 +568,89 @@ export async function fetchDevMemoryContext(
       console.warn('[VTID-01106] Bootstrap context failed (non-fatal):', bootstrapError.message);
     }
 
-    // VTID-01109 rev2: Query more items, then sort by importance + time in code
-    // This ensures high-importance personal info isn't pushed out by recent trivial messages
-    const { data: memoryItems, error } = await supabase
-      .from('memory_items')
-      .select('id, category_key, source, content, content_json, importance, occurred_at, created_at')
-      .eq('tenant_id', DEV_IDENTITY.TENANT_ID)
-      .eq('user_id', DEV_IDENTITY.USER_ID)
-      .in('category_key', categoryFilter)
-      .gte('occurred_at', sinceTimestamp)
-      .order('importance', { ascending: false })  // High importance first
-      .limit(limit * 2);  // Fetch more, then filter in code
+    // VTID-DEBUG-01: Split categories into persistent (no time filter) and time-sensitive
+    // Personal identity info (name, birthday, family) must NEVER expire
+    const persistentCategories = categoryFilter.filter(
+      (cat: string) => MEMORY_CONFIG.PERSISTENT_CATEGORIES.includes(cat)
+    );
+    const timeSensitiveCategories = categoryFilter.filter(
+      (cat: string) => !MEMORY_CONFIG.PERSISTENT_CATEGORIES.includes(cat)
+    );
 
-    if (error) {
-      // Check if table doesn't exist (VTID-01104 not deployed)
-      if (error.message.includes('does not exist') || error.code === '42P01') {
-        console.warn('[VTID-01106] memory_items table not found (VTID-01104 dependency)');
-        return {
-          ok: false,
-          user_id: DEV_IDENTITY.USER_ID,
-          tenant_id: DEV_IDENTITY.TENANT_ID,
-          items: [],
-          summary: 'Memory Core not deployed',
-          formatted_context: '',
-          fetched_at: fetchedAt,
-          error: 'Memory Core not available (VTID-01104 dependency)'
-        };
+    console.log(`[VTID-DEBUG-01] Querying persistent categories (no time limit): ${persistentCategories.join(', ')}`);
+    console.log(`[VTID-DEBUG-01] Querying time-sensitive categories (${MEMORY_CONFIG.MAX_AGE_HOURS}h): ${timeSensitiveCategories.join(', ')}`);
+
+    // Query 1: Persistent categories WITHOUT time filter (personal identity never expires)
+    let persistentItems: MemoryItem[] = [];
+    if (persistentCategories.length > 0) {
+      const { data: persistentData, error: persistentError } = await supabase
+        .from('memory_items')
+        .select('id, category_key, source, content, content_json, importance, occurred_at, created_at')
+        .eq('tenant_id', DEV_IDENTITY.TENANT_ID)
+        .eq('user_id', DEV_IDENTITY.USER_ID)
+        .in('category_key', persistentCategories)
+        // NO time filter - personal identity info should always be available
+        .order('importance', { ascending: false })
+        .limit(limit);  // Generous limit for identity info
+
+      if (persistentError) {
+        console.warn('[VTID-DEBUG-01] Persistent category query error:', persistentError.message);
+      } else {
+        persistentItems = (persistentData || []) as MemoryItem[];
+        console.log(`[VTID-DEBUG-01] Found ${persistentItems.length} persistent memory items (no time filter)`);
       }
-      console.error('[VTID-01106] Memory query error:', error.message);
-      return {
-        ok: false,
-        user_id: DEV_IDENTITY.USER_ID,
-        tenant_id: DEV_IDENTITY.TENANT_ID,
-        items: [],
-        summary: 'Query failed',
-        formatted_context: '',
-        fetched_at: fetchedAt,
-        error: error.message
-      };
+    }
+
+    // Query 2: Time-sensitive categories WITH time filter
+    let timeSensitiveItems: MemoryItem[] = [];
+    if (timeSensitiveCategories.length > 0) {
+      const { data: timeSensitiveData, error: timeSensitiveError } = await supabase
+        .from('memory_items')
+        .select('id, category_key, source, content, content_json, importance, occurred_at, created_at')
+        .eq('tenant_id', DEV_IDENTITY.TENANT_ID)
+        .eq('user_id', DEV_IDENTITY.USER_ID)
+        .in('category_key', timeSensitiveCategories)
+        .gte('occurred_at', sinceTimestamp)  // Time filter for non-identity categories
+        .order('importance', { ascending: false })
+        .limit(limit);
+
+      if (timeSensitiveError) {
+        // Check if table doesn't exist (VTID-01104 not deployed)
+        if (timeSensitiveError.message.includes('does not exist') || timeSensitiveError.code === '42P01') {
+          console.warn('[VTID-01106] memory_items table not found (VTID-01104 dependency)');
+          return {
+            ok: false,
+            user_id: DEV_IDENTITY.USER_ID,
+            tenant_id: DEV_IDENTITY.TENANT_ID,
+            items: [],
+            summary: 'Memory Core not deployed',
+            formatted_context: '',
+            fetched_at: fetchedAt,
+            error: 'Memory Core not available (VTID-01104 dependency)'
+          };
+        }
+        console.error('[VTID-DEBUG-01] Time-sensitive category query error:', timeSensitiveError.message);
+      } else {
+        timeSensitiveItems = (timeSensitiveData || []) as MemoryItem[];
+      }
+    }
+
+    // Merge results: persistent items first (identity is most important), then time-sensitive
+    const allItems = [...persistentItems, ...timeSensitiveItems];
+
+    // Deduplicate by ID (in case of overlap)
+    const seenIds = new Set<string>();
+    const memoryItems = allItems.filter(item => {
+      if (seenIds.has(item.id)) return false;
+      seenIds.add(item.id);
+      return true;
+    });
+
+    console.log(`[VTID-DEBUG-01] Total memory items: ${memoryItems.length} (${persistentItems.length} persistent + ${timeSensitiveItems.length} time-sensitive, ${allItems.length - memoryItems.length} duplicates removed)`);
+
+    // Handle empty result (not an error, just no data yet)
+    if (memoryItems.length === 0) {
+      console.log('[VTID-01106] No memory items found for dev user');
     }
 
     // VTID-01117: Use Context Window Manager for deterministic selection
@@ -807,50 +859,99 @@ export async function fetchScoredMemoryContext(
       console.warn('[VTID-01115] Bootstrap context failed (non-fatal):', bootstrapError.message);
     }
 
-    // Fetch more items than limit to allow for scoring-based filtering
-    // VTID-01115: Fetch 3x limit to have enough candidates for scoring
-    const { data: memoryItems, error } = await supabase
-      .from('memory_items')
-      .select('id, category_key, source, content, content_json, importance, occurred_at, created_at')
-      .eq('tenant_id', DEV_IDENTITY.TENANT_ID)
-      .eq('user_id', DEV_IDENTITY.USER_ID)
-      .in('category_key', categoryFilter)
-      .gte('occurred_at', sinceTimestamp)
-      .order('occurred_at', { ascending: false })
-      .limit(limit * 3);
+    // VTID-DEBUG-01: Split categories into persistent (no time filter) and time-sensitive
+    // Personal identity info (name, birthday, family) must NEVER expire
+    const persistentCategories = categoryFilter.filter(
+      (cat: string) => MEMORY_CONFIG.PERSISTENT_CATEGORIES.includes(cat)
+    );
+    const timeSensitiveCategories = categoryFilter.filter(
+      (cat: string) => !MEMORY_CONFIG.PERSISTENT_CATEGORIES.includes(cat)
+    );
 
-    if (error) {
-      if (error.message.includes('does not exist') || error.code === '42P01') {
-        console.warn('[VTID-01115] memory_items table not found (VTID-01104 dependency)');
-        return {
-          ok: false,
-          user_id: DEV_IDENTITY.USER_ID,
-          tenant_id: DEV_IDENTITY.TENANT_ID,
-          items: [],
-          scored_items: [],
-          excluded_items: [],
-          summary: 'Memory Core not deployed',
-          formatted_context: '',
-          fetched_at: fetchedAt,
-          error: 'Memory Core not available (VTID-01104 dependency)',
-          scoring_metadata: {
-            scoring_run_id: `score_${DEV_IDENTITY.TENANT_ID}_${Date.now()}`,
-            scoring_timestamp: fetchedAt,
-            context: { intent, domain, role },
-            total_candidates: 0,
-            included_count: 0,
-            deprioritized_count: 0,
-            excluded_count: 0,
-            top_n_with_factors: [],
-            exclusion_reasons: []
-          }
-        };
+    console.log(`[VTID-DEBUG-01] Scored query - persistent categories (no time limit): ${persistentCategories.join(', ')}`);
+    console.log(`[VTID-DEBUG-01] Scored query - time-sensitive categories (${MEMORY_CONFIG.MAX_AGE_HOURS}h): ${timeSensitiveCategories.join(', ')}`);
+
+    // Query 1: Persistent categories WITHOUT time filter (personal identity never expires)
+    let persistentItems: MemoryItem[] = [];
+    if (persistentCategories.length > 0) {
+      const { data: persistentData, error: persistentError } = await supabase
+        .from('memory_items')
+        .select('id, category_key, source, content, content_json, importance, occurred_at, created_at')
+        .eq('tenant_id', DEV_IDENTITY.TENANT_ID)
+        .eq('user_id', DEV_IDENTITY.USER_ID)
+        .in('category_key', persistentCategories)
+        // NO time filter - personal identity info should always be available
+        .order('importance', { ascending: false })
+        .limit(limit * 2);
+
+      if (persistentError) {
+        console.warn('[VTID-DEBUG-01] Persistent category query error (scored):', persistentError.message);
+      } else {
+        persistentItems = (persistentData || []) as MemoryItem[];
+        console.log(`[VTID-DEBUG-01] Scored: Found ${persistentItems.length} persistent memory items (no time filter)`);
       }
-      console.error('[VTID-01115] Memory query error:', error.message);
-      throw error;
     }
 
-    const rawItems = (memoryItems || []) as MemoryItem[];
+    // Query 2: Time-sensitive categories WITH time filter
+    let timeSensitiveItems: MemoryItem[] = [];
+    if (timeSensitiveCategories.length > 0) {
+      const { data: timeSensitiveData, error: timeSensitiveError } = await supabase
+        .from('memory_items')
+        .select('id, category_key, source, content, content_json, importance, occurred_at, created_at')
+        .eq('tenant_id', DEV_IDENTITY.TENANT_ID)
+        .eq('user_id', DEV_IDENTITY.USER_ID)
+        .in('category_key', timeSensitiveCategories)
+        .gte('occurred_at', sinceTimestamp)  // Time filter for non-identity categories
+        .order('occurred_at', { ascending: false })
+        .limit(limit * 2);
+
+      if (timeSensitiveError) {
+        if (timeSensitiveError.message.includes('does not exist') || timeSensitiveError.code === '42P01') {
+          console.warn('[VTID-01115] memory_items table not found (VTID-01104 dependency)');
+          return {
+            ok: false,
+            user_id: DEV_IDENTITY.USER_ID,
+            tenant_id: DEV_IDENTITY.TENANT_ID,
+            items: [],
+            scored_items: [],
+            excluded_items: [],
+            summary: 'Memory Core not deployed',
+            formatted_context: '',
+            fetched_at: fetchedAt,
+            error: 'Memory Core not available (VTID-01104 dependency)',
+            scoring_metadata: {
+              scoring_run_id: `score_${DEV_IDENTITY.TENANT_ID}_${Date.now()}`,
+              scoring_timestamp: fetchedAt,
+              context: { intent, domain, role },
+              total_candidates: 0,
+              included_count: 0,
+              deprioritized_count: 0,
+              excluded_count: 0,
+              top_n_with_factors: [],
+              exclusion_reasons: []
+            }
+          };
+        }
+        console.error('[VTID-DEBUG-01] Time-sensitive category query error (scored):', timeSensitiveError.message);
+      } else {
+        timeSensitiveItems = (timeSensitiveData || []) as MemoryItem[];
+      }
+    }
+
+    // Merge results: persistent items first (identity is most important), then time-sensitive
+    const allItems = [...persistentItems, ...timeSensitiveItems];
+
+    // Deduplicate by ID (in case of overlap)
+    const seenIds = new Set<string>();
+    const memoryItems = allItems.filter(item => {
+      if (seenIds.has(item.id)) return false;
+      seenIds.add(item.id);
+      return true;
+    });
+
+    console.log(`[VTID-DEBUG-01] Scored total: ${memoryItems.length} items (${persistentItems.length} persistent + ${timeSensitiveItems.length} time-sensitive)`);
+
+    const rawItems = memoryItems as MemoryItem[];
 
     // =============================================================================
     // VTID-01115: Apply Relevance Scoring
