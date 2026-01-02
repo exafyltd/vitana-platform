@@ -304,7 +304,10 @@ export type CicdEventType =
   // VTID-01123: Response Framing & Delivery Control Events
   | 'response.framing.computed'
   | 'response.framing.applied'
-  | 'response.framing.override';
+  | 'response.framing.override'
+  // VTID-01136: D42 Cross-Domain Context Fusion Events
+  | 'd42.priorities.resolved'
+  | 'd42.priorities.failed';
 
 export interface CicdOasisEvent {
   vtid: string;
