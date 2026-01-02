@@ -32,7 +32,7 @@ if [ "$SERVICE" = "gateway" ]; then
     --source "services/${SERVICE}" \
     --platform managed \
     --set-env-vars "ENVIRONMENT=${ENVIRONMENT}" \
-    --set-secrets "GOOGLE_GEMINI_API_KEY=google-gemini-api-key:latest,SUPABASE_URL=supabase-url:latest,SUPABASE_SERVICE_ROLE=supabase-service-role:latest" \
+    --set-secrets "GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest,SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest" \
     --quiet
 else
   gcloud run deploy "$SERVICE" \

@@ -46,9 +46,9 @@ echo ""
 echo -e "${YELLOW}Step 2: Checking required secrets in Secret Manager...${NC}"
 
 REQUIRED_SECRETS=(
-  "google-gemini-api-key"
-  "supabase-url"
-  "supabase-service-role"
+  "GOOGLE_GEMINI_API_KEY"
+  "SUPABASE_URL"
+  "SUPABASE_SERVICE_ROLE"
 )
 
 MISSING_SECRETS=()
@@ -78,7 +78,7 @@ echo -e "${YELLOW}Step 3: Binding secrets to Cloud Run service...${NC}"
 gcloud run services update "$SERVICE" \
   --project "$PROJECT" \
   --region "$REGION" \
-  --set-secrets "GOOGLE_GEMINI_API_KEY=google-gemini-api-key:latest,SUPABASE_URL=supabase-url:latest,SUPABASE_SERVICE_ROLE=supabase-service-role:latest" \
+  --set-secrets "GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest,SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest" \
   --quiet
 
 echo ""
