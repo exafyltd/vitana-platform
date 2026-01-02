@@ -108,6 +108,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const matchmakingRouter = require('./routes/matchmaking').default;
   // VTID-01083: Longevity Signal Layer - diary/memory to health signals bridge
   const longevityRouter = require('./routes/longevity').default;
+  // VTID-01120: D28 Emotional & Cognitive Signal Interpretation Engine
+  const emotionalCognitiveRouter = require('./routes/emotional-cognitive').default;
   // VTID-01084: Community Personalization v1 - longevity-focused groups/meetups
   const communityRouter = require('./routes/community').default;
   // VTID-01087: Relationship Graph Memory Routes
@@ -336,6 +338,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01083: Longevity Signal Layer - diary/memory to health signals bridge
   mountRouterSync(app, '/api/v1/longevity', longevityRouter, { owner: 'longevity' });
+
+  // VTID-01120: D28 Emotional & Cognitive Signal Interpretation Engine
+  mountRouterSync(app, '/api/v1/signals', emotionalCognitiveRouter, { owner: 'emotional-cognitive' });
 
   // VTID-01084: Community Personalization v1 - groups, meetups, recommendations
   mountRouterSync(app, '/api/v1/community', communityRouter, { owner: 'community' });
