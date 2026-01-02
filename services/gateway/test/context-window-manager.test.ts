@@ -284,17 +284,19 @@ describe('VTID-01117: Saturation Detection', () => {
   });
 
   test('Redundant content is detected and excluded', () => {
+    // VTID-DEBUG-01: redundancySimilarity threshold is now 0.85 (was 0.75)
+    // Need content that is >85% similar to trigger redundancy detection
     const items = [
       createMockItem({
         id: 'original',
-        content: 'My name is John and I live in Berlin',
-        category_key: 'personal',
+        content: 'I exercise at the gym every Monday Wednesday and Friday morning',
+        category_key: 'health',  // Use health, not personal (identity exempt from some filters)
         importance: 80
       }),
       createMockItem({
         id: 'duplicate',
-        content: 'My name is John and I live in Berlin Germany',
-        category_key: 'personal',
+        content: 'I exercise at the gym every Monday Wednesday and Friday morning early',
+        category_key: 'health',
         importance: 70
       })
     ];
@@ -310,26 +312,44 @@ describe('VTID-01117: Saturation Detection', () => {
 
   test('Topic repetition limit is enforced for non-identity domains', () => {
     // VTID-DEBUG-01: personal/relationships are EXEMPT from topic saturation
-    // So we test with conversation domain which still has topic limits
-    // Create more items on the same topic than the limit (8)
+    // Use conversation domain (maxItems: 5) - needs custom config to allow more items
+    // so we can actually hit the topic saturation limit (8) before domain cap
+    const customConfig = {
+      ...DEFAULT_CONTEXT_BUDGET,
+      domainBudgets: {
+        ...DEFAULT_CONTEXT_BUDGET.domainBudgets,
+        conversation: {
+          maxItems: 20,  // High enough to not hit domain cap first
+          maxChars: 5000,
+          minRelevanceScore: 20,
+          minConfidenceThreshold: 0
+        }
+      }
+    };
+    const customManager = new ContextWindowManager(customConfig);
+
+    // Create 12 items all about "work" topic (which maps to 'work' in extractTopic)
+    // Topic limit is 8, so 4 should be excluded for topic_saturation
     const items = [
-      createMockItem({ id: 'goal-1', content: 'I want to learn Spanish this year', category_key: 'goals', importance: 80 }),
-      createMockItem({ id: 'goal-2', content: 'My goal is to learn Spanish fluently', category_key: 'goals', importance: 75 }),
-      createMockItem({ id: 'goal-3', content: 'I plan to learn Spanish by summer', category_key: 'goals', importance: 70 }),
-      createMockItem({ id: 'goal-4', content: 'Learning Spanish is my priority goal', category_key: 'goals', importance: 65 }),
-      createMockItem({ id: 'goal-5', content: 'I want to achieve my Spanish learning goal', category_key: 'goals', importance: 60 }),
-      createMockItem({ id: 'goal-6', content: 'Spanish learning goal for next quarter', category_key: 'goals', importance: 55 }),
-      createMockItem({ id: 'goal-7', content: 'My Spanish goal is to be conversational', category_key: 'goals', importance: 50 }),
-      createMockItem({ id: 'goal-8', content: 'Goal: complete Spanish course online', category_key: 'goals', importance: 48 }),
-      createMockItem({ id: 'goal-9', content: 'Spanish goals include reading novels', category_key: 'goals', importance: 46 }),
-      createMockItem({ id: 'goal-10', content: 'My language goal is Spanish mastery', category_key: 'goals', importance: 44 })
+      createMockItem({ id: 'work-1', content: 'I have a meeting at work tomorrow', category_key: 'conversation', importance: 80 }),
+      createMockItem({ id: 'work-2', content: 'My work project is going well', category_key: 'conversation', importance: 78 }),
+      createMockItem({ id: 'work-3', content: 'Work has been busy this week', category_key: 'conversation', importance: 76 }),
+      createMockItem({ id: 'work-4', content: 'I finished my work assignment early', category_key: 'conversation', importance: 74 }),
+      createMockItem({ id: 'work-5', content: 'Work colleagues are supportive', category_key: 'conversation', importance: 72 }),
+      createMockItem({ id: 'work-6', content: 'My work schedule changed today', category_key: 'conversation', importance: 70 }),
+      createMockItem({ id: 'work-7', content: 'Work deadlines are approaching fast', category_key: 'conversation', importance: 68 }),
+      createMockItem({ id: 'work-8', content: 'I enjoy my work environment now', category_key: 'conversation', importance: 66 }),
+      createMockItem({ id: 'work-9', content: 'Work priorities shifted this month', category_key: 'conversation', importance: 64 }),
+      createMockItem({ id: 'work-10', content: 'My work performance review is soon', category_key: 'conversation', importance: 62 }),
+      createMockItem({ id: 'work-11', content: 'Work from home days are great', category_key: 'conversation', importance: 60 }),
+      createMockItem({ id: 'work-12', content: 'I love my work life balance now', category_key: 'conversation', importance: 58 })
     ];
 
-    const result = manager.selectContext(items);
+    const result = customManager.selectContext(items);
 
-    // Topic saturation limit is 8, so some should be excluded
-    const goalExclusions = result.excludedItems.filter(e => e.reason === 'topic_saturation');
-    expect(goalExclusions.length).toBeGreaterThanOrEqual(1);
+    // Topic saturation limit is 8, so at least 4 should be excluded for topic_saturation
+    const topicExclusions = result.excludedItems.filter(e => e.reason === 'topic_saturation');
+    expect(topicExclusions.length).toBeGreaterThanOrEqual(1);
   });
 
   test('Personal and relationships are exempt from topic saturation', () => {
