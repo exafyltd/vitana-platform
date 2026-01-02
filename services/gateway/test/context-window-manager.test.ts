@@ -208,13 +208,16 @@ describe('VTID-01117: Selection Rules', () => {
 
   test('Higher relevance items are selected first', () => {
     const items = [
-      createMockItem({ id: 'low', importance: 20, category_key: 'conversation' }),
+      createMockItem({ id: 'low', importance: 35, category_key: 'conversation' }),
       createMockItem({ id: 'high', importance: 80, category_key: 'conversation' }),
       createMockItem({ id: 'medium', importance: 50, category_key: 'conversation' })
     ];
 
     const result = manager.selectContext(items);
     const includedIds = result.includedItems.map(i => i.id);
+
+    // All should be included (all above conversation threshold of 30)
+    expect(includedIds.length).toBe(3);
 
     // High importance should come first
     expect(includedIds.indexOf('high')).toBeLessThan(includedIds.indexOf('medium'));
