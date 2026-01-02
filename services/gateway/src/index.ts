@@ -128,6 +128,18 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const domainRoutingRouter = require('./routes/domain-routing').default;
   // VTID-01119: User Preference & Constraint Modeling Engine
   const userPreferencesRouter = require('./routes/user-preferences').default;
+  // VTID-01126: D32 Situational Awareness Engine - situation understanding layer
+  const situationalAwarenessRouter = require('./routes/situational-awareness').default;
+  // VTID-01127: D33 Availability, Time-Window & Readiness Engine
+  const availabilityReadinessRouter = require('./routes/availability-readiness').default;
+  // VTID-01128: D34 Environmental, Location & Mobility Context Engine
+  const environmentalMobilityRouter = require('./routes/environmental-mobility-context').default;
+  // VTID-01129: D35 Social Context, Relationship Weighting & Proximity Engine
+  const socialContextRouter = require('./routes/social-context').default;
+  // VTID-01130: D36 Financial Sensitivity, Monetization Readiness & Value Perception Engine
+  const financialMonetizationRouter = require('./routes/financial-monetization').default;
+  // VTID-01122: D37 Health State, Energy & Capacity Awareness Engine
+  const healthCapacityRouter = require('./routes/health-capacity').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -357,6 +369,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01087: Relationship Graph Memory - matchmaking spine
   mountRouterSync(app, '/api/v1/relationships', relationshipsRouter, { owner: 'relationships' });
 
+  // VTID-01129: D35 Social Context, Relationship Weighting & Proximity Engine
+  mountRouterSync(app, '/api/v1/social', socialContextRouter, { owner: 'social-context' });
+
   // VTID-01090: Live Rooms + Events as Relationship Nodes
   mountRouterSync(app, '/api/v1/live', liveRouter, { owner: 'live' });
 
@@ -368,6 +383,21 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01119: User Preference & Constraint Modeling Engine
   mountRouterSync(app, '/api/v1/user-preferences', userPreferencesRouter, { owner: 'user-preferences' });
+
+  // VTID-01126: D32 Situational Awareness Engine - situation understanding layer
+  mountRouterSync(app, '/api/v1/situational', situationalAwarenessRouter, { owner: 'situational-awareness' });
+
+  // VTID-01127: D33 Availability, Time-Window & Readiness Engine
+  mountRouterSync(app, '/api/v1/availability', availabilityReadinessRouter, { owner: 'availability-readiness' });
+
+  // VTID-01128: D34 Environmental, Location & Mobility Context Engine
+  mountRouterSync(app, '/api/v1/context/mobility', environmentalMobilityRouter, { owner: 'environmental-mobility' });
+
+  // VTID-01130: D36 Financial Sensitivity, Monetization Readiness & Value Perception Engine
+  mountRouterSync(app, '/api/v1/monetization', financialMonetizationRouter, { owner: 'financial-monetization' });
+
+  // VTID-01122: D37 Health State, Energy & Capacity Awareness Engine
+  mountRouterSync(app, '/api/v1/capacity', healthCapacityRouter, { owner: 'health-capacity' });
 
   // VTID-01063: commandhub router (note: /board route REMOVED, use board-adapter)
   mountRouterSync(app, '/api/v1/commandhub', commandhub, { owner: 'commandhub' });

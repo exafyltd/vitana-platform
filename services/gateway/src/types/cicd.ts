@@ -305,6 +305,40 @@ export type CicdEventType =
   | 'response.framing.computed'
   | 'response.framing.applied'
   | 'response.framing.override'
+  // VTID-01127: D33 Availability, Time-Window & Readiness Engine Events
+  | 'd33.availability.computed'
+  | 'd33.availability.override'
+  | 'd33.readiness.risk_flagged'
+  | 'd33.action_depth.applied'
+  | 'd33.guardrail.enforced'
+  // VTID-01128: D34 Environmental, Location & Mobility Context Engine Events
+  | 'd34.context.computed'
+  | 'd34.context.cached'
+  | 'd34.context.override'
+  | 'd34.context.fallback'
+  | 'd34.filter.applied'
+  | 'd34.filter.rejected'
+  | 'd34.error'
+  // VTID-01129: D35 Social Context, Relationship Weighting & Proximity Engine Events
+  | 'd35.context.computed'
+  | 'd35.context.compute.failed'
+  | 'd35.proximity.scored'
+  | 'd35.comfort.updated'
+  | 'd35.action.filtered'
+  | 'd35.boundary.respected'
+  | 'd35.api.request'
+  | 'd35.api.error'
+  // VTID-01130: D36 Financial Sensitivity & Monetization Readiness Events
+  | 'd36.monetization.context.computed'
+  | 'd36.monetization.context.failed'
+  | 'd36.monetization.attempt.recorded'
+  // VTID-01122: D37 Health State, Energy & Capacity Awareness Events
+  | 'd37.capacity.computed'
+  | 'd37.capacity.compute.failed'
+  | 'd37.capacity.overridden'
+  | 'd37.actions.filtered'
+  | 'd37.low_energy.detected'
+  | 'd37.recovery.detected'
   // VTID-01136: D42 Cross-Domain Context Fusion Events
   | 'd42.priorities.resolved'
   | 'd42.priorities.failed';
