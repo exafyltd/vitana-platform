@@ -279,7 +279,11 @@ export type CicdEventType =
   | 'memory.unlocked'
   | 'memory.deleted'
   | 'memory.export.requested'
-  | 'memory.export.ready';
+  | 'memory.export.ready'
+  // VTID-01120: D28 Emotional & Cognitive Signal Events
+  | 'd28.signal.computed'
+  | 'd28.signal.compute.failed'
+  | 'd28.signal.overridden';
 
 export interface CicdOasisEvent {
   vtid: string;
