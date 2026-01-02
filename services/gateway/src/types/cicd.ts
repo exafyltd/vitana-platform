@@ -285,6 +285,10 @@ export type CicdEventType =
   | 'memory.deleted'
   | 'memory.export.requested'
   | 'memory.export.ready'
+  // VTID-01117: Context Window Management Events
+  | 'orb.context.window_selected'
+  // VTID-01118: Cross-Turn State & Continuity Engine Events
+  | 'orb.state.snapshot'
   // VTID-01123: Response Framing & Delivery Control Events
   | 'response.framing.computed'
   | 'response.framing.applied'
