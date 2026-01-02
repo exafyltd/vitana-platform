@@ -293,6 +293,14 @@ export type CicdEventType =
   | 'd28.signal.computed'
   | 'd28.signal.compute.failed'
   | 'd28.signal.overridden'
+  // VTID-01122: Safety Guardrail Events
+  | 'safety.guardrail.evaluated'
+  | 'safety.guardrail.allowed'
+  | 'safety.guardrail.restricted'
+  | 'safety.guardrail.redirected'
+  | 'safety.guardrail.blocked'
+  | 'safety.guardrail.rule.triggered'
+  | 'safety.guardrail.autonomy.denied'
   // VTID-01123: Response Framing & Delivery Control Events
   | 'response.framing.computed'
   | 'response.framing.applied'
