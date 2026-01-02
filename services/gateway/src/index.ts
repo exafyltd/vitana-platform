@@ -128,6 +128,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const domainRoutingRouter = require('./routes/domain-routing').default;
   // VTID-01119: User Preference & Constraint Modeling Engine
   const userPreferencesRouter = require('./routes/user-preferences').default;
+  // VTID-01126: D32 Situational Awareness Engine - situation understanding layer
+  const situationalAwarenessRouter = require('./routes/situational-awareness').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -368,6 +370,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01119: User Preference & Constraint Modeling Engine
   mountRouterSync(app, '/api/v1/user-preferences', userPreferencesRouter, { owner: 'user-preferences' });
+
+  // VTID-01126: D32 Situational Awareness Engine - situation understanding layer
+  mountRouterSync(app, '/api/v1/situational', situationalAwarenessRouter, { owner: 'situational-awareness' });
 
   // VTID-01063: commandhub router (note: /board route REMOVED, use board-adapter)
   mountRouterSync(app, '/api/v1/commandhub', commandhub, { owner: 'commandhub' });
