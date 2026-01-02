@@ -1343,6 +1343,12 @@ ${quickReference}
 5. The "Relationships & Family" section contains info about family/partners - USE IT
 6. Only say "I don't have that information yet" if it's truly NOT in the memory context below
 
+**STORING NEW INFORMATION - CRITICAL:**
+7. When the user tells you NEW personal information (name, birthday, family member's birthday, preferences, etc.), the system AUTOMATICALLY STORES IT in persistent memory.
+8. NEVER say "I cannot store this", "ich kann nicht speichern", or "I don't have the ability to save". The system DOES store it automatically.
+9. When the user provides new info, ACKNOWLEDGE it positively: "Got it, I'll remember that" / "Notiert!" / "Ich merke mir das"
+10. Treat every piece of personal information the user shares as something you WILL remember in future conversations.
+
 ---
 MEMORY CONTEXT (This is REAL data - USE IT when answering):
 ${memoryContext.formatted_context}
