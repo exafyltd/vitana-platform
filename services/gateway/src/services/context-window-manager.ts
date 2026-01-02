@@ -233,19 +233,20 @@ export const DEFAULT_CONTEXT_BUDGET: ContextBudgetConfig = {
   // Per-domain budgets with priority-based allocation
   domainBudgets: {
     // Critical domains (identity, relationships)
-    // VTID-DEBUG-01: Increased limits - personal identity has MANY facets
-    // (name, birthday, hometown, company, job, email, etc.)
+    // VTID-DEBUG-01: NO HARD LIMIT for personal identity - these are discrete
+    // facts (name, birthday, hometown, company, job, etc.) not repetitive content.
+    // Each piece of identity is unique and valuable. Only limited by total budget.
     personal: {
-      maxItems: 15,  // Was 5 - too aggressive, lost user identity
-      maxChars: 2500,  // Was 1200
-      minRelevanceScore: 10,  // Was 20 - personal info is always relevant
+      maxItems: 999,  // Effectively unlimited - only constrained by totalItemLimit
+      maxChars: 5000,  // Generous - identity is priority
+      minRelevanceScore: 0,  // ALL personal info is relevant
       minConfidenceThreshold: 0
     },
     relationships: {
-      maxItems: 10,  // Was 4 - user may have many family members
-      maxChars: 1500,  // Was 800
-      minRelevanceScore: 15,  // Was 30
-      minConfidenceThreshold: 0  // Was 20 - relationship info is critical
+      maxItems: 999,  // Effectively unlimited - user may have large family
+      maxChars: 3000,  // Generous for relationship info
+      minRelevanceScore: 0,  // ALL relationship info is relevant
+      minConfidenceThreshold: 0
     },
     // High-priority domains
     health: {

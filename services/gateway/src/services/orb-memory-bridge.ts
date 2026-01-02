@@ -73,11 +73,11 @@ export const DEV_IDENTITY = {
  */
 const MEMORY_CONFIG = {
   // Max items to fetch for context
-  // VTID-DEBUG-01: Increased from 30 to 50 to accommodate personal identity
-  DEFAULT_CONTEXT_LIMIT: 50,
-  // Per-category limit for formatting
-  // VTID-DEBUG-01: Increased from 5 to 15 for personal/relationships
-  ITEMS_PER_CATEGORY: 15,
+  // VTID-DEBUG-01: Increased from 30 to 100 to accommodate personal identity
+  DEFAULT_CONTEXT_LIMIT: 100,
+  // Per-category limit for formatting (applies to non-identity categories)
+  // VTID-DEBUG-01: Personal/relationships have NO limit - see formatMemoryForPrompt
+  ITEMS_PER_CATEGORY: 10,
   // Categories relevant for ORB context (added 'personal' for identity info)
   CONTEXT_CATEGORIES: ['personal', 'conversation', 'preferences', 'goals', 'health', 'relationships'],
   // Max age of memory items to include (7 days instead of 24 hours)
@@ -1107,8 +1107,11 @@ function formatScoredMemoryForPrompt(items: ScoredMemoryItem[]): string {
     const catItems = byCategory[category];
     lines.push(`### ${formatCategoryName(category)}`);
 
-    // Items are already sorted by relevance score
-    const itemLimit = MEMORY_CONFIG.ITEMS_PER_CATEGORY || 5;
+    // VTID-DEBUG-01: NO LIMIT for personal/relationships - include ALL items
+    // Other categories use ITEMS_PER_CATEGORY to prevent flooding
+    const isIdentityCategory = category === 'personal' || category === 'relationships';
+    const itemLimit = isIdentityCategory ? catItems.length : (MEMORY_CONFIG.ITEMS_PER_CATEGORY || 10);
+
     for (const item of catItems.slice(0, itemLimit)) {
       const timestamp = formatRelativeTime(item.occurred_at);
       const content = truncateContent(item.content, MEMORY_CONFIG.MAX_ITEM_CHARS || 300);
@@ -1203,8 +1206,11 @@ function formatMemoryForPrompt(items: MemoryItem[]): string {
     const catItems = byCategory[category];
     lines.push(`### ${formatCategoryName(category)}`);
 
-    // VTID-01109: Use config for items per category limit
-    const itemLimit = MEMORY_CONFIG.ITEMS_PER_CATEGORY || 5;
+    // VTID-DEBUG-01: NO LIMIT for personal/relationships - include ALL items
+    // Other categories use ITEMS_PER_CATEGORY to prevent flooding
+    const isIdentityCategory = category === 'personal' || category === 'relationships';
+    const itemLimit = isIdentityCategory ? catItems.length : (MEMORY_CONFIG.ITEMS_PER_CATEGORY || 10);
+
     for (const item of catItems.slice(0, itemLimit)) {
       const timestamp = formatRelativeTime(item.occurred_at);
       // VTID-01109: Use config for content truncation limit
