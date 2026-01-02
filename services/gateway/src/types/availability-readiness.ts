@@ -115,7 +115,7 @@ export interface SessionTelemetry {
   interaction_count: number;         // Number of turns
   avg_response_time_seconds: number; // Average user response time
   session_length_minutes: number;    // How long session has been active
-  recent_response_times: number[];   // Last N response times
+  recent_response_times?: number[];  // Last N response times (optional)
   interaction_mode: 'voice' | 'text';
 }
 

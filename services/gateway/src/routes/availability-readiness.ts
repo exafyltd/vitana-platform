@@ -156,9 +156,8 @@ router.get('/current', async (req: Request, res: Response) => {
 
   console.log(`${LOG_PREFIX} GET /current - Success: session=${sessionId}, age=${result.cache_age_seconds?.toFixed(1)}s`);
   return res.json({
-    ok: true,
-    has_data: true,
-    ...result
+    ...result,
+    has_data: true
   });
 });
 
