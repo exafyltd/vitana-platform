@@ -327,7 +327,20 @@ export type CicdEventType =
   | 'd35.action.filtered'
   | 'd35.boundary.respected'
   | 'd35.api.request'
-  | 'd35.api.error';
+  | 'd35.api.error'
+  // VTID-01135: D41 Ethical Boundaries, Personal Limits & Consent Sensitivity Engine Events
+  | 'd41.boundary.set'
+  | 'd41.boundary.checked'
+  | 'd41.consent.granted'
+  | 'd41.consent.denied'
+  | 'd41.consent.revoked'
+  | 'd41.consent.expired'
+  | 'd41.consent.updated'
+  | 'd41.action.blocked'
+  | 'd41.action.restricted'
+  | 'd41.action.allowed'
+  | 'd41.vulnerability.detected'
+  | 'd41.vulnerability.cleared';
 
 export interface CicdOasisEvent {
   vtid: string;

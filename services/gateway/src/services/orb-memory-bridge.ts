@@ -1711,9 +1711,13 @@ Use these signals to adapt your response:
   // VTID-01135: Get D41 boundary/consent context
   let boundaryContext: { context: string; orbContext: OrbBoundaryContext } | undefined;
   try {
+    // Convert OrbSignalContext to Record<string, unknown> for compatibility
+    const emotionalSignals = signalContext?.orbContext
+      ? { ...signalContext.orbContext } as Record<string, unknown>
+      : undefined;
     const boundaryResult = await getOrbBoundaryContext(
       undefined, // authToken - uses dev identity in sandbox
-      signalContext?.orbContext // Pass emotional signals for vulnerability detection
+      emotionalSignals // Pass emotional signals for vulnerability detection
     );
     if (boundaryResult) {
       boundaryContext = boundaryResult;
@@ -1812,9 +1816,13 @@ Use these signals to adapt your response:
   // VTID-01135: Get D41 boundary/consent context
   let boundaryContext: { context: string; orbContext: OrbBoundaryContext } | undefined;
   try {
+    // Convert OrbSignalContext to Record<string, unknown> for compatibility
+    const emotionalSignals = signalContext?.orbContext
+      ? { ...signalContext.orbContext } as Record<string, unknown>
+      : undefined;
     const boundaryResult = await getOrbBoundaryContext(
       undefined, // authToken - uses dev identity in sandbox
-      signalContext?.orbContext // Pass emotional signals for vulnerability detection
+      emotionalSignals // Pass emotional signals for vulnerability detection
     );
     if (boundaryResult) {
       boundaryContext = boundaryResult;

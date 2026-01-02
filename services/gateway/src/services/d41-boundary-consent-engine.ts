@@ -23,6 +23,7 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
+import { CicdEventType } from '../types/cicd';
 import {
   PersonalBoundaries,
   ConsentState,
@@ -419,7 +420,7 @@ export async function setConsent(
     const response = result.data as SetConsentResponse;
 
     // Determine event type based on status
-    let eventType: string;
+    let eventType: CicdEventType;
     switch (request.status) {
       case 'granted':
         eventType = 'd41.consent.granted';
