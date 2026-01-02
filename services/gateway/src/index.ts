@@ -108,6 +108,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const matchmakingRouter = require('./routes/matchmaking').default;
   // VTID-01083: Longevity Signal Layer - diary/memory to health signals bridge
   const longevityRouter = require('./routes/longevity').default;
+  // VTID-01120: D28 Emotional & Cognitive Signal Interpretation Engine
+  const emotionalCognitiveRouter = require('./routes/emotional-cognitive').default;
   // VTID-01084: Community Personalization v1 - longevity-focused groups/meetups
   const communityRouter = require('./routes/community').default;
   // VTID-01087: Relationship Graph Memory Routes
@@ -122,6 +124,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const diaryRouter = require('./routes/diary').default;
   // VTID-01114: Domain & Topic Routing Engine (D22) - intelligence traffic control
   const domainRoutingRouter = require('./routes/domain-routing').default;
+  // VTID-01119: User Preference & Constraint Modeling Engine
+  const userPreferencesRouter = require('./routes/user-preferences').default;
   // VTID-01121: User Feedback, Correction & Trust Repair Engine
   const feedbackTrustRouter = require('./routes/feedback-trust').default;
 
@@ -341,6 +345,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01083: Longevity Signal Layer - diary/memory to health signals bridge
   mountRouterSync(app, '/api/v1/longevity', longevityRouter, { owner: 'longevity' });
 
+  // VTID-01120: D28 Emotional & Cognitive Signal Interpretation Engine
+  mountRouterSync(app, '/api/v1/signals', emotionalCognitiveRouter, { owner: 'emotional-cognitive' });
+
   // VTID-01084: Community Personalization v1 - groups, meetups, recommendations
   mountRouterSync(app, '/api/v1/community', communityRouter, { owner: 'community' });
 
@@ -355,6 +362,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01114: Domain & Topic Routing Engine (D22) - intelligence traffic control layer
   mountRouterSync(app, '/api/v1/routing', domainRoutingRouter, { owner: 'domain-routing' });
+
+  // VTID-01119: User Preference & Constraint Modeling Engine
+  mountRouterSync(app, '/api/v1/user-preferences', userPreferencesRouter, { owner: 'user-preferences' });
 
   // VTID-01121: User Feedback, Correction & Trust Repair Engine
   mountRouterSync(app, '/api/v1/feedback', feedbackTrustRouter, { owner: 'feedback-trust' });
