@@ -24,6 +24,7 @@ echo -e "${YELLOW}Deploying ${SERVICE} to Cloud Run...${NC}"
 
 # VTID-01125: Gateway requires additional secrets for ORB intelligence
 # Secrets are stored in GCP Secret Manager and bound at deploy time
+# NOTE: --set-secrets REPLACES all secrets, so we must include ALL required secrets here
 if [ "$SERVICE" = "gateway" ]; then
   echo -e "${YELLOW}VTID-01125: Binding secrets for gateway service...${NC}"
   gcloud run deploy "$SERVICE" \
@@ -32,7 +33,7 @@ if [ "$SERVICE" = "gateway" ]; then
     --source "services/${SERVICE}" \
     --platform managed \
     --set-env-vars "ENVIRONMENT=${ENVIRONMENT}" \
-    --set-secrets "GOOGLE_GEMINI_API_KEY=google-gemini-api-key:latest,SUPABASE_URL=supabase-url:latest,SUPABASE_SERVICE_ROLE=supabase-service-role:latest" \
+    --set-secrets "GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest,SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest,SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest,GITHUB_TOKEN=GITHUB_TOKEN:latest,GH_TOKEN=GITHUB_TOKEN:latest,GITHUB_SAFE_MERGE_TOKEN=GITHUB_TOKEN:latest,DEV_AUTH_SECRET=DEV_AUTH_SECRET:latest,DEV_TEST_USER_EMAIL=DEV_TEST_USER_EMAIL:latest,DEV_TEST_USER_PASSWORD=DEV_TEST_USER_PASSWORD:latest,DEV_JWT_SECRET=DEV_JWT_SECRET:latest" \
     --quiet
 else
   gcloud run deploy "$SERVICE" \
