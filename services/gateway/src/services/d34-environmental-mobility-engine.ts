@@ -545,8 +545,8 @@ export async function computeEnvironmentalConstraints(
   }
 
   // 3. Weather considerations (placeholder - would need weather API)
-  // For now, default to unknown
-  const weatherSuitability: WeatherSuitability = 'unknown';
+  // For now, default to unknown (using let for future weather API integration)
+  let weatherSuitability: WeatherSuitability = 'unknown';
 
   // 4. Infer indoor/outdoor from situation
   if (situationVector) {
@@ -561,7 +561,8 @@ export async function computeEnvironmentalConstraints(
   }
 
   // 5. Default outdoor_ok if daytime and no restrictions
-  if (!isLateNight && weatherSuitability !== 'unsuitable' && !flags.includes('indoor_preferred')) {
+  // Note: weather check uses type assertion to allow for future weather API integration
+  if (!isLateNight && (weatherSuitability as WeatherSuitability) !== 'unsuitable' && !flags.includes('indoor_preferred')) {
     flags.push('outdoor_ok');
   }
 
@@ -1018,10 +1019,14 @@ export async function computeContext(
 
     // Bootstrap dev context if needed
     if (supabase && useDevIdentity) {
-      await supabase.rpc('dev_bootstrap_request_context', {
-        p_tenant_id: DEV_IDENTITY.TENANT_ID,
-        p_active_role: 'developer'
-      }).catch(() => { /* Ignore bootstrap errors */ });
+      try {
+        await supabase.rpc('dev_bootstrap_request_context', {
+          p_tenant_id: DEV_IDENTITY.TENANT_ID,
+          p_active_role: 'developer'
+        });
+      } catch {
+        /* Ignore bootstrap errors */
+      }
     }
 
     // Parse D32/D33 inputs if provided
@@ -1180,7 +1185,8 @@ export async function getCurrentContext(
   // Compute fresh
   const result = await computeContext({
     user_id: userId,
-    session_id: sessionId
+    session_id: sessionId,
+    force_refresh: false
   }, authToken);
 
   if (!result.ok) {
@@ -1218,7 +1224,7 @@ export async function filterActionsBatch(
     }
 
     if (!bundle) {
-      const contextResult = await computeContext({}, authToken);
+      const contextResult = await computeContext({ force_refresh: false }, authToken);
       if (!contextResult.ok || !contextResult.bundle) {
         return {
           ok: false,
