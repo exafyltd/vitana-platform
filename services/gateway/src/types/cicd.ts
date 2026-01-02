@@ -286,7 +286,11 @@ export type CicdEventType =
   | 'memory.export.requested'
   | 'memory.export.ready'
   // VTID-01118: Cross-Turn State & Continuity Engine Events
-  | 'orb.state.snapshot';
+  | 'orb.state.snapshot'
+  // VTID-01123: Response Framing & Delivery Control Events
+  | 'response.framing.computed'
+  | 'response.framing.applied'
+  | 'response.framing.override';
 
 export interface CicdOasisEvent {
   vtid: string;
