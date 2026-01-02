@@ -434,7 +434,7 @@ export async function recordFeedbackCorrection(
       return { ok: false, error: `Database error: ${response.status}` };
     }
 
-    const insertedData = await response.json();
+    const insertedData = await response.json() as FeedbackCorrection[];
     console.log(`[${VTID}] Correction recorded: ${correctionId}`);
 
     // 7. Emit OASIS event
@@ -514,10 +514,10 @@ export async function getOrCreateUserTrustScore(
       return { ok: false, error: `Database error: ${getResponse.status}` };
     }
 
-    const existingData = await getResponse.json();
+    const existingData = await getResponse.json() as UserTrustScore[];
 
     if (existingData.length > 0) {
-      return { ok: true, trustScore: existingData[0] as UserTrustScore };
+      return { ok: true, trustScore: existingData[0] };
     }
 
     // Create new trust score if not exists
@@ -554,8 +554,8 @@ export async function getOrCreateUserTrustScore(
       return { ok: false, error: `Database error: ${createResponse.status}` };
     }
 
-    const createdData = await createResponse.json();
-    return { ok: true, trustScore: createdData[0] as UserTrustScore };
+    const createdData = await createResponse.json() as UserTrustScore[];
+    return { ok: true, trustScore: createdData[0] };
   } catch (err: any) {
     console.error(`[${VTID}] getOrCreateUserTrustScore error:`, err.message);
     return { ok: false, error: err.message };
@@ -661,7 +661,7 @@ export async function recordTrustRepair(
       return { ok: false, error: `Database error: ${response.status}` };
     }
 
-    const insertedData = await response.json();
+    const insertedData = await response.json() as TrustRepairEntry[];
     console.log(`[${VTID}] Trust repair recorded: ${repairId} (${repairAction})`);
 
     // Emit OASIS event
@@ -741,7 +741,7 @@ export async function addBehaviorConstraint(
       return { ok: false, error: `Database error: ${response.status}` };
     }
 
-    const insertedData = await response.json();
+    const insertedData = await response.json() as BehaviorConstraint[];
     console.log(`[${VTID}] Behavior constraint added: ${constraintId} (${constraintType})`);
 
     // Emit OASIS event
