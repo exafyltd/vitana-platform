@@ -73,6 +73,13 @@ import {
   ActiveRole,
   InteractionMode
 } from '../services/intent-detection-engine';
+// VTID-01114: Domain & Topic Routing Engine (D22)
+import {
+  computeRoutingBundle,
+  getRoutingSummary,
+  emitRoutingEvent
+} from '../services/domain-routing-service';
+import { RoutingInput, RoutingBundle } from '../types/domain-routing';
 
 const router = Router();
 
@@ -166,6 +173,8 @@ interface OrbChatRequest {
 
 /**
  * VTID-0135: ORB Chat Response
+ * VTID-01106: Extended with memory debug info
+ * VTID-01114: Extended with routing debug info
  */
 interface OrbChatResponse {
   ok: boolean;
@@ -176,6 +185,22 @@ interface OrbChatResponse {
     model: string;
     mode: string;
     vtid?: string;
+    // VTID-01106: Memory debug info
+    memory_bridge_enabled?: boolean;
+    memory_context_ok?: boolean;
+    memory_items_count?: number;
+    memory_injected?: boolean;
+    // VTID-01114: Domain routing info
+    routing?: {
+      primary_domain: string;
+      secondary_domains: string[];
+      routing_confidence: number;
+      active_topics: string[];
+      safety_flags: string[];
+      autonomy_level: number;
+      allows_commerce: boolean;
+      determinism_key: string;
+    };
   };
   error?: string;
 }
@@ -1192,7 +1217,7 @@ router.post('/chat', async (req: Request, res: Response) => {
     // =========================================================================
     // VTID-01113: Intent Detection & Classification (D21)
     // Detect intent BEFORE ORB responds - this informs downstream intelligence
-    // Order: D20 Context → D21 Intent → Intelligence (Gemini)
+    // Order: D20 Context → D21 Intent → D22 Routing → Intelligence (Gemini)
     // =========================================================================
 
     // Build multi-signal input for intent detection
@@ -1243,6 +1268,54 @@ router.post('/chat', async (req: Request, res: Response) => {
         isDevSandbox() ? DEV_IDENTITY.USER_ID : undefined,
         conversationId
       ).catch((err: Error) => console.warn('[VTID-01113] Safety flag log failed:', err.message));
+    }
+
+    // =========================================================================
+    // VTID-01114: Domain & Topic Routing (D22)
+    // Uses D21 intent output to determine which intelligence domain handles turn
+    // =========================================================================
+
+    const routingInput: RoutingInput = {
+      context: {
+        user_id: memoryContext?.user_id || DEV_IDENTITY.USER_ID,
+        tenant_id: memoryContext?.tenant_id || DEV_IDENTITY.TENANT_ID,
+        memory_items: (memoryContext?.items || []).map(item => ({
+          category_key: item.category_key,
+          content: item.content,
+          importance: item.importance
+        })),
+        formatted_context: memoryContext?.formatted_context || ''
+      },
+      intent: {
+        // VTID-01113 → VTID-01114: Wire D21 intent into D22 routing
+        top_topics: intentBundle.domain_tags,
+        weaknesses: intentBundle.requires_safety_review ? [intentBundle.primary_intent] : [],
+        recommended_actions: intentBundle.urgency_level === 'critical' ? ['escalate'] : []
+      },
+      current_message: inputText,
+      active_role: (meta?.role as 'patient' | 'professional' | 'admin' | 'developer') || 'patient',
+      session: {
+        session_id: orbSessionId,
+        turn_number: transcript.turns.filter(t => t.role === 'user').length
+      }
+    };
+
+    const routingBundle = computeRoutingBundle(routingInput);
+    console.log(`[VTID-01114] ${getRoutingSummary(routingBundle)}`);
+
+    // Emit routing event for audit (D59 compliance)
+    await emitRoutingEvent(
+      routingBundle,
+      routingInput.context.user_id,
+      routingInput.context.tenant_id,
+      orbSessionId
+    );
+
+    // VTID-01114: Check for critical safety flags that require intervention
+    const criticalFlags = routingBundle.safety_flags.filter(f => f.severity === 'critical');
+    if (criticalFlags.length > 0) {
+      console.warn(`[VTID-01114] CRITICAL safety flags detected: ${criticalFlags.map(f => f.type).join(', ')}`);
+      // Note: In production, this might trigger human escalation or special handling
     }
 
     // Process with Gemini using Vertex routing (same as Operator Console)
@@ -1371,6 +1444,18 @@ router.post('/chat', async (req: Request, res: Response) => {
       requires_safety_review: intentBundle.requires_safety_review
     };
 
+    // VTID-01114: Add routing info to response for visibility
+    const routingDebug = {
+      primary_domain: routingBundle.primary_domain,
+      secondary_domains: routingBundle.secondary_domains,
+      routing_confidence: routingBundle.routing_confidence,
+      active_topics: routingBundle.active_topics.map(t => t.topic_key),
+      safety_flags: routingBundle.safety_flags.map(f => f.type),
+      autonomy_level: routingBundle.autonomy_level,
+      allows_commerce: routingBundle.allows_commerce,
+      determinism_key: routingBundle.metadata.determinism_key
+    };
+
     const response: OrbChatResponse = {
       ok: true,
       conversation_id: conversationId,
@@ -1381,7 +1466,8 @@ router.post('/chat', async (req: Request, res: Response) => {
         mode: 'orb_voice',
         vtid: 'VTID-0135',
         ...memoryDebug, // Include memory debug info in response
-        ...intentDebug  // VTID-01113: Include intent classification in response
+        ...intentDebug, // VTID-01113: Include intent classification in response
+        routing: routingDebug // VTID-01114: Include routing info
       }
     };
 
