@@ -2,6 +2,7 @@
 
 # Deployment script for Vitana services
 # Compliant with SYS-RULE-DEPLOY-L1
+# VTID-01125: Added GOOGLE_GEMINI_API_KEY secret binding for ORB
 
 set -euo pipefail
 
@@ -20,13 +21,28 @@ echo -e "${YELLOW}Starting deployment for service: ${SERVICE}${NC}"
 
 # STEP 1 — Deploy service using Cloud Run + CI standards
 echo -e "${YELLOW}Deploying ${SERVICE} to Cloud Run...${NC}"
-gcloud run deploy "$SERVICE" \
-  --project lovable-vitana-vers1 \
-  --region us-central1 \
-  --source "services/${SERVICE}" \
-  --platform managed \
-  --set-env-vars "ENVIRONMENT=${ENVIRONMENT}" \
-  --quiet
+
+# VTID-01125: Gateway requires additional secrets for ORB intelligence
+# Secrets are stored in GCP Secret Manager and bound at deploy time
+if [ "$SERVICE" = "gateway" ]; then
+  echo -e "${YELLOW}VTID-01125: Binding secrets for gateway service...${NC}"
+  gcloud run deploy "$SERVICE" \
+    --project lovable-vitana-vers1 \
+    --region us-central1 \
+    --source "services/${SERVICE}" \
+    --platform managed \
+    --set-env-vars "ENVIRONMENT=${ENVIRONMENT}" \
+    --set-secrets "GOOGLE_GEMINI_API_KEY=google-gemini-api-key:latest,SUPABASE_URL=supabase-url:latest,SUPABASE_SERVICE_ROLE=supabase-service-role:latest" \
+    --quiet
+else
+  gcloud run deploy "$SERVICE" \
+    --project lovable-vitana-vers1 \
+    --region us-central1 \
+    --source "services/${SERVICE}" \
+    --platform managed \
+    --set-env-vars "ENVIRONMENT=${ENVIRONMENT}" \
+    --quiet
+fi
 
 echo -e "${GREEN}Deployment triggered successfully for ${SERVICE}.${NC}"
 
