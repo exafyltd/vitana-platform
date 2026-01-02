@@ -4,7 +4,6 @@
  * Tests for the Learning Style, Adaptation & Knowledge Absorption Engine
  */
 
-import { describe, it, expect } from 'vitest';
 import {
   computeLearningStyle,
   getDefaultLearningStyle,
