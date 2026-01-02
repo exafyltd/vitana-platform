@@ -1288,9 +1288,16 @@ router.post('/chat', async (req: Request, res: Response) => {
       },
       intent: {
         // VTID-01113 → VTID-01114: Wire D21 intent into D22 routing
-        top_topics: intentBundle.domain_tags,
+        top_topics: intentBundle.domain_tags.map((tag, idx) => ({
+          topic_key: tag,
+          score: 1.0 - (idx * 0.1) // Primary topic gets 1.0, secondary gets 0.9, etc.
+        })),
         weaknesses: intentBundle.requires_safety_review ? [intentBundle.primary_intent] : [],
-        recommended_actions: intentBundle.urgency_level === 'critical' ? ['escalate'] : []
+        recommended_actions: intentBundle.urgency_level === 'critical' ? [{
+          type: 'escalate',
+          id: `escalate-${intentBundle.bundle_id}`,
+          why: [{ template: 'Critical urgency detected by D21 intent classification' }]
+        }] : []
       },
       current_message: inputText,
       active_role: (meta?.role as 'patient' | 'professional' | 'admin' | 'developer') || 'patient',
