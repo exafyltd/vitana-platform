@@ -1179,4 +1179,230 @@ export async function getGovernanceHistory(params: GovernanceHistoryParams): Pro
     }
 }
 
+// =============================================================================
+// VTID-01122: Safety Guardrail Event Types
+// =============================================================================
+
+/**
+ * VTID-01122: Safety Guardrail Event Types
+ * These are the event types for safety guardrail decisions.
+ */
+export const SAFETY_GUARDRAIL_EVENT_TYPES = [
+  'safety.guardrail.evaluated',
+  'safety.guardrail.allowed',
+  'safety.guardrail.restricted',
+  'safety.guardrail.redirected',
+  'safety.guardrail.blocked',
+  'safety.guardrail.rule.triggered',
+  'safety.guardrail.autonomy.denied'
+] as const;
+
+/**
+ * VTID-01122: Safety Guardrail Event Helpers
+ * Helper functions for emitting safety guardrail events.
+ */
+export const safetyGuardrailEvents = {
+  /**
+   * Emit guardrail evaluation event
+   */
+  evaluated: (
+    evaluationId: string,
+    requestId: string,
+    sessionId: string,
+    tenantId: string,
+    finalAction: 'allow' | 'restrict' | 'redirect' | 'block',
+    primaryDomain: string | null,
+    triggeredRules: string[],
+    inputHash: string,
+    ruleVersion: string,
+    evaluationDurationMs: number
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01122',
+      type: 'safety.guardrail.evaluated',
+      source: 'safety-guardrails',
+      status: finalAction === 'allow' ? 'success' : finalAction === 'block' ? 'warning' : 'info',
+      message: `Safety guardrail ${finalAction}: ${primaryDomain || 'none'}`,
+      payload: {
+        evaluation_id: evaluationId,
+        request_id: requestId,
+        session_id: sessionId,
+        tenant_id: tenantId,
+        final_action: finalAction,
+        primary_domain: primaryDomain,
+        triggered_rules: triggeredRules,
+        input_hash: inputHash,
+        rule_version: ruleVersion,
+        evaluation_duration_ms: evaluationDurationMs,
+        evaluated_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit allowed event
+   */
+  allowed: (
+    evaluationId: string,
+    requestId: string,
+    tenantId: string,
+    domains: string[]
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01122',
+      type: 'safety.guardrail.allowed',
+      source: 'safety-guardrails',
+      status: 'success',
+      message: `Request allowed through safety guardrails`,
+      payload: {
+        evaluation_id: evaluationId,
+        request_id: requestId,
+        tenant_id: tenantId,
+        domains_evaluated: domains,
+        allowed_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit restricted event
+   */
+  restricted: (
+    evaluationId: string,
+    requestId: string,
+    tenantId: string,
+    domain: string,
+    reason: string,
+    userMessage: string
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01122',
+      type: 'safety.guardrail.restricted',
+      source: 'safety-guardrails',
+      status: 'info',
+      message: `Request restricted: ${domain} - ${reason}`,
+      payload: {
+        evaluation_id: evaluationId,
+        request_id: requestId,
+        tenant_id: tenantId,
+        domain,
+        reason,
+        user_message: userMessage,
+        restricted_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit redirected event
+   */
+  redirected: (
+    evaluationId: string,
+    requestId: string,
+    tenantId: string,
+    domain: string,
+    reason: string,
+    clarifyingQuestion: string
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01122',
+      type: 'safety.guardrail.redirected',
+      source: 'safety-guardrails',
+      status: 'info',
+      message: `Request redirected: ${domain} - ${reason}`,
+      payload: {
+        evaluation_id: evaluationId,
+        request_id: requestId,
+        tenant_id: tenantId,
+        domain,
+        reason,
+        clarifying_question: clarifyingQuestion,
+        redirected_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit blocked event
+   */
+  blocked: (
+    evaluationId: string,
+    requestId: string,
+    tenantId: string,
+    domain: string,
+    reason: string,
+    userMessage: string,
+    alternatives?: string[]
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01122',
+      type: 'safety.guardrail.blocked',
+      source: 'safety-guardrails',
+      status: 'warning',
+      message: `Request blocked: ${domain} - ${reason}`,
+      payload: {
+        evaluation_id: evaluationId,
+        request_id: requestId,
+        tenant_id: tenantId,
+        domain,
+        reason,
+        user_message: userMessage,
+        alternatives,
+        blocked_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit rule triggered event
+   */
+  ruleTriggered: (
+    evaluationId: string,
+    requestId: string,
+    tenantId: string,
+    ruleId: string,
+    domain: string,
+    action: string
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01122',
+      type: 'safety.guardrail.rule.triggered',
+      source: 'safety-guardrails',
+      status: 'info',
+      message: `Rule triggered: ${ruleId} -> ${action}`,
+      payload: {
+        evaluation_id: evaluationId,
+        request_id: requestId,
+        tenant_id: tenantId,
+        rule_id: ruleId,
+        domain,
+        action,
+        triggered_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit autonomy denied event
+   */
+  autonomyDenied: (
+    evaluationId: string,
+    requestId: string,
+    tenantId: string,
+    domain: string,
+    reason: string,
+    requestedLevel: string
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01122',
+      type: 'safety.guardrail.autonomy.denied',
+      source: 'safety-guardrails',
+      status: 'warning',
+      message: `Autonomy denied: ${domain} - ${reason}`,
+      payload: {
+        evaluation_id: evaluationId,
+        request_id: requestId,
+        tenant_id: tenantId,
+        domain,
+        reason,
+        requested_level: requestedLevel,
+        denied_at: new Date().toISOString(),
+      },
+    }),
+};
+
 export default cicdEvents;

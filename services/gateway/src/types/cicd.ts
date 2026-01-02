@@ -279,7 +279,15 @@ export type CicdEventType =
   | 'memory.unlocked'
   | 'memory.deleted'
   | 'memory.export.requested'
-  | 'memory.export.ready';
+  | 'memory.export.ready'
+  // VTID-01122: Safety Guardrail Events
+  | 'safety.guardrail.evaluated'
+  | 'safety.guardrail.allowed'
+  | 'safety.guardrail.restricted'
+  | 'safety.guardrail.redirected'
+  | 'safety.guardrail.blocked'
+  | 'safety.guardrail.rule.triggered'
+  | 'safety.guardrail.autonomy.denied';
 
 export interface CicdOasisEvent {
   vtid: string;
