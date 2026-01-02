@@ -289,6 +289,10 @@ export type CicdEventType =
   | 'orb.context.window_selected'
   // VTID-01118: Cross-Turn State & Continuity Engine Events
   | 'orb.state.snapshot'
+  // VTID-01120: D28 Emotional & Cognitive Signal Events
+  | 'd28.signal.computed'
+  | 'd28.signal.compute.failed'
+  | 'd28.signal.overridden'
   // VTID-01122: Safety Guardrail Events
   | 'safety.guardrail.evaluated'
   | 'safety.guardrail.allowed'
