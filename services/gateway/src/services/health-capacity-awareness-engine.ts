@@ -595,7 +595,8 @@ export async function processMessageForOrb(
   try {
     const computeResult = await computeCapacity({
       message,
-      session_id: sessionId
+      session_id: sessionId,
+      include_wearables: false
     }, authToken);
 
     if (!computeResult.ok || !computeResult.capacity_state) {

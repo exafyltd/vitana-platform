@@ -331,7 +331,14 @@ export type CicdEventType =
   // VTID-01130: D36 Financial Sensitivity & Monetization Readiness Events
   | 'd36.monetization.context.computed'
   | 'd36.monetization.context.failed'
-  | 'd36.monetization.attempt.recorded';
+  | 'd36.monetization.attempt.recorded'
+  // VTID-01122: D37 Health State, Energy & Capacity Awareness Events
+  | 'd37.capacity.computed'
+  | 'd37.capacity.compute.failed'
+  | 'd37.capacity.overridden'
+  | 'd37.actions.filtered'
+  | 'd37.low_energy.detected'
+  | 'd37.recovery.detected';
 
 export interface CicdOasisEvent {
   vtid: string;
