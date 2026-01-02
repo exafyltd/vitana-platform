@@ -122,6 +122,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const { personalizationRouter } = require('./routes/match-feedback');
   // VTID-01097: Diary Templates Gateway - guided diary templates
   const diaryRouter = require('./routes/diary').default;
+  // VTID-01114: Domain & Topic Routing Engine (D22) - intelligence traffic control
+  const domainRoutingRouter = require('./routes/domain-routing').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -353,6 +355,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01097: Diary Templates - guided diary templates for memory quality
   mountRouterSync(app, '/api/v1/diary', diaryRouter, { owner: 'diary' });
+
+  // VTID-01114: Domain & Topic Routing Engine (D22) - intelligence traffic control layer
+  mountRouterSync(app, '/api/v1/routing', domainRoutingRouter, { owner: 'domain-routing' });
 
   // VTID-01063: commandhub router (note: /board route REMOVED, use board-adapter)
   mountRouterSync(app, '/api/v1/commandhub', commandhub, { owner: 'commandhub' });
