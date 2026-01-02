@@ -446,16 +446,21 @@ oasisTasksRouter.post('/api/v1/oasis/tasks/:vtid/complete', async (req: Request,
     const updated = updatedTasks[0];
 
     // Step 4: Emit OASIS event for terminal completion
+    // VTID-01122-FIX: Use correct topic so board-adapter recognizes completion
+    // Previously used 'vtid.lifecycle.terminal_completion' which was not recognized
     const eventId = randomUUID();
+    const completionTopic = terminal_outcome === 'success'
+      ? 'vtid.lifecycle.completed'
+      : 'vtid.lifecycle.failed';
     const eventPayload = {
       id: eventId,
       created_at: timestamp,
       vtid: vtid,
-      topic: 'vtid.lifecycle.terminal_completion',
+      topic: completionTopic,
       service: 'cicd-terminal-gate',
       role: 'DEPLOY',
       model: 'vtid-01080-terminal-gate',
-      status: 'success',
+      status: terminal_outcome === 'success' ? 'success' : 'error',
       message: `Task ${vtid} marked as terminal with outcome: ${terminal_outcome}`,
       link: null,
       metadata: {
