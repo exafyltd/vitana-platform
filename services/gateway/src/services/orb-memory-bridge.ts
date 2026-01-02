@@ -72,16 +72,19 @@ export const DEV_IDENTITY = {
  * VTID-01109: Increased limits to prevent losing personal details
  */
 const MEMORY_CONFIG = {
-  // Max items to fetch for context (increased from 10 to allow per-category limits)
-  DEFAULT_CONTEXT_LIMIT: 30,
-  // Per-category limit for formatting (new)
-  ITEMS_PER_CATEGORY: 5,
+  // Max items to fetch for context
+  // VTID-DEBUG-01: Increased from 30 to 50 to accommodate personal identity
+  DEFAULT_CONTEXT_LIMIT: 50,
+  // Per-category limit for formatting
+  // VTID-DEBUG-01: Increased from 5 to 15 for personal/relationships
+  ITEMS_PER_CATEGORY: 15,
   // Categories relevant for ORB context (added 'personal' for identity info)
   CONTEXT_CATEGORIES: ['personal', 'conversation', 'preferences', 'goals', 'health', 'relationships'],
   // Max age of memory items to include (7 days instead of 24 hours)
   MAX_AGE_HOURS: 168,
-  // Max characters for memory context in system prompt (increased from 2000)
-  MAX_CONTEXT_CHARS: 6000,
+  // Max characters for memory context in system prompt
+  // VTID-DEBUG-01: Increased from 6000 to 10000 to hold all personal info
+  MAX_CONTEXT_CHARS: 10000,
   // Max characters per individual item (increased from 150)
   MAX_ITEM_CHARS: 300,
   /**

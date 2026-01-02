@@ -224,25 +224,28 @@ export interface ContextWindowLog {
  * Tuned for optimal ORB performance with balanced domain representation
  */
 export const DEFAULT_CONTEXT_BUDGET: ContextBudgetConfig = {
-  // Total context budget: 6000 chars (matching existing MEMORY_CONFIG)
-  totalBudgetChars: 6000,
-  // Total item limit: 30 items max
-  totalItemLimit: 30,
+  // Total context budget: 10000 chars (increased from 6000)
+  // VTID-DEBUG-01: Need more space for personal identity + relationships
+  totalBudgetChars: 10000,
+  // Total item limit: 50 items max (increased from 30)
+  totalItemLimit: 50,
 
   // Per-domain budgets with priority-based allocation
   domainBudgets: {
     // Critical domains (identity, relationships)
+    // VTID-DEBUG-01: Increased limits - personal identity has MANY facets
+    // (name, birthday, hometown, company, job, email, etc.)
     personal: {
-      maxItems: 5,
-      maxChars: 1200,
-      minRelevanceScore: 20,
+      maxItems: 15,  // Was 5 - too aggressive, lost user identity
+      maxChars: 2500,  // Was 1200
+      minRelevanceScore: 10,  // Was 20 - personal info is always relevant
       minConfidenceThreshold: 0
     },
     relationships: {
-      maxItems: 4,
-      maxChars: 800,
-      minRelevanceScore: 30,
-      minConfidenceThreshold: 20
+      maxItems: 10,  // Was 4 - user may have many family members
+      maxChars: 1500,  // Was 800
+      minRelevanceScore: 15,  // Was 30
+      minConfidenceThreshold: 0  // Was 20 - relationship info is critical
     },
     // High-priority domains
     health: {
@@ -311,11 +314,12 @@ export const DEFAULT_CONTEXT_BUDGET: ContextBudgetConfig = {
   },
 
   // Saturation detection thresholds
+  // VTID-DEBUG-01: Relaxed thresholds - was too aggressive
   saturationThresholds: {
-    redundancySimilarity: 0.75,  // 75% similarity triggers redundancy
-    topicRepetitionLimit: 3,     // Max 3 items on same topic
-    minDiversityScore: 0.4,      // At least 40% diversity
-    similarityDownWeight: 0.5    // Down-weight similar items by 50%
+    redundancySimilarity: 0.85,  // Was 0.75 - only filter near-duplicates
+    topicRepetitionLimit: 8,     // Was 3 - too aggressive for personal info
+    minDiversityScore: 0.3,      // Was 0.4
+    similarityDownWeight: 0.7    // Was 0.5 - less aggressive down-weighting
   }
 };
 
@@ -789,18 +793,25 @@ export class ContextWindowManager {
       }
 
       // Check 2: Topic saturation
-      const topic = extractTopic(item.content);
-      topicCounts[topic] = (topicCounts[topic] || 0) + 1;
+      // VTID-DEBUG-01: EXEMPT personal and relationships from topic saturation
+      // These are fundamental identity facts that should NEVER be filtered
+      const domain = item.category_key as ContextDomain;
+      const isIdentityDomain = domain === 'personal' || domain === 'relationships';
 
-      if (topicCounts[topic] > thresholds.topicRepetitionLimit) {
-        saturationExcluded.push({
-          itemId: item.id,
-          domain: item.category_key as ContextDomain,
-          reason: 'topic_saturation',
-          explanation: `Topic '${topic}' already has ${thresholds.topicRepetitionLimit} items (diminishing returns)`,
-          relevanceScore: item.relevanceScore
-        });
-        continue;
+      if (!isIdentityDomain) {
+        const topic = extractTopic(item.content);
+        topicCounts[topic] = (topicCounts[topic] || 0) + 1;
+
+        if (topicCounts[topic] > thresholds.topicRepetitionLimit) {
+          saturationExcluded.push({
+            itemId: item.id,
+            domain,
+            reason: 'topic_saturation',
+            explanation: `Topic '${topic}' already has ${thresholds.topicRepetitionLimit} items (diminishing returns)`,
+            relevanceScore: item.relevanceScore
+          });
+          continue;
+        }
       }
 
       // Item passes saturation checks
