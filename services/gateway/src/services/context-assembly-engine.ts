@@ -617,12 +617,14 @@ export async function assembleContext(request: ContextAssemblyRequest): Promise<
 
   try {
     // Bootstrap request context for RLS
-    await supabase.rpc('dev_bootstrap_request_context', {
-      p_tenant_id: request.tenant_id,
-      p_active_role: request.active_role
-    }).catch(() => {
+    try {
+      await supabase.rpc('dev_bootstrap_request_context', {
+        p_tenant_id: request.tenant_id,
+        p_active_role: request.active_role
+      });
+    } catch {
       // Non-fatal if RPC doesn't exist
-    });
+    }
 
     // Determine time range
     const lookbackHours = request.time_range?.last_hours ?? CONTEXT_CONFIG.DEFAULT_LOOKBACK_HOURS;
@@ -986,12 +988,8 @@ export function verifyDeterminism(bundle1: ContextBundle, bundle2: ContextBundle
 }
 
 // =============================================================================
-// VTID-01112: Exports
+// VTID-01112: Additional Exports (re-exported for convenience)
+// Note: CONTEXT_CONFIG, DOMAINS already exported at declaration
 // =============================================================================
 
-export {
-  CONTEXT_CONFIG,
-  DOMAINS,
-  CATEGORY_TO_DOMAIN,
-  INTENT_DOMAIN_WEIGHTS,
-};
+export { CATEGORY_TO_DOMAIN, INTENT_DOMAIN_WEIGHTS };
