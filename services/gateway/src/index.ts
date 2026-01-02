@@ -132,6 +132,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const situationalAwarenessRouter = require('./routes/situational-awareness').default;
   // VTID-01127: D33 Availability, Time-Window & Readiness Engine
   const availabilityReadinessRouter = require('./routes/availability-readiness').default;
+  // VTID-01128: D34 Environmental, Location & Mobility Context Engine
+  const environmentalMobilityRouter = require('./routes/environmental-mobility-context').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -378,6 +380,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01127: D33 Availability, Time-Window & Readiness Engine
   mountRouterSync(app, '/api/v1/availability', availabilityReadinessRouter, { owner: 'availability-readiness' });
+
+  // VTID-01128: D34 Environmental, Location & Mobility Context Engine
+  mountRouterSync(app, '/api/v1/context/mobility', environmentalMobilityRouter, { owner: 'environmental-mobility' });
 
   // VTID-01063: commandhub router (note: /board route REMOVED, use board-adapter)
   mountRouterSync(app, '/api/v1/commandhub', commandhub, { owner: 'commandhub' });

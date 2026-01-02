@@ -310,7 +310,15 @@ export type CicdEventType =
   | 'd33.availability.override'
   | 'd33.readiness.risk_flagged'
   | 'd33.action_depth.applied'
-  | 'd33.guardrail.enforced';
+  | 'd33.guardrail.enforced'
+  // VTID-01128: D34 Environmental, Location & Mobility Context Engine Events
+  | 'd34.context.computed'
+  | 'd34.context.cached'
+  | 'd34.context.override'
+  | 'd34.context.fallback'
+  | 'd34.filter.applied'
+  | 'd34.filter.rejected'
+  | 'd34.error';
 
 export interface CicdOasisEvent {
   vtid: string;
