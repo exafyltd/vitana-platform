@@ -663,13 +663,12 @@ export const TASTE_INFERENCE_RULES: TasteInferenceRule[] = [
     dimension: 'simplicity_preference',
     type: 'taste',
     detect: (signals) => {
-      const avgLength = signals.message_lengths?.length > 0
-        ? signals.message_lengths.reduce((a, b) => a + b, 0) / signals.message_lengths.length
-        : null;
-
-      if (avgLength === null) {
+      // Require at least 5 samples for reliable inference
+      if (!signals.message_lengths || signals.message_lengths.length < 5) {
         return { match: false, value: '', confidence: 0, evidence: [] };
       }
+
+      const avgLength = signals.message_lengths.reduce((a, b) => a + b, 0) / signals.message_lengths.length;
 
       if (avgLength < 50) {
         return {
