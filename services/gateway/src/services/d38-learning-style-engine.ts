@@ -542,7 +542,7 @@ function generateResponsePlan(
 
   // Check understanding for slow absorbers or high cognitive load
   const check_understanding = profile.absorption_rate === 'slow' ||
-    (input.availability?.cognitive_load && input.availability.cognitive_load > 60);
+    (input.availability?.cognitive_load !== undefined && input.availability.cognitive_load > 60);
 
   // Suggested max length
   let suggested_max_length: number | undefined;
