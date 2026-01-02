@@ -57,6 +57,12 @@ import {
   MEMORY_CONFIG,
   OrbMemoryContext
 } from '../services/orb-memory-bridge';
+// VTID-01112: Context Assembly Engine (D20 Core Intelligence)
+import {
+  getOrbContext,
+  formatContextForPrompt,
+  ContextBundle
+} from '../services/context-assembly-engine';
 // VTID-01114: Domain & Topic Routing Engine (D22)
 import {
   computeRoutingBundle,
@@ -447,10 +453,13 @@ Operating mode:
  *
  * BUG FIX: Now returns different base instructions depending on whether memory is available.
  * Previously claimed "persistent memory" even when none was available, confusing the LLM.
+ *
+ * VTID-01112: Now uses Context Assembly Engine for unified, ranked context.
+ * ORB no longer accesses raw memory tables directly.
  */
 async function generateMemoryEnhancedSystemInstruction(
   session: { tenant: string; role: string; route?: string; selectedId?: string }
-): Promise<{ instruction: string; memoryContext: OrbMemoryContext | null }> {
+): Promise<{ instruction: string; memoryContext: OrbMemoryContext | null; contextBundle?: ContextBundle }> {
   // Base instruction WITHOUT memory claims (used when memory is unavailable)
   const baseInstructionNoMemory = `You are VITANA ORB, a voice-first multimodal assistant.
 
@@ -490,31 +499,76 @@ Operating mode:
   }
 
   try {
-    // Fetch memory context for dev user
-    const memoryContext = await fetchDevMemoryContext();
+    // VTID-01112: Use Context Assembly Engine instead of raw memory access
+    // This ensures all downstream intelligence uses ranked, unified context
+    const contextResult = await getOrbContext(
+      DEV_IDENTITY.USER_ID,
+      DEV_IDENTITY.TENANT_ID,
+      DEV_IDENTITY.ACTIVE_ROLE,
+      'conversation' // ORB default intent
+    );
 
-    if (!memoryContext.ok) {
-      console.log(`[VTID-01106] Memory fetch failed: ${memoryContext.error}`);
-      // Return instruction WITHOUT memory claims since we couldn't fetch memory
-      return { instruction: baseInstructionNoMemory, memoryContext };
+    if (!contextResult.ok || !contextResult.bundle) {
+      console.log(`[VTID-01112] Context assembly failed: ${contextResult.error}`);
+      // Fallback to legacy memory bridge
+      const memoryContext = await fetchDevMemoryContext();
+      if (!memoryContext.ok || memoryContext.items.length === 0) {
+        return { instruction: baseInstructionNoMemory, memoryContext };
+      }
+      const enhancedInstruction = buildMemoryEnhancedInstruction(baseInstructionWithMemory, memoryContext);
+      return { instruction: enhancedInstruction, memoryContext };
     }
 
-    if (memoryContext.items.length === 0) {
-      console.log('[VTID-01106] No memory items found for user');
-      // Return instruction WITHOUT memory claims since there's nothing to remember
-      return { instruction: baseInstructionNoMemory, memoryContext };
+    const bundle = contextResult.bundle;
+
+    if (bundle.top_memories.length === 0 && bundle.long_term_patterns.length === 0) {
+      console.log('[VTID-01112] No context items found for user');
+      return { instruction: baseInstructionNoMemory, memoryContext: null, contextBundle: bundle };
     }
 
-    // Build memory-enhanced instruction (WITH memory claims + actual memory content)
-    const enhancedInstruction = buildMemoryEnhancedInstruction(baseInstructionWithMemory, memoryContext);
+    // Format context bundle for prompt injection
+    const contextForPrompt = formatContextForPrompt(bundle);
 
-    console.log(`[VTID-01106] Memory-enhanced instruction generated with ${memoryContext.items.length} items`);
+    // Build enhanced instruction with context bundle
+    const enhancedInstruction = `${baseInstructionWithMemory}
 
-    return { instruction: enhancedInstruction, memoryContext };
+## CRITICAL: You Have Persistent Memory About This User
+
+You have access to PERSISTENT MEMORY that contains REAL information from previous conversations with THIS SPECIFIC USER. This is NOT hypothetical - this is ACTUAL stored data about them.
+
+**MANDATORY RULES - FOLLOW THESE EXACTLY:**
+1. NEVER say "I don't remember", "ich erinnere mich nicht", "I don't have information about your name/hometown/etc."
+2. When the user asks about their name, hometown, or ANY personal detail - CHECK THE CONTEXT BELOW FIRST
+3. If the information IS in your context, ANSWER WITH THAT INFORMATION
+4. Only say "I don't have that information yet" if it's truly NOT in the context below
+
+---
+${contextForPrompt}
+---
+
+You KNOW this user. You REMEMBER their name, their hometown, their family. Answer their questions using the context above.`;
+
+    console.log(`[VTID-01112] Context-enhanced instruction generated with ${bundle.traceability.total_items_included} items (bundle=${bundle.bundle_id})`);
+
+    // Return with context bundle for traceability
+    return {
+      instruction: enhancedInstruction,
+      memoryContext: null, // No longer using legacy format
+      contextBundle: bundle
+    };
   } catch (err: any) {
-    console.warn('[VTID-01106] Failed to fetch memory context:', err.message);
-    // Return instruction WITHOUT memory claims on error
-    return { instruction: baseInstructionNoMemory, memoryContext: null };
+    console.warn('[VTID-01112] Context assembly error:', err.message);
+    // Fallback to legacy memory bridge
+    try {
+      const memoryContext = await fetchDevMemoryContext();
+      if (!memoryContext.ok || memoryContext.items.length === 0) {
+        return { instruction: baseInstructionNoMemory, memoryContext };
+      }
+      const enhancedInstruction = buildMemoryEnhancedInstruction(baseInstructionWithMemory, memoryContext);
+      return { instruction: enhancedInstruction, memoryContext };
+    } catch {
+      return { instruction: baseInstructionNoMemory, memoryContext: null };
+    }
   }
 }
 
