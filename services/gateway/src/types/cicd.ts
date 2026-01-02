@@ -327,7 +327,11 @@ export type CicdEventType =
   | 'd35.action.filtered'
   | 'd35.boundary.respected'
   | 'd35.api.request'
-  | 'd35.api.error';
+  | 'd35.api.error'
+  // VTID-01130: D36 Financial Sensitivity & Monetization Readiness Events
+  | 'd36.monetization.context.computed'
+  | 'd36.monetization.context.failed'
+  | 'd36.monetization.attempt.recorded';
 
 export interface CicdOasisEvent {
   vtid: string;

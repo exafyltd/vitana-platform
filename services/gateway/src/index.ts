@@ -136,6 +136,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const environmentalMobilityRouter = require('./routes/environmental-mobility-context').default;
   // VTID-01129: D35 Social Context, Relationship Weighting & Proximity Engine
   const socialContextRouter = require('./routes/social-context').default;
+  // VTID-01130: D36 Financial Sensitivity, Monetization Readiness & Value Perception Engine
+  const financialMonetizationRouter = require('./routes/financial-monetization').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -388,6 +390,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01128: D34 Environmental, Location & Mobility Context Engine
   mountRouterSync(app, '/api/v1/context/mobility', environmentalMobilityRouter, { owner: 'environmental-mobility' });
+
+  // VTID-01130: D36 Financial Sensitivity, Monetization Readiness & Value Perception Engine
+  mountRouterSync(app, '/api/v1/monetization', financialMonetizationRouter, { owner: 'financial-monetization' });
 
   // VTID-01063: commandhub router (note: /board route REMOVED, use board-adapter)
   mountRouterSync(app, '/api/v1/commandhub', commandhub, { owner: 'commandhub' });
