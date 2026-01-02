@@ -284,7 +284,11 @@ export type CicdEventType =
   | 'memory.unlocked'
   | 'memory.deleted'
   | 'memory.export.requested'
-  | 'memory.export.ready';
+  | 'memory.export.ready'
+  // VTID-01123: Response Framing & Delivery Control Events
+  | 'response.framing.computed'
+  | 'response.framing.applied'
+  | 'response.framing.override';
 
 export interface CicdOasisEvent {
   vtid: string;
