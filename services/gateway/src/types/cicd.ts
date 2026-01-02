@@ -338,7 +338,10 @@ export type CicdEventType =
   | 'd37.capacity.overridden'
   | 'd37.actions.filtered'
   | 'd37.low_energy.detected'
-  | 'd37.recovery.detected';
+  | 'd37.recovery.detected'
+  // VTID-01136: D42 Cross-Domain Context Fusion Events
+  | 'd42.priorities.resolved'
+  | 'd42.priorities.failed';
 
 export interface CicdOasisEvent {
   vtid: string;
