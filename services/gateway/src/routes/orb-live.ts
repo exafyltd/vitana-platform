@@ -157,6 +157,8 @@ interface OrbChatRequest {
 
 /**
  * VTID-0135: ORB Chat Response
+ * VTID-01106: Extended with memory debug info
+ * VTID-01114: Extended with routing debug info
  */
 interface OrbChatResponse {
   ok: boolean;
@@ -167,6 +169,22 @@ interface OrbChatResponse {
     model: string;
     mode: string;
     vtid?: string;
+    // VTID-01106: Memory debug info
+    memory_bridge_enabled?: boolean;
+    memory_context_ok?: boolean;
+    memory_items_count?: number;
+    memory_injected?: boolean;
+    // VTID-01114: Domain routing info
+    routing?: {
+      primary_domain: string;
+      secondary_domains: string[];
+      routing_confidence: number;
+      active_topics: string[];
+      safety_flags: string[];
+      autonomy_level: number;
+      allows_commerce: boolean;
+      determinism_key: string;
+    };
   };
   error?: string;
 }

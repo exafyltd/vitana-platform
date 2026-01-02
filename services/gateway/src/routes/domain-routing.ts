@@ -270,7 +270,6 @@ router.get('/domains', (_req: Request, res: Response) => {
   console.log('[VTID-01114] GET /routing/domains');
 
   const domains = INTELLIGENCE_DOMAINS.map(domain => ({
-    domain,
     ...DOMAIN_METADATA[domain],
     topic_categories: Object.keys(DOMAIN_TOPIC_KEYWORDS[domain] || {})
   }));
