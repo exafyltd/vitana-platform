@@ -14,7 +14,8 @@
 // VTID-01022: Command Hub Governance - Human Task Only Filter
 // VTID-01027: Operator Console Session Memory - client-side context + conversation_id
 // VTID-01028: Task Board Rendering Fix - Restore Visibility & Authority
-console.log('🔥 COMMAND HUB BUNDLE: VTID-01028 LIVE 🔥');
+// VTID-01111: Filter allocator shell entries from Command Hub board
+console.log('🔥 COMMAND HUB BUNDLE: VTID-01111 LIVE 🔥');
 
 // ===========================================================================
 // VTID-01010: Target Role Constants (canonical)
@@ -707,25 +708,32 @@ async function initMeContext() {
 // ===========================================================================
 // VTID-01017: Scheduled Column Hard Eligibility Filter
 // VTID-01028: Relaxed to prevent hiding human-created tasks
+// VTID-01111: Re-added shell entry filter for allocator placeholders
 // ===========================================================================
 
 /**
  * VTID-01017: Check if a task is eligible to appear in Scheduled column.
  * VTID-01028: RELAXED - Task Board must never hide human-created tasks.
+ * VTID-01111: Re-added filter for allocator shell entries (safety net).
  *
  * Governance Rules (VTID-01028):
  * - "Scheduled column is creation-authoritative"
  * - "No heuristics that can zero out the board"
  * - "If data exists → it must render"
  *
- * The backend (commandhub.ts) is now authoritative for column placement.
- * This filter only performs minimal validation.
+ * Exception (VTID-01111):
+ * - Allocator shell entries (status='allocated', title='Allocated - Pending Title')
+ *   are NOT human-created tasks - they are placeholders awaiting real task data.
+ *   These MUST be filtered out to prevent phantom cards.
+ *
+ * The backend (board-adapter.ts) now filters these out, but this is a safety net.
  *
  * Requirements:
- *   A) Only classic VTIDs: must match pattern ^VTID-\d{4}$
+ *   A) Only classic VTIDs: must match pattern ^VTID-\d{4,5}$
  *      (isHumanTask already checks this before this function is called)
- *   B) REMOVED: Status check removed - backend normalizes to 'scheduled'
+ *   B) VTID-01111: Reject allocator shell entries (status='allocated')
  *   C) RELAXED: Title can be short/empty - task still renders with VTID
+ *      Exception: 'Allocated - Pending Title' is rejected (shell entry marker)
  */
 function isEligibleScheduled(task) {
     if (!task) return false;
@@ -739,18 +747,22 @@ function isEligibleScheduled(task) {
         return false;
     }
 
-    // VTID-01028: Rule B REMOVED
-    // Previous: Rejected status !== 'scheduled' (including 'allocated')
-    // Now: Backend normalizes all SCHEDULED column tasks to status='scheduled'
-    // If backend sends a task with column=SCHEDULED, we trust it.
+    // VTID-01111: Rule B RE-ADDED for shell entries only
+    // Reject allocator shell entries that somehow made it through backend
+    var status = (task.status || '').toLowerCase();
+    if (status === 'allocated') {
+        console.log('[VTID-01111] Filtering shell entry ' + vtid + ' (status=allocated)');
+        return false;
+    }
 
-    // VTID-01028: Rule C RELAXED
-    // Previous: Rejected titles < 3 chars or placeholder patterns
-    // Now: Tasks with short/empty titles still render (VTID shown as fallback)
-    // Governance: "If data exists → it must render"
+    // VTID-01111: Rule C - Reject allocator placeholder title
+    var title = (task.title || '').trim();
+    if (title === 'Allocated - Pending Title') {
+        console.log('[VTID-01111] Filtering shell entry ' + vtid + ' (placeholder title)');
+        return false;
+    }
 
     // VTID-01028 diagnostic logging for visibility
-    var title = (task.title || '').trim();
     if (!title) {
         console.log('[VTID-01028] Task ' + vtid + ' has empty title - will render with VTID');
     }
