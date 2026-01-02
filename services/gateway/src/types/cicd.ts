@@ -279,7 +279,15 @@ export type CicdEventType =
   | 'memory.unlocked'
   | 'memory.deleted'
   | 'memory.export.requested'
-  | 'memory.export.ready';
+  | 'memory.export.ready'
+  // VTID-01121: Feedback Correction & Trust Repair Events
+  | 'feedback.correction.recorded'
+  | 'feedback.correction.propagated'
+  | 'feedback.constraint.added'
+  | 'feedback.safety.escalated'
+  | 'trust.score.updated'
+  | 'trust.repair.action'
+  | 'trust.trend.changed';
 
 export interface CicdOasisEvent {
   vtid: string;
