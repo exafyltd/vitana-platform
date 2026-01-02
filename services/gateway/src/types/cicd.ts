@@ -304,7 +304,13 @@ export type CicdEventType =
   // VTID-01123: Response Framing & Delivery Control Events
   | 'response.framing.computed'
   | 'response.framing.applied'
-  | 'response.framing.override';
+  | 'response.framing.override'
+  // VTID-01127: D33 Availability, Time-Window & Readiness Engine Events
+  | 'd33.availability.computed'
+  | 'd33.availability.override'
+  | 'd33.readiness.risk_flagged'
+  | 'd33.action_depth.applied'
+  | 'd33.guardrail.enforced';
 
 export interface CicdOasisEvent {
   vtid: string;
