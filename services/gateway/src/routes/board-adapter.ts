@@ -132,14 +132,14 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
       }
     });
 
-    // VTID-01058: Post-fetch filter: exclude rows with deleted/voided status or metadata flags
+    // VTID-01058: Post-fetch filter: exclude rows with deleted/voided/cancelled status or metadata flags
     const vtidRows = vtidRowsRaw.filter((row: any) => {
       const status = (row.status || '').toLowerCase();
-      const isDeleted = status === 'deleted' || status === 'voided';
+      const isDeleted = status === 'deleted' || status === 'voided' || status === 'cancelled';
       const hasDeletedAt = !!row.deleted_at;
       const hasVoidedAt = !!row.voided_at;
       const meta = row.metadata || {};
-      const metaDeleted = meta.deleted === true || meta.voided === true;
+      const metaDeleted = meta.deleted === true || meta.voided === true || meta.cancelled === true;
 
       if (isDeleted || hasDeletedAt || hasVoidedAt || metaDeleted) {
         console.log(`[VTID-01058] Filtering out ${row.vtid}: status=${status}, deleted_at=${row.deleted_at}, voided_at=${row.voided_at}`);
