@@ -140,6 +140,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const financialMonetizationRouter = require('./routes/financial-monetization').default;
   // VTID-01122: D37 Health State, Energy & Capacity Awareness Engine
   const healthCapacityRouter = require('./routes/health-capacity').default;
+  // VTID-01133: D39 Taste, Aesthetic & Lifestyle Alignment Engine
+  const tasteAlignmentRouter = require('./routes/taste-alignment').default;
   // VTID-01135: D41 Ethical Boundaries, Personal Limits & Consent Sensitivity Engine
   const boundaryConsentRouter = require('./routes/boundary-consent').default;
   // VTID-01137: D43 Longitudinal Adaptation, Drift Detection & Personal Evolution Engine
@@ -402,6 +404,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01122: D37 Health State, Energy & Capacity Awareness Engine
   mountRouterSync(app, '/api/v1/capacity', healthCapacityRouter, { owner: 'health-capacity' });
+
+  // VTID-01133: D39 Taste, Aesthetic & Lifestyle Alignment Engine
+  mountRouterSync(app, '/api/v1/taste-alignment', tasteAlignmentRouter, { owner: 'taste-alignment' });
 
   // VTID-01135: D41 Ethical Boundaries, Personal Limits & Consent Sensitivity Engine
   mountRouterSync(app, '/api/v1/boundaries', boundaryConsentRouter, { owner: 'boundary-consent' });
