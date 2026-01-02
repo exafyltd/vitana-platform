@@ -1,5 +1,6 @@
 /**
  * VTID-01106: ORB Memory Bridge (Dev Sandbox)
+ * VTID-01115: Memory Relevance Scoring Engine Integration (D23)
  *
  * Bridges ORB live sessions to Memory Core for persistent user context.
  * Enables ORB to remember user identity and conversation history.
@@ -8,12 +9,24 @@
  * - Fixed dev identity for sandbox mode (no JWT required)
  * - Memory context retrieval for system instruction injection
  * - Conversation context formatting for LLM prompts
+ * - VTID-01115: Relevance scoring for all memory items before context assembly
  *
  * DEV SANDBOX ONLY - No production auth patterns.
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
+import {
+  scoreAndRankMemories,
+  emitScoringEvent,
+  logScoringRun,
+  type ScoringContext,
+  type ScoredMemoryItem,
+  type ScoringMetadata,
+  type RetrieveIntent,
+  type Domain,
+  type UserRole
+} from './memory-relevance-scoring';
 
 // =============================================================================
 // VTID-01106: Constants & Configuration
@@ -84,6 +97,17 @@ export interface OrbMemoryContext {
   formatted_context: string;
   fetched_at: string;
   error?: string;
+  // VTID-01115: Scoring metadata
+  scoring_metadata?: ScoringMetadata;
+}
+
+/**
+ * VTID-01115: Scored memory context with full relevance scoring
+ */
+export interface ScoredOrbMemoryContext extends OrbMemoryContext {
+  scored_items: ScoredMemoryItem[];
+  excluded_items: ScoredMemoryItem[];
+  scoring_metadata: ScoringMetadata;
 }
 
 // =============================================================================
@@ -628,6 +652,340 @@ export async function fetchDevMemoryContext(
 }
 
 // =============================================================================
+// VTID-01115: Scored Memory Context Fetching
+// =============================================================================
+
+/**
+ * VTID-01115: Fetch memory context with relevance scoring
+ *
+ * This is the D23 implementation of the Memory Relevance Scoring Engine.
+ * Every memory item is scored before entering the context bundle.
+ *
+ * Hard Constraints:
+ * - No memory enters context without a score
+ * - All scoring logic is deterministic and inspectable
+ * - Raw timestamps alone do not determine relevance
+ *
+ * @param intent - The current intent from D21 (health, longevity, community, lifestyle, planner, general)
+ * @param domain - Optional domain from D22 (health, community, business, lifestyle)
+ * @param role - User role for access control (patient, professional, staff, admin, developer)
+ * @param limit - Maximum number of memory items to consider
+ * @param categories - Optional category filter
+ */
+export async function fetchScoredMemoryContext(
+  intent: RetrieveIntent = 'general',
+  domain?: Domain,
+  role: UserRole = 'patient',
+  limit: number = MEMORY_CONFIG.DEFAULT_CONTEXT_LIMIT,
+  categories?: string[]
+): Promise<ScoredOrbMemoryContext> {
+  const fetchedAt = new Date().toISOString();
+  const currentTime = new Date();
+
+  // Check if memory bridge is enabled
+  if (!isMemoryBridgeEnabled()) {
+    return {
+      ok: false,
+      user_id: DEV_IDENTITY.USER_ID,
+      tenant_id: DEV_IDENTITY.TENANT_ID,
+      items: [],
+      scored_items: [],
+      excluded_items: [],
+      summary: 'Memory bridge disabled',
+      formatted_context: '',
+      fetched_at: fetchedAt,
+      error: 'Memory bridge not enabled (requires dev-sandbox mode)',
+      scoring_metadata: {
+        scoring_run_id: `score_${DEV_IDENTITY.TENANT_ID}_${Date.now()}`,
+        scoring_timestamp: fetchedAt,
+        context: { intent, domain, role },
+        total_candidates: 0,
+        included_count: 0,
+        deprioritized_count: 0,
+        excluded_count: 0,
+        top_n_with_factors: [],
+        exclusion_reasons: []
+      }
+    };
+  }
+
+  const supabase = createMemoryClient();
+  if (!supabase) {
+    return {
+      ok: false,
+      user_id: DEV_IDENTITY.USER_ID,
+      tenant_id: DEV_IDENTITY.TENANT_ID,
+      items: [],
+      scored_items: [],
+      excluded_items: [],
+      summary: 'Database not configured',
+      formatted_context: '',
+      fetched_at: fetchedAt,
+      error: 'Supabase not configured',
+      scoring_metadata: {
+        scoring_run_id: `score_${DEV_IDENTITY.TENANT_ID}_${Date.now()}`,
+        scoring_timestamp: fetchedAt,
+        context: { intent, domain, role },
+        total_candidates: 0,
+        included_count: 0,
+        deprioritized_count: 0,
+        excluded_count: 0,
+        top_n_with_factors: [],
+        exclusion_reasons: []
+      }
+    };
+  }
+
+  try {
+    // Calculate since timestamp (max age for memory items)
+    const sinceDate = new Date();
+    sinceDate.setHours(sinceDate.getHours() - MEMORY_CONFIG.MAX_AGE_HOURS);
+    const sinceTimestamp = sinceDate.toISOString();
+
+    // Filter categories
+    const categoryFilter = categories || MEMORY_CONFIG.CONTEXT_CATEGORIES;
+
+    // Set request context for dev user
+    const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
+      p_tenant_id: DEV_IDENTITY.TENANT_ID,
+      p_active_role: DEV_IDENTITY.ACTIVE_ROLE
+    });
+    if (bootstrapError) {
+      console.warn('[VTID-01115] Bootstrap context failed (non-fatal):', bootstrapError.message);
+    }
+
+    // Fetch more items than limit to allow for scoring-based filtering
+    // VTID-01115: Fetch 3x limit to have enough candidates for scoring
+    const { data: memoryItems, error } = await supabase
+      .from('memory_items')
+      .select('id, category_key, source, content, content_json, importance, occurred_at, created_at')
+      .eq('tenant_id', DEV_IDENTITY.TENANT_ID)
+      .eq('user_id', DEV_IDENTITY.USER_ID)
+      .in('category_key', categoryFilter)
+      .gte('occurred_at', sinceTimestamp)
+      .order('occurred_at', { ascending: false })
+      .limit(limit * 3);
+
+    if (error) {
+      if (error.message.includes('does not exist') || error.code === '42P01') {
+        console.warn('[VTID-01115] memory_items table not found (VTID-01104 dependency)');
+        return {
+          ok: false,
+          user_id: DEV_IDENTITY.USER_ID,
+          tenant_id: DEV_IDENTITY.TENANT_ID,
+          items: [],
+          scored_items: [],
+          excluded_items: [],
+          summary: 'Memory Core not deployed',
+          formatted_context: '',
+          fetched_at: fetchedAt,
+          error: 'Memory Core not available (VTID-01104 dependency)',
+          scoring_metadata: {
+            scoring_run_id: `score_${DEV_IDENTITY.TENANT_ID}_${Date.now()}`,
+            scoring_timestamp: fetchedAt,
+            context: { intent, domain, role },
+            total_candidates: 0,
+            included_count: 0,
+            deprioritized_count: 0,
+            excluded_count: 0,
+            top_n_with_factors: [],
+            exclusion_reasons: []
+          }
+        };
+      }
+      console.error('[VTID-01115] Memory query error:', error.message);
+      throw error;
+    }
+
+    const rawItems = (memoryItems || []) as MemoryItem[];
+
+    // =============================================================================
+    // VTID-01115: Apply Relevance Scoring
+    // This is the core D23 functionality - score all memories before context assembly
+    // =============================================================================
+
+    const scoringContext: ScoringContext = {
+      intent,
+      domain,
+      role,
+      user_id: DEV_IDENTITY.USER_ID,
+      tenant_id: DEV_IDENTITY.TENANT_ID,
+      current_time: currentTime
+      // TODO: Add user_reinforcement_signals when available from database
+    };
+
+    console.log(`[VTID-01115] Scoring ${rawItems.length} memory candidates (intent=${intent}, domain=${domain || 'none'}, role=${role})`);
+
+    const scoringResult = scoreAndRankMemories(rawItems, scoringContext);
+
+    // Log the scoring run for debugging
+    logScoringRun(scoringResult.scoring_metadata, true);
+
+    // Emit OASIS event for scoring
+    await emitScoringEvent(
+      'memory.scoring.completed',
+      scoringResult.scoring_metadata,
+      {
+        intent,
+        domain,
+        role,
+        categories: categoryFilter
+      }
+    ).catch((err: Error) => console.warn('[VTID-01115] Failed to emit scoring event:', err.message));
+
+    // Get only included items (not excluded) up to limit
+    const includedItems = scoringResult.scored_items
+      .filter(item => !item.exclusion_reason)
+      .slice(0, limit);
+
+    // Convert ScoredMemoryItem back to MemoryItem for backward compatibility
+    const items: MemoryItem[] = includedItems.map(scored => ({
+      id: scored.id,
+      category_key: scored.category_key,
+      source: scored.source,
+      content: scored.content,
+      content_json: scored.content_json,
+      importance: scored.importance,
+      occurred_at: scored.occurred_at,
+      created_at: scored.created_at
+    }));
+
+    const summary = generateMemorySummary(items);
+    const formattedContext = formatScoredMemoryForPrompt(includedItems);
+
+    console.log(`[VTID-01115] Scored context: ${includedItems.length} included, ${scoringResult.excluded_items.length} excluded (of ${rawItems.length} candidates)`);
+
+    // Emit OASIS event for context fetch
+    await emitOasisEvent({
+      vtid: 'VTID-01115',
+      type: 'orb.memory.scored_context_fetched',
+      source: 'orb-memory-bridge',
+      status: 'success',
+      message: `Fetched ${includedItems.length} scored memory items for ORB context`,
+      payload: {
+        user_id: DEV_IDENTITY.USER_ID,
+        tenant_id: DEV_IDENTITY.TENANT_ID,
+        scoring_run_id: scoringResult.scoring_metadata.scoring_run_id,
+        total_candidates: rawItems.length,
+        included_count: includedItems.length,
+        excluded_count: scoringResult.excluded_items.length,
+        intent,
+        domain,
+        role
+      }
+    }).catch((err: Error) => console.warn('[VTID-01115] OASIS event failed:', err.message));
+
+    return {
+      ok: true,
+      user_id: DEV_IDENTITY.USER_ID,
+      tenant_id: DEV_IDENTITY.TENANT_ID,
+      items,
+      scored_items: includedItems,
+      excluded_items: scoringResult.excluded_items,
+      summary,
+      formatted_context: formattedContext,
+      fetched_at: fetchedAt,
+      scoring_metadata: scoringResult.scoring_metadata
+    };
+
+  } catch (err: any) {
+    console.error('[VTID-01115] Scored memory context fetch error:', err.message);
+    return {
+      ok: false,
+      user_id: DEV_IDENTITY.USER_ID,
+      tenant_id: DEV_IDENTITY.TENANT_ID,
+      items: [],
+      scored_items: [],
+      excluded_items: [],
+      summary: 'Fetch error',
+      formatted_context: '',
+      fetched_at: fetchedAt,
+      error: err.message,
+      scoring_metadata: {
+        scoring_run_id: `score_${DEV_IDENTITY.TENANT_ID}_${Date.now()}`,
+        scoring_timestamp: fetchedAt,
+        context: { intent, domain, role },
+        total_candidates: 0,
+        included_count: 0,
+        deprioritized_count: 0,
+        excluded_count: 0,
+        top_n_with_factors: [],
+        exclusion_reasons: []
+      }
+    };
+  }
+}
+
+/**
+ * VTID-01115: Format scored memory items for prompt injection
+ * Includes relevance scores for transparency
+ */
+function formatScoredMemoryForPrompt(items: ScoredMemoryItem[]): string {
+  if (items.length === 0) {
+    return '';
+  }
+
+  const lines: string[] = [];
+  lines.push('## User Context (from Memory - Relevance Scored)');
+  lines.push('');
+
+  // Group by category
+  const byCategory: Record<string, ScoredMemoryItem[]> = {};
+  for (const item of items) {
+    if (!byCategory[item.category_key]) {
+      byCategory[item.category_key] = [];
+    }
+    byCategory[item.category_key].push(item);
+  }
+
+  // Sort categories by highest score in category
+  const sortedCategories = Object.keys(byCategory).sort((a, b) => {
+    const maxA = Math.max(...byCategory[a].map(i => i.relevance_score));
+    const maxB = Math.max(...byCategory[b].map(i => i.relevance_score));
+    return maxB - maxA;
+  });
+
+  // Format each category
+  for (const category of sortedCategories) {
+    const catItems = byCategory[category];
+    lines.push(`### ${formatCategoryName(category)}`);
+
+    // Items are already sorted by relevance score
+    const itemLimit = MEMORY_CONFIG.ITEMS_PER_CATEGORY || 5;
+    for (const item of catItems.slice(0, itemLimit)) {
+      const timestamp = formatRelativeTime(item.occurred_at);
+      const content = truncateContent(item.content, MEMORY_CONFIG.MAX_ITEM_CHARS || 300);
+      const direction = item.content_json?.direction as string | undefined;
+
+      // Include relevance indicator for high-scoring items
+      const relevanceMarker = item.relevance_score >= 70 ? '★' :
+                              item.relevance_score >= 50 ? '●' : '○';
+
+      if (direction === 'user') {
+        lines.push(`- ${relevanceMarker} [${timestamp}] User: "${content}"`);
+      } else if (direction === 'assistant') {
+        lines.push(`- ${relevanceMarker} [${timestamp}] Assistant: "${content}"`);
+      } else {
+        lines.push(`- ${relevanceMarker} [${timestamp}] ${content}`);
+      }
+    }
+
+    if (catItems.length > itemLimit) {
+      lines.push(`  (+ ${catItems.length - itemLimit} more ${category} items)`);
+    }
+    lines.push('');
+  }
+
+  // Truncate if too long
+  let result = lines.join('\n');
+  if (result.length > MEMORY_CONFIG.MAX_CONTEXT_CHARS) {
+    result = result.substring(0, MEMORY_CONFIG.MAX_CONTEXT_CHARS - 50) + '\n\n(context truncated for brevity)';
+  }
+
+  return result;
+}
+
+// =============================================================================
 // VTID-01106: Memory Formatting for Prompts
 // =============================================================================
 
@@ -941,8 +1299,9 @@ export async function getDebugSnapshot(): Promise<OrbMemoryDebugSnapshot> {
 }
 
 // =============================================================================
-// VTID-01106: Exports
+// VTID-01106 + VTID-01115: Exports
 // Note: shouldStoreInMemory, resetMemoryBridgeCache already exported inline
+// Note: fetchScoredMemoryContext, ScoredOrbMemoryContext exported inline
 // =============================================================================
 
 export {
@@ -950,3 +1309,13 @@ export {
   formatMemoryForPrompt,
   generateMemorySummary
 };
+
+// Re-export scoring types for consumers
+export type {
+  ScoringContext,
+  ScoredMemoryItem,
+  ScoringMetadata,
+  RetrieveIntent,
+  Domain,
+  UserRole
+} from './memory-relevance-scoring';
