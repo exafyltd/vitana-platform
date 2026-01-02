@@ -128,6 +128,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const domainRoutingRouter = require('./routes/domain-routing').default;
   // VTID-01119: User Preference & Constraint Modeling Engine
   const userPreferencesRouter = require('./routes/user-preferences').default;
+  // VTID-01126: D32 Situational Awareness Engine - situation understanding layer
+  const situationalAwarenessRouter = require('./routes/situational-awareness').default;
   // VTID-01127: D33 Availability, Time-Window & Readiness Engine
   const availabilityReadinessRouter = require('./routes/availability-readiness').default;
 
@@ -370,6 +372,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01119: User Preference & Constraint Modeling Engine
   mountRouterSync(app, '/api/v1/user-preferences', userPreferencesRouter, { owner: 'user-preferences' });
+
+  // VTID-01126: D32 Situational Awareness Engine - situation understanding layer
+  mountRouterSync(app, '/api/v1/situational', situationalAwarenessRouter, { owner: 'situational-awareness' });
 
   // VTID-01127: D33 Availability, Time-Window & Readiness Engine
   mountRouterSync(app, '/api/v1/availability', availabilityReadinessRouter, { owner: 'availability-readiness' });
