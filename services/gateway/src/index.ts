@@ -136,6 +136,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const environmentalMobilityRouter = require('./routes/environmental-mobility-context').default;
   // VTID-01129: D35 Social Context, Relationship Weighting & Proximity Engine
   const socialContextRouter = require('./routes/social-context').default;
+  // VTID-01130: D36 Financial Sensitivity, Monetization Readiness & Value Perception Engine
+  const financialMonetizationRouter = require('./routes/financial-monetization').default;
+  // VTID-01122: D37 Health State, Energy & Capacity Awareness Engine
+  const healthCapacityRouter = require('./routes/health-capacity').default;
   // VTID-01135: D41 Ethical Boundaries, Personal Limits & Consent Sensitivity Engine
   const boundaryConsentRouter = require('./routes/boundary-consent').default;
 
@@ -390,6 +394,12 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01128: D34 Environmental, Location & Mobility Context Engine
   mountRouterSync(app, '/api/v1/context/mobility', environmentalMobilityRouter, { owner: 'environmental-mobility' });
+
+  // VTID-01130: D36 Financial Sensitivity, Monetization Readiness & Value Perception Engine
+  mountRouterSync(app, '/api/v1/monetization', financialMonetizationRouter, { owner: 'financial-monetization' });
+
+  // VTID-01122: D37 Health State, Energy & Capacity Awareness Engine
+  mountRouterSync(app, '/api/v1/capacity', healthCapacityRouter, { owner: 'health-capacity' });
 
   // VTID-01135: D41 Ethical Boundaries, Personal Limits & Consent Sensitivity Engine
   mountRouterSync(app, '/api/v1/boundaries', boundaryConsentRouter, { owner: 'boundary-consent' });
