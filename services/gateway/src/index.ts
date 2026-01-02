@@ -118,6 +118,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01094: Match Quality Feedback Loop
   const matchFeedbackRouter = require('./routes/match-feedback').default;
   const { personalizationRouter } = require('./routes/match-feedback');
+  // VTID-01121: User Feedback, Correction & Trust Repair Engine
+  const feedbackCorrectionRouter = require('./routes/feedback-correction').default;
   // VTID-01097: Diary Templates Gateway - guided diary templates
   const diaryRouter = require('./routes/diary').default;
 
@@ -333,6 +335,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01096: Cross-Domain Personalization v1 (snapshot endpoint)
   mountRouterSync(app, '/api/v1/personalization', personalizationSnapshotRouter, { owner: 'personalization-snapshot' });
+
+  // VTID-01121: User Feedback, Correction & Trust Repair Engine
+  mountRouterSync(app, '/api/v1/feedback', feedbackCorrectionRouter, { owner: 'feedback-correction' });
 
   // VTID-01083: Longevity Signal Layer - diary/memory to health signals bridge
   mountRouterSync(app, '/api/v1/longevity', longevityRouter, { owner: 'longevity' });

@@ -941,6 +941,277 @@ export async function getDebugSnapshot(): Promise<OrbMemoryDebugSnapshot> {
 }
 
 // =============================================================================
+// VTID-01121: Trust Context Integration
+// =============================================================================
+
+import {
+  TrustRepairService,
+  quickDetectCorrection,
+  getTrustBand,
+} from './trust-repair-service';
+import type { TrustScore, BehaviorConstraint } from '../types/feedback-correction';
+
+/**
+ * Trust context for ORB decision-making
+ * Fetched alongside memory context for complete user state
+ */
+export interface OrbTrustContext {
+  ok: boolean;
+  overallTrust: number;
+  trustBand: string;  // 'Critical' | 'Low' | 'Medium' | 'High' | 'Full'
+  requiresRestriction: boolean;
+  needsAttention: boolean;
+  scores: TrustScore[];
+  constraints: BehaviorConstraint[];
+  recentCorrectionCount: number;
+  timestamp: string;
+  error?: string;
+}
+
+/**
+ * VTID-01121: Fetch trust context for ORB session
+ * Returns current trust scores and behavior constraints
+ * Used to adjust ORB behavior based on user's correction history
+ */
+export async function fetchDevTrustContext(): Promise<OrbTrustContext> {
+  const timestamp = new Date().toISOString();
+
+  // Only active in dev sandbox
+  if (!isMemoryBridgeEnabled()) {
+    return {
+      ok: false,
+      overallTrust: 80,  // Default trust
+      trustBand: 'High',
+      requiresRestriction: false,
+      needsAttention: false,
+      scores: [],
+      constraints: [],
+      recentCorrectionCount: 0,
+      timestamp,
+      error: 'Trust context only available in dev-sandbox mode',
+    };
+  }
+
+  try {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+
+    if (!supabaseUrl || !supabaseKey) {
+      return {
+        ok: false,
+        overallTrust: 80,
+        trustBand: 'High',
+        requiresRestriction: false,
+        needsAttention: false,
+        scores: [],
+        constraints: [],
+        recentCorrectionCount: 0,
+        timestamp,
+        error: 'Supabase credentials not configured',
+      };
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Bootstrap dev identity context
+    await supabase.rpc('dev_bootstrap_request_context', {
+      p_tenant_slug: DEV_IDENTITY.TENANT_SLUG,
+      p_user_id: DEV_IDENTITY.USER_ID,
+      p_active_role: DEV_IDENTITY.ACTIVE_ROLE,
+    });
+
+    // Fetch trust scores
+    const { data: trustData, error: trustError } = await supabase.rpc('get_trust_scores');
+
+    if (trustError) {
+      // If RPC doesn't exist, return defaults (migration not applied)
+      if (trustError.message.includes('does not exist')) {
+        console.log('[VTID-01121] Trust scores RPC not available (migration pending)');
+        return {
+          ok: true,
+          overallTrust: 80,
+          trustBand: 'High',
+          requiresRestriction: false,
+          needsAttention: false,
+          scores: [],
+          constraints: [],
+          recentCorrectionCount: 0,
+          timestamp,
+        };
+      }
+      throw new Error(trustError.message);
+    }
+
+    // Fetch behavior constraints
+    const { data: constraintData, error: constraintError } = await supabase.rpc('get_behavior_constraints', {
+      p_constraint_type: null,
+    });
+
+    if (constraintError && !constraintError.message.includes('does not exist')) {
+      console.warn('[VTID-01121] Constraint fetch error:', constraintError.message);
+    }
+
+    // Fetch recent correction count
+    const { data: historyData } = await supabase.rpc('get_correction_history', {
+      p_limit: 10,
+      p_offset: 0,
+      p_feedback_type: null,
+    });
+
+    const scores: TrustScore[] = trustData?.scores || [];
+    const constraints: BehaviorConstraint[] = constraintData?.constraints || [];
+    const recentCorrectionCount = historyData?.total || 0;
+
+    // Find overall trust score
+    const overallScore = scores.find(s => s.component === 'overall');
+    const overallTrust = overallScore?.score ?? 80;
+    const trustBand = getTrustBand(overallTrust);
+
+    // Determine if restriction is needed
+    const requiresRestriction = overallTrust < 40 || scores.some(s => s.score < 40);
+    const needsAttention = overallTrust < 20 || scores.some(s => s.consecutive_corrections >= 5);
+
+    console.log(`[VTID-01121] Trust context fetched: overall=${overallTrust}, band=${trustBand}, constraints=${constraints.length}`);
+
+    return {
+      ok: true,
+      overallTrust,
+      trustBand,
+      requiresRestriction,
+      needsAttention,
+      scores,
+      constraints,
+      recentCorrectionCount,
+      timestamp,
+    };
+
+  } catch (err: any) {
+    console.error('[VTID-01121] Failed to fetch trust context:', err.message);
+    return {
+      ok: false,
+      overallTrust: 80,
+      trustBand: 'High',
+      requiresRestriction: false,
+      needsAttention: false,
+      scores: [],
+      constraints: [],
+      recentCorrectionCount: 0,
+      timestamp,
+      error: err.message,
+    };
+  }
+}
+
+/**
+ * VTID-01121: Build trust-aware system instruction enhancement
+ * Adds trust context and behavior constraints to ORB system prompt
+ */
+export function buildTrustAwareInstruction(
+  baseInstruction: string,
+  trustContext: OrbTrustContext
+): string {
+  // If trust is high and no constraints, no modification needed
+  if (!trustContext.ok || (trustContext.overallTrust >= 70 && trustContext.constraints.length === 0)) {
+    return baseInstruction;
+  }
+
+  let trustGuidance = '\n\n## TRUST & BEHAVIOR GUIDANCE (VTID-01121)\n';
+
+  // Add trust level awareness
+  trustGuidance += `\nCurrent trust level: ${trustContext.trustBand} (${trustContext.overallTrust}/100)\n`;
+
+  // Add restriction guidance if needed
+  if (trustContext.requiresRestriction) {
+    trustGuidance += `
+**IMPORTANT: The user has corrected you multiple times. Be extra careful:**
+- Ask for confirmation before taking significant actions
+- Be more conservative with suggestions
+- Acknowledge when you're uncertain
+- If the user seems frustrated, acknowledge it and adjust your approach
+`;
+  }
+
+  if (trustContext.needsAttention) {
+    trustGuidance += `
+**CRITICAL: Trust is very low. The user is frustrated with past interactions:**
+- Avoid proactive suggestions unless asked
+- Keep responses shorter and more direct
+- Ask before assuming anything about their preferences
+- If you're about to repeat a past mistake, stop and ask instead
+`;
+  }
+
+  // Add specific behavior constraints
+  if (trustContext.constraints.length > 0) {
+    trustGuidance += '\n**BLOCKED BEHAVIORS - DO NOT DO THESE:**\n';
+    for (const constraint of trustContext.constraints.slice(0, 5)) {
+      trustGuidance += `- ${constraint.description}\n`;
+    }
+    if (trustContext.constraints.length > 5) {
+      trustGuidance += `- (and ${trustContext.constraints.length - 5} more constraints)\n`;
+    }
+  }
+
+  return baseInstruction + trustGuidance;
+}
+
+/**
+ * VTID-01121: Quick check if a user message appears to be a correction
+ * Returns detection result for ORB to decide how to respond
+ */
+export function detectUserCorrection(userMessage: string): {
+  isCorrection: boolean;
+  type: string | null;
+  shouldAcknowledge: boolean;
+} {
+  const result = quickDetectCorrection(userMessage);
+
+  return {
+    isCorrection: result.isCorrection,
+    type: result.type,
+    shouldAcknowledge: result.isCorrection && result.type !== null,
+  };
+}
+
+/**
+ * VTID-01121: Get combined memory and trust context for ORB
+ * Convenience function that fetches both contexts in parallel
+ */
+export async function getFullOrbContext(): Promise<{
+  memoryContext: OrbMemoryContext;
+  trustContext: OrbTrustContext;
+}> {
+  const [memoryContext, trustContext] = await Promise.all([
+    fetchDevMemoryContext(),
+    fetchDevTrustContext(),
+  ]);
+
+  return { memoryContext, trustContext };
+}
+
+/**
+ * VTID-01121: Build fully enhanced instruction with memory and trust
+ * Combines memory context and trust awareness into system instruction
+ */
+export async function buildFullyEnhancedInstruction(
+  baseInstruction: string
+): Promise<{
+  instruction: string;
+  memoryContext: OrbMemoryContext;
+  trustContext: OrbTrustContext;
+}> {
+  const { memoryContext, trustContext } = await getFullOrbContext();
+
+  // First add memory context
+  let instruction = buildMemoryEnhancedInstruction(baseInstruction, memoryContext);
+
+  // Then add trust awareness
+  instruction = buildTrustAwareInstruction(instruction, trustContext);
+
+  return { instruction, memoryContext, trustContext };
+}
+
+// =============================================================================
 // VTID-01106: Exports
 // Note: shouldStoreInMemory, resetMemoryBridgeCache already exported inline
 // =============================================================================
