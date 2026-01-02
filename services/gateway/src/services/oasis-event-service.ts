@@ -995,6 +995,125 @@ export const memoryGovernanceEvents = {
 };
 
 /**
+ * VTID-01123: Response Framing Event Types
+ * These are the event types for response framing decisions.
+ */
+export const RESPONSE_FRAMING_EVENT_TYPES = [
+    'response.framing.computed',
+    'response.framing.applied',
+    'response.framing.override'
+] as const;
+
+/**
+ * VTID-01123: Response Framing Event Helpers
+ * Helper functions for emitting response framing events.
+ */
+export const responseFramingEvents = {
+  /**
+   * Emit framing computed event
+   * Called when a response profile is computed
+   */
+  framingComputed: (
+    decisionId: string,
+    responseProfile: {
+      depth_level: string;
+      tone: string;
+      pacing: string;
+      directness: string;
+      confidence_expression: string;
+    },
+    inputSummary: {
+      intent_type: string;
+      intent_confidence: number;
+      domain: string;
+      emotional_state: string;
+      cognitive_load: number;
+      engagement_level: number;
+    },
+    rationaleCodes: string[],
+    conversationId?: string
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01123',
+      type: 'response.framing.computed',
+      source: 'response-framing-engine',
+      status: 'success',
+      message: `Response framing computed: ${responseProfile.tone} tone, ${responseProfile.depth_level} depth`,
+      payload: {
+        decision_id: decisionId,
+        response_profile: responseProfile,
+        input_summary: inputSummary,
+        rationale_codes: rationaleCodes,
+        conversation_id: conversationId,
+        computed_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit framing applied event
+   * Called when a response profile is applied to output generation
+   */
+  framingApplied: (
+    decisionId: string,
+    responseProfile: {
+      depth_level: string;
+      tone: string;
+      pacing: string;
+      directness: string;
+      confidence_expression: string;
+    },
+    outputContext: {
+      conversation_id?: string;
+      user_id?: string;
+      tenant_id?: string;
+      output_type?: 'text' | 'voice' | 'mixed';
+    }
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01123',
+      type: 'response.framing.applied',
+      source: 'response-framing-engine',
+      status: 'success',
+      message: `Response framing applied to output generation`,
+      payload: {
+        decision_id: decisionId,
+        response_profile: responseProfile,
+        ...outputContext,
+        applied_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit framing override event
+   * Called when user preferences or safety constraints override computed values
+   */
+  framingOverride: (
+    decisionId: string,
+    overrides: Array<{
+      dimension: string;
+      original_value: string;
+      applied_value: string;
+      reason: string;
+    }>,
+    overrideSource: 'user_preference' | 'safety_constraint' | 'system_policy'
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01123',
+      type: 'response.framing.override',
+      source: 'response-framing-engine',
+      status: 'info',
+      message: `Response framing overridden by ${overrideSource}: ${overrides.length} dimension(s)`,
+      payload: {
+        decision_id: decisionId,
+        overrides,
+        override_source: overrideSource,
+        override_count: overrides.length,
+        overridden_at: new Date().toISOString(),
+      },
+    }),
+};
+
+/**
  * VTID-0408: Governance History Event DTO
  */
 export interface GovernanceHistoryEvent {

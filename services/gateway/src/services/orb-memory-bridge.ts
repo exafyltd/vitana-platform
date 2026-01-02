@@ -11,6 +11,9 @@
  * - Conversation context formatting for LLM prompts
  * - VTID-01115: Relevance scoring for all memory items before context assembly
  *
+ * Integration with Intelligence Stack:
+ * - Memory Scoring (D23) → Confidence (D24) → D25 Context Window Control → Context Assembly (D20)
+ *
  * DEV SANDBOX ONLY - No production auth patterns.
  */
 
@@ -32,6 +35,13 @@ import {
   getOrbSignalContext,
   OrbSignalContext
 } from './d28-emotional-cognitive-engine';
+import {
+  ContextWindowManager,
+  selectContextWindow,
+  ContextSelectionResult,
+  ContextMetrics,
+  formatSelectionDebug
+} from './context-window-manager';
 
 // =============================================================================
 // VTID-01106: Constants & Configuration
@@ -92,6 +102,7 @@ export interface MemoryItem {
 
 /**
  * Memory context for ORB system instruction
+ * VTID-01117: Enhanced with context window metrics
  */
 export interface OrbMemoryContext {
   ok: boolean;
@@ -104,6 +115,12 @@ export interface OrbMemoryContext {
   error?: string;
   // VTID-01115: Scoring metadata
   scoring_metadata?: ScoringMetadata;
+  /** VTID-01117: Context window selection metrics */
+  contextMetrics?: ContextMetrics;
+  /** VTID-01117: Number of items excluded by context window manager */
+  excludedCount?: number;
+  /** VTID-01117: Reasons for exclusions (summary) */
+  exclusionSummary?: Record<string, number>;
 }
 
 /**
@@ -580,56 +597,79 @@ export async function fetchDevMemoryContext(
       };
     }
 
-    // VTID-01109 rev2: Smart sorting - prioritize personal/relationships, then by importance + recency
-    let items = (memoryItems || []) as MemoryItem[];
+    // VTID-01117: Use Context Window Manager for deterministic selection
+    // This replaces the old ad-hoc sorting and limiting logic
+    const rawItems = (memoryItems || []) as MemoryItem[];
 
-    // Sort by: category priority, then importance, then recency
-    const categoryPriority: Record<string, number> = {
-      personal: 0,
-      relationships: 1,
-      health: 2,
-      goals: 3,
-      preferences: 4,
-      conversation: 5
-    };
+    // Generate a unique turn ID for traceability
+    const turnId = `turn-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 
-    items.sort((a, b) => {
-      // First by category priority
-      const catA = categoryPriority[a.category_key] ?? 99;
-      const catB = categoryPriority[b.category_key] ?? 99;
-      if (catA !== catB) return catA - catB;
+    // Apply context window selection with saturation control
+    // Quality score defaults to 50 (medium confidence) - can be enhanced with D24 integration
+    const selectionResult = selectContextWindow(
+      rawItems,
+      50, // Default quality score
+      turnId,
+      DEV_IDENTITY.USER_ID,
+      DEV_IDENTITY.TENANT_ID
+    );
 
-      // Then by importance (higher first)
-      if (a.importance !== b.importance) return b.importance - a.importance;
+    // Extract selected items (strip the enhanced fields to maintain interface compatibility)
+    const items: MemoryItem[] = selectionResult.includedItems.map(item => ({
+      id: item.id,
+      category_key: item.category_key,
+      source: item.source,
+      content: item.content,
+      content_json: item.content_json,
+      importance: item.importance,
+      occurred_at: item.occurred_at,
+      created_at: item.created_at
+    }));
 
-      // Then by recency (newer first)
-      return new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime();
-    });
+    // Generate exclusion summary for debugging
+    const exclusionSummary: Record<string, number> = {};
+    for (const exclusion of selectionResult.excludedItems) {
+      exclusionSummary[exclusion.reason] = (exclusionSummary[exclusion.reason] || 0) + 1;
+    }
 
-    // Limit to requested amount after sorting
-    items = items.slice(0, limit);
+    console.log(
+      `[VTID-01117] Context window selection: ${items.length} included, ` +
+      `${selectionResult.excludedItems.length} excluded ` +
+      `(personal: ${items.filter(i => i.category_key === 'personal').length}, ` +
+      `relationships: ${items.filter(i => i.category_key === 'relationships').length})`
+    );
 
-    console.log(`[VTID-01109] Memory items after smart sort: ${items.length} (personal: ${items.filter(i => i.category_key === 'personal').length}, relationships: ${items.filter(i => i.category_key === 'relationships').length})`);
+    if (selectionResult.excludedItems.length > 0) {
+      console.log(`[VTID-01117] Exclusion reasons: ${JSON.stringify(exclusionSummary)}`);
+    }
+
     const summary = generateMemorySummary(items);
     const formattedContext = formatMemoryForPrompt(items);
 
-    console.log(`[VTID-01106] Fetched ${items.length} memory items for dev user`);
+    console.log(`[VTID-01106] Context assembled: ${items.length} items, ${selectionResult.metrics.totalChars} chars`);
 
-    // Emit OASIS event for memory context fetch
+    // Emit OASIS event for memory context fetch with enhanced metrics
     await emitOasisEvent({
-      vtid: 'VTID-01106',
-      type: 'orb.memory.context_fetched',
+      vtid: 'VTID-01117',
+      type: 'orb.context.window_selected',
       source: 'orb-memory-bridge',
       status: 'success',
-      message: `Fetched ${items.length} memory items for ORB context`,
+      message: `Context window selected: ${items.length} items, ${selectionResult.excludedItems.length} excluded`,
       payload: {
         user_id: DEV_IDENTITY.USER_ID,
         tenant_id: DEV_IDENTITY.TENANT_ID,
-        items_count: items.length,
+        turn_id: turnId,
+        included_count: items.length,
+        excluded_count: selectionResult.excludedItems.length,
+        total_chars: selectionResult.metrics.totalChars,
+        diversity_score: selectionResult.metrics.diversityScore,
+        budget_utilization: selectionResult.metrics.budgetUtilization,
+        processing_time_ms: selectionResult.metrics.processingTimeMs,
+        exclusion_summary: exclusionSummary,
         categories: categoryFilter,
         since: sinceTimestamp
       }
-    }).catch((err: Error) => console.warn('[VTID-01106] OASIS event failed:', err.message));
+    }).catch((err: Error) => console.warn('[VTID-01117] OASIS event failed:', err.message));
 
     return {
       ok: true,
@@ -638,7 +678,11 @@ export async function fetchDevMemoryContext(
       items,
       summary,
       formatted_context: formattedContext,
-      fetched_at: fetchedAt
+      fetched_at: fetchedAt,
+      // VTID-01117: Include context window metrics
+      contextMetrics: selectionResult.metrics,
+      excludedCount: selectionResult.excludedItems.length,
+      exclusionSummary
     };
 
   } catch (err: any) {
@@ -1214,6 +1258,7 @@ export async function getMemoryEnhancedInstruction(
 
 /**
  * Debug snapshot response for /api/v1/orb/debug/memory endpoint
+ * VTID-01117: Enhanced with context window metrics
  */
 export interface OrbMemoryDebugSnapshot {
   ok: boolean;
@@ -1227,6 +1272,14 @@ export interface OrbMemoryDebugSnapshot {
   injected_preview: string;
   timestamp: string;
   error?: string;
+  /** VTID-01117: Context window metrics */
+  context_window?: {
+    excluded_count: number;
+    exclusion_summary: Record<string, number>;
+    diversity_score: number;
+    budget_utilization: number;
+    processing_time_ms: number;
+  };
 }
 
 /**
@@ -1299,7 +1352,15 @@ export async function getDebugSnapshot(): Promise<OrbMemoryDebugSnapshot> {
     items_preview: itemsPreview,
     injected_chars: memoryContext.formatted_context.length,
     injected_preview: injectedPreview,
-    timestamp
+    timestamp,
+    // VTID-01117: Include context window metrics
+    context_window: memoryContext.contextMetrics ? {
+      excluded_count: memoryContext.excludedCount || 0,
+      exclusion_summary: memoryContext.exclusionSummary || {},
+      diversity_score: memoryContext.contextMetrics.diversityScore,
+      budget_utilization: memoryContext.contextMetrics.budgetUtilization,
+      processing_time_ms: memoryContext.contextMetrics.processingTimeMs
+    } : undefined
   };
 }
 
@@ -1434,9 +1495,10 @@ Use these signals to adapt your response:
 }
 
 // =============================================================================
-// VTID-01106 + VTID-01115 + VTID-01120: Exports
+// VTID-01106 + VTID-01115 + VTID-01117 + VTID-01120: Exports
 // Note: shouldStoreInMemory, resetMemoryBridgeCache already exported inline
 // Note: fetchScoredMemoryContext, ScoredOrbMemoryContext exported inline
+// VTID-01117: Added context window manager exports
 // =============================================================================
 
 export {
@@ -1447,7 +1509,7 @@ export {
   processMessageForOrb
 };
 
-// Re-export scoring types for consumers
+// Re-export scoring types for consumers (VTID-01115)
 export type {
   ScoringContext,
   ScoredMemoryItem,
@@ -1458,3 +1520,10 @@ export type {
 } from './memory-relevance-scoring';
 
 export type { OrbSignalContext };
+
+// VTID-01117: Re-export context window manager for direct access
+export {
+  ContextWindowManager,
+  selectContextWindow,
+  formatSelectionDebug
+} from './context-window-manager';

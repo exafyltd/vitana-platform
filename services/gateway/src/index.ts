@@ -124,6 +124,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const diaryRouter = require('./routes/diary').default;
   // VTID-01114: Domain & Topic Routing Engine (D22) - intelligence traffic control
   const domainRoutingRouter = require('./routes/domain-routing').default;
+  // VTID-01119: User Preference & Constraint Modeling Engine
+  const userPreferencesRouter = require('./routes/user-preferences').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -358,6 +360,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01114: Domain & Topic Routing Engine (D22) - intelligence traffic control layer
   mountRouterSync(app, '/api/v1/routing', domainRoutingRouter, { owner: 'domain-routing' });
+
+  // VTID-01119: User Preference & Constraint Modeling Engine
+  mountRouterSync(app, '/api/v1/user-preferences', userPreferencesRouter, { owner: 'user-preferences' });
 
   // VTID-01063: commandhub router (note: /board route REMOVED, use board-adapter)
   mountRouterSync(app, '/api/v1/commandhub', commandhub, { owner: 'commandhub' });
