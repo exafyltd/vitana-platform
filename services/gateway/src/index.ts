@@ -134,6 +134,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const availabilityReadinessRouter = require('./routes/availability-readiness').default;
   // VTID-01128: D34 Environmental, Location & Mobility Context Engine
   const environmentalMobilityRouter = require('./routes/environmental-mobility-context').default;
+  // VTID-01129: D35 Social Context, Relationship Weighting & Proximity Engine
+  const socialContextRouter = require('./routes/social-context').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -362,6 +364,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01087: Relationship Graph Memory - matchmaking spine
   mountRouterSync(app, '/api/v1/relationships', relationshipsRouter, { owner: 'relationships' });
+
+  // VTID-01129: D35 Social Context, Relationship Weighting & Proximity Engine
+  mountRouterSync(app, '/api/v1/social', socialContextRouter, { owner: 'social-context' });
 
   // VTID-01090: Live Rooms + Events as Relationship Nodes
   mountRouterSync(app, '/api/v1/live', liveRouter, { owner: 'live' });

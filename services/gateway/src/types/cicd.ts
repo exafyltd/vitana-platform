@@ -318,7 +318,16 @@ export type CicdEventType =
   | 'd34.context.fallback'
   | 'd34.filter.applied'
   | 'd34.filter.rejected'
-  | 'd34.error';
+  | 'd34.error'
+  // VTID-01129: D35 Social Context, Relationship Weighting & Proximity Engine Events
+  | 'd35.context.computed'
+  | 'd35.context.compute.failed'
+  | 'd35.proximity.scored'
+  | 'd35.comfort.updated'
+  | 'd35.action.filtered'
+  | 'd35.boundary.respected'
+  | 'd35.api.request'
+  | 'd35.api.error';
 
 export interface CicdOasisEvent {
   vtid: string;
