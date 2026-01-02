@@ -14,6 +14,7 @@
 
 import { randomUUID, createHash } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
+import type { CicdEventType } from '../types/cicd';
 import {
   SafetyDomain,
   GuardrailAction,
@@ -522,7 +523,7 @@ async function emitSafetyGuardrailEvent(
 /**
  * Map guardrail action to OASIS event type.
  */
-function mapActionToEventType(action: GuardrailAction): string {
+function mapActionToEventType(action: GuardrailAction): CicdEventType {
   switch (action) {
     case 'allow':
       return 'safety.guardrail.allowed';

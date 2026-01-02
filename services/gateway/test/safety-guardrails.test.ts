@@ -21,15 +21,7 @@ import {
   GUARDRAIL_ACTION_PRIORITY,
   HARD_CONSTRAINTS
 } from '../src/services/safety-guardrails';
-import {
-  SafetyDomain,
-  GuardrailAction,
-  GuardrailInput,
-  GuardrailEvaluation,
-  IntentBundle,
-  EmotionalSignal,
-  AutonomyIntent
-} from '../src/types/safety-guardrails';
+import type { GuardrailInput } from '../src/types/safety-guardrails';
 import { GUARDRAIL_RULES_BY_DOMAIN, DOMAIN_DETECTION_PATTERNS } from '../src/services/safety-guardrail-rules';
 
 // Set test environment
