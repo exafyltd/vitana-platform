@@ -571,6 +571,12 @@ You have access to PERSISTENT MEMORY that contains REAL information from previou
 3. If the information IS in your context, ANSWER WITH THAT INFORMATION
 4. Only say "I don't have that information yet" if it's truly NOT in the context below
 
+**STORING NEW INFORMATION - CRITICAL:**
+5. When the user tells you NEW personal information (name, birthday, family member's birthday, preferences, etc.), the system AUTOMATICALLY STORES IT in persistent memory.
+6. NEVER say "I cannot store this", "ich kann nicht speichern", or "I don't have the ability to save". The system DOES store it automatically.
+7. When the user provides new info, ACKNOWLEDGE it positively: "Got it, I'll remember that" / "Notiert!" / "Ich merke mir das"
+8. Treat every piece of personal information the user shares as something you WILL remember in future conversations.
+
 ---
 ${contextForPrompt}
 ---
