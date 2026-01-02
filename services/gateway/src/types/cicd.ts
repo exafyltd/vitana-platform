@@ -351,7 +351,10 @@ export type CicdEventType =
   | 'd41.action.restricted'
   | 'd41.action.allowed'
   | 'd41.vulnerability.detected'
-  | 'd41.vulnerability.cleared';
+  | 'd41.vulnerability.cleared'
+  // VTID-01136: D42 Cross-Domain Context Fusion Events
+  | 'd42.priorities.resolved'
+  | 'd42.priorities.failed';
 
 export interface CicdOasisEvent {
   vtid: string;
