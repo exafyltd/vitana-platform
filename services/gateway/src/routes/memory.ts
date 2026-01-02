@@ -4,6 +4,7 @@
  * VTID-01085: Memory Retrieve Router v1 (Unified Memory Access)
  * VTID-01098: Memory Timeline & Life-Change Causality
  * VTID-01100: Memory Quality Metrics & Confidence Scoring
+ * VTID-01116: Memory Confidence & Source Trust Engine
  *
  * Memory write/read endpoints and auto-write hooks for ORB conversations.
  * Memory Garden diary and node extraction for personalization.
@@ -21,6 +22,14 @@
  * - POST /api/v1/memory/timeline/rebuild - Rebuild timeline snapshot (VTID-01098)
  * - POST /api/v1/memory/quality/compute - Compute quality metrics (VTID-01100)
  * - GET  /api/v1/memory/quality         - Get latest quality snapshot (VTID-01100)
+ * - POST /api/v1/memory/confidence/adjust - Adjust confidence score (VTID-01116)
+ * - POST /api/v1/memory/confidence/confirm - Confirm a memory item (VTID-01116)
+ * - POST /api/v1/memory/confidence/correct - Correct a memory item (VTID-01116)
+ * - GET  /api/v1/memory/confidence/history/:id - Get confidence history (VTID-01116)
+ * - GET  /api/v1/memory/context/trusted - Get context with confidence filtering (VTID-01116)
+ * - POST /api/v1/memory/confidence/decay - Apply time decay (VTID-01116)
+ * - GET  /api/v1/memory/source-trust - Get source trust weights (VTID-01116)
+ * - GET  /api/v1/memory/confidence/reasons - Get adjustment reason codes (VTID-01116)
  *
  * Internal helpers:
  * - writeMemoryItem()            - Direct memory write (for ORB auto-write)
@@ -32,6 +41,7 @@
  * - VTID-01085 (memory retrieve RPC)
  * - VTID-01098 (timeline RPC)
  * - VTID-01100 (quality metrics RPC)
+ * - VTID-01116 (confidence trust RPC)
  */
 
 import { Router, Request, Response } from 'express';
@@ -280,6 +290,195 @@ type ConfidenceBand = keyof typeof CONFIDENCE_BANDS;
 const QualityComputeRequestSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format').optional()
 });
+
+// =============================================================================
+// VTID-01116: Memory Confidence & Source Trust Constants & Types
+// =============================================================================
+
+/**
+ * Source classification types for trust weighting
+ * These map to the memory_source_trust table in the database
+ */
+const SOURCE_CLASSIFICATIONS = [
+  'user_explicit',
+  'user_inferred',
+  'diary',
+  'orb_text',
+  'orb_voice',
+  'upload',
+  'system',
+  'third_party',
+  'derived'
+] as const;
+
+type SourceClassification = typeof SOURCE_CLASSIFICATIONS[number];
+
+/**
+ * Verification levels for memory items
+ */
+const VERIFICATION_LEVELS = [
+  'none',
+  'user_confirmed',
+  'cross_referenced',
+  'professionally_verified',
+  'lab_confirmed'
+] as const;
+
+type VerificationLevel = typeof VERIFICATION_LEVELS[number];
+
+/**
+ * Sensitivity flags for memory items (affects max confidence)
+ */
+const SENSITIVITY_FLAGS = [
+  'medical',
+  'psychological',
+  'financial',
+  'legal',
+  'personal'
+] as const;
+
+type SensitivityFlag = typeof SENSITIVITY_FLAGS[number];
+
+/**
+ * Confidence adjustment reason codes
+ */
+const CONFIDENCE_REASON_CODES = [
+  // Increase reasons
+  'USER_CONFIRMED',
+  'REPETITION_CONSISTENT',
+  'CROSS_REFERENCE_MATCH',
+  'PROFESSIONAL_VERIFIED',
+  'LAB_CONFIRMED',
+  // Decrease reasons
+  'USER_CORRECTED',
+  'CONTRADICTING_EVIDENCE',
+  'TIME_DECAY',
+  'SOURCE_INVALIDATED',
+  'PARTIAL_RETRACTION',
+  // Neutral reasons
+  'INITIAL_CAPTURE',
+  'RECALCULATED',
+  'SENSITIVITY_CAP'
+] as const;
+
+type ConfidenceReasonCode = typeof CONFIDENCE_REASON_CODES[number];
+
+/**
+ * Schema for confidence adjustment request
+ */
+const ConfidenceAdjustRequestSchema = z.object({
+  memory_item_id: z.string().uuid('memory_item_id must be a valid UUID'),
+  reason_code: z.enum(CONFIDENCE_REASON_CODES),
+  context: z.record(z.unknown()).optional().default({})
+});
+
+/**
+ * Schema for memory confirmation request
+ */
+const ConfidenceConfirmRequestSchema = z.object({
+  memory_item_id: z.string().uuid('memory_item_id must be a valid UUID'),
+  confirmation_notes: z.string().optional().nullable()
+});
+
+/**
+ * Schema for memory correction request
+ */
+const ConfidenceCorrectRequestSchema = z.object({
+  memory_item_id: z.string().uuid('memory_item_id must be a valid UUID'),
+  correction_notes: z.string().optional().nullable(),
+  new_content: z.string().optional().nullable()
+});
+
+/**
+ * Schema for trusted context query
+ */
+const TrustedContextQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  min_confidence: z.coerce.number().int().min(0).max(100).default(30),
+  categories: z.string().optional(), // comma-separated
+  since: z.string().datetime().optional(),
+  include_low_confidence: z.coerce.boolean().default(false)
+});
+
+/**
+ * Schema for time decay request
+ */
+const TimeDecayRequestSchema = z.object({
+  decay_threshold_days: z.number().int().min(1).max(365).default(30)
+});
+
+/**
+ * Extended memory item with confidence fields
+ */
+interface MemoryItemWithConfidence extends MemoryItem {
+  source_classification: SourceClassification;
+  confidence_score: number;
+  verification_level: VerificationLevel;
+  sensitivity_flag: SensitivityFlag | null;
+  times_confirmed: number;
+  times_corrected: number;
+  relevance_score?: number;
+  last_confidence_update?: string;
+}
+
+/**
+ * Confidence history entry
+ */
+interface ConfidenceHistoryEntry {
+  id: string;
+  previous_confidence: number;
+  new_confidence: number;
+  delta: number;
+  reason_code: ConfidenceReasonCode;
+  reason_label: string;
+  reason_details: Record<string, unknown>;
+  triggered_by: 'user' | 'system' | 'professional' | 'third_party' | 'time_decay';
+  created_at: string;
+}
+
+/**
+ * Source trust weight definition
+ */
+interface SourceTrustWeight {
+  source_type: SourceClassification;
+  trust_weight: number;
+  max_confidence: number;
+  label: string;
+  description: string;
+  requires_validation: boolean;
+}
+
+/**
+ * Confidence reason definition
+ */
+interface ConfidenceReasonDefinition {
+  reason_code: ConfidenceReasonCode;
+  category: 'increase' | 'decrease' | 'neutral';
+  delta_min: number;
+  delta_max: number;
+  label: string;
+  description: string;
+}
+
+/**
+ * Emit confidence-related OASIS events (VTID-01116)
+ */
+async function emitConfidenceEvent(
+  type: 'memory.confidence.adjusted' | 'memory.confidence.confirmed' | 'memory.confidence.corrected' |
+        'memory.confidence.decayed' | 'memory.confidence.history.read',
+  status: 'info' | 'success' | 'warning' | 'error',
+  message: string,
+  payload: Record<string, unknown>
+): Promise<void> {
+  await emitOasisEvent({
+    vtid: 'VTID-01116',
+    type: type as any,
+    source: 'memory-confidence-gateway',
+    status,
+    message,
+    payload
+  }).catch(err => console.warn(`[VTID-01116] Failed to emit ${type}:`, err.message));
+}
 
 // =============================================================================
 // VTID-01105: Deterministic Category Classification
@@ -1324,8 +1523,8 @@ router.get('/health', (_req: Request, res: Response) => {
     ok: true,
     status,
     service: 'memory-gateway',
-    version: '1.2.0',
-    vtids: ['VTID-01105', 'VTID-01082', 'VTID-01085', 'VTID-01086', 'VTID-01098'],
+    version: '1.3.0',
+    vtids: ['VTID-01105', 'VTID-01082', 'VTID-01085', 'VTID-01086', 'VTID-01098', 'VTID-01100', 'VTID-01116'],
     timestamp: new Date().toISOString(),
     capabilities: {
       write: hasSupabaseUrl && hasSupabaseKey,
@@ -1340,7 +1539,19 @@ router.get('/health', (_req: Request, res: Response) => {
       timeline: hasSupabaseUrl && hasSupabaseKey,
       timeline_rebuild: hasSupabaseUrl && hasSupabaseKey,
       timeline_types: ['health', 'relationships', 'community', 'all'],
-      quality_metrics: hasSupabaseUrl && hasSupabaseKey
+      quality_metrics: hasSupabaseUrl && hasSupabaseKey,
+      // VTID-01116: Confidence & Trust Engine
+      confidence_scoring: hasSupabaseUrl && hasSupabaseKey,
+      confidence_adjust: hasSupabaseUrl && hasSupabaseKey,
+      confidence_confirm: hasSupabaseUrl && hasSupabaseKey,
+      confidence_correct: hasSupabaseUrl && hasSupabaseKey,
+      confidence_history: hasSupabaseUrl && hasSupabaseKey,
+      trusted_context: hasSupabaseUrl && hasSupabaseKey,
+      source_trust: hasSupabaseUrl && hasSupabaseKey,
+      source_classifications: SOURCE_CLASSIFICATIONS,
+      verification_levels: VERIFICATION_LEVELS,
+      sensitivity_flags: SENSITIVITY_FLAGS,
+      confidence_reason_codes: CONFIDENCE_REASON_CODES
     },
     dependencies: {
       'VTID-01102': 'context_bridge',
@@ -1348,7 +1559,8 @@ router.get('/health', (_req: Request, res: Response) => {
       'VTID-01082': 'memory_garden_diary',
       'VTID-01085': 'memory_retrieve_router',
       'VTID-01098': 'timeline_rpc',
-      'VTID-01100': 'quality_metrics_rpc'
+      'VTID-01100': 'quality_metrics_rpc',
+      'VTID-01116': 'confidence_trust_engine'
     }
   });
 });
@@ -1994,6 +2206,816 @@ router.get('/quality', async (req: Request, res: Response) => {
     return res.status(200).json(response);
   } catch (err: any) {
     console.error('[VTID-01100] memory_get_quality error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+// =============================================================================
+// VTID-01116: Memory Confidence & Source Trust Endpoints
+// =============================================================================
+
+/**
+ * POST /confidence/adjust -> POST /api/v1/memory/confidence/adjust
+ *
+ * Adjust confidence for a specific memory item.
+ * Uses deterministic rules based on reason code.
+ */
+router.post('/confidence/adjust', async (req: Request, res: Response) => {
+  console.log('[VTID-01116] POST /memory/confidence/adjust');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Validate request body
+  const validation = ConfidenceAdjustRequestSchema.safeParse(req.body);
+  if (!validation.success) {
+    console.warn('[VTID-01116] Validation failed:', validation.error.errors);
+    return res.status(400).json({
+      ok: false,
+      error: 'Validation failed',
+      details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const { memory_item_id, reason_code, context } = validation.data;
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Call memory_adjust_confidence RPC
+    const { data, error } = await supabase.rpc('memory_adjust_confidence', {
+      p_memory_item_id: memory_item_id,
+      p_reason_code: reason_code,
+      p_context: context
+    });
+
+    if (error) {
+      // Check if RPC doesn't exist
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01116] memory_adjust_confidence RPC not found (VTID-01116 not deployed yet)');
+        return res.status(503).json({
+          ok: false,
+          error: 'Confidence RPC not available (VTID-01116 dependency)'
+        });
+      }
+      console.error('[VTID-01116] memory_adjust_confidence RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    const result = data as {
+      ok: boolean;
+      memory_item_id?: string;
+      previous_confidence?: number;
+      new_confidence?: number;
+      delta?: number;
+      reason_code?: string;
+      capped_by?: string;
+      error?: string;
+      message?: string;
+    };
+
+    if (!result.ok) {
+      return res.status(400).json({
+        ok: false,
+        error: result.error,
+        message: result.message
+      });
+    }
+
+    // Emit OASIS event
+    await emitConfidenceEvent(
+      'memory.confidence.adjusted',
+      'success',
+      `Confidence adjusted: ${result.previous_confidence} -> ${result.new_confidence} (${reason_code})`,
+      {
+        memory_item_id,
+        reason_code,
+        previous_confidence: result.previous_confidence,
+        new_confidence: result.new_confidence,
+        delta: result.delta,
+        capped_by: result.capped_by
+      }
+    );
+
+    console.log(`[VTID-01116] Confidence adjusted: ${memory_item_id} ${result.previous_confidence} -> ${result.new_confidence}`);
+
+    return res.status(200).json(result);
+  } catch (err: any) {
+    console.error('[VTID-01116] memory_adjust_confidence error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * POST /confidence/confirm -> POST /api/v1/memory/confidence/confirm
+ *
+ * User confirms a memory item is accurate.
+ * Increases confidence score (with diminishing returns).
+ */
+router.post('/confidence/confirm', async (req: Request, res: Response) => {
+  console.log('[VTID-01116] POST /memory/confidence/confirm');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Validate request body
+  const validation = ConfidenceConfirmRequestSchema.safeParse(req.body);
+  if (!validation.success) {
+    console.warn('[VTID-01116] Validation failed:', validation.error.errors);
+    return res.status(400).json({
+      ok: false,
+      error: 'Validation failed',
+      details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const { memory_item_id, confirmation_notes } = validation.data;
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Call memory_confirm_item RPC
+    const { data, error } = await supabase.rpc('memory_confirm_item', {
+      p_memory_item_id: memory_item_id,
+      p_confirmation_notes: confirmation_notes || null
+    });
+
+    if (error) {
+      // Check if RPC doesn't exist
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01116] memory_confirm_item RPC not found (VTID-01116 not deployed yet)');
+        return res.status(503).json({
+          ok: false,
+          error: 'Confidence RPC not available (VTID-01116 dependency)'
+        });
+      }
+      console.error('[VTID-01116] memory_confirm_item RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    const result = data as {
+      ok: boolean;
+      memory_item_id?: string;
+      previous_confidence?: number;
+      new_confidence?: number;
+      delta?: number;
+      error?: string;
+      message?: string;
+    };
+
+    if (!result.ok) {
+      return res.status(400).json({
+        ok: false,
+        error: result.error,
+        message: result.message
+      });
+    }
+
+    // Emit OASIS event
+    await emitConfidenceEvent(
+      'memory.confidence.confirmed',
+      'success',
+      `Memory confirmed: ${result.previous_confidence} -> ${result.new_confidence}`,
+      {
+        memory_item_id,
+        previous_confidence: result.previous_confidence,
+        new_confidence: result.new_confidence,
+        delta: result.delta
+      }
+    );
+
+    console.log(`[VTID-01116] Memory confirmed: ${memory_item_id} ${result.previous_confidence} -> ${result.new_confidence}`);
+
+    return res.status(200).json(result);
+  } catch (err: any) {
+    console.error('[VTID-01116] memory_confirm_item error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * POST /confidence/correct -> POST /api/v1/memory/confidence/correct
+ *
+ * User corrects a memory item.
+ * Permanently reduces trust (corrections have lasting impact).
+ */
+router.post('/confidence/correct', async (req: Request, res: Response) => {
+  console.log('[VTID-01116] POST /memory/confidence/correct');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Validate request body
+  const validation = ConfidenceCorrectRequestSchema.safeParse(req.body);
+  if (!validation.success) {
+    console.warn('[VTID-01116] Validation failed:', validation.error.errors);
+    return res.status(400).json({
+      ok: false,
+      error: 'Validation failed',
+      details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const { memory_item_id, correction_notes, new_content } = validation.data;
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Call memory_correct_item RPC
+    const { data, error } = await supabase.rpc('memory_correct_item', {
+      p_memory_item_id: memory_item_id,
+      p_correction_notes: correction_notes || null,
+      p_new_content: new_content || null
+    });
+
+    if (error) {
+      // Check if RPC doesn't exist
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01116] memory_correct_item RPC not found (VTID-01116 not deployed yet)');
+        return res.status(503).json({
+          ok: false,
+          error: 'Confidence RPC not available (VTID-01116 dependency)'
+        });
+      }
+      console.error('[VTID-01116] memory_correct_item RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    const result = data as {
+      ok: boolean;
+      memory_item_id?: string;
+      previous_confidence?: number;
+      new_confidence?: number;
+      delta?: number;
+      content_updated?: boolean;
+      error?: string;
+      message?: string;
+    };
+
+    if (!result.ok) {
+      return res.status(400).json({
+        ok: false,
+        error: result.error,
+        message: result.message
+      });
+    }
+
+    // Emit OASIS event
+    await emitConfidenceEvent(
+      'memory.confidence.corrected',
+      'warning',
+      `Memory corrected: ${result.previous_confidence} -> ${result.new_confidence}`,
+      {
+        memory_item_id,
+        previous_confidence: result.previous_confidence,
+        new_confidence: result.new_confidence,
+        delta: result.delta,
+        content_updated: result.content_updated || false
+      }
+    );
+
+    console.log(`[VTID-01116] Memory corrected: ${memory_item_id} ${result.previous_confidence} -> ${result.new_confidence}`);
+
+    return res.status(200).json(result);
+  } catch (err: any) {
+    console.error('[VTID-01116] memory_correct_item error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * GET /confidence/history/:id -> GET /api/v1/memory/confidence/history/:id
+ *
+ * Get confidence history for a memory item (for explainability).
+ */
+router.get('/confidence/history/:id', async (req: Request, res: Response) => {
+  console.log('[VTID-01116] GET /memory/confidence/history/:id');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  const memoryItemId = req.params.id;
+  if (!memoryItemId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(memoryItemId)) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Invalid memory_item_id format'
+    });
+  }
+
+  // Parse limit from query
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 50));
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Call memory_get_confidence_history RPC
+    const { data, error } = await supabase.rpc('memory_get_confidence_history', {
+      p_memory_item_id: memoryItemId,
+      p_limit: limit
+    });
+
+    if (error) {
+      // Check if RPC doesn't exist
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01116] memory_get_confidence_history RPC not found (VTID-01116 not deployed yet)');
+        return res.status(503).json({
+          ok: false,
+          error: 'Confidence RPC not available (VTID-01116 dependency)'
+        });
+      }
+      console.error('[VTID-01116] memory_get_confidence_history RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    const result = data as {
+      ok: boolean;
+      memory_item_id?: string;
+      current_state?: Record<string, unknown>;
+      history?: ConfidenceHistoryEntry[];
+      history_count?: number;
+      error?: string;
+      message?: string;
+    };
+
+    if (!result.ok) {
+      return res.status(400).json({
+        ok: false,
+        error: result.error,
+        message: result.message
+      });
+    }
+
+    // Emit OASIS event
+    await emitConfidenceEvent(
+      'memory.confidence.history.read',
+      'success',
+      `Confidence history fetched: ${result.history_count} entries`,
+      {
+        memory_item_id: memoryItemId,
+        history_count: result.history_count
+      }
+    );
+
+    console.log(`[VTID-01116] Confidence history fetched: ${memoryItemId} (${result.history_count} entries)`);
+
+    return res.status(200).json(result);
+  } catch (err: any) {
+    console.error('[VTID-01116] memory_get_confidence_history error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * GET /context/trusted -> GET /api/v1/memory/context/trusted
+ *
+ * Fetch memory context with confidence filtering.
+ * High-confidence items are prioritized (D23 integration).
+ * Low-confidence items are filtered out unless explicitly requested.
+ */
+router.get('/context/trusted', async (req: Request, res: Response) => {
+  console.log('[VTID-01116] GET /memory/context/trusted');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Validate query parameters
+  const queryValidation = TrustedContextQuerySchema.safeParse(req.query);
+  if (!queryValidation.success) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Invalid query parameters',
+      details: queryValidation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const { limit, min_confidence, categories, since, include_low_confidence } = queryValidation.data;
+
+  // Parse categories if provided
+  let categoriesArray: string[] | null = null;
+  if (categories) {
+    categoriesArray = categories.split(',').map(c => c.trim()).filter(c => c.length > 0);
+    // Validate each category
+    for (const cat of categoriesArray) {
+      if (!CATEGORY_KEYS.includes(cat as CategoryKey)) {
+        return res.status(400).json({
+          ok: false,
+          error: `Invalid category: ${cat}. Valid categories: ${CATEGORY_KEYS.join(', ')}`
+        });
+      }
+    }
+  }
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Call memory_get_context_with_confidence RPC
+    const { data, error } = await supabase.rpc('memory_get_context_with_confidence', {
+      p_limit: limit,
+      p_min_confidence: min_confidence,
+      p_categories: categoriesArray,
+      p_since: since || null,
+      p_include_low_confidence: include_low_confidence
+    });
+
+    if (error) {
+      // Check if RPC doesn't exist
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01116] memory_get_context_with_confidence RPC not found (VTID-01116 not deployed yet)');
+        return res.status(503).json({
+          ok: false,
+          error: 'Confidence RPC not available (VTID-01116 dependency)'
+        });
+      }
+      console.error('[VTID-01116] memory_get_context_with_confidence RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    const result = data as {
+      ok: boolean;
+      items?: MemoryItemWithConfidence[];
+      filters?: Record<string, unknown>;
+      count?: number;
+      error?: string;
+      message?: string;
+    };
+
+    if (!result.ok) {
+      return res.status(400).json({
+        ok: false,
+        error: result.error,
+        message: result.message
+      });
+    }
+
+    console.log(`[VTID-01116] Trusted context fetched: ${result.count} items (min_confidence: ${min_confidence})`);
+
+    return res.status(200).json(result);
+  } catch (err: any) {
+    console.error('[VTID-01116] memory_get_context_with_confidence error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * POST /confidence/decay -> POST /api/v1/memory/confidence/decay
+ *
+ * Apply time decay to memories that haven't been confirmed recently.
+ * This is typically called by a scheduled job.
+ */
+router.post('/confidence/decay', async (req: Request, res: Response) => {
+  console.log('[VTID-01116] POST /memory/confidence/decay');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Validate request body
+  const validation = TimeDecayRequestSchema.safeParse(req.body);
+  if (!validation.success) {
+    console.warn('[VTID-01116] Validation failed:', validation.error.errors);
+    return res.status(400).json({
+      ok: false,
+      error: 'Validation failed',
+      details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const { decay_threshold_days } = validation.data;
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Call memory_apply_time_decay RPC
+    const { data, error } = await supabase.rpc('memory_apply_time_decay', {
+      p_decay_threshold_days: decay_threshold_days
+    });
+
+    if (error) {
+      // Check if RPC doesn't exist
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01116] memory_apply_time_decay RPC not found (VTID-01116 not deployed yet)');
+        return res.status(503).json({
+          ok: false,
+          error: 'Confidence RPC not available (VTID-01116 dependency)'
+        });
+      }
+      console.error('[VTID-01116] memory_apply_time_decay RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    const result = data as {
+      ok: boolean;
+      decayed_count?: number;
+      threshold_days?: number;
+      error?: string;
+      message?: string;
+    };
+
+    if (!result.ok) {
+      return res.status(400).json({
+        ok: false,
+        error: result.error,
+        message: result.message
+      });
+    }
+
+    // Emit OASIS event
+    await emitConfidenceEvent(
+      'memory.confidence.decayed',
+      'info',
+      `Time decay applied: ${result.decayed_count} memories affected`,
+      {
+        decayed_count: result.decayed_count,
+        threshold_days: result.threshold_days
+      }
+    );
+
+    console.log(`[VTID-01116] Time decay applied: ${result.decayed_count} memories affected`);
+
+    return res.status(200).json(result);
+  } catch (err: any) {
+    console.error('[VTID-01116] memory_apply_time_decay error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * GET /source-trust -> GET /api/v1/memory/source-trust
+ *
+ * Get source trust weight definitions.
+ * Returns all source types with their trust weights and max confidence caps.
+ */
+router.get('/source-trust', async (req: Request, res: Response) => {
+  console.log('[VTID-01116] GET /memory/source-trust');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Query memory_source_trust table directly
+    const { data, error } = await supabase
+      .from('memory_source_trust')
+      .select('*')
+      .order('trust_weight', { ascending: false });
+
+    if (error) {
+      // Check if table doesn't exist
+      if (error.message.includes('relation') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01116] memory_source_trust table not found (VTID-01116 not deployed yet)');
+        // Return hardcoded fallback
+        return res.status(200).json({
+          ok: true,
+          source_trust: [
+            { source_type: 'user_explicit', trust_weight: 100, max_confidence: 95, label: 'User Stated (Explicit)', requires_validation: false },
+            { source_type: 'diary', trust_weight: 90, max_confidence: 90, label: 'Diary Entry', requires_validation: false },
+            { source_type: 'orb_text', trust_weight: 75, max_confidence: 85, label: 'ORB Text Input', requires_validation: false },
+            { source_type: 'user_inferred', trust_weight: 70, max_confidence: 80, label: 'User Inferred (Implicit)', requires_validation: false },
+            { source_type: 'orb_voice', trust_weight: 70, max_confidence: 80, label: 'ORB Voice Input', requires_validation: false },
+            { source_type: 'upload', trust_weight: 60, max_confidence: 75, label: 'User Upload', requires_validation: true },
+            { source_type: 'system', trust_weight: 50, max_confidence: 70, label: 'System Generated', requires_validation: false },
+            { source_type: 'third_party', trust_weight: 40, max_confidence: 65, label: 'Third Party', requires_validation: true },
+            { source_type: 'derived', trust_weight: 30, max_confidence: 60, label: 'Derived/Computed', requires_validation: false }
+          ],
+          _fallback: true
+        });
+      }
+      console.error('[VTID-01116] memory_source_trust query error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    console.log(`[VTID-01116] Source trust weights fetched: ${data?.length || 0} entries`);
+
+    return res.status(200).json({
+      ok: true,
+      source_trust: data || []
+    });
+  } catch (err: any) {
+    console.error('[VTID-01116] source-trust error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * GET /confidence/reasons -> GET /api/v1/memory/confidence/reasons
+ *
+ * Get confidence adjustment reason code definitions.
+ * Returns all reason codes with their delta ranges and descriptions.
+ */
+router.get('/confidence/reasons', async (req: Request, res: Response) => {
+  console.log('[VTID-01116] GET /memory/confidence/reasons');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Query memory_confidence_reasons table directly
+    const { data, error } = await supabase
+      .from('memory_confidence_reasons')
+      .select('*')
+      .order('category', { ascending: true })
+      .order('delta_max', { ascending: false });
+
+    if (error) {
+      // Check if table doesn't exist
+      if (error.message.includes('relation') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01116] memory_confidence_reasons table not found (VTID-01116 not deployed yet)');
+        // Return hardcoded fallback
+        return res.status(200).json({
+          ok: true,
+          reasons: [
+            { reason_code: 'USER_CONFIRMED', category: 'increase', delta_min: 5, delta_max: 15, label: 'User Confirmation' },
+            { reason_code: 'REPETITION_CONSISTENT', category: 'increase', delta_min: 3, delta_max: 8, label: 'Repetition Consistency' },
+            { reason_code: 'USER_CORRECTED', category: 'decrease', delta_min: -20, delta_max: -10, label: 'User Correction' },
+            { reason_code: 'CONTRADICTING_EVIDENCE', category: 'decrease', delta_min: -15, delta_max: -5, label: 'Contradicting Evidence' },
+            { reason_code: 'TIME_DECAY', category: 'decrease', delta_min: -5, delta_max: -1, label: 'Time Decay' },
+            { reason_code: 'INITIAL_CAPTURE', category: 'neutral', delta_min: 0, delta_max: 0, label: 'Initial Capture' }
+          ],
+          _fallback: true
+        });
+      }
+      console.error('[VTID-01116] memory_confidence_reasons query error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    console.log(`[VTID-01116] Confidence reasons fetched: ${data?.length || 0} entries`);
+
+    return res.status(200).json({
+      ok: true,
+      reasons: data || []
+    });
+  } catch (err: any) {
+    console.error('[VTID-01116] confidence-reasons error:', err.message);
     return res.status(502).json({
       ok: false,
       error: err.message
