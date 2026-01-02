@@ -142,6 +142,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const healthCapacityRouter = require('./routes/health-capacity').default;
   // VTID-01135: D41 Ethical Boundaries, Personal Limits & Consent Sensitivity Engine
   const boundaryConsentRouter = require('./routes/boundary-consent').default;
+  // VTID-01137: D43 Longitudinal Adaptation, Drift Detection & Personal Evolution Engine
+  const longitudinalAdaptationRouter = require('./routes/longitudinal-adaptation').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -403,6 +405,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01135: D41 Ethical Boundaries, Personal Limits & Consent Sensitivity Engine
   mountRouterSync(app, '/api/v1/boundaries', boundaryConsentRouter, { owner: 'boundary-consent' });
+
+  // VTID-01137: D43 Longitudinal Adaptation, Drift Detection & Personal Evolution Engine
+  mountRouterSync(app, '/api/v1/longitudinal', longitudinalAdaptationRouter, { owner: 'longitudinal-adaptation' });
 
   // VTID-01063: commandhub router (note: /board route REMOVED, use board-adapter)
   mountRouterSync(app, '/api/v1/commandhub', commandhub, { owner: 'commandhub' });
