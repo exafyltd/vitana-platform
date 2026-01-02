@@ -227,6 +227,11 @@ export type CicdEventType =
   // VTID-01106: ORB Memory Bridge Events
   | 'orb.memory.context_fetched'
   | 'orb.memory.context_injected'
+  // VTID-01115: Memory Relevance Scoring Events
+  | 'orb.memory.scored_context_fetched'
+  | 'memory.scoring.completed'
+  | 'memory.scoring.excluded'
+  | 'memory.scoring.sensitive_flagged'
   // VTID-01107: ORB Memory Debug Events
   | 'orb.memory.debug_requested'
   | 'orb.memory.debug_snapshot'
@@ -287,7 +292,11 @@ export type CicdEventType =
   | 'feedback.safety.escalated'
   | 'trust.score.updated'
   | 'trust.repair.action'
-  | 'trust.trend.changed';
+  | 'trust.trend.changed'
+  // VTID-01123: Response Framing & Delivery Control Events
+  | 'response.framing.computed'
+  | 'response.framing.applied'
+  | 'response.framing.override';
 
 export interface CicdOasisEvent {
   vtid: string;
