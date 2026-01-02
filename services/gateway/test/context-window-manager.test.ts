@@ -132,29 +132,31 @@ describe('VTID-01117: Context Budget Model', () => {
 
   test('Per-domain item caps are enforced', () => {
     // Create more items than the cap allows
-    const items = createMockItemsForCategory('personal', 10);
+    // Note: personal/relationships are now effectively unlimited (999)
+    // So we test with health which still has a cap of 4
+    const items = createMockItemsForCategory('health', 10);
     const result = manager.selectContext(items);
 
-    // Personal domain cap is 5
-    const personalItems = result.includedItems.filter(
-      i => i.category_key === 'personal'
+    // Health domain cap is 4
+    const healthItems = result.includedItems.filter(
+      i => i.category_key === 'health'
     );
-    expect(personalItems.length).toBeLessThanOrEqual(5);
+    expect(healthItems.length).toBeLessThanOrEqual(4);
   });
 
   test('Total item limit is enforced', () => {
     // Create many items across categories
     const items = [
-      ...createMockItemsForCategory('personal', 10),
-      ...createMockItemsForCategory('relationships', 10),
-      ...createMockItemsForCategory('conversation', 10),
-      ...createMockItemsForCategory('health', 10)
+      ...createMockItemsForCategory('personal', 20),
+      ...createMockItemsForCategory('relationships', 20),
+      ...createMockItemsForCategory('conversation', 20),
+      ...createMockItemsForCategory('health', 20)
     ];
 
     const result = manager.selectContext(items);
 
-    // Total limit is 30
-    expect(result.metrics.totalItems).toBeLessThanOrEqual(30);
+    // Total limit is 50 (VTID-DEBUG-01 increased from 30)
+    expect(result.metrics.totalItems).toBeLessThanOrEqual(50);
   });
 
   test('Total character limit is enforced', () => {
@@ -170,27 +172,29 @@ describe('VTID-01117: Context Budget Model', () => {
 
     const result = manager.selectContext(items);
 
-    // Total char limit is 6000
-    expect(result.metrics.totalChars).toBeLessThanOrEqual(6000);
+    // Total char limit is 10000 (VTID-DEBUG-01 increased from 6000)
+    expect(result.metrics.totalChars).toBeLessThanOrEqual(10000);
   });
 
   test('Domain char caps are enforced', () => {
-    // Create items that would exceed personal char cap (1200)
+    // Create items that would exceed health char cap (800)
+    // Note: personal/relationships now have very high char caps (5000/3000)
     const items = Array.from({ length: 10 }, (_, i) =>
       createMockItem({
-        id: `personal-${i}`,
-        category_key: 'personal',
+        id: `health-${i}`,
+        category_key: 'health',
         content: 'A'.repeat(300), // 300 chars each = 3000 total
         importance: 100
       })
     );
 
     const result = manager.selectContext(items);
-    const personalChars = result.includedItems
-      .filter(i => i.category_key === 'personal')
+    const healthChars = result.includedItems
+      .filter(i => i.category_key === 'health')
       .reduce((sum, i) => sum + i.charCount, 0);
 
-    expect(personalChars).toBeLessThanOrEqual(1200);
+    // Health char cap is 800
+    expect(healthChars).toBeLessThanOrEqual(800);
   });
 });
 
@@ -304,20 +308,46 @@ describe('VTID-01117: Saturation Detection', () => {
     )).toBe(true);
   });
 
-  test('Topic repetition limit is enforced', () => {
-    // Create more items on the same topic than the limit (3)
+  test('Topic repetition limit is enforced for non-identity domains', () => {
+    // VTID-DEBUG-01: personal/relationships are EXEMPT from topic saturation
+    // So we test with conversation domain which still has topic limits
+    // Create more items on the same topic than the limit (8)
     const items = [
-      createMockItem({ id: 'spouse-1', content: 'My wife Sarah loves hiking', category_key: 'relationships', importance: 80 }),
-      createMockItem({ id: 'spouse-2', content: 'Sarah my wife works as a doctor', category_key: 'relationships', importance: 75 }),
-      createMockItem({ id: 'spouse-3', content: 'I met my wife Sarah in 2010', category_key: 'relationships', importance: 70 }),
-      createMockItem({ id: 'spouse-4', content: 'My wife Sarah is from Munich', category_key: 'relationships', importance: 65 })
+      createMockItem({ id: 'goal-1', content: 'I want to learn Spanish this year', category_key: 'goals', importance: 80 }),
+      createMockItem({ id: 'goal-2', content: 'My goal is to learn Spanish fluently', category_key: 'goals', importance: 75 }),
+      createMockItem({ id: 'goal-3', content: 'I plan to learn Spanish by summer', category_key: 'goals', importance: 70 }),
+      createMockItem({ id: 'goal-4', content: 'Learning Spanish is my priority goal', category_key: 'goals', importance: 65 }),
+      createMockItem({ id: 'goal-5', content: 'I want to achieve my Spanish learning goal', category_key: 'goals', importance: 60 }),
+      createMockItem({ id: 'goal-6', content: 'Spanish learning goal for next quarter', category_key: 'goals', importance: 55 }),
+      createMockItem({ id: 'goal-7', content: 'My Spanish goal is to be conversational', category_key: 'goals', importance: 50 }),
+      createMockItem({ id: 'goal-8', content: 'Goal: complete Spanish course online', category_key: 'goals', importance: 48 }),
+      createMockItem({ id: 'goal-9', content: 'Spanish goals include reading novels', category_key: 'goals', importance: 46 }),
+      createMockItem({ id: 'goal-10', content: 'My language goal is Spanish mastery', category_key: 'goals', importance: 44 })
     ];
 
     const result = manager.selectContext(items);
 
-    // At most 3 items on the same topic (spouse)
-    const spouseExclusions = result.excludedItems.filter(e => e.reason === 'topic_saturation');
-    expect(spouseExclusions.length).toBeGreaterThanOrEqual(1);
+    // Topic saturation limit is 8, so some should be excluded
+    const goalExclusions = result.excludedItems.filter(e => e.reason === 'topic_saturation');
+    expect(goalExclusions.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('Personal and relationships are exempt from topic saturation', () => {
+    // VTID-DEBUG-01: Personal identity facts should NEVER be filtered by topic saturation
+    const items = [
+      createMockItem({ id: 'spouse-1', content: 'My wife Sarah loves hiking', category_key: 'relationships', importance: 80 }),
+      createMockItem({ id: 'spouse-2', content: 'Sarah my wife works as a doctor', category_key: 'relationships', importance: 75 }),
+      createMockItem({ id: 'spouse-3', content: 'I met my wife Sarah in 2010', category_key: 'relationships', importance: 70 }),
+      createMockItem({ id: 'spouse-4', content: 'My wife Sarah is from Munich', category_key: 'relationships', importance: 65 }),
+      createMockItem({ id: 'spouse-5', content: 'Sarah my wife enjoys cooking', category_key: 'relationships', importance: 60 })
+    ];
+
+    const result = manager.selectContext(items);
+
+    // ALL relationship items should be included (no topic saturation for identity domains)
+    const topicSaturationExclusions = result.excludedItems.filter(e => e.reason === 'topic_saturation');
+    expect(topicSaturationExclusions.length).toBe(0);
+    expect(result.includedItems.length).toBe(5);
   });
 
   test('Diversity is measured and reported', () => {
@@ -406,9 +436,9 @@ describe('VTID-01117: Hard Constraints', () => {
 
     const result = manager.selectContext(manyItems);
 
-    // Must respect limits
-    expect(result.metrics.totalItems).toBeLessThanOrEqual(30);
-    expect(result.metrics.totalChars).toBeLessThanOrEqual(6000);
+    // Must respect limits (VTID-DEBUG-01: increased to 50 items, 10000 chars)
+    expect(result.metrics.totalItems).toBeLessThanOrEqual(50);
+    expect(result.metrics.totalChars).toBeLessThanOrEqual(10000);
   });
 
   test('Sensitive domain (health) is protected from flooding', () => {
@@ -542,9 +572,10 @@ describe('VTID-01117: Configuration', () => {
     const manager = new ContextWindowManager();
     const config = manager.getConfig();
 
-    expect(config.totalBudgetChars).toBe(6000);
-    expect(config.totalItemLimit).toBe(30);
-    expect(config.domainBudgets.personal.maxItems).toBe(5);
+    // VTID-DEBUG-01: Updated values for better personal info retention
+    expect(config.totalBudgetChars).toBe(10000);
+    expect(config.totalItemLimit).toBe(50);
+    expect(config.domainBudgets.personal.maxItems).toBe(999); // Effectively unlimited
   });
 });
 
