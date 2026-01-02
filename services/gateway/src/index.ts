@@ -128,6 +128,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const domainRoutingRouter = require('./routes/domain-routing').default;
   // VTID-01119: User Preference & Constraint Modeling Engine
   const userPreferencesRouter = require('./routes/user-preferences').default;
+  // VTID-01137: D43 Longitudinal Adaptation, Drift Detection & Personal Evolution Engine
+  const longitudinalAdaptationRouter = require('./routes/longitudinal-adaptation').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -368,6 +370,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01119: User Preference & Constraint Modeling Engine
   mountRouterSync(app, '/api/v1/user-preferences', userPreferencesRouter, { owner: 'user-preferences' });
+
+  // VTID-01137: D43 Longitudinal Adaptation, Drift Detection & Personal Evolution Engine
+  mountRouterSync(app, '/api/v1/longitudinal', longitudinalAdaptationRouter, { owner: 'longitudinal-adaptation' });
 
   // VTID-01063: commandhub router (note: /board route REMOVED, use board-adapter)
   mountRouterSync(app, '/api/v1/commandhub', commandhub, { owner: 'commandhub' });
