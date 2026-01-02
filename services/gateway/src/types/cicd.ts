@@ -339,6 +339,19 @@ export type CicdEventType =
   | 'd37.actions.filtered'
   | 'd37.low_energy.detected'
   | 'd37.recovery.detected'
+  // VTID-01135: D41 Ethical Boundaries, Personal Limits & Consent Sensitivity Engine Events
+  | 'd41.boundary.set'
+  | 'd41.boundary.checked'
+  | 'd41.consent.granted'
+  | 'd41.consent.denied'
+  | 'd41.consent.revoked'
+  | 'd41.consent.expired'
+  | 'd41.consent.updated'
+  | 'd41.action.blocked'
+  | 'd41.action.restricted'
+  | 'd41.action.allowed'
+  | 'd41.vulnerability.detected'
+  | 'd41.vulnerability.cleared'
   // VTID-01136: D42 Cross-Domain Context Fusion Events
   | 'd42.priorities.resolved'
   | 'd42.priorities.failed';

@@ -36,6 +36,10 @@ import {
   OrbSignalContext
 } from './d28-emotional-cognitive-engine';
 import {
+  getOrbBoundaryContext,
+  OrbBoundaryContext
+} from './d41-boundary-consent-engine';
+import {
   ContextWindowManager,
   selectContextWindow,
   ContextSelectionResult,
@@ -1641,6 +1645,7 @@ export async function buildFullyEnhancedInstruction(
 
 /**
  * Enhanced instruction context including D28 emotional/cognitive signals
+ * VTID-01135: Now includes D41 boundary/consent context
  */
 export interface OrbEnhancedContext {
   instruction: string;
@@ -1649,19 +1654,25 @@ export interface OrbEnhancedContext {
     context: string;
     orbContext: OrbSignalContext;
   };
+  /** VTID-01135: D41 boundary and consent context */
+  boundaryContext?: {
+    context: string;
+    orbContext: OrbBoundaryContext;
+  };
 }
 
 /**
- * VTID-01120: Build memory-enhanced instruction with D28 signal context
+ * VTID-01120 + VTID-01135: Build memory-enhanced instruction with D28 signal and D41 boundary context
  *
  * Combines:
  * - Base system instruction
  * - Memory context (personal, relationships, conversations)
  * - D28 emotional/cognitive signals (tone, pacing, depth hints)
+ * - D41 boundary/consent context (privacy, emotional safety, suppressions)
  *
  * @param baseInstruction - The base system instruction
  * @param sessionId - Optional session ID for signal lookup
- * @returns Enhanced instruction with memory and signal context
+ * @returns Enhanced instruction with memory, signal, and boundary context
  */
 export async function getFullyEnhancedInstruction(
   baseInstruction: string,
@@ -1697,23 +1708,63 @@ Use these signals to adapt your response:
     // Continue without signal context - graceful degradation
   }
 
-  return { instruction, memoryContext, signalContext };
+  // VTID-01135: Get D41 boundary/consent context
+  let boundaryContext: { context: string; orbContext: OrbBoundaryContext } | undefined;
+  try {
+    // Convert OrbSignalContext to Record<string, unknown> for compatibility
+    const emotionalSignals = signalContext?.orbContext
+      ? { ...signalContext.orbContext } as Record<string, unknown>
+      : undefined;
+    const boundaryResult = await getOrbBoundaryContext(
+      undefined, // authToken - uses dev identity in sandbox
+      emotionalSignals // Pass emotional signals for vulnerability detection
+    );
+    if (boundaryResult) {
+      boundaryContext = boundaryResult;
+
+      // Inject boundary context into instruction
+      instruction = `${instruction}
+
+${boundaryResult.context}
+
+BOUNDARY ENFORCEMENT RULES (Non-Negotiable):
+- If monetization is suppressed: Do NOT suggest products, services, or paid recommendations
+- If social introductions are suppressed: Do NOT suggest meeting new people or joining groups
+- If proactive nudges are suppressed: Only respond to what the user explicitly asks
+- Blocked topics listed above MUST NEVER be discussed, even if user asks
+- For topics requiring consent: Ask permission before proceeding
+- When in doubt, choose the more protective response
+- NEVER argue with or question the user's boundaries`;
+
+      console.log(`[VTID-01135] D41 boundary context injected: privacy=${boundaryResult.orbContext.privacy_level}, suppressions=${
+        [boundaryResult.orbContext.suppress_monetization && 'monetization',
+         boundaryResult.orbContext.suppress_social && 'social',
+         boundaryResult.orbContext.suppress_proactive && 'proactive'].filter(Boolean).join(',') || 'none'
+      }`);
+    }
+  } catch (err) {
+    console.warn('[VTID-01135] Boundary context fetch failed (non-fatal):', err);
+    // Continue without boundary context - graceful degradation
+  }
+
+  return { instruction, memoryContext, signalContext, boundaryContext };
 }
 
 /**
- * VTID-01120: Process user message and get enhanced instruction context
+ * VTID-01120 + VTID-01135: Process user message and get enhanced instruction context
  *
  * Convenience function that:
  * 1. Computes D28 signals from the incoming message
  * 2. Fetches memory context
- * 3. Builds fully enhanced instruction
+ * 3. Fetches D41 boundary/consent context
+ * 4. Builds fully enhanced instruction
  *
  * @param baseInstruction - The base system instruction
  * @param userMessage - The user's incoming message
  * @param sessionId - Optional session ID
  * @param turnId - Optional turn ID
  * @param responseTimeSeconds - Optional time since last interaction
- * @returns Enhanced instruction with computed signals and memory
+ * @returns Enhanced instruction with computed signals, memory, and boundaries
  */
 export async function processAndEnhanceInstruction(
   baseInstruction: string,
@@ -1762,14 +1813,50 @@ Use these signals to adapt your response:
     // Continue without signal context - graceful degradation
   }
 
-  return { instruction, memoryContext, signalContext };
+  // VTID-01135: Get D41 boundary/consent context
+  let boundaryContext: { context: string; orbContext: OrbBoundaryContext } | undefined;
+  try {
+    // Convert OrbSignalContext to Record<string, unknown> for compatibility
+    const emotionalSignals = signalContext?.orbContext
+      ? { ...signalContext.orbContext } as Record<string, unknown>
+      : undefined;
+    const boundaryResult = await getOrbBoundaryContext(
+      undefined, // authToken - uses dev identity in sandbox
+      emotionalSignals // Pass emotional signals for vulnerability detection
+    );
+    if (boundaryResult) {
+      boundaryContext = boundaryResult;
+
+      // Inject boundary context into instruction
+      instruction = `${instruction}
+
+${boundaryResult.context}
+
+BOUNDARY ENFORCEMENT RULES (Non-Negotiable):
+- If monetization is suppressed: Do NOT suggest products, services, or paid recommendations
+- If social introductions are suppressed: Do NOT suggest meeting new people or joining groups
+- If proactive nudges are suppressed: Only respond to what the user explicitly asks
+- Blocked topics listed above MUST NEVER be discussed, even if user asks
+- For topics requiring consent: Ask permission before proceeding
+- When in doubt, choose the more protective response
+- NEVER argue with or question the user's boundaries`;
+
+      console.log(`[VTID-01135] D41 boundary context injected for message processing`);
+    }
+  } catch (err) {
+    console.warn('[VTID-01135] Boundary context fetch failed (non-fatal):', err);
+    // Continue without boundary context - graceful degradation
+  }
+
+  return { instruction, memoryContext, signalContext, boundaryContext };
 }
 
 // =============================================================================
-// VTID-01106 + VTID-01115 + VTID-01117 + VTID-01120 + VTID-01121: Exports
+// VTID-01106 + VTID-01115 + VTID-01117 + VTID-01120 + VTID-01121 + VTID-01135: Exports
 // Note: shouldStoreInMemory, resetMemoryBridgeCache already exported inline
 // Note: fetchScoredMemoryContext, ScoredOrbMemoryContext exported inline
 // VTID-01117: Added context window manager exports
+// VTID-01135: Added D41 boundary context exports
 // =============================================================================
 
 export {
@@ -1777,7 +1864,8 @@ export {
   formatMemoryForPrompt,
   generateMemorySummary,
   getOrbSignalContext,
-  processMessageForOrb
+  processMessageForOrb,
+  getOrbBoundaryContext
 };
 
 // Re-export scoring types for consumers (VTID-01115)
@@ -1791,6 +1879,7 @@ export type {
 } from './memory-relevance-scoring';
 
 export type { OrbSignalContext };
+export type { OrbBoundaryContext };
 
 // VTID-01117: Re-export context window manager for direct access
 export {
