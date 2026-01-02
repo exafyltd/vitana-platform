@@ -3,6 +3,7 @@
  * VTID-0135: ORB Voice Conversation Enablement (Phase A)
  * VTID-01106: ORB Memory Bridge (Dev Sandbox)
  * VTID-01107: ORB Memory Debug Endpoint (Dev Sandbox)
+ * VTID-01113: Intent Detection & Classification Engine (D21)
  *
  * SSE endpoint for real-time voice interaction with Gemini API.
  *
@@ -14,6 +15,7 @@
  * - POST /api/v1/orb/mute         - Toggle mute state
  * - POST /api/v1/orb/chat         - VTID-0135: Voice conversation chat (Vertex routing)
  * - GET  /api/v1/orb/debug/memory - VTID-01107: Memory debug endpoint (dev-sandbox only)
+ * - GET  /api/v1/orb/debug/intent - VTID-01113: Intent debug endpoint (dev-sandbox only)
  * - GET  /api/v1/orb/health       - Health check
  *
  * VTID-0135 Changes:
@@ -57,6 +59,20 @@ import {
   MEMORY_CONFIG,
   OrbMemoryContext
 } from '../services/orb-memory-bridge';
+// VTID-01113: Intent Detection & Classification Engine (D21)
+import {
+  detectIntent,
+  logIntentToOasis,
+  logAmbiguousIntentWarning,
+  logSafetyFlaggedIntent,
+  buildConversationSignal,
+  buildContextSignalFromMemory,
+  getIntentDebugInfo,
+  IntentBundle,
+  IntentDetectionInput,
+  ActiveRole,
+  InteractionMode
+} from '../services/intent-detection-engine';
 
 const router = Router();
 
@@ -1173,6 +1189,62 @@ router.post('/chat', async (req: Request, res: Response) => {
       }).catch((err: Error) => console.warn('[VTID-01106] OASIS event failed:', err.message));
     }
 
+    // =========================================================================
+    // VTID-01113: Intent Detection & Classification (D21)
+    // Detect intent BEFORE ORB responds - this informs downstream intelligence
+    // Order: D20 Context → D21 Intent → Intelligence (Gemini)
+    // =========================================================================
+
+    // Build multi-signal input for intent detection
+    const activeRole: ActiveRole = (meta?.role as ActiveRole) || 'patient';
+    const interactionMode: InteractionMode = body.meta?.mode === 'orb_voice' ? 'orb' : 'chat';
+
+    const intentInput: IntentDetectionInput = {
+      current_input: inputText,
+      conversation: buildConversationSignal(conversation.history),
+      context_bundle: memoryContext?.ok ? buildContextSignalFromMemory({
+        ok: memoryContext.ok,
+        user_id: memoryContext.user_id,
+        items: memoryContext.items.map(item => ({
+          category_key: item.category_key,
+          content: item.content
+        }))
+      }) : undefined,
+      active_role: activeRole,
+      mode: interactionMode
+    };
+
+    // Detect intent (deterministic classification)
+    const intentBundle = detectIntent(intentInput);
+
+    console.log(`[VTID-01113] Intent detected: ${intentBundle.primary_intent} (confidence: ${intentBundle.confidence_score}, ambiguous: ${intentBundle.is_ambiguous})`);
+
+    // Log intent to OASIS for traceability (fire-and-forget)
+    logIntentToOasis(
+      intentBundle,
+      intentInput,
+      isDevSandbox() ? DEV_IDENTITY.USER_ID : undefined,
+      conversationId
+    ).catch((err: Error) => console.warn('[VTID-01113] Intent log failed:', err.message));
+
+    // Log ambiguous intent warning if applicable
+    if (intentBundle.is_ambiguous) {
+      logAmbiguousIntentWarning(
+        intentBundle,
+        isDevSandbox() ? DEV_IDENTITY.USER_ID : undefined,
+        conversationId
+      ).catch((err: Error) => console.warn('[VTID-01113] Ambiguous intent log failed:', err.message));
+    }
+
+    // Log safety-flagged intent if applicable
+    if (intentBundle.requires_safety_review) {
+      logSafetyFlaggedIntent(
+        intentBundle,
+        isDevSandbox() ? DEV_IDENTITY.USER_ID : undefined,
+        conversationId
+      ).catch((err: Error) => console.warn('[VTID-01113] Safety flag log failed:', err.message));
+    }
+
     // Process with Gemini using Vertex routing (same as Operator Console)
     // VTID-0135: Uses processWithGemini which prioritizes Vertex AI > Gemini API > Local
     // VTID-01106: Pass memory-enhanced system instruction
@@ -1287,6 +1359,18 @@ router.post('/chat', async (req: Request, res: Response) => {
       memory_injected: Boolean(memoryContext?.ok && memoryContext?.items?.length > 0)
     };
 
+    // VTID-01113: Add intent bundle to response for visibility (spec section 5)
+    const intentDebug = {
+      intent_bundle_id: intentBundle.bundle_id,
+      primary_intent: intentBundle.primary_intent,
+      secondary_intents: intentBundle.secondary_intents,
+      confidence_score: intentBundle.confidence_score,
+      urgency_level: intentBundle.urgency_level,
+      domain_tags: intentBundle.domain_tags,
+      is_ambiguous: intentBundle.is_ambiguous,
+      requires_safety_review: intentBundle.requires_safety_review
+    };
+
     const response: OrbChatResponse = {
       ok: true,
       conversation_id: conversationId,
@@ -1296,7 +1380,8 @@ router.post('/chat', async (req: Request, res: Response) => {
         model,
         mode: 'orb_voice',
         vtid: 'VTID-0135',
-        ...memoryDebug // Include memory debug info in response
+        ...memoryDebug, // Include memory debug info in response
+        ...intentDebug  // VTID-01113: Include intent classification in response
       }
     };
 
@@ -1748,8 +1833,115 @@ router.get('/debug/memory', async (_req: Request, res: Response) => {
 });
 
 /**
+ * VTID-01113: GET /debug/intent - Intent Detection Debug Endpoint
+ *
+ * Tests the intent detection engine with a sample input text.
+ * Dev-sandbox only (returns 404 in other environments).
+ *
+ * Query params:
+ * - text: Input text to classify (required)
+ * - role: Active role (optional, defaults to 'patient')
+ * - mode: Interaction mode (optional, defaults to 'orb')
+ *
+ * Response:
+ * {
+ *   "ok": true,
+ *   "intent_bundle": { ... },
+ *   "debug": { ... },
+ *   "timestamp": "ISO"
+ * }
+ */
+router.get('/debug/intent', async (req: Request, res: Response) => {
+  // Dev-sandbox gate: return 404 in non-dev environments
+  if (!isDevSandbox()) {
+    console.log('[VTID-01113] Debug intent endpoint accessed in non-dev environment, returning 404');
+    return res.status(404).json({
+      ok: false,
+      error: 'Not found'
+    });
+  }
+
+  const inputText = (req.query.text as string) || '';
+  const role = (req.query.role as ActiveRole) || 'patient';
+  const mode = (req.query.mode as InteractionMode) || 'orb';
+
+  if (!inputText.trim()) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Missing required query param: text'
+    });
+  }
+
+  console.log(`[VTID-01113] Debug intent endpoint accessed: "${inputText.substring(0, 50)}..."`);
+
+  // Emit debug request event
+  await emitOasisEvent({
+    vtid: 'VTID-01113',
+    type: 'orb.intent.debug_requested' as any, // VTID-01113: Custom event type
+    source: 'intent-debug',
+    status: 'info',
+    message: 'ORB intent debug endpoint accessed',
+    payload: {
+      input_preview: inputText.substring(0, 100),
+      role,
+      mode
+    }
+  }).catch((err: Error) => console.warn('[VTID-01113] Failed to emit debug_requested event:', err.message));
+
+  try {
+    // Build input and get debug info
+    const intentInput: IntentDetectionInput = {
+      current_input: inputText,
+      conversation: { recent_turns: [], turn_count: 0 },
+      active_role: role,
+      mode: mode
+    };
+
+    const debugInfo = getIntentDebugInfo(intentInput);
+
+    // Emit debug result event
+    await emitOasisEvent({
+      vtid: 'VTID-01113',
+      type: 'orb.intent.debug_result' as any, // VTID-01113: Custom event type
+      source: 'intent-debug',
+      status: 'success',
+      message: `Debug result: ${debugInfo.bundle.primary_intent} (confidence: ${debugInfo.bundle.confidence_score})`,
+      payload: {
+        primary_intent: debugInfo.bundle.primary_intent,
+        confidence_score: debugInfo.bundle.confidence_score,
+        is_ambiguous: debugInfo.bundle.is_ambiguous,
+        requires_safety_review: debugInfo.bundle.requires_safety_review
+      }
+    }).catch((err: Error) => console.warn('[VTID-01113] Failed to emit debug_result event:', err.message));
+
+    console.log(`[VTID-01113] Debug result: ${debugInfo.bundle.primary_intent} (confidence: ${debugInfo.bundle.confidence_score})`);
+
+    return res.status(200).json({
+      ok: true,
+      intent_bundle: debugInfo.bundle,
+      debug: debugInfo.debug,
+      config: {
+        confidence_threshold: 0.6,
+        max_secondary_intents: 3,
+        safety_domains: ['health', 'commerce']
+      },
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (err: any) {
+    console.error('[VTID-01113] Debug intent endpoint error:', err.message);
+    return res.status(500).json({
+      ok: false,
+      error: err.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/**
  * GET /health - Health check
  * VTID-01106: Added memory bridge status
+ * VTID-01113: Added intent detection status
  */
 router.get('/health', (_req: Request, res: Response) => {
   const hasGeminiKey = !!GEMINI_API_KEY;
@@ -1758,7 +1950,7 @@ router.get('/health', (_req: Request, res: Response) => {
   return res.status(200).json({
     ok: true,
     service: 'orb-live',
-    vtid: ['DEV-COMHU-2025-0014', 'VTID-0135', 'VTID-01039', 'VTID-01106', 'VTID-01107'],
+    vtid: ['DEV-COMHU-2025-0014', 'VTID-0135', 'VTID-01039', 'VTID-01106', 'VTID-01107', 'VTID-01113'],
     model: GEMINI_MODEL,
     transport: 'SSE',
     gemini_configured: hasGeminiKey,
@@ -1771,6 +1963,13 @@ router.get('/health', (_req: Request, res: Response) => {
       enabled: memoryBridgeEnabled,
       dev_user_id: memoryBridgeEnabled ? DEV_IDENTITY.USER_ID : null,
       dev_tenant_id: memoryBridgeEnabled ? DEV_IDENTITY.TENANT_ID : null
+    },
+    // VTID-01113: Intent detection status
+    intent_detection: {
+      enabled: true,
+      vtid: 'VTID-01113',
+      intent_classes: ['information', 'action', 'reflection', 'decision', 'connection', 'health', 'commerce', 'system'],
+      confidence_threshold: 0.6
     },
     timestamp: new Date().toISOString()
   });
