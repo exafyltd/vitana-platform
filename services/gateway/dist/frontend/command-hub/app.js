@@ -803,12 +803,12 @@ function isHumanTask(task) {
 // ===========================================================================
 
 /**
- * VTID-01055: Check if a task should be rendered (not deleted/voided).
+ * VTID-01055: Check if a task should be rendered (not deleted/voided/cancelled).
  * This is a client-side safety net to suppress cards that are known invalid
  * even if the backend board endpoint returns them.
  *
  * A task is NOT renderable if:
- *   - status === "deleted"
+ *   - status === "deleted", "voided", or "cancelled"
  *   - deleted_at is set (non-null/non-empty)
  *   - metadata.deleted === true
  *   - is_terminal === true AND column is not COMPLETED (misplaced terminal task)
@@ -823,9 +823,9 @@ function isTaskRenderable(task) {
     var status = (task.status || '').toLowerCase();
     var oasisColumn = (task.oasisColumn || '').toUpperCase();
 
-    // Rule 1: status === "deleted" → never render
-    if (status === 'deleted' || status === 'voided') {
-        console.log('[VTID-01055] Suppressing deleted/voided task:', vtid, 'status=' + status);
+    // Rule 1: status === "deleted", "voided", or "cancelled" → never render
+    if (status === 'deleted' || status === 'voided' || status === 'cancelled') {
+        console.log('[VTID-01055] Suppressing deleted/voided/cancelled task:', vtid, 'status=' + status);
         return false;
     }
 
@@ -835,9 +835,9 @@ function isTaskRenderable(task) {
         return false;
     }
 
-    // Rule 3: metadata.deleted === true → never render
-    if (task.metadata && task.metadata.deleted === true) {
-        console.log('[VTID-01055] Suppressing task with metadata.deleted:', vtid);
+    // Rule 3: metadata.deleted or metadata.cancelled === true → never render
+    if (task.metadata && (task.metadata.deleted === true || task.metadata.cancelled === true)) {
+        console.log('[VTID-01055] Suppressing task with metadata.deleted/cancelled:', vtid);
         return false;
     }
 
