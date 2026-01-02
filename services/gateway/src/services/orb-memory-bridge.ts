@@ -31,6 +31,11 @@ import {
   type UserRole
 } from './memory-relevance-scoring';
 import {
+  processMessageForOrb,
+  getOrbSignalContext,
+  OrbSignalContext
+} from './d28-emotional-cognitive-engine';
+import {
   ContextWindowManager,
   selectContextWindow,
   ContextSelectionResult,
@@ -1631,7 +1636,137 @@ export async function buildFullyEnhancedInstruction(
 }
 
 // =============================================================================
-// VTID-01106 + VTID-01115 + VTID-01117 + VTID-01121: Exports
+// VTID-01120: D28 Emotional & Cognitive Signal Integration
+// =============================================================================
+
+/**
+ * Enhanced instruction context including D28 emotional/cognitive signals
+ */
+export interface OrbEnhancedContext {
+  instruction: string;
+  memoryContext: OrbMemoryContext;
+  signalContext?: {
+    context: string;
+    orbContext: OrbSignalContext;
+  };
+}
+
+/**
+ * VTID-01120: Build memory-enhanced instruction with D28 signal context
+ *
+ * Combines:
+ * - Base system instruction
+ * - Memory context (personal, relationships, conversations)
+ * - D28 emotional/cognitive signals (tone, pacing, depth hints)
+ *
+ * @param baseInstruction - The base system instruction
+ * @param sessionId - Optional session ID for signal lookup
+ * @returns Enhanced instruction with memory and signal context
+ */
+export async function getFullyEnhancedInstruction(
+  baseInstruction: string,
+  sessionId?: string
+): Promise<OrbEnhancedContext> {
+  // Get memory context
+  const memoryContext = await fetchDevMemoryContext();
+  let instruction = buildMemoryEnhancedInstruction(baseInstruction, memoryContext);
+
+  // Get D28 signal context
+  let signalContext: { context: string; orbContext: OrbSignalContext } | undefined;
+  try {
+    const signalResult = await getOrbSignalContext(sessionId);
+    if (signalResult) {
+      signalContext = signalResult;
+
+      // Inject signal context into instruction
+      // Position after memory context but before closing
+      instruction = `${instruction}
+
+${signalResult.context}
+
+Use these signals to adapt your response:
+- If user appears stressed/overwhelmed: Use calming tone, simplify explanations
+- If user appears frustrated: Be patient, acknowledge their concern, focus on solutions
+- If user appears fatigued: Be concise, offer to continue later if needed
+- If urgency is detected: Address the urgent need first
+- If hesitation is detected: Ask clarifying questions, offer options
+- IMPORTANT: Never mention these signals directly to the user`;
+    }
+  } catch (err) {
+    console.warn('[VTID-01120] Signal context fetch failed (non-fatal):', err);
+    // Continue without signal context - graceful degradation
+  }
+
+  return { instruction, memoryContext, signalContext };
+}
+
+/**
+ * VTID-01120: Process user message and get enhanced instruction context
+ *
+ * Convenience function that:
+ * 1. Computes D28 signals from the incoming message
+ * 2. Fetches memory context
+ * 3. Builds fully enhanced instruction
+ *
+ * @param baseInstruction - The base system instruction
+ * @param userMessage - The user's incoming message
+ * @param sessionId - Optional session ID
+ * @param turnId - Optional turn ID
+ * @param responseTimeSeconds - Optional time since last interaction
+ * @returns Enhanced instruction with computed signals and memory
+ */
+export async function processAndEnhanceInstruction(
+  baseInstruction: string,
+  userMessage: string,
+  sessionId?: string,
+  turnId?: string,
+  responseTimeSeconds?: number
+): Promise<OrbEnhancedContext> {
+  // Get memory context
+  const memoryContext = await fetchDevMemoryContext();
+  let instruction = buildMemoryEnhancedInstruction(baseInstruction, memoryContext);
+
+  // Process message through D28 engine to compute signals
+  let signalContext: { context: string; orbContext: OrbSignalContext } | undefined;
+  try {
+    const signalResult = await processMessageForOrb(
+      userMessage,
+      sessionId,
+      turnId,
+      responseTimeSeconds
+    );
+
+    if (signalResult) {
+      signalContext = {
+        context: signalResult.context,
+        orbContext: signalResult.orbContext
+      };
+
+      // Inject signal context into instruction
+      instruction = `${instruction}
+
+${signalResult.context}
+
+Use these signals to adapt your response:
+- If user appears stressed/overwhelmed: Use calming tone, simplify explanations
+- If user appears frustrated: Be patient, acknowledge their concern, focus on solutions
+- If user appears fatigued: Be concise, offer to continue later if needed
+- If urgency is detected: Address the urgent need first
+- If hesitation is detected: Ask clarifying questions, offer options
+- IMPORTANT: Never mention these signals directly to the user`;
+
+      console.log(`[VTID-01120] D28 signals computed: engagement=${signalResult.orbContext.engagement_level}, urgent=${signalResult.orbContext.is_urgent}`);
+    }
+  } catch (err) {
+    console.warn('[VTID-01120] Signal computation failed (non-fatal):', err);
+    // Continue without signal context - graceful degradation
+  }
+
+  return { instruction, memoryContext, signalContext };
+}
+
+// =============================================================================
+// VTID-01106 + VTID-01115 + VTID-01117 + VTID-01120 + VTID-01121: Exports
 // Note: shouldStoreInMemory, resetMemoryBridgeCache already exported inline
 // Note: fetchScoredMemoryContext, ScoredOrbMemoryContext exported inline
 // VTID-01117: Added context window manager exports
@@ -1640,7 +1775,9 @@ export async function buildFullyEnhancedInstruction(
 export {
   MEMORY_CONFIG,
   formatMemoryForPrompt,
-  generateMemorySummary
+  generateMemorySummary,
+  getOrbSignalContext,
+  processMessageForOrb
 };
 
 // Re-export scoring types for consumers (VTID-01115)
@@ -1652,6 +1789,8 @@ export type {
   Domain,
   UserRole
 } from './memory-relevance-scoring';
+
+export type { OrbSignalContext };
 
 // VTID-01117: Re-export context window manager for direct access
 export {
