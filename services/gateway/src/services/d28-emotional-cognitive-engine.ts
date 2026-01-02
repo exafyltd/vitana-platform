@@ -161,18 +161,18 @@ export async function computeSignals(
       p_interaction_count: input.interaction_count || 1
     };
 
-    let result;
+    // For dev sandbox, bootstrap the request context first
     if (useDevIdentity) {
-      // For dev sandbox, use RPC with dev context
-      result = await supabase.rpc('emotional_cognitive_compute', rpcParams, {
-        headers: {
-          'x-tenant-id': DEV_IDENTITY.TENANT_ID,
-          'x-user-id': DEV_IDENTITY.USER_ID
-        }
+      const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
+        p_tenant_id: DEV_IDENTITY.TENANT_ID,
+        p_active_role: 'developer'
       });
-    } else {
-      result = await supabase.rpc('emotional_cognitive_compute', rpcParams);
+      if (bootstrapError) {
+        console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, bootstrapError.message);
+      }
     }
+
+    const result = await supabase.rpc('emotional_cognitive_compute', rpcParams);
 
     if (result.error) {
       console.error(`${LOG_PREFIX} RPC error:`, result.error);
@@ -278,21 +278,20 @@ export async function getCurrentSignals(
       };
     }
 
-    let result;
+    // For dev sandbox, bootstrap the request context first
     if (useDevIdentity) {
-      result = await supabase.rpc('emotional_cognitive_get_current', {
-        p_session_id: sessionId || null
-      }, {
-        headers: {
-          'x-tenant-id': DEV_IDENTITY.TENANT_ID,
-          'x-user-id': DEV_IDENTITY.USER_ID
-        }
+      const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
+        p_tenant_id: DEV_IDENTITY.TENANT_ID,
+        p_active_role: 'developer'
       });
-    } else {
-      result = await supabase.rpc('emotional_cognitive_get_current', {
-        p_session_id: sessionId || null
-      });
+      if (bootstrapError) {
+        console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, bootstrapError.message);
+      }
     }
+
+    const result = await supabase.rpc('emotional_cognitive_get_current', {
+      p_session_id: sessionId || null
+    });
 
     if (result.error) {
       console.error(`${LOG_PREFIX} RPC error (get_current):`, result.error);
@@ -357,23 +356,21 @@ export async function overrideSignal(
       };
     }
 
-    let result;
+    // For dev sandbox, bootstrap the request context first
     if (useDevIdentity) {
-      result = await supabase.rpc('emotional_cognitive_override', {
-        p_signal_id: signalId,
-        p_override: override
-      }, {
-        headers: {
-          'x-tenant-id': DEV_IDENTITY.TENANT_ID,
-          'x-user-id': DEV_IDENTITY.USER_ID
-        }
+      const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
+        p_tenant_id: DEV_IDENTITY.TENANT_ID,
+        p_active_role: 'developer'
       });
-    } else {
-      result = await supabase.rpc('emotional_cognitive_override', {
-        p_signal_id: signalId,
-        p_override: override
-      });
+      if (bootstrapError) {
+        console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, bootstrapError.message);
+      }
     }
+
+    const result = await supabase.rpc('emotional_cognitive_override', {
+      p_signal_id: signalId,
+      p_override: override
+    });
 
     if (result.error) {
       console.error(`${LOG_PREFIX} RPC error (override):`, result.error);
@@ -452,21 +449,20 @@ export async function explainSignal(
       };
     }
 
-    let result;
+    // For dev sandbox, bootstrap the request context first
     if (useDevIdentity) {
-      result = await supabase.rpc('emotional_cognitive_explain', {
-        p_signal_id: signalId
-      }, {
-        headers: {
-          'x-tenant-id': DEV_IDENTITY.TENANT_ID,
-          'x-user-id': DEV_IDENTITY.USER_ID
-        }
+      const { error: bootstrapError } = await supabase.rpc('dev_bootstrap_request_context', {
+        p_tenant_id: DEV_IDENTITY.TENANT_ID,
+        p_active_role: 'developer'
       });
-    } else {
-      result = await supabase.rpc('emotional_cognitive_explain', {
-        p_signal_id: signalId
-      });
+      if (bootstrapError) {
+        console.warn(`${LOG_PREFIX} Bootstrap context failed (non-fatal):`, bootstrapError.message);
+      }
     }
+
+    const result = await supabase.rpc('emotional_cognitive_explain', {
+      p_signal_id: signalId
+    });
 
     if (result.error) {
       console.error(`${LOG_PREFIX} RPC error (explain):`, result.error);
