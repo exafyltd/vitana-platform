@@ -974,6 +974,7 @@ router.post('/audio', async (req: Request, res: Response) => {
 
 /**
  * POST /text - Submit text message (fallback/testing)
+ * VTID-01125: Updated to use Vertex AI via processWithGemini (same as /chat)
  */
 router.post('/text', async (req: Request, res: Response) => {
   const body = req.body as { sessionId: string; text: string };
@@ -999,26 +1000,59 @@ router.post('/text', async (req: Request, res: Response) => {
 
   console.log(`[ORB-LIVE] Processing text for session: ${body.sessionId}`);
 
-  const result = await callGeminiWithText(session, body.text);
+  try {
+    // VTID-01125: Use processWithGemini (Vertex AI) instead of direct Gemini API
+    // This uses the same routing as /chat: Vertex AI (ADC) > Gemini API > Local
+    const threadId = `orb-text-${body.sessionId}`;
 
-  if (result.ok && result.text) {
-    // Send response via SSE if connected
-    if (session.sseResponse) {
-      try {
-        session.sseResponse.write(`data: ${JSON.stringify({ type: 'assistant_text', text: result.text })}\n\n`);
-      } catch (e) {
-        console.error('[ORB-LIVE] Failed to send SSE response:', e);
-      }
+    // VTID-01107: Use memory-enhanced system instruction in dev-sandbox
+    let systemInstruction: string;
+    if (isDevSandbox()) {
+      const { instruction } = await generateMemoryEnhancedSystemInstruction({
+        tenant: session.tenant,
+        role: session.role,
+        route: session.route,
+        selectedId: session.selectedId
+      });
+      systemInstruction = instruction;
+    } else {
+      systemInstruction = generateSystemInstruction(session);
     }
 
-    return res.status(200).json({
-      ok: true,
-      text: result.text
+    const geminiResponse = await processWithGemini({
+      text: body.text,
+      threadId,
+      systemInstruction
     });
-  } else {
+
+    const replyText = geminiResponse.reply || '';
+
+    if (replyText) {
+      // Send response via SSE if connected
+      if (session.sseResponse) {
+        try {
+          session.sseResponse.write(`data: ${JSON.stringify({ type: 'assistant_text', text: replyText })}\n\n`);
+        } catch (e) {
+          console.error('[ORB-LIVE] Failed to send SSE response:', e);
+        }
+      }
+
+      return res.status(200).json({
+        ok: true,
+        text: replyText,
+        meta: geminiResponse.meta
+      });
+    } else {
+      return res.status(200).json({
+        ok: false,
+        error: 'No response from AI'
+      });
+    }
+  } catch (error: any) {
+    console.error('[ORB-LIVE] /text processing error:', error);
     return res.status(200).json({
       ok: false,
-      error: result.error
+      error: error.message || 'Failed to process text'
     });
   }
 });
