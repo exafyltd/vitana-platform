@@ -304,7 +304,30 @@ export type CicdEventType =
   // VTID-01123: Response Framing & Delivery Control Events
   | 'response.framing.computed'
   | 'response.framing.applied'
-  | 'response.framing.override';
+  | 'response.framing.override'
+  // VTID-01127: D33 Availability, Time-Window & Readiness Engine Events
+  | 'd33.availability.computed'
+  | 'd33.availability.override'
+  | 'd33.readiness.risk_flagged'
+  | 'd33.action_depth.applied'
+  | 'd33.guardrail.enforced'
+  // VTID-01128: D34 Environmental, Location & Mobility Context Engine Events
+  | 'd34.context.computed'
+  | 'd34.context.cached'
+  | 'd34.context.override'
+  | 'd34.context.fallback'
+  | 'd34.filter.applied'
+  | 'd34.filter.rejected'
+  | 'd34.error'
+  // VTID-01129: D35 Social Context, Relationship Weighting & Proximity Engine Events
+  | 'd35.context.computed'
+  | 'd35.context.compute.failed'
+  | 'd35.proximity.scored'
+  | 'd35.comfort.updated'
+  | 'd35.action.filtered'
+  | 'd35.boundary.respected'
+  | 'd35.api.request'
+  | 'd35.api.error';
 
 export interface CicdOasisEvent {
   vtid: string;
