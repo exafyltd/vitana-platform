@@ -154,9 +154,16 @@ const TASK_CREATION_KEYWORDS: RegExp[] = [
   /\b(schedule|plan|queue)\s+(a\s+)?(task|work|item)\b/i,
   /\b(add\s+to|put\s+on)\s+(the\s+)?(backlog|board|queue|list)\b/i,
   /\b(track|capture)\s+(this|that|the)\s+(as\s+a\s+)?(task|issue|ticket)\b/i,
-  // German
-  /\b(erstellen|anlegen|neu|hinzuf[uü]gen)\s*(eine?n?\s*)?(aufgabe|ticket|task|bug|fehler)\b/i,
-  /\b(melden|berichten|loggen)\s*(eine?n?\s*)?(bug|fehler|problem)\b/i,
+  // German - expanded patterns
+  /\b(erstell|anleg|hinzuf[uü]g)(en|e|st|t)?\s*(mir\s*)?(eine?n?\s*)?(neue?n?\s*)?(aufgabe|ticket|task|bug|fehler|eintrag)\b/i,
+  /\b(meld|bericht|logg)(en|e|st|t)?\s*(eine?n?\s*)?(bug|fehler|problem)\b/i,
+  /\b(ich\s+)?(m[oö]chte|will|brauche|h[aä]tte\s+gerne?)\s+(eine?n?\s*)?(neue?n?\s*)?(aufgabe|ticket|task|eintrag)\b/i,
+  /\b(kannst|k[oö]nntest|w[uü]rdest)\s+(du\s+)?(mir\s+)?(eine?n?\s*)?(aufgabe|ticket|task)\s*(erstellen|anlegen|machen)\b/i,
+  /\b(neue?n?\s+)(aufgabe|ticket|task|eintrag)\s*(bitte|erstellen|anlegen)?\b/i,
+  /\b(bitte\s+)?(erstell|leg|mach)(e|st|t)?\s*(mir\s+)?(eine?n?\s*)?(aufgabe|ticket|task)\b/i,
+  /\b(ich\s+)?(brauche|ben[oö]tige)\s+(eine?n?\s*)?(neue?n?\s*)?(aufgabe|ticket|task)\b/i,
+  /\baufgabe\s+(erstellen|anlegen|hinzuf[uü]gen)\b/i,
+  /\bticket\s+(erstellen|anlegen|aufmachen)\b/i,
 ];
 
 /**
@@ -464,6 +471,7 @@ export async function ensureScheduledDevTask(params: {
     };
 
     // Try to update first (for idempotency via vtid unique key)
+    // Use return=representation to get back results and verify update succeeded
     const updateResp = await fetch(
       `${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}`,
       {
@@ -472,22 +480,23 @@ export async function ensureScheduledDevTask(params: {
           'Content-Type': 'application/json',
           apikey: SUPABASE_SERVICE_ROLE,
           Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-          Prefer: 'return=minimal'
+          Prefer: 'return=representation'
         },
         body: JSON.stringify(taskPayload)
       }
     );
 
     if (updateResp.ok) {
-      // Check if any row was updated
-      const affectedRows = updateResp.headers.get('content-range');
-      const wasUpdated = affectedRows && !affectedRows.includes('*/0');
+      // Check if any row was updated by parsing the response
+      const updatedRows = await updateResp.json() as unknown[];
 
-      if (wasUpdated) {
-        console.log(`[VTID-01149] Updated existing task: ${vtid}`);
+      if (Array.isArray(updatedRows) && updatedRows.length > 0) {
+        console.log(`[VTID-01149] Updated existing task to scheduled: ${vtid}`);
         const eventResult = await emitScheduledEvent(vtid, header, 'update');
         return { ok: true, vtid, event_id: eventResult.event_id };
       }
+    } else {
+      console.warn(`[VTID-01149] PATCH failed: ${updateResp.status} - ${await updateResp.text()}`);
     }
 
     // No existing row - insert new one
