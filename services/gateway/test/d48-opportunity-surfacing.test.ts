@@ -83,7 +83,26 @@ mockGte.mockReturnValue({
 mockOrder.mockReturnValue({
   limit: mockLimit,
 });
-mockLimit.mockResolvedValue({ data: [], error: null });
+
+// Create a thenable mock that supports both Promise resolution and chaining
+const createChainableMock = (data: any = [], error: any = null) => {
+  const thenable: any = {};
+  // Set up self-referencing methods after object is created
+  thenable.in = jest.fn().mockReturnValue(thenable);
+  thenable.gte = jest.fn().mockReturnValue(thenable);
+  thenable.eq = jest.fn().mockReturnValue(thenable);
+  thenable.order = jest.fn().mockReturnValue(thenable);
+  thenable.limit = jest.fn().mockReturnValue(thenable);
+  thenable.then = (resolve: (value: any) => void) => {
+    resolve({ data, error });
+    return Promise.resolve({ data, error });
+  };
+  thenable.catch = () => thenable;
+  thenable.finally = () => thenable;
+  return thenable;
+};
+
+mockLimit.mockImplementation(() => createChainableMock());
 mockInsert.mockResolvedValue({ error: null });
 mockUpdate.mockReturnValue({
   eq: mockEq,
@@ -468,8 +487,8 @@ describe('VTID-01142: D48 Opportunity Surfacing Engine', () => {
     beforeEach(() => {
       jest.clearAllMocks();
 
-      // Reset mock chain
-      mockLimit.mockResolvedValue({ data: [], error: null });
+      // Reset mock chain with chainable mock
+      mockLimit.mockImplementation(() => createChainableMock());
       mockInsert.mockResolvedValue({ error: null });
 
       app = express();
@@ -585,7 +604,7 @@ describe('VTID-01142: D48 Opportunity Surfacing Engine', () => {
 
     describe('GET /active', () => {
       it('should return active opportunities', async () => {
-        mockLimit.mockResolvedValueOnce({ data: [], error: null });
+        mockLimit.mockImplementationOnce(() => createChainableMock([]));
 
         const response = await request(app)
           .get('/api/v1/opportunities/active');
@@ -596,7 +615,7 @@ describe('VTID-01142: D48 Opportunity Surfacing Engine', () => {
       });
 
       it('should respect limit parameter', async () => {
-        mockLimit.mockResolvedValueOnce({ data: [], error: null });
+        mockLimit.mockImplementationOnce(() => createChainableMock([]));
 
         const response = await request(app)
           .get('/api/v1/opportunities/active?limit=5');
@@ -605,7 +624,7 @@ describe('VTID-01142: D48 Opportunity Surfacing Engine', () => {
       });
 
       it('should cap limit at 50', async () => {
-        mockLimit.mockResolvedValueOnce({ data: [], error: null });
+        mockLimit.mockImplementationOnce(() => createChainableMock([]));
 
         const response = await request(app)
           .get('/api/v1/opportunities/active?limit=100');
@@ -617,7 +636,7 @@ describe('VTID-01142: D48 Opportunity Surfacing Engine', () => {
 
     describe('GET /history', () => {
       it('should return opportunity history', async () => {
-        mockLimit.mockResolvedValueOnce({ data: [], error: null });
+        mockLimit.mockImplementationOnce(() => createChainableMock([]));
 
         const response = await request(app)
           .get('/api/v1/opportunities/history');
@@ -628,7 +647,7 @@ describe('VTID-01142: D48 Opportunity Surfacing Engine', () => {
       });
 
       it('should filter by status', async () => {
-        mockLimit.mockResolvedValueOnce({ data: [], error: null });
+        mockLimit.mockImplementationOnce(() => createChainableMock([]));
 
         const response = await request(app)
           .get('/api/v1/opportunities/history?status=dismissed');
@@ -637,7 +656,7 @@ describe('VTID-01142: D48 Opportunity Surfacing Engine', () => {
       });
 
       it('should filter by types', async () => {
-        mockLimit.mockResolvedValueOnce({ data: [], error: null });
+        mockLimit.mockImplementationOnce(() => createChainableMock([]));
 
         const response = await request(app)
           .get('/api/v1/opportunities/history?types=activity,experience');
@@ -648,14 +667,11 @@ describe('VTID-01142: D48 Opportunity Surfacing Engine', () => {
 
     describe('GET /stats', () => {
       it('should return surfacing statistics', async () => {
-        mockLimit.mockResolvedValueOnce({
-          data: [
-            { status: 'active', opportunity_type: 'activity', priority_domain: 'health_wellbeing' },
-            { status: 'dismissed', opportunity_type: 'offer', priority_domain: 'commerce_monetization' },
-            { status: 'engaged', opportunity_type: 'experience', priority_domain: 'social_relationships' }
-          ],
-          error: null
-        });
+        mockLimit.mockImplementationOnce(() => createChainableMock([
+          { status: 'active', opportunity_type: 'activity', priority_domain: 'health_wellbeing' },
+          { status: 'dismissed', opportunity_type: 'offer', priority_domain: 'commerce_monetization' },
+          { status: 'engaged', opportunity_type: 'experience', priority_domain: 'social_relationships' }
+        ]));
 
         const response = await request(app)
           .get('/api/v1/opportunities/stats');
