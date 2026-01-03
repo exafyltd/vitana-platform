@@ -302,16 +302,16 @@ export function shouldStoreInMemory(content: string, direction: 'user' | 'assist
     // VTID-DEBUG-04: Skip "I don't know" / "I don't have" responses
     // These should NEVER be stored as they would override correct earlier information
     const dontKnowPatterns = [
-      // German "I don't know/have" patterns
-      /habe ich (noch )?nicht/i,              // "habe ich noch nicht" / "habe ich nicht"
-      /weiß ich (noch )?nicht/i,              // "weiß ich noch nicht" / "weiß ich nicht"
-      /weiss ich (noch )?nicht/i,             // "weiss ich noch nicht" (ss variant)
-      /kenne ich (noch )?nicht/i,             // "kenne ich noch nicht"
-      /ist mir (noch )?nicht bekannt/i,       // "ist mir noch nicht bekannt"
-      /habe ich (leider )?keine/i,            // "habe ich keine Information"
-      /fehlt mir/i,                           // "diese Information fehlt mir"
+      // German "I don't know/have" patterns - expanded to catch "gerade", "leider", etc.
+      /habe ich (noch |gerade |leider )?(nicht|keine)/i,  // "habe ich gerade nicht parat"
+      /weiß ich (noch |gerade |leider )?nicht/i,          // "weiß ich nicht"
+      /weiss ich (noch |gerade |leider )?nicht/i,         // "weiss ich nicht" (ss variant)
+      /kenne ich (noch |gerade |leider )?nicht/i,         // "kenne ich nicht"
+      /ist mir (noch |gerade )?nicht bekannt/i,           // "ist mir nicht bekannt"
+      /fehlt mir/i,                                        // "diese Information fehlt mir"
       /nicht (in meinem|in meiner) (gedächtnis|erinnerung)/i, // "nicht in meinem Gedächtnis"
-      /nicht gespeichert/i,                   // "noch nicht gespeichert"
+      /nicht gespeichert/i,                               // "noch nicht gespeichert"
+      /nicht parat/i,                                     // "habe ich nicht parat" - explicit catch
       // English "I don't know/have" patterns
       /i (do not|don't|dont) (know|have|remember)/i,
       /i haven't (got|stored|saved)/i,
@@ -319,7 +319,10 @@ export function shouldStoreInMemory(content: string, direction: 'user' | 'assist
       /not (in my|stored in) memory/i,
       /i('m| am) (not sure|uncertain|unsure)/i,
       // Generic negation patterns for missing info
-      /noch nicht (parat|gespeichert|bekannt|vorhanden)/i,
+      /(noch |gerade )?nicht (parat|gespeichert|bekannt|vorhanden)/i,
+      // "Can you tell me again" patterns (indicates LLM doesn't know)
+      /kannst du .*(noch ?mal|noch ?einmal|erneut|wieder) sagen/i,
+      /can you .*(again|once more)/i,
     ];
     for (const pattern of dontKnowPatterns) {
       if (pattern.test(lower)) {
