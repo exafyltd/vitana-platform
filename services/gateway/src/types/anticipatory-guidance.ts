@@ -505,14 +505,3 @@ export function getTemplateKey(mode: GuidanceMode, domain: SignalDomain, windowT
   return `${mode}:${domain}:${windowType}`;
 }
 
-// =============================================================================
-// VTID-01140: Exports
-// =============================================================================
-
-export {
-  GUIDANCE_THRESHOLDS,
-  GUIDANCE_MODE_METADATA,
-  FORBIDDEN_PHRASES,
-  OPTIONAL_PHRASING_PATTERNS,
-  ANTICIPATORY_GUIDANCE_EVENT_TYPES
-};

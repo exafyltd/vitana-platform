@@ -80,7 +80,7 @@ const DEV_IDENTITY = {
 /**
  * Current version of guidance generation rules
  */
-const GENERATION_RULES_VERSION = '1.0.0';
+export const GENERATION_RULES_VERSION = '1.0.0';
 
 // =============================================================================
 // VTID-01140: Environment Detection
@@ -1154,20 +1154,11 @@ export async function getGuidanceContextForOrb(
 }
 
 // =============================================================================
-// VTID-01140: Exports
+// VTID-01140: Re-exports from types (for consumer convenience)
 // =============================================================================
 
-export {
-  validateGuidanceLanguage,
-  checkWindowEligibility,
-  calculateRelevanceScore,
-  selectGuidanceMode,
-  selectTimingHint,
-  generateGuidanceText,
-  generateGuidanceFromWindow,
-  GUIDANCE_THRESHOLDS,
-  GENERATION_RULES_VERSION
-};
+// Re-export constants from types
+export { GUIDANCE_THRESHOLDS } from '../types/anticipatory-guidance';
 
 export type {
   SignalDomain,
