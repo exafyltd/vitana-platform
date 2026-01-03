@@ -150,6 +150,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const signalDetectionRouter = require('./routes/signal-detection').default;
   // VTID-01139: D45 Predictive Risk Windows & Opportunity Forecasting Engine
   const predictiveForecastingRouter = require('./routes/predictive-forecasting').default;
+  // VTID-01144: D50 Positive Trajectory Reinforcement & Momentum Engine
+  const positiveTrajectoryReinforcementRouter = require('./routes/positive-trajectory-reinforcement').default;
   // VTID-01124: D40 Life Stage, Goals & Trajectory Awareness Engine
   const lifeStageAwarenessRouter = require('./routes/life-stage-awareness').default;
   // VTID-01141: D47 Proactive Social & Community Alignment Engine
@@ -436,6 +438,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01139: D45 Predictive Risk Windows & Opportunity Forecasting Engine
   mountRouterSync(app, '/api/v1/forecast', predictiveForecastingRouter, { owner: 'predictive-forecasting' });
+
+  // VTID-01144: D50 Positive Trajectory Reinforcement & Momentum Engine
+  mountRouterSync(app, '/api/v1/reinforcement', positiveTrajectoryReinforcementRouter, { owner: 'positive-trajectory-reinforcement' });
 
   // VTID-01124: D40 Life Stage, Goals & Trajectory Awareness Engine
   mountRouterSync(app, '/api/v1/life-stage', lifeStageAwarenessRouter, { owner: 'life-stage-awareness' });

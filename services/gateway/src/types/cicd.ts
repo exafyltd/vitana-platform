@@ -368,6 +368,13 @@ export type CicdEventType =
   | 'social_alignment.expired'
   | 'social_alignment.batch_completed'
   | 'social_alignment.error'
+  // VTID-01144: D50 Positive Trajectory Reinforcement & Momentum Engine Events
+  | 'd50.eligibility.checked'
+  | 'd50.reinforcement.generated'
+  | 'd50.reinforcement.delivered'
+  | 'd50.reinforcement.dismissed'
+  | 'd50.momentum.computed'
+  | 'd50.trajectory.detected'
   // VTID-01146: Execute VTID Runner Events (One-Button End-to-End Pipeline)
   | 'vtid.execute.requested'
   | 'vtid.execute.started'
