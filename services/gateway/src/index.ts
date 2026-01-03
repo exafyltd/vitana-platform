@@ -152,8 +152,12 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const predictiveForecastingRouter = require('./routes/predictive-forecasting').default;
   // VTID-01124: D40 Life Stage, Goals & Trajectory Awareness Engine
   const lifeStageAwarenessRouter = require('./routes/life-stage-awareness').default;
+  // VTID-01141: D47 Proactive Social & Community Alignment Engine
+  const socialAlignmentRouter = require('./routes/social-alignment').default;
   // VTID-01142: D48 Context-Aware Opportunity & Experience Surfacing Engine
   const opportunitySurfacingRouter = require('./routes/opportunity-surfacing').default;
+  // VTID-01146: Execute VTID Runner (One-Button End-to-End Pipeline)
+  const { router: executeRouter } = require('./routes/execute');
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -312,6 +316,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/deploy', cicdRouter, { owner: 'cicd-deploy' });
   mountRouterSync(app, '/api/v1/cicd', cicdRouter, { owner: 'cicd' });
 
+  // VTID-01146: Execute VTID Runner (One-Button End-to-End Pipeline)
+  mountRouterSync(app, '/api/v1/execute', executeRouter, { owner: 'execute-runner' });
+
   // VTID-0509 + VTID-0510: Operator Console & Version Tracking
   mountRouterSync(app, '/api/v1/operator', operatorRouter, { owner: 'operator' });
 
@@ -430,6 +437,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01124: D40 Life Stage, Goals & Trajectory Awareness Engine
   mountRouterSync(app, '/api/v1/life-stage', lifeStageAwarenessRouter, { owner: 'life-stage-awareness' });
+
+  // VTID-01141: D47 Proactive Social & Community Alignment Engine
+  mountRouterSync(app, '/api/v1/alignment', socialAlignmentRouter, { owner: 'social-alignment' });
 
   // VTID-01142: D48 Context-Aware Opportunity & Experience Surfacing Engine
   mountRouterSync(app, '/api/v1/opportunities', opportunitySurfacingRouter, { owner: 'opportunity-surfacing' });

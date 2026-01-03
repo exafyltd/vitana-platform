@@ -359,7 +359,29 @@ export type CicdEventType =
   | 'd41.vulnerability.cleared'
   // VTID-01136: D42 Cross-Domain Context Fusion Events
   | 'd42.priorities.resolved'
-  | 'd42.priorities.failed';
+  | 'd42.priorities.failed'
+  // VTID-01141: D47 Proactive Social & Community Alignment Engine Events
+  | 'social_alignment.generated'
+  | 'social_alignment.shown'
+  | 'social_alignment.acted'
+  | 'social_alignment.dismissed'
+  | 'social_alignment.expired'
+  | 'social_alignment.batch_completed'
+  | 'social_alignment.error'
+  // VTID-01146: Execute VTID Runner Events (One-Button End-to-End Pipeline)
+  | 'vtid.execute.requested'
+  | 'vtid.execute.started'
+  | 'vtid.execute.worker.started'
+  | 'vtid.execute.worker.success'
+  | 'vtid.execute.worker.failed'
+  | 'vtid.execute.validator.started'
+  | 'vtid.execute.validator.success'
+  | 'vtid.execute.validator.failed'
+  | 'vtid.execute.deploy.started'
+  | 'vtid.execute.deploy.success'
+  | 'vtid.execute.deploy.failed'
+  | 'vtid.execute.completed'
+  | 'vtid.execute.failed';
 
 export interface CicdOasisEvent {
   vtid: string;
