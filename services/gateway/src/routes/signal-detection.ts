@@ -5,15 +5,15 @@
  * early weak signals indicating potential future risk or opportunity.
  *
  * Endpoints:
- * - GET  /api/v1/signals             - List active signals
- * - GET  /api/v1/signals/stats       - Get signal statistics
- * - GET  /api/v1/signals/:id         - Get signal details
- * - POST /api/v1/signals/:id/acknowledge - Acknowledge signal
- * - POST /api/v1/signals/:id/dismiss - Dismiss signal
- * - POST /api/v1/signals/:id/action  - Record intervention action
- * - POST /api/v1/signals/detect      - Run signal detection (internal)
- * - GET  /api/v1/signals/orb-context - Get ORB context
- * - GET  /api/v1/signals/metadata    - Get signal type metadata
+ * - GET  /api/v1/predictive-signals             - List active signals
+ * - GET  /api/v1/predictive-signals/stats       - Get signal statistics
+ * - GET  /api/v1/predictive-signals/:id         - Get signal details
+ * - POST /api/v1/predictive-signals/:id/acknowledge - Acknowledge signal
+ * - POST /api/v1/predictive-signals/:id/dismiss - Dismiss signal
+ * - POST /api/v1/predictive-signals/:id/action  - Record intervention action
+ * - POST /api/v1/predictive-signals/detect      - Run signal detection (internal)
+ * - GET  /api/v1/predictive-signals/orb-context - Get ORB context
+ * - GET  /api/v1/predictive-signals/metadata    - Get signal type metadata
  *
  * Core Rules (Hard):
  * - All operations require authentication
@@ -476,15 +476,15 @@ router.get('/info', (_req: Request, res: Response) => {
     version: 'v1',
     description: 'D44 Proactive Signal Detection & Early Intervention Engine',
     endpoints: [
-      'GET  /api/v1/signals - List active signals',
-      'GET  /api/v1/signals/stats - Get signal statistics',
-      'GET  /api/v1/signals/orb-context - Get ORB context',
-      'GET  /api/v1/signals/metadata - Get signal type metadata',
-      'GET  /api/v1/signals/:id - Get signal details',
-      'POST /api/v1/signals/:id/acknowledge - Acknowledge signal',
-      'POST /api/v1/signals/:id/dismiss - Dismiss signal',
-      'POST /api/v1/signals/:id/action - Record intervention action',
-      'POST /api/v1/signals/detect - Run signal detection'
+      'GET  /api/v1/predictive-signals - List active signals',
+      'GET  /api/v1/predictive-signals/stats - Get signal statistics',
+      'GET  /api/v1/predictive-signals/orb-context - Get ORB context',
+      'GET  /api/v1/predictive-signals/metadata - Get signal type metadata',
+      'GET  /api/v1/predictive-signals/:id - Get signal details',
+      'POST /api/v1/predictive-signals/:id/acknowledge - Acknowledge signal',
+      'POST /api/v1/predictive-signals/:id/dismiss - Dismiss signal',
+      'POST /api/v1/predictive-signals/:id/action - Record intervention action',
+      'POST /api/v1/predictive-signals/detect - Run signal detection'
     ],
     signal_types: Object.keys(SIGNAL_TYPE_METADATA),
     timestamp: new Date().toISOString()

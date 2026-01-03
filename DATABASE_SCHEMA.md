@@ -286,11 +286,11 @@ CREATE TABLE d44_predictive_signals (
 ```
 
 **API Endpoints:**
-- `GET /api/v1/signals` - List active signals
-- `GET /api/v1/signals/:id` - Get signal details
-- `POST /api/v1/signals/:id/acknowledge` - Acknowledge signal
-- `POST /api/v1/signals/:id/dismiss` - Dismiss signal
-- `GET /api/v1/signals/stats` - Get signal statistics
+- `GET /api/v1/predictive-signals` - List active signals
+- `GET /api/v1/predictive-signals/:id` - Get signal details
+- `POST /api/v1/predictive-signals/:id/acknowledge` - Acknowledge signal
+- `POST /api/v1/predictive-signals/:id/dismiss` - Dismiss signal
+- `GET /api/v1/predictive-signals/stats` - Get signal statistics
 
 **OASIS Events:**
 - `d44.signal.detected` - New signal detected
