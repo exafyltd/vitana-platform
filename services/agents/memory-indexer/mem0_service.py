@@ -56,8 +56,8 @@ class Mem0Config:
                     "api_key": self.anthropic_api_key,
                 },
             },
-            "embedding": {
-                "provider": "sentence_transformers",
+            "embedder": {
+                "provider": "huggingface",
                 "config": {
                     "model": self.embedding_model,
                 },
