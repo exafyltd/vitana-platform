@@ -381,7 +381,13 @@ export type CicdEventType =
   | 'vtid.execute.deploy.success'
   | 'vtid.execute.deploy.failed'
   | 'vtid.execute.completed'
-  | 'vtid.execute.failed';
+  | 'vtid.execute.failed'
+  // VTID-01142: D48 Context-Aware Opportunity Surfacing Engine Events
+  | 'opportunity.surfaced'
+  | 'opportunity.surfaced.failed'
+  | 'opportunity.dismissed'
+  | 'opportunity.engaged'
+  | 'opportunity.surface.error';
 
 export interface CicdOasisEvent {
   vtid: string;

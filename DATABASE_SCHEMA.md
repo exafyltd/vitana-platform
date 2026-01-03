@@ -398,8 +398,67 @@ CREATE TABLE my_new_table (
 | 2025-12-31 | Added personalization_audit table for cross-domain personalization | Claude | VTID-01096 |
 | 2025-12-31 | Added services_catalog, products_catalog, user_offers_memory, usage_outcomes, relationship_edges | Claude | VTID-01092 |
 | 2026-01-03 | Added d44_predictive_signals, d44_signal_evidence, d44_intervention_history for proactive signal detection | Claude | VTID-01138 |
+| 2026-01-03 | Added contextual_opportunities table for D48 opportunity surfacing | Claude | VTID-01142 |
 
 ---
 
-**Remember:** This file is the SINGLE SOURCE OF TRUTH for table names.  
-When in doubt, CHECK HERE FIRST! 🎯
+### contextual_opportunities
+**Purpose:** Contextual opportunities surfaced to users based on their current life context and predictive windows (D48)
+**Used by:** `services/gateway/src/services/d48-opportunity-surfacing-engine.ts` and `services/gateway/src/routes/opportunity-surfacing.ts`
+
+**Schema:**
+```sql
+CREATE TABLE contextual_opportunities (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  user_id UUID NOT NULL,
+  session_id TEXT,
+  opportunity_type TEXT NOT NULL,  -- Values: experience, service, content, activity, place, offer
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  confidence INTEGER NOT NULL,     -- 0-100
+  why_now TEXT NOT NULL,           -- Mandatory explanation for transparency
+  relevance_factors TEXT[] NOT NULL DEFAULT '{}',
+  suggested_action TEXT NOT NULL DEFAULT 'view',  -- Values: view, save, dismiss
+  dismissible BOOLEAN NOT NULL DEFAULT TRUE,
+  priority_domain TEXT NOT NULL,   -- Priority order: health > social > learning > exploration > commerce
+  external_id TEXT,
+  external_type TEXT,
+  window_id TEXT,
+  guidance_id TEXT,
+  alignment_signal_ids TEXT[] DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'active',  -- Values: active, dismissed, engaged, expired
+  dismissed_at TIMESTAMPTZ,
+  dismissed_reason TEXT,
+  engaged_at TIMESTAMPTZ,
+  engagement_type TEXT,
+  expires_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+**API Endpoints:**
+- `POST /api/v1/opportunities/surface` - Surface opportunities based on context
+- `GET /api/v1/opportunities/active` - Get active opportunities
+- `GET /api/v1/opportunities/history` - Get opportunity history
+- `GET /api/v1/opportunities/stats` - Get surfacing statistics
+- `POST /api/v1/opportunities/:id/dismiss` - Dismiss an opportunity
+- `POST /api/v1/opportunities/:id/engage` - Record engagement with opportunity
+
+**OASIS Events:**
+- `opportunity.surfaced` - Opportunities surfaced for user
+- `opportunity.dismissed` - Opportunity dismissed by user
+- `opportunity.engaged` - User engaged with opportunity
+
+**Hard Governance:**
+- User-benefit > monetization
+- Explainability mandatory (why_now field required)
+- No dark patterns
+- No urgency manipulation
+- No scarcity framing
+
+---
+
+**Remember:** This file is the SINGLE SOURCE OF TRUTH for table names.
+When in doubt, CHECK HERE FIRST!

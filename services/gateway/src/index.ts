@@ -154,6 +154,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const lifeStageAwarenessRouter = require('./routes/life-stage-awareness').default;
   // VTID-01141: D47 Proactive Social & Community Alignment Engine
   const socialAlignmentRouter = require('./routes/social-alignment').default;
+  // VTID-01142: D48 Context-Aware Opportunity & Experience Surfacing Engine
+  const opportunitySurfacingRouter = require('./routes/opportunity-surfacing').default;
   // VTID-01146: Execute VTID Runner (One-Button End-to-End Pipeline)
   const { router: executeRouter } = require('./routes/execute');
 
@@ -438,6 +440,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01141: D47 Proactive Social & Community Alignment Engine
   mountRouterSync(app, '/api/v1/alignment', socialAlignmentRouter, { owner: 'social-alignment' });
+
+  // VTID-01142: D48 Context-Aware Opportunity & Experience Surfacing Engine
+  mountRouterSync(app, '/api/v1/opportunities', opportunitySurfacingRouter, { owner: 'opportunity-surfacing' });
 
   // VTID-01063: commandhub router (note: /board route REMOVED, use board-adapter)
   mountRouterSync(app, '/api/v1/commandhub', commandhub, { owner: 'commandhub' });
