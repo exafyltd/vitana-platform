@@ -260,12 +260,12 @@ export const ComputeDetectionRequestSchema = z.object({
   dimensions: z.array(OverloadDimension).optional(),
 
   // Time window for analysis
-  time_window_days: z.number().int().min(7).max(21).default(14),
+  time_window_days: z.number().int().min(7).max(21).optional().default(14),
 
   // Include dismissed detections in response
-  include_dismissed: z.boolean().default(false)
+  include_dismissed: z.boolean().optional().default(false)
 });
-export type ComputeDetectionRequest = z.infer<typeof ComputeDetectionRequestSchema>;
+export type ComputeDetectionRequest = z.input<typeof ComputeDetectionRequestSchema>;
 
 /**
  * Compute detection response
@@ -283,10 +283,10 @@ export interface ComputeDetectionResponse {
  * Get current detections request
  */
 export const GetDetectionsRequestSchema = z.object({
-  include_dismissed: z.boolean().default(false),
-  limit: z.number().int().min(1).max(50).default(10)
+  include_dismissed: z.boolean().optional().default(false),
+  limit: z.number().int().min(1).max(50).optional().default(10)
 });
-export type GetDetectionsRequest = z.infer<typeof GetDetectionsRequestSchema>;
+export type GetDetectionsRequest = z.input<typeof GetDetectionsRequestSchema>;
 
 /**
  * Get detections response
@@ -324,9 +324,9 @@ export interface DismissDetectionResponse {
  */
 export const GetBaselineRequestSchema = z.object({
   dimensions: z.array(OverloadDimension).optional(),
-  recompute: z.boolean().default(false)
+  recompute: z.boolean().optional().default(false)
 });
-export type GetBaselineRequest = z.infer<typeof GetBaselineRequestSchema>;
+export type GetBaselineRequest = z.input<typeof GetBaselineRequestSchema>;
 
 /**
  * Get baseline response
