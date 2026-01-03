@@ -470,84 +470,71 @@ export async function ensureScheduledDevTask(params: {
       updated_at: now
     };
 
-    // Try to update first (for idempotency via vtid unique key)
-    // Use return=representation to get back results and verify update succeeded
-    const updateResp = await fetch(
-      `${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}`,
+    // Use UPSERT pattern: POST with on_conflict resolution to handle both insert and update
+    // This is more reliable than PATCH-then-INSERT because it's atomic
+    const upsertPayload = {
+      ...taskPayload,
+      id: randomUUID(), // Will be ignored on conflict
+      created_at: now
+    };
+
+    console.log(`[VTID-01149] Upserting task ${vtid} with status='scheduled'`);
+
+    // Use on_conflict=vtid to upsert - if vtid exists, update; if not, insert
+    const upsertResp = await fetch(
+      `${SUPABASE_URL}/rest/v1/vtid_ledger`,
       {
-        method: 'PATCH',
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           apikey: SUPABASE_SERVICE_ROLE,
           Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-          Prefer: 'return=representation'
+          // Use merge-duplicates to update on conflict
+          Prefer: 'resolution=merge-duplicates,return=representation'
         },
-        body: JSON.stringify(taskPayload)
+        body: JSON.stringify(upsertPayload)
       }
     );
 
-    if (updateResp.ok) {
-      // Check if any row was updated by parsing the response
-      const updatedRows = await updateResp.json() as unknown[];
+    if (!upsertResp.ok) {
+      const errorText = await upsertResp.text();
+      console.error(`[VTID-01149] Upsert failed: ${upsertResp.status} - ${errorText}`);
 
-      if (Array.isArray(updatedRows) && updatedRows.length > 0) {
-        console.log(`[VTID-01149] Updated existing task to scheduled: ${vtid}`);
-        const eventResult = await emitScheduledEvent(vtid, header, 'update');
-        return { ok: true, vtid, event_id: eventResult.event_id };
-      }
-    } else {
-      console.warn(`[VTID-01149] PATCH failed: ${updateResp.status} - ${await updateResp.text()}`);
-    }
+      // Fallback: try direct PATCH if upsert doesn't work
+      console.log(`[VTID-01149] Falling back to PATCH for ${vtid}`);
+      const patchResp = await fetch(
+        `${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: SUPABASE_SERVICE_ROLE,
+            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+            Prefer: 'return=representation'
+          },
+          body: JSON.stringify(taskPayload)
+        }
+      );
 
-    // No existing row - insert new one
-    const insertPayload = {
-      ...taskPayload,
-      id: randomUUID(),
-      created_at: now
-    };
-
-    const insertResp = await fetch(`${SUPABASE_URL}/rest/v1/vtid_ledger`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: SUPABASE_SERVICE_ROLE,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-        Prefer: 'return=minimal'
-      },
-      body: JSON.stringify(insertPayload)
-    });
-
-    if (!insertResp.ok) {
-      const errorText = await insertResp.text();
-      // Check if it's a duplicate key error (task already exists)
-      if (insertResp.status === 409 || errorText.includes('duplicate')) {
-        console.log(`[VTID-01149] Task already exists, updating: ${vtid}`);
-        // Retry update
-        await fetch(
-          `${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}`,
-          {
-            method: 'PATCH',
-            headers: {
-              'Content-Type': 'application/json',
-              apikey: SUPABASE_SERVICE_ROLE,
-              Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-              Prefer: 'return=minimal'
-            },
-            body: JSON.stringify(taskPayload)
-          }
-        );
-        const eventResult = await emitScheduledEvent(vtid, header, 'update');
-        return { ok: true, vtid, event_id: eventResult.event_id };
+      if (patchResp.ok) {
+        const patchedRows = await patchResp.json() as unknown[];
+        if (Array.isArray(patchedRows) && patchedRows.length > 0) {
+          console.log(`[VTID-01149] PATCH succeeded for ${vtid}`);
+          const eventResult = await emitScheduledEvent(vtid, header, 'update');
+          return { ok: true, vtid, event_id: eventResult.event_id };
+        }
       }
 
-      const error = `Failed to insert task: ${insertResp.status} - ${errorText}`;
-      console.error(`[VTID-01149] ${error}`);
+      const error = `Failed to upsert/patch task: ${upsertResp.status} - ${errorText}`;
       await emitScheduleFailedEvent(vtid, error);
       return { ok: false, vtid, error };
     }
 
-    console.log(`[VTID-01149] Inserted new scheduled task: ${vtid}`);
-    const eventResult = await emitScheduledEvent(vtid, header, 'insert');
+    const upsertedRows = await upsertResp.json() as unknown[];
+    const wasInsert = Array.isArray(upsertedRows) && upsertedRows.length > 0;
+
+    console.log(`[VTID-01149] Successfully upserted task ${vtid} to scheduled status`);
+    const eventResult = await emitScheduledEvent(vtid, header, wasInsert ? 'insert' : 'update');
     return { ok: true, vtid, event_id: eventResult.event_id };
 
   } catch (err: any) {
