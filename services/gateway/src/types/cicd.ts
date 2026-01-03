@@ -367,7 +367,21 @@ export type CicdEventType =
   | 'social_alignment.dismissed'
   | 'social_alignment.expired'
   | 'social_alignment.batch_completed'
-  | 'social_alignment.error';
+  | 'social_alignment.error'
+  // VTID-01146: Execute VTID Runner Events (One-Button End-to-End Pipeline)
+  | 'vtid.execute.requested'
+  | 'vtid.execute.started'
+  | 'vtid.execute.worker.started'
+  | 'vtid.execute.worker.success'
+  | 'vtid.execute.worker.failed'
+  | 'vtid.execute.validator.started'
+  | 'vtid.execute.validator.success'
+  | 'vtid.execute.validator.failed'
+  | 'vtid.execute.deploy.started'
+  | 'vtid.execute.deploy.success'
+  | 'vtid.execute.deploy.failed'
+  | 'vtid.execute.completed'
+  | 'vtid.execute.failed';
 
 export interface CicdOasisEvent {
   vtid: string;
