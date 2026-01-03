@@ -32,10 +32,10 @@ jest.mock('../src/services/oasis-event-service', () => ({
   emitOasisEvent: mockEmitOasisEvent,
 }));
 
-// Mock the Supabase user client
+// Mock the Supabase client - the D50 engine creates its own clients using createClient directly
 const mockRpc = jest.fn();
-jest.mock('../src/lib/supabase-user', () => ({
-  createUserSupabaseClient: jest.fn().mockReturnValue({
+jest.mock('@supabase/supabase-js', () => ({
+  createClient: jest.fn().mockReturnValue({
     rpc: mockRpc,
   }),
 }));
@@ -150,7 +150,8 @@ const stableTrend: TrendAnalysis = createTrendAnalysis(
   'stable',
   5,
   85,
-  14
+  14,
+  5 // Few data points - below threshold for consistency recognition
 );
 
 const stableWithManyDataPoints: TrendAnalysis = createTrendAnalysis(

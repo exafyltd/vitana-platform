@@ -226,18 +226,19 @@ function isTrendPositive(trend: TrendAnalysis): boolean {
   const direction = trend.direction;
   const magnitude = trend.magnitude;
 
-  // Must have sufficient magnitude
+  // Stable with high data points is positive (consistency)
+  // Check this first since stable trends naturally have low magnitude
+  if (direction === 'stable' && trend.data_points_count >= 10) {
+    return true;
+  }
+
+  // For non-stable trends, must have sufficient magnitude
   if (magnitude < REINFORCEMENT_THRESHOLDS.MIN_TREND_MAGNITUDE) {
     return false;
   }
 
   // Positive directions
   if (direction === 'increasing') {
-    return true;
-  }
-
-  // Stable with high data points is also positive (consistency)
-  if (direction === 'stable' && trend.data_points_count >= 10) {
     return true;
   }
 
