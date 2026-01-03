@@ -394,7 +394,14 @@ export type CicdEventType =
   | 'opportunity.surfaced.failed'
   | 'opportunity.dismissed'
   | 'opportunity.engaged'
-  | 'opportunity.surface.error';
+  | 'opportunity.surface.error'
+  // VTID-01149: Unified Task-Creation Intake Events
+  | 'autopilot.intent.task_create_detected'
+  | 'autopilot.task.intake.question_asked'
+  | 'autopilot.task.intake.answer_received'
+  | 'autopilot.task.ready_to_schedule'
+  | 'commandhub.task.scheduled'
+  | 'commandhub.task.schedule_failed';
 
 export interface CicdOasisEvent {
   vtid: string;
