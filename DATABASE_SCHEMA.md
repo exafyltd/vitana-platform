@@ -247,6 +247,105 @@ CREATE TABLE relationship_edges (
 
 ---
 
+### d44_predictive_signals
+**Purpose:** Proactive early intervention signals (VTID-01138 D44)
+**Used by:**
+- `services/gateway/src/services/d44-signal-detection-engine.ts` (Detection logic)
+- `services/gateway/src/routes/signal-detection.ts` (API endpoints)
+
+**Schema:**
+```sql
+CREATE TABLE d44_predictive_signals (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  user_id UUID NOT NULL,
+  signal_type TEXT NOT NULL,  -- Values: health_drift, behavioral_drift, routine_instability, cognitive_load_increase, social_withdrawal, social_overload, preference_shift, positive_momentum
+  confidence INTEGER NOT NULL CHECK (confidence >= 0 AND confidence <= 100),
+  time_window TEXT NOT NULL,  -- Values: last_7_days, last_14_days, last_30_days
+  detected_change TEXT NOT NULL,
+  user_impact TEXT NOT NULL,  -- Values: low, medium, high
+  suggested_action TEXT NOT NULL,  -- Values: awareness, reflection, check_in
+  explainability_text TEXT NOT NULL,
+  evidence_count INTEGER NOT NULL DEFAULT 0,
+  detection_source TEXT NOT NULL DEFAULT 'engine',  -- Values: engine, manual, scheduled
+  domains_analyzed TEXT[] NOT NULL DEFAULT '{}',
+  data_points_analyzed INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'active',  -- Values: active, acknowledged, dismissed, actioned, expired
+  acknowledged_at TIMESTAMPTZ,
+  actioned_at TIMESTAMPTZ,
+  user_feedback TEXT,
+  linked_drift_event_id UUID,
+  linked_memory_refs TEXT[] DEFAULT '{}',
+  linked_health_refs TEXT[] DEFAULT '{}',
+  linked_context_refs TEXT[] DEFAULT '{}',
+  detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+**API Endpoints:**
+- `GET /api/v1/predictive-signals` - List active signals
+- `GET /api/v1/predictive-signals/:id` - Get signal details
+- `POST /api/v1/predictive-signals/:id/acknowledge` - Acknowledge signal
+- `POST /api/v1/predictive-signals/:id/dismiss` - Dismiss signal
+- `GET /api/v1/predictive-signals/stats` - Get signal statistics
+
+**OASIS Events:**
+- `d44.signal.detected` - New signal detected
+- `d44.signal.acknowledged` - Signal acknowledged by user
+- `d44.signal.dismissed` - Signal dismissed by user
+- `d44.signal.expired` - Signal expired
+
+---
+
+### d44_signal_evidence
+**Purpose:** Evidence references linked to predictive signals (VTID-01138 D44)
+**Used by:**
+- `services/gateway/src/services/d44-signal-detection-engine.ts`
+- `services/gateway/src/routes/signal-detection.ts`
+
+**Schema:**
+```sql
+CREATE TABLE d44_signal_evidence (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  user_id UUID NOT NULL,
+  signal_id UUID NOT NULL REFERENCES d44_predictive_signals(id) ON DELETE CASCADE,
+  evidence_type TEXT NOT NULL,  -- Values: memory, health, context, diary, calendar, social, location, wearable, preference, behavior
+  source_ref TEXT NOT NULL,
+  source_table TEXT NOT NULL,
+  weight INTEGER NOT NULL DEFAULT 50 CHECK (weight >= 0 AND weight <= 100),
+  summary TEXT NOT NULL,
+  recorded_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+---
+
+### d44_intervention_history
+**Purpose:** History of user actions on predictive signals (VTID-01138 D44)
+**Used by:**
+- `services/gateway/src/services/d44-signal-detection-engine.ts`
+- `services/gateway/src/routes/signal-detection.ts`
+
+**Schema:**
+```sql
+CREATE TABLE d44_intervention_history (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  user_id UUID NOT NULL,
+  signal_id UUID NOT NULL REFERENCES d44_predictive_signals(id) ON DELETE CASCADE,
+  action_type TEXT NOT NULL,  -- Values: acknowledged, dismissed, marked_helpful, marked_not_helpful, took_action, reminder_set, shared
+  action_details JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+---
+
 ## 🎯 ADDING A NEW TABLE
 
 When adding a new table, follow this checklist:
@@ -298,6 +397,7 @@ CREATE TABLE my_new_table (
 | 2025-11-11 | Fixed vtid_ledger vs VtidLedger mismatch | Claude | DEV-COMMU-0055 |
 | 2025-12-31 | Added personalization_audit table for cross-domain personalization | Claude | VTID-01096 |
 | 2025-12-31 | Added services_catalog, products_catalog, user_offers_memory, usage_outcomes, relationship_edges | Claude | VTID-01092 |
+| 2026-01-03 | Added d44_predictive_signals, d44_signal_evidence, d44_intervention_history for proactive signal detection | Claude | VTID-01138 |
 | 2026-01-03 | Added risk_mitigations table for D49 Proactive Health & Lifestyle Risk Mitigation Layer | Claude | VTID-01143 |
 
 ---

@@ -146,6 +146,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const boundaryConsentRouter = require('./routes/boundary-consent').default;
   // VTID-01137: D43 Longitudinal Adaptation, Drift Detection & Personal Evolution Engine
   const longitudinalAdaptationRouter = require('./routes/longitudinal-adaptation').default;
+  // VTID-01138: D44 Proactive Signal Detection & Early Intervention Engine
+  const signalDetectionRouter = require('./routes/signal-detection').default;
+  // VTID-01139: D45 Predictive Risk Windows & Opportunity Forecasting Engine
+  const predictiveForecastingRouter = require('./routes/predictive-forecasting').default;
   // VTID-01124: D40 Life Stage, Goals & Trajectory Awareness Engine
   const lifeStageAwarenessRouter = require('./routes/life-stage-awareness').default;
   // VTID-01143: D49 Proactive Health & Lifestyle Risk Mitigation Layer
@@ -417,6 +421,12 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01137: D43 Longitudinal Adaptation, Drift Detection & Personal Evolution Engine
   mountRouterSync(app, '/api/v1/longitudinal', longitudinalAdaptationRouter, { owner: 'longitudinal-adaptation' });
+
+  // VTID-01138: D44 Proactive Signal Detection & Early Intervention Engine
+  mountRouterSync(app, '/api/v1/predictive-signals', signalDetectionRouter, { owner: 'signal-detection' });
+
+  // VTID-01139: D45 Predictive Risk Windows & Opportunity Forecasting Engine
+  mountRouterSync(app, '/api/v1/forecast', predictiveForecastingRouter, { owner: 'predictive-forecasting' });
 
   // VTID-01124: D40 Life Stage, Goals & Trajectory Awareness Engine
   mountRouterSync(app, '/api/v1/life-stage', lifeStageAwarenessRouter, { owner: 'life-stage-awareness' });
