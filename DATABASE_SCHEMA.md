@@ -399,6 +399,7 @@ CREATE TABLE my_new_table (
 | 2025-12-31 | Added services_catalog, products_catalog, user_offers_memory, usage_outcomes, relationship_edges | Claude | VTID-01092 |
 | 2026-01-03 | Added d44_predictive_signals, d44_signal_evidence, d44_intervention_history for proactive signal detection | Claude | VTID-01138 |
 | 2026-01-03 | Added contextual_opportunities table for D48 opportunity surfacing | Claude | VTID-01142 |
+| 2026-01-03 | Added risk_mitigations table for D49 Proactive Health & Lifestyle Risk Mitigation Layer | Claude | VTID-01143 |
 
 ---
 
@@ -460,5 +461,69 @@ CREATE TABLE contextual_opportunities (
 
 ---
 
+### risk_mitigations
+**Purpose:** D49 Proactive Health & Lifestyle Risk Mitigation Layer - stores generated mitigation suggestions (VTID-01143)
+**Used by:**
+- `services/gateway/src/services/d49-risk-mitigation-engine.ts` (CRUD operations)
+- `services/gateway/src/routes/risk-mitigation.ts` (API endpoints)
+
+**Schema:**
+```sql
+CREATE TABLE risk_mitigations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  user_id UUID NOT NULL,
+  risk_window_id UUID NOT NULL,
+  domain TEXT NOT NULL,  -- Values: sleep, nutrition, movement, mental, routine, social
+  confidence INTEGER NOT NULL CHECK (confidence >= 0 AND confidence <= 100),
+  suggested_adjustment TEXT NOT NULL,  -- Plain language suggestion
+  why_this_helps TEXT NOT NULL,  -- Short explanation
+  effort_level TEXT NOT NULL DEFAULT 'low',  -- Always 'low' for D49
+  source_signals UUID[] DEFAULT '{}',
+  precedent_type TEXT,  -- Values: user_history, general_safety
+  disclaimer TEXT NOT NULL,  -- Safety disclaimer
+  status TEXT NOT NULL DEFAULT 'active',  -- Values: active, dismissed, acknowledged, expired, superseded
+  expires_at TIMESTAMPTZ,
+  dismissed_at TIMESTAMPTZ,
+  acknowledged_at TIMESTAMPTZ,
+  dismiss_reason TEXT,  -- Values: not_relevant, already_doing, not_now, no_reason
+  generated_by_version TEXT NOT NULL,
+  input_hash TEXT NOT NULL,  -- For determinism verification
+  suggestion_hash TEXT NOT NULL,  -- For cooldown deduplication
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+**API Endpoints:**
+- `POST /api/v1/mitigation/generate` - Generate mitigations from risk windows
+- `POST /api/v1/mitigation/dismiss` - Dismiss a mitigation
+- `POST /api/v1/mitigation/acknowledge` - Acknowledge a mitigation (mark as viewed)
+- `GET /api/v1/mitigation/active` - Get active mitigations for current user
+- `GET /api/v1/mitigation/history` - Get mitigation history
+- `POST /api/v1/mitigation/expire` - Expire old mitigations (admin)
+- `GET /api/v1/mitigation/health` - Health check
+- `GET /api/v1/mitigation/config` - Get configuration
+- `GET /api/v1/mitigation/domains` - Get available domains
+- `GET /api/v1/mitigation/disclaimer` - Get safety disclaimer
+
+**OASIS Events:**
+- `risk_mitigation.generated` - Mitigation generated
+- `risk_mitigation.dismissed` - Mitigation dismissed
+- `risk_mitigation.acknowledged` - Mitigation acknowledged
+- `risk_mitigation.expired` - Mitigation expired
+- `risk_mitigation.skipped` - Mitigation skipped (cooldown/threshold)
+- `risk_mitigation.error` - Error during generation
+
+**Hard Governance:**
+- Safety > optimization
+- No diagnosis, no treatment
+- No medical claims
+- Suggestions only, never actions
+- Explainability mandatory
+- All outputs logged to OASIS
+
+---
+
 **Remember:** This file is the SINGLE SOURCE OF TRUTH for table names.
-When in doubt, CHECK HERE FIRST!
+When in doubt, CHECK HERE FIRST! 🎯
