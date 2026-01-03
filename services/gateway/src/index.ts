@@ -160,6 +160,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const opportunitySurfacingRouter = require('./routes/opportunity-surfacing').default;
   // VTID-01143: D49 Proactive Health & Lifestyle Risk Mitigation Layer
   const riskMitigationRouter = require('./routes/risk-mitigation').default;
+  // VTID-01145: D51 Predictive Fatigue, Burnout & Overload Detection Engine
+  const overloadDetectionRouter = require('./routes/overload-detection').default;
   // VTID-01146: Execute VTID Runner (One-Button End-to-End Pipeline)
   const { router: executeRouter } = require('./routes/execute');
 
@@ -453,6 +455,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01143: D49 Proactive Health & Lifestyle Risk Mitigation Layer
   mountRouterSync(app, '/api/v1/mitigation', riskMitigationRouter, { owner: 'risk-mitigation' });
+
+  // VTID-01145: D51 Predictive Fatigue, Burnout & Overload Detection Engine
+  mountRouterSync(app, '/api/v1/overload', overloadDetectionRouter, { owner: 'overload-detection' });
 
   // VTID-01063: commandhub router (note: /board route REMOVED, use board-adapter)
   mountRouterSync(app, '/api/v1/commandhub', commandhub, { owner: 'commandhub' });
