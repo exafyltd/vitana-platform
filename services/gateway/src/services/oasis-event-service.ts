@@ -1685,4 +1685,151 @@ export const reinforcementEvents = {
     }),
 };
 
+// ==================== VTID-01149: Task Intake Events ====================
+
+export const taskIntakeEvents = {
+  /**
+   * Emit task creation intent detected event
+   */
+  taskCreateDetected: (
+    sessionId: string,
+    surface: 'orb' | 'operator',
+    tenant: string = 'vitana'
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01149',
+      type: 'autopilot.intent.task_create_detected',
+      source: 'task-intake-service',
+      status: 'info',
+      message: `Task creation intent detected on ${surface}`,
+      payload: {
+        session_id: sessionId,
+        surface,
+        tenant,
+        detected_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit intake question asked event
+   */
+  questionAsked: (
+    vtid: string,
+    sessionId: string,
+    question: 'spec' | 'header',
+    surface: 'orb' | 'operator'
+  ) =>
+    emitOasisEvent({
+      vtid,
+      type: 'autopilot.task.intake.question_asked',
+      source: 'task-intake-service',
+      status: 'info',
+      message: `Asking ${question} question on ${surface}`,
+      payload: {
+        session_id: sessionId,
+        question,
+        surface,
+        asked_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit intake answer received event
+   */
+  answerReceived: (
+    vtid: string,
+    sessionId: string,
+    question: 'spec' | 'header',
+    text: string,
+    surface: 'orb' | 'operator',
+    readyToSchedule: boolean
+  ) =>
+    emitOasisEvent({
+      vtid,
+      type: 'autopilot.task.intake.answer_received',
+      source: 'task-intake-service',
+      status: 'info',
+      message: `Received ${question} answer on ${surface}`,
+      payload: {
+        session_id: sessionId,
+        question,
+        text,
+        surface,
+        ready_to_schedule: readyToSchedule,
+        received_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit task ready to schedule event
+   */
+  readyToSchedule: (
+    vtid: string,
+    header: string,
+    specText: string,
+    surface: 'orb' | 'operator',
+    sessionId: string
+  ) =>
+    emitOasisEvent({
+      vtid,
+      type: 'autopilot.task.ready_to_schedule',
+      source: 'task-intake-service',
+      status: 'info',
+      message: `Task ready to schedule: ${header}`,
+      payload: {
+        vtid,
+        header,
+        spec_text: specText,
+        task_family: 'DEV',
+        surface,
+        session_id: sessionId,
+        ready_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit task scheduled event (success)
+   */
+  taskScheduled: (
+    vtid: string,
+    header: string,
+    operation: 'insert' | 'update' = 'insert'
+  ) =>
+    emitOasisEvent({
+      vtid,
+      type: 'commandhub.task.scheduled',
+      source: 'task-intake-service',
+      status: 'success',
+      message: `Task scheduled: ${header}`,
+      payload: {
+        vtid,
+        header,
+        task_family: 'DEV',
+        status: 'scheduled',
+        operation,
+        scheduled_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit task schedule failed event (error - does not crash ingestion)
+   */
+  scheduleFailed: (
+    vtid: string,
+    error: string
+  ) =>
+    emitOasisEvent({
+      vtid,
+      type: 'commandhub.task.schedule_failed',
+      source: 'task-intake-service',
+      status: 'error',
+      message: `Task scheduling failed: ${error}`,
+      payload: {
+        vtid,
+        error,
+        failed_at: new Date().toISOString(),
+      },
+    }),
+};
+
 export default cicdEvents;

@@ -46,6 +46,19 @@ import {
   createOperatorTask,
   CreatedTask
 } from '../services/operator-service';
+// VTID-01149: Unified Task-Creation Intake
+import {
+  detectTaskCreationIntent,
+  hasActiveIntake,
+  getIntakeState,
+  startIntake,
+  processIntakeAnswer,
+  getNextQuestion,
+  completeIntakeAndSchedule,
+  looksLikeAnswer,
+  generateIntakeStartMessage,
+  INTAKE_QUESTIONS
+} from '../services/task-intake-service';
 import { OperatorChatMessageSchema, OperatorChatRole, OperatorChatMode } from '../types/operator-chat';
 import { getDeploymentHistory, getNextSWV, insertSoftwareVersion } from '../lib/versioning';
 // VTID-0525-B: naturalLanguageService disabled for MVP - using simple command matching
@@ -134,12 +147,154 @@ router.post('/chat', async (req: Request, res: Response) => {
       }
     }
 
-    // VTID-0532: Task detection logic
+    // =========================================================================
+    // VTID-01149: Unified Task-Creation Intake Mode
+    // Check for active intake session OR detect task creation intent
+    // Uses the same logic as ORB for consistency (Section 2)
+    // =========================================================================
+
+    const rawMessage = message ?? '';
+
+    // Check if there's an active intake session for this threadId
+    if (hasActiveIntake(threadId)) {
+      const intakeState = getIntakeState(threadId);
+
+      if (intakeState && intakeState.intake_active) {
+        const nextQ = getNextQuestion(intakeState);
+
+        // Process the user's message as an answer if it looks like one
+        if (nextQ.question && looksLikeAnswer(rawMessage)) {
+          const answerResult = await processIntakeAnswer({
+            sessionId: threadId,
+            question: nextQ.question,
+            answer: rawMessage,
+            surface: 'operator'
+          });
+
+          if (answerResult.ok) {
+            // If ready to schedule, complete the intake and schedule the task
+            if (answerResult.ready_to_schedule) {
+              const scheduleResult = await completeIntakeAndSchedule(threadId);
+
+              // Log the intake completion event
+              await ingestChatMessageEvent({
+                threadId,
+                vtid: scheduleResult.vtid || undefined,
+                role: 'assistant',
+                mode: mode as OperatorChatMode,
+                message: scheduleResult.ok
+                  ? `Your task has been created and scheduled: ${scheduleResult.vtid}. You can track it on the Command Hub board.`
+                  : `I couldn't schedule the task: ${scheduleResult.error}. Please try again.`,
+                metadata: { intake_complete: true, task_scheduled: scheduleResult.ok }
+              });
+
+              console.log(`[VTID-01149] Operator intake complete, task ${scheduleResult.ok ? 'scheduled' : 'failed'}: ${scheduleResult.vtid}`);
+
+              return res.status(200).json({
+                ok: true,
+                reply: scheduleResult.ok
+                  ? `Your task has been created and scheduled: ${scheduleResult.vtid}. You can track it on the Command Hub board.`
+                  : `I couldn't schedule the task: ${scheduleResult.error}. Please try again.`,
+                attachments: [],
+                oasis_ref: `OASIS-INTAKE-${requestId.slice(0, 8).toUpperCase()}`,
+                meta: {
+                  provider: 'task-intake',
+                  model: 'vtid-01149',
+                  intake_complete: true,
+                  task_scheduled: scheduleResult.ok
+                },
+                threadId,
+                messageId: randomUUID(),
+                createdAt,
+                createdTask: scheduleResult.ok ? {
+                  vtid: scheduleResult.vtid,
+                  title: intakeState.header || 'Untitled Task',
+                  mode: 'plan-only' as const
+                } : undefined
+              });
+            }
+
+            // More questions to ask
+            if (answerResult.next_question_prompt) {
+              // Log the question event
+              await ingestChatMessageEvent({
+                threadId,
+                role: 'assistant',
+                mode: mode as OperatorChatMode,
+                message: answerResult.next_question_prompt,
+                metadata: { intake_active: true, next_question: answerResult.next_question }
+              });
+
+              console.log(`[VTID-01149] Operator intake asking next question: ${answerResult.next_question}`);
+
+              return res.status(200).json({
+                ok: true,
+                reply: answerResult.next_question_prompt,
+                attachments: [],
+                oasis_ref: `OASIS-INTAKE-${requestId.slice(0, 8).toUpperCase()}`,
+                meta: {
+                  provider: 'task-intake',
+                  model: 'vtid-01149',
+                  intake_active: true,
+                  next_question: answerResult.next_question
+                },
+                threadId,
+                messageId: randomUUID(),
+                createdAt
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // Check if this message indicates task creation intent and start intake
+    // Only if not already in intake mode
+    // Skip if explicit /task command (that goes through legacy flow for backwards compatibility)
+    const isSlashTask = rawMessage.trim().toLowerCase().startsWith('/task ');
+
+    if (!isSlashTask && !hasActiveIntake(threadId) && detectTaskCreationIntent(rawMessage)) {
+      console.log(`[VTID-01149] Task creation intent detected in Operator Console, starting intake`);
+
+      await startIntake({
+        sessionId: threadId,
+        surface: 'operator',
+        tenant: 'vitana'
+      });
+
+      const startMessage = generateIntakeStartMessage();
+
+      // Log the intake start event
+      await ingestChatMessageEvent({
+        threadId,
+        role: 'assistant',
+        mode: mode as OperatorChatMode,
+        message: startMessage,
+        metadata: { intake_active: true, next_question: 'spec' }
+      });
+
+      return res.status(200).json({
+        ok: true,
+        reply: startMessage,
+        attachments: [],
+        oasis_ref: `OASIS-INTAKE-${requestId.slice(0, 8).toUpperCase()}`,
+        meta: {
+          provider: 'task-intake',
+          model: 'vtid-01149',
+          intake_active: true,
+          next_question: 'spec'
+        },
+        threadId,
+        messageId: randomUUID(),
+        createdAt
+      });
+    }
+
+    // VTID-0532: Task detection logic (legacy path for /task command)
     // A message is treated as a task request if:
     // - mode === 'task', OR
     // - message starts with '/task ' (case-insensitive, leading spaces allowed)
-    const rawMessage = message ?? '';
-    const isSlashTask = rawMessage.trim().toLowerCase().startsWith('/task ');
+    // Note: rawMessage and isSlashTask already defined above in VTID-01149 section
     const isTaskRequest = mode === 'task' || isSlashTask;
 
     // VTID-0532: Extract raw description for task
