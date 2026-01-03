@@ -451,27 +451,30 @@ export async function writeDevMemoryItem(params: {
 function classifyDevCategory(content: string): string {
   const lower = content.toLowerCase();
 
-  // VTID-01109 rev2: Personal identity keywords - FIXED REGEX
-  // Fixed: removed trailing spaces from patterns, added German ß/ss variants
-  // Added: more natural language patterns for name introduction
+  // VTID-01109 rev2 + VTID-DEBUG-05: Personal identity keywords
+  // VTID-DEBUG-05: Removed overly broad patterns that caused false positives:
+  // - "/\bi am\b/" matched any "I am X" including "I am here"
+  // - "/\bi'm\b/" matched any "I'm X"
+  // - "/\bich bin\b/" matched "ich bin da" (I'm here)
+  // Now uses more specific patterns for actual name introductions
   const personalPatterns = [
-    // English name patterns
+    // English name patterns - specific to name introductions
     /\bmy name\b/i,
     /\bmy name's\b/i,
-    /\bi am\b/i,
-    /\bi'm\b/i,
+    /\bmy name is\b/i,
+    /\bi am called\b/i,
     /\bcall me\b/i,
     /\byou can call me\b/i,
     /\bpeople call me\b/i,
     /\beveryone calls me\b/i,
     /\bi go by\b/i,
-    // German name patterns (with ß and ss variants for speech-to-text)
-    /\bich bin\b/i,
+    // German name patterns - specific to name introductions
     /\bich heiße\b/i,
     /\bich heisse\b/i,           // speech-to-text may convert ß to ss
-    /\bich bin der\b/i,
-    /\bich bin die\b/i,
-    /\bmein name\b/i,
+    /\bich bin der\b/i,          // "ich bin der Marco"
+    /\bich bin die\b/i,          // "ich bin die Maria"
+    /\bmein name ist\b/i,
+    /\bmein name lautet\b/i,
     /\bnenn mich\b/i,
     /\bnennen sie mich\b/i,
     /\bman nennt mich\b/i,
