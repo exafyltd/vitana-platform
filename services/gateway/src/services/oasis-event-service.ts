@@ -1524,4 +1524,165 @@ export const safetyGuardrailEvents = {
     }),
 };
 
+// =============================================================================
+// VTID-01144: D50 Positive Trajectory Reinforcement Event Types
+// =============================================================================
+
+/**
+ * VTID-01144: Positive Trajectory Reinforcement Event Types
+ * These are the event types for the D50 reinforcement engine.
+ */
+export const REINFORCEMENT_EVENT_TYPES = [
+  'd50.eligibility.checked',
+  'd50.reinforcement.generated',
+  'd50.reinforcement.delivered',
+  'd50.reinforcement.dismissed',
+  'd50.momentum.computed',
+  'd50.trajectory.detected'
+] as const;
+
+/**
+ * VTID-01144: Positive Trajectory Reinforcement Event Helpers
+ * Helper functions for emitting D50 reinforcement events.
+ */
+export const reinforcementEvents = {
+  /**
+   * Emit eligibility checked event
+   */
+  eligibilityChecked: (
+    trajectoryTypesChecked: string[],
+    eligibleCount: number,
+    totalSignalsDerived: number,
+    durationMs: number
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01144',
+      type: 'd50.eligibility.checked',
+      source: 'd50-reinforcement-engine',
+      status: 'success',
+      message: `Eligibility checked for ${trajectoryTypesChecked.length} trajectory types`,
+      payload: {
+        trajectory_types_checked: trajectoryTypesChecked,
+        eligible_count: eligibleCount,
+        total_signals_derived: totalSignalsDerived,
+        duration_ms: durationMs,
+        checked_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit reinforcement generated event
+   */
+  reinforcementGenerated: (
+    reinforcementId: string,
+    trajectoryType: string,
+    confidence: number,
+    daysSustained: number,
+    durationMs: number
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01144',
+      type: 'd50.reinforcement.generated',
+      source: 'd50-reinforcement-engine',
+      status: 'success',
+      message: `Reinforcement generated for ${trajectoryType}`,
+      payload: {
+        reinforcement_id: reinforcementId,
+        trajectory_type: trajectoryType,
+        confidence,
+        days_sustained: daysSustained,
+        duration_ms: durationMs,
+        generated_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit reinforcement delivered event
+   */
+  reinforcementDelivered: (
+    reinforcementId: string,
+    trajectoryType?: string
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01144',
+      type: 'd50.reinforcement.delivered',
+      source: 'd50-reinforcement-engine',
+      status: 'success',
+      message: `Reinforcement delivered`,
+      payload: {
+        reinforcement_id: reinforcementId,
+        trajectory_type: trajectoryType,
+        delivered_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit reinforcement dismissed event
+   */
+  reinforcementDismissed: (
+    reinforcementId: string,
+    reason: string
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01144',
+      type: 'd50.reinforcement.dismissed',
+      source: 'd50-reinforcement-engine',
+      status: 'info',
+      message: `Reinforcement dismissed`,
+      payload: {
+        reinforcement_id: reinforcementId,
+        reason,
+        dismissed_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit momentum computed event
+   */
+  momentumComputed: (
+    overallMomentum: string,
+    eligibleCount: number,
+    totalTrajectories: number,
+    durationMs: number
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01144',
+      type: 'd50.momentum.computed',
+      source: 'd50-reinforcement-engine',
+      status: 'success',
+      message: `Momentum state: ${overallMomentum}`,
+      payload: {
+        overall_momentum: overallMomentum,
+        eligible_count: eligibleCount,
+        total_trajectories: totalTrajectories,
+        duration_ms: durationMs,
+        computed_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit trajectory detected event
+   */
+  trajectoryDetected: (
+    trajectoryType: string,
+    daysSustained: number,
+    confidence: number,
+    isPositive: boolean
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01144',
+      type: 'd50.trajectory.detected',
+      source: 'd50-reinforcement-engine',
+      status: 'info',
+      message: `${isPositive ? 'Positive' : 'Neutral'} trajectory detected: ${trajectoryType}`,
+      payload: {
+        trajectory_type: trajectoryType,
+        days_sustained: daysSustained,
+        confidence,
+        is_positive: isPositive,
+        detected_at: new Date().toISOString(),
+      },
+    }),
+};
+
 export default cicdEvents;

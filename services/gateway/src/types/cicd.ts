@@ -359,7 +359,14 @@ export type CicdEventType =
   | 'd41.vulnerability.cleared'
   // VTID-01136: D42 Cross-Domain Context Fusion Events
   | 'd42.priorities.resolved'
-  | 'd42.priorities.failed';
+  | 'd42.priorities.failed'
+  // VTID-01144: D50 Positive Trajectory Reinforcement & Momentum Engine Events
+  | 'd50.eligibility.checked'
+  | 'd50.reinforcement.generated'
+  | 'd50.reinforcement.delivered'
+  | 'd50.reinforcement.dismissed'
+  | 'd50.momentum.computed'
+  | 'd50.trajectory.detected';
 
 export interface CicdOasisEvent {
   vtid: string;
