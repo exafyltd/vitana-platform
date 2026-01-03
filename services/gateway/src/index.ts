@@ -148,6 +148,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const longitudinalAdaptationRouter = require('./routes/longitudinal-adaptation').default;
   // VTID-01124: D40 Life Stage, Goals & Trajectory Awareness Engine
   const lifeStageAwarenessRouter = require('./routes/life-stage-awareness').default;
+  // VTID-01142: D48 Context-Aware Opportunity & Experience Surfacing Engine
+  const opportunitySurfacingRouter = require('./routes/opportunity-surfacing').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -418,6 +420,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01124: D40 Life Stage, Goals & Trajectory Awareness Engine
   mountRouterSync(app, '/api/v1/life-stage', lifeStageAwarenessRouter, { owner: 'life-stage-awareness' });
+
+  // VTID-01142: D48 Context-Aware Opportunity & Experience Surfacing Engine
+  mountRouterSync(app, '/api/v1/opportunities', opportunitySurfacingRouter, { owner: 'opportunity-surfacing' });
 
   // VTID-01063: commandhub router (note: /board route REMOVED, use board-adapter)
   mountRouterSync(app, '/api/v1/commandhub', commandhub, { owner: 'commandhub' });
