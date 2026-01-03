@@ -282,7 +282,10 @@ export function shouldStoreInMemory(content: string, direction: 'user' | 'assist
     }
   }
 
-  // For assistant messages, skip generic acknowledgments
+  // For assistant messages, skip generic acknowledgments AND "I don't know" responses
+  // VTID-DEBUG-04: Critical fix - "I don't know" responses were being stored as facts
+  // and retrieved later, creating a self-poisoning loop where the LLM would repeat
+  // "I don't know X" even when X was stored in earlier entries
   if (direction === 'assistant') {
     const assistantTrivial = [
       /^(verstanden|understood|got it|alright|i see|ich verstehe)/i,
@@ -292,6 +295,35 @@ export function shouldStoreInMemory(content: string, direction: 'user' | 'assist
     for (const pattern of assistantTrivial) {
       if (pattern.test(lower)) {
         console.log(`[VTID-01109] Skipping trivial assistant response: "${lower.substring(0, 50)}..."`);
+        return false;
+      }
+    }
+
+    // VTID-DEBUG-04: Skip "I don't know" / "I don't have" responses
+    // These should NEVER be stored as they would override correct earlier information
+    const dontKnowPatterns = [
+      // German "I don't know/have" patterns
+      /habe ich (noch )?nicht/i,              // "habe ich noch nicht" / "habe ich nicht"
+      /weiß ich (noch )?nicht/i,              // "weiß ich noch nicht" / "weiß ich nicht"
+      /weiss ich (noch )?nicht/i,             // "weiss ich noch nicht" (ss variant)
+      /kenne ich (noch )?nicht/i,             // "kenne ich noch nicht"
+      /ist mir (noch )?nicht bekannt/i,       // "ist mir noch nicht bekannt"
+      /habe ich (leider )?keine/i,            // "habe ich keine Information"
+      /fehlt mir/i,                           // "diese Information fehlt mir"
+      /nicht (in meinem|in meiner) (gedächtnis|erinnerung)/i, // "nicht in meinem Gedächtnis"
+      /nicht gespeichert/i,                   // "noch nicht gespeichert"
+      // English "I don't know/have" patterns
+      /i (do not|don't|dont) (know|have|remember)/i,
+      /i haven't (got|stored|saved)/i,
+      /i (do not|don't) have (this|that|your|the) (information|info|data)/i,
+      /not (in my|stored in) memory/i,
+      /i('m| am) (not sure|uncertain|unsure)/i,
+      // Generic negation patterns for missing info
+      /noch nicht (parat|gespeichert|bekannt|vorhanden)/i,
+    ];
+    for (const pattern of dontKnowPatterns) {
+      if (pattern.test(lower)) {
+        console.log(`[VTID-DEBUG-04] Skipping "I don't know" assistant response - prevents memory poisoning: "${lower.substring(0, 80)}..."`);
         return false;
       }
     }
