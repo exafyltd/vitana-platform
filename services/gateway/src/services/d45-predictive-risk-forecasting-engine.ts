@@ -548,7 +548,7 @@ export async function computeForecast(
   try {
     const { supabase, error: clientError } = await getClientWithContext(authToken);
     if (clientError || !supabase) {
-      return { ok: false, windows: [], risk_windows: [], opportunity_windows: [], error: clientError || 'SERVICE_UNAVAILABLE' };
+      return { ok: false, windows: [], risk_windows: [], opportunity_windows: [], signals_analyzed: 0, patterns_matched: 0, error: clientError || 'SERVICE_UNAVAILABLE' };
     }
 
     // 1. Fetch trends from D43
@@ -729,6 +729,8 @@ export async function computeForecast(
       windows: [],
       risk_windows: [],
       opportunity_windows: [],
+      signals_analyzed: 0,
+      patterns_matched: 0,
       error: errorMessage
     };
   }
@@ -938,7 +940,8 @@ export async function getForecastContextForOrb(
     const result = await getWindows({
       status: ['upcoming', 'active'],
       include_past: false,
-      limit: 5
+      limit: 5,
+      offset: 0
     }, authToken);
 
     if (!result.ok || !result.windows || result.windows.length === 0) {
@@ -988,7 +991,8 @@ export async function isInRiskWindow(
       window_types: ['risk'],
       status: ['active'],
       include_past: false,
-      limit: 10
+      limit: 10,
+      offset: 0
     }, authToken);
 
     if (!result.ok || !result.windows) {
@@ -1024,7 +1028,8 @@ export async function isInOpportunityWindow(
       window_types: ['opportunity'],
       status: ['active'],
       include_past: false,
-      limit: 10
+      limit: 10,
+      offset: 0
     }, authToken);
 
     if (!result.ok || !result.windows) {
