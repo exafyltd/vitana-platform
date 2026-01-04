@@ -29,7 +29,7 @@ logger = logging.getLogger("mem0_service")
 
 @dataclass
 class Mem0Config:
-    """Mem0 configuration with Anthropic + local storage"""
+    """Mem0 configuration with Anthropic + Qdrant Cloud storage"""
 
     # LLM config
     anthropic_api_key: str
@@ -38,8 +38,12 @@ class Mem0Config:
     # Embedding config
     embedding_model: str = "all-MiniLM-L6-v2"
 
-    # Storage paths
-    qdrant_path: str = "/tmp/qdrant"
+    # Qdrant Cloud config (preferred) or local path (fallback)
+    qdrant_url: Optional[str] = None
+    qdrant_api_key: Optional[str] = None
+    qdrant_path: str = "/tmp/qdrant"  # Fallback for local dev
+
+    # History storage
     history_db_path: str = "~/.mem0/history.db"
 
     def to_mem0_config(self) -> Dict[str, Any]:
@@ -47,6 +51,21 @@ class Mem0Config:
         # Expand user path for history db
         history_path = os.path.expanduser(self.history_db_path)
         Path(history_path).parent.mkdir(parents=True, exist_ok=True)
+
+        # Build Qdrant config - prefer cloud URL if available
+        if self.qdrant_url and self.qdrant_api_key:
+            qdrant_config = {
+                "url": self.qdrant_url,
+                "api_key": self.qdrant_api_key,
+                "embedding_model_dims": 384,  # all-MiniLM-L6-v2 dimension
+            }
+            logger.info(f"Using Qdrant Cloud: {self.qdrant_url[:50]}...")
+        else:
+            qdrant_config = {
+                "path": self.qdrant_path,
+                "embedding_model_dims": 384,  # all-MiniLM-L6-v2 dimension
+            }
+            logger.info(f"Using local Qdrant: {self.qdrant_path}")
 
         return {
             "llm": {
@@ -64,10 +83,7 @@ class Mem0Config:
             },
             "vector_store": {
                 "provider": "qdrant",
-                "config": {
-                    "path": self.qdrant_path,
-                    "embedding_model_dims": 384,  # all-MiniLM-L6-v2 dimension
-                },
+                "config": qdrant_config,
             },
             "history_store": {
                 "provider": "sqlite",
@@ -190,8 +206,14 @@ class OrbMemoryService:
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY environment variable required")
 
+        # Qdrant Cloud config (preferred for persistence)
+        qdrant_url = os.environ.get("QDRANT_URL")
+        qdrant_api_key = os.environ.get("QDRANT_API_KEY")
+
         return Mem0Config(
             anthropic_api_key=api_key,
+            qdrant_url=qdrant_url,
+            qdrant_api_key=qdrant_api_key,
             qdrant_path=os.environ.get("MEM0_QDRANT_PATH", "/tmp/qdrant"),
             history_db_path=os.environ.get("MEM0_HISTORY_PATH", "~/.mem0/history.db"),
         )
@@ -211,10 +233,14 @@ class OrbMemoryService:
         config = self._get_config()
         mem0_config = config.to_mem0_config()
 
-        logger.info("Initializing Mem0 with Anthropic + local storage")
+        storage_type = "Qdrant Cloud" if config.qdrant_url else "local Qdrant"
+        logger.info(f"Initializing Mem0 with Anthropic + {storage_type}")
         logger.info(f"  LLM: {config.llm_model}")
         logger.info(f"  Embeddings: {config.embedding_model}")
-        logger.info(f"  Qdrant path: {config.qdrant_path}")
+        if config.qdrant_url:
+            logger.info(f"  Qdrant Cloud: {config.qdrant_url[:50]}...")
+        else:
+            logger.info(f"  Qdrant path: {config.qdrant_path}")
 
         self._memory = Memory.from_config(mem0_config)
         self._initialized = True
