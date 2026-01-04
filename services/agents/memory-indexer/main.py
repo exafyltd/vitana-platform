@@ -33,31 +33,6 @@ app = Flask(__name__)
 
 
 # ============================================================================
-# Eager Initialization - Pre-warm at startup for low latency
-# ============================================================================
-
-def warmup_memory_service():
-    """
-    Pre-warm the memory service at startup.
-    This loads the sentence-transformers model BEFORE any requests come in,
-    so the first request doesn't have to wait for model loading.
-    """
-    try:
-        from mem0_service import get_memory_service
-        logger.info("Pre-warming memory service at startup...")
-        service = get_memory_service()
-        service._ensure_initialized()
-        logger.info("Memory service pre-warmed successfully")
-    except Exception as e:
-        logger.error(f"Failed to pre-warm memory service: {e}")
-        # Don't crash - service will try again on first request
-
-
-# Run warmup at module load time (before gunicorn accepts requests)
-warmup_memory_service()
-
-
-# ============================================================================
 # Health & Introspection
 # ============================================================================
 
