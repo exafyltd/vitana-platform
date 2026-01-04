@@ -138,7 +138,7 @@ export async function writeToMemoryIndexer(
       vtid: 'VTID-01153',
       type: 'orb.memory_indexer.write',
       source: 'memory-indexer-client',
-      status: data.stored ? 'success' : 'filtered',
+      status: data.stored ? 'success' : 'info',
       message: `Memory write: ${data.decision}`,
       payload: {
         user_id: request.user_id,
