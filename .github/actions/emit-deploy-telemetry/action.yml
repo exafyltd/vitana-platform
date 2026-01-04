@@ -37,17 +37,18 @@ runs:
       shell: bash
       run: |
         EVENT_KIND="deploy.${{ inputs.event }}"
+        # VTID-01111: Status must be one of: info, warning, error, success
         EVENT_STATUS="info"
-        
+
         case "${{ inputs.event }}" in
           started)
-            EVENT_STATUS="in_progress"
+            EVENT_STATUS="info"
             ;;
           success)
             EVENT_STATUS="success"
             ;;
           failed)
-            EVENT_STATUS="failure"
+            EVENT_STATUS="error"
             ;;
         esac
         
@@ -65,26 +66,27 @@ runs:
         EOF
         )
         
+        # VTID-01111: Fixed payload to match /api/v1/events/ingest schema
+        # Field mapping: kind→type, title→message, meta→payload
         PAYLOAD=$(cat <<EOF
         {
           "vtid": "${{ inputs.vtid }}",
           "source": "gcp.deploy",
-          "kind": "$EVENT_KIND",
+          "type": "$EVENT_KIND",
           "status": "$EVENT_STATUS",
-          "title": "$TITLE",
-          "ref": "${{ github.ref_name }}",
-          "link": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-          "meta": $META_JSON
+          "message": "$TITLE",
+          "payload": $META_JSON
         }
         EOF
         )
-        
+
         echo "📡 Emitting event to OASIS..."
         echo "   Event: $EVENT_KIND"
         echo "   Status: $EVENT_STATUS"
         echo "   VTID: ${{ inputs.vtid }}"
-        
-        curl -sS -X POST "${{ inputs.gateway_url }}/api/v1/oasis/events/ingest" \
+
+        # VTID-01111: Fixed endpoint URL (was /api/v1/oasis/events/ingest, correct is /api/v1/events/ingest)
+        curl -sS -X POST "${{ inputs.gateway_url }}/api/v1/events/ingest" \
           -H "Content-Type: application/json" \
           -d "$PAYLOAD" || echo "⚠️  Failed to emit event (non-blocking)"
         
