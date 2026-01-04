@@ -149,12 +149,13 @@ interface WorkerEvidence {
 
 /**
  * VTID-01150: Configuration for evidence polling
+ * VTID-01150-fix: Made configurable via environment variables for testing
  */
 const EVIDENCE_POLL_CONFIG = {
-  /** Maximum time to wait for evidence (in milliseconds) - 30 minutes */
-  MAX_WAIT_MS: 30 * 60 * 1000,
-  /** Interval between evidence checks (in milliseconds) - 30 seconds */
-  POLL_INTERVAL_MS: 30 * 1000,
+  /** Maximum time to wait for evidence (in milliseconds) - default 30 minutes, configurable */
+  MAX_WAIT_MS: parseInt(process.env.VTID_EVIDENCE_MAX_WAIT_MS || '1800000', 10),
+  /** Interval between evidence checks (in milliseconds) - default 30 seconds */
+  POLL_INTERVAL_MS: parseInt(process.env.VTID_EVIDENCE_POLL_INTERVAL_MS || '30000', 10),
   /** Repository for work orders */
   REPOSITORY: 'exafyltd/vitana-platform',
   /** Branch naming convention */
@@ -1041,6 +1042,7 @@ router.post("/vtid", async (req: Request, res: Response) => {
  *
  * Runner behavior:
  * - Emits stage events
+ * - Updates task status on failure (so tasks don't stay stuck in "in_progress")
  * - Waits for evidence (worker stage)
  * - Defers final completion to CI/CD
  */
@@ -1051,12 +1053,17 @@ async function executeAsyncPipeline(ctx: ExecutionContext): Promise<void> {
     // Stage 1: Worker (with real execution via work order + evidence polling)
     const workerResult = await executeWorker(ctx);
     if (!workerResult.success) {
-      // VTID-01150: Do NOT mark terminal here - just emit failure event
-      // Terminal marking is handled by CI/CD gate
+      // VTID-01150: Update task status to "blocked" so it doesn't stay stuck
+      // Terminal marking is still deferred to CI/CD gate
+      await updateTaskStatus(ctx.vtid, "blocked", ctx.run_id, {
+        blocked_reason: workerResult.error,
+        blocked_stage: "worker",
+        blocked_at: new Date().toISOString(),
+      });
       await emitStageEvent(ctx, "failed", "error", `Execution failed at worker stage: ${workerResult.error}`, {
         failed_stage: "worker",
         error: workerResult.error,
-        note: "Terminal marking deferred to CI/CD gate",
+        note: "Task marked blocked - terminal marking deferred to CI/CD gate",
       });
       return;
     }
@@ -1064,10 +1071,15 @@ async function executeAsyncPipeline(ctx: ExecutionContext): Promise<void> {
     // Stage 2: Validator (pre-validation only - final validation by CI/CD)
     const validatorResult = await executeValidator(ctx);
     if (!validatorResult.success) {
+      await updateTaskStatus(ctx.vtid, "blocked", ctx.run_id, {
+        blocked_reason: validatorResult.error,
+        blocked_stage: "validator",
+        blocked_at: new Date().toISOString(),
+      });
       await emitStageEvent(ctx, "failed", "error", `Execution failed at validator stage: ${validatorResult.error}`, {
         failed_stage: "validator",
         error: validatorResult.error,
-        note: "Terminal marking deferred to CI/CD gate",
+        note: "Task marked blocked - terminal marking deferred to CI/CD gate",
       });
       return;
     }
@@ -1076,10 +1088,15 @@ async function executeAsyncPipeline(ctx: ExecutionContext): Promise<void> {
     if (ctx.automerge && ctx.head_branch) {
       const mergeResult = await executePrMerge(ctx);
       if (!mergeResult.success) {
+        await updateTaskStatus(ctx.vtid, "blocked", ctx.run_id, {
+          blocked_reason: mergeResult.error,
+          blocked_stage: "pr_merge",
+          blocked_at: new Date().toISOString(),
+        });
         await emitStageEvent(ctx, "failed", "error", `Execution failed at PR merge stage: ${mergeResult.error}`, {
           failed_stage: "pr_merge",
           error: mergeResult.error,
-          note: "Terminal marking deferred to CI/CD gate",
+          note: "Task marked blocked - terminal marking deferred to CI/CD gate",
         });
         return;
       }
@@ -1089,16 +1106,27 @@ async function executeAsyncPipeline(ctx: ExecutionContext): Promise<void> {
     // Note: The actual deploy is triggered by existing AUTO-DEPLOY workflow
     const deployResult = await executeDeployVerification(ctx);
     if (!deployResult.success) {
+      await updateTaskStatus(ctx.vtid, "blocked", ctx.run_id, {
+        blocked_reason: deployResult.error,
+        blocked_stage: "deploy_verification",
+        blocked_at: new Date().toISOString(),
+      });
       await emitStageEvent(ctx, "failed", "error", `Execution failed at deploy verification: ${deployResult.error}`, {
         failed_stage: "deploy_verification",
         error: deployResult.error,
-        note: "Terminal marking deferred to CI/CD gate",
+        note: "Task marked blocked - terminal marking deferred to CI/CD gate",
       });
       return;
     }
 
     // VTID-01150: All runner stages passed
+    // Update task status to "validating" to indicate waiting for CI/CD
     // Do NOT mark terminal here - wait for existing CI/CD terminal gate
+    await updateTaskStatus(ctx.vtid, "validating", ctx.run_id, {
+      runner_completed_at: new Date().toISOString(),
+      awaiting: "cicd_terminal_gate",
+    });
+
     // The CI/CD terminal gate (cicd-terminal-gate) will emit vtid.lifecycle.completed
     await emitStageEvent(ctx, "completed", "success", `Runner execution completed for ${ctx.vtid}`, {
       worker: "success",
@@ -1112,10 +1140,18 @@ async function executeAsyncPipeline(ctx: ExecutionContext): Promise<void> {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown pipeline error";
     console.error(`[VTID-01150] ${ctx.vtid}: Pipeline error:`, errorMessage);
+
+    // Update task status on unexpected errors
+    await updateTaskStatus(ctx.vtid, "blocked", ctx.run_id, {
+      blocked_reason: errorMessage,
+      blocked_stage: "unknown",
+      blocked_at: new Date().toISOString(),
+    });
+
     await emitStageEvent(ctx, "failed", "error", `Execution failed with error: ${errorMessage}`, {
       failed_stage: "unknown",
       error: errorMessage,
-      note: "Terminal marking deferred to CI/CD gate",
+      note: "Task marked blocked - terminal marking deferred to CI/CD gate",
     });
   }
 }
@@ -1453,7 +1489,7 @@ router.get("/health", (_req: Request, res: Response) => {
   res.status(200).json({
     ok: true,
     service: "execution-bridge",
-    version: "2.0.0", // VTID-01150: Updated to v2
+    version: "2.1.0", // VTID-01150: v2.1.0 fixes task status stuck in "in_progress"
     vtid: "VTID-01150", // VTID-01150: Updated reference
     timestamp: new Date().toISOString(),
     capabilities: {
@@ -1466,6 +1502,8 @@ router.get("/health", (_req: Request, res: Response) => {
       evidence_polling: true,
       evidence_submission: true,
       spec_mandatory: true,
+      // v2.1.0: Status updates on failure
+      status_updates_on_failure: true,
     },
     models: {
       planner: "Claude 3.5 Sonnet",
