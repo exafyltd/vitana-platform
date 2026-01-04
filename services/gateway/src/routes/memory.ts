@@ -71,7 +71,8 @@ const CATEGORY_KEYS = [
   'tasks',
   'products_services',
   'events_meetups',
-  'notes'
+  'notes',
+  'personal'  // VTID-DEBUG-03: Added for personal identity info
 ] as const;
 
 type CategoryKey = typeof CATEGORY_KEYS[number];
