@@ -413,7 +413,16 @@ export type CicdEventType =
   // VTID-01153: Memory Indexer Events
   | 'orb.memory_indexer.write'
   | 'orb.memory_indexer.search'
-  | 'orb.memory_indexer.context';
+  | 'orb.memory_indexer.context'
+  // VTID-01155: Gemini Live Multimodal + TTS Events
+  | 'vtid.live.session.start'
+  | 'vtid.live.session.stop'
+  | 'vtid.live.audio.in.chunk'
+  | 'vtid.live.video.in.frame'
+  | 'vtid.live.audio.out.chunk'
+  | 'vtid.tts.request'
+  | 'vtid.tts.success'
+  | 'vtid.tts.failure';
 
 export interface CicdOasisEvent {
   vtid: string;
