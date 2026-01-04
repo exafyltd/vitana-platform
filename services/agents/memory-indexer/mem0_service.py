@@ -244,7 +244,7 @@ class OrbMemoryService:
 
         self._memory = Memory.from_config(mem0_config)
         self._initialized = True
-        logger.info("Mem0 initialized successfully")
+        logger.info("Mem0 initialized (once per container lifetime)")
 
     def write(
         self,
