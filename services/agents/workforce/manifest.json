@@ -1,0 +1,15 @@
+{
+  "name": "workforce-subagents",
+  "vtid": "VTID-01163",
+  "vt_layer": "oasis",
+  "vt_module": "agents",
+  "description": "Worker Sub-Agents + Orchestrator - Deterministic routing for worker execution",
+  "version": "1.0.0",
+  "type": "agent-configuration",
+  "subagents": [
+    "worker-orchestrator",
+    "worker-frontend",
+    "worker-backend",
+    "worker-memory"
+  ]
+}
