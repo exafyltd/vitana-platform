@@ -620,6 +620,13 @@ async function executeWorker(ctx: ExecutionContext): Promise<{
       return { success: false, error: dispatchResult.error };
     }
 
+    // Step 1.5: NOW update status to "in_progress" - work has actually started
+    // Task moves from "scheduled" → "in_progress" only after work order is dispatched
+    await updateTaskStatus(ctx.vtid, "in_progress", ctx.run_id, {
+      work_started_at: new Date().toISOString(),
+      work_order_dispatched: true,
+    });
+
     // Step 2: Wait for evidence
     console.log(`[VTID-01150] ${ctx.vtid}: Waiting for evidence...`);
     const evidenceResult = await pollForEvidence(ctx.vtid, ctx.run_id);
@@ -992,8 +999,11 @@ router.post("/vtid", async (req: Request, res: Response) => {
     // Step 4: Emit execution requested event
     await emitStageEvent(ctx, "requested", "info", `VTID execution requested: ${vtid}`);
 
-    // Step 5: Update task status to in_progress
-    await updateTaskStatus(vtid, "in_progress", run_id);
+    // Step 5: Update task status to "scheduled" (queued for execution)
+    // Status moves to "in_progress" only when work actually starts in executeWorker
+    await updateTaskStatus(vtid, "scheduled", run_id, {
+      queued_at: new Date().toISOString(),
+    });
 
     // Step 6: Emit execution started event
     // VTID-01150: spec_present is always true here (we hard-failed above if missing)
@@ -1489,7 +1499,7 @@ router.get("/health", (_req: Request, res: Response) => {
   res.status(200).json({
     ok: true,
     service: "execution-bridge",
-    version: "2.1.0", // VTID-01150: v2.1.0 fixes task status stuck in "in_progress"
+    version: "2.2.0", // VTID-01150: v2.2.0 - proper scheduled→in_progress→blocked/validating flow
     vtid: "VTID-01150", // VTID-01150: Updated reference
     timestamp: new Date().toISOString(),
     capabilities: {
