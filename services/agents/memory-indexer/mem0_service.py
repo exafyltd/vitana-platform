@@ -66,6 +66,7 @@ class Mem0Config:
                 "provider": "qdrant",
                 "config": {
                     "path": self.qdrant_path,
+                    "embedding_model_dims": 384,  # all-MiniLM-L6-v2 dimension
                 },
             },
             "history_store": {
