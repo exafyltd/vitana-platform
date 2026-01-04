@@ -149,12 +149,13 @@ interface WorkerEvidence {
 
 /**
  * VTID-01150: Configuration for evidence polling
+ * VTID-01150-fix: Made configurable via environment variables for testing
  */
 const EVIDENCE_POLL_CONFIG = {
-  /** Maximum time to wait for evidence (in milliseconds) - 30 minutes */
-  MAX_WAIT_MS: 30 * 60 * 1000,
-  /** Interval between evidence checks (in milliseconds) - 30 seconds */
-  POLL_INTERVAL_MS: 30 * 1000,
+  /** Maximum time to wait for evidence (in milliseconds) - default 30 minutes, configurable */
+  MAX_WAIT_MS: parseInt(process.env.VTID_EVIDENCE_MAX_WAIT_MS || '1800000', 10),
+  /** Interval between evidence checks (in milliseconds) - default 30 seconds */
+  POLL_INTERVAL_MS: parseInt(process.env.VTID_EVIDENCE_POLL_INTERVAL_MS || '30000', 10),
   /** Repository for work orders */
   REPOSITORY: 'exafyltd/vitana-platform',
   /** Branch naming convention */
@@ -369,6 +370,81 @@ async function markTerminal(
   } catch (error) {
     console.error("[VTID-01150] Error marking terminal:", error);
     return false;
+  }
+}
+
+/**
+ * VTID-01150: Create a new task in vtid_ledger if it doesn't exist
+ * This ensures tasks appear on the board immediately in SCHEDULED column
+ */
+async function createTask(
+  vtid: string,
+  title: string,
+  run_id: string
+): Promise<OasisTask | null> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    console.error("[VTID-01150] Missing Supabase credentials for task creation");
+    return null;
+  }
+
+  try {
+    const timestamp = new Date().toISOString();
+    const payload = {
+      vtid,
+      title: title || vtid,
+      status: "scheduled",
+      is_terminal: false,
+      terminal_outcome: null,
+      created_at: timestamp,
+      updated_at: timestamp,
+      metadata: {
+        created_by: "vtid-runner-v2",
+        initial_run_id: run_id,
+        created_at: timestamp,
+      },
+    };
+
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/vtid_ledger`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: SUPABASE_SERVICE_ROLE,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+          Prefer: "return=representation",
+        },
+        body: JSON.stringify(payload),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[VTID-01150] Failed to create task: ${response.status} - ${errorText}`);
+      return null;
+    }
+
+    const data = (await response.json()) as any[];
+    if (data.length === 0) return null;
+
+    const row = data[0];
+    console.log(`[VTID-01150] ${vtid}: Task created in ledger with status=scheduled`);
+
+    return {
+      vtid: row.vtid,
+      title: row.title,
+      status: row.status,
+      layer: row.layer,
+      module: row.module,
+      is_terminal: row.is_terminal ?? false,
+      terminal_outcome: row.terminal_outcome ?? null,
+      metadata: row.metadata ?? {},
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    };
+  } catch (error) {
+    console.error("[VTID-01150] Error creating task:", error);
+    return null;
   }
 }
 
@@ -618,6 +694,13 @@ async function executeWorker(ctx: ExecutionContext): Promise<{
       });
       return { success: false, error: dispatchResult.error };
     }
+
+    // Step 1.5: NOW update status to "in_progress" - work has actually started
+    // Task moves from "scheduled" → "in_progress" only after work order is dispatched
+    await updateTaskStatus(ctx.vtid, "in_progress", ctx.run_id, {
+      work_started_at: new Date().toISOString(),
+      work_order_dispatched: true,
+    });
 
     // Step 2: Wait for evidence
     console.log(`[VTID-01150] ${ctx.vtid}: Waiting for evidence...`);
@@ -938,18 +1021,8 @@ router.post("/vtid", async (req: Request, res: Response) => {
       });
     }
 
-    // Step 2: Read task and spec from OASIS
-    const task = await fetchTask(vtid);
-    if (!task) {
-      console.error(`[VTID-01150] ${vtid}: Task not found in OASIS`);
-      return res.status(404).json({
-        ok: false,
-        vtid,
-        error: `Task ${vtid} not found in OASIS`,
-      });
-    }
-
     // VTID-01150: Spec loading is MANDATORY - HARD FAIL if missing
+    // Check spec FIRST because we need it to derive the task title
     const spec = await fetchSpec(vtid);
     if (!spec) {
       console.error(`[VTID-01150] ${vtid}: SPEC_MISSING - cannot proceed (HARD FAIL)`);
@@ -976,7 +1049,36 @@ router.post("/vtid", async (req: Request, res: Response) => {
       });
     }
 
-    // Step 3: Create execution context
+    // Step 2: Read task from OASIS - CREATE if doesn't exist
+    let task = await fetchTask(vtid);
+    if (!task) {
+      console.log(`[VTID-01150] ${vtid}: Task not found in ledger - creating with status=scheduled`);
+
+      // Extract title from spec content (first line or first heading)
+      let specTitle = vtid;
+      if (spec.content) {
+        const lines = spec.content.split('\n');
+        const firstHeading = lines.find((line: string) => line.startsWith('#'));
+        if (firstHeading) {
+          specTitle = firstHeading.replace(/^#+\s*/, '').trim();
+        } else if (lines[0]) {
+          specTitle = lines[0].substring(0, 100).trim();
+        }
+      }
+
+      // Create the task in the ledger - this makes it appear on the board immediately
+      task = await createTask(vtid, specTitle, run_id);
+      if (!task) {
+        console.error(`[VTID-01150] ${vtid}: Failed to create task in ledger`);
+        return res.status(500).json({
+          ok: false,
+          vtid,
+          error: 'Failed to create task in ledger',
+        });
+      }
+    }
+
+    // Step 3: Create execution context (spec already validated above)
     const ctx: ExecutionContext = {
       vtid,
       run_id,
@@ -991,8 +1093,11 @@ router.post("/vtid", async (req: Request, res: Response) => {
     // Step 4: Emit execution requested event
     await emitStageEvent(ctx, "requested", "info", `VTID execution requested: ${vtid}`);
 
-    // Step 5: Update task status to in_progress
-    await updateTaskStatus(vtid, "in_progress", run_id);
+    // Step 5: Update task status to "scheduled" (queued for execution)
+    // Status moves to "in_progress" only when work actually starts in executeWorker
+    await updateTaskStatus(vtid, "scheduled", run_id, {
+      queued_at: new Date().toISOString(),
+    });
 
     // Step 6: Emit execution started event
     // VTID-01150: spec_present is always true here (we hard-failed above if missing)
@@ -1041,6 +1146,7 @@ router.post("/vtid", async (req: Request, res: Response) => {
  *
  * Runner behavior:
  * - Emits stage events
+ * - Updates task status on failure (so tasks don't stay stuck in "in_progress")
  * - Waits for evidence (worker stage)
  * - Defers final completion to CI/CD
  */
@@ -1051,12 +1157,17 @@ async function executeAsyncPipeline(ctx: ExecutionContext): Promise<void> {
     // Stage 1: Worker (with real execution via work order + evidence polling)
     const workerResult = await executeWorker(ctx);
     if (!workerResult.success) {
-      // VTID-01150: Do NOT mark terminal here - just emit failure event
-      // Terminal marking is handled by CI/CD gate
+      // VTID-01150: Update task status to "blocked" so it doesn't stay stuck
+      // Terminal marking is still deferred to CI/CD gate
+      await updateTaskStatus(ctx.vtid, "blocked", ctx.run_id, {
+        blocked_reason: workerResult.error,
+        blocked_stage: "worker",
+        blocked_at: new Date().toISOString(),
+      });
       await emitStageEvent(ctx, "failed", "error", `Execution failed at worker stage: ${workerResult.error}`, {
         failed_stage: "worker",
         error: workerResult.error,
-        note: "Terminal marking deferred to CI/CD gate",
+        note: "Task marked blocked - terminal marking deferred to CI/CD gate",
       });
       return;
     }
@@ -1064,10 +1175,15 @@ async function executeAsyncPipeline(ctx: ExecutionContext): Promise<void> {
     // Stage 2: Validator (pre-validation only - final validation by CI/CD)
     const validatorResult = await executeValidator(ctx);
     if (!validatorResult.success) {
+      await updateTaskStatus(ctx.vtid, "blocked", ctx.run_id, {
+        blocked_reason: validatorResult.error,
+        blocked_stage: "validator",
+        blocked_at: new Date().toISOString(),
+      });
       await emitStageEvent(ctx, "failed", "error", `Execution failed at validator stage: ${validatorResult.error}`, {
         failed_stage: "validator",
         error: validatorResult.error,
-        note: "Terminal marking deferred to CI/CD gate",
+        note: "Task marked blocked - terminal marking deferred to CI/CD gate",
       });
       return;
     }
@@ -1076,10 +1192,15 @@ async function executeAsyncPipeline(ctx: ExecutionContext): Promise<void> {
     if (ctx.automerge && ctx.head_branch) {
       const mergeResult = await executePrMerge(ctx);
       if (!mergeResult.success) {
+        await updateTaskStatus(ctx.vtid, "blocked", ctx.run_id, {
+          blocked_reason: mergeResult.error,
+          blocked_stage: "pr_merge",
+          blocked_at: new Date().toISOString(),
+        });
         await emitStageEvent(ctx, "failed", "error", `Execution failed at PR merge stage: ${mergeResult.error}`, {
           failed_stage: "pr_merge",
           error: mergeResult.error,
-          note: "Terminal marking deferred to CI/CD gate",
+          note: "Task marked blocked - terminal marking deferred to CI/CD gate",
         });
         return;
       }
@@ -1089,16 +1210,27 @@ async function executeAsyncPipeline(ctx: ExecutionContext): Promise<void> {
     // Note: The actual deploy is triggered by existing AUTO-DEPLOY workflow
     const deployResult = await executeDeployVerification(ctx);
     if (!deployResult.success) {
+      await updateTaskStatus(ctx.vtid, "blocked", ctx.run_id, {
+        blocked_reason: deployResult.error,
+        blocked_stage: "deploy_verification",
+        blocked_at: new Date().toISOString(),
+      });
       await emitStageEvent(ctx, "failed", "error", `Execution failed at deploy verification: ${deployResult.error}`, {
         failed_stage: "deploy_verification",
         error: deployResult.error,
-        note: "Terminal marking deferred to CI/CD gate",
+        note: "Task marked blocked - terminal marking deferred to CI/CD gate",
       });
       return;
     }
 
     // VTID-01150: All runner stages passed
+    // Update task status to "validating" to indicate waiting for CI/CD
     // Do NOT mark terminal here - wait for existing CI/CD terminal gate
+    await updateTaskStatus(ctx.vtid, "validating", ctx.run_id, {
+      runner_completed_at: new Date().toISOString(),
+      awaiting: "cicd_terminal_gate",
+    });
+
     // The CI/CD terminal gate (cicd-terminal-gate) will emit vtid.lifecycle.completed
     await emitStageEvent(ctx, "completed", "success", `Runner execution completed for ${ctx.vtid}`, {
       worker: "success",
@@ -1112,10 +1244,18 @@ async function executeAsyncPipeline(ctx: ExecutionContext): Promise<void> {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown pipeline error";
     console.error(`[VTID-01150] ${ctx.vtid}: Pipeline error:`, errorMessage);
+
+    // Update task status on unexpected errors
+    await updateTaskStatus(ctx.vtid, "blocked", ctx.run_id, {
+      blocked_reason: errorMessage,
+      blocked_stage: "unknown",
+      blocked_at: new Date().toISOString(),
+    });
+
     await emitStageEvent(ctx, "failed", "error", `Execution failed with error: ${errorMessage}`, {
       failed_stage: "unknown",
       error: errorMessage,
-      note: "Terminal marking deferred to CI/CD gate",
+      note: "Task marked blocked - terminal marking deferred to CI/CD gate",
     });
   }
 }
@@ -1453,7 +1593,7 @@ router.get("/health", (_req: Request, res: Response) => {
   res.status(200).json({
     ok: true,
     service: "execution-bridge",
-    version: "2.0.0", // VTID-01150: Updated to v2
+    version: "2.3.0", // VTID-01150: v2.3.0 - auto-create task in ledger if doesn't exist
     vtid: "VTID-01150", // VTID-01150: Updated reference
     timestamp: new Date().toISOString(),
     capabilities: {
@@ -1466,6 +1606,10 @@ router.get("/health", (_req: Request, res: Response) => {
       evidence_polling: true,
       evidence_submission: true,
       spec_mandatory: true,
+      // v2.1.0: Status updates on failure
+      status_updates_on_failure: true,
+      // v2.3.0: Auto-create task in ledger if doesn't exist
+      auto_create_task: true,
     },
     models: {
       planner: "Claude 3.5 Sonnet",
