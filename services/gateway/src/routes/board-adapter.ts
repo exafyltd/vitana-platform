@@ -34,14 +34,14 @@ interface BoardItem {
  *   - `in_progress` → `IN_PROGRESS`
  *   - `pending` → `SCHEDULED`
  *   - `scheduled` → `SCHEDULED`
- *   - `allocated` → null (excluded - shell entry not yet filled in)
+ *   - `allocated` → `SCHEDULED` (VTID-01150: show allocated tasks so users can trigger execution)
  */
 function mapStatusToColumn(status: string): BoardColumn | null {
   const s = (status || '').toLowerCase();
-  // VTID-01111: 'allocated' is a shell entry from the allocator - exclude from board
-  // These are placeholder entries awaiting actual task data
+  // VTID-01150: 'allocated' tasks should appear in SCHEDULED column (not filtered out)
+  // These are placeholder entries that need to be visible so users can trigger execution
   if (s === 'allocated') {
-    return null;
+    return 'SCHEDULED';
   }
   if (s === 'completed' || s === 'done' || s === 'closed' || s === 'deployed' || s === 'merged' || s === 'complete' || s === 'failed' || s === 'error') {
     return 'COMPLETED';
