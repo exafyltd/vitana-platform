@@ -30,8 +30,8 @@ export type WorkerSubagent = 'worker-frontend' | 'worker-backend' | 'worker-memo
  * Change budget limits
  */
 export interface ChangeBudget {
-  max_files: number;
-  max_directories: number;
+  max_files?: number;
+  max_directories?: number;
 }
 
 /**

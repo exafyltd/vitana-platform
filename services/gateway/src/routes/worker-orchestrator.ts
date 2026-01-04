@@ -82,7 +82,7 @@ workerOrchestratorRouter.post('/api/v1/worker/orchestrator/route', async (req: R
       });
     }
 
-    const payload: WorkOrderPayload = validation.data;
+    const payload = validation.data as WorkOrderPayload;
     console.log(`[VTID-01163] Route request received for ${payload.vtid}`);
 
     const result = await routeWorkOrder(payload);
