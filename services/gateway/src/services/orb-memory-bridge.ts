@@ -282,7 +282,10 @@ export function shouldStoreInMemory(content: string, direction: 'user' | 'assist
     }
   }
 
-  // For assistant messages, skip generic acknowledgments
+  // For assistant messages, skip generic acknowledgments AND "I don't know" responses
+  // VTID-DEBUG-04: Critical fix - "I don't know" responses were being stored as facts
+  // and retrieved later, creating a self-poisoning loop where the LLM would repeat
+  // "I don't know X" even when X was stored in earlier entries
   if (direction === 'assistant') {
     const assistantTrivial = [
       /^(verstanden|understood|got it|alright|i see|ich verstehe)/i,
@@ -292,6 +295,38 @@ export function shouldStoreInMemory(content: string, direction: 'user' | 'assist
     for (const pattern of assistantTrivial) {
       if (pattern.test(lower)) {
         console.log(`[VTID-01109] Skipping trivial assistant response: "${lower.substring(0, 50)}..."`);
+        return false;
+      }
+    }
+
+    // VTID-DEBUG-04: Skip "I don't know" / "I don't have" responses
+    // These should NEVER be stored as they would override correct earlier information
+    const dontKnowPatterns = [
+      // German "I don't know/have" patterns - expanded to catch "gerade", "leider", etc.
+      /habe ich (noch |gerade |leider )?(nicht|keine)/i,  // "habe ich gerade nicht parat"
+      /weiß ich (noch |gerade |leider )?nicht/i,          // "weiß ich nicht"
+      /weiss ich (noch |gerade |leider )?nicht/i,         // "weiss ich nicht" (ss variant)
+      /kenne ich (noch |gerade |leider )?nicht/i,         // "kenne ich nicht"
+      /ist mir (noch |gerade )?nicht bekannt/i,           // "ist mir nicht bekannt"
+      /fehlt mir/i,                                        // "diese Information fehlt mir"
+      /nicht (in meinem|in meiner) (gedächtnis|erinnerung)/i, // "nicht in meinem Gedächtnis"
+      /nicht gespeichert/i,                               // "noch nicht gespeichert"
+      /nicht parat/i,                                     // "habe ich nicht parat" - explicit catch
+      // English "I don't know/have" patterns
+      /i (do not|don't|dont) (know|have|remember)/i,
+      /i haven't (got|stored|saved)/i,
+      /i (do not|don't) have (this|that|your|the) (information|info|data)/i,
+      /not (in my|stored in) memory/i,
+      /i('m| am) (not sure|uncertain|unsure)/i,
+      // Generic negation patterns for missing info
+      /(noch |gerade )?nicht (parat|gespeichert|bekannt|vorhanden)/i,
+      // "Can you tell me again" patterns (indicates LLM doesn't know)
+      /kannst du .*(noch ?mal|noch ?einmal|erneut|wieder) sagen/i,
+      /can you .*(again|once more)/i,
+    ];
+    for (const pattern of dontKnowPatterns) {
+      if (pattern.test(lower)) {
+        console.log(`[VTID-DEBUG-04] Skipping "I don't know" assistant response - prevents memory poisoning: "${lower.substring(0, 80)}..."`);
         return false;
       }
     }
@@ -416,27 +451,30 @@ export async function writeDevMemoryItem(params: {
 function classifyDevCategory(content: string): string {
   const lower = content.toLowerCase();
 
-  // VTID-01109 rev2: Personal identity keywords - FIXED REGEX
-  // Fixed: removed trailing spaces from patterns, added German ß/ss variants
-  // Added: more natural language patterns for name introduction
+  // VTID-01109 rev2 + VTID-DEBUG-05: Personal identity keywords
+  // VTID-DEBUG-05: Removed overly broad patterns that caused false positives:
+  // - "/\bi am\b/" matched any "I am X" including "I am here"
+  // - "/\bi'm\b/" matched any "I'm X"
+  // - "/\bich bin\b/" matched "ich bin da" (I'm here)
+  // Now uses more specific patterns for actual name introductions
   const personalPatterns = [
-    // English name patterns
+    // English name patterns - specific to name introductions
     /\bmy name\b/i,
     /\bmy name's\b/i,
-    /\bi am\b/i,
-    /\bi'm\b/i,
+    /\bmy name is\b/i,
+    /\bi am called\b/i,
     /\bcall me\b/i,
     /\byou can call me\b/i,
     /\bpeople call me\b/i,
     /\beveryone calls me\b/i,
     /\bi go by\b/i,
-    // German name patterns (with ß and ss variants for speech-to-text)
-    /\bich bin\b/i,
+    // German name patterns - specific to name introductions
     /\bich heiße\b/i,
     /\bich heisse\b/i,           // speech-to-text may convert ß to ss
-    /\bich bin der\b/i,
-    /\bich bin die\b/i,
-    /\bmein name\b/i,
+    /\bich bin der\b/i,          // "ich bin der Marco"
+    /\bich bin die\b/i,          // "ich bin die Maria"
+    /\bmein name ist\b/i,
+    /\bmein name lautet\b/i,
     /\bnenn mich\b/i,
     /\bnennen sie mich\b/i,
     /\bman nennt mich\b/i,
