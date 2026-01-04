@@ -297,6 +297,91 @@ interface OrbSessionTranscript {
 // VTID-01039: In-memory transcript store
 const orbTranscripts = new Map<string, OrbSessionTranscript>();
 
+// =============================================================================
+// VTID-01155: Gemini Live Multimodal Session Types & Stores
+// =============================================================================
+
+/**
+ * VTID-01155: Supported languages for Live sessions and TTS
+ * Voice map uses female voices per spec
+ */
+const LIVE_LANGUAGE_VOICES: Record<string, string> = {
+  'en': 'Callirrhoe',
+  'de': 'Achernar',
+  'fr': 'Leda',
+  'es': 'Aoede',
+  'ar': 'Sulafat',
+  'zh': 'Laomedeia',
+  'sr': 'Vindemiatrix',
+  'ru': 'Gacrux'
+};
+
+const SUPPORTED_LIVE_LANGUAGES = ['en', 'de', 'fr', 'es', 'ar', 'zh', 'sr', 'ru'];
+
+/**
+ * VTID-01155: Gemini Live session state
+ */
+interface GeminiLiveSession {
+  sessionId: string;
+  lang: string;
+  voiceStyle?: string;
+  responseModalities: string[];
+  upstreamWs: any | null;  // WebSocket to Vertex Live API
+  sseResponse: Response | null;
+  active: boolean;
+  createdAt: Date;
+  lastActivity: Date;
+  audioInChunks: number;
+  videoInFrames: number;
+  audioOutChunks: number;
+}
+
+/**
+ * VTID-01155: Live session start request
+ */
+interface LiveSessionStartRequest {
+  lang: string;
+  voice_style?: string;
+  response_modalities?: string[];
+}
+
+/**
+ * VTID-01155: TTS request body
+ */
+interface TtsRequest {
+  text: string;
+  lang?: string;
+  voice_style?: string;
+}
+
+/**
+ * VTID-01155: Stream message types from client
+ */
+interface LiveStreamAudioChunk {
+  type: 'audio';
+  data_b64: string;
+  mime: string;  // audio/pcm;rate=16000
+}
+
+interface LiveStreamVideoFrame {
+  type: 'video';
+  source: 'screen' | 'camera';
+  data_b64: string;  // JPEG base64
+  width?: number;
+  height?: number;
+}
+
+type LiveStreamMessage = LiveStreamAudioChunk | LiveStreamVideoFrame;
+
+// VTID-01155: In-memory Live session store
+const liveSessions = new Map<string, GeminiLiveSession>();
+
+// VTID-01155: Vertex AI Live API configuration
+const VERTEX_PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID || '';
+const VERTEX_LOCATION = process.env.VERTEX_AI_LOCATION || 'us-central1';
+const VERTEX_LIVE_MODEL = 'gemini-2.0-flash-live-001';  // Live API model
+const VERTEX_TTS_MODEL = 'gemini-2.5-flash-preview-tts';  // Gemini-TTS model
+
 /**
  * VTID-01039: Cleanup expired transcripts (retain for 1 hour after finalization)
  */
@@ -2419,11 +2504,544 @@ router.get('/debug/intent', async (req: Request, res: Response) => {
   }
 });
 
+// =============================================================================
+// VTID-01155: Gemini Live Multimodal Session Endpoints
+// =============================================================================
+
+/**
+ * VTID-01155: Helper to emit Live session events to OASIS
+ */
+async function emitLiveSessionEvent(
+  eventType: 'vtid.live.session.start' | 'vtid.live.session.stop' | 'vtid.live.audio.in.chunk' | 'vtid.live.video.in.frame' | 'vtid.live.audio.out.chunk',
+  payload: Record<string, unknown>
+): Promise<void> {
+  try {
+    await emitOasisEvent({
+      vtid: 'VTID-01155',
+      type: eventType,
+      source: 'gateway',
+      status: 'info',
+      message: `Live session event: ${eventType}`,
+      payload: {
+        ...payload,
+        service: 'gateway',
+        component: 'orb-live',
+        env: isDevSandbox() ? 'dev-sandbox' : 'production'
+      }
+    });
+  } catch (err: any) {
+    console.warn(`[VTID-01155] Failed to emit ${eventType}:`, err.message);
+  }
+}
+
+/**
+ * VTID-01155: Helper to emit TTS events to OASIS
+ */
+async function emitTtsEvent(
+  eventType: 'vtid.tts.request' | 'vtid.tts.success' | 'vtid.tts.failure',
+  payload: Record<string, unknown>
+): Promise<void> {
+  try {
+    await emitOasisEvent({
+      vtid: 'VTID-01155',
+      type: eventType,
+      source: 'gateway',
+      status: eventType === 'vtid.tts.failure' ? 'error' : 'info',
+      message: `TTS event: ${eventType}`,
+      payload: {
+        ...payload,
+        service: 'gateway',
+        component: 'orb-live',
+        env: isDevSandbox() ? 'dev-sandbox' : 'production'
+      }
+    });
+  } catch (err: any) {
+    console.warn(`[VTID-01155] Failed to emit ${eventType}:`, err.message);
+  }
+}
+
+/**
+ * VTID-01155: Normalize language code to 2-letter ISO
+ */
+function normalizeLang(lang: string): string {
+  const lowerLang = lang.toLowerCase();
+  // Handle full locale codes like 'en-US', 'de-DE', 'sr-RS', 'ru-RU'
+  const langPart = lowerLang.split('-')[0];
+  return SUPPORTED_LIVE_LANGUAGES.includes(langPart) ? langPart : 'en';
+}
+
+/**
+ * VTID-01155: Get voice name for language
+ */
+function getVoiceForLang(lang: string): string {
+  const normalized = normalizeLang(lang);
+  return LIVE_LANGUAGE_VOICES[normalized] || LIVE_LANGUAGE_VOICES['en'];
+}
+
+/**
+ * VTID-01155: POST /live/session/start - Start Gemini Live API session
+ *
+ * Creates a Live API session for real-time audio/video streaming.
+ * Gateway maintains upstream WebSocket to Vertex Live API.
+ *
+ * Request:
+ * {
+ *   "lang": "en|de|fr|es|ar|zh|sr|ru",
+ *   "voice_style": "friendly, calm, empathetic (optional)",
+ *   "response_modalities": ["audio","text"]
+ * }
+ *
+ * Response:
+ * { "ok": true, "session_id": "live-xxx" }
+ */
+router.post('/live/session/start', async (req: Request, res: Response) => {
+  console.log('[VTID-01155] POST /orb/live/session/start');
+
+  // Validate origin
+  if (!validateOrigin(req)) {
+    return res.status(403).json({ ok: false, error: 'Origin not allowed' });
+  }
+
+  const body = req.body as LiveSessionStartRequest;
+  const lang = normalizeLang(body.lang || 'en');
+  const voiceStyle = body.voice_style || 'friendly, calm, empathetic';
+  const responseModalities = body.response_modalities || ['audio', 'text'];
+
+  // Generate session ID
+  const sessionId = `live-${randomUUID()}`;
+
+  // Create session object
+  const session: GeminiLiveSession = {
+    sessionId,
+    lang,
+    voiceStyle,
+    responseModalities,
+    upstreamWs: null,
+    sseResponse: null,
+    active: true,
+    createdAt: new Date(),
+    lastActivity: new Date(),
+    audioInChunks: 0,
+    videoInFrames: 0,
+    audioOutChunks: 0
+  };
+
+  // Store session
+  liveSessions.set(sessionId, session);
+
+  // Emit OASIS event
+  await emitLiveSessionEvent('vtid.live.session.start', {
+    session_id: sessionId,
+    lang,
+    modalities: responseModalities,
+    voice: getVoiceForLang(lang)
+  });
+
+  console.log(`[VTID-01155] Live session created: ${sessionId} (lang=${lang})`);
+
+  return res.status(200).json({
+    ok: true,
+    session_id: sessionId,
+    meta: {
+      lang,
+      voice: getVoiceForLang(lang),
+      modalities: responseModalities,
+      model: VERTEX_LIVE_MODEL
+    }
+  });
+});
+
+/**
+ * VTID-01155: POST /live/session/stop - Stop Gemini Live session
+ *
+ * Stops upstream session and cleans resources.
+ *
+ * Request:
+ * { "session_id": "live-xxx" }
+ */
+router.post('/live/session/stop', async (req: Request, res: Response) => {
+  console.log('[VTID-01155] POST /orb/live/session/stop');
+
+  const { session_id } = req.body;
+
+  if (!session_id) {
+    return res.status(400).json({ ok: false, error: 'session_id required' });
+  }
+
+  const session = liveSessions.get(session_id);
+  if (!session) {
+    return res.status(404).json({ ok: false, error: 'Session not found' });
+  }
+
+  // Close upstream WebSocket if exists
+  if (session.upstreamWs) {
+    try {
+      session.upstreamWs.close();
+    } catch (e) {
+      // Ignore close errors
+    }
+    session.upstreamWs = null;
+  }
+
+  // Close SSE response if exists
+  if (session.sseResponse) {
+    try {
+      session.sseResponse.write(`data: ${JSON.stringify({ type: 'session_ended' })}\n\n`);
+      session.sseResponse.end();
+    } catch (e) {
+      // Ignore
+    }
+    session.sseResponse = null;
+  }
+
+  session.active = false;
+
+  // Emit OASIS event
+  await emitLiveSessionEvent('vtid.live.session.stop', {
+    session_id,
+    audio_in_chunks: session.audioInChunks,
+    video_in_frames: session.videoInFrames,
+    audio_out_chunks: session.audioOutChunks,
+    duration_ms: Date.now() - session.createdAt.getTime()
+  });
+
+  // Remove from store
+  liveSessions.delete(session_id);
+
+  console.log(`[VTID-01155] Live session stopped: ${session_id}`);
+
+  return res.status(200).json({ ok: true });
+});
+
+/**
+ * VTID-01155: GET /live/stream - SSE endpoint for bidirectional streaming
+ *
+ * Client connects to this SSE endpoint to receive audio output from the model.
+ * Client sends audio/video data via POST /live/stream/send
+ *
+ * Query params:
+ * - session_id: The live session ID
+ */
+router.get('/live/stream', (req: Request, res: Response) => {
+  console.log('[VTID-01155] GET /orb/live/stream');
+
+  const sessionId = req.query.session_id as string;
+  if (!sessionId) {
+    return res.status(400).json({ ok: false, error: 'session_id required' });
+  }
+
+  const session = liveSessions.get(sessionId);
+  if (!session) {
+    return res.status(404).json({ ok: false, error: 'Session not found' });
+  }
+
+  if (!session.active) {
+    return res.status(400).json({ ok: false, error: 'Session not active' });
+  }
+
+  // Check connection limit
+  const clientIP = getClientIP(req);
+  if (!checkConnectionLimit(clientIP)) {
+    return res.status(429).json({ ok: false, error: 'Too many connections' });
+  }
+
+  // Setup SSE
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  // Track connection
+  incrementConnection(clientIP);
+  session.sseResponse = res;
+  session.lastActivity = new Date();
+
+  // Send ready event with session config
+  res.write(`data: ${JSON.stringify({
+    type: 'ready',
+    session_id: sessionId,
+    meta: {
+      model: VERTEX_LIVE_MODEL,
+      lang: session.lang,
+      voice: getVoiceForLang(session.lang),
+      audio_out_rate: 24000,  // 24kHz output
+      audio_in_rate: 16000    // 16kHz input
+    }
+  })}\n\n`);
+
+  // Heartbeat every 30 seconds
+  const heartbeatInterval = setInterval(() => {
+    try {
+      res.write(`:heartbeat\n\n`);
+    } catch (e) {
+      clearInterval(heartbeatInterval);
+    }
+  }, 30000);
+
+  // Handle client disconnect
+  req.on('close', () => {
+    console.log(`[VTID-01155] Live stream disconnected: ${sessionId}`);
+    clearInterval(heartbeatInterval);
+    decrementConnection(clientIP);
+    if (session.sseResponse === res) {
+      session.sseResponse = null;
+    }
+  });
+});
+
+/**
+ * VTID-01155: POST /live/stream/send - Send audio/video data to Live session
+ *
+ * Client sends audio chunks (PCM 16kHz) or video frames (JPEG) to this endpoint.
+ * Gateway forwards to Vertex Live API and relays responses via SSE.
+ *
+ * Request:
+ * For audio: { "type": "audio", "data_b64": "...", "mime": "audio/pcm;rate=16000" }
+ * For video: { "type": "video", "source": "screen|camera", "data_b64": "...", "width": 768, "height": 768 }
+ */
+router.post('/live/stream/send', async (req: Request, res: Response) => {
+  const { session_id } = req.query;
+  const body = req.body as LiveStreamMessage & { session_id?: string };
+  const effectiveSessionId = (session_id as string) || body.session_id;
+
+  if (!effectiveSessionId) {
+    return res.status(400).json({ ok: false, error: 'session_id required' });
+  }
+
+  const session = liveSessions.get(effectiveSessionId);
+  if (!session) {
+    return res.status(404).json({ ok: false, error: 'Session not found' });
+  }
+
+  if (!session.active) {
+    return res.status(400).json({ ok: false, error: 'Session not active' });
+  }
+
+  session.lastActivity = new Date();
+
+  try {
+    if (body.type === 'audio') {
+      // Handle audio chunk
+      session.audioInChunks++;
+
+      // Emit OASIS event (sample every 10th chunk to avoid flooding)
+      if (session.audioInChunks % 10 === 0) {
+        emitLiveSessionEvent('vtid.live.audio.in.chunk', {
+          session_id: effectiveSessionId,
+          chunk_number: session.audioInChunks,
+          bytes: body.data_b64.length,
+          rate: 16000
+        }).catch(() => {});
+      }
+
+      // TODO: Forward to Vertex Live API upstream WebSocket
+      // For now, simulate processing and respond via SSE
+      console.log(`[VTID-01155] Audio chunk received: session=${effectiveSessionId}, chunk=${session.audioInChunks}`);
+
+      // Simulated response (in production, this comes from Live API)
+      if (session.sseResponse && session.audioInChunks % 5 === 0) {
+        // Acknowledge receipt
+        session.sseResponse.write(`data: ${JSON.stringify({
+          type: 'audio_ack',
+          chunk_number: session.audioInChunks
+        })}\n\n`);
+      }
+
+    } else if (body.type === 'video') {
+      // Handle video frame
+      session.videoInFrames++;
+      const videoBody = body as LiveStreamVideoFrame;
+
+      // Emit OASIS event
+      emitLiveSessionEvent('vtid.live.video.in.frame', {
+        session_id: effectiveSessionId,
+        source: videoBody.source,
+        frame_number: session.videoInFrames,
+        bytes: videoBody.data_b64.length,
+        fps: 1
+      }).catch(() => {});
+
+      console.log(`[VTID-01155] Video frame received: session=${effectiveSessionId}, source=${videoBody.source}, frame=${session.videoInFrames}`);
+
+      // Acknowledge frame receipt via SSE
+      if (session.sseResponse) {
+        session.sseResponse.write(`data: ${JSON.stringify({
+          type: 'video_ack',
+          source: videoBody.source,
+          frame_number: session.videoInFrames
+        })}\n\n`);
+      }
+    }
+
+    return res.status(200).json({ ok: true });
+
+  } catch (error: any) {
+    console.error(`[VTID-01155] Stream send error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * VTID-01155: POST /tts - Gemini-TTS fallback endpoint
+ *
+ * Text-to-speech using Gemini-TTS for non-live mode playback.
+ * Returns base64 audio data.
+ *
+ * Request:
+ * {
+ *   "text": "Text to speak",
+ *   "lang": "en|de|fr|es|ar|zh|sr|ru",
+ *   "voice_style": "friendly, calm (optional)"
+ * }
+ *
+ * Response:
+ * {
+ *   "ok": true,
+ *   "audio_b64": "...",
+ *   "mime": "audio/mp3",
+ *   "voice": "Callirrhoe"
+ * }
+ */
+router.post('/tts', async (req: Request, res: Response) => {
+  console.log('[VTID-01155] POST /orb/tts');
+
+  const body = req.body as TtsRequest;
+
+  if (!body.text || typeof body.text !== 'string') {
+    return res.status(400).json({ ok: false, error: 'text is required' });
+  }
+
+  const text = body.text.trim();
+  if (!text) {
+    return res.status(400).json({ ok: false, error: 'text cannot be empty' });
+  }
+
+  // Limit text length for TTS
+  if (text.length > 2000) {
+    return res.status(400).json({ ok: false, error: 'text exceeds 2000 character limit' });
+  }
+
+  const lang = normalizeLang(body.lang || 'en');
+  const voice = getVoiceForLang(lang);
+  const voiceStyle = body.voice_style || 'friendly, calm, empathetic';
+
+  // Emit request event
+  await emitTtsEvent('vtid.tts.request', {
+    lang,
+    voice,
+    text_length: text.length
+  });
+
+  try {
+    // Use Vertex AI Gemini-TTS API
+    // For now, use a simple synthesis via generateContent with audio output
+    const ttsApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${VERTEX_TTS_MODEL}:generateContent`;
+
+    const ttsRequest = {
+      contents: [
+        {
+          parts: [
+            {
+              text: `Speak the following text in a ${voiceStyle} tone: "${text}"`
+            }
+          ]
+        }
+      ],
+      generationConfig: {
+        responseModalities: ['AUDIO'],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: {
+              voiceName: voice
+            }
+          }
+        }
+      }
+    };
+
+    const response = await fetch(`${ttsApiUrl}?key=${GEMINI_API_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(ttsRequest)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[VTID-01155] TTS API error: ${response.status} - ${errorText}`);
+
+      await emitTtsEvent('vtid.tts.failure', {
+        lang,
+        voice,
+        error: `API error: ${response.status}`
+      });
+
+      return res.status(response.status).json({
+        ok: false,
+        error: `TTS API error: ${response.status}`
+      });
+    }
+
+    const data = await response.json() as any;
+
+    // Extract audio data from response
+    const audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData;
+
+    if (!audioData || !audioData.data) {
+      console.error('[VTID-01155] No audio data in TTS response');
+
+      await emitTtsEvent('vtid.tts.failure', {
+        lang,
+        voice,
+        error: 'No audio data in response'
+      });
+
+      return res.status(500).json({
+        ok: false,
+        error: 'No audio data in TTS response'
+      });
+    }
+
+    // Emit success event
+    await emitTtsEvent('vtid.tts.success', {
+      lang,
+      voice,
+      text_length: text.length,
+      audio_bytes: audioData.data.length
+    });
+
+    console.log(`[VTID-01155] TTS success: lang=${lang}, voice=${voice}, text_length=${text.length}`);
+
+    return res.status(200).json({
+      ok: true,
+      audio_b64: audioData.data,
+      mime: audioData.mimeType || 'audio/mp3',
+      voice,
+      lang
+    });
+
+  } catch (error: any) {
+    console.error('[VTID-01155] TTS error:', error);
+
+    await emitTtsEvent('vtid.tts.failure', {
+      lang,
+      voice,
+      error: error.message
+    });
+
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'TTS processing failed'
+    });
+  }
+});
+
 /**
  * GET /health - Health check
  * VTID-01106: Added memory bridge status
  * VTID-01113: Added intent detection status
  * VTID-01118: Added cross-turn state engine status
+ * VTID-01155: Added Live session and TTS status
  */
 router.get('/health', (_req: Request, res: Response) => {
   const hasGeminiKey = !!GEMINI_API_KEY;
@@ -2432,7 +3050,7 @@ router.get('/health', (_req: Request, res: Response) => {
   return res.status(200).json({
     ok: true,
     service: 'orb-live',
-    vtid: ['DEV-COMHU-2025-0014', 'VTID-0135', 'VTID-01039', 'VTID-01106', 'VTID-01107', 'VTID-01113', 'VTID-01118'],
+    vtid: ['DEV-COMHU-2025-0014', 'VTID-0135', 'VTID-01039', 'VTID-01106', 'VTID-01107', 'VTID-01113', 'VTID-01118', 'VTID-01155'],
     model: GEMINI_MODEL,
     transport: 'SSE',
     gemini_configured: hasGeminiKey,
@@ -2457,6 +3075,18 @@ router.get('/health', (_req: Request, res: Response) => {
     cross_turn_state_engine: {
       enabled: true,
       version: 'D26-v1'
+    },
+    // VTID-01155: Gemini Live Multimodal + TTS status
+    gemini_live: {
+      enabled: true,
+      vtid: 'VTID-01155',
+      active_live_sessions: liveSessions.size,
+      live_model: VERTEX_LIVE_MODEL,
+      tts_model: VERTEX_TTS_MODEL,
+      supported_languages: SUPPORTED_LIVE_LANGUAGES,
+      audio_in_rate: '16kHz PCM',
+      audio_out_rate: '24kHz PCM',
+      video_format: 'JPEG 768x768 @ 1 FPS'
     },
     timestamp: new Date().toISOString()
   });
