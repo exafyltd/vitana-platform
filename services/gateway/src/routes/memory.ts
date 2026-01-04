@@ -71,7 +71,8 @@ const CATEGORY_KEYS = [
   'tasks',
   'products_services',
   'events_meetups',
-  'notes'
+  'notes',
+  'personal'  // VTID-DEBUG-03: Added for personal identity info
 ] as const;
 
 type CategoryKey = typeof CATEGORY_KEYS[number];
@@ -489,13 +490,46 @@ async function emitConfidenceEvent(
  * Maps message content → category_key based on keyword matching.
  * Order matters - first match wins.
  *
+ * VTID-DEBUG-03: Added 'personal' category for identity info (name, birthday, hometown)
+ * and German keywords for multi-language support.
+ *
  * @param content - The text content to classify
  * @returns The classified category key
  */
 export function classifyCategory(content: string): CategoryKey {
   const lowerContent = content.toLowerCase();
 
-  // Health-related keywords (highest priority for personal health data)
+  // VTID-DEBUG-03: Personal identity keywords (HIGHEST PRIORITY)
+  // This catches name, birthday, hometown, residence info in EN/DE
+  const personalKeywords = [
+    // English name patterns
+    'my name', 'i am called', 'call me', 'i\'m called',
+    // German name patterns
+    'ich heiße', 'ich heisse', 'mein name', 'ich bin der', 'ich bin die',
+    'nenn mich', 'man nennt mich',
+    // Birthday/age patterns (EN)
+    'my birthday', 'born on', 'i was born', 'years old', 'my age',
+    // Birthday/age patterns (DE)
+    'geburtstag', 'geboren', 'jahre alt', 'mein alter',
+    // Hometown/residence patterns (EN)
+    'hometown', 'home town', 'i\'m from', 'i am from', 'i come from',
+    'i live in', 'i reside', 'my residence', 'where i live',
+    // Hometown/residence patterns (DE)
+    'heimatstadt', 'ich komme aus', 'ich wohne', 'wohnort', 'ich lebe in',
+    // Summer/vacation residence
+    'spend summer', 'summer in', 'vacation home',
+    'sommer auf', 'sommer in', 'urlaub',
+    // Company/work identity
+    'my company', 'my firm', 'i work at', 'i own',
+    'meine firma', 'ich arbeite bei'
+  ];
+  for (const keyword of personalKeywords) {
+    if (lowerContent.includes(keyword)) {
+      return 'personal';
+    }
+  }
+
+  // Health-related keywords (high priority for personal health data)
   const healthKeywords = [
     'lab', 'biomarker', 'blood', 'genomics', 'sleep', 'steps', 'hrv',
     'heart rate', 'diet', 'nutrition', 'hydration', 'workout', 'exercise',
@@ -509,11 +543,17 @@ export function classifyCategory(content: string): CategoryKey {
     }
   }
 
-  // Relationships keywords
+  // Relationships keywords (EN + DE)
   const relationshipsKeywords = [
+    // English
     'wife', 'husband', 'partner', 'friend', 'relationship', 'dating',
     'match', 'family', 'mother', 'father', 'sister', 'brother', 'child',
-    'son', 'daughter', 'parent', 'spouse', 'boyfriend', 'girlfriend'
+    'son', 'daughter', 'parent', 'spouse', 'boyfriend', 'girlfriend',
+    'fiancé', 'fiancee', 'fiance', 'engaged',
+    // German
+    'mutter', 'vater', 'schwester', 'bruder', 'kind', 'sohn', 'tochter',
+    'eltern', 'ehefrau', 'ehemann', 'freund', 'freundin', 'verlobt',
+    'verlobte', 'verlobter', 'familie', 'beziehung'
   ];
   for (const keyword of relationshipsKeywords) {
     if (lowerContent.includes(keyword)) {

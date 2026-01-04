@@ -2,16 +2,63 @@
   "name": "AGENT-MEMORY-INDEXER",
   "vt_layer": "AGTL",
   "vt_module": "INDEXER",
-  "version": "1.0.0",
-  "description": "Memory indexing and retrieval agent for long-term context",
+  "vtid": "VTID-01152",
+  "version": "1.1.0",
+  "description": "Mem0 OSS Local Memory for ORB - Anthropic version. Local-first fact memory with no SaaS dependencies.",
   "provider_policy": {
-    "indexer": "gemini-flash",
-    "embeddings": "text-embedding-004"
+    "llm": {
+      "provider": "anthropic",
+      "model": "claude-3-5-sonnet-20240620"
+    },
+    "embeddings": {
+      "provider": "sentence_transformers",
+      "model": "all-MiniLM-L6-v2"
+    },
+    "vector_store": {
+      "provider": "qdrant",
+      "path": "/tmp/qdrant"
+    },
+    "history_store": {
+      "provider": "sqlite",
+      "path": "~/.mem0/history.db"
+    }
+  },
+  "required_env": [
+    "ANTHROPIC_API_KEY"
+  ],
+  "not_required": [
+    "MEM0_API_KEY",
+    "OPENAI_API_KEY"
+  ],
+  "features": [
+    "mem0_oss",
+    "anthropic_llm",
+    "local_embeddings",
+    "qdrant_storage",
+    "orb_memory_rules",
+    "semantic_deduplication"
+  ],
+  "memory_rules": {
+    "write": {
+      "only_user_facts": true,
+      "reject_assistant_messages": true,
+      "drop_filler": true,
+      "semantic_deduplication": true
+    },
+    "read": {
+      "semantic_search": true,
+      "no_category_ordering": true,
+      "no_regex_ranking": true
+    }
   },
   "telemetry": {
     "emit_ready": true,
     "emit_heartbeat": true,
-    "heartbeat_interval_seconds": 60
+    "heartbeat_interval_seconds": 60,
+    "log_decisions": [
+      "memory_write_decision",
+      "memory_search_hits"
+    ]
   },
   "runtime": {
     "type": "cloud-run",
@@ -20,7 +67,13 @@
   },
   "dependencies": {
     "gateway": "https://vitana-gateway-86804897789.us-central1.run.app",
-    "oasis": "https://vitana-gateway-86804897789.us-central1.run.app/api/v1/oasis",
-    "vector_db": "pinecone"
+    "oasis": "https://vitana-gateway-86804897789.us-central1.run.app/api/v1/oasis"
+  },
+  "packages": {
+    "mem0ai": ">=0.1.0",
+    "anthropic": ">=0.30.0",
+    "qdrant-client": ">=1.7.0",
+    "sentence-transformers": ">=2.2.0",
+    "flask": ">=3.0.0"
   }
 }

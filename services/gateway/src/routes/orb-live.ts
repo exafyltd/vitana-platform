@@ -45,6 +45,19 @@ import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { processWithGemini } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
+// VTID-01149: Unified Task-Creation Intake
+import {
+  detectTaskCreationIntent,
+  hasActiveIntake,
+  getIntakeState,
+  startIntake,
+  processIntakeAnswer,
+  getNextQuestion,
+  completeIntakeAndSchedule,
+  looksLikeAnswer,
+  generateIntakeStartMessage,
+  INTAKE_QUESTIONS
+} from '../services/task-intake-service';
 // VTID-01105: Memory auto-write for ORB conversations
 import { writeMemoryItem, classifyCategory } from './memory';
 // VTID-01106: ORB Memory Bridge (Dev Sandbox)
@@ -97,6 +110,14 @@ import {
   CrossTurnStateEngine,
   StateUpdateInput
 } from '../services/cross-turn-state-engine';
+// VTID-01153: Memory Indexer Client (Mem0 OSS)
+import {
+  isMemoryIndexerEnabled,
+  writeToMemoryIndexer,
+  searchMemoryIndexer,
+  getMemoryContext,
+  buildMemoryIndexerEnhancedInstruction
+} from '../services/memory-indexer-client';
 
 const router = Router();
 
@@ -521,7 +542,31 @@ Operating mode:
 - You have PERSISTENT MEMORY - you remember users across sessions.
 - NEVER claim you cannot remember or that your memory resets.`;
 
-  // Check if memory bridge is enabled
+  // VTID-01153: Try memory-indexer first (Mem0 OSS)
+  if (isMemoryIndexerEnabled()) {
+    console.log('[VTID-01153] Memory indexer enabled, fetching context from Mem0');
+    try {
+      const mem0Result = await buildMemoryIndexerEnhancedInstruction(
+        baseInstructionWithMemory,
+        DEV_IDENTITY.USER_ID,
+        'general conversation context' // Query for broad context
+      );
+
+      if (mem0Result.contextChars > 0) {
+        console.log(`[VTID-01153] Memory indexer context injected: ${mem0Result.contextChars} chars`);
+        return {
+          instruction: mem0Result.instruction,
+          memoryContext: null // Using Mem0 format instead of legacy
+        };
+      } else {
+        console.log('[VTID-01153] Memory indexer returned empty context, falling back');
+      }
+    } catch (err: any) {
+      console.warn('[VTID-01153] Memory indexer error, falling back:', err.message);
+    }
+  }
+
+  // Check if memory bridge is enabled (legacy Supabase-based memory)
   if (!isMemoryBridgeEnabled()) {
     console.log('[VTID-01106] Memory bridge disabled, using base instruction (no memory claims)');
     return { instruction: baseInstructionNoMemory, memoryContext: null };
@@ -1294,6 +1339,29 @@ router.post('/chat', async (req: Request, res: Response) => {
     });
   }
 
+  // VTID-01153: Write to memory-indexer (Mem0 OSS) - fire-and-forget
+  if (isMemoryIndexerEnabled()) {
+    writeToMemoryIndexer({
+      user_id: DEV_IDENTITY.USER_ID,
+      content: inputText,
+      role: 'user',
+      metadata: {
+        source: 'orb',
+        orb_session_id: orbSessionId,
+        conversation_id: conversationId,
+        vtid: 'VTID-01153'
+      }
+    }).then(result => {
+      if (result.stored) {
+        console.log(`[VTID-01153] User message written to Mem0: ${result.memory_ids.join(', ')}`);
+      } else {
+        console.log(`[VTID-01153] User message not stored in Mem0: ${result.decision}`);
+      }
+    }).catch(err => {
+      console.warn('[VTID-01153] Mem0 write error:', err.message);
+    });
+  }
+
   try {
     // Build thread ID for Gemini processing
     const threadId = `orb-${orbSessionId}`;
@@ -1397,6 +1465,149 @@ router.post('/chat', async (req: Request, res: Response) => {
         isDevSandbox() ? DEV_IDENTITY.USER_ID : undefined,
         conversationId
       ).catch((err: Error) => console.warn('[VTID-01113] Safety flag log failed:', err.message));
+    }
+
+    // =========================================================================
+    // VTID-01149: Unified Task-Creation Intake Mode
+    // Check for active intake session OR detect task creation intent
+    // If in intake mode, handle Q1/Q2 flow before Gemini processing
+    // =========================================================================
+
+    // Check if there's an active intake session for this orb session
+    if (hasActiveIntake(orbSessionId)) {
+      const intakeState = getIntakeState(orbSessionId);
+
+      if (intakeState && intakeState.intake_active) {
+        const nextQ = getNextQuestion(intakeState);
+
+        // Process the user's message as an answer if it looks like one
+        if (nextQ.question && looksLikeAnswer(inputText)) {
+          const answerResult = await processIntakeAnswer({
+            sessionId: orbSessionId,
+            question: nextQ.question,
+            answer: inputText,
+            surface: 'orb'
+          });
+
+          if (answerResult.ok) {
+            // If ready to schedule, complete the intake and schedule the task
+            if (answerResult.ready_to_schedule) {
+              const scheduleResult = await completeIntakeAndSchedule(orbSessionId);
+
+              // Append to transcript
+              if (transcript) {
+                transcript.turns.push({
+                  role: 'assistant',
+                  text: scheduleResult.ok
+                    ? `Your task has been created and scheduled: ${scheduleResult.vtid}. You can track it on the Command Hub board.`
+                    : `I couldn't schedule the task: ${scheduleResult.error}. Please try again.`,
+                  ts: new Date().toISOString()
+                });
+              }
+
+              // Update conversation history
+              conversation.history.push({ role: 'user', content: inputText });
+              conversation.history.push({
+                role: 'assistant',
+                content: scheduleResult.ok
+                  ? `Your task has been created and scheduled: ${scheduleResult.vtid}. You can track it on the Command Hub board.`
+                  : `I couldn't schedule the task: ${scheduleResult.error}. Please try again.`
+              });
+
+              console.log(`[VTID-01149] ORB intake complete, task ${scheduleResult.ok ? 'scheduled' : 'failed'}: ${scheduleResult.vtid}`);
+
+              return res.status(200).json({
+                ok: true,
+                conversation_id: conversationId,
+                reply_text: scheduleResult.ok
+                  ? `Your task has been created and scheduled: ${scheduleResult.vtid}. You can track it on the Command Hub board.`
+                  : `I couldn't schedule the task: ${scheduleResult.error}. Please try again.`,
+                meta: {
+                  provider: 'task-intake',
+                  model: 'vtid-01149',
+                  mode: 'orb_voice',
+                  vtid: scheduleResult.vtid || 'VTID-01149',
+                  intake_complete: true,
+                  task_scheduled: scheduleResult.ok
+                }
+              });
+            }
+
+            // More questions to ask
+            if (answerResult.next_question_prompt) {
+              // Append to transcript
+              if (transcript) {
+                transcript.turns.push({
+                  role: 'assistant',
+                  text: answerResult.next_question_prompt,
+                  ts: new Date().toISOString()
+                });
+              }
+
+              // Update conversation history
+              conversation.history.push({ role: 'user', content: inputText });
+              conversation.history.push({ role: 'assistant', content: answerResult.next_question_prompt });
+
+              console.log(`[VTID-01149] ORB intake asking next question: ${answerResult.next_question}`);
+
+              return res.status(200).json({
+                ok: true,
+                conversation_id: conversationId,
+                reply_text: answerResult.next_question_prompt,
+                meta: {
+                  provider: 'task-intake',
+                  model: 'vtid-01149',
+                  mode: 'orb_voice',
+                  vtid: 'VTID-01149',
+                  intake_active: true,
+                  next_question: answerResult.next_question
+                }
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // Check if this message indicates task creation intent and start intake
+    // Only if not already in intake mode
+    if (!hasActiveIntake(orbSessionId) && detectTaskCreationIntent(inputText)) {
+      console.log(`[VTID-01149] Task creation intent detected in ORB, starting intake`);
+
+      await startIntake({
+        sessionId: orbSessionId,
+        surface: 'orb',
+        tenant: 'vitana'
+      });
+
+      const startMessage = generateIntakeStartMessage();
+
+      // Append to transcript
+      if (transcript) {
+        transcript.turns.push({
+          role: 'assistant',
+          text: startMessage,
+          ts: new Date().toISOString()
+        });
+      }
+
+      // Update conversation history
+      conversation.history.push({ role: 'user', content: inputText });
+      conversation.history.push({ role: 'assistant', content: startMessage });
+
+      return res.status(200).json({
+        ok: true,
+        conversation_id: conversationId,
+        reply_text: startMessage,
+        meta: {
+          provider: 'task-intake',
+          model: 'vtid-01149',
+          mode: 'orb_voice',
+          vtid: 'VTID-01149',
+          intake_active: true,
+          next_question: 'spec'
+        }
+      });
     }
 
     // =========================================================================

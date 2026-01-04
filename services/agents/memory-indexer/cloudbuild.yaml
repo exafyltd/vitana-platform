@@ -1,20 +1,22 @@
+# VTID-01152: Mem0 OSS Local Memory Indexer
 steps:
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'us-central1-docker.pkg.dev/$PROJECT_ID/crewai-gcp/crewai-prompt-synth:$COMMIT_SHA', '.']
+    args: ['build', '-t', 'us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/vitana-memory-indexer:$COMMIT_SHA', '.']
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'us-central1-docker.pkg.dev/$PROJECT_ID/crewai-gcp/crewai-prompt-synth:$COMMIT_SHA']
+    args: ['push', 'us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/vitana-memory-indexer:$COMMIT_SHA']
   - name: 'gcr.io/cloud-builders/gcloud'
     args:
       - 'run'
       - 'deploy'
-      - 'crewai-prompt-synth'
-      - '--image=us-central1-docker.pkg.dev/$PROJECT_ID/crewai-gcp/crewai-prompt-synth:$COMMIT_SHA'
+      - 'vitana-memory-indexer'
+      - '--image=us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/vitana-memory-indexer:$COMMIT_SHA'
       - '--region=us-central1'
-      - '--memory=1Gi'
+      - '--memory=2Gi'
       - '--cpu=2'
+      - '--timeout=300'
       - '--allow-unauthenticated'
-      - '--set-env-vars=VERTEX_LOCATION=us-central1'
+      - '--set-secrets=ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest'
 
-images: ['us-central1-docker.pkg.dev/$PROJECT_ID/crewai-gcp/crewai-prompt-synth:$COMMIT_SHA']
+images: ['us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/vitana-memory-indexer:$COMMIT_SHA']
 options:
   logging: CLOUD_LOGGING_ONLY
