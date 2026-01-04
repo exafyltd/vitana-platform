@@ -9,12 +9,12 @@
 export * from './types';
 
 // Individual skill handlers
-export { checkMemoryFirst } from './checkMemoryFirst';
-export { securityScan } from './securityScan';
-export { validateRlsPolicy } from './validateRlsPolicy';
-export { previewMigration } from './previewMigration';
-export { analyzeService } from './analyzeService';
-export { validateAccessibility } from './validateAccessibility';
+export { checkMemoryFirst } from './check-memory-first';
+export { securityScan } from './security-scan';
+export { validateRlsPolicy } from './validate-rls-policy';
+export { previewMigration } from './preview-migration';
+export { analyzeService } from './analyze-service';
+export { validateAccessibility } from './validate-accessibility';
 
 // Registry and execution
 export {
@@ -27,4 +27,4 @@ export {
 } from './registry';
 
 // OASIS event utilities
-export { emitSkillEvent, createSkillEmitter } from './oasisEmitter';
+export { emitSkillEvent, createSkillEmitter } from './oasis-emitter';

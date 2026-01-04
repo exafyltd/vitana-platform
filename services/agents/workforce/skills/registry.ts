@@ -22,13 +22,13 @@ import {
   ValidateAccessibilityParams,
   ValidateAccessibilityResult,
 } from './types';
-import { createSkillEmitter } from './oasisEmitter';
-import { checkMemoryFirst } from './checkMemoryFirst';
-import { securityScan } from './securityScan';
-import { validateRlsPolicy } from './validateRlsPolicy';
-import { previewMigration } from './previewMigration';
-import { analyzeService } from './analyzeService';
-import { validateAccessibility } from './validateAccessibility';
+import { createSkillEmitter } from './oasis-emitter';
+import { checkMemoryFirst } from './check-memory-first';
+import { securityScan } from './security-scan';
+import { validateRlsPolicy } from './validate-rls-policy';
+import { previewMigration } from './preview-migration';
+import { analyzeService } from './analyze-service';
+import { validateAccessibility } from './validate-accessibility';
 
 // =============================================================================
 // Skill Registry
