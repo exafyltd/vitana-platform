@@ -4,12 +4,25 @@
   "vt_layer": "oasis",
   "vt_module": "agents",
   "description": "Worker Sub-Agents + Orchestrator - Deterministic routing for worker execution",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "agent-configuration",
   "subagents": [
     "worker-orchestrator",
     "worker-frontend",
     "worker-backend",
     "worker-memory"
-  ]
+  ],
+  "skills": {
+    "vtid": "VTID-01164",
+    "version": "1.0.0",
+    "description": "Sub-Agent Skill Pack v1 - analysis -> action -> validation",
+    "skills": [
+      "worker.common.check_memory_first",
+      "worker.backend.security_scan",
+      "worker.memory.validate_rls_policy",
+      "worker.memory.preview_migration",
+      "worker.backend.analyze_service",
+      "worker.frontend.validate_accessibility"
+    ]
+  }
 }
