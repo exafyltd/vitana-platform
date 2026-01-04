@@ -1,0 +1,198 @@
+# =============================================================================
+# Skill: Worker Backend Apply Patch - VTID-01163
+# =============================================================================
+# Applies code changes for backend domain with route mount validation.
+# =============================================================================
+
+skill_id: worker.backend.apply_patch
+name: Apply Backend Patch
+description: |
+  Applies code changes for backend domain work orders. Enforces path
+  restrictions and validates route mounts for conflict detection.
+version: 1.0.0
+category: worker
+domain: backend
+vtid: VTID-01163
+
+provider:
+  type: internal
+  module: services/agents/workforce/subagents/worker-backend
+  function: applyPatch
+  timeout_ms: 120000
+
+parameters:
+  vtid:
+    type: string
+    required: true
+    description: Task identifier
+    pattern: "^VTID-\\d{4,}$"
+
+  changes:
+    type: array
+    required: true
+    description: List of file changes to apply
+    items:
+      type: object
+      properties:
+        file_path:
+          type: string
+          required: true
+        action:
+          type: string
+          required: true
+          enum:
+            - create
+            - edit
+            - delete
+        content:
+          type: string
+          required: false
+        old_content:
+          type: string
+          required: false
+        new_content:
+          type: string
+          required: false
+
+  change_budget:
+    type: object
+    required: false
+    description: Maximum allowed changes
+    properties:
+      max_files:
+        type: integer
+        default: 15
+      max_directories:
+        type: integer
+        default: 8
+
+  validate_routes:
+    type: boolean
+    required: false
+    default: true
+    description: Check for route mount conflicts
+
+  curl_verification:
+    type: boolean
+    required: false
+    default: true
+    description: Verify new routes with curl test
+
+response_schema:
+  ok:
+    type: boolean
+    description: Whether patch was applied successfully
+
+  files_changed:
+    type: array
+    description: List of files that were modified
+    items:
+      type: string
+
+  files_created:
+    type: array
+    description: List of new files created
+    items:
+      type: string
+
+  routes_added:
+    type: array
+    description: New routes registered
+    items:
+      type: object
+      properties:
+        path:
+          type: string
+        method:
+          type: string
+        handler:
+          type: string
+
+  route_conflicts:
+    type: array
+    description: Route conflicts detected (should be empty for success)
+    items:
+      type: object
+      properties:
+        path:
+          type: string
+        existing_handler:
+          type: string
+        new_handler:
+          type: string
+
+  budget_used:
+    type: object
+    properties:
+      files:
+        type: integer
+      directories:
+        type: integer
+
+  error:
+    type: string
+    description: Error message if patch failed
+
+# ==========================================================================
+# HARD GUARDRAILS (from agent.yaml)
+# ==========================================================================
+guardrails:
+  # Path restrictions
+  allowed_paths:
+    - "services/gateway/src/**"
+    - "services/**/src/**"
+    - "config/**"
+    - "scripts/**"
+    - ".github/workflows/**"
+
+  # Paths always forbidden
+  forbidden_paths:
+    - "services/gateway/src/frontend/**"
+    - "services/gateway/dist/frontend/**"
+    - "supabase/migrations/**"
+
+  # Route mount rules
+  route_validation:
+    check_conflicts: true
+    verify_with_curl: true
+    max_new_routes: 5
+
+telemetry:
+  emit_events: true
+  event_types:
+    - vtid.stage.worker_backend.patch_started
+    - vtid.stage.worker_backend.patch_applied
+    - vtid.stage.worker_backend.route_conflict
+  oasis_endpoint: ${OASIS_API_URL}/events/ingest
+
+usage:
+  roles:
+    - worker
+  primary_role: worker
+  use_cases:
+    - Create new API endpoints
+    - Modify existing routes
+    - Update controllers/services
+    - Add middleware
+
+error_handling:
+  retry_attempts: 1
+  retry_backoff_ms: 2000
+  fallback_strategy: return_error_with_details
+
+  error_codes:
+    PATH_FORBIDDEN:
+      description: Target path is outside allowed backend paths
+      recoverable: false
+
+    ROUTE_CONFLICT:
+      description: Route path conflicts with existing route
+      recoverable: false
+
+    BUDGET_EXCEEDED:
+      description: Changes exceed file/directory budget
+      recoverable: false
+
+    CURL_VERIFICATION_FAILED:
+      description: New route failed curl verification
+      recoverable: true

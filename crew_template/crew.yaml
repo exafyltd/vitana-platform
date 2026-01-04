@@ -72,3 +72,66 @@ skills:
       max_attempts: 3
       backoff_ms: 1000
     fallback_mode: continue_without_kb
+
+  # Worker Sub-Agents + Orchestrator Skills (VTID-01163)
+  worker_orchestrator:
+    worker.route_subagent:
+      enabled: true
+      roles: [orchestrator, worker]
+      primary_role: orchestrator
+      description: Route work orders to domain-specialized worker subagents
+
+    worker.frontend.apply_patch:
+      enabled: true
+      roles: [worker]
+      primary_role: worker
+      domain: frontend
+      description: Apply code changes for frontend domain with CSP compliance
+      guardrails:
+        allowed_paths:
+          - services/gateway/src/frontend/**
+          - services/gateway/dist/frontend/**
+        csp_compliance: true
+
+    worker.backend.apply_patch:
+      enabled: true
+      roles: [worker]
+      primary_role: worker
+      domain: backend
+      description: Apply code changes for backend domain with route validation
+      guardrails:
+        allowed_paths:
+          - services/gateway/src/**
+          - services/**/src/**
+        route_validation: true
+
+    worker.memory.apply_patch:
+      enabled: true
+      roles: [worker]
+      primary_role: worker
+      domain: memory
+      description: Apply code changes for memory domain with tenant context
+      guardrails:
+        allowed_paths:
+          - supabase/migrations/**
+          - services/agents/memory-indexer/**
+        tenant_validation: true
+
+  # Worker Orchestrator Configuration
+  worker_orchestrator_config:
+    gateway_endpoint: ${GATEWAY_URL}/api/v1/worker/orchestrator/route
+    oasis_telemetry: true
+    subagents:
+      - worker-frontend
+      - worker-backend
+      - worker-memory
+    default_budget:
+      frontend:
+        max_files: 10
+        max_directories: 5
+      backend:
+        max_files: 15
+        max_directories: 8
+      memory:
+        max_files: 5
+        max_directories: 3

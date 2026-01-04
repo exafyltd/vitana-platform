@@ -154,9 +154,16 @@ const TASK_CREATION_KEYWORDS: RegExp[] = [
   /\b(schedule|plan|queue)\s+(a\s+)?(task|work|item)\b/i,
   /\b(add\s+to|put\s+on)\s+(the\s+)?(backlog|board|queue|list)\b/i,
   /\b(track|capture)\s+(this|that|the)\s+(as\s+a\s+)?(task|issue|ticket)\b/i,
-  // German
-  /\b(erstellen|anlegen|neu|hinzuf[uü]gen)\s*(eine?n?\s*)?(aufgabe|ticket|task|bug|fehler)\b/i,
-  /\b(melden|berichten|loggen)\s*(eine?n?\s*)?(bug|fehler|problem)\b/i,
+  // German - expanded patterns
+  /\b(erstell|anleg|hinzuf[uü]g)(en|e|st|t)?\s*(mir\s*)?(eine?n?\s*)?(neue?n?\s*)?(aufgabe|ticket|task|bug|fehler|eintrag)\b/i,
+  /\b(meld|bericht|logg)(en|e|st|t)?\s*(eine?n?\s*)?(bug|fehler|problem)\b/i,
+  /\b(ich\s+)?(m[oö]chte|will|brauche|h[aä]tte\s+gerne?)\s+(eine?n?\s*)?(neue?n?\s*)?(aufgabe|ticket|task|eintrag)\b/i,
+  /\b(kannst|k[oö]nntest|w[uü]rdest)\s+(du\s+)?(mir\s+)?(eine?n?\s*)?(aufgabe|ticket|task)\s*(erstellen|anlegen|machen)\b/i,
+  /\b(neue?n?\s+)(aufgabe|ticket|task|eintrag)\s*(bitte|erstellen|anlegen)?\b/i,
+  /\b(bitte\s+)?(erstell|leg|mach)(e|st|t)?\s*(mir\s+)?(eine?n?\s*)?(aufgabe|ticket|task)\b/i,
+  /\b(ich\s+)?(brauche|ben[oö]tige)\s+(eine?n?\s*)?(neue?n?\s*)?(aufgabe|ticket|task)\b/i,
+  /\baufgabe\s+(erstellen|anlegen|hinzuf[uü]gen)\b/i,
+  /\bticket\s+(erstellen|anlegen|aufmachen)\b/i,
 ];
 
 /**
@@ -446,7 +453,7 @@ export async function ensureScheduledDevTask(params: {
       title: header.trim(),
       description: spec_text.trim(),
       summary: spec_text.trim(),
-      status: 'scheduled', // Scheduled status for board visibility
+      status: 'pending', // VTID-01150: Use 'pending' like the button does (NOT 'scheduled')
       task_family: 'DEV', // DEV-default
       layer: 'DEV',
       module: 'COMHU', // Command Hub module
@@ -463,82 +470,71 @@ export async function ensureScheduledDevTask(params: {
       updated_at: now
     };
 
-    // Try to update first (for idempotency via vtid unique key)
-    const updateResp = await fetch(
-      `${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}`,
+    // Use UPSERT pattern: POST with on_conflict resolution to handle both insert and update
+    // This is more reliable than PATCH-then-INSERT because it's atomic
+    const upsertPayload = {
+      ...taskPayload,
+      id: randomUUID(), // Will be ignored on conflict
+      created_at: now
+    };
+
+    console.log(`[VTID-01149] Upserting task ${vtid} with status='scheduled'`);
+
+    // Use on_conflict=vtid to upsert - if vtid exists, update; if not, insert
+    const upsertResp = await fetch(
+      `${SUPABASE_URL}/rest/v1/vtid_ledger`,
       {
-        method: 'PATCH',
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           apikey: SUPABASE_SERVICE_ROLE,
           Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-          Prefer: 'return=minimal'
+          // Use merge-duplicates to update on conflict
+          Prefer: 'resolution=merge-duplicates,return=representation'
         },
-        body: JSON.stringify(taskPayload)
+        body: JSON.stringify(upsertPayload)
       }
     );
 
-    if (updateResp.ok) {
-      // Check if any row was updated
-      const affectedRows = updateResp.headers.get('content-range');
-      const wasUpdated = affectedRows && !affectedRows.includes('*/0');
+    if (!upsertResp.ok) {
+      const errorText = await upsertResp.text();
+      console.error(`[VTID-01149] Upsert failed: ${upsertResp.status} - ${errorText}`);
 
-      if (wasUpdated) {
-        console.log(`[VTID-01149] Updated existing task: ${vtid}`);
-        const eventResult = await emitScheduledEvent(vtid, header, 'update');
-        return { ok: true, vtid, event_id: eventResult.event_id };
-      }
-    }
+      // Fallback: try direct PATCH if upsert doesn't work
+      console.log(`[VTID-01149] Falling back to PATCH for ${vtid}`);
+      const patchResp = await fetch(
+        `${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: SUPABASE_SERVICE_ROLE,
+            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+            Prefer: 'return=representation'
+          },
+          body: JSON.stringify(taskPayload)
+        }
+      );
 
-    // No existing row - insert new one
-    const insertPayload = {
-      ...taskPayload,
-      id: randomUUID(),
-      created_at: now
-    };
-
-    const insertResp = await fetch(`${SUPABASE_URL}/rest/v1/vtid_ledger`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: SUPABASE_SERVICE_ROLE,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-        Prefer: 'return=minimal'
-      },
-      body: JSON.stringify(insertPayload)
-    });
-
-    if (!insertResp.ok) {
-      const errorText = await insertResp.text();
-      // Check if it's a duplicate key error (task already exists)
-      if (insertResp.status === 409 || errorText.includes('duplicate')) {
-        console.log(`[VTID-01149] Task already exists, updating: ${vtid}`);
-        // Retry update
-        await fetch(
-          `${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}`,
-          {
-            method: 'PATCH',
-            headers: {
-              'Content-Type': 'application/json',
-              apikey: SUPABASE_SERVICE_ROLE,
-              Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-              Prefer: 'return=minimal'
-            },
-            body: JSON.stringify(taskPayload)
-          }
-        );
-        const eventResult = await emitScheduledEvent(vtid, header, 'update');
-        return { ok: true, vtid, event_id: eventResult.event_id };
+      if (patchResp.ok) {
+        const patchedRows = await patchResp.json() as unknown[];
+        if (Array.isArray(patchedRows) && patchedRows.length > 0) {
+          console.log(`[VTID-01149] PATCH succeeded for ${vtid}`);
+          const eventResult = await emitScheduledEvent(vtid, header, 'update');
+          return { ok: true, vtid, event_id: eventResult.event_id };
+        }
       }
 
-      const error = `Failed to insert task: ${insertResp.status} - ${errorText}`;
-      console.error(`[VTID-01149] ${error}`);
+      const error = `Failed to upsert/patch task: ${upsertResp.status} - ${errorText}`;
       await emitScheduleFailedEvent(vtid, error);
       return { ok: false, vtid, error };
     }
 
-    console.log(`[VTID-01149] Inserted new scheduled task: ${vtid}`);
-    const eventResult = await emitScheduledEvent(vtid, header, 'insert');
+    const upsertedRows = await upsertResp.json() as unknown[];
+    const wasInsert = Array.isArray(upsertedRows) && upsertedRows.length > 0;
+
+    console.log(`[VTID-01149] Successfully upserted task ${vtid} to scheduled status`);
+    const eventResult = await emitScheduledEvent(vtid, header, wasInsert ? 'insert' : 'update');
     return { ok: true, vtid, event_id: eventResult.event_id };
 
   } catch (err: any) {
@@ -561,7 +557,7 @@ async function emitScheduledEvent(
     vtid,
     type: 'commandhub.task.scheduled' as any,
     source: 'task-intake-service',
-    status: 'success',
+    status: 'info',  // VTID-01150: Changed from 'success' to avoid false terminal detection
     message: `Task scheduled: ${header}`,
     payload: {
       vtid,

@@ -747,20 +747,21 @@ function isEligibleScheduled(task) {
         return false;
     }
 
-    // VTID-01111: Rule B RE-ADDED for shell entries only
-    // Reject allocator shell entries that somehow made it through backend
-    var status = (task.status || '').toLowerCase();
-    if (status === 'allocated') {
-        console.log('[VTID-01111] Filtering shell entry ' + vtid + ' (status=allocated)');
-        return false;
-    }
+    // VTID-01150: REMOVED Rule B - allocated tasks should now appear in SCHEDULED
+    // The backend (board-adapter.ts) properly maps allocated→SCHEDULED.
+    // Users need to see allocated tasks so they can trigger execution.
+    // var status = (task.status || '').toLowerCase();
+    // if (status === 'allocated') {
+    //     return false;
+    // }
 
-    // VTID-01111: Rule C - Reject allocator placeholder title
+    // VTID-01150: REMOVED Rule C - allocated tasks should now appear in SCHEDULED
+    // Even with placeholder titles, users need to see them to trigger execution.
+    // var title = (task.title || '').trim();
+    // if (title === 'Allocated - Pending Title') {
+    //     return false;
+    // }
     var title = (task.title || '').trim();
-    if (title === 'Allocated - Pending Title') {
-        console.log('[VTID-01111] Filtering shell entry ' + vtid + ' (placeholder title)');
-        return false;
-    }
 
     // VTID-01028 diagnostic logging for visibility
     if (!title) {
