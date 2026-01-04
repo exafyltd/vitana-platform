@@ -657,11 +657,19 @@ router.get("/projection", async (req: Request, res: Response) => {
                    topic === 'cicd.github.safe_merge.executed';
           });
 
+          // VTID-01150: Be more specific about what counts as completion
+          // Exclude commandhub.task.scheduled which has status='info' (not 'success')
+          // Only count actual lifecycle/deploy completion events
           const hasCompletionEvent = vtidEvents.some((e: any) => {
             const topic = (e.topic || '').toLowerCase();
             const status = (e.status || '').toLowerCase();
-            return topic.includes('completed') || topic.includes('success') ||
-                   (status === 'success' && (topic.includes('deploy') || topic.includes('merge')));
+            // Exclude scheduled events - they are NOT completion events
+            if (topic.includes('scheduled') || topic.includes('task.scheduled')) {
+              return false;
+            }
+            return topic === 'vtid.lifecycle.completed' ||
+                   topic.includes('deploy.success') ||
+                   (status === 'success' && topic.includes('deploy.gateway'));
           });
 
           if (hasDeploySuccess || hasCompletionEvent) {
@@ -686,14 +694,18 @@ router.get("/projection", async (req: Request, res: Response) => {
           }
 
           // Non-terminal status checks
+          // VTID-01150: Only mark as Done if we're in Deploy stage AND see completion signals
+          // Don't mark as Done just because some event has 'success' in it
           if (!isTerminal) {
-            if (combined.includes('done') || combined.includes('complete') || combined.includes('success') || combined.includes('merged') || combined.includes('deployed')) {
+            if (combined.includes('done') || combined.includes('complete') || combined.includes('merged') || combined.includes('deployed')) {
               if (currentStage === 'Deploy') {
                 currentStage = 'Done';
                 isTerminal = true;
                 terminalOutcome = 'success';
+                derivedStatus = 'Done';
               }
-              derivedStatus = 'Done';
+              // Only set derivedStatus = 'Done' if we're in Deploy stage
+              // Otherwise keep the current status (Moving, etc.)
             }
 
             // Check for failure/blocked states

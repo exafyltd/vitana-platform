@@ -56,6 +56,12 @@ export const CONTEXT_CONFIG = {
   MAX_CONTENT_LENGTH: 500,
   // Sensitive domains that require explicit expansion
   SENSITIVE_DOMAINS: ['health'] as const,
+  /**
+   * VTID-DEBUG-02: Categories that should NEVER have time filters.
+   * Personal identity info (name, birthday, hometown, family members)
+   * must be available regardless of when it was stored.
+   */
+  PERSISTENT_CATEGORIES: ['personal', 'relationships'] as const,
 };
 
 // =============================================================================
@@ -465,22 +471,56 @@ async function fetchMemoryItems(
   since: Date,
   limit: number
 ): Promise<NormalizedMemoryItem[]> {
-  const { data, error } = await supabase
+  // VTID-DEBUG-02: Split queries - persistent categories have NO time filter
+  // Personal identity info (name, birthday, hometown, family) must NEVER expire
+  const persistentCategories = CONTEXT_CONFIG.PERSISTENT_CATEGORIES as readonly string[];
+
+  // Query 1: Persistent categories WITHOUT time filter
+  const { data: persistentData, error: persistentError } = await supabase
     .from('memory_items')
     .select('id, category_key, source, content, content_json, importance, occurred_at, created_at')
     .eq('tenant_id', tenantId)
     .eq('user_id', userId)
+    .in('category_key', persistentCategories)
+    // NO time filter - personal identity info should always be available
+    .order('importance', { ascending: false })
+    .order('occurred_at', { ascending: false })
+    .limit(limit);
+
+  if (persistentError) {
+    console.warn('[VTID-DEBUG-02] Persistent memory fetch error:', persistentError.message);
+  }
+
+  // Query 2: Time-sensitive categories WITH time filter
+  const { data: timeSensitiveData, error: timeSensitiveError } = await supabase
+    .from('memory_items')
+    .select('id, category_key, source, content, content_json, importance, occurred_at, created_at')
+    .eq('tenant_id', tenantId)
+    .eq('user_id', userId)
+    .not('category_key', 'in', `(${persistentCategories.join(',')})`)
     .gte('occurred_at', since.toISOString())
     .order('importance', { ascending: false })
     .order('occurred_at', { ascending: false })
     .limit(limit);
 
-  if (error) {
-    console.warn('[VTID-01112] Memory items fetch error:', error.message);
-    return [];
+  if (timeSensitiveError) {
+    console.warn('[VTID-01112] Time-sensitive memory fetch error:', timeSensitiveError.message);
   }
 
-  return (data || []).map(item => ({
+  // Merge: persistent items first (identity is most important), then time-sensitive
+  const allData = [...(persistentData || []), ...(timeSensitiveData || [])];
+
+  // Deduplicate by ID
+  const seenIds = new Set<string>();
+  const dedupedData = allData.filter(item => {
+    if (seenIds.has(item.id)) return false;
+    seenIds.add(item.id);
+    return true;
+  });
+
+  console.log(`[VTID-DEBUG-02] Memory fetch: ${persistentData?.length || 0} persistent + ${timeSensitiveData?.length || 0} time-sensitive = ${dedupedData.length} total`);
+
+  return dedupedData.map(item => ({
     id: item.id,
     domain: normalizeDomain(item.category_key),
     category_key: item.category_key,

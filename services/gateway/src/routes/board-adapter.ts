@@ -34,14 +34,14 @@ interface BoardItem {
  *   - `in_progress` → `IN_PROGRESS`
  *   - `pending` → `SCHEDULED`
  *   - `scheduled` → `SCHEDULED`
- *   - `allocated` → null (excluded - shell entry not yet filled in)
+ *   - `allocated` → `SCHEDULED` (VTID-01150: show allocated tasks so users can trigger execution)
  */
 function mapStatusToColumn(status: string): BoardColumn | null {
   const s = (status || '').toLowerCase();
-  // VTID-01111: 'allocated' is a shell entry from the allocator - exclude from board
-  // These are placeholder entries awaiting actual task data
+  // VTID-01150: 'allocated' tasks should appear in SCHEDULED column (not filtered out)
+  // These are placeholder entries that need to be visible so users can trigger execution
   if (s === 'allocated') {
-    return null;
+    return 'SCHEDULED';
   }
   if (s === 'completed' || s === 'done' || s === 'closed' || s === 'deployed' || s === 'merged' || s === 'complete' || s === 'failed' || s === 'error') {
     return 'COMPLETED';
@@ -178,9 +178,18 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
     }
 
     // Step 3: Build board items with OASIS-derived column placement
+    // VTID-01111: Debug list to track problematic VTIDs
+    const debugVtidList = ['VTID-01007', 'VTID-01008', 'VTID-01009', 'VTID-01010', 'VTID-01011', 'VTID-0516'];
+
     const boardItems: BoardItem[] = allRows.map((row: any) => {
       const vtid = row.vtid;
       const vtidEvents = allEvents.filter((e: any) => e.vtid === vtid);
+
+      // VTID-01111: Debug logging for problematic VTIDs
+      if (debugVtidList.includes(vtid)) {
+        const topics = vtidEvents.map((e: any) => e.topic).join(', ');
+        console.log(`[VTID-01111-DEBUG] ${vtid}: ${vtidEvents.length} events, topics=[${topics}], ledger_status=${row.status}`);
+      }
 
       let isTerminal = false;
       let terminalOutcome: 'success' | 'failed' | null = null;
@@ -283,6 +292,11 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
       // VTID-01079: Use canonical mapping function for deterministic column placement
       // The derivedStatus may come from OASIS events, but column MUST use mapStatusToColumn
       const finalColumn = mapStatusToColumn(derivedStatus);
+
+      // VTID-01111: Debug logging for final decision
+      if (debugVtidList.includes(vtid)) {
+        console.log(`[VTID-01111-DEBUG] ${vtid}: FINAL → column=${finalColumn}, derivedStatus=${derivedStatus}, isTerminal=${isTerminal}`);
+      }
 
       // VTID-01111: If mapStatusToColumn returns null, this is a shell entry to exclude
       if (finalColumn === null) {

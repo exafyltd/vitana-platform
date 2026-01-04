@@ -389,6 +389,14 @@ export type CicdEventType =
   | 'vtid.execute.deploy.failed'
   | 'vtid.execute.completed'
   | 'vtid.execute.failed'
+  // VTID-01150: Runner → Claude Execution Bridge Events
+  | 'vtid.workorder.dispatched'       // Work order sent to Claude
+  | 'vtid.workorder.acknowledged'     // Claude acknowledged work order
+  | 'vtid.evidence.pr_opened'         // Evidence: PR was opened
+  | 'vtid.evidence.commits_pushed'    // Evidence: Commits pushed to branch
+  | 'vtid.evidence.worker_reported'   // Evidence: Worker explicitly reported success
+  | 'vtid.stage.worker.started'       // Worker stage started (no fake success)
+  | 'vtid.stage.validator.started'    // Validator stage started (external validation)
   // VTID-01142: D48 Context-Aware Opportunity Surfacing Engine Events
   | 'opportunity.surfaced'
   | 'opportunity.surfaced.failed'
@@ -401,7 +409,11 @@ export type CicdEventType =
   | 'autopilot.task.intake.answer_received'
   | 'autopilot.task.ready_to_schedule'
   | 'commandhub.task.scheduled'
-  | 'commandhub.task.schedule_failed';
+  | 'commandhub.task.schedule_failed'
+  // VTID-01153: Memory Indexer Events
+  | 'orb.memory_indexer.write'
+  | 'orb.memory_indexer.search'
+  | 'orb.memory_indexer.context';
 
 export interface CicdOasisEvent {
   vtid: string;
