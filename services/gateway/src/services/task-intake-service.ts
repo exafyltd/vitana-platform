@@ -561,7 +561,7 @@ async function emitScheduledEvent(
     vtid,
     type: 'commandhub.task.scheduled' as any,
     source: 'task-intake-service',
-    status: 'success',
+    status: 'info',  // VTID-01150: Changed from 'success' to avoid false terminal detection
     message: `Task scheduled: ${header}`,
     payload: {
       vtid,
