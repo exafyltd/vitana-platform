@@ -64,6 +64,24 @@ def introspect():
     ), 200
 
 
+@app.route("/debug/config")
+def debug_config():
+    """Debug endpoint to check environment configuration (does not initialize Mem0)"""
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
+    qdrant_url = os.getenv("QDRANT_URL", "")
+    qdrant_key = os.getenv("QDRANT_API_KEY", "")
+
+    return jsonify(
+        anthropic_api_key_set=bool(anthropic_key),
+        anthropic_api_key_prefix=anthropic_key[:10] + "..." if len(anthropic_key) > 10 else "(too short)",
+        qdrant_url_set=bool(qdrant_url),
+        qdrant_url=qdrant_url if qdrant_url else "(not set)",
+        qdrant_api_key_set=bool(qdrant_key),
+        qdrant_api_key_prefix=qdrant_key[:10] + "..." if len(qdrant_key) > 10 else "(not set or too short)",
+        storage_mode="cloud" if qdrant_url and qdrant_key else "local",
+    ), 200
+
+
 # ============================================================================
 # Memory Endpoints
 # ============================================================================
@@ -97,8 +115,6 @@ def memory_write():
         "timestamp": number
     }
     """
-    from mem0_service import memory_write as mem0_write
-
     data = request.get_json() or {}
 
     user_id = data.get("user_id")
@@ -111,11 +127,18 @@ def memory_write():
     if not content:
         return jsonify(error="content is required"), 400
 
-    result = mem0_write(user_id, content, role, metadata)
-
-    logger.info(f"Memory write: user={user_id}, decision={result.get('decision')}")
-
-    return jsonify(result), 200
+    try:
+        from mem0_service import memory_write as mem0_write
+        result = mem0_write(user_id, content, role, metadata)
+        logger.info(f"Memory write: user={user_id}, decision={result.get('decision')}")
+        return jsonify(result), 200
+    except Exception as e:
+        logger.error(f"Memory write failed: {type(e).__name__}: {e}")
+        return jsonify(
+            error=str(e),
+            error_type=type(e).__name__,
+            user_id=user_id,
+        ), 500
 
 
 @app.route("/memory/search", methods=["POST"])
@@ -144,8 +167,6 @@ def memory_search():
         "timestamp": number
     }
     """
-    from mem0_service import memory_search as mem0_search
-
     data = request.get_json() or {}
 
     user_id = data.get("user_id")
@@ -157,11 +178,18 @@ def memory_search():
     if not query:
         return jsonify(error="query is required"), 400
 
-    result = mem0_search(user_id, query, top_k)
-
-    logger.info(f"Memory search: user={user_id}, hits={len(result.get('hits', []))}")
-
-    return jsonify(result), 200
+    try:
+        from mem0_service import memory_search as mem0_search
+        result = mem0_search(user_id, query, top_k)
+        logger.info(f"Memory search: user={user_id}, hits={len(result.get('hits', []))}")
+        return jsonify(result), 200
+    except Exception as e:
+        logger.error(f"Memory search failed: {type(e).__name__}: {e}")
+        return jsonify(
+            error=str(e),
+            error_type=type(e).__name__,
+            user_id=user_id,
+        ), 500
 
 
 @app.route("/memory/context", methods=["POST"])
@@ -184,8 +212,6 @@ def memory_context():
         "user_id": "string"
     }
     """
-    from mem0_service import memory_context as mem0_context
-
     data = request.get_json() or {}
 
     user_id = data.get("user_id")
@@ -197,12 +223,20 @@ def memory_context():
     if not query:
         return jsonify(error="query is required"), 400
 
-    context = mem0_context(user_id, query, top_k)
-
-    return jsonify(
-        context=context,
-        user_id=user_id,
-    ), 200
+    try:
+        from mem0_service import memory_context as mem0_context
+        context = mem0_context(user_id, query, top_k)
+        return jsonify(
+            context=context,
+            user_id=user_id,
+        ), 200
+    except Exception as e:
+        logger.error(f"Memory context failed: {type(e).__name__}: {e}")
+        return jsonify(
+            error=str(e),
+            error_type=type(e).__name__,
+            user_id=user_id,
+        ), 500
 
 
 @app.route("/memory/all", methods=["GET"])
@@ -222,16 +256,22 @@ def memory_all():
         "timestamp": number
     }
     """
-    from mem0_service import get_memory_service
-
     user_id = request.args.get("user_id")
 
     if not user_id:
         return jsonify(error="user_id is required"), 400
 
-    result = get_memory_service().get_all(user_id)
-
-    return jsonify(result), 200
+    try:
+        from mem0_service import get_memory_service
+        result = get_memory_service().get_all(user_id)
+        return jsonify(result), 200
+    except Exception as e:
+        logger.error(f"Memory get_all failed: {type(e).__name__}: {e}")
+        return jsonify(
+            error=str(e),
+            error_type=type(e).__name__,
+            user_id=user_id,
+        ), 500
 
 
 @app.route("/memory/delete", methods=["DELETE"])
@@ -244,17 +284,23 @@ def memory_delete():
         "memory_id": "string"
     }
     """
-    from mem0_service import get_memory_service
-
     data = request.get_json() or {}
     memory_id = data.get("memory_id")
 
     if not memory_id:
         return jsonify(error="memory_id is required"), 400
 
-    result = get_memory_service().delete(memory_id)
-
-    return jsonify(result), 200
+    try:
+        from mem0_service import get_memory_service
+        result = get_memory_service().delete(memory_id)
+        return jsonify(result), 200
+    except Exception as e:
+        logger.error(f"Memory delete failed: {type(e).__name__}: {e}")
+        return jsonify(
+            error=str(e),
+            error_type=type(e).__name__,
+            memory_id=memory_id,
+        ), 500
 
 
 @app.route("/memory/delete_all", methods=["DELETE"])
@@ -267,17 +313,23 @@ def memory_delete_all():
         "user_id": "string"
     }
     """
-    from mem0_service import get_memory_service
-
     data = request.get_json() or {}
     user_id = data.get("user_id")
 
     if not user_id:
         return jsonify(error="user_id is required"), 400
 
-    result = get_memory_service().delete_all(user_id)
-
-    return jsonify(result), 200
+    try:
+        from mem0_service import get_memory_service
+        result = get_memory_service().delete_all(user_id)
+        return jsonify(result), 200
+    except Exception as e:
+        logger.error(f"Memory delete_all failed: {type(e).__name__}: {e}")
+        return jsonify(
+            error=str(e),
+            error_type=type(e).__name__,
+            user_id=user_id,
+        ), 500
 
 
 # ============================================================================
