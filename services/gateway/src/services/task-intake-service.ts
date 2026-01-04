@@ -453,7 +453,7 @@ export async function ensureScheduledDevTask(params: {
       title: header.trim(),
       description: spec_text.trim(),
       summary: spec_text.trim(),
-      status: 'scheduled', // Scheduled status for board visibility
+      status: 'pending', // VTID-01150: Use 'pending' like the button does (NOT 'scheduled')
       task_family: 'DEV', // DEV-default
       layer: 'DEV',
       module: 'COMHU', // Command Hub module
