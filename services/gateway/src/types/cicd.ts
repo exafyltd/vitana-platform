@@ -409,7 +409,11 @@ export type CicdEventType =
   | 'autopilot.task.intake.answer_received'
   | 'autopilot.task.ready_to_schedule'
   | 'commandhub.task.scheduled'
-  | 'commandhub.task.schedule_failed';
+  | 'commandhub.task.schedule_failed'
+  // VTID-01153: Memory Indexer Events
+  | 'orb.memory_indexer.write'
+  | 'orb.memory_indexer.search'
+  | 'orb.memory_indexer.context';
 
 export interface CicdOasisEvent {
   vtid: string;

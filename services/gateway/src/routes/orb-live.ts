@@ -110,6 +110,14 @@ import {
   CrossTurnStateEngine,
   StateUpdateInput
 } from '../services/cross-turn-state-engine';
+// VTID-01153: Memory Indexer Client (Mem0 OSS)
+import {
+  isMemoryIndexerEnabled,
+  writeToMemoryIndexer,
+  searchMemoryIndexer,
+  getMemoryContext,
+  buildMemoryIndexerEnhancedInstruction
+} from '../services/memory-indexer-client';
 
 const router = Router();
 
@@ -534,7 +542,31 @@ Operating mode:
 - You have PERSISTENT MEMORY - you remember users across sessions.
 - NEVER claim you cannot remember or that your memory resets.`;
 
-  // Check if memory bridge is enabled
+  // VTID-01153: Try memory-indexer first (Mem0 OSS)
+  if (isMemoryIndexerEnabled()) {
+    console.log('[VTID-01153] Memory indexer enabled, fetching context from Mem0');
+    try {
+      const mem0Result = await buildMemoryIndexerEnhancedInstruction(
+        baseInstructionWithMemory,
+        DEV_IDENTITY.USER_ID,
+        'general conversation context' // Query for broad context
+      );
+
+      if (mem0Result.contextChars > 0) {
+        console.log(`[VTID-01153] Memory indexer context injected: ${mem0Result.contextChars} chars`);
+        return {
+          instruction: mem0Result.instruction,
+          memoryContext: null // Using Mem0 format instead of legacy
+        };
+      } else {
+        console.log('[VTID-01153] Memory indexer returned empty context, falling back');
+      }
+    } catch (err: any) {
+      console.warn('[VTID-01153] Memory indexer error, falling back:', err.message);
+    }
+  }
+
+  // Check if memory bridge is enabled (legacy Supabase-based memory)
   if (!isMemoryBridgeEnabled()) {
     console.log('[VTID-01106] Memory bridge disabled, using base instruction (no memory claims)');
     return { instruction: baseInstructionNoMemory, memoryContext: null };
@@ -1304,6 +1336,29 @@ router.post('/chat', async (req: Request, res: Response) => {
       }
     }).catch(err => {
       console.warn('[VTID-01107] Dev user message memory write error:', err.message);
+    });
+  }
+
+  // VTID-01153: Write to memory-indexer (Mem0 OSS) - fire-and-forget
+  if (isMemoryIndexerEnabled()) {
+    writeToMemoryIndexer({
+      user_id: DEV_IDENTITY.USER_ID,
+      content: inputText,
+      role: 'user',
+      metadata: {
+        source: 'orb',
+        orb_session_id: orbSessionId,
+        conversation_id: conversationId,
+        vtid: 'VTID-01153'
+      }
+    }).then(result => {
+      if (result.stored) {
+        console.log(`[VTID-01153] User message written to Mem0: ${result.memory_ids.join(', ')}`);
+      } else {
+        console.log(`[VTID-01153] User message not stored in Mem0: ${result.decision}`);
+      }
+    }).catch(err => {
+      console.warn('[VTID-01153] Mem0 write error:', err.message);
     });
   }
 
