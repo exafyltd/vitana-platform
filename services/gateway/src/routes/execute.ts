@@ -374,6 +374,54 @@ async function markTerminal(
 }
 
 /**
+ * VTID-01150: Update task with title and status (for allocated shell entries)
+ * This converts an "allocated" placeholder into a real scheduled task
+ */
+async function updateTaskWithTitle(
+  vtid: string,
+  title: string,
+  status: string,
+  run_id: string
+): Promise<boolean> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) return false;
+
+  try {
+    const timestamp = new Date().toISOString();
+    const payload = {
+      title,
+      status,
+      updated_at: timestamp,
+      metadata: {
+        current_run_id: run_id,
+        updated_from_allocated: true,
+        updated_at: timestamp,
+      },
+    };
+
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.${vtid}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: SUPABASE_SERVICE_ROLE,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+        },
+        body: JSON.stringify(payload),
+      }
+    );
+
+    if (response.ok) {
+      console.log(`[VTID-01150] ${vtid}: Updated title="${title}", status="${status}"`);
+    }
+    return response.ok;
+  } catch (error) {
+    console.error("[VTID-01150] Error updating task with title:", error);
+    return false;
+  }
+}
+
+/**
  * VTID-01150: Create a new task in vtid_ledger if it doesn't exist
  * This ensures tasks appear on the board immediately in SCHEDULED column
  */
@@ -1049,22 +1097,23 @@ router.post("/vtid", async (req: Request, res: Response) => {
       });
     }
 
-    // Step 2: Read task from OASIS - CREATE if doesn't exist
+    // Step 2: Read task from OASIS - CREATE if doesn't exist, UPDATE if "allocated"
     let task = await fetchTask(vtid);
+
+    // Extract title from spec content (first line or first heading)
+    let specTitle = vtid;
+    if (spec.content) {
+      const lines = spec.content.split('\n');
+      const firstHeading = lines.find((line: string) => line.startsWith('#'));
+      if (firstHeading) {
+        specTitle = firstHeading.replace(/^#+\s*/, '').trim();
+      } else if (lines[0]) {
+        specTitle = lines[0].substring(0, 100).trim();
+      }
+    }
+
     if (!task) {
       console.log(`[VTID-01150] ${vtid}: Task not found in ledger - creating with status=scheduled`);
-
-      // Extract title from spec content (first line or first heading)
-      let specTitle = vtid;
-      if (spec.content) {
-        const lines = spec.content.split('\n');
-        const firstHeading = lines.find((line: string) => line.startsWith('#'));
-        if (firstHeading) {
-          specTitle = firstHeading.replace(/^#+\s*/, '').trim();
-        } else if (lines[0]) {
-          specTitle = lines[0].substring(0, 100).trim();
-        }
-      }
 
       // Create the task in the ledger - this makes it appear on the board immediately
       task = await createTask(vtid, specTitle, run_id);
@@ -1076,6 +1125,12 @@ router.post("/vtid", async (req: Request, res: Response) => {
           error: 'Failed to create task in ledger',
         });
       }
+    } else if (task.status === 'allocated' || task.title?.includes('Allocated') || task.title?.includes('Pending Title')) {
+      // Task exists but is a shell entry from allocator - update it with real title and status
+      console.log(`[VTID-01150] ${vtid}: Task is allocated shell entry - updating title and status`);
+      await updateTaskWithTitle(vtid, specTitle, "scheduled", run_id);
+      task.title = specTitle;
+      task.status = "scheduled";
     }
 
     // Step 3: Create execution context (spec already validated above)
@@ -1593,7 +1648,7 @@ router.get("/health", (_req: Request, res: Response) => {
   res.status(200).json({
     ok: true,
     service: "execution-bridge",
-    version: "2.3.0", // VTID-01150: v2.3.0 - auto-create task in ledger if doesn't exist
+    version: "2.4.0", // VTID-01150: v2.4.0 - update allocated shell entries with real title/status
     vtid: "VTID-01150", // VTID-01150: Updated reference
     timestamp: new Date().toISOString(),
     capabilities: {
