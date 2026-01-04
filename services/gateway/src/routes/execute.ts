@@ -373,6 +373,81 @@ async function markTerminal(
   }
 }
 
+/**
+ * VTID-01150: Create a new task in vtid_ledger if it doesn't exist
+ * This ensures tasks appear on the board immediately in SCHEDULED column
+ */
+async function createTask(
+  vtid: string,
+  title: string,
+  run_id: string
+): Promise<OasisTask | null> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    console.error("[VTID-01150] Missing Supabase credentials for task creation");
+    return null;
+  }
+
+  try {
+    const timestamp = new Date().toISOString();
+    const payload = {
+      vtid,
+      title: title || vtid,
+      status: "scheduled",
+      is_terminal: false,
+      terminal_outcome: null,
+      created_at: timestamp,
+      updated_at: timestamp,
+      metadata: {
+        created_by: "vtid-runner-v2",
+        initial_run_id: run_id,
+        created_at: timestamp,
+      },
+    };
+
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/vtid_ledger`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: SUPABASE_SERVICE_ROLE,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+          Prefer: "return=representation",
+        },
+        body: JSON.stringify(payload),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[VTID-01150] Failed to create task: ${response.status} - ${errorText}`);
+      return null;
+    }
+
+    const data = (await response.json()) as any[];
+    if (data.length === 0) return null;
+
+    const row = data[0];
+    console.log(`[VTID-01150] ${vtid}: Task created in ledger with status=scheduled`);
+
+    return {
+      vtid: row.vtid,
+      title: row.title,
+      status: row.status,
+      layer: row.layer,
+      module: row.module,
+      is_terminal: row.is_terminal ?? false,
+      terminal_outcome: row.terminal_outcome ?? null,
+      metadata: row.metadata ?? {},
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    };
+  } catch (error) {
+    console.error("[VTID-01150] Error creating task:", error);
+    return null;
+  }
+}
+
 // =============================================================================
 // Event Emission
 // =============================================================================
@@ -946,18 +1021,8 @@ router.post("/vtid", async (req: Request, res: Response) => {
       });
     }
 
-    // Step 2: Read task and spec from OASIS
-    const task = await fetchTask(vtid);
-    if (!task) {
-      console.error(`[VTID-01150] ${vtid}: Task not found in OASIS`);
-      return res.status(404).json({
-        ok: false,
-        vtid,
-        error: `Task ${vtid} not found in OASIS`,
-      });
-    }
-
     // VTID-01150: Spec loading is MANDATORY - HARD FAIL if missing
+    // Check spec FIRST because we need it to derive the task title
     const spec = await fetchSpec(vtid);
     if (!spec) {
       console.error(`[VTID-01150] ${vtid}: SPEC_MISSING - cannot proceed (HARD FAIL)`);
@@ -984,7 +1049,36 @@ router.post("/vtid", async (req: Request, res: Response) => {
       });
     }
 
-    // Step 3: Create execution context
+    // Step 2: Read task from OASIS - CREATE if doesn't exist
+    let task = await fetchTask(vtid);
+    if (!task) {
+      console.log(`[VTID-01150] ${vtid}: Task not found in ledger - creating with status=scheduled`);
+
+      // Extract title from spec content (first line or first heading)
+      let specTitle = vtid;
+      if (spec.content) {
+        const lines = spec.content.split('\n');
+        const firstHeading = lines.find((line: string) => line.startsWith('#'));
+        if (firstHeading) {
+          specTitle = firstHeading.replace(/^#+\s*/, '').trim();
+        } else if (lines[0]) {
+          specTitle = lines[0].substring(0, 100).trim();
+        }
+      }
+
+      // Create the task in the ledger - this makes it appear on the board immediately
+      task = await createTask(vtid, specTitle, run_id);
+      if (!task) {
+        console.error(`[VTID-01150] ${vtid}: Failed to create task in ledger`);
+        return res.status(500).json({
+          ok: false,
+          vtid,
+          error: 'Failed to create task in ledger',
+        });
+      }
+    }
+
+    // Step 3: Create execution context (spec already validated above)
     const ctx: ExecutionContext = {
       vtid,
       run_id,
@@ -1499,7 +1593,7 @@ router.get("/health", (_req: Request, res: Response) => {
   res.status(200).json({
     ok: true,
     service: "execution-bridge",
-    version: "2.2.0", // VTID-01150: v2.2.0 - proper scheduled→in_progress→blocked/validating flow
+    version: "2.3.0", // VTID-01150: v2.3.0 - auto-create task in ledger if doesn't exist
     vtid: "VTID-01150", // VTID-01150: Updated reference
     timestamp: new Date().toISOString(),
     capabilities: {
@@ -1514,6 +1608,8 @@ router.get("/health", (_req: Request, res: Response) => {
       spec_mandatory: true,
       // v2.1.0: Status updates on failure
       status_updates_on_failure: true,
+      // v2.3.0: Auto-create task in ledger if doesn't exist
+      auto_create_task: true,
     },
     models: {
       planner: "Claude 3.5 Sonnet",
