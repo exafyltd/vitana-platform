@@ -197,11 +197,18 @@ const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/
 
 /**
  * VTID-0135: ORB Chat Request (voice conversation)
+ * VTID-01155: Added images array for multimodal input
  */
 interface OrbChatRequest {
   orb_session_id: string;
   conversation_id: string | null;
   input_text: string;
+  // VTID-01155: Optional images for multimodal input (screen/camera frames)
+  images?: Array<{
+    data_b64: string;      // Base64 encoded image data
+    mime: string;          // e.g., 'image/jpeg'
+    source?: 'screen' | 'camera';
+  }>;
   meta?: {
     mode?: string;
     source?: string;
@@ -381,6 +388,96 @@ const VERTEX_PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PR
 const VERTEX_LOCATION = process.env.VERTEX_AI_LOCATION || 'us-central1';
 const VERTEX_LIVE_MODEL = 'gemini-2.0-flash-live-001';  // Live API model
 const VERTEX_TTS_MODEL = 'gemini-2.5-flash-preview-tts';  // Gemini-TTS model
+
+/**
+ * VTID-01155: Process multimodal chat with images
+ * Uses Gemini API directly with image data for screen/camera sharing
+ */
+async function processMultimodalChat(
+  inputText: string,
+  images: Array<{ data_b64: string; mime: string; source?: string }>,
+  conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }>,
+  systemInstruction?: string
+): Promise<{ reply: string; provider: string; model: string }> {
+  console.log(`[VTID-01155] Processing multimodal chat with ${images.length} image(s)`);
+
+  // Build content parts with text and images
+  const parts: any[] = [];
+
+  // Add images first
+  for (const img of images) {
+    parts.push({
+      inlineData: {
+        mimeType: img.mime || 'image/jpeg',
+        data: img.data_b64
+      }
+    });
+    console.log(`[VTID-01155] Added ${img.source || 'unknown'} image (${img.mime})`);
+  }
+
+  // Add text prompt
+  parts.push({ text: inputText });
+
+  // Build contents array with conversation history
+  const contents: any[] = [];
+
+  // Add conversation history (text only)
+  for (const msg of conversationHistory.slice(-10)) {  // Last 10 messages
+    contents.push({
+      role: msg.role === 'user' ? 'user' : 'model',
+      parts: [{ text: msg.content }]
+    });
+  }
+
+  // Add current user message with images
+  contents.push({
+    role: 'user',
+    parts
+  });
+
+  const requestBody: any = {
+    contents,
+    generationConfig: {
+      temperature: 0.7,
+      topP: 0.95,
+      maxOutputTokens: 2048
+    }
+  };
+
+  // Add system instruction if provided
+  if (systemInstruction) {
+    requestBody.systemInstruction = {
+      parts: [{ text: systemInstruction }]
+    };
+  }
+
+  // Use the multimodal-capable model
+  const multimodalModel = 'gemini-2.0-flash-exp';  // Supports vision
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${multimodalModel}:generateContent`;
+
+  const response = await fetch(`${apiUrl}?key=${GEMINI_API_KEY}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(requestBody)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`[VTID-01155] Multimodal API error: ${response.status} - ${errorText}`);
+    throw new Error(`Multimodal API error: ${response.status}`);
+  }
+
+  const data = await response.json() as any;
+  const replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+  console.log(`[VTID-01155] Multimodal response received: ${replyText.substring(0, 50)}...`);
+
+  return {
+    reply: replyText,
+    provider: 'gemini-multimodal',
+    model: multimodalModel
+  };
+}
 
 /**
  * VTID-01039: Cleanup expired transcripts (retain for 1 hour after finalization)
@@ -1750,20 +1847,38 @@ router.post('/chat', async (req: Request, res: Response) => {
       // Note: In production, this might trigger human escalation or special handling
     }
 
-    // Process with Gemini using Vertex routing (same as Operator Console)
-    // VTID-0135: Uses processWithGemini which prioritizes Vertex AI > Gemini API > Local
-    // VTID-01106: Pass memory-enhanced system instruction
-    const geminiResponse = await processWithGemini({
-      text: inputText,
-      threadId,
-      conversationHistory: conversation.history,
-      conversationId,
-      systemInstruction
-    });
+    // VTID-01155: Check if images are provided for multimodal processing
+    let replyText: string;
+    let provider: string;
+    let model: string;
 
-    const replyText = geminiResponse.reply || 'I apologize, but I could not generate a response.';
-    const provider = (geminiResponse.meta?.provider as string) || 'vertex';
-    const model = (geminiResponse.meta?.model as string) || 'gemini-2.5-pro';
+    if (body.images && body.images.length > 0) {
+      // VTID-01155: Use multimodal processing with images (screen/camera)
+      console.log(`[VTID-01155] Processing with ${body.images.length} image(s)`);
+      const multimodalResponse = await processMultimodalChat(
+        inputText,
+        body.images,
+        conversation.history,
+        systemInstruction
+      );
+      replyText = multimodalResponse.reply || 'I apologize, but I could not generate a response.';
+      provider = multimodalResponse.provider;
+      model = multimodalResponse.model;
+    } else {
+      // Process with Gemini using Vertex routing (same as Operator Console)
+      // VTID-0135: Uses processWithGemini which prioritizes Vertex AI > Gemini API > Local
+      // VTID-01106: Pass memory-enhanced system instruction
+      const geminiResponse = await processWithGemini({
+        text: inputText,
+        threadId,
+        conversationHistory: conversation.history,
+        conversationId,
+        systemInstruction
+      });
+      replyText = geminiResponse.reply || 'I apologize, but I could not generate a response.';
+      provider = (geminiResponse.meta?.provider as string) || 'vertex';
+      model = (geminiResponse.meta?.model as string) || 'gemini-2.5-pro';
+    }
 
     // Update conversation history
     conversation.history.push({ role: 'user', content: inputText });
