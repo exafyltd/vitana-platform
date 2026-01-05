@@ -151,14 +151,25 @@ class GatewayClient {
   }
 
   /**
-   * PATCH /api/v1/oasis/tasks/:vtid - Complete a task
+   * PATCH /api/v1/oasis/tasks/:vtid - Move task to validation
+   * NOTE: Does NOT set terminal 'completed' status. Uses 'in_validation' for governance.
+   * Terminal completion requires human validation or separate governance workflow.
    */
   async completeTask(vtid: string, summary: string): Promise<TaskCompleteResult> {
+    // First, emit the ready_for_validation event
+    await this.emitEvent(
+      vtid,
+      'task.ready_for_validation',
+      `Task ready for validation: ${summary}`,
+      { summary }
+    );
+
+    // Then transition to in_validation status (governance-safe, not terminal)
     return this.request<TaskCompleteResult>(
       'PATCH',
       `/api/v1/oasis/tasks/${vtid}`,
       {
-        status: 'completed',
+        status: 'in_validation',
         summary,
         actor: 'claude-code',
       }

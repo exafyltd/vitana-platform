@@ -1,6 +1,7 @@
 /**
  * complete_task tool
- * Marks a task as completed in OASIS
+ * Moves task to 'in_validation' status and emits task.ready_for_validation event.
+ * Does NOT set terminal 'completed' status - that requires human validation.
  */
 
 import { gatewayClient } from '../lib/gateway-client.js';

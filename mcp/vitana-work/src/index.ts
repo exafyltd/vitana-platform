@@ -101,13 +101,14 @@ const TOOLS = [
   },
   {
     name: 'complete_task',
-    description: 'Mark a task as completed with a summary',
+    description:
+      'Move task to in_validation status with a summary. Emits task.ready_for_validation event. Does NOT set terminal completed status - that requires human validation.',
     inputSchema: {
       type: 'object' as const,
       properties: {
         vtid: {
           type: 'string',
-          description: 'The VTID of the task to complete',
+          description: 'The VTID of the task to move to validation',
         },
         summary: {
           type: 'string',
