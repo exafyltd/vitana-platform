@@ -3052,6 +3052,20 @@ router.post('/tts', async (req: Request, res: Response) => {
     text_length: text.length
   });
 
+  // VTID-01155: Check if API key is configured
+  if (!GEMINI_API_KEY) {
+    console.warn('[VTID-01155] TTS: GOOGLE_GEMINI_API_KEY not configured');
+    await emitTtsEvent('vtid.tts.failure', {
+      lang,
+      voice,
+      error: 'API key not configured'
+    });
+    return res.status(503).json({
+      ok: false,
+      error: 'TTS service not configured (missing API key)'
+    });
+  }
+
   try {
     // Use Vertex AI Gemini-TTS API
     // For now, use a simple synthesis via generateContent with audio output
