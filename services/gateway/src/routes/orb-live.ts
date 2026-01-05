@@ -1851,6 +1851,8 @@ router.post('/chat', async (req: Request, res: Response) => {
     let replyText: string;
     let provider: string;
     let model: string;
+    let toolResults: Array<{ name: string; response: unknown }> = [];
+    let latencyMs = 0;
 
     if (body.images && body.images.length > 0) {
       // VTID-01155: Use multimodal processing with images (screen/camera)
@@ -1864,6 +1866,7 @@ router.post('/chat', async (req: Request, res: Response) => {
       replyText = multimodalResponse.reply || 'I apologize, but I could not generate a response.';
       provider = multimodalResponse.provider;
       model = multimodalResponse.model;
+      // Multimodal doesn't return tool results or latency
     } else {
       // Process with Gemini using Vertex routing (same as Operator Console)
       // VTID-0135: Uses processWithGemini which prioritizes Vertex AI > Gemini API > Local
@@ -1878,6 +1881,8 @@ router.post('/chat', async (req: Request, res: Response) => {
       replyText = geminiResponse.reply || 'I apologize, but I could not generate a response.';
       provider = (geminiResponse.meta?.provider as string) || 'vertex';
       model = (geminiResponse.meta?.model as string) || 'gemini-2.5-pro';
+      toolResults = (geminiResponse.toolResults as Array<{ name: string; response: unknown }>) || [];
+      latencyMs = (geminiResponse.meta?.latency_ms as number) || 0;
     }
 
     // Update conversation history
@@ -1891,7 +1896,7 @@ router.post('/chat', async (req: Request, res: Response) => {
 
     // VTID-01118: Update cross-turn state with turn results
     // Extract tool calls from response for state tracking
-    const toolCalls = (geminiResponse.toolResults || []).map(tr => ({
+    const toolCalls = toolResults.map((tr: { name: string; response: unknown }) => ({
       name: tr.name,
       args: {},
       result: tr.response
@@ -1930,7 +1935,6 @@ router.post('/chat', async (req: Request, res: Response) => {
 
     // VTID-01105: Auto-write assistant message to memory (fire-and-forget)
     // VTID-01107: Support dev-sandbox mode without token
-    const latencyMs = geminiResponse.meta?.latency_ms as number || 0;
     if (userToken) {
       writeMemoryItem(userToken, {
         source: memorySource as 'orb_text' | 'orb_voice',
