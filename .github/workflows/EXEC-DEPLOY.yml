@@ -258,8 +258,14 @@ jobs:
 
           # VTID allocator enablement (gateway-only)
           EXTRA_ENV_ARGS=()
+          SECRETS_ARGS=()
           if [ "$CLOUD_RUN_SERVICE" = "gateway" ]; then
             EXTRA_ENV_ARGS+=(--update-env-vars=VTID_ALLOCATOR_ENABLED=true)
+            # VTID-01155: Bind Gemini API key for TTS and chat
+            SECRETS_ARGS+=(--update-secrets=GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest)
+            # Bind other required secrets
+            SECRETS_ARGS+=(--update-secrets=SUPABASE_URL=SUPABASE_URL:latest)
+            SECRETS_ARGS+=(--update-secrets=SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest)
           fi
 
           gcloud run deploy "$CLOUD_RUN_SERVICE" \
@@ -268,6 +274,7 @@ jobs:
             --project=lovable-vitana-vers1 \
             --allow-unauthenticated \
             "${EXTRA_ENV_ARGS[@]}" \
+            "${SECRETS_ARGS[@]}" \
             --quiet
 
           # Get service URL
