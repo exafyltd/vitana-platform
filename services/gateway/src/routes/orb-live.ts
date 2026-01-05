@@ -3114,9 +3114,10 @@ router.post('/tts', async (req: Request, res: Response) => {
     const ttsRequest = {
       contents: [
         {
+          role: 'user',
           parts: [
             {
-              text: `Speak the following text in a ${voiceStyle} tone: "${text}"`
+              text: text  // Direct text, no prompt wrapper needed for TTS
             }
           ]
         }
@@ -3133,6 +3134,8 @@ router.post('/tts', async (req: Request, res: Response) => {
       }
     };
 
+    console.log(`[VTID-01155] TTS request: model=${VERTEX_TTS_MODEL}, voice=${voice}, text_length=${text.length}`);
+
     const response = await fetch(`${ttsApiUrl}?key=${GEMINI_API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3141,17 +3144,20 @@ router.post('/tts', async (req: Request, res: Response) => {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[VTID-01155] TTS API error: ${response.status} - ${errorText}`);
+      console.error(`[VTID-01155] TTS API error: ${response.status}`);
+      console.error(`[VTID-01155] TTS API error body: ${errorText.substring(0, 1000)}`);
 
       await emitTtsEvent('vtid.tts.failure', {
         lang,
         voice,
-        error: `API error: ${response.status}`
+        error: `API error: ${response.status}`,
+        details: errorText.substring(0, 200)
       });
 
       return res.status(response.status).json({
         ok: false,
-        error: `TTS API error: ${response.status}`
+        error: `TTS API error: ${response.status}`,
+        details: errorText.substring(0, 200)
       });
     }
 
