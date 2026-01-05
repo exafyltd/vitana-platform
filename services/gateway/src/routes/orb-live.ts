@@ -390,6 +390,46 @@ const VERTEX_LIVE_MODEL = 'gemini-2.0-flash-live-001';  // Live API model
 const VERTEX_TTS_MODEL = 'gemini-2.5-flash-preview-tts';  // Gemini-TTS model
 
 /**
+ * VTID-01155: Convert raw PCM audio data to WAV format
+ * Gemini TTS returns audio/L16;codec=pcm;rate=24000 (16-bit PCM at 24kHz mono)
+ * Browser Audio element cannot play raw PCM, needs WAV headers
+ */
+function pcmToWav(pcmBase64: string, sampleRate = 24000, numChannels = 1, bitsPerSample = 16): string {
+  // Decode base64 PCM data
+  const pcmData = Buffer.from(pcmBase64, 'base64');
+  const pcmLength = pcmData.length;
+
+  // WAV header is 44 bytes
+  const wavHeaderSize = 44;
+  const wavBuffer = Buffer.alloc(wavHeaderSize + pcmLength);
+
+  // RIFF header
+  wavBuffer.write('RIFF', 0);
+  wavBuffer.writeUInt32LE(wavHeaderSize + pcmLength - 8, 4); // File size - 8
+  wavBuffer.write('WAVE', 8);
+
+  // fmt subchunk
+  wavBuffer.write('fmt ', 12);
+  wavBuffer.writeUInt32LE(16, 16); // Subchunk1Size (16 for PCM)
+  wavBuffer.writeUInt16LE(1, 20); // AudioFormat (1 = PCM)
+  wavBuffer.writeUInt16LE(numChannels, 22); // NumChannels
+  wavBuffer.writeUInt32LE(sampleRate, 24); // SampleRate
+  wavBuffer.writeUInt32LE(sampleRate * numChannels * bitsPerSample / 8, 28); // ByteRate
+  wavBuffer.writeUInt16LE(numChannels * bitsPerSample / 8, 32); // BlockAlign
+  wavBuffer.writeUInt16LE(bitsPerSample, 34); // BitsPerSample
+
+  // data subchunk
+  wavBuffer.write('data', 36);
+  wavBuffer.writeUInt32LE(pcmLength, 40); // Subchunk2Size
+
+  // Copy PCM data
+  pcmData.copy(wavBuffer, wavHeaderSize);
+
+  // Return as base64
+  return wavBuffer.toString('base64');
+}
+
+/**
  * VTID-01155: Process multimodal chat with images
  * Uses Gemini API directly with image data for screen/camera sharing
  */
@@ -3122,6 +3162,7 @@ router.post('/tts', async (req: Request, res: Response) => {
 
     if (!audioData || !audioData.data) {
       console.error('[VTID-01155] No audio data in TTS response');
+      console.error('[VTID-01155] Full response:', JSON.stringify(data, null, 2).substring(0, 500));
 
       await emitTtsEvent('vtid.tts.failure', {
         lang,
@@ -3135,20 +3176,39 @@ router.post('/tts', async (req: Request, res: Response) => {
       });
     }
 
+    // Log the MIME type from API for debugging
+    const apiMimeType = audioData.mimeType || 'unknown';
+    console.log(`[VTID-01155] TTS API returned MIME type: ${apiMimeType}`);
+
+    // VTID-01155: Convert PCM to WAV for browser playback
+    // Gemini TTS returns audio/L16;codec=pcm;rate=24000 (raw PCM)
+    // Browser Audio element cannot play raw PCM - needs WAV headers
+    let finalAudioB64 = audioData.data;
+    let finalMimeType = 'audio/wav';
+
+    if (apiMimeType.includes('L16') || apiMimeType.includes('pcm')) {
+      console.log('[VTID-01155] Converting PCM to WAV for browser playback');
+      finalAudioB64 = pcmToWav(audioData.data, 24000, 1, 16);
+    } else if (apiMimeType.includes('mp3') || apiMimeType.includes('mpeg')) {
+      // If API returns MP3 directly, use it as-is
+      finalMimeType = 'audio/mp3';
+    }
+
     // Emit success event
     await emitTtsEvent('vtid.tts.success', {
       lang,
       voice,
       text_length: text.length,
-      audio_bytes: audioData.data.length
+      audio_bytes: finalAudioB64.length,
+      mime_type: finalMimeType
     });
 
-    console.log(`[VTID-01155] TTS success: lang=${lang}, voice=${voice}, text_length=${text.length}`);
+    console.log(`[VTID-01155] TTS success: lang=${lang}, voice=${voice}, text_length=${text.length}, mime=${finalMimeType}`);
 
     return res.status(200).json({
       ok: true,
-      audio_b64: audioData.data,
-      mime: audioData.mimeType || 'audio/mp3',
+      audio_b64: finalAudioB64,
+      mime: finalMimeType,
       voice,
       lang
     });
