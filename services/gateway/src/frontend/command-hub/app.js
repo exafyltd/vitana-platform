@@ -15015,19 +15015,32 @@ async function orbVoiceSpeakWithGeminiTts(text) {
             // Store reference for barge-in cancellation
             state.orb.geminiTtsAudio = audio;
 
+            // VTID-01155: Safety timeout - if audio doesn't complete in 60 seconds, force end
+            var geminiTtsSafetyTimeout = setTimeout(function() {
+                console.warn('[VTID-01155] Gemini-TTS safety timeout - forcing end');
+                if (state.orb.geminiTtsAudio === audio && state.orb.voiceState === 'SPEAKING') {
+                    audio.pause();
+                    state.orb.geminiTtsAudio = null;
+                    orbVoiceSpeakEnded();
+                }
+            }, 60000);
+
             audio.onended = function() {
+                clearTimeout(geminiTtsSafetyTimeout);
                 console.log('[VTID-01155] Gemini-TTS playback ended');
                 state.orb.geminiTtsAudio = null;
                 orbVoiceSpeakEnded();
             };
 
             audio.onerror = function(e) {
+                clearTimeout(geminiTtsSafetyTimeout);
                 console.error('[VTID-01155] Gemini-TTS audio error:', e);
                 state.orb.geminiTtsAudio = null;
                 orbVoiceSpeakEnded();
             };
 
             audio.play().catch(function(e) {
+                clearTimeout(geminiTtsSafetyTimeout);
                 console.warn('[VTID-01155] Gemini-TTS playback failed, falling back to browser:', e);
                 state.orb.geminiTtsAudio = null;
                 orbVoiceSpeakWithBrowserTts(text);
@@ -15075,17 +15088,30 @@ function orbVoiceSpeakWithBrowserTts(text) {
         console.log('[VTID-0135] Browser TTS started');
     };
 
-    utterance.onend = function() {
-        console.log('[VTID-0135] Browser TTS ended');
-        orbVoiceSpeakEnded();
-    };
-
-    utterance.onerror = function(event) {
-        console.error('[VTID-0135] Browser TTS error:', event.error);
-        // VTID-01037: Handle both normal cancellation (barge-in) and real errors
-        if (event.error !== 'interrupted' && event.error !== 'canceled') {
+    // VTID-01155: Safety timeout - if TTS doesn't complete in 30 seconds, force end
+    // This prevents the conversation from getting stuck if TTS fails silently
+    var ttsSafetyTimeout = setTimeout(function() {
+        console.warn('[VTID-01155] Browser TTS safety timeout - forcing end');
+        if (state.orb.voiceState === 'SPEAKING') {
+            window.speechSynthesis.cancel();
             orbVoiceSpeakEnded();
         }
+    }, 30000);
+
+    utterance.onerror = function(event) {
+        clearTimeout(ttsSafetyTimeout);
+        console.error('[VTID-0135] Browser TTS error:', event.error);
+        // VTID-01155: Always call orbVoiceSpeakEnded on error to prevent blocking
+        // Only skip for 'interrupted' during intentional barge-in cancellation
+        if (event.error !== 'interrupted') {
+            orbVoiceSpeakEnded();
+        }
+    };
+
+    utterance.onend = function() {
+        clearTimeout(ttsSafetyTimeout);
+        console.log('[VTID-0135] Browser TTS ended');
+        orbVoiceSpeakEnded();
     };
 
     state.orb.speechSynthesisUtterance = utterance;
