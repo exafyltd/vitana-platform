@@ -1,0 +1,192 @@
+# =============================================================================
+# Skill: Worker Memory Validate RLS Policy - VTID-01164
+# =============================================================================
+# Prevents tenant isolation leaks by validating RLS policies reference
+# tenant isolation helpers like current_tenant_id() patterns.
+# =============================================================================
+
+skill_id: worker.memory.validate_rls_policy
+name: Validate RLS Policy
+description: |
+  Validates that new/modified RLS (Row Level Security) policies correctly
+  reference tenant isolation helpers. Flags policies that allow broad access
+  or might leak data across tenants. Critical for multi-tenant security.
+version: 1.0.0
+category: worker
+domain: memory
+vtid: VTID-01164
+
+provider:
+  type: internal
+  module: services/agents/workforce/skills/validateRlsPolicy
+  function: validateRlsPolicy
+  timeout_ms: 30000
+
+parameters:
+  vtid:
+    type: string
+    required: true
+    description: Task identifier
+    pattern: "^VTID-\\d{4,}$"
+
+  policy_content:
+    type: string
+    required: false
+    description: SQL content of the RLS policy to validate
+
+  file_paths:
+    type: array
+    required: false
+    description: Migration files containing RLS policies
+    items:
+      type: string
+    examples:
+      - ["supabase/migrations/20260104_add_user_policy.sql"]
+
+  table_name:
+    type: string
+    required: false
+    description: Specific table to validate policies for
+
+  strict_mode:
+    type: boolean
+    required: false
+    default: true
+    description: Require explicit tenant_id checks (vs allowing role-based)
+
+response_schema:
+  ok:
+    type: boolean
+    description: Whether validation completed successfully
+
+  valid:
+    type: boolean
+    description: Whether all policies passed validation
+
+  policies_checked:
+    type: array
+    description: List of policies that were validated
+    items:
+      type: object
+      properties:
+        table:
+          type: string
+        policy_name:
+          type: string
+        policy_type:
+          type: string
+          enum: [SELECT, INSERT, UPDATE, DELETE, ALL]
+        valid:
+          type: boolean
+        issues:
+          type: array
+          items:
+            type: string
+
+  violations:
+    type: array
+    description: Tenant isolation violations found
+    items:
+      type: object
+      properties:
+        severity:
+          type: string
+          enum: [critical, warning]
+        table:
+          type: string
+        policy:
+          type: string
+        issue:
+          type: string
+        recommendation:
+          type: string
+
+  tenant_helpers_used:
+    type: array
+    description: Tenant isolation helpers found in policies
+    items:
+      type: string
+    examples:
+      - ["current_tenant_id()", "auth.uid()", "get_tenant_from_jwt()"]
+
+  summary:
+    type: object
+    properties:
+      total_policies:
+        type: integer
+      valid_policies:
+        type: integer
+      violations_count:
+        type: integer
+      tables_affected:
+        type: array
+        items:
+          type: string
+
+  error:
+    type: string
+    description: Error message if validation failed
+
+guardrails:
+  # Only validate memory/migration paths
+  allowed_paths:
+    - "supabase/migrations/**"
+    - "supabase/functions/**"
+    - "database/**"
+
+  # Known tenant isolation patterns
+  required_patterns:
+    - "current_tenant_id()"
+    - "auth.uid()"
+    - "tenant_id ="
+    - "user_id ="
+
+  # Tables exempt from tenant validation (system tables)
+  tenant_exempt_tables:
+    - "schema_migrations"
+    - "VtidLedger"
+    - "oasis_events"
+    - "service_versions"
+    - "governance_rules"
+
+telemetry:
+  emit_events: true
+  event_types:
+    - vtid.stage.worker_memory.rls_validate.start
+    - vtid.stage.worker_memory.rls_validate.success
+    - vtid.stage.worker_memory.rls_validate.failed
+    - vtid.stage.worker_memory.rls_validate.violation
+  oasis_endpoint: ${OASIS_API_URL}/events/ingest
+  include_metadata:
+    - policies_checked
+    - violations_count
+    - tables_affected
+
+usage:
+  roles:
+    - worker
+    - validator
+  primary_role: worker
+  use_cases:
+    - Validate new RLS policies before migration
+    - Audit existing tenant isolation
+    - Pre-merge gate for database changes
+    - Prevent cross-tenant data leaks
+
+error_handling:
+  retry_attempts: 1
+  retry_backoff_ms: 1000
+  fallback_strategy: return_error_with_details
+
+  error_codes:
+    PARSE_ERROR:
+      description: Could not parse SQL policy
+      recoverable: false
+
+    NO_POLICIES_FOUND:
+      description: No RLS policies found in provided content
+      recoverable: false
+
+    TENANT_VIOLATION:
+      description: Policy lacks tenant isolation
+      recoverable: false
