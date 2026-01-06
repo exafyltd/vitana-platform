@@ -15,7 +15,8 @@
 // VTID-01027: Operator Console Session Memory - client-side context + conversation_id
 // VTID-01028: Task Board Rendering Fix - Restore Visibility & Authority
 // VTID-01111: Filter allocator shell entries from Command Hub board
-console.log('🔥 COMMAND HUB BUNDLE: VTID-01111 LIVE 🔥');
+// VTID-01151: Command Hub Approvals UI — Badge Counter + Live Pending List + Approve/Reject
+console.log('🔥 COMMAND HUB BUNDLE: VTID-01151 LIVE 🔥');
 
 // ===========================================================================
 // VTID-01010: Target Role Constants (canonical)
@@ -2109,11 +2110,14 @@ const state = {
     },
 
     // VTID-0600: Approvals UI Scaffolding
+    // VTID-01151: Added pending_count for badge counter
     approvals: {
         items: [],
         loading: false,
         error: null,
-        fetched: false
+        fetched: false,
+        pending_count: 0,
+        countFetched: false
     },
 
     // VTID-0600: Ticker Severity Prioritization
@@ -2657,31 +2661,107 @@ async function fetchVtidProjection() {
 }
 
 /**
- * VTID-0601: Fetch approvals from CICD API
+ * VTID-01151: Fetch approvals count for badge counter
+ * Calls GET /api/v1/approvals/count
+ */
+async function fetchApprovalsCount() {
+    console.log('[VTID-01151] Fetching approvals count...');
+    try {
+        var response = await fetch('/api/v1/approvals/count', {
+            headers: withVitanaContextHeaders({})
+        });
+        var data = await response.json();
+
+        if (data.ok !== false && typeof data.pending_count === 'number') {
+            state.approvals.pending_count = data.pending_count;
+            state.approvals.countFetched = true;
+            console.log('[VTID-01151] Approvals count:', data.pending_count);
+        } else {
+            console.warn('[VTID-01151] Count fetch returned error:', data.error);
+        }
+    } catch (err) {
+        console.error('[VTID-01151] Count fetch exception:', err);
+    }
+    // Incremental update for badge - no full renderApp() to avoid scroll issues
+    updateApprovalsBadge();
+}
+
+/**
+ * VTID-01151: Incremental badge update - avoids full renderApp() during polling
+ */
+function updateApprovalsBadge() {
+    var badge = document.querySelector('.approvals-badge');
+    if (badge) {
+        var count = state.approvals.pending_count;
+        if (count > 0) {
+            badge.textContent = count;
+            badge.style.display = 'inline-flex';
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+}
+
+// VTID-01151: Polling interval for approvals badge
+var approvalsBadgePollingInterval = null;
+
+/**
+ * VTID-01151: Start polling for approvals count (every 20s)
+ */
+function startApprovalsBadgePolling() {
+    if (approvalsBadgePollingInterval) return; // Already polling
+    console.log('[VTID-01151] Starting approvals badge polling (20s interval)');
+    approvalsBadgePollingInterval = setInterval(function() {
+        fetchApprovalsCount();
+    }, 20000);
+}
+
+/**
+ * VTID-01151: Stop polling for approvals count
+ */
+function stopApprovalsBadgePolling() {
+    if (approvalsBadgePollingInterval) {
+        clearInterval(approvalsBadgePollingInterval);
+        approvalsBadgePollingInterval = null;
+        console.log('[VTID-01151] Stopped approvals badge polling');
+    }
+}
+
+/**
+ * VTID-0601: Fetch approvals from API
+ * VTID-01151: Updated to use /api/v1/approvals/pending?limit=50
  */
 async function fetchApprovals() {
-    console.log('[VTID-0601] Fetching approvals...');
+    console.log('[VTID-01151] Fetching pending approvals...');
     state.approvals.loading = true;
     state.approvals.error = null;
     renderApp();
 
     try {
-        var response = await fetch('/api/v1/cicd/approvals');
+        var response = await fetch('/api/v1/approvals/pending?limit=50', {
+            headers: withVitanaContextHeaders({})
+        });
         var data = await response.json();
 
-        if (data.ok) {
-            state.approvals.items = data.approvals || [];
+        if (data.ok !== false) {
+            state.approvals.items = data.approvals || data.items || [];
             state.approvals.error = null;
-            console.log('[VTID-0601] Approvals loaded:', state.approvals.items.length, 'items');
+            // VTID-01151: Also update count from response if available
+            if (typeof data.pending_count === 'number') {
+                state.approvals.pending_count = data.pending_count;
+            } else {
+                state.approvals.pending_count = state.approvals.items.length;
+            }
+            console.log('[VTID-01151] Approvals loaded:', state.approvals.items.length, 'items');
         } else {
             state.approvals.items = [];
             state.approvals.error = data.error || 'Failed to fetch approvals';
-            console.error('[VTID-0601] Approvals fetch error:', state.approvals.error);
+            console.error('[VTID-01151] Approvals fetch error:', state.approvals.error);
         }
     } catch (err) {
         state.approvals.items = [];
         state.approvals.error = err.message || 'Network error';
-        console.error('[VTID-0601] Approvals fetch exception:', err);
+        console.error('[VTID-01151] Approvals fetch exception:', err);
     }
 
     state.approvals.loading = false;
@@ -2692,20 +2772,21 @@ async function fetchApprovals() {
 /**
  * VTID-0601: Approve an approval item (merge + optional deploy)
  * VTID-01019: Uses OASIS ACK binding - no optimistic UI
+ * VTID-01151: Updated to use /api/v1/approvals/:approval_id/approve
  */
 async function approveApprovalItem(approvalId) {
-    console.log('[VTID-0601] Approving item:', approvalId);
+    console.log('[VTID-01151] Approving item:', approvalId);
     state.approvals.loading = true;
     renderApp();
 
     try {
-        var response = await fetch('/api/v1/cicd/approvals/' + approvalId + '/approve', {
+        var response = await fetch('/api/v1/approvals/' + approvalId + '/approve', {
             method: 'POST',
             headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' })
         });
         var data = await response.json();
 
-        if (data.ok) {
+        if (data.ok !== false) {
             // ===========================================================
             // VTID-01019: OASIS ACK Binding - No optimistic success UI
             // Register pending action and wait for OASIS confirmation
@@ -2733,9 +2814,10 @@ async function approveApprovalItem(approvalId) {
                 vtid: vtid
             });
 
-            // Refresh approvals list (shows pending state)
+            // VTID-01151: Refresh approvals list and count
             state.approvals.fetched = false;
             await fetchApprovals();
+            fetchApprovalsCount();
         } else {
             // VTID-01019: Immediate backend failure
             showToast('Approval failed: ' + (data.error || 'Unknown error'), 'error');
@@ -2751,33 +2833,35 @@ async function approveApprovalItem(approvalId) {
 }
 
 /**
- * VTID-0601: Deny an approval item
+ * VTID-0601: Deny/reject an approval item
+ * VTID-01151: Updated to use /api/v1/approvals/:approval_id/reject
  */
 async function denyApprovalItem(approvalId, reason) {
-    console.log('[VTID-0601] Denying item:', approvalId);
+    console.log('[VTID-01151] Rejecting item:', approvalId);
     state.approvals.loading = true;
     renderApp();
 
     try {
-        var response = await fetch('/api/v1/cicd/approvals/' + approvalId + '/deny', {
+        var response = await fetch('/api/v1/approvals/' + approvalId + '/reject', {
             method: 'POST',
             headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ reason: reason || 'Denied by user' })
+            body: JSON.stringify({ reason: reason || 'Rejected by user' })
         });
         var data = await response.json();
 
-        if (data.ok) {
-            showToast('Approval denied.', 'info');
-            // Refresh approvals list
+        if (data.ok !== false) {
+            showToast('Approval rejected.', 'info');
+            // VTID-01151: Refresh approvals list and count
             state.approvals.fetched = false;
             await fetchApprovals();
+            fetchApprovalsCount();
         } else {
-            showToast('Denial failed: ' + (data.error || 'Unknown error'), 'error');
+            showToast('Rejection failed: ' + (data.error || 'Unknown error'), 'error');
             state.approvals.loading = false;
             renderApp();
         }
     } catch (err) {
-        showToast('Denial failed: ' + err.message, 'error');
+        showToast('Rejection failed: ' + err.message, 'error');
         state.approvals.loading = false;
         renderApp();
     }
@@ -3635,6 +3719,17 @@ function renderMainContent() {
             const tabEl = document.createElement('div');
             tabEl.className = `sub-nav-tab ${state.currentTab === tab.key ? 'active' : ''}`;
             tabEl.textContent = formatTabLabel(tab.key);
+
+            // VTID-01151: Add badge counter to Approvals tab
+            if (tab.key === 'approvals') {
+                const badge = document.createElement('span');
+                badge.className = 'approvals-badge';
+                const count = state.approvals.pending_count;
+                badge.textContent = count;
+                badge.style.display = count > 0 ? 'inline-flex' : 'none';
+                tabEl.appendChild(badge);
+            }
+
             tabEl.onclick = () => handleTabClick(tab.key);
             subNav.appendChild(tabEl);
         });
@@ -5659,6 +5754,11 @@ function handleTabClick(tabKey) {
 
     // Update URL
     history.pushState(null, '', tab.path);
+
+    // VTID-01151: Refresh approvals count when navigating to Approvals tab
+    if (tabKey === 'approvals') {
+        fetchApprovalsCount();
+    }
 
     renderApp();
 
@@ -15490,6 +15590,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // VTID-0520: Start CI/CD health polling
         startCicdHealthPolling();
+
+        // VTID-01151: Fetch initial approvals count and start polling (20s)
+        fetchApprovalsCount();
+        startApprovalsBadgePolling();
     } catch (e) {
         console.error('Critical Render Error:', e);
         document.body.innerHTML = `<div class="critical-error"><h1>Critical Error</h1><pre>${e.stack}</pre></div>`;
