@@ -43,7 +43,7 @@
 
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
-import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
+import { GoogleAuth } from 'google-auth-library';
 import { processWithGemini } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
 // VTID-01149: Unified Task-Creation Intake
@@ -396,14 +396,74 @@ const VERTEX_LOCATION = process.env.VERTEX_AI_LOCATION || 'us-central1';
 const VERTEX_LIVE_MODEL = 'gemini-2.0-flash-live-001';  // Live API model
 const VERTEX_TTS_MODEL = 'gemini-2.5-flash-tts';  // Cloud TTS with Gemini voices
 
-// VTID-01155: Google Cloud Text-to-Speech client with Gemini voices
+// VTID-01155: Google Cloud Text-to-Speech REST API with Gemini voices
 // Uses ADC (Application Default Credentials) - automatic on Cloud Run
-let ttsClient: TextToSpeechClient | null = null;
-try {
-  ttsClient = new TextToSpeechClient();
-  console.log('[VTID-01155] Google Cloud TTS client initialized');
-} catch (err: any) {
-  console.warn('[VTID-01155] Failed to initialize TTS client:', err.message);
+// Note: SDK doesn't support modelName field, so we use REST API directly
+const ttsAuth = new GoogleAuth({
+  scopes: ['https://www.googleapis.com/auth/cloud-platform']
+});
+let ttsClientReady = false;
+
+// Test auth on startup
+(async () => {
+  try {
+    const client = await ttsAuth.getClient();
+    await client.getAccessToken();
+    ttsClientReady = true;
+    console.log('[VTID-01155] Google Cloud TTS auth initialized (REST API mode)');
+  } catch (err: any) {
+    console.warn('[VTID-01155] Failed to initialize TTS auth:', err.message);
+  }
+})();
+
+/**
+ * VTID-01155: Call Cloud TTS REST API with Gemini model
+ * SDK doesn't support modelName field, so we call REST API directly
+ */
+async function synthesizeSpeechRest(
+  text: string,
+  voiceName: string,
+  languageCode: string,
+  modelName: string = VERTEX_TTS_MODEL
+): Promise<{ audioContent: string } | null> {
+  const client = await ttsAuth.getClient();
+  const tokenResponse = await client.getAccessToken();
+  const token = tokenResponse.token;
+
+  if (!token) {
+    throw new Error('Failed to get access token');
+  }
+
+  const requestBody = {
+    input: { text },
+    voice: {
+      languageCode,
+      name: voiceName,
+      modelName
+    },
+    audioConfig: {
+      audioEncoding: 'MP3',
+      speakingRate: 1.0,
+      pitch: 0
+    }
+  };
+
+  const response = await fetch('https://texttospeech.googleapis.com/v1/text:synthesize', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(requestBody)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`TTS API error ${response.status}: ${errorText}`);
+  }
+
+  const result = await response.json() as { audioContent: string };
+  return result;
 }
 
 // VTID-01155: Gemini TTS voice mapping for each language
@@ -2809,36 +2869,36 @@ router.get('/debug/tts', async (req: Request, res: Response) => {
 
   const debugResult: Record<string, unknown> = {
     timestamp: new Date().toISOString(),
-    tts_client_ready: !!ttsClient,
-    model: 'gemini-2.5-flash-tts',
+    tts_client_ready: ttsClientReady,
+    model: VERTEX_TTS_MODEL,
     voice: voiceConfig.name,
     language_code: voiceConfig.languageCode,
     lang: lang,
     test_text: testText,
-    test_text_length: testText.length
+    test_text_length: testText.length,
+    api_mode: 'REST'  // Using REST API since SDK doesn't support modelName
   };
 
-  if (!ttsClient) {
+  if (!ttsClientReady) {
     return res.status(200).json({
       ok: false,
       ...debugResult,
-      error: 'Google Cloud TTS client not initialized'
+      error: 'Google Cloud TTS auth not initialized'
     });
   }
 
   try {
-    console.log(`[VTID-01155] Debug TTS: testing Cloud TTS with voice=${voiceConfig.name}, lang=${voiceConfig.languageCode}`);
+    console.log(`[VTID-01155] Debug TTS: testing REST API with voice=${voiceConfig.name}, lang=${voiceConfig.languageCode}, model=${VERTEX_TTS_MODEL}`);
 
-    const request: protos.google.cloud.texttospeech.v1.ISynthesizeSpeechRequest = {
+    const request = {
       input: { text: testText },
       voice: {
         languageCode: voiceConfig.languageCode,
         name: voiceConfig.name,
-        // @ts-ignore - modelName is supported but types may be outdated
-        modelName: 'gemini-2.5-flash-tts'
+        modelName: VERTEX_TTS_MODEL
       },
       audioConfig: {
-        audioEncoding: 'MP3' as any,
+        audioEncoding: 'MP3',
         speakingRate: 1.0,
         pitch: 0
       }
@@ -2846,11 +2906,16 @@ router.get('/debug/tts', async (req: Request, res: Response) => {
 
     debugResult.request = request;
 
-    const [response] = await ttsClient.synthesizeSpeech(request);
+    const response = await synthesizeSpeechRest(
+      testText,
+      voiceConfig.name,
+      voiceConfig.languageCode,
+      VERTEX_TTS_MODEL
+    );
 
-    debugResult.has_audio_content = !!response.audioContent;
+    debugResult.has_audio_content = !!response?.audioContent;
 
-    if (!response.audioContent) {
+    if (!response?.audioContent) {
       return res.status(200).json({
         ok: false,
         ...debugResult,
@@ -2858,17 +2923,14 @@ router.get('/debug/tts', async (req: Request, res: Response) => {
       });
     }
 
-    const audioBytes = Buffer.isBuffer(response.audioContent)
-      ? response.audioContent.length
-      : (response.audioContent as Uint8Array).length;
-
+    const audioBytes = Buffer.from(response.audioContent, 'base64').length;
     debugResult.audio_bytes = audioBytes;
 
     // Success!
     return res.status(200).json({
       ok: true,
       ...debugResult,
-      message: 'Google Cloud TTS with Gemini model working correctly'
+      message: 'Google Cloud TTS with Gemini model working correctly (REST API)'
     });
 
   } catch (err: any) {
@@ -2877,8 +2939,6 @@ router.get('/debug/tts', async (req: Request, res: Response) => {
       ok: false,
       ...debugResult,
       error: err.message,
-      error_code: err.code,
-      error_details: err.details,
       stack: err.stack?.substring(0, 500)
     });
   }
@@ -3313,13 +3373,13 @@ router.post('/tts', async (req: Request, res: Response) => {
     text_length: text.length
   });
 
-  // Check if TTS client is available
-  if (!ttsClient) {
-    console.warn('[VTID-01155] TTS: Google Cloud TTS client not initialized');
+  // Check if TTS auth is ready
+  if (!ttsClientReady) {
+    console.warn('[VTID-01155] TTS: Google Cloud TTS auth not initialized');
     await emitTtsEvent('vtid.tts.failure', {
       lang,
       voice: voiceConfig.name,
-      error: 'TTS client not initialized'
+      error: 'TTS auth not initialized'
     });
     return res.status(503).json({
       ok: false,
@@ -3328,27 +3388,17 @@ router.post('/tts', async (req: Request, res: Response) => {
   }
 
   try {
-    console.log(`[VTID-01155] TTS request: voice=${voiceConfig.name}, lang=${voiceConfig.languageCode}, text_length=${text.length}`);
+    console.log(`[VTID-01155] TTS request (REST): voice=${voiceConfig.name}, lang=${voiceConfig.languageCode}, model=${VERTEX_TTS_MODEL}, text_length=${text.length}`);
 
-    // Use Google Cloud Text-to-Speech API with Gemini model
-    const request: protos.google.cloud.texttospeech.v1.ISynthesizeSpeechRequest = {
-      input: { text: text },
-      voice: {
-        languageCode: voiceConfig.languageCode,
-        name: voiceConfig.name,
-        // @ts-ignore - modelName is supported but types may be outdated
-        modelName: 'gemini-2.5-flash-tts'
-      },
-      audioConfig: {
-        audioEncoding: 'MP3' as any,  // Returns MP3 directly
-        speakingRate: 1.0,
-        pitch: 0
-      }
-    };
+    // Use REST API directly since SDK doesn't support modelName
+    const response = await synthesizeSpeechRest(
+      text,
+      voiceConfig.name,
+      voiceConfig.languageCode,
+      VERTEX_TTS_MODEL
+    );
 
-    const [response] = await ttsClient.synthesizeSpeech(request);
-
-    if (!response.audioContent) {
+    if (!response?.audioContent) {
       console.error('[VTID-01155] No audio content in TTS response');
       await emitTtsEvent('vtid.tts.failure', {
         lang,
@@ -3361,10 +3411,8 @@ router.post('/tts', async (req: Request, res: Response) => {
       });
     }
 
-    // Convert audio content to base64
-    const audioB64 = Buffer.isBuffer(response.audioContent)
-      ? response.audioContent.toString('base64')
-      : Buffer.from(response.audioContent as Uint8Array).toString('base64');
+    // audioContent is already base64 from REST API
+    const audioB64 = response.audioContent;
 
     // Emit success event
     await emitTtsEvent('vtid.tts.success', {
@@ -3419,7 +3467,7 @@ router.get('/health', (_req: Request, res: Response) => {
     model: GEMINI_MODEL,
     transport: 'SSE',
     gemini_configured: hasGeminiKey,
-    tts_client_ready: !!ttsClient,
+    tts_client_ready: ttsClientReady,
     active_sessions: sessions.size,
     active_conversations: orbConversations.size,
     active_transcripts: orbTranscripts.size,
