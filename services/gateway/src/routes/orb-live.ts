@@ -387,7 +387,7 @@ const liveSessions = new Map<string, GeminiLiveSession>();
 const VERTEX_PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID || '';
 const VERTEX_LOCATION = process.env.VERTEX_AI_LOCATION || 'us-central1';
 const VERTEX_LIVE_MODEL = 'gemini-2.0-flash-live-001';  // Live API model
-const VERTEX_TTS_MODEL = 'gemini-2.5-flash-tts';  // Gemini-TTS model (NOT preview)
+const VERTEX_TTS_MODEL = 'gemini-2.5-flash-preview-tts';  // Gemini-TTS model (preview required for TTS)
 
 /**
  * VTID-01155: Convert raw PCM audio data to WAV format
@@ -3123,10 +3123,12 @@ router.post('/tts', async (req: Request, res: Response) => {
     };
     const languageCode = langCodeMap[lang] || 'en-US';
 
-    // Request format based on working Gemini TTS examples
+    // Request format based on official Google Gemini TTS documentation
+    // CRITICAL: responseModalities: ['AUDIO'] is REQUIRED for TTS output
     const ttsRequest = {
       contents: [
         {
+          role: 'user',
           parts: [
             {
               text: text
@@ -3135,8 +3137,8 @@ router.post('/tts', async (req: Request, res: Response) => {
         }
       ],
       generationConfig: {
+        responseModalities: ['AUDIO'],  // REQUIRED - tells API to return audio
         speechConfig: {
-          languageCode: languageCode,
           voiceConfig: {
             prebuiltVoiceConfig: {
               voiceName: voice
