@@ -1112,7 +1112,8 @@ body {
   border-radius: 50%;
 }
 
-/* Publish pill (accent blue) */
+/* SPEC-01 DEPRECATED: Publish pill (accent blue) - Now uses header-pill--neutral */
+/* DO NOT USE - Violates SPEC-01 Global Top Navigation Standard */
 .header-pill--publish {
   background: var(--color-accent);
   border-color: var(--color-accent);
@@ -1124,7 +1125,8 @@ body {
   border-color: var(--color-accent-hover);
 }
 
-/* Operator pill (orange accent, same size as other pills) */
+/* SPEC-01 DEPRECATED: Operator pill (orange accent) - Now uses header-pill--neutral */
+/* DO NOT USE - Violates SPEC-01 Global Top Navigation Standard */
 .header-pill--operator {
   background: rgba(245, 158, 11, 0.1);
   border-color: rgba(245, 158, 11, 0.3);
@@ -1201,6 +1203,33 @@ body {
 .header-icon-button__icon {
   font-size: 1rem;
   line-height: 1;
+}
+
+/* --- SPEC-01: Global Refresh Icon Button --- */
+.header-icon-button--refresh {
+  /* Same neutral styling as other header icon buttons */
+}
+
+.header-icon-button--refresh:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.header-icon-button--loading {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.header-icon-button--loading .header-icon-button__icon {
+  animation: spin-refresh 1s linear infinite;
+}
+
+@keyframes spin-refresh {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* --- LIVE Status Pill (VTID-0517) --- */

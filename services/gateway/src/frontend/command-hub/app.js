@@ -1095,6 +1095,98 @@ function refreshActiveViewData() {
 }
 
 /**
+ * SPEC-01: Global Refresh - Triggers full data reload for the active screen.
+ * Called by the global refresh button (⟳) in the header.
+ * Returns a promise that resolves when refresh is complete.
+ */
+async function triggerGlobalRefresh() {
+    var moduleKey = state.currentModuleKey;
+    var tab = state.currentTab;
+
+    console.log('[SPEC-01] Global refresh triggered for:', moduleKey, tab);
+
+    // Comprehensive refresh based on current view
+    try {
+        if (moduleKey === 'command-hub') {
+            if (tab === 'tasks') {
+                await fetchTasks();
+            } else if (tab === 'events') {
+                await fetchCommandHubEvents();
+            } else if (tab === 'vtids') {
+                state.vtidProjection.fetched = false;
+                await fetchVtidProjection();
+            } else if (tab === 'approvals') {
+                state.approvals.fetched = false;
+                await fetchApprovals();
+            }
+        } else if (moduleKey === 'oasis') {
+            if (tab === 'events') {
+                await fetchOasisEvents(state.oasisEvents.filters);
+            } else if (tab === 'vtid-ledger') {
+                state.vtidProjection.fetched = false;
+                await fetchVtidProjection();
+            } else if (tab === 'entities') {
+                state.oasisEntities.fetched = false;
+                await fetchOasisEntities();
+            } else if (tab === 'streams') {
+                state.oasisStreams.fetched = false;
+                await fetchOasisStreams();
+            } else if (tab === 'command-log') {
+                state.oasisCommandLog.fetched = false;
+                await fetchOasisCommandLog();
+            }
+        } else if (moduleKey === 'governance') {
+            if (tab === 'rules') {
+                await fetchGovernanceRules();
+            } else if (tab === 'evaluations') {
+                await fetchGovernanceEvaluations();
+            } else if (tab === 'history') {
+                state.historyPage = 1;
+                state.historyLoading = true;
+                await fetchHistory();
+            } else if (tab === 'violations') {
+                state.governanceViolations.fetched = false;
+                await fetchGovernanceViolations();
+            } else if (tab === 'proposals') {
+                state.governanceProposals.fetched = false;
+                await fetchGovernanceProposals();
+            } else if (tab === 'categories') {
+                state.governanceCategories.fetched = false;
+                await fetchGovernanceCategories();
+            }
+        } else if (moduleKey === 'operator') {
+            if (tab === 'task-queue' || tab === 'task-details') {
+                await fetchOperatorTasks();
+            } else if (tab === 'execution-logs') {
+                await fetchOperatorLogs();
+            } else if (tab === 'pipelines') {
+                state.operatorPipelines.fetched = false;
+                await fetchOperatorPipelines();
+            }
+        } else if (moduleKey === 'memory-garden') {
+            state.memoryGarden.loading = true;
+            await fetchMemoryGardenProgress();
+        } else if (moduleKey === 'agents') {
+            state.agents.fetched = false;
+            await fetchAgents();
+        } else if (moduleKey === 'test-runs') {
+            state.testRuns.fetched = false;
+            await fetchTestRuns();
+        } else if (moduleKey === 'deployments') {
+            state.deployments.fetched = false;
+            await fetchDeployments();
+        } else if (moduleKey === 'uxhub') {
+            await fetchUxHubData();
+        }
+
+        // Re-render to show updated data
+        renderApp();
+    } catch (error) {
+        console.error('[SPEC-01] Global refresh error:', error);
+    }
+}
+
+/**
  * VTID-01002: Incremental refresh for OASIS events content.
  * Updates table body only, keeps scroll container stable.
  */
@@ -1828,6 +1920,9 @@ const state = {
     // VTID-01010: Target Role state for task creation and filtering
     modalDraftTargetRoles: [], // Array of selected role strings
     taskRoleFilter: 'ALL', // 'ALL' or one of TARGET_ROLES
+
+    // SPEC-01: Global Refresh State
+    globalRefreshLoading: false,
 
     // Global Overlays (VTID-0508 / VTID-0509)
     isHeartbeatOpen: false,
@@ -3375,19 +3470,23 @@ function renderHeader() {
     const header = document.createElement('div');
     header.className = 'header-toolbar';
 
-    // --- Left Section: Autopilot, Operator, Clock (DEV-COMHU-2025-0010: Heartbeat removed) ---
+    // --- SPEC-01: Global Top Navigation Standard ---
+    // LEFT (from left → right): AUTOPILOT | OPERATOR | ⏱ (History) | Publish
+    // RIGHT (from right → left): ⟳ (Refresh - rightmost) | LIVE
+
+    // --- Left Section: Autopilot, Operator, History, Publish (all neutral) ---
     const left = document.createElement('div');
     left.className = 'header-toolbar-left';
 
-    // 1. Autopilot pill (neutral styling, uppercase)
+    // 1. Autopilot pill (neutral styling, uppercase) - leftmost
     const autopilotBtn = document.createElement('button');
     autopilotBtn.className = 'header-pill header-pill--neutral';
     autopilotBtn.textContent = 'AUTOPILOT';
     left.appendChild(autopilotBtn);
 
-    // 2. Operator pill (same size as Autopilot, uppercase, orange accent)
+    // 2. Operator pill (neutral styling - SPEC-01: same as Autopilot)
     const operatorBtn = document.createElement('button');
-    operatorBtn.className = 'header-pill header-pill--operator';
+    operatorBtn.className = 'header-pill header-pill--neutral';
     operatorBtn.textContent = 'OPERATOR';
     operatorBtn.onclick = () => {
         state.operatorActiveTab = 'chat';
@@ -3404,10 +3503,10 @@ function renderHeader() {
     };
     left.appendChild(operatorBtn);
 
-    // 3. Clock / Version History icon button (VTID-0524) - neutral color
+    // 3. History icon button (⏱) - neutral color
     const versionBtn = document.createElement('button');
     versionBtn.className = 'header-icon-button';
-    versionBtn.title = 'Version History';
+    versionBtn.title = 'History';
     // Clock icon using Unicode character (CSP compliant)
     versionBtn.innerHTML = '<span class="header-icon-button__icon">&#128337;</span>';
     versionBtn.onclick = async (e) => {
@@ -3433,20 +3532,9 @@ function renderHeader() {
         left.appendChild(renderVersionDropdown());
     }
 
-    header.appendChild(left);
-
-    // --- Center Section: Empty (Publish moved to right) ---
-    const center = document.createElement('div');
-    center.className = 'header-toolbar-center';
-    header.appendChild(center);
-
-    // --- Right Section: Publish + LIVE/OFFLINE with CI/CD dropdown ---
-    const right = document.createElement('div');
-    right.className = 'header-toolbar-right';
-
-    // Publish pill (LEFT of LIVE, same size as LIVE/OFFLINE)
+    // 4. Publish pill (neutral styling - SPEC-01: same palette as Autopilot)
     const publishBtn = document.createElement('button');
-    publishBtn.className = 'header-pill header-pill--publish';
+    publishBtn.className = 'header-pill header-pill--neutral';
     publishBtn.textContent = 'PUBLISH';
     publishBtn.onclick = async () => {
         state.showPublishModal = true;
@@ -3463,7 +3551,18 @@ function renderHeader() {
             }
         }
     };
-    right.appendChild(publishBtn);
+    left.appendChild(publishBtn);
+
+    header.appendChild(left);
+
+    // --- Center Section: Empty (flex spacer) ---
+    const center = document.createElement('div');
+    center.className = 'header-toolbar-center';
+    header.appendChild(center);
+
+    // --- Right Section: LIVE | Refresh (rightmost) ---
+    const right = document.createElement('div');
+    right.className = 'header-toolbar-right';
 
     // LIVE/OFFLINE pill with CI/CD dropdown (restored from pre-0010)
     const hasStageCounters = state.stageCounters && (state.stageCounters.PLANNER > 0 || state.stageCounters.WORKER > 0 || state.stageCounters.VALIDATOR > 0 || state.stageCounters.DEPLOY > 0 || state.lastTelemetryRefresh);
@@ -3581,6 +3680,31 @@ function renderHeader() {
     }
 
     right.appendChild(cicdHealthIndicator);
+
+    // SPEC-01: Global Refresh icon (⟳) - rightmost element
+    // Refresh is icon only, triggers full data reload for the active screen
+    const refreshBtn = document.createElement('button');
+    refreshBtn.className = 'header-icon-button header-icon-button--refresh';
+    refreshBtn.title = 'Refresh';
+    refreshBtn.innerHTML = '<span class="header-icon-button__icon">&#8635;</span>';
+    if (state.globalRefreshLoading) {
+        refreshBtn.classList.add('header-icon-button--loading');
+        refreshBtn.disabled = true;
+    }
+    refreshBtn.onclick = async () => {
+        // SPEC-01: Triggers full data reload for the active screen
+        state.globalRefreshLoading = true;
+        renderApp();
+
+        try {
+            await triggerGlobalRefresh();
+        } finally {
+            state.globalRefreshLoading = false;
+            renderApp();
+        }
+    };
+    right.appendChild(refreshBtn);
+
     header.appendChild(right);
 
     // Add click-outside handler for version dropdown
@@ -3929,17 +4053,7 @@ function renderTasksView() {
     };
     toolbar.appendChild(newBtn);
 
-    const refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn refresh-btn-margin';
-    refreshBtn.textContent = '↻';
-    refreshBtn.onclick = () => {
-        // VTID-01055: Enable debug logging for manual refresh
-        isManualRefresh = true;
-        fetchTasks();
-        // VTID-0527: Also refresh telemetry for stage timelines
-        fetchTelemetrySnapshot();
-    };
-    toolbar.appendChild(refreshBtn);
+    // SPEC-01: Per-view refresh buttons removed - use global refresh icon in header
 
     container.appendChild(toolbar);
 
@@ -6230,13 +6344,7 @@ function renderGovernanceRulesView() {
     countLabel.textContent = filteredRules.length + ' of ' + state.governanceRules.length + ' rules';
     toolbar.appendChild(countLabel);
 
-    // Refresh button
-    const refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn';
-    refreshBtn.textContent = '↻';
-    refreshBtn.title = 'Refresh rules';
-    refreshBtn.onclick = () => { fetchGovernanceRules(); };
-    toolbar.appendChild(refreshBtn);
+    // SPEC-01: Per-view refresh buttons removed - use global refresh icon in header
 
     container.appendChild(toolbar);
 
@@ -6658,11 +6766,7 @@ function renderGovernanceEvaluationsView() {
     toolbar.appendChild(countLabel);
 
     // Refresh button
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn';
-    refreshBtn.textContent = '↻';
-    refreshBtn.onclick = function() { fetchGovernanceEvaluations(); };
-    toolbar.appendChild(refreshBtn);
+    // SPEC-01: Per-view refresh buttons removed - use global refresh icon in header
 
     container.appendChild(toolbar);
 
@@ -6973,15 +7077,7 @@ function renderGovernanceHistoryView() {
     toolbar.appendChild(countLabel);
 
     // Refresh button
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn';
-    refreshBtn.textContent = '↻';
-    refreshBtn.title = 'Refresh';
-    refreshBtn.onclick = function() {
-        state.governanceHistory.fetched = false;
-        fetchGovernanceHistory();
-    };
-    toolbar.appendChild(refreshBtn);
+    // SPEC-01: Per-view refresh buttons removed - use global refresh icon in header
 
     container.appendChild(toolbar);
 
@@ -8114,14 +8210,7 @@ function renderCommandHubEventsView() {
     spacer.className = 'spacer';
     toolbar.appendChild(spacer);
 
-    // Refresh button
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn';
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.onclick = function() {
-        fetchCommandHubEvents();
-    };
-    toolbar.appendChild(refreshBtn);
+    // SPEC-01: Per-view refresh buttons removed - use global refresh icon in header
 
     container.appendChild(toolbar);
 
@@ -8411,20 +8500,7 @@ function renderVtidsView() {
 
     container.appendChild(header);
 
-    // Toolbar with Refresh button
-    var toolbar = document.createElement('div');
-    toolbar.className = 'vtids-toolbar';
-
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn';
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.onclick = function() {
-        state.vtidProjection.fetched = false;
-        fetchVtidProjection();
-    };
-    toolbar.appendChild(refreshBtn);
-
-    container.appendChild(toolbar);
+    // SPEC-01: Per-view refresh buttons removed - use global refresh icon in header
 
     // Error banner (visible error, not console-only)
     if (state.vtidProjection.error) {
@@ -8791,22 +8867,7 @@ function renderOasisVtidLedgerView() {
     container.appendChild(header);
 
     // Toolbar with Refresh button
-    var toolbar = document.createElement('div');
-    toolbar.className = 'vtids-toolbar';
-
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn';
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.onclick = function() {
-        state.vtidProjection.fetched = false;
-        oasisVtidDetail.selectedVtid = null;
-        oasisVtidDetail.data = null;
-        oasisVtidDetail.events = [];
-        fetchVtidProjection();
-    };
-    toolbar.appendChild(refreshBtn);
-
-    container.appendChild(toolbar);
+    // SPEC-01: Per-view refresh buttons removed - use global refresh icon in header
 
     // Error banner
     if (state.vtidProjection.error) {
@@ -9082,15 +9143,7 @@ function renderMemoryGardenView() {
     };
     actions.appendChild(addDiaryBtn);
 
-    // Refresh button
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn btn-secondary';
-    refreshBtn.textContent = 'Refresh Progress';
-    refreshBtn.disabled = state.memoryGarden.loading;
-    refreshBtn.onclick = function() {
-        refreshMemoryGarden();
-    };
-    actions.appendChild(refreshBtn);
+    // SPEC-01: Per-view refresh buttons removed - use global refresh icon in header
 
     header.appendChild(actions);
     container.appendChild(header);
@@ -9502,15 +9555,7 @@ function renderApprovalsView() {
     decisionsLabel.textContent = 'Decisions: Local (DEV-COMHU-2025-0012)';
     header.appendChild(decisionsLabel);
 
-    // Refresh button
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn btn-secondary';
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.onclick = function() {
-        state.approvals.fetched = false;
-        fetchApprovals();
-    };
-    header.appendChild(refreshBtn);
+    // SPEC-01: Per-view refresh buttons removed - use global refresh icon in header
 
     container.appendChild(header);
 
@@ -10756,7 +10801,7 @@ function renderOperatorHistory() {
     const container = document.createElement('div');
     container.className = 'history-container';
 
-    // Header with refresh button
+    // Header
     const header = document.createElement('div');
     header.className = 'history-header';
 
@@ -10764,24 +10809,7 @@ function renderOperatorHistory() {
     title.textContent = 'Deployment History';
     header.appendChild(title);
 
-    const refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn history-refresh-btn';
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.onclick = async () => {
-        state.historyLoading = true;
-        state.historyError = null;
-        renderApp();
-        try {
-            state.versionHistory = await fetchDeploymentHistory();
-            state.historyError = null;
-        } catch (error) {
-            state.historyError = error.message;
-        } finally {
-            state.historyLoading = false;
-            renderApp();
-        }
-    };
-    header.appendChild(refreshBtn);
+    // SPEC-01: Per-view refresh buttons removed - use global refresh icon in header
 
     container.appendChild(header);
 
