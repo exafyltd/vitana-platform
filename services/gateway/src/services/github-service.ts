@@ -364,6 +364,151 @@ export async function getWorkflowRuns(
 }
 
 /**
+ * VTID-01154: GitHub-authoritative feed item for approvals
+ */
+export interface GitHubFeedItem {
+  repo: string;
+  pr_number: number;
+  pr_url: string;
+  branch: string;
+  commit_sha: string;
+  ci_state: 'pass' | 'fail' | 'running';
+  mergeable: boolean;
+  vtid: string | null;
+  updated_at: string;
+}
+
+/**
+ * VTID-01154: Parse VTID from branch name or PR title
+ * Pattern: VTID-XXXXX where X is 4-5 digits
+ */
+function parseVtidFromText(text: string): string | null {
+  if (!text) return null;
+  const match = text.match(/VTID-\d{4,5}/i);
+  return match ? match[0].toUpperCase() : null;
+}
+
+/**
+ * VTID-01154: Get CI state from PR checks
+ * Returns 'pass' | 'fail' | 'running' based on GitHub's actual CI status
+ */
+async function getCiState(
+  repo: string,
+  headSha: string
+): Promise<'pass' | 'fail' | 'running'> {
+  try {
+    const [combinedStatus, checkRunsResponse] = await Promise.all([
+      getCombinedStatus(repo, headSha).catch(() => ({ state: 'pending' as const, statuses: [] })),
+      getCheckRuns(repo, headSha).catch(() => ({ check_runs: [] })),
+    ]);
+
+    // Gather all check states
+    const states: string[] = [];
+
+    // Legacy statuses
+    for (const status of combinedStatus.statuses) {
+      if (status.state === 'pending') {
+        states.push('pending');
+      } else if (status.state === 'success') {
+        states.push('success');
+      } else {
+        states.push('failure');
+      }
+    }
+
+    // Check runs (newer API)
+    for (const run of checkRunsResponse.check_runs) {
+      if (run.status !== 'completed') {
+        states.push('pending');
+      } else if (run.conclusion === 'success' || run.conclusion === 'neutral' || run.conclusion === 'skipped') {
+        states.push('success');
+      } else {
+        states.push('failure');
+      }
+    }
+
+    // If no checks, consider as pass (no CI requirements)
+    if (states.length === 0) {
+      return 'pass';
+    }
+
+    // Any failure means fail
+    if (states.some(s => s === 'failure')) {
+      return 'fail';
+    }
+
+    // Any pending means running
+    if (states.some(s => s === 'pending')) {
+      return 'running';
+    }
+
+    // All success
+    return 'pass';
+  } catch (error) {
+    console.error(`[VTID-01154] Error getting CI state for ${headSha}:`, error);
+    return 'running'; // Conservative default
+  }
+}
+
+/**
+ * VTID-01154: List open PRs with CI and mergeability status from GitHub
+ * This is the GitHub-authoritative source for the approvals feed
+ */
+export async function listOpenPrsWithStatus(
+  repo: string = DEFAULT_REPO,
+  limit: number = 50
+): Promise<GitHubFeedItem[]> {
+  try {
+    // Fetch open PRs from GitHub
+    const prs = await githubRequest<Array<{
+      number: number;
+      html_url: string;
+      title: string;
+      state: string;
+      head: { ref: string; sha: string };
+      base: { ref: string };
+      mergeable: boolean | null;
+      mergeable_state: string;
+      updated_at: string;
+    }>>(`/repos/${repo}/pulls?state=open&sort=updated&direction=desc&per_page=${limit}`);
+
+    const feedItems: GitHubFeedItem[] = [];
+
+    // Process each PR to get CI status
+    for (const pr of prs) {
+      // Get CI state for this PR's head commit
+      const ciState = await getCiState(repo, pr.head.sha);
+
+      // Parse VTID from branch name first, then title
+      const vtid = parseVtidFromText(pr.head.ref) || parseVtidFromText(pr.title);
+
+      // Determine mergeability
+      // GitHub's mergeable can be null while being computed, treat as false
+      // mergeable_state: clean, dirty, unstable, blocked, unknown
+      const mergeable = pr.mergeable === true &&
+        (pr.mergeable_state === 'clean' || pr.mergeable_state === 'unstable');
+
+      feedItems.push({
+        repo,
+        pr_number: pr.number,
+        pr_url: pr.html_url,
+        branch: pr.head.ref,
+        commit_sha: pr.head.sha,
+        ci_state: ciState,
+        mergeable,
+        vtid,
+        updated_at: pr.updated_at,
+      });
+    }
+
+    return feedItems;
+  } catch (error) {
+    console.error(`[VTID-01154] Error listing open PRs:`, error);
+    throw error;
+  }
+}
+
+/**
  * Detect which service is primarily affected by a PR
  */
 export function detectServiceFromFiles(files: string[]): string | null {
@@ -404,6 +549,7 @@ export const githubService = {
   triggerWorkflow,
   getWorkflowRuns,
   detectServiceFromFiles,
+  listOpenPrsWithStatus,
 };
 
 export default githubService;

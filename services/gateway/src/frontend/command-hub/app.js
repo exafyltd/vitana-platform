@@ -2206,13 +2206,19 @@ const state = {
 
     // VTID-0600: Approvals UI Scaffolding
     // VTID-01151: Added pending_count for badge counter
+    // VTID-01154: Added GitHub feed state
     approvals: {
         items: [],
         loading: false,
         error: null,
         fetched: false,
         pending_count: 0,
-        countFetched: false
+        countFetched: false,
+        // VTID-01154: GitHub-authoritative feed
+        feedItems: [],
+        feedLoading: false,
+        feedError: null,
+        feedFetched: false
     },
 
     // VTID-0600: Ticker Severity Prioritization
@@ -2958,6 +2964,80 @@ async function denyApprovalItem(approvalId, reason) {
     } catch (err) {
         showToast('Rejection failed: ' + err.message, 'error');
         state.approvals.loading = false;
+        renderApp();
+    }
+}
+
+/**
+ * VTID-01154: Fetch GitHub-authoritative feed
+ * Pulls live PR data directly from GitHub via /api/v1/approvals/feed
+ */
+async function fetchGitHubFeed() {
+    console.log('[VTID-01154] Fetching GitHub feed...');
+    state.approvals.feedLoading = true;
+    state.approvals.feedError = null;
+    renderApp();
+
+    try {
+        var response = await fetch('/api/v1/approvals/feed?limit=50', {
+            headers: withVitanaContextHeaders({})
+        });
+        var data = await response.json();
+
+        if (data.ok !== false) {
+            state.approvals.feedItems = data.items || [];
+            state.approvals.feedError = null;
+            console.log('[VTID-01154] GitHub feed loaded:', state.approvals.feedItems.length, 'PRs');
+        } else {
+            state.approvals.feedItems = [];
+            state.approvals.feedError = data.error || 'Failed to fetch GitHub feed';
+            console.error('[VTID-01154] GitHub feed error:', state.approvals.feedError);
+        }
+    } catch (err) {
+        state.approvals.feedItems = [];
+        state.approvals.feedError = err.message || 'Network error';
+        console.error('[VTID-01154] GitHub feed exception:', err);
+    }
+
+    state.approvals.feedLoading = false;
+    state.approvals.feedFetched = true;
+    renderApp();
+}
+
+/**
+ * VTID-01154: Approve a PR from the GitHub feed
+ * Only works when CI = pass AND mergeable = true
+ */
+async function approveFeedItem(prNumber, branch, vtid) {
+    console.log('[VTID-01154] Approving PR #' + prNumber + ' from feed');
+    state.approvals.feedLoading = true;
+    renderApp();
+
+    try {
+        var response = await fetch('/api/v1/approvals/feed/approve', {
+            method: 'POST',
+            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({
+                pr_number: prNumber,
+                branch: branch,
+                vtid: vtid
+            })
+        });
+        var data = await response.json();
+
+        if (data.ok !== false) {
+            showToast('PR #' + prNumber + ' approved - merge initiated', 'success');
+            // Refresh the feed
+            state.approvals.feedFetched = false;
+            await fetchGitHubFeed();
+        } else {
+            showToast('Approval failed: ' + (data.error || 'Unknown error'), 'error');
+            state.approvals.feedLoading = false;
+            renderApp();
+        }
+    } catch (err) {
+        showToast('Approval failed: ' + err.message, 'error');
+        state.approvals.feedLoading = false;
         renderApp();
     }
 }
@@ -9521,95 +9601,79 @@ function renderDiaryEntryModal() {
 }
 
 /**
- * VTID-0601: Renders the Command Hub > Approvals view.
- * Shows pending PRs from Claude branches that can be merged/deployed.
- */
-/**
- * DEV-COMHU-2025-0012: Approvals view with local suppression + UNKNOWN VTID handling.
+ * VTID-01154: GitHub-Authoritative Approvals Feed (SPEC-02)
+ *
+ * Table columns (only these): PR | Branch | CI | Mergeable | VTID | Action
+ * Rules:
+ * - No descriptive text
+ * - No workflow explanations
+ * - No onboarding copy
+ * - No "how it works" sections
+ * - Display "—" if VTID not found (never "UNKNOWN")
+ * - Approve button appears only when CI = pass AND mergeable = true
  */
 function renderApprovalsView() {
     var container = document.createElement('div');
     container.className = 'approvals-container';
 
-    // Auto-fetch approvals if not yet fetched
-    if (!state.approvals.fetched && !state.approvals.loading) {
-        fetchApprovals();
+    // Auto-fetch GitHub feed if not yet fetched
+    if (!state.approvals.feedFetched && !state.approvals.feedLoading) {
+        fetchGitHubFeed();
     }
 
-    // Header
+    // Header - minimal, no descriptions
     var header = document.createElement('div');
     header.className = 'approvals-header';
 
     var title = document.createElement('h2');
-    title.textContent = 'Autonomous Safe Merge & Deploy';
+    title.textContent = 'Approvals';
     header.appendChild(title);
 
-    var subtitle = document.createElement('p');
-    subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Review and approve pending PRs for merge and deploy. VTID-0601: No GitHub UI required.';
-    header.appendChild(subtitle);
-
-    // DEV-COMHU-2025-0012: Decisions mode label
-    var decisionsLabel = document.createElement('div');
-    decisionsLabel.className = 'approvals-decisions-label';
-    decisionsLabel.textContent = 'Decisions: Local (DEV-COMHU-2025-0012)';
-    header.appendChild(decisionsLabel);
-
-    // SPEC-01: Per-view refresh buttons removed - use global refresh icon in header
+    // SPEC-02: Refresh button for GitHub feed
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-secondary';
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.disabled = state.approvals.feedLoading;
+    refreshBtn.onclick = function() {
+        state.approvals.feedFetched = false;
+        fetchGitHubFeed();
+    };
+    header.appendChild(refreshBtn);
 
     container.appendChild(header);
 
-    // DEV-COMHU-2025-0013: Fingerprint for deployment verification (muted style)
-    var fingerprint = document.createElement('div');
-    fingerprint.className = 'view-fingerprint-muted';
-    fingerprint.textContent = 'Task Mgmt v2: OASIS (VTID-01005)';
-    container.appendChild(fingerprint);
-
     // Error display
-    if (state.approvals.error) {
+    if (state.approvals.feedError) {
         var errorDiv = document.createElement('div');
         errorDiv.className = 'approvals-error';
-        errorDiv.textContent = 'Error: ' + state.approvals.error;
+        errorDiv.textContent = 'Error: ' + state.approvals.feedError;
         container.appendChild(errorDiv);
     }
 
-    // DEV-COMHU-2025-0012: Filter out dismissed items using localStorage suppression
-    var visibleItems = state.approvals.items.filter(function(item) {
-        var repo = item.repo || 'unknown';
-        var prNumber = item.pr_number;
-        return !isApprovalDismissed(repo, prNumber);
-    });
+    // Get feed items
+    var feedItems = state.approvals.feedItems || [];
 
-    // Pending Approvals Section
-    var pendingSection = document.createElement('div');
-    pendingSection.className = 'approvals-section';
+    // Main content
+    var contentSection = document.createElement('div');
+    contentSection.className = 'approvals-section';
 
-    var pendingHeader = document.createElement('div');
-    pendingHeader.className = 'approvals-section-header';
-    pendingHeader.innerHTML = '<span>⏳</span> Pending Approvals (' + visibleItems.length + ')';
-    pendingSection.appendChild(pendingHeader);
-
-    var pendingContent = document.createElement('div');
-    pendingContent.className = 'approvals-section-content';
-
-    if (state.approvals.loading) {
-        pendingContent.innerHTML = '<div class="placeholder-content">Loading approvals from GitHub...</div>';
-    } else if (visibleItems.length === 0) {
-        // Empty state
+    if (state.approvals.feedLoading) {
+        contentSection.innerHTML = '<div class="placeholder-content">Loading...</div>';
+    } else if (feedItems.length === 0) {
+        // Empty state - minimal
         var emptyState = document.createElement('div');
         emptyState.className = 'approvals-empty-state';
-        emptyState.innerHTML = '<div class="approvals-empty-icon">✓</div>' +
-            '<div class="approvals-empty-title">No pending approvals</div>' +
-            '<div class="approvals-empty-subtitle">All PRs from Claude branches have been processed.</div>';
-        pendingContent.appendChild(emptyState);
+        emptyState.innerHTML = '<div class="approvals-empty-title">No open PRs</div>';
+        contentSection.appendChild(emptyState);
     } else {
-        // Real approvals table
+        // SPEC-02: GitHub-authoritative table
         var table = document.createElement('table');
         table.className = 'approvals-table';
 
         var thead = document.createElement('thead');
         var headerRow = document.createElement('tr');
-        ['VTID', 'PR', 'Branch', 'Service', 'CI', 'Gov', 'Action', 'Actions'].forEach(function(h) {
+        // SPEC-02: Only these columns
+        ['PR', 'Branch', 'CI', 'Mergeable', 'VTID', 'Action'].forEach(function(h) {
             var th = document.createElement('th');
             th.textContent = h;
             headerRow.appendChild(th);
@@ -9619,22 +9683,8 @@ function renderApprovalsView() {
 
         var tbody = document.createElement('tbody');
 
-        visibleItems.forEach(function(item) {
+        feedItems.forEach(function(item) {
             var row = document.createElement('tr');
-            var repo = item.repo || 'unknown';
-            var prNumber = item.pr_number;
-
-            // DEV-COMHU-2025-0012: Check if VTID is UNKNOWN
-            var vtidValue = item.vtid || 'UNKNOWN';
-            var isUnknownVtid = vtidValue === 'UNKNOWN' || vtidValue === '' || !vtidValue;
-
-            // VTID
-            var vtidCell = document.createElement('td');
-            var vtidBadge = document.createElement('span');
-            vtidBadge.className = 'vtid-badge' + (isUnknownVtid ? ' vtid-badge-unknown' : '');
-            vtidBadge.textContent = vtidValue;
-            vtidCell.appendChild(vtidBadge);
-            row.appendChild(vtidCell);
 
             // PR number with link
             var prCell = document.createElement('td');
@@ -9642,147 +9692,88 @@ function renderApprovalsView() {
             prLink.href = item.pr_url || '#';
             prLink.target = '_blank';
             prLink.className = 'approvals-pr-link';
-            prLink.textContent = '#' + prNumber;
-            prLink.title = item.pr_title || '';
+            prLink.textContent = '#' + item.pr_number;
             prCell.appendChild(prLink);
             row.appendChild(prCell);
 
             // Branch
             var branchCell = document.createElement('td');
             branchCell.className = 'approvals-branch-cell';
-            branchCell.textContent = item.branch ? (item.branch.length > 30 ? item.branch.substring(0, 30) + '...' : item.branch) : '-';
-            branchCell.title = item.branch || '';
+            var branchText = item.branch || '';
+            branchCell.textContent = branchText.length > 35 ? branchText.substring(0, 35) + '...' : branchText;
+            branchCell.title = branchText;
             row.appendChild(branchCell);
 
-            // Service
-            var serviceCell = document.createElement('td');
-            if (item.service) {
-                var serviceBadge = document.createElement('span');
-                serviceBadge.className = 'approvals-service-badge';
-                serviceBadge.textContent = item.service;
-                serviceCell.appendChild(serviceBadge);
-            } else {
-                serviceCell.textContent = '-';
-            }
-            row.appendChild(serviceCell);
-
-            // CI Status
+            // CI Status - SPEC-02: pass | fail | running
             var ciCell = document.createElement('td');
             var ciIndicator = document.createElement('span');
             ciIndicator.className = 'approvals-status-indicator';
-            if (item.ci_status === 'pass') {
-                ciIndicator.innerHTML = '<span class="status-pass">✓</span> Pass';
-            } else if (item.ci_status === 'fail') {
-                ciIndicator.innerHTML = '<span class="status-fail">✗</span> Fail';
-            } else if (item.ci_status === 'pending') {
-                ciIndicator.innerHTML = '<span class="status-pending">⋯</span> Pending';
-            } else {
-                ciIndicator.innerHTML = '<span class="status-unknown">?</span> Unknown';
+            if (item.ci_state === 'pass') {
+                ciIndicator.innerHTML = '<span class="status-pass">✓</span> pass';
+            } else if (item.ci_state === 'fail') {
+                ciIndicator.innerHTML = '<span class="status-fail">✗</span> fail';
+            } else if (item.ci_state === 'running') {
+                ciIndicator.innerHTML = '<span class="status-pending">⋯</span> running';
             }
             ciCell.appendChild(ciIndicator);
             row.appendChild(ciCell);
 
-            // Governance Status
-            var govCell = document.createElement('td');
-            var govIndicator = document.createElement('span');
-            govIndicator.className = 'approvals-status-indicator';
-            if (item.governance_status === 'pass') {
-                govIndicator.innerHTML = '<span class="status-pass">✓</span> Pass';
-            } else if (item.governance_status === 'fail') {
-                govIndicator.innerHTML = '<span class="status-fail">✗</span> Blocked';
+            // Mergeable - SPEC-02: true | false
+            var mergeableCell = document.createElement('td');
+            var mergeableIndicator = document.createElement('span');
+            mergeableIndicator.className = 'approvals-status-indicator';
+            if (item.mergeable === true) {
+                mergeableIndicator.innerHTML = '<span class="status-pass">✓</span> true';
             } else {
-                govIndicator.innerHTML = '<span class="status-unknown">?</span> Unknown';
+                mergeableIndicator.innerHTML = '<span class="status-fail">✗</span> false';
             }
-            govCell.appendChild(govIndicator);
-            row.appendChild(govCell);
+            mergeableCell.appendChild(mergeableIndicator);
+            row.appendChild(mergeableCell);
 
-            // Action type
+            // VTID - SPEC-02: Display "—" if not found (never "UNKNOWN")
+            var vtidCell = document.createElement('td');
+            if (item.vtid) {
+                var vtidBadge = document.createElement('span');
+                vtidBadge.className = 'vtid-badge';
+                vtidBadge.textContent = item.vtid;
+                vtidCell.appendChild(vtidBadge);
+            } else {
+                vtidCell.textContent = '—';
+            }
+            row.appendChild(vtidCell);
+
+            // Action button
             var actionCell = document.createElement('td');
-            var actionBadge = document.createElement('span');
-            if (item.type === 'merge+deploy') {
-                actionBadge.className = 'approvals-action-badge approvals-action-merge-deploy';
-                actionBadge.textContent = 'MERGE+DEPLOY';
-            } else if (item.type === 'deploy') {
-                actionBadge.className = 'approvals-action-badge approvals-action-deploy';
-                actionBadge.textContent = 'DEPLOY';
+            actionCell.className = 'approvals-actions-cell';
+
+            // SPEC-02: Approve button appears only when CI = pass AND mergeable = true
+            var canApprove = item.ci_state === 'pass' && item.mergeable === true;
+
+            if (canApprove) {
+                var approveBtn = document.createElement('button');
+                approveBtn.className = 'btn btn-success btn-sm';
+                approveBtn.textContent = 'Approve';
+                approveBtn.disabled = state.approvals.feedLoading;
+                approveBtn.onclick = function() {
+                    if (confirm('Approve PR #' + item.pr_number + '?\n\nThis will trigger a safe merge.')) {
+                        approveFeedItem(item.pr_number, item.branch, item.vtid);
+                    }
+                };
+                actionCell.appendChild(approveBtn);
             } else {
-                actionBadge.className = 'approvals-action-badge approvals-action-merge';
-                actionBadge.textContent = 'MERGE';
+                // No approve button when conditions not met
+                actionCell.textContent = '—';
             }
-            actionCell.appendChild(actionBadge);
+
             row.appendChild(actionCell);
-
-            // Actions buttons
-            var actionsCell = document.createElement('td');
-            actionsCell.className = 'approvals-actions-cell';
-
-            // DEV-COMHU-2025-0012: Disable Approve if UNKNOWN VTID
-            var canApprove = item.ci_status === 'pass' && item.governance_status === 'pass' && !isUnknownVtid;
-
-            var approveBtn = document.createElement('button');
-            approveBtn.className = 'btn btn-success btn-sm';
-            approveBtn.textContent = '✓ Approve';
-            approveBtn.disabled = !canApprove || state.approvals.loading;
-            if (isUnknownVtid) {
-                approveBtn.title = 'Cannot approve: VTID is UNKNOWN';
-            } else {
-                approveBtn.title = canApprove ? 'Merge PR' + (item.service ? ' and trigger deploy' : '') : 'CI or Governance not passed';
-            }
-            approveBtn.onclick = function() {
-                if (confirm('Approve PR #' + prNumber + '?\n\nThis will merge the PR' + (item.service ? ' and trigger a deploy to ' + item.service : '') + '.')) {
-                    approveApprovalItem(item.id);
-                }
-            };
-            actionsCell.appendChild(approveBtn);
-
-            // DEV-COMHU-2025-0012: Deny button becomes Dismiss for local suppression
-            var denyBtn = document.createElement('button');
-            denyBtn.className = 'btn btn-danger btn-sm';
-            denyBtn.textContent = isUnknownVtid ? 'Dismiss' : '✗ Deny';
-            denyBtn.disabled = state.approvals.loading;
-            denyBtn.title = isUnknownVtid ? 'Dismiss this item (hides locally)' : 'Deny this PR';
-            denyBtn.onclick = function() {
-                if (isUnknownVtid) {
-                    // Local dismiss only - no backend call
-                    if (confirm('Dismiss this item?\n\nThis will hide the item locally (localStorage suppression).')) {
-                        dismissApproval(repo, prNumber);
-                        // DEV-COMHU-2025-0013: Clear toast confirmation for dismiss
-                        showToast('Dismissed locally (DEV-COMHU-2025-0012)', 'info');
-                        renderApp();
-                    }
-                } else {
-                    var reason = prompt('Reason for denial (optional):');
-                    if (reason !== null) {
-                        // Also dismiss locally to prevent zombie returns
-                        dismissApproval(repo, prNumber);
-                        denyApprovalItem(item.id, reason);
-                    }
-                }
-            };
-            actionsCell.appendChild(denyBtn);
-
-            row.appendChild(actionsCell);
             tbody.appendChild(row);
         });
 
         table.appendChild(tbody);
-        pendingContent.appendChild(table);
+        contentSection.appendChild(table);
     }
 
-    pendingSection.appendChild(pendingContent);
-    container.appendChild(pendingSection);
-
-    // Info section
-    var infoSection = document.createElement('div');
-    infoSection.className = 'approvals-info';
-    infoSection.innerHTML = '<div class="approvals-info-title">VTID-0601 Workflow</div>' +
-        '<div class="approvals-info-content">' +
-        '1. Claude creates PR on <code>claude/*</code> branch<br>' +
-        '2. CI runs automatically<br>' +
-        '3. Governance evaluation runs<br>' +
-        '4. <strong>You approve here</strong> → Vitana merges + deploys<br>' +
-        '5. No GitHub UI or Cloud Shell required</div>';
-    container.appendChild(infoSection);
+    container.appendChild(contentSection);
 
     return container;
 }
