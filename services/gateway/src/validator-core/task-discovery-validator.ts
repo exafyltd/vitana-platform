@@ -341,5 +341,4 @@ export function buildTaskDiscoveryContext(params: {
     };
 }
 
-// Export types for convenience
-export type { TaskDiscoveryContext, TaskDiscoveryValidationResult, TaskDiscoveryError };
+// Note: Types are exported from '../types/governance' for canonical imports

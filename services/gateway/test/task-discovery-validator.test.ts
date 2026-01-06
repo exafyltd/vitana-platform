@@ -19,12 +19,11 @@ import {
     BLOCKED_MESSAGE,
     REQUIRED_DISCOVERY_TOOL,
 } from '../src/validator-core/task-discovery-validator';
-import {
+import type {
     TaskDiscoveryContext,
     TaskDiscoverySurface,
-    TaskStateSource,
-    VTID_FORMAT,
 } from '../src/types/governance';
+import { VTID_FORMAT } from '../src/types/governance';
 
 describe('VTID-01160: TaskDiscoveryValidator', () => {
     let validator: TaskDiscoveryValidator;
