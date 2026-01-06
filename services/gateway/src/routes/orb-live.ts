@@ -111,6 +111,12 @@ import {
   CrossTurnStateEngine,
   StateUpdateInput
 } from '../services/cross-turn-state-engine';
+// VTID-01158: ORB Router Fix — Enforce OASIS-Only Task Discovery
+import {
+  isTaskStateQuery,
+  executeTaskStateQuery,
+  getTaskStateQueryDebugInfo
+} from '../services/task-state-query-service';
 // VTID-01153: Memory Indexer Client (Mem0 OSS)
 import {
   isMemoryIndexerEnabled,
@@ -1851,6 +1857,94 @@ router.post('/chat', async (req: Request, res: Response) => {
           vtid: 'VTID-01149',
           intake_active: true,
           next_question: 'spec'
+        }
+      });
+    }
+
+    // =========================================================================
+    // VTID-01158: ORB Router Fix — Enforce OASIS-Only Task Discovery
+    // HARD GOVERNANCE: For any query about tasks/VTIDs/scheduled/pending/in progress,
+    // ORB MUST use OASIS discover_tasks. NO fallback to repo scans or memory.
+    // =========================================================================
+
+    if (detectedIntent === 'task_state_query' || isTaskStateQuery(inputText)) {
+      console.log(`[VTID-01158] Task state query detected, routing to OASIS discover_tasks`);
+
+      // Execute OASIS-only task discovery
+      const taskQueryResult = await executeTaskStateQuery({
+        tenant: (meta?.tenant as string) || 'vitana',
+        environment: (meta?.environment as string) || 'dev_sandbox',
+        statuses: ['scheduled', 'allocated', 'in_progress'],
+        limit: 50
+      });
+
+      // Log OASIS event for traceability
+      await emitOasisEvent({
+        vtid: 'VTID-01158',
+        type: 'orb.task_state_query.completed',
+        source: 'orb-live',
+        status: taskQueryResult.ok ? 'success' : 'error',
+        message: taskQueryResult.ok
+          ? `Task state query completed: ${taskQueryResult.counts.total_pending} pending tasks`
+          : `Task state query failed: ${taskQueryResult.error}`,
+        payload: {
+          orb_session_id: orbSessionId,
+          conversation_id: conversationId,
+          user_id: DEV_IDENTITY.USER_ID,
+          query_result: {
+            ok: taskQueryResult.ok,
+            pending_count: taskQueryResult.counts.total_pending,
+            ignored_count: taskQueryResult.counts.ignored,
+            status_breakdown: {
+              scheduled: taskQueryResult.counts.scheduled,
+              allocated: taskQueryResult.counts.allocated,
+              in_progress: taskQueryResult.counts.in_progress
+            }
+          }
+        }
+      }).catch((err: Error) => console.warn('[VTID-01158] OASIS event failed:', err.message));
+
+      // Update conversation history with response
+      conversation.history.push({ role: 'user', content: inputText });
+      conversation.history.push({ role: 'assistant', content: taskQueryResult.response_text });
+
+      // Append to transcript
+      if (transcript) {
+        transcript.turns.push({
+          role: 'user',
+          text: inputText,
+          ts: new Date().toISOString()
+        });
+        transcript.turns.push({
+          role: 'assistant',
+          text: taskQueryResult.response_text,
+          ts: new Date().toISOString()
+        });
+      }
+
+      console.log(`[VTID-01158] Task state query response: ${taskQueryResult.ok ? 'success' : 'failed'}, ${taskQueryResult.counts.total_pending} pending tasks`);
+
+      // Return OASIS-sourced response (NO FALLBACK to Gemini/memory)
+      return res.status(200).json({
+        ok: true,
+        conversation_id: conversationId,
+        reply_text: taskQueryResult.response_text,
+        meta: {
+          provider: 'oasis-discover-tasks',
+          model: 'vtid-01158',
+          mode: 'orb_voice',
+          vtid: 'VTID-01158',
+          source_of_truth: 'OASIS',
+          task_query_result: {
+            ok: taskQueryResult.ok,
+            pending_count: taskQueryResult.counts.total_pending,
+            ignored_count: taskQueryResult.counts.ignored,
+            status_breakdown: {
+              scheduled: taskQueryResult.counts.scheduled,
+              allocated: taskQueryResult.counts.allocated,
+              in_progress: taskQueryResult.counts.in_progress
+            }
+          }
         }
       });
     }

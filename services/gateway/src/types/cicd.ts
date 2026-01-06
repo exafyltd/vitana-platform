@@ -422,7 +422,15 @@ export type CicdEventType =
   | 'vtid.live.audio.out.chunk'
   | 'vtid.tts.request'
   | 'vtid.tts.success'
-  | 'vtid.tts.failure';
+  | 'vtid.tts.failure'
+  // VTID-01160: Task Discovery Governance Events
+  | 'governance.violation.oasis_only_task_truth'
+  | 'governance.enforcement.oasis_only_task_truth'
+  | 'governance.validation.task_discovery.passed'
+  | 'governance.validation.task_discovery.blocked'
+  // VTID-01158: ORB Router Fix — Enforce OASIS-Only Task Discovery
+  | 'orb.task_state_query'
+  | 'orb.task_state_query.completed';
 
 export interface CicdOasisEvent {
   vtid: string;

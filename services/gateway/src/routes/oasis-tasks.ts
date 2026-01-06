@@ -5,6 +5,188 @@ import { randomUUID } from 'crypto';
 export const oasisTasksRouter = Router();
 
 // ===========================================================================
+// VTID-01158: OASIS-Only Task Discovery
+// ===========================================================================
+
+// 2.3 Accepted VTID Format: VTID-\d{4,5}
+const VTID_PATTERN = /^VTID-\d{4,5}$/;
+
+// Hard reject patterns (legacy formats)
+const LEGACY_PATTERNS = [
+  /^DEV-/,
+  /^ADM-/,
+  /^AICOR-/,
+  /^OASIS-TASK-/,
+];
+
+/**
+ * Check if an ID matches a legacy pattern that should be ignored
+ */
+function isLegacyId(id: string): { isLegacy: boolean; pattern?: string } {
+  for (const pattern of LEGACY_PATTERNS) {
+    if (pattern.test(id)) {
+      return { isLegacy: true, pattern: pattern.source };
+    }
+  }
+  return { isLegacy: false };
+}
+
+/**
+ * GET /api/v1/oasis/tasks/discover
+ * VTID-01158 / VTID-01161: OASIS-Only Task Discovery
+ *
+ * HARD GOVERNANCE:
+ * 1. OASIS is the ONLY source of truth for tasks
+ * 2. NO fallback to repo scans, spec files, memory summaries, or cached lists
+ * 3. DEV-* items appear in ignored[] only, never in pending[]
+ * 4. VTID format must be VTID-\d{4,5}
+ *
+ * Query params:
+ * - tenant: string (default: 'vitana')
+ * - environment: string (default: 'dev_sandbox')
+ * - statuses: comma-separated (default: 'scheduled,allocated,in_progress')
+ * - limit: number (1-200, default: 50)
+ */
+oasisTasksRouter.get('/api/v1/oasis/tasks/discover', async (req: Request, res: Response) => {
+  try {
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+    if (!svcKey || !supabaseUrl) {
+      return res.status(500).json({
+        ok: false,
+        source_of_truth: 'OASIS',
+        error: 'Gateway misconfigured',
+        pending: [],
+        ignored: [],
+        counts: { pending: 0, ignored: 0 }
+      });
+    }
+
+    // Parse query parameters
+    const tenant = (req.query.tenant as string) || 'vitana';
+    const environment = (req.query.environment as string) || 'dev_sandbox';
+    const statusesParam = (req.query.statuses as string) || 'scheduled,allocated,in_progress';
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 50, 1), 200);
+
+    const validStatuses = statusesParam.split(',').filter(s =>
+      ['scheduled', 'allocated', 'in_progress'].includes(s.trim())
+    );
+
+    // Build query for pending statuses (NOT deleted, NOT completed)
+    // Use PostgREST 'in' operator for multiple status filter
+    const statusFilter = validStatuses.map(s => `status.eq.${s}`).join(',');
+    const queryParams = `limit=${limit}&order=updated_at.desc&or=(${statusFilter})&status=neq.deleted&status=neq.completed`;
+
+    console.log(`[VTID-01158] Discovering tasks: tenant=${tenant}, env=${environment}, statuses=${validStatuses.join(',')}, limit=${limit}`);
+
+    const resp = await fetch(`${supabaseUrl}/rest/v1/vtid_ledger?${queryParams}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`
+      },
+    });
+
+    if (!resp.ok) {
+      console.error(`[VTID-01158] Database query failed: ${resp.status}`);
+      return res.status(502).json({
+        ok: false,
+        source_of_truth: 'OASIS',
+        error: 'Database query failed',
+        pending: [],
+        ignored: [],
+        counts: { pending: 0, ignored: 0 }
+      });
+    }
+
+    const data = await resp.json() as any[];
+
+    // Separate valid VTIDs from legacy/invalid IDs
+    const pending: any[] = [];
+    const ignored: any[] = [];
+
+    for (const row of data) {
+      const vtid = row.vtid;
+
+      // Check for legacy ID patterns
+      const { isLegacy, pattern } = isLegacyId(vtid);
+      if (isLegacy) {
+        ignored.push({
+          id: vtid,
+          reason: 'ignored_by_contract',
+          details: `Non-numeric VTID format (matches ${pattern}); repo artifacts are not task truth.`
+        });
+        continue;
+      }
+
+      // Validate VTID format
+      if (!VTID_PATTERN.test(vtid)) {
+        ignored.push({
+          id: vtid,
+          reason: 'ignored_by_contract',
+          details: `VTID format invalid. Expected VTID-\\d{4,5}, got: ${vtid}`
+        });
+        continue;
+      }
+
+      // Task passes validation - add to pending
+      pending.push({
+        vtid: row.vtid,
+        title: row.title || 'Pending Title',
+        status: row.status,
+        task_family: 'VTID',
+        task_type: row.module || null,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        links: {
+          task: `/api/v1/oasis/tasks/${row.vtid}`,
+          events: `/api/v1/oasis/events?vtid=${row.vtid}`
+        },
+        evidence: {
+          oasis_task_present: true,
+          status_is_pending: validStatuses.includes(row.status),
+          vtid_format_valid: true
+        }
+      });
+    }
+
+    console.log(`[VTID-01158] Discovery complete: ${pending.length} pending, ${ignored.length} ignored`);
+
+    return res.status(200).json({
+      ok: true,
+      source_of_truth: 'OASIS',
+      queried: {
+        tenant,
+        environment,
+        statuses: validStatuses,
+        limit
+      },
+      pending,
+      ignored,
+      counts: {
+        pending: pending.length,
+        ignored: ignored.length
+      },
+      compatibility: {
+        command_hub_board_expected: true,
+        board_source_view: 'commandhub_board_visible',
+        note: 'Pending tasks are defined to match board visibility logic (OASIS-driven).'
+      }
+    });
+  } catch (e: any) {
+    console.error(`[VTID-01158] Discovery error:`, e);
+    return res.status(500).json({
+      ok: false,
+      source_of_truth: 'OASIS',
+      error: e.message || 'Internal server error',
+      pending: [],
+      ignored: [],
+      counts: { pending: 0, ignored: 0 }
+    });
+  }
+});
+
+// ===========================================================================
 // VTID-0542: Global VTID Allocator Feature Flags
 // ===========================================================================
 
