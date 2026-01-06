@@ -41,6 +41,29 @@ export interface TaskCompleteResult {
   error?: string;
 }
 
+// VTID-01161: Task Discovery types
+export interface DiscoverTasksParams {
+  tenant?: string;
+  environment?: string;
+  statuses?: string[];
+  limit?: number;
+  include_events?: boolean;
+}
+
+export interface OasisTask {
+  vtid: string;
+  title: string;
+  status: string;
+  layer?: string;
+  module?: string;
+  assigned_to?: string | null;
+  created_at: string;
+  updated_at: string;
+  is_terminal?: boolean;
+  terminal_outcome?: string | null;
+  completed_at?: string | null;
+}
+
 class GatewayClient {
   private config: GatewayConfig;
 
@@ -163,6 +186,24 @@ class GatewayClient {
         actor: 'claude-code',
       }
     );
+  }
+
+  /**
+   * VTID-01161: GET /api/v1/oasis/tasks - Discover pending tasks from OASIS
+   * This is the ONLY source of truth for task discovery per contract.
+   */
+  async discoverTasks(params: DiscoverTasksParams = {}): Promise<OasisTask[]> {
+    const { statuses = ['scheduled', 'allocated', 'in_progress'], limit = 50 } = params;
+
+    // Build query string - fetch all tasks, filter by pending statuses client-side
+    // because the API only supports single status filter
+    const queryParams = `limit=${limit}&order=updated_at.desc`;
+    const url = `/api/v1/oasis/tasks?${queryParams}`;
+
+    const tasks = await this.request<OasisTask[]>('GET', url);
+
+    // Filter to only pending statuses
+    return tasks.filter((task) => statuses.includes(task.status));
   }
 }
 
