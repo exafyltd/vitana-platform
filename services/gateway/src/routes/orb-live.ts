@@ -387,7 +387,7 @@ const liveSessions = new Map<string, GeminiLiveSession>();
 const VERTEX_PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID || '';
 const VERTEX_LOCATION = process.env.VERTEX_AI_LOCATION || 'us-central1';
 const VERTEX_LIVE_MODEL = 'gemini-2.0-flash-live-001';  // Live API model
-const VERTEX_TTS_MODEL = 'gemini-2.5-flash-preview-tts';  // Gemini-TTS model
+const VERTEX_TTS_MODEL = 'gemini-2.5-flash-tts';  // Gemini-TTS model (NOT preview)
 
 /**
  * VTID-01155: Convert raw PCM audio data to WAV format
@@ -3107,23 +3107,36 @@ router.post('/tts', async (req: Request, res: Response) => {
   }
 
   try {
-    // Use Vertex AI Gemini-TTS API
-    // For now, use a simple synthesis via generateContent with audio output
+    // Use Gemini-TTS API (Google AI, not Vertex)
     const ttsApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${VERTEX_TTS_MODEL}:generateContent`;
 
+    // Map language to BCP-47 locale code for TTS
+    const langCodeMap: Record<string, string> = {
+      'en': 'en-US',
+      'de': 'de-DE',
+      'fr': 'fr-FR',
+      'es': 'es-ES',
+      'ar': 'ar-XA',
+      'zh': 'zh-CN',
+      'sr': 'sr-RS',
+      'ru': 'ru-RU'
+    };
+    const languageCode = langCodeMap[lang] || 'en-US';
+
+    // Request format based on working Gemini TTS examples
     const ttsRequest = {
       contents: [
         {
           parts: [
             {
-              text: `Speak the following text in a ${voiceStyle} tone: "${text}"`
+              text: text
             }
           ]
         }
       ],
       generationConfig: {
-        responseModalities: ['AUDIO'],
         speechConfig: {
+          languageCode: languageCode,
           voiceConfig: {
             prebuiltVoiceConfig: {
               voiceName: voice
@@ -3133,6 +3146,8 @@ router.post('/tts', async (req: Request, res: Response) => {
       }
     };
 
+    console.log(`[VTID-01155] TTS request: model=${VERTEX_TTS_MODEL}, voice=${voice}, lang=${languageCode}, text_length=${text.length}`);
+
     const response = await fetch(`${ttsApiUrl}?key=${GEMINI_API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3141,17 +3156,20 @@ router.post('/tts', async (req: Request, res: Response) => {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[VTID-01155] TTS API error: ${response.status} - ${errorText}`);
+      console.error(`[VTID-01155] TTS API error: ${response.status}`);
+      console.error(`[VTID-01155] TTS API error body: ${errorText.substring(0, 1000)}`);
 
       await emitTtsEvent('vtid.tts.failure', {
         lang,
         voice,
-        error: `API error: ${response.status}`
+        error: `API error: ${response.status}`,
+        details: errorText.substring(0, 200)
       });
 
       return res.status(response.status).json({
         ok: false,
-        error: `TTS API error: ${response.status}`
+        error: `TTS API error: ${response.status}`,
+        details: errorText.substring(0, 200)
       });
     }
 

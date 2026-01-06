@@ -747,20 +747,21 @@ function isEligibleScheduled(task) {
         return false;
     }
 
-    // VTID-01111: Rule B RE-ADDED for shell entries only
-    // Reject allocator shell entries that somehow made it through backend
-    var status = (task.status || '').toLowerCase();
-    if (status === 'allocated') {
-        console.log('[VTID-01111] Filtering shell entry ' + vtid + ' (status=allocated)');
-        return false;
-    }
+    // VTID-01150: REMOVED Rule B - allocated tasks should now appear in SCHEDULED
+    // The backend (board-adapter.ts) properly maps allocated→SCHEDULED.
+    // Users need to see allocated tasks so they can trigger execution.
+    // var status = (task.status || '').toLowerCase();
+    // if (status === 'allocated') {
+    //     return false;
+    // }
 
-    // VTID-01111: Rule C - Reject allocator placeholder title
+    // VTID-01150: REMOVED Rule C - allocated tasks should now appear in SCHEDULED
+    // Even with placeholder titles, users need to see them to trigger execution.
+    // var title = (task.title || '').trim();
+    // if (title === 'Allocated - Pending Title') {
+    //     return false;
+    // }
     var title = (task.title || '').trim();
-    if (title === 'Allocated - Pending Title') {
-        console.log('[VTID-01111] Filtering shell entry ' + vtid + ' (placeholder title)');
-        return false;
-    }
 
     // VTID-01028 diagnostic logging for visibility
     if (!title) {
@@ -2036,7 +2037,17 @@ const state = {
         speakingBeatTimer: null, // Interval for speaking pulse beat
         microStatusText: '', // Current micro-status message
         microStatusTimer: null, // Auto-clear timer for micro-status
-        micShimmerActive: false // Whether mic shimmer is active
+        micShimmerActive: false, // Whether mic shimmer is active
+        // VTID-01155: Gemini Live Multimodal Session state
+        geminiLiveSessionId: null,    // Current Gemini Live session ID
+        geminiLiveActive: false,      // Whether Live session is active
+        geminiLiveEventSource: null,  // SSE EventSource for Live stream
+        geminiLiveAudioContext: null, // AudioContext for PCM playback
+        geminiLiveAudioQueue: [],     // Queue of audio chunks to play
+        geminiLiveFrameInterval: null, // Interval for capturing video frames
+        geminiLiveAudioStream: null,  // MediaStream for audio capture
+        geminiLiveAudioProcessor: null, // ScriptProcessorNode for audio
+        geminiTtsAudio: null          // Current Gemini-TTS Audio element for barge-in
     },
 
     // VTID-0600: Operational Visibility Foundation State
@@ -12535,13 +12546,16 @@ function renderOrbOverlay() {
     langDropdown.className = 'orb-input-lang';
     langDropdown.setAttribute('aria-label', 'Select language');
 
+    // VTID-01155: Updated to 8 languages (added SR, RU)
     var availableLanguages = [
         { code: 'en-US', label: 'EN' },
         { code: 'de-DE', label: 'DE' },
         { code: 'fr-FR', label: 'FR' },
         { code: 'es-ES', label: 'ES' },
         { code: 'ar-AE', label: 'AR' },
-        { code: 'zh-CN', label: 'ZH' }
+        { code: 'zh-CN', label: 'ZH' },
+        { code: 'sr-RS', label: 'SR' },
+        { code: 'ru-RU', label: 'RU' }
     ];
 
     availableLanguages.forEach(function(lang) {
@@ -13536,6 +13550,97 @@ function orbVoiceToggleMute() {
 }
 
 /**
+ * VTID-01155: Capture a frame from a MediaStream
+ * Returns base64 JPEG data suitable for Gemini multimodal input
+ * @param {MediaStream} stream - The media stream to capture from
+ * @param {string} source - 'screen' or 'camera'
+ * @returns {Promise<{data_b64: string, mime: string, source: string} | null>}
+ */
+async function orbCaptureFrame(stream, source) {
+    if (!stream) return null;
+
+    var videoTrack = stream.getVideoTracks()[0];
+    if (!videoTrack) return null;
+
+    try {
+        // Use ImageCapture API if available
+        if (typeof ImageCapture !== 'undefined') {
+            var imageCapture = new ImageCapture(videoTrack);
+            var bitmap = await imageCapture.grabFrame();
+
+            // Create canvas for resizing to 768x768 (Gemini recommendation)
+            var canvas = document.createElement('canvas');
+            canvas.width = 768;
+            canvas.height = 768;
+            var ctx = canvas.getContext('2d');
+
+            // Scale to fit while maintaining aspect ratio
+            var scale = Math.min(768 / bitmap.width, 768 / bitmap.height);
+            var scaledWidth = bitmap.width * scale;
+            var scaledHeight = bitmap.height * scale;
+            var offsetX = (768 - scaledWidth) / 2;
+            var offsetY = (768 - scaledHeight) / 2;
+
+            // Fill black background and draw centered image
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, 768, 768);
+            ctx.drawImage(bitmap, offsetX, offsetY, scaledWidth, scaledHeight);
+
+            // Convert to JPEG base64
+            var dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+            var base64 = dataUrl.split(',')[1];
+
+            return {
+                data_b64: base64,
+                mime: 'image/jpeg',
+                source: source
+            };
+        } else {
+            // Fallback: create video element to capture frame
+            return new Promise(function(resolve) {
+                var video = document.createElement('video');
+                video.srcObject = stream;
+                video.onloadedmetadata = function() {
+                    video.play();
+                    setTimeout(function() {
+                        var canvas = document.createElement('canvas');
+                        canvas.width = 768;
+                        canvas.height = 768;
+                        var ctx = canvas.getContext('2d');
+
+                        var scale = Math.min(768 / video.videoWidth, 768 / video.videoHeight);
+                        var scaledWidth = video.videoWidth * scale;
+                        var scaledHeight = video.videoHeight * scale;
+                        var offsetX = (768 - scaledWidth) / 2;
+                        var offsetY = (768 - scaledHeight) / 2;
+
+                        ctx.fillStyle = '#000';
+                        ctx.fillRect(0, 0, 768, 768);
+                        ctx.drawImage(video, offsetX, offsetY, scaledWidth, scaledHeight);
+
+                        var dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+                        var base64 = dataUrl.split(',')[1];
+
+                        video.srcObject = null;
+                        resolve({
+                            data_b64: base64,
+                            mime: 'image/jpeg',
+                            source: source
+                        });
+                    }, 100);
+                };
+                video.onerror = function() {
+                    resolve(null);
+                };
+            });
+        }
+    } catch (e) {
+        console.warn('[VTID-01155] Frame capture failed:', e);
+        return null;
+    }
+}
+
+/**
  * VTID-01069-D: Toggle camera - opens device camera with getUserMedia
  * On stop: stops all tracks and clears stream handle
  */
@@ -13642,9 +13747,473 @@ function orbToggleScreenShare() {
     }
 }
 
+// =============================================================================
+// VTID-01155: Gemini Live Multimodal Session Functions
+// =============================================================================
+
+/**
+ * VTID-01155: Start Gemini Live session
+ * Creates session, connects SSE stream, and sets up audio capture
+ */
+async function geminiLiveStart() {
+    if (state.orb.geminiLiveActive) {
+        console.log('[VTID-01155] Live session already active');
+        return;
+    }
+
+    console.log('[VTID-01155] Starting Gemini Live session...');
+
+    try {
+        // 1. Start Live session via API
+        var lang = state.orb.orbLang || 'en-US';
+        var response = await fetch('/api/v1/orb/live/session/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                lang: lang,
+                voice_style: 'friendly, calm, empathetic',
+                response_modalities: ['audio', 'text']
+            })
+        });
+
+        var data = await response.json();
+        if (!data.ok) {
+            throw new Error(data.error || 'Failed to start Live session');
+        }
+
+        state.orb.geminiLiveSessionId = data.session_id;
+        state.orb.geminiLiveActive = true;
+
+        console.log('[VTID-01155] Live session started:', data.session_id);
+
+        // 2. Connect to SSE stream
+        var eventSource = new EventSource('/api/v1/orb/live/stream?session_id=' + data.session_id);
+
+        eventSource.onopen = function() {
+            console.log('[VTID-01155] Live stream connected');
+        };
+
+        eventSource.onmessage = function(event) {
+            try {
+                var msg = JSON.parse(event.data);
+                geminiLiveHandleMessage(msg);
+            } catch (e) {
+                console.warn('[VTID-01155] Failed to parse SSE message:', e);
+            }
+        };
+
+        eventSource.onerror = function(err) {
+            console.error('[VTID-01155] Live stream error:', err);
+            if (eventSource.readyState === EventSource.CLOSED) {
+                geminiLiveStop();
+            }
+        };
+
+        state.orb.geminiLiveEventSource = eventSource;
+
+        // 3. Set up audio capture (PCM 16kHz 16-bit)
+        await geminiLiveStartAudioCapture();
+
+        // 4. Start frame capture if screen/camera active
+        geminiLiveStartFrameCapture();
+
+        renderApp();
+
+    } catch (error) {
+        console.error('[VTID-01155] Failed to start Live session:', error);
+        state.orb.geminiLiveActive = false;
+        state.orb.geminiLiveSessionId = null;
+        state.orb.liveTranscript.push({
+            id: Date.now(),
+            role: 'assistant',
+            text: 'Failed to start Live session: ' + error.message,
+            timestamp: new Date().toISOString()
+        });
+        renderApp();
+    }
+}
+
+/**
+ * VTID-01155: Stop Gemini Live session
+ */
+async function geminiLiveStop() {
+    console.log('[VTID-01155] Stopping Gemini Live session...');
+
+    // Stop frame capture
+    if (state.orb.geminiLiveFrameInterval) {
+        clearInterval(state.orb.geminiLiveFrameInterval);
+        state.orb.geminiLiveFrameInterval = null;
+    }
+
+    // Stop audio capture
+    if (state.orb.geminiLiveAudioStream) {
+        state.orb.geminiLiveAudioStream.getTracks().forEach(function(track) {
+            track.stop();
+        });
+        state.orb.geminiLiveAudioStream = null;
+    }
+
+    if (state.orb.geminiLiveAudioProcessor) {
+        state.orb.geminiLiveAudioProcessor.disconnect();
+        state.orb.geminiLiveAudioProcessor = null;
+    }
+
+    if (state.orb.geminiLiveAudioContext) {
+        state.orb.geminiLiveAudioContext.close().catch(function() {});
+        state.orb.geminiLiveAudioContext = null;
+    }
+
+    // Close SSE connection
+    if (state.orb.geminiLiveEventSource) {
+        state.orb.geminiLiveEventSource.close();
+        state.orb.geminiLiveEventSource = null;
+    }
+
+    // Stop session on backend
+    if (state.orb.geminiLiveSessionId) {
+        try {
+            await fetch('/api/v1/orb/live/session/stop', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: state.orb.geminiLiveSessionId })
+            });
+        } catch (e) {
+            console.warn('[VTID-01155] Failed to stop session on backend:', e);
+        }
+    }
+
+    state.orb.geminiLiveSessionId = null;
+    state.orb.geminiLiveActive = false;
+    state.orb.geminiLiveAudioQueue = [];
+
+    console.log('[VTID-01155] Live session stopped');
+    renderApp();
+}
+
+/**
+ * VTID-01155: Handle messages from Live SSE stream
+ */
+function geminiLiveHandleMessage(msg) {
+    console.log('[VTID-01155] Live message:', msg.type);
+
+    switch (msg.type) {
+        case 'ready':
+            console.log('[VTID-01155] Live stream ready:', msg.meta);
+            break;
+
+        case 'audio_out':
+            // Queue audio for playback (PCM 24kHz)
+            if (msg.data_b64) {
+                geminiLivePlayAudio(msg.data_b64);
+            }
+            break;
+
+        case 'text':
+            // Display text response
+            if (msg.text) {
+                state.orb.liveTranscript.push({
+                    id: Date.now(),
+                    role: 'assistant',
+                    text: msg.text,
+                    timestamp: new Date().toISOString()
+                });
+                scrollOrbLiveTranscript();
+                renderApp();
+            }
+            break;
+
+        case 'interrupted':
+            // Model was interrupted, flush audio queue
+            state.orb.geminiLiveAudioQueue = [];
+            console.log('[VTID-01155] Audio interrupted, queue flushed');
+            break;
+
+        case 'audio_ack':
+        case 'video_ack':
+            // Acknowledgements, no action needed
+            break;
+
+        case 'session_ended':
+            console.log('[VTID-01155] Session ended by server');
+            geminiLiveStop();
+            break;
+
+        default:
+            console.log('[VTID-01155] Unknown message type:', msg.type);
+    }
+}
+
+/**
+ * VTID-01155: Start audio capture for Live session
+ * Captures PCM 16kHz 16-bit audio and sends to Gateway
+ */
+async function geminiLiveStartAudioCapture() {
+    console.log('[VTID-01155] Starting audio capture...');
+
+    var stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            sampleRate: 16000
+        }
+    });
+
+    state.orb.geminiLiveAudioStream = stream;
+
+    // Create AudioContext at 16kHz
+    var audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    state.orb.geminiLiveAudioContext = audioContext;
+
+    var source = audioContext.createMediaStreamSource(stream);
+    // 640 samples = 40ms at 16kHz
+    var processor = audioContext.createScriptProcessor(640, 1, 1);
+
+    processor.onaudioprocess = function(e) {
+        if (!state.orb.geminiLiveActive || state.orb.voiceState === 'MUTED') return;
+
+        var inputData = e.inputBuffer.getChannelData(0);
+
+        // Convert Float32 to Int16 PCM
+        var pcmData = new Int16Array(inputData.length);
+        for (var i = 0; i < inputData.length; i++) {
+            var s = Math.max(-1, Math.min(1, inputData[i]));
+            pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        }
+
+        // Convert to base64
+        var uint8Array = new Uint8Array(pcmData.buffer);
+        var base64 = btoa(String.fromCharCode.apply(null, uint8Array));
+
+        // Send to Gateway
+        geminiLiveSendAudio(base64);
+    };
+
+    source.connect(processor);
+    processor.connect(audioContext.destination);
+    state.orb.geminiLiveAudioProcessor = processor;
+
+    console.log('[VTID-01155] Audio capture started');
+}
+
+/**
+ * VTID-01155: Send audio chunk to Gateway
+ */
+function geminiLiveSendAudio(base64Data) {
+    if (!state.orb.geminiLiveSessionId || !state.orb.geminiLiveActive) return;
+
+    fetch('/api/v1/orb/live/stream/send?session_id=' + state.orb.geminiLiveSessionId, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            type: 'audio',
+            data_b64: base64Data,
+            mime: 'audio/pcm;rate=16000'
+        })
+    }).catch(function(error) {
+        console.warn('[VTID-01155] Failed to send audio:', error);
+    });
+}
+
+/**
+ * VTID-01155: Start frame capture for screen/camera
+ * Captures JPEG frames at ~1 FPS, resized to 768x768
+ */
+function geminiLiveStartFrameCapture() {
+    if (state.orb.geminiLiveFrameInterval) {
+        clearInterval(state.orb.geminiLiveFrameInterval);
+    }
+
+    // Capture frames every 1 second
+    state.orb.geminiLiveFrameInterval = setInterval(function() {
+        if (!state.orb.geminiLiveActive) return;
+
+        // Capture screen frame if active
+        if (state.orb.screenShareActive && state.orb.screenStream) {
+            geminiLiveCaptureAndSendFrame(state.orb.screenStream, 'screen');
+        }
+
+        // Capture camera frame if active
+        if (state.orb.cameraActive && state.orb.cameraStream) {
+            geminiLiveCaptureAndSendFrame(state.orb.cameraStream, 'camera');
+        }
+    }, 1000);
+
+    console.log('[VTID-01155] Frame capture started');
+}
+
+/**
+ * VTID-01155: Capture frame from stream and send to Gateway
+ * Resizes to 768x768 and encodes as JPEG
+ */
+function geminiLiveCaptureAndSendFrame(stream, source) {
+    var videoTrack = stream.getVideoTracks()[0];
+    if (!videoTrack) return;
+
+    // Create ImageCapture if available
+    if (typeof ImageCapture !== 'undefined') {
+        var imageCapture = new ImageCapture(videoTrack);
+        imageCapture.grabFrame().then(function(bitmap) {
+            // Resize to 768x768 using canvas
+            var canvas = document.createElement('canvas');
+            canvas.width = 768;
+            canvas.height = 768;
+            var ctx = canvas.getContext('2d');
+
+            // Scale to fit
+            var scale = Math.min(768 / bitmap.width, 768 / bitmap.height);
+            var scaledWidth = bitmap.width * scale;
+            var scaledHeight = bitmap.height * scale;
+            var offsetX = (768 - scaledWidth) / 2;
+            var offsetY = (768 - scaledHeight) / 2;
+
+            // Fill black background
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, 768, 768);
+
+            // Draw scaled image centered
+            ctx.drawImage(bitmap, offsetX, offsetY, scaledWidth, scaledHeight);
+
+            // Convert to JPEG base64
+            var dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+            var base64 = dataUrl.split(',')[1];
+
+            // Send to Gateway
+            geminiLiveSendFrame(base64, source);
+        }).catch(function(err) {
+            console.warn('[VTID-01155] Failed to grab frame:', err);
+        });
+    } else {
+        // Fallback: use video element
+        var video = document.createElement('video');
+        video.srcObject = stream;
+        video.onloadedmetadata = function() {
+            video.play();
+            var canvas = document.createElement('canvas');
+            canvas.width = 768;
+            canvas.height = 768;
+            var ctx = canvas.getContext('2d');
+
+            var scale = Math.min(768 / video.videoWidth, 768 / video.videoHeight);
+            var scaledWidth = video.videoWidth * scale;
+            var scaledHeight = video.videoHeight * scale;
+            var offsetX = (768 - scaledWidth) / 2;
+            var offsetY = (768 - scaledHeight) / 2;
+
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, 768, 768);
+            ctx.drawImage(video, offsetX, offsetY, scaledWidth, scaledHeight);
+
+            var dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+            var base64 = dataUrl.split(',')[1];
+            geminiLiveSendFrame(base64, source);
+
+            video.srcObject = null;
+        };
+    }
+}
+
+/**
+ * VTID-01155: Send video frame to Gateway
+ */
+function geminiLiveSendFrame(base64Data, source) {
+    if (!state.orb.geminiLiveSessionId || !state.orb.geminiLiveActive) return;
+
+    fetch('/api/v1/orb/live/stream/send?session_id=' + state.orb.geminiLiveSessionId, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            type: 'video',
+            source: source,
+            data_b64: base64Data,
+            width: 768,
+            height: 768
+        })
+    }).catch(function(error) {
+        console.warn('[VTID-01155] Failed to send frame:', error);
+    });
+}
+
+/**
+ * VTID-01155: Play audio from Live session (PCM 24kHz)
+ */
+function geminiLivePlayAudio(base64Data) {
+    // Decode base64 to ArrayBuffer
+    var binaryString = atob(base64Data);
+    var bytes = new Uint8Array(binaryString.length);
+    for (var i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+
+    // Create AudioContext at 24kHz if not exists
+    if (!state.orb.geminiLiveAudioContext || state.orb.geminiLiveAudioContext.state === 'closed') {
+        state.orb.geminiLiveAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+    }
+
+    var audioContext = state.orb.geminiLiveAudioContext;
+
+    // Convert Int16 PCM to Float32
+    var int16Array = new Int16Array(bytes.buffer);
+    var floatArray = new Float32Array(int16Array.length);
+    for (var j = 0; j < int16Array.length; j++) {
+        floatArray[j] = int16Array[j] / 32768.0;
+    }
+
+    // Create audio buffer and play
+    var audioBuffer = audioContext.createBuffer(1, floatArray.length, 24000);
+    audioBuffer.copyToChannel(floatArray, 0);
+
+    var source = audioContext.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(audioContext.destination);
+    source.start();
+
+    console.log('[VTID-01155] Playing audio chunk');
+}
+
+/**
+ * VTID-01155: Fallback TTS using Gemini-TTS endpoint
+ * Used when Live session is not active
+ */
+async function geminiTtsFallback(text, lang) {
+    if (!text) return;
+
+    console.log('[VTID-01155] Using Gemini-TTS fallback');
+
+    try {
+        var response = await fetch('/api/v1/orb/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                text: text,
+                lang: lang || state.orb.orbLang || 'en-US',
+                voice_style: 'friendly, calm, empathetic'
+            })
+        });
+
+        var data = await response.json();
+        if (!data.ok) {
+            console.error('[VTID-01155] TTS failed:', data.error);
+            return;
+        }
+
+        // Play audio from base64
+        if (data.audio_b64) {
+            var audio = new Audio('data:' + (data.mime || 'audio/mp3') + ';base64,' + data.audio_b64);
+            audio.play().catch(function(e) {
+                console.warn('[VTID-01155] TTS playback failed:', e);
+            });
+        }
+
+    } catch (error) {
+        console.error('[VTID-01155] TTS error:', error);
+    }
+}
+
 /**
  * VTID-0135: Send text to backend via POST /api/v1/orb/chat
  * VTID-01066: Updated to insert thinking placeholder immediately
+ * VTID-01155: Updated to capture and send screen/camera frames
  */
 async function orbVoiceSendText(text) {
     if (!text || !text.trim()) return;
@@ -13670,20 +14239,49 @@ async function orbVoiceSendText(text) {
     renderApp();
     scrollOrbLiveTranscript();
 
+    // VTID-01155: Capture frames from active screen/camera for multimodal input
+    var images = [];
     try {
+        if (state.orb.screenShareActive && state.orb.screenStream) {
+            var screenFrame = await orbCaptureFrame(state.orb.screenStream, 'screen');
+            if (screenFrame) {
+                images.push(screenFrame);
+                console.log('[VTID-01155] Screen frame captured for chat');
+            }
+        }
+        if (state.orb.cameraActive && state.orb.cameraStream) {
+            var cameraFrame = await orbCaptureFrame(state.orb.cameraStream, 'camera');
+            if (cameraFrame) {
+                images.push(cameraFrame);
+                console.log('[VTID-01155] Camera frame captured for chat');
+            }
+        }
+    } catch (e) {
+        console.warn('[VTID-01155] Frame capture error:', e);
+    }
+
+    try {
+        var requestBody = {
+            orb_session_id: state.orb.orbSessionId,
+            conversation_id: state.orb.conversationId,
+            input_text: text,
+            meta: {
+                mode: 'orb_voice',
+                source: 'command-hub',
+                vtid: null
+            }
+        };
+
+        // VTID-01155: Add images if captured
+        if (images.length > 0) {
+            requestBody.images = images;
+            console.log('[VTID-01155] Sending chat with ' + images.length + ' image(s)');
+        }
+
         var response = await fetch('/api/v1/orb/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                orb_session_id: state.orb.orbSessionId,
-                conversation_id: state.orb.conversationId,
-                input_text: text,
-                meta: {
-                    mode: 'orb_voice',
-                    source: 'command-hub',
-                    vtid: null
-                }
-            })
+            body: JSON.stringify(requestBody)
         });
 
         var data = await response.json();
@@ -13887,7 +14485,8 @@ function orbClearConversationState() {
 }
 
 // VTID-01042: Supported languages list
-const ORB_SUPPORTED_LANGUAGES = ['en-US', 'de-DE', 'fr-FR', 'es-ES', 'ar-AE', 'zh-CN'];
+// VTID-01155: Added Serbian (sr-RS) and Russian (ru-RU) - 8 total
+const ORB_SUPPORTED_LANGUAGES = ['en-US', 'de-DE', 'fr-FR', 'es-ES', 'ar-AE', 'zh-CN', 'sr-RS', 'ru-RU'];
 
 /**
  * VTID-01042: Score a voice for quality selection based on target language
@@ -14244,15 +14843,32 @@ function restartRecognitionAfterTTS() {
 
 /**
  * VTID-01066: Stop TTS playback and clear speaking state
+ * VTID-01155: Updated to also cancel Gemini-TTS audio
  * @param {string} reason - 'user' | 'voice_interrupt' | 'error'
  */
 function orbStopTTS(reason) {
     console.log('[VTID-01066] Stopping TTS, reason:', reason);
 
-    // Cancel any ongoing TTS
+    // VTID-01155: Cancel Gemini-TTS audio if playing
+    if (state.orb.geminiTtsAudio) {
+        try {
+            state.orb.geminiTtsAudio.pause();
+            state.orb.geminiTtsAudio.currentTime = 0;
+            state.orb.geminiTtsAudio = null;
+            console.log('[VTID-01155] Gemini-TTS audio cancelled');
+        } catch (e) {
+            console.warn('[VTID-01155] Could not cancel Gemini-TTS audio:', e);
+        }
+    }
+
+    // Cancel browser speechSynthesis
     if (window.speechSynthesis) {
         window.speechSynthesis.cancel();
     }
+
+    // Stop speaking beat
+    stopSpeakingBeat();
+    setOrbMicroStatus('');
 
     // Clear speaking state
     state.orb.speaking = false;
@@ -14299,13 +14915,11 @@ function orbStopTTS(reason) {
  * VTID-01037: Implements TTS/STT coordination to prevent feedback loop
  * VTID-01038: Updated to use selected voice
  * VTID-01066: Updated to track speaking message and duration class
+ * VTID-01155: Updated to use Gemini-TTS as primary, browser TTS as fallback
  * Implements barge-in: stops speaking when user starts talking
  */
 function orbVoiceSpeak(text) {
-    if (!text || !window.speechSynthesis) return;
-
-    // Cancel any ongoing speech
-    window.speechSynthesis.cancel();
+    if (!text) return;
 
     console.log('[VTID-0135] Speaking:', text.substring(0, 50) + '...');
 
@@ -14356,6 +14970,107 @@ function orbVoiceSpeak(text) {
         }
     }
 
+    // VTID-01155: Use Gemini-TTS as primary method
+    orbVoiceSpeakWithGeminiTts(text);
+}
+
+/**
+ * VTID-01155: Speak text using Gemini-TTS endpoint
+ * Falls back to browser speechSynthesis if Gemini-TTS fails
+ */
+async function orbVoiceSpeakWithGeminiTts(text) {
+    var lang = state.orb.orbLang || 'en-US';
+    console.log('[VTID-01155] Using Gemini-TTS for language:', lang);
+
+    // Set speaking state
+    state.orb.voiceState = 'SPEAKING';
+    setOrbState('speaking');
+    startSpeakingBeat();
+    setOrbMicroStatus('Speaking...', 0);
+    renderOrbBadges();
+    renderApp();
+
+    try {
+        var response = await fetch('/api/v1/orb/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                text: text,
+                lang: lang,
+                voice_style: 'friendly, calm, empathetic'
+            })
+        });
+
+        var data = await response.json();
+        if (!data.ok) {
+            console.warn('[VTID-01155] Gemini-TTS failed, falling back to browser:', data.error);
+            orbVoiceSpeakWithBrowserTts(text);
+            return;
+        }
+
+        // Play audio from base64
+        if (data.audio_b64) {
+            var audio = new Audio('data:' + (data.mime || 'audio/mp3') + ';base64,' + data.audio_b64);
+
+            // Store reference for barge-in cancellation
+            state.orb.geminiTtsAudio = audio;
+
+            // VTID-01155: Safety timeout - if audio doesn't complete in 60 seconds, force end
+            var geminiTtsSafetyTimeout = setTimeout(function() {
+                console.warn('[VTID-01155] Gemini-TTS safety timeout - forcing end');
+                if (state.orb.geminiTtsAudio === audio && state.orb.voiceState === 'SPEAKING') {
+                    audio.pause();
+                    state.orb.geminiTtsAudio = null;
+                    orbVoiceSpeakEnded();
+                }
+            }, 60000);
+
+            audio.onended = function() {
+                clearTimeout(geminiTtsSafetyTimeout);
+                console.log('[VTID-01155] Gemini-TTS playback ended');
+                state.orb.geminiTtsAudio = null;
+                orbVoiceSpeakEnded();
+            };
+
+            audio.onerror = function(e) {
+                clearTimeout(geminiTtsSafetyTimeout);
+                console.error('[VTID-01155] Gemini-TTS audio error:', e);
+                state.orb.geminiTtsAudio = null;
+                orbVoiceSpeakEnded();
+            };
+
+            audio.play().catch(function(e) {
+                clearTimeout(geminiTtsSafetyTimeout);
+                console.warn('[VTID-01155] Gemini-TTS playback failed, falling back to browser:', e);
+                state.orb.geminiTtsAudio = null;
+                orbVoiceSpeakWithBrowserTts(text);
+            });
+        } else {
+            console.warn('[VTID-01155] No audio data, falling back to browser');
+            orbVoiceSpeakWithBrowserTts(text);
+        }
+
+    } catch (error) {
+        console.warn('[VTID-01155] Gemini-TTS error, falling back to browser:', error);
+        orbVoiceSpeakWithBrowserTts(text);
+    }
+}
+
+/**
+ * VTID-01155: Fallback browser TTS using speechSynthesis
+ */
+function orbVoiceSpeakWithBrowserTts(text) {
+    if (!window.speechSynthesis) {
+        console.warn('[VTID-01155] Browser speechSynthesis not available');
+        orbVoiceSpeakEnded();
+        return;
+    }
+
+    console.log('[VTID-01155] Using browser speechSynthesis fallback');
+
+    // Cancel any ongoing speech
+    window.speechSynthesis.cancel();
+
     var utterance = new SpeechSynthesisUtterance(text);
     // VTID-01042: Use unified language setting for TTS
     utterance.lang = state.orb.orbLang;
@@ -14370,45 +15085,57 @@ function orbVoiceSpeak(text) {
     }
 
     utterance.onstart = function() {
-        console.log('[VTID-0135] TTS started');
-        state.orb.voiceState = 'SPEAKING';
-        state.orb.speaking = true;
-        // VTID-01064: Update ORB aura to speaking state
-        setOrbState('speaking');
-        // VTID-01067: Start speaking beat timer and update micro-status
-        startSpeakingBeat();
-        setOrbMicroStatus('Speaking...', 0); // No auto-clear while speaking
-        renderOrbBadges();
-        renderApp();
+        console.log('[VTID-0135] Browser TTS started');
+    };
+
+    // VTID-01155: Safety timeout - if TTS doesn't complete in 30 seconds, force end
+    // This prevents the conversation from getting stuck if TTS fails silently
+    var ttsSafetyTimeout = setTimeout(function() {
+        console.warn('[VTID-01155] Browser TTS safety timeout - forcing end');
+        if (state.orb.voiceState === 'SPEAKING') {
+            window.speechSynthesis.cancel();
+            orbVoiceSpeakEnded();
+        }
+    }, 30000);
+
+    utterance.onerror = function(event) {
+        clearTimeout(ttsSafetyTimeout);
+        console.error('[VTID-0135] Browser TTS error:', event.error);
+        // VTID-01155: Always call orbVoiceSpeakEnded on error to prevent blocking
+        // Only skip for 'interrupted' during intentional barge-in cancellation
+        if (event.error !== 'interrupted') {
+            orbVoiceSpeakEnded();
+        }
     };
 
     utterance.onend = function() {
-        console.log('[VTID-0135] TTS ended');
-        // VTID-01067: Stop speaking beat timer
-        stopSpeakingBeat();
-        setOrbMicroStatus(''); // Clear micro-status
-        // VTID-01037: Restart recognition after TTS completes
-        if (state.orb.overlayVisible && state.orb.voiceState === 'SPEAKING') {
-            restartRecognitionAfterTTS();
-        }
-    };
-
-    utterance.onerror = function(event) {
-        console.error('[VTID-0135] TTS error:', event.error);
-        // VTID-01067: Stop speaking beat timer on error
-        stopSpeakingBeat();
-        setOrbMicroStatus(''); // Clear micro-status
-        // VTID-01037: Handle both normal cancellation (barge-in) and real errors
-        state.orb.speaking = false;
-        if (event.error !== 'interrupted' && event.error !== 'canceled') {
-            state.orb.voiceState = 'LISTENING';
-            renderApp();
-        }
-        // For interrupted/canceled (barge-in), voiceState is already set by barge-in handler
+        clearTimeout(ttsSafetyTimeout);
+        console.log('[VTID-0135] Browser TTS ended');
+        orbVoiceSpeakEnded();
     };
 
     state.orb.speechSynthesisUtterance = utterance;
     window.speechSynthesis.speak(utterance);
+}
+
+/**
+ * VTID-01155: Common handler for TTS end (both Gemini and browser)
+ */
+function orbVoiceSpeakEnded() {
+    console.log('[VTID-01155] TTS ended');
+
+    // Stop speaking beat timer
+    stopSpeakingBeat();
+    setOrbMicroStatus(''); // Clear micro-status
+
+    state.orb.speaking = false;
+    state.orb.speakingMessageId = null;
+    state.orb.speakingDurationClass = null;
+
+    // VTID-01037: Restart recognition after TTS completes
+    if (state.orb.overlayVisible && state.orb.voiceState === 'SPEAKING') {
+        restartRecognitionAfterTTS();
+    }
 }
 
 /**
