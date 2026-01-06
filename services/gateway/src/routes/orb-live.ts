@@ -2663,6 +2663,152 @@ router.get('/debug/intent', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * VTID-01155: GET /debug/tts - TTS Debug Endpoint
+ *
+ * Tests the Gemini TTS API directly and returns detailed debug info.
+ * Helps diagnose why TTS might be failing.
+ *
+ * Query params:
+ * - text: Text to speak (optional, defaults to "Hello, this is a test")
+ * - lang: Language code (optional, defaults to "en")
+ *
+ * Response:
+ * {
+ *   "ok": true/false,
+ *   "api_key_configured": true/false,
+ *   "model": "gemini-2.5-flash-preview-tts",
+ *   "voice": "Callirrhoe",
+ *   "api_response_status": 200,
+ *   "api_response_mime": "audio/L16...",
+ *   "audio_bytes": 12345,
+ *   "error": "..." (if failed)
+ * }
+ */
+router.get('/debug/tts', async (req: Request, res: Response) => {
+  console.log('[VTID-01155] Debug TTS endpoint accessed');
+
+  const testText = (req.query.text as string) || 'Hello, this is a TTS test.';
+  const lang = normalizeLang((req.query.lang as string) || 'en');
+  const voice = getVoiceForLang(lang);
+
+  const debugResult: Record<string, unknown> = {
+    timestamp: new Date().toISOString(),
+    api_key_configured: !!GEMINI_API_KEY,
+    api_key_length: GEMINI_API_KEY ? GEMINI_API_KEY.length : 0,
+    model: VERTEX_TTS_MODEL,
+    voice: voice,
+    lang: lang,
+    test_text: testText,
+    test_text_length: testText.length
+  };
+
+  if (!GEMINI_API_KEY) {
+    return res.status(200).json({
+      ok: false,
+      ...debugResult,
+      error: 'GOOGLE_GEMINI_API_KEY not configured'
+    });
+  }
+
+  try {
+    const ttsApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${VERTEX_TTS_MODEL}:generateContent`;
+
+    const ttsRequest = {
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: testText }]
+        }
+      ],
+      generationConfig: {
+        responseModalities: ['AUDIO'],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: {
+              voiceName: voice
+            }
+          }
+        }
+      }
+    };
+
+    debugResult.request_url = ttsApiUrl;
+    debugResult.request_body = ttsRequest;
+
+    console.log(`[VTID-01155] Debug TTS: calling API with model=${VERTEX_TTS_MODEL}, voice=${voice}`);
+
+    const response = await fetch(`${ttsApiUrl}?key=${GEMINI_API_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(ttsRequest)
+    });
+
+    debugResult.api_response_status = response.status;
+    debugResult.api_response_ok = response.ok;
+
+    const responseText = await response.text();
+
+    if (!response.ok) {
+      debugResult.api_error_body = responseText.substring(0, 1000);
+      return res.status(200).json({
+        ok: false,
+        ...debugResult,
+        error: `API returned ${response.status}`
+      });
+    }
+
+    // Parse JSON response
+    let data: any;
+    try {
+      data = JSON.parse(responseText);
+    } catch (e) {
+      debugResult.parse_error = 'Failed to parse JSON response';
+      debugResult.raw_response = responseText.substring(0, 500);
+      return res.status(200).json({
+        ok: false,
+        ...debugResult,
+        error: 'Failed to parse API response as JSON'
+      });
+    }
+
+    // Extract audio data
+    const audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData;
+    debugResult.has_candidates = !!data.candidates;
+    debugResult.candidates_count = data.candidates?.length || 0;
+    debugResult.has_audio_data = !!audioData;
+
+    if (audioData) {
+      debugResult.audio_mime_type = audioData.mimeType;
+      debugResult.audio_data_length = audioData.data?.length || 0;
+      debugResult.audio_data_preview = audioData.data?.substring(0, 50) + '...';
+    } else {
+      debugResult.response_structure = JSON.stringify(data, null, 2).substring(0, 500);
+      return res.status(200).json({
+        ok: false,
+        ...debugResult,
+        error: 'No audio data in response'
+      });
+    }
+
+    // Success!
+    return res.status(200).json({
+      ok: true,
+      ...debugResult,
+      message: 'TTS API working correctly'
+    });
+
+  } catch (err: any) {
+    console.error('[VTID-01155] Debug TTS error:', err.message);
+    return res.status(200).json({
+      ok: false,
+      ...debugResult,
+      error: err.message,
+      stack: err.stack?.substring(0, 500)
+    });
+  }
+});
+
 // =============================================================================
 // VTID-01155: Gemini Live Multimodal Session Endpoints
 // =============================================================================
