@@ -458,7 +458,7 @@ export async function ensureScheduledDevTask(params: {
       layer: 'DEV',
       module: 'COMHU', // Command Hub module
       tenant,
-      belongs_to: 'dev_environment', // DEV environment
+      // Note: belongs_to column removed - doesn't exist in vtid_ledger schema
       is_test: false,
       metadata: {
         source: 'task-intake-service',
