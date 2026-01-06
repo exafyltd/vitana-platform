@@ -104,21 +104,40 @@ class GatewayClient {
   }
 
   /**
-   * GET /api/v1/workorders - List pending work orders
+   * List pending work orders - MAPS TO CANONICAL: GET /api/v1/oasis/vtid-ledger
+   * NOTE: "workorders" is not a separate endpoint - it uses the vtid_ledger source of truth
    */
   async listWorkOrders(): Promise<WorkOrder[]> {
-    const result = await this.request<{ workorders: WorkOrder[] }>(
+    const result = await this.request<{ ok: boolean; data: OasisTask[] }>(
       'GET',
-      '/api/v1/workorders'
+      '/api/v1/oasis/vtid-ledger?limit=50'
     );
-    return result.workorders || [];
+    if (!result.ok || !result.data) return [];
+    // Map vtid_ledger format to WorkOrder format
+    return result.data
+      .filter(t => ['scheduled', 'allocated', 'in_progress'].includes(t.status))
+      .map(t => ({
+        vtid: t.vtid,
+        title: t.title,
+        spec: undefined,
+        status: t.status,
+        created_at: t.created_at,
+      }));
   }
 
   /**
-   * GET /api/v1/workorders/:vtid - Get a specific work order
+   * Get a specific work order - MAPS TO CANONICAL: GET /api/v1/vtid/:vtid
+   * NOTE: Uses the canonical VTID endpoint, not a separate workorders endpoint
    */
   async getWorkOrder(vtid: string): Promise<WorkOrder> {
-    return this.request<WorkOrder>('GET', `/api/v1/workorders/${vtid}`);
+    const result = await this.request<any>('GET', `/api/v1/vtid/${vtid}`);
+    return {
+      vtid: result.vtid,
+      title: result.title || result.description || vtid,
+      spec: result.summary,
+      status: result.status,
+      created_at: result.created_at,
+    };
   }
 
   /**
@@ -158,32 +177,52 @@ class GatewayClient {
   }
 
   /**
-   * POST /api/v1/evidence - Submit evidence (PR, commit, deploy)
+   * Submit evidence (PR, commit, deploy) - MAPS TO CANONICAL: POST /api/v1/oasis/events
+   * NOTE: Evidence is recorded as OASIS events, not a separate evidence endpoint.
+   * The event topic and metadata capture the evidence type and URL.
    */
   async submitEvidence(
     vtid: string,
     type: 'pr' | 'commit' | 'deploy',
     url: string
   ): Promise<EvidenceResult> {
-    return this.request<EvidenceResult>('POST', '/api/v1/evidence', {
+    // Evidence is submitted as OASIS events with specific topics
+    const topicMap = {
+      pr: 'vtid.evidence.pr_submitted',
+      commit: 'vtid.evidence.commit_pushed',
+      deploy: 'vtid.evidence.deploy_completed',
+    };
+
+    return this.request<EvidenceResult>('POST', '/api/v1/oasis/events', {
       vtid,
-      type,
-      url,
-      actor: 'claude-code',
+      topic: topicMap[type],
+      service: 'vitana-work-mcp',
+      status: 'success',
+      message: `Evidence submitted: ${type} at ${url}`,
+      metadata: {
+        evidence_type: type,
+        evidence_url: url,
+        actor: 'claude-code',
+        submitted_at: new Date().toISOString(),
+      },
     });
   }
 
   /**
-   * PATCH /api/v1/oasis/tasks/:vtid - Complete a task
+   * Complete a task - MAPS TO CANONICAL: POST /api/v1/vtid/lifecycle/complete
+   * NOTE: Task completion MUST go through the terminal lifecycle endpoint (VTID-01005)
+   * This is the MANDATORY endpoint for marking a VTID as terminally complete.
+   * OASIS is the single source of truth for task completion.
    */
   async completeTask(vtid: string, summary: string): Promise<TaskCompleteResult> {
     return this.request<TaskCompleteResult>(
-      'PATCH',
-      `/api/v1/oasis/tasks/${vtid}`,
+      'POST',
+      '/api/v1/vtid/lifecycle/complete',
       {
-        status: 'completed',
+        vtid,
+        outcome: 'success',
+        source: 'claude',
         summary,
-        actor: 'claude-code',
       }
     );
   }

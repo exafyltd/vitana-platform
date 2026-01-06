@@ -13,16 +13,32 @@ import { randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
 
 // =============================================================================
-// VTID-01167: Identity Defaults (IMMUTABLE)
-// Claude must NEVER ask "which project/repo is this?" - these are hardcoded.
+// VTID-01167: Identity Defaults
+// Claude must NEVER ask "which project/repo is this?" - these are derived from environment.
 // =============================================================================
 
+/**
+ * Get tenant from environment.
+ * For Dev Sandbox: defaults to 'vitana'
+ * For multi-tenancy (Maxina/Earthlings/AlKalma): derived from VITANA_TENANT env var
+ */
+function deriveTenant(): string {
+  return process.env.VITANA_TENANT || 'vitana';
+}
+
+/**
+ * Identity context for the current environment.
+ * Infrastructure values are fixed; tenant/environment are derived from context.
+ * Claude NEVER asks for these - they are always available.
+ */
 export const IDENTITY_DEFAULTS = {
+  // Infrastructure identifiers - fixed for this deployment
   repo: 'vitana-platform',
-  project: 'lovable-vitana-vers1',
-  region: 'us-central1',
-  environment: 'vitana_dev_sandbox',
-  tenant: 'vitana',
+  project: process.env.GCP_PROJECT || 'lovable-vitana-vers1',
+  region: process.env.GCP_REGION || 'us-central1',
+  // Environment and tenant - derived from environment variables
+  environment: process.env.VITANA_ENVIRONMENT || 'vitana_dev_sandbox',
+  tenant: deriveTenant(),
 } as const;
 
 // =============================================================================
