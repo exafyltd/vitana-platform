@@ -422,7 +422,12 @@ export type CicdEventType =
   | 'vtid.live.audio.out.chunk'
   | 'vtid.tts.request'
   | 'vtid.tts.success'
-  | 'vtid.tts.failure';
+  | 'vtid.tts.failure'
+  // VTID-01160: Task Discovery Governance Events
+  | 'governance.violation.oasis_only_task_truth'
+  | 'governance.enforcement.oasis_only_task_truth'
+  | 'governance.validation.task_discovery.passed'
+  | 'governance.validation.task_discovery.blocked';
 
 export interface CicdOasisEvent {
   vtid: string;
