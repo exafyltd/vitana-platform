@@ -211,6 +211,7 @@ export class TaskDiscoveryValidator {
             /task.*status/,
             /scheduled.*tasks?/,
             /in.?progress.*tasks?/,
+            /tasks?.*in.?progress/,   // Handle "tasks in progress" order
             /allocated.*tasks?/,
             /current.*tasks?/,
             /my.*tasks?/,
