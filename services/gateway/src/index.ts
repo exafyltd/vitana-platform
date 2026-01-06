@@ -166,6 +166,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const { router: executeRouter } = require('./routes/execute');
   // VTID-01163: Worker Sub-Agents + Orchestrator
   const { workerOrchestratorRouter } = require('./routes/worker-orchestrator');
+  // VTID-01148: Approvals API v1 — Pending Queue + Count + Approve/Reject
+  const approvalsRouter = require('./routes/approvals').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -326,6 +328,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01146: Execute VTID Runner (One-Button End-to-End Pipeline)
   mountRouterSync(app, '/api/v1/execute', executeRouter, { owner: 'execute-runner' });
+
+  // VTID-01148: Approvals API v1 — Pending Queue + Count + Approve/Reject (Gateway + OASIS-backed)
+  mountRouterSync(app, '/api/v1/approvals', approvalsRouter, { owner: 'approvals-api' });
 
   // VTID-01163: Worker Sub-Agents + Orchestrator
   mountRouterSync(app, '/', workerOrchestratorRouter, { owner: 'worker-orchestrator' });
