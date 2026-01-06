@@ -18,6 +18,7 @@ import {
   WorkOrderPayload,
   SubagentResult
 } from '../services/worker-orchestrator-service';
+import { runPreflightChain, listSkills, getPreflightChains } from '../services/skills/preflight-runner';
 
 export const workerOrchestratorRouter = Router();
 
@@ -69,6 +70,7 @@ const OrchestratorCompleteSchema = z.object({
  * POST /api/v1/worker/orchestrator/route
  *
  * Route a work order to the appropriate subagent.
+ * VTID-01167: Now runs preflight skill chains (VTID-01164) before routing.
  * Does NOT execute the work - just determines routing and emits events.
  */
 workerOrchestratorRouter.post('/api/v1/worker/orchestrator/route', async (req: Request, res: Response) => {
@@ -85,13 +87,54 @@ workerOrchestratorRouter.post('/api/v1/worker/orchestrator/route', async (req: R
     const payload = validation.data as WorkOrderPayload;
     console.log(`[VTID-01163] Route request received for ${payload.vtid}`);
 
+    // Step 1: Determine domain first for preflight chain selection
+    const domain = payload.task_domain || 'backend'; // Default to backend if not specified
+
+    // Step 2: Run governance preflight chain (VTID-01164/01167) if domain is not 'mixed'
+    // Preflight checks are GOVERNANCE EVALUATIONS - same format, same registry, same truth
+    let governanceResult: Awaited<ReturnType<typeof runPreflightChain>> | null = null;
+    if (domain !== 'mixed') {
+      console.log(`[VTID-01167] Running governance preflight chain for domain: ${domain}`);
+      try {
+        governanceResult = await runPreflightChain(
+          domain as 'frontend' | 'backend' | 'memory',
+          payload.vtid,
+          {
+            query: payload.title + (payload.spec_content ? ` ${payload.spec_content}` : ''),
+            target_paths: payload.target_paths || []
+          }
+        );
+
+        console.log(`[VTID-01167] Governance evaluation complete: ${governanceResult.summary.passed}/${governanceResult.summary.total} passed, proceed=${governanceResult.proceed}`);
+
+        // If governance says don't proceed (e.g., critical rule failed), block the routing
+        if (!governanceResult.proceed) {
+          console.log(`[VTID-01167] Governance blocked routing for ${payload.vtid}`);
+          return res.status(400).json({
+            ok: false,
+            error: 'Governance checks blocked this task',
+            error_code: 'GOVERNANCE_BLOCKED',
+            governance: governanceResult
+          });
+        }
+      } catch (governanceError: any) {
+        // Log but don't block on governance errors - degrade gracefully
+        console.error(`[VTID-01167] Governance evaluation error (non-blocking):`, governanceError.message);
+      }
+    }
+
+    // Step 3: Route the work order
     const result = await routeWorkOrder(payload);
 
     if (!result.ok) {
       return res.status(400).json(result);
     }
 
-    return res.status(200).json(result);
+    // Include governance evaluation results in response
+    return res.status(200).json({
+      ...result,
+      governance: governanceResult
+    });
   } catch (error: any) {
     console.error('[VTID-01163] Route error:', error);
     return res.status(500).json({
@@ -304,4 +347,28 @@ workerOrchestratorRouter.get('/api/v1/worker/subagents', (_req: Request, res: Re
       }
     ]
   });
+});
+
+/**
+ * GET /api/v1/worker/skills
+ *
+ * List available preflight/postflight skills (VTID-01164)
+ */
+workerOrchestratorRouter.get('/api/v1/worker/skills', (_req: Request, res: Response) => {
+  try {
+    const skills = listSkills();
+    const preflight_chains = getPreflightChains();
+    return res.status(200).json({
+      ok: true,
+      vtid: 'VTID-01164',
+      skills,
+      preflight_chains
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      ok: false,
+      error: 'Failed to list skills',
+      detail: error.message
+    });
+  }
 });
