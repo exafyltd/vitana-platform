@@ -15,6 +15,7 @@
     "validate:dev-frontend-spec": "node ./scripts/validate-dev-frontend-spec.mjs"
   },
   "dependencies": {
+    "@google-cloud/text-to-speech": "^5.5.0",
     "@google-cloud/vertexai": "^1.9.2",
     "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.80.0",

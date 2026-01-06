@@ -43,6 +43,7 @@
 
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
+import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
 // VTID-01149: Unified Task-Creation Intake
@@ -393,7 +394,30 @@ const liveSessions = new Map<string, GeminiLiveSession>();
 const VERTEX_PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID || '';
 const VERTEX_LOCATION = process.env.VERTEX_AI_LOCATION || 'us-central1';
 const VERTEX_LIVE_MODEL = 'gemini-2.0-flash-live-001';  // Live API model
-const VERTEX_TTS_MODEL = 'gemini-2.5-flash-preview-tts';  // Gemini-TTS model (preview required for TTS)
+const VERTEX_TTS_MODEL = 'gemini-2.5-flash-tts';  // Cloud TTS with Gemini voices
+
+// VTID-01155: Google Cloud Text-to-Speech client with Gemini voices
+// Uses ADC (Application Default Credentials) - automatic on Cloud Run
+let ttsClient: TextToSpeechClient | null = null;
+try {
+  ttsClient = new TextToSpeechClient();
+  console.log('[VTID-01155] Google Cloud TTS client initialized');
+} catch (err: any) {
+  console.warn('[VTID-01155] Failed to initialize TTS client:', err.message);
+}
+
+// VTID-01155: Gemini TTS voice mapping for each language
+// Uses Google Cloud TTS with Gemini model
+const GEMINI_TTS_VOICES: Record<string, { name: string; languageCode: string }> = {
+  'en': { name: 'Kore', languageCode: 'en-US' },
+  'de': { name: 'Kore', languageCode: 'de-DE' },
+  'fr': { name: 'Kore', languageCode: 'fr-FR' },
+  'es': { name: 'Kore', languageCode: 'es-ES' },
+  'ar': { name: 'Kore', languageCode: 'ar-XA' },
+  'zh': { name: 'Kore', languageCode: 'cmn-CN' },
+  'sr': { name: 'Kore', languageCode: 'sr-RS' },
+  'ru': { name: 'Kore', languageCode: 'ru-RU' }
+};
 
 /**
  * VTID-01155: Convert raw PCM audio data to WAV format
@@ -2760,7 +2784,7 @@ router.get('/debug/intent', async (req: Request, res: Response) => {
 /**
  * VTID-01155: GET /debug/tts - TTS Debug Endpoint
  *
- * Tests the Gemini TTS API directly and returns detailed debug info.
+ * Tests Google Cloud TTS with Gemini model and returns detailed debug info.
  * Helps diagnose why TTS might be failing.
  *
  * Query params:
@@ -2770,11 +2794,8 @@ router.get('/debug/intent', async (req: Request, res: Response) => {
  * Response:
  * {
  *   "ok": true/false,
- *   "api_key_configured": true/false,
- *   "model": "gemini-2.5-flash-preview-tts",
- *   "voice": "Callirrhoe",
- *   "api_response_status": 200,
- *   "api_response_mime": "audio/L16...",
+ *   "tts_client_ready": true/false,
+ *   "voice": "Kore",
  *   "audio_bytes": 12345,
  *   "error": "..." (if failed)
  * }
@@ -2784,112 +2805,70 @@ router.get('/debug/tts', async (req: Request, res: Response) => {
 
   const testText = (req.query.text as string) || 'Hello, this is a TTS test.';
   const lang = normalizeLang((req.query.lang as string) || 'en');
-  const voice = getVoiceForLang(lang);
+  const voiceConfig = GEMINI_TTS_VOICES[lang] || GEMINI_TTS_VOICES['en'];
 
   const debugResult: Record<string, unknown> = {
     timestamp: new Date().toISOString(),
-    api_key_configured: !!GEMINI_API_KEY,
-    api_key_length: GEMINI_API_KEY ? GEMINI_API_KEY.length : 0,
-    model: VERTEX_TTS_MODEL,
-    voice: voice,
+    tts_client_ready: !!ttsClient,
+    model: 'gemini-2.5-flash-tts',
+    voice: voiceConfig.name,
+    language_code: voiceConfig.languageCode,
     lang: lang,
     test_text: testText,
     test_text_length: testText.length
   };
 
-  if (!GEMINI_API_KEY) {
+  if (!ttsClient) {
     return res.status(200).json({
       ok: false,
       ...debugResult,
-      error: 'GOOGLE_GEMINI_API_KEY not configured'
+      error: 'Google Cloud TTS client not initialized'
     });
   }
 
   try {
-    const ttsApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${VERTEX_TTS_MODEL}:generateContent`;
+    console.log(`[VTID-01155] Debug TTS: testing Cloud TTS with voice=${voiceConfig.name}, lang=${voiceConfig.languageCode}`);
 
-    const ttsRequest = {
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: testText }]
-        }
-      ],
-      generationConfig: {
-        responseModalities: ['AUDIO'],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: {
-              voiceName: voice
-            }
-          }
-        }
+    const request: protos.google.cloud.texttospeech.v1.ISynthesizeSpeechRequest = {
+      input: { text: testText },
+      voice: {
+        languageCode: voiceConfig.languageCode,
+        name: voiceConfig.name,
+        // @ts-ignore - modelName is supported but types may be outdated
+        modelName: 'gemini-2.5-flash-tts'
+      },
+      audioConfig: {
+        audioEncoding: 'MP3' as any,
+        speakingRate: 1.0,
+        pitch: 0
       }
     };
 
-    debugResult.request_url = ttsApiUrl;
-    debugResult.request_body = ttsRequest;
+    debugResult.request = request;
 
-    console.log(`[VTID-01155] Debug TTS: calling API with model=${VERTEX_TTS_MODEL}, voice=${voice}`);
+    const [response] = await ttsClient.synthesizeSpeech(request);
 
-    const response = await fetch(`${ttsApiUrl}?key=${GEMINI_API_KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(ttsRequest)
-    });
+    debugResult.has_audio_content = !!response.audioContent;
 
-    debugResult.api_response_status = response.status;
-    debugResult.api_response_ok = response.ok;
-
-    const responseText = await response.text();
-
-    if (!response.ok) {
-      debugResult.api_error_body = responseText.substring(0, 1000);
+    if (!response.audioContent) {
       return res.status(200).json({
         ok: false,
         ...debugResult,
-        error: `API returned ${response.status}`
+        error: 'No audio content in response'
       });
     }
 
-    // Parse JSON response
-    let data: any;
-    try {
-      data = JSON.parse(responseText);
-    } catch (e) {
-      debugResult.parse_error = 'Failed to parse JSON response';
-      debugResult.raw_response = responseText.substring(0, 500);
-      return res.status(200).json({
-        ok: false,
-        ...debugResult,
-        error: 'Failed to parse API response as JSON'
-      });
-    }
+    const audioBytes = Buffer.isBuffer(response.audioContent)
+      ? response.audioContent.length
+      : (response.audioContent as Uint8Array).length;
 
-    // Extract audio data
-    const audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData;
-    debugResult.has_candidates = !!data.candidates;
-    debugResult.candidates_count = data.candidates?.length || 0;
-    debugResult.has_audio_data = !!audioData;
-
-    if (audioData) {
-      debugResult.audio_mime_type = audioData.mimeType;
-      debugResult.audio_data_length = audioData.data?.length || 0;
-      debugResult.audio_data_preview = audioData.data?.substring(0, 50) + '...';
-    } else {
-      debugResult.response_structure = JSON.stringify(data, null, 2).substring(0, 500);
-      return res.status(200).json({
-        ok: false,
-        ...debugResult,
-        error: 'No audio data in response'
-      });
-    }
+    debugResult.audio_bytes = audioBytes;
 
     // Success!
     return res.status(200).json({
       ok: true,
       ...debugResult,
-      message: 'TTS API working correctly'
+      message: 'Google Cloud TTS with Gemini model working correctly'
     });
 
   } catch (err: any) {
@@ -2898,6 +2877,8 @@ router.get('/debug/tts', async (req: Request, res: Response) => {
       ok: false,
       ...debugResult,
       error: err.message,
+      error_code: err.code,
+      error_details: err.details,
       stack: err.stack?.substring(0, 500)
     });
   }
@@ -3282,10 +3263,11 @@ router.post('/live/stream/send', async (req: Request, res: Response) => {
 });
 
 /**
- * VTID-01155: POST /tts - Gemini-TTS fallback endpoint
+ * VTID-01155: POST /tts - Google Cloud TTS with Gemini voices
  *
- * Text-to-speech using Gemini-TTS for non-live mode playback.
- * Returns base64 audio data.
+ * Text-to-speech using Google Cloud Text-to-Speech API with Gemini model.
+ * Uses ADC (Application Default Credentials) - automatic on Cloud Run.
+ * Returns MP3 audio directly (no PCM conversion needed).
  *
  * Request:
  * {
@@ -3299,11 +3281,11 @@ router.post('/live/stream/send', async (req: Request, res: Response) => {
  *   "ok": true,
  *   "audio_b64": "...",
  *   "mime": "audio/mp3",
- *   "voice": "Callirrhoe"
+ *   "voice": "Kore"
  * }
  */
 router.post('/tts', async (req: Request, res: Response) => {
-  console.log('[VTID-01155] POST /orb/tts');
+  console.log('[VTID-01155] POST /orb/tts (Cloud TTS with Gemini)');
 
   const body = req.body as TtsRequest;
 
@@ -3317,159 +3299,89 @@ router.post('/tts', async (req: Request, res: Response) => {
   }
 
   // Limit text length for TTS
-  if (text.length > 2000) {
-    return res.status(400).json({ ok: false, error: 'text exceeds 2000 character limit' });
+  if (text.length > 5000) {
+    return res.status(400).json({ ok: false, error: 'text exceeds 5000 character limit' });
   }
 
   const lang = normalizeLang(body.lang || 'en');
-  const voice = getVoiceForLang(lang);
-  const voiceStyle = body.voice_style || 'friendly, calm, empathetic';
+  const voiceConfig = GEMINI_TTS_VOICES[lang] || GEMINI_TTS_VOICES['en'];
 
   // Emit request event
   await emitTtsEvent('vtid.tts.request', {
     lang,
-    voice,
+    voice: voiceConfig.name,
     text_length: text.length
   });
 
-  // VTID-01155: Check if API key is configured
-  if (!GEMINI_API_KEY) {
-    console.warn('[VTID-01155] TTS: GOOGLE_GEMINI_API_KEY not configured');
+  // Check if TTS client is available
+  if (!ttsClient) {
+    console.warn('[VTID-01155] TTS: Google Cloud TTS client not initialized');
     await emitTtsEvent('vtid.tts.failure', {
       lang,
-      voice,
-      error: 'API key not configured'
+      voice: voiceConfig.name,
+      error: 'TTS client not initialized'
     });
     return res.status(503).json({
       ok: false,
-      error: 'TTS service not configured (missing API key)'
+      error: 'TTS service not available'
     });
   }
 
   try {
-    // Use Gemini-TTS API (Google AI, not Vertex)
-    const ttsApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${VERTEX_TTS_MODEL}:generateContent`;
+    console.log(`[VTID-01155] TTS request: voice=${voiceConfig.name}, lang=${voiceConfig.languageCode}, text_length=${text.length}`);
 
-    // Map language to BCP-47 locale code for TTS
-    const langCodeMap: Record<string, string> = {
-      'en': 'en-US',
-      'de': 'de-DE',
-      'fr': 'fr-FR',
-      'es': 'es-ES',
-      'ar': 'ar-XA',
-      'zh': 'zh-CN',
-      'sr': 'sr-RS',
-      'ru': 'ru-RU'
-    };
-    const languageCode = langCodeMap[lang] || 'en-US';
-
-    // Request format based on official Google Gemini TTS documentation
-    // CRITICAL: responseModalities: ['AUDIO'] is REQUIRED for TTS output
-    const ttsRequest = {
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              text: text
-            }
-          ]
-        }
-      ],
-      generationConfig: {
-        responseModalities: ['AUDIO'],  // REQUIRED - tells API to return audio
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: {
-              voiceName: voice
-            }
-          }
-        }
+    // Use Google Cloud Text-to-Speech API with Gemini model
+    const request: protos.google.cloud.texttospeech.v1.ISynthesizeSpeechRequest = {
+      input: { text: text },
+      voice: {
+        languageCode: voiceConfig.languageCode,
+        name: voiceConfig.name,
+        // @ts-ignore - modelName is supported but types may be outdated
+        modelName: 'gemini-2.5-flash-tts'
+      },
+      audioConfig: {
+        audioEncoding: 'MP3' as any,  // Returns MP3 directly
+        speakingRate: 1.0,
+        pitch: 0
       }
     };
 
-    console.log(`[VTID-01155] TTS request: model=${VERTEX_TTS_MODEL}, voice=${voice}, lang=${languageCode}, text_length=${text.length}`);
+    const [response] = await ttsClient.synthesizeSpeech(request);
 
-    const response = await fetch(`${ttsApiUrl}?key=${GEMINI_API_KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(ttsRequest)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[VTID-01155] TTS API error: ${response.status}`);
-      console.error(`[VTID-01155] TTS API error body: ${errorText.substring(0, 1000)}`);
-
+    if (!response.audioContent) {
+      console.error('[VTID-01155] No audio content in TTS response');
       await emitTtsEvent('vtid.tts.failure', {
         lang,
-        voice,
-        error: `API error: ${response.status}`,
-        details: errorText.substring(0, 200)
+        voice: voiceConfig.name,
+        error: 'No audio content in response'
       });
-
-      return res.status(response.status).json({
-        ok: false,
-        error: `TTS API error: ${response.status}`,
-        details: errorText.substring(0, 200)
-      });
-    }
-
-    const data = await response.json() as any;
-
-    // Extract audio data from response
-    const audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData;
-
-    if (!audioData || !audioData.data) {
-      console.error('[VTID-01155] No audio data in TTS response');
-      console.error('[VTID-01155] Full response:', JSON.stringify(data, null, 2).substring(0, 500));
-
-      await emitTtsEvent('vtid.tts.failure', {
-        lang,
-        voice,
-        error: 'No audio data in response'
-      });
-
       return res.status(500).json({
         ok: false,
-        error: 'No audio data in TTS response'
+        error: 'No audio content in TTS response'
       });
     }
 
-    // Log the MIME type from API for debugging
-    const apiMimeType = audioData.mimeType || 'unknown';
-    console.log(`[VTID-01155] TTS API returned MIME type: ${apiMimeType}`);
-
-    // VTID-01155: Convert PCM to WAV for browser playback
-    // Gemini TTS returns audio/L16;codec=pcm;rate=24000 (raw PCM)
-    // Browser Audio element cannot play raw PCM - needs WAV headers
-    let finalAudioB64 = audioData.data;
-    let finalMimeType = 'audio/wav';
-
-    if (apiMimeType.includes('L16') || apiMimeType.includes('pcm')) {
-      console.log('[VTID-01155] Converting PCM to WAV for browser playback');
-      finalAudioB64 = pcmToWav(audioData.data, 24000, 1, 16);
-    } else if (apiMimeType.includes('mp3') || apiMimeType.includes('mpeg')) {
-      // If API returns MP3 directly, use it as-is
-      finalMimeType = 'audio/mp3';
-    }
+    // Convert audio content to base64
+    const audioB64 = Buffer.isBuffer(response.audioContent)
+      ? response.audioContent.toString('base64')
+      : Buffer.from(response.audioContent as Uint8Array).toString('base64');
 
     // Emit success event
     await emitTtsEvent('vtid.tts.success', {
       lang,
-      voice,
+      voice: voiceConfig.name,
       text_length: text.length,
-      audio_bytes: finalAudioB64.length,
-      mime_type: finalMimeType
+      audio_bytes: audioB64.length,
+      mime_type: 'audio/mp3'
     });
 
-    console.log(`[VTID-01155] TTS success: lang=${lang}, voice=${voice}, text_length=${text.length}, mime=${finalMimeType}`);
+    console.log(`[VTID-01155] TTS success: lang=${lang}, voice=${voiceConfig.name}, text_length=${text.length}, audio_bytes=${audioB64.length}`);
 
     return res.status(200).json({
       ok: true,
-      audio_b64: finalAudioB64,
-      mime: finalMimeType,
-      voice,
+      audio_b64: audioB64,
+      mime: 'audio/mp3',
+      voice: voiceConfig.name,
       lang
     });
 
@@ -3478,7 +3390,7 @@ router.post('/tts', async (req: Request, res: Response) => {
 
     await emitTtsEvent('vtid.tts.failure', {
       lang,
-      voice,
+      voice: voiceConfig.name,
       error: error.message
     });
 
@@ -3507,6 +3419,7 @@ router.get('/health', (_req: Request, res: Response) => {
     model: GEMINI_MODEL,
     transport: 'SSE',
     gemini_configured: hasGeminiKey,
+    tts_client_ready: !!ttsClient,
     active_sessions: sessions.size,
     active_conversations: orbConversations.size,
     active_transcripts: orbTranscripts.size,
