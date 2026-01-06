@@ -430,46 +430,6 @@ function pcmToWav(pcmBase64: string, sampleRate = 24000, numChannels = 1, bitsPe
 }
 
 /**
- * VTID-01155: Convert raw PCM audio data to WAV format
- * Gemini TTS returns audio/L16;codec=pcm;rate=24000 (16-bit PCM at 24kHz mono)
- * Browser Audio element cannot play raw PCM, needs WAV headers
- */
-function pcmToWav(pcmBase64: string, sampleRate = 24000, numChannels = 1, bitsPerSample = 16): string {
-  // Decode base64 PCM data
-  const pcmData = Buffer.from(pcmBase64, 'base64');
-  const pcmLength = pcmData.length;
-
-  // WAV header is 44 bytes
-  const wavHeaderSize = 44;
-  const wavBuffer = Buffer.alloc(wavHeaderSize + pcmLength);
-
-  // RIFF header
-  wavBuffer.write('RIFF', 0);
-  wavBuffer.writeUInt32LE(wavHeaderSize + pcmLength - 8, 4); // File size - 8
-  wavBuffer.write('WAVE', 8);
-
-  // fmt subchunk
-  wavBuffer.write('fmt ', 12);
-  wavBuffer.writeUInt32LE(16, 16); // Subchunk1Size (16 for PCM)
-  wavBuffer.writeUInt16LE(1, 20); // AudioFormat (1 = PCM)
-  wavBuffer.writeUInt16LE(numChannels, 22); // NumChannels
-  wavBuffer.writeUInt32LE(sampleRate, 24); // SampleRate
-  wavBuffer.writeUInt32LE(sampleRate * numChannels * bitsPerSample / 8, 28); // ByteRate
-  wavBuffer.writeUInt16LE(numChannels * bitsPerSample / 8, 32); // BlockAlign
-  wavBuffer.writeUInt16LE(bitsPerSample, 34); // BitsPerSample
-
-  // data subchunk
-  wavBuffer.write('data', 36);
-  wavBuffer.writeUInt32LE(pcmLength, 40); // Subchunk2Size
-
-  // Copy PCM data
-  pcmData.copy(wavBuffer, wavHeaderSize);
-
-  // Return as base64
-  return wavBuffer.toString('base64');
-}
-
-/**
  * VTID-01155: Process multimodal chat with images
  * Uses Gemini API directly with image data for screen/camera sharing
  */
