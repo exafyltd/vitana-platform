@@ -5872,29 +5872,6 @@ async function fetchTasks() {
             });
             console.log('[VTID-01055] Board reconcile: total=' + state.tasks.length + ' scheduled=' + scheduled + ' in_progress=' + inProgress + ' completed=' + completed);
 
-            // VTID-01055: Board/Tasks consistency debug log - compare both endpoints
-            var boardVtids = Array.from(lastApiVtids);
-            fetch('/api/v1/tasks?limit=500')
-                .then(function(r) { return r.json(); })
-                .then(function(tasksJson) {
-                    var tasksData = tasksJson.data || tasksJson.items || tasksJson || [];
-                    var tasksVtidSet = new Set(tasksData.map(function(t) { return t.vtid; }).filter(Boolean));
-
-                    // Find phantom cards: in board but not in tasks
-                    var phantomVtids = boardVtids.filter(function(vtid) {
-                        return !tasksVtidSet.has(vtid);
-                    });
-
-                    if (phantomVtids.length > 0) {
-                        console.warn('[VTID-01055] board/tasks mismatch: phantom=' + JSON.stringify(phantomVtids));
-                    } else {
-                        console.log('[VTID-01055] board/tasks consistent - no phantom cards');
-                    }
-                })
-                .catch(function(err) {
-                    console.error('[VTID-01055] Failed to compare board/tasks:', err);
-                });
-
             isManualRefresh = false;
         }
     } catch (error) {
