@@ -90,12 +90,13 @@ workerOrchestratorRouter.post('/api/v1/worker/orchestrator/route', async (req: R
     // Step 1: Determine domain first for preflight chain selection
     const domain = payload.task_domain || 'backend'; // Default to backend if not specified
 
-    // Step 2: Run preflight chain (VTID-01164) if domain is not 'mixed'
-    let preflightResult: { ok: boolean; results: unknown[]; proceed: boolean } | null = null;
+    // Step 2: Run governance preflight chain (VTID-01164/01167) if domain is not 'mixed'
+    // Preflight checks are GOVERNANCE EVALUATIONS - same format, same registry, same truth
+    let governanceResult: Awaited<ReturnType<typeof runPreflightChain>> | null = null;
     if (domain !== 'mixed') {
-      console.log(`[VTID-01164] Running preflight chain for domain: ${domain}`);
+      console.log(`[VTID-01167] Running governance preflight chain for domain: ${domain}`);
       try {
-        preflightResult = await runPreflightChain(
+        governanceResult = await runPreflightChain(
           domain as 'frontend' | 'backend' | 'memory',
           payload.vtid,
           {
@@ -104,21 +105,21 @@ workerOrchestratorRouter.post('/api/v1/worker/orchestrator/route', async (req: R
           }
         );
 
-        console.log(`[VTID-01164] Preflight chain completed: ok=${preflightResult.ok}, proceed=${preflightResult.proceed}`);
+        console.log(`[VTID-01167] Governance evaluation complete: ${governanceResult.summary.passed}/${governanceResult.summary.total} passed, proceed=${governanceResult.proceed}`);
 
-        // If preflight chain says don't proceed (e.g., duplicate detected), block the routing
-        if (!preflightResult.proceed) {
-          console.log(`[VTID-01164] Preflight chain blocked routing for ${payload.vtid}`);
+        // If governance says don't proceed (e.g., critical rule failed), block the routing
+        if (!governanceResult.proceed) {
+          console.log(`[VTID-01167] Governance blocked routing for ${payload.vtid}`);
           return res.status(400).json({
             ok: false,
-            error: 'Preflight checks blocked this task',
-            error_code: 'PREFLIGHT_BLOCKED',
-            preflight: preflightResult
+            error: 'Governance checks blocked this task',
+            error_code: 'GOVERNANCE_BLOCKED',
+            governance: governanceResult
           });
         }
-      } catch (preflightError: any) {
-        // Log but don't block on preflight errors - degrade gracefully
-        console.error(`[VTID-01164] Preflight chain error (non-blocking):`, preflightError.message);
+      } catch (governanceError: any) {
+        // Log but don't block on governance errors - degrade gracefully
+        console.error(`[VTID-01167] Governance evaluation error (non-blocking):`, governanceError.message);
       }
     }
 
@@ -129,10 +130,10 @@ workerOrchestratorRouter.post('/api/v1/worker/orchestrator/route', async (req: R
       return res.status(400).json(result);
     }
 
-    // Include preflight results in response
+    // Include governance evaluation results in response
     return res.status(200).json({
       ...result,
-      preflight: preflightResult
+      governance: governanceResult
     });
   } catch (error: any) {
     console.error('[VTID-01163] Route error:', error);

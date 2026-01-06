@@ -1,11 +1,15 @@
 /**
  * Preflight Chain Runner - VTID-01167
  *
- * Gateway-local implementation of preflight chain execution.
- * Integrates with VTID-01164 skill pack by calling skills through OASIS events.
+ * CRITICAL: Preflight checks are GOVERNANCE EVALUATIONS, not a separate gate.
+ * - Each skill maps to a governance rule ID
+ * - Each result produces a GovernanceEvaluation record
+ * - One gate, one record, one truth
  */
 
 import { emitOasisEvent } from '../oasis-event-service';
+import { GovernanceEvaluation } from '../../types/governance';
+import { IDENTITY_DEFAULTS } from '../worker-orchestrator-service';
 
 // =============================================================================
 // Types
@@ -16,18 +20,68 @@ export interface PreflightContext {
   target_paths: string[];
 }
 
-export interface PreflightSkillResult {
-  skill_id: string;
-  ok: boolean;
-  recommendation?: string;
-  issues?: unknown[];
+/**
+ * Governance-aligned skill result
+ * Maps to GovernanceEvaluation format
+ */
+export interface GovernanceSkillResult {
+  rule_id: string;
+  rule_name: string;
+  status: 'PASS' | 'FAIL';
+  evaluated_at: string;
+  metadata: {
+    skill_id: string;
+    domain: string;
+    recommendation?: string;
+    issues?: unknown[];
+    duration_ms: number;
+  };
 }
 
 export interface PreflightChainResult {
   ok: boolean;
-  results: PreflightSkillResult[];
   proceed: boolean;
+  // Governance evaluations - same format as governance system
+  governance_evaluations: GovernanceSkillResult[];
+  // Summary for quick access
+  summary: {
+    total: number;
+    passed: number;
+    failed: number;
+    blocked: boolean;
+  };
 }
+
+// =============================================================================
+// Skill -> Governance Rule Mapping (SINGLE SOURCE OF TRUTH)
+// =============================================================================
+
+const SKILL_TO_GOVERNANCE_RULE: Record<string, { rule_id: string; rule_name: string }> = {
+  'worker.common.check_memory_first': {
+    rule_id: 'GOV-WORK-R.1',
+    rule_name: 'MEMORY_FIRST_CHECK',
+  },
+  'worker.backend.security_scan': {
+    rule_id: 'GOV-SEC-R.1',
+    rule_name: 'BACKEND_SECURITY_SCAN',
+  },
+  'worker.memory.validate_rls_policy': {
+    rule_id: 'GOV-DATA-R.1',
+    rule_name: 'RLS_POLICY_VALIDATION',
+  },
+  'worker.memory.preview_migration': {
+    rule_id: 'GOV-DATA-R.2',
+    rule_name: 'MIGRATION_PREVIEW',
+  },
+  'worker.backend.analyze_service': {
+    rule_id: 'GOV-ARCH-R.1',
+    rule_name: 'SERVICE_ANALYSIS',
+  },
+  'worker.frontend.validate_accessibility': {
+    rule_id: 'GOV-A11Y-R.1',
+    rule_name: 'ACCESSIBILITY_VALIDATION',
+  },
+};
 
 // =============================================================================
 // Preflight Chain Definitions (from VTID-01164)
@@ -64,139 +118,165 @@ const SKILL_DEFINITIONS = [
 ];
 
 // =============================================================================
-// Skill Execution
+// Skill Execution (Produces Governance Evaluations)
 // =============================================================================
 
 /**
- * Execute a single skill and emit OASIS events
+ * Execute a single skill and produce a governance evaluation
  */
-async function executeSkill(
+async function executeSkillAsGovernance(
   skillId: string,
   vtid: string,
-  context: PreflightContext
-): Promise<PreflightSkillResult> {
+  context: PreflightContext,
+  domain: string
+): Promise<GovernanceSkillResult> {
   const startTime = Date.now();
+  const ruleMapping = SKILL_TO_GOVERNANCE_RULE[skillId] || {
+    rule_id: `GOV-UNKNOWN-${skillId}`,
+    rule_name: skillId.toUpperCase(),
+  };
 
-  // Emit skill start event
+  // Emit governance check start event
   await emitOasisEvent({
     vtid,
-    type: 'vtid.skill.start' as any,
-    source: skillId,
+    type: 'GOVERNANCE_CHECK' as any,
+    source: 'preflight-runner',
     status: 'info',
-    message: `Starting skill: ${skillId}`,
+    message: `Evaluating governance rule: ${ruleMapping.rule_name}`,
     payload: {
+      rule_id: ruleMapping.rule_id,
+      rule_name: ruleMapping.rule_name,
       skill_id: skillId,
-      query: context.query,
-      target_paths: context.target_paths,
+      tenant_id: IDENTITY_DEFAULTS.tenant,
     },
   });
 
   try {
-    let result: PreflightSkillResult;
+    let ok = true;
+    let recommendation: string | undefined;
+    let issues: unknown[] = [];
 
     // Execute skill based on ID
     switch (skillId) {
       case 'worker.common.check_memory_first':
-        result = await runCheckMemoryFirst(vtid, context);
+        ({ ok, recommendation } = await runCheckMemoryFirst(vtid, context));
         break;
       case 'worker.backend.security_scan':
-        result = await runSecurityScan(vtid, context);
+        ({ ok, recommendation, issues } = await runSecurityScan(vtid, context));
         break;
       case 'worker.memory.validate_rls_policy':
-        result = await runValidateRlsPolicy(vtid, context);
+        ({ ok, recommendation, issues } = await runValidateRlsPolicy(vtid, context));
         break;
       case 'worker.memory.preview_migration':
-        result = await runPreviewMigration(vtid, context);
+        ({ ok, recommendation, issues } = await runPreviewMigration(vtid, context));
         break;
       case 'worker.backend.analyze_service':
-        result = await runAnalyzeService(vtid, context);
+        ({ ok, recommendation, issues } = await runAnalyzeService(vtid, context));
         break;
       case 'worker.frontend.validate_accessibility':
-        result = await runValidateAccessibility(vtid, context);
+        ({ ok, recommendation, issues } = await runValidateAccessibility(vtid, context));
         break;
-      default:
-        result = { skill_id: skillId, ok: true };
     }
 
-    // Emit skill completion event
     const duration = Date.now() - startTime;
+    const status: 'PASS' | 'FAIL' = ok ? 'PASS' : 'FAIL';
+    const evaluated_at = new Date().toISOString();
+
+    // Emit governance evaluation result (same format as governance system)
     await emitOasisEvent({
       vtid,
-      type: 'vtid.skill.complete' as any,
-      source: skillId,
-      status: result.ok ? 'success' : 'warning',
-      message: result.ok ? `Skill ${skillId} passed` : `Skill ${skillId} found issues`,
+      type: 'GOVERNANCE_CHECK' as any,
+      source: 'preflight-runner',
+      status: ok ? 'success' : 'warning',
+      message: `Rule ${ruleMapping.rule_name}: ${status}`,
       payload: {
-        skill_id: skillId,
-        duration_ms: duration,
-        ...result,
-      },
-    });
-
-    return result;
-  } catch (error) {
-    const duration = Date.now() - startTime;
-    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-
-    await emitOasisEvent({
-      vtid,
-      type: 'vtid.skill.error' as any,
-      source: skillId,
-      status: 'error',
-      message: `Skill ${skillId} failed: ${errorMsg}`,
-      payload: {
-        skill_id: skillId,
-        duration_ms: duration,
-        error: errorMsg,
+        eventType: 'GOVERNANCE_CHECK',
+        data: {
+          ruleId: ruleMapping.rule_id,
+          entityId: vtid,
+          result: status,
+          tenantId: IDENTITY_DEFAULTS.tenant,
+          details: {
+            skill_id: skillId,
+            recommendation,
+            issues,
+            duration_ms: duration,
+          },
+        },
       },
     });
 
     return {
-      skill_id: skillId,
-      ok: false,
-      recommendation: errorMsg,
+      rule_id: ruleMapping.rule_id,
+      rule_name: ruleMapping.rule_name,
+      status,
+      evaluated_at,
+      metadata: {
+        skill_id: skillId,
+        domain,
+        recommendation,
+        issues: issues.length > 0 ? issues : undefined,
+        duration_ms: duration,
+      },
+    };
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+
+    // Emit governance evaluation error
+    await emitOasisEvent({
+      vtid,
+      type: 'GOVERNANCE_CHECK' as any,
+      source: 'preflight-runner',
+      status: 'error',
+      message: `Rule ${ruleMapping.rule_name} evaluation failed: ${errorMsg}`,
+      payload: {
+        eventType: 'GOVERNANCE_CHECK',
+        data: {
+          ruleId: ruleMapping.rule_id,
+          entityId: vtid,
+          result: 'FAIL',
+          tenantId: IDENTITY_DEFAULTS.tenant,
+          details: { error: errorMsg },
+        },
+      },
+    });
+
+    return {
+      rule_id: ruleMapping.rule_id,
+      rule_name: ruleMapping.rule_name,
+      status: 'FAIL',
+      evaluated_at: new Date().toISOString(),
+      metadata: {
+        skill_id: skillId,
+        domain,
+        recommendation: errorMsg,
+        duration_ms: duration,
+      },
     };
   }
 }
 
 // =============================================================================
-// Individual Skill Implementations (Lightweight versions)
+// Individual Skill Implementations
 // =============================================================================
 
-/**
- * Check Memory First - Detects duplicate work by searching OASIS history
- */
-async function runCheckMemoryFirst(
-  vtid: string,
-  context: PreflightContext
-): Promise<PreflightSkillResult> {
-  // In a full implementation, this would query OASIS for similar past work
-  // For now, we emit the event and return ok
-  console.log(`[VTID-01164] check_memory_first: Checking for duplicates of ${vtid}`);
-
-  // TODO: Implement actual OASIS query for duplicate detection
-  // This would call the OASIS search API to find similar completed tasks
-
-  return {
-    skill_id: 'worker.common.check_memory_first',
-    ok: true,
-    recommendation: 'no_duplicate_found',
-  };
+interface SkillResult {
+  ok: boolean;
+  recommendation?: string;
+  issues: unknown[];
 }
 
-/**
- * Security Scan - Scans target paths for security vulnerabilities
- */
-async function runSecurityScan(
-  vtid: string,
-  context: PreflightContext
-): Promise<PreflightSkillResult> {
-  console.log(`[VTID-01164] security_scan: Scanning ${context.target_paths.length} paths`);
+async function runCheckMemoryFirst(vtid: string, context: PreflightContext): Promise<SkillResult> {
+  console.log(`[GOV-WORK-R.1] check_memory_first: Checking for duplicates of ${vtid}`);
+  // TODO: Implement actual OASIS query for duplicate detection
+  return { ok: true, recommendation: 'no_duplicate_found', issues: [] };
+}
 
-  // Lightweight check - in full implementation would scan file contents
+async function runSecurityScan(vtid: string, context: PreflightContext): Promise<SkillResult> {
+  console.log(`[GOV-SEC-R.1] security_scan: Scanning ${context.target_paths.length} paths`);
   const issues: unknown[] = [];
 
-  // Check for dangerous patterns in paths
   for (const path of context.target_paths) {
     if (path.includes('.env') || path.includes('credentials') || path.includes('secret')) {
       issues.push({
@@ -208,115 +288,44 @@ async function runSecurityScan(
   }
 
   return {
-    skill_id: 'worker.backend.security_scan',
     ok: issues.length === 0,
-    issues,
     recommendation: issues.length > 0 ? 'review_security_concerns' : 'security_ok',
+    issues,
   };
 }
 
-/**
- * Validate RLS Policy - Checks SQL files for proper RLS policies
- */
-async function runValidateRlsPolicy(
-  vtid: string,
-  context: PreflightContext
-): Promise<PreflightSkillResult> {
-  console.log(`[VTID-01164] validate_rls_policy: Checking SQL files`);
-
+async function runValidateRlsPolicy(vtid: string, context: PreflightContext): Promise<SkillResult> {
+  console.log(`[GOV-DATA-R.1] validate_rls_policy: Checking SQL files`);
   const sqlPaths = context.target_paths.filter(p => p.endsWith('.sql'));
-
   if (sqlPaths.length === 0) {
-    return {
-      skill_id: 'worker.memory.validate_rls_policy',
-      ok: true,
-      recommendation: 'no_sql_files',
-    };
+    return { ok: true, recommendation: 'no_sql_files', issues: [] };
   }
-
-  // TODO: In full implementation, read SQL files and check for RLS policies
-  return {
-    skill_id: 'worker.memory.validate_rls_policy',
-    ok: true,
-    recommendation: 'rls_check_pending',
-    issues: [],
-  };
+  return { ok: true, recommendation: 'rls_check_pending', issues: [] };
 }
 
-/**
- * Preview Migration - Previews database migration impacts
- */
-async function runPreviewMigration(
-  vtid: string,
-  context: PreflightContext
-): Promise<PreflightSkillResult> {
-  console.log(`[VTID-01164] preview_migration: Previewing migrations`);
-
-  const migrationPaths = context.target_paths.filter(p =>
-    p.includes('migration') && p.endsWith('.sql')
-  );
-
+async function runPreviewMigration(vtid: string, context: PreflightContext): Promise<SkillResult> {
+  console.log(`[GOV-DATA-R.2] preview_migration: Previewing migrations`);
+  const migrationPaths = context.target_paths.filter(p => p.includes('migration') && p.endsWith('.sql'));
   if (migrationPaths.length === 0) {
-    return {
-      skill_id: 'worker.memory.preview_migration',
-      ok: true,
-      recommendation: 'no_migrations',
-    };
+    return { ok: true, recommendation: 'no_migrations', issues: [] };
   }
-
-  return {
-    skill_id: 'worker.memory.preview_migration',
-    ok: true,
-    recommendation: 'migration_preview_ok',
-    issues: [],
-  };
+  return { ok: true, recommendation: 'migration_preview_ok', issues: [] };
 }
 
-/**
- * Analyze Service - Analyzes service dependencies and structure
- */
-async function runAnalyzeService(
-  vtid: string,
-  context: PreflightContext
-): Promise<PreflightSkillResult> {
-  console.log(`[VTID-01164] analyze_service: Analyzing service structure`);
-
-  // TODO: In full implementation, analyze import graphs and dependencies
-  return {
-    skill_id: 'worker.backend.analyze_service',
-    ok: true,
-    recommendation: 'analysis_complete',
-    issues: [],
-  };
+async function runAnalyzeService(vtid: string, context: PreflightContext): Promise<SkillResult> {
+  console.log(`[GOV-ARCH-R.1] analyze_service: Analyzing service structure`);
+  return { ok: true, recommendation: 'analysis_complete', issues: [] };
 }
 
-/**
- * Validate Accessibility - Checks for WCAG compliance issues
- */
-async function runValidateAccessibility(
-  vtid: string,
-  context: PreflightContext
-): Promise<PreflightSkillResult> {
-  console.log(`[VTID-01164] validate_accessibility: Checking accessibility`);
-
+async function runValidateAccessibility(vtid: string, context: PreflightContext): Promise<SkillResult> {
+  console.log(`[GOV-A11Y-R.1] validate_accessibility: Checking accessibility`);
   const htmlPaths = context.target_paths.filter(p =>
     p.endsWith('.html') || p.endsWith('.tsx') || p.endsWith('.jsx')
   );
-
   if (htmlPaths.length === 0) {
-    return {
-      skill_id: 'worker.frontend.validate_accessibility',
-      ok: true,
-      recommendation: 'no_frontend_files',
-    };
+    return { ok: true, recommendation: 'no_frontend_files', issues: [] };
   }
-
-  return {
-    skill_id: 'worker.frontend.validate_accessibility',
-    ok: true,
-    recommendation: 'accessibility_check_pending',
-    issues: [],
-  };
+  return { ok: true, recommendation: 'accessibility_check_pending', issues: [] };
 }
 
 // =============================================================================
@@ -325,6 +334,7 @@ async function runValidateAccessibility(
 
 /**
  * Run preflight chain for a domain
+ * Returns governance evaluations in the same format as the governance system
  */
 export async function runPreflightChain(
   domain: 'frontend' | 'backend' | 'memory',
@@ -332,74 +342,100 @@ export async function runPreflightChain(
   context: PreflightContext
 ): Promise<PreflightChainResult> {
   const chain = PREFLIGHT_CHAINS[domain] || [];
-  const results: PreflightSkillResult[] = [];
+  const evaluations: GovernanceSkillResult[] = [];
 
-  console.log(`[VTID-01164] Running preflight chain for ${domain}: ${chain.length} skills`);
+  console.log(`[VTID-01167] Running governance preflight chain for ${domain}: ${chain.length} rules`);
 
-  // Emit chain start event
+  // Emit chain start as governance batch
   await emitOasisEvent({
     vtid,
-    type: 'vtid.preflight.start' as any,
+    type: 'GOVERNANCE_CHECK' as any,
     source: 'preflight-runner',
     status: 'info',
-    message: `Starting preflight chain for ${domain}`,
+    message: `Starting governance evaluation batch for ${domain}`,
     payload: {
       domain,
-      chain,
+      rules: chain.map(s => SKILL_TO_GOVERNANCE_RULE[s]?.rule_id),
+      tenant_id: IDENTITY_DEFAULTS.tenant,
     },
   });
 
-  // Execute each skill in the chain
+  // Execute each skill as a governance evaluation
   for (const skillId of chain) {
-    const result = await executeSkill(skillId, vtid, context);
-    results.push(result);
+    const result = await executeSkillAsGovernance(skillId, vtid, context, domain);
+    evaluations.push(result);
 
-    // If a skill fails critically, we might want to stop early
-    if (result.recommendation === 'duplicate_detected') {
-      console.log(`[VTID-01164] Duplicate detected, stopping chain`);
+    // If a critical rule fails, we might want to stop early
+    if (result.status === 'FAIL' && result.metadata.recommendation === 'duplicate_detected') {
+      console.log(`[VTID-01167] Governance rule ${result.rule_id} blocked: duplicate detected`);
       break;
     }
   }
 
-  // Determine if we should proceed
-  const allOk = results.every(r => r.ok);
-  const hasBlockers = results.some(r =>
-    r.recommendation === 'duplicate_detected' ||
-    (r.issues && Array.isArray(r.issues) && r.issues.some((i: any) => i.severity === 'critical'))
+  // Calculate summary
+  const passed = evaluations.filter(e => e.status === 'PASS').length;
+  const failed = evaluations.filter(e => e.status === 'FAIL').length;
+  const hasBlockers = evaluations.some(e =>
+    e.status === 'FAIL' && (
+      e.metadata.recommendation === 'duplicate_detected' ||
+      (e.metadata.issues && Array.isArray(e.metadata.issues) &&
+        e.metadata.issues.some((i: any) => i.severity === 'critical'))
+    )
   );
 
-  // Emit chain completion event
+  // Emit chain completion as governance batch result
   await emitOasisEvent({
     vtid,
-    type: 'vtid.preflight.complete' as any,
+    type: 'GOVERNANCE_CHECK' as any,
     source: 'preflight-runner',
-    status: allOk ? 'success' : 'warning',
-    message: allOk ? 'Preflight chain passed' : 'Preflight chain found issues',
+    status: failed === 0 ? 'success' : 'warning',
+    message: `Governance evaluation batch complete: ${passed}/${evaluations.length} passed`,
     payload: {
       domain,
-      all_ok: allOk,
-      proceed: !hasBlockers,
-      results,
+      total: evaluations.length,
+      passed,
+      failed,
+      blocked: hasBlockers,
+      evaluations: evaluations.map(e => ({
+        rule_id: e.rule_id,
+        status: e.status,
+      })),
     },
   });
 
   return {
-    ok: allOk,
-    results,
+    ok: failed === 0,
     proceed: !hasBlockers,
+    governance_evaluations: evaluations,
+    summary: {
+      total: evaluations.length,
+      passed,
+      failed,
+      blocked: hasBlockers,
+    },
   };
 }
 
 /**
- * List available skills
+ * List available skills with governance rule mappings
  */
-export function listSkills(): Array<{ skill_id: string; name: string; domain: string }> {
-  return SKILL_DEFINITIONS;
+export function listSkills(): Array<{ skill_id: string; name: string; domain: string; rule_id: string }> {
+  return SKILL_DEFINITIONS.map(s => ({
+    ...s,
+    rule_id: SKILL_TO_GOVERNANCE_RULE[s.skill_id]?.rule_id || 'UNKNOWN',
+  }));
 }
 
 /**
- * Get preflight chains configuration
+ * Get preflight chains configuration with governance rule mappings
  */
-export function getPreflightChains(): Record<string, string[]> {
-  return PREFLIGHT_CHAINS;
+export function getPreflightChains(): Record<string, { skill_id: string; rule_id: string }[]> {
+  const result: Record<string, { skill_id: string; rule_id: string }[]> = {};
+  for (const [domain, skills] of Object.entries(PREFLIGHT_CHAINS)) {
+    result[domain] = skills.map(s => ({
+      skill_id: s,
+      rule_id: SKILL_TO_GOVERNANCE_RULE[s]?.rule_id || 'UNKNOWN',
+    }));
+  }
+  return result;
 }

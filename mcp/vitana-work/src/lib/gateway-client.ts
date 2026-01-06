@@ -189,21 +189,31 @@ class GatewayClient {
   }
 
   /**
-   * VTID-01161: GET /api/v1/oasis/tasks - Discover pending tasks from OASIS
-   * This is the ONLY source of truth for task discovery per contract.
+   * VTID-01161: GET /api/v1/oasis/vtid-ledger - Discover pending tasks from vtid_ledger
+   * This is the ONLY source of truth for task lifecycle per contract.
+   * MCP is THIN INTERFACE - all filtering/logic happens in Gateway.
    */
   async discoverTasks(params: DiscoverTasksParams = {}): Promise<OasisTask[]> {
     const { statuses = ['scheduled', 'allocated', 'in_progress'], limit = 50 } = params;
 
-    // Build query string - fetch all tasks, filter by pending statuses client-side
-    // because the API only supports single status filter
-    const queryParams = `limit=${limit}&order=updated_at.desc`;
-    const url = `/api/v1/oasis/tasks?${queryParams}`;
+    // Build query string - Gateway handles the filtering via vtid_ledger
+    const queryParams = new URLSearchParams();
+    queryParams.set('limit', String(limit));
 
-    const tasks = await this.request<OasisTask[]>('GET', url);
+    // Only pass first status if specified (Gateway supports single status filter)
+    // For multiple statuses, we rely on Gateway to return all and filter client-side
+    // TODO: Gateway should support ?status=in.(scheduled,allocated,in_progress)
 
-    // Filter to only pending statuses
-    return tasks.filter((task) => statuses.includes(task.status));
+    const url = `/api/v1/oasis/vtid-ledger?${queryParams.toString()}`;
+
+    const response = await this.request<{ ok: boolean; data: OasisTask[] }>('GET', url);
+
+    if (!response.ok || !response.data) {
+      return [];
+    }
+
+    // Thin client: minimal filtering only, Gateway is source of truth
+    return response.data.filter((task) => statuses.includes(task.status));
   }
 }
 

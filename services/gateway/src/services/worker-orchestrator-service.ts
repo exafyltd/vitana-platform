@@ -13,6 +13,19 @@ import { randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
 
 // =============================================================================
+// VTID-01167: Identity Defaults (IMMUTABLE)
+// Claude must NEVER ask "which project/repo is this?" - these are hardcoded.
+// =============================================================================
+
+export const IDENTITY_DEFAULTS = {
+  repo: 'vitana-platform',
+  project: 'lovable-vitana-vers1',
+  region: 'us-central1',
+  environment: 'vitana_dev_sandbox',
+  tenant: 'vitana',
+} as const;
+
+// =============================================================================
 // Types
 // =============================================================================
 
@@ -49,7 +62,7 @@ export interface WorkOrderPayload {
 }
 
 /**
- * Routing result
+ * Routing result - always includes identity context
  */
 export interface RoutingResult {
   ok: boolean;
@@ -58,6 +71,8 @@ export interface RoutingResult {
   stages?: Array<{ domain: TaskDomain; order: number }>;
   error?: string;
   error_code?: string;
+  // VTID-01167: Identity context injected into every routing result
+  identity: typeof IDENTITY_DEFAULTS;
 }
 
 /**
@@ -444,7 +459,8 @@ export async function routeWorkOrder(payload: WorkOrderPayload): Promise<Routing
         ok: false,
         error: errorMsg,
         error_code: 'VALIDATION_FAILED',
-        run_id
+        run_id,
+        identity: IDENTITY_DEFAULTS
       };
     }
 
@@ -472,7 +488,8 @@ export async function routeWorkOrder(payload: WorkOrderPayload): Promise<Routing
           ok: false,
           error: errorMsg,
           error_code: 'PATH_FORBIDDEN',
-          run_id
+          run_id,
+          identity: IDENTITY_DEFAULTS
         };
       }
     }
@@ -504,7 +521,8 @@ export async function routeWorkOrder(payload: WorkOrderPayload): Promise<Routing
       return {
         ok: true,
         run_id,
-        stages
+        stages,
+        identity: IDENTITY_DEFAULTS
       };
     }
 
@@ -522,7 +540,8 @@ export async function routeWorkOrder(payload: WorkOrderPayload): Promise<Routing
         ok: false,
         error: errorMsg,
         error_code: 'SUBAGENT_UNAVAILABLE',
-        run_id
+        run_id,
+        identity: IDENTITY_DEFAULTS
       };
     }
 
@@ -540,7 +559,8 @@ export async function routeWorkOrder(payload: WorkOrderPayload): Promise<Routing
     return {
       ok: true,
       dispatched_to: subagent,
-      run_id
+      run_id,
+      identity: IDENTITY_DEFAULTS
     };
 
   } catch (error) {
@@ -557,7 +577,8 @@ export async function routeWorkOrder(payload: WorkOrderPayload): Promise<Routing
       ok: false,
       error: errorMsg,
       error_code: 'ROUTING_ERROR',
-      run_id
+      run_id,
+      identity: IDENTITY_DEFAULTS
     };
   }
 }
