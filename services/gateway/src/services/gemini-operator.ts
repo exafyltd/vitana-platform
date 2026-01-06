@@ -1,6 +1,7 @@
 /**
  * VTID-0536: Gemini Operator Tools Bridge v1
  * VTID-01023: Wire /api/v1/operator/chat to Vertex Gemini
+ * VTID-01159: Enforce OASIS-Only Task Discovery via discover_oasis_tasks tool
  *
  * Provides Gemini function-calling tools for the Operator Chat.
  * Tools can trigger Autopilot and OASIS actions, governed by the 0400 Governance Engine.
@@ -9,10 +10,17 @@
  * When running on Cloud Run, uses the service account for authentication.
  * Priority: Vertex AI > Gemini API Key > Local Router
  *
+ * VTID-01159: OASIS-Only Task Discovery
+ * - discover_oasis_tasks: Query pending tasks from OASIS (read-only)
+ * - OASIS is the ONLY source of truth - NO repo/spec scanning permitted
+ * - If OASIS fails, return reliability error (no invented lists)
+ * - Output format: Scheduled/Allocated, In Progress, Ignored (legacy)
+ *
  * Tools:
  * - autopilot.create_task: Create a new Autopilot task (with governance)
  * - autopilot.get_status: Get status of an existing task
  * - autopilot.list_recent_tasks: List recent Autopilot tasks
+ * - discover_oasis_tasks: OASIS-only pending task discovery (VTID-01159)
  */
 
 import fetch from 'node-fetch';
@@ -204,6 +212,39 @@ Do NOT use this tool for:
           }
         },
         required: ['query']
+      }
+    },
+    // VTID-01159: OASIS-only task discovery (TASK_STATE_QUERY)
+    // Enforces OASIS as single source of truth - NO repo/spec scanning
+    {
+      name: 'discover_oasis_tasks',
+      description: `Discover pending tasks from OASIS (the single source of truth). Use this tool when the operator asks about:
+- "What tasks are scheduled?"
+- "List pending tasks"
+- "Show scheduled work"
+- "What's in the queue?"
+- "What tasks are in progress?"
+- "Show me allocated tasks"
+
+This tool returns ONLY tasks from OASIS with status: scheduled, allocated, or in_progress.
+Legacy DEV-* items are listed as ignored. NO repo scanning permitted.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          statuses: {
+            type: 'array',
+            items: {
+              type: 'string',
+              enum: ['scheduled', 'allocated', 'in_progress']
+            },
+            description: 'Filter by status. Defaults to all pending statuses: scheduled, allocated, in_progress.'
+          },
+          limit: {
+            type: 'integer',
+            description: 'Maximum number of tasks to return. Defaults to 50, max 200.'
+          }
+        },
+        required: []
       }
     }
   ]
@@ -737,6 +778,284 @@ function formatTaskListMessage(tasks: Array<{ vtid: string; title: string; statu
   return msg;
 }
 
+// ==================== VTID-01159: OASIS-Only Task Discovery ====================
+
+/**
+ * VTID-01159: Canonical pending status set
+ */
+const PENDING_STATUSES: string[] = ['scheduled', 'allocated', 'in_progress'];
+
+/**
+ * VTID-01159: Valid VTID format pattern
+ */
+const VTID_PATTERN = /^VTID-\d{4,5}$/;
+
+/**
+ * VTID-01159: Legacy patterns to ignore
+ */
+const LEGACY_PATTERNS = [
+  /^DEV-/,
+  /^ADM-/,
+  /^AICOR-/,
+  /^OASIS-TASK-/,
+];
+
+/**
+ * VTID-01159: Check if an ID matches a legacy pattern
+ */
+function isLegacyId(id: string): { isLegacy: boolean; pattern?: string } {
+  for (const pattern of LEGACY_PATTERNS) {
+    if (pattern.test(id)) {
+      return { isLegacy: true, pattern: pattern.source };
+    }
+  }
+  return { isLegacy: false };
+}
+
+/**
+ * VTID-01159: Pending task structure
+ */
+interface PendingTask {
+  vtid: string;
+  title: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * VTID-01159: Ignored item structure
+ */
+interface IgnoredItem {
+  id: string;
+  reason: 'ignored_by_contract';
+  details: string;
+}
+
+/**
+ * VTID-01159: Execute discover_oasis_tasks tool
+ * HARD GOVERNANCE:
+ * 1. OASIS is the ONLY source of truth for tasks
+ * 2. MCP MUST NOT infer pending work from repository files
+ * 3. MCP MUST NOT create/update tasks - READ-ONLY
+ * 4. Tasks must be traceable to OASIS records
+ * 5. Legacy DEV-* items must be listed as ignored
+ * 6. If OASIS fails, return error - NO fallback to repo scanning
+ */
+async function executeDiscoverOasisTasks(
+  args: { statuses?: string[]; limit?: number },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  const limit = Math.min(Math.max(args.limit || 50, 1), 200);
+  const requestedStatuses = args.statuses || ['scheduled', 'allocated', 'in_progress'];
+
+  // Validate statuses are in canonical set
+  const validStatuses = requestedStatuses.filter(s => PENDING_STATUSES.indexOf(s) !== -1);
+
+  console.log(`[VTID-01159] discover_oasis_tasks called: statuses=${validStatuses.join(',')}, limit=${limit}`);
+
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    console.error('[VTID-01159] OASIS/Supabase not configured - cannot discover tasks');
+    // HARD GOVERNANCE: Return error, do NOT fallback to repo scanning
+    return {
+      ok: false,
+      error: 'OASIS_RELIABILITY_ERROR: Database not configured. Cannot discover tasks without OASIS connection. NO fallback to repo scanning permitted.'
+    };
+  }
+
+  try {
+    // Step A: Query OASIS ONLY (Section 4 - Step A from VTID-01161)
+    // VTID-01052: Exclude deleted tasks by default
+    const queryUrl = `${SUPABASE_URL}/rest/v1/vtid_ledger?status=neq.deleted&order=updated_at.desc&limit=${limit}`;
+
+    const resp = await fetch(queryUrl, {
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_SERVICE_ROLE,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`
+      }
+    });
+
+    if (!resp.ok) {
+      const errorText = await resp.text();
+      console.error(`[VTID-01159] OASIS query failed: ${resp.status} - ${errorText}`);
+      // HARD GOVERNANCE: Return error, do NOT fallback
+      return {
+        ok: false,
+        error: `OASIS_RELIABILITY_ERROR: Database query failed (${resp.status}). Cannot discover tasks. NO fallback to repo scanning permitted.`
+      };
+    }
+
+    const oasisTasks = await resp.json() as Array<{
+      vtid: string;
+      title: string;
+      status: string;
+      created_at: string;
+      updated_at: string;
+    }>;
+
+    // Step B: Filter + Validate (Section 4 - Step B from VTID-01161)
+    const pending: PendingTask[] = [];
+    const ignored: IgnoredItem[] = [];
+
+    for (const task of oasisTasks) {
+      const vtid = task.vtid;
+
+      // Check for legacy ID patterns first
+      const { isLegacy, pattern } = isLegacyId(vtid);
+      if (isLegacy) {
+        ignored.push({
+          id: vtid,
+          reason: 'ignored_by_contract',
+          details: `Non-numeric VTID format (matches ${pattern}); repo artifacts are not task truth.`
+        });
+        continue;
+      }
+
+      // Validate VTID format
+      const vtidFormatValid = VTID_PATTERN.test(vtid);
+      if (!vtidFormatValid) {
+        ignored.push({
+          id: vtid,
+          reason: 'ignored_by_contract',
+          details: `VTID format invalid. Expected VTID-\\d{4,5}, got: ${vtid}`
+        });
+        continue;
+      }
+
+      // Validate status is in requested statuses
+      const statusIsPending = validStatuses.indexOf(task.status) !== -1;
+      if (!statusIsPending) {
+        // Skip tasks not in requested statuses
+        continue;
+      }
+
+      // Task passes all validation - add to pending
+      pending.push({
+        vtid: task.vtid,
+        title: task.title || 'Pending Title',
+        status: task.status,
+        created_at: task.created_at,
+        updated_at: task.updated_at
+      });
+    }
+
+    // Emit OASIS event for discovery (fire and forget)
+    emitOasisEvent({
+      vtid: 'VTID-01159',
+      type: 'vtid.stage.task_discovery.success' as any,
+      source: 'operator-console',
+      status: 'success',
+      message: `Discovered ${pending.length} pending tasks`,
+      payload: {
+        threadId,
+        requested_statuses: validStatuses,
+        pending_count: pending.length,
+        ignored_count: ignored.length,
+        source_of_truth: 'OASIS'
+      }
+    }).catch(err => console.warn('[VTID-01159] Failed to emit discovery event:', err.message));
+
+    console.log(`[VTID-01159] Discovery complete: ${pending.length} pending, ${ignored.length} ignored`);
+
+    // Format output per VTID-01159 spec (Section 2)
+    const formattedMessage = formatDiscoverTasksMessage(pending, ignored);
+
+    return {
+      ok: true,
+      data: {
+        source_of_truth: 'OASIS',
+        pending_count: pending.length,
+        ignored_count: ignored.length,
+        pending,
+        ignored,
+        message: formattedMessage
+      }
+    };
+  } catch (error: any) {
+    console.error(`[VTID-01159] Discovery failed:`, error);
+
+    // Emit failure event
+    emitOasisEvent({
+      vtid: 'VTID-01159',
+      type: 'vtid.stage.task_discovery.failed' as any,
+      source: 'operator-console',
+      status: 'error',
+      message: `Task discovery failed: ${error.message}`,
+      payload: {
+        threadId,
+        requested_statuses: validStatuses,
+        error: error.message
+      }
+    }).catch(() => {});
+
+    // HARD GOVERNANCE: Return error, do NOT fallback to repo scanning
+    return {
+      ok: false,
+      error: `OASIS_RELIABILITY_ERROR: ${error.message}. Cannot discover tasks. NO fallback to repo scanning permitted.`
+    };
+  }
+}
+
+/**
+ * VTID-01159: Format discover tasks output per spec Section 2
+ *
+ * Required Output Format:
+ * - "Scheduled/Allocated"
+ * - "In Progress"
+ * - "Ignored (legacy)"
+ * - Each task line: VTID-##### — Title (status)
+ * - Footer: Source: OASIS, pending_count
+ */
+function formatDiscoverTasksMessage(
+  pending: PendingTask[],
+  ignored: IgnoredItem[]
+): string {
+  const lines: string[] = [];
+
+  // Group tasks by status category
+  const scheduledAllocated = pending.filter(t => t.status === 'scheduled' || t.status === 'allocated');
+  const inProgress = pending.filter(t => t.status === 'in_progress');
+
+  // Section 1: Scheduled/Allocated
+  lines.push('**Scheduled/Allocated**');
+  if (scheduledAllocated.length === 0) {
+    lines.push('_(none)_');
+  } else {
+    for (const task of scheduledAllocated) {
+      lines.push(`- ${task.vtid} — ${task.title} (${task.status})`);
+    }
+  }
+  lines.push('');
+
+  // Section 2: In Progress
+  lines.push('**In Progress**');
+  if (inProgress.length === 0) {
+    lines.push('_(none)_');
+  } else {
+    for (const task of inProgress) {
+      lines.push(`- ${task.vtid} — ${task.title} (${task.status})`);
+    }
+  }
+  lines.push('');
+
+  // Section 3: Ignored (legacy)
+  if (ignored.length > 0) {
+    lines.push('**Ignored (legacy)**');
+    for (const item of ignored) {
+      lines.push(`- ${item.id} — ${item.details}`);
+    }
+    lines.push('');
+  }
+
+  // Footer
+  lines.push('---');
+  lines.push(`**Source:** OASIS`);
+  lines.push(`**pending_count:** ${pending.length}`);
+
+  return lines.join('\n');
+}
+
 // ==================== Main Tool Router ====================
 
 /**
@@ -781,6 +1100,14 @@ export async function executeTool(
       case 'knowledge_search':
         result = await executeKnowledgeSearch(
           args as { query: string },
+          threadId
+        );
+        break;
+
+      // VTID-01159: OASIS-only task discovery (TASK_STATE_QUERY)
+      case 'discover_oasis_tasks':
+        result = await executeDiscoverOasisTasks(
+          args as { statuses?: string[]; limit?: number },
           threadId
         );
         break;
@@ -1462,7 +1789,36 @@ async function processLocalRouting(text: string, threadId: string): Promise<Gemi
     }
   }
 
-  // Detect list requests
+  // VTID-01159: TASK_STATE_QUERY detection - OASIS-only task discovery
+  // These patterns trigger discover_oasis_tasks for consistent behavior with ORB
+  // MUST take precedence over generic list_recent_tasks
+  else if (
+    lowerText.match(/\b(scheduled|allocated|pending)\s+task/i) ||
+    lowerText.match(/\btask.*\b(scheduled|allocated|pending)\b/i) ||
+    lowerText.match(/\blist\s+(scheduled|allocated|pending)\b/i) ||
+    lowerText.match(/\bshow\s+(scheduled|allocated|pending)\b/i) ||
+    lowerText.match(/\bwhat.*\b(scheduled|in\s*progress|queue|pending)\b/i) ||
+    lowerText.match(/\bin\s*progress\s+task/i) ||
+    lowerText.match(/\btask.*in\s*progress\b/i) ||
+    lowerText.match(/\bwhat's\s+(in\s+the\s+)?queue\b/i) ||
+    lowerText.match(/\bshow\s+me\s+(the\s+)?queue\b/i) ||
+    lowerText.match(/\bwork\s+(is\s+)?scheduled\b/i) ||
+    lowerText.match(/\bscheduled\s+work\b/i)
+  ) {
+    // VTID-01159: Use OASIS-only discover_oasis_tasks tool
+    console.log('[VTID-01159] TASK_STATE_QUERY detected - using discover_oasis_tasks');
+    const result = await executeTool('discover_oasis_tasks', {}, threadId);
+    toolResults.push({
+      name: 'discover_oasis_tasks',
+      response: {
+        ok: result.ok,
+        ...result.data,
+        error: result.error
+      }
+    });
+  }
+
+  // Detect list requests (generic - for recent tasks without status filter)
   else if (
     lowerText.includes('list') && lowerText.includes('task') ||
     lowerText.includes('recent task') ||
