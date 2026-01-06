@@ -1116,8 +1116,9 @@ async function triggerGlobalRefresh() {
                 state.vtidProjection.fetched = false;
                 await fetchVtidProjection();
             } else if (tab === 'approvals') {
-                state.approvals.fetched = false;
-                await fetchApprovals();
+                // VTID-01154: SPEC-02 uses GitHub feed
+                state.approvals.feedFetched = false;
+                await fetchGitHubFeed();
             }
         } else if (moduleKey === 'oasis') {
             if (tab === 'events') {
@@ -9629,16 +9630,7 @@ function renderApprovalsView() {
     title.textContent = 'Approvals';
     header.appendChild(title);
 
-    // SPEC-02: Refresh button for GitHub feed
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn btn-secondary';
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.disabled = state.approvals.feedLoading;
-    refreshBtn.onclick = function() {
-        state.approvals.feedFetched = false;
-        fetchGitHubFeed();
-    };
-    header.appendChild(refreshBtn);
+    // SPEC-01: Per-view refresh buttons removed - use global refresh icon in header
 
     container.appendChild(header);
 
