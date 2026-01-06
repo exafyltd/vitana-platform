@@ -29,6 +29,7 @@
 
 import { randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
+import { isTaskStateQuery } from './task-state-query-service';
 
 // =============================================================================
 // Types & Constants
@@ -41,6 +42,7 @@ export type IntentType =
   | 'task_creation'
   | 'task_status'
   | 'task_list'
+  | 'task_state_query'  // VTID-01158: OASIS-only task discovery
   | 'knowledge_query'
   | 'conversation'
   | 'control'
@@ -622,6 +624,7 @@ export class CrossTurnStateEngine {
       case 'task_creation': return `Creating a new task: "${truncatedMessage}"`;
       case 'task_status': return `Checking task status`;
       case 'task_list': return `Listing tasks`;
+      case 'task_state_query': return `Querying task state from OASIS`; // VTID-01158
       case 'knowledge_query': return `Knowledge query: "${truncatedMessage}"`;
       case 'conversation': return `General conversation`;
       case 'control': return `System control command`;
@@ -1115,6 +1118,9 @@ setInterval(() => cleanupExpiredStateEngines(), 10 * 60 * 1000);
 /**
  * Detect intent type from user message
  * This is a lightweight classifier - D21 would have more sophisticated detection
+ *
+ * VTID-01158: TASK_STATE_QUERY takes priority for task-related queries
+ * to ensure OASIS-only discovery is triggered.
  */
 export function detectIntentType(message: string, toolCalls?: Array<{ name: string }>): IntentType {
   const lowerMessage = message.toLowerCase().trim();
@@ -1125,10 +1131,17 @@ export function detectIntentType(message: string, toolCalls?: Array<{ name: stri
     if (toolName === 'autopilot_create_task') return 'task_creation';
     if (toolName === 'autopilot_get_status') return 'task_status';
     if (toolName === 'autopilot_list_recent_tasks') return 'task_list';
+    if (toolName === 'mcp__vitana-work__discover_tasks') return 'task_state_query';
     if (toolName === 'knowledge_search') return 'knowledge_query';
   }
 
-  // Keyword-based detection
+  // VTID-01158: Check for TASK_STATE_QUERY BEFORE other task intents
+  // This ensures queries about pending/scheduled/in_progress tasks go through OASIS
+  if (isTaskStateQuery(message)) {
+    return 'task_state_query';
+  }
+
+  // Keyword-based detection for other intents
   if (lowerMessage.match(/\b(create|new|add)\s+(a\s+)?task\b/)) return 'task_creation';
   if (lowerMessage.match(/\bstatus\s+(of\s+)?vtid/i) || lowerMessage.match(/vtid-\d{4,5}/i)) return 'task_status';
   if (lowerMessage.match(/\b(list|show|recent)\s+task/)) return 'task_list';
