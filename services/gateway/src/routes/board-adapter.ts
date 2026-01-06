@@ -7,9 +7,12 @@ const router = Router();
  * VTID-01005: Board Column Derivation (OASIS-based)
  * VTID-01058: Exclude deleted/voided tasks, treat 'completed' as terminal success
  * VTID-01079: Deterministic status→column mapping, one-row-per-VTID, DEV filter
+ * VTID-01169: vtid_ledger.is_terminal is the PRIMARY AUTHORITY for terminal state
  *
- * OASIS is the SINGLE SOURCE OF TRUTH for task completion.
- * Column placement is derived from OASIS events, NOT local ledger status.
+ * Command Hub Reliability Rule (VTID-01169):
+ * - If vtid_ledger.is_terminal = true → Completed/Failed determined by terminal_outcome
+ * - Else → use active status (from ledger or events as fallback)
+ * - No inference from events alone. Events are supporting evidence; ledger is authoritative.
  */
 type BoardColumn = 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED';
 type IdNamespace = 'VTID' | 'DEV' | 'OTHER';
@@ -188,7 +191,7 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
       // VTID-01111: Debug logging for problematic VTIDs
       if (debugVtidList.includes(vtid)) {
         const topics = vtidEvents.map((e: any) => e.topic).join(', ');
-        console.log(`[VTID-01111-DEBUG] ${vtid}: ${vtidEvents.length} events, topics=[${topics}], ledger_status=${row.status}`);
+        console.log(`[VTID-01111-DEBUG] ${vtid}: ${vtidEvents.length} events, topics=[${topics}], ledger_status=${row.status}, is_terminal=${row.is_terminal}, terminal_outcome=${row.terminal_outcome}`);
       }
 
       let isTerminal = false;
@@ -196,24 +199,59 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
       let column: BoardColumn = 'SCHEDULED';
       let derivedStatus = 'scheduled';
 
-      // Check for terminal lifecycle events FIRST (highest authority)
-      const terminalCompletedEvent = vtidEvents.find((e: any) =>
-        (e.topic || '').toLowerCase() === 'vtid.lifecycle.completed'
-      );
-      const terminalFailedEvent = vtidEvents.find((e: any) =>
-        (e.topic || '').toLowerCase() === 'vtid.lifecycle.failed'
-      );
+      // ==========================================================================
+      // VTID-01169: vtid_ledger.is_terminal is the PRIMARY AUTHORITY
+      // Command Hub Reliability Rule:
+      // - If vtid_ledger.is_terminal = true → Completed/Failed determined by terminal_outcome
+      // - Else → use active status (from ledger or events as fallback)
+      // - No inference from events alone. Events are supporting evidence; ledger is authoritative.
+      // ==========================================================================
+      if (row.is_terminal === true) {
+        isTerminal = true;
+        if (row.terminal_outcome === 'success') {
+          terminalOutcome = 'success';
+          column = 'COMPLETED';
+          derivedStatus = 'completed';
+        } else if (row.terminal_outcome === 'failed') {
+          terminalOutcome = 'failed';
+          column = 'COMPLETED';
+          derivedStatus = 'failed';
+        } else if (row.terminal_outcome === 'cancelled') {
+          terminalOutcome = 'failed'; // Treat cancelled as failed for column placement
+          column = 'COMPLETED';
+          derivedStatus = 'cancelled';
+        } else {
+          // is_terminal=true but no outcome - default to success
+          terminalOutcome = 'success';
+          column = 'COMPLETED';
+          derivedStatus = 'completed';
+        }
+      }
 
-      if (terminalCompletedEvent) {
-        isTerminal = true;
-        terminalOutcome = 'success';
-        column = 'COMPLETED';
-        derivedStatus = 'completed';
-      } else if (terminalFailedEvent) {
-        isTerminal = true;
-        terminalOutcome = 'failed';
-        column = 'COMPLETED';
-        derivedStatus = 'failed';
+      // ==========================================================================
+      // FALLBACK: If ledger doesn't have is_terminal=true, check events and status
+      // This handles legacy VTIDs and provides backward compatibility
+      // ==========================================================================
+      if (!isTerminal) {
+        // Check for terminal lifecycle events (secondary authority)
+        const terminalCompletedEvent = vtidEvents.find((e: any) =>
+          (e.topic || '').toLowerCase() === 'vtid.lifecycle.completed'
+        );
+        const terminalFailedEvent = vtidEvents.find((e: any) =>
+          (e.topic || '').toLowerCase() === 'vtid.lifecycle.failed'
+        );
+
+        if (terminalCompletedEvent) {
+          isTerminal = true;
+          terminalOutcome = 'success';
+          column = 'COMPLETED';
+          derivedStatus = 'completed';
+        } else if (terminalFailedEvent) {
+          isTerminal = true;
+          terminalOutcome = 'failed';
+          column = 'COMPLETED';
+          derivedStatus = 'failed';
+        }
       }
 
       // VTID-01009: Check for lifecycle.started event → IN_PROGRESS

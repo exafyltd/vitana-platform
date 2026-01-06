@@ -168,6 +168,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const { workerOrchestratorRouter } = require('./routes/worker-orchestrator');
   // VTID-01148: Approvals API v1 — Pending Queue + Count + Approve/Reject
   const approvalsRouter = require('./routes/approvals').default;
+  // VTID-01169: Deploy → Ledger Terminalization (terminalize endpoint + repair job)
+  const vtidTerminalizeRouter = require('./routes/vtid-terminalize').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -485,6 +487,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01020: VTID Ledger JSON endpoint
   mountRouterSync(app, '/', oasisVtidLedgerRouter, { owner: 'oasis-vtid-ledger' });
+
+  // VTID-01169: Deploy → Ledger Terminalization (terminalize endpoint + repair job)
+  mountRouterSync(app, '/', vtidTerminalizeRouter, { owner: 'vtid-terminalize' });
 
   // VTID-0529-C: Static files MUST be served BEFORE the router
   const staticPath = path.join(__dirname, 'frontend/command-hub');
