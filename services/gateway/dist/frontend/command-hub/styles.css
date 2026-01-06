@@ -300,6 +300,27 @@ body {
   border-bottom-color: var(--color-accent);
 }
 
+/* VTID-01151: Approvals badge counter */
+.approvals-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  margin-left: 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #fff;
+  background: #ef4444;
+  border-radius: 9px;
+  vertical-align: middle;
+}
+
+.sub-nav-tab.active .approvals-badge {
+  background: var(--color-accent);
+}
+
 /* --- Content Area --- */
 .content-area {
   flex: 1;
