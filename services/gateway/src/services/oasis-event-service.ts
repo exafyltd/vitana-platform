@@ -1832,4 +1832,209 @@ export const taskIntakeEvents = {
     }),
 };
 
+// =============================================================================
+// VTID-01160: Task Discovery Governance Event Types
+// =============================================================================
+
+/**
+ * VTID-01160: Task Discovery Governance Event Types
+ * These are the event types for OASIS_ONLY_TASK_TRUTH enforcement.
+ */
+export const TASK_DISCOVERY_GOVERNANCE_EVENT_TYPES = [
+  'governance.violation.oasis_only_task_truth',
+  'governance.enforcement.oasis_only_task_truth',
+  'governance.validation.task_discovery.passed',
+  'governance.validation.task_discovery.blocked',
+] as const;
+
+/**
+ * VTID-01160: Task Discovery Governance Event Helpers
+ * Helper functions for emitting task discovery governance events.
+ *
+ * HARD GOVERNANCE:
+ * - Rule ID: GOV-INTEL-R.1
+ * - Name: OASIS_ONLY_TASK_TRUTH
+ * - Severity: CRITICAL
+ */
+export const taskDiscoveryGovernanceEvents = {
+  /**
+   * Emit governance violation event when non-OASIS task source detected
+   *
+   * MANDATORY: This event MUST be emitted when any of these conditions occur:
+   * 1. Task state query uses non-OASIS source (repo_scan, memory, unknown)
+   * 2. Response does not use discover_tasks tool
+   * 3. Task IDs do not match VTID-\d{4,5} format
+   * 4. Legacy task IDs (DEV-*, ADM-*, AICOR-*) detected in pending list
+   */
+  violationDetected: (
+    surface: 'orb' | 'operator' | 'mcp' | 'other',
+    detectedSource: 'repo_scan' | 'memory' | 'unknown',
+    requestedQuery: string,
+    invalidTaskIds?: string[],
+    errorCodes?: string[]
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01160',
+      type: 'governance.violation.oasis_only_task_truth',
+      source: 'governance-validator',
+      status: 'warning',
+      message: `BLOCKED: Task status query from ${surface} used non-OASIS source (${detectedSource})`,
+      payload: {
+        rule_id: 'GOV-INTEL-R.1',
+        rule_name: 'OASIS_ONLY_TASK_TRUTH',
+        severity: 'CRITICAL',
+        status: 'blocked',
+        surface,
+        detected_source: detectedSource,
+        requested_query: requestedQuery,
+        retry_action: 'discover_tasks_required',
+        invalid_task_ids: invalidTaskIds,
+        error_codes: errorCodes,
+        violated_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit enforcement event when a task discovery request is blocked
+   */
+  enforcementBlocked: (
+    surface: 'orb' | 'operator' | 'mcp' | 'other',
+    reason: string,
+    requestedQuery: string,
+    userMessage: string
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01160',
+      type: 'governance.enforcement.oasis_only_task_truth',
+      source: 'governance-validator',
+      status: 'warning',
+      message: `Enforcement: Task discovery blocked for ${surface}`,
+      payload: {
+        rule_id: 'GOV-INTEL-R.1',
+        rule_name: 'OASIS_ONLY_TASK_TRUTH',
+        action: 'block',
+        surface,
+        reason,
+        requested_query: requestedQuery,
+        user_message: userMessage,
+        retry_action: 'discover_tasks_required',
+        enforced_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit validation passed event for compliant task discovery
+   */
+  validationPassed: (
+    surface: 'orb' | 'operator' | 'mcp' | 'other',
+    pendingCount: number,
+    requestedQuery: string
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01160',
+      type: 'governance.validation.task_discovery.passed',
+      source: 'governance-validator',
+      status: 'success',
+      message: `Task discovery validation passed for ${surface}`,
+      payload: {
+        rule_id: 'GOV-INTEL-R.1',
+        rule_name: 'OASIS_ONLY_TASK_TRUTH',
+        status: 'passed',
+        surface,
+        source_of_truth: 'OASIS',
+        pending_count: pendingCount,
+        requested_query: requestedQuery,
+        validated_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit validation blocked event with full details
+   */
+  validationBlocked: (
+    surface: 'orb' | 'operator' | 'mcp' | 'other',
+    detectedSource: 'oasis' | 'repo_scan' | 'memory' | 'unknown',
+    requestedQuery: string,
+    errors: Array<{ code: string; message: string; value?: string }>
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01160',
+      type: 'governance.validation.task_discovery.blocked',
+      source: 'governance-validator',
+      status: 'warning',
+      message: `Task discovery validation blocked for ${surface}: ${errors.length} error(s)`,
+      payload: {
+        rule_id: 'GOV-INTEL-R.1',
+        rule_name: 'OASIS_ONLY_TASK_TRUTH',
+        status: 'blocked',
+        surface,
+        detected_source: detectedSource,
+        requested_query: requestedQuery,
+        errors,
+        error_count: errors.length,
+        retry_action: 'discover_tasks_required',
+        blocked_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit legacy ID detection event
+   * Used when DEV-*, ADM-*, AICOR-* patterns are found in task responses
+   */
+  legacyIdDetected: (
+    surface: 'orb' | 'operator' | 'mcp' | 'other',
+    legacyIds: string[],
+    requestedQuery: string
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01160',
+      type: 'governance.violation.oasis_only_task_truth',
+      source: 'governance-validator',
+      status: 'warning',
+      message: `Legacy task IDs detected on ${surface}: ${legacyIds.join(', ')}`,
+      payload: {
+        rule_id: 'GOV-INTEL-R.1',
+        rule_name: 'OASIS_ONLY_TASK_TRUTH',
+        violation_type: 'legacy_id_detected',
+        severity: 'CRITICAL',
+        status: 'blocked',
+        surface,
+        legacy_ids: legacyIds,
+        requested_query: requestedQuery,
+        note: 'Legacy IDs may only appear in ignored[] as artifacts, not in pending[]',
+        retry_action: 'discover_tasks_required',
+        violated_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit invalid VTID format detection event
+   */
+  invalidVtidFormat: (
+    surface: 'orb' | 'operator' | 'mcp' | 'other',
+    invalidIds: string[],
+    requestedQuery: string
+  ) =>
+    emitOasisEvent({
+      vtid: 'VTID-01160',
+      type: 'governance.violation.oasis_only_task_truth',
+      source: 'governance-validator',
+      status: 'warning',
+      message: `Invalid VTID formats detected on ${surface}: ${invalidIds.join(', ')}`,
+      payload: {
+        rule_id: 'GOV-INTEL-R.1',
+        rule_name: 'OASIS_ONLY_TASK_TRUTH',
+        violation_type: 'invalid_vtid_format',
+        severity: 'CRITICAL',
+        status: 'blocked',
+        surface,
+        invalid_ids: invalidIds,
+        expected_format: '^VTID-\\d{4,5}$',
+        requested_query: requestedQuery,
+        retry_action: 'discover_tasks_required',
+        violated_at: new Date().toISOString(),
+      },
+    }),
+};
+
 export default cicdEvents;
