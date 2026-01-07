@@ -123,9 +123,10 @@ router.get('/', async (req: Request, res: Response) => {
     });
   }
 
-  const jwtSecret = process.env.SUPABASE_JWT_SECRET;
+  // VTID-01171: Try SUPABASE_JWT_SECRET first, fall back to DEV_JWT_SECRET
+  const jwtSecret = process.env.SUPABASE_JWT_SECRET || process.env.DEV_JWT_SECRET;
   if (!jwtSecret) {
-    console.error('[VTID-01171] SUPABASE_JWT_SECRET not configured');
+    console.error('[VTID-01171] SUPABASE_JWT_SECRET or DEV_JWT_SECRET not configured');
     return res.status(500).json({
       ok: false,
       error: 'INTERNAL_ERROR',
