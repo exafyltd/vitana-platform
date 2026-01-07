@@ -21,15 +21,18 @@ This document specifies the design for a **compatibility adapter** that allows L
 
 ## 1. Problem Statement
 
-### Current State
+### Current State (CONFIRMED via Analysis)
 
-| Component | Lovable (v1) | Platform |
-|-----------|--------------|----------|
-| Auth Provider | Supabase Auth (separate instance?) | Supabase Auth |
-| JWT Issuer | Lovable Supabase | Platform Supabase |
-| Identity Claims | Unknown (TBD from handover) | Canonical identity (see canonical-identity.md) |
-| Tenant Model | Unknown | Multi-tenant with tenant_id in JWT |
-| Role Model | Unknown | 7 roles (community → infra) |
+| Component | Lovable (v1) | Platform | Compatibility |
+|-----------|--------------|----------|---------------|
+| Auth Provider | Supabase Auth | Supabase Auth | ✓ Same |
+| Supabase Project | `inmkhvwdcuyhnxkgfvsb.supabase.co` | (Platform instance) | **DIFFERENT** |
+| JWT Issuer | Lovable Supabase | Platform Supabase | Requires consolidation |
+| Auth Methods | Magic Link, Google OAuth | Same + more | ✓ Compatible |
+| Identity Claims | `app_metadata.active_tenant_id`, `exafy_admin` | JWT claims: `tenant`, `role` | Mappable |
+| Tenant Model | `tenants` table, 3 tenants | Multi-tenant, 4 tenants | ✓ Similar |
+| Role Model | 6 roles (community → developer) | 7 roles (community → infra) | ✓ Subset |
+| Schema | 271 tables | ~135 tables | Additive merge possible |
 
 ### Desired State
 
@@ -41,26 +44,87 @@ This document specifies the design for a **compatibility adapter** that allows L
 
 ---
 
-## 2. Compatibility Questions (To Answer During Handover)
+## 2. Lovable Analysis Results (From Read-Only Inspection)
 
-### 2.1 Lovable Auth Questions
+> **Analysis Date**: 2026-01-07
+> **Source**: Read-only GitHub access to `exafyltd/vitana-v1`
 
-| Question | Answer (TBD) | Impact |
-|----------|--------------|--------|
-| Does Lovable use Supabase Auth? | | If yes, migration path easier |
-| What auth methods? (email, OAuth, etc.) | | Must be supported by Platform |
-| Are there custom JWT claims? | | Must be mapped to Platform claims |
-| User ID format? (UUID?) | | Must be compatible with Platform |
-| Session storage? (cookies, localStorage?) | | May affect adapter design |
+### 2.1 Lovable Auth Configuration (CONFIRMED)
 
-### 2.2 Lovable Identity Questions
+| Question | Answer | Impact |
+|----------|--------|--------|
+| Does Lovable use Supabase Auth? | **YES** - Standard `@supabase/supabase-js` | Migration path easier ✓ |
+| Supabase Project | `inmkhvwdcuyhnxkgfvsb.supabase.co` | **DIFFERENT** from Platform - requires consolidation |
+| What auth methods? | Magic Link + Google OAuth | Both supported by Platform ✓ |
+| Are there custom JWT claims? | `app_metadata.active_tenant_id`, `app_metadata.exafy_admin` | Must be mapped |
+| User ID format? | UUID (Supabase standard) | Compatible with Platform ✓ |
+| Session storage? | `localStorage` with `persistSession: true` | Standard approach ✓ |
 
-| Question | Answer (TBD) | Impact |
-|----------|--------------|--------|
-| Is there a tenant/org concept? | | Must map to Platform tenant_id |
-| What roles exist? | | Must map to Platform roles |
-| How are permissions checked? | | Must use Platform RLS |
-| Is there multi-tenancy? | | Critical for RLS |
+### 2.2 Lovable Identity Configuration (CONFIRMED)
+
+| Question | Answer | Impact |
+|----------|--------|--------|
+| Is there a tenant/org concept? | **YES** - `tenants` table with `tenant_id` | Maps to Platform tenant_id ✓ |
+| Tenant slugs | `maxina`, `earthlinks`, `alkalma` | Note: `earthlinks` ≠ Platform's `earthlings` |
+| What roles exist? | `vitana_role` enum: `community`, `patient`, `professional`, `staff`, `admin`, `developer` | Almost identical to Platform ✓ |
+| Role hierarchy | community(1) < patient(2) < professional(3) < staff(4) < admin(5) | Matches Platform hierarchy ✓ |
+| How are permissions checked? | Role hierarchy + `hasPermission()` function | Similar to Platform ✓ |
+| Is there multi-tenancy? | **YES** - All user-data tables have `tenant_id` | RLS compatible ✓ |
+| Super-admin concept | `app_metadata.exafy_admin === true` | Maps to Platform's `infra` role |
+
+### 2.3 Lovable Schema Summary
+
+| Metric | Value |
+|--------|-------|
+| Total Tables | **271** |
+| Tables with `tenant_id` | Majority (multi-tenant) |
+| Tables with `user_id` | All user-scoped data |
+| Role Enums | `vitana_role`, `tenant_role` |
+| Role Management | `user_roles` table, `role_preferences` table |
+
+### 2.4 Key Lovable RPC Functions
+
+| Function | Purpose | Platform Equivalent |
+|----------|---------|---------------------|
+| `get_role_preference(p_tenant_id)` | Get user's active role | `me_context()` |
+| `set_role_preference(p_tenant_id, p_role)` | Set active role | `me_set_active_role(p_role)` |
+| `switch_to_tenant_by_slug(p_tenant_slug)` | Switch tenant context | N/A (Platform uses JWT claim) |
+| `current_active_role()` | Get current role | `current_active_role()` ✓ |
+
+### 2.5 Role Mapping (Lovable → Platform)
+
+| Lovable Role | Platform Role | Notes |
+|--------------|---------------|-------|
+| `community` | `community` | ✓ Direct mapping |
+| `patient` | `patient` | ✓ Direct mapping |
+| `professional` | `professional` | ✓ Direct mapping |
+| `staff` | `staff` | ✓ Direct mapping |
+| `admin` | `admin` | ✓ Direct mapping |
+| `developer` | `developer` | ✓ Direct mapping |
+| `reseller` (tenant_role only) | `community` + capability | Reseller is capability, not role |
+| `exafy_admin` (app_metadata) | `infra` | Super-admin mapping |
+
+### 2.6 Tenant Mapping (Lovable → Platform)
+
+| Lovable Slug | Platform Slug | Platform UUID | Action Required |
+|--------------|---------------|---------------|-----------------|
+| `maxina` | `maxina` | `00000000-...0002` | ✓ Direct mapping |
+| `alkalma` | `alkalma` | `00000000-...0003` | ✓ Direct mapping |
+| `earthlinks` | `earthlings` | `00000000-...0004` | **RENAME** or alias |
+| (none) | `vitana` | `00000000-...0001` | N/A (Platform-only) |
+
+### 2.7 Compatibility Assessment
+
+| Aspect | Compatibility | Risk Level |
+|--------|---------------|------------|
+| Auth Method | HIGH - Standard Supabase | LOW |
+| User IDs | HIGH - Both UUID | LOW |
+| Roles | HIGH - 6/7 match | LOW |
+| Tenants | MEDIUM - 3/4 match | MEDIUM |
+| Schema | MEDIUM - Similar patterns | MEDIUM |
+| RLS | HIGH - Same patterns | LOW |
+
+**Overall Assessment**: HIGH COMPATIBILITY - Consolidation is feasible
 
 ---
 
