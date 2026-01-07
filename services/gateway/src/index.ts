@@ -85,6 +85,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const orbLiveRouter = require('./routes/orb-live').default;
   // VTID-01046: Me Context Routes - role context and role switching
   const meRouter = require('./routes/me').default;
+  // VTID-01171: Auth Me Endpoint - JWT verification + identity
+  const authMeRouter = require('./routes/auth-me').default;
   // VTID-01047: Dev Token Mint Endpoint (Cloud-Shell Friendly)
   const devAuthRouter = require('./routes/dev-auth').default;
   // VTID-01081 + VTID-01103: Health Gateway (C2 ingest + C3 compute)
@@ -359,6 +361,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01046: Me Context - role context and active role switching
   mountRouterSync(app, '/api/v1/me', meRouter, { owner: 'me-context' });
+
+  // VTID-01171: Auth Me - JWT verification + identity endpoint
+  mountRouterSync(app, '/api/v1/auth/me', authMeRouter, { owner: 'auth-me' });
 
   // VTID-01047: Dev Token Mint Endpoint (dev-sandbox only)
   mountRouterSync(app, '/api/v1/dev/auth', devAuthRouter, { owner: 'dev-auth' });
