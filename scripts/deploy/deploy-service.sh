@@ -3,6 +3,7 @@
 # Deployment script for Vitana services
 # Compliant with SYS-RULE-DEPLOY-L1
 # VTID-01125: Added GOOGLE_GEMINI_API_KEY secret binding for ORB
+# VTID-01157: Added SUPABASE_JWT_SECRET for Gateway Supabase JWT Auth
 
 set -euo pipefail
 
@@ -23,6 +24,7 @@ echo -e "${YELLOW}Starting deployment for service: ${SERVICE}${NC}"
 echo -e "${YELLOW}Deploying ${SERVICE} to Cloud Run...${NC}"
 
 # VTID-01125: Gateway requires additional secrets for ORB intelligence
+# VTID-01157: SUPABASE_JWT_SECRET for Supabase JWT verification
 # Secrets are stored in GCP Secret Manager and bound at deploy time
 # NOTE: --set-secrets REPLACES all secrets, so we must include ALL required secrets here
 if [ "$SERVICE" = "gateway" ]; then
@@ -33,7 +35,7 @@ if [ "$SERVICE" = "gateway" ]; then
     --source "services/${SERVICE}" \
     --platform managed \
     --set-env-vars "ENVIRONMENT=${ENVIRONMENT}" \
-    --set-secrets "GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest,SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest,SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest,GITHUB_TOKEN=GITHUB_TOKEN:latest,GH_TOKEN=GITHUB_TOKEN:latest,GITHUB_SAFE_MERGE_TOKEN=GITHUB_TOKEN:latest,DEV_AUTH_SECRET=DEV_AUTH_SECRET:latest,DEV_TEST_USER_EMAIL=DEV_TEST_USER_EMAIL:latest,DEV_TEST_USER_PASSWORD=DEV_TEST_USER_PASSWORD:latest,DEV_JWT_SECRET=DEV_JWT_SECRET:latest" \
+    --set-secrets "GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest,SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest,SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest,SUPABASE_JWT_SECRET=SUPABASE_JWT_SECRET:latest,GITHUB_TOKEN=GITHUB_TOKEN:latest,GH_TOKEN=GITHUB_TOKEN:latest,GITHUB_SAFE_MERGE_TOKEN=GITHUB_TOKEN:latest,DEV_AUTH_SECRET=DEV_AUTH_SECRET:latest,DEV_TEST_USER_EMAIL=DEV_TEST_USER_EMAIL:latest,DEV_TEST_USER_PASSWORD=DEV_TEST_USER_PASSWORD:latest,DEV_JWT_SECRET=DEV_JWT_SECRET:latest" \
     --quiet
 else
   gcloud run deploy "$SERVICE" \

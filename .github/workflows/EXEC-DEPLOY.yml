@@ -266,6 +266,8 @@ jobs:
             # Bind other required secrets
             SECRETS_ARGS+=(--update-secrets=SUPABASE_URL=SUPABASE_URL:latest)
             SECRETS_ARGS+=(--update-secrets=SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest)
+            # VTID-01157: Bind Supabase JWT secret for auth middleware
+            SECRETS_ARGS+=(--update-secrets=SUPABASE_JWT_SECRET=SUPABASE_JWT_SECRET:latest)
           fi
 
           gcloud run deploy "$CLOUD_RUN_SERVICE" \
