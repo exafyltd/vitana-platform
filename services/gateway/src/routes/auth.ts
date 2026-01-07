@@ -1,5 +1,5 @@
 /**
- * VTID-01170: Auth Routes (Dev Onboarding MVP)
+ * VTID-01157: Auth Routes (Dev Onboarding MVP)
  *
  * Purpose: Provide authentication endpoints for the Gateway.
  * - GET /me - Returns the authenticated user's identity
@@ -51,7 +51,7 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
   const identity = req.identity!;
 
   console.log(
-    `[VTID-01170] GET /auth/me - user_id=${identity.user_id} exafy_admin=${identity.exafy_admin}`
+    `[VTID-01157] GET /auth/me - user_id=${identity.user_id} exafy_admin=${identity.exafy_admin}`
   );
 
   return res.status(200).json({
@@ -95,7 +95,7 @@ router.get('/me/debug', requireAuth, async (req: AuthenticatedRequest, res: Resp
   }
 
   console.log(
-    `[VTID-01170] GET /auth/me/debug - user_id=${identity.user_id}`
+    `[VTID-01157] GET /auth/me/debug - user_id=${identity.user_id}`
   );
 
   return res.status(200).json({
@@ -118,7 +118,7 @@ router.get('/health', (_req, res: Response) => {
   return res.status(200).json({
     ok: true,
     service: 'auth',
-    vtid: 'VTID-01170',
+    vtid: 'VTID-01157',
     config: {
       jwt_secret_configured: hasJwtSecret,
       supabase_url_configured: hasSupabaseUrl,

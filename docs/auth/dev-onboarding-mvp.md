@@ -1,6 +1,6 @@
 # Dev Onboarding MVP - Gateway Auth
 
-> **VTID**: VTID-01170
+> **VTID**: VTID-01157
 > **Status**: Implemented
 > **Date**: 2026-01-07
 

@@ -1,5 +1,5 @@
 /**
- * VTID-01170: Supabase JWT Auth Middleware (Dev Onboarding MVP)
+ * VTID-01157: Supabase JWT Auth Middleware (Dev Onboarding MVP)
  *
  * Purpose: Verify Supabase HS256 JWT tokens and extract identity claims.
  * This middleware validates the JWT signature using SUPABASE_JWT_SECRET
@@ -53,7 +53,7 @@ function getBearerToken(req: Request): string | null {
 function getJwtSecret(): Uint8Array | null {
   const secret = process.env.SUPABASE_JWT_SECRET;
   if (!secret) {
-    console.error('[VTID-01170] SUPABASE_JWT_SECRET not configured');
+    console.error('[VTID-01157] SUPABASE_JWT_SECRET not configured');
     return null;
   }
   return new TextEncoder().encode(secret);
@@ -96,11 +96,11 @@ async function verifyAndExtractIdentity(
   } catch (error: any) {
     // Log verification failures for debugging
     if (error.code === 'ERR_JWT_EXPIRED') {
-      console.warn('[VTID-01170] JWT expired');
+      console.warn('[VTID-01157] JWT expired');
     } else if (error.code === 'ERR_JWS_SIGNATURE_VERIFICATION_FAILED') {
-      console.warn('[VTID-01170] JWT signature verification failed');
+      console.warn('[VTID-01157] JWT signature verification failed');
     } else {
-      console.warn('[VTID-01170] JWT verification failed:', error.message);
+      console.warn('[VTID-01157] JWT verification failed:', error.message);
     }
     return null;
   }
@@ -188,7 +188,7 @@ export function requireExafyAdmin(
 
   if (!req.identity.exafy_admin) {
     console.warn(
-      `[VTID-01170] Access denied: user ${req.identity.user_id} is not exafy_admin`
+      `[VTID-01157] Access denied: user ${req.identity.user_id} is not exafy_admin`
     );
     res.status(403).json({
       ok: false,
@@ -239,7 +239,7 @@ export async function requireAdminAuth(
   // Then, require exafy_admin
   if (!req.identity.exafy_admin) {
     console.warn(
-      `[VTID-01170] Access denied: user ${req.identity.user_id} is not exafy_admin`
+      `[VTID-01157] Access denied: user ${req.identity.user_id} is not exafy_admin`
     );
     res.status(403).json({
       ok: false,
