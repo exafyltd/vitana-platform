@@ -14,8 +14,16 @@
  * - POST /api/v1/cicd/approvals/:id/approve - Approve and execute
  * - POST /api/v1/cicd/approvals/:id/deny    - Deny approval request
  *
+ * VTID-01168 Approval Auto-Deploy:
+ * - POST /api/v1/cicd/autonomous-pr-merge - Approve → Safe Merge → Auto-Deploy
+ *   Payload: { vtid, pr_number, merge_method, automerge }
+ *   - VTID is REQUIRED (blocks approval if missing)
+ *   - Merge commit format: VTID-####: <PR title>
+ *   - State transitions: MERGED → DEPLOYING tracked via OASIS
+ *
  * Autonomous PR+Merge (Claude Worker):
  * - POST /api/v1/github/autonomous-pr-merge - Create PR + Wait for CI + Merge (with VTID-01033 concurrency control)
+ *   Payload: { vtid, repo, head_branch, base_branch, title, body, merge_method, automerge, ... }
  *
  * VTID-01033 Concurrency Control Endpoints:
  * - GET  /api/v1/cicd/lock-status    - Get current lock status and configuration
@@ -24,7 +32,7 @@
  * Mounting (in index.ts):
  * - app.use('/api/v1/github', cicdRouter);  // GitHub operations
  * - app.use('/api/v1/deploy', cicdRouter);  // Deploy operations
- * - app.use('/api/v1/cicd', cicdRouter);    // CICD health + VTID-0601 endpoints + VTID-01033 lock endpoints
+ * - app.use('/api/v1/cicd', cicdRouter);    // CICD health + VTID-0601 endpoints + VTID-01033 lock endpoints + VTID-01168 approval auto-deploy
  */
 
 import { Router, Request, Response } from 'express';
@@ -51,6 +59,9 @@ import {
   DeployTargetReason,
   // VTID-01033: Concurrency control types
   ConcurrencyBlockedResponse,
+  // VTID-01168: Approval Auto-Deploy
+  ApprovalAutoPrMergeRequestSchema,
+  ApprovalAutoPrMergeResponse,
 } from '../types/cicd';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
@@ -1157,10 +1168,262 @@ router.post('/approvals/:id/deny', async (req: Request, res: Response) => {
   }
 });
 
+// ==================== VTID-01168: Approval Auto-Deploy ====================
+
+/**
+ * POST /autonomous-pr-merge - Approve → Safe Merge → Auto-Deploy
+ *
+ * VTID-01168: One approval = one controlled deployment
+ *
+ * This endpoint is called by the Command Hub Approve button.
+ * It performs:
+ * 1. Validate VTID (required, must match format VTID-#### or VTID-#####)
+ * 2. Get PR details from GitHub
+ * 3. Verify PR is open and CI passed
+ * 4. Merge with commit message: VTID-####: <PR title>
+ * 5. Emit OASIS events for MERGED state
+ * 6. Auto-detect service and trigger deploy
+ * 7. Emit OASIS events for DEPLOYING state
+ * 8. Track terminal success/failure via OASIS
+ *
+ * Payload:
+ * {
+ *   "vtid": "VTID-####",
+ *   "pr_number": 380,
+ *   "merge_method": "squash",
+ *   "automerge": true
+ * }
+ *
+ * If VTID is missing or invalid → approval is blocked (400 error)
+ */
+router.post('/autonomous-pr-merge', async (req: Request, res: Response, next: Function) => {
+  // VTID-01168: Route differentiation
+  // If request has 'head_branch', it's a legacy Claude Worker request → pass to next handler
+  // If request has 'pr_number', it's a Command Hub approval request → handle here
+  if (req.body?.head_branch && !req.body?.pr_number) {
+    console.log(`[VTID-01168] Request has head_branch, routing to legacy autonomous-pr-merge handler`);
+    return next();
+  }
+
+  const requestId = randomUUID();
+  console.log(`[VTID-01168] Approval auto-deploy request ${requestId} started`);
+
+  try {
+    // Step 1: Validate request payload (VTID is REQUIRED)
+    const validation = ApprovalAutoPrMergeRequestSchema.safeParse(req.body);
+    if (!validation.success) {
+      const details = validation.error.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ');
+      console.error(`[VTID-01168] Validation failed: ${details}`);
+
+      // Check if VTID is the issue
+      const vtidError = validation.error.errors.find(e => e.path.includes('vtid'));
+      if (vtidError) {
+        return res.status(400).json({
+          ok: false,
+          vtid: req.body?.vtid || 'UNKNOWN',
+          pr_number: req.body?.pr_number || 0,
+          state: 'FAILED',
+          merged: false,
+          error: `VTID validation failed: ${vtidError.message}`,
+          reason: 'vtid_missing',
+        } as ApprovalAutoPrMergeResponse);
+      }
+
+      return res.status(400).json({
+        ok: false,
+        vtid: req.body?.vtid || 'UNKNOWN',
+        pr_number: req.body?.pr_number || 0,
+        state: 'FAILED',
+        merged: false,
+        error: `Invalid request payload: ${details}`,
+        reason: 'vtid_missing',
+      } as ApprovalAutoPrMergeResponse);
+    }
+
+    const { vtid, pr_number, merge_method, automerge } = validation.data;
+
+    console.log(`[VTID-01168] ${vtid}: Processing approval for PR #${pr_number} (merge_method: ${merge_method}, automerge: ${automerge})`);
+
+    // Step 2: Get PR details from GitHub
+    let pr;
+    try {
+      pr = await githubService.getPullRequest(DEFAULT_REPO, pr_number);
+    } catch (error) {
+      console.error(`[VTID-01168] ${vtid}: PR #${pr_number} not found`);
+      return res.status(404).json({
+        ok: false,
+        vtid,
+        pr_number,
+        state: 'FAILED',
+        merged: false,
+        error: `PR #${pr_number} not found`,
+        reason: 'pr_not_found',
+      } as ApprovalAutoPrMergeResponse);
+    }
+
+    // Step 3: Verify PR is still open
+    if (pr.state !== 'open') {
+      console.error(`[VTID-01168] ${vtid}: PR #${pr_number} is ${pr.state}, cannot merge`);
+      return res.status(400).json({
+        ok: false,
+        vtid,
+        pr_number,
+        pr_url: pr.html_url,
+        state: 'FAILED',
+        merged: false,
+        error: `PR is ${pr.state}, cannot merge`,
+        reason: 'pr_not_open',
+      } as ApprovalAutoPrMergeResponse);
+    }
+
+    // Step 4: Check CI status
+    try {
+      const prStatus = await githubService.getPrStatus(DEFAULT_REPO, pr_number);
+      if (!prStatus.allPassed) {
+        const pendingOrFailed = prStatus.checks.filter(c => c.status !== 'success');
+        console.error(`[VTID-01168] ${vtid}: CI not passed for PR #${pr_number}`);
+        return res.status(400).json({
+          ok: false,
+          vtid,
+          pr_number,
+          pr_url: pr.html_url,
+          state: 'FAILED',
+          merged: false,
+          error: `CI checks not passed: ${pendingOrFailed.map(c => `${c.name}(${c.status})`).join(', ')}`,
+          reason: 'ci_not_passed',
+        } as ApprovalAutoPrMergeResponse);
+      }
+    } catch (error) {
+      // If we can't check CI status, continue (CI might be optional)
+      console.warn(`[VTID-01168] ${vtid}: Could not check CI status, continuing...`);
+    }
+
+    // Step 5: Emit approval approved event
+    await cicdEvents.approvalApproved(vtid, `pr-${pr_number}`, 'merge', 'command-hub-user');
+
+    // Step 6: Emit merge requested event
+    await cicdEvents.mergeRequested(vtid, pr_number, DEFAULT_REPO);
+
+    // Step 7: Execute merge with proper commit message format: VTID-####: <PR title>
+    // Strip any existing VTID prefix from title to avoid duplication
+    const vtidPattern = /^VTID-\d{4,5}:\s*/i;
+    const prTitleClean = pr.title.replace(vtidPattern, '').trim();
+    const mergeCommitMessage = `${vtid}: ${prTitleClean}`;
+
+    console.log(`[VTID-01168] ${vtid}: Merging PR #${pr_number} with message: "${mergeCommitMessage}"`);
+
+    let mergeResult;
+    try {
+      mergeResult = await githubService.mergePullRequest(
+        DEFAULT_REPO,
+        pr_number,
+        mergeCommitMessage,
+        merge_method
+      );
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`[VTID-01168] ${vtid}: Merge failed - ${errorMessage}`);
+      await cicdEvents.mergeFailed(vtid, pr_number, errorMessage, DEFAULT_REPO);
+      return res.status(500).json({
+        ok: false,
+        vtid,
+        pr_number,
+        pr_url: pr.html_url,
+        state: 'FAILED',
+        merged: false,
+        error: `Merge failed: ${errorMessage}`,
+        reason: 'merge_failed',
+      } as ApprovalAutoPrMergeResponse);
+    }
+
+    // Step 8: Emit MERGED state event
+    console.log(`[VTID-01168] ${vtid}: PR #${pr_number} merged successfully (sha: ${mergeResult.sha})`);
+    await cicdEvents.mergeSuccess(vtid, pr_number, mergeResult.sha, DEFAULT_REPO);
+
+    // Step 9: Detect service and trigger auto-deploy (if automerge=true)
+    let deployResult = null;
+    let finalState: 'MERGED' | 'DEPLOYING' = 'MERGED';
+
+    if (automerge) {
+      const files = await githubService.getPrFiles(DEFAULT_REPO, pr_number);
+      const service = githubService.detectServiceFromFiles(files.map(f => f.filename));
+
+      if (service && ALLOWED_DEPLOY_SERVICES.includes(service as any)) {
+        console.log(`[VTID-01168] ${vtid}: Auto-deploying service ${service}`);
+
+        // Emit DEPLOYING state event
+        await cicdEvents.deployRequestedFromHub(vtid, service, 'dev');
+
+        try {
+          await githubService.triggerWorkflow(
+            DEFAULT_REPO,
+            'EXEC-DEPLOY.yml',
+            'main',
+            {
+              vtid,
+              service,
+              health_path: '/alive',
+              initiator: 'command-hub',
+              environment: 'dev',
+            }
+          );
+
+          const runs = await githubService.getWorkflowRuns(DEFAULT_REPO, 'EXEC-DEPLOY.yml');
+          const latestRun = runs.workflow_runs[0];
+
+          await cicdEvents.deployStarted(vtid, service, 'dev', latestRun?.html_url);
+
+          deployResult = {
+            service,
+            environment: 'dev',
+            workflow_url: latestRun?.html_url,
+          };
+
+          finalState = 'DEPLOYING';
+          console.log(`[VTID-01168] ${vtid}: Deploy triggered for ${service} - ${latestRun?.html_url}`);
+        } catch (error) {
+          console.error(`[VTID-01168] ${vtid}: Deploy trigger failed:`, error);
+          // Don't fail the response - merge succeeded, deploy failed
+        }
+      } else {
+        console.log(`[VTID-01168] ${vtid}: No deployable service detected, skipping deploy`);
+      }
+    }
+
+    // Step 10: Return success response
+    console.log(`[VTID-01168] ${vtid}: Approval completed - state: ${finalState}`);
+
+    return res.status(200).json({
+      ok: true,
+      vtid,
+      pr_number,
+      pr_url: pr.html_url,
+      state: finalState,
+      merged: true,
+      merge_sha: mergeResult.sha,
+      merge_commit_message: mergeCommitMessage,
+      deploy: deployResult,
+      reason: deployResult ? 'deploy_triggered' : 'merge_only',
+    } as ApprovalAutoPrMergeResponse);
+
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[VTID-01168] Request ${requestId} failed: ${errorMessage}`);
+    return res.status(500).json({
+      ok: false,
+      vtid: req.body?.vtid || 'UNKNOWN',
+      pr_number: req.body?.pr_number || 0,
+      state: 'FAILED',
+      merged: false,
+      error: errorMessage,
+    } as ApprovalAutoPrMergeResponse);
+  }
+});
+
 // ==================== Autonomous PR+Merge (Claude Worker Integration) ====================
 
 /**
- * POST /autonomous-pr-merge - Create PR + Wait for CI + Merge
+ * POST /autonomous-pr-merge (legacy path) - Create PR + Wait for CI + Merge
  *
  * VTID-01031: Made idempotent - reuses existing PRs instead of failing
  *

@@ -693,6 +693,64 @@ export interface AutonomousPrMergeResponse {
   details?: Record<string, unknown>;
 }
 
+// ==================== VTID-01168: Approval Auto-Deploy Endpoint ====================
+
+/**
+ * VTID-01168: Simplified Autonomous PR Merge Request Schema
+ * Used by Command Hub Approve button for one-click merge + auto-deploy.
+ *
+ * Payload structure:
+ * {
+ *   "vtid": "VTID-####",
+ *   "pr_number": 380,
+ *   "merge_method": "squash",
+ *   "automerge": true
+ * }
+ */
+export const ApprovalAutoPrMergeRequestSchema = z.object({
+  vtid: z.string()
+    .min(1, 'VTID is required')
+    .regex(/^VTID-\d{4,5}$/, 'VTID must be in format VTID-#### or VTID-#####'),
+  pr_number: z.number().int().positive('PR number must be a positive integer'),
+  merge_method: z.enum(['squash', 'merge', 'rebase']).default('squash'),
+  automerge: z.boolean().default(true),
+});
+
+export type ApprovalAutoPrMergeRequest = z.infer<typeof ApprovalAutoPrMergeRequestSchema>;
+
+/**
+ * VTID-01168: Response for Approval Auto PR Merge
+ * Includes state transitions: MERGED → DEPLOYING tracked via OASIS
+ */
+export interface ApprovalAutoPrMergeResponse {
+  ok: boolean;
+  vtid: string;
+  pr_number: number;
+  pr_url?: string;
+  /** State after merge: 'MERGED' if merge succeeded */
+  state: 'MERGED' | 'DEPLOYING' | 'FAILED';
+  merged: boolean;
+  merge_sha?: string | null;
+  /** Merge commit message in format VTID-####: <PR title> */
+  merge_commit_message?: string;
+  /** Deploy information if auto-deploy triggered */
+  deploy?: {
+    service: string;
+    environment: string;
+    workflow_url?: string;
+  };
+  error?: string;
+  reason?:
+    | 'vtid_missing'              // VTID not provided or invalid format
+    | 'vtid_mismatch'             // VTID doesn't match PR branch/title
+    | 'pr_not_found'              // PR doesn't exist
+    | 'pr_not_open'               // PR is already closed/merged
+    | 'ci_not_passed'             // CI checks haven't passed
+    | 'merge_failed'              // Merge operation failed
+    | 'deploy_triggered'          // Success: merge + deploy triggered
+    | 'merge_only';               // Success: merge only (no deployable service)
+}
+
 /**
  * VTID-01018: Structured error response for OASIS write failures
  */
