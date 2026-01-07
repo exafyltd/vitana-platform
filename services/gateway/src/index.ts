@@ -170,6 +170,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const approvalsRouter = require('./routes/approvals').default;
   // VTID-01169: Deploy → Ledger Terminalization (terminalize endpoint + repair job)
   const vtidTerminalizeRouter = require('./routes/vtid-terminalize').default;
+  // VTID-01157: Supabase JWT Auth Middleware + /api/v1/auth/me endpoint
+  const authRouter = require('./routes/auth').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -360,6 +362,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01047: Dev Token Mint Endpoint (dev-sandbox only)
   mountRouterSync(app, '/api/v1/dev/auth', devAuthRouter, { owner: 'dev-auth' });
+
+  // VTID-01157: Supabase JWT Auth Middleware + /api/v1/auth/me endpoint
+  mountRouterSync(app, '/api/v1/auth', authRouter, { owner: 'auth' });
 
   // VTID-01081 + VTID-01103: Health Gateway (C2 ingest + C3 compute)
   mountRouterSync(app, '/api/v1/health', healthRouter, { owner: 'health' });
