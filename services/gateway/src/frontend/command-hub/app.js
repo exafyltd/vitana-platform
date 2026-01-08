@@ -2177,6 +2177,15 @@ const state = {
     governanceRulesSortDirection: 'asc',
     selectedGovernanceRule: null,
 
+    // VTID-01172: Admin Dev Users (exafy_admin toggle)
+    adminDevUsers: [],
+    adminDevUsersLoading: false,
+    adminDevUsersError: null,
+    adminDevUsersSearchQuery: '',
+    adminDevUsersGrantEmail: '',
+    adminDevUsersGrantLoading: false,
+    adminDevUsersGrantError: null,
+
     // VTID-0406: Governance Evaluations (OASIS Integration)
     governanceEvaluations: [],
     governanceEvaluationsLoading: false,
@@ -4192,6 +4201,9 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'intelligence-memory-dev' && tab === 'memory-vault') {
         // VTID-01086: Memory Garden UI Deepening
         container.appendChild(renderMemoryGardenView());
+    } else if (moduleKey === 'admin' && tab === 'users') {
+        // VTID-01172: Admin Dev Users - exafy_admin toggle
+        container.appendChild(renderAdminDevUsersView());
     } else {
         // Placeholder for other modules
         const placeholder = document.createElement('div');
@@ -6520,6 +6532,331 @@ async function fetchGovernanceRules() {
         state.governanceRulesLoading = false;
         renderApp();
     }
+}
+
+// --- Admin Dev Users (VTID-01172) ---
+
+/**
+ * VTID-01172: Fetches dev users (exafy_admin=true) from the dev-access API.
+ * Optionally filters by email query.
+ */
+async function fetchAdminDevUsers() {
+    state.adminDevUsersLoading = true;
+    state.adminDevUsersError = null;
+    renderApp();
+
+    try {
+        var query = state.adminDevUsersSearchQuery || '';
+        var url = '/api/v1/dev-access/users';
+        if (query.trim()) {
+            url += '?query=' + encodeURIComponent(query.trim());
+        }
+
+        var response = await fetch(url, {
+            method: 'GET',
+            headers: buildContextHeaders()
+        });
+
+        var json = await response.json();
+
+        if (!response.ok || !json.ok) {
+            var errorMsg = json.error || json.message || 'Failed to fetch dev users';
+            if (response.status === 401) {
+                throw new Error('Unauthenticated - please log in');
+            } else if (response.status === 403) {
+                throw new Error('Access denied - requires exafy_admin');
+            }
+            throw new Error(errorMsg);
+        }
+
+        state.adminDevUsers = json.users || [];
+        console.log('[VTID-01172] Dev users loaded:', state.adminDevUsers.length);
+    } catch (error) {
+        console.error('[VTID-01172] Failed to fetch dev users:', error);
+        state.adminDevUsersError = error.message;
+        state.adminDevUsers = [];
+    } finally {
+        state.adminDevUsersLoading = false;
+        renderApp();
+    }
+}
+
+/**
+ * VTID-01172: Grants dev access (exafy_admin=true) to a user by email.
+ */
+async function grantDevAccess(email) {
+    if (!email || !email.trim()) {
+        showToast('Please enter an email address', 'error');
+        return;
+    }
+
+    state.adminDevUsersGrantLoading = true;
+    state.adminDevUsersGrantError = null;
+    renderApp();
+
+    try {
+        var response = await fetch('/api/v1/dev-access/grant', {
+            method: 'POST',
+            headers: buildContextHeaders(),
+            body: JSON.stringify({ email: email.trim() })
+        });
+
+        var json = await response.json();
+
+        if (!response.ok || !json.ok) {
+            var errorMsg = json.error || json.message || 'Failed to grant dev access';
+            if (response.status === 401) {
+                throw new Error('Unauthenticated - please log in');
+            } else if (response.status === 403) {
+                throw new Error('Access denied - requires exafy_admin');
+            } else if (response.status === 404) {
+                throw new Error('User not found: ' + email);
+            }
+            throw new Error(errorMsg);
+        }
+
+        showToast('Dev access granted to ' + email, 'success');
+        state.adminDevUsersGrantEmail = '';
+        // Refresh user list
+        await fetchAdminDevUsers();
+    } catch (error) {
+        console.error('[VTID-01172] Failed to grant dev access:', error);
+        state.adminDevUsersGrantError = error.message;
+        showToast(error.message, 'error');
+    } finally {
+        state.adminDevUsersGrantLoading = false;
+        renderApp();
+    }
+}
+
+/**
+ * VTID-01172: Revokes dev access (exafy_admin=false) from a user by email.
+ */
+async function revokeDevAccess(email) {
+    if (!email || !email.trim()) {
+        showToast('Invalid email', 'error');
+        return;
+    }
+
+    // Confirm revocation
+    if (!confirm('Revoke dev access from ' + email + '?')) {
+        return;
+    }
+
+    try {
+        var response = await fetch('/api/v1/dev-access/revoke', {
+            method: 'POST',
+            headers: buildContextHeaders(),
+            body: JSON.stringify({ email: email.trim() })
+        });
+
+        var json = await response.json();
+
+        if (!response.ok || !json.ok) {
+            var errorMsg = json.error || json.message || 'Failed to revoke dev access';
+            if (response.status === 400 && json.error === 'SELF_REVOKE_FORBIDDEN') {
+                throw new Error('Cannot revoke your own dev access');
+            }
+            throw new Error(errorMsg);
+        }
+
+        showToast('Dev access revoked from ' + email, 'success');
+        // Refresh user list
+        await fetchAdminDevUsers();
+    } catch (error) {
+        console.error('[VTID-01172] Failed to revoke dev access:', error);
+        showToast(error.message, 'error');
+    }
+}
+
+/**
+ * VTID-01172: Renders the Admin > Users (Dev Access) view.
+ */
+function renderAdminDevUsersView() {
+    var container = document.createElement('div');
+    container.className = 'admin-dev-users-container';
+
+    // Auto-fetch dev users if not loaded and not currently loading
+    if (state.adminDevUsers.length === 0 && !state.adminDevUsersLoading && !state.adminDevUsersError) {
+        fetchAdminDevUsers();
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'admin-dev-users-header';
+    header.innerHTML = '<h2>Dev Users</h2><p class="admin-dev-users-subtitle">Manage exafy_admin access for development and onboarding</p>';
+    container.appendChild(header);
+
+    // Toolbar
+    var toolbar = document.createElement('div');
+    toolbar.className = 'admin-dev-users-toolbar';
+
+    // Search input
+    var searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'search-field admin-dev-users-search';
+    searchInput.placeholder = 'Search by email...';
+    searchInput.value = state.adminDevUsersSearchQuery;
+    searchInput.oninput = function(e) {
+        state.adminDevUsersSearchQuery = e.target.value;
+    };
+    searchInput.onkeypress = function(e) {
+        if (e.key === 'Enter') {
+            fetchAdminDevUsers();
+        }
+    };
+    toolbar.appendChild(searchInput);
+
+    // Search button
+    var searchBtn = document.createElement('button');
+    searchBtn.className = 'btn btn-secondary';
+    searchBtn.textContent = 'Search';
+    searchBtn.onclick = function() {
+        fetchAdminDevUsers();
+    };
+    toolbar.appendChild(searchBtn);
+
+    // Spacer
+    var spacer = document.createElement('div');
+    spacer.className = 'spacer';
+    toolbar.appendChild(spacer);
+
+    // Grant access section
+    var grantInput = document.createElement('input');
+    grantInput.type = 'email';
+    grantInput.className = 'form-control admin-dev-users-grant-input';
+    grantInput.placeholder = 'Enter email to grant access...';
+    grantInput.value = state.adminDevUsersGrantEmail;
+    grantInput.oninput = function(e) {
+        state.adminDevUsersGrantEmail = e.target.value;
+    };
+    grantInput.onkeypress = function(e) {
+        if (e.key === 'Enter') {
+            grantDevAccess(state.adminDevUsersGrantEmail);
+        }
+    };
+    toolbar.appendChild(grantInput);
+
+    var grantBtn = document.createElement('button');
+    grantBtn.className = 'btn btn-primary';
+    grantBtn.textContent = state.adminDevUsersGrantLoading ? 'Granting...' : 'Grant Dev Access';
+    grantBtn.disabled = state.adminDevUsersGrantLoading;
+    grantBtn.onclick = function() {
+        grantDevAccess(state.adminDevUsersGrantEmail);
+    };
+    toolbar.appendChild(grantBtn);
+
+    container.appendChild(toolbar);
+
+    // User count
+    var countLabel = document.createElement('div');
+    countLabel.className = 'admin-dev-users-count';
+    if (state.adminDevUsersLoading) {
+        countLabel.textContent = 'Loading...';
+    } else if (state.adminDevUsersError) {
+        countLabel.textContent = 'Error: ' + state.adminDevUsersError;
+        countLabel.className += ' error-text';
+    } else {
+        countLabel.textContent = state.adminDevUsers.length + ' dev user' + (state.adminDevUsers.length !== 1 ? 's' : '');
+    }
+    container.appendChild(countLabel);
+
+    // Content area
+    var content = document.createElement('div');
+    content.className = 'admin-dev-users-content';
+
+    if (state.adminDevUsersLoading) {
+        content.innerHTML = '<div class="admin-dev-users-loading">Loading dev users...</div>';
+    } else if (state.adminDevUsersError) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'admin-dev-users-error';
+        errorDiv.textContent = state.adminDevUsersError;
+
+        var retryBtn = document.createElement('button');
+        retryBtn.className = 'btn btn-secondary';
+        retryBtn.textContent = 'Retry';
+        retryBtn.onclick = function() {
+            state.adminDevUsersError = null;
+            fetchAdminDevUsers();
+        };
+        errorDiv.appendChild(document.createElement('br'));
+        errorDiv.appendChild(retryBtn);
+        content.appendChild(errorDiv);
+    } else if (state.adminDevUsers.length === 0) {
+        content.innerHTML = '<div class="admin-dev-users-empty">No dev users found. Grant access to a user above.</div>';
+    } else {
+        // Render user table
+        var table = document.createElement('table');
+        table.className = 'admin-dev-users-table';
+
+        // Header
+        var thead = document.createElement('thead');
+        var headerRow = document.createElement('tr');
+        ['Email', 'User ID', 'Status', 'Updated', 'Actions'].forEach(function(h) {
+            var th = document.createElement('th');
+            th.textContent = h;
+            headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        // Body
+        var tbody = document.createElement('tbody');
+        state.adminDevUsers.forEach(function(user) {
+            var row = document.createElement('tr');
+
+            // Email
+            var emailCell = document.createElement('td');
+            emailCell.className = 'admin-dev-users-email';
+            emailCell.textContent = user.email || '-';
+            row.appendChild(emailCell);
+
+            // User ID
+            var idCell = document.createElement('td');
+            idCell.className = 'admin-dev-users-id';
+            idCell.textContent = user.user_id ? user.user_id.substring(0, 8) + '...' : '-';
+            idCell.title = user.user_id || '';
+            row.appendChild(idCell);
+
+            // Status
+            var statusCell = document.createElement('td');
+            var statusBadge = document.createElement('span');
+            statusBadge.className = 'admin-dev-users-status-badge status-active';
+            statusBadge.textContent = 'exafy_admin';
+            statusCell.appendChild(statusBadge);
+            row.appendChild(statusCell);
+
+            // Updated
+            var updatedCell = document.createElement('td');
+            updatedCell.className = 'admin-dev-users-updated';
+            if (user.updated_at) {
+                var date = new Date(user.updated_at);
+                updatedCell.textContent = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+            } else {
+                updatedCell.textContent = '-';
+            }
+            row.appendChild(updatedCell);
+
+            // Actions
+            var actionsCell = document.createElement('td');
+            var revokeBtn = document.createElement('button');
+            revokeBtn.className = 'btn btn-danger btn-sm';
+            revokeBtn.textContent = 'Revoke';
+            revokeBtn.onclick = function() {
+                revokeDevAccess(user.email);
+            };
+            actionsCell.appendChild(revokeBtn);
+            row.appendChild(actionsCell);
+
+            tbody.appendChild(row);
+        });
+        table.appendChild(tbody);
+        content.appendChild(table);
+    }
+
+    container.appendChild(content);
+
+    return container;
 }
 
 /**
