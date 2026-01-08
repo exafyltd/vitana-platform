@@ -1,9 +1,11 @@
 """
-Domain-Specific Validators
-
-VTID: VTID-01175
+Domain-Specific Validators - VTID-01175
 
 Validators that check domain-specific requirements for task completion.
+These are used by the VerificationStageGate to validate worker output
+before the orchestrator marks tasks complete.
+
+This is a SUBSYSTEM of the Worker Orchestrator (VTID-01163).
 """
 
 import logging
@@ -14,7 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ..main import TaskDomain, TaskState
+from ..main import TaskDomain
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,7 @@ class ValidationResult:
     passed: bool
     reason: str = ""
     details: Dict[str, Any] = field(default_factory=dict)
+    retriable: bool = True  # Whether the orchestrator should retry on failure
 
 
 class Validator(ABC):
@@ -32,13 +35,35 @@ class Validator(ABC):
 
     name: str = "base"
 
-    @abstractmethod
-    async def validate(
+    async def validate_changes(
         self,
-        task: TaskState,
-        result: Dict[str, Any],
+        domain: TaskDomain,
+        changes: List[Dict[str, Any]],
+        workspace_path: Path,
     ) -> ValidationResult:
-        """Validate task completion"""
+        """
+        Validate changes made by a worker.
+
+        This is the primary interface used by VerificationStageGate.
+
+        Args:
+            domain: Task domain
+            changes: List of file changes claimed by worker
+            workspace_path: Path to workspace
+
+        Returns:
+            ValidationResult with pass/fail and details
+        """
+        return await self._validate_changes_impl(domain, changes, workspace_path)
+
+    @abstractmethod
+    async def _validate_changes_impl(
+        self,
+        domain: TaskDomain,
+        changes: List[Dict[str, Any]],
+        workspace_path: Path,
+    ) -> ValidationResult:
+        """Implementation of change validation"""
         pass
 
 
@@ -55,22 +80,20 @@ class FrontendValidator(Validator):
 
     name = "frontend"
 
-    async def validate(
+    async def _validate_changes_impl(
         self,
-        task: TaskState,
-        result: Dict[str, Any],
+        domain: TaskDomain,
+        changes: List[Dict[str, Any]],
+        workspace_path: Path,
     ) -> ValidationResult:
         issues = []
-        changes = result.get("changes", [])
-
-        workspace = Path(os.getenv("WORKSPACE_PATH", "/mnt/project"))
 
         for change in changes:
             file_path = change.get("file_path", "")
             if not file_path:
                 continue
 
-            full_path = workspace / file_path
+            full_path = workspace_path / file_path
 
             # Only check frontend files
             if not self._is_frontend_file(file_path):
@@ -159,22 +182,20 @@ class BackendValidator(Validator):
         r'token\s*=\s*["\'][^"\']+["\']',
     ]
 
-    async def validate(
+    async def _validate_changes_impl(
         self,
-        task: TaskState,
-        result: Dict[str, Any],
+        domain: TaskDomain,
+        changes: List[Dict[str, Any]],
+        workspace_path: Path,
     ) -> ValidationResult:
         issues = []
-        changes = result.get("changes", [])
-
-        workspace = Path(os.getenv("WORKSPACE_PATH", "/mnt/project"))
 
         for change in changes:
             file_path = change.get("file_path", "")
             if not file_path:
                 continue
 
-            full_path = workspace / file_path
+            full_path = workspace_path / file_path
 
             # Only check backend files
             if not self._is_backend_file(file_path):
@@ -223,6 +244,7 @@ class BackendValidator(Validator):
                 passed=False,
                 reason=f"Security validation failed: {len(critical_issues)} critical issue(s)",
                 details={"issues": issues, "critical_count": len(critical_issues)},
+                retriable=False,  # Security issues shouldn't be retried blindly
             )
 
         return ValidationResult(
@@ -290,22 +312,20 @@ class MemoryValidator(Validator):
 
     name = "memory"
 
-    async def validate(
+    async def _validate_changes_impl(
         self,
-        task: TaskState,
-        result: Dict[str, Any],
+        domain: TaskDomain,
+        changes: List[Dict[str, Any]],
+        workspace_path: Path,
     ) -> ValidationResult:
         issues = []
-        changes = result.get("changes", [])
-
-        workspace = Path(os.getenv("WORKSPACE_PATH", "/mnt/project"))
 
         for change in changes:
             file_path = change.get("file_path", "")
             if not file_path:
                 continue
 
-            full_path = workspace / file_path
+            full_path = workspace_path / file_path
 
             # Only check SQL files
             if not file_path.endswith(".sql"):
@@ -354,6 +374,7 @@ class MemoryValidator(Validator):
                 passed=False,
                 reason=f"Memory validation failed: {len(critical_issues)} critical issue(s)",
                 details={"issues": issues, "critical_count": len(critical_issues)},
+                retriable=False,  # DB issues need manual review
             )
 
         return ValidationResult(
