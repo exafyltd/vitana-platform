@@ -30,6 +30,7 @@ import { MemoryItem } from './orb-memory-bridge';
 export type ContextDomain =
   | 'personal'
   | 'relationships'
+  | 'company'      // VTID-DEBUG-MEMORY-FIX: Added company/business identity
   | 'health'
   | 'goals'
   | 'preferences'
@@ -248,6 +249,13 @@ export const DEFAULT_CONTEXT_BUDGET: ContextBudgetConfig = {
       minRelevanceScore: 0,  // ALL relationship info is relevant
       minConfidenceThreshold: 0
     },
+    // VTID-DEBUG-MEMORY-FIX: Added company/business identity domain
+    company: {
+      maxItems: 999,  // Effectively unlimited - company/business identity is important
+      maxChars: 2000,  // Generous for business info
+      minRelevanceScore: 0,  // ALL company info is relevant
+      minConfidenceThreshold: 0
+    },
     // High-priority domains
     health: {
       maxItems: 4,
@@ -359,9 +367,10 @@ function classifyPriorityTier(item: MemoryItem): PriorityTier {
   const domain = item.category_key as ContextDomain;
   const importance = item.importance || 0;
 
-  // Critical tier: personal identity, high-importance relationships, explicit requests
+  // Critical tier: personal identity, high-importance relationships/company, explicit requests
   if (domain === 'personal' && importance >= 30) return 'critical';
   if (domain === 'relationships' && importance >= 50) return 'critical';
+  if (domain === 'company' && importance >= 30) return 'critical';  // VTID-DEBUG-MEMORY-FIX
   if (importance >= 70) return 'critical';
 
   // Relevant tier: moderate importance, core domains
@@ -794,10 +803,10 @@ export class ContextWindowManager {
       }
 
       // Check 2: Topic saturation
-      // VTID-DEBUG-01: EXEMPT personal and relationships from topic saturation
+      // VTID-DEBUG-01 + VTID-DEBUG-MEMORY-FIX: EXEMPT personal, relationships, and company from topic saturation
       // These are fundamental identity facts that should NEVER be filtered
       const domain = item.category_key as ContextDomain;
-      const isIdentityDomain = domain === 'personal' || domain === 'relationships';
+      const isIdentityDomain = domain === 'personal' || domain === 'relationships' || domain === 'company';
 
       if (!isIdentityDomain) {
         const topic = extractTopic(item.content);
@@ -845,7 +854,7 @@ export class ContextWindowManager {
     // Calculate per-domain metrics
     const domainUsage: Record<ContextDomain, DomainMetrics> = {} as Record<ContextDomain, DomainMetrics>;
     const allDomains: ContextDomain[] = [
-      'personal', 'relationships', 'health', 'goals', 'preferences',
+      'personal', 'relationships', 'company', 'health', 'goals', 'preferences',
       'conversation', 'tasks', 'community', 'events_meetups', 'products_services', 'notes'
     ];
 
