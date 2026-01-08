@@ -313,6 +313,14 @@ export function shouldStoreInMemory(content: string, direction: 'user' | 'assist
       /nicht (in meinem|in meiner) (gedächtnis|erinnerung)/i, // "nicht in meinem Gedächtnis"
       /nicht gespeichert/i,                               // "noch nicht gespeichert"
       /nicht parat/i,                                     // "habe ich nicht parat" - explicit catch
+      // VTID-DEBUG-MEMORY-FIX: Added missing patterns that were slipping through
+      /kann .{0,30}nicht abrufen/i,                       // "kann den Namen gerade nicht abrufen"
+      /nicht abrufen/i,                                   // "nicht abrufen" anywhere
+      /kann ich (dir )?(gerade )?(leider )?(noch )?nicht/i, // "kann ich dir gerade nicht sagen"
+      /hast du mir noch nicht/i,                          // "hast du mir noch nicht genannt"
+      /noch nicht genannt/i,                              // "noch nicht genannt"
+      /noch nicht gesagt/i,                               // "noch nicht gesagt"
+      /noch nicht mitgeteilt/i,                           // "noch nicht mitgeteilt"
       // English "I don't know/have" patterns
       /i (do not|don't|dont) (know|have|remember)/i,
       /i haven't (got|stored|saved)/i,
@@ -328,6 +336,28 @@ export function shouldStoreInMemory(content: string, direction: 'user' | 'assist
     for (const pattern of dontKnowPatterns) {
       if (pattern.test(lower)) {
         console.log(`[VTID-DEBUG-04] Skipping "I don't know" assistant response - prevents memory poisoning: "${lower.substring(0, 80)}..."`);
+        return false;
+      }
+    }
+
+    // VTID-DEBUG-MEMORY-FIX: Skip assistant "I remember" summaries
+    // These are NOT new facts - they're the assistant restating what it already knows
+    // Storing them creates duplicate/redundant entries and pollutes the memory
+    const assistantSummaryPatterns = [
+      /ich erinnere mich/i,                              // "Ich erinnere mich, dass..."
+      /ich weiß,? dass/i,                                // "Ich weiß, dass du..."
+      /ich weiss,? dass/i,                               // ss variant
+      /aus unseren .{0,30}gesprächen/i,                  // "Aus unseren früheren Gesprächen..."
+      /aus unserem .{0,30}gespräch/i,                    // "Aus unserem Gespräch..."
+      /du hast mir (gesagt|erzählt|mitgeteilt)/i,        // "Du hast mir gesagt, dass..."
+      /i remember (that |you )/i,                        // "I remember that you..."
+      /you (told|mentioned|said) (me |that )/i,          // "You told me that..."
+      /from our .{0,30}conversation/i,                   // "From our previous conversation..."
+      /as (i|you) mentioned/i,                           // "As you mentioned..."
+    ];
+    for (const pattern of assistantSummaryPatterns) {
+      if (pattern.test(lower)) {
+        console.log(`[VTID-DEBUG-MEMORY-FIX] Skipping assistant summary/recall response: "${lower.substring(0, 80)}..."`);
         return false;
       }
     }
