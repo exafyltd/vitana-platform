@@ -707,6 +707,139 @@ async function initMeContext() {
 }
 
 // ===========================================================================
+// VTID-01171: Auth Identity from /api/v1/auth/me
+// ===========================================================================
+
+/**
+ * VTID-01171: Fetch authenticated user identity from /api/v1/auth/me
+ * Returns identity (user_id, email, tenant_id, exafy_admin), profile, memberships.
+ * Updates state.user with real name/avatar for profile capsule display.
+ *
+ * @returns {Promise<Object|null>} The auth identity or null on error
+ */
+async function fetchAuthMe() {
+    if (!state.authToken) {
+        console.log('[VTID-01171] No auth token, skipping auth/me fetch');
+        // Set fallback user for unauthenticated state
+        state.user = {
+            name: 'Guest',
+            role: 'User',
+            avatar: '?'
+        };
+        return null;
+    }
+
+    state.authIdentityLoading = true;
+    state.authIdentityError = null;
+
+    try {
+        var response = await fetch('/api/v1/auth/me', {
+            method: 'GET',
+            headers: buildContextHeaders()
+        });
+
+        var data = await response.json();
+
+        if (!response.ok || !data.ok) {
+            var errorMsg = data.error || 'Failed to fetch auth identity';
+            console.error('[VTID-01171] fetchAuthMe error:', errorMsg);
+
+            if (response.status === 401) {
+                // Clear invalid auth token
+                state.authToken = null;
+                localStorage.removeItem('vitana.authToken');
+            }
+
+            state.authIdentityError = errorMsg;
+            state.authIdentityLoading = false;
+
+            // Set fallback user
+            state.user = {
+                name: 'User',
+                role: 'User',
+                avatar: '?'
+            };
+            return null;
+        }
+
+        console.log('[VTID-01171] fetchAuthMe success:', data.identity);
+        state.authIdentity = data;
+        state.authIdentityLoading = false;
+        state.authIdentityError = null;
+
+        // VTID-01171: Update state.user with real identity data
+        var identity = data.identity || {};
+        var profile = data.profile || {};
+        var email = identity.email || '';
+        var displayName = profile.display_name || '';
+
+        // Determine display name: prefer profile.display_name, then email username, then email
+        var name = displayName || (email ? email.split('@')[0] : 'User');
+
+        // Generate initials for avatar
+        var initials = generateInitials(displayName || email || 'User');
+
+        // Determine role label
+        var roleLabel = 'User';
+        if (identity.exafy_admin) {
+            roleLabel = 'Admin';
+        } else if (data.memberships && data.memberships.length > 0) {
+            // Use first membership role, capitalize
+            var firstRole = data.memberships[0].role || 'user';
+            roleLabel = firstRole.charAt(0).toUpperCase() + firstRole.slice(1);
+        }
+
+        state.user = {
+            name: name,
+            role: roleLabel,
+            avatar: initials,
+            email: email,
+            avatarUrl: profile.avatar_url || null
+        };
+
+        return data;
+    } catch (err) {
+        console.error('[VTID-01171] fetchAuthMe exception:', err);
+        state.authIdentityError = err.message || 'Network error';
+        state.authIdentityLoading = false;
+
+        // Set fallback user
+        state.user = {
+            name: 'User',
+            role: 'User',
+            avatar: '?'
+        };
+        return null;
+    }
+}
+
+/**
+ * VTID-01171: Generate initials from name or email.
+ * @param {string} input - Name or email to generate initials from
+ * @returns {string} 1-2 character initials
+ */
+function generateInitials(input) {
+    if (!input) return '?';
+
+    // If it's an email, use username part
+    if (input.includes('@')) {
+        input = input.split('@')[0];
+    }
+
+    // Split by space, dot, underscore, or hyphen
+    var parts = input.split(/[\s._-]+/).filter(function(p) { return p.length > 0; });
+
+    if (parts.length === 0) return '?';
+    if (parts.length === 1) {
+        // Single word: use first 2 characters
+        return parts[0].substring(0, 2).toUpperCase();
+    }
+
+    // Multiple parts: use first letter of first two parts
+    return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
+}
+
+// ===========================================================================
 // VTID-01017: Scheduled Column Hard Eligibility Filter
 // VTID-01028: Relaxed to prevent hiding human-created tasks
 // VTID-01111: Re-added shell entry filter for allocator placeholders
@@ -1981,11 +2114,11 @@ const state = {
     historyLoading: false,
     historyError: null,
 
-    // User
+    // User (fallback values - will be replaced by authIdentity when available)
     user: {
-        name: 'David Stevens',
-        role: 'Admin',
-        avatar: 'DS'
+        name: 'Loading...',
+        role: 'User',
+        avatar: '...'
     },
 
     // VTID-01014: View Role (persisted in localStorage)
@@ -1998,6 +2131,12 @@ const state = {
     meContextError: null,
     // Auth token for API calls (set via dev-auth or Supabase session)
     authToken: localStorage.getItem('vitana.authToken') || null,
+
+    // VTID-01171: Auth Identity from /api/v1/auth/me
+    // Contains user identity (email, user_id), profile (display_name, avatar_url), memberships
+    authIdentity: null,
+    authIdentityLoading: false,
+    authIdentityError: null,
 
     // Docs / Screen Inventory
     screenInventory: null,
@@ -5495,20 +5634,52 @@ function renderProfileModal() {
     const body = document.createElement('div');
     body.className = 'modal-body';
 
+    // VTID-01171: Show avatar (initials or image)
     const avatar = document.createElement('div');
     avatar.className = 'profile-avatar-large';
-    avatar.textContent = state.user.avatar;
+    if (state.user.avatarUrl) {
+        avatar.style.backgroundImage = 'url(' + state.user.avatarUrl + ')';
+        avatar.style.backgroundSize = 'cover';
+        avatar.style.backgroundPosition = 'center';
+        avatar.textContent = '';
+    } else {
+        avatar.textContent = state.user.avatar || '?';
+    }
     body.appendChild(avatar);
 
+    // VTID-01171: Show name
     const name = document.createElement('div');
     name.className = 'profile-name';
-    name.textContent = state.user.name;
+    name.textContent = state.user.name || 'User';
     body.appendChild(name);
 
+    // VTID-01171: Show email if available
+    if (state.user.email) {
+        const emailEl = document.createElement('div');
+        emailEl.className = 'profile-email';
+        emailEl.textContent = state.user.email;
+        emailEl.style.color = 'var(--text-secondary, #666)';
+        emailEl.style.fontSize = '0.875rem';
+        emailEl.style.marginBottom = '8px';
+        body.appendChild(emailEl);
+    }
+
+    // VTID-01171: Show role badge
     const badge = document.createElement('div');
     badge.className = 'profile-role-badge';
-    // VTID-01049: Use authoritative role from MeState, fallback to state.viewRole
-    if (MeState.me && MeState.me.active_role) {
+    // Use authIdentity > MeState > viewRole fallback chain
+    if (state.authIdentity && state.authIdentity.identity) {
+        if (state.authIdentity.identity.exafy_admin) {
+            badge.textContent = 'Admin';
+        } else if (state.authIdentity.memberships && state.authIdentity.memberships.length > 0) {
+            var role = state.authIdentity.memberships[0].role || 'user';
+            badge.textContent = role.charAt(0).toUpperCase() + role.slice(1);
+        } else {
+            badge.textContent = 'User';
+        }
+    } else if (state.authIdentityLoading) {
+        badge.textContent = 'Loading...';
+    } else if (MeState.me && MeState.me.active_role) {
         badge.textContent = MeState.me.active_role.charAt(0).toUpperCase() + MeState.me.active_role.slice(1);
     } else if (!MeState.loaded) {
         badge.textContent = 'Loading...';
@@ -5519,8 +5690,37 @@ function renderProfileModal() {
     }
     body.appendChild(badge);
 
-    // VTID-01014: Role Switcher dropdown
-    const VIEW_ROLES = ['Community', 'Patient', 'Professional', 'Staff', 'Admin', 'Developer'];
+    // VTID-01171: Show active tenant if available
+    if (state.authIdentity && state.authIdentity.identity && state.authIdentity.identity.tenant_id) {
+        const tenantEl = document.createElement('div');
+        tenantEl.className = 'profile-tenant';
+        tenantEl.textContent = 'Tenant: ' + state.authIdentity.identity.tenant_id.substring(0, 8) + '...';
+        tenantEl.style.color = 'var(--text-secondary, #666)';
+        tenantEl.style.fontSize = '0.75rem';
+        tenantEl.style.marginTop = '4px';
+        body.appendChild(tenantEl);
+    }
+
+    // VTID-01014 + VTID-01171: Role Switcher dropdown
+    // Populate from memberships if available, otherwise use default list
+    var VIEW_ROLES = ['Community', 'Patient', 'Professional', 'Staff', 'Admin', 'Developer'];
+    if (state.authIdentity && state.authIdentity.memberships && state.authIdentity.memberships.length > 0) {
+        // Use roles from memberships
+        VIEW_ROLES = state.authIdentity.memberships.map(function(m) {
+            var role = m.role || 'user';
+            return role.charAt(0).toUpperCase() + role.slice(1);
+        });
+        // Ensure uniqueness
+        VIEW_ROLES = VIEW_ROLES.filter(function(r, i, arr) { return arr.indexOf(r) === i; });
+        // Add Admin if exafy_admin and not already in list
+        if (state.authIdentity.identity && state.authIdentity.identity.exafy_admin && VIEW_ROLES.indexOf('Admin') === -1) {
+            VIEW_ROLES.unshift('Admin');
+        }
+    } else if (state.authIdentity && state.authIdentity.identity && state.authIdentity.identity.exafy_admin) {
+        // exafy_admin with no memberships - show Admin
+        VIEW_ROLES = ['Admin'];
+    }
+
     const roleSwitcher = document.createElement('div');
     roleSwitcher.className = 'profile-role-switcher';
 
@@ -5574,6 +5774,40 @@ function renderProfileModal() {
 
     const footer = document.createElement('div');
     footer.className = 'modal-footer';
+    footer.style.display = 'flex';
+    footer.style.justifyContent = 'space-between';
+
+    // VTID-01171: Logout button
+    const logoutBtn = document.createElement('button');
+    logoutBtn.className = 'btn btn-danger';
+    logoutBtn.textContent = 'Logout';
+    logoutBtn.style.backgroundColor = 'var(--danger-bg, #dc3545)';
+    logoutBtn.style.color = 'var(--danger-text, #fff)';
+    logoutBtn.onclick = () => {
+        // Clear auth state
+        state.authToken = null;
+        state.authIdentity = null;
+        state.meContext = null;
+        MeState.loaded = false;
+        MeState.me = null;
+        localStorage.removeItem('vitana.authToken');
+        localStorage.removeItem('vitana.viewRole');
+        // VTID-01109: Clear ORB conversation on logout
+        if (typeof orbClearConversationState === 'function') {
+            orbClearConversationState();
+        }
+        // Reset user to guest
+        state.user = {
+            name: 'Guest',
+            role: 'User',
+            avatar: '?'
+        };
+        state.viewRole = 'User';
+        state.showProfileModal = false;
+        showToast('Logged out successfully', 'info');
+        renderApp();
+    };
+    footer.appendChild(logoutBtn);
 
     const closeBtn = document.createElement('button');
     closeBtn.className = 'btn';
@@ -15955,6 +16189,17 @@ document.addEventListener('DOMContentLoaded', () => {
             renderApp();
         }).catch(function(err) {
             console.error('[VTID-01049] fetchMeContext failed:', err);
+        });
+
+        // VTID-01171: Fetch auth identity for profile display
+        fetchAuthMe().then(function(data) {
+            if (data) {
+                console.log('[VTID-01171] Auth identity loaded:', data.identity?.email);
+            }
+            // Re-render to update profile capsule with real data
+            renderApp();
+        }).catch(function(err) {
+            console.error('[VTID-01171] fetchAuthMe failed:', err);
         });
 
         fetchTasks();
