@@ -78,8 +78,9 @@ const MEMORY_CONFIG = {
   // Per-category limit for formatting (applies to non-identity categories)
   // VTID-DEBUG-01: Personal/relationships have NO limit - see formatMemoryForPrompt
   ITEMS_PER_CATEGORY: 10,
-  // Categories relevant for ORB context (added 'personal' for identity info)
-  CONTEXT_CATEGORIES: ['personal', 'conversation', 'preferences', 'goals', 'health', 'relationships'],
+  // Categories relevant for ORB context (added 'personal' and 'company' for identity info)
+  // VTID-DEBUG-MEMORY-FIX: Added 'company' category for business identity
+  CONTEXT_CATEGORIES: ['personal', 'company', 'conversation', 'preferences', 'goals', 'health', 'relationships'],
   // Max age of memory items to include (7 days instead of 24 hours)
   MAX_AGE_HOURS: 168,
   // Max characters for memory context in system prompt
@@ -88,12 +89,12 @@ const MEMORY_CONFIG = {
   // Max characters per individual item (increased from 150)
   MAX_ITEM_CHARS: 300,
   /**
-   * VTID-DEBUG-01: Categories that should NEVER be time-filtered.
-   * Personal identity information (name, birthday, hometown, family members)
+   * VTID-DEBUG-01 + VTID-DEBUG-MEMORY-FIX: Categories that should NEVER be time-filtered.
+   * Personal identity information (name, birthday, hometown, family members, company)
    * must be available regardless of when it was stored.
    * These are fundamental facts about the user that don't expire.
    */
-  PERSISTENT_CATEGORIES: ['personal', 'relationships']
+  PERSISTENT_CATEGORIES: ['personal', 'relationships', 'company']
 };
 
 // =============================================================================
@@ -490,12 +491,30 @@ function classifyDevCategory(content: string): string {
     /\bich komme aus\b/i,
     /\bich wohne in\b/i,
     /\bgeboren in\b/i,
+    // VTID-DEBUG-MEMORY-FIX: Added missing German location patterns
+    /\bmein wohnort\b/i,         // "mein Wohnort ist..."
+    /\bwohnort ist\b/i,          // "Wohnort ist Berlin"
+    /\bmeine heimatstadt\b/i,    // "meine Heimatstadt ist..."
+    /\bheimatstadt ist\b/i,      // "Heimatstadt ist München"
+    /\bich lebe in\b/i,          // "ich lebe in Berlin"
+    /\bwohne seit\b/i,           // "ich wohne seit 5 Jahren in..."
+    /\bgebürtig aus\b/i,         // "gebürtig aus Hamburg"
+    /\bgeburtig aus\b/i,         // speech-to-text variant
+    /\baufgewachsen in\b/i,      // "aufgewachsen in München"
     // Age/birthday patterns
     /\bmy age\b/i,
     /\byears old\b/i,
     /\bmy birthday\b/i,
     /\bich bin \d+ jahre\b/i,
     /\bmein geburtstag\b/i,
+    // VTID-DEBUG-MEMORY-FIX: Added missing German birthday patterns
+    /\bmein geburtsdatum\b/i,    // "mein Geburtsdatum ist..."
+    /\bgeburtsdatum ist\b/i,     // "Geburtsdatum ist 15.03.1985"
+    /\bgeboren am\b/i,           // "geboren am 15. März"
+    /\bam \d+\.\d+\.\d+ geboren\b/i,  // "am 15.03.1985 geboren"
+    /\bbin am \d+\b/i,           // "ich bin am 15. März..."
+    /\bgeburtstag ist am\b/i,    // "mein Geburtstag ist am..."
+    /\bgeburtstag am\b/i,        // "Geburtstag am 15.03"
     // Occupation patterns
     /\bi work\b/i,
     /\bmy job\b/i,
@@ -504,13 +523,34 @@ function classifyDevCategory(content: string): string {
     /\bich arbeite\b/i,
     /\bmein beruf\b/i,
     /\bich bin.*von beruf\b/i,
+    // VTID-DEBUG-MEMORY-FIX: Added company/business patterns
+    /\bmy company\b/i,           // "my company is..."
+    /\bmy business\b/i,          // "my business is..."
+    /\bown a company\b/i,        // "I own a company"
+    /\bmy firm\b/i,              // "my firm is..."
+    /\bmeine firma\b/i,          // "meine Firma heißt..."
+    /\bfirma heißt\b/i,          // "die Firma heißt..."
+    /\bfirma heisst\b/i,         // speech-to-text variant
+    /\bmein unternehmen\b/i,     // "mein Unternehmen ist..."
+    /\bunternehmen heißt\b/i,    // "das Unternehmen heißt..."
+    /\bunternehmen heisst\b/i,   // speech-to-text variant
+    /\bich habe eine firma\b/i,  // "ich habe eine Firma"
+    /\bselbstständig\b/i,        // "ich bin selbstständig"
+    /\bselbststaendig\b/i,       // speech-to-text variant
+    /\bfreiberufler\b/i,         // "ich bin Freiberufler"
+    /\bgründer von\b/i,          // "ich bin Gründer von..."
+    /\bgruender von\b/i,         // speech-to-text variant
     // Contact patterns
     /\bmy email\b/i,
     /\bmy phone\b/i,
     /\bmy address\b/i,
     /\bmeine email\b/i,
     /\bmeine telefon\b/i,
-    /\bmeine adresse\b/i
+    /\bmeine adresse\b/i,
+    // VTID-DEBUG-MEMORY-FIX: Explicit "remember this" patterns (German)
+    /\bdas ist mein\b/i,         // "das ist mein Name/Geburtstag/etc."
+    /\bdas ist meine\b/i,        // "das ist meine Firma/Adresse/etc."
+    /\bich bin \w+ und\b/i       // "ich bin Dragan und..." (name introduction)
   ];
 
   for (const pattern of personalPatterns) {
