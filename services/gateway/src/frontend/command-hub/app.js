@@ -2996,33 +2996,73 @@ async function fetchGitHubFeed() {
 }
 
 /**
- * VTID-01154: Approve a PR from the GitHub feed
- * Only works when CI = pass AND mergeable = true
+ * VTID-01168: Approve → Safe Merge → Auto-Deploy
+ *
+ * Calls POST /api/v1/cicd/autonomous-pr-merge with:
+ * {
+ *   "vtid": "VTID-####",
+ *   "pr_number": 380,
+ *   "merge_method": "squash",
+ *   "automerge": true
+ * }
+ *
+ * VTID is REQUIRED - approval is blocked if VTID is missing or invalid.
  */
 async function approveFeedItem(prNumber, branch, vtid) {
-    console.log('[VTID-01154] Approving PR #' + prNumber + ' from feed');
+    console.log('[VTID-01168] Approving PR #' + prNumber + ' from feed (vtid: ' + vtid + ')');
+
+    // VTID-01168: Block approval if VTID is missing
+    if (!vtid || vtid === 'UNKNOWN') {
+        showToast('Approval blocked: VTID is required for merge', 'error');
+        return;
+    }
+
     state.approvals.feedLoading = true;
     renderApp();
 
     try {
-        var response = await fetch('/api/v1/approvals/feed/approve', {
+        // VTID-01168: Call new autonomous-pr-merge endpoint
+        var response = await fetch('/api/v1/cicd/autonomous-pr-merge', {
             method: 'POST',
             headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
+                vtid: vtid,
                 pr_number: prNumber,
-                branch: branch,
-                vtid: vtid
+                merge_method: 'squash',
+                automerge: true
             })
         });
         var data = await response.json();
 
-        if (data.ok !== false) {
-            showToast('PR #' + prNumber + ' approved - merge initiated', 'success');
+        if (data.ok) {
+            // VTID-01168: Show state transition in toast
+            var stateMsg = data.state === 'DEPLOYING'
+                ? 'PR #' + prNumber + ' merged → deploying ' + (data.deploy?.service || 'service')
+                : 'PR #' + prNumber + ' merged successfully';
+            showToast(stateMsg, 'success');
+
+            // Add to ticker with MERGED/DEPLOYING state
+            state.tickerEvents.unshift({
+                id: Date.now(),
+                timestamp: new Date().toLocaleTimeString(),
+                type: 'cicd',
+                topic: data.state === 'DEPLOYING' ? 'cicd.deploy.started' : 'cicd.merge.success',
+                content: stateMsg,
+                vtid: vtid
+            });
+
             // Refresh the feed
             state.approvals.feedFetched = false;
             await fetchGitHubFeed();
         } else {
-            showToast('Approval failed: ' + (data.error || 'Unknown error'), 'error');
+            // VTID-01168: Show detailed error with reason
+            var errorMsg = data.error || 'Unknown error';
+            if (data.reason === 'vtid_missing') {
+                errorMsg = 'VTID validation failed - approval blocked';
+            } else if (data.reason === 'ci_not_passed') {
+                errorMsg = 'CI checks must pass before merge';
+            }
+            showToast('Approval failed: ' + errorMsg, 'error');
             state.approvals.feedLoading = false;
             renderApp();
         }
@@ -10056,8 +10096,12 @@ function renderApprovalsView() {
             var actionCell = document.createElement('td');
             actionCell.className = 'approvals-actions-cell';
 
-            // SPEC-02: Approve button appears only when CI = pass AND mergeable = true
-            var canApprove = item.ci_state === 'pass' && item.mergeable === true;
+            // VTID-01168: Approve button appears only when:
+            // - CI = pass
+            // - mergeable = true
+            // - VTID is present (not null/undefined)
+            var hasValidVtid = item.vtid && item.vtid !== 'UNKNOWN';
+            var canApprove = item.ci_state === 'pass' && item.mergeable === true && hasValidVtid;
 
             if (canApprove) {
                 var approveBtn = document.createElement('button');
@@ -10065,13 +10109,20 @@ function renderApprovalsView() {
                 approveBtn.textContent = 'Approve';
                 approveBtn.disabled = state.approvals.feedLoading;
                 approveBtn.onclick = function() {
-                    if (confirm('Approve PR #' + item.pr_number + '?\n\nThis will trigger a safe merge.')) {
+                    if (confirm('Approve PR #' + item.pr_number + '?\n\nThis will trigger a safe merge + auto-deploy.')) {
                         approveFeedItem(item.pr_number, item.branch, item.vtid);
                     }
                 };
                 actionCell.appendChild(approveBtn);
+            } else if (!hasValidVtid && item.ci_state === 'pass' && item.mergeable === true) {
+                // VTID-01168: Show "VTID Required" when only VTID is blocking approval
+                var vtidRequired = document.createElement('span');
+                vtidRequired.className = 'status-warning';
+                vtidRequired.textContent = 'VTID Required';
+                vtidRequired.title = 'Approval blocked: VTID must be in branch name or PR title';
+                actionCell.appendChild(vtidRequired);
             } else {
-                // No approve button when conditions not met
+                // No approve button when CI/mergeable conditions not met
                 actionCell.textContent = '—';
             }
 
