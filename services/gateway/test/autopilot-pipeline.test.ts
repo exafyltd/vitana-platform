@@ -19,9 +19,16 @@
  * - Validation rules VAL-RULE-001 to VAL-RULE-006
  * - Rich validator section in status endpoint
  * - autopilot.validation.completed and autopilot.task.finalized events
+ *
+ * VTID-01170 Note:
+ * - Execution endpoints (plan, work/start, work/complete) are DEPRECATED
+ * - Tests use X-BYPASS-ORCHESTRATOR header to test legacy behavior
  */
 
 import request from 'supertest';
+
+// VTID-01170: Header required to bypass deprecation guards in tests
+const BYPASS_HEADER = { 'X-BYPASS-ORCHESTRATOR': 'EMERGENCY-BYPASS' };
 
 // Create a chainable mock that supports Supabase's fluent API
 const createChainableMock = () => {
@@ -180,6 +187,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     it('should reject missing plan object', async () => {
       const response = await request(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/plan')
+        .set(BYPASS_HEADER)
         .send({ metadata: validPlanPayload.metadata })
         .expect(400);
 
@@ -191,6 +199,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     it('should reject missing plan.summary', async () => {
       const response = await request(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/plan')
+        .set(BYPASS_HEADER)
         .send({
           plan: { steps: [] },
           metadata: validPlanPayload.metadata
@@ -205,6 +214,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     it('should reject missing plan.steps array', async () => {
       const response = await request(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/plan')
+        .set(BYPASS_HEADER)
         .send({
           plan: { summary: 'Test' },
           metadata: validPlanPayload.metadata
@@ -219,6 +229,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     it('should reject missing metadata object', async () => {
       const response = await request(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/plan')
+        .set(BYPASS_HEADER)
         .send({ plan: validPlanPayload.plan })
         .expect(400);
 
@@ -230,6 +241,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     it('should reject missing plannerModel', async () => {
       const response = await request(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/plan')
+        .set(BYPASS_HEADER)
         .send({
           plan: validPlanPayload.plan,
           metadata: { plannerRole: 'PLANNER' }
@@ -245,6 +257,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
       // The endpoint works with valid input - actual submission depends on Supabase mocking
       const response = await request(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/plan')
+        .set(BYPASS_HEADER)
         .send(validPlanPayload)
         .expect((res) => {
           // Accept either 200 (success) or 400 (task not found - expected without Supabase)
@@ -271,6 +284,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     it('should reject missing step_id', async () => {
       const response = await request(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/work/start')
+        .set(BYPASS_HEADER)
         .send({ ...validWorkStartPayload, step_id: undefined })
         .expect(400);
 
@@ -282,6 +296,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     it('should reject missing step_index', async () => {
       const response = await request(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/work/start')
+        .set(BYPASS_HEADER)
         .send({ ...validWorkStartPayload, step_index: undefined })
         .expect(400);
 
@@ -293,6 +308,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     it('should reject missing label', async () => {
       const response = await request(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/work/start')
+        .set(BYPASS_HEADER)
         .send({ ...validWorkStartPayload, label: undefined })
         .expect(400);
 
@@ -304,6 +320,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     it('should reject missing agent', async () => {
       const response = await request(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/work/start')
+        .set(BYPASS_HEADER)
         .send({ ...validWorkStartPayload, agent: undefined })
         .expect(400);
 
@@ -315,6 +332,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     it('should reject missing executor_type', async () => {
       const response = await request(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/work/start')
+        .set(BYPASS_HEADER)
         .send({ ...validWorkStartPayload, executor_type: undefined })
         .expect(400);
 
@@ -326,6 +344,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     it('should accept valid work start payload (v1 format)', async () => {
       const response = await request(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/work/start')
+        .set(BYPASS_HEADER)
         .send(validWorkStartPayload)
         .expect((res) => {
           // Accept either 200 (success) or 400 (plan missing - expected without Supabase events)
@@ -338,6 +357,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     it('should return worker.plan_missing error when no plan exists', async () => {
       const response = await request(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/work/start')
+        .set(BYPASS_HEADER)
         .send(validWorkStartPayload);
 
       // Without a plan event in OASIS, should return plan_missing
@@ -361,6 +381,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     it('should reject missing step_id', async () => {
       const response = await request(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/work/complete')
+        .set(BYPASS_HEADER)
         .send({ ...validWorkCompletePayload, step_id: undefined })
         .expect(400);
 
@@ -372,6 +393,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     it('should reject missing step_index', async () => {
       const response = await request(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/work/complete')
+        .set(BYPASS_HEADER)
         .send({ ...validWorkCompletePayload, step_index: undefined })
         .expect(400);
 
@@ -383,6 +405,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     it('should reject invalid status (only completed or failed allowed)', async () => {
       const response = await request(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/work/complete')
+        .set(BYPASS_HEADER)
         .send({ ...validWorkCompletePayload, status: 'success' })
         .expect(400);
 
@@ -394,6 +417,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     it('should reject partial status (not allowed in v1)', async () => {
       const response = await request(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/work/complete')
+        .set(BYPASS_HEADER)
         .send({ ...validWorkCompletePayload, status: 'partial' })
         .expect(400);
 
@@ -405,6 +429,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     it('should accept valid work complete payload with completed status', async () => {
       const response = await request(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/work/complete')
+        .set(BYPASS_HEADER)
         .send(validWorkCompletePayload)
         .expect((res) => {
           // Accept 200 (success), 400 (plan missing), or 409 (invalid transition)
@@ -417,6 +442,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     it('should accept failed status with error message', async () => {
       const response = await request(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/work/complete')
+        .set(BYPASS_HEADER)
         .send({
           ...validWorkCompletePayload,
           status: 'failed',
@@ -432,6 +458,7 @@ describe('Autopilot Pipeline - VTID-0533', () => {
     it('should return worker.plan_missing error when no plan exists', async () => {
       const response = await request(app)
         .post('/api/v1/autopilot/tasks/TEST-VTID-001/work/complete')
+        .set(BYPASS_HEADER)
         .send(validWorkCompletePayload);
 
       // Without a plan event in OASIS, should return plan_missing

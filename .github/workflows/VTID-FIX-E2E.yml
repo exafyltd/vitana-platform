@@ -1,11 +1,33 @@
 name: VTID Fix E2E - Auto PR/Merge/Deploy
-# Runs end-to-end: Migration -> VTID create -> PR -> Merge -> Deploy -> Verify
+# ============================================================================
+# DISABLED by VTID-01170 - Operational Safety Lock
+# ============================================================================
+# This was a one-off fix workflow that auto-merges to main and dispatches
+# EXEC-DEPLOY. It is now DISABLED to prevent parallel deployment paths.
+#
+# Canonical deployment path is: AUTO-DEPLOY.yml -> EXEC-DEPLOY.yml
+# Canonical merge path requires PR review.
+#
+# DO NOT RE-ENABLE without governance approval.
+# See: VTID-01170 (Freeze Parallel Paths)
+# ============================================================================
+#
+# ORIGINAL PURPOSE: Migration -> VTID create -> PR -> Merge -> Deploy -> Verify
+
+# ORIGINAL TRIGGERS (DISABLED):
+# on:
+#   push:
+#     branches:
+#       - 'claude/fix-vtid-list-endpoint-1q7ao'
+#   workflow_dispatch:
 
 on:
-  push:
-    branches:
-      - 'claude/fix-vtid-list-endpoint-1q7ao'
   workflow_dispatch:
+    inputs:
+      confirm_bypass:
+        description: 'Type EMERGENCY-BYPASS to run (governance violation)'
+        required: true
+        type: string
 
 env:
   GW_URL: https://gateway-q74ibpv6ia-uc.a.run.app
@@ -22,6 +44,27 @@ jobs:
       id-token: write
 
     steps:
+      # VTID-01170: Hard block - this workflow is disabled
+      - name: "[VTID-01170] WORKFLOW DISABLED - Canonical Spine Enforcement"
+        run: |
+          echo "============================================================"
+          echo "  ⛔ WORKFLOW DISABLED by VTID-01170"
+          echo "============================================================"
+          echo ""
+          echo "  This workflow (VTID-FIX-E2E) is a one-off workflow that"
+          echo "  auto-merges to main. It is now DISABLED to enforce"
+          echo "  canonical merge and deployment paths."
+          echo ""
+          echo "  - Canonical merge: PR review required"
+          echo "  - Canonical deploy: AUTO-DEPLOY.yml -> EXEC-DEPLOY.yml"
+          echo ""
+          echo "============================================================"
+          if [ "${{ inputs.confirm_bypass }}" != "EMERGENCY-BYPASS" ]; then
+            echo "::error::Workflow blocked. To bypass, enter EMERGENCY-BYPASS (governance violation)"
+            exit 1
+          fi
+          echo "::warning::EMERGENCY BYPASS activated - this is a governance violation"
+
       - name: Checkout
         uses: actions/checkout@v4
         with:

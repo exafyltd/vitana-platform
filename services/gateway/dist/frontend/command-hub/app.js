@@ -707,6 +707,139 @@ async function initMeContext() {
 }
 
 // ===========================================================================
+// VTID-01171: Auth Identity from /api/v1/auth/me
+// ===========================================================================
+
+/**
+ * VTID-01171: Fetch authenticated user identity from /api/v1/auth/me
+ * Returns identity (user_id, email, tenant_id, exafy_admin), profile, memberships.
+ * Updates state.user with real name/avatar for profile capsule display.
+ *
+ * @returns {Promise<Object|null>} The auth identity or null on error
+ */
+async function fetchAuthMe() {
+    if (!state.authToken) {
+        console.log('[VTID-01171] No auth token, skipping auth/me fetch');
+        // Set fallback user for unauthenticated state
+        state.user = {
+            name: 'Guest',
+            role: 'User',
+            avatar: '?'
+        };
+        return null;
+    }
+
+    state.authIdentityLoading = true;
+    state.authIdentityError = null;
+
+    try {
+        var response = await fetch('/api/v1/auth/me', {
+            method: 'GET',
+            headers: buildContextHeaders()
+        });
+
+        var data = await response.json();
+
+        if (!response.ok || !data.ok) {
+            var errorMsg = data.error || 'Failed to fetch auth identity';
+            console.error('[VTID-01171] fetchAuthMe error:', errorMsg);
+
+            if (response.status === 401) {
+                // Clear invalid auth token
+                state.authToken = null;
+                localStorage.removeItem('vitana.authToken');
+            }
+
+            state.authIdentityError = errorMsg;
+            state.authIdentityLoading = false;
+
+            // Set fallback user
+            state.user = {
+                name: 'User',
+                role: 'User',
+                avatar: '?'
+            };
+            return null;
+        }
+
+        console.log('[VTID-01171] fetchAuthMe success:', data.identity);
+        state.authIdentity = data;
+        state.authIdentityLoading = false;
+        state.authIdentityError = null;
+
+        // VTID-01171: Update state.user with real identity data
+        var identity = data.identity || {};
+        var profile = data.profile || {};
+        var email = identity.email || '';
+        var displayName = profile.display_name || '';
+
+        // Determine display name: prefer profile.display_name, then email username, then email
+        var name = displayName || (email ? email.split('@')[0] : 'User');
+
+        // Generate initials for avatar
+        var initials = generateInitials(displayName || email || 'User');
+
+        // Determine role label
+        var roleLabel = 'User';
+        if (identity.exafy_admin) {
+            roleLabel = 'Admin';
+        } else if (data.memberships && data.memberships.length > 0) {
+            // Use first membership role, capitalize
+            var firstRole = data.memberships[0].role || 'user';
+            roleLabel = firstRole.charAt(0).toUpperCase() + firstRole.slice(1);
+        }
+
+        state.user = {
+            name: name,
+            role: roleLabel,
+            avatar: initials,
+            email: email,
+            avatarUrl: profile.avatar_url || null
+        };
+
+        return data;
+    } catch (err) {
+        console.error('[VTID-01171] fetchAuthMe exception:', err);
+        state.authIdentityError = err.message || 'Network error';
+        state.authIdentityLoading = false;
+
+        // Set fallback user
+        state.user = {
+            name: 'User',
+            role: 'User',
+            avatar: '?'
+        };
+        return null;
+    }
+}
+
+/**
+ * VTID-01171: Generate initials from name or email.
+ * @param {string} input - Name or email to generate initials from
+ * @returns {string} 1-2 character initials
+ */
+function generateInitials(input) {
+    if (!input) return '?';
+
+    // If it's an email, use username part
+    if (input.includes('@')) {
+        input = input.split('@')[0];
+    }
+
+    // Split by space, dot, underscore, or hyphen
+    var parts = input.split(/[\s._-]+/).filter(function(p) { return p.length > 0; });
+
+    if (parts.length === 0) return '?';
+    if (parts.length === 1) {
+        // Single word: use first 2 characters
+        return parts[0].substring(0, 2).toUpperCase();
+    }
+
+    // Multiple parts: use first letter of first two parts
+    return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
+}
+
+// ===========================================================================
 // VTID-01017: Scheduled Column Hard Eligibility Filter
 // VTID-01028: Relaxed to prevent hiding human-created tasks
 // VTID-01111: Re-added shell entry filter for allocator placeholders
@@ -1092,6 +1225,99 @@ function refreshActiveViewData() {
         refreshOperatorContent();
     }
     // For other views or when specific view not active, skip refresh to avoid unnecessary work
+}
+
+/**
+ * SPEC-01: Global Refresh - Triggers full data reload for the active screen.
+ * Called by the global refresh button (⟳) in the header.
+ * Returns a promise that resolves when refresh is complete.
+ */
+async function triggerGlobalRefresh() {
+    var moduleKey = state.currentModuleKey;
+    var tab = state.currentTab;
+
+    console.log('[SPEC-01] Global refresh triggered for:', moduleKey, tab);
+
+    // Comprehensive refresh based on current view
+    try {
+        if (moduleKey === 'command-hub') {
+            if (tab === 'tasks') {
+                await fetchTasks();
+            } else if (tab === 'events') {
+                await fetchCommandHubEvents();
+            } else if (tab === 'vtids') {
+                state.vtidProjection.fetched = false;
+                await fetchVtidProjection();
+            } else if (tab === 'approvals') {
+                // VTID-01154: SPEC-02 uses GitHub feed
+                state.approvals.feedFetched = false;
+                await fetchGitHubFeed();
+            }
+        } else if (moduleKey === 'oasis') {
+            if (tab === 'events') {
+                await fetchOasisEvents(state.oasisEvents.filters);
+            } else if (tab === 'vtid-ledger') {
+                state.vtidProjection.fetched = false;
+                await fetchVtidProjection();
+            } else if (tab === 'entities') {
+                state.oasisEntities.fetched = false;
+                await fetchOasisEntities();
+            } else if (tab === 'streams') {
+                state.oasisStreams.fetched = false;
+                await fetchOasisStreams();
+            } else if (tab === 'command-log') {
+                state.oasisCommandLog.fetched = false;
+                await fetchOasisCommandLog();
+            }
+        } else if (moduleKey === 'governance') {
+            if (tab === 'rules') {
+                await fetchGovernanceRules();
+            } else if (tab === 'evaluations') {
+                await fetchGovernanceEvaluations();
+            } else if (tab === 'history') {
+                state.historyPage = 1;
+                state.historyLoading = true;
+                await fetchHistory();
+            } else if (tab === 'violations') {
+                state.governanceViolations.fetched = false;
+                await fetchGovernanceViolations();
+            } else if (tab === 'proposals') {
+                state.governanceProposals.fetched = false;
+                await fetchGovernanceProposals();
+            } else if (tab === 'categories') {
+                state.governanceCategories.fetched = false;
+                await fetchGovernanceCategories();
+            }
+        } else if (moduleKey === 'operator') {
+            if (tab === 'task-queue' || tab === 'task-details') {
+                await fetchOperatorTasks();
+            } else if (tab === 'execution-logs') {
+                await fetchOperatorLogs();
+            } else if (tab === 'pipelines') {
+                state.operatorPipelines.fetched = false;
+                await fetchOperatorPipelines();
+            }
+        } else if (moduleKey === 'memory-garden') {
+            state.memoryGarden.loading = true;
+            await fetchMemoryGardenProgress();
+        } else if (moduleKey === 'agents') {
+            state.agents.fetched = false;
+            await fetchAgents();
+        } else if (moduleKey === 'test-runs') {
+            state.testRuns.fetched = false;
+            await fetchTestRuns();
+        } else if (moduleKey === 'deployments') {
+            state.deployments.fetched = false;
+            await fetchDeployments();
+        } else if (moduleKey === 'uxhub') {
+            await fetchUxHubData();
+        }
+
+        // Re-render to show updated data
+        renderApp();
+    } catch (error) {
+        console.error('[SPEC-01] Global refresh error:', error);
+    }
 }
 
 /**
@@ -1829,6 +2055,9 @@ const state = {
     modalDraftTargetRoles: [], // Array of selected role strings
     taskRoleFilter: 'ALL', // 'ALL' or one of TARGET_ROLES
 
+    // SPEC-01: Global Refresh State
+    globalRefreshLoading: false,
+
     // Global Overlays (VTID-0508 / VTID-0509)
     isHeartbeatOpen: false,
     isOperatorOpen: false,
@@ -1885,11 +2114,11 @@ const state = {
     historyLoading: false,
     historyError: null,
 
-    // User
+    // User (fallback values - will be replaced by authIdentity when available)
     user: {
-        name: 'David Stevens',
-        role: 'Admin',
-        avatar: 'DS'
+        name: 'Loading...',
+        role: 'User',
+        avatar: '...'
     },
 
     // VTID-01014: View Role (persisted in localStorage)
@@ -1902,6 +2131,12 @@ const state = {
     meContextError: null,
     // Auth token for API calls (set via dev-auth or Supabase session)
     authToken: localStorage.getItem('vitana.authToken') || null,
+
+    // VTID-01171: Auth Identity from /api/v1/auth/me
+    // Contains user identity (email, user_id), profile (display_name, avatar_url), memberships
+    authIdentity: null,
+    authIdentityLoading: false,
+    authIdentityError: null,
 
     // Docs / Screen Inventory
     screenInventory: null,
@@ -1941,6 +2176,15 @@ const state = {
     governanceRulesSortColumn: 'id',
     governanceRulesSortDirection: 'asc',
     selectedGovernanceRule: null,
+
+    // VTID-01172: Admin Dev Users (exafy_admin toggle)
+    adminDevUsers: [],
+    adminDevUsersLoading: false,
+    adminDevUsersError: null,
+    adminDevUsersSearchQuery: '',
+    adminDevUsersGrantEmail: '',
+    adminDevUsersGrantLoading: false,
+    adminDevUsersGrantError: null,
 
     // VTID-0406: Governance Evaluations (OASIS Integration)
     governanceEvaluations: [],
@@ -2111,13 +2355,19 @@ const state = {
 
     // VTID-0600: Approvals UI Scaffolding
     // VTID-01151: Added pending_count for badge counter
+    // VTID-01154: Added GitHub feed state
     approvals: {
         items: [],
         loading: false,
         error: null,
         fetched: false,
         pending_count: 0,
-        countFetched: false
+        countFetched: false,
+        // VTID-01154: GitHub-authoritative feed
+        feedItems: [],
+        feedLoading: false,
+        feedError: null,
+        feedFetched: false
     },
 
     // VTID-0600: Ticker Severity Prioritization
@@ -2134,6 +2384,39 @@ const state = {
         longevityLoading: false,
         longevityError: null,
         showDiaryModal: false  // Diary entry modal state
+    },
+
+    // VTID-01173: Agents Control Plane v1 - Worker Orchestrator Registry
+    agentsRegistry: {
+        // API response data
+        orchestratorHealth: null,
+        subagents: null,
+        skills: null,
+        // Loading states
+        loading: false,
+        fetched: false,
+        // API call timing (ms)
+        timing: {
+            orchestratorHealth: null,
+            subagents: null,
+            skills: null
+        },
+        // API status codes
+        status: {
+            orchestratorHealth: null,
+            subagents: null,
+            skills: null
+        },
+        // Error state
+        errors: {
+            orchestratorHealth: null,
+            subagents: null,
+            skills: null
+        },
+        // Raw JSON debug toggle states
+        showRawHealth: false,
+        showRawSubagents: false,
+        showRawSkills: false
     }
 };
 
@@ -2849,6 +3132,120 @@ async function denyApprovalItem(approvalId, reason) {
 }
 
 /**
+ * VTID-01154: Fetch GitHub-authoritative feed
+ * Pulls live PR data directly from GitHub via /api/v1/approvals/feed
+ */
+async function fetchGitHubFeed() {
+    console.log('[VTID-01154] Fetching GitHub feed...');
+    state.approvals.feedLoading = true;
+    state.approvals.feedError = null;
+    renderApp();
+
+    try {
+        var response = await fetch('/api/v1/approvals/feed?limit=50', {
+            headers: withVitanaContextHeaders({})
+        });
+        var data = await response.json();
+
+        if (data.ok !== false) {
+            state.approvals.feedItems = data.items || [];
+            state.approvals.feedError = null;
+            console.log('[VTID-01154] GitHub feed loaded:', state.approvals.feedItems.length, 'PRs');
+        } else {
+            state.approvals.feedItems = [];
+            state.approvals.feedError = data.error || 'Failed to fetch GitHub feed';
+            console.error('[VTID-01154] GitHub feed error:', state.approvals.feedError);
+        }
+    } catch (err) {
+        state.approvals.feedItems = [];
+        state.approvals.feedError = err.message || 'Network error';
+        console.error('[VTID-01154] GitHub feed exception:', err);
+    }
+
+    state.approvals.feedLoading = false;
+    state.approvals.feedFetched = true;
+    renderApp();
+}
+
+/**
+ * VTID-01168: Approve → Safe Merge → Auto-Deploy
+ *
+ * Calls POST /api/v1/cicd/autonomous-pr-merge with:
+ * {
+ *   "vtid": "VTID-####",
+ *   "pr_number": 380,
+ *   "merge_method": "squash",
+ *   "automerge": true
+ * }
+ *
+ * VTID is REQUIRED - approval is blocked if VTID is missing or invalid.
+ */
+async function approveFeedItem(prNumber, branch, vtid) {
+    console.log('[VTID-01168] Approving PR #' + prNumber + ' from feed (vtid: ' + vtid + ')');
+
+    // VTID-01168: Block approval if VTID is missing
+    if (!vtid || vtid === 'UNKNOWN') {
+        showToast('Approval blocked: VTID is required for merge', 'error');
+        return;
+    }
+
+    state.approvals.feedLoading = true;
+    renderApp();
+
+    try {
+        // VTID-01168: Call new autonomous-pr-merge endpoint
+        var response = await fetch('/api/v1/cicd/autonomous-pr-merge', {
+            method: 'POST',
+            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({
+                vtid: vtid,
+                pr_number: prNumber,
+                merge_method: 'squash',
+                automerge: true
+            })
+        });
+        var data = await response.json();
+
+        if (data.ok) {
+            // VTID-01168: Show state transition in toast
+            var stateMsg = data.state === 'DEPLOYING'
+                ? 'PR #' + prNumber + ' merged → deploying ' + (data.deploy?.service || 'service')
+                : 'PR #' + prNumber + ' merged successfully';
+            showToast(stateMsg, 'success');
+
+            // Add to ticker with MERGED/DEPLOYING state
+            state.tickerEvents.unshift({
+                id: Date.now(),
+                timestamp: new Date().toLocaleTimeString(),
+                type: 'cicd',
+                topic: data.state === 'DEPLOYING' ? 'cicd.deploy.started' : 'cicd.merge.success',
+                content: stateMsg,
+                vtid: vtid
+            });
+
+            // Refresh the feed
+            state.approvals.feedFetched = false;
+            await fetchGitHubFeed();
+        } else {
+            // VTID-01168: Show detailed error with reason
+            var errorMsg = data.error || 'Unknown error';
+            if (data.reason === 'vtid_missing') {
+                errorMsg = 'VTID validation failed - approval blocked';
+            } else if (data.reason === 'ci_not_passed') {
+                errorMsg = 'CI checks must pass before merge';
+            }
+            showToast('Approval failed: ' + errorMsg, 'error');
+            state.approvals.feedLoading = false;
+            renderApp();
+        }
+    } catch (err) {
+        showToast('Approval failed: ' + err.message, 'error');
+        state.approvals.feedLoading = false;
+        renderApp();
+    }
+}
+
+/**
  * VTID-0600: Generate human-readable summary from deployment data
  * Extracts meaning from VTID, service, and status
  */
@@ -3356,19 +3753,23 @@ function renderHeader() {
     const header = document.createElement('div');
     header.className = 'header-toolbar';
 
-    // --- Left Section: Autopilot, Operator, Clock (DEV-COMHU-2025-0010: Heartbeat removed) ---
+    // --- SPEC-01: Global Top Navigation Standard ---
+    // LEFT (from left → right): AUTOPILOT | OPERATOR | ⏱ (History) | Publish
+    // RIGHT (from right → left): ⟳ (Refresh - rightmost) | LIVE
+
+    // --- Left Section: Autopilot, Operator, History, Publish (all neutral) ---
     const left = document.createElement('div');
     left.className = 'header-toolbar-left';
 
-    // 1. Autopilot pill (neutral styling, uppercase)
+    // 1. Autopilot pill (neutral styling, uppercase) - leftmost
     const autopilotBtn = document.createElement('button');
     autopilotBtn.className = 'header-pill header-pill--neutral';
     autopilotBtn.textContent = 'AUTOPILOT';
     left.appendChild(autopilotBtn);
 
-    // 2. Operator pill (same size as Autopilot, uppercase, orange accent)
+    // 2. Operator pill (neutral styling - SPEC-01: same as Autopilot)
     const operatorBtn = document.createElement('button');
-    operatorBtn.className = 'header-pill header-pill--operator';
+    operatorBtn.className = 'header-pill header-pill--neutral';
     operatorBtn.textContent = 'OPERATOR';
     operatorBtn.onclick = () => {
         state.operatorActiveTab = 'chat';
@@ -3385,10 +3786,10 @@ function renderHeader() {
     };
     left.appendChild(operatorBtn);
 
-    // 3. Clock / Version History icon button (VTID-0524) - neutral color
+    // 3. History icon button (⏱) - neutral color
     const versionBtn = document.createElement('button');
     versionBtn.className = 'header-icon-button';
-    versionBtn.title = 'Version History';
+    versionBtn.title = 'History';
     // Clock icon using Unicode character (CSP compliant)
     versionBtn.innerHTML = '<span class="header-icon-button__icon">&#128337;</span>';
     versionBtn.onclick = async (e) => {
@@ -3414,20 +3815,9 @@ function renderHeader() {
         left.appendChild(renderVersionDropdown());
     }
 
-    header.appendChild(left);
-
-    // --- Center Section: Empty (Publish moved to right) ---
-    const center = document.createElement('div');
-    center.className = 'header-toolbar-center';
-    header.appendChild(center);
-
-    // --- Right Section: Publish + LIVE/OFFLINE with CI/CD dropdown ---
-    const right = document.createElement('div');
-    right.className = 'header-toolbar-right';
-
-    // Publish pill (LEFT of LIVE, same size as LIVE/OFFLINE)
+    // 4. Publish pill (neutral styling - SPEC-01: same palette as Autopilot)
     const publishBtn = document.createElement('button');
-    publishBtn.className = 'header-pill header-pill--publish';
+    publishBtn.className = 'header-pill header-pill--neutral';
     publishBtn.textContent = 'PUBLISH';
     publishBtn.onclick = async () => {
         state.showPublishModal = true;
@@ -3444,7 +3834,18 @@ function renderHeader() {
             }
         }
     };
-    right.appendChild(publishBtn);
+    left.appendChild(publishBtn);
+
+    header.appendChild(left);
+
+    // --- Center Section: Empty (flex spacer) ---
+    const center = document.createElement('div');
+    center.className = 'header-toolbar-center';
+    header.appendChild(center);
+
+    // --- Right Section: LIVE | Refresh (rightmost) ---
+    const right = document.createElement('div');
+    right.className = 'header-toolbar-right';
 
     // LIVE/OFFLINE pill with CI/CD dropdown (restored from pre-0010)
     const hasStageCounters = state.stageCounters && (state.stageCounters.PLANNER > 0 || state.stageCounters.WORKER > 0 || state.stageCounters.VALIDATOR > 0 || state.stageCounters.DEPLOY > 0 || state.lastTelemetryRefresh);
@@ -3562,6 +3963,31 @@ function renderHeader() {
     }
 
     right.appendChild(cicdHealthIndicator);
+
+    // SPEC-01: Global Refresh icon (⟳) - rightmost element
+    // Refresh is icon only, triggers full data reload for the active screen
+    const refreshBtn = document.createElement('button');
+    refreshBtn.className = 'header-icon-button header-icon-button--refresh';
+    refreshBtn.title = 'Refresh';
+    refreshBtn.innerHTML = '<span class="header-icon-button__icon">&#8635;</span>';
+    if (state.globalRefreshLoading) {
+        refreshBtn.classList.add('header-icon-button--loading');
+        refreshBtn.disabled = true;
+    }
+    refreshBtn.onclick = async () => {
+        // SPEC-01: Triggers full data reload for the active screen
+        state.globalRefreshLoading = true;
+        renderApp();
+
+        try {
+            await triggerGlobalRefresh();
+        } finally {
+            state.globalRefreshLoading = false;
+            renderApp();
+        }
+    };
+    right.appendChild(refreshBtn);
+
     header.appendChild(right);
 
     // Add click-outside handler for version dropdown
@@ -3808,6 +4234,15 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'intelligence-memory-dev' && tab === 'memory-vault') {
         // VTID-01086: Memory Garden UI Deepening
         container.appendChild(renderMemoryGardenView());
+    } else if (moduleKey === 'admin' && tab === 'users') {
+        // VTID-01172: Admin Dev Users - exafy_admin toggle
+        container.appendChild(renderAdminDevUsersView());
+    } else if (moduleKey === 'agents' && tab === 'registered-agents') {
+        // VTID-01173: Agents Control Plane v1 - Registered Agents (Worker Orchestrator)
+        container.appendChild(renderRegisteredAgentsView());
+    } else if (moduleKey === 'agents' && tab === 'skills') {
+        // VTID-01173: Agents Control Plane v1 - Skills Registry
+        container.appendChild(renderAgentsSkillsView());
     } else {
         // Placeholder for other modules
         const placeholder = document.createElement('div');
@@ -3910,17 +4345,7 @@ function renderTasksView() {
     };
     toolbar.appendChild(newBtn);
 
-    const refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn refresh-btn-margin';
-    refreshBtn.textContent = '↻';
-    refreshBtn.onclick = () => {
-        // VTID-01055: Enable debug logging for manual refresh
-        isManualRefresh = true;
-        fetchTasks();
-        // VTID-0527: Also refresh telemetry for stage timelines
-        fetchTelemetrySnapshot();
-    };
-    toolbar.appendChild(refreshBtn);
+    // SPEC-01: Per-view refresh buttons removed - use global refresh icon in header
 
     container.appendChild(toolbar);
 
@@ -5248,20 +5673,52 @@ function renderProfileModal() {
     const body = document.createElement('div');
     body.className = 'modal-body';
 
+    // VTID-01171: Show avatar (initials or image)
     const avatar = document.createElement('div');
     avatar.className = 'profile-avatar-large';
-    avatar.textContent = state.user.avatar;
+    if (state.user.avatarUrl) {
+        avatar.style.backgroundImage = 'url(' + state.user.avatarUrl + ')';
+        avatar.style.backgroundSize = 'cover';
+        avatar.style.backgroundPosition = 'center';
+        avatar.textContent = '';
+    } else {
+        avatar.textContent = state.user.avatar || '?';
+    }
     body.appendChild(avatar);
 
+    // VTID-01171: Show name
     const name = document.createElement('div');
     name.className = 'profile-name';
-    name.textContent = state.user.name;
+    name.textContent = state.user.name || 'User';
     body.appendChild(name);
 
+    // VTID-01171: Show email if available
+    if (state.user.email) {
+        const emailEl = document.createElement('div');
+        emailEl.className = 'profile-email';
+        emailEl.textContent = state.user.email;
+        emailEl.style.color = 'var(--text-secondary, #666)';
+        emailEl.style.fontSize = '0.875rem';
+        emailEl.style.marginBottom = '8px';
+        body.appendChild(emailEl);
+    }
+
+    // VTID-01171: Show role badge
     const badge = document.createElement('div');
     badge.className = 'profile-role-badge';
-    // VTID-01049: Use authoritative role from MeState, fallback to state.viewRole
-    if (MeState.me && MeState.me.active_role) {
+    // Use authIdentity > MeState > viewRole fallback chain
+    if (state.authIdentity && state.authIdentity.identity) {
+        if (state.authIdentity.identity.exafy_admin) {
+            badge.textContent = 'Admin';
+        } else if (state.authIdentity.memberships && state.authIdentity.memberships.length > 0) {
+            var role = state.authIdentity.memberships[0].role || 'user';
+            badge.textContent = role.charAt(0).toUpperCase() + role.slice(1);
+        } else {
+            badge.textContent = 'User';
+        }
+    } else if (state.authIdentityLoading) {
+        badge.textContent = 'Loading...';
+    } else if (MeState.me && MeState.me.active_role) {
         badge.textContent = MeState.me.active_role.charAt(0).toUpperCase() + MeState.me.active_role.slice(1);
     } else if (!MeState.loaded) {
         badge.textContent = 'Loading...';
@@ -5272,8 +5729,37 @@ function renderProfileModal() {
     }
     body.appendChild(badge);
 
-    // VTID-01014: Role Switcher dropdown
-    const VIEW_ROLES = ['Community', 'Patient', 'Professional', 'Staff', 'Admin', 'Developer'];
+    // VTID-01171: Show active tenant if available
+    if (state.authIdentity && state.authIdentity.identity && state.authIdentity.identity.tenant_id) {
+        const tenantEl = document.createElement('div');
+        tenantEl.className = 'profile-tenant';
+        tenantEl.textContent = 'Tenant: ' + state.authIdentity.identity.tenant_id.substring(0, 8) + '...';
+        tenantEl.style.color = 'var(--text-secondary, #666)';
+        tenantEl.style.fontSize = '0.75rem';
+        tenantEl.style.marginTop = '4px';
+        body.appendChild(tenantEl);
+    }
+
+    // VTID-01014 + VTID-01171: Role Switcher dropdown
+    // Populate from memberships if available, otherwise use default list
+    var VIEW_ROLES = ['Community', 'Patient', 'Professional', 'Staff', 'Admin', 'Developer'];
+    if (state.authIdentity && state.authIdentity.memberships && state.authIdentity.memberships.length > 0) {
+        // Use roles from memberships
+        VIEW_ROLES = state.authIdentity.memberships.map(function(m) {
+            var role = m.role || 'user';
+            return role.charAt(0).toUpperCase() + role.slice(1);
+        });
+        // Ensure uniqueness
+        VIEW_ROLES = VIEW_ROLES.filter(function(r, i, arr) { return arr.indexOf(r) === i; });
+        // Add Admin if exafy_admin and not already in list
+        if (state.authIdentity.identity && state.authIdentity.identity.exafy_admin && VIEW_ROLES.indexOf('Admin') === -1) {
+            VIEW_ROLES.unshift('Admin');
+        }
+    } else if (state.authIdentity && state.authIdentity.identity && state.authIdentity.identity.exafy_admin) {
+        // exafy_admin with no memberships - show Admin
+        VIEW_ROLES = ['Admin'];
+    }
+
     const roleSwitcher = document.createElement('div');
     roleSwitcher.className = 'profile-role-switcher';
 
@@ -5327,6 +5813,40 @@ function renderProfileModal() {
 
     const footer = document.createElement('div');
     footer.className = 'modal-footer';
+    footer.style.display = 'flex';
+    footer.style.justifyContent = 'space-between';
+
+    // VTID-01171: Logout button
+    const logoutBtn = document.createElement('button');
+    logoutBtn.className = 'btn btn-danger';
+    logoutBtn.textContent = 'Logout';
+    logoutBtn.style.backgroundColor = 'var(--danger-bg, #dc3545)';
+    logoutBtn.style.color = 'var(--danger-text, #fff)';
+    logoutBtn.onclick = () => {
+        // Clear auth state
+        state.authToken = null;
+        state.authIdentity = null;
+        state.meContext = null;
+        MeState.loaded = false;
+        MeState.me = null;
+        localStorage.removeItem('vitana.authToken');
+        localStorage.removeItem('vitana.viewRole');
+        // VTID-01109: Clear ORB conversation on logout
+        if (typeof orbClearConversationState === 'function') {
+            orbClearConversationState();
+        }
+        // Reset user to guest
+        state.user = {
+            name: 'Guest',
+            role: 'User',
+            avatar: '?'
+        };
+        state.viewRole = 'User';
+        state.showProfileModal = false;
+        showToast('Logged out successfully', 'info');
+        renderApp();
+    };
+    footer.appendChild(logoutBtn);
 
     const closeBtn = document.createElement('button');
     closeBtn.className = 'btn';
@@ -6053,6 +6573,1005 @@ async function fetchGovernanceRules() {
     }
 }
 
+// --- Admin Dev Users (VTID-01172) ---
+
+/**
+ * VTID-01172: Fetches dev users (exafy_admin=true) from the dev-access API.
+ * Optionally filters by email query.
+ */
+async function fetchAdminDevUsers() {
+    state.adminDevUsersLoading = true;
+    state.adminDevUsersError = null;
+    renderApp();
+
+    try {
+        var query = state.adminDevUsersSearchQuery || '';
+        var url = '/api/v1/dev-access/users';
+        if (query.trim()) {
+            url += '?query=' + encodeURIComponent(query.trim());
+        }
+
+        var response = await fetch(url, {
+            method: 'GET',
+            headers: buildContextHeaders()
+        });
+
+        var json = await response.json();
+
+        if (!response.ok || !json.ok) {
+            var errorMsg = json.error || json.message || 'Failed to fetch dev users';
+            if (response.status === 401) {
+                throw new Error('Unauthenticated - please log in');
+            } else if (response.status === 403) {
+                throw new Error('Access denied - requires exafy_admin');
+            }
+            throw new Error(errorMsg);
+        }
+
+        state.adminDevUsers = json.users || [];
+        console.log('[VTID-01172] Dev users loaded:', state.adminDevUsers.length);
+    } catch (error) {
+        console.error('[VTID-01172] Failed to fetch dev users:', error);
+        state.adminDevUsersError = error.message;
+        state.adminDevUsers = [];
+    } finally {
+        state.adminDevUsersLoading = false;
+        renderApp();
+    }
+}
+
+/**
+ * VTID-01172: Grants dev access (exafy_admin=true) to a user by email.
+ */
+async function grantDevAccess(email) {
+    if (!email || !email.trim()) {
+        showToast('Please enter an email address', 'error');
+        return;
+    }
+
+    state.adminDevUsersGrantLoading = true;
+    state.adminDevUsersGrantError = null;
+    renderApp();
+
+    try {
+        var response = await fetch('/api/v1/dev-access/grant', {
+            method: 'POST',
+            headers: buildContextHeaders(),
+            body: JSON.stringify({ email: email.trim() })
+        });
+
+        var json = await response.json();
+
+        if (!response.ok || !json.ok) {
+            var errorMsg = json.error || json.message || 'Failed to grant dev access';
+            if (response.status === 401) {
+                throw new Error('Unauthenticated - please log in');
+            } else if (response.status === 403) {
+                throw new Error('Access denied - requires exafy_admin');
+            } else if (response.status === 404) {
+                throw new Error('User not found: ' + email);
+            }
+            throw new Error(errorMsg);
+        }
+
+        showToast('Dev access granted to ' + email, 'success');
+        state.adminDevUsersGrantEmail = '';
+        // Refresh user list
+        await fetchAdminDevUsers();
+    } catch (error) {
+        console.error('[VTID-01172] Failed to grant dev access:', error);
+        state.adminDevUsersGrantError = error.message;
+        showToast(error.message, 'error');
+    } finally {
+        state.adminDevUsersGrantLoading = false;
+        renderApp();
+    }
+}
+
+/**
+ * VTID-01172: Revokes dev access (exafy_admin=false) from a user by email.
+ */
+async function revokeDevAccess(email) {
+    if (!email || !email.trim()) {
+        showToast('Invalid email', 'error');
+        return;
+    }
+
+    // Confirm revocation
+    if (!confirm('Revoke dev access from ' + email + '?')) {
+        return;
+    }
+
+    try {
+        var response = await fetch('/api/v1/dev-access/revoke', {
+            method: 'POST',
+            headers: buildContextHeaders(),
+            body: JSON.stringify({ email: email.trim() })
+        });
+
+        var json = await response.json();
+
+        if (!response.ok || !json.ok) {
+            var errorMsg = json.error || json.message || 'Failed to revoke dev access';
+            if (response.status === 400 && json.error === 'SELF_REVOKE_FORBIDDEN') {
+                throw new Error('Cannot revoke your own dev access');
+            }
+            throw new Error(errorMsg);
+        }
+
+        showToast('Dev access revoked from ' + email, 'success');
+        // Refresh user list
+        await fetchAdminDevUsers();
+    } catch (error) {
+        console.error('[VTID-01172] Failed to revoke dev access:', error);
+        showToast(error.message, 'error');
+    }
+}
+
+/**
+ * VTID-01172: Renders the Admin > Users (Dev Access) view.
+ */
+function renderAdminDevUsersView() {
+    var container = document.createElement('div');
+    container.className = 'admin-dev-users-container';
+
+    // Auto-fetch dev users if not loaded and not currently loading
+    if (state.adminDevUsers.length === 0 && !state.adminDevUsersLoading && !state.adminDevUsersError) {
+        fetchAdminDevUsers();
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'admin-dev-users-header';
+    header.innerHTML = '<h2>Dev Users</h2><p class="admin-dev-users-subtitle">Manage exafy_admin access for development and onboarding</p>';
+    container.appendChild(header);
+
+    // Toolbar
+    var toolbar = document.createElement('div');
+    toolbar.className = 'admin-dev-users-toolbar';
+
+    // Search input
+    var searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'search-field admin-dev-users-search';
+    searchInput.placeholder = 'Search by email...';
+    searchInput.value = state.adminDevUsersSearchQuery;
+    searchInput.oninput = function(e) {
+        state.adminDevUsersSearchQuery = e.target.value;
+    };
+    searchInput.onkeypress = function(e) {
+        if (e.key === 'Enter') {
+            fetchAdminDevUsers();
+        }
+    };
+    toolbar.appendChild(searchInput);
+
+    // Search button
+    var searchBtn = document.createElement('button');
+    searchBtn.className = 'btn btn-secondary';
+    searchBtn.textContent = 'Search';
+    searchBtn.onclick = function() {
+        fetchAdminDevUsers();
+    };
+    toolbar.appendChild(searchBtn);
+
+    // Spacer
+    var spacer = document.createElement('div');
+    spacer.className = 'spacer';
+    toolbar.appendChild(spacer);
+
+    // Grant access section
+    var grantInput = document.createElement('input');
+    grantInput.type = 'email';
+    grantInput.className = 'form-control admin-dev-users-grant-input';
+    grantInput.placeholder = 'Enter email to grant access...';
+    grantInput.value = state.adminDevUsersGrantEmail;
+    grantInput.oninput = function(e) {
+        state.adminDevUsersGrantEmail = e.target.value;
+    };
+    grantInput.onkeypress = function(e) {
+        if (e.key === 'Enter') {
+            grantDevAccess(state.adminDevUsersGrantEmail);
+        }
+    };
+    toolbar.appendChild(grantInput);
+
+    var grantBtn = document.createElement('button');
+    grantBtn.className = 'btn btn-primary';
+    grantBtn.textContent = state.adminDevUsersGrantLoading ? 'Granting...' : 'Grant Dev Access';
+    grantBtn.disabled = state.adminDevUsersGrantLoading;
+    grantBtn.onclick = function() {
+        grantDevAccess(state.adminDevUsersGrantEmail);
+    };
+    toolbar.appendChild(grantBtn);
+
+    container.appendChild(toolbar);
+
+    // User count
+    var countLabel = document.createElement('div');
+    countLabel.className = 'admin-dev-users-count';
+    if (state.adminDevUsersLoading) {
+        countLabel.textContent = 'Loading...';
+    } else if (state.adminDevUsersError) {
+        countLabel.textContent = 'Error: ' + state.adminDevUsersError;
+        countLabel.className += ' error-text';
+    } else {
+        countLabel.textContent = state.adminDevUsers.length + ' dev user' + (state.adminDevUsers.length !== 1 ? 's' : '');
+    }
+    container.appendChild(countLabel);
+
+    // Content area
+    var content = document.createElement('div');
+    content.className = 'admin-dev-users-content';
+
+    if (state.adminDevUsersLoading) {
+        content.innerHTML = '<div class="admin-dev-users-loading">Loading dev users...</div>';
+    } else if (state.adminDevUsersError) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'admin-dev-users-error';
+        errorDiv.textContent = state.adminDevUsersError;
+
+        var retryBtn = document.createElement('button');
+        retryBtn.className = 'btn btn-secondary';
+        retryBtn.textContent = 'Retry';
+        retryBtn.onclick = function() {
+            state.adminDevUsersError = null;
+            fetchAdminDevUsers();
+        };
+        errorDiv.appendChild(document.createElement('br'));
+        errorDiv.appendChild(retryBtn);
+        content.appendChild(errorDiv);
+    } else if (state.adminDevUsers.length === 0) {
+        content.innerHTML = '<div class="admin-dev-users-empty">No dev users found. Grant access to a user above.</div>';
+    } else {
+        // Render user table
+        var table = document.createElement('table');
+        table.className = 'admin-dev-users-table';
+
+        // Header
+        var thead = document.createElement('thead');
+        var headerRow = document.createElement('tr');
+        ['Email', 'User ID', 'Status', 'Updated', 'Actions'].forEach(function(h) {
+            var th = document.createElement('th');
+            th.textContent = h;
+            headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        // Body
+        var tbody = document.createElement('tbody');
+        state.adminDevUsers.forEach(function(user) {
+            var row = document.createElement('tr');
+
+            // Email
+            var emailCell = document.createElement('td');
+            emailCell.className = 'admin-dev-users-email';
+            emailCell.textContent = user.email || '-';
+            row.appendChild(emailCell);
+
+            // User ID
+            var idCell = document.createElement('td');
+            idCell.className = 'admin-dev-users-id';
+            idCell.textContent = user.user_id ? user.user_id.substring(0, 8) + '...' : '-';
+            idCell.title = user.user_id || '';
+            row.appendChild(idCell);
+
+            // Status
+            var statusCell = document.createElement('td');
+            var statusBadge = document.createElement('span');
+            statusBadge.className = 'admin-dev-users-status-badge status-active';
+            statusBadge.textContent = 'exafy_admin';
+            statusCell.appendChild(statusBadge);
+            row.appendChild(statusCell);
+
+            // Updated
+            var updatedCell = document.createElement('td');
+            updatedCell.className = 'admin-dev-users-updated';
+            if (user.updated_at) {
+                var date = new Date(user.updated_at);
+                updatedCell.textContent = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+            } else {
+                updatedCell.textContent = '-';
+            }
+            row.appendChild(updatedCell);
+
+            // Actions
+            var actionsCell = document.createElement('td');
+            var revokeBtn = document.createElement('button');
+            revokeBtn.className = 'btn btn-danger btn-sm';
+            revokeBtn.textContent = 'Revoke';
+            revokeBtn.onclick = function() {
+                revokeDevAccess(user.email);
+            };
+            actionsCell.appendChild(revokeBtn);
+            row.appendChild(actionsCell);
+
+            tbody.appendChild(row);
+        });
+        table.appendChild(tbody);
+        content.appendChild(table);
+    }
+
+    container.appendChild(content);
+
+    return container;
+}
+
+// ===========================================================================
+// VTID-01173: Agents Control Plane v1 - Worker Orchestrator Registry
+// ===========================================================================
+
+/**
+ * VTID-01173: Fetch data from Worker Orchestrator APIs
+ * Calls all 3 endpoints in parallel and records timing
+ */
+async function fetchAgentsRegistry() {
+    if (state.agentsRegistry.loading) return;
+
+    state.agentsRegistry.loading = true;
+    state.agentsRegistry.errors = { orchestratorHealth: null, subagents: null, skills: null };
+    renderApp();
+
+    var endpoints = [
+        { key: 'orchestratorHealth', url: '/api/v1/worker/orchestrator/health' },
+        { key: 'subagents', url: '/api/v1/worker/subagents' },
+        { key: 'skills', url: '/api/v1/worker/skills' }
+    ];
+
+    var results = await Promise.all(endpoints.map(async function(ep) {
+        var startTime = Date.now();
+        try {
+            var response = await fetch(ep.url, {
+                headers: withVitanaContextHeaders({})
+            });
+            var elapsed = Date.now() - startTime;
+            var data = null;
+            var errorText = null;
+
+            if (response.ok) {
+                data = await response.json();
+            } else {
+                errorText = await response.text().catch(function() { return 'Unknown error'; });
+            }
+
+            return {
+                key: ep.key,
+                status: response.status,
+                timing: elapsed,
+                data: data,
+                error: response.ok ? null : { status: response.status, text: errorText.substring(0, 500) }
+            };
+        } catch (e) {
+            var elapsed = Date.now() - startTime;
+            return {
+                key: ep.key,
+                status: 0,
+                timing: elapsed,
+                data: null,
+                error: { status: 0, text: e.message }
+            };
+        }
+    }));
+
+    // Process results
+    results.forEach(function(r) {
+        state.agentsRegistry[r.key] = r.data;
+        state.agentsRegistry.timing[r.key] = r.timing;
+        state.agentsRegistry.status[r.key] = r.status;
+        state.agentsRegistry.errors[r.key] = r.error;
+    });
+
+    state.agentsRegistry.loading = false;
+    state.agentsRegistry.fetched = true;
+    renderApp();
+}
+
+/**
+ * VTID-01173: Render the API Status Strip
+ * Shows status of each endpoint with timing
+ */
+function renderAgentsApiStatusStrip() {
+    var strip = document.createElement('div');
+    strip.className = 'agents-api-status-strip';
+
+    var endpoints = [
+        { key: 'orchestratorHealth', label: 'Orchestrator Health' },
+        { key: 'subagents', label: 'Subagents' },
+        { key: 'skills', label: 'Skills' }
+    ];
+
+    endpoints.forEach(function(ep) {
+        var status = state.agentsRegistry.status[ep.key];
+        var timing = state.agentsRegistry.timing[ep.key];
+        var error = state.agentsRegistry.errors[ep.key];
+
+        var item = document.createElement('div');
+        item.className = 'agents-api-status-item';
+
+        var icon = document.createElement('span');
+        icon.className = 'agents-api-status-icon';
+        if (status === 200) {
+            icon.textContent = '\u2705';
+            item.classList.add('agents-api-status-ok');
+        } else if (status === null) {
+            icon.textContent = '\u23F3';
+            item.classList.add('agents-api-status-pending');
+        } else {
+            icon.textContent = '\u274C';
+            item.classList.add('agents-api-status-error');
+        }
+        item.appendChild(icon);
+
+        var label = document.createElement('span');
+        label.className = 'agents-api-status-label';
+        label.textContent = ep.label + ': ';
+        item.appendChild(label);
+
+        var statusText = document.createElement('span');
+        statusText.className = 'agents-api-status-value';
+        if (status === null) {
+            statusText.textContent = 'pending';
+        } else {
+            statusText.textContent = status + (timing !== null ? ' (' + timing + 'ms)' : '');
+        }
+        item.appendChild(statusText);
+
+        strip.appendChild(item);
+    });
+
+    return strip;
+}
+
+/**
+ * VTID-01173: Render error panel for failed API calls
+ */
+function renderAgentsErrorPanel() {
+    var errors = state.agentsRegistry.errors;
+    var hasErrors = errors.orchestratorHealth || errors.subagents || errors.skills;
+
+    if (!hasErrors) return null;
+
+    var panel = document.createElement('div');
+    panel.className = 'agents-error-panel';
+
+    var heading = document.createElement('h4');
+    heading.textContent = 'API Errors';
+    panel.appendChild(heading);
+
+    ['orchestratorHealth', 'subagents', 'skills'].forEach(function(key) {
+        var err = errors[key];
+        if (!err) return;
+
+        var item = document.createElement('div');
+        item.className = 'agents-error-item';
+
+        var endpoint = document.createElement('strong');
+        endpoint.textContent = key + ': ';
+        item.appendChild(endpoint);
+
+        var statusSpan = document.createElement('span');
+        statusSpan.textContent = 'HTTP ' + err.status;
+        item.appendChild(statusSpan);
+
+        if (err.text) {
+            var textPre = document.createElement('pre');
+            textPre.className = 'agents-error-text';
+            textPre.textContent = err.text;
+            item.appendChild(textPre);
+        }
+
+        panel.appendChild(item);
+    });
+
+    return panel;
+}
+
+/**
+ * VTID-01173: Render Orchestrator Summary Card
+ */
+function renderOrchestratorSummaryCard() {
+    var health = state.agentsRegistry.orchestratorHealth;
+
+    var card = document.createElement('div');
+    card.className = 'agents-card agents-orchestrator-card';
+
+    var heading = document.createElement('h3');
+    heading.textContent = 'Orchestrator Summary';
+    card.appendChild(heading);
+
+    if (!health) {
+        var empty = document.createElement('p');
+        empty.className = 'agents-card-empty';
+        empty.textContent = 'No data available';
+        card.appendChild(empty);
+        return card;
+    }
+
+    // Service info
+    var infoGrid = document.createElement('div');
+    infoGrid.className = 'agents-info-grid';
+
+    var fields = [
+        { label: 'Service', value: health.service || 'N/A' },
+        { label: 'Version', value: health.version || 'N/A' },
+        { label: 'VTID', value: health.vtid || 'N/A' },
+        { label: 'Timestamp', value: health.timestamp ? new Date(health.timestamp).toLocaleString() : 'N/A' }
+    ];
+
+    fields.forEach(function(f) {
+        var row = document.createElement('div');
+        row.className = 'agents-info-row';
+        row.innerHTML = '<span class="agents-info-label">' + f.label + ':</span><span class="agents-info-value">' + escapeHtml(f.value) + '</span>';
+        infoGrid.appendChild(row);
+    });
+
+    card.appendChild(infoGrid);
+
+    // Subagents summary
+    if (health.subagents && health.subagents.length > 0) {
+        var subagentsSection = document.createElement('div');
+        subagentsSection.className = 'agents-orchestrator-subagents';
+
+        var subHeading = document.createElement('h4');
+        subHeading.textContent = 'Registered Subagents (' + health.subagents.length + ')';
+        subagentsSection.appendChild(subHeading);
+
+        var subList = document.createElement('div');
+        subList.className = 'agents-subagent-badges';
+
+        health.subagents.forEach(function(sub) {
+            var badge = document.createElement('span');
+            badge.className = 'agents-subagent-badge';
+            var statusClass = (sub.status || '').toLowerCase() === 'active' ? 'badge-success' : 'badge-secondary';
+            badge.classList.add(statusClass);
+            badge.textContent = sub.id + ' (' + (sub.domain || 'default') + ')';
+            subList.appendChild(badge);
+        });
+
+        subagentsSection.appendChild(subList);
+        card.appendChild(subagentsSection);
+    }
+
+    // Endpoints summary
+    if (health.endpoints) {
+        var endpointsSection = document.createElement('div');
+        endpointsSection.className = 'agents-orchestrator-endpoints';
+
+        var epHeading = document.createElement('h4');
+        epHeading.textContent = 'Endpoint Keys';
+        endpointsSection.appendChild(epHeading);
+
+        var epList = document.createElement('div');
+        epList.className = 'agents-endpoint-list';
+
+        Object.keys(health.endpoints).forEach(function(key) {
+            var epItem = document.createElement('span');
+            epItem.className = 'agents-endpoint-item';
+            epItem.textContent = key;
+            epList.appendChild(epItem);
+        });
+
+        endpointsSection.appendChild(epList);
+        card.appendChild(endpointsSection);
+    }
+
+    return card;
+}
+
+/**
+ * VTID-01173: Render Subagents Table
+ */
+function renderSubagentsTable() {
+    var subagents = state.agentsRegistry.subagents;
+
+    var section = document.createElement('div');
+    section.className = 'agents-section agents-subagents-section';
+
+    var heading = document.createElement('h3');
+    heading.textContent = 'Subagents';
+    section.appendChild(heading);
+
+    if (!subagents || !subagents.subagents || subagents.subagents.length === 0) {
+        var empty = document.createElement('p');
+        empty.className = 'agents-section-empty';
+        empty.textContent = 'No subagents registered';
+        section.appendChild(empty);
+        return section;
+    }
+
+    var table = document.createElement('table');
+    table.className = 'agents-table agents-subagents-table';
+
+    // Header
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    ['ID', 'Domain', 'Allowed Paths', 'Guardrails', 'Default Budget'].forEach(function(h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    // Body
+    var tbody = document.createElement('tbody');
+    subagents.subagents.forEach(function(sub) {
+        var row = document.createElement('tr');
+
+        // ID
+        var idCell = document.createElement('td');
+        idCell.className = 'agents-table-id';
+        idCell.textContent = sub.id || 'N/A';
+        row.appendChild(idCell);
+
+        // Domain
+        var domainCell = document.createElement('td');
+        domainCell.textContent = sub.domain || 'default';
+        row.appendChild(domainCell);
+
+        // Allowed Paths
+        var pathsCell = document.createElement('td');
+        pathsCell.className = 'agents-table-paths';
+        if (sub.allowed_paths && sub.allowed_paths.length > 0) {
+            var pathsList = document.createElement('ul');
+            pathsList.className = 'agents-list-compact';
+            sub.allowed_paths.forEach(function(p) {
+                var li = document.createElement('li');
+                li.textContent = p;
+                pathsList.appendChild(li);
+            });
+            pathsCell.appendChild(pathsList);
+        } else {
+            pathsCell.textContent = '-';
+        }
+        row.appendChild(pathsCell);
+
+        // Guardrails
+        var guardrailsCell = document.createElement('td');
+        guardrailsCell.className = 'agents-table-guardrails';
+        if (sub.guardrails && sub.guardrails.length > 0) {
+            var guardList = document.createElement('ul');
+            guardList.className = 'agents-list-compact';
+            sub.guardrails.forEach(function(g) {
+                var li = document.createElement('li');
+                li.textContent = g;
+                guardList.appendChild(li);
+            });
+            guardrailsCell.appendChild(guardList);
+        } else {
+            guardrailsCell.textContent = '-';
+        }
+        row.appendChild(guardrailsCell);
+
+        // Default Budget
+        var budgetCell = document.createElement('td');
+        if (sub.default_budget) {
+            budgetCell.innerHTML = 'Files: ' + (sub.default_budget.max_files || 'N/A') + '<br>Dirs: ' + (sub.default_budget.max_directories || 'N/A');
+        } else {
+            budgetCell.textContent = '-';
+        }
+        row.appendChild(budgetCell);
+
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    section.appendChild(table);
+
+    return section;
+}
+
+/**
+ * VTID-01173: Render Skills Table
+ */
+function renderSkillsTable() {
+    var skillsData = state.agentsRegistry.skills;
+
+    var section = document.createElement('div');
+    section.className = 'agents-section agents-skills-section';
+
+    var heading = document.createElement('h3');
+    heading.textContent = 'Skills Registry';
+    section.appendChild(heading);
+
+    if (!skillsData || !skillsData.skills || skillsData.skills.length === 0) {
+        var empty = document.createElement('p');
+        empty.className = 'agents-section-empty';
+        empty.textContent = 'No skills registered';
+        section.appendChild(empty);
+        return section;
+    }
+
+    var table = document.createElement('table');
+    table.className = 'agents-table agents-skills-table';
+
+    // Header
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    ['Skill ID', 'Name', 'Domain', 'Rule ID'].forEach(function(h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    // Body
+    var tbody = document.createElement('tbody');
+    skillsData.skills.forEach(function(skill) {
+        var row = document.createElement('tr');
+
+        // Skill ID
+        var idCell = document.createElement('td');
+        idCell.className = 'agents-table-id';
+        idCell.textContent = skill.skill_id || skill.id || 'N/A';
+        row.appendChild(idCell);
+
+        // Name
+        var nameCell = document.createElement('td');
+        nameCell.textContent = skill.name || 'N/A';
+        row.appendChild(nameCell);
+
+        // Domain
+        var domainCell = document.createElement('td');
+        domainCell.textContent = skill.domain || 'default';
+        row.appendChild(domainCell);
+
+        // Rule ID
+        var ruleCell = document.createElement('td');
+        ruleCell.textContent = skill.rule_id || '-';
+        row.appendChild(ruleCell);
+
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    section.appendChild(table);
+
+    // Preflight Chains Summary
+    if (skillsData.preflight_chains) {
+        var chainsSection = document.createElement('div');
+        chainsSection.className = 'agents-preflight-chains';
+
+        var chainsHeading = document.createElement('h4');
+        chainsHeading.textContent = 'Preflight Chains';
+        chainsSection.appendChild(chainsHeading);
+
+        var chains = skillsData.preflight_chains;
+        ['frontend', 'backend', 'memory'].forEach(function(chainType) {
+            if (chains[chainType] && chains[chainType].length > 0) {
+                var chainDiv = document.createElement('div');
+                chainDiv.className = 'agents-chain-row';
+
+                var chainLabel = document.createElement('strong');
+                chainLabel.textContent = chainType + ': ';
+                chainDiv.appendChild(chainLabel);
+
+                var chainValue = document.createElement('span');
+                chainValue.textContent = chains[chainType].join(' \u2192 ');
+                chainDiv.appendChild(chainValue);
+
+                chainsSection.appendChild(chainDiv);
+            }
+        });
+
+        section.appendChild(chainsSection);
+    }
+
+    return section;
+}
+
+/**
+ * VTID-01173: Render Raw JSON Debug Section
+ */
+function renderRawJsonDebug(key, label) {
+    var data = state.agentsRegistry[key];
+    var showKey = 'showRaw' + key.charAt(0).toUpperCase() + key.slice(1);
+    var isExpanded = state.agentsRegistry[showKey];
+
+    var section = document.createElement('div');
+    section.className = 'agents-raw-json-section';
+
+    var toggle = document.createElement('button');
+    toggle.className = 'agents-raw-json-toggle';
+    toggle.textContent = (isExpanded ? '\u25BC' : '\u25B6') + ' Show raw JSON: ' + label;
+    toggle.onclick = function() {
+        state.agentsRegistry[showKey] = !state.agentsRegistry[showKey];
+        renderApp();
+    };
+    section.appendChild(toggle);
+
+    if (isExpanded && data) {
+        var pre = document.createElement('pre');
+        pre.className = 'agents-raw-json-content';
+        pre.textContent = JSON.stringify(data, null, 2);
+        section.appendChild(pre);
+    }
+
+    return section;
+}
+
+/**
+ * VTID-01173: Render VTID Fingerprints Section
+ */
+function renderVtidFingerprints() {
+    var health = state.agentsRegistry.orchestratorHealth;
+    var skills = state.agentsRegistry.skills;
+
+    var section = document.createElement('div');
+    section.className = 'agents-fingerprints-section';
+
+    var heading = document.createElement('h4');
+    heading.textContent = 'VTID Fingerprints';
+    section.appendChild(heading);
+
+    var grid = document.createElement('div');
+    grid.className = 'agents-fingerprints-grid';
+
+    // Worker Orchestrator VTID
+    var orchVtid = document.createElement('div');
+    orchVtid.className = 'agents-fingerprint-item';
+    orchVtid.innerHTML = '<span class="agents-fingerprint-label">Worker Orchestrator VTID:</span><span class="agents-fingerprint-value">' + escapeHtml(health && health.vtid ? health.vtid : 'N/A') + '</span>';
+    grid.appendChild(orchVtid);
+
+    // Skills Registry VTID
+    var skillsVtid = document.createElement('div');
+    skillsVtid.className = 'agents-fingerprint-item';
+    skillsVtid.innerHTML = '<span class="agents-fingerprint-label">Skills Registry VTID:</span><span class="agents-fingerprint-value">' + escapeHtml(skills && skills.vtid ? skills.vtid : 'N/A') + '</span>';
+    grid.appendChild(skillsVtid);
+
+    section.appendChild(grid);
+
+    return section;
+}
+
+/**
+ * VTID-01173: HTML escape helper
+ */
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+/**
+ * VTID-01173: Render the Registered Agents View
+ * Main entry point for /command-hub/agents/registered-agents/
+ */
+function renderRegisteredAgentsView() {
+    var container = document.createElement('div');
+    container.className = 'agents-registry-container';
+
+    // Auto-fetch if not loaded
+    if (!state.agentsRegistry.fetched && !state.agentsRegistry.loading) {
+        fetchAgentsRegistry();
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'agents-registry-header';
+
+    var title = document.createElement('h2');
+    title.textContent = 'Registered Agents';
+    header.appendChild(title);
+
+    var subtitle = document.createElement('p');
+    subtitle.className = 'agents-registry-subtitle';
+    subtitle.textContent = 'Worker Orchestrator APIs - VTID-01173';
+    header.appendChild(subtitle);
+
+    // Refresh button
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-secondary agents-refresh-btn';
+    refreshBtn.textContent = state.agentsRegistry.loading ? 'Loading...' : 'Refresh';
+    refreshBtn.disabled = state.agentsRegistry.loading;
+    refreshBtn.onclick = function() {
+        state.agentsRegistry.fetched = false;
+        fetchAgentsRegistry();
+    };
+    header.appendChild(refreshBtn);
+
+    container.appendChild(header);
+
+    // API Status Strip
+    container.appendChild(renderAgentsApiStatusStrip());
+
+    // Error panel (if any errors)
+    var errorPanel = renderAgentsErrorPanel();
+    if (errorPanel) {
+        container.appendChild(errorPanel);
+    }
+
+    // Loading state
+    if (state.agentsRegistry.loading) {
+        var loadingDiv = document.createElement('div');
+        loadingDiv.className = 'agents-loading';
+        loadingDiv.textContent = 'Loading Worker Orchestrator data...';
+        container.appendChild(loadingDiv);
+        return container;
+    }
+
+    // VTID Fingerprints
+    container.appendChild(renderVtidFingerprints());
+
+    // Orchestrator Summary Card
+    container.appendChild(renderOrchestratorSummaryCard());
+
+    // Subagents Table
+    container.appendChild(renderSubagentsTable());
+
+    // Skills Table
+    container.appendChild(renderSkillsTable());
+
+    // Raw JSON Debug sections
+    var debugSection = document.createElement('div');
+    debugSection.className = 'agents-debug-section';
+
+    var debugHeading = document.createElement('h3');
+    debugHeading.textContent = 'Debug Data';
+    debugSection.appendChild(debugHeading);
+
+    debugSection.appendChild(renderRawJsonDebug('orchestratorHealth', 'Orchestrator Health'));
+    debugSection.appendChild(renderRawJsonDebug('subagents', 'Subagents'));
+    debugSection.appendChild(renderRawJsonDebug('skills', 'Skills'));
+
+    container.appendChild(debugSection);
+
+    return container;
+}
+
+/**
+ * VTID-01173: Render the Agents Skills View
+ * Placeholder for /command-hub/agents/skills/ tab
+ */
+function renderAgentsSkillsView() {
+    var container = document.createElement('div');
+    container.className = 'agents-skills-view-container';
+
+    // Auto-fetch if not loaded
+    if (!state.agentsRegistry.fetched && !state.agentsRegistry.loading) {
+        fetchAgentsRegistry();
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'agents-registry-header';
+
+    var title = document.createElement('h2');
+    title.textContent = 'Skills Registry';
+    header.appendChild(title);
+
+    var subtitle = document.createElement('p');
+    subtitle.className = 'agents-registry-subtitle';
+    subtitle.textContent = 'Worker Orchestrator Skills - VTID-01173';
+    header.appendChild(subtitle);
+
+    container.appendChild(header);
+
+    // API Status Strip
+    container.appendChild(renderAgentsApiStatusStrip());
+
+    // Loading state
+    if (state.agentsRegistry.loading) {
+        var loadingDiv = document.createElement('div');
+        loadingDiv.className = 'agents-loading';
+        loadingDiv.textContent = 'Loading Skills data...';
+        container.appendChild(loadingDiv);
+        return container;
+    }
+
+    // Skills Table
+    container.appendChild(renderSkillsTable());
+
+    // Raw JSON Debug
+    container.appendChild(renderRawJsonDebug('skills', 'Skills'));
+
+    return container;
+}
+
 /**
  * VTID-0401: Sorts governance rules by the specified column.
  */
@@ -6211,13 +7730,7 @@ function renderGovernanceRulesView() {
     countLabel.textContent = filteredRules.length + ' of ' + state.governanceRules.length + ' rules';
     toolbar.appendChild(countLabel);
 
-    // Refresh button
-    const refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn';
-    refreshBtn.textContent = '↻';
-    refreshBtn.title = 'Refresh rules';
-    refreshBtn.onclick = () => { fetchGovernanceRules(); };
-    toolbar.appendChild(refreshBtn);
+    // SPEC-01: Per-view refresh buttons removed - use global refresh icon in header
 
     container.appendChild(toolbar);
 
@@ -6639,11 +8152,7 @@ function renderGovernanceEvaluationsView() {
     toolbar.appendChild(countLabel);
 
     // Refresh button
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn';
-    refreshBtn.textContent = '↻';
-    refreshBtn.onclick = function() { fetchGovernanceEvaluations(); };
-    toolbar.appendChild(refreshBtn);
+    // SPEC-01: Per-view refresh buttons removed - use global refresh icon in header
 
     container.appendChild(toolbar);
 
@@ -6954,15 +8463,7 @@ function renderGovernanceHistoryView() {
     toolbar.appendChild(countLabel);
 
     // Refresh button
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn';
-    refreshBtn.textContent = '↻';
-    refreshBtn.title = 'Refresh';
-    refreshBtn.onclick = function() {
-        state.governanceHistory.fetched = false;
-        fetchGovernanceHistory();
-    };
-    toolbar.appendChild(refreshBtn);
+    // SPEC-01: Per-view refresh buttons removed - use global refresh icon in header
 
     container.appendChild(toolbar);
 
@@ -8095,14 +9596,7 @@ function renderCommandHubEventsView() {
     spacer.className = 'spacer';
     toolbar.appendChild(spacer);
 
-    // Refresh button
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn';
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.onclick = function() {
-        fetchCommandHubEvents();
-    };
-    toolbar.appendChild(refreshBtn);
+    // SPEC-01: Per-view refresh buttons removed - use global refresh icon in header
 
     container.appendChild(toolbar);
 
@@ -8392,20 +9886,7 @@ function renderVtidsView() {
 
     container.appendChild(header);
 
-    // Toolbar with Refresh button
-    var toolbar = document.createElement('div');
-    toolbar.className = 'vtids-toolbar';
-
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn';
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.onclick = function() {
-        state.vtidProjection.fetched = false;
-        fetchVtidProjection();
-    };
-    toolbar.appendChild(refreshBtn);
-
-    container.appendChild(toolbar);
+    // SPEC-01: Per-view refresh buttons removed - use global refresh icon in header
 
     // Error banner (visible error, not console-only)
     if (state.vtidProjection.error) {
@@ -8772,22 +10253,7 @@ function renderOasisVtidLedgerView() {
     container.appendChild(header);
 
     // Toolbar with Refresh button
-    var toolbar = document.createElement('div');
-    toolbar.className = 'vtids-toolbar';
-
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn';
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.onclick = function() {
-        state.vtidProjection.fetched = false;
-        oasisVtidDetail.selectedVtid = null;
-        oasisVtidDetail.data = null;
-        oasisVtidDetail.events = [];
-        fetchVtidProjection();
-    };
-    toolbar.appendChild(refreshBtn);
-
-    container.appendChild(toolbar);
+    // SPEC-01: Per-view refresh buttons removed - use global refresh icon in header
 
     // Error banner
     if (state.vtidProjection.error) {
@@ -9063,15 +10529,7 @@ function renderMemoryGardenView() {
     };
     actions.appendChild(addDiaryBtn);
 
-    // Refresh button
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn btn-secondary';
-    refreshBtn.textContent = 'Refresh Progress';
-    refreshBtn.disabled = state.memoryGarden.loading;
-    refreshBtn.onclick = function() {
-        refreshMemoryGarden();
-    };
-    actions.appendChild(refreshBtn);
+    // SPEC-01: Per-view refresh buttons removed - use global refresh icon in header
 
     header.appendChild(actions);
     container.appendChild(header);
@@ -9449,103 +10907,70 @@ function renderDiaryEntryModal() {
 }
 
 /**
- * VTID-0601: Renders the Command Hub > Approvals view.
- * Shows pending PRs from Claude branches that can be merged/deployed.
- */
-/**
- * DEV-COMHU-2025-0012: Approvals view with local suppression + UNKNOWN VTID handling.
+ * VTID-01154: GitHub-Authoritative Approvals Feed (SPEC-02)
+ *
+ * Table columns (only these): PR | Branch | CI | Mergeable | VTID | Action
+ * Rules:
+ * - No descriptive text
+ * - No workflow explanations
+ * - No onboarding copy
+ * - No "how it works" sections
+ * - Display "—" if VTID not found (never "UNKNOWN")
+ * - Approve button appears only when CI = pass AND mergeable = true
  */
 function renderApprovalsView() {
     var container = document.createElement('div');
     container.className = 'approvals-container';
 
-    // Auto-fetch approvals if not yet fetched
-    if (!state.approvals.fetched && !state.approvals.loading) {
-        fetchApprovals();
+    // Auto-fetch GitHub feed if not yet fetched
+    if (!state.approvals.feedFetched && !state.approvals.feedLoading) {
+        fetchGitHubFeed();
     }
 
-    // Header
+    // Header - minimal, no descriptions
     var header = document.createElement('div');
     header.className = 'approvals-header';
 
     var title = document.createElement('h2');
-    title.textContent = 'Autonomous Safe Merge & Deploy';
+    title.textContent = 'Approvals';
     header.appendChild(title);
 
-    var subtitle = document.createElement('p');
-    subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Review and approve pending PRs for merge and deploy. VTID-0601: No GitHub UI required.';
-    header.appendChild(subtitle);
-
-    // DEV-COMHU-2025-0012: Decisions mode label
-    var decisionsLabel = document.createElement('div');
-    decisionsLabel.className = 'approvals-decisions-label';
-    decisionsLabel.textContent = 'Decisions: Local (DEV-COMHU-2025-0012)';
-    header.appendChild(decisionsLabel);
-
-    // Refresh button
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn btn-secondary';
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.onclick = function() {
-        state.approvals.fetched = false;
-        fetchApprovals();
-    };
-    header.appendChild(refreshBtn);
+    // SPEC-01: Per-view refresh buttons removed - use global refresh icon in header
 
     container.appendChild(header);
 
-    // DEV-COMHU-2025-0013: Fingerprint for deployment verification (muted style)
-    var fingerprint = document.createElement('div');
-    fingerprint.className = 'view-fingerprint-muted';
-    fingerprint.textContent = 'Task Mgmt v2: OASIS (VTID-01005)';
-    container.appendChild(fingerprint);
-
     // Error display
-    if (state.approvals.error) {
+    if (state.approvals.feedError) {
         var errorDiv = document.createElement('div');
         errorDiv.className = 'approvals-error';
-        errorDiv.textContent = 'Error: ' + state.approvals.error;
+        errorDiv.textContent = 'Error: ' + state.approvals.feedError;
         container.appendChild(errorDiv);
     }
 
-    // DEV-COMHU-2025-0012: Filter out dismissed items using localStorage suppression
-    var visibleItems = state.approvals.items.filter(function(item) {
-        var repo = item.repo || 'unknown';
-        var prNumber = item.pr_number;
-        return !isApprovalDismissed(repo, prNumber);
-    });
+    // Get feed items
+    var feedItems = state.approvals.feedItems || [];
 
-    // Pending Approvals Section
-    var pendingSection = document.createElement('div');
-    pendingSection.className = 'approvals-section';
+    // Main content
+    var contentSection = document.createElement('div');
+    contentSection.className = 'approvals-section';
 
-    var pendingHeader = document.createElement('div');
-    pendingHeader.className = 'approvals-section-header';
-    pendingHeader.innerHTML = '<span>⏳</span> Pending Approvals (' + visibleItems.length + ')';
-    pendingSection.appendChild(pendingHeader);
-
-    var pendingContent = document.createElement('div');
-    pendingContent.className = 'approvals-section-content';
-
-    if (state.approvals.loading) {
-        pendingContent.innerHTML = '<div class="placeholder-content">Loading approvals from GitHub...</div>';
-    } else if (visibleItems.length === 0) {
-        // Empty state
+    if (state.approvals.feedLoading) {
+        contentSection.innerHTML = '<div class="placeholder-content">Loading...</div>';
+    } else if (feedItems.length === 0) {
+        // Empty state - minimal
         var emptyState = document.createElement('div');
         emptyState.className = 'approvals-empty-state';
-        emptyState.innerHTML = '<div class="approvals-empty-icon">✓</div>' +
-            '<div class="approvals-empty-title">No pending approvals</div>' +
-            '<div class="approvals-empty-subtitle">All PRs from Claude branches have been processed.</div>';
-        pendingContent.appendChild(emptyState);
+        emptyState.innerHTML = '<div class="approvals-empty-title">No open PRs</div>';
+        contentSection.appendChild(emptyState);
     } else {
-        // Real approvals table
+        // SPEC-02: GitHub-authoritative table
         var table = document.createElement('table');
         table.className = 'approvals-table';
 
         var thead = document.createElement('thead');
         var headerRow = document.createElement('tr');
-        ['VTID', 'PR', 'Branch', 'Service', 'CI', 'Gov', 'Action', 'Actions'].forEach(function(h) {
+        // SPEC-02: Only these columns
+        ['PR', 'Branch', 'CI', 'Mergeable', 'VTID', 'Action'].forEach(function(h) {
             var th = document.createElement('th');
             th.textContent = h;
             headerRow.appendChild(th);
@@ -9555,22 +10980,8 @@ function renderApprovalsView() {
 
         var tbody = document.createElement('tbody');
 
-        visibleItems.forEach(function(item) {
+        feedItems.forEach(function(item) {
             var row = document.createElement('tr');
-            var repo = item.repo || 'unknown';
-            var prNumber = item.pr_number;
-
-            // DEV-COMHU-2025-0012: Check if VTID is UNKNOWN
-            var vtidValue = item.vtid || 'UNKNOWN';
-            var isUnknownVtid = vtidValue === 'UNKNOWN' || vtidValue === '' || !vtidValue;
-
-            // VTID
-            var vtidCell = document.createElement('td');
-            var vtidBadge = document.createElement('span');
-            vtidBadge.className = 'vtid-badge' + (isUnknownVtid ? ' vtid-badge-unknown' : '');
-            vtidBadge.textContent = vtidValue;
-            vtidCell.appendChild(vtidBadge);
-            row.appendChild(vtidCell);
 
             // PR number with link
             var prCell = document.createElement('td');
@@ -9578,147 +10989,99 @@ function renderApprovalsView() {
             prLink.href = item.pr_url || '#';
             prLink.target = '_blank';
             prLink.className = 'approvals-pr-link';
-            prLink.textContent = '#' + prNumber;
-            prLink.title = item.pr_title || '';
+            prLink.textContent = '#' + item.pr_number;
             prCell.appendChild(prLink);
             row.appendChild(prCell);
 
             // Branch
             var branchCell = document.createElement('td');
             branchCell.className = 'approvals-branch-cell';
-            branchCell.textContent = item.branch ? (item.branch.length > 30 ? item.branch.substring(0, 30) + '...' : item.branch) : '-';
-            branchCell.title = item.branch || '';
+            var branchText = item.branch || '';
+            branchCell.textContent = branchText.length > 35 ? branchText.substring(0, 35) + '...' : branchText;
+            branchCell.title = branchText;
             row.appendChild(branchCell);
 
-            // Service
-            var serviceCell = document.createElement('td');
-            if (item.service) {
-                var serviceBadge = document.createElement('span');
-                serviceBadge.className = 'approvals-service-badge';
-                serviceBadge.textContent = item.service;
-                serviceCell.appendChild(serviceBadge);
-            } else {
-                serviceCell.textContent = '-';
-            }
-            row.appendChild(serviceCell);
-
-            // CI Status
+            // CI Status - SPEC-02: pass | fail | running
             var ciCell = document.createElement('td');
             var ciIndicator = document.createElement('span');
             ciIndicator.className = 'approvals-status-indicator';
-            if (item.ci_status === 'pass') {
-                ciIndicator.innerHTML = '<span class="status-pass">✓</span> Pass';
-            } else if (item.ci_status === 'fail') {
-                ciIndicator.innerHTML = '<span class="status-fail">✗</span> Fail';
-            } else if (item.ci_status === 'pending') {
-                ciIndicator.innerHTML = '<span class="status-pending">⋯</span> Pending';
-            } else {
-                ciIndicator.innerHTML = '<span class="status-unknown">?</span> Unknown';
+            if (item.ci_state === 'pass') {
+                ciIndicator.innerHTML = '<span class="status-pass">✓</span> pass';
+            } else if (item.ci_state === 'fail') {
+                ciIndicator.innerHTML = '<span class="status-fail">✗</span> fail';
+            } else if (item.ci_state === 'running') {
+                ciIndicator.innerHTML = '<span class="status-pending">⋯</span> running';
             }
             ciCell.appendChild(ciIndicator);
             row.appendChild(ciCell);
 
-            // Governance Status
-            var govCell = document.createElement('td');
-            var govIndicator = document.createElement('span');
-            govIndicator.className = 'approvals-status-indicator';
-            if (item.governance_status === 'pass') {
-                govIndicator.innerHTML = '<span class="status-pass">✓</span> Pass';
-            } else if (item.governance_status === 'fail') {
-                govIndicator.innerHTML = '<span class="status-fail">✗</span> Blocked';
+            // Mergeable - SPEC-02: true | false
+            var mergeableCell = document.createElement('td');
+            var mergeableIndicator = document.createElement('span');
+            mergeableIndicator.className = 'approvals-status-indicator';
+            if (item.mergeable === true) {
+                mergeableIndicator.innerHTML = '<span class="status-pass">✓</span> true';
             } else {
-                govIndicator.innerHTML = '<span class="status-unknown">?</span> Unknown';
+                mergeableIndicator.innerHTML = '<span class="status-fail">✗</span> false';
             }
-            govCell.appendChild(govIndicator);
-            row.appendChild(govCell);
+            mergeableCell.appendChild(mergeableIndicator);
+            row.appendChild(mergeableCell);
 
-            // Action type
+            // VTID - SPEC-02: Display "—" if not found (never "UNKNOWN")
+            var vtidCell = document.createElement('td');
+            if (item.vtid) {
+                var vtidBadge = document.createElement('span');
+                vtidBadge.className = 'vtid-badge';
+                vtidBadge.textContent = item.vtid;
+                vtidCell.appendChild(vtidBadge);
+            } else {
+                vtidCell.textContent = '—';
+            }
+            row.appendChild(vtidCell);
+
+            // Action button
             var actionCell = document.createElement('td');
-            var actionBadge = document.createElement('span');
-            if (item.type === 'merge+deploy') {
-                actionBadge.className = 'approvals-action-badge approvals-action-merge-deploy';
-                actionBadge.textContent = 'MERGE+DEPLOY';
-            } else if (item.type === 'deploy') {
-                actionBadge.className = 'approvals-action-badge approvals-action-deploy';
-                actionBadge.textContent = 'DEPLOY';
+            actionCell.className = 'approvals-actions-cell';
+
+            // VTID-01168: Approve button appears only when:
+            // - CI = pass
+            // - mergeable = true
+            // - VTID is present (not null/undefined)
+            var hasValidVtid = item.vtid && item.vtid !== 'UNKNOWN';
+            var canApprove = item.ci_state === 'pass' && item.mergeable === true && hasValidVtid;
+
+            if (canApprove) {
+                var approveBtn = document.createElement('button');
+                approveBtn.className = 'btn btn-success btn-sm';
+                approveBtn.textContent = 'Approve';
+                approveBtn.disabled = state.approvals.feedLoading;
+                approveBtn.onclick = function() {
+                    if (confirm('Approve PR #' + item.pr_number + '?\n\nThis will trigger a safe merge + auto-deploy.')) {
+                        approveFeedItem(item.pr_number, item.branch, item.vtid);
+                    }
+                };
+                actionCell.appendChild(approveBtn);
+            } else if (!hasValidVtid && item.ci_state === 'pass' && item.mergeable === true) {
+                // VTID-01168: Show "VTID Required" when only VTID is blocking approval
+                var vtidRequired = document.createElement('span');
+                vtidRequired.className = 'status-warning';
+                vtidRequired.textContent = 'VTID Required';
+                vtidRequired.title = 'Approval blocked: VTID must be in branch name or PR title';
+                actionCell.appendChild(vtidRequired);
             } else {
-                actionBadge.className = 'approvals-action-badge approvals-action-merge';
-                actionBadge.textContent = 'MERGE';
+                // No approve button when CI/mergeable conditions not met
+                actionCell.textContent = '—';
             }
-            actionCell.appendChild(actionBadge);
+
             row.appendChild(actionCell);
-
-            // Actions buttons
-            var actionsCell = document.createElement('td');
-            actionsCell.className = 'approvals-actions-cell';
-
-            // DEV-COMHU-2025-0012: Disable Approve if UNKNOWN VTID
-            var canApprove = item.ci_status === 'pass' && item.governance_status === 'pass' && !isUnknownVtid;
-
-            var approveBtn = document.createElement('button');
-            approveBtn.className = 'btn btn-success btn-sm';
-            approveBtn.textContent = '✓ Approve';
-            approveBtn.disabled = !canApprove || state.approvals.loading;
-            if (isUnknownVtid) {
-                approveBtn.title = 'Cannot approve: VTID is UNKNOWN';
-            } else {
-                approveBtn.title = canApprove ? 'Merge PR' + (item.service ? ' and trigger deploy' : '') : 'CI or Governance not passed';
-            }
-            approveBtn.onclick = function() {
-                if (confirm('Approve PR #' + prNumber + '?\n\nThis will merge the PR' + (item.service ? ' and trigger a deploy to ' + item.service : '') + '.')) {
-                    approveApprovalItem(item.id);
-                }
-            };
-            actionsCell.appendChild(approveBtn);
-
-            // DEV-COMHU-2025-0012: Deny button becomes Dismiss for local suppression
-            var denyBtn = document.createElement('button');
-            denyBtn.className = 'btn btn-danger btn-sm';
-            denyBtn.textContent = isUnknownVtid ? 'Dismiss' : '✗ Deny';
-            denyBtn.disabled = state.approvals.loading;
-            denyBtn.title = isUnknownVtid ? 'Dismiss this item (hides locally)' : 'Deny this PR';
-            denyBtn.onclick = function() {
-                if (isUnknownVtid) {
-                    // Local dismiss only - no backend call
-                    if (confirm('Dismiss this item?\n\nThis will hide the item locally (localStorage suppression).')) {
-                        dismissApproval(repo, prNumber);
-                        // DEV-COMHU-2025-0013: Clear toast confirmation for dismiss
-                        showToast('Dismissed locally (DEV-COMHU-2025-0012)', 'info');
-                        renderApp();
-                    }
-                } else {
-                    var reason = prompt('Reason for denial (optional):');
-                    if (reason !== null) {
-                        // Also dismiss locally to prevent zombie returns
-                        dismissApproval(repo, prNumber);
-                        denyApprovalItem(item.id, reason);
-                    }
-                }
-            };
-            actionsCell.appendChild(denyBtn);
-
-            row.appendChild(actionsCell);
             tbody.appendChild(row);
         });
 
         table.appendChild(tbody);
-        pendingContent.appendChild(table);
+        contentSection.appendChild(table);
     }
 
-    pendingSection.appendChild(pendingContent);
-    container.appendChild(pendingSection);
-
-    // Info section
-    var infoSection = document.createElement('div');
-    infoSection.className = 'approvals-info';
-    infoSection.innerHTML = '<div class="approvals-info-title">VTID-0601 Workflow</div>' +
-        '<div class="approvals-info-content">' +
-        '1. Claude creates PR on <code>claude/*</code> branch<br>' +
-        '2. CI runs automatically<br>' +
-        '3. Governance evaluation runs<br>' +
-        '4. <strong>You approve here</strong> → Vitana merges + deploys<br>' +
-        '5. No GitHub UI or Cloud Shell required</div>';
-    container.appendChild(infoSection);
+    container.appendChild(contentSection);
 
     return container;
 }
@@ -10737,7 +12100,7 @@ function renderOperatorHistory() {
     const container = document.createElement('div');
     container.className = 'history-container';
 
-    // Header with refresh button
+    // Header
     const header = document.createElement('div');
     header.className = 'history-header';
 
@@ -10745,24 +12108,7 @@ function renderOperatorHistory() {
     title.textContent = 'Deployment History';
     header.appendChild(title);
 
-    const refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn history-refresh-btn';
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.onclick = async () => {
-        state.historyLoading = true;
-        state.historyError = null;
-        renderApp();
-        try {
-            state.versionHistory = await fetchDeploymentHistory();
-            state.historyError = null;
-        } catch (error) {
-            state.historyError = error.message;
-        } finally {
-            state.historyLoading = false;
-            renderApp();
-        }
-    };
-    header.appendChild(refreshBtn);
+    // SPEC-01: Per-view refresh buttons removed - use global refresh icon in header
 
     container.appendChild(header);
 
@@ -15556,6 +16902,17 @@ document.addEventListener('DOMContentLoaded', () => {
             renderApp();
         }).catch(function(err) {
             console.error('[VTID-01049] fetchMeContext failed:', err);
+        });
+
+        // VTID-01171: Fetch auth identity for profile display
+        fetchAuthMe().then(function(data) {
+            if (data) {
+                console.log('[VTID-01171] Auth identity loaded:', data.identity?.email);
+            }
+            // Re-render to update profile capsule with real data
+            renderApp();
+        }).catch(function(err) {
+            console.error('[VTID-01171] fetchAuthMe failed:', err);
         });
 
         fetchTasks();

@@ -1,5 +1,6 @@
 /**
  * VTID-01158: ORB Router Fix — Enforce OASIS-Only Task Discovery
+ * VTID-01170: Read-Path Lock - ORB MUST use vtid_ledger + OASIS events only
  *
  * HARD GOVERNANCE (NON-NEGOTIABLE):
  * 1. For any user query about tasks/VTIDs/scheduled/pending/in progress/planning/status,
@@ -9,6 +10,11 @@
  *    "OASIS not reachable — cannot provide reliable task status."
  * 4. ORB must never present DEV-* as "scheduled tasks."
  *    DEV-* may only appear under ignored[] with reason ignored_by_contract.
+ *
+ * VTID-01170 Read-Path Lock (ENFORCED):
+ * - Status & board → vtid_ledger ONLY (via discover endpoint)
+ * - Timeline & logs → oasis_events ONLY
+ * - No screen may derive status from anything else
  *
  * Intent Detection Triggers (EN/DE):
  * - task|tasks|vtid|scheduled|pending|in progress|planned|geplant|planung|status|board|kanban|allocated

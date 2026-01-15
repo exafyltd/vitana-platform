@@ -2384,6 +2384,39 @@ const state = {
         longevityLoading: false,
         longevityError: null,
         showDiaryModal: false  // Diary entry modal state
+    },
+
+    // VTID-01173: Agents Control Plane v1 - Worker Orchestrator Registry
+    agentsRegistry: {
+        // API response data
+        orchestratorHealth: null,
+        subagents: null,
+        skills: null,
+        // Loading states
+        loading: false,
+        fetched: false,
+        // API call timing (ms)
+        timing: {
+            orchestratorHealth: null,
+            subagents: null,
+            skills: null
+        },
+        // API status codes
+        status: {
+            orchestratorHealth: null,
+            subagents: null,
+            skills: null
+        },
+        // Error state
+        errors: {
+            orchestratorHealth: null,
+            subagents: null,
+            skills: null
+        },
+        // Raw JSON debug toggle states
+        showRawHealth: false,
+        showRawSubagents: false,
+        showRawSkills: false
     }
 };
 
@@ -4204,6 +4237,12 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'admin' && tab === 'users') {
         // VTID-01172: Admin Dev Users - exafy_admin toggle
         container.appendChild(renderAdminDevUsersView());
+    } else if (moduleKey === 'agents' && tab === 'registered-agents') {
+        // VTID-01173: Agents Control Plane v1 - Registered Agents (Worker Orchestrator)
+        container.appendChild(renderRegisteredAgentsView());
+    } else if (moduleKey === 'agents' && tab === 'skills') {
+        // VTID-01173: Agents Control Plane v1 - Skills Registry
+        container.appendChild(renderAgentsSkillsView());
     } else {
         // Placeholder for other modules
         const placeholder = document.createElement('div');
@@ -6855,6 +6894,680 @@ function renderAdminDevUsersView() {
     }
 
     container.appendChild(content);
+
+    return container;
+}
+
+// ===========================================================================
+// VTID-01173: Agents Control Plane v1 - Worker Orchestrator Registry
+// ===========================================================================
+
+/**
+ * VTID-01173: Fetch data from Worker Orchestrator APIs
+ * Calls all 3 endpoints in parallel and records timing
+ */
+async function fetchAgentsRegistry() {
+    if (state.agentsRegistry.loading) return;
+
+    state.agentsRegistry.loading = true;
+    state.agentsRegistry.errors = { orchestratorHealth: null, subagents: null, skills: null };
+    renderApp();
+
+    var endpoints = [
+        { key: 'orchestratorHealth', url: '/api/v1/worker/orchestrator/health' },
+        { key: 'subagents', url: '/api/v1/worker/subagents' },
+        { key: 'skills', url: '/api/v1/worker/skills' }
+    ];
+
+    var results = await Promise.all(endpoints.map(async function(ep) {
+        var startTime = Date.now();
+        try {
+            var response = await fetch(ep.url, {
+                headers: withVitanaContextHeaders({})
+            });
+            var elapsed = Date.now() - startTime;
+            var data = null;
+            var errorText = null;
+
+            if (response.ok) {
+                data = await response.json();
+            } else {
+                errorText = await response.text().catch(function() { return 'Unknown error'; });
+            }
+
+            return {
+                key: ep.key,
+                status: response.status,
+                timing: elapsed,
+                data: data,
+                error: response.ok ? null : { status: response.status, text: errorText.substring(0, 500) }
+            };
+        } catch (e) {
+            var elapsed = Date.now() - startTime;
+            return {
+                key: ep.key,
+                status: 0,
+                timing: elapsed,
+                data: null,
+                error: { status: 0, text: e.message }
+            };
+        }
+    }));
+
+    // Process results
+    results.forEach(function(r) {
+        state.agentsRegistry[r.key] = r.data;
+        state.agentsRegistry.timing[r.key] = r.timing;
+        state.agentsRegistry.status[r.key] = r.status;
+        state.agentsRegistry.errors[r.key] = r.error;
+    });
+
+    state.agentsRegistry.loading = false;
+    state.agentsRegistry.fetched = true;
+    renderApp();
+}
+
+/**
+ * VTID-01173: Render the API Status Strip
+ * Shows status of each endpoint with timing
+ */
+function renderAgentsApiStatusStrip() {
+    var strip = document.createElement('div');
+    strip.className = 'agents-api-status-strip';
+
+    var endpoints = [
+        { key: 'orchestratorHealth', label: 'Orchestrator Health' },
+        { key: 'subagents', label: 'Subagents' },
+        { key: 'skills', label: 'Skills' }
+    ];
+
+    endpoints.forEach(function(ep) {
+        var status = state.agentsRegistry.status[ep.key];
+        var timing = state.agentsRegistry.timing[ep.key];
+        var error = state.agentsRegistry.errors[ep.key];
+
+        var item = document.createElement('div');
+        item.className = 'agents-api-status-item';
+
+        var icon = document.createElement('span');
+        icon.className = 'agents-api-status-icon';
+        if (status === 200) {
+            icon.textContent = '\u2705';
+            item.classList.add('agents-api-status-ok');
+        } else if (status === null) {
+            icon.textContent = '\u23F3';
+            item.classList.add('agents-api-status-pending');
+        } else {
+            icon.textContent = '\u274C';
+            item.classList.add('agents-api-status-error');
+        }
+        item.appendChild(icon);
+
+        var label = document.createElement('span');
+        label.className = 'agents-api-status-label';
+        label.textContent = ep.label + ': ';
+        item.appendChild(label);
+
+        var statusText = document.createElement('span');
+        statusText.className = 'agents-api-status-value';
+        if (status === null) {
+            statusText.textContent = 'pending';
+        } else {
+            statusText.textContent = status + (timing !== null ? ' (' + timing + 'ms)' : '');
+        }
+        item.appendChild(statusText);
+
+        strip.appendChild(item);
+    });
+
+    return strip;
+}
+
+/**
+ * VTID-01173: Render error panel for failed API calls
+ */
+function renderAgentsErrorPanel() {
+    var errors = state.agentsRegistry.errors;
+    var hasErrors = errors.orchestratorHealth || errors.subagents || errors.skills;
+
+    if (!hasErrors) return null;
+
+    var panel = document.createElement('div');
+    panel.className = 'agents-error-panel';
+
+    var heading = document.createElement('h4');
+    heading.textContent = 'API Errors';
+    panel.appendChild(heading);
+
+    ['orchestratorHealth', 'subagents', 'skills'].forEach(function(key) {
+        var err = errors[key];
+        if (!err) return;
+
+        var item = document.createElement('div');
+        item.className = 'agents-error-item';
+
+        var endpoint = document.createElement('strong');
+        endpoint.textContent = key + ': ';
+        item.appendChild(endpoint);
+
+        var statusSpan = document.createElement('span');
+        statusSpan.textContent = 'HTTP ' + err.status;
+        item.appendChild(statusSpan);
+
+        if (err.text) {
+            var textPre = document.createElement('pre');
+            textPre.className = 'agents-error-text';
+            textPre.textContent = err.text;
+            item.appendChild(textPre);
+        }
+
+        panel.appendChild(item);
+    });
+
+    return panel;
+}
+
+/**
+ * VTID-01173: Render Orchestrator Summary Card
+ */
+function renderOrchestratorSummaryCard() {
+    var health = state.agentsRegistry.orchestratorHealth;
+
+    var card = document.createElement('div');
+    card.className = 'agents-card agents-orchestrator-card';
+
+    var heading = document.createElement('h3');
+    heading.textContent = 'Orchestrator Summary';
+    card.appendChild(heading);
+
+    if (!health) {
+        var empty = document.createElement('p');
+        empty.className = 'agents-card-empty';
+        empty.textContent = 'No data available';
+        card.appendChild(empty);
+        return card;
+    }
+
+    // Service info
+    var infoGrid = document.createElement('div');
+    infoGrid.className = 'agents-info-grid';
+
+    var fields = [
+        { label: 'Service', value: health.service || 'N/A' },
+        { label: 'Version', value: health.version || 'N/A' },
+        { label: 'VTID', value: health.vtid || 'N/A' },
+        { label: 'Timestamp', value: health.timestamp ? new Date(health.timestamp).toLocaleString() : 'N/A' }
+    ];
+
+    fields.forEach(function(f) {
+        var row = document.createElement('div');
+        row.className = 'agents-info-row';
+        row.innerHTML = '<span class="agents-info-label">' + f.label + ':</span><span class="agents-info-value">' + escapeHtml(f.value) + '</span>';
+        infoGrid.appendChild(row);
+    });
+
+    card.appendChild(infoGrid);
+
+    // Subagents summary
+    if (health.subagents && health.subagents.length > 0) {
+        var subagentsSection = document.createElement('div');
+        subagentsSection.className = 'agents-orchestrator-subagents';
+
+        var subHeading = document.createElement('h4');
+        subHeading.textContent = 'Registered Subagents (' + health.subagents.length + ')';
+        subagentsSection.appendChild(subHeading);
+
+        var subList = document.createElement('div');
+        subList.className = 'agents-subagent-badges';
+
+        health.subagents.forEach(function(sub) {
+            var badge = document.createElement('span');
+            badge.className = 'agents-subagent-badge';
+            var statusClass = (sub.status || '').toLowerCase() === 'active' ? 'badge-success' : 'badge-secondary';
+            badge.classList.add(statusClass);
+            badge.textContent = sub.id + ' (' + (sub.domain || 'default') + ')';
+            subList.appendChild(badge);
+        });
+
+        subagentsSection.appendChild(subList);
+        card.appendChild(subagentsSection);
+    }
+
+    // Endpoints summary
+    if (health.endpoints) {
+        var endpointsSection = document.createElement('div');
+        endpointsSection.className = 'agents-orchestrator-endpoints';
+
+        var epHeading = document.createElement('h4');
+        epHeading.textContent = 'Endpoint Keys';
+        endpointsSection.appendChild(epHeading);
+
+        var epList = document.createElement('div');
+        epList.className = 'agents-endpoint-list';
+
+        Object.keys(health.endpoints).forEach(function(key) {
+            var epItem = document.createElement('span');
+            epItem.className = 'agents-endpoint-item';
+            epItem.textContent = key;
+            epList.appendChild(epItem);
+        });
+
+        endpointsSection.appendChild(epList);
+        card.appendChild(endpointsSection);
+    }
+
+    return card;
+}
+
+/**
+ * VTID-01173: Render Subagents Table
+ */
+function renderSubagentsTable() {
+    var subagents = state.agentsRegistry.subagents;
+
+    var section = document.createElement('div');
+    section.className = 'agents-section agents-subagents-section';
+
+    var heading = document.createElement('h3');
+    heading.textContent = 'Subagents';
+    section.appendChild(heading);
+
+    if (!subagents || !subagents.subagents || subagents.subagents.length === 0) {
+        var empty = document.createElement('p');
+        empty.className = 'agents-section-empty';
+        empty.textContent = 'No subagents registered';
+        section.appendChild(empty);
+        return section;
+    }
+
+    var table = document.createElement('table');
+    table.className = 'agents-table agents-subagents-table';
+
+    // Header
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    ['ID', 'Domain', 'Allowed Paths', 'Guardrails', 'Default Budget'].forEach(function(h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    // Body
+    var tbody = document.createElement('tbody');
+    subagents.subagents.forEach(function(sub) {
+        var row = document.createElement('tr');
+
+        // ID
+        var idCell = document.createElement('td');
+        idCell.className = 'agents-table-id';
+        idCell.textContent = sub.id || 'N/A';
+        row.appendChild(idCell);
+
+        // Domain
+        var domainCell = document.createElement('td');
+        domainCell.textContent = sub.domain || 'default';
+        row.appendChild(domainCell);
+
+        // Allowed Paths
+        var pathsCell = document.createElement('td');
+        pathsCell.className = 'agents-table-paths';
+        if (sub.allowed_paths && sub.allowed_paths.length > 0) {
+            var pathsList = document.createElement('ul');
+            pathsList.className = 'agents-list-compact';
+            sub.allowed_paths.forEach(function(p) {
+                var li = document.createElement('li');
+                li.textContent = p;
+                pathsList.appendChild(li);
+            });
+            pathsCell.appendChild(pathsList);
+        } else {
+            pathsCell.textContent = '-';
+        }
+        row.appendChild(pathsCell);
+
+        // Guardrails
+        var guardrailsCell = document.createElement('td');
+        guardrailsCell.className = 'agents-table-guardrails';
+        if (sub.guardrails && sub.guardrails.length > 0) {
+            var guardList = document.createElement('ul');
+            guardList.className = 'agents-list-compact';
+            sub.guardrails.forEach(function(g) {
+                var li = document.createElement('li');
+                li.textContent = g;
+                guardList.appendChild(li);
+            });
+            guardrailsCell.appendChild(guardList);
+        } else {
+            guardrailsCell.textContent = '-';
+        }
+        row.appendChild(guardrailsCell);
+
+        // Default Budget
+        var budgetCell = document.createElement('td');
+        if (sub.default_budget) {
+            budgetCell.innerHTML = 'Files: ' + (sub.default_budget.max_files || 'N/A') + '<br>Dirs: ' + (sub.default_budget.max_directories || 'N/A');
+        } else {
+            budgetCell.textContent = '-';
+        }
+        row.appendChild(budgetCell);
+
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    section.appendChild(table);
+
+    return section;
+}
+
+/**
+ * VTID-01173: Render Skills Table
+ */
+function renderSkillsTable() {
+    var skillsData = state.agentsRegistry.skills;
+
+    var section = document.createElement('div');
+    section.className = 'agents-section agents-skills-section';
+
+    var heading = document.createElement('h3');
+    heading.textContent = 'Skills Registry';
+    section.appendChild(heading);
+
+    if (!skillsData || !skillsData.skills || skillsData.skills.length === 0) {
+        var empty = document.createElement('p');
+        empty.className = 'agents-section-empty';
+        empty.textContent = 'No skills registered';
+        section.appendChild(empty);
+        return section;
+    }
+
+    var table = document.createElement('table');
+    table.className = 'agents-table agents-skills-table';
+
+    // Header
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    ['Skill ID', 'Name', 'Domain', 'Rule ID'].forEach(function(h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    // Body
+    var tbody = document.createElement('tbody');
+    skillsData.skills.forEach(function(skill) {
+        var row = document.createElement('tr');
+
+        // Skill ID
+        var idCell = document.createElement('td');
+        idCell.className = 'agents-table-id';
+        idCell.textContent = skill.skill_id || skill.id || 'N/A';
+        row.appendChild(idCell);
+
+        // Name
+        var nameCell = document.createElement('td');
+        nameCell.textContent = skill.name || 'N/A';
+        row.appendChild(nameCell);
+
+        // Domain
+        var domainCell = document.createElement('td');
+        domainCell.textContent = skill.domain || 'default';
+        row.appendChild(domainCell);
+
+        // Rule ID
+        var ruleCell = document.createElement('td');
+        ruleCell.textContent = skill.rule_id || '-';
+        row.appendChild(ruleCell);
+
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    section.appendChild(table);
+
+    // Preflight Chains Summary
+    if (skillsData.preflight_chains) {
+        var chainsSection = document.createElement('div');
+        chainsSection.className = 'agents-preflight-chains';
+
+        var chainsHeading = document.createElement('h4');
+        chainsHeading.textContent = 'Preflight Chains';
+        chainsSection.appendChild(chainsHeading);
+
+        var chains = skillsData.preflight_chains;
+        ['frontend', 'backend', 'memory'].forEach(function(chainType) {
+            if (chains[chainType] && chains[chainType].length > 0) {
+                var chainDiv = document.createElement('div');
+                chainDiv.className = 'agents-chain-row';
+
+                var chainLabel = document.createElement('strong');
+                chainLabel.textContent = chainType + ': ';
+                chainDiv.appendChild(chainLabel);
+
+                var chainValue = document.createElement('span');
+                chainValue.textContent = chains[chainType].join(' \u2192 ');
+                chainDiv.appendChild(chainValue);
+
+                chainsSection.appendChild(chainDiv);
+            }
+        });
+
+        section.appendChild(chainsSection);
+    }
+
+    return section;
+}
+
+/**
+ * VTID-01173: Render Raw JSON Debug Section
+ */
+function renderRawJsonDebug(key, label) {
+    var data = state.agentsRegistry[key];
+    var showKey = 'showRaw' + key.charAt(0).toUpperCase() + key.slice(1);
+    var isExpanded = state.agentsRegistry[showKey];
+
+    var section = document.createElement('div');
+    section.className = 'agents-raw-json-section';
+
+    var toggle = document.createElement('button');
+    toggle.className = 'agents-raw-json-toggle';
+    toggle.textContent = (isExpanded ? '\u25BC' : '\u25B6') + ' Show raw JSON: ' + label;
+    toggle.onclick = function() {
+        state.agentsRegistry[showKey] = !state.agentsRegistry[showKey];
+        renderApp();
+    };
+    section.appendChild(toggle);
+
+    if (isExpanded && data) {
+        var pre = document.createElement('pre');
+        pre.className = 'agents-raw-json-content';
+        pre.textContent = JSON.stringify(data, null, 2);
+        section.appendChild(pre);
+    }
+
+    return section;
+}
+
+/**
+ * VTID-01173: Render VTID Fingerprints Section
+ */
+function renderVtidFingerprints() {
+    var health = state.agentsRegistry.orchestratorHealth;
+    var skills = state.agentsRegistry.skills;
+
+    var section = document.createElement('div');
+    section.className = 'agents-fingerprints-section';
+
+    var heading = document.createElement('h4');
+    heading.textContent = 'VTID Fingerprints';
+    section.appendChild(heading);
+
+    var grid = document.createElement('div');
+    grid.className = 'agents-fingerprints-grid';
+
+    // Worker Orchestrator VTID
+    var orchVtid = document.createElement('div');
+    orchVtid.className = 'agents-fingerprint-item';
+    orchVtid.innerHTML = '<span class="agents-fingerprint-label">Worker Orchestrator VTID:</span><span class="agents-fingerprint-value">' + escapeHtml(health && health.vtid ? health.vtid : 'N/A') + '</span>';
+    grid.appendChild(orchVtid);
+
+    // Skills Registry VTID
+    var skillsVtid = document.createElement('div');
+    skillsVtid.className = 'agents-fingerprint-item';
+    skillsVtid.innerHTML = '<span class="agents-fingerprint-label">Skills Registry VTID:</span><span class="agents-fingerprint-value">' + escapeHtml(skills && skills.vtid ? skills.vtid : 'N/A') + '</span>';
+    grid.appendChild(skillsVtid);
+
+    section.appendChild(grid);
+
+    return section;
+}
+
+/**
+ * VTID-01173: HTML escape helper
+ */
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+/**
+ * VTID-01173: Render the Registered Agents View
+ * Main entry point for /command-hub/agents/registered-agents/
+ */
+function renderRegisteredAgentsView() {
+    var container = document.createElement('div');
+    container.className = 'agents-registry-container';
+
+    // Auto-fetch if not loaded
+    if (!state.agentsRegistry.fetched && !state.agentsRegistry.loading) {
+        fetchAgentsRegistry();
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'agents-registry-header';
+
+    var title = document.createElement('h2');
+    title.textContent = 'Registered Agents';
+    header.appendChild(title);
+
+    var subtitle = document.createElement('p');
+    subtitle.className = 'agents-registry-subtitle';
+    subtitle.textContent = 'Worker Orchestrator APIs - VTID-01173';
+    header.appendChild(subtitle);
+
+    // Refresh button
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-secondary agents-refresh-btn';
+    refreshBtn.textContent = state.agentsRegistry.loading ? 'Loading...' : 'Refresh';
+    refreshBtn.disabled = state.agentsRegistry.loading;
+    refreshBtn.onclick = function() {
+        state.agentsRegistry.fetched = false;
+        fetchAgentsRegistry();
+    };
+    header.appendChild(refreshBtn);
+
+    container.appendChild(header);
+
+    // API Status Strip
+    container.appendChild(renderAgentsApiStatusStrip());
+
+    // Error panel (if any errors)
+    var errorPanel = renderAgentsErrorPanel();
+    if (errorPanel) {
+        container.appendChild(errorPanel);
+    }
+
+    // Loading state
+    if (state.agentsRegistry.loading) {
+        var loadingDiv = document.createElement('div');
+        loadingDiv.className = 'agents-loading';
+        loadingDiv.textContent = 'Loading Worker Orchestrator data...';
+        container.appendChild(loadingDiv);
+        return container;
+    }
+
+    // VTID Fingerprints
+    container.appendChild(renderVtidFingerprints());
+
+    // Orchestrator Summary Card
+    container.appendChild(renderOrchestratorSummaryCard());
+
+    // Subagents Table
+    container.appendChild(renderSubagentsTable());
+
+    // Skills Table
+    container.appendChild(renderSkillsTable());
+
+    // Raw JSON Debug sections
+    var debugSection = document.createElement('div');
+    debugSection.className = 'agents-debug-section';
+
+    var debugHeading = document.createElement('h3');
+    debugHeading.textContent = 'Debug Data';
+    debugSection.appendChild(debugHeading);
+
+    debugSection.appendChild(renderRawJsonDebug('orchestratorHealth', 'Orchestrator Health'));
+    debugSection.appendChild(renderRawJsonDebug('subagents', 'Subagents'));
+    debugSection.appendChild(renderRawJsonDebug('skills', 'Skills'));
+
+    container.appendChild(debugSection);
+
+    return container;
+}
+
+/**
+ * VTID-01173: Render the Agents Skills View
+ * Placeholder for /command-hub/agents/skills/ tab
+ */
+function renderAgentsSkillsView() {
+    var container = document.createElement('div');
+    container.className = 'agents-skills-view-container';
+
+    // Auto-fetch if not loaded
+    if (!state.agentsRegistry.fetched && !state.agentsRegistry.loading) {
+        fetchAgentsRegistry();
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'agents-registry-header';
+
+    var title = document.createElement('h2');
+    title.textContent = 'Skills Registry';
+    header.appendChild(title);
+
+    var subtitle = document.createElement('p');
+    subtitle.className = 'agents-registry-subtitle';
+    subtitle.textContent = 'Worker Orchestrator Skills - VTID-01173';
+    header.appendChild(subtitle);
+
+    container.appendChild(header);
+
+    // API Status Strip
+    container.appendChild(renderAgentsApiStatusStrip());
+
+    // Loading state
+    if (state.agentsRegistry.loading) {
+        var loadingDiv = document.createElement('div');
+        loadingDiv.className = 'agents-loading';
+        loadingDiv.textContent = 'Loading Skills data...';
+        container.appendChild(loadingDiv);
+        return container;
+    }
+
+    // Skills Table
+    container.appendChild(renderSkillsTable());
+
+    // Raw JSON Debug
+    container.appendChild(renderRawJsonDebug('skills', 'Skills'));
 
     return container;
 }
