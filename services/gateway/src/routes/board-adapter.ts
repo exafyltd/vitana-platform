@@ -8,11 +8,17 @@ const router = Router();
  * VTID-01058: Exclude deleted/voided tasks, treat 'completed' as terminal success
  * VTID-01079: Deterministic status→column mapping, one-row-per-VTID, DEV filter
  * VTID-01169: vtid_ledger.is_terminal is the PRIMARY AUTHORITY for terminal state
+ * VTID-01170: Read-Path Lock - Command Hub MUST use vtid_ledger + OASIS events only
  *
  * Command Hub Reliability Rule (VTID-01169):
  * - If vtid_ledger.is_terminal = true → Completed/Failed determined by terminal_outcome
  * - Else → use active status (from ledger or events as fallback)
  * - No inference from events alone. Events are supporting evidence; ledger is authoritative.
+ *
+ * VTID-01170 Read-Path Lock (ENFORCED):
+ * - Status & board → vtid_ledger ONLY
+ * - Timeline & logs → oasis_events ONLY
+ * - No screen may derive status from anything else
  */
 type BoardColumn = 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED';
 type IdNamespace = 'VTID' | 'DEV' | 'OTHER';

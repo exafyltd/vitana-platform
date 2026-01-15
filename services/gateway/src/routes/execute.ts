@@ -2,6 +2,25 @@
  * VTID-01146: Execute VTID Runner (One-Button End-to-End Pipeline)
  * VTID-01150: Runner → Claude Execution Bridge (No CI/CD Duplication)
  *
+ * ============================================================================
+ * VTID-01170: DEPRECATION NOTICE - Operational Safety Lock
+ * ============================================================================
+ * These endpoints BYPASS the canonical Worker Orchestrator (VTID-01163).
+ *
+ * CANONICAL PATH: POST /api/v1/worker/orchestrator/route
+ *
+ * The following endpoints in this file are DEPRECATED:
+ * - POST /vtid              → Use orchestrator/route instead
+ * - POST /evidence          → Use orchestrator completion reporting
+ * - GET  /workorders        → Use orchestrator task discovery
+ * - GET  /workorders/:vtid  → Use orchestrator task status
+ *
+ * These endpoints will return HTTP 400 with DEPRECATED status unless
+ * the X-BYPASS-ORCHESTRATOR header is set (governance violation).
+ *
+ * See: VTID-01170 (Freeze Parallel Paths)
+ * ============================================================================
+ *
  * Provides a single API call to trigger deterministic VTID execution:
  * Execute VTID → Worker → Validator → PR merge → Deploy health check → Mark terminal
  *
@@ -15,12 +34,50 @@
  * This enables the CEO loop to run with one command from Command Hub or curl.
  */
 
-import { Router, Request, Response } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import { randomUUID } from "crypto";
 import { emitOasisEvent } from "../services/oasis-event-service";
 
 export const router = Router();
+
+// =============================================================================
+// VTID-01170: Deprecation Guard
+// =============================================================================
+
+/**
+ * VTID-01170: Check if request is attempting to bypass canonical orchestrator
+ * Returns 400 DEPRECATED unless X-BYPASS-ORCHESTRATOR header is set
+ */
+function checkDeprecatedBypass(
+  req: Request,
+  res: Response,
+  endpointName: string,
+  canonicalPath: string
+): boolean {
+  const bypassHeader = req.get("X-BYPASS-ORCHESTRATOR");
+
+  if (bypassHeader === "EMERGENCY-BYPASS") {
+    // Log the governance violation
+    console.warn(`[VTID-01170] DEPRECATED endpoint used with bypass: ${endpointName}`);
+    console.warn(`[VTID-01170] Canonical path: ${canonicalPath}`);
+    return false; // Continue with deprecated endpoint
+  }
+
+  // Block access to deprecated endpoint
+  console.warn(`[VTID-01170] Blocked access to deprecated endpoint: ${endpointName}`);
+  res.status(400).json({
+    ok: false,
+    error: "DEPRECATED",
+    code: "VTID-01170-DEPRECATED",
+    endpoint: endpointName,
+    message: `This endpoint is DEPRECATED by VTID-01170. Use the canonical orchestrator path instead.`,
+    canonical_path: canonicalPath,
+    how_to_migrate: `Use POST /api/v1/worker/orchestrator/route for all agent execution`,
+    bypass_header: "Set X-BYPASS-ORCHESTRATOR: EMERGENCY-BYPASS to override (governance violation)",
+  });
+  return true; // Blocked
+}
 
 // =============================================================================
 // Environment Configuration
@@ -1026,8 +1083,13 @@ async function executeDeployVerification(ctx: ExecutionContext): Promise<{
  * 7. Mark terminal in OASIS
  */
 router.post("/vtid", async (req: Request, res: Response) => {
+  // VTID-01170: Deprecation check - this endpoint bypasses the canonical orchestrator
+  if (checkDeprecatedBypass(req, res, "POST /vtid", "POST /api/v1/worker/orchestrator/route")) {
+    return; // Blocked by deprecation guard
+  }
+
   const requestId = randomUUID();
-  console.log(`[VTID-01150] Execute VTID request ${requestId} started`);
+  console.log(`[VTID-01150] Execute VTID request ${requestId} started (DEPRECATED - bypassing orchestrator)`);
 
   try {
     // Parse and validate request
@@ -1430,6 +1492,11 @@ const EvidenceSubmitSchema = z.object({
  * - worker_reported: Worker explicitly reports success
  */
 router.post("/evidence", async (req: Request, res: Response) => {
+  // VTID-01170: Deprecation check - use orchestrator completion reporting
+  if (checkDeprecatedBypass(req, res, "POST /evidence", "POST /api/v1/worker/subagent/complete")) {
+    return; // Blocked by deprecation guard
+  }
+
   try {
     const validation = EvidenceSubmitSchema.safeParse(req.body);
     if (!validation.success) {
@@ -1502,6 +1569,11 @@ router.post("/evidence", async (req: Request, res: Response) => {
  * VTID-01150: Claude polls this endpoint to get work orders
  */
 router.get("/workorders/:vtid", async (req: Request, res: Response) => {
+  // VTID-01170: Deprecation check - use orchestrator for task status
+  if (checkDeprecatedBypass(req, res, "GET /workorders/:vtid", "GET /api/v1/oasis/tasks/:vtid")) {
+    return; // Blocked by deprecation guard
+  }
+
   const { vtid } = req.params;
 
   if (!VTID_PATTERN.test(vtid)) {
@@ -1575,7 +1647,12 @@ router.get("/workorders/:vtid", async (req: Request, res: Response) => {
  * GET /workorders - List pending work orders (for Claude to poll)
  * VTID-01150: Returns all pending work orders (no evidence yet)
  */
-router.get("/workorders", async (_req: Request, res: Response) => {
+router.get("/workorders", async (req: Request, res: Response) => {
+  // VTID-01170: Deprecation check - use orchestrator task discovery
+  if (checkDeprecatedBypass(req, res, "GET /workorders", "GET /api/v1/oasis/tasks/discover")) {
+    return; // Blocked by deprecation guard
+  }
+
   try {
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
       return res.status(500).json({

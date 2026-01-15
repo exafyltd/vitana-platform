@@ -1,18 +1,49 @@
+# ============================================================================
+# DISABLED by VTID-01170 - Operational Safety Lock
+# ============================================================================
 # DEPRECATED — DO NOT USE
 # Canonical deployment is:
-#   main → .github/workflows/auto-deploy.yml → dispatches EXEC-DEPLOY.yml
-# This workflow is MANUAL-ONLY (break-glass).
+#   main → .github/workflows/AUTO-DEPLOY.yml → dispatches EXEC-DEPLOY.yml
+#
+# This workflow was previously MANUAL-ONLY (break-glass) but is now fully
+# DISABLED to enforce single-spine deployment.
+#
+# DO NOT RE-ENABLE without governance approval.
+# See: VTID-01170 (Freeze Parallel Paths)
+# ============================================================================
 
 on:
   workflow_dispatch:
+    inputs:
+      confirm_bypass:
+        description: 'Type EMERGENCY-BYPASS to run (governance violation)'
+        required: true
+        type: string
 
 name: Deploy MCP Gateway
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
+      # VTID-01170: Hard block - this workflow is disabled
+      - name: "[VTID-01170] WORKFLOW DISABLED - Canonical Spine Enforcement"
+        run: |
+          echo "============================================================"
+          echo "  ⛔ WORKFLOW DISABLED by VTID-01170"
+          echo "============================================================"
+          echo ""
+          echo "  This workflow (DEPLOY-MCP-GATEWAY) is DEPRECATED and DISABLED."
+          echo "  Canonical deployment path: AUTO-DEPLOY.yml -> EXEC-DEPLOY.yml"
+          echo ""
+          echo "============================================================"
+          if [ "${{ inputs.confirm_bypass }}" != "EMERGENCY-BYPASS" ]; then
+            echo "::error::Workflow blocked. To bypass, enter EMERGENCY-BYPASS (governance violation)"
+            exit 1
+          fi
+          echo "::warning::EMERGENCY BYPASS activated - this is a governance violation"
+
       - uses: actions/checkout@v3
       
       - name: Setup Node.js

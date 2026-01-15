@@ -1,6 +1,26 @@
 /**
  * Autopilot Routes - VTID-0532 + VTID-0533 + VTID-0534 + VTID-0535
  *
+ * ============================================================================
+ * VTID-01170: DEPRECATION NOTICE - Operational Safety Lock
+ * ============================================================================
+ * These endpoints run PARALLEL to the canonical Worker Orchestrator (VTID-01163).
+ *
+ * CANONICAL PATH: POST /api/v1/worker/orchestrator/route
+ *
+ * The following execution endpoints will be DEPRECATED:
+ * - POST /tasks/:vtid/plan       → Use orchestrator routing
+ * - POST /tasks/:vtid/work/start → Use orchestrator subagent/start
+ * - POST /tasks/:vtid/work/complete → Use orchestrator subagent/complete
+ *
+ * Read-only endpoints remain available:
+ * - GET /tasks/pending-plan      → Still available (read-only)
+ * - GET /tasks/:vtid/status      → Still available (read-only)
+ * - POST /tasks/:vtid/validate   → Still available (validation is governance)
+ *
+ * See: VTID-01170 (Freeze Parallel Paths)
+ * ============================================================================
+ *
  * Planner Handoff API and Execution Pipeline for multi-agent planning workflows.
  *
  * Final API endpoints (after mounting at /api/v1/autopilot):
@@ -53,6 +73,44 @@ import {
 } from '../services/validator-core-service';
 
 const router = Router();
+
+// =============================================================================
+// VTID-01170: Deprecation Guard
+// =============================================================================
+
+/**
+ * VTID-01170: Check if request is attempting to bypass canonical orchestrator
+ * Returns 400 DEPRECATED unless X-BYPASS-ORCHESTRATOR header is set
+ */
+function checkDeprecatedBypass(
+  req: Request,
+  res: Response,
+  endpointName: string,
+  canonicalPath: string
+): boolean {
+  const bypassHeader = req.get("X-BYPASS-ORCHESTRATOR");
+
+  if (bypassHeader === "EMERGENCY-BYPASS") {
+    // Log the governance violation
+    console.warn(`[VTID-01170] DEPRECATED endpoint used with bypass: ${endpointName}`);
+    console.warn(`[VTID-01170] Canonical path: ${canonicalPath}`);
+    return false; // Continue with deprecated endpoint
+  }
+
+  // Block access to deprecated endpoint
+  console.warn(`[VTID-01170] Blocked access to deprecated endpoint: ${endpointName}`);
+  res.status(400).json({
+    ok: false,
+    error: "DEPRECATED",
+    code: "VTID-01170-DEPRECATED",
+    endpoint: endpointName,
+    message: `This endpoint is DEPRECATED by VTID-01170. Use the canonical orchestrator path instead.`,
+    canonical_path: canonicalPath,
+    how_to_migrate: `Use POST /api/v1/worker/orchestrator/route for all agent execution`,
+    bypass_header: "Set X-BYPASS-ORCHESTRATOR: EMERGENCY-BYPASS to override (governance violation)",
+  });
+  return true; // Blocked
+}
 
 // ==================== VTID-0532: Planner Handoff ====================
 
@@ -120,10 +178,15 @@ router.get('/tasks/pending-plan', async (_req: Request, res: Response) => {
  * { "ok": true, "vtid": "...", "status": "planned", "planSteps": 3 }
  */
 router.post('/tasks/:vtid/plan', async (req: Request, res: Response) => {
+  // VTID-01170: Deprecation check - use orchestrator for plan routing
+  if (checkDeprecatedBypass(req, res, "POST /autopilot/tasks/:vtid/plan", "POST /api/v1/worker/orchestrator/route")) {
+    return; // Blocked by deprecation guard
+  }
+
   const { vtid } = req.params;
   const { plan, metadata } = req.body;
 
-  console.log(`[VTID-0533] Plan submission received for ${vtid}`);
+  console.log(`[VTID-0533] Plan submission received for ${vtid} (DEPRECATED - bypassing orchestrator)`);
 
   // Validate request body
   if (!plan || typeof plan !== 'object') {
@@ -228,10 +291,15 @@ router.post('/tasks/:vtid/plan', async (req: Request, res: Response) => {
  * - 409 + worker.invalid_transition: Step not in pending state
  */
 router.post('/tasks/:vtid/work/start', async (req: Request, res: Response) => {
+  // VTID-01170: Deprecation check - use orchestrator for work start
+  if (checkDeprecatedBypass(req, res, "POST /autopilot/tasks/:vtid/work/start", "POST /api/v1/worker/subagent/start")) {
+    return; // Blocked by deprecation guard
+  }
+
   const { vtid } = req.params;
   const { step_id, step_index, label, agent, executor_type, notes } = req.body;
 
-  console.log(`[VTID-0534] Work start received for ${vtid}, step: ${step_id}`);
+  console.log(`[VTID-0534] Work start received for ${vtid}, step: ${step_id} (DEPRECATED - bypassing orchestrator)`);
 
   // Validate request body
   if (!step_id || typeof step_id !== 'string') {
@@ -337,10 +405,15 @@ router.post('/tasks/:vtid/work/start', async (req: Request, res: Response) => {
  * - 409 + worker.invalid_transition: Step not in in_progress state
  */
 router.post('/tasks/:vtid/work/complete', async (req: Request, res: Response) => {
+  // VTID-01170: Deprecation check - use orchestrator for work complete
+  if (checkDeprecatedBypass(req, res, "POST /autopilot/tasks/:vtid/work/complete", "POST /api/v1/worker/subagent/complete")) {
+    return; // Blocked by deprecation guard
+  }
+
   const { vtid } = req.params;
   const { step_id, step_index, status, output_summary, error, agent } = req.body;
 
-  console.log(`[VTID-0534] Work complete received for ${vtid}, step: ${step_id}`);
+  console.log(`[VTID-0534] Work complete received for ${vtid}, step: ${step_id} (DEPRECATED - bypassing orchestrator)`);
 
   // Validate request body
   if (!step_id || typeof step_id !== 'string') {

@@ -1,15 +1,31 @@
 name: AUTODEPLOY-COMMAND-HUB (DEV-COMHU-2025-0015)
-# Governance: SYS-RULE-DEPLOY-L1 compliant
-# Canonical Gateway: gateway-q74ibpv6ia-uc.a.run.app
+# ============================================================================
+# DISABLED by VTID-01170 - Operational Safety Lock
+# ============================================================================
+# This workflow is DISABLED as part of the canonical spine enforcement.
+# Canonical deployment path is: AUTO-DEPLOY.yml -> EXEC-DEPLOY.yml
+#
+# DO NOT RE-ENABLE without governance approval.
+# See: VTID-01170 (Freeze Parallel Paths)
+# ============================================================================
+
+# ORIGINAL TRIGGERS (DISABLED):
+# on:
+#   push:
+#     branches:
+#       - main
+#     paths:
+#       - 'services/gateway/src/frontend/command-hub/**'
+#       - 'services/gateway/dist/frontend/command-hub/**'
+#   workflow_dispatch:
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'services/gateway/src/frontend/command-hub/**'
-      - 'services/gateway/dist/frontend/command-hub/**'
   workflow_dispatch:
+    inputs:
+      confirm_bypass:
+        description: 'Type EMERGENCY-BYPASS to run (governance violation)'
+        required: true
+        type: string
 
 env:
   VTID_PREFIX: DEV-COMHU-2025-0015
@@ -25,6 +41,26 @@ jobs:
       issues: write
       id-token: write
     steps:
+      # VTID-01170: Hard block - this workflow is disabled
+      - name: "[VTID-01170] WORKFLOW DISABLED - Canonical Spine Enforcement"
+        run: |
+          echo "============================================================"
+          echo "  ⛔ WORKFLOW DISABLED by VTID-01170"
+          echo "============================================================"
+          echo ""
+          echo "  This workflow (AUTODEPLOY-COMMAND-HUB) is DISABLED."
+          echo "  Canonical deployment path: AUTO-DEPLOY.yml -> EXEC-DEPLOY.yml"
+          echo ""
+          echo "  To deploy Command Hub, push changes to main and let"
+          echo "  the canonical AUTO-DEPLOY workflow handle deployment."
+          echo ""
+          echo "============================================================"
+          if [ "${{ inputs.confirm_bypass }}" != "EMERGENCY-BYPASS" ]; then
+            echo "::error::Workflow blocked. To bypass, enter EMERGENCY-BYPASS (governance violation)"
+            exit 1
+          fi
+          echo "::warning::EMERGENCY BYPASS activated - this is a governance violation"
+
       - name: Validate Secrets (Fail Fast)
         run: |
           MISSING=""
