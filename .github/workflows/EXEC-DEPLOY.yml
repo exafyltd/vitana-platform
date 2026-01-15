@@ -15,6 +15,7 @@ name: Exec Deploy (VTID Bridge)
 # - gateway: services/gateway/ -> Cloud Run 'gateway'
 # - oasis-operator: services/oasis-operator/ -> Cloud Run 'oasis-operator'
 # - oasis-projector: services/oasis-projector/ -> Cloud Run 'oasis-projector'
+# - vitana-verification-engine: services/agents/vitana-orchestrator/ -> Cloud Run 'vitana-verification-engine'
 #
 on:
   workflow_dispatch:
@@ -243,6 +244,10 @@ jobs:
             oasis-projector)
               CLOUD_RUN_SERVICE="oasis-projector"
               SOURCE_PATH="services/oasis-projector"
+              ;;
+            vitana-verification-engine)
+              CLOUD_RUN_SERVICE="vitana-verification-engine"
+              SOURCE_PATH="services/agents/vitana-orchestrator"
               ;;
             *)
               # Use inputs directly for custom services

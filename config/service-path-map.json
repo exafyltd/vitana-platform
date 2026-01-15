@@ -18,6 +18,11 @@
       "cloud_run_service": "oasis-projector",
       "deployable": true
     },
+    "vitana-verification-engine": {
+      "paths": ["services/agents/vitana-orchestrator/"],
+      "cloud_run_service": "vitana-verification-engine",
+      "deployable": true
+    },
     "agents": {
       "paths": ["services/agents/"],
       "cloud_run_service": "agents",
