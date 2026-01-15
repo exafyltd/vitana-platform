@@ -3,11 +3,12 @@ set -e
 
 echo "=================================================="
 echo "Phase 1.5 Verification (No Lies Edition)"
-echo "VTID: DEV-COMMU-0042.G"
+echo "VTID: DEV-COMMU-0042.G | Updated: VTID-01176"
 echo "=================================================="
 echo ""
 
-GATEWAY_URL="https://vitana-dev-gateway-86804897789.us-central1.run.app"
+# VTID-01176: Use canonical gateway URL (vitana-dev-gateway is deprecated redirector)
+GATEWAY_URL="${GATEWAY_URL:-https://vitana-gateway-86804897789.us-central1.run.app}"
 FAILURES=0
 
 # Test 1: Command Hub UI

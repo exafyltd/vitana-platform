@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
+"""
+VTID-01176: Cloud Run Status Collector
+Checks health of canonical Cloud Run services.
+"""
 import os, requests
 from datetime import datetime
 
+# Canonical Cloud Run services (VTID-01176 cleanup)
+# Old 7h42a5ucbq URLs removed - those services are deprecated
+GATEWAY_URL = os.environ.get('GATEWAY_URL', 'https://gateway-q74ibpv6ia-uc.a.run.app')
+
 SERVICES = {
-    'oasis': 'https://vitana-oasis-7h42a5ucbq-uc.a.run.app',
-    'planner-core': 'https://vitana-planner-7h42a5ucbq-uc.a.run.app',
-    'worker-core': 'https://vitana-worker-7h42a5ucbq-uc.a.run.app',
-    'validator-core': 'https://vitana-validator-7h42a5ucbq-uc.a.run.app',
-    'memory-indexer': 'https://vitana-memory-7h42a5ucbq-uc.a.run.app',
+    'gateway': f'{GATEWAY_URL}',
+    'gateway-health': f'{GATEWAY_URL}/alive',
+    'oasis-api': f'{GATEWAY_URL}/api/v1/oasis/health',
 }
 
 services = []

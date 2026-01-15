@@ -115,8 +115,9 @@ export class GChatNotifierService {
       ? `${icon} VTID: ${event.vtid}`
       : `${icon} ${event.topic}`;
     
-    const commandHubUrl = process.env.COMMAND_HUB_URL || 
-                          'https://vitana-dev-gateway-86804897789.us-central1.run.app/command-hub';
+    // VTID-01176: Use canonical gateway URL (vitana-dev-gateway is deprecated)
+    const commandHubUrl = process.env.COMMAND_HUB_URL ||
+                          'https://vitana-gateway-86804897789.us-central1.run.app/command-hub';
     
     const vtidLink = event.vtid 
       ? `${commandHubUrl}?vtid=${event.vtid}`
