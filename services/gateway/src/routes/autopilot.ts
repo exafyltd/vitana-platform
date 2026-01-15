@@ -49,6 +49,30 @@
  */
 
 import { Router, Request, Response } from 'express';
+import {
+  getPendingPlanTasks,
+  submitPlan,
+  emitValidationResult,
+  getAutopilotTaskStatus,
+  PlanPayload,
+  PlanMetadata,
+  ValidationResultPayload,
+  ValidationMetadata
+} from '../services/operator-service';
+import {
+  startWork,
+  completeWork,
+  getWorkerState,
+  WorkStartRequest,
+  WorkCompleteRequest
+} from '../services/worker-core-service';
+import {
+  runValidation,
+  getValidatorState,
+  ValidateRequest
+} from '../services/validator-core-service';
+
+const router = Router();
 
 // =============================================================================
 // VTID-01170: Deprecation Guard
@@ -87,30 +111,6 @@ function checkDeprecatedBypass(
   });
   return true; // Blocked
 }
-import {
-  getPendingPlanTasks,
-  submitPlan,
-  emitValidationResult,
-  getAutopilotTaskStatus,
-  PlanPayload,
-  PlanMetadata,
-  ValidationResultPayload,
-  ValidationMetadata
-} from '../services/operator-service';
-import {
-  startWork,
-  completeWork,
-  getWorkerState,
-  WorkStartRequest,
-  WorkCompleteRequest
-} from '../services/worker-core-service';
-import {
-  runValidation,
-  getValidatorState,
-  ValidateRequest
-} from '../services/validator-core-service';
-
-const router = Router();
 
 // ==================== VTID-0532: Planner Handoff ====================
 
