@@ -13,8 +13,14 @@ import { randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
 
 // =============================================================================
-// VTID-01167: Identity Defaults
+// VTID-01167 + VTID-01170: Identity Defaults (Canonical Identity Enforcement)
+// =============================================================================
 // Claude must NEVER ask "which project/repo is this?" - these are derived from environment.
+//
+// VTID-01170 ENFORCEMENT:
+// Every VTID MUST have canonical identity injected. If identity is missing:
+// - Gateway injects these defaults automatically
+// - Agents MUST NOT ask the user for identity values
 // =============================================================================
 
 /**
