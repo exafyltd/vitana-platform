@@ -1,11 +1,14 @@
 import cors from "cors";
 import { Express, Request, Response, NextFunction } from "express";
 
+// VTID-01176: Allowed CORS origins for gateway
+// vitana-dev-gateway is deprecated but kept for backward compatibility during transition
 const ALLOWED_ORIGINS = [
-  "https://vitana-dev-gateway-86804897789.us-central1.run.app",
-  "https://gateway-86804897789.us-central1.run.app",
-  "https://gateway-q74ibpv6ia-uc.a.run.app",
-  "https://id-preview--vitana-v1.lovable.app",
+  "https://vitana-gateway-86804897789.us-central1.run.app",  // Canonical gateway
+  "https://gateway-86804897789.us-central1.run.app",         // Short alias
+  "https://gateway-q74ibpv6ia-uc.a.run.app",                 // Cloud Run generated
+  "https://vitana-dev-gateway-86804897789.us-central1.run.app", // Deprecated redirector
+  "https://id-preview--vitana-v1.lovable.app",               // Lovable preview
 ];
 
 export const corsOptions = {

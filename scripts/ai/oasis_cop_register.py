@@ -12,7 +12,9 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 from scripts.ai.load_claude_prompt import load_claude_prompt
 
 # Load environment variables
-OASIS_URL = os.environ.get("OASIS_URL", "https://oasis-operator-86804897789.us-central1.run.app/api/v1/events")
+# VTID-01176: Use gateway proxy for OASIS events (canonical routing)
+GATEWAY_URL = os.environ.get("GATEWAY_URL", "https://vitana-gateway-86804897789.us-central1.run.app")
+OASIS_URL = os.environ.get("OASIS_URL", f"{GATEWAY_URL}/api/v1/oasis/events")
 OASIS_TOKEN = os.environ.get("OASIS_TOKEN")
 
 def register_cop():
