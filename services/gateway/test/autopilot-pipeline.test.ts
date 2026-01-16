@@ -146,15 +146,22 @@ describe('Autopilot Pipeline - VTID-0533', () => {
       expect(response.body.ok).toBe(true);
       expect(response.body.service).toBe('autopilot-api');
       expect(response.body.status).toBe('healthy');
-      expect(response.body.vtid).toBe('VTID-0535');
-      expect(response.body.capabilities).toEqual({
+      expect(response.body.vtid).toBe('VTID-01178');  // Updated in VTID-01178 Autopilot Controller
+      // VTID-01178: Expanded capabilities with autopilot controller features
+      expect(response.body.capabilities).toMatchObject({
         task_extraction: true,
         planner_handoff: true,
         execution: true,
         worker_skeleton: true,
         validator_skeleton: true,
         worker_core_engine: true,
-        validator_core_engine: true
+        validator_core_engine: true,
+        // VTID-01178: New capabilities
+        autopilot_controller: true,
+        spec_snapshotting: true,
+        validator_hard_gate: true,
+        post_deploy_verification: true,
+        acceptance_assertions: true,
       });
     });
   });

@@ -71,6 +71,17 @@ import {
   getValidatorState,
   ValidateRequest
 } from '../services/validator-core-service';
+// VTID-01178: Autopilot Controller imports
+import {
+  startAutopilotRun,
+  getAutopilotRun,
+  getActiveRuns,
+  getSpecSnapshot,
+  verifySpecIntegrity,
+  getAutopilotStatus,
+} from '../services/autopilot-controller';
+import { runVerification } from '../services/autopilot-verification';
+import { validateForMerge, getValidationResult } from '../services/autopilot-validator';
 
 const router = Router();
 
@@ -626,19 +637,243 @@ router.get('/tasks/:vtid/status', async (req: Request, res: Response) => {
   }
 });
 
+// ==================== VTID-01178: Autopilot Controller Endpoints ====================
+
+/**
+ * GET /controller/status → /api/v1/autopilot/controller/status
+ * VTID-01178: Get autopilot controller status
+ */
+router.get('/controller/status', (_req: Request, res: Response) => {
+  try {
+    const status = getAutopilotStatus();
+    return res.status(200).json({
+      ok: true,
+      service: 'autopilot-controller',
+      version: '1.0.0',
+      vtid: 'VTID-01178',
+      timestamp: new Date().toISOString(),
+      ...status,
+    });
+  } catch (error: any) {
+    console.error(`[VTID-01178] Status error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * GET /controller/runs → /api/v1/autopilot/controller/runs
+ * VTID-01178: List active autopilot runs
+ */
+router.get('/controller/runs', (_req: Request, res: Response) => {
+  try {
+    const runs = getActiveRuns();
+    return res.status(200).json({
+      ok: true,
+      count: runs.length,
+      runs: runs.map(run => ({
+        id: run.id,
+        vtid: run.vtid,
+        state: run.state,
+        started_at: run.started_at,
+        updated_at: run.updated_at,
+        pr_number: run.pr_number,
+        retry_count: run.retry_count,
+      })),
+    });
+  } catch (error: any) {
+    console.error(`[VTID-01178] List runs error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * GET /controller/runs/:vtid → /api/v1/autopilot/controller/runs/:vtid
+ * VTID-01178: Get specific run details
+ */
+router.get('/controller/runs/:vtid', (req: Request, res: Response) => {
+  try {
+    const { vtid } = req.params;
+    if (!vtid || !/^VTID-\d{4,}$/.test(vtid)) {
+      return res.status(400).json({ ok: false, error: 'Invalid VTID format' });
+    }
+
+    const run = getAutopilotRun(vtid);
+    if (!run) {
+      return res.status(404).json({ ok: false, error: `No autopilot run found for ${vtid}` });
+    }
+
+    return res.status(200).json({ ok: true, run });
+  } catch (error: any) {
+    console.error(`[VTID-01178] Get run error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * POST /controller/runs/:vtid/start → /api/v1/autopilot/controller/runs/:vtid/start
+ * VTID-01178: Start autopilot run for VTID
+ */
+router.post('/controller/runs/:vtid/start', async (req: Request, res: Response) => {
+  try {
+    const { vtid } = req.params;
+    const { title, spec_content, task_domain, target_paths } = req.body;
+
+    if (!vtid || !/^VTID-\d{4,}$/.test(vtid)) {
+      return res.status(400).json({ ok: false, error: 'Invalid VTID format' });
+    }
+    if (!title || !spec_content) {
+      return res.status(400).json({ ok: false, error: 'title and spec_content are required' });
+    }
+
+    console.log(`[VTID-01178] Starting autopilot run for ${vtid}`);
+    const run = await startAutopilotRun(vtid, title, spec_content, task_domain, target_paths);
+
+    return res.status(201).json({
+      ok: true,
+      vtid,
+      run_id: run.id,
+      state: run.state,
+      spec_snapshot_id: run.spec_snapshot?.id,
+      started_at: run.started_at,
+    });
+  } catch (error: any) {
+    console.error(`[VTID-01178] Start run error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * POST /controller/runs/:vtid/verify → /api/v1/autopilot/controller/runs/:vtid/verify
+ * VTID-01178: Trigger post-deploy verification
+ */
+router.post('/controller/runs/:vtid/verify', async (req: Request, res: Response) => {
+  try {
+    const { vtid } = req.params;
+    const { service, environment = 'dev', deploy_url, merge_sha } = req.body;
+
+    if (!vtid || !/^VTID-\d{4,}$/.test(vtid)) {
+      return res.status(400).json({ ok: false, error: 'Invalid VTID format' });
+    }
+    if (!service) {
+      return res.status(400).json({ ok: false, error: 'service is required' });
+    }
+
+    console.log(`[VTID-01178] Triggering verification for ${vtid} (${service}@${environment})`);
+    const result = await runVerification({ vtid, service, environment, deploy_url, merge_sha });
+
+    return res.status(result.passed ? 200 : 422).json({
+      ok: result.ok,
+      vtid,
+      passed: result.passed,
+      result: result.result,
+      error: result.error,
+    });
+  } catch (error: any) {
+    console.error(`[VTID-01178] Verification error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * POST /controller/runs/:vtid/validate → /api/v1/autopilot/controller/runs/:vtid/validate
+ * VTID-01178: Run validator (pre-merge check)
+ */
+router.post('/controller/runs/:vtid/validate', async (req: Request, res: Response) => {
+  try {
+    const { vtid } = req.params;
+    const { pr_number, repo = 'exafyltd/vitana-platform', files_changed } = req.body;
+
+    if (!vtid || !/^VTID-\d{4,}$/.test(vtid)) {
+      return res.status(400).json({ ok: false, error: 'Invalid VTID format' });
+    }
+    if (!pr_number) {
+      return res.status(400).json({ ok: false, error: 'pr_number is required' });
+    }
+
+    console.log(`[VTID-01178] Running validation for ${vtid} PR #${pr_number}`);
+    const result = await validateForMerge({ vtid, pr_number, repo, files_changed });
+
+    return res.status(result.passed ? 200 : 422).json({
+      ok: result.ok,
+      vtid,
+      pr_number,
+      passed: result.passed,
+      result: result.result,
+      error: result.error,
+    });
+  } catch (error: any) {
+    console.error(`[VTID-01178] Validation error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * GET /spec/:vtid → /api/v1/autopilot/spec/:vtid
+ * VTID-01178: Get spec snapshot for VTID
+ */
+router.get('/spec/:vtid', (req: Request, res: Response) => {
+  try {
+    const { vtid } = req.params;
+    if (!vtid || !/^VTID-\d{4,}$/.test(vtid)) {
+      return res.status(400).json({ ok: false, error: 'Invalid VTID format' });
+    }
+
+    const snapshot = getSpecSnapshot(vtid);
+    if (!snapshot) {
+      return res.status(404).json({ ok: false, error: `No spec snapshot found for ${vtid}` });
+    }
+
+    const integrityValid = verifySpecIntegrity(vtid);
+    return res.status(200).json({
+      ok: true,
+      vtid,
+      snapshot,
+      integrity_valid: integrityValid,
+    });
+  } catch (error: any) {
+    console.error(`[VTID-01178] Get spec error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * GET /validation/:vtid → /api/v1/autopilot/validation/:vtid
+ * VTID-01178: Get validation result for VTID
+ */
+router.get('/validation/:vtid', (req: Request, res: Response) => {
+  try {
+    const { vtid } = req.params;
+    if (!vtid || !/^VTID-\d{4,}$/.test(vtid)) {
+      return res.status(400).json({ ok: false, error: 'Invalid VTID format' });
+    }
+
+    const result = getValidationResult(vtid);
+    if (!result) {
+      return res.status(404).json({ ok: false, error: `No validation result found for ${vtid}` });
+    }
+
+    return res.status(200).json({ ok: true, vtid, result });
+  } catch (error: any) {
+    console.error(`[VTID-01178] Get validation error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
 // ==================== Health Check ====================
 
 /**
  * GET /health → /api/v1/autopilot/health
- * VTID-0532 + VTID-0533 + VTID-0534 + VTID-0535: Autopilot health check
+ * VTID-0532 + VTID-0533 + VTID-0534 + VTID-0535 + VTID-01178: Autopilot health check
  */
 router.get('/health', (_req: Request, res: Response) => {
+  const controllerStatus = getAutopilotStatus();
+
   return res.status(200).json({
     ok: true,
     service: 'autopilot-api',
     timestamp: new Date().toISOString(),
     status: 'healthy',
-    vtid: 'VTID-0535',
+    vtid: 'VTID-01178',
     capabilities: {
       task_extraction: true,
       planner_handoff: true,
@@ -646,8 +881,15 @@ router.get('/health', (_req: Request, res: Response) => {
       worker_skeleton: true,
       validator_skeleton: true,
       worker_core_engine: true,
-      validator_core_engine: true
-    }
+      validator_core_engine: true,
+      // VTID-01178: New capabilities
+      autopilot_controller: true,
+      spec_snapshotting: true,
+      validator_hard_gate: true,
+      post_deploy_verification: true,
+      acceptance_assertions: true,
+    },
+    controller: controllerStatus,
   });
 });
 

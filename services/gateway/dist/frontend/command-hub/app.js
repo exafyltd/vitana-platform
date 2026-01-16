@@ -16,7 +16,8 @@
 // VTID-01028: Task Board Rendering Fix - Restore Visibility & Authority
 // VTID-01111: Filter allocator shell entries from Command Hub board
 // VTID-01151: Command Hub Approvals UI — Badge Counter + Live Pending List + Approve/Reject
-console.log('🔥 COMMAND HUB BUNDLE: VTID-01151 LIVE 🔥');
+// VTID-01174: Agents Control Plane v2 — Pipelines (Runs + Traces from VTID Ledger + OASIS Events)
+console.log('🔥 COMMAND HUB BUNDLE: VTID-01174 LIVE 🔥');
 
 // ===========================================================================
 // VTID-01010: Target Role Constants (canonical)
@@ -2417,6 +2418,35 @@ const state = {
         showRawHealth: false,
         showRawSubagents: false,
         showRawSkills: false
+    },
+
+    // VTID-01174: Agents Control Plane v2 - Pipelines (Runs + Traces)
+    agentsPipelines: {
+        // Filter state
+        activeFilter: 'all', // 'active' | 'recent' | 'failed' | 'all'
+        timeWindow: '48h',   // '1h' | '24h' | '48h' | '7d'
+        // Data
+        items: [],           // VTID ledger items with stage timelines
+        eventsCache: {},     // VTID -> events array (for trace expansion)
+        // UI state
+        expandedVtids: {},   // VTID -> boolean (expanded trace view)
+        loading: false,
+        fetched: false,
+        // API timing/status
+        timing: {
+            ledger: null,
+            events: null
+        },
+        status: {
+            ledger: null,
+            events: null
+        },
+        errors: {
+            ledger: null,
+            events: null
+        },
+        // Debug
+        showRawLedger: false
     }
 };
 
@@ -4243,6 +4273,9 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'agents' && tab === 'skills') {
         // VTID-01173: Agents Control Plane v1 - Skills Registry
         container.appendChild(renderAgentsSkillsView());
+    } else if (moduleKey === 'agents' && tab === 'pipelines') {
+        // VTID-01174: Agents Control Plane v2 - Pipelines (Runs + Traces)
+        container.appendChild(renderAgentsPipelinesView());
     } else {
         // Placeholder for other modules
         const placeholder = document.createElement('div');
@@ -7568,6 +7601,660 @@ function renderAgentsSkillsView() {
 
     // Raw JSON Debug
     container.appendChild(renderRawJsonDebug('skills', 'Skills'));
+
+    return container;
+}
+
+// ===========================================================================
+// VTID-01174: Agents Control Plane v2 - Pipelines (Runs + Traces)
+// ===========================================================================
+
+/**
+ * VTID-01174: Fetch pipelines data from VTID Ledger API
+ * Uses GET /api/v1/oasis/vtid-ledger?limit=50 for all VTIDs with stage timelines
+ */
+async function fetchPipelinesData() {
+    if (state.agentsPipelines.loading) return;
+
+    state.agentsPipelines.loading = true;
+    state.agentsPipelines.errors = { ledger: null, events: null };
+    renderApp();
+
+    var ledgerStart = Date.now();
+    try {
+        var response = await fetch('/api/v1/oasis/vtid-ledger?limit=100', {
+            headers: withVitanaContextHeaders({})
+        });
+        var ledgerElapsed = Date.now() - ledgerStart;
+        state.agentsPipelines.timing.ledger = ledgerElapsed;
+        state.agentsPipelines.status.ledger = response.status;
+
+        if (!response.ok) {
+            var errorText = await response.text();
+            console.error('[VTID-01174] Ledger fetch failed:', response.status, errorText);
+            state.agentsPipelines.errors.ledger = { status: response.status, message: errorText };
+            state.agentsPipelines.items = [];
+        } else {
+            var data = await response.json();
+            if (data.ok && Array.isArray(data.data)) {
+                state.agentsPipelines.items = data.data;
+                console.log('[VTID-01174] Fetched', data.data.length, 'pipelines');
+            } else {
+                state.agentsPipelines.items = [];
+                state.agentsPipelines.errors.ledger = { status: response.status, message: 'Invalid response format' };
+            }
+        }
+    } catch (err) {
+        console.error('[VTID-01174] Ledger fetch error:', err);
+        state.agentsPipelines.timing.ledger = Date.now() - ledgerStart;
+        state.agentsPipelines.status.ledger = 0;
+        state.agentsPipelines.errors.ledger = { status: 0, message: err.message };
+        state.agentsPipelines.items = [];
+    }
+
+    state.agentsPipelines.loading = false;
+    state.agentsPipelines.fetched = true;
+    renderApp();
+}
+
+/**
+ * VTID-01174: Fetch trace events for a specific VTID
+ * Uses GET /api/v1/events?vtid=VTID-XXXX&limit=200
+ */
+async function fetchVtidTraceEvents(vtid) {
+    if (!vtid) return;
+
+    // Already cached?
+    if (state.agentsPipelines.eventsCache[vtid]) {
+        return state.agentsPipelines.eventsCache[vtid];
+    }
+
+    try {
+        var response = await fetch('/api/v1/events?vtid=' + encodeURIComponent(vtid) + '&limit=200', {
+            headers: withVitanaContextHeaders({})
+        });
+        if (response.ok) {
+            var data = await response.json();
+            var events = (data.ok && Array.isArray(data.data)) ? data.data : (Array.isArray(data) ? data : []);
+            state.agentsPipelines.eventsCache[vtid] = events;
+            console.log('[VTID-01174] Fetched', events.length, 'events for', vtid);
+            renderApp();
+            return events;
+        } else {
+            console.warn('[VTID-01174] Failed to fetch events for', vtid, response.status);
+            state.agentsPipelines.eventsCache[vtid] = [];
+            return [];
+        }
+    } catch (err) {
+        console.error('[VTID-01174] Events fetch error for', vtid, err);
+        state.agentsPipelines.eventsCache[vtid] = [];
+        return [];
+    }
+}
+
+/**
+ * VTID-01174: Toggle VTID trace expansion
+ */
+function togglePipelineExpand(vtid) {
+    var wasExpanded = state.agentsPipelines.expandedVtids[vtid];
+    state.agentsPipelines.expandedVtids[vtid] = !wasExpanded;
+
+    // Fetch events if expanding and not cached
+    if (!wasExpanded && !state.agentsPipelines.eventsCache[vtid]) {
+        fetchVtidTraceEvents(vtid);
+    }
+
+    renderApp();
+}
+
+/**
+ * VTID-01174: Get time window in hours
+ */
+function getTimeWindowHours(tw) {
+    var map = { '1h': 1, '24h': 24, '48h': 48, '7d': 168 };
+    return map[tw] || 48;
+}
+
+/**
+ * VTID-01174: Filter pipelines based on active filter and time window
+ */
+function getFilteredPipelines() {
+    var items = state.agentsPipelines.items || [];
+    var filter = state.agentsPipelines.activeFilter;
+    var hours = getTimeWindowHours(state.agentsPipelines.timeWindow);
+    var cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
+
+    // Time window filter
+    items = items.filter(function(item) {
+        var itemDate = new Date(item.updated_at || item.created_at);
+        return itemDate >= cutoff;
+    });
+
+    // Status filter
+    if (filter === 'active') {
+        // Active: scheduled, allocated, in_progress
+        items = items.filter(function(item) {
+            var s = (item.status || '').toLowerCase();
+            return s === 'scheduled' || s === 'allocated' || s === 'in_progress' || s === 'queued' || s === 'running';
+        });
+    } else if (filter === 'recent') {
+        // Recent: completed successfully (done, complete, deployed, merged)
+        items = items.filter(function(item) {
+            var s = (item.status || '').toLowerCase();
+            return s === 'done' || s === 'complete' || s === 'deployed' || s === 'merged' || s === 'closed';
+        });
+    } else if (filter === 'failed') {
+        // Failed: error, failed, blocked
+        items = items.filter(function(item) {
+            var s = (item.status || '').toLowerCase();
+            return s === 'failed' || s === 'error' || s === 'blocked';
+        });
+    }
+    // 'all' - no additional filter
+
+    return items;
+}
+
+/**
+ * VTID-01174: Derive pipeline status class
+ */
+function getPipelineStatusClass(status) {
+    var s = (status || '').toLowerCase();
+    if (s === 'in_progress' || s === 'running' || s === 'queued') return 'pipeline-status-active';
+    if (s === 'scheduled' || s === 'allocated') return 'pipeline-status-scheduled';
+    if (s === 'done' || s === 'complete' || s === 'deployed' || s === 'merged' || s === 'closed') return 'pipeline-status-success';
+    if (s === 'failed' || s === 'error' || s === 'blocked') return 'pipeline-status-failed';
+    return 'pipeline-status-pending';
+}
+
+/**
+ * VTID-01174: Get stage status from stageTimeline
+ */
+function getStageStatus(stageTimeline, stageName) {
+    if (!stageTimeline || !Array.isArray(stageTimeline)) return 'pending';
+    var entry = stageTimeline.find(function(s) { return s.stage === stageName; });
+    return entry ? (entry.status || 'pending') : 'pending';
+}
+
+/**
+ * VTID-01174: Render the Pipelines API Status Strip
+ */
+function renderPipelinesApiStatusStrip() {
+    var strip = document.createElement('div');
+    strip.className = 'agents-api-status-strip';
+
+    var endpoints = [
+        { key: 'ledger', label: 'VTID Ledger', url: '/api/v1/oasis/vtid-ledger' }
+    ];
+
+    endpoints.forEach(function(ep) {
+        var status = state.agentsPipelines.status[ep.key];
+        var timing = state.agentsPipelines.timing[ep.key];
+        var error = state.agentsPipelines.errors[ep.key];
+
+        var item = document.createElement('div');
+        item.className = 'agents-api-status-item';
+
+        var isOk = status >= 200 && status < 300;
+        var isPending = status === null;
+
+        if (isPending) {
+            item.classList.add('agents-api-status-pending');
+        } else if (isOk) {
+            item.classList.add('agents-api-status-ok');
+        } else {
+            item.classList.add('agents-api-status-error');
+        }
+
+        var icon = document.createElement('span');
+        icon.className = 'agents-api-status-icon';
+        icon.textContent = isPending ? '⏳' : (isOk ? '✓' : '✗');
+        item.appendChild(icon);
+
+        var label = document.createElement('span');
+        label.className = 'agents-api-status-label';
+        label.textContent = ep.label + ':';
+        item.appendChild(label);
+
+        var value = document.createElement('span');
+        value.className = 'agents-api-status-value';
+        if (isPending) {
+            value.textContent = '...';
+        } else {
+            value.textContent = status + (timing !== null ? ' (' + timing + 'ms)' : '');
+        }
+        item.appendChild(value);
+
+        strip.appendChild(item);
+    });
+
+    return strip;
+}
+
+/**
+ * VTID-01174: Render error panel for pipelines
+ */
+function renderPipelinesErrorPanel() {
+    var errors = state.agentsPipelines.errors;
+    var hasErrors = errors.ledger || errors.events;
+
+    if (!hasErrors) return null;
+
+    var panel = document.createElement('div');
+    panel.className = 'agents-error-panel';
+
+    var heading = document.createElement('h4');
+    heading.textContent = 'API Errors';
+    panel.appendChild(heading);
+
+    if (errors.ledger) {
+        var ledgerErr = document.createElement('div');
+        ledgerErr.className = 'agents-error-item';
+
+        var ledgerLabel = document.createElement('strong');
+        ledgerLabel.textContent = 'VTID Ledger: ';
+        ledgerErr.appendChild(ledgerLabel);
+
+        var ledgerStatus = document.createElement('span');
+        ledgerStatus.textContent = 'HTTP ' + (errors.ledger.status || 'Error');
+        ledgerErr.appendChild(ledgerStatus);
+
+        if (errors.ledger.message) {
+            var ledgerMsg = document.createElement('pre');
+            ledgerMsg.className = 'agents-error-text';
+            ledgerMsg.textContent = errors.ledger.message;
+            ledgerErr.appendChild(ledgerMsg);
+        }
+        panel.appendChild(ledgerErr);
+    }
+
+    return panel;
+}
+
+/**
+ * VTID-01174: Render stage ribbon (P | W | V | D)
+ */
+function renderPipelineStageRibbon(stageTimeline) {
+    var ribbon = document.createElement('div');
+    ribbon.className = 'pipeline-stage-ribbon';
+
+    var stages = [
+        { name: 'PLANNER', label: 'P' },
+        { name: 'WORKER', label: 'W' },
+        { name: 'VALIDATOR', label: 'V' },
+        { name: 'DEPLOY', label: 'D' }
+    ];
+
+    stages.forEach(function(stageInfo) {
+        var status = getStageStatus(stageTimeline, stageInfo.name);
+        var pill = document.createElement('span');
+        pill.className = 'pipeline-stage-pill pipeline-stage-pill-' + stageInfo.name.toLowerCase();
+
+        // Add status class
+        if (status === 'success' || status === 'completed') {
+            pill.classList.add('pipeline-stage-completed');
+        } else if (status === 'in_progress' || status === 'active' || status === 'running') {
+            pill.classList.add('pipeline-stage-active');
+        } else if (status === 'error' || status === 'failed') {
+            pill.classList.add('pipeline-stage-failed');
+        } else {
+            pill.classList.add('pipeline-stage-pending');
+        }
+
+        pill.textContent = stageInfo.label;
+        pill.title = stageInfo.name + ': ' + status;
+        ribbon.appendChild(pill);
+    });
+
+    return ribbon;
+}
+
+/**
+ * VTID-01174: Render a single pipeline row
+ */
+function renderPipelineRow(item) {
+    var row = document.createElement('div');
+    row.className = 'pipeline-row';
+
+    var isExpanded = state.agentsPipelines.expandedVtids[item.vtid];
+    if (isExpanded) {
+        row.classList.add('pipeline-row-expanded');
+    }
+
+    // Main row content
+    var mainRow = document.createElement('div');
+    mainRow.className = 'pipeline-row-main';
+    mainRow.onclick = function() {
+        togglePipelineExpand(item.vtid);
+    };
+
+    // Expand icon
+    var expandIcon = document.createElement('span');
+    expandIcon.className = 'pipeline-expand-icon';
+    expandIcon.textContent = isExpanded ? '▼' : '▶';
+    mainRow.appendChild(expandIcon);
+
+    // VTID
+    var vtidSpan = document.createElement('span');
+    vtidSpan.className = 'pipeline-vtid';
+    vtidSpan.textContent = item.vtid;
+    mainRow.appendChild(vtidSpan);
+
+    // Status badge
+    var statusBadge = document.createElement('span');
+    statusBadge.className = 'pipeline-status-badge ' + getPipelineStatusClass(item.status);
+    statusBadge.textContent = item.status || 'unknown';
+    mainRow.appendChild(statusBadge);
+
+    // Title
+    var titleSpan = document.createElement('span');
+    titleSpan.className = 'pipeline-title';
+    titleSpan.textContent = item.title || 'Untitled';
+    titleSpan.title = item.title || '';
+    mainRow.appendChild(titleSpan);
+
+    // Stage ribbon
+    mainRow.appendChild(renderPipelineStageRibbon(item.stageTimeline));
+
+    // Timestamp
+    var timeSpan = document.createElement('span');
+    timeSpan.className = 'pipeline-timestamp';
+    var ts = item.updated_at || item.created_at;
+    if (ts) {
+        var d = new Date(ts);
+        timeSpan.textContent = d.toLocaleString();
+        timeSpan.title = ts;
+    }
+    mainRow.appendChild(timeSpan);
+
+    row.appendChild(mainRow);
+
+    // Expanded trace view
+    if (isExpanded) {
+        row.appendChild(renderPipelineTraceView(item));
+    }
+
+    return row;
+}
+
+/**
+ * VTID-01174: Render trace view for expanded pipeline
+ */
+function renderPipelineTraceView(item) {
+    var trace = document.createElement('div');
+    trace.className = 'pipeline-trace-view';
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'pipeline-trace-header';
+    header.textContent = 'OASIS Event Trace for ' + item.vtid;
+    trace.appendChild(header);
+
+    // Check cache
+    var events = state.agentsPipelines.eventsCache[item.vtid];
+
+    if (!events) {
+        var loading = document.createElement('div');
+        loading.className = 'pipeline-trace-loading';
+        loading.textContent = 'Loading trace events...';
+        trace.appendChild(loading);
+        return trace;
+    }
+
+    if (events.length === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'pipeline-trace-empty';
+        empty.textContent = 'No OASIS events found for this VTID.';
+        trace.appendChild(empty);
+        return trace;
+    }
+
+    // Timeline
+    var timeline = document.createElement('div');
+    timeline.className = 'pipeline-trace-timeline';
+
+    // Sort events by created_at ascending (oldest first)
+    var sortedEvents = events.slice().sort(function(a, b) {
+        return new Date(a.created_at) - new Date(b.created_at);
+    });
+
+    sortedEvents.forEach(function(ev) {
+        var eventRow = document.createElement('div');
+        eventRow.className = 'pipeline-trace-event';
+
+        // Status indicator
+        var statusDot = document.createElement('span');
+        statusDot.className = 'pipeline-trace-dot';
+        var evStatus = (ev.status || '').toLowerCase();
+        if (evStatus === 'success') {
+            statusDot.classList.add('pipeline-trace-dot-success');
+        } else if (evStatus === 'error' || evStatus === 'fail' || evStatus === 'failure') {
+            statusDot.classList.add('pipeline-trace-dot-error');
+        } else if (evStatus === 'warning') {
+            statusDot.classList.add('pipeline-trace-dot-warning');
+        } else {
+            statusDot.classList.add('pipeline-trace-dot-info');
+        }
+        eventRow.appendChild(statusDot);
+
+        // Timestamp
+        var tsSpan = document.createElement('span');
+        tsSpan.className = 'pipeline-trace-ts';
+        if (ev.created_at) {
+            var evDate = new Date(ev.created_at);
+            tsSpan.textContent = evDate.toLocaleTimeString();
+            tsSpan.title = ev.created_at;
+        }
+        eventRow.appendChild(tsSpan);
+
+        // Type/Topic
+        var typeSpan = document.createElement('span');
+        typeSpan.className = 'pipeline-trace-type';
+        typeSpan.textContent = ev.type || ev.topic || 'event';
+        eventRow.appendChild(typeSpan);
+
+        // Message
+        var msgSpan = document.createElement('span');
+        msgSpan.className = 'pipeline-trace-message';
+        msgSpan.textContent = ev.message || '';
+        msgSpan.title = ev.message || '';
+        eventRow.appendChild(msgSpan);
+
+        // Source
+        var srcSpan = document.createElement('span');
+        srcSpan.className = 'pipeline-trace-source';
+        srcSpan.textContent = ev.source || '';
+        eventRow.appendChild(srcSpan);
+
+        timeline.appendChild(eventRow);
+    });
+
+    trace.appendChild(timeline);
+
+    // Event count
+    var countDiv = document.createElement('div');
+    countDiv.className = 'pipeline-trace-count';
+    countDiv.textContent = events.length + ' event' + (events.length !== 1 ? 's' : '');
+    trace.appendChild(countDiv);
+
+    return trace;
+}
+
+/**
+ * VTID-01174: Render the Agents Pipelines View
+ * Main entry point for /command-hub/agents/pipelines/
+ */
+function renderAgentsPipelinesView() {
+    var container = document.createElement('div');
+    container.className = 'pipelines-container';
+
+    // Auto-fetch if not loaded
+    if (!state.agentsPipelines.fetched && !state.agentsPipelines.loading) {
+        fetchPipelinesData();
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'pipelines-header';
+
+    var title = document.createElement('h2');
+    title.textContent = 'Pipeline Runs';
+    header.appendChild(title);
+
+    var subtitle = document.createElement('p');
+    subtitle.className = 'pipelines-subtitle';
+    subtitle.textContent = 'VTID Ledger + OASIS Events Trace - VTID-01174';
+    header.appendChild(subtitle);
+
+    // Refresh button
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-secondary pipelines-refresh-btn';
+    refreshBtn.textContent = state.agentsPipelines.loading ? 'Loading...' : 'Refresh';
+    refreshBtn.disabled = state.agentsPipelines.loading;
+    refreshBtn.onclick = function() {
+        state.agentsPipelines.fetched = false;
+        state.agentsPipelines.eventsCache = {}; // Clear events cache
+        fetchPipelinesData();
+    };
+    header.appendChild(refreshBtn);
+
+    container.appendChild(header);
+
+    // Controls bar: Filter pills + Time window
+    var controlsBar = document.createElement('div');
+    controlsBar.className = 'pipelines-controls';
+
+    // Filter pills
+    var filterGroup = document.createElement('div');
+    filterGroup.className = 'pipelines-filter-pills';
+
+    var filters = [
+        { key: 'active', label: 'Active' },
+        { key: 'recent', label: 'Recent' },
+        { key: 'failed', label: 'Failed' },
+        { key: 'all', label: 'All' }
+    ];
+
+    filters.forEach(function(f) {
+        var pill = document.createElement('button');
+        pill.className = 'pipelines-filter-pill';
+        if (state.agentsPipelines.activeFilter === f.key) {
+            pill.classList.add('pipelines-filter-pill-active');
+        }
+        pill.textContent = f.label;
+        pill.onclick = function() {
+            state.agentsPipelines.activeFilter = f.key;
+            renderApp();
+        };
+        filterGroup.appendChild(pill);
+    });
+
+    controlsBar.appendChild(filterGroup);
+
+    // Time window selector
+    var timeGroup = document.createElement('div');
+    timeGroup.className = 'pipelines-time-selector';
+
+    var timeLabel = document.createElement('span');
+    timeLabel.className = 'pipelines-time-label';
+    timeLabel.textContent = 'Window:';
+    timeGroup.appendChild(timeLabel);
+
+    var timeWindows = ['1h', '24h', '48h', '7d'];
+    timeWindows.forEach(function(tw) {
+        var btn = document.createElement('button');
+        btn.className = 'pipelines-time-btn';
+        if (state.agentsPipelines.timeWindow === tw) {
+            btn.classList.add('pipelines-time-btn-active');
+        }
+        btn.textContent = tw;
+        btn.onclick = function() {
+            state.agentsPipelines.timeWindow = tw;
+            renderApp();
+        };
+        timeGroup.appendChild(btn);
+    });
+
+    controlsBar.appendChild(timeGroup);
+    container.appendChild(controlsBar);
+
+    // API Status Strip
+    container.appendChild(renderPipelinesApiStatusStrip());
+
+    // Error panel (if any errors)
+    var errorPanel = renderPipelinesErrorPanel();
+    if (errorPanel) {
+        container.appendChild(errorPanel);
+    }
+
+    // Loading state
+    if (state.agentsPipelines.loading) {
+        var loadingDiv = document.createElement('div');
+        loadingDiv.className = 'pipelines-loading';
+        loadingDiv.textContent = 'Loading pipeline data from VTID Ledger...';
+        container.appendChild(loadingDiv);
+        return container;
+    }
+
+    // Filtered items
+    var filteredItems = getFilteredPipelines();
+
+    // Stats bar
+    var statsBar = document.createElement('div');
+    statsBar.className = 'pipelines-stats';
+    var totalItems = state.agentsPipelines.items.length;
+    var activeCount = state.agentsPipelines.items.filter(function(i) {
+        var s = (i.status || '').toLowerCase();
+        return s === 'scheduled' || s === 'allocated' || s === 'in_progress' || s === 'queued' || s === 'running';
+    }).length;
+    var failedCount = state.agentsPipelines.items.filter(function(i) {
+        var s = (i.status || '').toLowerCase();
+        return s === 'failed' || s === 'error' || s === 'blocked';
+    }).length;
+    statsBar.innerHTML = '<span class="pipelines-stat">Total: <strong>' + totalItems + '</strong></span>' +
+        '<span class="pipelines-stat pipelines-stat-active">Active: <strong>' + activeCount + '</strong></span>' +
+        '<span class="pipelines-stat pipelines-stat-failed">Failed: <strong>' + failedCount + '</strong></span>' +
+        '<span class="pipelines-stat">Showing: <strong>' + filteredItems.length + '</strong></span>';
+    container.appendChild(statsBar);
+
+    // Pipelines list
+    var list = document.createElement('div');
+    list.className = 'pipelines-list';
+
+    if (filteredItems.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'pipelines-empty';
+        emptyDiv.textContent = 'No pipelines match the current filter.';
+        list.appendChild(emptyDiv);
+    } else {
+        filteredItems.forEach(function(item) {
+            list.appendChild(renderPipelineRow(item));
+        });
+    }
+
+    container.appendChild(list);
+
+    // Debug: Raw JSON toggle
+    var debugSection = document.createElement('div');
+    debugSection.className = 'pipelines-debug-section';
+
+    var debugToggle = document.createElement('button');
+    debugToggle.className = 'btn btn-sm btn-ghost';
+    debugToggle.textContent = state.agentsPipelines.showRawLedger ? 'Hide Raw JSON' : 'Show Raw JSON';
+    debugToggle.onclick = function() {
+        state.agentsPipelines.showRawLedger = !state.agentsPipelines.showRawLedger;
+        renderApp();
+    };
+    debugSection.appendChild(debugToggle);
+
+    if (state.agentsPipelines.showRawLedger) {
+        var rawJson = document.createElement('pre');
+        rawJson.className = 'pipelines-raw-json';
+        rawJson.textContent = JSON.stringify(state.agentsPipelines.items.slice(0, 10), null, 2);
+        debugSection.appendChild(rawJson);
+    }
+
+    container.appendChild(debugSection);
 
     return container;
 }

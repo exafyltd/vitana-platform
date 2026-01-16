@@ -70,6 +70,7 @@ import cicdEvents from '../services/oasis-event-service';
 import cicdLockManager from '../services/cicd-lock-manager';
 import { ZodError } from 'zod';
 import { randomUUID } from 'crypto';
+import { validateForMerge, hasValidatorPass } from '../services/autopilot-validator';
 
 const router = Router();
 const DEFAULT_REPO = 'exafyltd/vitana-platform';
@@ -726,6 +727,38 @@ router.post('/merge', async (req: Request, res: Response) => {
         pr_number,
       } as CicdMergeResponse);
     }
+
+    // VTID-01178: Validator Hard Gate - MUST pass before merge
+    // Run full validation (code review + governance + security scan)
+    console.log(`[VTID-01178] Running validator hard gate for ${vtid} PR #${pr_number}`);
+    const validationResult = await validateForMerge({
+      vtid,
+      pr_number,
+      repo,
+      files_changed: governance.files_touched,
+    });
+
+    if (!validationResult.passed) {
+      const issues = validationResult.result?.issues || [];
+      const errorIssues = issues.filter(i => i.severity === 'error');
+      const errorMessage = errorIssues.length > 0
+        ? `Validator blocked: ${errorIssues.map(i => i.message).join('; ')}`
+        : validationResult.error || 'Validator blocked merge';
+
+      await cicdEvents.mergeFailed(vtid, pr_number, errorMessage, repo);
+      console.log(`[VTID-01178] Validator BLOCKED merge for ${vtid}: ${errorMessage}`);
+
+      return res.status(403).json({
+        ok: false,
+        error: errorMessage,
+        reason: 'validator_blocked',
+        vtid,
+        pr_number,
+        validation_issues: issues,
+      } as CicdMergeResponse);
+    }
+
+    console.log(`[VTID-01178] Validator PASSED for ${vtid} - proceeding with merge`);
 
     // All checks passed - proceed with merge (squash)
     const mergeResult = await githubService.mergePullRequest(

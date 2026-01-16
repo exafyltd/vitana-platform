@@ -11,6 +11,7 @@
 
 import { randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
+import { markInProgress as autopilotMarkInProgress } from './autopilot-controller';
 
 // =============================================================================
 // VTID-01167 + VTID-01170: Identity Defaults (Canonical Identity Enforcement)
@@ -577,6 +578,16 @@ export async function routeWorkOrder(payload: WorkOrderPayload): Promise<Routing
     });
 
     console.log(`[VTID-01163] Routed ${vtid} to ${subagent}`);
+
+    // VTID-01178: Mandatory IN_PROGRESS trigger when worker job dispatched
+    // This updates vtid_ledger.status = 'in_progress' and emits autopilot state event
+    try {
+      await autopilotMarkInProgress(vtid, run_id);
+      console.log(`[VTID-01163] Marked ${vtid} as in_progress (autopilot controller)`);
+    } catch (err) {
+      // Non-fatal: log but don't block routing
+      console.warn(`[VTID-01163] Failed to mark ${vtid} as in_progress:`, err);
+    }
 
     return {
       ok: true,
