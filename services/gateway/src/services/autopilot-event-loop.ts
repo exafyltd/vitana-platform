@@ -35,6 +35,7 @@ import {
   getLoopState,
   setLoopRunning,
   updateLoopCursor,
+  resetLoopCursor,
   recordLoopError,
   getLoopStats,
   isEventProcessed,
@@ -825,6 +826,32 @@ export async function initializeEventLoop(): Promise<void> {
   }
 }
 
+/**
+ * Reset event loop cursor to a specific timestamp
+ * VTID-01179: Allows manual cursor reset for catching up or skipping ahead
+ *
+ * @param timestamp - ISO timestamp to reset cursor to (or 'now' for current time)
+ * @param reason - Reason for the reset (for logging)
+ */
+export async function resetEventLoopCursor(
+  timestamp: string,
+  reason: string = 'manual-reset'
+): Promise<{ ok: boolean; cursor: string; reason: string }> {
+  const effectiveTimestamp = timestamp === 'now'
+    ? new Date().toISOString()
+    : timestamp;
+
+  console.log(`${LOG_PREFIX} Resetting cursor to ${effectiveTimestamp} (reason: ${reason})`);
+
+  const success = await resetLoopCursor(effectiveTimestamp, reason);
+
+  return {
+    ok: success,
+    cursor: effectiveTimestamp,
+    reason,
+  };
+}
+
 // =============================================================================
 // Exports
 // =============================================================================
@@ -835,4 +862,5 @@ export default {
   getEventLoopStatus,
   getEventLoopHistory,
   initializeEventLoop,
+  resetEventLoopCursor,
 };

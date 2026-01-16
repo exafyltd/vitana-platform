@@ -88,6 +88,7 @@ import {
   stopEventLoop,
   getEventLoopStatus,
   getEventLoopHistory,
+  resetEventLoopCursor,
 } from '../services/autopilot-event-loop';
 
 const router = Router();
@@ -956,6 +957,53 @@ router.get('/loop/history', async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('[VTID-01179] Loop history error:', error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * POST /loop/cursor/reset → /api/v1/autopilot/loop/cursor/reset
+ * VTID-01179: Reset event loop cursor to a specific timestamp
+ *
+ * Body:
+ * - timestamp: ISO timestamp or 'now' (required)
+ * - reason: Optional reason for the reset
+ *
+ * Use cases:
+ * - Skip ahead to recent events when cursor is far behind
+ * - Reset to a specific point after a deployment issue
+ */
+router.post('/loop/cursor/reset', async (req: Request, res: Response) => {
+  try {
+    const { timestamp, reason } = req.body;
+
+    if (!timestamp) {
+      return res.status(400).json({
+        ok: false,
+        error: 'timestamp is required (ISO timestamp or "now")',
+      });
+    }
+
+    // Validate timestamp format (unless 'now')
+    if (timestamp !== 'now') {
+      const parsed = Date.parse(timestamp);
+      if (isNaN(parsed)) {
+        return res.status(400).json({
+          ok: false,
+          error: 'Invalid timestamp format. Use ISO format (e.g., 2026-01-16T00:00:00Z) or "now"',
+        });
+      }
+    }
+
+    const result = await resetEventLoopCursor(timestamp, reason || 'manual-reset-via-api');
+
+    return res.status(result.ok ? 200 : 500).json({
+      ...result,
+      vtid: 'VTID-01179',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error('[VTID-01179] Cursor reset error:', error);
     return res.status(500).json({ ok: false, error: error.message });
   }
 });

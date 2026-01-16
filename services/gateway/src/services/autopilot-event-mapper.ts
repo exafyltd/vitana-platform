@@ -127,13 +127,14 @@ export const EVENT_MAPPING_RULES: EventMappingRule[] = [
   {
     eventTypes: [
       'vtid.lifecycle.allocated',
+      'vtid.lifecycle.started',      // VTID-01179: Activate button from Command Hub
       'commandhub.task.scheduled',
       'autopilot.run.started',
     ],
     fromStates: ['allocated'],
     toState: 'in_progress',
     triggerAction: 'dispatch',
-    description: 'VTID allocated/scheduled - dispatch to worker',
+    description: 'VTID allocated/scheduled/activated - dispatch to worker',
   },
   {
     eventTypes: [
