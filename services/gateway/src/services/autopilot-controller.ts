@@ -1,5 +1,5 @@
 /**
- * Autopilot Controller - VTID-01180
+ * Autopilot Controller - VTID-01178
  *
  * Central orchestration layer that ties all steps together into an autonomous
  * VTID lifecycle pipeline. This is the "brain" that advances VTIDs through
@@ -279,7 +279,7 @@ export function createSpecSnapshot(
   // Check if snapshot already exists (immutable - no overwrites)
   const existing = specSnapshots.get(vtid);
   if (existing) {
-    console.log(`[VTID-01180] Spec snapshot already exists for ${vtid}, returning existing`);
+    console.log(`[VTID-01178] Spec snapshot already exists for ${vtid}, returning existing`);
     return existing;
   }
 
@@ -301,11 +301,11 @@ export function createSpecSnapshot(
   // Store snapshot (immutable)
   specSnapshots.set(vtid, snapshot);
 
-  console.log(`[VTID-01180] Created spec snapshot for ${vtid} (checksum: ${checksum.slice(0, 8)}...)`);
+  console.log(`[VTID-01178] Created spec snapshot for ${vtid} (checksum: ${checksum.slice(0, 8)}...)`);
 
   // Emit event asynchronously
   emitSpecSnapshot(snapshot).catch(err => {
-    console.warn(`[VTID-01180] Failed to emit spec snapshot event: ${err}`);
+    console.warn(`[VTID-01178] Failed to emit spec snapshot event: ${err}`);
   });
 
   return snapshot;
@@ -372,7 +372,7 @@ async function transitionState(
 
   // Validate transition
   if (!isValidTransition(fromState, toState)) {
-    console.error(`[VTID-01180] Invalid transition: ${fromState} → ${toState} for ${run.vtid}`);
+    console.error(`[VTID-01178] Invalid transition: ${fromState} → ${toState} for ${run.vtid}`);
     return false;
   }
 
@@ -384,7 +384,7 @@ async function transitionState(
     run.completed_at = run.updated_at;
   }
 
-  console.log(`[VTID-01180] ${run.vtid}: ${fromState} → ${toState} (${trigger})`);
+  console.log(`[VTID-01178] ${run.vtid}: ${fromState} → ${toState} (${trigger})`);
 
   // Emit state transition event
   await emitStateTransition({
@@ -416,7 +416,7 @@ export async function startAutopilotRun(
   // Check if run already exists
   const existing = activeRuns.get(vtid);
   if (existing && existing.state !== 'completed' && existing.state !== 'failed') {
-    console.log(`[VTID-01180] Run already active for ${vtid}, returning existing`);
+    console.log(`[VTID-01178] Run already active for ${vtid}, returning existing`);
     return existing;
   }
 
@@ -437,7 +437,7 @@ export async function startAutopilotRun(
 
   activeRuns.set(vtid, run);
 
-  console.log(`[VTID-01180] Started autopilot run ${run.id} for ${vtid}`);
+  console.log(`[VTID-01178] Started autopilot run ${run.id} for ${vtid}`);
 
   // Emit run started event
   await emitOasisEvent({
@@ -486,7 +486,7 @@ export function getActiveRuns(): AutopilotRun[] {
 export async function markInProgress(vtid: string, runId?: string): Promise<boolean> {
   const run = activeRuns.get(vtid);
   if (!run) {
-    console.error(`[VTID-01180] No autopilot run found for ${vtid}`);
+    console.error(`[VTID-01178] No autopilot run found for ${vtid}`);
     return false;
   }
 
@@ -672,7 +672,7 @@ async function updateLedgerStatus(vtid: string, status: string): Promise<void> {
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
 
   if (!supabaseUrl || !supabaseKey) {
-    console.warn(`[VTID-01180] Cannot update ledger: missing Supabase credentials`);
+    console.warn(`[VTID-01178] Cannot update ledger: missing Supabase credentials`);
     return;
   }
 
@@ -691,12 +691,12 @@ async function updateLedgerStatus(vtid: string, status: string): Promise<void> {
     });
 
     if (!response.ok) {
-      console.warn(`[VTID-01180] Failed to update ledger status for ${vtid}: ${response.status}`);
+      console.warn(`[VTID-01178] Failed to update ledger status for ${vtid}: ${response.status}`);
     } else {
-      console.log(`[VTID-01180] Updated ledger status for ${vtid}: ${status}`);
+      console.log(`[VTID-01178] Updated ledger status for ${vtid}: ${status}`);
     }
   } catch (error) {
-    console.warn(`[VTID-01180] Error updating ledger status: ${error}`);
+    console.warn(`[VTID-01178] Error updating ledger status: ${error}`);
   }
 }
 
@@ -708,7 +708,7 @@ async function updateLedgerTerminal(vtid: string, outcome: 'success' | 'failed')
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
 
   if (!supabaseUrl || !supabaseKey) {
-    console.warn(`[VTID-01180] Cannot update ledger terminal: missing Supabase credentials`);
+    console.warn(`[VTID-01178] Cannot update ledger terminal: missing Supabase credentials`);
     return;
   }
 
@@ -732,12 +732,12 @@ async function updateLedgerTerminal(vtid: string, outcome: 'success' | 'failed')
     });
 
     if (!response.ok) {
-      console.warn(`[VTID-01180] Failed to update ledger terminal for ${vtid}: ${response.status}`);
+      console.warn(`[VTID-01178] Failed to update ledger terminal for ${vtid}: ${response.status}`);
     } else {
-      console.log(`[VTID-01180] Updated ledger to terminal for ${vtid}: ${outcome}`);
+      console.log(`[VTID-01178] Updated ledger to terminal for ${vtid}: ${outcome}`);
     }
   } catch (error) {
-    console.warn(`[VTID-01180] Error updating ledger terminal: ${error}`);
+    console.warn(`[VTID-01178] Error updating ledger terminal: ${error}`);
   }
 }
 

@@ -1,5 +1,5 @@
 /**
- * Autopilot Validator Service - VTID-01180
+ * Autopilot Validator Service - VTID-01178
  *
  * Provides the "validator hard gate" before merge.
  * The merge endpoint MUST call validateForMerge() and refuse if it doesn't pass.
@@ -179,7 +179,7 @@ async function runGovernanceCheck(
       blocked_reasons: governance.blocked_reasons,
     };
   } catch (error) {
-    console.error(`[VTID-01180] Governance check failed for ${vtid}:`, error);
+    console.error(`[VTID-01178] Governance check failed for ${vtid}:`, error);
     return {
       passed: false,
       decision: 'blocked',
@@ -252,7 +252,7 @@ async function runSecurityScan(
 export async function validateForMerge(request: ValidationRequest): Promise<ValidationResponse> {
   const { vtid, pr_number, repo = 'exafyltd/vitana-platform', files_changed = [] } = request;
 
-  console.log(`[VTID-01180] Starting validation for ${vtid} PR #${pr_number}`);
+  console.log(`[VTID-01178] Starting validation for ${vtid} PR #${pr_number}`);
 
   await emitValidationEvent(vtid, 'started', 'info', `Validation started for ${vtid}`, {
     pr_number,
@@ -266,7 +266,7 @@ export async function validateForMerge(request: ValidationRequest): Promise<Vali
 
   try {
     // Step 1: Code Review
-    console.log(`[VTID-01180] Running code review for ${vtid}...`);
+    console.log(`[VTID-01178] Running code review for ${vtid}...`);
     const codeReview = await runCodeReview(vtid, pr_number, files_changed);
     codeReviewPassed = codeReview.passed;
     allIssues.push(...codeReview.issues);
@@ -280,7 +280,7 @@ export async function validateForMerge(request: ValidationRequest): Promise<Vali
     );
 
     // Step 2: Governance Check
-    console.log(`[VTID-01180] Running governance check for ${vtid}...`);
+    console.log(`[VTID-01178] Running governance check for ${vtid}...`);
     const governance = await runGovernanceCheck(vtid, pr_number, repo);
     governancePassed = governance.passed;
 
@@ -301,7 +301,7 @@ export async function validateForMerge(request: ValidationRequest): Promise<Vali
     );
 
     // Step 3: Security Scan
-    console.log(`[VTID-01180] Running security scan for ${vtid}...`);
+    console.log(`[VTID-01178] Running security scan for ${vtid}...`);
     const security = await runSecurityScan(vtid, pr_number, files_changed);
     securityPassed = security.passed;
 
@@ -351,7 +351,7 @@ export async function validateForMerge(request: ValidationRequest): Promise<Vali
       });
     }
 
-    console.log(`[VTID-01180] Validation complete for ${vtid}: ${passed ? 'PASSED' : 'BLOCKED'}`);
+    console.log(`[VTID-01178] Validation complete for ${vtid}: ${passed ? 'PASSED' : 'BLOCKED'}`);
 
     return {
       ok: true,
@@ -361,7 +361,7 @@ export async function validateForMerge(request: ValidationRequest): Promise<Vali
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`[VTID-01180] Validation error for ${vtid}:`, errorMessage);
+    console.error(`[VTID-01178] Validation error for ${vtid}:`, errorMessage);
 
     await emitValidationEvent(vtid, 'blocked', 'error', `Validation error: ${errorMessage}`, {
       error: errorMessage,

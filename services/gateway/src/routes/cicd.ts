@@ -728,9 +728,9 @@ router.post('/merge', async (req: Request, res: Response) => {
       } as CicdMergeResponse);
     }
 
-    // VTID-01180: Validator Hard Gate - MUST pass before merge
+    // VTID-01178: Validator Hard Gate - MUST pass before merge
     // Run full validation (code review + governance + security scan)
-    console.log(`[VTID-01180] Running validator hard gate for ${vtid} PR #${pr_number}`);
+    console.log(`[VTID-01178] Running validator hard gate for ${vtid} PR #${pr_number}`);
     const validationResult = await validateForMerge({
       vtid,
       pr_number,
@@ -746,7 +746,7 @@ router.post('/merge', async (req: Request, res: Response) => {
         : validationResult.error || 'Validator blocked merge';
 
       await cicdEvents.mergeFailed(vtid, pr_number, errorMessage, repo);
-      console.log(`[VTID-01180] Validator BLOCKED merge for ${vtid}: ${errorMessage}`);
+      console.log(`[VTID-01178] Validator BLOCKED merge for ${vtid}: ${errorMessage}`);
 
       return res.status(403).json({
         ok: false,
@@ -758,7 +758,7 @@ router.post('/merge', async (req: Request, res: Response) => {
       } as CicdMergeResponse);
     }
 
-    console.log(`[VTID-01180] Validator PASSED for ${vtid} - proceeding with merge`);
+    console.log(`[VTID-01178] Validator PASSED for ${vtid} - proceeding with merge`);
 
     // All checks passed - proceed with merge (squash)
     const mergeResult = await githubService.mergePullRequest(

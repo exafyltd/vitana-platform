@@ -1,5 +1,5 @@
 /**
- * Autopilot Verification Service - VTID-01180
+ * Autopilot Verification Service - VTID-01178
  *
  * Post-deploy verification pipeline that runs after successful deployment.
  * This is the final gate before a VTID can be marked as terminally completed.
@@ -157,7 +157,7 @@ async function runHealthCheck(
 
       // Non-200 response
       if (attempt < CONFIG.maxRetries) {
-        console.log(`[VTID-01180] Health check attempt ${attempt} failed (${response.status}), retrying...`);
+        console.log(`[VTID-01178] Health check attempt ${attempt} failed (${response.status}), retrying...`);
         await new Promise(r => setTimeout(r, CONFIG.retryDelayMs));
         continue;
       }
@@ -171,7 +171,7 @@ async function runHealthCheck(
 
     } catch (error) {
       if (attempt < CONFIG.maxRetries) {
-        console.log(`[VTID-01180] Health check attempt ${attempt} error, retrying...`);
+        console.log(`[VTID-01178] Health check attempt ${attempt} error, retrying...`);
         await new Promise(r => setTimeout(r, CONFIG.retryDelayMs));
         continue;
       }
@@ -249,7 +249,7 @@ async function runCspCheck(
 
   } catch (error) {
     // CSP check errors are warnings, not failures
-    console.warn(`[VTID-01180] CSP check error for ${vtid}:`, error);
+    console.warn(`[VTID-01178] CSP check error for ${vtid}:`, error);
     return { passed: true, violations: [] };
   }
 }
@@ -408,7 +408,7 @@ async function runAcceptanceAssertions(
 export async function runVerification(request: VerificationRequest): Promise<VerificationResponse> {
   const { vtid, service, environment, deploy_url, merge_sha } = request;
 
-  console.log(`[VTID-01180] Starting verification for ${vtid} (${service}@${environment})`);
+  console.log(`[VTID-01178] Starting verification for ${vtid} (${service}@${environment})`);
 
   // Mark as verifying state
   await markVerifying(vtid);
@@ -423,7 +423,7 @@ export async function runVerification(request: VerificationRequest): Promise<Ver
 
   try {
     // Step 1: Health Check
-    console.log(`[VTID-01180] Running health check for ${vtid}...`);
+    console.log(`[VTID-01178] Running health check for ${vtid}...`);
     const healthCheck = await runHealthCheck(vtid, service, deploy_url);
 
     await emitVerificationEvent(
@@ -445,7 +445,7 @@ export async function runVerification(request: VerificationRequest): Promise<Ver
     }
 
     // Step 2: CSP Check
-    console.log(`[VTID-01180] Running CSP check for ${vtid}...`);
+    console.log(`[VTID-01178] Running CSP check for ${vtid}...`);
     const cspCheck = await runCspCheck(vtid, service);
 
     await emitVerificationEvent(
@@ -466,7 +466,7 @@ export async function runVerification(request: VerificationRequest): Promise<Ver
     }
 
     // Step 3: Acceptance Assertions
-    console.log(`[VTID-01180] Running acceptance assertions for ${vtid}...`);
+    console.log(`[VTID-01178] Running acceptance assertions for ${vtid}...`);
     const acceptance = await runAcceptanceAssertions(vtid, service);
 
     await emitVerificationEvent(
@@ -510,14 +510,14 @@ export async function runVerification(request: VerificationRequest): Promise<Ver
         acceptance_passed: acceptance.passed,
       });
 
-      console.log(`[VTID-01180] Verification PASSED for ${vtid} - marked as completed`);
+      console.log(`[VTID-01178] Verification PASSED for ${vtid} - marked as completed`);
     } else {
       await emitVerificationEvent(vtid, 'failed', 'error', `Verification failed for ${vtid}`, {
         passed: false,
         issues,
       });
 
-      console.log(`[VTID-01180] Verification FAILED for ${vtid}: ${issues.join(', ')}`);
+      console.log(`[VTID-01178] Verification FAILED for ${vtid}: ${issues.join(', ')}`);
     }
 
     return {
@@ -528,7 +528,7 @@ export async function runVerification(request: VerificationRequest): Promise<Ver
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`[VTID-01180] Verification error for ${vtid}:`, errorMessage);
+    console.error(`[VTID-01178] Verification error for ${vtid}:`, errorMessage);
 
     // Mark as failed
     await markFailed(vtid, `Verification error: ${errorMessage}`, 'VERIFICATION_ERROR');

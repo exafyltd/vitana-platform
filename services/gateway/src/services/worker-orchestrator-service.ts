@@ -579,7 +579,7 @@ export async function routeWorkOrder(payload: WorkOrderPayload): Promise<Routing
 
     console.log(`[VTID-01163] Routed ${vtid} to ${subagent}`);
 
-    // VTID-01180: Mandatory IN_PROGRESS trigger when worker job dispatched
+    // VTID-01178: Mandatory IN_PROGRESS trigger when worker job dispatched
     // This updates vtid_ledger.status = 'in_progress' and emits autopilot state event
     try {
       await autopilotMarkInProgress(vtid, run_id);
