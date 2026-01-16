@@ -1,16 +1,14 @@
 # Vitana Platform - Live Status
 
-**Updated:** 2026-01-15T08:15:32.413495Z
+**Updated:** 2026-01-16T08:15:07.897342Z
 
 ## Service Health
 
 | Service | Status |
 |---------|--------|
-| oasis | ❌ Down |
-| planner-core | ❌ Down |
-| worker-core | ❌ Down |
-| validator-core | ❌ Down |
-| memory-indexer | ❌ Down |
+| gateway | ✅ Live |
+| gateway-health | ❌ Down |
+| oasis-api | ❌ Down |
 
 
 See full details at docs/STATUS.md
