@@ -199,6 +199,19 @@ subagents:
     failed_event: vtid.stage.worker_memory.failed
     timeout_ms: 1800000
 
+  # VTID-01177: Code Review Agent
+  code-review:
+    agent_id: code-review
+    dispatch_event: vtid.stage.code_review.start
+    success_event: vtid.stage.code_review.complete
+    failed_event: vtid.stage.code_review.failed
+    timeout_ms: 300000  # 5 min - review should be quick
+    # Gate configuration
+    gate_type: pre_merge
+    required: true
+    can_skip: true
+    skip_flag: "--skip-review"
+
 # =============================================================================
 # Validation Rules
 # =============================================================================
@@ -216,3 +229,64 @@ validation:
 
   # Fail if no domain can be determined
   require_domain_detection: true
+
+# =============================================================================
+# Pre-Merge Pipeline - VTID-01177
+# =============================================================================
+# Gates that run after worker completion, before merge/PR
+pre_merge_pipeline:
+  enabled: true
+
+  # Order of execution
+  stages:
+    - stage_id: code_review
+      agent_id: code-review
+      required: true
+      can_skip: true
+      skip_conditions:
+        - flag: "--skip-review"
+        - env: SKIP_CODE_REVIEW=true
+      timeout_ms: 300000
+      # Block merge if critical issues found
+      blocking_severities:
+        - CRITICAL
+        - HIGH
+      # Auto-approve if no issues
+      auto_approve_on_clean: true
+
+  # Events
+  events:
+    pipeline_start: vtid.stage.pre_merge.start
+    pipeline_complete: vtid.stage.pre_merge.complete
+    pipeline_failed: vtid.stage.pre_merge.failed
+
+  # Triggered by
+  triggers:
+    - event: vtid.stage.worker_orchestrator.complete
+    - event: vtid.request.pre_merge
+
+# =============================================================================
+# Code Review Routing
+# =============================================================================
+code_review_routing:
+  # Domains that require code review
+  required_for_domains:
+    - frontend
+    - backend
+    - memory
+
+  # File patterns that always require review
+  always_review_patterns:
+    - "**/*.sql"                    # Database changes
+    - "**/auth/**"                  # Auth changes
+    - "**/security/**"              # Security changes
+    - "supabase/migrations/**"      # Migrations
+    - ".github/workflows/**"        # CI/CD changes
+
+  # File patterns that skip review
+  skip_review_patterns:
+    - "**/*.md"                     # Documentation only
+    - "**/*.json"                   # Config files
+    - "**/test/**"                  # Test files
+    - "**/*.test.ts"                # Test files
+    - "**/*.spec.ts"                # Test files

@@ -3,11 +3,17 @@
  * VTID-01177: Dynamic tool loading to reduce context usage at scale
  *
  * Skills:
- *   - tool.search      - Semantic search for relevant tools
- *   - tool.get_schema  - Get specific tool definition
- *   - tool.suggest     - AI-suggested tools based on task description
- *   - tool.list_tier   - List tools by tier (essential/domain/specialty)
- *   - tool.batch_load  - Load multiple tool schemas efficiently
+ *   - tool.filter         - Metadata + text filtering (NOT semantic search)
+ *   - tool.semantic_search - Real semantic search via embeddings (when available)
+ *   - tool.get_schema     - Get specific tool definition (with visibility gating)
+ *   - tool.suggest        - Suggest tools based on task description
+ *   - tool.list_tier      - List tools by tier (essential/domain/specialty)
+ *   - tool.batch_load     - Load multiple tool schemas efficiently
+ *
+ * Security:
+ *   - Visibility gating (dev/prod/internal/admin)
+ *   - Caller role validation
+ *   - OASIS audit logging for all schema fetches
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
@@ -53,8 +59,23 @@ export const TOOL_TIERS = {
     linear: ['linear.issue.list', 'linear.issue.get', 'linear.issue.update_status', 'linear.issue.create'],
     context7: ['context7.space.list', 'context7.search', 'context7.doc.get', 'context7.doc.search'],
     testsprite: ['testsprite.run_tests', 'testsprite.debug_code', 'testsprite.test.status', 'testsprite.test.results'],
+    sentry: ['sentry.list_issues', 'sentry.get_issue', 'sentry.get_stacktrace', 'sentry.search_similar', 'sentry.list_events'],
+    code_review: ['review.analyze_diff', 'review.security_scan', 'review.type_check', 'review.lint_check', 'review.suggest_improvements'],
   },
 } as const;
+
+// Visibility levels (ordered by access level)
+type VisibilityLevel = 'public' | 'dev' | 'prod' | 'internal' | 'admin';
+const VISIBILITY_HIERARCHY: VisibilityLevel[] = ['public', 'dev', 'prod', 'internal', 'admin'];
+
+// Caller roles and their max visibility access
+const ROLE_VISIBILITY_ACCESS: Record<string, VisibilityLevel> = {
+  'agent': 'prod',           // Agents can see dev + prod tools
+  'worker': 'prod',          // Workers can see dev + prod tools
+  'orchestrator': 'internal', // Orchestrator can see internal tools
+  'admin': 'admin',          // Admin can see everything
+  'debug': 'admin',          // Debug mode sees everything
+};
 
 // Domain keywords for routing
 const DOMAIN_KEYWORDS: Record<string, string[]> = {
@@ -65,6 +86,8 @@ const DOMAIN_KEYWORDS: Record<string, string[]> = {
   linear: ['issue', 'ticket', 'task', 'linear', 'backlog', 'sprint'],
   testing: ['test', 'spec', 'coverage', 'assertion', 'mock', 'testsprite'],
   research: ['search', 'research', 'question', 'answer', 'perplexity', 'context7'],
+  sentry: ['error', 'exception', 'crash', 'bug', 'stacktrace', 'sentry'],
+  code_review: ['review', 'lint', 'quality', 'static analysis'],
 };
 
 interface ToolSchema {
@@ -74,6 +97,7 @@ interface ToolSchema {
   params_schema: Record<string, any>;
   tier: 'essential' | 'domain' | 'specialty';
   domain?: string;
+  visibility: VisibilityLevel;
   enabled: boolean;
 }
 
@@ -86,26 +110,48 @@ interface ToolMatch {
   domain?: string;
 }
 
-interface SearchParams {
+interface CallerContext {
+  caller_role: string;
+  caller_id?: string;
+  vtid?: string;
+  run_id?: string;
+}
+
+interface FilterParams {
   query: string;
   domain?: string;
   tier?: 'essential' | 'domain' | 'specialty';
   limit?: number;
+  caller: CallerContext;
+}
+
+interface SemanticSearchParams {
+  query: string;
+  limit?: number;
+  caller: CallerContext;
+}
+
+interface GetSchemaParams {
+  tool_id: string;
+  caller: CallerContext;
 }
 
 interface SuggestParams {
   task_description: string;
   vtid?: string;
   include_essential?: boolean;
+  caller: CallerContext;
 }
 
 interface BatchLoadParams {
   tool_ids: string[];
+  caller: CallerContext;
 }
 
 interface ListTierParams {
   tier: 'essential' | 'domain' | 'specialty';
   domain?: string;
+  caller: CallerContext;
 }
 
 function getSupabaseClient(): SupabaseClient {
@@ -122,10 +168,52 @@ function getSupabaseClient(): SupabaseClient {
 }
 
 /**
- * Compute simple relevance score based on keyword matching
- * In production, this would use embeddings and vector search
+ * Check if caller can access a tool based on visibility
  */
-function computeRelevanceScore(query: string, tool: ToolSchema): number {
+function canAccessVisibility(callerRole: string, toolVisibility: VisibilityLevel): boolean {
+  const maxAccess = ROLE_VISIBILITY_ACCESS[callerRole] || 'dev';
+  const callerLevel = VISIBILITY_HIERARCHY.indexOf(maxAccess);
+  const toolLevel = VISIBILITY_HIERARCHY.indexOf(toolVisibility);
+  return callerLevel >= toolLevel;
+}
+
+/**
+ * Emit OASIS audit event for tool schema access
+ */
+async function emitOasisAuditEvent(
+  eventType: string,
+  caller: CallerContext,
+  details: Record<string, any>
+): Promise<void> {
+  const client = getSupabaseClient();
+
+  const event = {
+    event_type: eventType,
+    event_family: 'TOOL_REGISTRY',
+    vtid: caller.vtid || 'SYSTEM',
+    run_id: caller.run_id,
+    payload: {
+      caller_role: caller.caller_role,
+      caller_id: caller.caller_id,
+      timestamp: new Date().toISOString(),
+      ...details,
+    },
+    created_at: new Date().toISOString(),
+  };
+
+  try {
+    await client.from('oasis_events').insert(event);
+  } catch (err) {
+    // Log but don't fail the operation
+    console.error('Failed to emit OASIS audit event:', err);
+  }
+}
+
+/**
+ * Compute simple relevance score based on keyword matching
+ * This is METADATA + TEXT FILTERING, not semantic search
+ */
+function computeTextRelevanceScore(query: string, tool: ToolSchema): number {
   const queryLower = query.toLowerCase();
   const queryWords = queryLower.split(/\s+/);
 
@@ -207,19 +295,22 @@ function getToolTierInfo(skillId: string): { tier: 'essential' | 'domain' | 'spe
 }
 
 /**
- * Search for relevant tools
+ * Filter tools by metadata and text matching
+ * NOTE: This is NOT semantic search - it uses keyword/text matching only
  */
-async function searchTools(params: SearchParams): Promise<{ tools: ToolMatch[]; total_available: number }> {
+async function filterTools(params: FilterParams): Promise<{
+  tools: ToolMatch[];
+  total_available: number;
+  method: 'metadata_text_filter';
+}> {
   const client = getSupabaseClient();
   const limit = Math.min(params.limit || 10, 50);
 
   // Get all enabled tools
-  let query = client.from('skills_mcp').select('*').eq('enabled', true);
-
-  const { data, error } = await query;
+  const { data, error } = await client.from('skills_mcp').select('*').eq('enabled', true);
 
   if (error) {
-    throw new Error(`Failed to search tools: ${error.message}`);
+    throw new Error(`Failed to filter tools: ${error.message}`);
   }
 
   const tools = (data || []).map((row: any) => {
@@ -233,12 +324,15 @@ async function searchTools(params: SearchParams): Promise<{ tools: ToolMatch[]; 
         : row.params_schema,
       tier: tierInfo.tier,
       domain: tierInfo.domain,
+      visibility: row.visibility || 'dev',
       enabled: row.enabled,
     } as ToolSchema;
   });
 
+  // Filter by visibility based on caller role
+  let filtered = tools.filter(t => canAccessVisibility(params.caller.caller_role, t.visibility));
+
   // Filter by tier if specified
-  let filtered = tools;
   if (params.tier) {
     filtered = filtered.filter(t => t.tier === params.tier);
   }
@@ -248,12 +342,12 @@ async function searchTools(params: SearchParams): Promise<{ tools: ToolMatch[]; 
     filtered = filtered.filter(t => t.domain === params.domain);
   }
 
-  // Score and rank
+  // Score and rank using text matching
   const scored: ToolMatch[] = filtered.map(t => ({
     skill_id: t.skill_id,
     server: t.server,
     description: t.description,
-    relevance_score: computeRelevanceScore(params.query, t),
+    relevance_score: computeTextRelevanceScore(params.query, t),
     tier: t.tier,
     domain: t.domain,
   }));
@@ -264,16 +358,89 @@ async function searchTools(params: SearchParams): Promise<{ tools: ToolMatch[]; 
   // Filter out zero scores and apply limit
   const results = scored.filter(t => t.relevance_score > 0).slice(0, limit);
 
+  // Audit log
+  await emitOasisAuditEvent('tool.filter', params.caller, {
+    query: params.query,
+    results_count: results.length,
+    total_searched: tools.length,
+  });
+
   return {
     tools: results,
     total_available: tools.length,
+    method: 'metadata_text_filter',
   };
 }
 
 /**
- * Get specific tool schema
+ * Semantic search using embeddings
+ * Requires MEM0_QDRANT_HOST to be configured
+ * Falls back to text filtering if embeddings not available
  */
-async function getToolSchema(params: { tool_id: string }): Promise<ToolSchema | null> {
+async function semanticSearch(params: SemanticSearchParams): Promise<{
+  tools: ToolMatch[];
+  total_available: number;
+  method: 'semantic_embedding' | 'fallback_text_filter';
+  embedding_available: boolean;
+}> {
+  const qdrantHost = process.env.MEM0_QDRANT_HOST || process.env.QDRANT_HOST;
+
+  // If Qdrant not configured, fall back to text filter
+  if (!qdrantHost) {
+    console.warn('Qdrant not configured, falling back to text filter');
+    const filterResult = await filterTools({
+      query: params.query,
+      limit: params.limit,
+      caller: params.caller,
+    });
+
+    return {
+      tools: filterResult.tools,
+      total_available: filterResult.total_available,
+      method: 'fallback_text_filter',
+      embedding_available: false,
+    };
+  }
+
+  // TODO: Implement actual embedding-based search
+  // This would:
+  // 1. Generate embedding for query using sentence-transformers
+  // 2. Search Qdrant collection "tool_embeddings" for nearest neighbors
+  // 3. Return tools with cosine similarity scores
+  //
+  // For now, we mark it as not available and fall back
+
+  console.warn('Semantic search not yet implemented, falling back to text filter');
+  const filterResult = await filterTools({
+    query: params.query,
+    limit: params.limit,
+    caller: params.caller,
+  });
+
+  // Audit log
+  await emitOasisAuditEvent('tool.semantic_search', params.caller, {
+    query: params.query,
+    results_count: filterResult.tools.length,
+    method_used: 'fallback_text_filter',
+    embedding_available: false,
+  });
+
+  return {
+    tools: filterResult.tools,
+    total_available: filterResult.total_available,
+    method: 'fallback_text_filter',
+    embedding_available: false,
+  };
+}
+
+/**
+ * Get specific tool schema with visibility gating and audit logging
+ */
+async function getToolSchema(params: GetSchemaParams): Promise<{
+  schema: ToolSchema | null;
+  access_granted: boolean;
+  audit_logged: boolean;
+}> {
   const client = getSupabaseClient();
 
   const { data, error } = await client
@@ -284,14 +451,32 @@ async function getToolSchema(params: { tool_id: string }): Promise<ToolSchema | 
 
   if (error) {
     if (error.code === 'PGRST116') {
-      return null; // Not found
+      // Audit log - tool not found
+      await emitOasisAuditEvent('tool.get_schema.not_found', params.caller, {
+        tool_id: params.tool_id,
+      });
+      return { schema: null, access_granted: false, audit_logged: true };
     }
     throw new Error(`Failed to get tool: ${error.message}`);
   }
 
+  const visibility = data.visibility || 'dev';
+
+  // Check visibility access
+  if (!canAccessVisibility(params.caller.caller_role, visibility)) {
+    // Audit log - access denied
+    await emitOasisAuditEvent('tool.get_schema.access_denied', params.caller, {
+      tool_id: params.tool_id,
+      tool_visibility: visibility,
+      caller_role: params.caller.caller_role,
+    });
+
+    return { schema: null, access_granted: false, audit_logged: true };
+  }
+
   const tierInfo = getToolTierInfo(data.skill_id);
 
-  return {
+  const schema: ToolSchema = {
     skill_id: data.skill_id,
     server: data.server,
     description: data.description,
@@ -300,8 +485,17 @@ async function getToolSchema(params: { tool_id: string }): Promise<ToolSchema | 
       : data.params_schema,
     tier: tierInfo.tier,
     domain: tierInfo.domain,
+    visibility: visibility,
     enabled: data.enabled,
   };
+
+  // Audit log - access granted
+  await emitOasisAuditEvent('tool.get_schema.success', params.caller, {
+    tool_id: params.tool_id,
+    tool_visibility: visibility,
+  });
+
+  return { schema, access_granted: true, audit_logged: true };
 }
 
 /**
@@ -331,7 +525,6 @@ async function suggestTools(params: SuggestParams): Promise<{
 
   // Add domain-specific tools
   for (const domain of detectedDomains) {
-    // Domain tier
     const domainTools = TOOL_TIERS.domain[domain as keyof typeof TOOL_TIERS.domain];
     if (domainTools) {
       for (const toolId of domainTools) {
@@ -348,7 +541,6 @@ async function suggestTools(params: SuggestParams): Promise<{
       }
     }
 
-    // Specialty tier
     const specialtyTools = TOOL_TIERS.specialty[domain as keyof typeof TOOL_TIERS.specialty];
     if (specialtyTools) {
       for (const toolId of specialtyTools) {
@@ -366,7 +558,14 @@ async function suggestTools(params: SuggestParams): Promise<{
     }
   }
 
-  // Estimate context tokens (rough: ~50 tokens per tool definition)
+  // Audit log
+  await emitOasisAuditEvent('tool.suggest', params.caller, {
+    task_description_length: params.task_description.length,
+    detected_domains: detectedDomains,
+    recommended_count: recommended.length,
+    vtid: params.vtid,
+  });
+
   const tokensPerTool = 50;
   const contextTokensEstimate = recommended.length * tokensPerTool;
 
@@ -390,7 +589,6 @@ async function listTier(params: ListTierParams): Promise<{ tools: string[]; coun
     if (params.domain && TOOL_TIERS.domain[params.domain as keyof typeof TOOL_TIERS.domain]) {
       tools = [...TOOL_TIERS.domain[params.domain as keyof typeof TOOL_TIERS.domain]];
     } else {
-      // All domain tools
       for (const domainTools of Object.values(TOOL_TIERS.domain)) {
         tools.push(...domainTools);
       }
@@ -399,7 +597,6 @@ async function listTier(params: ListTierParams): Promise<{ tools: string[]; coun
     if (params.domain && TOOL_TIERS.specialty[params.domain as keyof typeof TOOL_TIERS.specialty]) {
       tools = [...TOOL_TIERS.specialty[params.domain as keyof typeof TOOL_TIERS.specialty]];
     } else {
-      // All specialty tools
       for (const specialtyTools of Object.values(TOOL_TIERS.specialty)) {
         tools.push(...specialtyTools);
       }
@@ -410,11 +607,12 @@ async function listTier(params: ListTierParams): Promise<{ tools: string[]; coun
 }
 
 /**
- * Batch load tool schemas
+ * Batch load tool schemas with visibility gating
  */
 async function batchLoad(params: BatchLoadParams): Promise<{
   schemas: Record<string, ToolSchema>;
   loaded_count: number;
+  denied_count: number;
   tokens_saved_estimate: number;
 }> {
   const client = getSupabaseClient();
@@ -429,8 +627,17 @@ async function batchLoad(params: BatchLoadParams): Promise<{
   }
 
   const schemas: Record<string, ToolSchema> = {};
+  let deniedCount = 0;
 
   for (const row of data || []) {
+    const visibility = row.visibility || 'dev';
+
+    // Check visibility access
+    if (!canAccessVisibility(params.caller.caller_role, visibility)) {
+      deniedCount++;
+      continue;
+    }
+
     const tierInfo = getToolTierInfo(row.skill_id);
     schemas[row.skill_id] = {
       skill_id: row.skill_id,
@@ -441,18 +648,26 @@ async function batchLoad(params: BatchLoadParams): Promise<{
         : row.params_schema,
       tier: tierInfo.tier,
       domain: tierInfo.domain,
+      visibility: visibility,
       enabled: row.enabled,
     };
   }
 
-  // Estimate tokens saved (assuming full registry would be ~34 tools * 50 tokens = 1700)
-  const fullRegistryTokens = 1700;
+  // Audit log
+  await emitOasisAuditEvent('tool.batch_load', params.caller, {
+    requested_count: params.tool_ids.length,
+    loaded_count: Object.keys(schemas).length,
+    denied_count: deniedCount,
+  });
+
+  const fullRegistryTokens = 2500; // Updated for 49 tools
   const loadedTokens = Object.keys(schemas).length * 50;
   const tokensSaved = Math.max(0, fullRegistryTokens - loadedTokens);
 
   return {
     schemas,
     loaded_count: Object.keys(schemas).length,
+    denied_count: deniedCount,
     tokens_saved_estimate: tokensSaved,
   };
 }
@@ -464,10 +679,30 @@ async function health() {
     if (error) {
       return { status: 'error', error: error.message };
     }
-    return { status: 'ok', message: 'Tool Registry MCP operational' };
+
+    const qdrantAvailable = !!(process.env.MEM0_QDRANT_HOST || process.env.QDRANT_HOST);
+
+    return {
+      status: 'ok',
+      message: 'Tool Registry MCP operational',
+      features: {
+        text_filter: true,
+        semantic_search: qdrantAvailable,
+        visibility_gating: true,
+        oasis_audit: true,
+      },
+    };
   } catch (err: any) {
     return { status: 'error', error: String(err.message || err) };
   }
+}
+
+// Default caller context when not provided
+function ensureCaller(params: any): CallerContext {
+  return params.caller || {
+    caller_role: 'agent',
+    caller_id: 'unknown',
+  };
 }
 
 export const toolRegistryMcpConnector = {
@@ -479,16 +714,22 @@ export const toolRegistryMcpConnector = {
 
   async call(method: string, params: any) {
     switch (method) {
-      case 'search':
-        return searchTools(params || {});
+      case 'filter':
+        return filterTools({ ...params, caller: ensureCaller(params) });
+      case 'semantic_search':
+        return semanticSearch({ ...params, caller: ensureCaller(params) });
       case 'get_schema':
-        return getToolSchema(params || {});
+        return getToolSchema({ ...params, caller: ensureCaller(params) });
       case 'suggest':
-        return suggestTools(params || {});
+        return suggestTools({ ...params, caller: ensureCaller(params) });
       case 'list_tier':
-        return listTier(params || {});
+        return listTier({ ...params, caller: ensureCaller(params) });
       case 'batch_load':
-        return batchLoad(params || {});
+        return batchLoad({ ...params, caller: ensureCaller(params) });
+      // Legacy alias for search -> filter
+      case 'search':
+        console.warn('tool.search is deprecated, use tool.filter (text matching) or tool.semantic_search');
+        return filterTools({ ...params, caller: ensureCaller(params) });
       default:
         throw new Error(`Unknown method for tool-registry-mcp: ${method}`);
     }

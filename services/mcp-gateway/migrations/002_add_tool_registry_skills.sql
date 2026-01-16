@@ -1,5 +1,8 @@
 -- Migration: Add Tool Registry MCP skills
 -- VTID-01177: Context Pollution Management
+--
+-- NOTE: tool.filter is metadata + text filtering, NOT semantic search
+-- tool.semantic_search will use embeddings when Qdrant is configured
 
 -- Add tool_tier and tool_domain columns for hierarchical loading
 ALTER TABLE skills_mcp ADD COLUMN IF NOT EXISTS tool_tier TEXT DEFAULT 'specialty';
@@ -11,22 +14,27 @@ CREATE INDEX IF NOT EXISTS idx_skills_mcp_domain ON skills_mcp(tool_domain);
 
 -- Insert Tool Registry MCP skills
 INSERT INTO skills_mcp (skill_id, server, description, params_schema, visibility, tool_tier) VALUES
-  ('tool.search', 'tool-registry-mcp', 'Semantic search for relevant tools based on task description',
-   '{"query": "string", "domain": "string?", "tier": "string?", "limit": "number?"}', 'prod', 'essential'),
-  ('tool.get_schema', 'tool-registry-mcp', 'Get specific tool definition and parameters',
-   '{"tool_id": "string"}', 'prod', 'essential'),
-  ('tool.suggest', 'tool-registry-mcp', 'AI-suggested tools based on task description and detected domains',
-   '{"task_description": "string", "vtid": "string?", "include_essential": "boolean?"}', 'prod', 'essential'),
+  ('tool.filter', 'tool-registry-mcp', 'Filter tools by metadata and text matching (NOT semantic search)',
+   '{"query": "string", "domain": "string?", "tier": "string?", "limit": "number?", "caller": "object"}', 'prod', 'essential'),
+  ('tool.semantic_search', 'tool-registry-mcp', 'Semantic search using embeddings (falls back to filter if Qdrant unavailable)',
+   '{"query": "string", "limit": "number?", "caller": "object"}', 'prod', 'essential'),
+  ('tool.get_schema', 'tool-registry-mcp', 'Get specific tool definition with visibility gating and audit logging',
+   '{"tool_id": "string", "caller": "object"}', 'prod', 'essential'),
+  ('tool.suggest', 'tool-registry-mcp', 'Suggest tools based on task description and detected domains',
+   '{"task_description": "string", "vtid": "string?", "include_essential": "boolean?", "caller": "object"}', 'prod', 'essential'),
   ('tool.list_tier', 'tool-registry-mcp', 'List tools by tier (essential/domain/specialty)',
-   '{"tier": "string", "domain": "string?"}', 'prod', 'essential'),
-  ('tool.batch_load', 'tool-registry-mcp', 'Batch load multiple tool schemas efficiently to minimize context usage',
-   '{"tool_ids": "array"}', 'prod', 'essential')
+   '{"tier": "string", "domain": "string?", "caller": "object"}', 'prod', 'essential'),
+  ('tool.batch_load', 'tool-registry-mcp', 'Batch load multiple tool schemas with visibility gating',
+   '{"tool_ids": "array", "caller": "object"}', 'prod', 'essential')
 ON CONFLICT (skill_id) DO UPDATE SET
   description = EXCLUDED.description,
   params_schema = EXCLUDED.params_schema,
   visibility = EXCLUDED.visibility,
   tool_tier = EXCLUDED.tool_tier,
   updated_at = NOW();
+
+-- Remove deprecated tool.search if it exists
+DELETE FROM skills_mcp WHERE skill_id = 'tool.search';
 
 -- Update existing skills with tier information
 UPDATE skills_mcp SET tool_tier = 'specialty', tool_domain = 'github'

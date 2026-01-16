@@ -12,15 +12,16 @@ vtid: VTID-01177
 # Essential tools - always in context
 essential:
   description: "Core orchestration tools always available"
-  max_context_tokens: 250
+  max_context_tokens: 300
   tools:
     - worker.route_subagent
     - oasis.emit_event
     - vtid.validate_payload
     - vtid.get_task
     - vtid.get_spec
-    - tool.search        # Meta: search for more tools
-    - tool.suggest       # Meta: get tool suggestions
+    - tool.filter           # Meta: filter tools by metadata/text (NOT semantic)
+    - tool.semantic_search  # Meta: semantic search (requires Qdrant)
+    - tool.suggest          # Meta: get tool suggestions
 
 # Domain-specific tools - loaded based on routing decision
 domain:
