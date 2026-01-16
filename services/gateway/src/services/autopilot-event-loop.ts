@@ -669,9 +669,9 @@ async function runLoopIteration(): Promise<void> {
   }
 
   try {
-    // Get current cursor
+    // Get current cursor - use timestamp, not cursor ID
     const state = await getLoopState();
-    const cursor = state?.last_event_cursor || null;
+    const cursor = state?.last_event_timestamp || null;
 
     // Fetch events
     const { ok, events, error } = await fetchOasisEvents(cursor, currentConfig.batchSize);
