@@ -4,13 +4,37 @@
 -- Connects worker agents to the Autopilot Event Loop so dispatched tasks
 -- are automatically picked up and executed.
 --
--- Tables:
--- 1. worker_registry - Registered worker agents
--- 2. worker_task_claims - Atomic task claims with expiration
+-- Design:
+-- 1. Claims are embedded in vtid_ledger (single source of truth)
+-- 2. worker_registry tracks worker agents (capabilities, health)
+-- 3. Atomic claim via DB constraint enforcement
 -- =============================================================================
 
 -- =============================================================================
--- Table 1: Worker Registry
+-- Step 1: Add claim fields to vtid_ledger (claims embedded in ledger)
+-- =============================================================================
+
+-- Add claim columns to vtid_ledger (if they don't exist)
+ALTER TABLE vtid_ledger ADD COLUMN IF NOT EXISTS claimed_by TEXT;
+ALTER TABLE vtid_ledger ADD COLUMN IF NOT EXISTS claim_expires_at TIMESTAMPTZ;
+ALTER TABLE vtid_ledger ADD COLUMN IF NOT EXISTS claim_started_at TIMESTAMPTZ;
+
+-- Index for finding unclaimed tasks in_progress
+CREATE INDEX IF NOT EXISTS idx_vtid_ledger_unclaimed
+  ON vtid_ledger(status, claimed_by)
+  WHERE status = 'in_progress' AND claimed_by IS NULL;
+
+-- Index for finding worker's active claims
+CREATE INDEX IF NOT EXISTS idx_vtid_ledger_claimed_by
+  ON vtid_ledger(claimed_by) WHERE claimed_by IS NOT NULL;
+
+-- Index for expired claims
+CREATE INDEX IF NOT EXISTS idx_vtid_ledger_claim_expires
+  ON vtid_ledger(claim_expires_at)
+  WHERE claimed_by IS NOT NULL AND claim_expires_at IS NOT NULL;
+
+-- =============================================================================
+-- Step 2: Worker Registry Table (capabilities, versioning, health)
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS worker_registry (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -21,6 +45,7 @@ CREATE TABLE IF NOT EXISTS worker_registry (
   last_heartbeat_at TIMESTAMPTZ DEFAULT NOW(),
   status TEXT DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'terminated')),
   current_vtid TEXT,  -- Currently claimed VTID (if any)
+  version TEXT DEFAULT '1.0.0',
   metadata JSONB DEFAULT '{}',
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -35,62 +60,9 @@ CREATE INDEX IF NOT EXISTS idx_worker_registry_heartbeat
   ON worker_registry(last_heartbeat_at) WHERE status = 'active';
 
 -- =============================================================================
--- Table 2: Worker Task Claims
+-- Step 3: Atomic Task Claim Function (updates vtid_ledger directly)
 -- =============================================================================
-CREATE TABLE IF NOT EXISTS worker_task_claims (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  vtid TEXT NOT NULL,
-  worker_id TEXT NOT NULL,
-  claimed_at TIMESTAMPTZ DEFAULT NOW(),
-  expires_at TIMESTAMPTZ NOT NULL,
-  released_at TIMESTAMPTZ,
-  release_reason TEXT,
-  progress_events JSONB DEFAULT '[]',  -- Track progress updates
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Unique constraint: only one active claim per VTID
-CREATE UNIQUE INDEX IF NOT EXISTS idx_claims_active_vtid
-  ON worker_task_claims(vtid) WHERE released_at IS NULL;
-
--- Index for finding worker's active claims
-CREATE INDEX IF NOT EXISTS idx_claims_worker_active
-  ON worker_task_claims(worker_id) WHERE released_at IS NULL;
-
--- Index for expired claims cleanup
-CREATE INDEX IF NOT EXISTS idx_claims_expires
-  ON worker_task_claims(expires_at) WHERE released_at IS NULL;
-
--- =============================================================================
--- Table 3: Dispatched Tasks Queue (view of autopilot_run_state)
--- =============================================================================
--- Note: We use autopilot_run_state from VTID-01179 for task state
--- This view shows tasks ready for worker pickup
-
-CREATE OR REPLACE VIEW worker_pending_tasks AS
-SELECT
-  r.vtid,
-  r.state,
-  r.run_id,
-  r.started_at,
-  r.spec_snapshot_id,
-  r.updated_at as dispatched_at,
-  l.title,
-  l.summary as description
-FROM autopilot_run_state r
-LEFT JOIN vtid_ledger l ON r.vtid = l.vtid
-WHERE r.state = 'in_progress'
-  AND NOT EXISTS (
-    SELECT 1 FROM worker_task_claims c
-    WHERE c.vtid = r.vtid AND c.released_at IS NULL
-  )
-ORDER BY r.started_at ASC;
-
--- =============================================================================
--- Function: Claim Task Atomically
--- =============================================================================
-CREATE OR REPLACE FUNCTION claim_worker_task(
+CREATE OR REPLACE FUNCTION claim_vtid_task(
   p_vtid TEXT,
   p_worker_id TEXT,
   p_expires_minutes INTEGER DEFAULT 60
@@ -99,78 +71,88 @@ RETURNS JSONB
 LANGUAGE plpgsql
 AS $$
 DECLARE
-  v_claim_id UUID;
+  v_ledger RECORD;
   v_expires_at TIMESTAMPTZ;
-  v_existing_claim RECORD;
+  v_now TIMESTAMPTZ := NOW();
 BEGIN
-  -- Check for existing active claim
-  SELECT * INTO v_existing_claim
-  FROM worker_task_claims
-  WHERE vtid = p_vtid AND released_at IS NULL
-  FOR UPDATE SKIP LOCKED;
+  -- Lock the row for update
+  SELECT * INTO v_ledger
+  FROM vtid_ledger
+  WHERE vtid = p_vtid
+  FOR UPDATE;
 
-  IF FOUND THEN
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object(
+      'ok', false,
+      'claimed', false,
+      'reason', 'VTID not found'
+    );
+  END IF;
+
+  -- Check if task is in claimable state
+  IF v_ledger.status NOT IN ('in_progress', 'allocated') THEN
+    RETURN jsonb_build_object(
+      'ok', false,
+      'claimed', false,
+      'reason', format('Task not in claimable state: %s', v_ledger.status)
+    );
+  END IF;
+
+  -- Check if already claimed by another worker
+  IF v_ledger.claimed_by IS NOT NULL THEN
     -- Check if expired
-    IF v_existing_claim.expires_at < NOW() THEN
-      -- Release expired claim
-      UPDATE worker_task_claims
-      SET released_at = NOW(),
-          release_reason = 'expired',
-          updated_at = NOW()
-      WHERE id = v_existing_claim.id;
+    IF v_ledger.claim_expires_at IS NOT NULL AND v_ledger.claim_expires_at < v_now THEN
+      -- Expired claim - release it and let this worker claim
+      NULL; -- Will be overwritten below
+    ELSIF v_ledger.claimed_by = p_worker_id THEN
+      -- Same worker reclaiming - extend the claim
+      NULL; -- Will be overwritten below
     ELSE
-      -- Already claimed by another worker
+      -- Another worker has active claim
       RETURN jsonb_build_object(
         'ok', false,
         'claimed', false,
         'reason', 'Task already claimed',
-        'claimed_by', v_existing_claim.worker_id,
-        'expires_at', v_existing_claim.expires_at
+        'claimed_by', v_ledger.claimed_by,
+        'expires_at', v_ledger.claim_expires_at
       );
     END IF;
   END IF;
 
-  -- Verify task is in correct state
-  IF NOT EXISTS (
-    SELECT 1 FROM autopilot_run_state
-    WHERE vtid = p_vtid AND state = 'in_progress'
-  ) THEN
-    RETURN jsonb_build_object(
-      'ok', false,
-      'claimed', false,
-      'reason', 'Task not in dispatchable state'
-    );
-  END IF;
+  -- Calculate expiration
+  v_expires_at := v_now + (p_expires_minutes || ' minutes')::INTERVAL;
 
-  -- Create claim
-  v_expires_at := NOW() + (p_expires_minutes || ' minutes')::INTERVAL;
+  -- Claim the task
+  UPDATE vtid_ledger
+  SET claimed_by = p_worker_id,
+      claim_expires_at = v_expires_at,
+      claim_started_at = COALESCE(claim_started_at, v_now),
+      updated_at = v_now
+  WHERE vtid = p_vtid;
 
-  INSERT INTO worker_task_claims (vtid, worker_id, expires_at)
-  VALUES (p_vtid, p_worker_id, v_expires_at)
-  RETURNING id INTO v_claim_id;
-
-  -- Update worker's current task
+  -- Update worker registry
   UPDATE worker_registry
   SET current_vtid = p_vtid,
-      last_heartbeat_at = NOW(),
-      updated_at = NOW()
+      last_heartbeat_at = v_now,
+      updated_at = v_now
   WHERE worker_id = p_worker_id;
 
   RETURN jsonb_build_object(
     'ok', true,
     'claimed', true,
-    'claim_id', v_claim_id,
     'vtid', p_vtid,
     'worker_id', p_worker_id,
-    'expires_at', v_expires_at
+    'expires_at', v_expires_at,
+    'title', v_ledger.title,
+    'summary', v_ledger.summary
   );
 END;
 $$;
 
 -- =============================================================================
--- Function: Release Task Claim
+-- Step 4: Release Task Claim Function
 -- =============================================================================
-CREATE OR REPLACE FUNCTION release_worker_task(
+CREATE OR REPLACE FUNCTION release_vtid_claim(
   p_vtid TEXT,
   p_worker_id TEXT,
   p_reason TEXT DEFAULT 'completed'
@@ -179,29 +161,35 @@ RETURNS JSONB
 LANGUAGE plpgsql
 AS $$
 DECLARE
-  v_claim RECORD;
+  v_ledger RECORD;
 BEGIN
-  -- Find active claim
-  SELECT * INTO v_claim
-  FROM worker_task_claims
+  -- Lock and get the row
+  SELECT * INTO v_ledger
+  FROM vtid_ledger
   WHERE vtid = p_vtid
-    AND worker_id = p_worker_id
-    AND released_at IS NULL
   FOR UPDATE;
 
   IF NOT FOUND THEN
     RETURN jsonb_build_object(
       'ok', false,
-      'reason', 'No active claim found'
+      'reason', 'VTID not found'
     );
   END IF;
 
-  -- Release claim
-  UPDATE worker_task_claims
-  SET released_at = NOW(),
-      release_reason = p_reason,
+  -- Verify worker owns the claim
+  IF v_ledger.claimed_by IS NULL OR v_ledger.claimed_by != p_worker_id THEN
+    RETURN jsonb_build_object(
+      'ok', false,
+      'reason', 'Worker does not own this claim'
+    );
+  END IF;
+
+  -- Release the claim
+  UPDATE vtid_ledger
+  SET claimed_by = NULL,
+      claim_expires_at = NULL,
       updated_at = NOW()
-  WHERE id = v_claim.id;
+  WHERE vtid = p_vtid;
 
   -- Clear worker's current task
   UPDATE worker_registry
@@ -219,7 +207,7 @@ END;
 $$;
 
 -- =============================================================================
--- Function: Worker Heartbeat
+-- Step 5: Worker Heartbeat Function
 -- =============================================================================
 CREATE OR REPLACE FUNCTION worker_heartbeat(
   p_worker_id TEXT,
@@ -248,12 +236,11 @@ BEGIN
 
   -- Extend claim expiry if actively working
   IF p_active_vtid IS NOT NULL THEN
-    UPDATE worker_task_claims
-    SET expires_at = NOW() + INTERVAL '60 minutes',
+    UPDATE vtid_ledger
+    SET claim_expires_at = NOW() + INTERVAL '60 minutes',
         updated_at = NOW()
     WHERE vtid = p_active_vtid
-      AND worker_id = p_worker_id
-      AND released_at IS NULL;
+      AND claimed_by = p_worker_id;
   END IF;
 
   RETURN jsonb_build_object(
@@ -266,23 +253,24 @@ END;
 $$;
 
 -- =============================================================================
--- Function: Expire Stale Claims
+-- Step 6: Expire Stale Claims Function
 -- =============================================================================
-CREATE OR REPLACE FUNCTION expire_stale_worker_claims()
+CREATE OR REPLACE FUNCTION expire_stale_vtid_claims()
 RETURNS INTEGER
 LANGUAGE plpgsql
 AS $$
 DECLARE
   v_count INTEGER;
 BEGIN
+  -- Release expired claims
   WITH expired AS (
-    UPDATE worker_task_claims
-    SET released_at = NOW(),
-        release_reason = 'expired',
+    UPDATE vtid_ledger
+    SET claimed_by = NULL,
+        claim_expires_at = NULL,
         updated_at = NOW()
-    WHERE released_at IS NULL
-      AND expires_at < NOW()
-    RETURNING vtid, worker_id
+    WHERE claimed_by IS NOT NULL
+      AND claim_expires_at < NOW()
+    RETURNING vtid, claimed_by
   )
   SELECT COUNT(*) INTO v_count FROM expired;
 
@@ -290,19 +278,56 @@ BEGIN
   UPDATE worker_registry w
   SET current_vtid = NULL,
       updated_at = NOW()
-  WHERE EXISTS (
-    SELECT 1 FROM worker_task_claims c
-    WHERE c.worker_id = w.worker_id
-      AND c.release_reason = 'expired'
-      AND c.released_at > NOW() - INTERVAL '1 minute'
-  );
+  WHERE current_vtid IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM vtid_ledger l
+      WHERE l.vtid = w.current_vtid
+        AND l.claimed_by = w.worker_id
+    );
 
   RETURN v_count;
 END;
 $$;
 
 -- =============================================================================
--- Function: Get Worker Stats
+-- Step 7: Get Pending Tasks (tasks ready for claiming)
+-- =============================================================================
+CREATE OR REPLACE FUNCTION get_pending_worker_tasks(
+  p_limit INTEGER DEFAULT 50
+)
+RETURNS TABLE (
+  vtid TEXT,
+  title TEXT,
+  summary TEXT,
+  status TEXT,
+  layer TEXT,
+  module TEXT,
+  created_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    l.vtid,
+    l.title,
+    l.summary,
+    l.status,
+    l.layer,
+    l.module,
+    l.created_at,
+    l.updated_at
+  FROM vtid_ledger l
+  WHERE l.status = 'in_progress'
+    AND (l.claimed_by IS NULL OR l.claim_expires_at < NOW())
+  ORDER BY l.updated_at ASC
+  LIMIT p_limit;
+END;
+$$;
+
+-- =============================================================================
+-- Step 8: Get Worker Stats
 -- =============================================================================
 CREATE OR REPLACE FUNCTION get_worker_connector_stats()
 RETURNS JSONB
@@ -315,10 +340,9 @@ BEGIN
     'total_workers', (SELECT COUNT(*) FROM worker_registry),
     'active_workers', (SELECT COUNT(*) FROM worker_registry WHERE status = 'active'),
     'workers_with_tasks', (SELECT COUNT(*) FROM worker_registry WHERE current_vtid IS NOT NULL),
-    'pending_tasks', (SELECT COUNT(*) FROM worker_pending_tasks),
-    'active_claims', (SELECT COUNT(*) FROM worker_task_claims WHERE released_at IS NULL),
-    'claims_today', (SELECT COUNT(*) FROM worker_task_claims WHERE created_at > NOW() - INTERVAL '1 day'),
-    'completed_today', (SELECT COUNT(*) FROM worker_task_claims WHERE release_reason = 'completed' AND released_at > NOW() - INTERVAL '1 day')
+    'pending_tasks', (SELECT COUNT(*) FROM vtid_ledger WHERE status = 'in_progress' AND (claimed_by IS NULL OR claim_expires_at < NOW())),
+    'active_claims', (SELECT COUNT(*) FROM vtid_ledger WHERE claimed_by IS NOT NULL AND claim_expires_at > NOW()),
+    'tasks_today', (SELECT COUNT(*) FROM vtid_ledger WHERE created_at > NOW() - INTERVAL '1 day')
   ) INTO v_result;
 
   RETURN v_result;
@@ -329,16 +353,22 @@ $$;
 -- RLS Policies
 -- =============================================================================
 ALTER TABLE worker_registry ENABLE ROW LEVEL SECURITY;
-ALTER TABLE worker_task_claims ENABLE ROW LEVEL SECURITY;
 
 -- Service role has full access
-CREATE POLICY "Service role full access to worker_registry"
+CREATE POLICY IF NOT EXISTS "Service role full access to worker_registry"
   ON worker_registry FOR ALL
   USING (auth.role() = 'service_role');
 
-CREATE POLICY "Service role full access to worker_task_claims"
-  ON worker_task_claims FOR ALL
-  USING (auth.role() = 'service_role');
+-- =============================================================================
+-- Grants
+-- =============================================================================
+GRANT ALL ON worker_registry TO service_role;
+GRANT EXECUTE ON FUNCTION claim_vtid_task TO service_role;
+GRANT EXECUTE ON FUNCTION release_vtid_claim TO service_role;
+GRANT EXECUTE ON FUNCTION worker_heartbeat TO service_role;
+GRANT EXECUTE ON FUNCTION expire_stale_vtid_claims TO service_role;
+GRANT EXECUTE ON FUNCTION get_pending_worker_tasks TO service_role;
+GRANT EXECUTE ON FUNCTION get_worker_connector_stats TO service_role;
 
 -- =============================================================================
 -- Done

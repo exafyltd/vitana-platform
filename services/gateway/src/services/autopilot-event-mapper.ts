@@ -142,6 +142,8 @@ export const EVENT_MAPPING_RULES: EventMappingRule[] = [
       'worker.execution.started',
       'autopilot.worker.started',
       'worker.orchestrator.dispatch.accepted',
+      'vtid.stage.worker_orchestrator.claimed',     // VTID-01183: Worker claimed task
+      'vtid.stage.worker_orchestrator.started',     // VTID-01183: Worker started
     ],
     fromStates: ['allocated', 'in_progress'],
     toState: 'in_progress',
@@ -156,6 +158,9 @@ export const EVENT_MAPPING_RULES: EventMappingRule[] = [
       'worker.building',
       'worker.execution.building',
       'autopilot.worker.building',
+      'vtid.stage.worker_orchestrator.building',    // VTID-01183: Worker building
+      'vtid.stage.worker_backend.start',            // VTID-01163: Backend subagent started
+      'vtid.stage.worker_frontend.start',           // VTID-01163: Frontend subagent started
     ],
     fromStates: ['in_progress'],
     toState: 'building',
@@ -171,6 +176,8 @@ export const EVENT_MAPPING_RULES: EventMappingRule[] = [
       'worker.execution.completed',
       'autopilot.worker.completed',
       'worker.orchestrator.completed',
+      'vtid.stage.worker_orchestrator.completed',   // VTID-01183: Worker completed
+      'vtid.stage.worker_orchestrator.success',     // VTID-01163: Orchestrator success
     ],
     fromStates: ['in_progress', 'building'],
     toState: 'pr_created',
@@ -188,6 +195,8 @@ export const EVENT_MAPPING_RULES: EventMappingRule[] = [
       'worker.execution.completed',
       'autopilot.worker.completed',
       'worker.orchestrator.completed',
+      'vtid.stage.worker_orchestrator.completed',   // VTID-01183: Worker completed
+      'vtid.stage.worker_orchestrator.success',     // VTID-01163: Orchestrator success
     ],
     fromStates: ['in_progress', 'building'],
     toState: 'pr_created',
@@ -199,7 +208,8 @@ export const EVENT_MAPPING_RULES: EventMappingRule[] = [
       'cicd.pr.created',
       'github.pr.created',
       'autopilot.pr.created',
-      'worker.pr.created',  // VTID-01183: Worker connector PR created event
+      'worker.pr.created',
+      'vtid.stage.worker_orchestrator.pr_created',  // VTID-01183: Worker PR created
     ],
     fromStates: ['in_progress', 'building', 'pr_created'],
     toState: 'pr_created',
@@ -332,6 +342,9 @@ export const EVENT_MAPPING_RULES: EventMappingRule[] = [
       'worker.execution.failed',
       'worker.dispatch.failed',
       'worker.orchestrator.failed',
+      'vtid.stage.worker_orchestrator.failed',      // VTID-01183: Worker failed
+      'vtid.stage.worker_backend.failed',           // VTID-01163: Backend subagent failed
+      'vtid.stage.worker_frontend.failed',          // VTID-01163: Frontend subagent failed
     ],
     fromStates: ['allocated', 'in_progress', 'building'],
     toState: 'failed',
