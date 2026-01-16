@@ -2161,6 +2161,33 @@ router.post('/chat', async (req: Request, res: Response) => {
       });
     }
 
+    // VTID-DEBUG-MEM: Write assistant response to memory-indexer (Mem0 OSS) - fire-and-forget
+    // This ensures conversation continuity - the LLM needs to know what it said previously
+    if (isMemoryIndexerEnabled()) {
+      writeToMemoryIndexer({
+        user_id: DEV_IDENTITY.USER_ID,
+        content: replyText,
+        role: 'assistant',
+        metadata: {
+          source: 'orb',
+          orb_session_id: orbSessionId,
+          conversation_id: conversationId,
+          model,
+          provider,
+          latency_ms: latencyMs,
+          vtid: 'VTID-DEBUG-MEM'
+        }
+      }).then(result => {
+        if (result.stored) {
+          console.log(`[VTID-DEBUG-MEM] Assistant response written to Mem0: ${result.memory_ids.join(', ')}`);
+        } else {
+          console.log(`[VTID-DEBUG-MEM] Assistant response not stored in Mem0: ${result.decision}`);
+        }
+      }).catch(err => {
+        console.warn('[VTID-DEBUG-MEM] Mem0 assistant write error:', err.message);
+      });
+    }
+
     console.log(`[VTID-0135] Chat response generated via ${provider}`);
 
     // VTID-01106: Add memory debug info to response for debugging
