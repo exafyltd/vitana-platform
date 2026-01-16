@@ -807,10 +807,111 @@ export function getAutopilotStatus(): {
 }
 
 // =============================================================================
+// VTID-01178: Initialization - Ensure VTID exists in ledger
+// =============================================================================
+
+/**
+ * Ensure a VTID exists in the ledger. Used at startup to register
+ * feature VTIDs that were used in code but not formally allocated.
+ *
+ * This is idempotent - if the VTID already exists, it does nothing.
+ */
+async function ensureVtidExists(
+  vtid: string,
+  title: string,
+  layer: string = 'DEV',
+  module: string = 'AUTO'
+): Promise<boolean> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+
+  if (!supabaseUrl || !supabaseKey) {
+    console.warn(`[VTID-01178] Cannot ensure VTID exists: missing Supabase credentials`);
+    return false;
+  }
+
+  try {
+    // First check if VTID already exists
+    const checkResponse = await fetch(`${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}&select=vtid`, {
+      method: 'GET',
+      headers: {
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`,
+      },
+    });
+
+    if (checkResponse.ok) {
+      const existing = await checkResponse.json();
+      if (Array.isArray(existing) && existing.length > 0) {
+        console.log(`[VTID-01178] VTID ${vtid} already exists in ledger`);
+        return true;
+      }
+    }
+
+    // VTID doesn't exist, create it
+    console.log(`[VTID-01178] Creating VTID ${vtid} in ledger...`);
+    const timestamp = new Date().toISOString();
+
+    const insertResponse = await fetch(`${supabaseUrl}/rest/v1/vtid_ledger`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`,
+        'Prefer': 'return=minimal',
+      },
+      body: JSON.stringify({
+        vtid,
+        title,
+        layer,
+        module,
+        status: 'deployed',
+        summary: title,
+        created_at: timestamp,
+        updated_at: timestamp,
+      }),
+    });
+
+    if (insertResponse.ok || insertResponse.status === 201) {
+      console.log(`[VTID-01178] Successfully created VTID ${vtid} in ledger`);
+      return true;
+    } else {
+      const errorText = await insertResponse.text();
+      console.warn(`[VTID-01178] Failed to create VTID ${vtid}: ${insertResponse.status} - ${errorText}`);
+      return false;
+    }
+  } catch (error) {
+    console.warn(`[VTID-01178] Error ensuring VTID exists: ${error}`);
+    return false;
+  }
+}
+
+/**
+ * Initialize autopilot controller - called at startup
+ * Ensures required VTIDs exist in the ledger
+ */
+export async function initializeAutopilotController(): Promise<void> {
+  console.log(`[VTID-01178] Initializing autopilot controller...`);
+
+  // Ensure VTID-01178 exists (Autopilot Controller implementation)
+  await ensureVtidExists(
+    'VTID-01178',
+    'Autopilot Controller - End-to-end VTID lifecycle automation',
+    'DEV',
+    'AUTOP'
+  );
+
+  console.log(`[VTID-01178] Autopilot controller initialization complete`);
+}
+
+// =============================================================================
 // Exports
 // =============================================================================
 
 export default {
+  // Initialization
+  initializeAutopilotController,
+
   // Run management
   startAutopilotRun,
   getAutopilotRun,

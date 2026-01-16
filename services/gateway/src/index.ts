@@ -527,13 +527,22 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // Start server
   if (process.env.NODE_ENV !== 'test') {
-    app.listen(PORT, () => {
+    app.listen(PORT, async () => {
       console.log('✅ Gateway server running on port ' + PORT);
       console.log('📊 Command Hub: http://localhost:' + PORT + '/command-hub');
       console.log('🔌 SSE Stream: http://localhost:' + PORT + '/api/v1/events/stream');
       console.log('Gateway: debug /debug/governance-ping route registered');
       console.log('Gateway: governance routes mounted at /api/v1/governance');
       console.log('Gateway: operator routes mounted at /api/v1/operator (VTID-0510)');
+
+      // VTID-01178: Initialize autopilot controller (ensure VTIDs exist in ledger)
+      try {
+        const { initializeAutopilotController } = require('./services/autopilot-controller');
+        await initializeAutopilotController();
+        console.log('🤖 Autopilot controller initialized (VTID-01178)');
+      } catch (error) {
+        console.warn('⚠️ Autopilot controller initialization failed (non-fatal):', error);
+      }
     });
   }
 }
