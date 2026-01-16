@@ -199,6 +199,7 @@ export const EVENT_MAPPING_RULES: EventMappingRule[] = [
       'cicd.pr.created',
       'github.pr.created',
       'autopilot.pr.created',
+      'worker.pr.created',  // VTID-01183: Worker connector PR created event
     ],
     fromStates: ['in_progress', 'building', 'pr_created'],
     toState: 'pr_created',
