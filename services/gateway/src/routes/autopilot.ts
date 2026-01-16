@@ -980,7 +980,7 @@ router.get('/health', async (_req: Request, res: Response) => {
     service: 'autopilot-api',
     timestamp: new Date().toISOString(),
     status: 'healthy',
-    vtid: 'VTID-01179',
+    vtid: 'VTID-01178',
     capabilities: {
       task_extraction: true,
       planner_handoff: true,
