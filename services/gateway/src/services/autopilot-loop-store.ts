@@ -243,6 +243,35 @@ export async function updateLoopCursor(
 }
 
 /**
+ * Reset loop cursor to a specific timestamp
+ * VTID-01179: Manual cursor reset for catching up or skipping ahead
+ */
+export async function resetLoopCursor(
+  timestamp: string,
+  reason: string = 'manual-reset'
+): Promise<boolean> {
+  const result = await supabaseRequest(
+    `/rest/v1/autopilot_loop_state?id=eq.${LOOP_ID}`,
+    {
+      method: 'PATCH',
+      body: {
+        last_event_cursor: `reset-${Date.now()}`,
+        last_event_timestamp: timestamp,
+        updated_at: new Date().toISOString(),
+      },
+    }
+  );
+
+  if (result.ok) {
+    console.log(`${LOG_PREFIX} Cursor reset to ${timestamp} (reason: ${reason})`);
+  } else {
+    console.error(`${LOG_PREFIX} Failed to reset cursor: ${result.error}`);
+  }
+
+  return result.ok;
+}
+
+/**
  * Increment processed events counter
  */
 export async function incrementProcessedCount(count: number = 1): Promise<boolean> {
