@@ -1,6 +1,6 @@
 /**
  * Tool Registry MCP - Context Pollution Management
- * VTID-01177: Dynamic tool loading to reduce context usage at scale
+ * VTID-01178: Dynamic tool loading to reduce context usage at scale
  *
  * Skills:
  *   - tool.filter         - Metadata + text filtering (NOT semantic search)

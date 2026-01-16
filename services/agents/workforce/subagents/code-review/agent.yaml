@@ -1,5 +1,5 @@
 # =============================================================================
-# Code Review Agent - VTID-01177
+# Code Review Agent - VTID-01178
 # =============================================================================
 # Automated code review agent for quality, security, and best practices.
 # Runs before PR creation to catch issues early.
@@ -8,7 +8,7 @@
 agent_id: code-review
 name: Code Review Agent
 version: 1.0.0
-vtid: VTID-01177
+vtid: VTID-01178
 
 role:
   type: reviewer

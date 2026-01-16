@@ -1,5 +1,5 @@
 -- Migration: Add Tool Registry MCP skills
--- VTID-01177: Context Pollution Management
+-- VTID-01178: Context Pollution Management
 --
 -- NOTE: tool.filter is metadata + text filtering, NOT semantic search
 -- tool.semantic_search will use embeddings when Qdrant is configured

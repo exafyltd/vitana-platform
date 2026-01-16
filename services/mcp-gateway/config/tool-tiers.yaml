@@ -1,5 +1,5 @@
 # Tool Tiers Configuration
-# VTID-01177: Hierarchical tool loading for context pollution management
+# VTID-01178: Hierarchical tool loading for context pollution management
 #
 # Tiers:
 #   - essential: Always loaded (~5 tools, ~250 tokens)
@@ -7,7 +7,7 @@
 #   - specialty: On-demand loading for specific integrations
 
 version: "1.0"
-vtid: VTID-01177
+vtid: VTID-01178
 
 # Essential tools - always in context
 essential:

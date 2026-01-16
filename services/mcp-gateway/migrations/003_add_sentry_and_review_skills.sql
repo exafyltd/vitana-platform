@@ -1,5 +1,5 @@
 -- Migration: Add Sentry MCP and Code Review skills
--- VTID-01177: Error tracking and automated code review
+-- VTID-01178: Error tracking and automated code review
 
 -- Insert Sentry MCP skills
 INSERT INTO skills_mcp (skill_id, server, description, params_schema, visibility, tool_tier, tool_domain) VALUES

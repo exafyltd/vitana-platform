@@ -1,6 +1,6 @@
 /**
  * Sentry MCP - Error Tracking Integration
- * VTID-01177: Production error analysis and debugging
+ * VTID-01178: Production error analysis and debugging
  *
  * Skills:
  *   - sentry.list_issues     - List recent issues/errors

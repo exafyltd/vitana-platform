@@ -199,7 +199,7 @@ subagents:
     failed_event: vtid.stage.worker_memory.failed
     timeout_ms: 1800000
 
-  # VTID-01177: Code Review Agent
+  # VTID-01178: Code Review Agent
   code-review:
     agent_id: code-review
     dispatch_event: vtid.stage.code_review.start
@@ -231,7 +231,7 @@ validation:
   require_domain_detection: true
 
 # =============================================================================
-# Pre-Merge Pipeline - VTID-01177
+# Pre-Merge Pipeline - VTID-01178
 # =============================================================================
 # Gates that run after worker completion, before merge/PR
 pre_merge_pipeline:
