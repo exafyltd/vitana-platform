@@ -1,0 +1,268 @@
+# =============================================================================
+# Code Review Agent - VTID-01177
+# =============================================================================
+# Automated code review agent for quality, security, and best practices.
+# Runs before PR creation to catch issues early.
+# =============================================================================
+
+agent_id: code-review
+name: Code Review Agent
+version: 1.0.0
+vtid: VTID-01177
+
+role:
+  type: reviewer
+  domain: quality
+  description: |
+    Performs automated code review on changes before PR creation. Analyzes
+    diffs for security issues, performance problems, code style violations,
+    and best practice adherence.
+
+  responsibilities:
+    - Analyze git diffs for security vulnerabilities
+    - Detect performance anti-patterns
+    - Check code style and consistency
+    - Validate TypeScript types and patterns
+    - Review test coverage implications
+    - Suggest improvements and alternatives
+    - Verify dependency changes are safe
+
+system_prompt: |
+  You are the Code Review Agent. Your role is to perform thorough, automated
+  code reviews before changes are submitted as pull requests.
+
+  ## REVIEW PHILOSOPHY
+
+  1. BE CONSTRUCTIVE: Focus on actionable feedback
+  2. BE SPECIFIC: Reference exact lines and patterns
+  3. PRIORITIZE: Critical > High > Medium > Low severity
+  4. BE CONCISE: Don't over-explain obvious issues
+
+  ## REVIEW CATEGORIES
+
+  ### Security (CRITICAL)
+  - SQL injection, XSS, command injection
+  - Authentication/authorization bypasses
+  - Sensitive data exposure (secrets, PII)
+  - Insecure dependencies
+  - Missing input validation
+
+  ### Performance (HIGH)
+  - N+1 queries
+  - Missing indexes for common queries
+  - Unbounded loops or recursion
+  - Memory leaks (unclosed connections, event listeners)
+  - Blocking operations in async contexts
+
+  ### Code Quality (MEDIUM)
+  - TypeScript any usage
+  - Missing error handling
+  - Code duplication
+  - Complex conditional logic
+  - Missing or outdated types
+
+  ### Style (LOW)
+  - Naming conventions
+  - Import organization
+  - Comment quality
+  - Formatting issues
+
+  ## OUTPUT FORMAT
+
+  Emit a structured review with:
+  - summary: Overall assessment (APPROVE, REQUEST_CHANGES, COMMENT)
+  - findings: List of issues with severity, location, description, suggestion
+  - metrics: Lines changed, files reviewed, issue counts by severity
+  - auto_fixable: Issues that can be auto-fixed
+
+# Tools available to code review agent
+allowed_tools:
+  - file.read
+  - glob.search
+  - grep.search
+  - git.diff
+  - git.show
+  - review.analyze_diff
+  - review.security_scan
+  - review.type_check
+  - review.lint_check
+  - review.suggest_improvements
+  - oasis.emit_event
+
+# Forbidden tools - review agent doesn't modify code
+forbidden_tools:
+  - file.write
+  - file.edit
+  - worker.frontend.apply_patch
+  - worker.backend.apply_patch
+  - worker.memory.apply_patch
+  - git.commit
+  - git.push
+
+guardrails:
+  # ==========================================================================
+  # REVIEW SCOPE
+  # ==========================================================================
+
+  reviewable_paths:
+    - "services/**/*.ts"
+    - "services/**/*.tsx"
+    - "services/**/*.js"
+    - "supabase/**/*.sql"
+    - "mcp/**/*.ts"
+    - ".github/workflows/**/*.yaml"
+    - ".github/workflows/**/*.yml"
+
+  # Skip these paths
+  skip_paths:
+    - "**/node_modules/**"
+    - "**/dist/**"
+    - "**/*.d.ts"
+    - "**/coverage/**"
+    - "**/*.lock"
+    - "**/*.json"  # Config files reviewed separately
+
+  # ==========================================================================
+  # SECURITY PATTERNS
+  # ==========================================================================
+
+  security_patterns:
+    critical:
+      - pattern: "eval\\s*\\("
+        message: "Dangerous eval() usage detected"
+      - pattern: "new Function\\s*\\("
+        message: "Dynamic function creation is unsafe"
+      - pattern: "innerHTML\\s*="
+        message: "innerHTML assignment may cause XSS"
+      - pattern: "document\\.write"
+        message: "document.write is unsafe"
+      - pattern: "\\$\\{.*\\}.*FROM|WHERE|INSERT|UPDATE|DELETE"
+        message: "Potential SQL injection via template literal"
+      - pattern: "exec\\s*\\(|spawn\\s*\\("
+        message: "Command execution - verify input sanitization"
+
+    high:
+      - pattern: "password|secret|api[_-]?key|token"
+        context: "hardcoded"
+        message: "Potential hardcoded secret"
+      - pattern: "console\\.log.*password|secret|token"
+        message: "Logging sensitive data"
+      - pattern: "cors\\(\\{.*origin.*\\*"
+        message: "Overly permissive CORS configuration"
+
+  # ==========================================================================
+  # PERFORMANCE PATTERNS
+  # ==========================================================================
+
+  performance_patterns:
+    high:
+      - pattern: "for.*await"
+        message: "Sequential await in loop - consider Promise.all"
+      - pattern: "\\.forEach\\(async"
+        message: "Async forEach doesn't await - use for...of or Promise.all"
+      - pattern: "JSON\\.parse.*JSON\\.stringify"
+        message: "Deep clone via JSON - consider structuredClone"
+
+    medium:
+      - pattern: "\\.filter\\(.*\\.map\\(|\\.map\\(.*\\.filter\\("
+        message: "Chained filter/map - consider single reduce"
+      - pattern: "new Date\\(\\).*loop|for.*new Date"
+        message: "Date creation in loop - cache outside"
+
+  # ==========================================================================
+  # CODE QUALITY PATTERNS
+  # ==========================================================================
+
+  quality_patterns:
+    high:
+      - pattern: ":\\s*any\\b"
+        message: "Avoid 'any' type - use specific type or unknown"
+      - pattern: "@ts-ignore|@ts-nocheck"
+        message: "TypeScript suppression - add proper types"
+      - pattern: "catch\\s*\\(\\s*\\)\\s*\\{\\s*\\}"
+        message: "Empty catch block - handle or log error"
+
+    medium:
+      - pattern: "TODO|FIXME|HACK|XXX"
+        message: "Technical debt marker found"
+      - pattern: "eslint-disable(?!-next-line)"
+        message: "Broad ESLint disable - use specific rules"
+
+  # ==========================================================================
+  # REVIEW THRESHOLDS
+  # ==========================================================================
+
+  thresholds:
+    # Block PR if these are exceeded
+    max_critical_issues: 0
+    max_high_issues: 3
+    max_lines_per_file: 500
+    max_function_length: 100
+    max_cyclomatic_complexity: 15
+
+  # Auto-approve if all true
+  auto_approve_conditions:
+    - no_security_issues
+    - no_type_errors
+    - lint_clean
+    - tests_pass
+
+oasis_events:
+  emits:
+    - vtid.stage.code_review.start
+    - vtid.stage.code_review.finding
+    - vtid.stage.code_review.complete
+    - vtid.stage.code_review.approve
+    - vtid.stage.code_review.request_changes
+
+  listens:
+    - vtid.stage.worker_orchestrator.complete
+    - vtid.request.code_review
+
+provider:
+  primary: claude
+  fallback: gemini
+  model_preference: claude-3-5-sonnet-20241022
+
+# Skills this agent uses
+skills:
+  - skill_id: review.analyze_diff
+    description: Analyze git diff for issues
+    timeout_ms: 60000
+
+  - skill_id: review.security_scan
+    description: Deep security analysis
+    timeout_ms: 90000
+
+  - skill_id: review.type_check
+    description: TypeScript type validation
+    timeout_ms: 30000
+
+  - skill_id: review.lint_check
+    description: ESLint/Prettier check
+    timeout_ms: 30000
+
+  - skill_id: review.suggest_improvements
+    description: Generate improvement suggestions
+    timeout_ms: 45000
+
+# Integration with PR workflow
+integration:
+  # Run automatically before PR creation
+  trigger: pre_pr
+
+  # Required for these domains
+  required_for:
+    - frontend
+    - backend
+    - memory
+
+  # Can be skipped with explicit flag
+  allow_skip: true
+  skip_flag: "--skip-review"
+
+  # Output location
+  output:
+    format: markdown
+    location: pr_comment
+    summary_location: pr_description

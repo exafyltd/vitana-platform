@@ -1,0 +1,256 @@
+# Tool Tiers Configuration
+# VTID-01177: Hierarchical tool loading for context pollution management
+#
+# Tiers:
+#   - essential: Always loaded (~5 tools, ~250 tokens)
+#   - domain: Loaded based on task routing (~8-12 tools per domain)
+#   - specialty: On-demand loading for specific integrations
+
+version: "1.0"
+vtid: VTID-01177
+
+# Essential tools - always in context
+essential:
+  description: "Core orchestration tools always available"
+  max_context_tokens: 250
+  tools:
+    - worker.route_subagent
+    - oasis.emit_event
+    - vtid.validate_payload
+    - vtid.get_task
+    - vtid.get_spec
+    - tool.search        # Meta: search for more tools
+    - tool.suggest       # Meta: get tool suggestions
+
+# Domain-specific tools - loaded based on routing decision
+domain:
+  frontend:
+    description: "UI, CSS, components, accessibility"
+    keywords:
+      - ui
+      - css
+      - component
+      - layout
+      - button
+      - modal
+      - form
+      - tailwind
+      - html
+      - spa
+      - csp
+      - accessibility
+      - wcag
+    paths:
+      - "services/gateway/src/frontend/**"
+      - "**/*.html"
+      - "**/*.css"
+    tools:
+      - worker.frontend.apply_patch
+      - worker.frontend.validate_accessibility
+      - csp.validate
+      - file.read
+      - file.write
+      - file.edit
+      - glob.search
+      - grep.search
+
+  backend:
+    description: "API endpoints, routes, controllers, CI/CD"
+    keywords:
+      - api
+      - endpoint
+      - route
+      - controller
+      - middleware
+      - service
+      - rest
+      - express
+      - authentication
+      - authorization
+      - cicd
+      - deploy
+    paths:
+      - "services/gateway/src/**"
+      - "services/**/src/**"
+      - "**/routes/**"
+      - "**/controllers/**"
+    tools:
+      - worker.backend.apply_patch
+      - worker.backend.security_scan
+      - worker.backend.analyze_service
+      - route.validate_mount
+      - route.check_conflicts
+      - curl.test_endpoint
+      - file.read
+      - file.write
+      - file.edit
+      - glob.search
+      - grep.search
+
+  memory:
+    description: "Database, migrations, RPC, RLS policies"
+    keywords:
+      - database
+      - migration
+      - supabase
+      - rpc
+      - query
+      - schema
+      - table
+      - vector
+      - embedding
+      - rls
+      - tenant
+      - qdrant
+    paths:
+      - "supabase/migrations/**"
+      - "services/agents/memory-indexer/**"
+      - "**/*.sql"
+    tools:
+      - worker.memory.apply_patch
+      - worker.memory.validate_rls_policy
+      - worker.memory.preview_migration
+      - supabase.validate_migration
+      - rpc.validate_signature
+      - file.read
+      - file.write
+      - file.edit
+
+# Specialty tools - loaded on-demand for specific integrations
+specialty:
+  github:
+    description: "GitHub repository and PR operations"
+    triggers:
+      - "pr"
+      - "pull request"
+      - "commit"
+      - "repository"
+      - "branch"
+      - "merge"
+      - "github"
+    tools:
+      - github.repo.get_file
+      - github.repo.search_code
+      - github.pr.list
+      - github.pr.get
+
+  supabase:
+    description: "Direct Supabase database operations"
+    triggers:
+      - "list tables"
+      - "schema"
+      - "read query"
+    tools:
+      - supabase.schema.list_tables
+      - supabase.schema.get_table
+      - supabase.read_query
+
+  perplexity:
+    description: "AI-powered research and Q&A"
+    triggers:
+      - "research"
+      - "search web"
+      - "find information"
+      - "perplexity"
+    tools:
+      - perplexity.ask
+      - perplexity.research
+
+  linear:
+    description: "Issue tracking and project management"
+    triggers:
+      - "issue"
+      - "ticket"
+      - "task"
+      - "linear"
+      - "backlog"
+      - "sprint"
+    tools:
+      - linear.issue.list
+      - linear.issue.get
+      - linear.issue.update_status
+      - linear.issue.create
+
+  context7:
+    description: "Knowledge base access"
+    triggers:
+      - "knowledge base"
+      - "documentation"
+      - "context7"
+      - "docs search"
+    tools:
+      - context7.space.list
+      - context7.search
+      - context7.doc.get
+      - context7.doc.search
+
+  testsprite:
+    description: "Automated testing integration"
+    triggers:
+      - "run tests"
+      - "test"
+      - "coverage"
+      - "testsprite"
+    tools:
+      - testsprite.run_tests
+      - testsprite.debug_code
+      - testsprite.test.status
+      - testsprite.test.results
+
+  sentry:
+    description: "Error tracking and monitoring"
+    triggers:
+      - "error"
+      - "exception"
+      - "sentry"
+      - "crash"
+      - "bug"
+      - "stacktrace"
+    tools:
+      - sentry.list_issues
+      - sentry.get_issue
+      - sentry.get_stacktrace
+      - sentry.search_similar
+
+  code_review:
+    description: "Automated code review"
+    triggers:
+      - "review"
+      - "lint"
+      - "static analysis"
+      - "code quality"
+    tools:
+      - review.analyze_diff
+      - review.security_scan
+      - review.suggest_improvements
+
+# Loading strategy
+loading_strategy:
+  # Always load essential tier
+  always_load_essential: true
+
+  # Maximum tools to load at once
+  max_tools_per_request: 25
+
+  # Context budget (tokens)
+  context_budget_tokens: 2000
+
+  # Tool definition size estimate
+  tokens_per_tool: 50
+
+  # Cache tool schemas for this duration
+  cache_ttl_seconds: 300
+
+  # Preload domain tools on routing decision
+  preload_on_routing: true
+
+# Metrics
+metrics:
+  # Track tool usage for optimization
+  track_usage: true
+
+  # Log context savings
+  log_savings: true
+
+  # Alert if context usage exceeds threshold
+  alert_threshold_tokens: 1500
