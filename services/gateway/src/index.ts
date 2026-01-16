@@ -543,6 +543,20 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
       } catch (error) {
         console.warn('⚠️ Autopilot controller initialization failed (non-fatal):', error);
       }
+
+      // VTID-01179: Initialize autopilot event loop (if enabled)
+      try {
+        const { initializeEventLoop } = require('./services/autopilot-event-loop');
+        await initializeEventLoop();
+        const loopEnabled = process.env.AUTOPILOT_LOOP_ENABLED === 'true';
+        if (loopEnabled) {
+          console.log('🔄 Autopilot event loop started (VTID-01179)');
+        } else {
+          console.log('⏸️ Autopilot event loop disabled (VTID-01179) - set AUTOPILOT_LOOP_ENABLED=true to enable');
+        }
+      } catch (error) {
+        console.warn('⚠️ Autopilot event loop initialization failed (non-fatal):', error);
+      }
     });
   }
 }

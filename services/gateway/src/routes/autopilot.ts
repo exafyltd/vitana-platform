@@ -82,6 +82,13 @@ import {
 } from '../services/autopilot-controller';
 import { runVerification } from '../services/autopilot-verification';
 import { validateForMerge, getValidationResult } from '../services/autopilot-validator';
+// VTID-01179: Event Loop imports
+import {
+  startEventLoop,
+  stopEventLoop,
+  getEventLoopStatus,
+  getEventLoopHistory,
+} from '../services/autopilot-event-loop';
 
 const router = Router();
 
@@ -859,14 +866,114 @@ router.get('/validation/:vtid', (req: Request, res: Response) => {
   }
 });
 
+// ==================== VTID-01179: Event Loop Endpoints ====================
+
+/**
+ * GET /loop/status → /api/v1/autopilot/loop/status
+ * VTID-01179: Get event loop status
+ *
+ * Returns:
+ * - is_running: boolean
+ * - poll_ms: number
+ * - last_cursor: string | null
+ * - processed_1h: number
+ * - errors_1h: number
+ * - active_runs: number
+ * - runs_by_state: Record<string, number>
+ */
+router.get('/loop/status', async (_req: Request, res: Response) => {
+  try {
+    const status = await getEventLoopStatus();
+    return res.status(200).json({
+      vtid: 'VTID-01179',
+      timestamp: new Date().toISOString(),
+      ...status,
+    });
+  } catch (error: any) {
+    console.error('[VTID-01179] Loop status error:', error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * POST /loop/start → /api/v1/autopilot/loop/start
+ * VTID-01179: Start event loop
+ */
+router.post('/loop/start', async (_req: Request, res: Response) => {
+  console.log('[VTID-01179] Loop start requested');
+  try {
+    const started = await startEventLoop();
+    return res.status(200).json({
+      ok: true,
+      vtid: 'VTID-01179',
+      started,
+      message: started ? 'Event loop started' : 'Event loop disabled by configuration',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error('[VTID-01179] Loop start error:', error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * POST /loop/stop → /api/v1/autopilot/loop/stop
+ * VTID-01179: Stop event loop (graceful)
+ */
+router.post('/loop/stop', async (_req: Request, res: Response) => {
+  console.log('[VTID-01179] Loop stop requested');
+  try {
+    await stopEventLoop();
+    return res.status(200).json({
+      ok: true,
+      vtid: 'VTID-01179',
+      message: 'Event loop stopped',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error('[VTID-01179] Loop stop error:', error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * GET /loop/history → /api/v1/autopilot/loop/history
+ * VTID-01179: Get processed event history
+ *
+ * Query params:
+ * - limit: number (default 100, max 500)
+ */
+router.get('/loop/history', async (req: Request, res: Response) => {
+  try {
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 100, 1), 500);
+    const history = await getEventLoopHistory(limit);
+    return res.status(200).json({
+      ok: true,
+      vtid: 'VTID-01179',
+      count: history.length,
+      events: history,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error('[VTID-01179] Loop history error:', error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
 // ==================== Health Check ====================
 
 /**
  * GET /health → /api/v1/autopilot/health
- * VTID-0532 + VTID-0533 + VTID-0534 + VTID-0535 + VTID-01178: Autopilot health check
+ * VTID-0532 + VTID-0533 + VTID-0534 + VTID-0535 + VTID-01178 + VTID-01179: Autopilot health check
  */
-router.get('/health', (_req: Request, res: Response) => {
+router.get('/health', async (_req: Request, res: Response) => {
   const controllerStatus = getAutopilotStatus();
+  let loopStatus;
+  try {
+    loopStatus = await getEventLoopStatus();
+  } catch {
+    loopStatus = { is_running: false, error: 'Failed to get loop status' };
+  }
 
   return res.status(200).json({
     ok: true,
@@ -882,14 +989,19 @@ router.get('/health', (_req: Request, res: Response) => {
       validator_skeleton: true,
       worker_core_engine: true,
       validator_core_engine: true,
-      // VTID-01178: New capabilities
+      // VTID-01178: Controller capabilities
       autopilot_controller: true,
       spec_snapshotting: true,
       validator_hard_gate: true,
       post_deploy_verification: true,
       acceptance_assertions: true,
+      // VTID-01179: Event loop capabilities
+      event_loop: true,
+      autonomous_state_machine: true,
+      crash_safe_recovery: true,
     },
     controller: controllerStatus,
+    event_loop: loopStatus,
   });
 });
 
