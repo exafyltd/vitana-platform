@@ -814,7 +814,8 @@ export const GOVERNANCE_EVENT_TYPES = [
     'governance.evaluate',    // Legacy event type for backward compatibility
     'governance.rule.created',
     'governance.rule.updated',
-    'governance.violated'
+    'governance.violated',
+    'governance.control.updated'  // VTID-01181: System control state changes (arm/disarm)
 ] as const;
 
 /**

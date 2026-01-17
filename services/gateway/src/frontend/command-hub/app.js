@@ -1843,7 +1843,8 @@ const NAVIGATION_CONFIG = [
             { "key": "evaluations", "path": "/command-hub/governance/evaluations/" },
             { "key": "violations", "path": "/command-hub/governance/violations/" },
             { "key": "history", "path": "/command-hub/governance/history/" },
-            { "key": "proposals", "path": "/command-hub/governance/proposals/" }
+            { "key": "proposals", "path": "/command-hub/governance/proposals/" },
+            { "key": "controls", "path": "/command-hub/governance/controls/" }
         ]
     },
     {
@@ -2228,6 +2229,28 @@ const state = {
         error: null,
         selectedCategoryId: null,
         fetched: false
+    },
+
+    // VTID-01181: Governance Controls (System Arming Panel)
+    governanceControls: {
+        items: [],
+        loading: false,
+        error: null,
+        fetched: false,
+        // Modal state for arm/disarm
+        showArmModal: false,
+        showDisarmModal: false,
+        selectedControlKey: null,
+        armReason: '',
+        armDuration: 60, // minutes
+        disarmReason: '',
+        actionLoading: false,
+        actionError: null,
+        // History drawer state
+        showHistoryDrawer: false,
+        historyItems: [],
+        historyLoading: false,
+        historyError: null
     },
 
     // VTID-0150-A: ORB UI State (Global Assistant Overlay)
@@ -4306,6 +4329,9 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'governance' && tab === 'categories') {
         // VTID-0409: Governance Categories (Read-Only V1)
         container.appendChild(renderGovernanceCategoriesView());
+    } else if (moduleKey === 'governance' && tab === 'controls') {
+        // VTID-01181: Governance Controls (System Arming Panel)
+        container.appendChild(renderGovernanceControlsView());
     } else if (moduleKey === 'intelligence-memory-dev' && tab === 'memory-vault') {
         // VTID-01086: Memory Garden UI Deepening
         container.appendChild(renderMemoryGardenView());
@@ -9733,6 +9759,684 @@ function renderGovernanceCategoriesView() {
     container.appendChild(layout);
 
     return container;
+}
+
+// =============================================================================
+// VTID-01181: Governance Controls - System Arming Panel
+// =============================================================================
+
+/**
+ * VTID-01181: Fetch governance controls from API.
+ */
+async function fetchGovernanceControls() {
+    state.governanceControls.loading = true;
+    state.governanceControls.error = null;
+    renderApp();
+
+    try {
+        var response = await fetch('/api/v1/governance/controls', {
+            method: 'GET',
+            headers: buildContextHeaders()
+        });
+
+        var json = await response.json();
+
+        if (!response.ok || !json.ok) {
+            throw new Error(json.error || json.message || 'Failed to fetch controls');
+        }
+
+        state.governanceControls.items = json.data || [];
+        state.governanceControls.fetched = true;
+        console.log('[VTID-01181] Governance controls loaded:', state.governanceControls.items.length);
+    } catch (error) {
+        console.error('[VTID-01181] Failed to fetch governance controls:', error);
+        state.governanceControls.error = error.message;
+        state.governanceControls.items = [];
+    } finally {
+        state.governanceControls.loading = false;
+        renderApp();
+    }
+}
+
+/**
+ * VTID-01181: Fetch audit history for a specific control.
+ */
+async function fetchControlHistory(key) {
+    state.governanceControls.historyLoading = true;
+    state.governanceControls.historyError = null;
+    state.governanceControls.historyItems = [];
+    renderApp();
+
+    try {
+        var response = await fetch('/api/v1/governance/controls/' + encodeURIComponent(key) + '/history?limit=50', {
+            method: 'GET',
+            headers: buildContextHeaders()
+        });
+
+        var json = await response.json();
+
+        if (!response.ok || !json.ok) {
+            throw new Error(json.error || json.message || 'Failed to fetch history');
+        }
+
+        state.governanceControls.historyItems = json.data || [];
+        console.log('[VTID-01181] Control history loaded:', state.governanceControls.historyItems.length, 'entries');
+    } catch (error) {
+        console.error('[VTID-01181] Failed to fetch control history:', error);
+        state.governanceControls.historyError = error.message;
+    } finally {
+        state.governanceControls.historyLoading = false;
+        renderApp();
+    }
+}
+
+/**
+ * VTID-01181: Arm a system control.
+ */
+async function armControl(key, reason, durationMinutes) {
+    state.governanceControls.actionLoading = true;
+    state.governanceControls.actionError = null;
+    renderApp();
+
+    try {
+        var response = await fetch('/api/v1/governance/controls/' + encodeURIComponent(key), {
+            method: 'POST',
+            headers: buildContextHeaders(),
+            body: JSON.stringify({
+                enabled: true,
+                reason: reason,
+                duration_minutes: durationMinutes
+            })
+        });
+
+        var json = await response.json();
+
+        if (!response.ok || !json.ok) {
+            throw new Error(json.error || json.message || 'Failed to arm control');
+        }
+
+        showToast('Control armed: ' + key, 'success');
+        state.governanceControls.showArmModal = false;
+        state.governanceControls.armReason = '';
+        state.governanceControls.armDuration = 60;
+        state.governanceControls.fetched = false; // Force re-fetch
+        fetchGovernanceControls();
+    } catch (error) {
+        console.error('[VTID-01181] Failed to arm control:', error);
+        state.governanceControls.actionError = error.message;
+        showToast('Failed to arm control: ' + error.message, 'error');
+    } finally {
+        state.governanceControls.actionLoading = false;
+        renderApp();
+    }
+}
+
+/**
+ * VTID-01181: Disarm a system control.
+ */
+async function disarmControl(key, reason) {
+    state.governanceControls.actionLoading = true;
+    state.governanceControls.actionError = null;
+    renderApp();
+
+    try {
+        var response = await fetch('/api/v1/governance/controls/' + encodeURIComponent(key), {
+            method: 'POST',
+            headers: buildContextHeaders(),
+            body: JSON.stringify({
+                enabled: false,
+                reason: reason
+            })
+        });
+
+        var json = await response.json();
+
+        if (!response.ok || !json.ok) {
+            throw new Error(json.error || json.message || 'Failed to disarm control');
+        }
+
+        showToast('Control disarmed: ' + key, 'success');
+        state.governanceControls.showDisarmModal = false;
+        state.governanceControls.disarmReason = '';
+        state.governanceControls.fetched = false; // Force re-fetch
+        fetchGovernanceControls();
+    } catch (error) {
+        console.error('[VTID-01181] Failed to disarm control:', error);
+        state.governanceControls.actionError = error.message;
+        showToast('Failed to disarm control: ' + error.message, 'error');
+    } finally {
+        state.governanceControls.actionLoading = false;
+        renderApp();
+    }
+}
+
+/**
+ * VTID-01181: Format control key for display.
+ */
+function formatControlKey(key) {
+    var keyMap = {
+        'vtid_allocator_enabled': 'VTID Allocator'
+    };
+    return keyMap[key] || key.replace(/_/g, ' ').replace(/\b\w/g, function(l) { return l.toUpperCase(); });
+}
+
+/**
+ * VTID-01181: Calculate time remaining until expiry.
+ */
+function getTimeRemaining(expiresAt) {
+    if (!expiresAt) return null;
+    var now = new Date();
+    var expiry = new Date(expiresAt);
+    var diffMs = expiry - now;
+    if (diffMs <= 0) return 'Expired';
+    var minutes = Math.floor(diffMs / 60000);
+    var hours = Math.floor(minutes / 60);
+    if (hours > 0) {
+        return hours + 'h ' + (minutes % 60) + 'm remaining';
+    }
+    return minutes + 'm remaining';
+}
+
+/**
+ * VTID-01181: Renders the Governance Controls view (System Arming Panel).
+ */
+function renderGovernanceControlsView() {
+    var container = document.createElement('div');
+    container.className = 'gov-controls-container';
+
+    // Auto-fetch controls if not yet fetched and not currently loading
+    if (!state.governanceControls.fetched && !state.governanceControls.loading) {
+        fetchGovernanceControls();
+    }
+
+    // Header section
+    var header = document.createElement('div');
+    header.className = 'gov-controls-header';
+
+    var headerTitle = document.createElement('h2');
+    headerTitle.className = 'gov-controls-title';
+    headerTitle.textContent = 'System Arming Panel';
+    header.appendChild(headerTitle);
+
+    var headerDesc = document.createElement('p');
+    headerDesc.className = 'gov-controls-desc';
+    headerDesc.textContent = 'Arm or disarm high-risk system capabilities without redeploys. All changes are audited.';
+    header.appendChild(headerDesc);
+
+    container.appendChild(header);
+
+    // Loading state
+    if (state.governanceControls.loading) {
+        var loading = document.createElement('div');
+        loading.className = 'gov-controls-loading';
+        loading.innerHTML = '<div class="skeleton-table">' +
+            '<div class="skeleton-row"></div>' +
+            '<div class="skeleton-row"></div>' +
+            '</div>';
+        container.appendChild(loading);
+        return container;
+    }
+
+    // Error state
+    if (state.governanceControls.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'gov-controls-error';
+        errorDiv.innerHTML = '<span class="error-icon">!</span> Error loading controls: ' + escapeHtml(state.governanceControls.error);
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    // Empty state
+    if (state.governanceControls.items.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'gov-controls-empty';
+        emptyDiv.innerHTML = '<p>No system controls configured.</p>' +
+            '<p class="gov-controls-empty-hint">Controls will appear here as they are added to the system.</p>';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    // Controls cards
+    var cardsContainer = document.createElement('div');
+    cardsContainer.className = 'gov-controls-cards';
+
+    state.governanceControls.items.forEach(function(control) {
+        var card = renderControlCard(control);
+        cardsContainer.appendChild(card);
+    });
+
+    container.appendChild(cardsContainer);
+
+    // Arm modal
+    if (state.governanceControls.showArmModal) {
+        container.appendChild(renderArmModal());
+    }
+
+    // Disarm modal
+    if (state.governanceControls.showDisarmModal) {
+        container.appendChild(renderDisarmModal());
+    }
+
+    // History drawer
+    if (state.governanceControls.showHistoryDrawer) {
+        container.appendChild(renderControlHistoryDrawer());
+    }
+
+    return container;
+}
+
+/**
+ * VTID-01181: Render a single control card.
+ */
+function renderControlCard(control) {
+    var card = document.createElement('div');
+    card.className = 'gov-control-card';
+
+    // Check if expired
+    var isExpired = control.expires_at && new Date(control.expires_at) <= new Date();
+    var effectiveEnabled = control.enabled && !isExpired;
+
+    // Card header
+    var cardHeader = document.createElement('div');
+    cardHeader.className = 'gov-control-card-header';
+
+    var controlTitle = document.createElement('h3');
+    controlTitle.className = 'gov-control-title';
+    controlTitle.textContent = formatControlKey(control.key);
+    cardHeader.appendChild(controlTitle);
+
+    // Status pill
+    var statusPill = document.createElement('span');
+    statusPill.className = 'gov-control-status ' + (effectiveEnabled ? 'status-armed' : 'status-disarmed');
+    statusPill.textContent = effectiveEnabled ? 'ARMED' : 'DISARMED';
+    cardHeader.appendChild(statusPill);
+
+    card.appendChild(cardHeader);
+
+    // Card body
+    var cardBody = document.createElement('div');
+    cardBody.className = 'gov-control-card-body';
+
+    // Expiry info (if armed and has expiry)
+    if (effectiveEnabled && control.expires_at) {
+        var expiryDiv = document.createElement('div');
+        expiryDiv.className = 'gov-control-expiry';
+        var timeRemaining = getTimeRemaining(control.expires_at);
+        expiryDiv.innerHTML = '<span class="expiry-icon">&#9200;</span> ' + escapeHtml(timeRemaining);
+        cardBody.appendChild(expiryDiv);
+    }
+
+    // Reason (if present)
+    if (control.reason) {
+        var reasonDiv = document.createElement('div');
+        reasonDiv.className = 'gov-control-reason';
+        reasonDiv.innerHTML = '<strong>Reason:</strong> ' + escapeHtml(control.reason);
+        cardBody.appendChild(reasonDiv);
+    }
+
+    // Last updated info
+    if (control.updated_by || control.updated_at) {
+        var updatedDiv = document.createElement('div');
+        updatedDiv.className = 'gov-control-updated';
+        var updatedText = 'Last updated';
+        if (control.updated_by) {
+            updatedText += ' by ' + escapeHtml(control.updated_by);
+        }
+        if (control.updated_at) {
+            updatedText += ' at ' + formatHistoryTimestamp(control.updated_at);
+        }
+        updatedDiv.textContent = updatedText;
+        cardBody.appendChild(updatedDiv);
+    }
+
+    card.appendChild(cardBody);
+
+    // Card actions
+    var cardActions = document.createElement('div');
+    cardActions.className = 'gov-control-card-actions';
+
+    // Toggle button (Arm/Disarm)
+    var toggleBtn = document.createElement('button');
+    toggleBtn.className = 'gov-control-toggle-btn ' + (effectiveEnabled ? 'btn-disarm' : 'btn-arm');
+    toggleBtn.textContent = effectiveEnabled ? 'Disarm' : 'Arm';
+    toggleBtn.onclick = function() {
+        state.governanceControls.selectedControlKey = control.key;
+        if (effectiveEnabled) {
+            state.governanceControls.showDisarmModal = true;
+        } else {
+            state.governanceControls.showArmModal = true;
+        }
+        renderApp();
+    };
+    cardActions.appendChild(toggleBtn);
+
+    // View history link
+    var historyLink = document.createElement('button');
+    historyLink.className = 'gov-control-history-link';
+    historyLink.textContent = 'View history';
+    historyLink.onclick = function() {
+        state.governanceControls.selectedControlKey = control.key;
+        state.governanceControls.showHistoryDrawer = true;
+        fetchControlHistory(control.key);
+    };
+    cardActions.appendChild(historyLink);
+
+    card.appendChild(cardActions);
+
+    return card;
+}
+
+/**
+ * VTID-01181: Render the Arm modal.
+ */
+function renderArmModal() {
+    var overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.onclick = function(e) {
+        if (e.target === overlay) {
+            state.governanceControls.showArmModal = false;
+            renderApp();
+        }
+    };
+
+    var modal = document.createElement('div');
+    modal.className = 'gov-control-modal';
+
+    var modalHeader = document.createElement('div');
+    modalHeader.className = 'gov-control-modal-header';
+    modalHeader.innerHTML = '<h3>Arm Control: ' + escapeHtml(formatControlKey(state.governanceControls.selectedControlKey)) + '</h3>';
+    modal.appendChild(modalHeader);
+
+    var modalBody = document.createElement('div');
+    modalBody.className = 'gov-control-modal-body';
+
+    // Warning message
+    var warning = document.createElement('div');
+    warning.className = 'gov-control-modal-warning';
+    warning.innerHTML = '<span class="warning-icon">!</span> Arming this control enables high-risk functionality. All changes are logged to the audit trail.';
+    modalBody.appendChild(warning);
+
+    // Reason input (required)
+    var reasonLabel = document.createElement('label');
+    reasonLabel.className = 'gov-control-modal-label';
+    reasonLabel.textContent = 'Reason (required)';
+    modalBody.appendChild(reasonLabel);
+
+    var reasonInput = document.createElement('textarea');
+    reasonInput.className = 'gov-control-modal-textarea';
+    reasonInput.placeholder = 'Why are you arming this control?';
+    reasonInput.value = state.governanceControls.armReason;
+    reasonInput.oninput = function(e) {
+        state.governanceControls.armReason = e.target.value;
+    };
+    modalBody.appendChild(reasonInput);
+
+    // Duration select (required)
+    var durationLabel = document.createElement('label');
+    durationLabel.className = 'gov-control-modal-label';
+    durationLabel.textContent = 'Duration (required)';
+    modalBody.appendChild(durationLabel);
+
+    var durationSelect = document.createElement('select');
+    durationSelect.className = 'gov-control-modal-select';
+    var durations = [
+        { value: 15, label: '15 minutes' },
+        { value: 60, label: '1 hour' },
+        { value: 240, label: '4 hours' },
+        { value: 480, label: '8 hours' },
+        { value: 1440, label: '24 hours' }
+    ];
+    durations.forEach(function(d) {
+        var opt = document.createElement('option');
+        opt.value = d.value;
+        opt.textContent = d.label;
+        opt.selected = d.value === state.governanceControls.armDuration;
+        durationSelect.appendChild(opt);
+    });
+    durationSelect.onchange = function(e) {
+        state.governanceControls.armDuration = parseInt(e.target.value, 10);
+    };
+    modalBody.appendChild(durationSelect);
+
+    // Error message
+    if (state.governanceControls.actionError) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'gov-control-modal-error';
+        errorDiv.textContent = state.governanceControls.actionError;
+        modalBody.appendChild(errorDiv);
+    }
+
+    modal.appendChild(modalBody);
+
+    // Modal footer
+    var modalFooter = document.createElement('div');
+    modalFooter.className = 'gov-control-modal-footer';
+
+    var cancelBtn = document.createElement('button');
+    cancelBtn.className = 'gov-control-modal-cancel';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.onclick = function() {
+        state.governanceControls.showArmModal = false;
+        state.governanceControls.armReason = '';
+        state.governanceControls.actionError = null;
+        renderApp();
+    };
+    modalFooter.appendChild(cancelBtn);
+
+    var confirmBtn = document.createElement('button');
+    confirmBtn.className = 'gov-control-modal-confirm btn-arm';
+    confirmBtn.textContent = state.governanceControls.actionLoading ? 'Arming...' : 'Confirm Arm';
+    confirmBtn.disabled = state.governanceControls.actionLoading || !state.governanceControls.armReason.trim();
+    confirmBtn.onclick = function() {
+        if (state.governanceControls.armReason.trim()) {
+            armControl(
+                state.governanceControls.selectedControlKey,
+                state.governanceControls.armReason.trim(),
+                state.governanceControls.armDuration
+            );
+        }
+    };
+    modalFooter.appendChild(confirmBtn);
+
+    modal.appendChild(modalFooter);
+    overlay.appendChild(modal);
+
+    return overlay;
+}
+
+/**
+ * VTID-01181: Render the Disarm modal.
+ */
+function renderDisarmModal() {
+    var overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.onclick = function(e) {
+        if (e.target === overlay) {
+            state.governanceControls.showDisarmModal = false;
+            renderApp();
+        }
+    };
+
+    var modal = document.createElement('div');
+    modal.className = 'gov-control-modal';
+
+    var modalHeader = document.createElement('div');
+    modalHeader.className = 'gov-control-modal-header';
+    modalHeader.innerHTML = '<h3>Disarm Control: ' + escapeHtml(formatControlKey(state.governanceControls.selectedControlKey)) + '</h3>';
+    modal.appendChild(modalHeader);
+
+    var modalBody = document.createElement('div');
+    modalBody.className = 'gov-control-modal-body';
+
+    // Reason input (required)
+    var reasonLabel = document.createElement('label');
+    reasonLabel.className = 'gov-control-modal-label';
+    reasonLabel.textContent = 'Reason (required)';
+    modalBody.appendChild(reasonLabel);
+
+    var reasonInput = document.createElement('textarea');
+    reasonInput.className = 'gov-control-modal-textarea';
+    reasonInput.placeholder = 'Why are you disarming this control?';
+    reasonInput.value = state.governanceControls.disarmReason;
+    reasonInput.oninput = function(e) {
+        state.governanceControls.disarmReason = e.target.value;
+    };
+    modalBody.appendChild(reasonInput);
+
+    // Error message
+    if (state.governanceControls.actionError) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'gov-control-modal-error';
+        errorDiv.textContent = state.governanceControls.actionError;
+        modalBody.appendChild(errorDiv);
+    }
+
+    modal.appendChild(modalBody);
+
+    // Modal footer
+    var modalFooter = document.createElement('div');
+    modalFooter.className = 'gov-control-modal-footer';
+
+    var cancelBtn = document.createElement('button');
+    cancelBtn.className = 'gov-control-modal-cancel';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.onclick = function() {
+        state.governanceControls.showDisarmModal = false;
+        state.governanceControls.disarmReason = '';
+        state.governanceControls.actionError = null;
+        renderApp();
+    };
+    modalFooter.appendChild(cancelBtn);
+
+    var confirmBtn = document.createElement('button');
+    confirmBtn.className = 'gov-control-modal-confirm btn-disarm';
+    confirmBtn.textContent = state.governanceControls.actionLoading ? 'Disarming...' : 'Confirm Disarm';
+    confirmBtn.disabled = state.governanceControls.actionLoading || !state.governanceControls.disarmReason.trim();
+    confirmBtn.onclick = function() {
+        if (state.governanceControls.disarmReason.trim()) {
+            disarmControl(
+                state.governanceControls.selectedControlKey,
+                state.governanceControls.disarmReason.trim()
+            );
+        }
+    };
+    modalFooter.appendChild(confirmBtn);
+
+    modal.appendChild(modalFooter);
+    overlay.appendChild(modal);
+
+    return overlay;
+}
+
+/**
+ * VTID-01181: Render the control history drawer.
+ */
+function renderControlHistoryDrawer() {
+    var overlay = document.createElement('div');
+    overlay.className = 'drawer-overlay';
+    overlay.onclick = function(e) {
+        if (e.target === overlay) {
+            state.governanceControls.showHistoryDrawer = false;
+            renderApp();
+        }
+    };
+
+    var drawer = document.createElement('div');
+    drawer.className = 'gov-control-history-drawer';
+
+    // Drawer header
+    var drawerHeader = document.createElement('div');
+    drawerHeader.className = 'gov-control-history-header';
+
+    var headerTitle = document.createElement('h3');
+    headerTitle.textContent = 'Audit History: ' + formatControlKey(state.governanceControls.selectedControlKey);
+    drawerHeader.appendChild(headerTitle);
+
+    var closeBtn = document.createElement('button');
+    closeBtn.className = 'drawer-close-btn';
+    closeBtn.innerHTML = '&#x2715;';
+    closeBtn.onclick = function() {
+        state.governanceControls.showHistoryDrawer = false;
+        renderApp();
+    };
+    drawerHeader.appendChild(closeBtn);
+
+    drawer.appendChild(drawerHeader);
+
+    // Drawer body
+    var drawerBody = document.createElement('div');
+    drawerBody.className = 'gov-control-history-body';
+
+    if (state.governanceControls.historyLoading) {
+        var loading = document.createElement('div');
+        loading.className = 'gov-control-history-loading';
+        loading.innerHTML = '<div class="skeleton-row"></div><div class="skeleton-row"></div>';
+        drawerBody.appendChild(loading);
+    } else if (state.governanceControls.historyError) {
+        var error = document.createElement('div');
+        error.className = 'gov-control-history-error';
+        error.textContent = 'Error: ' + state.governanceControls.historyError;
+        drawerBody.appendChild(error);
+    } else if (state.governanceControls.historyItems.length === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'gov-control-history-empty';
+        empty.textContent = 'No audit history available.';
+        drawerBody.appendChild(empty);
+    } else {
+        var timeline = document.createElement('div');
+        timeline.className = 'gov-control-history-timeline';
+
+        state.governanceControls.historyItems.forEach(function(item) {
+            var entry = document.createElement('div');
+            entry.className = 'gov-control-history-entry';
+
+            var entryIcon = document.createElement('div');
+            entryIcon.className = 'history-entry-icon ' + (item.to_enabled ? 'icon-armed' : 'icon-disarmed');
+            entryIcon.innerHTML = item.to_enabled ? '&#x2191;' : '&#x2193;';
+            entry.appendChild(entryIcon);
+
+            var entryContent = document.createElement('div');
+            entryContent.className = 'history-entry-content';
+
+            var entryAction = document.createElement('div');
+            entryAction.className = 'history-entry-action';
+            entryAction.textContent = item.to_enabled ? 'Armed' : 'Disarmed';
+            if (item.from_enabled !== item.to_enabled) {
+                entryAction.textContent += ' (was ' + (item.from_enabled ? 'Armed' : 'Disarmed') + ')';
+            }
+            entryContent.appendChild(entryAction);
+
+            var entryReason = document.createElement('div');
+            entryReason.className = 'history-entry-reason';
+            entryReason.textContent = item.reason || 'No reason provided';
+            entryContent.appendChild(entryReason);
+
+            var entryMeta = document.createElement('div');
+            entryMeta.className = 'history-entry-meta';
+            var metaText = formatHistoryTimestamp(item.created_at);
+            if (item.updated_by) {
+                metaText += ' by ' + item.updated_by;
+            }
+            if (item.updated_by_role) {
+                metaText += ' (' + item.updated_by_role + ')';
+            }
+            if (item.expires_at) {
+                metaText += ' | Expires: ' + formatHistoryTimestamp(item.expires_at);
+            }
+            entryMeta.textContent = metaText;
+            entryContent.appendChild(entryMeta);
+
+            entry.appendChild(entryContent);
+            timeline.appendChild(entry);
+        });
+
+        drawerBody.appendChild(timeline);
+    }
+
+    drawer.appendChild(drawerBody);
+    overlay.appendChild(drawer);
+
+    return overlay;
 }
 
 /**

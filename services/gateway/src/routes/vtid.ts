@@ -1,6 +1,8 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { buildStageTimeline, defaultStageTimeline, type TimelineEvent, type StageTimelineEntry } from '../lib/stage-mapping';
+// VTID-01181: Import system controls service for DB-backed allocator toggle
+import { isVtidAllocatorEnabled, getSystemControl } from '../services/system-controls-service';
 
 const router = Router();
 
@@ -11,12 +13,12 @@ const TARGET_ROLES_ENUM = ['DEV', 'COM', 'ADM', 'PRO', 'ERP', 'PAT', 'INFRA'] as
 type TargetRole = typeof TARGET_ROLES_ENUM[number];
 
 // ===========================================================================
-// VTID-0542: Global VTID Allocator Configuration
+// VTID-0542 + VTID-01181: Global VTID Allocator Configuration
 // ===========================================================================
 
-// Feature flags for allocator activation
-// OFF until all 3 paths (Manual/CTO, Operator Console, Command Hub) are wired
-const VTID_ALLOCATOR_ENABLED = process.env.VTID_ALLOCATOR_ENABLED === 'true';
+// Env var for backward compatibility - checked FIRST
+// VTID-01181: DB control state checked SECOND (allows arming without redeploy)
+const VTID_ALLOCATOR_ENABLED_ENV = process.env.VTID_ALLOCATOR_ENABLED === 'true';
 const VTID_ALLOCATOR_START = parseInt(process.env.VTID_ALLOCATOR_START || '1000', 10);
 
 // Allocator response type
@@ -31,23 +33,29 @@ interface AllocatorResponse {
 
 /**
  * POST /allocate → /api/v1/vtid/allocate
- * VTID-0542: Global VTID Allocator
+ * VTID-0542 + VTID-01181: Global VTID Allocator
  *
  * Atomically allocates the next sequential VTID and creates a shell entry
  * in the ledger. This ensures allocated == registered (no split-brain).
  *
- * Returns 409 if allocator is disabled (feature flag OFF).
+ * Returns 409 if allocator is disabled.
+ *
+ * VTID-01181: Allocator enabled if:
+ * - VTID_ALLOCATOR_ENABLED env var is 'true' (backward compatible), OR
+ * - DB control 'vtid_allocator_enabled' is enabled AND not expired
  */
 router.post("/allocate", async (req: Request, res: Response) => {
-  console.log(`[VTID-0542] Allocate request received, enabled=${VTID_ALLOCATOR_ENABLED}`);
+  // VTID-01181: Check DB-backed control state (with caching and expiry)
+  const allocatorEnabled = await isVtidAllocatorEnabled();
+  console.log(`[VTID-0542] Allocate request received, env=${VTID_ALLOCATOR_ENABLED_ENV}, dbEnabled=${allocatorEnabled}`);
 
-  // D2: Check feature flag - return 409 if disabled
-  if (!VTID_ALLOCATOR_ENABLED) {
-    console.log(`[VTID-0542] Allocator disabled, returning 409`);
+  // D2: Check feature flag - return 409 if disabled (both env and DB control)
+  if (!allocatorEnabled) {
+    console.log(`[VTID-0542] Allocator disabled (env=${VTID_ALLOCATOR_ENABLED_ENV}, db=false), returning 409`);
     return res.status(409).json({
       ok: false,
       error: 'allocator_disabled',
-      message: 'VTID allocator is not active. Enable VTID_ALLOCATOR_ENABLED=true after all 3 paths are wired.',
+      message: 'VTID allocator is not active. Enable via Governance > Controls or set VTID_ALLOCATOR_ENABLED=true.',
       vtid: 'VTID-0542'
     } as AllocatorResponse);
   }
@@ -118,18 +126,31 @@ router.post("/allocate", async (req: Request, res: Response) => {
 
 /**
  * GET /allocator/status → /api/v1/vtid/allocator/status
- * VTID-0542: Check allocator status and configuration
+ * VTID-0542 + VTID-01181: Check allocator status and configuration
+ * Shows both env var and DB control state
  */
-router.get("/allocator/status", (_req: Request, res: Response) => {
+router.get("/allocator/status", async (_req: Request, res: Response) => {
+  // VTID-01181: Get DB control state
+  const dbControl = await getSystemControl('vtid_allocator_enabled');
+  const effectiveEnabled = await isVtidAllocatorEnabled();
+
   return res.status(200).json({
     ok: true,
-    enabled: VTID_ALLOCATOR_ENABLED,
+    enabled: effectiveEnabled,
+    env_var_enabled: VTID_ALLOCATOR_ENABLED_ENV,
+    db_control: dbControl ? {
+      enabled: dbControl.enabled,
+      expires_at: dbControl.expires_at,
+      reason: dbControl.reason,
+      updated_by: dbControl.updated_by,
+      updated_at: dbControl.updated_at,
+    } : null,
     start: VTID_ALLOCATOR_START,
     format: 'VTID-XXXXX',
     vtid: 'VTID-0542',
-    message: VTID_ALLOCATOR_ENABLED
+    message: effectiveEnabled
       ? 'Allocator is active. All task creation paths should use POST /api/v1/vtid/allocate.'
-      : 'Allocator is disabled. Set VTID_ALLOCATOR_ENABLED=true to activate.'
+      : 'Allocator is disabled. Enable via Governance > Controls or set VTID_ALLOCATOR_ENABLED=true.'
   });
 });
 

@@ -73,6 +73,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const { sseService } = require('./services/sse-service');
   const { setupCors, sseHeaders } = require('./middleware/cors');
   const governanceRouter = require('./routes/governance').default;
+  // VTID-01181: Governance Controls v1 - System Arming Panel
+  const governanceControlsRouter = require('./routes/governance-controls').default;
   const { oasisTasksRouter } = require('./routes/oasis-tasks');
   const { oasisVtidLedgerRouter } = require('./routes/oasis-vtid-ledger');
   const cicdRouter = require('./routes/cicd').default;
@@ -328,6 +330,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // Core API routes
   mountRouterSync(app, '/api/v1/governance', governanceRouter, { owner: 'governance' });
+  // VTID-01181: Governance Controls v1 - System Arming Panel (arm/disarm without redeploy)
+  mountRouterSync(app, '/api/v1/governance/controls', governanceControlsRouter, { owner: 'governance-controls' });
   mountRouterSync(app, '/api/v1/vtid', vtidRouter, { owner: 'vtid' });
 
   // VTID-0516: Autonomous Safe-Merge Layer - CICD routes

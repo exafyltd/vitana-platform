@@ -437,7 +437,9 @@ export type CicdEventType =
   | 'governance.validation.task_discovery.blocked'
   // VTID-01158: ORB Router Fix — Enforce OASIS-Only Task Discovery
   | 'orb.task_state_query'
-  | 'orb.task_state_query.completed';
+  | 'orb.task_state_query.completed'
+  // VTID-01181: Governance Controls - System Arming Panel Events
+  | 'governance.control.updated';
 
 export interface CicdOasisEvent {
   vtid: string;
