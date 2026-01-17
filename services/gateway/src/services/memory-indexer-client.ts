@@ -4,13 +4,25 @@
  * HTTP client for calling the Mem0-based memory-indexer service.
  * Provides context retrieval and memory writes for ORB.
  *
- * Endpoints called:
+ * VTID-01184 DEPRECATION NOTICE:
+ * This client is DEPRECATED. Use supabase-semantic-memory.ts instead.
+ * Mem0/Qdrant-based memory is being replaced with Supabase pgvector.
+ *
+ * Migration Guide:
+ * - Reads: Use semanticSearch() from supabase-semantic-memory.ts
+ * - Writes: Use writeMemoryItem() from supabase-semantic-memory.ts
+ * - Context: Use buildSemanticContext() from supabase-semantic-memory.ts
+ *
+ * Endpoints called (DEPRECATED):
  * - POST /memory/context - Get context injection for prompts
  * - POST /memory/write - Write user facts to memory
  * - POST /memory/search - Search memory (alternative to context)
+ *
+ * @deprecated Use supabase-semantic-memory.ts instead (VTID-01184)
  */
 
 import { emitOasisEvent } from './oasis-event-service';
+import { isMem0Enabled, getMemorySourceStatus } from './memory-source-config';
 
 // =============================================================================
 // Configuration
@@ -82,8 +94,23 @@ export interface MemoryContextResponse {
 /**
  * Check if memory-indexer is configured
  * VTID-01182: Emits memory.indexer.disabled OASIS event when not configured
+ *
+ * @deprecated VTID-01184: Use isSupabasePrimary() from memory-source-config.ts instead.
+ * Mem0/Qdrant is deprecated in favor of Supabase pgvector.
  */
 export function isMemoryIndexerEnabled(): boolean {
+  // VTID-01184: Check if Mem0 is still enabled via config
+  if (!isMem0Enabled()) {
+    // Mem0 is disabled - use Supabase instead
+    const status = getMemorySourceStatus();
+    if (!isMemoryIndexerEnabled._supabaseWarningEmitted) {
+      console.log('[VTID-01184] Memory Indexer (Mem0/Qdrant) is DISABLED. Using Supabase semantic memory.');
+      console.log('[VTID-01184] Status:', JSON.stringify(status, null, 2));
+      isMemoryIndexerEnabled._supabaseWarningEmitted = true;
+    }
+    return false;
+  }
+
   const enabled = !!MEMORY_INDEXER_URL;
   // VTID-01182: Log ERROR and emit OASIS event if memory indexer is NOT configured
   if (!enabled && !isMemoryIndexerEnabled._warnedOnce) {
@@ -108,6 +135,8 @@ export function isMemoryIndexerEnabled(): boolean {
 }
 // Track if we've already warned about missing config
 isMemoryIndexerEnabled._warnedOnce = false;
+// VTID-01184: Track if we've warned about Supabase migration
+isMemoryIndexerEnabled._supabaseWarningEmitted = false;
 
 /**
  * Get the memory-indexer URL

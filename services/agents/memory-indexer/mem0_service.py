@@ -1,6 +1,34 @@
 """
 VTID-01152 + VTID-01186: Mem0 OSS Memory Service with Qdrant Cloud
 
+================================================================================
+VTID-01184 DEPRECATION NOTICE
+================================================================================
+
+While VTID-01186 added Qdrant Cloud support for persistent storage, this service
+is being superseded by Supabase pgvector (VTID-01184).
+
+Supabase pgvector is now the RECOMMENDED source of truth for memory persistence.
+
+Reasons for Migration:
+- Unified data layer (memory + auth + governance in one database)
+- Built-in tenant isolation via RLS
+- No additional infrastructure (Qdrant Cloud) to manage
+- Consistent with other Vitana data governance patterns
+
+Current Status:
+- Qdrant Cloud (VTID-01186): Still functional, production-supported
+- Supabase pgvector (VTID-01184): New recommended approach
+
+Migration Guide (VTID-01184):
+- Reads: Use Supabase semantic search (memory_semantic_search RPC)
+- Writes: Use Supabase memory_write_item_v2 RPC
+- Embeddings: Generated via embedding-service.ts or OpenAI API
+
+See VTID-01184 for full migration guide.
+
+================================================================================
+
 Memory service for ORB using:
 - Anthropic Claude for LLM reasoning (fact extraction)
 - Sentence Transformers for local embeddings (all-MiniLM-L6-v2)
@@ -343,6 +371,12 @@ class OrbMemoryService:
 
         config = self._get_config()
         mem0_config = config.to_mem0_config()
+
+        # VTID-01184: Migration notice (Supabase pgvector is recommended)
+        logger.info("=" * 70)
+        logger.info("VTID-01184: Supabase pgvector is now the RECOMMENDED memory backend")
+        logger.info("  See VTID-01184 for migration guide to Supabase semantic memory")
+        logger.info("=" * 70)
 
         # VTID-01186: Log storage mode clearly
         if config.is_cloud_mode():
