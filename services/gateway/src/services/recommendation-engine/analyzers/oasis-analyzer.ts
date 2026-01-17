@@ -86,7 +86,7 @@ async function queryOasisEvents(
       return { ok: false, error: `${response.status}: ${errorText}` };
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as any[];
     return { ok: true, data };
   } catch (error) {
     return { ok: false, error: String(error) };

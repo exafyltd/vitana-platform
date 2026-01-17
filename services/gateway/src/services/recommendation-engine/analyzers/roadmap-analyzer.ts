@@ -172,7 +172,7 @@ async function scanStalledVtids(config: RoadmapAnalyzerConfig): Promise<StalledV
       return stalled;
     }
 
-    const vtids = await response.json();
+    const vtids = (await response.json()) as any[];
 
     for (const vtid of vtids) {
       const lastUpdate = new Date(vtid.updated_at);
