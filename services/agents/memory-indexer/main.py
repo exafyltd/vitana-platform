@@ -1,14 +1,15 @@
 """
-VTID-01152: Mem0 OSS Local Memory Indexer (Anthropic version)
+VTID-01152 + VTID-01185: Mem0 Memory Indexer with Qdrant Cloud
 
-Local-first fact memory service for ORB using:
+Memory service for ORB using:
 - Anthropic Claude for LLM reasoning
 - Sentence Transformers for local embeddings
-- Qdrant for local vector storage
+- Qdrant Cloud for PERSISTENT vector storage (VTID-01185)
 
 Endpoints:
-- /health - Health check
-- /introspect - Build info
+- /health - Basic health check
+- /health/deep - Deep health check (verifies Qdrant connectivity)
+- /introspect - Build info with storage mode
 - /memory/write - Write memory item (enforces ORB rules)
 - /memory/search - Search memory
 - /memory/context - Get context injection for prompts
@@ -38,29 +39,67 @@ app = Flask(__name__)
 
 @app.route("/health")
 def health():
-    """Health check endpoint"""
+    """Basic health check endpoint (does not verify Qdrant)"""
+    # VTID-01185: Report storage mode from env
+    qdrant_url = os.getenv("QDRANT_URL")
+    storage_mode = "cloud" if qdrant_url else "local"
+
     return jsonify(
         status="ok",
         service="memory-indexer",
         vtid="VTID-01152",
+        storage_mode=storage_mode,
     ), 200
+
+
+@app.route("/health/deep")
+def health_deep():
+    """
+    VTID-01185: Deep health check that verifies Qdrant connectivity.
+
+    Use this for monitoring dashboards to detect Qdrant Cloud outages.
+    """
+    from mem0_service import memory_health_check
+
+    result = memory_health_check()
+
+    status_code = 200 if result.get("ok") else 503
+
+    return jsonify(
+        status="ok" if result.get("ok") else "error",
+        service="memory-indexer",
+        vtid="VTID-01185",
+        **result
+    ), status_code
 
 
 @app.route("/introspect")
 def introspect():
     """Build introspection endpoint"""
+    # VTID-01185: Report storage mode
+    qdrant_url = os.getenv("QDRANT_URL")
+    storage_mode = "cloud" if qdrant_url else "local"
+
+    features = [
+        "mem0_oss",
+        "anthropic_llm",
+        "local_embeddings",
+        "orb_memory_rules",
+    ]
+
+    # Add storage-specific feature
+    if storage_mode == "cloud":
+        features.append("qdrant_cloud_persistent")
+    else:
+        features.append("qdrant_local_ephemeral")
+
     return jsonify(
         build_sha=os.getenv("GITHUB_SHA", "dev"),
         service="memory-indexer",
         vtid="VTID-01152",
-        version="1.1.0",
-        features=[
-            "mem0_oss",
-            "anthropic_llm",
-            "local_embeddings",
-            "qdrant_storage",
-            "orb_memory_rules",
-        ],
+        version="1.2.0",  # VTID-01185: Bumped version for Qdrant Cloud support
+        storage_mode=storage_mode,
+        features=features,
     ), 200
 
 
@@ -306,7 +345,15 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
     debug = os.getenv("FLASK_DEBUG", "false").lower() == "true"
 
+    # VTID-01185: Log storage mode on startup
+    qdrant_url = os.getenv("QDRANT_URL")
+    storage_mode = "Qdrant Cloud (PERSISTENT)" if qdrant_url else "Local /tmp/qdrant (EPHEMERAL)"
+
     logger.info(f"Starting memory-indexer on port {port}")
-    logger.info("VTID-01152: Mem0 OSS Local Memory (Anthropic version)")
+    logger.info(f"VTID-01185: Storage mode: {storage_mode}")
+    if qdrant_url:
+        logger.info(f"  Qdrant URL: {qdrant_url[:50]}...")
+    else:
+        logger.warning("  WARNING: Set QDRANT_URL for persistent storage!")
 
     app.run(host="0.0.0.0", port=port, debug=debug)
