@@ -367,11 +367,15 @@ async function writeMemoryItemV1(
     occurred_at: payload.occurred_at,
   };
 
-  // Set context first
-  await supabase.rpc('dev_bootstrap_request_context', {
-    p_tenant_id: payload.lens.tenant_id,
-    p_active_role: payload.lens.active_role ?? 'developer'
-  }).catch(() => {});
+  // Set context first (ignore errors - context may already be set)
+  try {
+    await supabase.rpc('dev_bootstrap_request_context', {
+      p_tenant_id: payload.lens.tenant_id,
+      p_active_role: payload.lens.active_role ?? 'developer'
+    });
+  } catch {
+    // Ignore context bootstrap errors
+  }
 
   const { data, error } = await supabase.rpc('memory_write_item', {
     p_payload: rpcPayload

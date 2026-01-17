@@ -421,6 +421,17 @@ export type CicdEventType =
   | 'memory.write.failed'
   | 'memory.read.failed'
   | 'memory.indexer.disabled'
+  // VTID-01184: Supabase Semantic Memory Events
+  | 'memory.semantic_search.completed'
+  | 'memory.semantic_search.failed'
+  | 'memory.write.completed'
+  | 'memory.embeddings.updated'
+  | 'memory.reembed.triggered'
+  | 'memory.deprecation_warning'
+  | 'embedding.fallback_used'
+  | 'embedding.all_providers_failed'
+  | 'embedding.batch_generated'
+  | 'embedding.pipeline.batch_completed'
   // VTID-01155: Gemini Live Multimodal + TTS Events
   | 'vtid.live.session.start'
   | 'vtid.live.session.stop'

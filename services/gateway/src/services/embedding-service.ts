@@ -108,7 +108,7 @@ async function generateOpenAIEmbedding(
       throw new Error(`OpenAI API error: ${response.status} - ${errorBody}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as { data?: Array<{ embedding?: number[] }> };
     const embedding = data.data?.[0]?.embedding;
 
     if (!embedding || !Array.isArray(embedding)) {
@@ -180,15 +180,15 @@ async function generateOpenAIBatchEmbeddings(
       throw new Error(`OpenAI API error: ${response.status} - ${errorBody}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as { data?: Array<{ index: number; embedding: number[] }> };
 
     if (!data.data || !Array.isArray(data.data)) {
       throw new Error('Invalid batch embedding response format');
     }
 
     // Sort by index to maintain order
-    const sortedData = data.data.sort((a: { index: number }, b: { index: number }) => a.index - b.index);
-    const embeddings = sortedData.map((item: { embedding: number[] }) => item.embedding);
+    const sortedData = data.data.sort((a, b) => a.index - b.index);
+    const embeddings = sortedData.map((item) => item.embedding);
 
     const latencyMs = Date.now() - startTime;
 
@@ -260,7 +260,7 @@ async function generateGeminiEmbedding(text: string): Promise<EmbeddingResponse>
       throw new Error(`Gemini API error: ${response.status} - ${errorBody}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as { embedding?: { values?: number[] } };
     const embedding = data.embedding?.values;
 
     if (!embedding || !Array.isArray(embedding)) {
