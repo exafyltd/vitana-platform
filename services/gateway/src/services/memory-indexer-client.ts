@@ -81,10 +81,33 @@ export interface MemoryContextResponse {
 
 /**
  * Check if memory-indexer is configured
+ * VTID-01182: Emits memory.indexer.disabled OASIS event when not configured
  */
 export function isMemoryIndexerEnabled(): boolean {
-  return !!MEMORY_INDEXER_URL;
+  const enabled = !!MEMORY_INDEXER_URL;
+  // VTID-01182: Log ERROR and emit OASIS event if memory indexer is NOT configured
+  if (!enabled && !isMemoryIndexerEnabled._warnedOnce) {
+    console.error('[VTID-01182] MEMORY_INDEXER_URL is NOT configured - memory will NOT work!');
+    console.error('[VTID-01182] Set MEMORY_INDEXER_URL=http://memory-indexer:8080 in your .env');
+    // Emit OASIS event for monitoring/alerting
+    emitOasisEvent({
+      vtid: 'VTID-01182',
+      type: 'memory.indexer.disabled',
+      source: 'memory-indexer-client',
+      status: 'error',
+      message: 'Memory indexer is DISABLED - MEMORY_INDEXER_URL not configured',
+      payload: {
+        component: 'memory-indexer',
+        memory_indexer_url: MEMORY_INDEXER_URL || 'NOT_SET',
+        impact: 'Users will experience memory loss - AI will not remember conversations'
+      }
+    }).catch(e => console.warn('[VTID-01182] OASIS event failed:', e.message));
+    isMemoryIndexerEnabled._warnedOnce = true;
+  }
+  return enabled;
 }
+// Track if we've already warned about missing config
+isMemoryIndexerEnabled._warnedOnce = false;
 
 /**
  * Get the memory-indexer URL
@@ -152,7 +175,27 @@ export async function writeToMemoryIndexer(
     return data;
   } catch (err: any) {
     const latencyMs = Date.now() - startTime;
-    console.warn(`[VTID-01153] Memory write error: ${err.message} (${latencyMs}ms)`);
+    // VTID-01182: Use ERROR level for actual failures
+    console.error(`[VTID-01182] Memory write FAILED: ${err.message} (${latencyMs}ms)`);
+    console.error(`[VTID-01182] This indicates the memory-indexer service is unreachable or failing`);
+    console.error(`[VTID-01182] Check: 1) MEMORY_INDEXER_URL=${MEMORY_INDEXER_URL}, 2) Service health, 3) Network connectivity`);
+
+    // VTID-01182: Emit spec-mandated OASIS event for error tracking
+    emitOasisEvent({
+      vtid: 'VTID-01182',
+      type: 'memory.write.failed',
+      source: 'memory-indexer-client',
+      status: 'error',
+      message: `Memory write failed: ${err.message}`,
+      payload: {
+        user_id: request.user_id,
+        role: request.role,
+        error: err.message,
+        latency_ms: latencyMs,
+        component: 'memory-indexer',
+        memory_indexer_url: MEMORY_INDEXER_URL
+      }
+    }).catch(e => console.warn('[VTID-01182] OASIS event failed:', e.message));
 
     return {
       user_id: request.user_id,
@@ -298,7 +341,27 @@ export async function getMemoryContext(
     return data;
   } catch (err: any) {
     const latencyMs = Date.now() - startTime;
-    console.warn(`[VTID-01153] Memory context error: ${err.message} (${latencyMs}ms)`);
+    // VTID-01182: Use ERROR level - this causes memory loss for the user
+    console.error(`[VTID-01182] Memory context retrieval FAILED: ${err.message} (${latencyMs}ms)`);
+    console.error(`[VTID-01182] User will experience "memory loss" - AI won't remember previous conversations`);
+    console.error(`[VTID-01182] Check: 1) MEMORY_INDEXER_URL=${MEMORY_INDEXER_URL}, 2) Service health`);
+
+    // VTID-01182: Emit spec-mandated OASIS event for error tracking
+    emitOasisEvent({
+      vtid: 'VTID-01182',
+      type: 'memory.read.failed',
+      source: 'memory-indexer-client',
+      status: 'error',
+      message: `Memory read failed: ${err.message}`,
+      payload: {
+        user_id: request.user_id,
+        query: request.query,
+        error: err.message,
+        latency_ms: latencyMs,
+        component: 'memory-indexer',
+        memory_indexer_url: MEMORY_INDEXER_URL
+      }
+    }).catch(e => console.warn('[VTID-01182] OASIS event failed:', e.message));
 
     return {
       context: '',

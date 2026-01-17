@@ -414,6 +414,13 @@ export type CicdEventType =
   | 'orb.memory_indexer.write'
   | 'orb.memory_indexer.search'
   | 'orb.memory_indexer.context'
+  // VTID-DEBUG-MEM: Memory Indexer Error Events (for alerting)
+  | 'orb.memory_indexer.error'
+  | 'orb.memory_indexer.context_error'
+  // VTID-01182: Memory System E2E - Spec-mandated error events
+  | 'memory.write.failed'
+  | 'memory.read.failed'
+  | 'memory.indexer.disabled'
   // VTID-01155: Gemini Live Multimodal + TTS Events
   | 'vtid.live.session.start'
   | 'vtid.live.session.stop'

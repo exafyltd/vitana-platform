@@ -163,6 +163,88 @@ def is_user_originated_fact(text: str, role: str) -> bool:
     return True
 
 
+# VTID-DEBUG-MEM: Assistant message patterns to REJECT (prevent hallucination poisoning)
+ASSISTANT_REJECT_PATTERNS = [
+    # "I don't know" patterns
+    r"(?:ich\s+)?wei[ßs]\s+(?:ich\s+)?nicht",
+    r"(?:ich\s+)?habe\s+(?:gerade\s+)?nicht\s+parat",
+    r"(?:ich\s+)?kenne?\s+(?:ich\s+)?nicht",
+    r"(?:ich\s+)?erinnere?\s+mich\s+nicht",
+    r"i\s+don'?t\s+(?:know|have|remember)",
+    r"i\s+(?:can'?t|cannot)\s+(?:remember|recall)",
+    r"i\s+(?:don'?t|do\s+not)\s+have\s+(?:that|this|any)\s+information",
+    r"(?:not|no)\s+(?:in\s+)?(?:my\s+)?memory",
+    r"keine?\s+(?:information|erinnerung|ahnung)",
+    # Meta-commentary about capabilities
+    r"(?:ich\s+)?bin\s+(?:nur\s+)?(?:ein\s+)?(?:ki|ai|sprachmodell|assistant)",
+    r"i'?m\s+(?:just\s+)?(?:an?\s+)?(?:ai|language\s+model|assistant)",
+    r"(?:ich\s+)?kann?\s+(?:das\s+)?nicht\s+(?:tun|machen|speichern)",
+    r"i\s+(?:can'?t|cannot)\s+(?:do|store|remember)\s+that",
+    # Negative acknowledgments
+    r"(?:tut\s+mir\s+)?leid",
+    r"(?:i'?m\s+)?sorry",
+    r"entschuldigung",
+    # Reset/forget patterns (prevent storing these as facts!)
+    r"(?:ich\s+)?(?:habe|werde)\s+(?:das\s+)?(?:vergessen|zurückgesetzt)",
+    r"(?:my\s+)?memory\s+(?:has\s+been\s+)?(?:reset|cleared|wiped)",
+]
+
+ASSISTANT_REJECT_REGEX = [re.compile(p, re.IGNORECASE) for p in ASSISTANT_REJECT_PATTERNS]
+
+
+def is_assistant_storable(text: str) -> bool:
+    """
+    VTID-DEBUG-MEM: Check if assistant message should be stored.
+
+    We DO want to store assistant responses that:
+    - Acknowledge user facts ("Nice to meet you, Alice!")
+    - Confirm information ("Yes, I'll remember that")
+    - Reference stored knowledge ("Based on your preference for...")
+
+    We DO NOT want to store:
+    - "I don't know" responses (prevents hallucination poisoning)
+    - Meta-commentary about AI limitations
+    - Error messages or apologies
+    """
+    text = text.strip()
+
+    # Too short
+    if len(text) < 15:
+        return False
+
+    # Check reject patterns
+    for pattern in ASSISTANT_REJECT_REGEX:
+        if pattern.search(text):
+            logger.debug(f"Assistant message rejected: matched reject pattern")
+            return False
+
+    return True
+
+
+def should_store_message(text: str, role: str) -> tuple[bool, str]:
+    """
+    VTID-DEBUG-MEM: Unified message storage decision.
+
+    Returns (should_store, decision_reason)
+    """
+    # User messages
+    if role == "user":
+        if is_filler_message(text):
+            return False, "rejected_filler"
+        clean_text = text.strip()
+        if len(clean_text) < 10:
+            return False, "rejected_too_short"
+        return True, "user_fact"
+
+    # Assistant messages - NEW: we now store these (with filtering)
+    if role == "assistant":
+        if not is_assistant_storable(text):
+            return False, "rejected_assistant_negative"
+        return True, "assistant_context"
+
+    return False, "rejected_unknown_role"
+
+
 # ============================================================================
 # Memory Service
 # ============================================================================
@@ -230,10 +312,12 @@ class OrbMemoryService:
         """
         Write memory item for a user.
 
+        VTID-DEBUG-MEM: Updated to support both user and assistant messages.
+
         Enforces ORB memory rules:
-        - Only store user-originated facts
-        - Never store assistant messages into identity/relationships
-        - Drop filler messages
+        - Store user-originated facts
+        - Store assistant responses that acknowledge/confirm (NOT "I don't know")
+        - Drop filler messages and negative assistant responses
         - Deduplicate semantically (handled by Mem0)
 
         Returns decision info for logging/debugging.
@@ -247,16 +331,11 @@ class OrbMemoryService:
             "timestamp": time.time(),
         }
 
-        # Apply ORB memory rules
-        if not is_user_originated_fact(content, role):
-            if role != "user":
-                result["decision"] = "rejected_assistant_message"
-            elif is_filler_message(content):
-                result["decision"] = "rejected_filler"
-            else:
-                result["decision"] = "rejected_too_short"
-
-            logger.debug(f"Memory write rejected: {result['decision']}")
+        # VTID-DEBUG-MEM: Use unified storage decision (supports both user and assistant)
+        should_store, decision = should_store_message(content, role)
+        if not should_store:
+            result["decision"] = decision
+            logger.debug(f"Memory write rejected: {result['decision']} (role={role})")
             return result
 
         # Initialize Mem0 if needed
