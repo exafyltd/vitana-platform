@@ -5,12 +5,25 @@
  * (frontend, backend, memory). Implements deterministic routing based on
  * task_domain field and keyword heuristics.
  *
+ * VTID-01175: Integrated with Verification Engine to validate worker output
+ * before marking tasks as complete.
+ *
  * This service does NOT edit code directly - it only validates, routes,
  * and coordinates execution stages via OASIS events.
  */
 
 import { randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
+
+// =============================================================================
+// VTID-01175: Verification Engine Configuration
+// =============================================================================
+
+const VERIFICATION_ENGINE_URL = process.env.VERIFICATION_ENGINE_URL ||
+  'https://vitana-verification-engine-q74ibpv6ia-uc.a.run.app';
+
+const VERIFICATION_TIMEOUT_MS = parseInt(process.env.VERIFICATION_TIMEOUT_MS || '30000', 10);
+const MAX_VERIFICATION_RETRIES = parseInt(process.env.MAX_VERIFICATION_RETRIES || '2', 10);
 
 // =============================================================================
 // VTID-01167 + VTID-01170: Identity Defaults (Canonical Identity Enforcement)
@@ -107,6 +120,56 @@ export interface SubagentResult {
   summary?: string;
   error?: string;
   violations?: string[];
+}
+
+// =============================================================================
+// VTID-01175: Verification Types
+// =============================================================================
+
+/**
+ * File change claimed by a worker
+ */
+interface FileChange {
+  file_path: string;
+  action: 'created' | 'modified' | 'deleted';
+}
+
+/**
+ * Request payload for verification engine
+ */
+interface VerifyRequest {
+  vtid: string;
+  domain: TaskDomain;
+  claimed_changes: FileChange[];
+  claimed_output?: string;
+  started_at?: string;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Response from verification engine
+ */
+interface VerifyResponse {
+  passed: boolean;
+  verification_result: string;
+  reason: string;
+  checks_run: string[];
+  checks_passed: string[];
+  checks_failed: string[];
+  duration_ms: number;
+  oasis_event_id?: string;
+  recommended_action: 'complete' | 'retry' | 'fail' | 'manual_review';
+  details: Record<string, unknown>;
+}
+
+/**
+ * Result of verification with retry support
+ */
+export interface VerificationOutcome {
+  passed: boolean;
+  should_retry: boolean;
+  reason: string;
+  verification_response?: VerifyResponse;
 }
 
 // =============================================================================
@@ -699,6 +762,296 @@ export async function emitSubagentFailed(
 }
 
 // =============================================================================
+// VTID-01175: Verification Engine Integration
+// =============================================================================
+
+/**
+ * Emit verification stage event
+ */
+async function emitVerificationEvent(
+  vtid: string,
+  stage: 'start' | 'passed' | 'failed' | 'error',
+  status: 'info' | 'success' | 'warning' | 'error',
+  message: string,
+  payload: Record<string, unknown> = {}
+): Promise<void> {
+  await emitOasisEvent({
+    vtid,
+    type: `vtid.stage.verification.${stage}` as any,
+    source: 'worker-orchestrator',
+    status,
+    message,
+    payload: {
+      vtid,
+      stage,
+      ...payload,
+      emitted_at: new Date().toISOString()
+    }
+  });
+}
+
+/**
+ * Call the verification engine to validate worker output
+ *
+ * VTID-01175: This is the integration point between the orchestrator and
+ * the verification engine. The verification engine validates that:
+ * - Claimed files actually exist
+ * - Files were actually modified (not just claimed)
+ * - Domain-specific rules are satisfied
+ * - No safety violations occurred
+ */
+export async function verifyWorkerOutput(
+  vtid: string,
+  domain: TaskDomain,
+  result: SubagentResult,
+  run_id: string,
+  startedAt?: Date
+): Promise<VerificationOutcome> {
+  console.log(`[VTID-01175] Verifying worker output for ${vtid} (domain=${domain})`);
+
+  // Emit verification start event
+  await emitVerificationEvent(vtid, 'start', 'info', `Verification started for ${vtid}`, {
+    run_id,
+    domain,
+    files_count: (result.files_changed?.length || 0) + (result.files_created?.length || 0)
+  });
+
+  // Build claimed changes from result
+  const claimedChanges: FileChange[] = [
+    ...(result.files_changed || []).map(f => ({ file_path: f, action: 'modified' as const })),
+    ...(result.files_created || []).map(f => ({ file_path: f, action: 'created' as const }))
+  ];
+
+  // If no files claimed, pass verification (nothing to verify)
+  if (claimedChanges.length === 0) {
+    console.log(`[VTID-01175] No files claimed for ${vtid}, skipping verification`);
+    await emitVerificationEvent(vtid, 'passed', 'success', 'No files to verify', {
+      run_id,
+      domain,
+      skipped: true
+    });
+    return {
+      passed: true,
+      should_retry: false,
+      reason: 'No files to verify'
+    };
+  }
+
+  const request: VerifyRequest = {
+    vtid,
+    domain,
+    claimed_changes: claimedChanges,
+    claimed_output: result.summary || '',
+    started_at: startedAt?.toISOString(),
+    metadata: {
+      run_id,
+      files_changed: result.files_changed,
+      files_created: result.files_created
+    }
+  };
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), VERIFICATION_TIMEOUT_MS);
+
+    const response = await fetch(`${VERIFICATION_ENGINE_URL}/verify`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-VTID': vtid,
+        'X-Run-ID': run_id
+      },
+      body: JSON.stringify(request),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      console.error(`[VTID-01175] Verification request failed: ${response.status} - ${errorText}`);
+
+      await emitVerificationEvent(vtid, 'error', 'error', `Verification service error: ${response.status}`, {
+        run_id,
+        domain,
+        http_status: response.status,
+        error: errorText
+      });
+
+      // On service error, recommend manual review
+      return {
+        passed: false,
+        should_retry: false,
+        reason: `Verification service error: ${response.status}`
+      };
+    }
+
+    const verifyResponse: VerifyResponse = await response.json();
+
+    console.log(`[VTID-01175] Verification result for ${vtid}: ${verifyResponse.passed ? 'PASSED' : 'FAILED'} - ${verifyResponse.reason}`);
+
+    if (verifyResponse.passed) {
+      await emitVerificationEvent(vtid, 'passed', 'success', verifyResponse.reason, {
+        run_id,
+        domain,
+        checks_passed: verifyResponse.checks_passed,
+        duration_ms: verifyResponse.duration_ms
+      });
+
+      return {
+        passed: true,
+        should_retry: false,
+        reason: verifyResponse.reason,
+        verification_response: verifyResponse
+      };
+    } else {
+      await emitVerificationEvent(vtid, 'failed', 'warning', verifyResponse.reason, {
+        run_id,
+        domain,
+        checks_failed: verifyResponse.checks_failed,
+        recommended_action: verifyResponse.recommended_action,
+        duration_ms: verifyResponse.duration_ms,
+        details: verifyResponse.details
+      });
+
+      return {
+        passed: false,
+        should_retry: verifyResponse.recommended_action === 'retry',
+        reason: verifyResponse.reason,
+        verification_response: verifyResponse
+      };
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Unknown verification error';
+    console.error(`[VTID-01175] Verification error for ${vtid}:`, errorMsg);
+
+    await emitVerificationEvent(vtid, 'error', 'error', `Verification error: ${errorMsg}`, {
+      run_id,
+      domain,
+      error: errorMsg
+    });
+
+    // On network/timeout error, allow retry
+    return {
+      passed: false,
+      should_retry: true,
+      reason: `Verification error: ${errorMsg}`
+    };
+  }
+}
+
+/**
+ * Complete subagent execution with verification
+ *
+ * VTID-01175: This is the main entry point for completing a subagent task.
+ * It verifies worker output before marking success. On verification failure,
+ * it returns a result indicating whether to retry.
+ *
+ * Flow:
+ * 1. Call verification engine
+ * 2. If passed: emit success event, return success
+ * 3. If failed + retriable: return should_retry=true
+ * 4. If failed + not retriable: emit failure event, return failure
+ */
+export async function completeSubagentWithVerification(
+  vtid: string,
+  domain: TaskDomain,
+  run_id: string,
+  result: SubagentResult,
+  startedAt?: Date,
+  retryCount: number = 0
+): Promise<{
+  ok: boolean;
+  should_retry: boolean;
+  reason: string;
+  retry_count: number;
+}> {
+  console.log(`[VTID-01175] Completing subagent ${domain} for ${vtid} (attempt=${retryCount + 1})`);
+
+  // Step 1: Verify worker output
+  const verification = await verifyWorkerOutput(vtid, domain, result, run_id, startedAt);
+
+  // Step 2: Handle verification result
+  if (verification.passed) {
+    // Verification passed - emit success
+    await emitSubagentSuccess(vtid, domain, run_id, result);
+    return {
+      ok: true,
+      should_retry: false,
+      reason: verification.reason,
+      retry_count: retryCount
+    };
+  }
+
+  // Step 3: Verification failed
+  if (verification.should_retry && retryCount < MAX_VERIFICATION_RETRIES) {
+    // Can retry - don't emit failure yet
+    console.log(`[VTID-01175] Verification failed for ${vtid}, recommending retry (${retryCount + 1}/${MAX_VERIFICATION_RETRIES})`);
+    return {
+      ok: false,
+      should_retry: true,
+      reason: verification.reason,
+      retry_count: retryCount
+    };
+  }
+
+  // Step 4: Cannot retry or max retries exceeded - emit failure
+  const failureReason = retryCount >= MAX_VERIFICATION_RETRIES
+    ? `Verification failed after ${retryCount + 1} attempts: ${verification.reason}`
+    : `Verification failed (not retriable): ${verification.reason}`;
+
+  await emitSubagentFailed(vtid, domain, run_id, failureReason, [verification.reason]);
+  return {
+    ok: false,
+    should_retry: false,
+    reason: failureReason,
+    retry_count: retryCount
+  };
+}
+
+/**
+ * Complete orchestrator with verification of all subagent results
+ *
+ * VTID-01175: Verifies all work before marking orchestrator complete.
+ * This is called after all subagents have reported completion.
+ */
+export async function completeOrchestratorWithVerification(
+  vtid: string,
+  run_id: string,
+  domain: TaskDomain,
+  result: SubagentResult,
+  startedAt?: Date
+): Promise<{
+  ok: boolean;
+  should_retry: boolean;
+  reason: string;
+}> {
+  const completion = await completeSubagentWithVerification(
+    vtid,
+    domain,
+    run_id,
+    result,
+    startedAt,
+    0
+  );
+
+  if (completion.ok) {
+    // Verification passed - mark orchestrator success
+    await markOrchestratorSuccess(vtid, run_id, `Task completed and verified: ${completion.reason}`);
+  } else if (!completion.should_retry) {
+    // Verification failed and cannot retry - mark orchestrator failed
+    await markOrchestratorFailed(vtid, run_id, completion.reason);
+  }
+  // If should_retry, caller decides whether to retry the worker
+
+  return {
+    ok: completion.ok,
+    should_retry: completion.should_retry,
+    reason: completion.reason
+  };
+}
+
+// =============================================================================
 // Exports for Testing
 // =============================================================================
 
@@ -712,5 +1065,9 @@ export const _internal = {
   FRONTEND_KEYWORDS,
   BACKEND_KEYWORDS,
   MEMORY_KEYWORDS,
-  DEFAULT_BUDGETS
+  DEFAULT_BUDGETS,
+  // VTID-01175: Verification internals
+  VERIFICATION_ENGINE_URL,
+  VERIFICATION_TIMEOUT_MS,
+  MAX_VERIFICATION_RETRIES
 };
