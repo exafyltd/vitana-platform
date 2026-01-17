@@ -2153,6 +2153,13 @@ const state = {
     // Publish Modal (VTID-0517)
     showPublishModal: false,
 
+    // VTID-01180: Autopilot Recommendations Modal
+    showAutopilotRecommendationsModal: false,
+    autopilotRecommendations: [],
+    autopilotRecommendationsLoading: false,
+    autopilotRecommendationsError: null,
+    autopilotRecommendationsCount: 0,
+
     // VTID-0407: Governance Blocked Modal
     showGovernanceBlockedModal: false,
     governanceBlockedData: null, // { level, violations, service, vtid }
@@ -3540,6 +3547,9 @@ function renderApp() {
     // VTID-0407: Governance Blocked Modal
     if (state.showGovernanceBlockedModal) root.appendChild(renderGovernanceBlockedModal());
 
+    // VTID-01180: Autopilot Recommendations Modal
+    if (state.showAutopilotRecommendationsModal) root.appendChild(renderAutopilotRecommendationsModal());
+
     // Toast Notifications (VTID-0517)
     if (state.toasts.length > 0) root.appendChild(renderToastContainer());
 
@@ -3792,9 +3802,44 @@ function renderHeader() {
     left.className = 'header-toolbar-left';
 
     // 1. Autopilot pill (neutral styling, uppercase) - leftmost
+    // VTID-01180: Opens Autopilot Recommendations popup
     const autopilotBtn = document.createElement('button');
     autopilotBtn.className = 'header-pill header-pill--neutral';
     autopilotBtn.textContent = 'AUTOPILOT';
+    // VTID-01180: Add badge if there are new recommendations
+    if (state.autopilotRecommendationsCount > 0) {
+        const badge = document.createElement('span');
+        badge.className = 'header-pill-badge';
+        badge.textContent = state.autopilotRecommendationsCount > 99 ? '99+' : state.autopilotRecommendationsCount;
+        autopilotBtn.appendChild(badge);
+    }
+    autopilotBtn.onclick = async () => {
+        state.showAutopilotRecommendationsModal = true;
+        state.autopilotRecommendationsLoading = true;
+        state.autopilotRecommendationsError = null;
+        renderApp();
+
+        // VTID-01180: Fetch recommendations from API
+        try {
+            const response = await fetch('/api/v1/autopilot/recommendations?status=new&limit=20', {
+                headers: withVitanaContextHeaders({})
+            });
+            if (!response.ok) {
+                throw new Error('Failed to fetch recommendations');
+            }
+            const data = await response.json();
+            if (data.ok) {
+                state.autopilotRecommendations = data.recommendations || [];
+            } else {
+                state.autopilotRecommendationsError = data.error || 'Unknown error';
+            }
+        } catch (err) {
+            console.error('[VTID-01180] Fetch recommendations error:', err);
+            state.autopilotRecommendationsError = err.message;
+        }
+        state.autopilotRecommendationsLoading = false;
+        renderApp();
+    };
     left.appendChild(autopilotBtn);
 
     // 2. Operator pill (neutral styling - SPEC-01: same as Autopilot)
@@ -13341,6 +13386,291 @@ function renderPublishModal() {
     return overlay;
 }
 
+// --- VTID-01180: Autopilot Recommendations Modal ---
+
+/**
+ * VTID-01180: Render the Autopilot Recommendations modal
+ * Shows AI-generated recommendations with Activate/Snooze/Reject actions
+ */
+function renderAutopilotRecommendationsModal() {
+    var overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.onclick = function(e) {
+        if (e.target === overlay) {
+            state.showAutopilotRecommendationsModal = false;
+            renderApp();
+        }
+    };
+
+    var modal = document.createElement('div');
+    modal.className = 'modal autopilot-recommendations-modal';
+    modal.style.cssText = 'max-width: 700px; width: 95%; max-height: 80vh; display: flex; flex-direction: column;';
+
+    // === HEADER ===
+    var header = document.createElement('div');
+    header.className = 'modal-header';
+    header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--border-color, rgba(255,255,255,0.1)); flex-shrink: 0;';
+
+    var titleRow = document.createElement('div');
+    titleRow.style.cssText = 'display: flex; align-items: center; gap: 12px;';
+
+    var iconSpan = document.createElement('span');
+    iconSpan.style.cssText = 'font-size: 24px;';
+    iconSpan.textContent = '\u{1F916}'; // Robot emoji
+    titleRow.appendChild(iconSpan);
+
+    var title = document.createElement('span');
+    title.textContent = 'Autopilot Recommendations';
+    title.style.cssText = 'font-size: 18px; font-weight: 600; color: var(--text-color, #fff);';
+    titleRow.appendChild(title);
+
+    header.appendChild(titleRow);
+
+    var closeBtn = document.createElement('button');
+    closeBtn.className = 'modal-close-btn';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.style.cssText = 'background: none; border: none; font-size: 24px; cursor: pointer; color: var(--text-secondary, #888); padding: 4px 8px;';
+    closeBtn.onclick = function() {
+        state.showAutopilotRecommendationsModal = false;
+        renderApp();
+    };
+    header.appendChild(closeBtn);
+
+    modal.appendChild(header);
+
+    // === BODY ===
+    var body = document.createElement('div');
+    body.className = 'modal-body';
+    body.style.cssText = 'padding: 16px 20px; overflow-y: auto; flex: 1;';
+
+    if (state.autopilotRecommendationsLoading) {
+        var loadingDiv = document.createElement('div');
+        loadingDiv.style.cssText = 'text-align: center; padding: 40px; color: var(--text-secondary, #888);';
+        loadingDiv.textContent = 'Loading recommendations...';
+        body.appendChild(loadingDiv);
+    } else if (state.autopilotRecommendationsError) {
+        var errorDiv = document.createElement('div');
+        errorDiv.style.cssText = 'text-align: center; padding: 40px; color: #f87171;';
+        errorDiv.textContent = 'Error: ' + state.autopilotRecommendationsError;
+        body.appendChild(errorDiv);
+    } else if (state.autopilotRecommendations.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.style.cssText = 'text-align: center; padding: 40px; color: var(--text-secondary, #888);';
+        emptyDiv.innerHTML = '<div style="font-size: 48px; margin-bottom: 16px;">\u2705</div>';
+        emptyDiv.innerHTML += '<div style="font-size: 16px;">All caught up!</div>';
+        emptyDiv.innerHTML += '<div style="font-size: 14px; margin-top: 8px;">No new recommendations at this time.</div>';
+        body.appendChild(emptyDiv);
+    } else {
+        // Render recommendations list
+        state.autopilotRecommendations.forEach(function(rec) {
+            var card = createRecommendationCard(rec);
+            body.appendChild(card);
+        });
+    }
+
+    modal.appendChild(body);
+
+    // === FOOTER ===
+    var footer = document.createElement('div');
+    footer.className = 'modal-footer';
+    footer.style.cssText = 'padding: 12px 20px; border-top: 1px solid var(--border-color, rgba(255,255,255,0.1)); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;';
+
+    var countLabel = document.createElement('span');
+    countLabel.style.cssText = 'color: var(--text-secondary, #888); font-size: 13px;';
+    countLabel.textContent = state.autopilotRecommendations.length + ' recommendation' + (state.autopilotRecommendations.length !== 1 ? 's' : '');
+    footer.appendChild(countLabel);
+
+    var closeFooterBtn = document.createElement('button');
+    closeFooterBtn.className = 'btn btn-secondary';
+    closeFooterBtn.textContent = 'Close';
+    closeFooterBtn.style.cssText = 'padding: 8px 16px;';
+    closeFooterBtn.onclick = function() {
+        state.showAutopilotRecommendationsModal = false;
+        renderApp();
+    };
+    footer.appendChild(closeFooterBtn);
+
+    modal.appendChild(footer);
+
+    overlay.appendChild(modal);
+    return overlay;
+}
+
+/**
+ * VTID-01180: Create a recommendation card element
+ */
+function createRecommendationCard(rec) {
+    var card = document.createElement('div');
+    card.className = 'recommendation-card';
+    card.style.cssText = 'background: var(--card-bg, rgba(255,255,255,0.05)); border: 1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius: 8px; padding: 16px; margin-bottom: 12px;';
+
+    // Top row: Domain badge + Risk level
+    var topRow = document.createElement('div');
+    topRow.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;';
+
+    var domainBadge = document.createElement('span');
+    domainBadge.className = 'domain-badge';
+    domainBadge.style.cssText = 'background: var(--accent-color, #3b82f6); color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; text-transform: uppercase;';
+    domainBadge.textContent = rec.domain || 'general';
+    topRow.appendChild(domainBadge);
+
+    var riskBadge = document.createElement('span');
+    var riskColors = { low: '#22c55e', medium: '#eab308', high: '#f97316', critical: '#ef4444' };
+    riskBadge.style.cssText = 'font-size: 11px; color: ' + (riskColors[rec.risk_level] || '#888') + ';';
+    riskBadge.textContent = (rec.risk_level || 'low').toUpperCase() + ' RISK';
+    topRow.appendChild(riskBadge);
+
+    card.appendChild(topRow);
+
+    // Title
+    var titleEl = document.createElement('div');
+    titleEl.style.cssText = 'font-size: 15px; font-weight: 600; color: var(--text-color, #fff); margin-bottom: 6px;';
+    titleEl.textContent = rec.title;
+    card.appendChild(titleEl);
+
+    // Summary
+    var summaryEl = document.createElement('div');
+    summaryEl.style.cssText = 'font-size: 13px; color: var(--text-secondary, #aaa); margin-bottom: 12px; line-height: 1.4;';
+    summaryEl.textContent = rec.summary;
+    card.appendChild(summaryEl);
+
+    // Scores row
+    var scoresRow = document.createElement('div');
+    scoresRow.style.cssText = 'display: flex; gap: 16px; margin-bottom: 12px;';
+
+    var impactEl = document.createElement('span');
+    impactEl.style.cssText = 'font-size: 12px; color: var(--text-secondary, #888);';
+    impactEl.innerHTML = 'Impact: <strong style="color: #22c55e;">' + (rec.impact_score || 5) + '/10</strong>';
+    scoresRow.appendChild(impactEl);
+
+    var effortEl = document.createElement('span');
+    effortEl.style.cssText = 'font-size: 12px; color: var(--text-secondary, #888);';
+    effortEl.innerHTML = 'Effort: <strong style="color: #eab308;">' + (rec.effort_score || 5) + '/10</strong>';
+    scoresRow.appendChild(effortEl);
+
+    card.appendChild(scoresRow);
+
+    // Action buttons
+    var actionsRow = document.createElement('div');
+    actionsRow.style.cssText = 'display: flex; gap: 8px;';
+
+    // Activate button
+    var activateBtn = document.createElement('button');
+    activateBtn.className = 'btn btn-primary';
+    activateBtn.textContent = 'Activate';
+    activateBtn.style.cssText = 'padding: 6px 14px; font-size: 13px; background: #22c55e; border: none; color: white; border-radius: 4px; cursor: pointer;';
+    activateBtn.onclick = async function() {
+        activateBtn.disabled = true;
+        activateBtn.textContent = 'Activating...';
+        try {
+            var response = await fetch('/api/v1/autopilot/recommendations/' + rec.id + '/activate', {
+                method: 'POST',
+                headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' })
+            });
+            var data = await response.json();
+            if (data.ok) {
+                showToast('Activated! VTID: ' + data.vtid, 'success');
+                // Remove from list
+                state.autopilotRecommendations = state.autopilotRecommendations.filter(function(r) { return r.id !== rec.id; });
+                state.autopilotRecommendationsCount = Math.max(0, state.autopilotRecommendationsCount - 1);
+                renderApp();
+            } else {
+                showToast('Activation failed: ' + (data.error || 'Unknown error'), 'error');
+                activateBtn.disabled = false;
+                activateBtn.textContent = 'Activate';
+            }
+        } catch (err) {
+            showToast('Activation error: ' + err.message, 'error');
+            activateBtn.disabled = false;
+            activateBtn.textContent = 'Activate';
+        }
+    };
+    actionsRow.appendChild(activateBtn);
+
+    // Snooze button
+    var snoozeBtn = document.createElement('button');
+    snoozeBtn.className = 'btn btn-secondary';
+    snoozeBtn.textContent = 'Snooze';
+    snoozeBtn.style.cssText = 'padding: 6px 14px; font-size: 13px; background: transparent; border: 1px solid var(--border-color, rgba(255,255,255,0.2)); color: var(--text-color, #fff); border-radius: 4px; cursor: pointer;';
+    snoozeBtn.onclick = async function() {
+        snoozeBtn.disabled = true;
+        try {
+            var response = await fetch('/api/v1/autopilot/recommendations/' + rec.id + '/snooze', {
+                method: 'POST',
+                headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ hours: 24 })
+            });
+            var data = await response.json();
+            if (data.ok) {
+                showToast('Snoozed for 24 hours', 'info');
+                state.autopilotRecommendations = state.autopilotRecommendations.filter(function(r) { return r.id !== rec.id; });
+                state.autopilotRecommendationsCount = Math.max(0, state.autopilotRecommendationsCount - 1);
+                renderApp();
+            } else {
+                showToast('Snooze failed: ' + (data.error || 'Unknown error'), 'error');
+                snoozeBtn.disabled = false;
+            }
+        } catch (err) {
+            showToast('Snooze error: ' + err.message, 'error');
+            snoozeBtn.disabled = false;
+        }
+    };
+    actionsRow.appendChild(snoozeBtn);
+
+    // Reject button
+    var rejectBtn = document.createElement('button');
+    rejectBtn.className = 'btn btn-secondary';
+    rejectBtn.textContent = 'Dismiss';
+    rejectBtn.style.cssText = 'padding: 6px 14px; font-size: 13px; background: transparent; border: 1px solid var(--border-color, rgba(255,255,255,0.2)); color: var(--text-secondary, #888); border-radius: 4px; cursor: pointer;';
+    rejectBtn.onclick = async function() {
+        rejectBtn.disabled = true;
+        try {
+            var response = await fetch('/api/v1/autopilot/recommendations/' + rec.id + '/reject', {
+                method: 'POST',
+                headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' })
+            });
+            var data = await response.json();
+            if (data.ok) {
+                showToast('Recommendation dismissed', 'info');
+                state.autopilotRecommendations = state.autopilotRecommendations.filter(function(r) { return r.id !== rec.id; });
+                state.autopilotRecommendationsCount = Math.max(0, state.autopilotRecommendationsCount - 1);
+                renderApp();
+            } else {
+                showToast('Dismiss failed: ' + (data.error || 'Unknown error'), 'error');
+                rejectBtn.disabled = false;
+            }
+        } catch (err) {
+            showToast('Dismiss error: ' + err.message, 'error');
+            rejectBtn.disabled = false;
+        }
+    };
+    actionsRow.appendChild(rejectBtn);
+
+    card.appendChild(actionsRow);
+
+    return card;
+}
+
+/**
+ * VTID-01180: Fetch recommendation count on app boot (for badge)
+ */
+async function fetchAutopilotRecommendationsCount() {
+    try {
+        var response = await fetch('/api/v1/autopilot/recommendations/count', {
+            headers: withVitanaContextHeaders({})
+        });
+        if (response.ok) {
+            var data = await response.json();
+            if (data.ok) {
+                state.autopilotRecommendationsCount = data.count || 0;
+                renderApp();
+            }
+        }
+    } catch (err) {
+        console.warn('[VTID-01180] Could not fetch recommendations count:', err);
+    }
+}
+
 // --- VTID-0407: Governance Blocked Modal ---
 
 /**
@@ -17619,6 +17949,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // VTID-01151: Fetch initial approvals (silent) and start polling (20s)
         fetchApprovals(true);
         startApprovalsBadgePolling();
+
+        // VTID-01180: Fetch autopilot recommendations count for badge
+        fetchAutopilotRecommendationsCount();
     } catch (e) {
         console.error('Critical Render Error:', e);
         document.body.innerHTML = `<div class="critical-error"><h1>Critical Error</h1><pre>${e.stack}</pre></div>`;
