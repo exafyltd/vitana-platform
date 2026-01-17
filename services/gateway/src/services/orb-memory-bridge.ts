@@ -440,6 +440,271 @@ export async function writeDevMemoryItem(params: {
 }
 
 /**
+ * VTID-01186: Identity structure for authenticated memory operations
+ */
+export interface MemoryIdentity {
+  user_id: string;
+  tenant_id: string;
+  active_role?: string | null;
+}
+
+/**
+ * VTID-01186: Write memory item with authenticated identity
+ * Uses the provided identity instead of DEV_IDENTITY.
+ * This is the production-ready version that works with req.identity from JWT.
+ *
+ * @param identity - The authenticated user's identity (from req.identity)
+ * @param params - Memory item parameters
+ */
+export async function writeMemoryItemWithIdentity(
+  identity: MemoryIdentity,
+  params: {
+    source: 'orb_text' | 'orb_voice' | 'system';
+    content: string;
+    content_json?: Record<string, unknown>;
+    importance?: number;
+    category_key?: string;
+    occurred_at?: string;
+    workspace_scope?: string;
+    skipFiltering?: boolean;
+  }
+): Promise<{ ok: boolean; id?: string; category_key?: string; error?: string; skipped?: boolean }> {
+  // Validate identity
+  if (!identity.user_id || !identity.tenant_id) {
+    console.error('[VTID-01186] writeMemoryItemWithIdentity: Missing user_id or tenant_id');
+    return { ok: false, error: 'Identity incomplete: user_id and tenant_id required' };
+  }
+
+  // Filter trivial messages to prevent memory flooding
+  const direction = params.content_json?.direction as 'user' | 'assistant' | undefined;
+  if (!params.skipFiltering && direction && !shouldStoreInMemory(params.content, direction)) {
+    return { ok: true, skipped: true };
+  }
+
+  const supabase = createMemoryClient();
+  if (!supabase) {
+    return { ok: false, error: 'Supabase not configured' };
+  }
+
+  try {
+    const occurredAt = params.occurred_at || new Date().toISOString();
+    const importance = params.importance || 10;
+    const contentJson = {
+      ...params.content_json,
+      workspace_scope: params.workspace_scope || 'dev',
+      active_role: identity.active_role || null,
+    };
+
+    // Auto-classify category if not provided
+    const categoryKey = params.category_key || classifyDevCategory(params.content);
+
+    // Boost importance for personal/relationship categories
+    let adjustedImportance = importance;
+    if (categoryKey === 'personal') {
+      adjustedImportance = Math.max(importance, 50);
+    } else if (categoryKey === 'relationships') {
+      adjustedImportance = Math.max(importance, 40);
+    }
+
+    // Insert with authenticated identity
+    const { data, error } = await supabase
+      .from('memory_items')
+      .insert({
+        tenant_id: identity.tenant_id,
+        user_id: identity.user_id,
+        category_key: categoryKey,
+        source: params.source,
+        content: params.content,
+        content_json: contentJson,
+        importance: adjustedImportance,
+        occurred_at: occurredAt
+      })
+      .select('id, category_key')
+      .single();
+
+    if (error) {
+      if (error.message.includes('does not exist') || error.code === '42P01') {
+        console.warn('[VTID-01186] memory_items table not found');
+        return { ok: false, error: 'Memory Core not available' };
+      }
+      console.error('[VTID-01186] Memory write error:', error.message);
+      return { ok: false, error: error.message };
+    }
+
+    console.log(`[VTID-01186] Memory written: ${data?.id} (user=${identity.user_id.substring(0,8)}..., tenant=${identity.tenant_id.substring(0,8)}...)`);
+    return { ok: true, id: data?.id, category_key: categoryKey };
+
+  } catch (err: any) {
+    console.error('[VTID-01186] Memory write exception:', err.message);
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * VTID-01186: Fetch memory context with authenticated identity
+ * Uses the provided identity instead of DEV_IDENTITY.
+ * Falls back to DEV_IDENTITY if no identity provided (dev-sandbox only).
+ *
+ * @param identity - Optional authenticated identity. If not provided, uses DEV_IDENTITY in dev-sandbox mode.
+ * @param limit - Maximum number of memory items to fetch
+ * @param categories - Optional category filter
+ */
+export async function fetchMemoryContextWithIdentity(
+  identity?: MemoryIdentity | null,
+  limit: number = MEMORY_CONFIG.DEFAULT_CONTEXT_LIMIT,
+  categories?: string[]
+): Promise<OrbMemoryContext> {
+  // If no identity provided, fall back to DEV_IDENTITY in dev-sandbox mode
+  const effectiveIdentity: MemoryIdentity = identity && identity.user_id && identity.tenant_id
+    ? identity
+    : {
+        user_id: DEV_IDENTITY.USER_ID,
+        tenant_id: DEV_IDENTITY.TENANT_ID,
+        active_role: DEV_IDENTITY.ACTIVE_ROLE
+      };
+
+  // If falling back to DEV_IDENTITY, check if dev-sandbox mode is enabled
+  if (!identity && !isMemoryBridgeEnabled()) {
+    const fetchedAt = new Date().toISOString();
+    return {
+      ok: false,
+      user_id: effectiveIdentity.user_id,
+      tenant_id: effectiveIdentity.tenant_id,
+      items: [],
+      summary: 'Memory bridge disabled',
+      formatted_context: '',
+      fetched_at: fetchedAt,
+      error: 'Memory bridge not enabled (requires dev-sandbox mode or valid identity)'
+    };
+  }
+
+  const fetchedAt = new Date().toISOString();
+  const supabase = createMemoryClient();
+  if (!supabase) {
+    return {
+      ok: false,
+      user_id: effectiveIdentity.user_id,
+      tenant_id: effectiveIdentity.tenant_id,
+      items: [],
+      summary: 'Database not configured',
+      formatted_context: '',
+      fetched_at: fetchedAt,
+      error: 'Supabase not configured'
+    };
+  }
+
+  try {
+    const sinceDate = new Date();
+    sinceDate.setHours(sinceDate.getHours() - MEMORY_CONFIG.MAX_AGE_HOURS);
+    const sinceTimestamp = sinceDate.toISOString();
+    const categoryFilter = categories || MEMORY_CONFIG.CONTEXT_CATEGORIES;
+
+    // Split categories into persistent and time-sensitive
+    const persistentCategories = categoryFilter.filter(
+      (cat: string) => MEMORY_CONFIG.PERSISTENT_CATEGORIES.includes(cat)
+    );
+    const timeSensitiveCategories = categoryFilter.filter(
+      (cat: string) => !MEMORY_CONFIG.PERSISTENT_CATEGORIES.includes(cat)
+    );
+
+    // Query persistent categories (no time filter)
+    let persistentItems: MemoryItem[] = [];
+    if (persistentCategories.length > 0) {
+      const { data, error } = await supabase
+        .from('memory_items')
+        .select('id, category_key, source, content, content_json, importance, occurred_at, created_at')
+        .eq('tenant_id', effectiveIdentity.tenant_id)
+        .eq('user_id', effectiveIdentity.user_id)
+        .in('category_key', persistentCategories)
+        .order('importance', { ascending: false })
+        .limit(limit);
+
+      if (!error) {
+        persistentItems = (data || []) as MemoryItem[];
+      }
+    }
+
+    // Query time-sensitive categories
+    let timeSensitiveItems: MemoryItem[] = [];
+    if (timeSensitiveCategories.length > 0) {
+      const { data, error } = await supabase
+        .from('memory_items')
+        .select('id, category_key, source, content, content_json, importance, occurred_at, created_at')
+        .eq('tenant_id', effectiveIdentity.tenant_id)
+        .eq('user_id', effectiveIdentity.user_id)
+        .in('category_key', timeSensitiveCategories)
+        .gte('occurred_at', sinceTimestamp)
+        .order('importance', { ascending: false })
+        .limit(limit);
+
+      if (!error) {
+        timeSensitiveItems = (data || []) as MemoryItem[];
+      }
+    }
+
+    // Merge and deduplicate
+    const allItems = [...persistentItems, ...timeSensitiveItems];
+    const seenIds = new Set<string>();
+    const memoryItems = allItems.filter(item => {
+      if (seenIds.has(item.id)) return false;
+      seenIds.add(item.id);
+      return true;
+    });
+
+    // Use context window manager for selection
+    const turnId = `turn-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    const selectionResult = selectContextWindow(
+      memoryItems,
+      50,
+      turnId,
+      effectiveIdentity.user_id,
+      effectiveIdentity.tenant_id
+    );
+
+    const items: MemoryItem[] = selectionResult.includedItems.map(item => ({
+      id: item.id,
+      category_key: item.category_key,
+      source: item.source,
+      content: item.content,
+      content_json: item.content_json,
+      importance: item.importance,
+      occurred_at: item.occurred_at,
+      created_at: item.created_at
+    }));
+
+    const summary = generateMemorySummary(items);
+    const formattedContext = formatMemoryForPrompt(items);
+
+    console.log(`[VTID-01186] Memory context fetched for user=${effectiveIdentity.user_id.substring(0,8)}...: ${items.length} items`);
+
+    return {
+      ok: true,
+      user_id: effectiveIdentity.user_id,
+      tenant_id: effectiveIdentity.tenant_id,
+      items,
+      summary,
+      formatted_context: formattedContext,
+      fetched_at: fetchedAt,
+      contextMetrics: selectionResult.metrics,
+      excludedCount: selectionResult.excludedItems.length
+    };
+
+  } catch (err: any) {
+    console.error('[VTID-01186] Memory context fetch error:', err.message);
+    return {
+      ok: false,
+      user_id: effectiveIdentity.user_id,
+      tenant_id: effectiveIdentity.tenant_id,
+      items: [],
+      summary: 'Fetch error',
+      formatted_context: '',
+      fetched_at: fetchedAt,
+      error: err.message
+    };
+  }
+}
+
+/**
  * Simple category classification for dev memory writes
  * VTID-01109: Enhanced to better classify personal identity and relationships
  *

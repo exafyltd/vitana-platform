@@ -841,6 +841,109 @@ function generateInitials(input) {
 }
 
 // ===========================================================================
+// VTID-01186: Dev Login (Email/Password) via Gateway /api/v1/auth/login
+// ===========================================================================
+
+/**
+ * VTID-01186: Login with email and password via Gateway.
+ * Calls POST /api/v1/auth/login and stores the access_token.
+ *
+ * @param {string} email - User email
+ * @param {string} password - User password
+ * @returns {Promise<Object>} Result object { ok, error, message }
+ */
+async function doLogin(email, password) {
+    state.loginLoading = true;
+    state.loginError = null;
+    renderApp();
+
+    try {
+        var response = await fetch('/api/v1/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: email, password: password })
+        });
+
+        var data = await response.json();
+
+        if (!response.ok || !data.ok) {
+            var errorMsg = data.message || data.error || 'Login failed';
+            console.error('[VTID-01186] doLogin error:', errorMsg);
+            state.loginError = errorMsg;
+            state.loginLoading = false;
+            renderApp();
+            return { ok: false, error: data.error, message: errorMsg };
+        }
+
+        console.log('[VTID-01186] doLogin success, user_id=', data.user?.id);
+
+        // Store the access token
+        state.authToken = data.access_token;
+        localStorage.setItem('vitana.authToken', data.access_token);
+
+        // Store refresh token for later use
+        if (data.refresh_token) {
+            localStorage.setItem('vitana.refreshToken', data.refresh_token);
+        }
+
+        state.loginLoading = false;
+        state.loginError = null;
+
+        // Clear login form state
+        state.loginEmail = '';
+        state.loginPassword = '';
+
+        // Fetch full identity
+        await fetchAuthMe();
+
+        // Close profile modal and refresh
+        state.showProfileModal = false;
+        showToast('Logged in successfully', 'success');
+        renderApp();
+
+        return { ok: true };
+    } catch (err) {
+        console.error('[VTID-01186] doLogin exception:', err);
+        state.loginError = err.message || 'Network error';
+        state.loginLoading = false;
+        renderApp();
+        return { ok: false, error: 'NETWORK_ERROR', message: err.message };
+    }
+}
+
+/**
+ * VTID-01186: Logout - clears auth state.
+ */
+function doLogout() {
+    // Clear auth state
+    state.authToken = null;
+    state.authIdentity = null;
+    state.meContext = null;
+    MeState.loaded = false;
+    MeState.me = null;
+    localStorage.removeItem('vitana.authToken');
+    localStorage.removeItem('vitana.refreshToken');
+    localStorage.removeItem('vitana.viewRole');
+
+    // Clear ORB conversation on logout
+    if (typeof orbClearConversationState === 'function') {
+        orbClearConversationState();
+    }
+
+    // Reset user to guest
+    state.user = {
+        name: 'Guest',
+        role: 'User',
+        avatar: '?'
+    };
+    state.viewRole = 'User';
+    state.showProfileModal = false;
+
+    showToast('Logged out successfully', 'info');
+    renderApp();
+}
+
+// ===========================================================================
 // VTID-01017: Scheduled Column Hard Eligibility Filter
 // VTID-01028: Relaxed to prevent hiding human-created tasks
 // VTID-01111: Re-added shell entry filter for allocator placeholders
@@ -2139,6 +2242,12 @@ const state = {
     authIdentity: null,
     authIdentityLoading: false,
     authIdentityError: null,
+
+    // VTID-01186: Login Form State
+    loginEmail: '',
+    loginPassword: '',
+    loginLoading: false,
+    loginError: null,
 
     // Docs / Screen Inventory
     screenInventory: null,
@@ -5762,6 +5871,7 @@ function renderProfileModal() {
     overlay.onclick = (e) => {
         if (e.target === overlay) {
             state.showProfileModal = false;
+            state.loginError = null; // Clear any login errors on close
             renderApp();
         }
     };
@@ -5771,13 +5881,145 @@ function renderProfileModal() {
 
     const header = document.createElement('div');
     header.className = 'modal-header';
-    header.textContent = 'Profile';
+    header.textContent = state.authToken ? 'Profile' : 'Login';
     modal.appendChild(header);
 
     const body = document.createElement('div');
     body.className = 'modal-body';
 
-    // VTID-01171: Show avatar (initials or image)
+    // VTID-01186: Show login form if not authenticated
+    if (!state.authToken) {
+        // Login form
+        const loginForm = document.createElement('div');
+        loginForm.className = 'login-form';
+
+        // Email input
+        const emailGroup = document.createElement('div');
+        emailGroup.className = 'form-group';
+        emailGroup.style.marginBottom = '12px';
+
+        const emailLabel = document.createElement('label');
+        emailLabel.textContent = 'Email';
+        emailLabel.setAttribute('for', 'login-email');
+        emailLabel.style.display = 'block';
+        emailLabel.style.marginBottom = '4px';
+        emailLabel.style.fontWeight = '500';
+        emailGroup.appendChild(emailLabel);
+
+        const emailInput = document.createElement('input');
+        emailInput.type = 'email';
+        emailInput.id = 'login-email';
+        emailInput.className = 'form-control';
+        emailInput.placeholder = 'Enter your email';
+        emailInput.value = state.loginEmail || '';
+        emailInput.style.width = '100%';
+        emailInput.style.padding = '8px 12px';
+        emailInput.style.border = '1px solid var(--border-color, #ccc)';
+        emailInput.style.borderRadius = '4px';
+        emailInput.style.boxSizing = 'border-box';
+        emailInput.disabled = state.loginLoading;
+        emailInput.oninput = function(e) {
+            state.loginEmail = e.target.value;
+        };
+        emailGroup.appendChild(emailInput);
+        loginForm.appendChild(emailGroup);
+
+        // Password input
+        const passwordGroup = document.createElement('div');
+        passwordGroup.className = 'form-group';
+        passwordGroup.style.marginBottom = '16px';
+
+        const passwordLabel = document.createElement('label');
+        passwordLabel.textContent = 'Password';
+        passwordLabel.setAttribute('for', 'login-password');
+        passwordLabel.style.display = 'block';
+        passwordLabel.style.marginBottom = '4px';
+        passwordLabel.style.fontWeight = '500';
+        passwordGroup.appendChild(passwordLabel);
+
+        const passwordInput = document.createElement('input');
+        passwordInput.type = 'password';
+        passwordInput.id = 'login-password';
+        passwordInput.className = 'form-control';
+        passwordInput.placeholder = 'Enter your password';
+        passwordInput.value = state.loginPassword || '';
+        passwordInput.style.width = '100%';
+        passwordInput.style.padding = '8px 12px';
+        passwordInput.style.border = '1px solid var(--border-color, #ccc)';
+        passwordInput.style.borderRadius = '4px';
+        passwordInput.style.boxSizing = 'border-box';
+        passwordInput.disabled = state.loginLoading;
+        passwordInput.oninput = function(e) {
+            state.loginPassword = e.target.value;
+        };
+        // Allow login on Enter key
+        passwordInput.onkeydown = function(e) {
+            if (e.key === 'Enter' && !state.loginLoading) {
+                doLogin(state.loginEmail, state.loginPassword);
+            }
+        };
+        passwordGroup.appendChild(passwordInput);
+        loginForm.appendChild(passwordGroup);
+
+        // Error message
+        if (state.loginError) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'login-error';
+            errorDiv.textContent = state.loginError;
+            errorDiv.style.color = 'var(--danger-text, #dc3545)';
+            errorDiv.style.backgroundColor = 'var(--danger-bg-light, #f8d7da)';
+            errorDiv.style.padding = '8px 12px';
+            errorDiv.style.borderRadius = '4px';
+            errorDiv.style.marginBottom = '12px';
+            errorDiv.style.fontSize = '0.875rem';
+            loginForm.appendChild(errorDiv);
+        }
+
+        // Login button
+        const loginBtn = document.createElement('button');
+        loginBtn.className = 'btn btn-primary';
+        loginBtn.textContent = state.loginLoading ? 'Logging in...' : 'Login';
+        loginBtn.style.width = '100%';
+        loginBtn.style.padding = '10px';
+        loginBtn.style.backgroundColor = 'var(--primary-color, #4a90d9)';
+        loginBtn.style.color = '#fff';
+        loginBtn.style.border = 'none';
+        loginBtn.style.borderRadius = '4px';
+        loginBtn.style.cursor = state.loginLoading ? 'not-allowed' : 'pointer';
+        loginBtn.style.fontWeight = '500';
+        loginBtn.disabled = state.loginLoading;
+        loginBtn.onclick = function() {
+            if (!state.loginLoading) {
+                doLogin(state.loginEmail, state.loginPassword);
+            }
+        };
+        loginForm.appendChild(loginBtn);
+
+        body.appendChild(loginForm);
+        modal.appendChild(body);
+
+        // Footer with close button only
+        const footer = document.createElement('div');
+        footer.className = 'modal-footer';
+        footer.style.display = 'flex';
+        footer.style.justifyContent = 'flex-end';
+
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'btn';
+        closeBtn.textContent = 'Cancel';
+        closeBtn.onclick = () => {
+            state.showProfileModal = false;
+            state.loginError = null;
+            renderApp();
+        };
+        footer.appendChild(closeBtn);
+
+        modal.appendChild(footer);
+        overlay.appendChild(modal);
+        return overlay;
+    }
+
+    // VTID-01171: Show avatar (initials or image) - AUTHENTICATED USER
     const avatar = document.createElement('div');
     avatar.className = 'profile-avatar-large';
     if (state.user.avatarUrl) {
@@ -5920,35 +6162,14 @@ function renderProfileModal() {
     footer.style.display = 'flex';
     footer.style.justifyContent = 'space-between';
 
-    // VTID-01171: Logout button
+    // VTID-01186: Logout button - uses doLogout function
     const logoutBtn = document.createElement('button');
     logoutBtn.className = 'btn btn-danger';
     logoutBtn.textContent = 'Logout';
     logoutBtn.style.backgroundColor = 'var(--danger-bg, #dc3545)';
     logoutBtn.style.color = 'var(--danger-text, #fff)';
     logoutBtn.onclick = () => {
-        // Clear auth state
-        state.authToken = null;
-        state.authIdentity = null;
-        state.meContext = null;
-        MeState.loaded = false;
-        MeState.me = null;
-        localStorage.removeItem('vitana.authToken');
-        localStorage.removeItem('vitana.viewRole');
-        // VTID-01109: Clear ORB conversation on logout
-        if (typeof orbClearConversationState === 'function') {
-            orbClearConversationState();
-        }
-        // Reset user to guest
-        state.user = {
-            name: 'Guest',
-            role: 'User',
-            avatar: '?'
-        };
-        state.viewRole = 'User';
-        state.showProfileModal = false;
-        showToast('Logged out successfully', 'info');
-        renderApp();
+        doLogout();
     };
     footer.appendChild(logoutBtn);
 
