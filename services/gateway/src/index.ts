@@ -174,6 +174,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const vtidTerminalizeRouter = require('./routes/vtid-terminalize').default;
   // VTID-01157: Supabase JWT Auth Middleware + /api/v1/auth/me endpoint
   const authRouter = require('./routes/auth').default;
+  // VTID-01180: Autopilot Recommendation Inbox API v0 + Popup Wiring
+  const recommendationInboxRouter = require('./routes/recommendation-inbox').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -352,6 +354,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01089: Autopilot Matchmaking Prompts (prefs, prompts/today, prompts/generate, prompts/:id/action)
   mountRouterSync(app, '/api/v1/autopilot', autopilotPromptsRouter, { owner: 'autopilot-prompts' });
+
+  // VTID-01180: Autopilot Recommendation Inbox API v0 + Popup Wiring
+  mountRouterSync(app, '/api/v1/recommendations', recommendationInboxRouter, { owner: 'recommendation-inbox' });
 
   // VTID-0150-B + VTID-0151 + VTID-0538: Assistant Core + Knowledge Hub
   mountRouterSync(app, '/api/v1/assistant', assistantRouter, { owner: 'assistant' });
