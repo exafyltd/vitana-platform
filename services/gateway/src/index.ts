@@ -95,6 +95,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const memoryRouter = require('./routes/memory').default;
   // VTID-01099: Memory Governance Routes - visibility, lock, delete, export
   const memoryGovernanceRouter = require('./routes/memory-governance').default;
+  // VTID-01184: Supabase Semantic Memory Routes - pgvector search + embeddings
+  const semanticMemoryRouter = require('./routes/semantic-memory').default;
   // VTID-01096: Cross-Domain Personalization v1 - snapshot endpoint
   const personalizationSnapshotRouter = require('./routes/personalization').default;
   // VTID-01095: Daily Scheduler Routes - daily recompute pipeline
@@ -388,6 +390,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/memory', memoryRouter, { owner: 'memory' });
   // VTID-01099: Memory Governance - visibility, lock, delete, export endpoints
   mountRouterSync(app, '/api/v1/memory', memoryGovernanceRouter, { owner: 'memory-governance' });
+  // VTID-01184: Supabase Semantic Memory - pgvector similarity search + embedding pipeline
+  mountRouterSync(app, '/api/v1/memory', semanticMemoryRouter, { owner: 'semantic-memory' });
 
   // VTID-01095: Daily Scheduler - daily recompute pipeline
   mountRouterSync(app, '/api/v1/scheduler', schedulerRouter, { owner: 'scheduler' });

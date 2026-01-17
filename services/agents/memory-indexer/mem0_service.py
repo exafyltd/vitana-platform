@@ -1,11 +1,35 @@
 """
 VTID-01152: Mem0 OSS Local Memory Service (Anthropic version)
 
+================================================================================
+VTID-01184 DEPRECATION NOTICE
+================================================================================
+
+This service (Mem0/Qdrant) is DEPRECATED and will be removed.
+
+Supabase pgvector is now the ONLY source of truth for memory persistence.
+
+Why Deprecated:
+- Local Qdrant storage (/tmp/qdrant) is NOT durable
+- Data is LOST on Cloud Run restart/scale-to-zero
+- No tenant isolation by default
+- Dual-source inconsistency risks
+
+Migration:
+- Reads: Use Supabase semantic search (memory_semantic_search RPC)
+- Writes: Use Supabase memory_write_item_v2 RPC
+- Embeddings: Generated via embedding-service.ts or OpenAI API
+
+See VTID-01184 for full migration guide.
+
+================================================================================
+
+Original Description:
 Local-first fact memory for ORB using:
 - Anthropic Claude for LLM reasoning
 - Sentence Transformers for local embeddings
-- Qdrant for local vector storage
-- SQLite for history storage
+- Qdrant for local vector storage (DEPRECATED - use Supabase pgvector)
+- SQLite for history storage (DEPRECATED)
 
 No Mem0 SaaS. No external services. Fully local persistence.
 """
@@ -293,10 +317,21 @@ class OrbMemoryService:
         config = self._get_config()
         mem0_config = config.to_mem0_config()
 
-        logger.info("Initializing Mem0 with Anthropic + local storage")
+        # VTID-01184: Deprecation warning
+        logger.warning("=" * 80)
+        logger.warning("VTID-01184 DEPRECATION WARNING: This service is DEPRECATED")
+        logger.warning("=" * 80)
+        logger.warning("Mem0/Qdrant local storage is being replaced with Supabase pgvector.")
+        logger.warning("Data stored in Qdrant (/tmp/qdrant) is NOT durable and will be LOST")
+        logger.warning("on Cloud Run restart/scale-to-zero.")
+        logger.warning("")
+        logger.warning("ACTION REQUIRED: Migrate to Supabase semantic memory (VTID-01184)")
+        logger.warning("=" * 80)
+
+        logger.info("Initializing Mem0 with Anthropic + local storage (DEPRECATED)")
         logger.info(f"  LLM: {config.llm_model}")
         logger.info(f"  Embeddings: {config.embedding_model}")
-        logger.info(f"  Qdrant path: {config.qdrant_path}")
+        logger.info(f"  Qdrant path: {config.qdrant_path} (DEPRECATED - will be lost on restart)")
 
         self._memory = Memory.from_config(mem0_config)
         self._initialized = True
