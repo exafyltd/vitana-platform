@@ -1,0 +1,11 @@
+# Canonical GCP Configuration for Vitana Platform
+# DO NOT GUESS - READ FROM THIS FILE
+
+GCP_PROJECT_ID=lovable-vitana-vers1
+GCP_REGION=us-central1
+REPO_NAME=vitana-platform
+REPO_PATH=/home/user/vitana-platform
+
+# Cloud Run Services
+GATEWAY_SERVICE=gateway
+MEMORY_INDEXER_SERVICE=vitana-memory-indexer
