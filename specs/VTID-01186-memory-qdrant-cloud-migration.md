@@ -1,6 +1,6 @@
-# VTID-01185 — Memory System: Migrate to Qdrant Cloud (Persistent Storage)
+# VTID-01186 — Memory System: Migrate to Qdrant Cloud (Persistent Storage)
 
-**VTID:** 01185
+**VTID:** 01186
 **Title:** Migrate Memory-Indexer from Local Qdrant to Qdrant Cloud
 **Owner:** Claude (Worker)
 **Validator:** Claude (Validator)
@@ -108,13 +108,13 @@ gcloud run services update vitana-memory-indexer \
 
 Add at startup:
 ```python
-# VTID-01185: Validate Qdrant Cloud configuration
+# VTID-01186: Validate Qdrant Cloud configuration
 QDRANT_URL = os.environ.get("QDRANT_URL")
 QDRANT_API_KEY = os.environ.get("QDRANT_API_KEY")
 
 if not QDRANT_URL or not QDRANT_API_KEY:
-    logger.error("[VTID-01185] CRITICAL: QDRANT_URL or QDRANT_API_KEY not set!")
-    logger.error("[VTID-01185] Memory will NOT work without Qdrant Cloud connection")
+    logger.error("[VTID-01186] CRITICAL: QDRANT_URL or QDRANT_API_KEY not set!")
+    logger.error("[VTID-01186] Memory will NOT work without Qdrant Cloud connection")
     # Don't crash - allow health checks to pass, but log prominently
 ```
 
@@ -130,7 +130,7 @@ RUN mkdir -p /tmp/qdrant /root/.mem0
 **Replace with:**
 ```dockerfile
 RUN mkdir -p /root/.mem0
-# VTID-01185: Qdrant Cloud used - no local storage needed
+# VTID-01186: Qdrant Cloud used - no local storage needed
 ```
 
 ### 3.4 Update .gcp-config
@@ -171,14 +171,14 @@ metadata = {
 def write(self, user_id: str, content: str, role: str = "user",
           metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
 
-    # VTID-01185: Enforce governance metadata
+    # VTID-01186: Enforce governance metadata
     required_metadata = {
         "tenant_id": metadata.get("tenant_id", "00000000-0000-0000-0000-000000000001"),
         "user_id": user_id,
         "role_context": metadata.get("role_context", "unknown"),
         "visibility": metadata.get("visibility", "private"),
         "source": metadata.get("source", "unknown"),
-        "vtid": metadata.get("vtid", "VTID-01185"),
+        "vtid": metadata.get("vtid", "VTID-01186"),
         "created_at": datetime.utcnow().isoformat(),
     }
 
@@ -204,7 +204,7 @@ writeToMemoryIndexer({
     role_context: activeRole,
     visibility: 'private',
     source: 'orb',
-    vtid: 'VTID-01185',
+    vtid: 'VTID-01186',
     orb_session_id: orbSessionId,
     conversation_id: conversationId,
   }
@@ -220,7 +220,7 @@ writeToMemoryIndexer({
 ```python
 @app.route('/health', methods=['GET'])
 def health():
-    # VTID-01185: Include Qdrant Cloud connectivity status
+    # VTID-01186: Include Qdrant Cloud connectivity status
     qdrant_status = "unknown"
     try:
         from qdrant_client import QdrantClient

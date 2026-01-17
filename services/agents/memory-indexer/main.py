@@ -1,10 +1,10 @@
 """
-VTID-01152 + VTID-01185: Mem0 Memory Indexer with Qdrant Cloud
+VTID-01152 + VTID-01186: Mem0 Memory Indexer with Qdrant Cloud
 
 Memory service for ORB using:
 - Anthropic Claude for LLM reasoning
 - Sentence Transformers for local embeddings
-- Qdrant Cloud for PERSISTENT vector storage (VTID-01185)
+- Qdrant Cloud for PERSISTENT vector storage (VTID-01186)
 
 Endpoints:
 - /health - Basic health check
@@ -40,7 +40,7 @@ app = Flask(__name__)
 @app.route("/health")
 def health():
     """Basic health check endpoint (does not verify Qdrant)"""
-    # VTID-01185: Report storage mode from env
+    # VTID-01186: Report storage mode from env
     qdrant_url = os.getenv("QDRANT_URL")
     storage_mode = "cloud" if qdrant_url else "local"
 
@@ -55,7 +55,7 @@ def health():
 @app.route("/health/deep")
 def health_deep():
     """
-    VTID-01185: Deep health check that verifies Qdrant connectivity.
+    VTID-01186: Deep health check that verifies Qdrant connectivity.
 
     Use this for monitoring dashboards to detect Qdrant Cloud outages.
     """
@@ -68,7 +68,7 @@ def health_deep():
     return jsonify(
         status="ok" if result.get("ok") else "error",
         service="memory-indexer",
-        vtid="VTID-01185",
+        vtid="VTID-01186",
         **result
     ), status_code
 
@@ -76,7 +76,7 @@ def health_deep():
 @app.route("/introspect")
 def introspect():
     """Build introspection endpoint"""
-    # VTID-01185: Report storage mode
+    # VTID-01186: Report storage mode
     qdrant_url = os.getenv("QDRANT_URL")
     storage_mode = "cloud" if qdrant_url else "local"
 
@@ -97,7 +97,7 @@ def introspect():
         build_sha=os.getenv("GITHUB_SHA", "dev"),
         service="memory-indexer",
         vtid="VTID-01152",
-        version="1.2.0",  # VTID-01185: Bumped version for Qdrant Cloud support
+        version="1.2.0",  # VTID-01186: Bumped version for Qdrant Cloud support
         storage_mode=storage_mode,
         features=features,
     ), 200
@@ -345,12 +345,12 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
     debug = os.getenv("FLASK_DEBUG", "false").lower() == "true"
 
-    # VTID-01185: Log storage mode on startup
+    # VTID-01186: Log storage mode on startup
     qdrant_url = os.getenv("QDRANT_URL")
     storage_mode = "Qdrant Cloud (PERSISTENT)" if qdrant_url else "Local /tmp/qdrant (EPHEMERAL)"
 
     logger.info(f"Starting memory-indexer on port {port}")
-    logger.info(f"VTID-01185: Storage mode: {storage_mode}")
+    logger.info(f"VTID-01186: Storage mode: {storage_mode}")
     if qdrant_url:
         logger.info(f"  Qdrant URL: {qdrant_url[:50]}...")
     else:

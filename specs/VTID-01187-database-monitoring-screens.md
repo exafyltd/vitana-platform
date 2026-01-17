@@ -1,6 +1,6 @@
-# VTID-01186 — Database Monitoring Screens (Supabase + Vectors + Cache + Analytics)
+# VTID-01187 — Database Monitoring Screens (Supabase + Vectors + Cache + Analytics)
 
-**VTID:** 01186
+**VTID:** 01187
 **Title:** Build Database Monitoring Screens in Command Hub
 **Owner:** Claude (Worker)
 **Validator:** Claude (Validator)
@@ -396,7 +396,7 @@ interface ClustersDashboard {
 ```typescript
 // Emit on health check failure
 emitOasisEvent({
-  vtid: 'VTID-01186',
+  vtid: 'VTID-01187',
   type: 'database.health.degraded',
   source: 'database-monitor',
   status: 'error',

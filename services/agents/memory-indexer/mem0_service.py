@@ -1,17 +1,17 @@
 """
-VTID-01152 + VTID-01185: Mem0 OSS Memory Service with Qdrant Cloud
+VTID-01152 + VTID-01186: Mem0 OSS Memory Service with Qdrant Cloud
 
 Memory service for ORB using:
 - Anthropic Claude for LLM reasoning (fact extraction)
 - Sentence Transformers for local embeddings (all-MiniLM-L6-v2)
-- Qdrant Cloud for PERSISTENT vector storage (VTID-01185)
+- Qdrant Cloud for PERSISTENT vector storage (VTID-01186)
 - SQLite for history storage
 
 Storage modes:
 - Cloud mode (QDRANT_URL set): Uses Qdrant Cloud for persistent storage
 - Local mode (fallback): Uses /tmp/qdrant - EPHEMERAL, data lost on restart
 
-VTID-01185: Migrated from local-only storage to support Qdrant Cloud
+VTID-01186: Migrated from local-only storage to support Qdrant Cloud
 for production-grade persistent memory across container restarts.
 """
 
@@ -35,7 +35,7 @@ logger = logging.getLogger("mem0_service")
 @dataclass
 class Mem0Config:
     """
-    VTID-01185: Mem0 configuration with Anthropic + Qdrant Cloud.
+    VTID-01186: Mem0 configuration with Anthropic + Qdrant Cloud.
 
     Supports two modes:
     - Cloud mode (QDRANT_URL set): Uses Qdrant Cloud for persistent vector storage
@@ -49,7 +49,7 @@ class Mem0Config:
     # Embedding config
     embedding_model: str = "all-MiniLM-L6-v2"
 
-    # Qdrant Cloud config (VTID-01185)
+    # Qdrant Cloud config (VTID-01186)
     qdrant_url: Optional[str] = None
     qdrant_api_key: Optional[str] = None
 
@@ -67,7 +67,7 @@ class Mem0Config:
         history_path = os.path.expanduser(self.history_db_path)
         Path(history_path).parent.mkdir(parents=True, exist_ok=True)
 
-        # VTID-01185: Build Qdrant config based on mode
+        # VTID-01186: Build Qdrant config based on mode
         if self.is_cloud_mode():
             # Cloud mode: use URL + API key for persistent storage
             qdrant_config = {
@@ -75,7 +75,7 @@ class Mem0Config:
                 "api_key": self.qdrant_api_key,
                 "embedding_model_dims": 384,  # all-MiniLM-L6-v2 dimension
             }
-            logger.info(f"VTID-01185: Using Qdrant Cloud at {self.qdrant_url[:50]}...")
+            logger.info(f"VTID-01186: Using Qdrant Cloud at {self.qdrant_url[:50]}...")
         else:
             # Local mode: ephemeral storage (WARNING: lost on container restart)
             qdrant_config = {
@@ -83,7 +83,7 @@ class Mem0Config:
                 "embedding_model_dims": 384,  # all-MiniLM-L6-v2 dimension
             }
             logger.warning(
-                "VTID-01185: Using LOCAL Qdrant at %s - EPHEMERAL! "
+                "VTID-01186: Using LOCAL Qdrant at %s - EPHEMERAL! "
                 "Set QDRANT_URL for persistent storage.",
                 self.qdrant_path
             )
@@ -309,14 +309,14 @@ class OrbMemoryService:
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY environment variable required")
 
-        # VTID-01185: Read Qdrant Cloud config
+        # VTID-01186: Read Qdrant Cloud config
         qdrant_url = os.environ.get("QDRANT_URL")
         qdrant_api_key = os.environ.get("QDRANT_API_KEY")
 
         # Validate: if URL is set, API key is required
         if qdrant_url and not qdrant_api_key:
             logger.warning(
-                "VTID-01185: QDRANT_URL is set but QDRANT_API_KEY is missing! "
+                "VTID-01186: QDRANT_URL is set but QDRANT_API_KEY is missing! "
                 "Falling back to local storage."
             )
             qdrant_url = None
@@ -344,12 +344,12 @@ class OrbMemoryService:
         config = self._get_config()
         mem0_config = config.to_mem0_config()
 
-        # VTID-01185: Log storage mode clearly
+        # VTID-01186: Log storage mode clearly
         if config.is_cloud_mode():
-            logger.info("VTID-01185: Initializing Mem0 with Qdrant Cloud (PERSISTENT)")
+            logger.info("VTID-01186: Initializing Mem0 with Qdrant Cloud (PERSISTENT)")
             logger.info(f"  Qdrant URL: {config.qdrant_url[:50]}...")
         else:
-            logger.warning("VTID-01185: Initializing Mem0 with LOCAL storage (EPHEMERAL)")
+            logger.warning("VTID-01186: Initializing Mem0 with LOCAL storage (EPHEMERAL)")
             logger.warning(f"  Qdrant path: {config.qdrant_path}")
             logger.warning("  WARNING: Data will be LOST on container restart!")
 
@@ -567,7 +567,7 @@ class OrbMemoryService:
 
     def health_check(self) -> Dict[str, Any]:
         """
-        VTID-01185: Health check for Qdrant connectivity.
+        VTID-01186: Health check for Qdrant connectivity.
 
         Returns status info for monitoring dashboards.
         """
@@ -684,5 +684,5 @@ def memory_context(
 
 
 def memory_health_check() -> Dict[str, Any]:
-    """VTID-01185: Health check for Qdrant connectivity"""
+    """VTID-01186: Health check for Qdrant connectivity"""
     return get_memory_service().health_check()
