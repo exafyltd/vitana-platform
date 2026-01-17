@@ -1,20 +1,173 @@
 /**
  * VTID-01157: Auth Routes (Dev Onboarding MVP)
+ * VTID-01186: Dev Auth Handshake + Identity Propagation
  *
  * Purpose: Provide authentication endpoints for the Gateway.
+ * - GET /config - Returns Supabase config for frontend auth (no auth required)
+ * - POST /login - Email/password login via Supabase (no auth required)
  * - GET /me - Returns the authenticated user's identity
  *
  * This endpoint verifies the Supabase JWT and returns identity claims
  * extracted from the token.
  */
 
-import { Router, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import {
   requireAuth,
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
+
+/**
+ * VTID-01186: GET /config
+ *
+ * Returns Supabase configuration for frontend authentication.
+ * This allows the frontend to initialize Supabase auth without hardcoding keys.
+ * Does NOT require authentication.
+ *
+ * Response (success - 200):
+ * {
+ *   "ok": true,
+ *   "supabase_url": "https://xxx.supabase.co",
+ *   "supabase_anon_key": "eyJ..."
+ * }
+ */
+router.get('/config', (_req: Request, res: Response) => {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.error('[VTID-01186] GET /auth/config - Missing SUPABASE_URL or SUPABASE_ANON_KEY');
+    return res.status(500).json({
+      ok: false,
+      error: 'INTERNAL_ERROR',
+      message: 'Supabase configuration not available',
+    });
+  }
+
+  console.log('[VTID-01186] GET /auth/config - Returning Supabase config');
+  return res.status(200).json({
+    ok: true,
+    supabase_url: supabaseUrl,
+    supabase_anon_key: supabaseAnonKey,
+  });
+});
+
+/**
+ * VTID-01186: POST /login
+ *
+ * Email/password login via Supabase Auth REST API.
+ * Proxies the request to Supabase and returns the session tokens.
+ * Does NOT require authentication.
+ *
+ * Body:
+ * {
+ *   "email": "user@example.com",
+ *   "password": "..."
+ * }
+ *
+ * Response (success - 200):
+ * {
+ *   "ok": true,
+ *   "access_token": "...",
+ *   "refresh_token": "...",
+ *   "expires_in": 3600,
+ *   "token_type": "bearer",
+ *   "user": { ... }
+ * }
+ *
+ * Response (error - 401):
+ * {
+ *   "ok": false,
+ *   "error": "INVALID_CREDENTIALS",
+ *   "message": "..."
+ * }
+ */
+router.post('/login', async (req: Request, res: Response) => {
+  const { email, password } = req.body;
+
+  if (!email || typeof email !== 'string' || email.trim() === '') {
+    return res.status(400).json({
+      ok: false,
+      error: 'INVALID_INPUT',
+      message: 'email is required',
+    });
+  }
+
+  if (!password || typeof password !== 'string') {
+    return res.status(400).json({
+      ok: false,
+      error: 'INVALID_INPUT',
+      message: 'password is required',
+    });
+  }
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.error('[VTID-01186] POST /auth/login - Missing Supabase configuration');
+    return res.status(500).json({
+      ok: false,
+      error: 'INTERNAL_ERROR',
+      message: 'Supabase configuration not available',
+    });
+  }
+
+  try {
+    // Call Supabase Auth REST API for email/password login
+    const authResponse = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': supabaseAnonKey,
+      },
+      body: JSON.stringify({
+        email: email.trim(),
+        password,
+      }),
+    });
+
+    const authData = await authResponse.json() as {
+      access_token?: string;
+      refresh_token?: string;
+      expires_in?: number;
+      token_type?: string;
+      user?: { id?: string };
+      error?: string;
+      error_description?: string;
+      msg?: string;
+    };
+
+    if (!authResponse.ok) {
+      console.warn(`[VTID-01186] POST /auth/login - Auth failed for ${email}: ${authData.error || authData.msg || 'Unknown error'}`);
+      return res.status(401).json({
+        ok: false,
+        error: 'INVALID_CREDENTIALS',
+        message: authData.error_description || authData.msg || 'Invalid email or password',
+      });
+    }
+
+    console.log(`[VTID-01186] POST /auth/login - Success for ${email}, user_id=${authData.user?.id}`);
+
+    return res.status(200).json({
+      ok: true,
+      access_token: authData.access_token,
+      refresh_token: authData.refresh_token,
+      expires_in: authData.expires_in,
+      token_type: authData.token_type || 'bearer',
+      user: authData.user,
+    });
+  } catch (err: any) {
+    console.error('[VTID-01186] POST /auth/login - Exception:', err.message);
+    return res.status(500).json({
+      ok: false,
+      error: 'INTERNAL_ERROR',
+      message: 'Authentication service error',
+    });
+  }
+});
 
 /**
  * GET /me

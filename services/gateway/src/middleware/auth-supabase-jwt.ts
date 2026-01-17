@@ -202,6 +202,90 @@ export function requireExafyAdmin(
 }
 
 /**
+ * VTID-01186: Middleware: Require tenant_id in JWT.
+ * Must be used AFTER requireAuth middleware.
+ * Returns 400 if tenant_id is null/missing in JWT app_metadata.
+ */
+export function requireTenant(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): void {
+  if (!req.identity) {
+    res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED',
+      message: 'Authentication required',
+    });
+    return;
+  }
+
+  if (!req.identity.tenant_id) {
+    console.warn(
+      `[VTID-01186] Tenant required: user ${req.identity.user_id} has no active_tenant_id in JWT`
+    );
+    res.status(400).json({
+      ok: false,
+      error: 'TENANT_REQUIRED',
+      message: 'No active_tenant_id in JWT app_metadata. Please select an active tenant.',
+    });
+    return;
+  }
+
+  next();
+}
+
+/**
+ * VTID-01186: Combined middleware: requireAuth + requireTenant
+ * Convenience middleware for routes that require both auth and tenant.
+ */
+export async function requireAuthWithTenant(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  const token = getBearerToken(req);
+
+  if (!token) {
+    res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED',
+      message: 'Missing or invalid Authorization header. Expected: Bearer <token>',
+    });
+    return;
+  }
+
+  const result = await verifyAndExtractIdentity(token);
+
+  if (!result) {
+    res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED',
+      message: 'Invalid or expired token',
+    });
+    return;
+  }
+
+  req.identity = result.identity;
+  req.auth_raw_claims = result.claims;
+
+  // Require tenant_id
+  if (!req.identity.tenant_id) {
+    console.warn(
+      `[VTID-01186] Tenant required: user ${req.identity.user_id} has no active_tenant_id`
+    );
+    res.status(400).json({
+      ok: false,
+      error: 'TENANT_REQUIRED',
+      message: 'No active_tenant_id in JWT app_metadata. Please select an active tenant.',
+    });
+    return;
+  }
+
+  next();
+}
+
+/**
  * Combined middleware: requireAuth + requireExafyAdmin
  * Convenience middleware for routes that require both.
  */

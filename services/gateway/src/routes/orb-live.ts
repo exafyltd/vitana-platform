@@ -63,17 +63,26 @@ import {
 import { writeMemoryItem, classifyCategory } from './memory';
 // VTID-01106: ORB Memory Bridge (Dev Sandbox)
 // VTID-01107: ORB Memory Debug Endpoint + Dev Memory Write
+// VTID-01186: Identity-aware memory functions
 import {
   isMemoryBridgeEnabled,
   isDevSandbox,
   fetchDevMemoryContext,
+  fetchMemoryContextWithIdentity,
   buildMemoryEnhancedInstruction,
   getDebugSnapshot,
   writeDevMemoryItem,
+  writeMemoryItemWithIdentity,
   DEV_IDENTITY,
   MEMORY_CONFIG,
-  OrbMemoryContext
+  OrbMemoryContext,
+  MemoryIdentity
 } from '../services/orb-memory-bridge';
+// VTID-01186: Auth middleware for identity propagation
+import {
+  optionalAuth,
+  AuthenticatedRequest
+} from '../middleware/auth-supabase-jwt';
 // VTID-01112: Context Assembly Engine (D20 Core Intelligence)
 import {
   getOrbContext,
@@ -197,6 +206,54 @@ const connectionCountByIP = new Map<string, number>();
 const GEMINI_API_KEY = process.env.GOOGLE_GEMINI_API_KEY || '';
 const GEMINI_MODEL = 'gemini-2.0-flash-exp';
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+
+// =============================================================================
+// VTID-01186: Identity Helpers for Memory Operations
+// =============================================================================
+
+/**
+ * VTID-01186: Extract memory identity from authenticated request.
+ * If authenticated, uses req.identity. Otherwise, falls back to DEV_IDENTITY in dev-sandbox mode.
+ *
+ * @param req - Express request (may have identity attached by optionalAuth middleware)
+ * @returns MemoryIdentity with user_id, tenant_id, and active_role
+ */
+function getMemoryIdentity(req: AuthenticatedRequest): MemoryIdentity {
+  // If authenticated with tenant, use the real identity
+  if (req.identity && req.identity.user_id && req.identity.tenant_id) {
+    return {
+      user_id: req.identity.user_id,
+      tenant_id: req.identity.tenant_id,
+      active_role: req.identity.role || null
+    };
+  }
+
+  // Fallback to DEV_IDENTITY in dev-sandbox mode
+  if (isDevSandbox()) {
+    return {
+      user_id: DEV_IDENTITY.USER_ID,
+      tenant_id: DEV_IDENTITY.TENANT_ID,
+      active_role: DEV_IDENTITY.ACTIVE_ROLE
+    };
+  }
+
+  // No identity available - this will cause memory operations to fail gracefully
+  return {
+    user_id: '',
+    tenant_id: '',
+    active_role: null
+  };
+}
+
+/**
+ * VTID-01186: Check if request has valid identity for memory operations.
+ * @param req - Express request
+ * @returns true if identity is valid (either authenticated or dev-sandbox fallback)
+ */
+function hasValidIdentity(req: AuthenticatedRequest): boolean {
+  const identity = getMemoryIdentity(req);
+  return !!identity.user_id && !!identity.tenant_id;
+}
 
 // =============================================================================
 // VTID-0135: Voice Conversation Types & Stores
@@ -758,10 +815,17 @@ Operating mode:
  *
  * VTID-01112: Now uses Context Assembly Engine for unified, ranked context.
  * ORB no longer accesses raw memory tables directly.
+ *
+ * VTID-01186: Now accepts optional identity parameter to use authenticated user's memory.
  */
 async function generateMemoryEnhancedSystemInstruction(
-  session: { tenant: string; role: string; route?: string; selectedId?: string }
+  session: { tenant: string; role: string; route?: string; selectedId?: string },
+  identity?: MemoryIdentity | null
 ): Promise<{ instruction: string; memoryContext: OrbMemoryContext | null; contextBundle?: ContextBundle }> {
+  // VTID-01186: Determine effective identity (authenticated or DEV_IDENTITY fallback)
+  const effectiveIdentity: MemoryIdentity = identity && identity.user_id && identity.tenant_id
+    ? identity
+    : { user_id: DEV_IDENTITY.USER_ID, tenant_id: DEV_IDENTITY.TENANT_ID, active_role: DEV_IDENTITY.ACTIVE_ROLE };
   // Base instruction WITHOUT memory claims (used when memory is unavailable)
   const baseInstructionNoMemory = `You are VITANA ORB, a voice-first multimodal assistant.
 
@@ -795,12 +859,13 @@ Operating mode:
 - NEVER claim you cannot remember or that your memory resets.`;
 
   // VTID-01153: Try memory-indexer first (Mem0 OSS)
+  // VTID-01186: Use effective identity for memory lookups
   if (isMemoryIndexerEnabled()) {
     console.log('[VTID-01153] Memory indexer enabled, fetching context from Mem0');
     try {
       const mem0Result = await buildMemoryIndexerEnhancedInstruction(
         baseInstructionWithMemory,
-        DEV_IDENTITY.USER_ID,
+        effectiveIdentity.user_id,
         'general conversation context' // Query for broad context
       );
 
@@ -826,18 +891,19 @@ Operating mode:
 
   try {
     // VTID-01112: Use Context Assembly Engine instead of raw memory access
+    // VTID-01186: Use effective identity for context assembly
     // This ensures all downstream intelligence uses ranked, unified context
     const contextResult = await getOrbContext(
-      DEV_IDENTITY.USER_ID,
-      DEV_IDENTITY.TENANT_ID,
-      DEV_IDENTITY.ACTIVE_ROLE,
+      effectiveIdentity.user_id,
+      effectiveIdentity.tenant_id,
+      effectiveIdentity.active_role || 'user',
       'conversation' // ORB default intent
     );
 
     if (!contextResult.ok || !contextResult.bundle) {
       console.log(`[VTID-01112] Context assembly failed: ${contextResult.error}`);
-      // Fallback to legacy memory bridge
-      const memoryContext = await fetchDevMemoryContext();
+      // Fallback to legacy memory bridge with identity-aware function
+      const memoryContext = await fetchMemoryContextWithIdentity(effectiveIdentity);
       if (!memoryContext.ok || memoryContext.items.length === 0) {
         return { instruction: baseInstructionNoMemory, memoryContext };
       }
@@ -1445,10 +1511,12 @@ router.post('/stop', (req: Request, res: Response) => {
  *   "meta": { "provider": "vertex", "model": "gemini-*", "mode": "orb_voice" }
  * }
  */
-router.post('/chat', async (req: Request, res: Response) => {
+router.post('/chat', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   const body = req.body as OrbChatRequest;
 
-  console.log('[VTID-0135] POST /orb/chat received');
+  // VTID-01186: Extract identity from authenticated request or fallback to DEV_IDENTITY
+  const identity = getMemoryIdentity(req);
+  console.log(`[VTID-01186] POST /orb/chat received (user=${identity.user_id ? identity.user_id.substring(0,8) + '...' : 'none'})`);
 
   // Validate required fields
   if (!body.orb_session_id || !body.input_text) {
@@ -1524,44 +1592,14 @@ router.post('/chat', async (req: Request, res: Response) => {
   });
 
   // VTID-01105: Auto-write user message to memory
-  // VTID-01107: Support dev-sandbox mode without token
-  const userToken = getBearerToken(req);
+  // VTID-01186: Use identity-aware memory write with req.identity or DEV_IDENTITY fallback
   const isVoice = body.meta?.mode === 'orb_voice';
   const memorySource = isVoice ? 'orb_voice' : 'orb_text';
   const requestId = randomUUID();
 
-  if (userToken) {
-    // Write user message to memory with JWT (fire-and-forget, don't block response)
-    writeMemoryItem(userToken, {
-      source: memorySource as 'orb_text' | 'orb_voice',
-      content: inputText,
-      content_json: {
-        direction: 'user',
-        channel: 'orb',
-        mode: isVoice ? 'voice' : 'text',
-        request_id: requestId,
-        orb_session_id: orbSessionId,
-        conversation_id: conversationId
-      }
-    }).then(result => {
-      if (result.ok) {
-        console.log(`[VTID-01105] User message written to memory: ${result.id} (${result.category_key})`);
-        emitMemoryWriteEvent('memory.write.user_message', {
-          memory_id: result.id,
-          category_key: result.category_key,
-          orb_session_id: orbSessionId,
-          conversation_id: conversationId,
-          source: memorySource
-        });
-      } else {
-        console.warn('[VTID-01105] User message memory write failed:', result.error);
-      }
-    }).catch(err => {
-      console.warn('[VTID-01105] User message memory write error:', err.message);
-    });
-  } else if (isDevSandbox()) {
-    // VTID-01107: Dev-sandbox mode - write with dev identity (no token required)
-    writeDevMemoryItem({
+  // VTID-01186: Write memory with authenticated identity (fire-and-forget)
+  if (hasValidIdentity(req)) {
+    writeMemoryItemWithIdentity(identity, {
       source: memorySource,
       content: inputText,
       content_json: {
@@ -1571,37 +1609,43 @@ router.post('/chat', async (req: Request, res: Response) => {
         request_id: requestId,
         orb_session_id: orbSessionId,
         conversation_id: conversationId
-      }
+      },
+      workspace_scope: 'dev'
     }).then(result => {
-      if (result.ok) {
-        console.log(`[VTID-01107] Dev user message written to memory: ${result.id} (${result.category_key})`);
+      if (result.ok && !result.skipped) {
+        console.log(`[VTID-01186] User message written to memory: ${result.id} (user=${identity.user_id.substring(0,8)}...)`);
         emitMemoryWriteEvent('memory.write.user_message', {
           memory_id: result.id,
           category_key: result.category_key,
           orb_session_id: orbSessionId,
           conversation_id: conversationId,
           source: memorySource,
-          dev_sandbox: true
+          user_id: identity.user_id,
+          tenant_id: identity.tenant_id
         });
+      } else if (result.skipped) {
+        console.log(`[VTID-01186] User message skipped (trivial)`);
       } else {
-        console.warn('[VTID-01107] Dev user message memory write failed:', result.error);
+        console.warn('[VTID-01186] User message memory write failed:', result.error);
       }
     }).catch(err => {
-      console.warn('[VTID-01107] Dev user message memory write error:', err.message);
+      console.warn('[VTID-01186] User message memory write error:', err.message);
     });
   }
 
   // VTID-01153: Write to memory-indexer (Mem0 OSS) - fire-and-forget
-  if (isMemoryIndexerEnabled()) {
+  // VTID-01186: Use identity from request
+  if (isMemoryIndexerEnabled() && identity.user_id) {
     writeToMemoryIndexer({
-      user_id: DEV_IDENTITY.USER_ID,
+      user_id: identity.user_id,
       content: inputText,
       role: 'user',
       metadata: {
         source: 'orb',
         orb_session_id: orbSessionId,
         conversation_id: conversationId,
-        vtid: 'VTID-01153'
+        vtid: 'VTID-01153',
+        tenant_id: identity.tenant_id
       }
     }).then(result => {
       if (result.stored) {
@@ -1630,6 +1674,7 @@ router.post('/chat', async (req: Request, res: Response) => {
     console.log(`[VTID-01118] Turn ${conversation.turn_count}: intent=${detectedIntent}, domain=${detectedDomain}, vtids=${vtidMentions.join(',') || 'none'}`);
 
     // VTID-01106: Fetch memory context and build enhanced system instruction
+    // VTID-01186: Pass identity for authenticated memory access
     // Extract context from meta (cast to any for dev sandbox flexibility)
     const meta = body.meta as Record<string, unknown> | undefined;
     const { instruction: baseSystemInstruction, memoryContext } = await generateMemoryEnhancedSystemInstruction({
@@ -1637,7 +1682,7 @@ router.post('/chat', async (req: Request, res: Response) => {
       role: (meta?.role as string) || 'developer',
       route: meta?.route as string | undefined,
       selectedId: meta?.selectedId as string | undefined
-    });
+    }, identity);
 
     // VTID-01118: Inject cross-turn state context into system instruction
     const stateContext = stateEngine.generateContextString();
@@ -2092,42 +2137,9 @@ router.post('/chat', async (req: Request, res: Response) => {
     }
 
     // VTID-01105: Auto-write assistant message to memory (fire-and-forget)
-    // VTID-01107: Support dev-sandbox mode without token
-    if (userToken) {
-      writeMemoryItem(userToken, {
-        source: memorySource as 'orb_text' | 'orb_voice',
-        content: replyText,
-        content_json: {
-          direction: 'assistant',
-          channel: 'orb',
-          model,
-          provider,
-          latency_ms: latencyMs,
-          request_id: requestId,
-          orb_session_id: orbSessionId,
-          conversation_id: conversationId
-        }
-      }).then(result => {
-        if (result.ok) {
-          console.log(`[VTID-01105] Assistant message written to memory: ${result.id} (${result.category_key})`);
-          emitMemoryWriteEvent('memory.write.assistant_message', {
-            memory_id: result.id,
-            category_key: result.category_key,
-            orb_session_id: orbSessionId,
-            conversation_id: conversationId,
-            source: memorySource,
-            model,
-            latency_ms: latencyMs
-          });
-        } else {
-          console.warn('[VTID-01105] Assistant message memory write failed:', result.error);
-        }
-      }).catch(err => {
-        console.warn('[VTID-01105] Assistant message memory write error:', err.message);
-      });
-    } else if (isDevSandbox()) {
-      // VTID-01107: Dev-sandbox mode - write with dev identity (no token required)
-      writeDevMemoryItem({
+    // VTID-01186: Use identity-aware memory write with req.identity or DEV_IDENTITY fallback
+    if (hasValidIdentity(req)) {
+      writeMemoryItemWithIdentity(identity, {
         source: memorySource,
         content: replyText,
         content_json: {
@@ -2139,10 +2151,11 @@ router.post('/chat', async (req: Request, res: Response) => {
           request_id: requestId,
           orb_session_id: orbSessionId,
           conversation_id: conversationId
-        }
+        },
+        workspace_scope: 'dev'
       }).then(result => {
-        if (result.ok) {
-          console.log(`[VTID-01107] Dev assistant message written to memory: ${result.id} (${result.category_key})`);
+        if (result.ok && !result.skipped) {
+          console.log(`[VTID-01186] Assistant message written to memory: ${result.id} (user=${identity.user_id.substring(0,8)}...)`);
           emitMemoryWriteEvent('memory.write.assistant_message', {
             memory_id: result.id,
             category_key: result.category_key,
@@ -2151,21 +2164,25 @@ router.post('/chat', async (req: Request, res: Response) => {
             source: memorySource,
             model,
             latency_ms: latencyMs,
-            dev_sandbox: true
+            user_id: identity.user_id,
+            tenant_id: identity.tenant_id
           });
+        } else if (result.skipped) {
+          console.log(`[VTID-01186] Assistant message skipped (trivial)`);
         } else {
-          console.warn('[VTID-01107] Dev assistant message memory write failed:', result.error);
+          console.warn('[VTID-01186] Assistant message memory write failed:', result.error);
         }
       }).catch(err => {
-        console.warn('[VTID-01107] Dev assistant message memory write error:', err.message);
+        console.warn('[VTID-01186] Assistant message memory write error:', err.message);
       });
     }
 
     // VTID-DEBUG-MEM: Write assistant response to memory-indexer (Mem0 OSS) - fire-and-forget
+    // VTID-01186: Use identity from request
     // This ensures conversation continuity - the LLM needs to know what it said previously
-    if (isMemoryIndexerEnabled()) {
+    if (isMemoryIndexerEnabled() && identity.user_id) {
       writeToMemoryIndexer({
-        user_id: DEV_IDENTITY.USER_ID,
+        user_id: identity.user_id,
         content: replyText,
         role: 'assistant',
         metadata: {
@@ -2175,7 +2192,8 @@ router.post('/chat', async (req: Request, res: Response) => {
           model,
           provider,
           latency_ms: latencyMs,
-          vtid: 'VTID-DEBUG-MEM'
+          vtid: 'VTID-DEBUG-MEM',
+          tenant_id: identity.tenant_id
         }
       }).then(result => {
         if (result.stored) {
