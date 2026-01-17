@@ -166,7 +166,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const overloadDetectionRouter = require('./routes/overload-detection').default;
   // VTID-01146: Execute VTID Runner (One-Button End-to-End Pipeline)
   const { router: executeRouter } = require('./routes/execute');
-  // VTID-01163: Worker Sub-Agents + Orchestrator
+  // VTID-01163 + VTID-01183: Worker Sub-Agents + Orchestrator + Connector
   const { workerOrchestratorRouter } = require('./routes/worker-orchestrator');
   // VTID-01148: Approvals API v1 — Pending Queue + Count + Approve/Reject
   const approvalsRouter = require('./routes/approvals').default;
@@ -338,7 +338,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01148: Approvals API v1 — Pending Queue + Count + Approve/Reject (Gateway + OASIS-backed)
   mountRouterSync(app, '/api/v1/approvals', approvalsRouter, { owner: 'approvals-api' });
 
-  // VTID-01163: Worker Sub-Agents + Orchestrator
+  // VTID-01163 + VTID-01183: Worker Sub-Agents + Orchestrator + Connector
   mountRouterSync(app, '/', workerOrchestratorRouter, { owner: 'worker-orchestrator' });
 
   // VTID-0509 + VTID-0510: Operator Console & Version Tracking

@@ -1,12 +1,18 @@
 /**
- * Worker Orchestrator Routes - VTID-01163
+ * Worker Orchestrator Routes - VTID-01163 + VTID-01183
  *
  * API endpoints for the Worker Orchestrator that routes work orders
  * to specialized domain subagents (frontend, backend, memory).
+ *
+ * VTID-01183: Added worker connector endpoints for autonomous task execution:
+ * - Worker registration and heartbeat
+ * - Task polling and atomic claiming
+ * - Progress reporting with OASIS events
  */
 
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import { emitOasisEvent } from '../services/oasis-event-service';
 import {
   routeWorkOrder,
   markOrchestratorSuccess,
@@ -370,5 +376,529 @@ workerOrchestratorRouter.get('/api/v1/worker/skills', (_req: Request, res: Respo
       error: 'Failed to list skills',
       detail: error.message
     });
+  }
+});
+
+// =============================================================================
+// VTID-01183: Worker Connector Endpoints
+// Connects autonomous worker agents to the event loop for task execution
+// =============================================================================
+
+const LOG_PREFIX = '[VTID-01183]';
+
+// Helper: Supabase request
+async function supabaseRequest<T>(
+  path: string,
+  options: { method?: string; body?: unknown; headers?: Record<string, string> } = {}
+): Promise<{ ok: boolean; data?: T; error?: string }> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+
+  if (!supabaseUrl || !supabaseKey) {
+    return { ok: false, error: 'Missing Supabase credentials' };
+  }
+
+  try {
+    const response = await fetch(`${supabaseUrl}${path}`, {
+      method: options.method || 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`,
+        'Prefer': 'return=representation',
+        ...options.headers,
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { ok: false, error: `${response.status}: ${errorText}` };
+    }
+
+    const data = await response.json() as T;
+    return { ok: true, data };
+  } catch (error) {
+    return { ok: false, error: String(error) };
+  }
+}
+
+// Helper: Call RPC function
+async function callRpc<T>(
+  functionName: string,
+  params: Record<string, unknown>
+): Promise<{ ok: boolean; data?: T; error?: string }> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+
+  if (!supabaseUrl || !supabaseKey) {
+    return { ok: false, error: 'Missing Supabase credentials' };
+  }
+
+  try {
+    const response = await fetch(`${supabaseUrl}/rest/v1/rpc/${functionName}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`,
+      },
+      body: JSON.stringify(params),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { ok: false, error: `${response.status}: ${errorText}` };
+    }
+
+    const data = await response.json() as T;
+    return { ok: true, data };
+  } catch (error) {
+    return { ok: false, error: String(error) };
+  }
+}
+
+/**
+ * POST /api/v1/worker/orchestrator/register
+ *
+ * Register a worker agent with the orchestrator
+ */
+workerOrchestratorRouter.post('/api/v1/worker/orchestrator/register', async (req: Request, res: Response) => {
+  try {
+    const { worker_id, capabilities, max_concurrent, version, metadata } = req.body;
+
+    if (!worker_id) {
+      return res.status(400).json({ ok: false, error: 'worker_id is required' });
+    }
+
+    console.log(`${LOG_PREFIX} Registering worker: ${worker_id}`);
+
+    // Check if already registered
+    const existing = await supabaseRequest<any[]>(
+      `/rest/v1/worker_registry?worker_id=eq.${encodeURIComponent(worker_id)}&select=*`
+    );
+
+    if (existing.ok && existing.data && existing.data.length > 0) {
+      // Update existing registration
+      const result = await supabaseRequest<any[]>(
+        `/rest/v1/worker_registry?worker_id=eq.${encodeURIComponent(worker_id)}`,
+        {
+          method: 'PATCH',
+          body: {
+            capabilities: capabilities || [],
+            max_concurrent: max_concurrent || 1,
+            version: version || '1.0.0',
+            metadata: metadata || {},
+            status: 'active',
+            last_heartbeat_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+        }
+      );
+
+      if (!result.ok) {
+        return res.status(400).json({ ok: false, error: result.error });
+      }
+
+      console.log(`${LOG_PREFIX} Worker re-registered: ${worker_id}`);
+      return res.status(200).json({
+        ok: true,
+        worker_id,
+        registered: true,
+        reregistered: true,
+        vtid: 'VTID-01183',
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    // Create new registration
+    const result = await supabaseRequest<any[]>(
+      '/rest/v1/worker_registry',
+      {
+        method: 'POST',
+        body: {
+          worker_id,
+          capabilities: capabilities || [],
+          max_concurrent: max_concurrent || 1,
+          version: version || '1.0.0',
+          metadata: metadata || {},
+          status: 'active',
+          last_heartbeat_at: new Date().toISOString(),
+        },
+      }
+    );
+
+    if (!result.ok) {
+      return res.status(400).json({ ok: false, error: result.error });
+    }
+
+    // Emit registration event
+    await emitOasisEvent({
+      vtid: 'SYSTEM',
+      type: 'vtid.stage.worker_orchestrator.registered' as any,
+      source: 'worker-orchestrator',
+      status: 'info',
+      message: `Worker registered: ${worker_id}`,
+      payload: { worker_id, capabilities },
+    });
+
+    console.log(`${LOG_PREFIX} Worker registered: ${worker_id}`);
+    return res.status(200).json({
+      ok: true,
+      worker_id,
+      registered: true,
+      vtid: 'VTID-01183',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error(`${LOG_PREFIX} Registration error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * DELETE /api/v1/worker/orchestrator/register/:worker_id
+ *
+ * Unregister a worker agent
+ */
+workerOrchestratorRouter.delete('/api/v1/worker/orchestrator/register/:worker_id', async (req: Request, res: Response) => {
+  try {
+    const { worker_id } = req.params;
+
+    console.log(`${LOG_PREFIX} Unregistering worker: ${worker_id}`);
+
+    const result = await supabaseRequest(
+      `/rest/v1/worker_registry?worker_id=eq.${encodeURIComponent(worker_id)}`,
+      {
+        method: 'PATCH',
+        body: {
+          status: 'terminated',
+          current_vtid: null,
+          updated_at: new Date().toISOString(),
+        },
+      }
+    );
+
+    if (!result.ok) {
+      return res.status(400).json({ ok: false, error: result.error });
+    }
+
+    // Release any active claims
+    await supabaseRequest(
+      `/rest/v1/vtid_ledger?claimed_by=eq.${encodeURIComponent(worker_id)}`,
+      {
+        method: 'PATCH',
+        body: {
+          claimed_by: null,
+          claim_expires_at: null,
+          updated_at: new Date().toISOString(),
+        },
+      }
+    );
+
+    return res.status(200).json({
+      ok: true,
+      worker_id,
+      unregistered: true,
+      vtid: 'VTID-01183',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error(`${LOG_PREFIX} Unregistration error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/v1/worker/orchestrator/workers
+ *
+ * List active workers
+ */
+workerOrchestratorRouter.get('/api/v1/worker/orchestrator/workers', async (_req: Request, res: Response) => {
+  try {
+    const result = await supabaseRequest<any[]>(
+      '/rest/v1/worker_registry?status=eq.active&select=*&order=registered_at.desc'
+    );
+
+    return res.status(200).json({
+      ok: true,
+      workers: result.data || [],
+      count: result.data?.length || 0,
+      vtid: 'VTID-01183',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error(`${LOG_PREFIX} List workers error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/v1/worker/orchestrator/tasks/pending
+ *
+ * Get tasks available for workers to claim
+ */
+workerOrchestratorRouter.get('/api/v1/worker/orchestrator/tasks/pending', async (_req: Request, res: Response) => {
+  try {
+    const result = await callRpc<any[]>('get_pending_worker_tasks', { p_limit: 50 });
+
+    return res.status(200).json({
+      ok: true,
+      tasks: result.data || [],
+      count: result.data?.length || 0,
+      vtid: 'VTID-01183',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error(`${LOG_PREFIX} Get pending tasks error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/v1/worker/orchestrator/tasks/:vtid/claim
+ *
+ * Claim a task atomically
+ */
+workerOrchestratorRouter.post('/api/v1/worker/orchestrator/tasks/:vtid/claim', async (req: Request, res: Response) => {
+  try {
+    const { vtid } = req.params;
+    const { worker_id, expires_minutes } = req.body;
+
+    if (!worker_id) {
+      return res.status(400).json({ ok: false, error: 'worker_id is required' });
+    }
+
+    console.log(`${LOG_PREFIX} Worker ${worker_id} claiming task ${vtid}`);
+
+    const result = await callRpc<any>('claim_vtid_task', {
+      p_vtid: vtid,
+      p_worker_id: worker_id,
+      p_expires_minutes: expires_minutes || 60,
+    });
+
+    if (!result.ok) {
+      return res.status(400).json({ ok: false, claimed: false, error: result.error });
+    }
+
+    const claim = result.data;
+
+    if (claim.claimed) {
+      // Emit claim event
+      await emitOasisEvent({
+        vtid,
+        type: 'vtid.stage.worker_orchestrator.claimed' as any,
+        source: 'worker-orchestrator',
+        status: 'info',
+        message: `Task claimed by ${worker_id}`,
+        payload: { worker_id, expires_at: claim.expires_at },
+      });
+
+      console.log(`${LOG_PREFIX} Task ${vtid} claimed by ${worker_id}`);
+    }
+
+    return res.status(claim.claimed ? 200 : 409).json({
+      ...claim,
+      vtid: 'VTID-01183',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error(`${LOG_PREFIX} Claim error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/v1/worker/orchestrator/tasks/:vtid/release
+ *
+ * Release a task claim
+ */
+workerOrchestratorRouter.post('/api/v1/worker/orchestrator/tasks/:vtid/release', async (req: Request, res: Response) => {
+  try {
+    const { vtid } = req.params;
+    const { worker_id, reason } = req.body;
+
+    if (!worker_id) {
+      return res.status(400).json({ ok: false, error: 'worker_id is required' });
+    }
+
+    console.log(`${LOG_PREFIX} Worker ${worker_id} releasing task ${vtid} (${reason || 'completed'})`);
+
+    const result = await callRpc<any>('release_vtid_claim', {
+      p_vtid: vtid,
+      p_worker_id: worker_id,
+      p_reason: reason || 'completed',
+    });
+
+    if (!result.ok) {
+      return res.status(400).json({ ok: false, error: result.error });
+    }
+
+    // Emit release event
+    await emitOasisEvent({
+      vtid,
+      type: 'vtid.stage.worker_orchestrator.released' as any,
+      source: 'worker-orchestrator',
+      status: 'info',
+      message: `Task released: ${reason || 'completed'}`,
+      payload: { worker_id, reason: reason || 'completed' },
+    });
+
+    return res.status(200).json({
+      ...result.data,
+      vtid: 'VTID-01183',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error(`${LOG_PREFIX} Release error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/v1/worker/orchestrator/tasks/:vtid/progress
+ *
+ * Report progress on a task (emits OASIS event for event loop)
+ */
+workerOrchestratorRouter.post('/api/v1/worker/orchestrator/tasks/:vtid/progress', async (req: Request, res: Response) => {
+  try {
+    const { vtid } = req.params;
+    const { worker_id, event, message, metadata } = req.body;
+
+    if (!worker_id) {
+      return res.status(400).json({ ok: false, error: 'worker_id is required' });
+    }
+
+    if (!event) {
+      return res.status(400).json({ ok: false, error: 'event is required' });
+    }
+
+    console.log(`${LOG_PREFIX} Progress: ${vtid} - ${event}`);
+
+    // Verify worker has active claim
+    const claimCheck = await supabaseRequest<any[]>(
+      `/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}&claimed_by=eq.${encodeURIComponent(worker_id)}&select=vtid,claimed_by`
+    );
+
+    if (!claimCheck.ok || !claimCheck.data || claimCheck.data.length === 0) {
+      return res.status(400).json({ ok: false, error: 'No active claim for this task' });
+    }
+
+    // Normalize event name to vtid.stage.worker_orchestrator.* taxonomy
+    const normalizedEvent = event.startsWith('vtid.stage.') ? event : `vtid.stage.worker_orchestrator.${event}`;
+
+    // Emit OASIS event for the event loop to process
+    const eventResult = await emitOasisEvent({
+      vtid,
+      type: normalizedEvent as any,
+      source: 'worker-orchestrator',
+      status: 'info',
+      message: message || `Worker progress: ${event}`,
+      payload: { worker_id, ...metadata },
+    });
+
+    if (!eventResult.ok) {
+      return res.status(400).json({ ok: false, error: eventResult.error });
+    }
+
+    // Extend claim expiry
+    await supabaseRequest(
+      `/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}&claimed_by=eq.${encodeURIComponent(worker_id)}`,
+      {
+        method: 'PATCH',
+        body: { updated_at: new Date().toISOString() },
+      }
+    );
+
+    return res.status(200).json({
+      ok: true,
+      vtid,
+      event: normalizedEvent,
+      vtid_tag: 'VTID-01183',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error(`${LOG_PREFIX} Progress error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/v1/worker/orchestrator/heartbeat
+ *
+ * Worker heartbeat - keeps registration and claim alive
+ */
+workerOrchestratorRouter.post('/api/v1/worker/orchestrator/heartbeat', async (req: Request, res: Response) => {
+  try {
+    const { worker_id, active_vtid } = req.body;
+
+    if (!worker_id) {
+      return res.status(400).json({ ok: false, error: 'worker_id is required' });
+    }
+
+    const result = await callRpc<any>('worker_heartbeat', {
+      p_worker_id: worker_id,
+      p_active_vtid: active_vtid || null,
+    });
+
+    if (!result.ok || !result.data?.ok) {
+      return res.status(400).json({ ok: false, error: result.error || result.data?.reason });
+    }
+
+    return res.status(200).json({
+      ...result.data,
+      vtid: 'VTID-01183',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error(`${LOG_PREFIX} Heartbeat error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/v1/worker/orchestrator/stats
+ *
+ * Get worker connector statistics
+ */
+workerOrchestratorRouter.get('/api/v1/worker/orchestrator/stats', async (_req: Request, res: Response) => {
+  try {
+    const result = await callRpc<any>('get_worker_connector_stats', {});
+
+    return res.status(200).json({
+      ok: true,
+      stats: result.data,
+      vtid: 'VTID-01183',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error(`${LOG_PREFIX} Stats error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/v1/worker/orchestrator/cleanup
+ *
+ * Expire stale claims (admin endpoint)
+ */
+workerOrchestratorRouter.post('/api/v1/worker/orchestrator/cleanup', async (_req: Request, res: Response) => {
+  try {
+    const result = await callRpc<number>('expire_stale_vtid_claims', {});
+
+    const count = result.data as number;
+    if (count > 0) {
+      console.log(`${LOG_PREFIX} Expired ${count} stale claims`);
+    }
+
+    return res.status(200).json({
+      ok: true,
+      expired_count: count,
+      vtid: 'VTID-01183',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error(`${LOG_PREFIX} Cleanup error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
   }
 });
