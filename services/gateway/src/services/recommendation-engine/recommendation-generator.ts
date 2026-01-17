@@ -9,22 +9,22 @@ import { createHash } from 'crypto';
 import {
   analyzeCodebase,
   CodebaseSignal,
-  generateFingerprint as codebaseFingerprint,
+  generateCodebaseFingerprint,
 } from './analyzers/codebase-analyzer';
 import {
   analyzeOasisEvents,
   OasisSignal,
-  generateFingerprint as oasisFingerprint,
+  generateOasisFingerprint,
 } from './analyzers/oasis-analyzer';
 import {
   analyzeSystemHealth,
   HealthSignal,
-  generateFingerprint as healthFingerprint,
+  generateHealthFingerprint,
 } from './analyzers/health-analyzer';
 import {
   analyzeRoadmap,
   RoadmapSignal,
-  generateFingerprint as roadmapFingerprint,
+  generateRoadmapFingerprint,
 } from './analyzers/roadmap-analyzer';
 
 const LOG_PREFIX = '[VTID-01185:Generator]';
@@ -164,7 +164,7 @@ function convertCodebaseSignal(signal: CodebaseSignal): GeneratedRecommendation 
     risk_level: severityToRisk[signal.severity] || 'low',
     source_type: 'codebase',
     source_ref: `${signal.file_path}${signal.line_number ? ':' + signal.line_number : ''}`,
-    fingerprint: codebaseFingerprint(signal),
+    fingerprint: generateCodebaseFingerprint(signal),
     suggested_files: [signal.file_path],
     suggested_endpoints: [],
     suggested_tests: signal.type === 'missing_tests' ? ['unit'] : [],
@@ -197,7 +197,7 @@ function convertOasisSignal(signal: OasisSignal): GeneratedRecommendation {
     risk_level: signal.severity === 'critical' ? 'critical' : signal.severity as 'low' | 'medium' | 'high',
     source_type: 'oasis',
     source_ref: signal.source,
-    fingerprint: oasisFingerprint(signal),
+    fingerprint: generateOasisFingerprint(signal),
     suggested_files: [],
     suggested_endpoints: signal.type === 'slow_endpoint' ? [signal.source] : [],
     suggested_tests: ['integration'],
@@ -230,7 +230,7 @@ function convertHealthSignal(signal: HealthSignal): GeneratedRecommendation {
     risk_level: signal.severity === 'critical' ? 'critical' : signal.severity as 'low' | 'medium' | 'high',
     source_type: 'health',
     source_ref: signal.resource,
-    fingerprint: healthFingerprint(signal),
+    fingerprint: generateHealthFingerprint(signal),
     suggested_files: [],
     suggested_endpoints: [],
     suggested_tests: [],
@@ -247,7 +247,7 @@ function convertRoadmapSignal(signal: RoadmapSignal): GeneratedRecommendation {
     risk_level: signal.severity as 'low' | 'medium' | 'high',
     source_type: 'roadmap',
     source_ref: signal.reference,
-    fingerprint: roadmapFingerprint(signal),
+    fingerprint: generateRoadmapFingerprint(signal),
     suggested_files: [],
     suggested_endpoints: [],
     suggested_tests: [],

@@ -338,7 +338,7 @@ export async function analyzeRoadmap(
 // Fingerprint Generator
 // =============================================================================
 
-export function generateFingerprint(signal: RoadmapSignal): string {
-  const data = `${signal.type}:${signal.reference}`;
+export function generateRoadmapFingerprint(signal: RoadmapSignal): string {
+  const data = `roadmap:${signal.type}:${signal.reference}`;
   return createHash('sha256').update(data).digest('hex').substring(0, 16);
 }

@@ -422,7 +422,7 @@ export async function analyzeSystemHealth(
 // Fingerprint Generator
 // =============================================================================
 
-export function generateFingerprint(signal: HealthSignal): string {
+export function generateHealthFingerprint(signal: HealthSignal): string {
   const data = `${signal.type}:${signal.resource}`;
   return createHash('sha256').update(data).digest('hex').substring(0, 16);
 }

@@ -191,7 +191,7 @@ async function scanMissingTests(
     const cmd = `find ${basePath}/services -path "*/src/*.ts" -type f 2>/dev/null | grep -v node_modules | grep -v dist | grep -v ".test." | grep -v ".spec." || true`;
     const result = execSync(cmd, { maxBuffer: 10 * 1024 * 1024 }).toString();
 
-    const sourceFiles = result.split('\n').filter(f => f.trim());
+    const sourceFiles = result.split('\n').filter((f: string) => f.trim());
 
     for (const sourceFile of sourceFiles) {
       // Check if corresponding test file exists
@@ -328,7 +328,7 @@ export async function analyzeCodebase(
 // Fingerprint Generator
 // =============================================================================
 
-export function generateFingerprint(signal: CodebaseSignal): string {
-  const data = `${signal.type}:${signal.file_path}:${signal.line_number || 0}`;
+export function generateCodebaseFingerprint(signal: CodebaseSignal): string {
+  const data = `codebase:${signal.type}:${signal.file_path}:${signal.line_number || 0}`;
   return createHash('sha256').update(data).digest('hex').substring(0, 16);
 }

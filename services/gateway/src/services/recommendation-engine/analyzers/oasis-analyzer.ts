@@ -381,7 +381,7 @@ export async function analyzeOasisEvents(
 // Fingerprint Generator
 // =============================================================================
 
-export function generateFingerprint(signal: OasisSignal): string {
-  const data = `${signal.type}:${signal.source}`;
+export function generateOasisFingerprint(signal: OasisSignal): string {
+  const data = `oasis:${signal.type}:${signal.source}`;
   return createHash('sha256').update(data).digest('hex').substring(0, 16);
 }
