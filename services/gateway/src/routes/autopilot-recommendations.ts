@@ -1,22 +1,28 @@
 /**
- * Autopilot Recommendations Routes - VTID-01180
+ * Autopilot Recommendations Routes - VTID-01180 + VTID-01185
  *
  * API endpoints for the Autopilot Recommendation popup in Command Hub.
  * Users can view AI-generated recommendations and activate them to create
  * VTID task cards with spec snapshots.
  *
- * Endpoints:
+ * VTID-01180 Endpoints:
  * - GET /recommendations - List recommendations (filtered by status)
  * - GET /recommendations/count - Get count for badge
  * - POST /recommendations/:id/activate - Activate recommendation (creates VTID)
  * - POST /recommendations/:id/reject - Reject/dismiss recommendation
  * - POST /recommendations/:id/snooze - Snooze for later
  *
+ * VTID-01185 Endpoints (Recommendation Engine):
+ * - POST /recommendations/generate - Trigger recommendation generation
+ * - GET /recommendations/sources - Get analyzer source status
+ * - GET /recommendations/history - Get generation run history
+ *
  * Mounted at: /api/v1/autopilot/recommendations
  */
 
 import { Router, Request, Response } from 'express';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { generateRecommendations, SourceType } from '../services/recommendation-engine';
 
 const router = Router();
 
@@ -345,6 +351,247 @@ router.post('/:id/snooze', async (req: Request, res: Response) => {
 });
 
 // =============================================================================
+// VTID-01185: POST /recommendations/generate - Trigger recommendation generation
+// =============================================================================
+/**
+ * POST /recommendations/generate
+ *
+ * Triggers recommendation generation from analyzers.
+ * Admin-only endpoint.
+ *
+ * Body:
+ * {
+ *   sources?: string[] // ['codebase', 'oasis', 'health', 'roadmap'] - default all
+ *   limit?: number     // Max recommendations to generate (default 20)
+ *   force?: boolean    // Regenerate even if recently run
+ * }
+ *
+ * Response:
+ * {
+ *   ok: true,
+ *   generated: 15,
+ *   duplicates_skipped: 3,
+ *   run_id: "rec-gen-2026-01-17-001",
+ *   duration_ms: 45000
+ * }
+ */
+router.post('/generate', async (req: Request, res: Response) => {
+  const LOG = '[VTID-01185]';
+
+  try {
+    const userId = getUserId(req);
+    const {
+      sources = ['codebase', 'oasis', 'health', 'roadmap'],
+      limit = 20,
+      force = false,
+    } = req.body;
+
+    // Validate sources
+    const validSources: SourceType[] = ['codebase', 'oasis', 'health', 'roadmap'];
+    const requestedSources = (Array.isArray(sources) ? sources : [sources]).filter(
+      (s: string) => validSources.includes(s as SourceType)
+    ) as SourceType[];
+
+    if (requestedSources.length === 0) {
+      return res.status(400).json({
+        ok: false,
+        error: 'No valid sources specified',
+        valid_sources: validSources,
+      });
+    }
+
+    console.log(`${LOG} Generation requested by ${userId || 'anonymous'} - sources: ${requestedSources.join(', ')}`);
+
+    // Emit start event
+    await emitOasisEvent({
+      vtid: 'VTID-01185',
+      type: 'autopilot.recommendation.generation.started' as any,
+      source: 'recommendation-engine',
+      status: 'info',
+      message: `Recommendation generation started (sources: ${requestedSources.join(', ')})`,
+      payload: {
+        sources: requestedSources,
+        limit,
+        force,
+        triggered_by: userId,
+      },
+    });
+
+    // Get base path from environment or use default
+    const basePath = process.env.VITANA_BASE_PATH || '/home/user/vitana-platform';
+
+    // Run generation
+    const result = await generateRecommendations(basePath, {
+      sources: requestedSources,
+      limit: Math.min(Math.max(limit, 1), 50),
+      force,
+      triggered_by: userId || 'api',
+      trigger_type: 'manual',
+    });
+
+    // Emit completion event
+    await emitOasisEvent({
+      vtid: 'VTID-01185',
+      type: result.ok
+        ? ('autopilot.recommendation.generation.completed' as any)
+        : ('autopilot.recommendation.generation.failed' as any),
+      source: 'recommendation-engine',
+      status: result.ok ? 'success' : 'error',
+      message: result.ok
+        ? `Generated ${result.generated} recommendations (${result.duplicates_skipped} duplicates skipped)`
+        : `Generation failed: ${result.errors[0]?.error || 'Unknown error'}`,
+      payload: {
+        run_id: result.run_id,
+        generated: result.generated,
+        duplicates_skipped: result.duplicates_skipped,
+        duration_ms: result.duration_ms,
+        errors: result.errors,
+      },
+    });
+
+    return res.status(result.ok ? 200 : 500).json({
+      ...result,
+      vtid: 'VTID-01185',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error(`${LOG} Generation error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// =============================================================================
+// VTID-01185: GET /recommendations/sources - Get analyzer source status
+// =============================================================================
+/**
+ * GET /recommendations/sources
+ *
+ * Returns available analysis sources and their status.
+ *
+ * Response:
+ * {
+ *   ok: true,
+ *   sources: [
+ *     { type: 'codebase', status: 'ready', last_scan: '2026-01-17T10:00:00Z', files_scanned: 1523 },
+ *     { type: 'oasis', status: 'ready', last_scan: '2026-01-17T12:00:00Z', events_analyzed: 50000 },
+ *     { type: 'health', status: 'ready', last_scan: '2026-01-17T11:00:00Z', checks_run: 45 },
+ *     { type: 'roadmap', status: 'ready', last_scan: '2026-01-17T09:00:00Z', specs_found: 23 }
+ *   ]
+ * }
+ */
+router.get('/sources', async (_req: Request, res: Response) => {
+  const LOG = '[VTID-01185]';
+
+  try {
+    console.log(`${LOG} Sources status requested`);
+
+    const result = await callRpc<any[]>('get_autopilot_analyzer_sources', {});
+
+    if (!result.ok) {
+      return res.status(400).json({ ok: false, error: result.error });
+    }
+
+    const sources = (result.data || []).map((s: any) => ({
+      type: s.source_type,
+      status: s.status,
+      enabled: s.enabled,
+      last_scan: s.last_scan_at,
+      last_scan_duration_ms: s.last_scan_duration_ms,
+      items_scanned: s.items_scanned,
+      items_found: s.items_found,
+      recommendations_generated: s.recommendations_generated,
+      last_error: s.last_error,
+      config: s.config,
+    }));
+
+    return res.status(200).json({
+      ok: true,
+      sources,
+      vtid: 'VTID-01185',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error(`${LOG} Sources error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// =============================================================================
+// VTID-01185: GET /recommendations/history - Get generation run history
+// =============================================================================
+/**
+ * GET /recommendations/history
+ *
+ * Returns generation history.
+ *
+ * Query params:
+ * - limit: max items (default: 20, max: 100)
+ * - offset: pagination offset (default: 0)
+ * - trigger_type: filter by trigger type (manual, scheduled, pr_merge, webhook)
+ *
+ * Response:
+ * {
+ *   ok: true,
+ *   runs: [
+ *     { run_id: "rec-gen-2026-01-17-001", timestamp: "...", generated: 15, duration_ms: 45000 },
+ *     { run_id: "rec-gen-2026-01-16-001", timestamp: "...", generated: 8, duration_ms: 32000 }
+ *   ]
+ * }
+ */
+router.get('/history', async (req: Request, res: Response) => {
+  const LOG = '[VTID-01185]';
+
+  try {
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 20, 1), 100);
+    const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+    const triggerType = req.query.trigger_type as string || null;
+
+    console.log(`${LOG} History requested (limit: ${limit}, offset: ${offset})`);
+
+    const result = await callRpc<any[]>('get_autopilot_recommendation_history', {
+      p_limit: limit + 1,
+      p_offset: offset,
+      p_trigger_type: triggerType,
+    });
+
+    if (!result.ok) {
+      return res.status(400).json({ ok: false, error: result.error });
+    }
+
+    const runs = result.data || [];
+    const hasMore = runs.length > limit;
+    if (hasMore) {
+      runs.pop();
+    }
+
+    return res.status(200).json({
+      ok: true,
+      runs: runs.map((r: any) => ({
+        run_id: r.run_id,
+        status: r.status,
+        trigger_type: r.trigger_type,
+        triggered_by: r.triggered_by,
+        sources: r.sources,
+        recommendations_generated: r.recommendations_generated,
+        duplicates_skipped: r.duplicates_skipped,
+        errors_count: r.errors_count,
+        duration_ms: r.duration_ms,
+        started_at: r.started_at,
+        completed_at: r.completed_at,
+        analysis_summary: r.analysis_summary,
+      })),
+      count: runs.length,
+      has_more: hasMore,
+      vtid: 'VTID-01185',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error(`${LOG} History error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// =============================================================================
 // GET /recommendations/health - Health check
 // =============================================================================
 router.get('/health', (_req: Request, res: Response) => {
@@ -352,7 +599,7 @@ router.get('/health', (_req: Request, res: Response) => {
     ok: true,
     service: 'autopilot-recommendations',
     vtid: 'VTID-01180',
-    version: '1.0.0',
+    version: '2.0.0',
     timestamp: new Date().toISOString(),
     endpoints: [
       'GET /recommendations',
@@ -360,6 +607,9 @@ router.get('/health', (_req: Request, res: Response) => {
       'POST /recommendations/:id/activate',
       'POST /recommendations/:id/reject',
       'POST /recommendations/:id/snooze',
+      'POST /recommendations/generate',
+      'GET /recommendations/sources',
+      'GET /recommendations/history',
     ],
   });
 });
