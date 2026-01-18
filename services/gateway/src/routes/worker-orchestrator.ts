@@ -13,6 +13,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { isAutopilotExecutionArmed } from '../services/system-controls-service';
 import {
   routeWorkOrder,
   markOrchestratorSuccess,
@@ -77,10 +78,24 @@ const OrchestratorCompleteSchema = z.object({
  *
  * Route a work order to the appropriate subagent.
  * VTID-01167: Now runs preflight skill chains (VTID-01164) before routing.
+ * VTID-01187: Requires autopilot_execution_enabled to be ARMED.
  * Does NOT execute the work - just determines routing and emits events.
  */
 workerOrchestratorRouter.post('/api/v1/worker/orchestrator/route', async (req: Request, res: Response) => {
   try {
+    // VTID-01187: Check governance control before any side-effect action
+    const executionArmed = await isAutopilotExecutionArmed();
+    if (!executionArmed) {
+      console.log('[VTID-01187] Route request BLOCKED - autopilot execution is DISARMED');
+      return res.status(403).json({
+        ok: false,
+        error: 'Autopilot execution is disarmed',
+        error_code: 'EXECUTION_DISARMED',
+        vtid: 'VTID-01187',
+        message: 'The autopilot_execution_enabled control must be armed to route work orders'
+      });
+    }
+
     const validation = WorkOrderSchema.safeParse(req.body);
     if (!validation.success) {
       return res.status(400).json({
@@ -659,9 +674,24 @@ workerOrchestratorRouter.get('/api/v1/worker/orchestrator/tasks/pending', async 
  * POST /api/v1/worker/orchestrator/tasks/:vtid/claim
  *
  * Claim a task atomically
+ * VTID-01187: Requires autopilot_execution_enabled to be ARMED.
  */
 workerOrchestratorRouter.post('/api/v1/worker/orchestrator/tasks/:vtid/claim', async (req: Request, res: Response) => {
   try {
+    // VTID-01187: Check governance control before claiming (prevents bypass of event loop)
+    const executionArmed = await isAutopilotExecutionArmed();
+    if (!executionArmed) {
+      console.log('[VTID-01187] Task claim BLOCKED - autopilot execution is DISARMED');
+      return res.status(403).json({
+        ok: false,
+        claimed: false,
+        error: 'Autopilot execution is disarmed',
+        error_code: 'EXECUTION_DISARMED',
+        vtid: 'VTID-01187',
+        message: 'The autopilot_execution_enabled control must be armed to claim tasks'
+      });
+    }
+
     const { vtid } = req.params;
     const { worker_id, expires_minutes } = req.body;
 

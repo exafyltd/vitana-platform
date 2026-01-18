@@ -49,6 +49,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import { isAutopilotExecutionArmed } from '../services/system-controls-service';
 import {
   getPendingPlanTasks,
   submitPlan,
@@ -202,6 +203,19 @@ router.post('/tasks/:vtid/plan', async (req: Request, res: Response) => {
     return; // Blocked by deprecation guard
   }
 
+  // VTID-01187: Secondary governance gate (defense in depth)
+  const executionArmed = await isAutopilotExecutionArmed();
+  if (!executionArmed) {
+    console.log('[VTID-01187] Plan submission BLOCKED - autopilot execution is DISARMED');
+    return res.status(403).json({
+      ok: false,
+      error: 'Autopilot execution is disarmed',
+      error_code: 'EXECUTION_DISARMED',
+      vtid: 'VTID-01187',
+      message: 'The autopilot_execution_enabled control must be armed to submit plans'
+    });
+  }
+
   const { vtid } = req.params;
   const { plan, metadata } = req.body;
 
@@ -313,6 +327,19 @@ router.post('/tasks/:vtid/work/start', async (req: Request, res: Response) => {
   // VTID-01170: Deprecation check - use orchestrator for work start
   if (checkDeprecatedBypass(req, res, "POST /autopilot/tasks/:vtid/work/start", "POST /api/v1/worker/subagent/start")) {
     return; // Blocked by deprecation guard
+  }
+
+  // VTID-01187: Secondary governance gate (defense in depth)
+  const executionArmed = await isAutopilotExecutionArmed();
+  if (!executionArmed) {
+    console.log('[VTID-01187] Work start BLOCKED - autopilot execution is DISARMED');
+    return res.status(403).json({
+      ok: false,
+      error: 'Autopilot execution is disarmed',
+      error_code: 'EXECUTION_DISARMED',
+      vtid: 'VTID-01187',
+      message: 'The autopilot_execution_enabled control must be armed to start work'
+    });
   }
 
   const { vtid } = req.params;

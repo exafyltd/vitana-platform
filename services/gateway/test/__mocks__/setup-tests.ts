@@ -91,6 +91,31 @@ beforeEach(() => {
       } as any);
     }
 
+    // VTID-01187: Mock system_controls for governance gate tests
+    // By default, autopilot_execution_enabled is ARMED in tests
+    if (urlString.includes('/rest/v1/system_controls')) {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        headers: new Headers(),
+        json: async () => [{
+          key: 'autopilot_execution_enabled',
+          enabled: true, // ARMED by default in tests
+          scope: { environment: 'test' },
+          reason: 'Test environment - armed by default',
+          expires_at: null,
+          updated_by: 'test-setup',
+          updated_by_role: 'dev_admin',
+          updated_at: new Date().toISOString(),
+        }],
+        text: async () => 'OK',
+        blob: async () => new Blob(),
+        arrayBuffer: async () => new ArrayBuffer(0),
+        formData: async () => new FormData(),
+      } as any);
+    }
+
     // Mock RPC create_vtid_atomic call - VTID-0543/VTID-0544
     if (urlString.includes('/rest/v1/rpc/create_vtid_atomic')) {
       if (method === 'POST' && body) {

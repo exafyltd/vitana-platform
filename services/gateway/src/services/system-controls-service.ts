@@ -407,3 +407,35 @@ export async function isVtidAllocatorEnabled(): Promise<boolean> {
 
   return control.enabled;
 }
+
+/**
+ * VTID-01187: Check if autopilot execution is armed.
+ *
+ * This is the PRIMARY governance gate for autonomous task execution.
+ * Even if AUTOPILOT_LOOP_ENABLED=true (loop is running), execution
+ * will not happen unless this DB control is also armed.
+ *
+ * This separation allows:
+ * - Loop to keep running (monitoring, status updates)
+ * - Execution to be armed/disarmed at runtime without redeploy
+ * - Emergency stop without killing the loop process
+ *
+ * Returns true ONLY if DB control 'autopilot_execution_enabled' is armed.
+ */
+export async function isAutopilotExecutionArmed(): Promise<boolean> {
+  const control = await getSystemControl('autopilot_execution_enabled');
+
+  // Control must exist AND be enabled
+  if (!control) {
+    console.log('[VTID-01187] autopilot_execution_enabled control not found - execution DISARMED');
+    return false;
+  }
+
+  if (!control.enabled) {
+    console.log('[VTID-01187] autopilot_execution_enabled is DISARMED');
+    return false;
+  }
+
+  console.log('[VTID-01187] autopilot_execution_enabled is ARMED');
+  return true;
+}
