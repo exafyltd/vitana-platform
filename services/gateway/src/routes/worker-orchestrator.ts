@@ -31,6 +31,69 @@ import { runPreflightChain, listSkills, getPreflightChains } from '../services/s
 export const workerOrchestratorRouter = Router();
 
 // =============================================================================
+// VTID-01175: Governance Control for skip_verification
+// =============================================================================
+
+/**
+ * Check if skip_verification is allowed based on governance rules.
+ * Allowed when:
+ * - Environment is dev/sandbox (VITANA_ENVIRONMENT contains 'dev' or 'sandbox')
+ * - Request includes valid governance_override_key (for admin use)
+ * - Caller is staff/admin role (checked via x-vitana-role header)
+ */
+function isSkipVerificationAllowed(req: Request): { allowed: boolean; reason: string } {
+  const env = process.env.VITANA_ENVIRONMENT || 'production';
+  const role = req.headers['x-vitana-role'] as string | undefined;
+  const overrideKey = req.headers['x-governance-override-key'] as string | undefined;
+  const expectedOverrideKey = process.env.GOVERNANCE_OVERRIDE_KEY;
+
+  // Allow in dev/sandbox environments
+  if (env.toLowerCase().includes('dev') || env.toLowerCase().includes('sandbox')) {
+    return { allowed: true, reason: `environment=${env}` };
+  }
+
+  // Allow with valid governance override key
+  if (expectedOverrideKey && overrideKey === expectedOverrideKey) {
+    return { allowed: true, reason: 'governance_override_key' };
+  }
+
+  // Allow for staff/admin roles
+  if (role === 'admin' || role === 'staff' || role === 'governance') {
+    return { allowed: true, reason: `role=${role}` };
+  }
+
+  return { allowed: false, reason: 'skip_verification requires dev environment, admin role, or governance override key' };
+}
+
+/**
+ * Emit OASIS governance event when skip_verification is used.
+ * This creates an audit trail for all verification bypasses.
+ */
+async function emitSkipVerificationEvent(
+  vtid: string,
+  endpoint: 'subagent/complete' | 'orchestrator/complete',
+  reason: string,
+  requestInfo: { domain?: string; run_id: string; caller_ip?: string }
+): Promise<void> {
+  await emitOasisEvent({
+    vtid,
+    type: 'vtid.governance.verification_skipped' as any,
+    source: 'worker-orchestrator',
+    status: 'warning',
+    message: `Verification skipped for ${vtid} at ${endpoint}`,
+    payload: {
+      vtid,
+      endpoint,
+      skip_reason: reason,
+      domain: requestInfo.domain,
+      run_id: requestInfo.run_id,
+      caller_ip: requestInfo.caller_ip,
+      timestamp: new Date().toISOString()
+    }
+  });
+}
+
+// =============================================================================
 // Request Schemas
 // =============================================================================
 
@@ -227,17 +290,39 @@ workerOrchestratorRouter.post('/api/v1/worker/subagent/complete', async (req: Re
     const startedAtDate = started_at ? new Date(started_at) : undefined;
 
     if (result?.ok) {
-      // VTID-01175: Run verification before marking success (unless skipped)
+      // VTID-01175: Run verification before marking success (unless skipped with governance approval)
       if (skip_verification) {
-        // Legacy mode - skip verification
+        // Governance check: is skip_verification allowed?
+        const governanceCheck = isSkipVerificationAllowed(req);
+        if (!governanceCheck.allowed) {
+          console.log(`[VTID-01175] skip_verification denied for ${vtid}: ${governanceCheck.reason}`);
+          return res.status(403).json({
+            ok: false,
+            error: 'skip_verification not allowed',
+            reason: governanceCheck.reason,
+            vtid,
+            domain,
+            run_id
+          });
+        }
+
+        // Emit governance audit event
+        await emitSkipVerificationEvent(vtid, 'subagent/complete', governanceCheck.reason, {
+          domain,
+          run_id,
+          caller_ip: req.ip || req.headers['x-forwarded-for'] as string
+        });
+
+        // Legacy mode - skip verification (governance approved)
         await emitSubagentSuccess(vtid, domain as TaskDomain, run_id, result as SubagentResult);
-        console.log(`[VTID-01163] Subagent ${domain} succeeded for ${vtid} (verification skipped)`);
+        console.log(`[VTID-01175] Subagent ${domain} succeeded for ${vtid} (verification skipped: ${governanceCheck.reason})`);
         return res.status(200).json({
           ok: true,
           vtid,
           domain,
           run_id,
           verification_skipped: true,
+          skip_reason: governanceCheck.reason,
           event: `vtid.stage.worker_${domain}.success`
         });
       }
@@ -338,16 +423,42 @@ workerOrchestratorRouter.post('/api/v1/worker/orchestrator/complete', async (req
     const startedAtDate = started_at ? new Date(started_at) : undefined;
 
     if (success) {
-      // VTID-01175: Run verification before marking success (unless skipped)
-      if (skip_verification || !domain || !result) {
-        // Legacy mode or no verification data - skip verification
+      // VTID-01175: Run verification before marking success (unless skipped with governance approval)
+      const needsSkip = skip_verification || !domain || !result;
+      if (needsSkip) {
+        // Governance check: is skip_verification allowed?
+        const governanceCheck = isSkipVerificationAllowed(req);
+        const skipReason = skip_verification ? 'explicit_skip' : (!domain ? 'missing_domain' : 'missing_result');
+
+        if (!governanceCheck.allowed) {
+          console.log(`[VTID-01175] skip_verification denied for ${vtid}: ${governanceCheck.reason}`);
+          return res.status(403).json({
+            ok: false,
+            error: 'skip_verification not allowed',
+            reason: governanceCheck.reason,
+            skip_trigger: skipReason,
+            vtid,
+            run_id,
+            hint: 'Provide domain and result fields, or use valid governance credentials'
+          });
+        }
+
+        // Emit governance audit event
+        await emitSkipVerificationEvent(vtid, 'orchestrator/complete', `${governanceCheck.reason}:${skipReason}`, {
+          domain: domain || 'unknown',
+          run_id,
+          caller_ip: req.ip || req.headers['x-forwarded-for'] as string
+        });
+
+        // Legacy mode - skip verification (governance approved)
         await markOrchestratorSuccess(vtid, run_id, summary || 'Orchestrator completed successfully');
-        console.log(`[VTID-01163] Orchestrator succeeded for ${vtid} (verification skipped)`);
+        console.log(`[VTID-01175] Orchestrator succeeded for ${vtid} (verification skipped: ${governanceCheck.reason}:${skipReason})`);
         return res.status(200).json({
           ok: true,
           vtid,
           run_id,
           verification_skipped: true,
+          skip_reason: `${governanceCheck.reason}:${skipReason}`,
           event: 'vtid.stage.worker_orchestrator.success'
         });
       }
