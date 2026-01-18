@@ -10062,7 +10062,7 @@ async function enableControl(key, reason, durationMinutes) {
     try {
         var response = await fetch('/api/v1/governance/controls/' + encodeURIComponent(key), {
             method: 'POST',
-            headers: buildContextHeaders(),
+            headers: Object.assign({ 'Content-Type': 'application/json' }, buildContextHeaders()),
             body: JSON.stringify({
                 enabled: true,
                 reason: reason,
@@ -10103,7 +10103,7 @@ async function disableControl(key, reason) {
     try {
         var response = await fetch('/api/v1/governance/controls/' + encodeURIComponent(key), {
             method: 'POST',
-            headers: buildContextHeaders(),
+            headers: Object.assign({ 'Content-Type': 'application/json' }, buildContextHeaders()),
             body: JSON.stringify({
                 enabled: false,
                 reason: reason
