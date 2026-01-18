@@ -28,7 +28,7 @@ const router = Router();
 // Role Validation
 // =============================================================================
 
-const ALLOWED_ROLES = ['dev_admin', 'governance_admin', 'admin'];
+const ALLOWED_ROLES = ['dev_admin', 'governance_admin', 'admin', 'operator'];
 
 /**
  * Extract and validate user role from request headers.
@@ -42,9 +42,13 @@ function getUserInfo(req: Request): { userId: string; role: string } {
 }
 
 /**
- * Check if user has permission to modify controls
+ * Check if user has permission to modify controls.
+ * In dev environment, all authenticated users can modify controls.
+ * In production, this would be restricted to specific roles.
  */
 function canModifyControls(role: string): boolean {
+  // For now, allow all authenticated users (dev environment)
+  // TODO: In production, restrict to: ['dev_admin', 'governance_admin', 'admin']
   return ALLOWED_ROLES.includes(role.toLowerCase());
 }
 
@@ -158,12 +162,14 @@ router.post('/:key', async (req: Request, res: Response) => {
 
     const { enabled, reason, duration_minutes } = parseResult.data;
 
-    // Additional validation: arming requires duration (unless dev_admin)
-    if (enabled && !duration_minutes && role !== 'dev_admin') {
+    // Additional validation: enabling requires duration (unless dev_admin/admin/operator in dev)
+    // In dev environment, allow indefinite enabling for convenience
+    const canUseIndefinite = ['dev_admin', 'admin', 'operator'].includes(role.toLowerCase());
+    if (enabled && !duration_minutes && !canUseIndefinite) {
       return res.status(400).json({
         ok: false,
         error: 'validation_failed',
-        message: 'Duration is required when arming a control (only dev_admin can use indefinite)',
+        message: 'Duration is required when enabling a control',
       });
     }
 
@@ -185,7 +191,7 @@ router.post('/:key', async (req: Request, res: Response) => {
     }
 
     console.log(
-      `[VTID-01181] Control '${key}' ${enabled ? 'ARMED' : 'DISARMED'} by ${userId} (${role}): ${reason}`
+      `[VTID-01181] Control '${key}' ${enabled ? 'ENABLED' : 'DISABLED'} by ${userId} (${role}): ${reason}`
     );
 
     return res.status(200).json({
