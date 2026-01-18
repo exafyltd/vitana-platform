@@ -17,18 +17,25 @@ This specification defines a standardized layout for all list-based views in the
 
 **Issue 1: Inconsistent Header Layout**
 
-The Governance History page correctly uses a compact 3-row header:
-- Row 1: Tab navigation
-- Row 2: Filters + metadata (count)
-- Row 3: Table column headers
+All list screens should have exactly **3 fixed rows** before the scrollable list area:
 
-However, the OASIS Events page uses 6+ rows:
-- Row 1: Tab navigation
-- Row 2: Auto-refresh toggle (separate row)
-- Row 3: Topic filter dropdown (separate row)
-- Row 4: Status filter dropdown (separate row)
-- Row 5: "LIVE - Auto-refreshing" indicator (separate row)
-- Row 6: Table column headers
+- **Row 1:** Global top bar (AUTOPILOT | OPERATOR | PUBLISH ... LIVE | refresh icon) — **FIXED, DO NOT CHANGE**
+- **Row 2:** Section tab navigation (e.g., Events | VTID Ledger | Entities | Streams | Command Log) — **FIXED, DO NOT CHANGE**
+- **Row 3:** Toolbar (filters, controls, status indicators, metadata) — **MUST BE A SINGLE ROW**
+
+The Governance History page correctly uses this 3-row structure:
+- Row 1: Global top bar (unchanged)
+- Row 2: Tab navigation (Rules | Categories | Evaluations | Violations | History | Proposals | Controls)
+- Row 3: Toolbar with filters inline ([All Types ▼] [All Levels ▼] [All Actors ▼] ... 50 events)
+
+However, the OASIS Events page incorrectly splits Row 3 into multiple rows (6+ total):
+- Row 1: Global top bar (correct)
+- Row 2: Tab navigation (correct)
+- Row 3: Auto-refresh toggle (should be in toolbar)
+- Row 4: Topic filter dropdown (should be in toolbar)
+- Row 5: Status filter dropdown (should be in toolbar)
+- Row 6: "LIVE - Auto-refreshing" indicator (should be in toolbar)
+- Row 7: Table column headers (start of list)
 
 This inconsistency wastes vertical space and reduces the visible list area.
 
@@ -68,17 +75,22 @@ Users cannot scroll endlessly through historical data.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ ROW 1: Tab Navigation                                                    │
-│ ┌─────┐ ┌─────────┐ ┌──────────┐ ┌─────────┐ ┌─────────────┐            │
-│ │Events│ │VTID Ledger│ │ Entities │ │ Streams │ │ Command Log │            │
-│ └─────┘ └─────────┘ └──────────┘ └─────────┘ └─────────────┘            │
+│ ROW 1: Global Top Bar (DO NOT CHANGE)                                    │
+│ ┌──────────┐ ┌──────────┐ ┌─────────┐                 ┌──────┐ ┌───┐   │
+│ │ AUTOPILOT│ │ OPERATOR │ │ PUBLISH │        ...      │● LIVE│ │ ↻ │   │
+│ └──────────┘ └──────────┘ └─────────┘                 └──────┘ └───┘   │
 ├─────────────────────────────────────────────────────────────────────────┤
-│ ROW 2: Toolbar (Filters + Controls + Metadata)                          │
-│ ┌──────────────┐ ┌──────────────┐ ┌────────────┐    ┌──────┐  50 events │
-│ │ All Topics ▼ │ │ All Status ▼ │ │ Auto: ON   │    │ LIVE │            │
-│ └──────────────┘ └──────────────┘ └────────────┘    └──────┘            │
+│ ROW 2: Section Tab Navigation (DO NOT CHANGE)                            │
+│ ┌───────┐ ┌───────────┐ ┌──────────┐ ┌─────────┐ ┌─────────────┐       │
+│ │Events │ │VTID Ledger│ │ Entities │ │ Streams │ │ Command Log │       │
+│ └───────┘ └───────────┘ └──────────┘ └─────────┘ └─────────────┘       │
 ├─────────────────────────────────────────────────────────────────────────┤
-│ ROW 3: Table Column Headers                                              │
+│ ROW 3: Toolbar (Filters + Controls + Status + Metadata) — CONSOLIDATE   │
+│ ┌──────────────┐ ┌──────────────┐ ┌────────────┐ ┌────────────┐  50 ev │
+│ │ All Topics ▼ │ │ All Status ▼ │ │ Auto: ON   │ │● LIVE-Auto │        │
+│ └──────────────┘ └──────────────┘ └────────────┘ └────────────┘        │
+├─────────────────────────────────────────────────────────────────────────┤
+│ TABLE HEADER ROW (part of scrollable list container)                     │
 │ Severity │ Timestamp │ Topic │ VTID │ Service │ Status │ Message        │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
@@ -96,21 +108,25 @@ Users cannot scroll endlessly through historical data.
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 Row 1: Tab Navigation
+### 3.2 Row 1: Global Top Bar (DO NOT CHANGE)
 
-- **Content:** Horizontal tab buttons for sub-navigation
+- **Content:** AUTOPILOT | OPERATOR | PUBLISH buttons, LIVE indicator, refresh icon
 - **Height:** Fixed (~48px)
-- **Behavior:** Standard tab switching, no changes required
+- **Behavior:** Global navigation and status — **NO CHANGES REQUIRED**
 
-### 3.3 Row 2: Toolbar
+### 3.3 Row 2: Section Tab Navigation (DO NOT CHANGE)
 
-All controls consolidated into a single horizontal row:
+- **Content:** Horizontal tab buttons for sub-navigation within the section
+- **Height:** Fixed (~48px)
+- **Behavior:** Standard tab switching — **NO CHANGES REQUIRED**
+
+All controls must be consolidated into a single horizontal row:
 
 | Element | Position | Description |
 |---------|----------|-------------|
 | Filters | Left | Dropdowns arranged horizontally (inline-flex) |
 | Toggle Controls | Center-left | Auto-refresh toggle, other action buttons |
-| Status Indicator | Center-right | "LIVE" pill when auto-refresh active |
+| Status Indicator | Center-right | "LIVE - Auto-refreshing" pill |
 | Metadata | Right | Item count (e.g., "50 events") |
 
 **CSS Layout:**
@@ -143,12 +159,13 @@ All controls consolidated into a single horizontal row:
 }
 ```
 
-### 3.4 Row 3: Table Column Headers
+### 3.5 Table Header Row (Part of Scrollable Container)
 
 - **Content:** Column headers for the data table
 - **Height:** Fixed (~40px)
 - **Position:** Sticky at top of scroll container
 - **Behavior:** Remains visible while scrolling list
+- **Note:** This is NOT counted as a "header row" — it is part of the list/table component
 
 **CSS for Sticky Headers:**
 ```css
@@ -416,54 +433,58 @@ function setupInfiniteScrollObserver(element, viewState, loadMoreFn) {
 
 ### 5.1 OASIS Events View
 
-**Current Layout (6 rows):**
+**Current Layout (6+ rows below top bar):**
 ```
-Row 1: Tabs
-Row 2: Auto-refresh toggle
-Row 3: Topic dropdown
-Row 4: Status dropdown
-Row 5: LIVE indicator
-Row 6: Table headers
+Row 1: Global top bar (AUTOPILOT | OPERATOR | PUBLISH ... LIVE | refresh) — OK
+Row 2: Tab navigation (Events | VTID Ledger | Entities | Streams | Command Log) — OK
+Row 3: Auto-refresh toggle — PROBLEM (should be in toolbar)
+Row 4: Topic dropdown — PROBLEM (should be in toolbar)
+Row 5: Status dropdown — PROBLEM (should be in toolbar)
+Row 6: LIVE indicator — PROBLEM (should be in toolbar)
+Row 7: Table headers
 ```
 
 **New Layout (3 rows):**
 ```
-Row 1: Tabs (unchanged)
-Row 2: [All Topics ▼] [All Status ▼] [Auto-refresh: ON] [LIVE pill] | 50 events
-Row 3: Table headers (Severity | Timestamp | Topic | VTID | Service | Status | Message)
+Row 1: Global top bar — UNCHANGED
+Row 2: Tab navigation — UNCHANGED
+Row 3: [All Topics ▼] [All Status ▼] [Auto-refresh: ON] [● LIVE-Auto] | 50 events
+Then:  Table with headers + scrollable list + Load More
 ```
 
 **Changes Required:**
-1. Consolidate rows 2-5 into single toolbar row
+1. Consolidate current rows 3-6 into a single Row 3 toolbar
 2. Add pagination state to `state.oasisEvents`
 3. Modify `fetchOasisEvents()` to support pagination
 4. Add "Load More" button after table
 5. Implement IntersectionObserver for auto-load
 
 **Function Changes:**
-- `renderOasisEventsView()` - Restructure HTML output
+- `renderOasisEventsView()` - Restructure HTML output for Row 3
 - `fetchOasisEvents()` → `fetchOasisEventsPage(append)` - Add pagination
 - New: `renderOasisEventsLoadMore()`
 
 ### 5.2 VTID Ledger View
 
-**Current Layout (4 rows):**
+**Current Layout (4+ rows below top bar):**
 ```
-Row 1: Tabs
-Row 2: View label (OASIS_VTID_LEDGER_ACTIVE)
-Row 3: Description + count
-Row 4: Table headers
+Row 1: Global top bar — OK
+Row 2: Tab navigation — OK
+Row 3: View label (OASIS_VTID_LEDGER_ACTIVE) — PROBLEM (should be in toolbar)
+Row 4: Description + count — PROBLEM (should be in toolbar)
+Row 5: Table headers
 ```
 
 **New Layout (3 rows):**
 ```
-Row 1: Tabs (unchanged)
-Row 2: View: [OASIS_VTID_LEDGER_ACTIVE ▼] | Loaded 50 VTIDs from Ledger
-Row 3: Table headers (VTID | Title | Stage | Status | Attention | Last Update)
+Row 1: Global top bar — UNCHANGED
+Row 2: Tab navigation — UNCHANGED
+Row 3: View: [OASIS_VTID_LEDGER_ACTIVE ▼] | Description | Loaded 50 VTIDs
+Then:  Table with headers + scrollable list + Load More
 ```
 
 **Changes Required:**
-1. Merge view selector and count into toolbar row
+1. Merge view selector, description, and count into single Row 3 toolbar
 2. Add pagination state to `state.vtidLedger`
 3. Modify API calls to support offset pagination
 4. Add "Load More" button after table
@@ -472,6 +493,12 @@ Row 3: Table headers (VTID | Title | Stage | Status | Attention | Last Update)
 ### 5.3 Governance History View
 
 **Current Layout (3 rows):** Already compliant
+```
+Row 1: Global top bar — OK
+Row 2: Tab navigation (Rules | Categories | ... | History | ...) — OK
+Row 3: Toolbar ([All Types ▼] [All Levels ▼] [All Actors ▼] ... 50 events) — OK
+Then:  Table with headers + scrollable list + Load More
+```
 
 **Changes Required:**
 1. Enhance existing "Load More" with IntersectionObserver for auto-load
@@ -479,7 +506,7 @@ Row 3: Table headers (VTID | Title | Stage | Status | Attention | Last Update)
 
 ### 5.4 Command Hub Events View
 
-Same changes as OASIS Events View.
+Same changes as OASIS Events View — consolidate all controls into Row 3 toolbar.
 
 ---
 
@@ -600,41 +627,63 @@ When filters change:
 
 ## 9. Visual Reference
 
-### Before (OASIS Events - 6 rows):
+### Before (OASIS Events - 6+ rows, BAD):
 ```
 ┌────────────────────────────────────────────────────────────┐
-│ Events | VTID Ledger | Entities | Streams | Command Log   │ ← Row 1
+│ AUTOPILOT | OPERATOR | PUBLISH          ● LIVE    ↻       │ ← Row 1 (OK)
 ├────────────────────────────────────────────────────────────┤
-│ Auto-refresh (5s): [ON]                                    │ ← Row 2
+│ Events | VTID Ledger | Entities | Streams | Command Log   │ ← Row 2 (OK)
 ├────────────────────────────────────────────────────────────┤
-│ ┌─────────────────────────────────────────────────────┐   │ ← Row 3
+│ Auto-refresh (5s): [ON]                                    │ ← Row 3 (BAD)
+├────────────────────────────────────────────────────────────┤
+│ ┌─────────────────────────────────────────────────────┐   │ ← Row 4 (BAD)
 │ │ All Topics                                        ▼ │   │
 │ └─────────────────────────────────────────────────────┘   │
 ├────────────────────────────────────────────────────────────┤
-│ ┌─────────────────────────────────────────────────────┐   │ ← Row 4
+│ ┌─────────────────────────────────────────────────────┐   │ ← Row 5 (BAD)
 │ │ All Status                                        ▼ │   │
 │ └─────────────────────────────────────────────────────┘   │
 ├────────────────────────────────────────────────────────────┤
-│ ● LIVE - Auto-refreshing                                   │ ← Row 5
+│ ● LIVE - Auto-refreshing                                   │ ← Row 6 (BAD)
 ├────────────────────────────────────────────────────────────┤
-│ Severity | Timestamp | Topic | VTID | Service | Status    │ ← Row 6
+│ Severity | Timestamp | Topic | VTID | Service | Status    │ ← Table Header
 ├────────────────────────────────────────────────────────────┤
 │                     List items...                          │
 └────────────────────────────────────────────────────────────┘
 ```
 
-### After (OASIS Events - 3 rows):
+### After (OASIS Events - 3 rows, GOOD):
 ```
 ┌────────────────────────────────────────────────────────────┐
-│ Events | VTID Ledger | Entities | Streams | Command Log   │ ← Row 1
+│ AUTOPILOT | OPERATOR | PUBLISH          ● LIVE    ↻       │ ← Row 1 (unchanged)
 ├────────────────────────────────────────────────────────────┤
-│ [All Topics▼] [All Status▼] [Auto: ON] ● LIVE   50 events │ ← Row 2
+│ Events | VTID Ledger | Entities | Streams | Command Log   │ ← Row 2 (unchanged)
 ├────────────────────────────────────────────────────────────┤
-│ Severity | Timestamp | Topic | VTID | Service | Status    │ ← Row 3
+│ [All Topics▼] [All Status▼] [Auto: ON] ●LIVE    50 events │ ← Row 3 (consolidated)
+├────────────────────────────────────────────────────────────┤
+│ Severity | Timestamp | Topic | VTID | Service | Status    │ ← Table Header (sticky)
 ├────────────────────────────────────────────────────────────┤
 │                                                            │
 │                     List items...                          │
+│                     (scrollable)                           │
 │                                                            │
+├────────────────────────────────────────────────────────────┤
+│                    [ Load More ]                           │
+└────────────────────────────────────────────────────────────┘
+```
+
+### Reference: Governance History (GOOD - already 3 rows):
+```
+┌────────────────────────────────────────────────────────────┐
+│ AUTOPILOT | OPERATOR | PUBLISH          ● LIVE    ↻       │ ← Row 1
+├────────────────────────────────────────────────────────────┤
+│ Rules | Categories | Evaluations | Violations | History   │ ← Row 2
+├────────────────────────────────────────────────────────────┤
+│ [All Types▼] [All Levels▼] [All Actors▼]        50 events │ ← Row 3
+├────────────────────────────────────────────────────────────┤
+│ Timestamp | Type | Level | Actor | Summary                 │ ← Table Header
+├────────────────────────────────────────────────────────────┤
+│                     List items...                          │
 ├────────────────────────────────────────────────────────────┤
 │                    [ Load More ]                           │
 └────────────────────────────────────────────────────────────┘
