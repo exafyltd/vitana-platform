@@ -262,15 +262,21 @@ jobs:
           echo "Deploying $CLOUD_RUN_SERVICE from $SOURCE_PATH"
 
           # VTID allocator enablement (gateway-only)
+          # VTID-01184: Memory bridge requires ENVIRONMENT=dev-sandbox
           EXTRA_ENV_ARGS=()
           SECRETS_ARGS=()
           if [ "$CLOUD_RUN_SERVICE" = "gateway" ]; then
+            # VTID-01184: CRITICAL - ENVIRONMENT enables memory bridge and dev sandbox features
             EXTRA_ENV_ARGS+=(--update-env-vars=VTID_ALLOCATOR_ENABLED=true)
+            EXTRA_ENV_ARGS+=(--update-env-vars=ENVIRONMENT=dev-sandbox)
             # VTID-01155: Bind Gemini API key for TTS and chat
             SECRETS_ARGS+=(--update-secrets=GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest)
             # Bind other required secrets
             SECRETS_ARGS+=(--update-secrets=SUPABASE_URL=SUPABASE_URL:latest)
             SECRETS_ARGS+=(--update-secrets=SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest)
+            # VTID-01184: JWT verification and frontend auth
+            SECRETS_ARGS+=(--update-secrets=SUPABASE_JWT_SECRET=SUPABASE_JWT_SECRET:latest)
+            SECRETS_ARGS+=(--update-secrets=SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest)
           fi
 
           gcloud run deploy "$CLOUD_RUN_SERVICE" \
