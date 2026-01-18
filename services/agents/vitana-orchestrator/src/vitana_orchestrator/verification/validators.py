@@ -35,6 +35,28 @@ class Validator(ABC):
 
     name: str = "base"
 
+    async def validate(
+        self,
+        task: Any,
+        result: Dict[str, Any],
+    ) -> ValidationResult:
+        """
+        Validate task completion result.
+
+        This is the interface expected by tests and external callers.
+
+        Args:
+            task: TaskState object with domain info
+            result: Worker result with changes list
+
+        Returns:
+            ValidationResult with pass/fail and details
+        """
+        workspace_path = Path(os.environ.get("WORKSPACE_PATH", "."))
+        changes = result.get("changes", [])
+        domain = task.domain if hasattr(task, "domain") else TaskDomain.BACKEND
+        return await self.validate_changes(domain, changes, workspace_path)
+
     async def validate_changes(
         self,
         domain: TaskDomain,
