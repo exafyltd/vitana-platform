@@ -886,7 +886,7 @@ export async function verifyWorkerOutput(
       };
     }
 
-    const verifyResponse: VerifyResponse = await response.json();
+    const verifyResponse = await response.json() as VerifyResponse;
 
     console.log(`[VTID-01175] Verification result for ${vtid}: ${verifyResponse.passed ? 'PASSED' : 'FAILED'} - ${verifyResponse.reason}`);
 
