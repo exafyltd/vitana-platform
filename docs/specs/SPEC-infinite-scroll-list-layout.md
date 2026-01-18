@@ -21,7 +21,7 @@ All list screens should have exactly **3 fixed rows** before the scrollable list
 
 - **Row 1:** Global top bar (AUTOPILOT | OPERATOR | PUBLISH ... LIVE | refresh icon) — **FIXED, DO NOT CHANGE**
 - **Row 2:** Section tab navigation (e.g., Events | VTID Ledger | Entities | Streams | Command Log) — **FIXED, DO NOT CHANGE**
-- **Row 3:** Toolbar (filters, controls, status indicators, metadata) — **MUST BE A SINGLE ROW**
+- **Row 3:** Toolbar (filters + metadata only) — **MUST BE A SINGLE ROW**
 
 The Governance History page correctly uses this 3-row structure:
 - Row 1: Global top bar (unchanged)
@@ -29,12 +29,12 @@ The Governance History page correctly uses this 3-row structure:
 - Row 3: Toolbar with filters inline ([All Types ▼] [All Levels ▼] [All Actors ▼] ... 50 events)
 
 However, the OASIS Events page incorrectly splits Row 3 into multiple rows (6+ total):
-- Row 1: Global top bar (correct)
+- Row 1: Global top bar (correct — already has LIVE + refresh)
 - Row 2: Tab navigation (correct)
-- Row 3: Auto-refresh toggle (should be in toolbar)
-- Row 4: Topic filter dropdown (should be in toolbar)
-- Row 5: Status filter dropdown (should be in toolbar)
-- Row 6: "LIVE - Auto-refreshing" indicator (should be in toolbar)
+- Row 3: Auto-refresh toggle (REMOVE — redundant, Row 1 has refresh)
+- Row 4: Topic filter dropdown (move to Row 3 toolbar)
+- Row 5: Status filter dropdown (move to Row 3 toolbar)
+- Row 6: "LIVE - Auto-refreshing" indicator (REMOVE — redundant, Row 1 has LIVE)
 - Row 7: Table column headers (start of list)
 
 This inconsistency wastes vertical space and reduces the visible list area.
@@ -85,10 +85,10 @@ Users cannot scroll endlessly through historical data.
 │ │Events │ │VTID Ledger│ │ Entities │ │ Streams │ │ Command Log │       │
 │ └───────┘ └───────────┘ └──────────┘ └─────────┘ └─────────────┘       │
 ├─────────────────────────────────────────────────────────────────────────┤
-│ ROW 3: Toolbar (Filters + Controls + Status + Metadata) — CONSOLIDATE   │
-│ ┌──────────────┐ ┌──────────────┐ ┌────────────┐ ┌────────────┐  50 ev │
-│ │ All Topics ▼ │ │ All Status ▼ │ │ Auto: ON   │ │● LIVE-Auto │        │
-│ └──────────────┘ └──────────────┘ └────────────┘ └────────────┘        │
+│ ROW 3: Toolbar (Filters + Metadata ONLY) — CONSOLIDATE                  │
+│ ┌──────────────┐ ┌──────────────┐                            50 events │
+│ │ All Topics ▼ │ │ All Status ▼ │                                      │
+│ └──────────────┘ └──────────────┘                                      │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ TABLE HEADER ROW (part of scrollable list container)                     │
 │ Severity │ Timestamp │ Topic │ VTID │ Service │ Status │ Message        │
@@ -120,13 +120,13 @@ Users cannot scroll endlessly through historical data.
 - **Height:** Fixed (~48px)
 - **Behavior:** Standard tab switching — **NO CHANGES REQUIRED**
 
-All controls must be consolidated into a single horizontal row:
+### 3.4 Row 3: Toolbar (Filters + Metadata Only)
+
+Row 3 contains ONLY filters and metadata. Do NOT duplicate controls that already exist in Row 1 (LIVE indicator, refresh icon).
 
 | Element | Position | Description |
 |---------|----------|-------------|
 | Filters | Left | Dropdowns arranged horizontally (inline-flex) |
-| Toggle Controls | Center-left | Auto-refresh toggle, other action buttons |
-| Status Indicator | Center-right | "LIVE - Auto-refreshing" pill |
 | Metadata | Right | Item count (e.g., "50 events") |
 
 **CSS Layout:**
@@ -437,27 +437,29 @@ function setupInfiniteScrollObserver(element, viewState, loadMoreFn) {
 ```
 Row 1: Global top bar (AUTOPILOT | OPERATOR | PUBLISH ... LIVE | refresh) — OK
 Row 2: Tab navigation (Events | VTID Ledger | Entities | Streams | Command Log) — OK
-Row 3: Auto-refresh toggle — PROBLEM (should be in toolbar)
-Row 4: Topic dropdown — PROBLEM (should be in toolbar)
-Row 5: Status dropdown — PROBLEM (should be in toolbar)
-Row 6: LIVE indicator — PROBLEM (should be in toolbar)
+Row 3: Auto-refresh toggle — REMOVE (redundant, Row 1 has refresh icon)
+Row 4: Topic dropdown — MOVE to Row 3 toolbar
+Row 5: Status dropdown — MOVE to Row 3 toolbar
+Row 6: LIVE indicator — REMOVE (redundant, Row 1 has LIVE)
 Row 7: Table headers
 ```
 
 **New Layout (3 rows):**
 ```
-Row 1: Global top bar — UNCHANGED
+Row 1: Global top bar (includes LIVE + refresh — already there) — UNCHANGED
 Row 2: Tab navigation — UNCHANGED
-Row 3: [All Topics ▼] [All Status ▼] [Auto-refresh: ON] [● LIVE-Auto] | 50 events
+Row 3: [All Topics ▼] [All Status ▼]                          50 events
 Then:  Table with headers + scrollable list + Load More
 ```
 
 **Changes Required:**
-1. Consolidate current rows 3-6 into a single Row 3 toolbar
-2. Add pagination state to `state.oasisEvents`
-3. Modify `fetchOasisEvents()` to support pagination
-4. Add "Load More" button after table
-5. Implement IntersectionObserver for auto-load
+1. REMOVE auto-refresh toggle (Row 1 already has refresh icon)
+2. REMOVE LIVE indicator (Row 1 already has LIVE badge)
+3. MOVE filter dropdowns (Topic, Status) into single Row 3 toolbar with item count
+4. Add pagination state to `state.oasisEvents`
+5. Modify `fetchOasisEvents()` to support pagination
+6. Add "Load More" button after table
+7. Implement IntersectionObserver for auto-load
 
 **Function Changes:**
 - `renderOasisEventsView()` - Restructure HTML output for Row 3
@@ -630,21 +632,21 @@ When filters change:
 ### Before (OASIS Events - 6+ rows, BAD):
 ```
 ┌────────────────────────────────────────────────────────────┐
-│ AUTOPILOT | OPERATOR | PUBLISH          ● LIVE    ↻       │ ← Row 1 (OK)
+│ AUTOPILOT | OPERATOR | PUBLISH          ● LIVE    ↻       │ ← Row 1 (OK - has LIVE + refresh)
 ├────────────────────────────────────────────────────────────┤
 │ Events | VTID Ledger | Entities | Streams | Command Log   │ ← Row 2 (OK)
 ├────────────────────────────────────────────────────────────┤
-│ Auto-refresh (5s): [ON]                                    │ ← Row 3 (BAD)
+│ Auto-refresh (5s): [ON]                                    │ ← REMOVE (redundant)
 ├────────────────────────────────────────────────────────────┤
-│ ┌─────────────────────────────────────────────────────┐   │ ← Row 4 (BAD)
+│ ┌─────────────────────────────────────────────────────┐   │ ← MOVE to Row 3
 │ │ All Topics                                        ▼ │   │
 │ └─────────────────────────────────────────────────────┘   │
 ├────────────────────────────────────────────────────────────┤
-│ ┌─────────────────────────────────────────────────────┐   │ ← Row 5 (BAD)
+│ ┌─────────────────────────────────────────────────────┐   │ ← MOVE to Row 3
 │ │ All Status                                        ▼ │   │
 │ └─────────────────────────────────────────────────────┘   │
 ├────────────────────────────────────────────────────────────┤
-│ ● LIVE - Auto-refreshing                                   │ ← Row 6 (BAD)
+│ ● LIVE - Auto-refreshing                                   │ ← REMOVE (redundant)
 ├────────────────────────────────────────────────────────────┤
 │ Severity | Timestamp | Topic | VTID | Service | Status    │ ← Table Header
 ├────────────────────────────────────────────────────────────┤
@@ -655,11 +657,11 @@ When filters change:
 ### After (OASIS Events - 3 rows, GOOD):
 ```
 ┌────────────────────────────────────────────────────────────┐
-│ AUTOPILOT | OPERATOR | PUBLISH          ● LIVE    ↻       │ ← Row 1 (unchanged)
+│ AUTOPILOT | OPERATOR | PUBLISH          ● LIVE    ↻       │ ← Row 1 (has LIVE + refresh)
 ├────────────────────────────────────────────────────────────┤
 │ Events | VTID Ledger | Entities | Streams | Command Log   │ ← Row 2 (unchanged)
 ├────────────────────────────────────────────────────────────┤
-│ [All Topics▼] [All Status▼] [Auto: ON] ●LIVE    50 events │ ← Row 3 (consolidated)
+│ [All Topics▼] [All Status▼]                     50 events │ ← Row 3 (filters + count only)
 ├────────────────────────────────────────────────────────────┤
 │ Severity | Timestamp | Topic | VTID | Service | Status    │ ← Table Header (sticky)
 ├────────────────────────────────────────────────────────────┤
