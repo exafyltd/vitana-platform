@@ -59,7 +59,7 @@ function canModifyControls(role: string): boolean {
 const UpdateControlSchema = z.object({
   enabled: z.boolean(),
   reason: z.string().min(1, 'Reason is required'),
-  duration_minutes: z.number().int().positive().optional().nullable(),
+  duration_minutes: z.number().int().min(0).optional().nullable(),
 });
 
 // =============================================================================
