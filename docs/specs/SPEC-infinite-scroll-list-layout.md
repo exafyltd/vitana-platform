@@ -9,289 +9,227 @@
 
 ## 1. Overview
 
-This specification defines a standardized layout for all list-based views in the Command Hub, implementing:
-1. A consistent **3-row header structure** before list content
-2. **Infinite scroll** with "Load More" functionality for endless data loading
+This specification defines changes for two list screens in Command Hub:
+1. **OASIS Events** - Fix layout, add infinite scroll
+2. **VTID Ledger** - Fix layout, make rows clickable, add infinite scroll
 
-### 1.1 Problem Statement
+### 1.1 Universal 3-Row Structure
 
-**Issue 1: Inconsistent Header Layout**
+All list screens MUST have exactly **3 rows** before the table:
 
-All list screens should have exactly **3 fixed rows** before the scrollable list area:
+| Row | Content | Rule |
+|-----|---------|------|
+| **Row 1** | Global top bar (AUTOPILOT \| OPERATOR \| PUBLISH ... LIVE \| refresh) | **DO NOT CHANGE** |
+| **Row 2** | Section tab navigation | **DO NOT CHANGE** |
+| **Row 3** | Toolbar (filters + item count only) | **Filters left, count right** |
 
-- **Row 1:** Global top bar (AUTOPILOT | OPERATOR | PUBLISH ... LIVE | refresh icon) — **FIXED, DO NOT CHANGE**
-- **Row 2:** Section tab navigation (e.g., Events | VTID Ledger | Entities | Streams | Command Log) — **FIXED, DO NOT CHANGE**
-- **Row 3:** Toolbar (filters + metadata only) — **MUST BE A SINGLE ROW**
-
-The Governance History page correctly uses this 3-row structure:
-- Row 1: Global top bar (unchanged)
-- Row 2: Tab navigation (Rules | Categories | Evaluations | Violations | History | Proposals | Controls)
-- Row 3: Toolbar with filters inline ([All Types ▼] [All Levels ▼] [All Actors ▼] ... 50 events)
-
-However, the OASIS Events page incorrectly splits Row 3 into multiple rows (6+ total):
-- Row 1: Global top bar (correct — already has LIVE + refresh)
-- Row 2: Tab navigation (correct)
-- Row 3: Auto-refresh toggle (REMOVE — redundant, Row 1 has refresh)
-- Row 4: Topic filter dropdown (move to Row 3 toolbar)
-- Row 5: Status filter dropdown (move to Row 3 toolbar)
-- Row 6: "LIVE - Auto-refreshing" indicator (REMOVE — redundant, Row 1 has LIVE)
-- Row 7: Table column headers (start of list)
-
-This inconsistency wastes vertical space and reduces the visible list area.
-
-**Issue 2: No Infinite Scroll**
-
-Currently, lists either:
-- Load all data at once (OASIS Events: 100-200 items max)
-- Have pagination but no infinite scroll (Governance History has "Load More" but limited)
-- Have fixed limits (VTID Ledger: 50-200 items max)
-
-Users cannot scroll endlessly through historical data.
+Then immediately: **Table with sticky headers + scrollable list + Load More**
 
 ---
 
-## 2. Scope
+## 2. OASIS Events Screen
 
-### 2.1 Affected Views
-
-| View | File Location | Current State | Changes Required |
-|------|--------------|---------------|------------------|
-| OASIS Events | `app.js:10726` | 6-row header, no pagination | Layout + infinite scroll |
-| VTID Ledger | `app.js:11883` | 4-row header, no pagination | Layout + infinite scroll |
-| Governance History | `app.js:9359` | 3-row header, has "Load More" | Infinite scroll enhancement |
-| Command Hub Events | `app.js` | Similar to OASIS Events | Layout + infinite scroll |
-
-### 2.2 Out of Scope
-
-- Detail drawer/panel layouts
-- Mobile responsiveness (future enhancement)
-- Virtual scrolling optimization (future enhancement)
-
----
-
-## 3. Standardized 3-Row Header Layout
-
-### 3.1 Row Structure
+### 2.1 Current State (BAD)
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│ ROW 1: Global Top Bar (DO NOT CHANGE)                                    │
-│ ┌──────────┐ ┌──────────┐ ┌─────────┐                 ┌──────┐ ┌───┐   │
-│ │ AUTOPILOT│ │ OPERATOR │ │ PUBLISH │        ...      │● LIVE│ │ ↻ │   │
-│ └──────────┘ └──────────┘ └─────────┘                 └──────┘ └───┘   │
-├─────────────────────────────────────────────────────────────────────────┤
-│ ROW 2: Section Tab Navigation (DO NOT CHANGE)                            │
-│ ┌───────┐ ┌───────────┐ ┌──────────┐ ┌─────────┐ ┌─────────────┐       │
-│ │Events │ │VTID Ledger│ │ Entities │ │ Streams │ │ Command Log │       │
-│ └───────┘ └───────────┘ └──────────┘ └─────────┘ └─────────────┘       │
-├─────────────────────────────────────────────────────────────────────────┤
-│ ROW 3: Toolbar (Filters + Metadata ONLY) — CONSOLIDATE                  │
-│ ┌──────────────┐ ┌──────────────┐                            50 events │
-│ │ All Topics ▼ │ │ All Status ▼ │                                      │
-│ └──────────────┘ └──────────────┘                                      │
-├─────────────────────────────────────────────────────────────────────────┤
-│ TABLE HEADER ROW (part of scrollable list container)                     │
-│ Severity │ Timestamp │ Topic │ VTID │ Service │ Status │ Message        │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│                         SCROLLABLE LIST AREA                             │
-│                                                                          │
-│  ● Jan 18, 05:26 PM  governance.control.updated  VTID-01181  SUCCESS    │
-│  ● Jan 18, 05:23 PM  vtid.tts.failure            VTID-01155  ERROR      │
-│  ● Jan 18, 05:23 PM  memory.write.assistant...   VTID-01105  SUCCESS    │
-│                              ...                                         │
-│                                                                          │
-├─────────────────────────────────────────────────────────────────────────┤
-│                        ┌─────────────┐                                   │
-│                        │  Load More  │                                   │
-│                        └─────────────┘                                   │
-└─────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────┐
+│ AUTOPILOT | OPERATOR | PUBLISH          ● LIVE    ↻       │ ← Row 1 (OK)
+├────────────────────────────────────────────────────────────┤
+│ Events | VTID Ledger | Entities | Streams | Command Log   │ ← Row 2 (OK)
+├────────────────────────────────────────────────────────────┤
+│ Auto-refresh (5s): [ON]                                    │ ← REMOVE
+├────────────────────────────────────────────────────────────┤
+│ ┌─────────────────────────────────────────────────────┐   │
+│ │ All Topics                                        ▼ │   │ ← MOVE
+│ └─────────────────────────────────────────────────────┘   │
+├────────────────────────────────────────────────────────────┤
+│ ┌─────────────────────────────────────────────────────┐   │
+│ │ All Status                                        ▼ │   │ ← MOVE
+│ └─────────────────────────────────────────────────────┘   │
+├────────────────────────────────────────────────────────────┤
+│ ● LIVE - Auto-refreshing                                   │ ← REMOVE
+├────────────────────────────────────────────────────────────┤
+│ Severity | Timestamp | Topic | VTID | Service | Status    │
+├────────────────────────────────────────────────────────────┤
+│                     List items...                          │
+│                     (no Load More, no scroll)              │
+└────────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 Row 1: Global Top Bar (DO NOT CHANGE)
-
-- **Content:** AUTOPILOT | OPERATOR | PUBLISH buttons, LIVE indicator, refresh icon
-- **Height:** Fixed (~48px)
-- **Behavior:** Global navigation and status — **NO CHANGES REQUIRED**
-
-### 3.3 Row 2: Section Tab Navigation (DO NOT CHANGE)
-
-- **Content:** Horizontal tab buttons for sub-navigation within the section
-- **Height:** Fixed (~48px)
-- **Behavior:** Standard tab switching — **NO CHANGES REQUIRED**
-
-### 3.4 Row 3: Toolbar (Filters + Metadata Only)
-
-Row 3 contains ONLY filters and metadata. Do NOT duplicate controls that already exist in Row 1 (LIVE indicator, refresh icon).
-
-| Element | Position | Description |
-|---------|----------|-------------|
-| Filters | Left | Dropdowns arranged horizontally (inline-flex) |
-| Metadata | Right | Item count (e.g., "50 events") |
-
-**CSS Layout:**
-```css
-.list-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border-color);
-  flex-wrap: wrap; /* Allow wrapping on narrow screens */
-}
-
-.list-toolbar__filters {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.list-toolbar__controls {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.list-toolbar__metadata {
-  margin-left: auto;
-  color: var(--text-secondary);
-  font-size: 13px;
-}
-```
-
-### 3.5 Table Header Row (Part of Scrollable Container)
-
-- **Content:** Column headers for the data table
-- **Height:** Fixed (~40px)
-- **Position:** Sticky at top of scroll container
-- **Behavior:** Remains visible while scrolling list
-- **Note:** This is NOT counted as a "header row" — it is part of the list/table component
-
-**CSS for Sticky Headers:**
-```css
-.list-table thead {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  background: var(--bg-secondary);
-}
-```
-
----
-
-## 4. Infinite Scroll Implementation
-
-### 4.1 Architecture
+### 2.2 Target State (GOOD)
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Frontend (app.js)                         │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │                    List View State                           ││
-│  │  {                                                           ││
-│  │    items: [...],           // All loaded items               ││
-│  │    loading: false,         // Loading indicator              ││
-│  │    hasMore: true,          // More data available            ││
-│  │    pagination: {                                             ││
-│  │      limit: 50,            // Items per page                 ││
-│  │      offset: 0,            // Current offset (cursor)        ││
-│  │      total: null           // Total count (optional)         ││
-│  │    }                                                         ││
-│  │  }                                                           ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                              │                                   │
-│                              ▼                                   │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │              Scroll Container + Observer                     ││
-│  │                                                              ││
-│  │  - IntersectionObserver watches "Load More" button           ││
-│  │  - Triggers fetch when button enters viewport                ││
-│  │  - Manual click also triggers fetch                          ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                              │                                   │
-│                              ▼                                   │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │                     API Request                              ││
-│  │  GET /api/v1/{resource}?limit=50&offset={offset}&...         ││
-│  └─────────────────────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────────┘
-                               │
-                               ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                        Backend (API)                             │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │                   Response Format                            ││
-│  │  {                                                           ││
-│  │    data: [...],            // Items for this page            ││
-│  │    pagination: {                                             ││
-│  │      limit: 50,                                              ││
-│  │      offset: 50,           // Next offset                    ││
-│  │      has_more: true,       // More data available            ││
-│  │      total: 1234           // Total count (optional)         ││
-│  │    }                                                         ││
-│  │  }                                                           ││
-│  └─────────────────────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────┐
+│ AUTOPILOT | OPERATOR | PUBLISH          ● LIVE    ↻       │ ← Row 1
+├────────────────────────────────────────────────────────────┤
+│ Events | VTID Ledger | Entities | Streams | Command Log   │ ← Row 2
+├────────────────────────────────────────────────────────────┤
+│ [All Topics▼] [All Status▼]                     50 events │ ← Row 3
+├────────────────────────────────────────────────────────────┤
+│ Severity | Timestamp | Topic | VTID | Service | Status    │ ← Sticky header
+├────────────────────────────────────────────────────────────┤
+│  ●  Jan 18, 05:26 PM  governance.control.updated  ...     │
+│  ●  Jan 18, 05:23 PM  vtid.tts.failure            ...     │
+│  ●  Jan 18, 05:23 PM  memory.write.assistant      ...     │
+│                        (scrollable)                        │
+├────────────────────────────────────────────────────────────┤
+│                    [ Load More ]                           │
+└────────────────────────────────────────────────────────────┘
 ```
 
-### 4.2 State Management
+### 2.3 Changes Required
 
-Each list view will maintain pagination state:
+| Change | Description |
+|--------|-------------|
+| **REMOVE** | Auto-refresh toggle row (Row 1 has refresh icon) |
+| **REMOVE** | "LIVE - Auto-refreshing" indicator row (Row 1 has LIVE badge) |
+| **MOVE** | Topic filter dropdown → Row 3 toolbar (left) |
+| **MOVE** | Status filter dropdown → Row 3 toolbar (left, after Topic) |
+| **ADD** | Item count "50 events" → Row 3 toolbar (right) |
+| **ADD** | Infinite scroll with "Load More" button |
+| **ADD** | Pagination state management |
+
+### 2.4 Row 3 Toolbar HTML
+
+```html
+<div class="list-toolbar">
+  <div class="list-toolbar__filters">
+    <select class="filter-dropdown" id="oasis-topic-filter">
+      <option value="">All Topics</option>
+      <option value="deploy">deploy</option>
+      <option value="governance">governance</option>
+      <option value="ci-cd">CI/CD</option>
+      <option value="autopilot">autopilot</option>
+      <option value="operator">operator</option>
+    </select>
+    <select class="filter-dropdown" id="oasis-status-filter">
+      <option value="">All Status</option>
+      <option value="SUCCESS">Success</option>
+      <option value="ERROR">Error</option>
+      <option value="INFO">Info</option>
+    </select>
+  </div>
+  <div class="list-toolbar__metadata">
+    <span id="oasis-events-count">50 events</span>
+  </div>
+</div>
+```
+
+### 2.5 Function Changes
+
+**File:** `services/gateway/src/frontend/command-hub/app.js`
+
+#### 2.5.1 Modify `renderOasisEventsView()` (~line 10726)
 
 ```javascript
-// State structure for each list view
+function renderOasisEventsView() {
+  return `
+    <div class="oasis-events-view" data-view="oasis-events">
+      <!-- Row 3: Toolbar -->
+      <div class="list-toolbar">
+        <div class="list-toolbar__filters">
+          <select class="filter-dropdown" id="oasis-topic-filter" onchange="handleOasisFilterChange()">
+            <option value="">All Topics</option>
+            <option value="deploy">deploy</option>
+            <option value="governance">governance</option>
+            <option value="ci-cd">CI/CD</option>
+            <option value="autopilot">autopilot</option>
+            <option value="operator">operator</option>
+          </select>
+          <select class="filter-dropdown" id="oasis-status-filter" onchange="handleOasisFilterChange()">
+            <option value="">All Status</option>
+            <option value="SUCCESS">Success</option>
+            <option value="ERROR">Error</option>
+            <option value="INFO">Info</option>
+          </select>
+        </div>
+        <div class="list-toolbar__metadata">
+          <span id="oasis-events-count">${state.oasisEvents.items.length} events</span>
+        </div>
+      </div>
+
+      <!-- Table -->
+      <div class="list-scroll-container">
+        <table class="list-table oasis-events-table">
+          <thead>
+            <tr>
+              <th>Severity</th>
+              <th>Timestamp</th>
+              <th>Topic</th>
+              <th>VTID</th>
+              <th>Service</th>
+              <th>Status</th>
+              <th>Message</th>
+            </tr>
+          </thead>
+          <tbody id="oasis-events-tbody">
+            <!-- Rows inserted dynamically -->
+          </tbody>
+        </table>
+
+        <!-- Load More -->
+        <div class="load-more-container" id="oasis-load-more">
+          <button class="load-more-btn" onclick="loadMoreOasisEvents()">Load More</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+```
+
+#### 2.5.2 Add Pagination State
+
+```javascript
+// Update initial state
 state.oasisEvents = {
   items: [],
   loading: false,
   error: null,
   fetched: false,
+  selectedEvent: null,
   filters: { topic: '', status: '' },
-  autoRefreshEnabled: true,
   pagination: {
     limit: 50,
     offset: 0,
-    hasMore: true,
-    total: null
+    hasMore: true
   }
 };
 ```
 
-### 4.3 Fetch Function Pattern
+#### 2.5.3 Modify `fetchOasisEvents()` (~line 2772)
 
 ```javascript
-async function fetchOasisEventsPage(append = false) {
-  const { pagination, filters } = state.oasisEvents;
-
+async function fetchOasisEvents(append = false) {
   if (state.oasisEvents.loading) return;
-  if (!append && !pagination.hasMore) return;
+  if (append && !state.oasisEvents.pagination.hasMore) return;
 
   state.oasisEvents.loading = true;
-  updateLoadMoreButton('loading');
+  updateLoadMoreButton('oasis-load-more', true);
 
   try {
+    const { pagination, filters } = state.oasisEvents;
+    const offset = append ? pagination.offset : 0;
+
     const params = new URLSearchParams({
       limit: pagination.limit,
-      offset: append ? pagination.offset : 0,
-      ...filters
+      offset: offset
     });
+    if (filters.topic) params.append('topic', filters.topic);
+    if (filters.status) params.append('status', filters.status);
 
     const response = await fetch(`/api/v1/oasis/events?${params}`);
     const result = await response.json();
 
     if (append) {
-      // Append new items to existing list
       state.oasisEvents.items = [...state.oasisEvents.items, ...result.data];
     } else {
-      // Replace items (initial load or filter change)
       state.oasisEvents.items = result.data;
     }
 
-    // Update pagination state
     state.oasisEvents.pagination = {
       ...pagination,
-      offset: pagination.offset + result.data.length,
-      hasMore: result.pagination?.has_more ?? result.data.length === pagination.limit,
-      total: result.pagination?.total ?? null
+      offset: offset + result.data.length,
+      hasMore: result.pagination?.has_more ?? result.data.length === pagination.limit
     };
 
     state.oasisEvents.fetched = true;
@@ -301,102 +239,461 @@ async function fetchOasisEventsPage(append = false) {
     state.oasisEvents.error = error.message;
   } finally {
     state.oasisEvents.loading = false;
-    renderOasisEventsList();
+    updateOasisEventsTableBody();
+    updateEventCount('oasis-events-count', state.oasisEvents.items.length, 'events');
+    updateLoadMoreButton('oasis-load-more', false, state.oasisEvents.pagination.hasMore);
   }
+}
+
+function loadMoreOasisEvents() {
+  fetchOasisEvents(true);
+}
+
+function handleOasisFilterChange() {
+  state.oasisEvents.filters = {
+    topic: document.getElementById('oasis-topic-filter')?.value || '',
+    status: document.getElementById('oasis-status-filter')?.value || ''
+  };
+  state.oasisEvents.pagination.offset = 0;
+  state.oasisEvents.pagination.hasMore = true;
+  fetchOasisEvents(false);
 }
 ```
 
-### 4.4 Load More Button Component
+---
+
+## 3. VTID Ledger Screen
+
+### 3.1 Current State (BAD)
+
+```
+┌────────────────────────────────────────────────────────────┐
+│ AUTOPILOT | OPERATOR | PUBLISH          ● LIVE    ↻       │ ← Row 1 (OK)
+├────────────────────────────────────────────────────────────┤
+│ Events | VTID Ledger | Entities | Streams | Command Log   │ ← Row 2 (OK)
+├────────────────────────────────────────────────────────────┤
+│ VTID Ledger                                                │ ← REMOVE (redundant)
+├────────────────────────────────────────────────────────────┤
+│ View: OASIS_VTID_LEDGER_ACTIVE (VTID-01001)               │ ← REMOVE (unnecessary)
+├────────────────────────────────────────────────────────────┤
+│ Authoritative VTID registry. Click a row to view...       │ ← REMOVE (text is useless)
+├────────────────────────────────────────────────────────────┤
+│ Loaded 50 VTIDs from Ledger                                │ ← MOVE count to Row 3
+├────────────────────────────────────────────────────────────┤
+│ VTID | Title | Stage | Status | Attention | Last Update   │ ← Table header
+├────────────────────────────────────────────────────────────┤
+│ VTID-01187  01187 - ORB Voice...   Done  Success  AUTO    │ ← NOT CLICKABLE!
+│ VTID-01186  VTID-01186 - Replace   Done  Success  AUTO    │
+│                     (no Load More)                         │
+└────────────────────────────────────────────────────────────┘
+```
+
+**Critical Bug:** Text says "Click a row to view lifecycle, events, governance, and provenance" but rows are NOT clickable.
+
+### 3.2 Target State (GOOD)
+
+```
+┌────────────────────────────────────────────────────────────┐
+│ AUTOPILOT | OPERATOR | PUBLISH          ● LIVE    ↻       │ ← Row 1
+├────────────────────────────────────────────────────────────┤
+│ Events | VTID Ledger | Entities | Streams | Command Log   │ ← Row 2
+├────────────────────────────────────────────────────────────┤
+│                                                  50 VTIDs │ ← Row 3 (count only)
+├────────────────────────────────────────────────────────────┤
+│ VTID | Title | Stage | Status | Attention | Last Update   │ ← Sticky header
+├────────────────────────────────────────────────────────────┤
+│ VTID-01187  01187 - ORB Voice...   Done  Success  AUTO    │ ← CLICKABLE
+│ VTID-01186  VTID-01186 - Replace   Done  Success  AUTO    │ ← CLICKABLE
+│ VTID-01185  VTID-01185 - Autopilot Done  Success  AUTO    │ ← CLICKABLE
+│                        (scrollable)                        │
+├────────────────────────────────────────────────────────────┤
+│                    [ Load More ]                           │
+└────────────────────────────────────────────────────────────┘
+```
+
+### 3.3 Changes Required
+
+| Change | Description |
+|--------|-------------|
+| **REMOVE** | "VTID Ledger" title (tab already shows this) |
+| **REMOVE** | "View: OASIS_VTID_LEDGER_ACTIVE (VTID-01001)" label |
+| **REMOVE** | Description text "Authoritative VTID registry..." |
+| **MOVE** | Count "50 VTIDs" → Row 3 toolbar (right side) |
+| **FIX** | Make table rows CLICKABLE |
+| **ADD** | Row click handler to show VTID detail drawer |
+| **ADD** | Infinite scroll with "Load More" button |
+| **ADD** | Pagination state management |
+
+### 3.4 Row Click Behavior
+
+When a VTID row is clicked, display a detail drawer/panel showing:
+- VTID identifier
+- Title
+- Stage timeline
+- Status history
+- Governance events
+- Provenance data
+
+### 3.5 Row 3 Toolbar HTML
+
+```html
+<div class="list-toolbar">
+  <div class="list-toolbar__filters">
+    <!-- No filters needed for VTID Ledger, or add Stage/Status filters if desired -->
+  </div>
+  <div class="list-toolbar__metadata">
+    <span id="vtid-ledger-count">50 VTIDs</span>
+  </div>
+</div>
+```
+
+### 3.6 Function Changes
+
+**File:** `services/gateway/src/frontend/command-hub/app.js`
+
+#### 3.6.1 Modify `renderOasisVtidLedgerView()` (~line 11883)
 
 ```javascript
-function renderLoadMoreButton(containerSelector, viewState, loadMoreFn) {
-  const container = document.querySelector(containerSelector);
-  if (!container) return;
+function renderOasisVtidLedgerView() {
+  return `
+    <div class="vtid-ledger-view" data-view="vtid-ledger">
+      <!-- Row 3: Toolbar (count only) -->
+      <div class="list-toolbar">
+        <div class="list-toolbar__filters"></div>
+        <div class="list-toolbar__metadata">
+          <span id="vtid-ledger-count">${state.vtidLedger.items.length} VTIDs</span>
+        </div>
+      </div>
 
-  // Remove existing button
-  const existingBtn = container.querySelector('.load-more-container');
-  if (existingBtn) existingBtn.remove();
+      <!-- Table -->
+      <div class="list-scroll-container">
+        <table class="list-table vtid-ledger-table">
+          <thead>
+            <tr>
+              <th>VTID</th>
+              <th>Title</th>
+              <th>Stage</th>
+              <th>Status</th>
+              <th>Attention</th>
+              <th>Last Update</th>
+            </tr>
+          </thead>
+          <tbody id="vtid-ledger-tbody">
+            <!-- Rows inserted dynamically -->
+          </tbody>
+        </table>
 
-  // Don't render if no more data
-  if (!viewState.pagination.hasMore) return;
+        <!-- Load More -->
+        <div class="load-more-container" id="vtid-load-more">
+          <button class="load-more-btn" onclick="loadMoreVtidLedger()">Load More</button>
+        </div>
+      </div>
 
-  const loadMoreContainer = document.createElement('div');
-  loadMoreContainer.className = 'load-more-container';
-
-  const button = document.createElement('button');
-  button.className = 'load-more-btn';
-  button.disabled = viewState.loading;
-
-  if (viewState.loading) {
-    button.innerHTML = `
-      <span class="spinner"></span>
-      Loading...
-    `;
-  } else {
-    button.textContent = 'Load More';
-    button.onclick = () => loadMoreFn(true); // append=true
-  }
-
-  loadMoreContainer.appendChild(button);
-  container.appendChild(loadMoreContainer);
-
-  // Setup IntersectionObserver for auto-load
-  setupInfiniteScrollObserver(loadMoreContainer, viewState, loadMoreFn);
+      <!-- Detail Drawer (hidden by default) -->
+      <div class="vtid-detail-drawer" id="vtid-detail-drawer" style="display: none;">
+        <!-- Populated when row clicked -->
+      </div>
+    </div>
+  `;
 }
 ```
 
-### 4.5 Intersection Observer for Auto-Loading
+#### 3.6.2 Add Pagination State
 
 ```javascript
-const infiniteScrollObservers = new Map();
-
-function setupInfiniteScrollObserver(element, viewState, loadMoreFn) {
-  const viewKey = element.closest('[data-view]')?.dataset.view;
-  if (!viewKey) return;
-
-  // Disconnect existing observer for this view
-  if (infiniteScrollObservers.has(viewKey)) {
-    infiniteScrollObservers.get(viewKey).disconnect();
+// Update initial state
+state.vtidLedger = {
+  items: [],
+  loading: false,
+  error: null,
+  fetched: false,
+  selectedVtid: null,
+  pagination: {
+    limit: 50,
+    offset: 0,
+    hasMore: true
   }
+};
+```
 
-  const observer = new IntersectionObserver(
-    (entries) => {
-      const entry = entries[0];
-      if (entry.isIntersecting && !viewState.loading && viewState.pagination.hasMore) {
-        loadMoreFn(true); // append=true
-      }
-    },
-    {
-      root: element.closest('.list-scroll-container'),
-      rootMargin: '100px', // Start loading 100px before button is visible
-      threshold: 0.1
+#### 3.6.3 Create Clickable Rows
+
+```javascript
+function createVtidLedgerRow(vtid) {
+  const tr = document.createElement('tr');
+  tr.className = 'vtid-ledger-row clickable-row';
+  tr.dataset.vtid = vtid.vtid_id;
+  tr.onclick = () => handleVtidRowClick(vtid);
+
+  tr.innerHTML = `
+    <td class="vtid-id">${vtid.vtid_id}</td>
+    <td class="vtid-title">${escapeHtml(vtid.title)}</td>
+    <td><span class="stage-badge stage-${vtid.stage?.toLowerCase()}">${vtid.stage || '-'}</span></td>
+    <td><span class="status-badge status-${vtid.status?.toLowerCase()}">${vtid.status || '-'}</span></td>
+    <td>${vtid.attention || 'AUTO'}</td>
+    <td>${formatEventTimestamp(vtid.last_update)}</td>
+  `;
+
+  return tr;
+}
+
+function handleVtidRowClick(vtid) {
+  state.vtidLedger.selectedVtid = vtid;
+  showVtidDetailDrawer(vtid);
+}
+
+function showVtidDetailDrawer(vtid) {
+  const drawer = document.getElementById('vtid-detail-drawer');
+  if (!drawer) return;
+
+  drawer.innerHTML = `
+    <div class="drawer-header">
+      <h3>${vtid.vtid_id}</h3>
+      <button class="drawer-close" onclick="closeVtidDetailDrawer()">×</button>
+    </div>
+    <div class="drawer-content">
+      <div class="detail-section">
+        <h4>Title</h4>
+        <p>${escapeHtml(vtid.title)}</p>
+      </div>
+      <div class="detail-section">
+        <h4>Stage</h4>
+        <span class="stage-badge stage-${vtid.stage?.toLowerCase()}">${vtid.stage || '-'}</span>
+      </div>
+      <div class="detail-section">
+        <h4>Status</h4>
+        <span class="status-badge status-${vtid.status?.toLowerCase()}">${vtid.status || '-'}</span>
+      </div>
+      <div class="detail-section">
+        <h4>Last Update</h4>
+        <p>${formatEventTimestamp(vtid.last_update)}</p>
+      </div>
+      <div class="detail-section">
+        <h4>Lifecycle Events</h4>
+        <div id="vtid-lifecycle-events">Loading...</div>
+      </div>
+      <div class="detail-section">
+        <h4>Governance</h4>
+        <div id="vtid-governance">Loading...</div>
+      </div>
+    </div>
+  `;
+
+  drawer.style.display = 'block';
+
+  // Fetch additional details
+  fetchVtidDetails(vtid.vtid_id);
+}
+
+function closeVtidDetailDrawer() {
+  const drawer = document.getElementById('vtid-detail-drawer');
+  if (drawer) {
+    drawer.style.display = 'none';
+    state.vtidLedger.selectedVtid = null;
+  }
+}
+
+async function fetchVtidDetails(vtidId) {
+  try {
+    // Fetch lifecycle events
+    const eventsResponse = await fetch(`/api/v1/oasis/events?vtid=${vtidId}&limit=20`);
+    const eventsData = await eventsResponse.json();
+
+    const eventsContainer = document.getElementById('vtid-lifecycle-events');
+    if (eventsContainer && eventsData.data) {
+      eventsContainer.innerHTML = eventsData.data.length > 0
+        ? eventsData.data.map(e => `
+            <div class="event-item">
+              <span class="event-timestamp">${formatEventTimestamp(e.timestamp)}</span>
+              <span class="event-topic">${e.topic}</span>
+              <span class="event-status status-${e.status?.toLowerCase()}">${e.status}</span>
+            </div>
+          `).join('')
+        : '<p class="no-data">No events found</p>';
     }
-  );
 
-  observer.observe(element);
-  infiniteScrollObservers.set(viewKey, observer);
+    // Fetch governance data
+    const govResponse = await fetch(`/api/v1/governance/history?vtid=${vtidId}&limit=10`);
+    const govData = await govResponse.json();
+
+    const govContainer = document.getElementById('vtid-governance');
+    if (govContainer && govData.data) {
+      govContainer.innerHTML = govData.data.length > 0
+        ? govData.data.map(g => `
+            <div class="gov-item">
+              <span class="gov-timestamp">${formatEventTimestamp(g.timestamp)}</span>
+              <span class="gov-type">${g.type}</span>
+              <span class="gov-actor">${g.actor}</span>
+            </div>
+          `).join('')
+        : '<p class="no-data">No governance events</p>';
+    }
+
+  } catch (error) {
+    console.error('Failed to fetch VTID details:', error);
+  }
 }
 ```
 
-### 4.6 CSS for Load More Component
+#### 3.6.4 Fetch with Pagination
+
+```javascript
+async function fetchVtidLedger(append = false) {
+  if (state.vtidLedger.loading) return;
+  if (append && !state.vtidLedger.pagination.hasMore) return;
+
+  state.vtidLedger.loading = true;
+  updateLoadMoreButton('vtid-load-more', true);
+
+  try {
+    const { pagination } = state.vtidLedger;
+    const offset = append ? pagination.offset : 0;
+
+    const params = new URLSearchParams({
+      limit: pagination.limit,
+      offset: offset
+    });
+
+    const response = await fetch(`/api/v1/oasis/vtid-ledger?${params}`);
+    const result = await response.json();
+
+    if (append) {
+      state.vtidLedger.items = [...state.vtidLedger.items, ...result.data];
+    } else {
+      state.vtidLedger.items = result.data;
+    }
+
+    state.vtidLedger.pagination = {
+      ...pagination,
+      offset: offset + result.data.length,
+      hasMore: result.pagination?.has_more ?? result.data.length === pagination.limit
+    };
+
+    state.vtidLedger.fetched = true;
+    state.vtidLedger.error = null;
+
+  } catch (error) {
+    state.vtidLedger.error = error.message;
+  } finally {
+    state.vtidLedger.loading = false;
+    updateVtidLedgerTableBody();
+    updateEventCount('vtid-ledger-count', state.vtidLedger.items.length, 'VTIDs');
+    updateLoadMoreButton('vtid-load-more', false, state.vtidLedger.pagination.hasMore);
+  }
+}
+
+function loadMoreVtidLedger() {
+  fetchVtidLedger(true);
+}
+```
+
+---
+
+## 4. Shared Components
+
+### 4.1 CSS Styles
+
+Add to `app.js` or separate CSS file:
 
 ```css
+/* Row 3 Toolbar */
+.list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color, #333);
+  background: var(--bg-secondary, #1a1a2e);
+  min-height: 48px;
+}
+
+.list-toolbar__filters {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.list-toolbar__metadata {
+  color: var(--text-secondary, #888);
+  font-size: 13px;
+}
+
+/* Filter Dropdowns */
+.filter-dropdown {
+  padding: 6px 12px;
+  background: var(--bg-tertiary, #252540);
+  border: 1px solid var(--border-color, #333);
+  border-radius: 4px;
+  color: var(--text-primary, #fff);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.filter-dropdown:hover {
+  border-color: var(--border-hover, #555);
+}
+
+/* Scrollable List Container */
+.list-scroll-container {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* Table */
+.list-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.list-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg-secondary, #1a1a2e);
+}
+
+.list-table th {
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-secondary, #888);
+  border-bottom: 1px solid var(--border-color, #333);
+}
+
+.list-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color, #333);
+}
+
+/* Clickable Rows */
+.clickable-row {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.clickable-row:hover {
+  background: var(--bg-hover, #252540);
+}
+
+.clickable-row.selected {
+  background: var(--bg-selected, #2a2a4a);
+}
+
+/* Load More */
 .load-more-container {
   display: flex;
   justify-content: center;
   padding: 24px 16px;
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid var(--border-color, #333);
 }
 
 .load-more-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
   padding: 10px 24px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary, #252540);
+  border: 1px solid var(--border-color, #333);
   border-radius: 6px;
-  color: var(--text-primary);
+  color: var(--text-primary, #fff);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
@@ -404,8 +701,8 @@ function setupInfiniteScrollObserver(element, viewState, loadMoreFn) {
 }
 
 .load-more-btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-  border-color: var(--border-hover);
+  background: var(--bg-hover, #2a2a4a);
+  border-color: var(--border-hover, #555);
 }
 
 .load-more-btn:disabled {
@@ -413,11 +710,18 @@ function setupInfiniteScrollObserver(element, viewState, loadMoreFn) {
   cursor: not-allowed;
 }
 
-.load-more-btn .spinner {
-  width: 16px;
-  height: 16px;
-  border: 2px solid var(--border-color);
-  border-top-color: var(--accent-color);
+.load-more-btn.loading {
+  pointer-events: none;
+}
+
+.load-more-btn.loading::after {
+  content: '';
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-left: 8px;
+  border: 2px solid var(--border-color, #333);
+  border-top-color: var(--accent-color, #4a9eff);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -425,107 +729,112 @@ function setupInfiniteScrollObserver(element, viewState, loadMoreFn) {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* Detail Drawer */
+.vtid-detail-drawer {
+  position: fixed;
+  right: 0;
+  top: 0;
+  width: 400px;
+  height: 100vh;
+  background: var(--bg-primary, #0f0f1a);
+  border-left: 1px solid var(--border-color, #333);
+  z-index: 100;
+  overflow-y: auto;
+  box-shadow: -4px 0 20px rgba(0,0,0,0.3);
+}
+
+.drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid var(--border-color, #333);
+}
+
+.drawer-header h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.drawer-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary, #888);
+  font-size: 24px;
+  cursor: pointer;
+}
+
+.drawer-close:hover {
+  color: var(--text-primary, #fff);
+}
+
+.drawer-content {
+  padding: 16px;
+}
+
+.detail-section {
+  margin-bottom: 20px;
+}
+
+.detail-section h4 {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--text-secondary, #888);
+}
+
+.no-data {
+  color: var(--text-secondary, #888);
+  font-style: italic;
+}
+```
+
+### 4.2 Shared Helper Functions
+
+```javascript
+function updateLoadMoreButton(containerId, loading, hasMore = true) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  const btn = container.querySelector('.load-more-btn');
+  if (!btn) return;
+
+  if (loading) {
+    btn.disabled = true;
+    btn.classList.add('loading');
+    btn.textContent = 'Loading';
+  } else {
+    btn.disabled = false;
+    btn.classList.remove('loading');
+    btn.textContent = 'Load More';
+  }
+
+  // Hide container if no more data
+  container.style.display = hasMore ? 'flex' : 'none';
+}
+
+function updateEventCount(elementId, count, label) {
+  const el = document.getElementById(elementId);
+  if (el) {
+    el.textContent = `${count} ${label}`;
+  }
+}
 ```
 
 ---
 
-## 5. View-Specific Changes
+## 5. API Changes
 
-### 5.1 OASIS Events View
+### 5.1 OASIS Events API
 
-**Current Layout (6+ rows below top bar):**
-```
-Row 1: Global top bar (AUTOPILOT | OPERATOR | PUBLISH ... LIVE | refresh) — OK
-Row 2: Tab navigation (Events | VTID Ledger | Entities | Streams | Command Log) — OK
-Row 3: Auto-refresh toggle — REMOVE (redundant, Row 1 has refresh icon)
-Row 4: Topic dropdown — MOVE to Row 3 toolbar
-Row 5: Status dropdown — MOVE to Row 3 toolbar
-Row 6: LIVE indicator — REMOVE (redundant, Row 1 has LIVE)
-Row 7: Table headers
-```
+**Endpoint:** `GET /api/v1/oasis/events`
 
-**New Layout (3 rows):**
-```
-Row 1: Global top bar (includes LIVE + refresh — already there) — UNCHANGED
-Row 2: Tab navigation — UNCHANGED
-Row 3: [All Topics ▼] [All Status ▼]                          50 events
-Then:  Table with headers + scrollable list + Load More
-```
+**Add parameters:**
+- `offset` (integer, default: 0) - Starting position
+- `limit` (integer, default: 50) - Items per page
 
-**Changes Required:**
-1. REMOVE auto-refresh toggle (Row 1 already has refresh icon)
-2. REMOVE LIVE indicator (Row 1 already has LIVE badge)
-3. MOVE filter dropdowns (Topic, Status) into single Row 3 toolbar with item count
-4. Add pagination state to `state.oasisEvents`
-5. Modify `fetchOasisEvents()` to support pagination
-6. Add "Load More" button after table
-7. Implement IntersectionObserver for auto-load
-
-**Function Changes:**
-- `renderOasisEventsView()` - Restructure HTML output for Row 3
-- `fetchOasisEvents()` → `fetchOasisEventsPage(append)` - Add pagination
-- New: `renderOasisEventsLoadMore()`
-
-### 5.2 VTID Ledger View
-
-**Current Layout (4+ rows below top bar):**
-```
-Row 1: Global top bar — OK
-Row 2: Tab navigation — OK
-Row 3: View label (OASIS_VTID_LEDGER_ACTIVE) — PROBLEM (should be in toolbar)
-Row 4: Description + count — PROBLEM (should be in toolbar)
-Row 5: Table headers
-```
-
-**New Layout (3 rows):**
-```
-Row 1: Global top bar — UNCHANGED
-Row 2: Tab navigation — UNCHANGED
-Row 3: View: [OASIS_VTID_LEDGER_ACTIVE ▼] | Description | Loaded 50 VTIDs
-Then:  Table with headers + scrollable list + Load More
-```
-
-**Changes Required:**
-1. Merge view selector, description, and count into single Row 3 toolbar
-2. Add pagination state to `state.vtidLedger`
-3. Modify API calls to support offset pagination
-4. Add "Load More" button after table
-5. Implement IntersectionObserver
-
-### 5.3 Governance History View
-
-**Current Layout (3 rows):** Already compliant
-```
-Row 1: Global top bar — OK
-Row 2: Tab navigation (Rules | Categories | ... | History | ...) — OK
-Row 3: Toolbar ([All Types ▼] [All Levels ▼] [All Actors ▼] ... 50 events) — OK
-Then:  Table with headers + scrollable list + Load More
-```
-
-**Changes Required:**
-1. Enhance existing "Load More" with IntersectionObserver for auto-load
-2. Ensure consistent styling with other views
-
-### 5.4 Command Hub Events View
-
-Same changes as OASIS Events View — consolidate all controls into Row 3 toolbar.
-
----
-
-## 6. API Changes
-
-### 6.1 Required Response Format
-
-All list endpoints must support:
-
-**Request Parameters:**
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `limit` | integer | 50 | Items per page |
-| `offset` | integer | 0 | Starting offset |
-| `...filters` | various | - | View-specific filters |
-
-**Response Format:**
+**Response format:**
 ```json
 {
   "data": [...],
@@ -538,178 +847,91 @@ All list endpoints must support:
 }
 ```
 
-### 6.2 Endpoint Updates Required
+### 5.2 VTID Ledger API
 
-| Endpoint | Current State | Changes Needed |
-|----------|--------------|----------------|
-| `GET /api/v1/oasis/events` | limit only | Add offset, return pagination object |
-| `GET /api/v1/oasis/vtid-ledger` | limit only (max 200) | Add offset, remove max limit, return pagination |
-| `GET /api/v1/governance/history` | Has pagination | Already compliant |
+**Endpoint:** `GET /api/v1/oasis/vtid-ledger`
+
+**Add parameters:**
+- `offset` (integer, default: 0) - Starting position
+- `limit` (integer, default: 50) - Items per page
+
+**Remove:** Max limit of 200 (allow unlimited pagination)
+
+**Response format:**
+```json
+{
+  "data": [...],
+  "pagination": {
+    "limit": 50,
+    "offset": 50,
+    "has_more": true,
+    "total": 500
+  }
+}
+```
 
 ---
 
-## 7. Implementation Checklist
+## 6. Implementation Checklist
 
-### Phase 1: Shared Infrastructure
-- [ ] Create shared toolbar CSS class `.list-toolbar`
-- [ ] Create shared load more component
-- [ ] Create IntersectionObserver utility function
-- [ ] Update CSS variables for consistent styling
-
-### Phase 2: OASIS Events View
-- [ ] Restructure `renderOasisEventsView()` to 3-row layout
-- [ ] Update toolbar to inline filters + controls
-- [ ] Add pagination state
-- [ ] Update `fetchOasisEvents()` for pagination
+### 6.1 OASIS Events Screen
+- [ ] Remove auto-refresh toggle row
+- [ ] Remove LIVE indicator row
+- [ ] Create Row 3 toolbar with inline filters
+- [ ] Add item count to toolbar
+- [ ] Add pagination state to `state.oasisEvents`
+- [ ] Modify `fetchOasisEvents()` for pagination
+- [ ] Add `loadMoreOasisEvents()` function
+- [ ] Add `handleOasisFilterChange()` function
 - [ ] Add "Load More" button
-- [ ] Implement auto-load with IntersectionObserver
-- [ ] Update API endpoint if needed
-
-### Phase 3: VTID Ledger View
-- [ ] Restructure `renderOasisVtidLedgerView()` to 3-row layout
-- [ ] Update toolbar layout
-- [ ] Add pagination state
-- [ ] Update fetch function for pagination
-- [ ] Add "Load More" button
-- [ ] Implement auto-load
-- [ ] Update API endpoint
-
-### Phase 4: Governance History View
-- [ ] Add IntersectionObserver to existing "Load More"
-- [ ] Ensure consistent styling
-
-### Phase 5: Command Hub Events View
-- [ ] Apply same changes as OASIS Events
-
-### Phase 6: Testing
-- [ ] Test infinite scroll with large datasets
+- [ ] Update API to support offset pagination
+- [ ] Test infinite scroll
 - [ ] Test filter changes reset pagination
-- [ ] Test scroll position preservation
-- [ ] Test auto-refresh interaction with pagination
-- [ ] Test error handling during load more
-- [ ] Test empty states
+
+### 6.2 VTID Ledger Screen
+- [ ] Remove "VTID Ledger" title
+- [ ] Remove "View: OASIS_VTID_LEDGER_ACTIVE" label
+- [ ] Remove description text
+- [ ] Create Row 3 toolbar with count
+- [ ] Add pagination state to `state.vtidLedger`
+- [ ] Make table rows clickable
+- [ ] Add `handleVtidRowClick()` function
+- [ ] Add VTID detail drawer component
+- [ ] Add `showVtidDetailDrawer()` function
+- [ ] Add `fetchVtidDetails()` function
+- [ ] Modify `fetchVtidLedger()` for pagination
+- [ ] Add `loadMoreVtidLedger()` function
+- [ ] Add "Load More" button
+- [ ] Update API to support offset pagination
+- [ ] Test infinite scroll
+- [ ] Test row click opens drawer
+
+### 6.3 Shared Components
+- [ ] Add `.list-toolbar` CSS
+- [ ] Add `.filter-dropdown` CSS
+- [ ] Add `.list-scroll-container` CSS
+- [ ] Add `.clickable-row` CSS
+- [ ] Add `.load-more-container` CSS
+- [ ] Add `.vtid-detail-drawer` CSS
+- [ ] Add `updateLoadMoreButton()` helper
+- [ ] Add `updateEventCount()` helper
 
 ---
 
-## 8. Edge Cases & Considerations
+## 7. Files to Modify
 
-### 8.1 Auto-Refresh + Pagination
-
-For views with auto-refresh (OASIS Events):
-- Auto-refresh should **prepend** new items to the list
-- Pagination offset should account for prepended items
-- Consider showing "X new events" banner instead of auto-prepending
-
-### 8.2 Filter Changes
-
-When filters change:
-- Reset pagination offset to 0
-- Clear existing items
-- Fetch fresh data
-- Disconnect and reconnect IntersectionObserver
-
-### 8.3 Error Handling
-
-- Show inline error message below list on load more failure
-- Provide retry button
-- Do not clear existing items on error
-
-### 8.4 Loading States
-
-- Initial load: Show skeleton rows
-- Load more: Show spinner in button, keep existing items visible
-- Prevent duplicate requests (check `loading` state)
-
-### 8.5 Empty States
-
-- Show "No items found" message when list is empty
-- Hide "Load More" button when `hasMore: false`
-
----
-
-## 9. Visual Reference
-
-### Before (OASIS Events - 6+ rows, BAD):
-```
-┌────────────────────────────────────────────────────────────┐
-│ AUTOPILOT | OPERATOR | PUBLISH          ● LIVE    ↻       │ ← Row 1 (OK - has LIVE + refresh)
-├────────────────────────────────────────────────────────────┤
-│ Events | VTID Ledger | Entities | Streams | Command Log   │ ← Row 2 (OK)
-├────────────────────────────────────────────────────────────┤
-│ Auto-refresh (5s): [ON]                                    │ ← REMOVE (redundant)
-├────────────────────────────────────────────────────────────┤
-│ ┌─────────────────────────────────────────────────────┐   │ ← MOVE to Row 3
-│ │ All Topics                                        ▼ │   │
-│ └─────────────────────────────────────────────────────┘   │
-├────────────────────────────────────────────────────────────┤
-│ ┌─────────────────────────────────────────────────────┐   │ ← MOVE to Row 3
-│ │ All Status                                        ▼ │   │
-│ └─────────────────────────────────────────────────────┘   │
-├────────────────────────────────────────────────────────────┤
-│ ● LIVE - Auto-refreshing                                   │ ← REMOVE (redundant)
-├────────────────────────────────────────────────────────────┤
-│ Severity | Timestamp | Topic | VTID | Service | Status    │ ← Table Header
-├────────────────────────────────────────────────────────────┤
-│                     List items...                          │
-└────────────────────────────────────────────────────────────┘
-```
-
-### After (OASIS Events - 3 rows, GOOD):
-```
-┌────────────────────────────────────────────────────────────┐
-│ AUTOPILOT | OPERATOR | PUBLISH          ● LIVE    ↻       │ ← Row 1 (has LIVE + refresh)
-├────────────────────────────────────────────────────────────┤
-│ Events | VTID Ledger | Entities | Streams | Command Log   │ ← Row 2 (unchanged)
-├────────────────────────────────────────────────────────────┤
-│ [All Topics▼] [All Status▼]                     50 events │ ← Row 3 (filters + count only)
-├────────────────────────────────────────────────────────────┤
-│ Severity | Timestamp | Topic | VTID | Service | Status    │ ← Table Header (sticky)
-├────────────────────────────────────────────────────────────┤
-│                                                            │
-│                     List items...                          │
-│                     (scrollable)                           │
-│                                                            │
-├────────────────────────────────────────────────────────────┤
-│                    [ Load More ]                           │
-└────────────────────────────────────────────────────────────┘
-```
-
-### Reference: Governance History (GOOD - already 3 rows):
-```
-┌────────────────────────────────────────────────────────────┐
-│ AUTOPILOT | OPERATOR | PUBLISH          ● LIVE    ↻       │ ← Row 1
-├────────────────────────────────────────────────────────────┤
-│ Rules | Categories | Evaluations | Violations | History   │ ← Row 2
-├────────────────────────────────────────────────────────────┤
-│ [All Types▼] [All Levels▼] [All Actors▼]        50 events │ ← Row 3
-├────────────────────────────────────────────────────────────┤
-│ Timestamp | Type | Level | Actor | Summary                 │ ← Table Header
-├────────────────────────────────────────────────────────────┤
-│                     List items...                          │
-├────────────────────────────────────────────────────────────┤
-│                    [ Load More ]                           │
-└────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 10. Success Criteria
-
-1. **Layout Consistency:** All list views follow the 3-row header pattern
-2. **Infinite Scroll:** Users can load unlimited historical data
-3. **Performance:** No degradation with large lists (1000+ items)
-4. **UX:** Smooth loading experience with proper feedback
-5. **Compatibility:** Works with existing auto-refresh functionality
-6. **Maintainability:** Shared components reduce code duplication
-
----
-
-## 11. Appendix: Affected Files
-
-| File | Purpose |
+| File | Changes |
 |------|---------|
-| `services/gateway/src/frontend/command-hub/app.js` | Main frontend application |
-| `services/gateway/src/frontend/command-hub/app.css` | Styles (if separate) |
-| `services/gateway/src/routes/events.ts` | Events API route |
-| `services/gateway/src/routes/oasis-vtid-ledger.ts` | VTID Ledger API route |
-| `services/gateway/src/controllers/governance-controller.ts` | Governance API controller |
+| `services/gateway/src/frontend/command-hub/app.js` | Main frontend changes |
+| `services/gateway/src/routes/events.ts` | Add offset param to events API |
+| `services/gateway/src/routes/oasis-vtid-ledger.ts` | Add offset param, remove max limit |
+
+---
+
+## 8. Success Criteria
+
+1. **OASIS Events:** 3 rows only, filters inline, infinite scroll works
+2. **VTID Ledger:** 3 rows only, no text clutter, rows are clickable, infinite scroll works
+3. **Consistency:** Both screens follow the same 3-row pattern
+4. **Performance:** No degradation with 1000+ items loaded
+5. **UX:** Smooth scrolling, clear loading feedback
