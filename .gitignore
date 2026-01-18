@@ -8,3 +8,4 @@ dist/
 *.swo
 *~
 __pycache__/
+services/agents/vitana-orchestrator/src/vitana_verification_engine.egg-info/
