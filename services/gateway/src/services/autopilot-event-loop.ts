@@ -15,6 +15,7 @@
  */
 
 import { emitOasisEvent } from './oasis-event-service';
+import { isAutopilotExecutionArmed } from './system-controls-service';
 import {
   AutopilotState,
   markInProgress,
@@ -662,11 +663,18 @@ async function emitLoopEvent(
 
 /**
  * Single iteration of the event loop
+ *
+ * VTID-01187: Governance gate separates "loop running" from "execution armed":
+ * - Loop keeps running even when disarmed (for monitoring/status)
+ * - Actions only execute when autopilot_execution_enabled is ARMED
  */
 async function runLoopIteration(): Promise<void> {
   if (!loopRunning) {
     return;
   }
+
+  // VTID-01187: Check governance control BEFORE processing any actions
+  const executionArmed = await isAutopilotExecutionArmed();
 
   try {
     // Get current cursor - use timestamp, not cursor ID
@@ -687,7 +695,19 @@ async function runLoopIteration(): Promise<void> {
       return;
     }
 
-    console.log(`${LOG_PREFIX} Processing ${events.length} events`);
+    // VTID-01187: If execution is DISARMED, skip action processing but update cursor
+    if (!executionArmed) {
+      console.log(`${LOG_PREFIX} Execution DISARMED - skipping ${events.length} events (loop still running for monitoring)`);
+
+      // Still update cursor so we don't reprocess these events when armed
+      const lastEvent = events[events.length - 1];
+      if (lastEvent) {
+        await updateLoopCursor(lastEvent.created_at, lastEvent.created_at);
+      }
+      return;
+    }
+
+    console.log(`${LOG_PREFIX} Processing ${events.length} events (execution ARMED)`);
 
     // Process events sequentially
     let lastProcessedEvent: OasisEvent | null = null;
@@ -779,20 +799,27 @@ export async function stopEventLoop(): Promise<void> {
 
 /**
  * Get loop status
+ *
+ * VTID-01187: Now includes separate flags for:
+ * - is_running: Whether the loop process is active (env var controlled)
+ * - execution_armed: Whether actions will execute (DB control)
  */
 export async function getEventLoopStatus(): Promise<{
   ok: boolean;
   is_running: boolean;
+  execution_armed: boolean;
   config: LoopConfig;
   stats?: LoopStats;
   error?: string;
 }> {
   try {
     const stats = await getLoopStats();
+    const executionArmed = await isAutopilotExecutionArmed();
 
     return {
       ok: true,
       is_running: loopRunning,
+      execution_armed: executionArmed,
       config: currentConfig,
       stats: stats || undefined,
     };
@@ -800,6 +827,7 @@ export async function getEventLoopStatus(): Promise<{
     return {
       ok: false,
       is_running: loopRunning,
+      execution_armed: false,
       config: currentConfig,
       error: String(error),
     };
