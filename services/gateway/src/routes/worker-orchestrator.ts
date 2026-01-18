@@ -20,6 +20,8 @@ import {
   emitSubagentStart,
   emitSubagentSuccess,
   emitSubagentFailed,
+  completeSubagentWithVerification,
+  completeOrchestratorWithVerification,
   TaskDomain,
   WorkOrderPayload,
   SubagentResult
@@ -50,6 +52,8 @@ const SubagentEventSchema = z.object({
   vtid: z.string().regex(/^VTID-\d{4,}$/, 'Invalid VTID format'),
   domain: z.enum(['frontend', 'backend', 'memory']),
   run_id: z.string(),
+  started_at: z.string().datetime().optional(), // VTID-01175: For file modification verification
+  skip_verification: z.boolean().optional(), // VTID-01175: Opt-out (for testing/legacy)
   result: z.object({
     ok: z.boolean(),
     files_changed: z.array(z.string()).optional(),
@@ -63,9 +67,16 @@ const SubagentEventSchema = z.object({
 const OrchestratorCompleteSchema = z.object({
   vtid: z.string().regex(/^VTID-\d{4,}$/, 'Invalid VTID format'),
   run_id: z.string(),
+  domain: z.enum(['frontend', 'backend', 'memory', 'mixed']).optional(), // VTID-01175: For verification
   success: z.boolean(),
   summary: z.string().optional(),
-  error: z.string().optional()
+  error: z.string().optional(),
+  started_at: z.string().datetime().optional(), // VTID-01175: For file modification verification
+  skip_verification: z.boolean().optional(), // VTID-01175: Opt-out (for testing/legacy)
+  result: z.object({
+    files_changed: z.array(z.string()).optional(),
+    files_created: z.array(z.string()).optional()
+  }).optional()
 });
 
 // =============================================================================
@@ -199,6 +210,7 @@ workerOrchestratorRouter.post('/api/v1/worker/subagent/start', async (req: Reque
  * POST /api/v1/worker/subagent/complete
  *
  * Emit subagent completion event (success or failure)
+ * VTID-01175: Now runs verification before marking success
  */
 workerOrchestratorRouter.post('/api/v1/worker/subagent/complete', async (req: Request, res: Response) => {
   try {
@@ -211,12 +223,74 @@ workerOrchestratorRouter.post('/api/v1/worker/subagent/complete', async (req: Re
       });
     }
 
-    const { vtid, domain, run_id, result } = validation.data;
+    const { vtid, domain, run_id, started_at, skip_verification, result } = validation.data;
+    const startedAtDate = started_at ? new Date(started_at) : undefined;
 
     if (result?.ok) {
-      await emitSubagentSuccess(vtid, domain as TaskDomain, run_id, result as SubagentResult);
-      console.log(`[VTID-01163] Subagent ${domain} succeeded for ${vtid}`);
+      // VTID-01175: Run verification before marking success (unless skipped)
+      if (skip_verification) {
+        // Legacy mode - skip verification
+        await emitSubagentSuccess(vtid, domain as TaskDomain, run_id, result as SubagentResult);
+        console.log(`[VTID-01163] Subagent ${domain} succeeded for ${vtid} (verification skipped)`);
+        return res.status(200).json({
+          ok: true,
+          vtid,
+          domain,
+          run_id,
+          verification_skipped: true,
+          event: `vtid.stage.worker_${domain}.success`
+        });
+      }
+
+      // Run verification
+      const verificationResult = await completeSubagentWithVerification(
+        vtid,
+        domain as TaskDomain,
+        run_id,
+        result as SubagentResult,
+        startedAtDate
+      );
+
+      if (verificationResult.ok) {
+        console.log(`[VTID-01175] Subagent ${domain} verified and succeeded for ${vtid}`);
+        return res.status(200).json({
+          ok: true,
+          vtid,
+          domain,
+          run_id,
+          verified: true,
+          event: `vtid.stage.worker_${domain}.success`
+        });
+      } else if (verificationResult.should_retry) {
+        // Verification failed but retriable
+        console.log(`[VTID-01175] Subagent ${domain} verification failed for ${vtid}, retry recommended`);
+        return res.status(202).json({
+          ok: false,
+          vtid,
+          domain,
+          run_id,
+          verified: false,
+          should_retry: true,
+          retry_count: verificationResult.retry_count,
+          reason: verificationResult.reason,
+          event: 'vtid.stage.verification.failed'
+        });
+      } else {
+        // Verification failed and not retriable
+        console.log(`[VTID-01175] Subagent ${domain} verification failed for ${vtid}: ${verificationResult.reason}`);
+        return res.status(400).json({
+          ok: false,
+          vtid,
+          domain,
+          run_id,
+          verified: false,
+          should_retry: false,
+          reason: verificationResult.reason,
+          event: `vtid.stage.worker_${domain}.failed`
+        });
+      }
     } else {
+      // Worker reported failure - no verification needed
       await emitSubagentFailed(
         vtid,
         domain as TaskDomain,
@@ -225,15 +299,14 @@ workerOrchestratorRouter.post('/api/v1/worker/subagent/complete', async (req: Re
         result?.violations
       );
       console.log(`[VTID-01163] Subagent ${domain} failed for ${vtid}: ${result?.error}`);
+      return res.status(200).json({
+        ok: true,
+        vtid,
+        domain,
+        run_id,
+        event: `vtid.stage.worker_${domain}.failed`
+      });
     }
-
-    return res.status(200).json({
-      ok: true,
-      vtid,
-      domain,
-      run_id,
-      event: `vtid.stage.worker_${domain}.${result?.ok ? 'success' : 'failed'}`
-    });
   } catch (error: any) {
     console.error('[VTID-01163] Subagent complete error:', error);
     return res.status(500).json({
@@ -248,6 +321,7 @@ workerOrchestratorRouter.post('/api/v1/worker/subagent/complete', async (req: Re
  * POST /api/v1/worker/orchestrator/complete
  *
  * Mark orchestrator as complete (success or failure)
+ * VTID-01175: Now runs verification before marking success
  */
 workerOrchestratorRouter.post('/api/v1/worker/orchestrator/complete', async (req: Request, res: Response) => {
   try {
@@ -260,22 +334,86 @@ workerOrchestratorRouter.post('/api/v1/worker/orchestrator/complete', async (req
       });
     }
 
-    const { vtid, run_id, success, summary, error } = validation.data;
+    const { vtid, run_id, domain, success, summary, error, started_at, skip_verification, result } = validation.data;
+    const startedAtDate = started_at ? new Date(started_at) : undefined;
 
     if (success) {
-      await markOrchestratorSuccess(vtid, run_id, summary || 'Orchestrator completed successfully');
-      console.log(`[VTID-01163] Orchestrator succeeded for ${vtid}`);
+      // VTID-01175: Run verification before marking success (unless skipped)
+      if (skip_verification || !domain || !result) {
+        // Legacy mode or no verification data - skip verification
+        await markOrchestratorSuccess(vtid, run_id, summary || 'Orchestrator completed successfully');
+        console.log(`[VTID-01163] Orchestrator succeeded for ${vtid} (verification skipped)`);
+        return res.status(200).json({
+          ok: true,
+          vtid,
+          run_id,
+          verification_skipped: true,
+          event: 'vtid.stage.worker_orchestrator.success'
+        });
+      }
+
+      // Build SubagentResult from request
+      const subagentResult: SubagentResult = {
+        ok: true,
+        files_changed: result.files_changed,
+        files_created: result.files_created,
+        summary: summary
+      };
+
+      // Run verification
+      const verificationResult = await completeOrchestratorWithVerification(
+        vtid,
+        run_id,
+        domain as TaskDomain,
+        subagentResult,
+        startedAtDate
+      );
+
+      if (verificationResult.ok) {
+        console.log(`[VTID-01175] Orchestrator verified and succeeded for ${vtid}`);
+        return res.status(200).json({
+          ok: true,
+          vtid,
+          run_id,
+          verified: true,
+          event: 'vtid.stage.worker_orchestrator.success'
+        });
+      } else if (verificationResult.should_retry) {
+        // Verification failed but retriable
+        console.log(`[VTID-01175] Orchestrator verification failed for ${vtid}, retry recommended`);
+        return res.status(202).json({
+          ok: false,
+          vtid,
+          run_id,
+          verified: false,
+          should_retry: true,
+          reason: verificationResult.reason,
+          event: 'vtid.stage.verification.failed'
+        });
+      } else {
+        // Verification failed and not retriable
+        console.log(`[VTID-01175] Orchestrator verification failed for ${vtid}: ${verificationResult.reason}`);
+        return res.status(400).json({
+          ok: false,
+          vtid,
+          run_id,
+          verified: false,
+          should_retry: false,
+          reason: verificationResult.reason,
+          event: 'vtid.stage.worker_orchestrator.failed'
+        });
+      }
     } else {
+      // Marked as failure - no verification needed
       await markOrchestratorFailed(vtid, run_id, error || 'Unknown error');
       console.log(`[VTID-01163] Orchestrator failed for ${vtid}: ${error}`);
+      return res.status(200).json({
+        ok: true,
+        vtid,
+        run_id,
+        event: 'vtid.stage.worker_orchestrator.failed'
+      });
     }
-
-    return res.status(200).json({
-      ok: true,
-      vtid,
-      run_id,
-      event: `vtid.stage.worker_orchestrator.${success ? 'success' : 'failed'}`
-    });
   } catch (error: any) {
     console.error('[VTID-01163] Orchestrator complete error:', error);
     return res.status(500).json({
