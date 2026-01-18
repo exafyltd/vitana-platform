@@ -321,7 +321,7 @@ export async function updateSystemControl(
       type: 'governance.control.updated',
       source: 'system-controls-service',
       status: request.enabled ? 'success' : 'info',
-      message: `System control ${key} ${request.enabled ? 'ARMED' : 'DISARMED'}: ${request.reason}`,
+      message: `System control ${key} ${request.enabled ? 'ENABLED' : 'DISABLED'}: ${request.reason}`,
       payload: {
         key,
         enabled: request.enabled,
@@ -336,7 +336,7 @@ export async function updateSystemControl(
     });
 
     console.log(
-      `[VTID-01181] Control ${key} ${request.enabled ? 'ARMED' : 'DISARMED'} by ${request.updated_by} (${request.updated_by_role})`
+      `[VTID-01181] Control ${key} ${request.enabled ? 'ENABLED' : 'DISABLED'} by ${request.updated_by} (${request.updated_by_role})`
     );
 
     return {

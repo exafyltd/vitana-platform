@@ -2340,19 +2340,19 @@ const state = {
         fetched: false
     },
 
-    // VTID-01181: Governance Controls (System Arming Panel)
+    // VTID-01181: Governance Controls (System Controls)
     governanceControls: {
         items: [],
         loading: false,
         error: null,
         fetched: false,
-        // Modal state for arm/disarm
-        showArmModal: false,
-        showDisarmModal: false,
+        // Modal state for enable/disable
+        showEnableModal: false,
+        showDisableModal: false,
         selectedControlKey: null,
-        armReason: '',
-        armDuration: 60, // minutes
-        disarmReason: '',
+        enableReason: '',
+        enableDuration: 60, // minutes
+        disableReason: '',
         actionLoading: false,
         actionError: null,
         // History drawer state
@@ -10052,9 +10052,9 @@ async function fetchControlHistory(key) {
 }
 
 /**
- * VTID-01181: Arm a system control.
+ * VTID-01181: Enable a system control.
  */
-async function armControl(key, reason, durationMinutes) {
+async function enableControl(key, reason, durationMinutes) {
     state.governanceControls.actionLoading = true;
     state.governanceControls.actionError = null;
     renderApp();
@@ -10073,19 +10073,19 @@ async function armControl(key, reason, durationMinutes) {
         var json = await response.json();
 
         if (!response.ok || !json.ok) {
-            throw new Error(json.error || json.message || 'Failed to arm control');
+            throw new Error(json.error || json.message || 'Failed to enable control');
         }
 
-        showToast('Control armed: ' + key, 'success');
-        state.governanceControls.showArmModal = false;
-        state.governanceControls.armReason = '';
-        state.governanceControls.armDuration = 60;
+        showToast('Control enabled: ' + key, 'success');
+        state.governanceControls.showEnableModal = false;
+        state.governanceControls.enableReason = '';
+        state.governanceControls.enableDuration = 60;
         state.governanceControls.fetched = false; // Force re-fetch
         fetchGovernanceControls();
     } catch (error) {
-        console.error('[VTID-01181] Failed to arm control:', error);
+        console.error('[VTID-01181] Failed to enable control:', error);
         state.governanceControls.actionError = error.message;
-        showToast('Failed to arm control: ' + error.message, 'error');
+        showToast('Failed to enable control: ' + error.message, 'error');
     } finally {
         state.governanceControls.actionLoading = false;
         renderApp();
@@ -10093,9 +10093,9 @@ async function armControl(key, reason, durationMinutes) {
 }
 
 /**
- * VTID-01181: Disarm a system control.
+ * VTID-01181: Disable a system control.
  */
-async function disarmControl(key, reason) {
+async function disableControl(key, reason) {
     state.governanceControls.actionLoading = true;
     state.governanceControls.actionError = null;
     renderApp();
@@ -10113,18 +10113,18 @@ async function disarmControl(key, reason) {
         var json = await response.json();
 
         if (!response.ok || !json.ok) {
-            throw new Error(json.error || json.message || 'Failed to disarm control');
+            throw new Error(json.error || json.message || 'Failed to disable control');
         }
 
-        showToast('Control disarmed: ' + key, 'success');
-        state.governanceControls.showDisarmModal = false;
-        state.governanceControls.disarmReason = '';
+        showToast('Control disabled: ' + key, 'success');
+        state.governanceControls.showDisableModal = false;
+        state.governanceControls.disableReason = '';
         state.governanceControls.fetched = false; // Force re-fetch
         fetchGovernanceControls();
     } catch (error) {
-        console.error('[VTID-01181] Failed to disarm control:', error);
+        console.error('[VTID-01181] Failed to disable control:', error);
         state.governanceControls.actionError = error.message;
-        showToast('Failed to disarm control: ' + error.message, 'error');
+        showToast('Failed to disable control: ' + error.message, 'error');
     } finally {
         state.governanceControls.actionLoading = false;
         renderApp();
@@ -10159,7 +10159,7 @@ function getTimeRemaining(expiresAt) {
 }
 
 /**
- * VTID-01181: Renders the Governance Controls view (System Arming Panel).
+ * VTID-01181: Renders the Governance Controls view (System Controls).
  */
 function renderGovernanceControlsView() {
     var container = document.createElement('div');
@@ -10176,12 +10176,12 @@ function renderGovernanceControlsView() {
 
     var headerTitle = document.createElement('h2');
     headerTitle.className = 'gov-controls-title';
-    headerTitle.textContent = 'System Arming Panel';
+    headerTitle.textContent = 'System Controls';
     header.appendChild(headerTitle);
 
     var headerDesc = document.createElement('p');
     headerDesc.className = 'gov-controls-desc';
-    headerDesc.textContent = 'Arm or disarm high-risk system capabilities without redeploys. All changes are audited.';
+    headerDesc.textContent = 'Enable or disable high-risk system capabilities without redeploys. All changes are audited.';
     header.appendChild(headerDesc);
 
     container.appendChild(header);
@@ -10228,14 +10228,14 @@ function renderGovernanceControlsView() {
 
     container.appendChild(cardsContainer);
 
-    // Arm modal
-    if (state.governanceControls.showArmModal) {
-        container.appendChild(renderArmModal());
+    // Enable modal
+    if (state.governanceControls.showEnableModal) {
+        container.appendChild(renderEnableModal());
     }
 
-    // Disarm modal
-    if (state.governanceControls.showDisarmModal) {
-        container.appendChild(renderDisarmModal());
+    // Disable modal
+    if (state.governanceControls.showDisableModal) {
+        container.appendChild(renderDisableModal());
     }
 
     // History drawer
@@ -10268,8 +10268,8 @@ function renderControlCard(control) {
 
     // Status pill
     var statusPill = document.createElement('span');
-    statusPill.className = 'gov-control-status ' + (effectiveEnabled ? 'status-armed' : 'status-disarmed');
-    statusPill.textContent = effectiveEnabled ? 'ARMED' : 'DISARMED';
+    statusPill.className = 'gov-control-status ' + (effectiveEnabled ? 'status-enabled' : 'status-disabled');
+    statusPill.textContent = effectiveEnabled ? 'ENABLED' : 'DISABLED';
     cardHeader.appendChild(statusPill);
 
     card.appendChild(cardHeader);
@@ -10278,7 +10278,7 @@ function renderControlCard(control) {
     var cardBody = document.createElement('div');
     cardBody.className = 'gov-control-card-body';
 
-    // Expiry info (if armed and has expiry)
+    // Expiry info (if enabled and has expiry)
     if (effectiveEnabled && control.expires_at) {
         var expiryDiv = document.createElement('div');
         expiryDiv.className = 'gov-control-expiry';
@@ -10316,16 +10316,16 @@ function renderControlCard(control) {
     var cardActions = document.createElement('div');
     cardActions.className = 'gov-control-card-actions';
 
-    // Toggle button (Arm/Disarm)
+    // Toggle button (Enable/Disable)
     var toggleBtn = document.createElement('button');
-    toggleBtn.className = 'gov-control-toggle-btn ' + (effectiveEnabled ? 'btn-disarm' : 'btn-arm');
-    toggleBtn.textContent = effectiveEnabled ? 'Disarm' : 'Arm';
+    toggleBtn.className = 'gov-control-toggle-btn ' + (effectiveEnabled ? 'btn-disable' : 'btn-enable');
+    toggleBtn.textContent = effectiveEnabled ? 'Disable' : 'Enable';
     toggleBtn.onclick = function() {
         state.governanceControls.selectedControlKey = control.key;
         if (effectiveEnabled) {
-            state.governanceControls.showDisarmModal = true;
+            state.governanceControls.showDisableModal = true;
         } else {
-            state.governanceControls.showArmModal = true;
+            state.governanceControls.showEnableModal = true;
         }
         renderApp();
     };
@@ -10348,14 +10348,14 @@ function renderControlCard(control) {
 }
 
 /**
- * VTID-01181: Render the Arm modal.
+ * VTID-01181: Render the Enable modal.
  */
-function renderArmModal() {
+function renderEnableModal() {
     var overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.onclick = function(e) {
         if (e.target === overlay) {
-            state.governanceControls.showArmModal = false;
+            state.governanceControls.showEnableModal = false;
             renderApp();
         }
     };
@@ -10365,7 +10365,7 @@ function renderArmModal() {
 
     var modalHeader = document.createElement('div');
     modalHeader.className = 'gov-control-modal-header';
-    modalHeader.innerHTML = '<h3>Arm Control: ' + escapeHtml(formatControlKey(state.governanceControls.selectedControlKey)) + '</h3>';
+    modalHeader.innerHTML = '<h3>Enable Control: ' + escapeHtml(formatControlKey(state.governanceControls.selectedControlKey)) + '</h3>';
     modal.appendChild(modalHeader);
 
     var modalBody = document.createElement('div');
@@ -10374,7 +10374,7 @@ function renderArmModal() {
     // Warning message
     var warning = document.createElement('div');
     warning.className = 'gov-control-modal-warning';
-    warning.innerHTML = '<span class="warning-icon">!</span> Arming this control enables high-risk functionality. All changes are logged to the audit trail.';
+    warning.innerHTML = '<span class="warning-icon">!</span> Enabling this control activates high-risk functionality. All changes are logged to the audit trail.';
     modalBody.appendChild(warning);
 
     // Reason input (required)
@@ -10385,22 +10385,23 @@ function renderArmModal() {
 
     var reasonInput = document.createElement('textarea');
     reasonInput.className = 'gov-control-modal-textarea';
-    reasonInput.placeholder = 'Why are you arming this control?';
-    reasonInput.value = state.governanceControls.armReason;
+    reasonInput.placeholder = 'Why are you enabling this control?';
+    reasonInput.value = state.governanceControls.enableReason;
     reasonInput.oninput = function(e) {
-        state.governanceControls.armReason = e.target.value;
+        state.governanceControls.enableReason = e.target.value;
     };
     modalBody.appendChild(reasonInput);
 
-    // Duration select (required)
+    // Duration select (optional in dev)
     var durationLabel = document.createElement('label');
     durationLabel.className = 'gov-control-modal-label';
-    durationLabel.textContent = 'Duration (required)';
+    durationLabel.textContent = 'Duration (optional)';
     modalBody.appendChild(durationLabel);
 
     var durationSelect = document.createElement('select');
     durationSelect.className = 'gov-control-modal-select';
     var durations = [
+        { value: 0, label: 'No expiry (indefinite)' },
         { value: 15, label: '15 minutes' },
         { value: 60, label: '1 hour' },
         { value: 240, label: '4 hours' },
@@ -10411,11 +10412,11 @@ function renderArmModal() {
         var opt = document.createElement('option');
         opt.value = d.value;
         opt.textContent = d.label;
-        opt.selected = d.value === state.governanceControls.armDuration;
+        opt.selected = d.value === state.governanceControls.enableDuration;
         durationSelect.appendChild(opt);
     });
     durationSelect.onchange = function(e) {
-        state.governanceControls.armDuration = parseInt(e.target.value, 10);
+        state.governanceControls.enableDuration = parseInt(e.target.value, 10);
     };
     modalBody.appendChild(durationSelect);
 
@@ -10437,23 +10438,23 @@ function renderArmModal() {
     cancelBtn.className = 'gov-control-modal-cancel';
     cancelBtn.textContent = 'Cancel';
     cancelBtn.onclick = function() {
-        state.governanceControls.showArmModal = false;
-        state.governanceControls.armReason = '';
+        state.governanceControls.showEnableModal = false;
+        state.governanceControls.enableReason = '';
         state.governanceControls.actionError = null;
         renderApp();
     };
     modalFooter.appendChild(cancelBtn);
 
     var confirmBtn = document.createElement('button');
-    confirmBtn.className = 'gov-control-modal-confirm btn-arm';
-    confirmBtn.textContent = state.governanceControls.actionLoading ? 'Arming...' : 'Confirm Arm';
-    confirmBtn.disabled = state.governanceControls.actionLoading || !state.governanceControls.armReason.trim();
+    confirmBtn.className = 'gov-control-modal-confirm btn-enable';
+    confirmBtn.textContent = state.governanceControls.actionLoading ? 'Enabling...' : 'Confirm Enable';
+    confirmBtn.disabled = state.governanceControls.actionLoading || !state.governanceControls.enableReason.trim();
     confirmBtn.onclick = function() {
-        if (state.governanceControls.armReason.trim()) {
-            armControl(
+        if (state.governanceControls.enableReason.trim()) {
+            enableControl(
                 state.governanceControls.selectedControlKey,
-                state.governanceControls.armReason.trim(),
-                state.governanceControls.armDuration
+                state.governanceControls.enableReason.trim(),
+                state.governanceControls.enableDuration || null
             );
         }
     };
@@ -10466,14 +10467,14 @@ function renderArmModal() {
 }
 
 /**
- * VTID-01181: Render the Disarm modal.
+ * VTID-01181: Render the Disable modal.
  */
-function renderDisarmModal() {
+function renderDisableModal() {
     var overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.onclick = function(e) {
         if (e.target === overlay) {
-            state.governanceControls.showDisarmModal = false;
+            state.governanceControls.showDisableModal = false;
             renderApp();
         }
     };
@@ -10483,7 +10484,7 @@ function renderDisarmModal() {
 
     var modalHeader = document.createElement('div');
     modalHeader.className = 'gov-control-modal-header';
-    modalHeader.innerHTML = '<h3>Disarm Control: ' + escapeHtml(formatControlKey(state.governanceControls.selectedControlKey)) + '</h3>';
+    modalHeader.innerHTML = '<h3>Disable Control: ' + escapeHtml(formatControlKey(state.governanceControls.selectedControlKey)) + '</h3>';
     modal.appendChild(modalHeader);
 
     var modalBody = document.createElement('div');
@@ -10497,10 +10498,10 @@ function renderDisarmModal() {
 
     var reasonInput = document.createElement('textarea');
     reasonInput.className = 'gov-control-modal-textarea';
-    reasonInput.placeholder = 'Why are you disarming this control?';
-    reasonInput.value = state.governanceControls.disarmReason;
+    reasonInput.placeholder = 'Why are you disabling this control?';
+    reasonInput.value = state.governanceControls.disableReason;
     reasonInput.oninput = function(e) {
-        state.governanceControls.disarmReason = e.target.value;
+        state.governanceControls.disableReason = e.target.value;
     };
     modalBody.appendChild(reasonInput);
 
@@ -10522,22 +10523,22 @@ function renderDisarmModal() {
     cancelBtn.className = 'gov-control-modal-cancel';
     cancelBtn.textContent = 'Cancel';
     cancelBtn.onclick = function() {
-        state.governanceControls.showDisarmModal = false;
-        state.governanceControls.disarmReason = '';
+        state.governanceControls.showDisableModal = false;
+        state.governanceControls.disableReason = '';
         state.governanceControls.actionError = null;
         renderApp();
     };
     modalFooter.appendChild(cancelBtn);
 
     var confirmBtn = document.createElement('button');
-    confirmBtn.className = 'gov-control-modal-confirm btn-disarm';
-    confirmBtn.textContent = state.governanceControls.actionLoading ? 'Disarming...' : 'Confirm Disarm';
-    confirmBtn.disabled = state.governanceControls.actionLoading || !state.governanceControls.disarmReason.trim();
+    confirmBtn.className = 'gov-control-modal-confirm btn-disable';
+    confirmBtn.textContent = state.governanceControls.actionLoading ? 'Disabling...' : 'Confirm Disable';
+    confirmBtn.disabled = state.governanceControls.actionLoading || !state.governanceControls.disableReason.trim();
     confirmBtn.onclick = function() {
-        if (state.governanceControls.disarmReason.trim()) {
-            disarmControl(
+        if (state.governanceControls.disableReason.trim()) {
+            disableControl(
                 state.governanceControls.selectedControlKey,
-                state.governanceControls.disarmReason.trim()
+                state.governanceControls.disableReason.trim()
             );
         }
     };
@@ -10612,7 +10613,7 @@ function renderControlHistoryDrawer() {
             entry.className = 'gov-control-history-entry';
 
             var entryIcon = document.createElement('div');
-            entryIcon.className = 'history-entry-icon ' + (item.to_enabled ? 'icon-armed' : 'icon-disarmed');
+            entryIcon.className = 'history-entry-icon ' + (item.to_enabled ? 'icon-enabled' : 'icon-disabled');
             entryIcon.innerHTML = item.to_enabled ? '&#x2191;' : '&#x2193;';
             entry.appendChild(entryIcon);
 
@@ -10621,9 +10622,9 @@ function renderControlHistoryDrawer() {
 
             var entryAction = document.createElement('div');
             entryAction.className = 'history-entry-action';
-            entryAction.textContent = item.to_enabled ? 'Armed' : 'Disarmed';
+            entryAction.textContent = item.to_enabled ? 'Enabled' : 'Disabled';
             if (item.from_enabled !== item.to_enabled) {
-                entryAction.textContent += ' (was ' + (item.from_enabled ? 'Armed' : 'Disarmed') + ')';
+                entryAction.textContent += ' (was ' + (item.from_enabled ? 'Enabled' : 'Disabled') + ')';
             }
             entryContent.appendChild(entryAction);
 
