@@ -10865,3 +10865,160 @@ body {
   margin-top: 4px;
   font-style: italic;
 }
+
+/* =============================================================================
+ * VTID-01189: Infinite Scroll List Layout Standardization
+ * Shared styles for Row 3 toolbar, filters, and Load More button
+ * ============================================================================= */
+
+/* Row 3 Toolbar - Filters left, metadata right */
+.list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border, #333);
+  background: var(--color-bg-secondary, #1a1a2e);
+  min-height: 48px;
+  gap: 12px;
+}
+
+.list-toolbar__filters {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.list-toolbar__metadata {
+  color: var(--color-text-secondary, #888);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+/* Filter Dropdowns */
+.filter-dropdown {
+  padding: 6px 12px;
+  background: var(--color-bg-tertiary, #252540);
+  border: 1px solid var(--color-border, #333);
+  border-radius: 4px;
+  color: var(--color-text-primary, #fff);
+  font-size: 13px;
+  cursor: pointer;
+  min-width: 120px;
+}
+
+.filter-dropdown:hover {
+  border-color: var(--color-border-hover, #555);
+}
+
+.filter-dropdown:focus {
+  outline: none;
+  border-color: var(--color-accent, #4a9eff);
+}
+
+/* Scrollable List Container */
+.list-scroll-container {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* List Table with Sticky Headers */
+.list-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.list-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--color-bg-secondary, #1a1a2e);
+}
+
+.list-table th {
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: 500;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-text-secondary, #888);
+  border-bottom: 1px solid var(--color-border, #333);
+}
+
+.list-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border, #333);
+  font-size: 13px;
+}
+
+/* Clickable Rows */
+.clickable-row {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.clickable-row:hover {
+  background: var(--color-bg-hover, #252540);
+}
+
+.clickable-row.selected {
+  background: var(--color-bg-selected, #2a2a4a);
+}
+
+/* Load More Button Container */
+.load-more-container {
+  display: flex;
+  justify-content: center;
+  padding: 24px 16px;
+  border-top: 1px solid var(--color-border, #333);
+}
+
+.load-more-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 24px;
+  min-width: 120px;
+  background: var(--color-bg-tertiary, #252540);
+  border: 1px solid var(--color-border, #333);
+  border-radius: 6px;
+  color: var(--color-text-primary, #fff);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.load-more-btn:hover:not(:disabled) {
+  background: var(--color-bg-hover, #2a2a4a);
+  border-color: var(--color-border-hover, #555);
+}
+
+.load-more-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.load-more-btn.loading {
+  pointer-events: none;
+}
+
+.load-more-btn.loading::after {
+  content: '';
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-left: 8px;
+  border: 2px solid var(--color-border, #333);
+  border-top-color: var(--color-accent, #4a9eff);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

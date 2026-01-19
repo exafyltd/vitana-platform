@@ -2447,8 +2447,14 @@ const state = {
             service: '',
             status: ''
         },
-        autoRefreshEnabled: true,
+        autoRefreshEnabled: false, // VTID-01189: Disabled - use global refresh only
         autoRefreshInterval: null,
+        // VTID-01189: Pagination state for infinite scroll
+        pagination: {
+            limit: 50,
+            offset: 0,
+            hasMore: true
+        },
         // VTID-01039: ORB Session Transcript State
         orbTranscript: null,
         orbTranscriptLoading: false,
@@ -2490,7 +2496,13 @@ const state = {
         items: [],
         loading: false,
         error: null,
-        fetched: false
+        fetched: false,
+        // VTID-01189: Pagination state for infinite scroll
+        pagination: {
+            limit: 50,
+            offset: 0,
+            hasMore: true
+        }
     },
 
     // VTID-0600: Approvals UI Scaffolding
@@ -2765,21 +2777,24 @@ function formatEventTimestamp(isoString) {
 
 /**
  * VTID-0600: Fetch OASIS events from the API
- * VTID-01002: Added silentRefresh parameter for polling - uses incremental updates instead of renderApp()
+ * VTID-01189: Added pagination support for infinite scroll
  * @param {Object} filters - Optional filters (topic, service, status)
- * @param {boolean} silentRefresh - If true, skip renderApp() and use incremental update
+ * @param {boolean} append - If true, append to existing items (Load More)
  */
-async function fetchOasisEvents(filters, silentRefresh) {
-    console.log('[VTID-0600] Fetching OASIS events...', silentRefresh ? '(silent)' : '');
+async function fetchOasisEvents(filters, append) {
+    console.log('[VTID-0600] Fetching OASIS events...', append ? '(append)' : '(fresh)');
 
-    // VTID-01002: Only show loading state for initial load, not polling refreshes
-    if (!silentRefresh) {
-        state.oasisEvents.loading = true;
-        renderApp();
-    }
+    if (state.oasisEvents.loading) return;
+    if (append && !state.oasisEvents.pagination.hasMore) return;
+
+    state.oasisEvents.loading = true;
+    renderApp();
 
     try {
-        var queryParams = 'limit=100';
+        var pagination = state.oasisEvents.pagination;
+        var offset = append ? pagination.offset : 0;
+
+        var queryParams = 'limit=' + pagination.limit + '&offset=' + offset;
         if (filters) {
             if (filters.topic) queryParams += '&topic=like.*' + encodeURIComponent(filters.topic) + '*';
             if (filters.service) queryParams += '&service=eq.' + encodeURIComponent(filters.service);
@@ -2792,24 +2807,50 @@ async function fetchOasisEvents(filters, silentRefresh) {
         }
 
         const data = await response.json();
-        console.log('[VTID-0600] OASIS events loaded:', data.length);
+        var items = Array.isArray(data) ? data : (data.data || []);
+        console.log('[VTID-0600] OASIS events loaded:', items.length);
 
-        state.oasisEvents.items = Array.isArray(data) ? data : [];
+        if (append) {
+            state.oasisEvents.items = state.oasisEvents.items.concat(items);
+        } else {
+            state.oasisEvents.items = items;
+        }
+
+        // VTID-01189: Update pagination state
+        state.oasisEvents.pagination = {
+            limit: pagination.limit,
+            offset: offset + items.length,
+            hasMore: data.pagination ? data.pagination.has_more : items.length === pagination.limit
+        };
+
         state.oasisEvents.error = null;
         state.oasisEvents.fetched = true;
     } catch (error) {
         console.error('[VTID-0600] Failed to fetch OASIS events:', error);
         state.oasisEvents.error = error.message;
-        state.oasisEvents.items = [];
+        if (!append) {
+            state.oasisEvents.items = [];
+        }
     } finally {
         state.oasisEvents.loading = false;
-        // VTID-01002: Use incremental update for polling, full render for initial load
-        if (silentRefresh) {
-            refreshActiveViewData();
-        } else {
-            renderApp();
-        }
+        renderApp();
     }
+}
+
+/**
+ * VTID-01189: Load more OASIS events (infinite scroll)
+ */
+function loadMoreOasisEvents() {
+    fetchOasisEvents(state.oasisEvents.filters, true);
+}
+
+/**
+ * VTID-01189: Handle OASIS filter change - reset pagination and fetch fresh
+ */
+function handleOasisFilterChange() {
+    state.oasisEvents.pagination.offset = 0;
+    state.oasisEvents.pagination.hasMore = true;
+    fetchOasisEvents(state.oasisEvents.filters, false);
 }
 
 /**
@@ -3069,14 +3110,26 @@ async function fetchVtidLedger() {
  */
 const VTID_PROJECTION_LIMIT = 50;
 
-async function fetchVtidProjection() {
-    console.log('[VTID-01001] Fetching VTID projection...');
+/**
+ * VTID-01001: Fetch VTID projection
+ * VTID-01189: Added pagination support for infinite scroll
+ * @param {boolean} append - If true, append to existing items (Load More)
+ */
+async function fetchVtidProjection(append) {
+    console.log('[VTID-01001] Fetching VTID projection...', append ? '(append)' : '(fresh)');
+
+    if (state.vtidProjection.loading) return;
+    if (append && !state.vtidProjection.pagination.hasMore) return;
+
     state.vtidProjection.loading = true;
     state.vtidProjection.error = null;
     renderApp();
 
     try {
-        var response = await fetch('/api/v1/vtid/projection?limit=' + VTID_PROJECTION_LIMIT);
+        var pagination = state.vtidProjection.pagination;
+        var offset = append ? pagination.offset : 0;
+
+        var response = await fetch('/api/v1/vtid/projection?limit=' + pagination.limit + '&offset=' + offset);
         if (!response.ok) {
             throw new Error('VTID projection fetch failed: ' + response.status);
         }
@@ -3097,7 +3150,20 @@ async function fetchVtidProjection() {
         }
 
         console.log('[VTID-01001] VTID projection loaded:', items.length, 'VTIDs');
-        state.vtidProjection.items = items;
+
+        if (append) {
+            state.vtidProjection.items = state.vtidProjection.items.concat(items);
+        } else {
+            state.vtidProjection.items = items;
+        }
+
+        // VTID-01189: Update pagination state
+        state.vtidProjection.pagination = {
+            limit: pagination.limit,
+            offset: offset + items.length,
+            hasMore: data.pagination ? data.pagination.has_more : items.length === pagination.limit
+        };
+
         state.vtidProjection.error = null;
         state.vtidProjection.fetched = true;
     } catch (error) {
@@ -3110,6 +3176,13 @@ async function fetchVtidProjection() {
         state.vtidProjection.loading = false;
         renderApp();
     }
+}
+
+/**
+ * VTID-01189: Load more VTIDs (infinite scroll)
+ */
+function loadMoreVtidProjection() {
+    fetchVtidProjection(true);
 }
 
 /**
@@ -10981,51 +11054,33 @@ function capitalizeFirst(str) {
 // --- VTID-0600: Operational Visibility Views ---
 
 /**
- * VTID-0600: Renders the OASIS > Events view with auto-refresh, severity colors, and drawer.
+ * VTID-0600: Renders the OASIS > Events view with severity colors and drawer.
+ * VTID-01189: Standardized 3-row layout with infinite scroll
+ * - Row 1: Global top bar (unchanged)
+ * - Row 2: Tab navigation (unchanged)
+ * - Row 3: Toolbar (filters left, item count right)
+ * - Content: Scrollable table with Load More
  */
 function renderOasisEventsView() {
     var container = document.createElement('div');
     container.className = 'oasis-events-container';
 
-    // Auto-fetch events if not yet fetched
+    // VTID-01189: Auto-fetch events if not yet fetched (no auto-refresh)
     if (!state.oasisEvents.fetched && !state.oasisEvents.loading) {
-        fetchOasisEvents(state.oasisEvents.filters);
-        startOasisEventsAutoRefresh();
+        fetchOasisEvents(state.oasisEvents.filters, false);
     }
 
-    // Toolbar - single row compact layout
+    // VTID-01189: Row 3 - Toolbar (filters left, count right)
     var toolbar = document.createElement('div');
-    toolbar.className = 'oasis-events-toolbar';
+    toolbar.className = 'list-toolbar';
 
-    // Left cluster: Auto-refresh + dropdowns + LIVE pill
-    var leftCluster = document.createElement('div');
-    leftCluster.className = 'oasis-toolbar-left';
-
-    // Auto-refresh toggle
-    var refreshToggle = document.createElement('div');
-    refreshToggle.className = 'auto-refresh-toggle';
-
-    var refreshLabel = document.createElement('span');
-    refreshLabel.textContent = 'Auto-refresh (5s):';
-    refreshToggle.appendChild(refreshLabel);
-
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = state.oasisEvents.autoRefreshEnabled ? 'btn btn-sm btn-active' : 'btn btn-sm';
-    refreshBtn.textContent = state.oasisEvents.autoRefreshEnabled ? 'ON' : 'OFF';
-    refreshBtn.onclick = function() {
-        if (state.oasisEvents.autoRefreshEnabled) {
-            stopOasisEventsAutoRefresh();
-        } else {
-            startOasisEventsAutoRefresh();
-        }
-        renderApp();
-    };
-    refreshToggle.appendChild(refreshBtn);
-    leftCluster.appendChild(refreshToggle);
+    // Left: Filters
+    var filtersCluster = document.createElement('div');
+    filtersCluster.className = 'list-toolbar__filters';
 
     // Topic filter
     var topicFilter = document.createElement('select');
-    topicFilter.className = 'form-control filter-select';
+    topicFilter.className = 'filter-dropdown';
     topicFilter.innerHTML =
         '<option value="">All Topics</option>' +
         '<option value="deploy">Deploy</option>' +
@@ -11036,13 +11091,13 @@ function renderOasisEventsView() {
     topicFilter.value = state.oasisEvents.filters.topic || '';
     topicFilter.onchange = function(e) {
         state.oasisEvents.filters.topic = e.target.value;
-        fetchOasisEvents(state.oasisEvents.filters);
+        handleOasisFilterChange();
     };
-    leftCluster.appendChild(topicFilter);
+    filtersCluster.appendChild(topicFilter);
 
     // Status filter
     var statusFilter = document.createElement('select');
-    statusFilter.className = 'form-control filter-select';
+    statusFilter.className = 'filter-dropdown';
     statusFilter.innerHTML =
         '<option value="">All Status</option>' +
         '<option value="success">Success</option>' +
@@ -11052,42 +11107,23 @@ function renderOasisEventsView() {
     statusFilter.value = state.oasisEvents.filters.status || '';
     statusFilter.onchange = function(e) {
         state.oasisEvents.filters.status = e.target.value;
-        fetchOasisEvents(state.oasisEvents.filters);
+        handleOasisFilterChange();
     };
-    leftCluster.appendChild(statusFilter);
+    filtersCluster.appendChild(statusFilter);
 
-    // Live indicator pill (inline in toolbar)
-    if (state.oasisEvents.autoRefreshEnabled) {
-        var liveIndicator = document.createElement('div');
-        liveIndicator.className = 'oasis-live-pill';
-        liveIndicator.innerHTML = '<span class="live-dot"></span> LIVE - Auto-refreshing';
-        leftCluster.appendChild(liveIndicator);
-    }
+    toolbar.appendChild(filtersCluster);
 
-    toolbar.appendChild(leftCluster);
+    // Right: Item count
+    var metadataCluster = document.createElement('div');
+    metadataCluster.className = 'list-toolbar__metadata';
+    metadataCluster.textContent = state.oasisEvents.items.length + ' events';
+    toolbar.appendChild(metadataCluster);
 
-    // Right cluster: Refresh icon button
-    var rightCluster = document.createElement('div');
-    rightCluster.className = 'oasis-toolbar-right';
-
-    // Refresh icon button
-    var manualRefresh = document.createElement('button');
-    manualRefresh.className = 'btn oasis-refresh-icon-btn';
-    manualRefresh.title = 'Refresh now';
-    manualRefresh.setAttribute('aria-label', 'Refresh now');
-    manualRefresh.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M13.65 2.35A7.958 7.958 0 0 0 8 0a8 8 0 1 0 8 8h-2a6 6 0 1 1-1.76-4.24l-2.24 2.24h5V1l-1.35 1.35z" fill="currentColor"/></svg>';
-    manualRefresh.onclick = function() {
-        fetchOasisEvents(state.oasisEvents.filters);
-    };
-    rightCluster.appendChild(manualRefresh);
-
-    toolbar.appendChild(rightCluster);
     container.appendChild(toolbar);
 
-    // Events table
+    // Content area with scrollable table
     var content = document.createElement('div');
-    content.className = 'oasis-events-content';
-    // VTID-01002: Mark as scroll-retaining container
+    content.className = 'list-scroll-container oasis-events-content';
     content.dataset.scrollRetain = 'true';
     content.dataset.scrollKey = 'oasis-events';
 
@@ -11099,9 +11135,9 @@ function renderOasisEventsView() {
         content.innerHTML = '<div class="placeholder-content">No events found.</div>';
     } else {
         var table = document.createElement('table');
-        table.className = 'oasis-events-table';
+        table.className = 'list-table oasis-events-table';
 
-        // Header
+        // Sticky header
         var thead = document.createElement('thead');
         var headerRow = document.createElement('tr');
         ['Severity', 'Timestamp', 'Topic', 'VTID', 'Service', 'Status', 'Message'].forEach(function(header) {
@@ -11116,7 +11152,7 @@ function renderOasisEventsView() {
         var tbody = document.createElement('tbody');
         state.oasisEvents.items.forEach(function(event) {
             var row = document.createElement('tr');
-            row.className = 'oasis-event-row';
+            row.className = 'oasis-event-row clickable-row';
             var severity = getEventSeverity(event);
             row.dataset.severity = severity;
             row.onclick = function() {
@@ -11173,6 +11209,22 @@ function renderOasisEventsView() {
         });
         table.appendChild(tbody);
         content.appendChild(table);
+
+        // VTID-01189: Load More button
+        if (state.oasisEvents.pagination.hasMore || state.oasisEvents.loading) {
+            var loadMoreContainer = document.createElement('div');
+            loadMoreContainer.className = 'load-more-container';
+
+            var loadMoreBtn = document.createElement('button');
+            loadMoreBtn.className = 'load-more-btn' + (state.oasisEvents.loading ? ' loading' : '');
+            loadMoreBtn.disabled = state.oasisEvents.loading;
+            loadMoreBtn.textContent = state.oasisEvents.loading ? 'Loading...' : 'Load More';
+            loadMoreBtn.onclick = function() {
+                loadMoreOasisEvents();
+            };
+            loadMoreContainer.appendChild(loadMoreBtn);
+            content.appendChild(loadMoreContainer);
+        }
     }
 
     container.appendChild(content);
@@ -12140,38 +12192,39 @@ function renderOasisVtidDetailPanel() {
     return panel;
 }
 
+/**
+ * VTID-01001: Renders the OASIS > VTID Ledger view
+ * VTID-01189: Standardized 3-row layout with infinite scroll
+ * - Row 1: Global top bar (unchanged)
+ * - Row 2: Tab navigation (unchanged)
+ * - Row 3: Toolbar (item count only, right-aligned)
+ * - Content: Split layout with scrollable table + detail panel
+ */
 function renderOasisVtidLedgerView() {
     var container = document.createElement('div');
     container.className = 'vtids-container oasis-vtid-ledger-container';
 
-    // Auto-fetch VTIDs from projection if not yet fetched
+    // VTID-01189: Auto-fetch VTIDs if not yet fetched
     if (!state.vtidProjection.fetched && !state.vtidProjection.loading) {
-        fetchVtidProjection();
+        fetchVtidProjection(false);
     }
 
-    // Header - always rendered immediately
-    var header = document.createElement('div');
-    header.className = 'vtids-header';
+    // VTID-01189: Row 3 - Toolbar (count only, right-aligned)
+    var toolbar = document.createElement('div');
+    toolbar.className = 'list-toolbar';
 
-    var title = document.createElement('h2');
-    title.textContent = 'VTID Ledger';
-    header.appendChild(title);
+    // Left: Empty (no filters for VTID Ledger)
+    var filtersCluster = document.createElement('div');
+    filtersCluster.className = 'list-toolbar__filters';
+    toolbar.appendChild(filtersCluster);
 
-    // DEV-COMHU-2025-0009: Visible fingerprint for deployment proof
-    var fingerprint = document.createElement('span');
-    fingerprint.className = 'view-fingerprint';
-    fingerprint.textContent = 'View: OASIS_VTID_LEDGER_ACTIVE (VTID-01001)';
-    header.appendChild(fingerprint);
+    // Right: Item count
+    var metadataCluster = document.createElement('div');
+    metadataCluster.className = 'list-toolbar__metadata';
+    metadataCluster.textContent = state.vtidProjection.items.length + ' VTIDs';
+    toolbar.appendChild(metadataCluster);
 
-    var subtitle = document.createElement('p');
-    subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Authoritative VTID registry. Click a row to view lifecycle, events, governance, and provenance.';
-    header.appendChild(subtitle);
-
-    container.appendChild(header);
-
-    // Toolbar with Refresh button
-    // SPEC-01: Per-view refresh buttons removed - use global refresh icon in header
+    container.appendChild(toolbar);
 
     // Error banner
     if (state.vtidProjection.error) {
@@ -12181,32 +12234,36 @@ function renderOasisVtidLedgerView() {
         container.appendChild(errorBanner);
     }
 
-    // Status line
-    var statusLine = document.createElement('div');
-    statusLine.className = 'vtid-ledger-status-line';
-    if (state.vtidProjection.loading) {
-        statusLine.textContent = 'Loading VTID Ledger...';
-    } else if (state.vtidProjection.fetched && !state.vtidProjection.error) {
-        statusLine.textContent = 'Loaded ' + state.vtidProjection.items.length + ' VTIDs from Ledger';
-    } else if (!state.vtidProjection.fetched) {
-        statusLine.textContent = 'Loading VTID Ledger...';
-    }
-    container.appendChild(statusLine);
-
     // Split layout: list + detail panel
     var splitContainer = document.createElement('div');
     splitContainer.className = 'oasis-split-container';
 
-    // Left: VTID list
+    // Left: VTID list with Load More
     var listPane = document.createElement('div');
-    listPane.className = 'oasis-list-pane';
+    listPane.className = 'oasis-list-pane list-scroll-container';
 
-    if (state.vtidProjection.loading || (!state.vtidProjection.fetched && !state.vtidProjection.error)) {
+    if (state.vtidProjection.loading && state.vtidProjection.items.length === 0) {
         listPane.innerHTML = '<div class="placeholder-content">Loading VTID Ledger...</div>';
     } else if (state.vtidProjection.items.length === 0 && !state.vtidProjection.error) {
         listPane.innerHTML = '<div class="placeholder-content">No VTIDs found in ledger.</div>';
     } else if (state.vtidProjection.items.length > 0) {
         listPane.appendChild(renderOasisLedgerTableWithDrilldown(state.vtidProjection.items));
+
+        // VTID-01189: Load More button
+        if (state.vtidProjection.pagination.hasMore || state.vtidProjection.loading) {
+            var loadMoreContainer = document.createElement('div');
+            loadMoreContainer.className = 'load-more-container';
+
+            var loadMoreBtn = document.createElement('button');
+            loadMoreBtn.className = 'load-more-btn' + (state.vtidProjection.loading ? ' loading' : '');
+            loadMoreBtn.disabled = state.vtidProjection.loading;
+            loadMoreBtn.textContent = state.vtidProjection.loading ? 'Loading...' : 'Load More';
+            loadMoreBtn.onclick = function() {
+                loadMoreVtidProjection();
+            };
+            loadMoreContainer.appendChild(loadMoreBtn);
+            listPane.appendChild(loadMoreContainer);
+        }
     }
     splitContainer.appendChild(listPane);
 
