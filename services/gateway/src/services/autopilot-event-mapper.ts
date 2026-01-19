@@ -119,22 +119,45 @@ function isForwardTransition(from: AutopilotState, to: AutopilotState): boolean 
  *
  * Rules are evaluated in order. First match wins.
  * Event types support wildcards: * matches any suffix.
+ *
+ * VTID-01194: Autonomous Execution Trigger Semantics
+ * --------------------------------------------------
+ * IN_PROGRESS = Explicit Human Approval to Execute
+ *
+ * Key semantics:
+ * - Moving a task to IN_PROGRESS is the ONLY approval needed for execution
+ * - vtid.lifecycle.execution_approved is emitted on SCHEDULED → IN_PROGRESS transition
+ * - autopilot_execution_enabled is now an EMERGENCY STOP, not a daily approval
+ * - "ACTIVATED" status is DEPRECATED for autonomy purposes
  */
 export const EVENT_MAPPING_RULES: EventMappingRule[] = [
   // -------------------------------------------------------------------------
-  // ALLOCATION → IN_PROGRESS (Worker dispatch accepted)
+  // ALLOCATION/SCHEDULED → IN_PROGRESS (VTID-01194: Execution Trigger)
   // -------------------------------------------------------------------------
+  // VTID-01194: The execution_approved event is the canonical trigger
+  // This is emitted when a human explicitly moves a task to IN_PROGRESS
+  {
+    eventTypes: [
+      'vtid.lifecycle.execution_approved',  // VTID-01194: NEW - Explicit human approval
+      'vtid.lifecycle.in_progress',         // VTID-01194: Status-based trigger
+    ],
+    fromStates: ['allocated'],
+    toState: 'in_progress',
+    triggerAction: 'dispatch',
+    description: 'VTID-01194: Human approved execution - dispatch to worker',
+  },
+  // VTID-01194: Legacy event support (will eventually be deprecated)
   {
     eventTypes: [
       'vtid.lifecycle.allocated',
-      'vtid.lifecycle.started',      // VTID-01179: Activate button from Command Hub
+      'vtid.lifecycle.started',      // Legacy: Activate button (maps to IN_PROGRESS)
       'commandhub.task.scheduled',
       'autopilot.run.started',
     ],
     fromStates: ['allocated'],
     toState: 'in_progress',
     triggerAction: 'dispatch',
-    description: 'VTID allocated/scheduled/activated - dispatch to worker',
+    description: 'Legacy: VTID allocated/scheduled/activated - dispatch to worker',
   },
   {
     eventTypes: [

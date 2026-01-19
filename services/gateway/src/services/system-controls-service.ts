@@ -409,33 +409,40 @@ export async function isVtidAllocatorEnabled(): Promise<boolean> {
 }
 
 /**
- * VTID-01187: Check if autopilot execution is armed.
+ * VTID-01187 + VTID-01194: Check if autopilot execution is armed.
  *
- * This is the PRIMARY governance gate for autonomous task execution.
+ * This is the EMERGENCY STOP gate for autonomous task execution.
  * Even if AUTOPILOT_LOOP_ENABLED=true (loop is running), execution
  * will not happen unless this DB control is also armed.
+ *
+ * VTID-01194 SEMANTICS:
+ * - autopilot_execution_enabled is now an EMERGENCY STOP, not a daily approval
+ * - Default behavior: ARMED (execution allowed)
+ * - Only DISARMED during: incidents, maintenance, investigations, mass stop
+ * - Moving a task to IN_PROGRESS is the approval - no extra arming needed
  *
  * This separation allows:
  * - Loop to keep running (monitoring, status updates)
  * - Execution to be armed/disarmed at runtime without redeploy
  * - Emergency stop without killing the loop process
  *
- * Returns true ONLY if DB control 'autopilot_execution_enabled' is armed.
+ * Returns true if DB control 'autopilot_execution_enabled' is armed OR does not exist.
+ * VTID-01194: Defaults to ARMED (not DISARMED) when control is missing.
  */
 export async function isAutopilotExecutionArmed(): Promise<boolean> {
   const control = await getSystemControl('autopilot_execution_enabled');
 
-  // Control must exist AND be enabled
+  // VTID-01194: Control missing = ARMED by default (it's an emergency stop, not daily approval)
   if (!control) {
-    console.log('[VTID-01187] autopilot_execution_enabled control not found - execution DISARMED');
-    return false;
+    console.log('[VTID-01194] autopilot_execution_enabled control not found - defaults to ARMED');
+    return true;
   }
 
   if (!control.enabled) {
-    console.log('[VTID-01187] autopilot_execution_enabled is DISARMED');
+    console.log('[VTID-01194] autopilot_execution_enabled is DISARMED (emergency stop active)');
     return false;
   }
 
-  console.log('[VTID-01187] autopilot_execution_enabled is ARMED');
+  // Normal operation: ARMED
   return true;
 }
