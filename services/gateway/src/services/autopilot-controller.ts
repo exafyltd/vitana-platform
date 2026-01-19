@@ -23,6 +23,16 @@
 
 import { randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
+import {
+  createVtidSpec,
+  getVtidSpec,
+  vtidSpecExists,
+  verifySpecChecksum,
+  enforceSpecRequirement,
+  toLegacySnapshot,
+  type VtidSpec,
+  type VtidSpecContent,
+} from './vtid-spec-service';
 
 // =============================================================================
 // Types
@@ -135,14 +145,15 @@ interface StateTransition {
 }
 
 // =============================================================================
-// In-Memory State (would be DB in production)
+// In-Memory State
 // =============================================================================
 
 // Active autopilot runs (keyed by VTID)
+// Note: Run state is persisted in autopilot_run_state table for crash recovery
 const activeRuns = new Map<string, AutopilotRun>();
 
-// Spec snapshots (keyed by VTID)
-const specSnapshots = new Map<string, SpecSnapshot>();
+// VTID-01190: Spec snapshots are now persisted in vtid_specs table
+// The in-memory map is REMOVED - all spec access goes through vtid-spec-service
 
 // =============================================================================
 // Configuration
@@ -262,73 +273,104 @@ async function emitVerificationResult(
 }
 
 // =============================================================================
-// Spec Snapshotting
+// Spec Snapshotting (VTID-01190: Now DB-backed via vtid-spec-service)
 // =============================================================================
 
 /**
  * Create an immutable spec snapshot for a VTID
- * This MUST be called when a VTID is allocated for autopilot processing
+ *
+ * VTID-01190: This now persists to vtid_specs table instead of memory.
+ * The spec is locked immediately upon creation - no edits allowed.
+ *
+ * This MUST be called when a VTID is allocated for autopilot processing.
  */
-export function createSpecSnapshot(
+export async function createSpecSnapshot(
   vtid: string,
   title: string,
   specContent: string,
   taskDomain?: string,
-  targetPaths?: string[]
-): SpecSnapshot {
-  // Check if snapshot already exists (immutable - no overwrites)
-  const existing = specSnapshots.get(vtid);
-  if (existing) {
-    console.log(`[VTID-01178] Spec snapshot already exists for ${vtid}, returning existing`);
-    return existing;
+  targetPaths?: string[],
+  options?: {
+    layer?: string;
+    module?: string;
+    executionMode?: string;
+    creativity?: string;
+    dependsOn?: string[];
+    systemSurface?: string[];
+  }
+): Promise<SpecSnapshot> {
+  // Check if spec already exists in DB (immutable - no overwrites)
+  const existingSpec = await getVtidSpec(vtid, { verifyChecksum: true });
+  if (existingSpec) {
+    console.log(`[VTID-01190] Spec already exists in DB for ${vtid}, returning existing`);
+    return toLegacySnapshot(existingSpec);
   }
 
-  // Create checksum for integrity verification
-  const crypto = require('crypto');
-  const checksum = crypto.createHash('sha256').update(specContent).digest('hex');
+  // Determine primary domain
+  const primaryDomain = taskDomain || 'unknown';
 
-  const snapshot: SpecSnapshot = {
-    id: randomUUID(),
+  // Create spec in database
+  const result = await createVtidSpec({
     vtid,
     title,
-    spec_content: specContent,
+    spec_text: specContent,
     task_domain: taskDomain,
     target_paths: targetPaths,
-    created_at: new Date().toISOString(),
-    checksum,
-  };
-
-  // Store snapshot (immutable)
-  specSnapshots.set(vtid, snapshot);
-
-  console.log(`[VTID-01178] Created spec snapshot for ${vtid} (checksum: ${checksum.slice(0, 8)}...)`);
-
-  // Emit event asynchronously
-  emitSpecSnapshot(snapshot).catch(err => {
-    console.warn(`[VTID-01178] Failed to emit spec snapshot event: ${err}`);
+    primary_domain: primaryDomain,
+    system_surface: options?.systemSurface || [],
+    layer: options?.layer,
+    module: options?.module,
+    execution_mode: options?.executionMode,
+    creativity: options?.creativity,
+    depends_on: options?.dependsOn,
+    created_by: 'autopilot-controller',
   });
 
-  return snapshot;
+  if (!result.ok || !result.spec) {
+    // Fallback: create a local snapshot object for compatibility
+    // This should not happen in production, but prevents hard failures during migration
+    console.error(`[VTID-01190] Failed to create DB spec for ${vtid}: ${result.error}`);
+    const crypto = require('crypto');
+    const checksum = crypto.createHash('sha256').update(specContent).digest('hex');
+    return {
+      id: randomUUID(),
+      vtid,
+      title,
+      spec_content: specContent,
+      task_domain: taskDomain,
+      target_paths: targetPaths,
+      created_at: new Date().toISOString(),
+      checksum,
+    };
+  }
+
+  console.log(`[VTID-01190] Created persistent spec for ${vtid} (checksum: ${result.spec.spec_checksum.slice(0, 8)}...)`);
+
+  return toLegacySnapshot(result.spec);
 }
 
 /**
  * Get the spec snapshot for a VTID
- * Returns null if no snapshot exists
+ *
+ * VTID-01190: This now reads from vtid_specs table with checksum verification.
+ * Returns null if no snapshot exists or checksum verification fails.
  */
-export function getSpecSnapshot(vtid: string): SpecSnapshot | null {
-  return specSnapshots.get(vtid) || null;
+export async function getSpecSnapshot(vtid: string): Promise<SpecSnapshot | null> {
+  const spec = await getVtidSpec(vtid, { verifyChecksum: true });
+  if (!spec) {
+    return null;
+  }
+  return toLegacySnapshot(spec);
 }
 
 /**
  * Verify spec snapshot integrity
+ *
+ * VTID-01190: This now uses DB-level checksum verification.
  */
-export function verifySpecIntegrity(vtid: string): boolean {
-  const snapshot = specSnapshots.get(vtid);
-  if (!snapshot) return false;
-
-  const crypto = require('crypto');
-  const currentChecksum = crypto.createHash('sha256').update(snapshot.spec_content).digest('hex');
-  return currentChecksum === snapshot.checksum;
+export async function verifySpecIntegrity(vtid: string): Promise<boolean> {
+  const result = await verifySpecChecksum(vtid);
+  return result.valid;
 }
 
 // =============================================================================
@@ -405,23 +447,51 @@ async function transitionState(
 
 /**
  * Start a new autopilot run for a VTID
+ *
+ * VTID-01190: This now enforces spec requirement before execution.
+ * A VTID cannot enter in_progress without a persisted, verified spec.
  */
 export async function startAutopilotRun(
   vtid: string,
   title: string,
   specContent: string,
   taskDomain?: string,
-  targetPaths?: string[]
+  targetPaths?: string[],
+  options?: {
+    layer?: string;
+    module?: string;
+    executionMode?: string;
+    creativity?: string;
+    dependsOn?: string[];
+    systemSurface?: string[];
+  }
 ): Promise<AutopilotRun> {
   // Check if run already exists
   const existing = activeRuns.get(vtid);
   if (existing && existing.state !== 'completed' && existing.state !== 'failed') {
-    console.log(`[VTID-01178] Run already active for ${vtid}, returning existing`);
+    console.log(`[VTID-01190] Run already active for ${vtid}, returning existing`);
+
+    // VTID-01190: Verify spec still exists and is valid
+    const specCheck = await enforceSpecRequirement(vtid);
+    if (!specCheck.allowed) {
+      console.error(`[VTID-01190] SPEC ENFORCEMENT FAILED for active run ${vtid}: ${specCheck.error}`);
+      // Mark the run as failed if spec is invalid
+      await markFailed(vtid, specCheck.error || 'Spec enforcement failed', specCheck.error_code);
+      throw new Error(`[VTID-01190] SPEC REQUIRED: ${specCheck.error}`);
+    }
+
     return existing;
   }
 
-  // Create spec snapshot first (immutable)
-  const snapshot = createSpecSnapshot(vtid, title, specContent, taskDomain, targetPaths);
+  // VTID-01190: Create spec snapshot first (immutable, DB-backed)
+  const snapshot = await createSpecSnapshot(vtid, title, specContent, taskDomain, targetPaths, options);
+
+  // VTID-01190: HARD ENFORCEMENT - Verify spec was persisted
+  const specEnforcement = await enforceSpecRequirement(vtid);
+  if (!specEnforcement.allowed) {
+    console.error(`[VTID-01190] SPEC ENFORCEMENT FAILED for ${vtid}: ${specEnforcement.error}`);
+    throw new Error(`[VTID-01190] SPEC REQUIRED: ${specEnforcement.error}`);
+  }
 
   // Create new run
   const run: AutopilotRun = {
@@ -437,7 +507,7 @@ export async function startAutopilotRun(
 
   activeRuns.set(vtid, run);
 
-  console.log(`[VTID-01178] Started autopilot run ${run.id} for ${vtid}`);
+  console.log(`[VTID-01190] Started autopilot run ${run.id} for ${vtid} (spec verified)`);
 
   // Emit run started event
   await emitOasisEvent({
@@ -452,6 +522,7 @@ export async function startAutopilotRun(
       title,
       task_domain: taskDomain,
       spec_checksum: snapshot.checksum,
+      spec_verified: true, // VTID-01190: Indicates spec was verified
       started_at: run.started_at,
     },
   });
@@ -481,19 +552,50 @@ export function getActiveRuns(): AutopilotRun[] {
 
 /**
  * Mark a VTID as in_progress (called when worker dispatch is accepted)
- * This is the MANDATORY trigger when a worker job starts
+ *
+ * VTID-01190: This is the CRITICAL enforcement point. A specless VTID
+ * CANNOT enter in_progress state. This enforces the hard governance rule:
+ * "No VTID may execute without a persisted spec."
  */
 export async function markInProgress(vtid: string, runId?: string): Promise<boolean> {
   const run = activeRuns.get(vtid);
   if (!run) {
-    console.error(`[VTID-01178] No autopilot run found for ${vtid}`);
+    console.error(`[VTID-01190] No autopilot run found for ${vtid}`);
+    return false;
+  }
+
+  // VTID-01190: HARD ENFORCEMENT - Verify spec exists and is valid before execution
+  const specEnforcement = await enforceSpecRequirement(vtid);
+  if (!specEnforcement.allowed) {
+    console.error(`[VTID-01190] EXECUTION BLOCKED - Specless VTID cannot enter in_progress: ${vtid}`);
+    console.error(`[VTID-01190] Enforcement failure: ${specEnforcement.error}`);
+
+    // Emit governance event for blocked execution
+    await emitOasisEvent({
+      vtid,
+      type: 'governance.spec.execution_blocked' as any,
+      source: 'autopilot-controller',
+      status: 'error',
+      message: `VTID ${vtid} blocked from execution: ${specEnforcement.error}`,
+      payload: {
+        vtid,
+        run_id: run.id,
+        error: specEnforcement.error,
+        error_code: specEnforcement.error_code,
+        blocked_at: new Date().toISOString(),
+      },
+    });
+
     return false;
   }
 
   // Also update vtid_ledger status
   await updateLedgerStatus(vtid, 'in_progress');
 
-  return transitionState(run, 'in_progress', 'worker_dispatch_accepted', { run_id: runId });
+  return transitionState(run, 'in_progress', 'worker_dispatch_accepted', {
+    run_id: runId,
+    spec_checksum: specEnforcement.spec?.spec_checksum, // Include checksum in transition metadata
+  });
 }
 
 /**
