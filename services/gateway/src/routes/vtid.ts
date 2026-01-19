@@ -565,18 +565,23 @@ interface VtidProjectionItem {
 
 router.get("/projection", async (req: Request, res: Response) => {
   try {
-    const { limit: limitParam = "50" } = req.query as Record<string, string>;
+    // VTID-01189: Added offset support for infinite scroll pagination
+    const { limit: limitParam = "50", offset: offsetParam = "0" } = req.query as Record<string, string>;
     const { supabaseUrl, svcKey } = getSupabaseConfig();
 
     let limit = parseInt(limitParam, 10);
     if (isNaN(limit) || limit < 1) limit = 50;
     if (limit > 200) limit = 200;
 
-    console.log(`[VTID-01001] Projection request, limit=${limit}`);
+    let offset = parseInt(offsetParam, 10);
+    if (isNaN(offset) || offset < 0) offset = 0;
 
-    // Step 1: Fetch VTIDs from ledger
+    console.log(`[VTID-01001] Projection request, limit=${limit}, offset=${offset}`);
+
+    // Step 1: Fetch VTIDs from ledger with pagination
+    // VTID-01189: Added offset for infinite scroll
     const vtidResp = await fetch(
-      `${supabaseUrl}/rest/v1/vtid_ledger?order=created_at.desc&limit=${limit}`,
+      `${supabaseUrl}/rest/v1/vtid_ledger?order=created_at.desc&limit=${limit + 1}&offset=${offset}`,
       { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } }
     );
 
@@ -586,11 +591,21 @@ router.get("/projection", async (req: Request, res: Response) => {
       return res.status(502).json({ ok: false, error: "database_query_failed" });
     }
 
-    const vtidRows = await vtidResp.json() as any[];
-    console.log(`[VTID-01001] Fetched ${vtidRows.length} VTIDs from ledger`);
+    const vtidRowsRaw = await vtidResp.json() as any[];
+
+    // VTID-01189: Check if there are more items (we fetched limit+1)
+    const hasMore = vtidRowsRaw.length > limit;
+    const vtidRows = hasMore ? vtidRowsRaw.slice(0, limit) : vtidRowsRaw;
+
+    console.log(`[VTID-01001] Fetched ${vtidRows.length} VTIDs from ledger (hasMore=${hasMore})`);
 
     if (vtidRows.length === 0) {
-      return res.status(200).json({ ok: true, count: 0, data: [] });
+      return res.status(200).json({
+        ok: true,
+        count: 0,
+        data: [],
+        pagination: { has_more: false, offset: offset, limit: limit }
+      });
     }
 
     // Step 2: Fetch recent events for all these VTIDs (batch query)
@@ -791,8 +806,14 @@ router.get("/projection", async (req: Request, res: Response) => {
       };
     });
 
-    console.log(`[VTID-01001] Built projection for ${projections.length} VTIDs`);
-    return res.status(200).json({ ok: true, count: projections.length, data: projections });
+    console.log(`[VTID-01001] Built projection for ${projections.length} VTIDs (hasMore=${hasMore})`);
+    // VTID-01189: Include pagination info for infinite scroll
+    return res.status(200).json({
+      ok: true,
+      count: projections.length,
+      data: projections,
+      pagination: { has_more: hasMore, offset: offset, limit: limit }
+    });
   } catch (e: any) {
     console.error(`[VTID-01001] Projection error:`, e.message);
     return res.status(500).json({ ok: false, error: "internal_server_error", message: e.message });
