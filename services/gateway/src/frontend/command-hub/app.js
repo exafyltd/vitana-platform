@@ -3738,6 +3738,9 @@ function renderApp() {
     // VTID-0600: OASIS Event Detail Drawer
     root.appendChild(renderOasisEventDrawer());
 
+    // VTID-01189: VTID Ledger Detail Drawer
+    root.appendChild(renderOasisVtidLedgerDrawer());
+
     // Modals
     if (state.showProfileModal) root.appendChild(renderProfileModal());
     if (state.showTaskModal) root.appendChild(renderTaskModal());
@@ -12194,31 +12197,27 @@ function renderOasisVtidDetailPanel() {
 
 /**
  * VTID-01001: Renders the OASIS > VTID Ledger view
- * VTID-01189: Standardized 3-row layout with infinite scroll
- * - Row 1: Global top bar (unchanged)
- * - Row 2: Tab navigation (unchanged)
- * - Row 3: Toolbar (item count only, right-aligned)
- * - Content: Split layout with scrollable table + detail panel
+ * VTID-01189: Fixed to match standard list + drawer pattern (like OASIS Events)
+ * - Full-width table, clicking row opens drawer
+ * - Load More button at bottom
  */
 function renderOasisVtidLedgerView() {
     var container = document.createElement('div');
-    container.className = 'vtids-container oasis-vtid-ledger-container';
+    container.className = 'oasis-events-container vtid-ledger-view';
 
-    // VTID-01189: Auto-fetch VTIDs if not yet fetched
+    // Auto-fetch VTIDs if not yet fetched
     if (!state.vtidProjection.fetched && !state.vtidProjection.loading) {
         fetchVtidProjection(false);
     }
 
-    // VTID-01189: Row 3 - Toolbar (count only, right-aligned)
+    // Toolbar with count
     var toolbar = document.createElement('div');
     toolbar.className = 'list-toolbar';
 
-    // Left: Empty (no filters for VTID Ledger)
     var filtersCluster = document.createElement('div');
     filtersCluster.className = 'list-toolbar__filters';
     toolbar.appendChild(filtersCluster);
 
-    // Right: Item count
     var metadataCluster = document.createElement('div');
     metadataCluster.className = 'list-toolbar__metadata';
     metadataCluster.textContent = state.vtidProjection.items.length + ' VTIDs';
@@ -12226,31 +12225,92 @@ function renderOasisVtidLedgerView() {
 
     container.appendChild(toolbar);
 
-    // Error banner
-    if (state.vtidProjection.error) {
-        var errorBanner = document.createElement('div');
-        errorBanner.className = 'vtid-ledger-error-banner';
-        errorBanner.textContent = 'Error loading VTID Ledger: ' + state.vtidProjection.error;
-        container.appendChild(errorBanner);
-    }
-
-    // Split layout: list + detail panel
-    var splitContainer = document.createElement('div');
-    splitContainer.className = 'oasis-split-container';
-
-    // Left: VTID list with Load More
-    var listPane = document.createElement('div');
-    listPane.className = 'oasis-list-pane list-scroll-container';
+    // Content area
+    var content = document.createElement('div');
+    content.className = 'oasis-events-content';
 
     if (state.vtidProjection.loading && state.vtidProjection.items.length === 0) {
-        listPane.innerHTML = '<div class="placeholder-content">Loading VTID Ledger...</div>';
-    } else if (state.vtidProjection.items.length === 0 && !state.vtidProjection.error) {
-        listPane.innerHTML = '<div class="placeholder-content">No VTIDs found in ledger.</div>';
-    } else if (state.vtidProjection.items.length > 0) {
-        listPane.appendChild(renderOasisLedgerTableWithDrilldown(state.vtidProjection.items));
+        content.innerHTML = '<div class="placeholder-content">Loading VTID Ledger...</div>';
+    } else if (state.vtidProjection.error) {
+        content.innerHTML = '<div class="error-banner">Error loading VTID Ledger: ' + state.vtidProjection.error + '</div>';
+    } else if (state.vtidProjection.items.length === 0) {
+        content.innerHTML = '<div class="placeholder-content">No VTIDs found in ledger.</div>';
+    } else {
+        // Table
+        var table = document.createElement('table');
+        table.className = 'oasis-events-table vtid-ledger-table';
 
-        // VTID-01189: Load More button
-        if (state.vtidProjection.pagination.hasMore || state.vtidProjection.loading) {
+        // Header
+        var thead = document.createElement('thead');
+        thead.innerHTML = '<tr>' +
+            '<th>VTID</th>' +
+            '<th>Title</th>' +
+            '<th>Stage</th>' +
+            '<th>Status</th>' +
+            '<th>Attention</th>' +
+            '<th>Last Update</th>' +
+            '</tr>';
+        table.appendChild(thead);
+
+        // Body
+        var tbody = document.createElement('tbody');
+        state.vtidProjection.items.forEach(function(item) {
+            var row = document.createElement('tr');
+            row.className = 'vtid-ledger-row clickable-row';
+            if (oasisVtidDetail.selectedVtid === item.vtid) {
+                row.classList.add('selected');
+            }
+            row.onclick = function() {
+                fetchOasisVtidDetail(item.vtid);
+            };
+
+            // VTID
+            var vtidCell = document.createElement('td');
+            vtidCell.className = 'vtid-cell';
+            vtidCell.textContent = item.vtid || '-';
+            row.appendChild(vtidCell);
+
+            // Title
+            var titleCell = document.createElement('td');
+            titleCell.className = 'title-cell';
+            titleCell.textContent = item.title || '-';
+            row.appendChild(titleCell);
+
+            // Stage
+            var stageCell = document.createElement('td');
+            var stageBadge = document.createElement('span');
+            stageBadge.className = 'status-badge stage-' + (item.current_stage || 'pending').toLowerCase();
+            stageBadge.textContent = item.current_stage || '-';
+            stageCell.appendChild(stageBadge);
+            row.appendChild(stageCell);
+
+            // Status
+            var statusCell = document.createElement('td');
+            var statusBadge = document.createElement('span');
+            statusBadge.className = 'status-badge status-' + (item.status || 'pending').toLowerCase();
+            statusBadge.textContent = item.status || '-';
+            statusCell.appendChild(statusBadge);
+            row.appendChild(statusCell);
+
+            // Attention
+            var attentionCell = document.createElement('td');
+            attentionCell.className = 'attention-cell';
+            attentionCell.textContent = item.attention_required || 'AUTO';
+            row.appendChild(attentionCell);
+
+            // Last Update
+            var updateCell = document.createElement('td');
+            updateCell.className = 'update-cell';
+            updateCell.textContent = item.last_update ? formatEventTimestamp(item.last_update) : '-';
+            row.appendChild(updateCell);
+
+            tbody.appendChild(row);
+        });
+        table.appendChild(tbody);
+        content.appendChild(table);
+
+        // Load More button
+        if (state.vtidProjection.pagination.hasMore) {
             var loadMoreContainer = document.createElement('div');
             loadMoreContainer.className = 'load-more-container';
 
@@ -12258,24 +12318,136 @@ function renderOasisVtidLedgerView() {
             loadMoreBtn.className = 'load-more-btn' + (state.vtidProjection.loading ? ' loading' : '');
             loadMoreBtn.disabled = state.vtidProjection.loading;
             loadMoreBtn.textContent = state.vtidProjection.loading ? 'Loading...' : 'Load More';
-            loadMoreBtn.onclick = function() {
+            loadMoreBtn.onclick = function(e) {
+                e.preventDefault();
                 loadMoreVtidProjection();
             };
             loadMoreContainer.appendChild(loadMoreBtn);
-            listPane.appendChild(loadMoreContainer);
+            content.appendChild(loadMoreContainer);
         }
     }
-    splitContainer.appendChild(listPane);
 
-    // Right: Detail panel
-    var detailPane = document.createElement('div');
-    detailPane.className = 'oasis-detail-pane';
-    detailPane.appendChild(renderOasisVtidDetailPanel());
-    splitContainer.appendChild(detailPane);
-
-    container.appendChild(splitContainer);
-
+    container.appendChild(content);
     return container;
+}
+
+/**
+ * VTID-01189: Renders the VTID Ledger detail drawer (standard drawer pattern)
+ */
+function renderOasisVtidLedgerDrawer() {
+    var drawer = document.createElement('div');
+    drawer.className = 'drawer vtid-ledger-drawer' + (oasisVtidDetail.selectedVtid ? ' open' : '');
+
+    if (!oasisVtidDetail.selectedVtid) {
+        return drawer;
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'drawer-header';
+
+    var title = document.createElement('h3');
+    title.textContent = oasisVtidDetail.selectedVtid || 'VTID Details';
+    header.appendChild(title);
+
+    var closeBtn = document.createElement('button');
+    closeBtn.className = 'drawer-close-btn';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.onclick = function() {
+        oasisVtidDetail.selectedVtid = null;
+        oasisVtidDetail.data = null;
+        oasisVtidDetail.events = [];
+        oasisVtidDetail.error = null;
+        renderApp();
+    };
+    header.appendChild(closeBtn);
+    drawer.appendChild(header);
+
+    // Content
+    var content = document.createElement('div');
+    content.className = 'drawer-content';
+
+    if (oasisVtidDetail.loading) {
+        content.innerHTML = '<div class="drawer-loading">Loading VTID details...</div>';
+    } else if (oasisVtidDetail.error) {
+        content.innerHTML = '<div class="drawer-error">Error: ' + oasisVtidDetail.error + '</div>';
+    } else if (oasisVtidDetail.data) {
+        var data = oasisVtidDetail.data;
+
+        // Title
+        if (data.title) {
+            var titleSection = document.createElement('div');
+            titleSection.className = 'drawer-section';
+            titleSection.innerHTML = '<div class="vtid-title">' + data.title + '</div>';
+            content.appendChild(titleSection);
+        }
+
+        // Lifecycle & Timestamps
+        var lifecycleSection = document.createElement('div');
+        lifecycleSection.className = 'drawer-section';
+        lifecycleSection.innerHTML = '<h4>Lifecycle & Timestamps</h4>' +
+            '<div class="drawer-grid">' +
+            '<div><strong>Status:</strong> ' + (data.status || 'pending') + '</div>' +
+            '<div><strong>Layer:</strong> ' + (data.layer || 'DEV') + '</div>' +
+            '<div><strong>Module:</strong> ' + (data.module || '-') + '</div>' +
+            '<div><strong>Created:</strong> ' + (data.created_at ? formatEventTimestamp(data.created_at) : '-') + '</div>' +
+            '<div><strong>Updated:</strong> ' + (data.updated_at ? formatEventTimestamp(data.updated_at) : '-') + '</div>' +
+            '</div>';
+        content.appendChild(lifecycleSection);
+
+        // Stage Timeline
+        if (data.stageTimeline && data.stageTimeline.length > 0) {
+            var timelineSection = document.createElement('div');
+            timelineSection.className = 'drawer-section';
+            timelineSection.innerHTML = '<h4>Stage Timeline</h4>';
+            var timelineDiv = document.createElement('div');
+            timelineDiv.className = 'stage-timeline';
+            data.stageTimeline.forEach(function(stage) {
+                var stageItem = document.createElement('div');
+                stageItem.className = 'stage-item stage-' + (stage.status || 'pending').toLowerCase();
+                stageItem.innerHTML = '<span class="stage-name">' + stage.stage + '</span>' +
+                                      '<span class="stage-status">' + (stage.status || 'PENDING') + '</span>';
+                timelineDiv.appendChild(stageItem);
+            });
+            timelineSection.appendChild(timelineDiv);
+            content.appendChild(timelineSection);
+        }
+
+        // Events
+        var eventsSection = document.createElement('div');
+        eventsSection.className = 'drawer-section';
+        eventsSection.innerHTML = '<h4>Events Timeline (' + oasisVtidDetail.events.length + ')</h4>';
+
+        if (oasisVtidDetail.events.length === 0) {
+            eventsSection.innerHTML += '<div class="no-events">No events recorded</div>';
+        } else {
+            var eventsList = document.createElement('div');
+            eventsList.className = 'events-list';
+            oasisVtidDetail.events.slice(0, 20).forEach(function(event) {
+                var eventItem = document.createElement('div');
+                eventItem.className = 'event-item';
+                eventItem.innerHTML = '<div class="event-topic">' + (event.topic || '-') + '</div>' +
+                    '<div class="event-time">' + (event.created_at ? formatEventTimestamp(event.created_at) : '-') + '</div>' +
+                    '<div class="event-message">' + (event.message || '-') + '</div>';
+                eventsList.appendChild(eventItem);
+            });
+            eventsSection.appendChild(eventsList);
+        }
+        content.appendChild(eventsSection);
+
+        // Provenance
+        var provenanceSection = document.createElement('div');
+        provenanceSection.className = 'drawer-section';
+        provenanceSection.innerHTML = '<h4>Provenance</h4>' +
+            '<div class="drawer-grid">' +
+            '<div><strong>VTID:</strong> ' + (data.vtid || '-') + '</div>' +
+            '<div><strong>Source:</strong> OASIS Ledger</div>' +
+            '</div>';
+        content.appendChild(provenanceSection);
+    }
+
+    drawer.appendChild(content);
+    return drawer;
 }
 
 // =============================================================================
