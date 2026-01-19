@@ -10917,62 +10917,133 @@ body {
   border-color: var(--color-accent, #4a9eff);
 }
 
-/* VTID-01189: VTID Ledger Container Override */
-.oasis-vtid-ledger-container {
-  padding: 0;
-}
-
-/* VTID-01189: Split Layout for VTID Ledger */
-.oasis-split-container {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.oasis-list-pane {
-  flex: 1;
+/* VTID-01189: VTID Ledger View - Standard list layout */
+.vtid-ledger-view {
   display: flex;
   flex-direction: column;
-  min-width: 0;
-  border-right: 1px solid var(--color-border, #333);
+  height: 100%;
 }
 
-.oasis-detail-pane {
-  width: 400px;
-  flex-shrink: 0;
-  overflow-y: auto;
+.vtid-ledger-table {
+  width: 100%;
+}
+
+.vtid-ledger-row.selected {
+  background: var(--color-bg-selected, #2a2a4a);
+}
+
+/* VTID-01189: VTID Ledger Drawer */
+.vtid-ledger-drawer {
+  position: fixed;
+  top: 0;
+  right: -450px;
+  width: 450px;
+  height: 100vh;
   background: var(--color-bg-secondary, #1a1a2e);
+  border-left: 1px solid var(--color-border, #333);
+  z-index: 1000;
+  transition: right 0.25s ease;
+  display: flex;
+  flex-direction: column;
 }
 
-/* Scrollable List Container */
-.list-scroll-container {
+.vtid-ledger-drawer.open {
+  right: 0;
+}
+
+.vtid-ledger-drawer .drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid var(--color-border, #333);
+}
+
+.vtid-ledger-drawer .drawer-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--color-text-primary, #fff);
+}
+
+.vtid-ledger-drawer .drawer-content {
   flex: 1;
   overflow-y: auto;
-  min-height: 0;
+  padding: 16px;
 }
 
-/* List Table with Sticky Headers */
-.list-table {
-  width: 100%;
-  border-collapse: collapse;
+.vtid-ledger-drawer .drawer-section {
+  margin-bottom: 20px;
 }
 
-.list-table thead {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  background: var(--color-bg-secondary, #1a1a2e);
-}
-
-.list-table th {
-  padding: 12px 16px;
-  text-align: left;
-  font-weight: 500;
-  font-size: 12px;
+.vtid-ledger-drawer .drawer-section h4 {
+  margin: 0 0 10px 0;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary, #888);
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+.vtid-ledger-drawer .drawer-grid {
+  display: grid;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+.vtid-ledger-drawer .vtid-title {
+  font-size: 1rem;
+  color: var(--color-text-primary, #fff);
+  margin-bottom: 8px;
+}
+
+.vtid-ledger-drawer .stage-timeline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.vtid-ledger-drawer .stage-item {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 12px;
+  background: var(--color-bg-tertiary, #252540);
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.vtid-ledger-drawer .events-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.vtid-ledger-drawer .event-item {
+  padding: 10px;
+  background: var(--color-bg-tertiary, #252540);
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.vtid-ledger-drawer .event-topic {
+  font-weight: 500;
+  color: var(--color-accent, #4a9eff);
+}
+
+.vtid-ledger-drawer .event-time {
+  font-size: 0.75rem;
   color: var(--color-text-secondary, #888);
+  margin: 4px 0;
+}
+
+.vtid-ledger-drawer .event-message {
+  color: var(--color-text-primary, #fff);
+}
+
+.vtid-ledger-drawer .no-events {
+  color: var(--color-text-secondary, #888);
+  font-style: italic;
+}
   border-bottom: 1px solid var(--color-border, #333);
 }
 
