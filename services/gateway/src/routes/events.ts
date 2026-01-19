@@ -512,7 +512,8 @@ router.get("/api/v1/oasis/events", async (req: Request, res: Response) => {
     const status = req.query.status as string;
     const layer = req.query.layer as string;
 
-    let queryParams = `limit=${limit}&offset=${offset}&order=created_at.desc`;
+    // VTID-01189: Fetch limit+1 to determine if there are more items
+    let queryParams = `limit=${limit + 1}&offset=${offset}&order=created_at.desc`;
     if (vtid) queryParams += `&vtid=eq.${vtid}`;
     if (source) queryParams += `&source=eq.${source}`;
     if (kind) queryParams += `&kind=eq.${kind}`;
@@ -541,17 +542,25 @@ router.get("/api/v1/oasis/events", async (req: Request, res: Response) => {
       });
     }
 
-    const data = (await resp.json()) as any[];
+    const dataRaw = (await resp.json()) as any[];
+
+    // VTID-01189: Check if there are more items
+    const hasMore = dataRaw.length > limit;
+    const data = hasMore ? dataRaw.slice(0, limit) : dataRaw;
 
     if (vtid) {
       res.setHeader("X-VTID", vtid);
     }
 
     console.log(
-      `✅ OASIS query: ${data.length} events (vtid=${vtid || "all"})`,
+      `✅ OASIS query: ${data.length} events (vtid=${vtid || "all"}, hasMore=${hasMore})`,
     );
 
-    return res.status(200).json(data);
+    // VTID-01189: Return with pagination info for infinite scroll
+    return res.status(200).json({
+      data: data,
+      pagination: { has_more: hasMore, offset: offset, limit: limit }
+    });
   } catch (e: any) {
     console.error("❌ Unexpected error:", e);
     return res.status(500).json({
