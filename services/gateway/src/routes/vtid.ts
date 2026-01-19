@@ -884,6 +884,7 @@ router.get("/:vtid", async (req: Request, res: Response) => {
     }
 
     // Return response with stageTimeline
+    // VTID-01188: Include spec pipeline columns
     return res.status(200).json({
       ok: true,
       data: {
@@ -903,6 +904,14 @@ router.get("/:vtid", async (req: Request, res: Response) => {
         // VTID-0527-C: Stage timeline (always 4 entries, never null)
         stageTimeline: stageTimeline,
         _stageTimelineEventsFound: eventsFound,
+        // VTID-01188: Spec pipeline columns
+        spec_status: row.spec_status || 'missing',
+        spec_current_id: row.spec_current_id || null,
+        spec_current_hash: row.spec_current_hash || null,
+        spec_approved_hash: row.spec_approved_hash || null,
+        spec_approved_by: row.spec_approved_by || null,
+        spec_approved_at: row.spec_approved_at || null,
+        spec_last_error: row.spec_last_error || null,
       }
     });
   } catch (e: any) {

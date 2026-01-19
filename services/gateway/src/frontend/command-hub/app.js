@@ -5361,7 +5361,10 @@ function renderTaskDrawer() {
         specPipelineHeader.appendChild(specPipelineTitle);
 
         // Spec status pill
-        var specStatus = state.selectedTask.spec_status || 'missing';
+        // VTID-01188: Prefer fresh data from selectedTaskDetail, fallback to selectedTask
+        var specStatus = (state.selectedTaskDetail && state.selectedTaskDetail.spec_status)
+            ? state.selectedTaskDetail.spec_status
+            : (state.selectedTask.spec_status || 'missing');
         var specPipelineStatus = document.createElement('div');
         specPipelineStatus.className = 'task-spec-pipeline-status';
 
