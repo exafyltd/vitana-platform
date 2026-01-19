@@ -4801,6 +4801,31 @@ function createTaskCard(task) {
 
     card.appendChild(statusRow);
 
+    // VTID-01188: Spec status row
+    if (columnStatus === 'Scheduled') {
+        const specRow = document.createElement('div');
+        specRow.className = 'task-card-spec-row';
+
+        const specStatus = task.spec_status || 'missing';
+        const specPill = document.createElement('span');
+        specPill.className = 'task-card-spec-pill task-card-spec-pill-' + specStatus.toLowerCase();
+
+        // Display-friendly spec status text
+        var specStatusText = {
+            'missing': 'SPEC MISSING',
+            'generating': 'GENERATING',
+            'draft': 'DRAFT',
+            'validating': 'VALIDATING',
+            'validated': 'VALIDATED',
+            'rejected': 'REJECTED',
+            'approved': 'APPROVED'
+        }[specStatus] || specStatus.toUpperCase();
+        specPill.textContent = specStatusText;
+        specRow.appendChild(specPill);
+
+        card.appendChild(specRow);
+    }
+
     // DEV-COMHU-2025-0012: Stage badges row (PL / WO / VA / DE)
     const stageTimeline = createTaskStageTimeline(task);
     card.appendChild(stageTimeline);
@@ -5244,6 +5269,222 @@ function renderTaskDrawer() {
         content.appendChild(finalizationBanner);
     }
 
+    // VTID-01188: Spec Pipeline Section (Generate/Validate/Approve)
+    // Only show for Scheduled tasks that are not finalized
+    var currentColumn = mapStatusToColumnWithOverride(vtid, state.selectedTask.status, state.selectedTask.oasisColumn);
+    if (currentColumn === 'Scheduled' && !isFinalMode) {
+        var specPipelineSection = document.createElement('div');
+        specPipelineSection.className = 'task-spec-pipeline-section';
+
+        var specPipelineHeader = document.createElement('div');
+        specPipelineHeader.className = 'task-spec-pipeline-header';
+
+        var specPipelineTitle = document.createElement('span');
+        specPipelineTitle.className = 'task-spec-pipeline-title';
+        specPipelineTitle.textContent = 'Spec Pipeline';
+        specPipelineHeader.appendChild(specPipelineTitle);
+
+        // Spec status pill
+        var specStatus = state.selectedTask.spec_status || 'missing';
+        var specPipelineStatus = document.createElement('div');
+        specPipelineStatus.className = 'task-spec-pipeline-status';
+
+        var specStatusPill = document.createElement('span');
+        specStatusPill.className = 'task-card-spec-pill task-card-spec-pill-' + specStatus.toLowerCase();
+        var specStatusLabels = {
+            'missing': 'SPEC MISSING',
+            'generating': 'GENERATING...',
+            'draft': 'DRAFT',
+            'validating': 'VALIDATING...',
+            'validated': 'VALIDATED',
+            'rejected': 'REJECTED',
+            'approved': 'APPROVED'
+        };
+        specStatusPill.textContent = specStatusLabels[specStatus] || specStatus.toUpperCase();
+        specPipelineStatus.appendChild(specStatusPill);
+        specPipelineHeader.appendChild(specPipelineStatus);
+
+        specPipelineSection.appendChild(specPipelineHeader);
+
+        // Action buttons row
+        var specPipelineActions = document.createElement('div');
+        specPipelineActions.className = 'task-spec-pipeline-actions';
+
+        // Generate Spec button (visible when missing or rejected)
+        if (specStatus === 'missing' || specStatus === 'rejected') {
+            var generateBtn = document.createElement('button');
+            generateBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-generate';
+            generateBtn.textContent = 'Generate Spec';
+            generateBtn.title = 'Generate spec from task description';
+            generateBtn.onclick = async function() {
+                generateBtn.disabled = true;
+                generateBtn.textContent = 'Generating...';
+                try {
+                    var seedNotes = state.drawerSpecText || state.selectedTask.summary || state.selectedTask.title || '';
+                    var response = await fetch('/api/v1/specs/' + vtid + '/generate', {
+                        method: 'POST',
+                        headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+                        body: JSON.stringify({ seed_notes: seedNotes, source: 'commandhub' })
+                    });
+                    var result = await response.json();
+                    if (result.ok) {
+                        showToast('Spec generated for ' + vtid, 'success');
+                        // Refresh task detail
+                        await fetchVtidDetail(vtid);
+                        await fetchTasks();
+                    } else {
+                        showToast('Generate failed: ' + (result.message || result.error || 'Unknown error'), 'error');
+                        generateBtn.disabled = false;
+                        generateBtn.textContent = 'Generate Spec';
+                    }
+                } catch (e) {
+                    console.error('[VTID-01188] Generate spec error:', e);
+                    showToast('Generate failed: Network error', 'error');
+                    generateBtn.disabled = false;
+                    generateBtn.textContent = 'Generate Spec';
+                }
+            };
+            specPipelineActions.appendChild(generateBtn);
+        }
+
+        // Validate button (visible when draft)
+        if (specStatus === 'draft') {
+            var validateBtn = document.createElement('button');
+            validateBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-validate';
+            validateBtn.textContent = 'Validate';
+            validateBtn.title = 'Validate spec against governance rules';
+            validateBtn.onclick = async function() {
+                validateBtn.disabled = true;
+                validateBtn.textContent = 'Validating...';
+                try {
+                    var response = await fetch('/api/v1/specs/' + vtid + '/validate', {
+                        method: 'POST',
+                        headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' })
+                    });
+                    var result = await response.json();
+                    if (result.ok) {
+                        if (result.result === 'pass') {
+                            showToast('Spec validated for ' + vtid, 'success');
+                        } else {
+                            showToast('Validation failed: ' + (result.message || 'Check report'), 'warning');
+                        }
+                        await fetchVtidDetail(vtid);
+                        await fetchTasks();
+                    } else {
+                        showToast('Validation error: ' + (result.message || result.error || 'Unknown error'), 'error');
+                        validateBtn.disabled = false;
+                        validateBtn.textContent = 'Validate';
+                    }
+                } catch (e) {
+                    console.error('[VTID-01188] Validate spec error:', e);
+                    showToast('Validation failed: Network error', 'error');
+                    validateBtn.disabled = false;
+                    validateBtn.textContent = 'Validate';
+                }
+            };
+            specPipelineActions.appendChild(validateBtn);
+        }
+
+        // Approve button (visible when validated)
+        if (specStatus === 'validated') {
+            var approveBtn = document.createElement('button');
+            approveBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-approve';
+            approveBtn.textContent = 'Approve Spec';
+            approveBtn.title = 'Approve spec for activation';
+            approveBtn.onclick = async function() {
+                approveBtn.disabled = true;
+                approveBtn.textContent = 'Approving...';
+                try {
+                    var userId = MeState.me?.user_id || MeState.me?.email || 'unknown';
+                    var userRole = MeState.me?.active_role || 'operator';
+                    var response = await fetch('/api/v1/specs/' + vtid + '/approve', {
+                        method: 'POST',
+                        headers: withVitanaContextHeaders({
+                            'Content-Type': 'application/json',
+                            'x-user-id': userId,
+                            'x-user-role': userRole
+                        })
+                    });
+                    var result = await response.json();
+                    if (result.ok) {
+                        showToast('Spec approved for ' + vtid + ' - Activate is now enabled', 'success');
+                        await fetchVtidDetail(vtid);
+                        await fetchTasks();
+                    } else {
+                        showToast('Approval failed: ' + (result.message || result.error || 'Unknown error'), 'error');
+                        approveBtn.disabled = false;
+                        approveBtn.textContent = 'Approve Spec';
+                    }
+                } catch (e) {
+                    console.error('[VTID-01188] Approve spec error:', e);
+                    showToast('Approval failed: Network error', 'error');
+                    approveBtn.disabled = false;
+                    approveBtn.textContent = 'Approve Spec';
+                }
+            };
+            specPipelineActions.appendChild(approveBtn);
+        }
+
+        // View Spec button (visible when draft, validated, or approved)
+        if (specStatus === 'draft' || specStatus === 'validated' || specStatus === 'approved') {
+            var viewBtn = document.createElement('button');
+            viewBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-view';
+            viewBtn.textContent = 'View Spec';
+            viewBtn.title = 'View generated spec';
+            viewBtn.onclick = async function() {
+                viewBtn.disabled = true;
+                viewBtn.textContent = 'Loading...';
+                try {
+                    var response = await fetch('/api/v1/specs/' + vtid, {
+                        headers: withVitanaContextHeaders({})
+                    });
+                    var result = await response.json();
+                    if (result.ok && result.spec) {
+                        // Show spec in a viewer
+                        var existingViewer = specPipelineSection.querySelector('.task-spec-viewer');
+                        if (existingViewer) {
+                            existingViewer.remove();
+                        }
+                        var viewer = document.createElement('div');
+                        viewer.className = 'task-spec-viewer';
+                        var viewerContent = document.createElement('pre');
+                        viewerContent.className = 'task-spec-viewer-content';
+                        viewerContent.textContent = result.spec.spec_markdown || 'No spec content';
+                        viewer.appendChild(viewerContent);
+                        specPipelineSection.appendChild(viewer);
+                        viewBtn.textContent = 'Hide Spec';
+                        viewBtn.onclick = function() {
+                            viewer.remove();
+                            viewBtn.textContent = 'View Spec';
+                            viewBtn.onclick = arguments.callee;
+                        };
+                    } else {
+                        showToast('Could not load spec: ' + (result.error || 'Unknown error'), 'error');
+                    }
+                    viewBtn.disabled = false;
+                } catch (e) {
+                    console.error('[VTID-01188] View spec error:', e);
+                    showToast('Could not load spec: Network error', 'error');
+                    viewBtn.disabled = false;
+                    viewBtn.textContent = 'View Spec';
+                }
+            };
+            specPipelineActions.appendChild(viewBtn);
+        }
+
+        specPipelineSection.appendChild(specPipelineActions);
+
+        // Show last error if rejected
+        if (specStatus === 'rejected' && state.selectedTask.spec_last_error) {
+            var errorDiv = document.createElement('div');
+            errorDiv.className = 'task-spec-validation-error';
+            errorDiv.textContent = 'Validation Error: ' + state.selectedTask.spec_last_error;
+            specPipelineSection.appendChild(errorDiv);
+        }
+
+        content.appendChild(specPipelineSection);
+    }
+
     // DEV-COMHU-2025-0012: Task Spec Editor Section
     // VTID-01006: Enforce editability based on lifecycle state
     var specSection = document.createElement('div');
@@ -5325,14 +5566,33 @@ function renderTaskDrawer() {
         specActions.appendChild(resetBtn);
 
         // VTID-01009: Activate button (Scheduled → In Progress)
+        // VTID-01188: Gate activation on spec approval status
         // Emits authoritative OASIS lifecycle.started event
         var currentColumn = mapStatusToColumnWithOverride(vtid, state.selectedTask.status, state.selectedTask.oasisColumn);
         if (currentColumn === 'Scheduled') {
             var activateBtn = document.createElement('button');
             activateBtn.className = 'btn btn-success task-spec-btn task-activate-btn';
-            activateBtn.textContent = 'Activate';
-            activateBtn.title = 'Move task from Scheduled to In Progress';
+
+            // VTID-01188: Check spec approval status - disable if not approved
+            var taskSpecStatus = state.selectedTask.spec_status || 'missing';
+            var isSpecApproved = taskSpecStatus === 'approved';
+
+            if (!isSpecApproved) {
+                activateBtn.disabled = true;
+                activateBtn.title = 'Spec must be approved before activation (current: ' + taskSpecStatus + ')';
+                activateBtn.classList.add('btn-disabled');
+                activateBtn.textContent = 'Activate (Spec Required)';
+            } else {
+                activateBtn.textContent = 'Activate';
+                activateBtn.title = 'Move task from Scheduled to In Progress';
+            }
+
             activateBtn.onclick = async function() {
+                // VTID-01188: Double-check spec approval on click (in case state is stale)
+                if (!isSpecApproved) {
+                    showToast('Cannot activate: spec must be approved first', 'warning');
+                    return;
+                }
                 // VTID-01009: Emit lifecycle.started to OASIS (authoritative)
                 activateBtn.disabled = true;
                 activateBtn.textContent = 'Activating...';

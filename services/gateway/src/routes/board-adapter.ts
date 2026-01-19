@@ -32,6 +32,12 @@ interface BoardItem {
   terminal_outcome: 'success' | 'failed' | null;
   updated_at: string;
   id_namespace: IdNamespace;
+  // VTID-01188: Spec pipeline status
+  spec_status: string;
+  spec_current_id: string | null;
+  spec_current_hash: string | null;
+  spec_approved_hash: string | null;
+  spec_last_error: string | null;
 }
 
 /**
@@ -356,6 +362,12 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
         terminal_outcome: terminalOutcome,
         updated_at: row.updated_at || row.created_at,
         id_namespace: deriveNamespace(vtid),
+        // VTID-01188: Spec pipeline status columns
+        spec_status: row.spec_status || 'missing',
+        spec_current_id: row.spec_current_id || null,
+        spec_current_hash: row.spec_current_hash || null,
+        spec_approved_hash: row.spec_approved_hash || null,
+        spec_last_error: row.spec_last_error || null,
       };
     }).filter((item): item is BoardItem => item !== null);  // VTID-01111: Filter out null entries
 
