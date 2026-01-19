@@ -893,8 +893,20 @@ async function doLogin(email, password) {
         state.loginEmail = '';
         state.loginPassword = '';
 
+        // VTID-01186: Clear page error states to trigger data refetch after login
+        // This ensures pages re-fetch data with the new auth token
+        state.adminDevUsersError = null;
+        state.adminDevUsers = [];
+        state.meContextError = null;
+        state.authIdentityError = null;
+        state.tasksError = null;
+        state.governanceRulesError = null;
+
         // Fetch full identity
         await fetchAuthMe();
+
+        // Also fetch me context to update MeState
+        await fetchMeContext();
 
         // Close profile modal and refresh
         state.showProfileModal = false;
@@ -3900,7 +3912,15 @@ function renderSidebar() {
 
     const avatar = document.createElement('div');
     avatar.className = 'sidebar-profile-avatar';
-    avatar.textContent = state.user.avatar;
+    // VTID-01186: Show avatar image if available, otherwise show initials
+    if (state.user.avatarUrl) {
+        avatar.style.backgroundImage = 'url(' + state.user.avatarUrl + ')';
+        avatar.style.backgroundSize = 'cover';
+        avatar.style.backgroundPosition = 'center';
+        avatar.textContent = '';
+    } else {
+        avatar.textContent = state.user.avatar || '?';
+    }
     profile.appendChild(avatar);
 
     if (!state.sidebarCollapsed) {
@@ -6414,6 +6434,24 @@ function renderProfileModal() {
     }
     body.appendChild(badge);
 
+    // VTID-01186: Edit Profile link (matching vitana-v1 design)
+    const editProfileLink = document.createElement('div');
+    editProfileLink.className = 'profile-edit-link';
+    editProfileLink.style.display = 'flex';
+    editProfileLink.style.alignItems = 'center';
+    editProfileLink.style.justifyContent = 'center';
+    editProfileLink.style.gap = '6px';
+    editProfileLink.style.marginTop = '12px';
+    editProfileLink.style.marginBottom = '16px';
+    editProfileLink.style.color = 'var(--color-text-secondary, #888)';
+    editProfileLink.style.cursor = 'pointer';
+    editProfileLink.style.fontSize = '0.9rem';
+    editProfileLink.innerHTML = '<span style="font-size: 1rem;">&#9998;</span> Edit Profile';
+    editProfileLink.onclick = function() {
+        showToast('Edit Profile coming soon', 'info');
+    };
+    body.appendChild(editProfileLink);
+
     // VTID-01171: Show active tenant if available
     if (state.authIdentity && state.authIdentity.identity && state.authIdentity.identity.tenant_id) {
         const tenantEl = document.createElement('div');
@@ -6425,7 +6463,7 @@ function renderProfileModal() {
         body.appendChild(tenantEl);
     }
 
-    // VTID-01014 + VTID-01171: Role Switcher dropdown
+    // VTID-01014 + VTID-01171: Role Switcher
     // Populate from memberships if available, otherwise use default list
     var VIEW_ROLES = ['Community', 'Patient', 'Professional', 'Staff', 'Admin', 'Developer'];
     if (state.authIdentity && state.authIdentity.memberships && state.authIdentity.memberships.length > 0) {
@@ -6445,17 +6483,104 @@ function renderProfileModal() {
         VIEW_ROLES = ['Admin'];
     }
 
+    // VTID-01186: Role list with clickable items (matching vitana-v1 design)
+    const roleList = document.createElement('div');
+    roleList.className = 'profile-role-list';
+    roleList.style.margin = '0 0 16px 0';
+    roleList.style.padding = '0';
+
+    // Helper function to handle role click
+    async function handleRoleClick(newRole) {
+        const previousRole = state.viewRole;
+        state.viewRole = newRole;
+        renderApp();
+
+        var result = await setActiveRole(newRole);
+        if (result.ok) {
+            localStorage.setItem('vitana.viewRole', newRole);
+            showToast('Role set to ' + newRole, 'success');
+        } else {
+            state.viewRole = previousRole;
+            if (MeState.me) {
+                MeState.me.active_role = previousRole.toLowerCase();
+            }
+            renderApp();
+            showToast(result.error || 'Failed to change role', 'error');
+        }
+    }
+
+    VIEW_ROLES.forEach(function(r) {
+        const roleItem = document.createElement('div');
+        roleItem.className = 'profile-role-item';
+        roleItem.style.display = 'flex';
+        roleItem.style.alignItems = 'center';
+        roleItem.style.padding = '10px 16px';
+        roleItem.style.cursor = 'pointer';
+        roleItem.style.borderRadius = '6px';
+        roleItem.style.marginBottom = '4px';
+        roleItem.style.transition = 'background-color 0.15s';
+
+        const isSelected = r === state.viewRole;
+        if (isSelected) {
+            roleItem.style.backgroundColor = 'rgba(59, 130, 246, 0.15)';
+        }
+
+        // Dot indicator
+        const dot = document.createElement('span');
+        dot.style.width = '8px';
+        dot.style.height = '8px';
+        dot.style.borderRadius = '50%';
+        dot.style.marginRight = '12px';
+        dot.style.flexShrink = '0';
+        if (isSelected) {
+            dot.style.backgroundColor = 'var(--color-accent, #4a90d9)';
+        } else {
+            dot.style.backgroundColor = 'transparent';
+            dot.style.border = '1px solid var(--color-border, #444)';
+        }
+        roleItem.appendChild(dot);
+
+        // Role text
+        const roleText = document.createElement('span');
+        roleText.textContent = r;
+        roleText.style.color = isSelected ? 'var(--color-accent, #4a90d9)' : 'var(--color-text-primary, #fff)';
+        roleItem.appendChild(roleText);
+
+        // Hover effect
+        roleItem.onmouseenter = function() {
+            if (!isSelected) {
+                roleItem.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+            }
+        };
+        roleItem.onmouseleave = function() {
+            if (!isSelected) {
+                roleItem.style.backgroundColor = 'transparent';
+            }
+        };
+
+        // Click handler
+        roleItem.onclick = function() {
+            if (!isSelected) {
+                handleRoleClick(r);
+            }
+        };
+
+        roleList.appendChild(roleItem);
+    });
+    body.appendChild(roleList);
+
+    // VTID-01186: Dropdown selector (secondary, for accessibility)
     const roleSwitcher = document.createElement('div');
     roleSwitcher.className = 'profile-role-switcher';
-
-    const roleLabel = document.createElement('label');
-    roleLabel.textContent = 'View as:';
-    roleLabel.setAttribute('for', 'profile-role-select');
-    roleSwitcher.appendChild(roleLabel);
+    roleSwitcher.style.borderTop = '1px solid var(--color-border, #333)';
+    roleSwitcher.style.paddingTop = '16px';
+    roleSwitcher.style.marginTop = '8px';
 
     const roleSelect = document.createElement('select');
     roleSelect.className = 'profile-role-select';
     roleSelect.id = 'profile-role-select';
+    roleSelect.style.width = '100%';
+    roleSelect.style.maxWidth = 'none';
 
     VIEW_ROLES.forEach(r => {
         const option = document.createElement('option');
@@ -6499,14 +6624,35 @@ function renderProfileModal() {
     const footer = document.createElement('div');
     footer.className = 'modal-footer';
     footer.style.display = 'flex';
-    footer.style.justifyContent = 'space-between';
+    footer.style.flexDirection = 'column';
+    footer.style.gap = '12px';
 
-    // VTID-01186: Logout button - uses doLogout function
+    // VTID-01186: Sign Out button (full-width, matching vitana-v1 design)
     const logoutBtn = document.createElement('button');
-    logoutBtn.className = 'btn btn-danger';
-    logoutBtn.textContent = 'Logout';
-    logoutBtn.style.backgroundColor = 'var(--danger-bg, #dc3545)';
-    logoutBtn.style.color = 'var(--danger-text, #fff)';
+    logoutBtn.className = 'btn';
+    logoutBtn.style.width = '100%';
+    logoutBtn.style.padding = '12px 16px';
+    logoutBtn.style.display = 'flex';
+    logoutBtn.style.alignItems = 'center';
+    logoutBtn.style.justifyContent = 'center';
+    logoutBtn.style.gap = '8px';
+    logoutBtn.style.backgroundColor = 'transparent';
+    logoutBtn.style.border = '1px solid var(--color-border, #444)';
+    logoutBtn.style.color = 'var(--color-text-primary, #fff)';
+    logoutBtn.style.borderRadius = '6px';
+    logoutBtn.style.cursor = 'pointer';
+    logoutBtn.style.transition = 'all 0.15s';
+    logoutBtn.innerHTML = '<span style="font-size: 1.1rem;">&#x2192;</span> Sign Out';
+    logoutBtn.onmouseenter = function() {
+        logoutBtn.style.backgroundColor = 'rgba(220, 53, 69, 0.1)';
+        logoutBtn.style.borderColor = 'var(--danger-bg, #dc3545)';
+        logoutBtn.style.color = 'var(--danger-bg, #dc3545)';
+    };
+    logoutBtn.onmouseleave = function() {
+        logoutBtn.style.backgroundColor = 'transparent';
+        logoutBtn.style.borderColor = 'var(--color-border, #444)';
+        logoutBtn.style.color = 'var(--color-text-primary, #fff)';
+    };
     logoutBtn.onclick = () => {
         doLogout();
     };
@@ -6514,7 +6660,9 @@ function renderProfileModal() {
 
     const closeBtn = document.createElement('button');
     closeBtn.className = 'btn';
-    closeBtn.textContent = 'Close';
+    closeBtn.textContent = 'Cancel';
+    closeBtn.style.width = '100%';
+    closeBtn.style.padding = '10px 16px';
     closeBtn.onclick = () => {
         state.showProfileModal = false;
         renderApp();
