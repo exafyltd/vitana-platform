@@ -44,6 +44,52 @@ const MeState = {
 // VTID-01049: Valid view roles for POST /api/v1/me/active-role
 const VALID_VIEW_ROLES = ['community', 'patient', 'professional', 'staff', 'admin', 'developer'];
 
+// VTID-01186: Role-to-default-screen mapping (matching vitana-v1 navigation)
+// When user switches role, they are redirected to their role-specific home screen
+const ROLE_DEFAULT_SCREENS = {
+    'community': { section: 'overview', tab: 'system-overview' },
+    'patient': { section: 'overview', tab: 'system-overview' },
+    'professional': { section: 'overview', tab: 'system-overview' },
+    'staff': { section: 'operator', tab: 'task-queue' },
+    'admin': { section: 'admin', tab: 'users' },
+    'developer': { section: 'command-hub', tab: 'tasks' }
+};
+
+/**
+ * VTID-01186: Navigate to role-specific default screen
+ * Called after role switch to redirect user to appropriate screen
+ */
+function navigateToRoleDefaultScreen(role) {
+    var lowerRole = (role || 'community').toLowerCase();
+    var defaultScreen = ROLE_DEFAULT_SCREENS[lowerRole] || ROLE_DEFAULT_SCREENS['community'];
+
+    // Find the section config
+    var section = NAVIGATION_CONFIG.find(function(s) { return s.section === defaultScreen.section; });
+    if (!section) {
+        console.warn('[VTID-01186] Section not found for role:', lowerRole);
+        return;
+    }
+
+    // Find the tab within the section
+    var tab = section.tabs.find(function(t) { return t.key === defaultScreen.tab; });
+    if (!tab) {
+        tab = section.tabs[0]; // Fallback to first tab
+    }
+
+    // Update state
+    state.currentModuleKey = defaultScreen.section;
+    state.currentTab = tab ? tab.key : '';
+
+    // Update URL
+    if (tab) {
+        history.pushState(null, '', tab.path);
+    } else {
+        history.pushState(null, '', section.basePath);
+    }
+
+    console.log('[VTID-01186] Navigated to role default screen:', lowerRole, '->', defaultScreen.section + '/' + (tab ? tab.key : ''));
+}
+
 /**
  * VTID-01049: Fetch Me Context from Gateway
  * Called on app boot to load authoritative role from server.
@@ -6499,6 +6545,10 @@ function renderProfileModal() {
         if (result.ok) {
             localStorage.setItem('vitana.viewRole', newRole);
             showToast('Role set to ' + newRole, 'success');
+            // VTID-01186: Navigate to role-specific default screen
+            state.showProfileModal = false;
+            navigateToRoleDefaultScreen(newRole);
+            renderApp();
         } else {
             state.viewRole = previousRole;
             if (MeState.me) {
@@ -6605,6 +6655,10 @@ function renderProfileModal() {
             // Success - update localStorage and show toast
             localStorage.setItem('vitana.viewRole', newRole);
             showToast('Role set to ' + newRole, 'success');
+            // VTID-01186: Navigate to role-specific default screen
+            state.showProfileModal = false;
+            navigateToRoleDefaultScreen(newRole);
+            renderApp();
         } else {
             // Failure - revert to previous role
             state.viewRole = previousRole;

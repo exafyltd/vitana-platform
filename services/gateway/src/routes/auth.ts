@@ -16,6 +16,7 @@ import {
   requireAuth,
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
+import { getSupabase } from '../lib/supabase';
 
 const router = Router();
 
@@ -172,8 +173,10 @@ router.post('/login', async (req: Request, res: Response) => {
 /**
  * GET /me
  *
- * Returns the authenticated user's identity extracted from their JWT.
+ * Returns the authenticated user's identity, profile, and memberships.
  * Requires a valid Supabase JWT in the Authorization header.
+ *
+ * VTID-01186: Enhanced to fetch profile data (display_name, avatar_url) from database.
  *
  * Headers required:
  * - Authorization: Bearer <supabase_access_token>
@@ -189,7 +192,15 @@ router.post('/login', async (req: Request, res: Response) => {
  *     "role": "authenticated",
  *     "exp": 1234567890,
  *     "iat": 1234567800
- *   }
+ *   },
+ *   "profile": {
+ *     "display_name": "John Doe",
+ *     "avatar_url": "https://...",
+ *     "bio": "..."
+ *   },
+ *   "memberships": [
+ *     { "tenant_id": "uuid", "role": "admin", "is_primary": true }
+ *   ]
  * }
  *
  * Response (error - 401):
@@ -204,8 +215,51 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
   const identity = req.identity!;
 
   console.log(
-    `[VTID-01157] GET /auth/me - user_id=${identity.user_id} exafy_admin=${identity.exafy_admin}`
+    `[VTID-01186] GET /auth/me - user_id=${identity.user_id} exafy_admin=${identity.exafy_admin}`
   );
+
+  // VTID-01186: Fetch profile and memberships from database
+  let profile: { display_name?: string; avatar_url?: string; bio?: string } = {};
+  let memberships: Array<{ tenant_id: string; role: string; is_primary: boolean }> = [];
+
+  const supabase = getSupabase();
+  if (supabase && identity.user_id) {
+    try {
+      // Fetch user profile from app_users
+      const { data: profileData, error: profileError } = await supabase
+        .from('app_users')
+        .select('display_name, avatar_url, bio')
+        .eq('user_id', identity.user_id)
+        .single();
+
+      if (!profileError && profileData) {
+        profile = {
+          display_name: profileData.display_name || undefined,
+          avatar_url: profileData.avatar_url || undefined,
+          bio: profileData.bio || undefined,
+        };
+      }
+
+      // Fetch user memberships from user_tenants
+      const { data: membershipData, error: membershipError } = await supabase
+        .from('user_tenants')
+        .select('tenant_id, active_role, is_primary')
+        .eq('user_id', identity.user_id);
+
+      if (!membershipError && membershipData) {
+        memberships = membershipData.map((m: any) => ({
+          tenant_id: m.tenant_id,
+          role: m.active_role || 'community',
+          is_primary: m.is_primary || false,
+        }));
+      }
+
+      console.log(`[VTID-01186] Profile loaded: display_name=${profile.display_name}, memberships=${memberships.length}`);
+    } catch (err: any) {
+      console.warn(`[VTID-01186] Failed to load profile/memberships: ${err.message}`);
+      // Continue with empty profile/memberships - don't fail the request
+    }
+  }
 
   return res.status(200).json({
     ok: true,
@@ -219,6 +273,8 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
       exp: identity.exp,
       iat: identity.iat,
     },
+    profile,
+    memberships,
   });
 });
 
