@@ -23,6 +23,12 @@ import {
   type ValidatorResult,
   type ValidatorIssue,
 } from './autopilot-controller';
+import {
+  getVtidSpec,
+  enforceSpecRequirement,
+  type VtidSpec,
+  type VtidSpecContent,
+} from './vtid-spec-service';
 
 // =============================================================================
 // Types
@@ -92,6 +98,128 @@ async function emitValidationEvent(
 }
 
 // =============================================================================
+// VTID-01190: Spec Schema Validation
+// =============================================================================
+
+/**
+ * VTID-01190: Required fields for a valid spec (based on VTID-01191 schema)
+ */
+const SPEC_REQUIRED_FIELDS: (keyof VtidSpecContent)[] = [
+  'vtid',
+  'title',
+  'spec_text',
+  'snapshot_created_at',
+];
+
+/**
+ * VTID-01190: Valid values for spec metadata fields
+ */
+const VALID_DOMAINS = ['frontend', 'backend', 'database', 'infrastructure', 'governance', 'system', 'unknown'];
+const VALID_LAYERS = ['SYSTEM', 'DEV', 'FRONTEND', 'BACKEND', 'DATA', 'INFRA'];
+const VALID_CREATIVITY = ['FORBIDDEN', 'ALLOWED', 'REQUIRED'];
+const VALID_EXECUTION_MODES = ['Autonomous', 'Supervised', 'Manual'];
+
+interface SpecValidationResult {
+  valid: boolean;
+  issues: ValidatorIssue[];
+}
+
+/**
+ * VTID-01190: Validate spec against schema
+ *
+ * This validates:
+ * 1. Required fields are present
+ * 2. Field values are valid
+ * 3. Checksum is valid
+ * 4. Spec is locked
+ */
+async function validateSpecSchema(vtid: string): Promise<SpecValidationResult> {
+  const issues: ValidatorIssue[] = [];
+
+  // Enforce spec requirement (checks existence, checksum, and lock)
+  const enforcement = await enforceSpecRequirement(vtid);
+  if (!enforcement.allowed) {
+    issues.push({
+      severity: 'error',
+      code: enforcement.error_code || 'SPEC_INVALID',
+      message: enforcement.error || 'Spec validation failed',
+    });
+    return { valid: false, issues };
+  }
+
+  const spec = enforcement.spec!;
+  const content = spec.spec_content;
+
+  // Validate required fields
+  for (const field of SPEC_REQUIRED_FIELDS) {
+    if (!content[field]) {
+      issues.push({
+        severity: 'error',
+        code: 'SPEC_MISSING_FIELD',
+        message: `Spec missing required field: ${field}`,
+      });
+    }
+  }
+
+  // Validate primary domain
+  if (!VALID_DOMAINS.includes(spec.primary_domain)) {
+    issues.push({
+      severity: 'warning',
+      code: 'SPEC_INVALID_DOMAIN',
+      message: `Invalid primary_domain: ${spec.primary_domain}. Valid: ${VALID_DOMAINS.join(', ')}`,
+    });
+  }
+
+  // Validate layer if present
+  if (content.layer && !VALID_LAYERS.includes(content.layer)) {
+    issues.push({
+      severity: 'warning',
+      code: 'SPEC_INVALID_LAYER',
+      message: `Invalid layer: ${content.layer}. Valid: ${VALID_LAYERS.join(', ')}`,
+    });
+  }
+
+  // Validate creativity if present
+  if (content.creativity && !VALID_CREATIVITY.includes(content.creativity)) {
+    issues.push({
+      severity: 'warning',
+      code: 'SPEC_INVALID_CREATIVITY',
+      message: `Invalid creativity: ${content.creativity}. Valid: ${VALID_CREATIVITY.join(', ')}`,
+    });
+  }
+
+  // Validate execution mode if present
+  if (content.execution_mode && !VALID_EXECUTION_MODES.includes(content.execution_mode)) {
+    issues.push({
+      severity: 'warning',
+      code: 'SPEC_INVALID_EXECUTION_MODE',
+      message: `Invalid execution_mode: ${content.execution_mode}. Valid: ${VALID_EXECUTION_MODES.join(', ')}`,
+    });
+  }
+
+  // Validate VTID format
+  if (!spec.vtid.match(/^VTID-\d{5}$/)) {
+    issues.push({
+      severity: 'warning',
+      code: 'SPEC_INVALID_VTID_FORMAT',
+      message: `VTID format should be VTID-XXXXX (5 digits): ${spec.vtid}`,
+    });
+  }
+
+  // Validate spec_text is not empty
+  if (content.spec_text && content.spec_text.trim().length < 10) {
+    issues.push({
+      severity: 'warning',
+      code: 'SPEC_TEXT_TOO_SHORT',
+      message: `Spec text appears too short (${content.spec_text.length} chars) - ensure spec is complete`,
+    });
+  }
+
+  const valid = !issues.some(i => i.severity === 'error');
+  return { valid, issues };
+}
+
+// =============================================================================
 // Code Review Agent
 // =============================================================================
 
@@ -134,13 +262,13 @@ async function runCodeReview(
     }
   }
 
-  // Check 2: Verify spec snapshot exists and was referenced
-  const specSnapshot = getSpecSnapshot(vtid);
+  // VTID-01190: Verify spec exists in DB with valid checksum
+  const specSnapshot = await getSpecSnapshot(vtid);
   if (!specSnapshot) {
     issues.push({
-      severity: 'warning',
+      severity: 'error', // VTID-01190: Upgraded from warning to error
       code: 'NO_SPEC_SNAPSHOT',
-      message: `No spec snapshot found for ${vtid} - changes may not align with requirements`,
+      message: `No persisted spec found for ${vtid} - VTID cannot proceed without spec (VTID-01190)`,
     });
   }
 
@@ -243,6 +371,9 @@ async function runSecurityScan(
 /**
  * Validate a PR for merge - HARD GATE
  *
+ * VTID-01190: This function now validates spec schema FIRST.
+ * Invalid specs block execution before any other validation.
+ *
  * This function MUST be called before any merge operation.
  * The merge endpoint should refuse to proceed if this returns passed: false.
  *
@@ -252,7 +383,7 @@ async function runSecurityScan(
 export async function validateForMerge(request: ValidationRequest): Promise<ValidationResponse> {
   const { vtid, pr_number, repo = 'exafyltd/vitana-platform', files_changed = [] } = request;
 
-  console.log(`[VTID-01178] Starting validation for ${vtid} PR #${pr_number}`);
+  console.log(`[VTID-01190] Starting validation for ${vtid} PR #${pr_number}`);
 
   await emitValidationEvent(vtid, 'started', 'info', `Validation started for ${vtid}`, {
     pr_number,
@@ -260,13 +391,53 @@ export async function validateForMerge(request: ValidationRequest): Promise<Vali
   });
 
   const allIssues: ValidatorIssue[] = [];
+  let specValidationPassed = false;
   let codeReviewPassed = false;
   let governancePassed = false;
   let securityPassed = false;
 
   try {
+    // VTID-01190: Step 0 - Spec Schema Validation (MUST pass before any other validation)
+    console.log(`[VTID-01190] Running spec schema validation for ${vtid}...`);
+    const specValidation = await validateSpecSchema(vtid);
+    specValidationPassed = specValidation.valid;
+    allIssues.push(...specValidation.issues);
+
+    await emitValidationEvent(
+      vtid,
+      'spec_validation' as any,
+      specValidation.valid ? 'success' : 'error',
+      specValidation.valid
+        ? 'Spec schema validation passed'
+        : `Spec schema validation failed: ${specValidation.issues.length} issue(s)`,
+      { passed: specValidation.valid, issue_count: specValidation.issues.length }
+    );
+
+    // VTID-01190: If spec validation fails, block immediately
+    if (!specValidationPassed) {
+      console.error(`[VTID-01190] SPEC VALIDATION BLOCKED for ${vtid} - cannot proceed`);
+      await emitValidationEvent(vtid, 'blocked', 'error', `Spec validation blocked ${vtid}`, {
+        passed: false,
+        spec_validation_failed: true,
+        issue_count: allIssues.length,
+      });
+
+      return {
+        ok: true,
+        passed: false,
+        result: {
+          passed: false,
+          code_review_passed: false,
+          governance_passed: false,
+          security_scan_passed: false,
+          issues: allIssues,
+          validated_at: new Date().toISOString(),
+        },
+      };
+    }
+
     // Step 1: Code Review
-    console.log(`[VTID-01178] Running code review for ${vtid}...`);
+    console.log(`[VTID-01190] Running code review for ${vtid}...`);
     const codeReview = await runCodeReview(vtid, pr_number, files_changed);
     codeReviewPassed = codeReview.passed;
     allIssues.push(...codeReview.issues);
@@ -280,7 +451,7 @@ export async function validateForMerge(request: ValidationRequest): Promise<Vali
     );
 
     // Step 2: Governance Check
-    console.log(`[VTID-01178] Running governance check for ${vtid}...`);
+    console.log(`[VTID-01190] Running governance check for ${vtid}...`);
     const governance = await runGovernanceCheck(vtid, pr_number, repo);
     governancePassed = governance.passed;
 
@@ -301,7 +472,7 @@ export async function validateForMerge(request: ValidationRequest): Promise<Vali
     );
 
     // Step 3: Security Scan
-    console.log(`[VTID-01178] Running security scan for ${vtid}...`);
+    console.log(`[VTID-01190] Running security scan for ${vtid}...`);
     const security = await runSecurityScan(vtid, pr_number, files_changed);
     securityPassed = security.passed;
 
@@ -323,8 +494,8 @@ export async function validateForMerge(request: ValidationRequest): Promise<Vali
       { passed: security.passed, finding_count: security.findings.length }
     );
 
-    // Final result
-    const passed = codeReviewPassed && governancePassed && securityPassed;
+    // Final result (VTID-01190: spec validation is now included)
+    const passed = specValidationPassed && codeReviewPassed && governancePassed && securityPassed;
     const result: ValidatorResult = {
       passed,
       code_review_passed: codeReviewPassed,
@@ -339,6 +510,7 @@ export async function validateForMerge(request: ValidationRequest): Promise<Vali
       await markValidated(vtid, result);
       await emitValidationEvent(vtid, 'completed', 'success', `Validation passed for ${vtid}`, {
         passed: true,
+        spec_validation_passed: specValidationPassed,
         code_review_passed: codeReviewPassed,
         governance_passed: governancePassed,
         security_scan_passed: securityPassed,
@@ -351,7 +523,7 @@ export async function validateForMerge(request: ValidationRequest): Promise<Vali
       });
     }
 
-    console.log(`[VTID-01178] Validation complete for ${vtid}: ${passed ? 'PASSED' : 'BLOCKED'}`);
+    console.log(`[VTID-01190] Validation complete for ${vtid}: ${passed ? 'PASSED' : 'BLOCKED'}`);
 
     return {
       ok: true,
