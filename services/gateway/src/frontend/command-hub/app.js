@@ -5719,7 +5719,10 @@ function renderTaskDrawer() {
             activateBtn.className = 'btn btn-success task-spec-btn task-activate-btn';
 
             // VTID-01188: Check spec approval status - disable if not approved
-            var taskSpecStatus = state.selectedTask.spec_status || 'missing';
+            // VTID-01194: Use selectedTaskDetail.spec_status first (updated after approval), then fall back
+            var taskSpecStatus = (state.selectedTaskDetail && state.selectedTaskDetail.spec_status)
+                ? state.selectedTaskDetail.spec_status
+                : (state.selectedTask.spec_status || 'missing');
             var isSpecApproved = taskSpecStatus === 'approved';
 
             if (!isSpecApproved) {
