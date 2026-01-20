@@ -797,8 +797,10 @@ async function fetchAuthMe(fallbackEmail) {
             var errorMsg = data.error || 'Failed to fetch auth identity';
             console.error('[VTID-01171] fetchAuthMe error:', errorMsg);
 
-            if (response.status === 401) {
-                // Clear invalid auth token
+            // VTID-01196: Only clear token on 401 if we DON'T have a fallback email
+            // If we have fallback email, it means login just succeeded - don't clear the valid token
+            if (response.status === 401 && !emailFallback) {
+                // Clear invalid auth token (only for stale tokens, not fresh logins)
                 state.authToken = null;
                 localStorage.removeItem('vitana.authToken');
             }
