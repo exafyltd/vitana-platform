@@ -135,7 +135,15 @@ router.post('/login', async (req: Request, res: Response) => {
       refresh_token?: string;
       expires_in?: number;
       token_type?: string;
-      user?: { id?: string };
+      user?: {
+        id?: string;
+        email?: string;
+        user_metadata?: {
+          avatar_url?: string;
+          full_name?: string;
+          name?: string;
+        };
+      };
       error?: string;
       error_description?: string;
       msg?: string;
@@ -152,6 +160,36 @@ router.post('/login', async (req: Request, res: Response) => {
 
     console.log(`[VTID-01186] POST /auth/login - Success for ${email}, user_id=${authData.user?.id}`);
 
+    // VTID-01196: Fetch profile from app_users to get avatar_url
+    let profile: { display_name?: string; avatar_url?: string; bio?: string } = {};
+    const supabase = getSupabase();
+    if (supabase && authData.user?.id) {
+      try {
+        const { data: profileData, error: profileError } = await supabase
+          .from('app_users')
+          .select('display_name, avatar_url, bio')
+          .eq('user_id', authData.user.id)
+          .single();
+
+        if (!profileError && profileData) {
+          profile = {
+            display_name: profileData.display_name || undefined,
+            avatar_url: profileData.avatar_url || undefined,
+            bio: profileData.bio || undefined,
+          };
+          console.log(`[VTID-01196] Profile loaded during login: avatar_url=${profile.avatar_url ? 'yes' : 'no'}`);
+        }
+      } catch (err: any) {
+        console.warn(`[VTID-01196] Failed to load profile during login: ${err.message}`);
+      }
+    }
+
+    // Also check user_metadata from Supabase auth for avatar
+    const userMetaAvatar = authData.user?.user_metadata?.avatar_url;
+    if (!profile.avatar_url && userMetaAvatar) {
+      profile.avatar_url = userMetaAvatar;
+    }
+
     return res.status(200).json({
       ok: true,
       access_token: authData.access_token,
@@ -159,6 +197,7 @@ router.post('/login', async (req: Request, res: Response) => {
       expires_in: authData.expires_in,
       token_type: authData.token_type || 'bearer',
       user: authData.user,
+      profile, // VTID-01196: Include profile with avatar_url
     });
   } catch (err: any) {
     console.error('[VTID-01186] POST /auth/login - Exception:', err.message);
