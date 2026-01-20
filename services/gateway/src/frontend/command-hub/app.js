@@ -2332,6 +2332,13 @@ const state = {
     showGovernanceBlockedModal: false,
     governanceBlockedData: null, // { level, violations, service, vtid }
 
+    // VTID-01194: Execution Approval Confirmation Modal
+    // "IN_PROGRESS = Explicit Human Approval to Execute"
+    showExecutionApprovalModal: false,
+    executionApprovalVtid: null,
+    executionApprovalReason: '',
+    executionApprovalLoading: false,
+
     // Toast Notifications (VTID-0517)
     toasts: [],
 
@@ -3828,6 +3835,9 @@ function renderApp() {
 
     // VTID-0407: Governance Blocked Modal
     if (state.showGovernanceBlockedModal) root.appendChild(renderGovernanceBlockedModal());
+
+    // VTID-01194: Execution Approval Confirmation Modal
+    if (state.showExecutionApprovalModal) root.appendChild(renderExecutionApprovalModal());
 
     // VTID-01180: Autopilot Recommendations Modal
     if (state.showAutopilotRecommendationsModal) root.appendChild(renderAutopilotRecommendationsModal());
@@ -5769,45 +5779,12 @@ function renderTaskDrawer() {
                     showToast('Cannot activate: spec must be approved first', 'warning');
                     return;
                 }
-                // VTID-01009: Emit lifecycle.started to OASIS (authoritative)
-                activateBtn.disabled = true;
-                activateBtn.textContent = 'Activating...';
-                try {
-                    var response = await fetch('/api/v1/vtid/lifecycle/start', {
-                        method: 'POST',
-                        headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
-                        body: JSON.stringify({
-                            vtid: vtid,
-                            source: 'command-hub',
-                            summary: vtid + ': Activated from Command Hub'
-                        })
-                    });
-                    var result = await response.json();
-                    if (result.ok) {
-                        // VTID-01009: Clear any stale local override since OASIS is now authoritative
-                        clearTaskStatusOverride(vtid);
-                        showToast('Task activated: ' + vtid + ' → In Progress', 'success');
-                        // Close drawer and refresh authoritative data
-                        state.selectedTask = null;
-                        state.selectedTaskDetail = null;
-                        state.drawerSpecVtid = null;
-                        state.drawerSpecText = '';
-                        state.drawerSpecEditing = false;
-                        // Refresh tasks from OASIS-derived board endpoint
-                        await fetchTasks();
-                    } else {
-                        // VTID-01009: API failed - show error, do NOT fake local override
-                        showToast('Activation failed: ' + (result.error || 'Unknown error'), 'error');
-                        activateBtn.disabled = false;
-                        activateBtn.textContent = 'Activate';
-                    }
-                } catch (e) {
-                    // VTID-01009: Network/server error - show error, do NOT fake local override
-                    console.error('[VTID-01009] Activate failed:', e);
-                    showToast('Activation failed: Network error', 'error');
-                    activateBtn.disabled = false;
-                    activateBtn.textContent = 'Activate';
-                }
+                // VTID-01194: Show confirmation modal instead of direct activation
+                // "Moving this task to In Progress will immediately start autonomous execution."
+                state.executionApprovalVtid = vtid;
+                state.executionApprovalReason = '';
+                state.showExecutionApprovalModal = true;
+                renderApp();
             };
             specActions.appendChild(activateBtn);
 
@@ -16194,6 +16171,238 @@ function renderGovernanceBlockedModal() {
         renderApp();
     };
     footer.appendChild(dismissBtn);
+
+    modal.appendChild(footer);
+    overlay.appendChild(modal);
+    return overlay;
+}
+
+/**
+ * VTID-01194: Execution Approval Confirmation Modal
+ * "Moving this task to In Progress will immediately start autonomous execution."
+ *
+ * This modal is REQUIRED per VTID-01194 spec before moving a task to IN_PROGRESS.
+ * IN_PROGRESS = Explicit Human Approval to Execute
+ *
+ * Features:
+ * - Clear warning message about autonomous execution
+ * - Optional reason field for audit trail
+ * - Confirm/Cancel buttons
+ */
+function renderExecutionApprovalModal() {
+    if (!state.showExecutionApprovalModal || !state.executionApprovalVtid) {
+        return null;
+    }
+
+    var vtid = state.executionApprovalVtid;
+
+    var overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.onclick = function(e) {
+        if (e.target === overlay && !state.executionApprovalLoading) {
+            state.showExecutionApprovalModal = false;
+            state.executionApprovalVtid = null;
+            state.executionApprovalReason = '';
+            renderApp();
+        }
+    };
+
+    var modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.cssText = 'max-width: 480px; background: #1e293b; border: 1px solid rgba(74,222,128,0.3); box-shadow: 0 0 40px rgba(74,222,128,0.15);';
+
+    // === HEADER ===
+    var header = document.createElement('div');
+    header.className = 'modal-header';
+    header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.1);';
+
+    var titleRow = document.createElement('div');
+    titleRow.style.cssText = 'display: flex; align-items: center; gap: 10px;';
+
+    var iconSpan = document.createElement('span');
+    iconSpan.style.cssText = 'font-size: 22px;';
+    iconSpan.textContent = '\u26A1'; // Lightning bolt - execution
+    titleRow.appendChild(iconSpan);
+
+    var title = document.createElement('span');
+    title.textContent = 'Approve Execution';
+    title.style.cssText = 'font-size: 18px; font-weight: 600; color: #4ade80;';
+    titleRow.appendChild(title);
+
+    header.appendChild(titleRow);
+
+    var closeBtn = document.createElement('button');
+    closeBtn.innerHTML = '&times;';
+    closeBtn.style.cssText = 'background: none; border: none; color: #888; font-size: 28px; cursor: pointer; padding: 0; line-height: 1;';
+    closeBtn.disabled = state.executionApprovalLoading;
+    closeBtn.onclick = function() {
+        if (!state.executionApprovalLoading) {
+            state.showExecutionApprovalModal = false;
+            state.executionApprovalVtid = null;
+            state.executionApprovalReason = '';
+            renderApp();
+        }
+    };
+    header.appendChild(closeBtn);
+    modal.appendChild(header);
+
+    // === BODY ===
+    var body = document.createElement('div');
+    body.className = 'modal-body';
+    body.style.cssText = 'padding: 20px;';
+
+    // VTID badge
+    var vtidBadge = document.createElement('div');
+    vtidBadge.style.cssText = 'display: inline-block; padding: 6px 12px; background: rgba(96,165,250,0.15); border: 1px solid rgba(96,165,250,0.3); border-radius: 6px; font-size: 14px; font-weight: 600; color: #60a5fa; font-family: ui-monospace, monospace; margin-bottom: 16px;';
+    vtidBadge.textContent = vtid;
+    body.appendChild(vtidBadge);
+
+    // Warning message section (VTID-01194 required text)
+    var warningSection = document.createElement('div');
+    warningSection.style.cssText = 'margin-bottom: 20px; padding: 16px; background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.25); border-radius: 8px;';
+
+    var warningIcon = document.createElement('div');
+    warningIcon.style.cssText = 'font-size: 24px; margin-bottom: 8px;';
+    warningIcon.textContent = '\u26A0\uFE0F'; // Warning sign
+    warningSection.appendChild(warningIcon);
+
+    var warningTitle = document.createElement('div');
+    warningTitle.style.cssText = 'font-weight: 600; color: #fbbf24; margin-bottom: 8px; font-size: 15px;';
+    warningTitle.textContent = 'Autonomous Execution Warning';
+    warningSection.appendChild(warningTitle);
+
+    var warningText = document.createElement('p');
+    warningText.style.cssText = 'margin: 0; color: #f8fafc; font-size: 14px; line-height: 1.6;';
+    warningText.textContent = 'Moving this task to In Progress will immediately start autonomous execution. The system will begin working on this task automatically.';
+    warningSection.appendChild(warningText);
+
+    body.appendChild(warningSection);
+
+    // What will happen section
+    var whatHappensSection = document.createElement('div');
+    whatHappensSection.style.cssText = 'margin-bottom: 20px; padding: 14px; background: rgba(255,255,255,0.03); border-radius: 8px;';
+
+    var whatHappensTitle = document.createElement('div');
+    whatHappensTitle.style.cssText = 'font-weight: 500; color: #94a3b8; margin-bottom: 10px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;';
+    whatHappensTitle.textContent = 'What will happen:';
+    whatHappensSection.appendChild(whatHappensTitle);
+
+    var stepsList = document.createElement('ul');
+    stepsList.style.cssText = 'margin: 0; padding-left: 18px; color: #cbd5e1; font-size: 13px; line-height: 1.8;';
+    var steps = [
+        'Task status changes to IN_PROGRESS',
+        'Execution approval event emitted to OASIS',
+        'Worker dispatched to begin autonomous work',
+        'Progress tracked in Command Hub'
+    ];
+    steps.forEach(function(step) {
+        var li = document.createElement('li');
+        li.textContent = step;
+        stepsList.appendChild(li);
+    });
+    whatHappensSection.appendChild(stepsList);
+
+    body.appendChild(whatHappensSection);
+
+    // Optional reason field (audit-friendly per VTID-01194)
+    var reasonSection = document.createElement('div');
+    reasonSection.style.cssText = 'margin-bottom: 8px;';
+
+    var reasonLabel = document.createElement('label');
+    reasonLabel.style.cssText = 'display: block; font-size: 13px; color: #94a3b8; margin-bottom: 6px;';
+    reasonLabel.textContent = 'Reason (optional, for audit trail):';
+    reasonSection.appendChild(reasonLabel);
+
+    var reasonInput = document.createElement('input');
+    reasonInput.type = 'text';
+    reasonInput.placeholder = 'e.g., Approved after review, Testing new feature...';
+    reasonInput.style.cssText = 'width: 100%; padding: 10px 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; color: #f8fafc; font-size: 14px; box-sizing: border-box;';
+    reasonInput.value = state.executionApprovalReason || '';
+    reasonInput.disabled = state.executionApprovalLoading;
+    reasonInput.oninput = function(e) {
+        state.executionApprovalReason = e.target.value;
+    };
+    reasonSection.appendChild(reasonInput);
+
+    body.appendChild(reasonSection);
+    modal.appendChild(body);
+
+    // === FOOTER ===
+    var footer = document.createElement('div');
+    footer.className = 'modal-footer';
+    footer.style.cssText = 'display: flex; justify-content: flex-end; align-items: center; gap: 12px; padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.1);';
+
+    var cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.cssText = 'padding: 10px 20px; background: rgba(255,255,255,0.1); border: none; border-radius: 6px; color: #fff; cursor: pointer;';
+    cancelBtn.disabled = state.executionApprovalLoading;
+    cancelBtn.onclick = function() {
+        if (!state.executionApprovalLoading) {
+            state.showExecutionApprovalModal = false;
+            state.executionApprovalVtid = null;
+            state.executionApprovalReason = '';
+            renderApp();
+        }
+    };
+    footer.appendChild(cancelBtn);
+
+    var confirmBtn = document.createElement('button');
+    confirmBtn.className = 'btn btn-success';
+    confirmBtn.textContent = state.executionApprovalLoading ? 'Approving...' : 'Approve & Start Execution';
+    confirmBtn.style.cssText = 'padding: 10px 20px; background: #22c55e; border: none; border-radius: 6px; color: #fff; cursor: pointer; font-weight: 600;';
+    confirmBtn.disabled = state.executionApprovalLoading;
+    confirmBtn.onclick = async function() {
+        state.executionApprovalLoading = true;
+        renderApp();
+
+        try {
+            // VTID-01194: Call lifecycle/start with approval_reason
+            var response = await fetch('/api/v1/vtid/lifecycle/start', {
+                method: 'POST',
+                headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({
+                    vtid: vtid,
+                    source: 'command-hub',
+                    summary: vtid + ': Execution approved from Command Hub',
+                    approval_reason: state.executionApprovalReason || null
+                })
+            });
+            var result = await response.json();
+
+            if (result.ok) {
+                // Clear modal state
+                state.showExecutionApprovalModal = false;
+                state.executionApprovalVtid = null;
+                state.executionApprovalReason = '';
+                state.executionApprovalLoading = false;
+
+                // Clear task selection and override
+                clearTaskStatusOverride(vtid);
+                state.selectedTask = null;
+                state.selectedTaskDetail = null;
+                state.drawerSpecVtid = null;
+                state.drawerSpecText = '';
+                state.drawerSpecEditing = false;
+
+                // Show success toast
+                showToast('Execution approved: ' + vtid + ' \u2192 Autonomous execution started', 'success');
+
+                // Refresh tasks
+                await fetchTasks();
+            } else {
+                state.executionApprovalLoading = false;
+                showToast('Approval failed: ' + (result.error || 'Unknown error'), 'error');
+                renderApp();
+            }
+        } catch (e) {
+            console.error('[VTID-01194] Execution approval failed:', e);
+            state.executionApprovalLoading = false;
+            showToast('Approval failed: Network error', 'error');
+            renderApp();
+        }
+    };
+    footer.appendChild(confirmBtn);
 
     modal.appendChild(footer);
     overlay.appendChild(modal);

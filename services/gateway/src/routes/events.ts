@@ -1038,8 +1038,13 @@ router.post("/api/v1/vtid/lifecycle/complete", async (req: Request, res: Respons
 });
 
 /**
- * VTID-01009: Lifecycle Start Event Schema
- * Emits authoritative lifecycle.started event when task is activated
+ * VTID-01009 + VTID-01194: Lifecycle Start Event Schema
+ *
+ * VTID-01194: Autonomous Execution Trigger Semantics
+ * IN_PROGRESS = Explicit Human Approval to Execute
+ *
+ * Moving a task to IN_PROGRESS now triggers autonomous execution immediately.
+ * This is the ONLY approval needed - no separate "arm" step required.
  */
 const LifecycleStartEventSchema = z.object({
   vtid: z.string().min(1, "vtid required"),
@@ -1047,21 +1052,31 @@ const LifecycleStartEventSchema = z.object({
     errorMap: () => ({ message: "source must be: claude, cicd, operator, or command-hub" }),
   }),
   summary: z.string().optional(),
+  // VTID-01194: Optional reason for audit trail (from confirmation modal)
+  approval_reason: z.string().optional(),
 });
 
 /**
  * POST /api/v1/vtid/lifecycle/start
- * VTID-01009: Emit lifecycle.started event when task is activated
+ * VTID-01009 + VTID-01194: Emit execution_approved event when task moves to IN_PROGRESS
  *
- * This endpoint emits an authoritative OASIS event when a task transitions
- * from SCHEDULED to IN_PROGRESS. OASIS is the single source of truth.
+ * VTID-01194 SEMANTICS:
+ * - Moving to IN_PROGRESS = Explicit human approval to execute
+ * - This is the ONLY approval needed for autonomous execution
+ * - No separate "arm" step required in daily workflow
+ * - autopilot_execution_enabled is now an EMERGENCY STOP only
+ *
+ * This endpoint emits:
+ * 1. vtid.lifecycle.execution_approved (NEW - VTID-01194)
+ * 2. vtid.lifecycle.started (Legacy - kept for backward compatibility)
  *
  * Body:
  * - vtid: The VTID to mark as started (required)
  * - source: "claude", "cicd", "operator", or "command-hub" (required)
  * - summary: Optional summary message
+ * - approval_reason: Optional reason from confirmation modal (VTID-01194)
  *
- * Idempotency: If a lifecycle.started event already exists for this VTID,
+ * Idempotency: If execution_approved/started event already exists for this VTID,
  * this endpoint returns 200 OK with a note that the event already exists.
  */
 router.post("/api/v1/vtid/lifecycle/start", async (req: Request, res: Response) => {
@@ -1069,7 +1084,7 @@ router.post("/api/v1/vtid/lifecycle/start", async (req: Request, res: Response) 
     const validation = LifecycleStartEventSchema.safeParse(req.body);
 
     if (!validation.success) {
-      console.error("[VTID-01009] Validation error:", validation.error.errors);
+      console.error("[VTID-01194] Validation error:", validation.error.errors);
       return res.status(400).json({
         ok: false,
         error: validation.error.errors
@@ -1083,16 +1098,16 @@ router.post("/api/v1/vtid/lifecycle/start", async (req: Request, res: Response) 
     const supabaseUrl = process.env.SUPABASE_URL;
 
     if (!svcKey || !supabaseUrl) {
-      console.error("[VTID-01009] Gateway misconfigured: Missing Supabase credentials");
+      console.error("[VTID-01194] Gateway misconfigured: Missing Supabase credentials");
       return res.status(500).json({
         ok: false,
         error: "Gateway misconfigured",
       });
     }
 
-    // Check for existing started event (idempotency)
+    // VTID-01194: Check for existing execution_approved OR started event (idempotency)
     const existingResp = await fetch(
-      `${supabaseUrl}/rest/v1/oasis_events?vtid=eq.${body.vtid}&topic=eq.vtid.lifecycle.started&limit=1`,
+      `${supabaseUrl}/rest/v1/oasis_events?vtid=eq.${body.vtid}&or=(topic.eq.vtid.lifecycle.execution_approved,topic.eq.vtid.lifecycle.started)&limit=1`,
       {
         method: "GET",
         headers: {
@@ -1106,38 +1121,42 @@ router.post("/api/v1/vtid/lifecycle/start", async (req: Request, res: Response) 
     if (existingResp.ok) {
       const existingEvents = await existingResp.json() as any[];
       if (existingEvents.length > 0) {
-        console.log(`[VTID-01009] Lifecycle started event already exists for ${body.vtid}`);
+        console.log(`[VTID-01194] Execution already approved for ${body.vtid} (existing event: ${existingEvents[0].topic})`);
         return res.status(200).json({
           ok: true,
           vtid: body.vtid,
           already_exists: true,
           existing_event_id: existingEvents[0].id,
-          message: `Lifecycle started event already exists for ${body.vtid}`,
+          existing_topic: existingEvents[0].topic,
+          message: `Execution already approved for ${body.vtid}`,
         });
       }
     }
 
-    // Emit the lifecycle.started event
-    const eventId = randomUUID();
     const timestamp = new Date().toISOString();
-    const topic = "vtid.lifecycle.started";
-    const defaultMessage = `${body.vtid}: Activated from Command Hub`;
+    const defaultMessage = `${body.vtid}: Execution approved - moving to IN_PROGRESS`;
 
-    const payload = {
-      id: eventId,
+    // VTID-01194: Emit the NEW execution_approved event (canonical trigger)
+    const executionApprovedId = randomUUID();
+    const executionApprovedPayload = {
+      id: executionApprovedId,
       created_at: timestamp,
       vtid: body.vtid,
-      topic: topic,
+      topic: "vtid.lifecycle.execution_approved",
       service: `vtid-lifecycle-${body.source}`,
       role: "GOVERNANCE",
-      model: "vtid-01009-lifecycle-start",
+      model: "vtid-01194-execution-approved",
       status: "in_progress",
       message: body.summary || defaultMessage,
       link: null,
       metadata: {
         vtid: body.vtid,
         source: body.source,
-        started_at: timestamp,
+        approved_at: timestamp,
+        approval_reason: body.approval_reason || null,
+        // VTID-01194: Mark this as the canonical execution trigger
+        trigger_type: "human_approval",
+        vtid_ref: "VTID-01194",
       },
     };
 
@@ -1149,12 +1168,12 @@ router.post("/api/v1/vtid/lifecycle/start", async (req: Request, res: Response) 
         Authorization: `Bearer ${svcKey}`,
         Prefer: "return=representation",
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(executionApprovedPayload),
     });
 
     if (!insertResp.ok) {
       const text = await insertResp.text();
-      console.error(`[VTID-01009] OASIS insert failed: ${insertResp.status} - ${text}`);
+      console.error(`[VTID-01194] OASIS insert failed: ${insertResp.status} - ${text}`);
       return res.status(502).json({
         ok: false,
         error: "Database insert failed",
@@ -1164,9 +1183,44 @@ router.post("/api/v1/vtid/lifecycle/start", async (req: Request, res: Response) 
     const data = await insertResp.json();
     const insertedEvent = Array.isArray(data) ? data[0] : data;
 
-    console.log(`[VTID-01009] Lifecycle started event emitted: ${eventId} - ${body.vtid}`);
+    console.log(`[VTID-01194] Execution approved event emitted: ${executionApprovedId} - ${body.vtid}`);
 
-    // Also update the vtid_ledger status to in_progress
+    // VTID-01194: Also emit legacy started event for backward compatibility
+    const startedEventId = randomUUID();
+    const startedPayload = {
+      id: startedEventId,
+      created_at: timestamp,
+      vtid: body.vtid,
+      topic: "vtid.lifecycle.started",
+      service: `vtid-lifecycle-${body.source}`,
+      role: "GOVERNANCE",
+      model: "vtid-01009-lifecycle-start",
+      status: "in_progress",
+      message: body.summary || `${body.vtid}: Activated from Command Hub`,
+      link: null,
+      metadata: {
+        vtid: body.vtid,
+        source: body.source,
+        started_at: timestamp,
+        // VTID-01194: Link to the canonical event
+        execution_approved_event_id: executionApprovedId,
+      },
+    };
+
+    // Fire and forget for legacy event - don't block on it
+    fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+      },
+      body: JSON.stringify(startedPayload),
+    }).catch(err => {
+      console.warn(`[VTID-01194] Legacy started event insert failed (non-blocking): ${err.message}`);
+    });
+
+    // Update the vtid_ledger status to in_progress
     const ledgerUpdateResp = await fetch(
       `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${body.vtid}`,
       {
@@ -1184,18 +1238,27 @@ router.post("/api/v1/vtid/lifecycle/start", async (req: Request, res: Response) 
     );
 
     if (!ledgerUpdateResp.ok) {
-      console.warn(`[VTID-01009] Ledger update failed for ${body.vtid}, but lifecycle event was emitted`);
+      console.warn(`[VTID-01194] Ledger update failed for ${body.vtid}, but execution_approved event was emitted`);
     }
 
+    // VTID-01194: Return response indicating execution will start
     return res.status(200).json({
       ok: true,
       event_id: insertedEvent.id,
       vtid: body.vtid,
-      topic: topic,
-      message: `Lifecycle started event emitted for ${body.vtid}`,
+      topic: "vtid.lifecycle.execution_approved",
+      status: "in_progress",
+      message: `Execution approved for ${body.vtid} - autonomous execution will begin`,
+      // VTID-01194: Include semantic info
+      execution_trigger: {
+        type: "human_approval",
+        approved_at: timestamp,
+        source: body.source,
+        vtid_ref: "VTID-01194",
+      },
     });
   } catch (e: any) {
-    console.error("[VTID-01009] Unexpected error:", e);
+    console.error("[VTID-01194] Unexpected error:", e);
     return res.status(500).json({
       ok: false,
       error: "Internal server error",
