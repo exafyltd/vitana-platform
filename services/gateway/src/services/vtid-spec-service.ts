@@ -186,6 +186,9 @@ export function verifyChecksumLocally(spec: VtidSpec): boolean {
  *
  * This is the ONLY way to create specs. The spec is locked immediately
  * upon creation - no edits allowed.
+ *
+ * VTID-01196 FIX: Added cache clearing and VTID validation to prevent
+ * task identity confusion when copying specs between tasks.
  */
 export async function createVtidSpec(request: CreateSpecRequest): Promise<SpecOperationResult> {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
@@ -209,6 +212,11 @@ export async function createVtidSpec(request: CreateSpecRequest): Promise<SpecOp
   if (!request.created_by || request.created_by.trim() === '') {
     return { ok: false, error: 'Created by is required', error_code: 'VALIDATION_ERROR' };
   }
+
+  // VTID-01196 FIX: Clear any stale cache entry for this VTID before creating
+  // This prevents cache confusion when creating specs for new tasks
+  clearSpecsCache(request.vtid);
+  console.log(`[VTID-01196-FIX] Cleared cache for ${request.vtid} before spec creation`);
 
   // Build spec content
   const specContent: VtidSpecContent = {
@@ -234,9 +242,15 @@ export async function createVtidSpec(request: CreateSpecRequest): Promise<SpecOp
   const systemSurface = request.system_surface || [];
 
   try {
+    // VTID-01196 FIX: Always bypass cache and verify from database directly
     // Check if spec already exists (idempotent - return existing)
     const existingSpec = await getVtidSpec(request.vtid, { verifyChecksum: false, bypassCache: true });
     if (existingSpec) {
+      // VTID-01196 FIX: Verify the existing spec belongs to the correct VTID
+      if (existingSpec.vtid !== request.vtid) {
+        console.error(`[VTID-01196-FIX] CRITICAL: Spec VTID mismatch! requested=${request.vtid}, found=${existingSpec.vtid}`);
+        return { ok: false, error: `Spec identity mismatch: requested ${request.vtid} but found ${existingSpec.vtid}`, error_code: 'VTID_MISMATCH' };
+      }
       console.log(`[VTID-01190] Spec already exists for ${request.vtid}, returning existing`);
       return { ok: true, spec: existingSpec };
     }
@@ -341,13 +355,20 @@ export async function getVtidSpec(
   if (!bypassCache) {
     const cached = specsCache.get(vtid);
     if (cached && isCacheValid(cached)) {
-      // Verify checksum if requested
-      if (verifyChecksum && !verifyChecksumLocally(cached.spec)) {
-        console.error(`[VTID-01190] CHECKSUM MISMATCH for cached spec ${vtid} - HARD FAIL`);
-        await emitChecksumFailureEvent(vtid, 'cache');
-        return null;
+      // VTID-01196 FIX: Validate cached spec matches requested VTID
+      if (cached.spec.vtid !== vtid) {
+        console.error(`[VTID-01196-FIX] CRITICAL: Cached spec VTID mismatch! requested=${vtid}, cached=${cached.spec.vtid} - clearing cache`);
+        specsCache.delete(vtid);
+        // Fall through to fetch from DB
+      } else {
+        // Verify checksum if requested
+        if (verifyChecksum && !verifyChecksumLocally(cached.spec)) {
+          console.error(`[VTID-01190] CHECKSUM MISMATCH for cached spec ${vtid} - HARD FAIL`);
+          await emitChecksumFailureEvent(vtid, 'cache');
+          return null;
+        }
+        return cached.spec;
       }
-      return cached.spec;
     }
   }
 
@@ -381,6 +402,14 @@ export async function getVtidSpec(
     }
 
     const spec = rows[0];
+
+    // VTID-01196 FIX: Validate that the returned spec matches the requested VTID
+    // This prevents cross-contamination if database query returns unexpected results
+    if (spec.vtid !== vtid) {
+      console.error(`[VTID-01196-FIX] CRITICAL: Database returned wrong spec! requested=${vtid}, returned=${spec.vtid}`);
+      // Do not cache or return mismatched spec
+      return null;
+    }
 
     // Verify checksum if requested
     if (verifyChecksum && !verifyChecksumLocally(spec)) {
