@@ -299,18 +299,11 @@ export async function createSpecSnapshot(
     systemSurface?: string[];
   }
 ): Promise<SpecSnapshot> {
-  // VTID-01196 FIX: Always bypass cache for spec creation to avoid stale entries
   // Check if spec already exists in DB (immutable - no overwrites)
-  const existingSpec = await getVtidSpec(vtid, { verifyChecksum: true, bypassCache: true });
+  const existingSpec = await getVtidSpec(vtid, { verifyChecksum: true });
   if (existingSpec) {
-    // VTID-01196 FIX: Validate the existing spec belongs to the correct VTID
-    if (existingSpec.vtid !== vtid) {
-      console.error(`[VTID-01196-FIX] CRITICAL: createSpecSnapshot - spec VTID mismatch! requested=${vtid}, found=${existingSpec.vtid}`);
-      // Continue to create a new spec for the correct VTID
-    } else {
-      console.log(`[VTID-01190] Spec already exists in DB for ${vtid}, returning existing`);
-      return toLegacySnapshot(existingSpec);
-    }
+    console.log(`[VTID-01190] Spec already exists in DB for ${vtid}, returning existing`);
+    return toLegacySnapshot(existingSpec);
   }
 
   // Determine primary domain
