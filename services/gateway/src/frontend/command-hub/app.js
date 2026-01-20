@@ -44,6 +44,52 @@ const MeState = {
 // VTID-01049: Valid view roles for POST /api/v1/me/active-role
 const VALID_VIEW_ROLES = ['community', 'patient', 'professional', 'staff', 'admin', 'developer'];
 
+// VTID-01186: Role-to-default-screen mapping (matching vitana-v1 navigation)
+// When user switches role, they are redirected to their role-specific home screen
+const ROLE_DEFAULT_SCREENS = {
+    'community': { section: 'overview', tab: 'system-overview' },
+    'patient': { section: 'overview', tab: 'system-overview' },
+    'professional': { section: 'overview', tab: 'system-overview' },
+    'staff': { section: 'operator', tab: 'task-queue' },
+    'admin': { section: 'admin', tab: 'users' },
+    'developer': { section: 'command-hub', tab: 'tasks' }
+};
+
+/**
+ * VTID-01186: Navigate to role-specific default screen
+ * Called after role switch to redirect user to appropriate screen
+ */
+function navigateToRoleDefaultScreen(role) {
+    var lowerRole = (role || 'community').toLowerCase();
+    var defaultScreen = ROLE_DEFAULT_SCREENS[lowerRole] || ROLE_DEFAULT_SCREENS['community'];
+
+    // Find the section config
+    var section = NAVIGATION_CONFIG.find(function(s) { return s.section === defaultScreen.section; });
+    if (!section) {
+        console.warn('[VTID-01186] Section not found for role:', lowerRole);
+        return;
+    }
+
+    // Find the tab within the section
+    var tab = section.tabs.find(function(t) { return t.key === defaultScreen.tab; });
+    if (!tab) {
+        tab = section.tabs[0]; // Fallback to first tab
+    }
+
+    // Update state
+    state.currentModuleKey = defaultScreen.section;
+    state.currentTab = tab ? tab.key : '';
+
+    // Update URL
+    if (tab) {
+        history.pushState(null, '', tab.path);
+    } else {
+        history.pushState(null, '', section.basePath);
+    }
+
+    console.log('[VTID-01186] Navigated to role default screen:', lowerRole, '->', defaultScreen.section + '/' + (tab ? tab.key : ''));
+}
+
 /**
  * VTID-01049: Fetch Me Context from Gateway
  * Called on app boot to load authoritative role from server.
@@ -716,9 +762,15 @@ async function initMeContext() {
  * Returns identity (user_id, email, tenant_id, exafy_admin), profile, memberships.
  * Updates state.user with real name/avatar for profile capsule display.
  *
+ * VTID-01196: Now accepts fallbackEmail to preserve user info if API fails.
+ *
+ * @param {string} [fallbackEmail] - Email to use if API call fails
  * @returns {Promise<Object|null>} The auth identity or null on error
  */
-async function fetchAuthMe() {
+async function fetchAuthMe(fallbackEmail) {
+    // VTID-01196: Use stored login email as fallback
+    var emailFallback = fallbackEmail || state.loginUserEmail || '';
+
     if (!state.authToken) {
         console.log('[VTID-01171] No auth token, skipping auth/me fetch');
         // Set fallback user for unauthenticated state
@@ -745,8 +797,10 @@ async function fetchAuthMe() {
             var errorMsg = data.error || 'Failed to fetch auth identity';
             console.error('[VTID-01171] fetchAuthMe error:', errorMsg);
 
-            if (response.status === 401) {
-                // Clear invalid auth token
+            // VTID-01196: Only clear token on 401 if we DON'T have a fallback email
+            // If we have fallback email, it means login just succeeded - don't clear the valid token
+            if (response.status === 401 && !emailFallback) {
+                // Clear invalid auth token (only for stale tokens, not fresh logins)
                 state.authToken = null;
                 localStorage.removeItem('vitana.authToken');
             }
@@ -754,12 +808,17 @@ async function fetchAuthMe() {
             state.authIdentityError = errorMsg;
             state.authIdentityLoading = false;
 
-            // Set fallback user
+            // VTID-01196: Set fallback user using login email if available
+            var fallbackName = emailFallback ? emailFallback.split('@')[0] : 'User';
+            var fallbackInitials = generateInitials(emailFallback || 'User');
             state.user = {
-                name: 'User',
-                role: 'User',
-                avatar: '?'
+                name: fallbackName,
+                role: state.viewRole || 'User',
+                avatar: fallbackInitials,
+                email: emailFallback || null,
+                avatarUrl: null
             };
+            console.warn('[VTID-01196] fetchAuthMe failed, using fallback email:', emailFallback || '(none)');
             return null;
         }
 
@@ -804,12 +863,17 @@ async function fetchAuthMe() {
         state.authIdentityError = err.message || 'Network error';
         state.authIdentityLoading = false;
 
-        // Set fallback user
+        // VTID-01196: Set fallback user using login email if available
+        var fallbackName = emailFallback ? emailFallback.split('@')[0] : 'User';
+        var fallbackInitials = generateInitials(emailFallback || 'User');
         state.user = {
-            name: 'User',
-            role: 'User',
-            avatar: '?'
+            name: fallbackName,
+            role: state.viewRole || 'User',
+            avatar: fallbackInitials,
+            email: emailFallback || null,
+            avatarUrl: null
         };
+        console.warn('[VTID-01196] fetchAuthMe exception, using fallback email:', emailFallback || '(none)');
         return null;
     }
 }
@@ -875,7 +939,7 @@ async function doLogin(email, password) {
             return { ok: false, error: data.error, message: errorMsg };
         }
 
-        console.log('[VTID-01186] doLogin success, user_id=', data.user?.id);
+        console.log('[VTID-01186] doLogin success, user_id=', data.user?.id, 'email=', data.user?.email || email);
 
         // Store the access token
         state.authToken = data.access_token;
@@ -886,6 +950,11 @@ async function doLogin(email, password) {
             localStorage.setItem('vitana.refreshToken', data.refresh_token);
         }
 
+        // VTID-01196: Store login email as fallback for profile display
+        // This ensures we can show user info even if /auth/me fails
+        var loginEmail = data.user?.email || email;
+        state.loginUserEmail = loginEmail;
+
         state.loginLoading = false;
         state.loginError = null;
 
@@ -893,8 +962,33 @@ async function doLogin(email, password) {
         state.loginEmail = '';
         state.loginPassword = '';
 
-        // Fetch full identity
-        await fetchAuthMe();
+        // VTID-01186: Clear page error states to trigger data refetch after login
+        // This ensures pages re-fetch data with the new auth token
+        state.adminDevUsersError = null;
+        state.adminDevUsers = [];
+        state.meContextError = null;
+        state.authIdentityError = null;
+        state.tasksError = null;
+        state.governanceRulesError = null;
+
+        // VTID-01196: Set initial user state from login response immediately
+        // This provides visual feedback while fetchAuthMe loads full profile
+        var initialName = loginEmail ? loginEmail.split('@')[0] : 'User';
+        var initialInitials = generateInitials(loginEmail || 'User');
+        state.user = {
+            name: initialName,
+            role: state.viewRole || 'User',
+            avatar: initialInitials,
+            email: loginEmail,
+            avatarUrl: null
+        };
+        renderApp(); // Show immediate feedback
+
+        // Fetch full identity (will update with avatar_url if available)
+        await fetchAuthMe(loginEmail);
+
+        // Also fetch me context to update MeState
+        await fetchMeContext();
 
         // Close profile modal and refresh
         state.showProfileModal = false;
@@ -919,6 +1013,7 @@ function doLogout() {
     state.authToken = null;
     state.authIdentity = null;
     state.meContext = null;
+    state.loginUserEmail = null; // VTID-01196: Clear login email fallback
     MeState.loaded = false;
     MeState.me = null;
     localStorage.removeItem('vitana.authToken');
@@ -2248,6 +2343,8 @@ const state = {
     loginPassword: '',
     loginLoading: false,
     loginError: null,
+    // VTID-01196: Store login email as fallback for profile display
+    loginUserEmail: null,
 
     // Docs / Screen Inventory
     screenInventory: null,
@@ -2273,6 +2370,13 @@ const state = {
     // VTID-0407: Governance Blocked Modal
     showGovernanceBlockedModal: false,
     governanceBlockedData: null, // { level, violations, service, vtid }
+
+    // VTID-01194: Execution Approval Confirmation Modal
+    // "IN_PROGRESS = Explicit Human Approval to Execute"
+    showExecutionApprovalModal: false,
+    executionApprovalVtid: null,
+    executionApprovalReason: '',
+    executionApprovalLoading: false,
 
     // Toast Notifications (VTID-0517)
     toasts: [],
@@ -2303,6 +2407,22 @@ const state = {
     adminDevUsersGrantEmail: '',
     adminDevUsersGrantLoading: false,
     adminDevUsersGrantError: null,
+
+    // VTID-01195: Admin Screens v1 State
+    // Users screen state
+    adminUsersSearchQuery: '',
+    adminUsersSelectedId: null,
+    // Permissions screen state
+    adminPermissionsSearchQuery: '',
+    adminPermissionsSelectedKey: null,
+    // Tenants screen state
+    adminTenantsSearchQuery: '',
+    adminTenantsSelectedId: null,
+    // Content Moderation screen state
+    adminModerationTypeFilter: '',
+    adminModerationStatusFilter: '',
+    adminModerationSelectedId: null,
+    // Identity Access screen state (no selection needed - static panels)
 
     // VTID-0406: Governance Evaluations (OASIS Integration)
     governanceEvaluations: [],
@@ -2447,8 +2567,14 @@ const state = {
             service: '',
             status: ''
         },
-        autoRefreshEnabled: true,
+        autoRefreshEnabled: false, // VTID-01189: Disabled - use global refresh only
         autoRefreshInterval: null,
+        // VTID-01189: Pagination state for infinite scroll
+        pagination: {
+            limit: 50,
+            offset: 0,
+            hasMore: true
+        },
         // VTID-01039: ORB Session Transcript State
         orbTranscript: null,
         orbTranscriptLoading: false,
@@ -2490,7 +2616,13 @@ const state = {
         items: [],
         loading: false,
         error: null,
-        fetched: false
+        fetched: false,
+        // VTID-01189: Pagination state for infinite scroll
+        pagination: {
+            limit: 50,
+            offset: 0,
+            hasMore: true
+        }
     },
 
     // VTID-0600: Approvals UI Scaffolding
@@ -2765,21 +2897,24 @@ function formatEventTimestamp(isoString) {
 
 /**
  * VTID-0600: Fetch OASIS events from the API
- * VTID-01002: Added silentRefresh parameter for polling - uses incremental updates instead of renderApp()
+ * VTID-01189: Added pagination support for infinite scroll
  * @param {Object} filters - Optional filters (topic, service, status)
- * @param {boolean} silentRefresh - If true, skip renderApp() and use incremental update
+ * @param {boolean} append - If true, append to existing items (Load More)
  */
-async function fetchOasisEvents(filters, silentRefresh) {
-    console.log('[VTID-0600] Fetching OASIS events...', silentRefresh ? '(silent)' : '');
+async function fetchOasisEvents(filters, append) {
+    console.log('[VTID-0600] Fetching OASIS events...', append ? '(append)' : '(fresh)');
 
-    // VTID-01002: Only show loading state for initial load, not polling refreshes
-    if (!silentRefresh) {
-        state.oasisEvents.loading = true;
-        renderApp();
-    }
+    if (state.oasisEvents.loading) return;
+    if (append && !state.oasisEvents.pagination.hasMore) return;
+
+    state.oasisEvents.loading = true;
+    renderApp();
 
     try {
-        var queryParams = 'limit=100';
+        var pagination = state.oasisEvents.pagination;
+        var offset = append ? pagination.offset : 0;
+
+        var queryParams = 'limit=' + pagination.limit + '&offset=' + offset;
         if (filters) {
             if (filters.topic) queryParams += '&topic=like.*' + encodeURIComponent(filters.topic) + '*';
             if (filters.service) queryParams += '&service=eq.' + encodeURIComponent(filters.service);
@@ -2792,24 +2927,50 @@ async function fetchOasisEvents(filters, silentRefresh) {
         }
 
         const data = await response.json();
-        console.log('[VTID-0600] OASIS events loaded:', data.length);
+        var items = Array.isArray(data) ? data : (data.data || []);
+        console.log('[VTID-0600] OASIS events loaded:', items.length);
 
-        state.oasisEvents.items = Array.isArray(data) ? data : [];
+        if (append) {
+            state.oasisEvents.items = state.oasisEvents.items.concat(items);
+        } else {
+            state.oasisEvents.items = items;
+        }
+
+        // VTID-01189: Update pagination state
+        state.oasisEvents.pagination = {
+            limit: pagination.limit,
+            offset: offset + items.length,
+            hasMore: data.pagination ? data.pagination.has_more : items.length === pagination.limit
+        };
+
         state.oasisEvents.error = null;
         state.oasisEvents.fetched = true;
     } catch (error) {
         console.error('[VTID-0600] Failed to fetch OASIS events:', error);
         state.oasisEvents.error = error.message;
-        state.oasisEvents.items = [];
+        if (!append) {
+            state.oasisEvents.items = [];
+        }
     } finally {
         state.oasisEvents.loading = false;
-        // VTID-01002: Use incremental update for polling, full render for initial load
-        if (silentRefresh) {
-            refreshActiveViewData();
-        } else {
-            renderApp();
-        }
+        renderApp();
     }
+}
+
+/**
+ * VTID-01189: Load more OASIS events (infinite scroll)
+ */
+function loadMoreOasisEvents() {
+    fetchOasisEvents(state.oasisEvents.filters, true);
+}
+
+/**
+ * VTID-01189: Handle OASIS filter change - reset pagination and fetch fresh
+ */
+function handleOasisFilterChange() {
+    state.oasisEvents.pagination.offset = 0;
+    state.oasisEvents.pagination.hasMore = true;
+    fetchOasisEvents(state.oasisEvents.filters, false);
 }
 
 /**
@@ -3069,14 +3230,26 @@ async function fetchVtidLedger() {
  */
 const VTID_PROJECTION_LIMIT = 50;
 
-async function fetchVtidProjection() {
-    console.log('[VTID-01001] Fetching VTID projection...');
+/**
+ * VTID-01001: Fetch VTID projection
+ * VTID-01189: Added pagination support for infinite scroll
+ * @param {boolean} append - If true, append to existing items (Load More)
+ */
+async function fetchVtidProjection(append) {
+    console.log('[VTID-01001] Fetching VTID projection...', append ? '(append)' : '(fresh)');
+
+    if (state.vtidProjection.loading) return;
+    if (append && !state.vtidProjection.pagination.hasMore) return;
+
     state.vtidProjection.loading = true;
     state.vtidProjection.error = null;
     renderApp();
 
     try {
-        var response = await fetch('/api/v1/vtid/projection?limit=' + VTID_PROJECTION_LIMIT);
+        var pagination = state.vtidProjection.pagination;
+        var offset = append ? pagination.offset : 0;
+
+        var response = await fetch('/api/v1/vtid/projection?limit=' + pagination.limit + '&offset=' + offset);
         if (!response.ok) {
             throw new Error('VTID projection fetch failed: ' + response.status);
         }
@@ -3097,7 +3270,20 @@ async function fetchVtidProjection() {
         }
 
         console.log('[VTID-01001] VTID projection loaded:', items.length, 'VTIDs');
-        state.vtidProjection.items = items;
+
+        if (append) {
+            state.vtidProjection.items = state.vtidProjection.items.concat(items);
+        } else {
+            state.vtidProjection.items = items;
+        }
+
+        // VTID-01189: Update pagination state
+        state.vtidProjection.pagination = {
+            limit: pagination.limit,
+            offset: offset + items.length,
+            hasMore: data.pagination ? data.pagination.has_more : items.length === pagination.limit
+        };
+
         state.vtidProjection.error = null;
         state.vtidProjection.fetched = true;
     } catch (error) {
@@ -3110,6 +3296,13 @@ async function fetchVtidProjection() {
         state.vtidProjection.loading = false;
         renderApp();
     }
+}
+
+/**
+ * VTID-01189: Load more VTIDs (infinite scroll)
+ */
+function loadMoreVtidProjection() {
+    fetchVtidProjection(true);
 }
 
 /**
@@ -3665,6 +3858,9 @@ function renderApp() {
     // VTID-0600: OASIS Event Detail Drawer
     root.appendChild(renderOasisEventDrawer());
 
+    // VTID-01189: VTID Ledger Detail Drawer
+    root.appendChild(renderOasisVtidLedgerDrawer());
+
     // Modals
     if (state.showProfileModal) root.appendChild(renderProfileModal());
     if (state.showTaskModal) root.appendChild(renderTaskModal());
@@ -3678,6 +3874,9 @@ function renderApp() {
 
     // VTID-0407: Governance Blocked Modal
     if (state.showGovernanceBlockedModal) root.appendChild(renderGovernanceBlockedModal());
+
+    // VTID-01194: Execution Approval Confirmation Modal
+    if (state.showExecutionApprovalModal) root.appendChild(renderExecutionApprovalModal());
 
     // VTID-01180: Autopilot Recommendations Modal
     if (state.showAutopilotRecommendationsModal) root.appendChild(renderAutopilotRecommendationsModal());
@@ -3824,7 +4023,15 @@ function renderSidebar() {
 
     const avatar = document.createElement('div');
     avatar.className = 'sidebar-profile-avatar';
-    avatar.textContent = state.user.avatar;
+    // VTID-01186: Show avatar image if available, otherwise show initials
+    if (state.user.avatarUrl) {
+        avatar.style.backgroundImage = 'url(' + state.user.avatarUrl + ')';
+        avatar.style.backgroundSize = 'cover';
+        avatar.style.backgroundPosition = 'center';
+        avatar.textContent = '';
+    } else {
+        avatar.textContent = state.user.avatar || '?';
+    }
     profile.appendChild(avatar);
 
     if (!state.sidebarCollapsed) {
@@ -4445,8 +4652,20 @@ function renderModuleContent(moduleKey, tab) {
         // VTID-01086: Memory Garden UI Deepening
         container.appendChild(renderMemoryGardenView());
     } else if (moduleKey === 'admin' && tab === 'users') {
-        // VTID-01172: Admin Dev Users - exafy_admin toggle
-        container.appendChild(renderAdminDevUsersView());
+        // VTID-01195: Admin Users v1 - Split layout with user list + detail
+        container.appendChild(renderAdminUsersView());
+    } else if (moduleKey === 'admin' && tab === 'permissions') {
+        // VTID-01195: Admin Permissions v1 - Permission keys + scope
+        container.appendChild(renderAdminPermissionsView());
+    } else if (moduleKey === 'admin' && tab === 'tenants') {
+        // VTID-01195: Admin Tenants v1 - Tenant list + plan/limits
+        container.appendChild(renderAdminTenantsView());
+    } else if (moduleKey === 'admin' && tab === 'content-moderation') {
+        // VTID-01195: Admin Content Moderation v1 - Report queue + actions
+        container.appendChild(renderAdminContentModerationView());
+    } else if (moduleKey === 'admin' && tab === 'identity-access') {
+        // VTID-01195: Admin Identity Access v1 - Auth status + access logs
+        container.appendChild(renderAdminIdentityAccessView());
     } else if (moduleKey === 'agents' && tab === 'registered-agents') {
         // VTID-01173: Agents Control Plane v1 - Registered Agents (Worker Orchestrator)
         container.appendChild(renderRegisteredAgentsView());
@@ -4800,6 +5019,31 @@ function createTaskCard(task) {
     }
 
     card.appendChild(statusRow);
+
+    // VTID-01188: Spec status row
+    if (columnStatus === 'Scheduled') {
+        const specRow = document.createElement('div');
+        specRow.className = 'task-card-spec-row';
+
+        const specStatus = task.spec_status || 'missing';
+        const specPill = document.createElement('span');
+        specPill.className = 'task-card-spec-pill task-card-spec-pill-' + specStatus.toLowerCase();
+
+        // Display-friendly spec status text
+        var specStatusText = {
+            'missing': 'SPEC MISSING',
+            'generating': 'GENERATING',
+            'draft': 'DRAFT',
+            'validating': 'VALIDATING',
+            'validated': 'VALIDATED',
+            'rejected': 'REJECTED',
+            'approved': 'APPROVED'
+        }[specStatus] || specStatus.toUpperCase();
+        specPill.textContent = specStatusText;
+        specRow.appendChild(specPill);
+
+        card.appendChild(specRow);
+    }
 
     // DEV-COMHU-2025-0012: Stage badges row (PL / WO / VA / DE)
     const stageTimeline = createTaskStageTimeline(task);
@@ -5244,6 +5488,225 @@ function renderTaskDrawer() {
         content.appendChild(finalizationBanner);
     }
 
+    // VTID-01188: Spec Pipeline Section (Generate/Validate/Approve)
+    // Only show for Scheduled tasks that are not finalized
+    var currentColumn = mapStatusToColumnWithOverride(vtid, state.selectedTask.status, state.selectedTask.oasisColumn);
+    if (currentColumn === 'Scheduled' && !isFinalMode) {
+        var specPipelineSection = document.createElement('div');
+        specPipelineSection.className = 'task-spec-pipeline-section';
+
+        var specPipelineHeader = document.createElement('div');
+        specPipelineHeader.className = 'task-spec-pipeline-header';
+
+        var specPipelineTitle = document.createElement('span');
+        specPipelineTitle.className = 'task-spec-pipeline-title';
+        specPipelineTitle.textContent = 'Spec Pipeline';
+        specPipelineHeader.appendChild(specPipelineTitle);
+
+        // Spec status pill
+        // VTID-01188: Prefer fresh data from selectedTaskDetail, fallback to selectedTask
+        var specStatus = (state.selectedTaskDetail && state.selectedTaskDetail.spec_status)
+            ? state.selectedTaskDetail.spec_status
+            : (state.selectedTask.spec_status || 'missing');
+        var specPipelineStatus = document.createElement('div');
+        specPipelineStatus.className = 'task-spec-pipeline-status';
+
+        var specStatusPill = document.createElement('span');
+        specStatusPill.className = 'task-card-spec-pill task-card-spec-pill-' + specStatus.toLowerCase();
+        var specStatusLabels = {
+            'missing': 'SPEC MISSING',
+            'generating': 'GENERATING...',
+            'draft': 'DRAFT',
+            'validating': 'VALIDATING...',
+            'validated': 'VALIDATED',
+            'rejected': 'REJECTED',
+            'approved': 'APPROVED'
+        };
+        specStatusPill.textContent = specStatusLabels[specStatus] || specStatus.toUpperCase();
+        specPipelineStatus.appendChild(specStatusPill);
+        specPipelineHeader.appendChild(specPipelineStatus);
+
+        specPipelineSection.appendChild(specPipelineHeader);
+
+        // Action buttons row
+        var specPipelineActions = document.createElement('div');
+        specPipelineActions.className = 'task-spec-pipeline-actions';
+
+        // Generate Spec button (visible when missing or rejected)
+        if (specStatus === 'missing' || specStatus === 'rejected') {
+            var generateBtn = document.createElement('button');
+            generateBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-generate';
+            generateBtn.textContent = 'Generate Spec';
+            generateBtn.title = 'Generate spec from task description';
+            generateBtn.onclick = async function() {
+                generateBtn.disabled = true;
+                generateBtn.textContent = 'Generating...';
+                try {
+                    var seedNotes = state.drawerSpecText || state.selectedTask.summary || state.selectedTask.title || '';
+                    var response = await fetch('/api/v1/specs/' + vtid + '/generate', {
+                        method: 'POST',
+                        headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+                        body: JSON.stringify({ seed_notes: seedNotes, source: 'commandhub' })
+                    });
+                    var result = await response.json();
+                    if (result.ok) {
+                        showToast('Spec generated for ' + vtid, 'success');
+                        // Refresh task detail
+                        await fetchVtidDetail(vtid);
+                        await fetchTasks();
+                    } else {
+                        showToast('Generate failed: ' + (result.message || result.error || 'Unknown error'), 'error');
+                        generateBtn.disabled = false;
+                        generateBtn.textContent = 'Generate Spec';
+                    }
+                } catch (e) {
+                    console.error('[VTID-01188] Generate spec error:', e);
+                    showToast('Generate failed: Network error', 'error');
+                    generateBtn.disabled = false;
+                    generateBtn.textContent = 'Generate Spec';
+                }
+            };
+            specPipelineActions.appendChild(generateBtn);
+        }
+
+        // Validate button (visible when draft)
+        if (specStatus === 'draft') {
+            var validateBtn = document.createElement('button');
+            validateBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-validate';
+            validateBtn.textContent = 'Validate';
+            validateBtn.title = 'Validate spec against governance rules';
+            validateBtn.onclick = async function() {
+                validateBtn.disabled = true;
+                validateBtn.textContent = 'Validating...';
+                try {
+                    var response = await fetch('/api/v1/specs/' + vtid + '/validate', {
+                        method: 'POST',
+                        headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' })
+                    });
+                    var result = await response.json();
+                    if (result.ok) {
+                        if (result.result === 'pass') {
+                            showToast('Spec validated for ' + vtid, 'success');
+                        } else {
+                            showToast('Validation failed: ' + (result.message || 'Check report'), 'warning');
+                        }
+                        await fetchVtidDetail(vtid);
+                        await fetchTasks();
+                    } else {
+                        showToast('Validation error: ' + (result.message || result.error || 'Unknown error'), 'error');
+                        validateBtn.disabled = false;
+                        validateBtn.textContent = 'Validate';
+                    }
+                } catch (e) {
+                    console.error('[VTID-01188] Validate spec error:', e);
+                    showToast('Validation failed: Network error', 'error');
+                    validateBtn.disabled = false;
+                    validateBtn.textContent = 'Validate';
+                }
+            };
+            specPipelineActions.appendChild(validateBtn);
+        }
+
+        // Approve button (visible when validated)
+        if (specStatus === 'validated') {
+            var approveBtn = document.createElement('button');
+            approveBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-approve';
+            approveBtn.textContent = 'Approve Spec';
+            approveBtn.title = 'Approve spec for activation';
+            approveBtn.onclick = async function() {
+                approveBtn.disabled = true;
+                approveBtn.textContent = 'Approving...';
+                try {
+                    var userId = MeState.me?.user_id || MeState.me?.email || 'unknown';
+                    var userRole = MeState.me?.active_role || 'operator';
+                    var response = await fetch('/api/v1/specs/' + vtid + '/approve', {
+                        method: 'POST',
+                        headers: withVitanaContextHeaders({
+                            'Content-Type': 'application/json',
+                            'x-user-id': userId,
+                            'x-user-role': userRole
+                        })
+                    });
+                    var result = await response.json();
+                    if (result.ok) {
+                        showToast('Spec approved for ' + vtid + ' - Activate is now enabled', 'success');
+                        await fetchVtidDetail(vtid);
+                        await fetchTasks();
+                    } else {
+                        showToast('Approval failed: ' + (result.message || result.error || 'Unknown error'), 'error');
+                        approveBtn.disabled = false;
+                        approveBtn.textContent = 'Approve Spec';
+                    }
+                } catch (e) {
+                    console.error('[VTID-01188] Approve spec error:', e);
+                    showToast('Approval failed: Network error', 'error');
+                    approveBtn.disabled = false;
+                    approveBtn.textContent = 'Approve Spec';
+                }
+            };
+            specPipelineActions.appendChild(approveBtn);
+        }
+
+        // View Spec button (visible when draft, validated, or approved)
+        if (specStatus === 'draft' || specStatus === 'validated' || specStatus === 'approved') {
+            var viewBtn = document.createElement('button');
+            viewBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-view';
+            viewBtn.textContent = 'View Spec';
+            viewBtn.title = 'View generated spec';
+            viewBtn.onclick = async function() {
+                viewBtn.disabled = true;
+                viewBtn.textContent = 'Loading...';
+                try {
+                    var response = await fetch('/api/v1/specs/' + vtid, {
+                        headers: withVitanaContextHeaders({})
+                    });
+                    var result = await response.json();
+                    if (result.ok && result.spec) {
+                        // Show spec in a viewer
+                        var existingViewer = specPipelineSection.querySelector('.task-spec-viewer');
+                        if (existingViewer) {
+                            existingViewer.remove();
+                        }
+                        var viewer = document.createElement('div');
+                        viewer.className = 'task-spec-viewer';
+                        var viewerContent = document.createElement('pre');
+                        viewerContent.className = 'task-spec-viewer-content';
+                        viewerContent.textContent = result.spec.spec_markdown || 'No spec content';
+                        viewer.appendChild(viewerContent);
+                        specPipelineSection.appendChild(viewer);
+                        viewBtn.textContent = 'Hide Spec';
+                        viewBtn.onclick = function() {
+                            viewer.remove();
+                            viewBtn.textContent = 'View Spec';
+                            viewBtn.onclick = arguments.callee;
+                        };
+                    } else {
+                        showToast('Could not load spec: ' + (result.error || 'Unknown error'), 'error');
+                    }
+                    viewBtn.disabled = false;
+                } catch (e) {
+                    console.error('[VTID-01188] View spec error:', e);
+                    showToast('Could not load spec: Network error', 'error');
+                    viewBtn.disabled = false;
+                    viewBtn.textContent = 'View Spec';
+                }
+            };
+            specPipelineActions.appendChild(viewBtn);
+        }
+
+        specPipelineSection.appendChild(specPipelineActions);
+
+        // Show last error if rejected
+        if (specStatus === 'rejected' && state.selectedTask.spec_last_error) {
+            var errorDiv = document.createElement('div');
+            errorDiv.className = 'task-spec-validation-error';
+            errorDiv.textContent = 'Validation Error: ' + state.selectedTask.spec_last_error;
+            specPipelineSection.appendChild(errorDiv);
+        }
+
+        content.appendChild(specPipelineSection);
+    }
+
     // DEV-COMHU-2025-0012: Task Spec Editor Section
     // VTID-01006: Enforce editability based on lifecycle state
     var specSection = document.createElement('div');
@@ -5325,53 +5788,42 @@ function renderTaskDrawer() {
         specActions.appendChild(resetBtn);
 
         // VTID-01009: Activate button (Scheduled → In Progress)
+        // VTID-01188: Gate activation on spec approval status
         // Emits authoritative OASIS lifecycle.started event
         var currentColumn = mapStatusToColumnWithOverride(vtid, state.selectedTask.status, state.selectedTask.oasisColumn);
         if (currentColumn === 'Scheduled') {
             var activateBtn = document.createElement('button');
             activateBtn.className = 'btn btn-success task-spec-btn task-activate-btn';
-            activateBtn.textContent = 'Activate';
-            activateBtn.title = 'Move task from Scheduled to In Progress';
-            activateBtn.onclick = async function() {
-                // VTID-01009: Emit lifecycle.started to OASIS (authoritative)
+
+            // VTID-01188: Check spec approval status - disable if not approved
+            // VTID-01194: Use selectedTaskDetail.spec_status first (updated after approval), then fall back
+            var taskSpecStatus = (state.selectedTaskDetail && state.selectedTaskDetail.spec_status)
+                ? state.selectedTaskDetail.spec_status
+                : (state.selectedTask.spec_status || 'missing');
+            var isSpecApproved = taskSpecStatus === 'approved';
+
+            if (!isSpecApproved) {
                 activateBtn.disabled = true;
-                activateBtn.textContent = 'Activating...';
-                try {
-                    var response = await fetch('/api/v1/vtid/lifecycle/start', {
-                        method: 'POST',
-                        headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
-                        body: JSON.stringify({
-                            vtid: vtid,
-                            source: 'command-hub',
-                            summary: vtid + ': Activated from Command Hub'
-                        })
-                    });
-                    var result = await response.json();
-                    if (result.ok) {
-                        // VTID-01009: Clear any stale local override since OASIS is now authoritative
-                        clearTaskStatusOverride(vtid);
-                        showToast('Task activated: ' + vtid + ' → In Progress', 'success');
-                        // Close drawer and refresh authoritative data
-                        state.selectedTask = null;
-                        state.selectedTaskDetail = null;
-                        state.drawerSpecVtid = null;
-                        state.drawerSpecText = '';
-                        state.drawerSpecEditing = false;
-                        // Refresh tasks from OASIS-derived board endpoint
-                        await fetchTasks();
-                    } else {
-                        // VTID-01009: API failed - show error, do NOT fake local override
-                        showToast('Activation failed: ' + (result.error || 'Unknown error'), 'error');
-                        activateBtn.disabled = false;
-                        activateBtn.textContent = 'Activate';
-                    }
-                } catch (e) {
-                    // VTID-01009: Network/server error - show error, do NOT fake local override
-                    console.error('[VTID-01009] Activate failed:', e);
-                    showToast('Activation failed: Network error', 'error');
-                    activateBtn.disabled = false;
-                    activateBtn.textContent = 'Activate';
+                activateBtn.title = 'Spec must be approved before activation (current: ' + taskSpecStatus + ')';
+                activateBtn.classList.add('btn-disabled');
+                activateBtn.textContent = 'Activate (Spec Required)';
+            } else {
+                activateBtn.textContent = 'Activate';
+                activateBtn.title = 'Move task from Scheduled to In Progress';
+            }
+
+            activateBtn.onclick = async function() {
+                // VTID-01188: Double-check spec approval on click (in case state is stale)
+                if (!isSpecApproved) {
+                    showToast('Cannot activate: spec must be approved first', 'warning');
+                    return;
                 }
+                // VTID-01194: Show confirmation modal instead of direct activation
+                // "Moving this task to In Progress will immediately start autonomous execution."
+                state.executionApprovalVtid = vtid;
+                state.executionApprovalReason = '';
+                state.showExecutionApprovalModal = true;
+                renderApp();
             };
             specActions.appendChild(activateBtn);
 
@@ -6075,6 +6527,24 @@ function renderProfileModal() {
     }
     body.appendChild(badge);
 
+    // VTID-01186: Edit Profile link (matching vitana-v1 design)
+    const editProfileLink = document.createElement('div');
+    editProfileLink.className = 'profile-edit-link';
+    editProfileLink.style.display = 'flex';
+    editProfileLink.style.alignItems = 'center';
+    editProfileLink.style.justifyContent = 'center';
+    editProfileLink.style.gap = '6px';
+    editProfileLink.style.marginTop = '12px';
+    editProfileLink.style.marginBottom = '16px';
+    editProfileLink.style.color = 'var(--color-text-secondary, #888)';
+    editProfileLink.style.cursor = 'pointer';
+    editProfileLink.style.fontSize = '0.9rem';
+    editProfileLink.innerHTML = '<span style="font-size: 1rem;">&#9998;</span> Edit Profile';
+    editProfileLink.onclick = function() {
+        showToast('Edit Profile coming soon', 'info');
+    };
+    body.appendChild(editProfileLink);
+
     // VTID-01171: Show active tenant if available
     if (state.authIdentity && state.authIdentity.identity && state.authIdentity.identity.tenant_id) {
         const tenantEl = document.createElement('div');
@@ -6086,7 +6556,7 @@ function renderProfileModal() {
         body.appendChild(tenantEl);
     }
 
-    // VTID-01014 + VTID-01171: Role Switcher dropdown
+    // VTID-01014 + VTID-01171: Role Switcher
     // Populate from memberships if available, otherwise use default list
     var VIEW_ROLES = ['Community', 'Patient', 'Professional', 'Staff', 'Admin', 'Developer'];
     if (state.authIdentity && state.authIdentity.memberships && state.authIdentity.memberships.length > 0) {
@@ -6106,17 +6576,108 @@ function renderProfileModal() {
         VIEW_ROLES = ['Admin'];
     }
 
+    // VTID-01186: Role list with clickable items (matching vitana-v1 design)
+    const roleList = document.createElement('div');
+    roleList.className = 'profile-role-list';
+    roleList.style.margin = '0 0 16px 0';
+    roleList.style.padding = '0';
+
+    // Helper function to handle role click
+    async function handleRoleClick(newRole) {
+        const previousRole = state.viewRole;
+        state.viewRole = newRole;
+        renderApp();
+
+        var result = await setActiveRole(newRole);
+        if (result.ok) {
+            localStorage.setItem('vitana.viewRole', newRole);
+            showToast('Role set to ' + newRole, 'success');
+            // VTID-01186: Navigate to role-specific default screen
+            state.showProfileModal = false;
+            navigateToRoleDefaultScreen(newRole);
+            renderApp();
+        } else {
+            state.viewRole = previousRole;
+            if (MeState.me) {
+                MeState.me.active_role = previousRole.toLowerCase();
+            }
+            renderApp();
+            showToast(result.error || 'Failed to change role', 'error');
+        }
+    }
+
+    VIEW_ROLES.forEach(function(r) {
+        const roleItem = document.createElement('div');
+        roleItem.className = 'profile-role-item';
+        roleItem.style.display = 'flex';
+        roleItem.style.alignItems = 'center';
+        roleItem.style.padding = '10px 16px';
+        roleItem.style.cursor = 'pointer';
+        roleItem.style.borderRadius = '6px';
+        roleItem.style.marginBottom = '4px';
+        roleItem.style.transition = 'background-color 0.15s';
+
+        const isSelected = r === state.viewRole;
+        if (isSelected) {
+            roleItem.style.backgroundColor = 'rgba(59, 130, 246, 0.15)';
+        }
+
+        // Dot indicator
+        const dot = document.createElement('span');
+        dot.style.width = '8px';
+        dot.style.height = '8px';
+        dot.style.borderRadius = '50%';
+        dot.style.marginRight = '12px';
+        dot.style.flexShrink = '0';
+        if (isSelected) {
+            dot.style.backgroundColor = 'var(--color-accent, #4a90d9)';
+        } else {
+            dot.style.backgroundColor = 'transparent';
+            dot.style.border = '1px solid var(--color-border, #444)';
+        }
+        roleItem.appendChild(dot);
+
+        // Role text
+        const roleText = document.createElement('span');
+        roleText.textContent = r;
+        roleText.style.color = isSelected ? 'var(--color-accent, #4a90d9)' : 'var(--color-text-primary, #fff)';
+        roleItem.appendChild(roleText);
+
+        // Hover effect
+        roleItem.onmouseenter = function() {
+            if (!isSelected) {
+                roleItem.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+            }
+        };
+        roleItem.onmouseleave = function() {
+            if (!isSelected) {
+                roleItem.style.backgroundColor = 'transparent';
+            }
+        };
+
+        // Click handler
+        roleItem.onclick = function() {
+            if (!isSelected) {
+                handleRoleClick(r);
+            }
+        };
+
+        roleList.appendChild(roleItem);
+    });
+    body.appendChild(roleList);
+
+    // VTID-01186: Dropdown selector (secondary, for accessibility)
     const roleSwitcher = document.createElement('div');
     roleSwitcher.className = 'profile-role-switcher';
-
-    const roleLabel = document.createElement('label');
-    roleLabel.textContent = 'View as:';
-    roleLabel.setAttribute('for', 'profile-role-select');
-    roleSwitcher.appendChild(roleLabel);
+    roleSwitcher.style.borderTop = '1px solid var(--color-border, #333)';
+    roleSwitcher.style.paddingTop = '16px';
+    roleSwitcher.style.marginTop = '8px';
 
     const roleSelect = document.createElement('select');
     roleSelect.className = 'profile-role-select';
     roleSelect.id = 'profile-role-select';
+    roleSelect.style.width = '100%';
+    roleSelect.style.maxWidth = 'none';
 
     VIEW_ROLES.forEach(r => {
         const option = document.createElement('option');
@@ -6141,6 +6702,10 @@ function renderProfileModal() {
             // Success - update localStorage and show toast
             localStorage.setItem('vitana.viewRole', newRole);
             showToast('Role set to ' + newRole, 'success');
+            // VTID-01186: Navigate to role-specific default screen
+            state.showProfileModal = false;
+            navigateToRoleDefaultScreen(newRole);
+            renderApp();
         } else {
             // Failure - revert to previous role
             state.viewRole = previousRole;
@@ -6160,14 +6725,35 @@ function renderProfileModal() {
     const footer = document.createElement('div');
     footer.className = 'modal-footer';
     footer.style.display = 'flex';
-    footer.style.justifyContent = 'space-between';
+    footer.style.flexDirection = 'column';
+    footer.style.gap = '12px';
 
-    // VTID-01186: Logout button - uses doLogout function
+    // VTID-01186: Sign Out button (full-width, matching vitana-v1 design)
     const logoutBtn = document.createElement('button');
-    logoutBtn.className = 'btn btn-danger';
-    logoutBtn.textContent = 'Logout';
-    logoutBtn.style.backgroundColor = 'var(--danger-bg, #dc3545)';
-    logoutBtn.style.color = 'var(--danger-text, #fff)';
+    logoutBtn.className = 'btn';
+    logoutBtn.style.width = '100%';
+    logoutBtn.style.padding = '12px 16px';
+    logoutBtn.style.display = 'flex';
+    logoutBtn.style.alignItems = 'center';
+    logoutBtn.style.justifyContent = 'center';
+    logoutBtn.style.gap = '8px';
+    logoutBtn.style.backgroundColor = 'transparent';
+    logoutBtn.style.border = '1px solid var(--color-border, #444)';
+    logoutBtn.style.color = 'var(--color-text-primary, #fff)';
+    logoutBtn.style.borderRadius = '6px';
+    logoutBtn.style.cursor = 'pointer';
+    logoutBtn.style.transition = 'all 0.15s';
+    logoutBtn.innerHTML = '<span style="font-size: 1.1rem;">&#x2192;</span> Sign Out';
+    logoutBtn.onmouseenter = function() {
+        logoutBtn.style.backgroundColor = 'rgba(220, 53, 69, 0.1)';
+        logoutBtn.style.borderColor = 'var(--danger-bg, #dc3545)';
+        logoutBtn.style.color = 'var(--danger-bg, #dc3545)';
+    };
+    logoutBtn.onmouseleave = function() {
+        logoutBtn.style.backgroundColor = 'transparent';
+        logoutBtn.style.borderColor = 'var(--color-border, #444)';
+        logoutBtn.style.color = 'var(--color-text-primary, #fff)';
+    };
     logoutBtn.onclick = () => {
         doLogout();
     };
@@ -6175,7 +6761,9 @@ function renderProfileModal() {
 
     const closeBtn = document.createElement('button');
     closeBtn.className = 'btn';
-    closeBtn.textContent = 'Close';
+    closeBtn.textContent = 'Cancel';
+    closeBtn.style.width = '100%';
+    closeBtn.style.padding = '10px 16px';
     closeBtn.onclick = () => {
         state.showProfileModal = false;
         renderApp();
@@ -7219,6 +7807,695 @@ function renderAdminDevUsersView() {
     }
 
     container.appendChild(content);
+
+    return container;
+}
+
+// ===========================================================================
+// VTID-01195: Command Hub Admin Screens v1
+// ===========================================================================
+
+/**
+ * VTID-01195: Placeholder user data for Admin Users screen
+ * This is static mock data - data source not wired in v1
+ */
+var adminUsersMockData = [
+    { id: '1', email: 'admin@vitana.io', role: 'Admin', tenant: 'Vitana Core', status: 'Active' },
+    { id: '2', email: 'dev@vitana.io', role: 'Developer', tenant: 'Vitana Core', status: 'Active' },
+    { id: '3', email: 'user@tenant1.com', role: 'User', tenant: 'Tenant Alpha', status: 'Active' },
+    { id: '4', email: 'support@vitana.io', role: 'Support', tenant: 'Vitana Core', status: 'Inactive' }
+];
+
+/**
+ * VTID-01195: Admin Users View - Split layout with user list + detail panel
+ * v1 skeleton - data source not wired
+ */
+function renderAdminUsersView() {
+    var container = document.createElement('div');
+    container.className = 'admin-screen-container admin-users-container';
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'admin-screen-header';
+    header.innerHTML = '<h2>Users</h2><p class="admin-screen-subtitle">Manage user accounts, roles, and tenant assignments</p>';
+    container.appendChild(header);
+
+    // Not-wired banner
+    var banner = document.createElement('div');
+    banner.className = 'admin-not-wired-banner';
+    banner.innerHTML = '<span class="admin-not-wired-icon">&#9888;</span> Data source not connected yet — showing placeholder data';
+    container.appendChild(banner);
+
+    // Split layout
+    var splitLayout = document.createElement('div');
+    splitLayout.className = 'admin-split-layout';
+
+    // Left panel: search + list
+    var leftPanel = document.createElement('div');
+    leftPanel.className = 'admin-split-left';
+
+    // Search input
+    var searchWrapper = document.createElement('div');
+    searchWrapper.className = 'admin-search-wrapper';
+    var searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'search-field admin-search-input';
+    searchInput.placeholder = 'Search by email...';
+    searchInput.value = state.adminUsersSearchQuery;
+    searchInput.oninput = function(e) {
+        state.adminUsersSearchQuery = e.target.value;
+        renderApp();
+    };
+    searchWrapper.appendChild(searchInput);
+    leftPanel.appendChild(searchWrapper);
+
+    // User list table
+    var listContainer = document.createElement('div');
+    listContainer.className = 'admin-list-container';
+
+    var table = document.createElement('table');
+    table.className = 'admin-list-table';
+
+    var thead = document.createElement('thead');
+    thead.innerHTML = '<tr><th>Email</th><th>Role</th><th>Tenant</th><th>Status</th></tr>';
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    var filteredUsers = adminUsersMockData.filter(function(u) {
+        if (!state.adminUsersSearchQuery) return true;
+        return u.email.toLowerCase().includes(state.adminUsersSearchQuery.toLowerCase());
+    });
+
+    filteredUsers.forEach(function(user) {
+        var row = document.createElement('tr');
+        row.className = 'admin-list-row clickable-row';
+        if (state.adminUsersSelectedId === user.id) {
+            row.classList.add('selected');
+        }
+        row.onclick = function() {
+            state.adminUsersSelectedId = user.id;
+            renderApp();
+        };
+
+        row.innerHTML = '<td class="admin-cell-email">' + user.email + '</td>' +
+            '<td><span class="admin-role-badge admin-role-' + user.role.toLowerCase() + '">' + user.role + '</span></td>' +
+            '<td>' + user.tenant + '</td>' +
+            '<td><span class="admin-status-badge admin-status-' + user.status.toLowerCase() + '">' + user.status + '</span></td>';
+
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    listContainer.appendChild(table);
+    leftPanel.appendChild(listContainer);
+    splitLayout.appendChild(leftPanel);
+
+    // Right panel: detail view
+    var rightPanel = document.createElement('div');
+    rightPanel.className = 'admin-split-right';
+
+    if (state.adminUsersSelectedId) {
+        var selectedUser = adminUsersMockData.find(function(u) { return u.id === state.adminUsersSelectedId; });
+        if (selectedUser) {
+            rightPanel.innerHTML = '<div class="admin-detail-panel">' +
+                '<div class="admin-detail-header">' +
+                '<h3>' + selectedUser.email + '</h3>' +
+                '<button class="admin-detail-close-btn" onclick="state.adminUsersSelectedId = null; renderApp();">&times;</button>' +
+                '</div>' +
+                '<div class="admin-detail-section">' +
+                '<h4>User Summary</h4>' +
+                '<div class="admin-detail-grid">' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">User ID:</span><span class="admin-detail-value">' + selectedUser.id + '</span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Email:</span><span class="admin-detail-value">' + selectedUser.email + '</span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Status:</span><span class="admin-status-badge admin-status-' + selectedUser.status.toLowerCase() + '">' + selectedUser.status + '</span></div>' +
+                '</div>' +
+                '</div>' +
+                '<div class="admin-detail-section">' +
+                '<h4>Role & Access</h4>' +
+                '<div class="admin-badges-row"><span class="admin-role-badge admin-role-' + selectedUser.role.toLowerCase() + '">' + selectedUser.role + '</span></div>' +
+                '</div>' +
+                '<div class="admin-detail-section">' +
+                '<h4>Tenant Assignment</h4>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Primary Tenant:</span><span class="admin-detail-value">' + selectedUser.tenant + '</span></div>' +
+                '</div>' +
+                '<div class="admin-detail-actions">' +
+                '<button class="btn btn-secondary" disabled>Edit User</button>' +
+                '<button class="btn btn-danger" disabled>Deactivate</button>' +
+                '</div>' +
+                '</div>';
+        }
+    } else {
+        rightPanel.innerHTML = '<div class="admin-detail-empty"><span class="admin-detail-empty-icon">&#128100;</span><p>Select a user from the list to view details</p></div>';
+    }
+    splitLayout.appendChild(rightPanel);
+    container.appendChild(splitLayout);
+
+    return container;
+}
+
+/**
+ * VTID-01195: Placeholder permission data for Admin Permissions screen
+ */
+var adminPermissionsMockData = [
+    { key: 'admin.users.read', description: 'Read user accounts', scope: 'Global' },
+    { key: 'admin.users.write', description: 'Create and edit user accounts', scope: 'Global' },
+    { key: 'admin.tenants.manage', description: 'Manage tenant settings', scope: 'Tenant' },
+    { key: 'tasks.create', description: 'Create new tasks', scope: 'Tenant' },
+    { key: 'tasks.approve', description: 'Approve task execution', scope: 'Tenant' },
+    { key: 'governance.rules.edit', description: 'Edit governance rules', scope: 'Global' }
+];
+
+/**
+ * VTID-01195: Admin Permissions View - Permission keys + scope
+ */
+function renderAdminPermissionsView() {
+    var container = document.createElement('div');
+    container.className = 'admin-screen-container admin-permissions-container';
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'admin-screen-header';
+    header.innerHTML = '<h2>Permissions</h2><p class="admin-screen-subtitle">View and manage permission keys and their scopes</p>';
+    container.appendChild(header);
+
+    // Not-wired banner
+    var banner = document.createElement('div');
+    banner.className = 'admin-not-wired-banner';
+    banner.innerHTML = '<span class="admin-not-wired-icon">&#9888;</span> Data source not connected yet — showing placeholder data';
+    container.appendChild(banner);
+
+    // Split layout
+    var splitLayout = document.createElement('div');
+    splitLayout.className = 'admin-split-layout';
+
+    // Left panel
+    var leftPanel = document.createElement('div');
+    leftPanel.className = 'admin-split-left';
+
+    // Search
+    var searchWrapper = document.createElement('div');
+    searchWrapper.className = 'admin-search-wrapper';
+    var searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'search-field admin-search-input';
+    searchInput.placeholder = 'Search permission key...';
+    searchInput.value = state.adminPermissionsSearchQuery;
+    searchInput.oninput = function(e) {
+        state.adminPermissionsSearchQuery = e.target.value;
+        renderApp();
+    };
+    searchWrapper.appendChild(searchInput);
+    leftPanel.appendChild(searchWrapper);
+
+    // Permissions list
+    var listContainer = document.createElement('div');
+    listContainer.className = 'admin-list-container';
+
+    var table = document.createElement('table');
+    table.className = 'admin-list-table';
+
+    var thead = document.createElement('thead');
+    thead.innerHTML = '<tr><th>Key</th><th>Description</th><th>Scope</th></tr>';
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    var filteredPerms = adminPermissionsMockData.filter(function(p) {
+        if (!state.adminPermissionsSearchQuery) return true;
+        return p.key.toLowerCase().includes(state.adminPermissionsSearchQuery.toLowerCase()) ||
+               p.description.toLowerCase().includes(state.adminPermissionsSearchQuery.toLowerCase());
+    });
+
+    filteredPerms.forEach(function(perm) {
+        var row = document.createElement('tr');
+        row.className = 'admin-list-row clickable-row';
+        if (state.adminPermissionsSelectedKey === perm.key) {
+            row.classList.add('selected');
+        }
+        row.onclick = function() {
+            state.adminPermissionsSelectedKey = perm.key;
+            renderApp();
+        };
+
+        row.innerHTML = '<td class="admin-cell-key"><code>' + perm.key + '</code></td>' +
+            '<td>' + perm.description + '</td>' +
+            '<td><span class="admin-scope-badge admin-scope-' + perm.scope.toLowerCase() + '">' + perm.scope + '</span></td>';
+
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    listContainer.appendChild(table);
+    leftPanel.appendChild(listContainer);
+    splitLayout.appendChild(leftPanel);
+
+    // Right panel
+    var rightPanel = document.createElement('div');
+    rightPanel.className = 'admin-split-right';
+
+    if (state.adminPermissionsSelectedKey) {
+        var selectedPerm = adminPermissionsMockData.find(function(p) { return p.key === state.adminPermissionsSelectedKey; });
+        if (selectedPerm) {
+            rightPanel.innerHTML = '<div class="admin-detail-panel">' +
+                '<div class="admin-detail-header">' +
+                '<h3><code>' + selectedPerm.key + '</code></h3>' +
+                '<button class="admin-detail-close-btn" onclick="state.adminPermissionsSelectedKey = null; renderApp();">&times;</button>' +
+                '</div>' +
+                '<div class="admin-detail-section">' +
+                '<h4>Permission Details</h4>' +
+                '<div class="admin-detail-grid">' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Key:</span><span class="admin-detail-value"><code>' + selectedPerm.key + '</code></span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Description:</span><span class="admin-detail-value">' + selectedPerm.description + '</span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Scope:</span><span class="admin-scope-badge admin-scope-' + selectedPerm.scope.toLowerCase() + '">' + selectedPerm.scope + '</span></div>' +
+                '</div>' +
+                '</div>' +
+                '<div class="admin-detail-section">' +
+                '<h4>Roles with this Permission</h4>' +
+                '<div class="admin-placeholder-list">' +
+                '<div class="admin-placeholder-item"><span class="admin-role-badge admin-role-admin">Admin</span></div>' +
+                '<div class="admin-placeholder-item"><span class="admin-role-badge admin-role-developer">Developer</span></div>' +
+                '</div>' +
+                '<p class="admin-detail-note">Role assignments are placeholder data</p>' +
+                '</div>' +
+                '</div>';
+        }
+    } else {
+        rightPanel.innerHTML = '<div class="admin-detail-empty"><span class="admin-detail-empty-icon">&#128273;</span><p>Select a permission from the list to view details</p></div>';
+    }
+    splitLayout.appendChild(rightPanel);
+    container.appendChild(splitLayout);
+
+    return container;
+}
+
+/**
+ * VTID-01195: Placeholder tenant data for Admin Tenants screen
+ */
+var adminTenantsMockData = [
+    { id: 't1', name: 'Vitana Core', plan: 'Enterprise', status: 'Active' },
+    { id: 't2', name: 'Tenant Alpha', plan: 'Professional', status: 'Active' },
+    { id: 't3', name: 'Tenant Beta', plan: 'Starter', status: 'Trial' },
+    { id: 't4', name: 'Demo Tenant', plan: 'Free', status: 'Inactive' }
+];
+
+/**
+ * VTID-01195: Admin Tenants View - Tenant list + plan/limits
+ */
+function renderAdminTenantsView() {
+    var container = document.createElement('div');
+    container.className = 'admin-screen-container admin-tenants-container';
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'admin-screen-header';
+    header.innerHTML = '<h2>Tenants</h2><p class="admin-screen-subtitle">View and manage tenant organizations and their plans</p>';
+    container.appendChild(header);
+
+    // Not-wired banner
+    var banner = document.createElement('div');
+    banner.className = 'admin-not-wired-banner';
+    banner.innerHTML = '<span class="admin-not-wired-icon">&#9888;</span> Data source not connected yet — showing placeholder data';
+    container.appendChild(banner);
+
+    // Split layout
+    var splitLayout = document.createElement('div');
+    splitLayout.className = 'admin-split-layout';
+
+    // Left panel
+    var leftPanel = document.createElement('div');
+    leftPanel.className = 'admin-split-left';
+
+    // Search
+    var searchWrapper = document.createElement('div');
+    searchWrapper.className = 'admin-search-wrapper';
+    var searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'search-field admin-search-input';
+    searchInput.placeholder = 'Search tenant...';
+    searchInput.value = state.adminTenantsSearchQuery;
+    searchInput.oninput = function(e) {
+        state.adminTenantsSearchQuery = e.target.value;
+        renderApp();
+    };
+    searchWrapper.appendChild(searchInput);
+    leftPanel.appendChild(searchWrapper);
+
+    // Tenants list
+    var listContainer = document.createElement('div');
+    listContainer.className = 'admin-list-container';
+
+    var table = document.createElement('table');
+    table.className = 'admin-list-table';
+
+    var thead = document.createElement('thead');
+    thead.innerHTML = '<tr><th>Tenant</th><th>Plan</th><th>Status</th></tr>';
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    var filteredTenants = adminTenantsMockData.filter(function(t) {
+        if (!state.adminTenantsSearchQuery) return true;
+        return t.name.toLowerCase().includes(state.adminTenantsSearchQuery.toLowerCase());
+    });
+
+    filteredTenants.forEach(function(tenant) {
+        var row = document.createElement('tr');
+        row.className = 'admin-list-row clickable-row';
+        if (state.adminTenantsSelectedId === tenant.id) {
+            row.classList.add('selected');
+        }
+        row.onclick = function() {
+            state.adminTenantsSelectedId = tenant.id;
+            renderApp();
+        };
+
+        row.innerHTML = '<td class="admin-cell-tenant">' + tenant.name + '</td>' +
+            '<td><span class="admin-plan-badge admin-plan-' + tenant.plan.toLowerCase() + '">' + tenant.plan + '</span></td>' +
+            '<td><span class="admin-status-badge admin-status-' + tenant.status.toLowerCase() + '">' + tenant.status + '</span></td>';
+
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    listContainer.appendChild(table);
+    leftPanel.appendChild(listContainer);
+    splitLayout.appendChild(leftPanel);
+
+    // Right panel
+    var rightPanel = document.createElement('div');
+    rightPanel.className = 'admin-split-right';
+
+    if (state.adminTenantsSelectedId) {
+        var selectedTenant = adminTenantsMockData.find(function(t) { return t.id === state.adminTenantsSelectedId; });
+        if (selectedTenant) {
+            rightPanel.innerHTML = '<div class="admin-detail-panel">' +
+                '<div class="admin-detail-header">' +
+                '<h3>' + selectedTenant.name + '</h3>' +
+                '<button class="admin-detail-close-btn" onclick="state.adminTenantsSelectedId = null; renderApp();">&times;</button>' +
+                '</div>' +
+                '<div class="admin-detail-section">' +
+                '<h4>Tenant Details</h4>' +
+                '<div class="admin-detail-grid">' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Tenant ID:</span><span class="admin-detail-value">' + selectedTenant.id + '</span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Name:</span><span class="admin-detail-value">' + selectedTenant.name + '</span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Plan:</span><span class="admin-plan-badge admin-plan-' + selectedTenant.plan.toLowerCase() + '">' + selectedTenant.plan + '</span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Status:</span><span class="admin-status-badge admin-status-' + selectedTenant.status.toLowerCase() + '">' + selectedTenant.status + '</span></div>' +
+                '</div>' +
+                '</div>' +
+                '<div class="admin-detail-section">' +
+                '<h4>Limits & Quotas</h4>' +
+                '<div class="admin-limits-grid">' +
+                '<div class="admin-limit-item"><span class="admin-limit-label">Users</span><span class="admin-limit-value">—</span></div>' +
+                '<div class="admin-limit-item"><span class="admin-limit-label">Storage</span><span class="admin-limit-value">—</span></div>' +
+                '<div class="admin-limit-item"><span class="admin-limit-label">API Calls/mo</span><span class="admin-limit-value">—</span></div>' +
+                '<div class="admin-limit-item"><span class="admin-limit-label">Tasks/day</span><span class="admin-limit-value">—</span></div>' +
+                '</div>' +
+                '<p class="admin-detail-note">Limits data not available yet</p>' +
+                '</div>' +
+                '<div class="admin-detail-section">' +
+                '<h4>Feature Flags</h4>' +
+                '<div class="admin-flags-list">' +
+                '<div class="admin-flag-item"><span class="admin-flag-name">advanced_analytics</span><span class="admin-flag-value admin-flag-unknown">—</span></div>' +
+                '<div class="admin-flag-item"><span class="admin-flag-name">custom_workflows</span><span class="admin-flag-value admin-flag-unknown">—</span></div>' +
+                '<div class="admin-flag-item"><span class="admin-flag-name">api_access</span><span class="admin-flag-value admin-flag-unknown">—</span></div>' +
+                '</div>' +
+                '<p class="admin-detail-note">Feature flags data not available yet</p>' +
+                '</div>' +
+                '</div>';
+        }
+    } else {
+        rightPanel.innerHTML = '<div class="admin-detail-empty"><span class="admin-detail-empty-icon">&#127970;</span><p>Select a tenant from the list to view details</p></div>';
+    }
+    splitLayout.appendChild(rightPanel);
+    container.appendChild(splitLayout);
+
+    return container;
+}
+
+/**
+ * VTID-01195: Placeholder moderation report data
+ */
+var adminModerationMockData = [
+    { id: 'r1', type: 'Spam', status: 'Pending', reporter: 'user@example.com', reportedAt: '2025-01-15T10:30:00Z' },
+    { id: 'r2', type: 'Abuse', status: 'Pending', reporter: 'admin@vitana.io', reportedAt: '2025-01-14T15:45:00Z' },
+    { id: 'r3', type: 'Inappropriate', status: 'Reviewed', reporter: 'support@vitana.io', reportedAt: '2025-01-13T09:00:00Z' },
+    { id: 'r4', type: 'Other', status: 'Resolved', reporter: 'user2@example.com', reportedAt: '2025-01-12T14:20:00Z' }
+];
+
+/**
+ * VTID-01195: Admin Content Moderation View - Report queue + actions
+ */
+function renderAdminContentModerationView() {
+    var container = document.createElement('div');
+    container.className = 'admin-screen-container admin-moderation-container';
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'admin-screen-header';
+    header.innerHTML = '<h2>Content Moderation</h2><p class="admin-screen-subtitle">Review and manage content moderation reports</p>';
+    container.appendChild(header);
+
+    // Not-wired banner
+    var banner = document.createElement('div');
+    banner.className = 'admin-not-wired-banner';
+    banner.innerHTML = '<span class="admin-not-wired-icon">&#9888;</span> Data source not connected yet — showing placeholder data';
+    container.appendChild(banner);
+
+    // Filters row
+    var filtersRow = document.createElement('div');
+    filtersRow.className = 'admin-filters-row';
+
+    // Type filter
+    var typeFilter = document.createElement('select');
+    typeFilter.className = 'admin-filter-select';
+    typeFilter.innerHTML = '<option value="">All Types</option><option value="Spam">Spam</option><option value="Abuse">Abuse</option><option value="Inappropriate">Inappropriate</option><option value="Other">Other</option>';
+    typeFilter.value = state.adminModerationTypeFilter;
+    typeFilter.onchange = function(e) {
+        state.adminModerationTypeFilter = e.target.value;
+        renderApp();
+    };
+    filtersRow.appendChild(typeFilter);
+
+    // Status filter
+    var statusFilter = document.createElement('select');
+    statusFilter.className = 'admin-filter-select';
+    statusFilter.innerHTML = '<option value="">All Statuses</option><option value="Pending">Pending</option><option value="Reviewed">Reviewed</option><option value="Resolved">Resolved</option>';
+    statusFilter.value = state.adminModerationStatusFilter;
+    statusFilter.onchange = function(e) {
+        state.adminModerationStatusFilter = e.target.value;
+        renderApp();
+    };
+    filtersRow.appendChild(statusFilter);
+
+    container.appendChild(filtersRow);
+
+    // Split layout
+    var splitLayout = document.createElement('div');
+    splitLayout.className = 'admin-split-layout';
+
+    // Left panel - report list
+    var leftPanel = document.createElement('div');
+    leftPanel.className = 'admin-split-left';
+
+    var listContainer = document.createElement('div');
+    listContainer.className = 'admin-list-container admin-moderation-list';
+
+    var filteredReports = adminModerationMockData.filter(function(r) {
+        if (state.adminModerationTypeFilter && r.type !== state.adminModerationTypeFilter) return false;
+        if (state.adminModerationStatusFilter && r.status !== state.adminModerationStatusFilter) return false;
+        return true;
+    });
+
+    filteredReports.forEach(function(report) {
+        var card = document.createElement('div');
+        card.className = 'admin-report-card clickable-row';
+        if (state.adminModerationSelectedId === report.id) {
+            card.classList.add('selected');
+        }
+        card.onclick = function() {
+            state.adminModerationSelectedId = report.id;
+            renderApp();
+        };
+
+        var reportDate = new Date(report.reportedAt);
+        card.innerHTML = '<div class="admin-report-card-header">' +
+            '<span class="admin-type-badge admin-type-' + report.type.toLowerCase() + '">' + report.type + '</span>' +
+            '<span class="admin-status-badge admin-status-' + report.status.toLowerCase() + '">' + report.status + '</span>' +
+            '</div>' +
+            '<div class="admin-report-card-body">' +
+            '<div class="admin-report-meta">Report #' + report.id + '</div>' +
+            '<div class="admin-report-meta">By: ' + report.reporter + '</div>' +
+            '<div class="admin-report-meta">' + reportDate.toLocaleDateString() + '</div>' +
+            '</div>';
+
+        listContainer.appendChild(card);
+    });
+
+    if (filteredReports.length === 0) {
+        listContainer.innerHTML = '<div class="admin-empty-list">No reports match the selected filters</div>';
+    }
+
+    leftPanel.appendChild(listContainer);
+    splitLayout.appendChild(leftPanel);
+
+    // Right panel - report detail
+    var rightPanel = document.createElement('div');
+    rightPanel.className = 'admin-split-right';
+
+    if (state.adminModerationSelectedId) {
+        var selectedReport = adminModerationMockData.find(function(r) { return r.id === state.adminModerationSelectedId; });
+        if (selectedReport) {
+            var reportDate = new Date(selectedReport.reportedAt);
+            rightPanel.innerHTML = '<div class="admin-detail-panel">' +
+                '<div class="admin-detail-header">' +
+                '<h3>Report #' + selectedReport.id + '</h3>' +
+                '<button class="admin-detail-close-btn" onclick="state.adminModerationSelectedId = null; renderApp();">&times;</button>' +
+                '</div>' +
+                '<div class="admin-detail-section">' +
+                '<h4>Report Details</h4>' +
+                '<div class="admin-detail-grid">' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Type:</span><span class="admin-type-badge admin-type-' + selectedReport.type.toLowerCase() + '">' + selectedReport.type + '</span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Status:</span><span class="admin-status-badge admin-status-' + selectedReport.status.toLowerCase() + '">' + selectedReport.status + '</span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Reporter:</span><span class="admin-detail-value">' + selectedReport.reporter + '</span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Reported At:</span><span class="admin-detail-value">' + reportDate.toLocaleString() + '</span></div>' +
+                '</div>' +
+                '</div>' +
+                '<div class="admin-detail-section">' +
+                '<h4>Content</h4>' +
+                '<div class="admin-content-preview">' +
+                '<p class="admin-placeholder-text">Content preview not available — data source not wired</p>' +
+                '</div>' +
+                '</div>' +
+                '<div class="admin-detail-section">' +
+                '<h4>Moderation Notes</h4>' +
+                '<textarea class="admin-notes-textarea" placeholder="Add moderation notes..." disabled></textarea>' +
+                '</div>' +
+                '<div class="admin-detail-actions">' +
+                '<button class="btn btn-primary" disabled>Approve</button>' +
+                '<button class="btn btn-danger" disabled>Remove Content</button>' +
+                '<button class="btn btn-secondary" disabled>Dismiss Report</button>' +
+                '</div>' +
+                '</div>';
+        }
+    } else {
+        rightPanel.innerHTML = '<div class="admin-detail-empty"><span class="admin-detail-empty-icon">&#128221;</span><p>Select a report from the list to view details</p></div>';
+    }
+    splitLayout.appendChild(rightPanel);
+    container.appendChild(splitLayout);
+
+    return container;
+}
+
+/**
+ * VTID-01195: Admin Identity Access View - Auth status + role switching + access logs
+ */
+function renderAdminIdentityAccessView() {
+    var container = document.createElement('div');
+    container.className = 'admin-screen-container admin-identity-container';
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'admin-screen-header';
+    header.innerHTML = '<h2>Identity & Access</h2><p class="admin-screen-subtitle">Authentication status, role switching rules, and access audit logs</p>';
+    container.appendChild(header);
+
+    // Not-wired banner
+    var banner = document.createElement('div');
+    banner.className = 'admin-not-wired-banner';
+    banner.innerHTML = '<span class="admin-not-wired-icon">&#9888;</span> Data source not connected yet — showing placeholder data';
+    container.appendChild(banner);
+
+    // Panels container
+    var panelsContainer = document.createElement('div');
+    panelsContainer.className = 'admin-panels-container';
+
+    // Authentication Status Panel
+    var authPanel = document.createElement('div');
+    authPanel.className = 'admin-panel';
+    authPanel.innerHTML = '<div class="admin-panel-header">' +
+        '<h3>Authentication Status</h3>' +
+        '</div>' +
+        '<div class="admin-panel-body">' +
+        '<div class="admin-auth-status">' +
+        '<div class="admin-auth-item">' +
+        '<span class="admin-auth-label">Auth Provider:</span>' +
+        '<span class="admin-auth-value">Supabase</span>' +
+        '</div>' +
+        '<div class="admin-auth-item">' +
+        '<span class="admin-auth-label">Session Status:</span>' +
+        '<span class="admin-auth-value admin-auth-status-active">Active</span>' +
+        '</div>' +
+        '<div class="admin-auth-item">' +
+        '<span class="admin-auth-label">MFA Enabled:</span>' +
+        '<span class="admin-auth-value">—</span>' +
+        '</div>' +
+        '<div class="admin-auth-item">' +
+        '<span class="admin-auth-label">Last Login:</span>' +
+        '<span class="admin-auth-value">—</span>' +
+        '</div>' +
+        '<div class="admin-auth-item">' +
+        '<span class="admin-auth-label">Session Expiry:</span>' +
+        '<span class="admin-auth-value">—</span>' +
+        '</div>' +
+        '</div>' +
+        '<p class="admin-detail-note">Session details will be populated when auth is fully wired</p>' +
+        '</div>';
+    panelsContainer.appendChild(authPanel);
+
+    // Role Switching Rules Panel
+    var rolePanel = document.createElement('div');
+    rolePanel.className = 'admin-panel';
+    rolePanel.innerHTML = '<div class="admin-panel-header">' +
+        '<h3>Role Switching Rules</h3>' +
+        '</div>' +
+        '<div class="admin-panel-body">' +
+        '<div class="admin-rules-list">' +
+        '<div class="admin-rule-item">' +
+        '<span class="admin-rule-icon">&#10003;</span>' +
+        '<span class="admin-rule-text">Users can switch between their assigned roles</span>' +
+        '</div>' +
+        '<div class="admin-rule-item">' +
+        '<span class="admin-rule-icon">&#10003;</span>' +
+        '<span class="admin-rule-text">Role changes are logged to the audit trail</span>' +
+        '</div>' +
+        '<div class="admin-rule-item">' +
+        '<span class="admin-rule-icon">&#10003;</span>' +
+        '<span class="admin-rule-text">Admin role requires elevated permissions</span>' +
+        '</div>' +
+        '<div class="admin-rule-item">' +
+        '<span class="admin-rule-icon">&#10003;</span>' +
+        '<span class="admin-rule-text">Developer role grants access to Command Hub</span>' +
+        '</div>' +
+        '<div class="admin-rule-item">' +
+        '<span class="admin-rule-icon">&#10003;</span>' +
+        '<span class="admin-rule-text">Role context persists across sessions (localStorage)</span>' +
+        '</div>' +
+        '</div>' +
+        '</div>';
+    panelsContainer.appendChild(rolePanel);
+
+    // Access Logs Panel
+    var logsPanel = document.createElement('div');
+    logsPanel.className = 'admin-panel admin-panel-full';
+    logsPanel.innerHTML = '<div class="admin-panel-header">' +
+        '<h3>Access Logs</h3>' +
+        '<button class="btn btn-secondary btn-sm" disabled>Export</button>' +
+        '</div>' +
+        '<div class="admin-panel-body">' +
+        '<table class="admin-logs-table">' +
+        '<thead><tr><th>Timestamp</th><th>User</th><th>Action</th><th>Resource</th><th>Result</th></tr></thead>' +
+        '<tbody>' +
+        '<tr class="admin-log-row">' +
+        '<td class="admin-log-ts">—</td>' +
+        '<td class="admin-log-user">—</td>' +
+        '<td class="admin-log-action">—</td>' +
+        '<td class="admin-log-resource">—</td>' +
+        '<td class="admin-log-result">—</td>' +
+        '</tr>' +
+        '</tbody>' +
+        '</table>' +
+        '<div class="admin-logs-empty">' +
+        '<p>Access logs will be displayed when data source is connected</p>' +
+        '</div>' +
+        '</div>';
+    panelsContainer.appendChild(logsPanel);
+
+    container.appendChild(panelsContainer);
 
     return container;
 }
@@ -10721,51 +11998,33 @@ function capitalizeFirst(str) {
 // --- VTID-0600: Operational Visibility Views ---
 
 /**
- * VTID-0600: Renders the OASIS > Events view with auto-refresh, severity colors, and drawer.
+ * VTID-0600: Renders the OASIS > Events view with severity colors and drawer.
+ * VTID-01189: Standardized 3-row layout with infinite scroll
+ * - Row 1: Global top bar (unchanged)
+ * - Row 2: Tab navigation (unchanged)
+ * - Row 3: Toolbar (filters left, item count right)
+ * - Content: Scrollable table with Load More
  */
 function renderOasisEventsView() {
     var container = document.createElement('div');
     container.className = 'oasis-events-container';
 
-    // Auto-fetch events if not yet fetched
+    // VTID-01189: Auto-fetch events if not yet fetched (no auto-refresh)
     if (!state.oasisEvents.fetched && !state.oasisEvents.loading) {
-        fetchOasisEvents(state.oasisEvents.filters);
-        startOasisEventsAutoRefresh();
+        fetchOasisEvents(state.oasisEvents.filters, false);
     }
 
-    // Toolbar - single row compact layout
+    // VTID-01189: Row 3 - Toolbar (filters left, count right)
     var toolbar = document.createElement('div');
-    toolbar.className = 'oasis-events-toolbar';
+    toolbar.className = 'list-toolbar';
 
-    // Left cluster: Auto-refresh + dropdowns + LIVE pill
-    var leftCluster = document.createElement('div');
-    leftCluster.className = 'oasis-toolbar-left';
-
-    // Auto-refresh toggle
-    var refreshToggle = document.createElement('div');
-    refreshToggle.className = 'auto-refresh-toggle';
-
-    var refreshLabel = document.createElement('span');
-    refreshLabel.textContent = 'Auto-refresh (5s):';
-    refreshToggle.appendChild(refreshLabel);
-
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = state.oasisEvents.autoRefreshEnabled ? 'btn btn-sm btn-active' : 'btn btn-sm';
-    refreshBtn.textContent = state.oasisEvents.autoRefreshEnabled ? 'ON' : 'OFF';
-    refreshBtn.onclick = function() {
-        if (state.oasisEvents.autoRefreshEnabled) {
-            stopOasisEventsAutoRefresh();
-        } else {
-            startOasisEventsAutoRefresh();
-        }
-        renderApp();
-    };
-    refreshToggle.appendChild(refreshBtn);
-    leftCluster.appendChild(refreshToggle);
+    // Left: Filters
+    var filtersCluster = document.createElement('div');
+    filtersCluster.className = 'list-toolbar__filters';
 
     // Topic filter
     var topicFilter = document.createElement('select');
-    topicFilter.className = 'form-control filter-select';
+    topicFilter.className = 'filter-dropdown';
     topicFilter.innerHTML =
         '<option value="">All Topics</option>' +
         '<option value="deploy">Deploy</option>' +
@@ -10776,13 +12035,13 @@ function renderOasisEventsView() {
     topicFilter.value = state.oasisEvents.filters.topic || '';
     topicFilter.onchange = function(e) {
         state.oasisEvents.filters.topic = e.target.value;
-        fetchOasisEvents(state.oasisEvents.filters);
+        handleOasisFilterChange();
     };
-    leftCluster.appendChild(topicFilter);
+    filtersCluster.appendChild(topicFilter);
 
     // Status filter
     var statusFilter = document.createElement('select');
-    statusFilter.className = 'form-control filter-select';
+    statusFilter.className = 'filter-dropdown';
     statusFilter.innerHTML =
         '<option value="">All Status</option>' +
         '<option value="success">Success</option>' +
@@ -10792,42 +12051,23 @@ function renderOasisEventsView() {
     statusFilter.value = state.oasisEvents.filters.status || '';
     statusFilter.onchange = function(e) {
         state.oasisEvents.filters.status = e.target.value;
-        fetchOasisEvents(state.oasisEvents.filters);
+        handleOasisFilterChange();
     };
-    leftCluster.appendChild(statusFilter);
+    filtersCluster.appendChild(statusFilter);
 
-    // Live indicator pill (inline in toolbar)
-    if (state.oasisEvents.autoRefreshEnabled) {
-        var liveIndicator = document.createElement('div');
-        liveIndicator.className = 'oasis-live-pill';
-        liveIndicator.innerHTML = '<span class="live-dot"></span> LIVE - Auto-refreshing';
-        leftCluster.appendChild(liveIndicator);
-    }
+    toolbar.appendChild(filtersCluster);
 
-    toolbar.appendChild(leftCluster);
+    // Right: Item count
+    var metadataCluster = document.createElement('div');
+    metadataCluster.className = 'list-toolbar__metadata';
+    metadataCluster.textContent = state.oasisEvents.items.length + ' events';
+    toolbar.appendChild(metadataCluster);
 
-    // Right cluster: Refresh icon button
-    var rightCluster = document.createElement('div');
-    rightCluster.className = 'oasis-toolbar-right';
-
-    // Refresh icon button
-    var manualRefresh = document.createElement('button');
-    manualRefresh.className = 'btn oasis-refresh-icon-btn';
-    manualRefresh.title = 'Refresh now';
-    manualRefresh.setAttribute('aria-label', 'Refresh now');
-    manualRefresh.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M13.65 2.35A7.958 7.958 0 0 0 8 0a8 8 0 1 0 8 8h-2a6 6 0 1 1-1.76-4.24l-2.24 2.24h5V1l-1.35 1.35z" fill="currentColor"/></svg>';
-    manualRefresh.onclick = function() {
-        fetchOasisEvents(state.oasisEvents.filters);
-    };
-    rightCluster.appendChild(manualRefresh);
-
-    toolbar.appendChild(rightCluster);
     container.appendChild(toolbar);
 
-    // Events table
+    // Content area with scrollable table
     var content = document.createElement('div');
-    content.className = 'oasis-events-content';
-    // VTID-01002: Mark as scroll-retaining container
+    content.className = 'list-scroll-container oasis-events-content';
     content.dataset.scrollRetain = 'true';
     content.dataset.scrollKey = 'oasis-events';
 
@@ -10839,9 +12079,9 @@ function renderOasisEventsView() {
         content.innerHTML = '<div class="placeholder-content">No events found.</div>';
     } else {
         var table = document.createElement('table');
-        table.className = 'oasis-events-table';
+        table.className = 'list-table oasis-events-table';
 
-        // Header
+        // Sticky header
         var thead = document.createElement('thead');
         var headerRow = document.createElement('tr');
         ['Severity', 'Timestamp', 'Topic', 'VTID', 'Service', 'Status', 'Message'].forEach(function(header) {
@@ -10856,7 +12096,7 @@ function renderOasisEventsView() {
         var tbody = document.createElement('tbody');
         state.oasisEvents.items.forEach(function(event) {
             var row = document.createElement('tr');
-            row.className = 'oasis-event-row';
+            row.className = 'oasis-event-row clickable-row';
             var severity = getEventSeverity(event);
             row.dataset.severity = severity;
             row.onclick = function() {
@@ -10913,6 +12153,22 @@ function renderOasisEventsView() {
         });
         table.appendChild(tbody);
         content.appendChild(table);
+
+        // VTID-01189: Load More button
+        if (state.oasisEvents.pagination.hasMore || state.oasisEvents.loading) {
+            var loadMoreContainer = document.createElement('div');
+            loadMoreContainer.className = 'load-more-container';
+
+            var loadMoreBtn = document.createElement('button');
+            loadMoreBtn.className = 'load-more-btn' + (state.oasisEvents.loading ? ' loading' : '');
+            loadMoreBtn.disabled = state.oasisEvents.loading;
+            loadMoreBtn.textContent = state.oasisEvents.loading ? 'Loading...' : 'Load More';
+            loadMoreBtn.onclick = function() {
+                loadMoreOasisEvents();
+            };
+            loadMoreContainer.appendChild(loadMoreBtn);
+            content.appendChild(loadMoreContainer);
+        }
     }
 
     container.appendChild(content);
@@ -11880,85 +13136,259 @@ function renderOasisVtidDetailPanel() {
     return panel;
 }
 
+/**
+ * VTID-01001: Renders the OASIS > VTID Ledger view
+ * VTID-01189: Fixed to match standard list + drawer pattern (like OASIS Events)
+ * - Full-width table, clicking row opens drawer
+ * - Load More button at bottom
+ */
 function renderOasisVtidLedgerView() {
     var container = document.createElement('div');
-    container.className = 'vtids-container oasis-vtid-ledger-container';
+    container.className = 'oasis-events-container vtid-ledger-view';
 
-    // Auto-fetch VTIDs from projection if not yet fetched
+    // Auto-fetch VTIDs if not yet fetched
     if (!state.vtidProjection.fetched && !state.vtidProjection.loading) {
-        fetchVtidProjection();
+        fetchVtidProjection(false);
     }
 
-    // Header - always rendered immediately
-    var header = document.createElement('div');
-    header.className = 'vtids-header';
+    // Toolbar with count
+    var toolbar = document.createElement('div');
+    toolbar.className = 'list-toolbar';
 
-    var title = document.createElement('h2');
-    title.textContent = 'VTID Ledger';
+    var filtersCluster = document.createElement('div');
+    filtersCluster.className = 'list-toolbar__filters';
+    toolbar.appendChild(filtersCluster);
+
+    var metadataCluster = document.createElement('div');
+    metadataCluster.className = 'list-toolbar__metadata';
+    metadataCluster.textContent = state.vtidProjection.items.length + ' VTIDs';
+    toolbar.appendChild(metadataCluster);
+
+    container.appendChild(toolbar);
+
+    // Content area
+    var content = document.createElement('div');
+    content.className = 'oasis-events-content';
+
+    if (state.vtidProjection.loading && state.vtidProjection.items.length === 0) {
+        content.innerHTML = '<div class="placeholder-content">Loading VTID Ledger...</div>';
+    } else if (state.vtidProjection.error) {
+        content.innerHTML = '<div class="error-banner">Error loading VTID Ledger: ' + state.vtidProjection.error + '</div>';
+    } else if (state.vtidProjection.items.length === 0) {
+        content.innerHTML = '<div class="placeholder-content">No VTIDs found in ledger.</div>';
+    } else {
+        // Table
+        var table = document.createElement('table');
+        table.className = 'oasis-events-table vtid-ledger-table';
+
+        // Header
+        var thead = document.createElement('thead');
+        thead.innerHTML = '<tr>' +
+            '<th>VTID</th>' +
+            '<th>Title</th>' +
+            '<th>Stage</th>' +
+            '<th>Status</th>' +
+            '<th>Attention</th>' +
+            '<th>Last Update</th>' +
+            '</tr>';
+        table.appendChild(thead);
+
+        // Body
+        var tbody = document.createElement('tbody');
+        state.vtidProjection.items.forEach(function(item) {
+            var row = document.createElement('tr');
+            row.className = 'vtid-ledger-row clickable-row';
+            if (oasisVtidDetail.selectedVtid === item.vtid) {
+                row.classList.add('selected');
+            }
+            row.onclick = function() {
+                fetchOasisVtidDetail(item.vtid);
+            };
+
+            // VTID
+            var vtidCell = document.createElement('td');
+            vtidCell.className = 'vtid-cell';
+            vtidCell.textContent = item.vtid || '-';
+            row.appendChild(vtidCell);
+
+            // Title
+            var titleCell = document.createElement('td');
+            titleCell.className = 'title-cell';
+            titleCell.textContent = item.title || '-';
+            row.appendChild(titleCell);
+
+            // Stage
+            var stageCell = document.createElement('td');
+            var stageBadge = document.createElement('span');
+            stageBadge.className = 'status-badge stage-' + (item.current_stage || 'pending').toLowerCase();
+            stageBadge.textContent = item.current_stage || '-';
+            stageCell.appendChild(stageBadge);
+            row.appendChild(stageCell);
+
+            // Status
+            var statusCell = document.createElement('td');
+            var statusBadge = document.createElement('span');
+            statusBadge.className = 'status-badge status-' + (item.status || 'pending').toLowerCase();
+            statusBadge.textContent = item.status || '-';
+            statusCell.appendChild(statusBadge);
+            row.appendChild(statusCell);
+
+            // Attention
+            var attentionCell = document.createElement('td');
+            attentionCell.className = 'attention-cell';
+            attentionCell.textContent = item.attention_required || 'AUTO';
+            row.appendChild(attentionCell);
+
+            // Last Update
+            var updateCell = document.createElement('td');
+            updateCell.className = 'update-cell';
+            updateCell.textContent = item.last_update ? formatEventTimestamp(item.last_update) : '-';
+            row.appendChild(updateCell);
+
+            tbody.appendChild(row);
+        });
+        table.appendChild(tbody);
+        content.appendChild(table);
+
+        // Load More button
+        if (state.vtidProjection.pagination.hasMore) {
+            var loadMoreContainer = document.createElement('div');
+            loadMoreContainer.className = 'load-more-container';
+
+            var loadMoreBtn = document.createElement('button');
+            loadMoreBtn.className = 'load-more-btn' + (state.vtidProjection.loading ? ' loading' : '');
+            loadMoreBtn.disabled = state.vtidProjection.loading;
+            loadMoreBtn.textContent = state.vtidProjection.loading ? 'Loading...' : 'Load More';
+            loadMoreBtn.onclick = function(e) {
+                e.preventDefault();
+                loadMoreVtidProjection();
+            };
+            loadMoreContainer.appendChild(loadMoreBtn);
+            content.appendChild(loadMoreContainer);
+        }
+    }
+
+    container.appendChild(content);
+    return container;
+}
+
+/**
+ * VTID-01189: Renders the VTID Ledger detail drawer (standard drawer pattern)
+ */
+function renderOasisVtidLedgerDrawer() {
+    var drawer = document.createElement('div');
+    drawer.className = 'drawer vtid-ledger-drawer' + (oasisVtidDetail.selectedVtid ? ' open' : '');
+
+    if (!oasisVtidDetail.selectedVtid) {
+        return drawer;
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'drawer-header';
+
+    var title = document.createElement('h3');
+    title.textContent = oasisVtidDetail.selectedVtid || 'VTID Details';
     header.appendChild(title);
 
-    // DEV-COMHU-2025-0009: Visible fingerprint for deployment proof
-    var fingerprint = document.createElement('span');
-    fingerprint.className = 'view-fingerprint';
-    fingerprint.textContent = 'View: OASIS_VTID_LEDGER_ACTIVE (VTID-01001)';
-    header.appendChild(fingerprint);
+    var closeBtn = document.createElement('button');
+    closeBtn.className = 'drawer-close-btn';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.onclick = function() {
+        oasisVtidDetail.selectedVtid = null;
+        oasisVtidDetail.data = null;
+        oasisVtidDetail.events = [];
+        oasisVtidDetail.error = null;
+        renderApp();
+    };
+    header.appendChild(closeBtn);
+    drawer.appendChild(header);
 
-    var subtitle = document.createElement('p');
-    subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Authoritative VTID registry. Click a row to view lifecycle, events, governance, and provenance.';
-    header.appendChild(subtitle);
+    // Content
+    var content = document.createElement('div');
+    content.className = 'drawer-content';
 
-    container.appendChild(header);
+    if (oasisVtidDetail.loading) {
+        content.innerHTML = '<div class="drawer-loading">Loading VTID details...</div>';
+    } else if (oasisVtidDetail.error) {
+        content.innerHTML = '<div class="drawer-error">Error: ' + oasisVtidDetail.error + '</div>';
+    } else if (oasisVtidDetail.data) {
+        var data = oasisVtidDetail.data;
 
-    // Toolbar with Refresh button
-    // SPEC-01: Per-view refresh buttons removed - use global refresh icon in header
+        // Title
+        if (data.title) {
+            var titleSection = document.createElement('div');
+            titleSection.className = 'drawer-section';
+            titleSection.innerHTML = '<div class="vtid-title">' + data.title + '</div>';
+            content.appendChild(titleSection);
+        }
 
-    // Error banner
-    if (state.vtidProjection.error) {
-        var errorBanner = document.createElement('div');
-        errorBanner.className = 'vtid-ledger-error-banner';
-        errorBanner.textContent = 'Error loading VTID Ledger: ' + state.vtidProjection.error;
-        container.appendChild(errorBanner);
+        // Lifecycle & Timestamps
+        var lifecycleSection = document.createElement('div');
+        lifecycleSection.className = 'drawer-section';
+        lifecycleSection.innerHTML = '<h4>Lifecycle & Timestamps</h4>' +
+            '<div class="drawer-grid">' +
+            '<div><strong>Status:</strong> ' + (data.status || 'pending') + '</div>' +
+            '<div><strong>Layer:</strong> ' + (data.layer || 'DEV') + '</div>' +
+            '<div><strong>Module:</strong> ' + (data.module || '-') + '</div>' +
+            '<div><strong>Created:</strong> ' + (data.created_at ? formatEventTimestamp(data.created_at) : '-') + '</div>' +
+            '<div><strong>Updated:</strong> ' + (data.updated_at ? formatEventTimestamp(data.updated_at) : '-') + '</div>' +
+            '</div>';
+        content.appendChild(lifecycleSection);
+
+        // Stage Timeline
+        if (data.stageTimeline && data.stageTimeline.length > 0) {
+            var timelineSection = document.createElement('div');
+            timelineSection.className = 'drawer-section';
+            timelineSection.innerHTML = '<h4>Stage Timeline</h4>';
+            var timelineDiv = document.createElement('div');
+            timelineDiv.className = 'stage-timeline';
+            data.stageTimeline.forEach(function(stage) {
+                var stageItem = document.createElement('div');
+                stageItem.className = 'stage-item stage-' + (stage.status || 'pending').toLowerCase();
+                stageItem.innerHTML = '<span class="stage-name">' + stage.stage + '</span>' +
+                                      '<span class="stage-status">' + (stage.status || 'PENDING') + '</span>';
+                timelineDiv.appendChild(stageItem);
+            });
+            timelineSection.appendChild(timelineDiv);
+            content.appendChild(timelineSection);
+        }
+
+        // Events
+        var eventsSection = document.createElement('div');
+        eventsSection.className = 'drawer-section';
+        eventsSection.innerHTML = '<h4>Events Timeline (' + oasisVtidDetail.events.length + ')</h4>';
+
+        if (oasisVtidDetail.events.length === 0) {
+            eventsSection.innerHTML += '<div class="no-events">No events recorded</div>';
+        } else {
+            var eventsList = document.createElement('div');
+            eventsList.className = 'events-list';
+            oasisVtidDetail.events.slice(0, 20).forEach(function(event) {
+                var eventItem = document.createElement('div');
+                eventItem.className = 'event-item';
+                eventItem.innerHTML = '<div class="event-topic">' + (event.topic || '-') + '</div>' +
+                    '<div class="event-time">' + (event.created_at ? formatEventTimestamp(event.created_at) : '-') + '</div>' +
+                    '<div class="event-message">' + (event.message || '-') + '</div>';
+                eventsList.appendChild(eventItem);
+            });
+            eventsSection.appendChild(eventsList);
+        }
+        content.appendChild(eventsSection);
+
+        // Provenance
+        var provenanceSection = document.createElement('div');
+        provenanceSection.className = 'drawer-section';
+        provenanceSection.innerHTML = '<h4>Provenance</h4>' +
+            '<div class="drawer-grid">' +
+            '<div><strong>VTID:</strong> ' + (data.vtid || '-') + '</div>' +
+            '<div><strong>Source:</strong> OASIS Ledger</div>' +
+            '</div>';
+        content.appendChild(provenanceSection);
     }
 
-    // Status line
-    var statusLine = document.createElement('div');
-    statusLine.className = 'vtid-ledger-status-line';
-    if (state.vtidProjection.loading) {
-        statusLine.textContent = 'Loading VTID Ledger...';
-    } else if (state.vtidProjection.fetched && !state.vtidProjection.error) {
-        statusLine.textContent = 'Loaded ' + state.vtidProjection.items.length + ' VTIDs from Ledger';
-    } else if (!state.vtidProjection.fetched) {
-        statusLine.textContent = 'Loading VTID Ledger...';
-    }
-    container.appendChild(statusLine);
-
-    // Split layout: list + detail panel
-    var splitContainer = document.createElement('div');
-    splitContainer.className = 'oasis-split-container';
-
-    // Left: VTID list
-    var listPane = document.createElement('div');
-    listPane.className = 'oasis-list-pane';
-
-    if (state.vtidProjection.loading || (!state.vtidProjection.fetched && !state.vtidProjection.error)) {
-        listPane.innerHTML = '<div class="placeholder-content">Loading VTID Ledger...</div>';
-    } else if (state.vtidProjection.items.length === 0 && !state.vtidProjection.error) {
-        listPane.innerHTML = '<div class="placeholder-content">No VTIDs found in ledger.</div>';
-    } else if (state.vtidProjection.items.length > 0) {
-        listPane.appendChild(renderOasisLedgerTableWithDrilldown(state.vtidProjection.items));
-    }
-    splitContainer.appendChild(listPane);
-
-    // Right: Detail panel
-    var detailPane = document.createElement('div');
-    detailPane.className = 'oasis-detail-pane';
-    detailPane.appendChild(renderOasisVtidDetailPanel());
-    splitContainer.appendChild(detailPane);
-
-    container.appendChild(splitContainer);
-
-    return container;
+    drawer.appendChild(content);
+    return drawer;
 }
 
 // =============================================================================
@@ -14780,6 +16210,238 @@ function renderGovernanceBlockedModal() {
         renderApp();
     };
     footer.appendChild(dismissBtn);
+
+    modal.appendChild(footer);
+    overlay.appendChild(modal);
+    return overlay;
+}
+
+/**
+ * VTID-01194: Execution Approval Confirmation Modal
+ * "Moving this task to In Progress will immediately start autonomous execution."
+ *
+ * This modal is REQUIRED per VTID-01194 spec before moving a task to IN_PROGRESS.
+ * IN_PROGRESS = Explicit Human Approval to Execute
+ *
+ * Features:
+ * - Clear warning message about autonomous execution
+ * - Optional reason field for audit trail
+ * - Confirm/Cancel buttons
+ */
+function renderExecutionApprovalModal() {
+    if (!state.showExecutionApprovalModal || !state.executionApprovalVtid) {
+        return null;
+    }
+
+    var vtid = state.executionApprovalVtid;
+
+    var overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.onclick = function(e) {
+        if (e.target === overlay && !state.executionApprovalLoading) {
+            state.showExecutionApprovalModal = false;
+            state.executionApprovalVtid = null;
+            state.executionApprovalReason = '';
+            renderApp();
+        }
+    };
+
+    var modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.cssText = 'max-width: 480px; background: #1e293b; border: 1px solid rgba(74,222,128,0.3); box-shadow: 0 0 40px rgba(74,222,128,0.15);';
+
+    // === HEADER ===
+    var header = document.createElement('div');
+    header.className = 'modal-header';
+    header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.1);';
+
+    var titleRow = document.createElement('div');
+    titleRow.style.cssText = 'display: flex; align-items: center; gap: 10px;';
+
+    var iconSpan = document.createElement('span');
+    iconSpan.style.cssText = 'font-size: 22px;';
+    iconSpan.textContent = '\u26A1'; // Lightning bolt - execution
+    titleRow.appendChild(iconSpan);
+
+    var title = document.createElement('span');
+    title.textContent = 'Approve Execution';
+    title.style.cssText = 'font-size: 18px; font-weight: 600; color: #4ade80;';
+    titleRow.appendChild(title);
+
+    header.appendChild(titleRow);
+
+    var closeBtn = document.createElement('button');
+    closeBtn.innerHTML = '&times;';
+    closeBtn.style.cssText = 'background: none; border: none; color: #888; font-size: 28px; cursor: pointer; padding: 0; line-height: 1;';
+    closeBtn.disabled = state.executionApprovalLoading;
+    closeBtn.onclick = function() {
+        if (!state.executionApprovalLoading) {
+            state.showExecutionApprovalModal = false;
+            state.executionApprovalVtid = null;
+            state.executionApprovalReason = '';
+            renderApp();
+        }
+    };
+    header.appendChild(closeBtn);
+    modal.appendChild(header);
+
+    // === BODY ===
+    var body = document.createElement('div');
+    body.className = 'modal-body';
+    body.style.cssText = 'padding: 20px;';
+
+    // VTID badge
+    var vtidBadge = document.createElement('div');
+    vtidBadge.style.cssText = 'display: inline-block; padding: 6px 12px; background: rgba(96,165,250,0.15); border: 1px solid rgba(96,165,250,0.3); border-radius: 6px; font-size: 14px; font-weight: 600; color: #60a5fa; font-family: ui-monospace, monospace; margin-bottom: 16px;';
+    vtidBadge.textContent = vtid;
+    body.appendChild(vtidBadge);
+
+    // Warning message section (VTID-01194 required text)
+    var warningSection = document.createElement('div');
+    warningSection.style.cssText = 'margin-bottom: 20px; padding: 16px; background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.25); border-radius: 8px;';
+
+    var warningIcon = document.createElement('div');
+    warningIcon.style.cssText = 'font-size: 24px; margin-bottom: 8px;';
+    warningIcon.textContent = '\u26A0\uFE0F'; // Warning sign
+    warningSection.appendChild(warningIcon);
+
+    var warningTitle = document.createElement('div');
+    warningTitle.style.cssText = 'font-weight: 600; color: #fbbf24; margin-bottom: 8px; font-size: 15px;';
+    warningTitle.textContent = 'Autonomous Execution Warning';
+    warningSection.appendChild(warningTitle);
+
+    var warningText = document.createElement('p');
+    warningText.style.cssText = 'margin: 0; color: #f8fafc; font-size: 14px; line-height: 1.6;';
+    warningText.textContent = 'Moving this task to In Progress will immediately start autonomous execution. The system will begin working on this task automatically.';
+    warningSection.appendChild(warningText);
+
+    body.appendChild(warningSection);
+
+    // What will happen section
+    var whatHappensSection = document.createElement('div');
+    whatHappensSection.style.cssText = 'margin-bottom: 20px; padding: 14px; background: rgba(255,255,255,0.03); border-radius: 8px;';
+
+    var whatHappensTitle = document.createElement('div');
+    whatHappensTitle.style.cssText = 'font-weight: 500; color: #94a3b8; margin-bottom: 10px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;';
+    whatHappensTitle.textContent = 'What will happen:';
+    whatHappensSection.appendChild(whatHappensTitle);
+
+    var stepsList = document.createElement('ul');
+    stepsList.style.cssText = 'margin: 0; padding-left: 18px; color: #cbd5e1; font-size: 13px; line-height: 1.8;';
+    var steps = [
+        'Task status changes to IN_PROGRESS',
+        'Execution approval event emitted to OASIS',
+        'Worker dispatched to begin autonomous work',
+        'Progress tracked in Command Hub'
+    ];
+    steps.forEach(function(step) {
+        var li = document.createElement('li');
+        li.textContent = step;
+        stepsList.appendChild(li);
+    });
+    whatHappensSection.appendChild(stepsList);
+
+    body.appendChild(whatHappensSection);
+
+    // Optional reason field (audit-friendly per VTID-01194)
+    var reasonSection = document.createElement('div');
+    reasonSection.style.cssText = 'margin-bottom: 8px;';
+
+    var reasonLabel = document.createElement('label');
+    reasonLabel.style.cssText = 'display: block; font-size: 13px; color: #94a3b8; margin-bottom: 6px;';
+    reasonLabel.textContent = 'Reason (optional, for audit trail):';
+    reasonSection.appendChild(reasonLabel);
+
+    var reasonInput = document.createElement('input');
+    reasonInput.type = 'text';
+    reasonInput.placeholder = 'e.g., Approved after review, Testing new feature...';
+    reasonInput.style.cssText = 'width: 100%; padding: 10px 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; color: #f8fafc; font-size: 14px; box-sizing: border-box;';
+    reasonInput.value = state.executionApprovalReason || '';
+    reasonInput.disabled = state.executionApprovalLoading;
+    reasonInput.oninput = function(e) {
+        state.executionApprovalReason = e.target.value;
+    };
+    reasonSection.appendChild(reasonInput);
+
+    body.appendChild(reasonSection);
+    modal.appendChild(body);
+
+    // === FOOTER ===
+    var footer = document.createElement('div');
+    footer.className = 'modal-footer';
+    footer.style.cssText = 'display: flex; justify-content: flex-end; align-items: center; gap: 12px; padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.1);';
+
+    var cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.cssText = 'padding: 10px 20px; background: rgba(255,255,255,0.1); border: none; border-radius: 6px; color: #fff; cursor: pointer;';
+    cancelBtn.disabled = state.executionApprovalLoading;
+    cancelBtn.onclick = function() {
+        if (!state.executionApprovalLoading) {
+            state.showExecutionApprovalModal = false;
+            state.executionApprovalVtid = null;
+            state.executionApprovalReason = '';
+            renderApp();
+        }
+    };
+    footer.appendChild(cancelBtn);
+
+    var confirmBtn = document.createElement('button');
+    confirmBtn.className = 'btn btn-success';
+    confirmBtn.textContent = state.executionApprovalLoading ? 'Approving...' : 'Approve & Start Execution';
+    confirmBtn.style.cssText = 'padding: 10px 20px; background: #22c55e; border: none; border-radius: 6px; color: #fff; cursor: pointer; font-weight: 600;';
+    confirmBtn.disabled = state.executionApprovalLoading;
+    confirmBtn.onclick = async function() {
+        state.executionApprovalLoading = true;
+        renderApp();
+
+        try {
+            // VTID-01194: Call lifecycle/start with approval_reason
+            var response = await fetch('/api/v1/vtid/lifecycle/start', {
+                method: 'POST',
+                headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({
+                    vtid: vtid,
+                    source: 'command-hub',
+                    summary: vtid + ': Execution approved from Command Hub',
+                    approval_reason: state.executionApprovalReason || null
+                })
+            });
+            var result = await response.json();
+
+            if (result.ok) {
+                // Clear modal state
+                state.showExecutionApprovalModal = false;
+                state.executionApprovalVtid = null;
+                state.executionApprovalReason = '';
+                state.executionApprovalLoading = false;
+
+                // Clear task selection and override
+                clearTaskStatusOverride(vtid);
+                state.selectedTask = null;
+                state.selectedTaskDetail = null;
+                state.drawerSpecVtid = null;
+                state.drawerSpecText = '';
+                state.drawerSpecEditing = false;
+
+                // Show success toast
+                showToast('Execution approved: ' + vtid + ' \u2192 Autonomous execution started', 'success');
+
+                // Refresh tasks
+                await fetchTasks();
+            } else {
+                state.executionApprovalLoading = false;
+                showToast('Approval failed: ' + (result.error || 'Unknown error'), 'error');
+                renderApp();
+            }
+        } catch (e) {
+            console.error('[VTID-01194] Execution approval failed:', e);
+            state.executionApprovalLoading = false;
+            showToast('Approval failed: Network error', 'error');
+            renderApp();
+        }
+    };
+    footer.appendChild(confirmBtn);
 
     modal.appendChild(footer);
     overlay.appendChild(modal);

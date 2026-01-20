@@ -129,6 +129,13 @@ interface OasisTask {
   metadata?: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;
+  // VTID-01188: Spec approval gate columns
+  spec_status?: string;
+  spec_current_id?: string;
+  spec_current_hash?: string;
+  spec_approved_hash?: string;
+  spec_approved_by?: string;
+  spec_approved_at?: string;
 }
 
 interface OasisSpec {
@@ -264,6 +271,13 @@ async function fetchTask(vtid: string): Promise<OasisTask | null> {
       metadata: row.metadata ?? {},
       created_at: row.created_at,
       updated_at: row.updated_at,
+      // VTID-01188: Spec approval gate columns
+      spec_status: row.spec_status ?? 'missing',
+      spec_current_id: row.spec_current_id ?? null,
+      spec_current_hash: row.spec_current_hash ?? null,
+      spec_approved_hash: row.spec_approved_hash ?? null,
+      spec_approved_by: row.spec_approved_by ?? null,
+      spec_approved_at: row.spec_approved_at ?? null,
     };
   } catch (error) {
     console.error("[VTID-01150] Error fetching task:", error);
@@ -1157,6 +1171,72 @@ router.post("/vtid", async (req: Request, res: Response) => {
         error: 'SPEC_MISSING',
         message: 'Spec is required for execution but was not found in OASIS. Please create a spec for this VTID first.',
       });
+    }
+
+    // VTID-01188: Spec approval gate - ACTIVATION REQUIRES APPROVED SPEC
+    // Check spec_status and hash integrity from vtid_ledger
+    const taskForApprovalCheck = await fetchTask(vtid);
+    if (taskForApprovalCheck) {
+      const specStatus = taskForApprovalCheck.spec_status || 'missing';
+      const specApprovedHash = taskForApprovalCheck.spec_approved_hash;
+      const specCurrentHash = taskForApprovalCheck.spec_current_hash;
+
+      // Spec must be approved for activation
+      if (specStatus !== 'approved') {
+        console.error(`[VTID-01188] ${vtid}: SPEC_NOT_APPROVED - spec_status=${specStatus}`);
+
+        // Emit activation blocked event
+        await emitOasisEvent({
+          vtid,
+          type: 'vtid.execution.activation.blocked',
+          source: 'vtid-runner-v2',
+          status: 'warning',
+          message: `Activation blocked: spec not approved (status=${specStatus})`,
+          payload: {
+            error_code: 'SPEC_NOT_APPROVED',
+            spec_status: specStatus,
+            required_status: 'approved',
+          },
+        });
+
+        return res.status(409).json({
+          ok: false,
+          vtid,
+          error: 'SPEC_NOT_APPROVED',
+          code: 'SPEC_NOT_APPROVED',
+          spec_status: specStatus,
+          message: `Activation requires an approved spec. Current spec status: ${specStatus}. Please generate, validate, and approve the spec first.`,
+        });
+      }
+
+      // Hash integrity check: approved hash must match current hash (no silent spec changes)
+      if (specApprovedHash && specCurrentHash && specApprovedHash !== specCurrentHash) {
+        console.error(`[VTID-01188] ${vtid}: SPEC_HASH_MISMATCH - approved=${specApprovedHash?.slice(0, 8)}, current=${specCurrentHash?.slice(0, 8)}`);
+
+        // Emit activation blocked event
+        await emitOasisEvent({
+          vtid,
+          type: 'vtid.execution.activation.blocked',
+          source: 'vtid-runner-v2',
+          status: 'warning',
+          message: `Activation blocked: spec changed after approval`,
+          payload: {
+            error_code: 'SPEC_HASH_MISMATCH',
+            spec_approved_hash: specApprovedHash,
+            spec_current_hash: specCurrentHash,
+          },
+        });
+
+        return res.status(409).json({
+          ok: false,
+          vtid,
+          error: 'SPEC_HASH_MISMATCH',
+          code: 'SPEC_HASH_MISMATCH',
+          message: 'Spec was modified after approval. Re-validate and re-approve the spec before activation.',
+        });
+      }
+
+      console.log(`[VTID-01188] ${vtid}: Spec approval gate passed (status=approved, hash verified)`);
     }
 
     // Step 2: Read task from OASIS - CREATE if doesn't exist, UPDATE if "allocated"

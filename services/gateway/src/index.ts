@@ -182,6 +182,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const recommendationInboxRouter = require('./routes/recommendation-inbox').default;
   // VTID-01180: Autopilot Recommendations API v1 (correct implementation)
   const autopilotRecommendationsRouter = require('./routes/autopilot-recommendations').default;
+  // VTID-01188: Unified "Generate Spec" Pipeline Routes
+  const { specsRouter } = require('./routes/specs');
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -344,6 +346,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01146: Execute VTID Runner (One-Button End-to-End Pipeline)
   mountRouterSync(app, '/api/v1/execute', executeRouter, { owner: 'execute-runner' });
+
+  // VTID-01188: Unified "Generate Spec" Pipeline (generate/validate/approve/get)
+  mountRouterSync(app, '/api/v1/specs', specsRouter, { owner: 'specs-pipeline' });
 
   // VTID-01148: Approvals API v1 — Pending Queue + Count + Approve/Reject (Gateway + OASIS-backed)
   mountRouterSync(app, '/api/v1/approvals', approvalsRouter, { owner: 'approvals-api' });

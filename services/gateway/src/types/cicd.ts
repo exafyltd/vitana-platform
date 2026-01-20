@@ -450,7 +450,13 @@ export type CicdEventType =
   | 'orb.task_state_query'
   | 'orb.task_state_query.completed'
   // VTID-01181: Governance Controls - System Arming Panel Events
-  | 'governance.control.updated';
+  | 'governance.control.updated'
+  // VTID-01188: Unified Spec Generation Pipeline Events
+  | 'vtid.spec.generate.requested'
+  | 'vtid.spec.generate.completed'
+  | 'vtid.spec.validation.completed'
+  | 'vtid.spec.approved'
+  | 'vtid.execution.activation.blocked';
 
 export interface CicdOasisEvent {
   vtid: string;

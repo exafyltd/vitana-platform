@@ -21,6 +21,13 @@ import {
   getSpecSnapshot,
   type VerificationResult,
 } from './autopilot-controller';
+import {
+  getVtidSpec,
+  enforceSpecRequirement,
+  getSpecDomain,
+  getSpecTargetPaths,
+  type VtidSpec,
+} from './vtid-spec-service';
 
 // =============================================================================
 // Types
@@ -196,6 +203,8 @@ async function runHealthCheck(
 /**
  * Run CSP (Content Security Policy) compliance check
  * For frontend changes, verify no inline scripts/styles
+ *
+ * VTID-01190: Now uses DB-based spec with checksum verification
  */
 async function runCspCheck(
   vtid: string,
@@ -203,10 +212,12 @@ async function runCspCheck(
 ): Promise<CspCheckResult> {
   const violations: string[] = [];
 
-  // Get spec snapshot to check if this is frontend-related
-  const spec = getSpecSnapshot(vtid);
-  const isFrontend = spec?.task_domain === 'frontend' ||
-    spec?.target_paths?.some(p => p.includes('/frontend/'));
+  // VTID-01190: Get spec from DB with checksum verification
+  const dbSpec = await getVtidSpec(vtid, { verifyChecksum: true });
+  const isFrontend = dbSpec
+    ? (getSpecDomain(dbSpec) === 'frontend' ||
+       getSpecTargetPaths(dbSpec).some(p => p.includes('/frontend/')))
+    : false;
 
   if (!isFrontend) {
     // CSP check only applies to frontend changes
@@ -310,13 +321,18 @@ function parseAcceptanceAssertions(specContent: string): AcceptanceAssertion[] {
 
 /**
  * Evaluate acceptance assertions against deployed service
+ *
+ * VTID-01190: Now uses DB-based spec with checksum verification.
+ * Acceptance assertions are derived from the persisted spec.
  */
 async function runAcceptanceAssertions(
   vtid: string,
   service: string
 ): Promise<AcceptanceAssertionResult> {
-  const spec = getSpecSnapshot(vtid);
-  if (!spec) {
+  // VTID-01190: Get spec from DB with checksum verification
+  const dbSpec = await getVtidSpec(vtid, { verifyChecksum: true });
+  if (!dbSpec) {
+    console.warn(`[VTID-01190] No spec found for ${vtid} during acceptance assertions`);
     return {
       passed: true,
       assertions: [],
@@ -324,7 +340,8 @@ async function runAcceptanceAssertions(
     };
   }
 
-  const assertions = parseAcceptanceAssertions(spec.spec_content);
+  // Use spec_text from the persisted spec content
+  const assertions = parseAcceptanceAssertions(dbSpec.spec_content.spec_text);
   if (assertions.length === 0) {
     // No assertions found in spec - pass by default
     return {
@@ -399,6 +416,9 @@ async function runAcceptanceAssertions(
 /**
  * Run post-deploy verification for a VTID
  *
+ * VTID-01190: This now enforces spec requirement before verification.
+ * Verification uses the persisted spec for acceptance assertions.
+ *
  * This should be called after successful deployment.
  * If verification passes, the VTID can be marked as terminally completed.
  *
@@ -408,7 +428,25 @@ async function runAcceptanceAssertions(
 export async function runVerification(request: VerificationRequest): Promise<VerificationResponse> {
   const { vtid, service, environment, deploy_url, merge_sha } = request;
 
-  console.log(`[VTID-01178] Starting verification for ${vtid} (${service}@${environment})`);
+  console.log(`[VTID-01190] Starting verification for ${vtid} (${service}@${environment})`);
+
+  // VTID-01190: Verify spec exists and is valid before verification
+  const specEnforcement = await enforceSpecRequirement(vtid);
+  if (!specEnforcement.allowed) {
+    console.error(`[VTID-01190] VERIFICATION BLOCKED - No valid spec for ${vtid}: ${specEnforcement.error}`);
+
+    await emitVerificationEvent(vtid, 'failed', 'error', `Verification blocked: ${specEnforcement.error}`, {
+      error: specEnforcement.error,
+      error_code: specEnforcement.error_code,
+      spec_enforcement_failed: true,
+    });
+
+    return {
+      ok: false,
+      passed: false,
+      error: `Spec enforcement failed: ${specEnforcement.error}`,
+    };
+  }
 
   // Mark as verifying state
   await markVerifying(vtid);
@@ -417,6 +455,7 @@ export async function runVerification(request: VerificationRequest): Promise<Ver
     service,
     environment,
     merge_sha,
+    spec_checksum: specEnforcement.spec?.spec_checksum, // VTID-01190: Include checksum
   });
 
   const issues: string[] = [];
