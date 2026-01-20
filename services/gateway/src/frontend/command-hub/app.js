@@ -762,9 +762,15 @@ async function initMeContext() {
  * Returns identity (user_id, email, tenant_id, exafy_admin), profile, memberships.
  * Updates state.user with real name/avatar for profile capsule display.
  *
+ * VTID-01196: Now accepts fallbackEmail to preserve user info if API fails.
+ *
+ * @param {string} [fallbackEmail] - Email to use if API call fails
  * @returns {Promise<Object|null>} The auth identity or null on error
  */
-async function fetchAuthMe() {
+async function fetchAuthMe(fallbackEmail) {
+    // VTID-01196: Use stored login email as fallback
+    var emailFallback = fallbackEmail || state.loginUserEmail || '';
+
     if (!state.authToken) {
         console.log('[VTID-01171] No auth token, skipping auth/me fetch');
         // Set fallback user for unauthenticated state
@@ -800,12 +806,17 @@ async function fetchAuthMe() {
             state.authIdentityError = errorMsg;
             state.authIdentityLoading = false;
 
-            // Set fallback user
+            // VTID-01196: Set fallback user using login email if available
+            var fallbackName = emailFallback ? emailFallback.split('@')[0] : 'User';
+            var fallbackInitials = generateInitials(emailFallback || 'User');
             state.user = {
-                name: 'User',
-                role: 'User',
-                avatar: '?'
+                name: fallbackName,
+                role: state.viewRole || 'User',
+                avatar: fallbackInitials,
+                email: emailFallback || null,
+                avatarUrl: null
             };
+            console.warn('[VTID-01196] fetchAuthMe failed, using fallback email:', emailFallback || '(none)');
             return null;
         }
 
@@ -850,12 +861,17 @@ async function fetchAuthMe() {
         state.authIdentityError = err.message || 'Network error';
         state.authIdentityLoading = false;
 
-        // Set fallback user
+        // VTID-01196: Set fallback user using login email if available
+        var fallbackName = emailFallback ? emailFallback.split('@')[0] : 'User';
+        var fallbackInitials = generateInitials(emailFallback || 'User');
         state.user = {
-            name: 'User',
-            role: 'User',
-            avatar: '?'
+            name: fallbackName,
+            role: state.viewRole || 'User',
+            avatar: fallbackInitials,
+            email: emailFallback || null,
+            avatarUrl: null
         };
+        console.warn('[VTID-01196] fetchAuthMe exception, using fallback email:', emailFallback || '(none)');
         return null;
     }
 }
@@ -921,7 +937,7 @@ async function doLogin(email, password) {
             return { ok: false, error: data.error, message: errorMsg };
         }
 
-        console.log('[VTID-01186] doLogin success, user_id=', data.user?.id);
+        console.log('[VTID-01186] doLogin success, user_id=', data.user?.id, 'email=', data.user?.email || email);
 
         // Store the access token
         state.authToken = data.access_token;
@@ -931,6 +947,11 @@ async function doLogin(email, password) {
         if (data.refresh_token) {
             localStorage.setItem('vitana.refreshToken', data.refresh_token);
         }
+
+        // VTID-01196: Store login email as fallback for profile display
+        // This ensures we can show user info even if /auth/me fails
+        var loginEmail = data.user?.email || email;
+        state.loginUserEmail = loginEmail;
 
         state.loginLoading = false;
         state.loginError = null;
@@ -948,8 +969,21 @@ async function doLogin(email, password) {
         state.tasksError = null;
         state.governanceRulesError = null;
 
-        // Fetch full identity
-        await fetchAuthMe();
+        // VTID-01196: Set initial user state from login response immediately
+        // This provides visual feedback while fetchAuthMe loads full profile
+        var initialName = loginEmail ? loginEmail.split('@')[0] : 'User';
+        var initialInitials = generateInitials(loginEmail || 'User');
+        state.user = {
+            name: initialName,
+            role: state.viewRole || 'User',
+            avatar: initialInitials,
+            email: loginEmail,
+            avatarUrl: null
+        };
+        renderApp(); // Show immediate feedback
+
+        // Fetch full identity (will update with avatar_url if available)
+        await fetchAuthMe(loginEmail);
 
         // Also fetch me context to update MeState
         await fetchMeContext();
@@ -977,6 +1011,7 @@ function doLogout() {
     state.authToken = null;
     state.authIdentity = null;
     state.meContext = null;
+    state.loginUserEmail = null; // VTID-01196: Clear login email fallback
     MeState.loaded = false;
     MeState.me = null;
     localStorage.removeItem('vitana.authToken');
@@ -2306,6 +2341,8 @@ const state = {
     loginPassword: '',
     loginLoading: false,
     loginError: null,
+    // VTID-01196: Store login email as fallback for profile display
+    loginUserEmail: null,
 
     // Docs / Screen Inventory
     screenInventory: null,
