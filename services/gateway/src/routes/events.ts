@@ -1053,7 +1053,8 @@ const LifecycleStartEventSchema = z.object({
   }),
   summary: z.string().optional(),
   // VTID-01194: Optional reason for audit trail (from confirmation modal)
-  approval_reason: z.string().optional(),
+  // Use .nullish() to accept string, undefined, OR null (frontend sends null when empty)
+  approval_reason: z.string().nullish(),
 });
 
 /**
