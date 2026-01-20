@@ -122,9 +122,12 @@ export async function resolveThreadId(
       console.error(`[${VTID}] Thread resolution failed:`, error.message);
 
       await emitOasisEvent({
-        topic: 'memory.thread.resolution.failed',
+        vtid: VTID,
+        type: 'memory.thread.resolution.failed' as any,
+        source: SERVICE_NAME,
+        status: 'error',
+        message: `Thread resolution failed: ${error.message}`,
         payload: {
-          vtid: VTID,
           tenant_id: request.tenant_id,
           user_id: request.user_id,
           error: error.message,
@@ -146,9 +149,12 @@ export async function resolveThreadId(
 
     // Emit success event
     await emitOasisEvent({
-      topic: 'memory.thread.resolved',
+      vtid: VTID,
+      type: 'memory.thread.resolved' as any,
+      source: SERVICE_NAME,
+      status: 'success',
+      message: `Thread resolved: ${result.thread_id}`,
       payload: {
-        vtid: VTID,
         tenant_id: request.tenant_id,
         user_id: request.user_id,
         thread_id: result.thread_id,

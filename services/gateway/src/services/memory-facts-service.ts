@@ -162,9 +162,12 @@ export async function writeFact(request: WriteFactRequest): Promise<WriteFactRes
       console.error(`[${VTID}] Fact write failed:`, error.message);
 
       await emitOasisEvent({
-        topic: 'memory.fact.write.failed',
+        vtid: VTID,
+        type: 'memory.fact.write.failed' as any,
+        source: SERVICE_NAME,
+        status: 'error',
+        message: `Fact write failed: ${error.message}`,
         payload: {
-          vtid: VTID,
           tenant_id: request.tenant_id,
           user_id: request.user_id,
           fact_key: request.fact_key,
@@ -178,9 +181,12 @@ export async function writeFact(request: WriteFactRequest): Promise<WriteFactRes
 
     // Emit success event
     await emitOasisEvent({
-      topic: 'memory.fact.written',
+      vtid: VTID,
+      type: 'memory.fact.written' as any,
+      source: SERVICE_NAME,
+      status: 'success',
+      message: `Fact written: ${request.fact_key}`,
       payload: {
-        vtid: VTID,
         tenant_id: request.tenant_id,
         user_id: request.user_id,
         fact_id: data,
