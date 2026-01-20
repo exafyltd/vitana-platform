@@ -971,17 +971,21 @@ async function doLogin(email, password) {
         state.tasksError = null;
         state.governanceRulesError = null;
 
-        // VTID-01196: Set initial user state from login response immediately
-        // This provides visual feedback while fetchAuthMe loads full profile
-        var initialName = loginEmail ? loginEmail.split('@')[0] : 'User';
-        var initialInitials = generateInitials(loginEmail || 'User');
+        // VTID-01196: Set user state from login response immediately
+        // Use profile data if available (includes avatar_url from app_users)
+        var loginProfile = data.profile || {};
+        var displayName = loginProfile.display_name || (loginEmail ? loginEmail.split('@')[0] : 'User');
+        var avatarUrl = loginProfile.avatar_url || null;
+        var initialInitials = generateInitials(loginProfile.display_name || loginEmail || 'User');
+
         state.user = {
-            name: initialName,
+            name: displayName,
             role: state.viewRole || 'User',
             avatar: initialInitials,
             email: loginEmail,
-            avatarUrl: null
+            avatarUrl: avatarUrl
         };
+        console.log('[VTID-01196] User state from login:', { name: displayName, avatarUrl: avatarUrl ? 'yes' : 'no' });
         renderApp(); // Show immediate feedback
 
         // Fetch full identity (will update with avatar_url if available)
@@ -6490,7 +6494,7 @@ function renderProfileModal() {
     name.textContent = state.user.name || 'User';
     body.appendChild(name);
 
-    // VTID-01171: Show email if available
+    // VTID-01171: Show email if available (centered under name)
     if (state.user.email) {
         const emailEl = document.createElement('div');
         emailEl.className = 'profile-email';
@@ -6498,6 +6502,7 @@ function renderProfileModal() {
         emailEl.style.color = 'var(--text-secondary, #666)';
         emailEl.style.fontSize = '0.875rem';
         emailEl.style.marginBottom = '8px';
+        emailEl.style.textAlign = 'center';
         body.appendChild(emailEl);
     }
 
@@ -6576,102 +6581,10 @@ function renderProfileModal() {
         VIEW_ROLES = ['Admin'];
     }
 
-    // VTID-01186: Role list with clickable items (matching vitana-v1 design)
-    const roleList = document.createElement('div');
-    roleList.className = 'profile-role-list';
-    roleList.style.margin = '0 0 16px 0';
-    roleList.style.padding = '0';
-
-    // Helper function to handle role click
-    async function handleRoleClick(newRole) {
-        const previousRole = state.viewRole;
-        state.viewRole = newRole;
-        renderApp();
-
-        var result = await setActiveRole(newRole);
-        if (result.ok) {
-            localStorage.setItem('vitana.viewRole', newRole);
-            showToast('Role set to ' + newRole, 'success');
-            // VTID-01186: Navigate to role-specific default screen
-            state.showProfileModal = false;
-            navigateToRoleDefaultScreen(newRole);
-            renderApp();
-        } else {
-            state.viewRole = previousRole;
-            if (MeState.me) {
-                MeState.me.active_role = previousRole.toLowerCase();
-            }
-            renderApp();
-            showToast(result.error || 'Failed to change role', 'error');
-        }
-    }
-
-    VIEW_ROLES.forEach(function(r) {
-        const roleItem = document.createElement('div');
-        roleItem.className = 'profile-role-item';
-        roleItem.style.display = 'flex';
-        roleItem.style.alignItems = 'center';
-        roleItem.style.padding = '10px 16px';
-        roleItem.style.cursor = 'pointer';
-        roleItem.style.borderRadius = '6px';
-        roleItem.style.marginBottom = '4px';
-        roleItem.style.transition = 'background-color 0.15s';
-
-        const isSelected = r === state.viewRole;
-        if (isSelected) {
-            roleItem.style.backgroundColor = 'rgba(59, 130, 246, 0.15)';
-        }
-
-        // Dot indicator
-        const dot = document.createElement('span');
-        dot.style.width = '8px';
-        dot.style.height = '8px';
-        dot.style.borderRadius = '50%';
-        dot.style.marginRight = '12px';
-        dot.style.flexShrink = '0';
-        if (isSelected) {
-            dot.style.backgroundColor = 'var(--color-accent, #4a90d9)';
-        } else {
-            dot.style.backgroundColor = 'transparent';
-            dot.style.border = '1px solid var(--color-border, #444)';
-        }
-        roleItem.appendChild(dot);
-
-        // Role text
-        const roleText = document.createElement('span');
-        roleText.textContent = r;
-        roleText.style.color = isSelected ? 'var(--color-accent, #4a90d9)' : 'var(--color-text-primary, #fff)';
-        roleItem.appendChild(roleText);
-
-        // Hover effect
-        roleItem.onmouseenter = function() {
-            if (!isSelected) {
-                roleItem.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
-            }
-        };
-        roleItem.onmouseleave = function() {
-            if (!isSelected) {
-                roleItem.style.backgroundColor = 'transparent';
-            }
-        };
-
-        // Click handler
-        roleItem.onclick = function() {
-            if (!isSelected) {
-                handleRoleClick(r);
-            }
-        };
-
-        roleList.appendChild(roleItem);
-    });
-    body.appendChild(roleList);
-
-    // VTID-01186: Dropdown selector (secondary, for accessibility)
+    // VTID-01196: Single dropdown for role selection (removed duplicate list)
     const roleSwitcher = document.createElement('div');
     roleSwitcher.className = 'profile-role-switcher';
-    roleSwitcher.style.borderTop = '1px solid var(--color-border, #333)';
-    roleSwitcher.style.paddingTop = '16px';
-    roleSwitcher.style.marginTop = '8px';
+    roleSwitcher.style.marginTop = '16px';
 
     const roleSelect = document.createElement('select');
     roleSelect.className = 'profile-role-select';
