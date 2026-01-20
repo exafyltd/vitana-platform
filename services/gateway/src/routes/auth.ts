@@ -165,6 +165,7 @@ router.post('/login', async (req: Request, res: Response) => {
     const supabase = getSupabase();
     if (supabase && authData.user?.id) {
       try {
+        // First try app_users table
         const { data: profileData, error: profileError } = await supabase
           .from('app_users')
           .select('display_name, avatar_url, bio')
@@ -177,7 +178,28 @@ router.post('/login', async (req: Request, res: Response) => {
             avatar_url: profileData.avatar_url || undefined,
             bio: profileData.bio || undefined,
           };
-          console.log(`[VTID-01196] Profile loaded during login: avatar_url=${profile.avatar_url ? 'yes' : 'no'}`);
+          console.log(`[VTID-01196] Profile from app_users: display_name=${profile.display_name}, avatar_url=${profile.avatar_url || 'null'}`);
+        } else if (profileError) {
+          console.log(`[VTID-01196] app_users query: ${profileError.message}`);
+        }
+
+        // If no avatar, try users table (vitana-v1 compatibility)
+        if (!profile.avatar_url) {
+          const { data: usersData, error: usersError } = await supabase
+            .from('users')
+            .select('display_name, avatar_url')
+            .eq('id', authData.user.id)
+            .single();
+
+          if (!usersError && usersData) {
+            if (!profile.display_name && usersData.display_name) {
+              profile.display_name = usersData.display_name;
+            }
+            if (usersData.avatar_url) {
+              profile.avatar_url = usersData.avatar_url;
+              console.log(`[VTID-01196] Avatar from users table: ${profile.avatar_url}`);
+            }
+          }
         }
       } catch (err: any) {
         console.warn(`[VTID-01196] Failed to load profile during login: ${err.message}`);
@@ -188,6 +210,7 @@ router.post('/login', async (req: Request, res: Response) => {
     const userMetaAvatar = authData.user?.user_metadata?.avatar_url;
     if (!profile.avatar_url && userMetaAvatar) {
       profile.avatar_url = userMetaAvatar;
+      console.log(`[VTID-01196] Avatar from user_metadata: ${userMetaAvatar}`);
     }
 
     return res.status(200).json({

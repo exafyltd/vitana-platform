@@ -6380,7 +6380,7 @@ function renderProfileModal() {
         emailGroup.appendChild(emailInput);
         loginForm.appendChild(emailGroup);
 
-        // Password input
+        // Password input with visibility toggle
         const passwordGroup = document.createElement('div');
         passwordGroup.className = 'form-group';
         passwordGroup.style.marginBottom = '16px';
@@ -6393,6 +6393,11 @@ function renderProfileModal() {
         passwordLabel.style.fontWeight = '500';
         passwordGroup.appendChild(passwordLabel);
 
+        // Password input wrapper for eye icon
+        const passwordWrapper = document.createElement('div');
+        passwordWrapper.style.position = 'relative';
+        passwordWrapper.style.width = '100%';
+
         const passwordInput = document.createElement('input');
         passwordInput.type = 'password';
         passwordInput.id = 'login-password';
@@ -6400,7 +6405,7 @@ function renderProfileModal() {
         passwordInput.placeholder = 'Enter your password';
         passwordInput.value = state.loginPassword || '';
         passwordInput.style.width = '100%';
-        passwordInput.style.padding = '8px 12px';
+        passwordInput.style.padding = '8px 40px 8px 12px';
         passwordInput.style.border = '1px solid var(--border-color, #ccc)';
         passwordInput.style.borderRadius = '4px';
         passwordInput.style.boxSizing = 'border-box';
@@ -6414,7 +6419,38 @@ function renderProfileModal() {
                 doLogin(state.loginEmail, state.loginPassword);
             }
         };
-        passwordGroup.appendChild(passwordInput);
+        passwordWrapper.appendChild(passwordInput);
+
+        // Eye icon toggle button
+        const eyeToggle = document.createElement('button');
+        eyeToggle.type = 'button';
+        eyeToggle.className = 'password-toggle';
+        eyeToggle.style.position = 'absolute';
+        eyeToggle.style.right = '8px';
+        eyeToggle.style.top = '50%';
+        eyeToggle.style.transform = 'translateY(-50%)';
+        eyeToggle.style.background = 'none';
+        eyeToggle.style.border = 'none';
+        eyeToggle.style.cursor = 'pointer';
+        eyeToggle.style.padding = '4px';
+        eyeToggle.style.color = 'var(--text-secondary, #888)';
+        eyeToggle.style.fontSize = '1.1rem';
+        eyeToggle.innerHTML = '&#128065;'; // Eye icon (👁)
+        eyeToggle.title = 'Show password';
+        eyeToggle.onclick = function() {
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                eyeToggle.innerHTML = '&#128064;'; // Eyes icon (👀)
+                eyeToggle.title = 'Hide password';
+            } else {
+                passwordInput.type = 'password';
+                eyeToggle.innerHTML = '&#128065;'; // Eye icon (👁)
+                eyeToggle.title = 'Show password';
+            }
+        };
+        passwordWrapper.appendChild(eyeToggle);
+
+        passwordGroup.appendChild(passwordWrapper);
         loginForm.appendChild(passwordGroup);
 
         // Error message
