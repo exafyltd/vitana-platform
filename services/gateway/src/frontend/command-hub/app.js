@@ -797,28 +797,25 @@ async function fetchAuthMe(fallbackEmail) {
             var errorMsg = data.error || 'Failed to fetch auth identity';
             console.error('[VTID-01171] fetchAuthMe error:', errorMsg);
 
-            // VTID-01196: Only clear token on 401 if we DON'T have a fallback email
-            // If we have fallback email, it means login just succeeded - don't clear the valid token
-            if (response.status === 401 && !emailFallback) {
-                // Clear invalid auth token (only for stale tokens, not fresh logins)
-                state.authToken = null;
-                localStorage.removeItem('vitana.authToken');
-            }
+            // VTID-01196: NEVER clear token on /auth/me failure
+            // Token should only be cleared on explicit logout
+            // The /auth/me endpoint may fail due to server-side JWT issues, but the token is still valid
 
             state.authIdentityError = errorMsg;
             state.authIdentityLoading = false;
 
-            // VTID-01196: Set fallback user using login email if available
-            var fallbackName = emailFallback ? emailFallback.split('@')[0] : 'User';
-            var fallbackInitials = generateInitials(emailFallback || 'User');
+            // VTID-01196: Set fallback user - use stored email or extract from token if possible
+            var storedEmail = emailFallback || state.loginUserEmail || localStorage.getItem('vitana.userEmail') || '';
+            var fallbackName = storedEmail ? storedEmail.split('@')[0] : 'User';
+            var fallbackInitials = generateInitials(storedEmail || 'User');
             state.user = {
                 name: fallbackName,
                 role: state.viewRole || 'User',
                 avatar: fallbackInitials,
-                email: emailFallback || null,
+                email: storedEmail || null,
                 avatarUrl: null
             };
-            console.warn('[VTID-01196] fetchAuthMe failed, using fallback email:', emailFallback || '(none)');
+            console.warn('[VTID-01196] fetchAuthMe failed, using fallback. Token preserved.');
             return null;
         }
 
@@ -863,17 +860,18 @@ async function fetchAuthMe(fallbackEmail) {
         state.authIdentityError = err.message || 'Network error';
         state.authIdentityLoading = false;
 
-        // VTID-01196: Set fallback user using login email if available
-        var fallbackName = emailFallback ? emailFallback.split('@')[0] : 'User';
-        var fallbackInitials = generateInitials(emailFallback || 'User');
+        // VTID-01196: Set fallback user - use stored email, token preserved
+        var storedEmail = emailFallback || state.loginUserEmail || localStorage.getItem('vitana.userEmail') || '';
+        var fallbackName = storedEmail ? storedEmail.split('@')[0] : 'User';
+        var fallbackInitials = generateInitials(storedEmail || 'User');
         state.user = {
             name: fallbackName,
             role: state.viewRole || 'User',
             avatar: fallbackInitials,
-            email: emailFallback || null,
+            email: storedEmail || null,
             avatarUrl: null
         };
-        console.warn('[VTID-01196] fetchAuthMe exception, using fallback email:', emailFallback || '(none)');
+        console.warn('[VTID-01196] fetchAuthMe exception, using fallback. Token preserved.');
         return null;
     }
 }
@@ -952,8 +950,10 @@ async function doLogin(email, password) {
 
         // VTID-01196: Store login email as fallback for profile display
         // This ensures we can show user info even if /auth/me fails
+        // Store in both state and localStorage for persistence across page refresh
         var loginEmail = data.user?.email || email;
         state.loginUserEmail = loginEmail;
+        localStorage.setItem('vitana.userEmail', loginEmail);
 
         state.loginLoading = false;
         state.loginError = null;
@@ -1023,6 +1023,7 @@ function doLogout() {
     localStorage.removeItem('vitana.authToken');
     localStorage.removeItem('vitana.refreshToken');
     localStorage.removeItem('vitana.viewRole');
+    localStorage.removeItem('vitana.userEmail');
 
     // Clear ORB conversation on logout
     if (typeof orbClearConversationState === 'function') {
