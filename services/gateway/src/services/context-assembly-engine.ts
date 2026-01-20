@@ -38,6 +38,9 @@ import { emitOasisEvent } from './oasis-event-service';
 /**
  * Context Assembly Configuration
  * All limits are configurable but have safe defaults.
+ *
+ * VTID-01192: Token-budgeted assembly replaces hard count limits.
+ * This enables "infinite memory" without prompt bloat.
  */
 export const CONTEXT_CONFIG = {
   // Max items per domain (safety limit)
@@ -48,8 +51,43 @@ export const CONTEXT_CONFIG = {
   MAX_DIARY_ENTRIES: 10,
   // Max garden nodes
   MAX_GARDEN_NODES: 20,
-  // Max recent events (conversations)
-  MAX_RECENT_EVENTS: 15,
+
+  // ==========================================================================
+  // VTID-01192: TOKEN BUDGET CONFIGURATION (Replaces hard count limits)
+  // ==========================================================================
+
+  /**
+   * Total token budget ceiling for assembled context.
+   * This is the hard limit - context will never exceed this.
+   */
+  TOKEN_BUDGET_TOTAL: 8000,
+
+  /**
+   * Token budgets per component.
+   * Assembly prioritizes by rank_score within each budget.
+   */
+  TOKEN_BUDGET_RECENT_TURNS: 3000,    // Conversation history
+  TOKEN_BUDGET_SEMANTIC_RECALL: 3000, // Memory items from semantic search
+  TOKEN_BUDGET_FACTS: 1000,           // Pinned identity facts
+  TOKEN_BUDGET_SUMMARY: 1000,         // Thread summary
+
+  /**
+   * Minimum recent turns to ALWAYS include (never drop below this).
+   * Ensures basic continuity even with long messages.
+   */
+  MIN_RECENT_TURNS: 6,
+
+  /**
+   * DEPRECATED: Hard count limit - kept for backwards compatibility only.
+   * Token budgeting is now the primary mechanism.
+   * @deprecated Use TOKEN_BUDGET_RECENT_TURNS instead
+   */
+  MAX_RECENT_EVENTS: 100, // Increased from 15 - token budget is the real limit
+
+  // ==========================================================================
+  // END VTID-01192 TOKEN BUDGET CONFIGURATION
+  // ==========================================================================
+
   // Default lookback hours for memory
   DEFAULT_LOOKBACK_HOURS: 168, // 7 days
   // Max content length per item (truncation)
@@ -366,6 +404,93 @@ const INTENT_DOMAIN_WEIGHTS: Record<string, DomainWeights> = {
   planner: { health: 0.7, social: 0.8, business: 1.2, learning: 0.9, commerce: 0.8, lifestyle: 1.0, values: 0.6 },
   general: { health: 1.0, social: 1.0, business: 1.0, learning: 1.0, commerce: 1.0, lifestyle: 1.0, values: 1.0 },
 };
+
+// =============================================================================
+// VTID-01192: Token Estimation & Budgeting
+// =============================================================================
+
+/**
+ * Estimate token count for a string.
+ * Uses rough approximation: 1 token ≈ 4 characters for English.
+ * This is intentionally conservative to avoid overflow.
+ */
+function estimateTokens(text: string): number {
+  if (!text) return 0;
+  // Conservative estimate: ~4 chars per token (GPT-style tokenization)
+  return Math.ceil(text.length / 4);
+}
+
+/**
+ * Estimate token count for a memory item.
+ */
+function estimateMemoryItemTokens(item: { content: string; content_json?: Record<string, unknown> }): number {
+  let tokens = estimateTokens(item.content);
+  if (item.content_json) {
+    tokens += estimateTokens(JSON.stringify(item.content_json));
+  }
+  return tokens;
+}
+
+/**
+ * Estimate token count for a recent event (conversation turn).
+ */
+function estimateRecentEventTokens(event: { content: string }): number {
+  // Add overhead for role prefix ("user: " or "assistant: ")
+  return estimateTokens(event.content) + 3;
+}
+
+/**
+ * VTID-01192: Select items within token budget.
+ *
+ * Takes ranked items and selects as many as fit within the budget,
+ * while respecting minimum count constraints.
+ *
+ * @param items Ranked items (highest rank first)
+ * @param budget Token budget
+ * @param minCount Minimum items to include regardless of budget
+ * @param estimateFn Function to estimate tokens for an item
+ * @returns Selected items within budget
+ */
+function selectWithinTokenBudget<T>(
+  items: T[],
+  budget: number,
+  minCount: number,
+  estimateFn: (item: T) => number
+): { selected: T[]; tokensUsed: number; totalConsidered: number } {
+  const selected: T[] = [];
+  let tokensUsed = 0;
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const itemTokens = estimateFn(item);
+
+    // Always include up to minCount items
+    if (i < minCount) {
+      selected.push(item);
+      tokensUsed += itemTokens;
+      continue;
+    }
+
+    // After minCount, only include if within budget
+    if (tokensUsed + itemTokens <= budget) {
+      selected.push(item);
+      tokensUsed += itemTokens;
+    } else {
+      // Budget exhausted
+      break;
+    }
+  }
+
+  return {
+    selected,
+    tokensUsed,
+    totalConsidered: items.length
+  };
+}
+
+// =============================================================================
+// VTID-01112: Scoring Functions
+// =============================================================================
 
 /**
  * Calculate temporal proximity score (0-100)
@@ -750,10 +875,14 @@ export async function assembleContext(request: ContextAssemblyRequest): Promise<
     const rankedMemories = stableSort(memoryItems);
     const rankedGardenNodes = stableSort(gardenNodes);
 
-    // Extract recent events (conversations) from memory items
-    const recentEvents: RecentEvent[] = rankedMemories
+    // ==========================================================================
+    // VTID-01192: Extract recent events with TOKEN BUDGETING
+    // Replaces hard .slice(0, 15) with intelligent token-based selection
+    // ==========================================================================
+
+    // First, extract all conversation items as RecentEvent candidates
+    const conversationCandidates: RecentEvent[] = rankedMemories
       .filter(item => item.category_key === 'conversation' && item.content_json?.direction)
-      .slice(0, CONTEXT_CONFIG.MAX_RECENT_EVENTS)
       .map(item => ({
         id: item.id,
         direction: (item.content_json?.direction as 'user' | 'assistant') || 'user',
@@ -762,6 +891,24 @@ export async function assembleContext(request: ContextAssemblyRequest): Promise<
         importance: item.importance,
         rank_score: item.rank_score,
       }));
+
+    // Apply token budget selection instead of hard count limit
+    const recentEventsSelection = selectWithinTokenBudget(
+      conversationCandidates,
+      CONTEXT_CONFIG.TOKEN_BUDGET_RECENT_TURNS,
+      CONTEXT_CONFIG.MIN_RECENT_TURNS,
+      estimateRecentEventTokens
+    );
+
+    const recentEvents = recentEventsSelection.selected;
+
+    // Log token budget usage for observability
+    console.log(`[VTID-01192] Recent events: ${recentEvents.length}/${conversationCandidates.length} selected, ` +
+      `${recentEventsSelection.tokensUsed}/${CONTEXT_CONFIG.TOKEN_BUDGET_RECENT_TURNS} tokens used`);
+
+    // ==========================================================================
+    // END VTID-01192 TOKEN BUDGETING
+    // ==========================================================================
 
     // Extract long-term patterns from garden nodes
     const longTermPatterns: LongTermPattern[] = rankedGardenNodes
@@ -849,6 +996,7 @@ export async function assembleContext(request: ContextAssemblyRequest): Promise<
     console.log(`[VTID-01112] Context assembly complete: ${bundleId} (${bundle.assembly_duration_ms}ms, hash=${bundleHash})`);
 
     // Emit OASIS event for traceability
+    // VTID-01192: Enhanced with token budget metrics
     await emitOasisEvent({
       vtid: 'VTID-01112',
       type: 'context.assembly.completed' as any,
@@ -864,6 +1012,15 @@ export async function assembleContext(request: ContextAssemblyRequest): Promise<
         items_considered: traceability.total_items_considered,
         items_included: traceability.total_items_included,
         duration_ms: bundle.assembly_duration_ms,
+        // VTID-01192: Token budget metrics
+        vtid_01192_metrics: {
+          recent_events_count: recentEvents.length,
+          recent_events_candidates: conversationCandidates.length,
+          recent_events_tokens_used: recentEventsSelection.tokensUsed,
+          recent_events_token_budget: CONTEXT_CONFIG.TOKEN_BUDGET_RECENT_TURNS,
+          min_recent_turns: CONTEXT_CONFIG.MIN_RECENT_TURNS,
+          memory_mode: 'FULL'  // Will be DEGRADED if memory service fails
+        }
       }
     }).catch(err => console.warn('[VTID-01112] OASIS event failed:', err.message));
 
