@@ -2362,6 +2362,22 @@ const state = {
     adminDevUsersGrantLoading: false,
     adminDevUsersGrantError: null,
 
+    // VTID-01195: Admin Screens v1 State
+    // Users screen state
+    adminUsersSearchQuery: '',
+    adminUsersSelectedId: null,
+    // Permissions screen state
+    adminPermissionsSearchQuery: '',
+    adminPermissionsSelectedKey: null,
+    // Tenants screen state
+    adminTenantsSearchQuery: '',
+    adminTenantsSelectedId: null,
+    // Content Moderation screen state
+    adminModerationTypeFilter: '',
+    adminModerationStatusFilter: '',
+    adminModerationSelectedId: null,
+    // Identity Access screen state (no selection needed - static panels)
+
     // VTID-0406: Governance Evaluations (OASIS Integration)
     governanceEvaluations: [],
     governanceEvaluationsLoading: false,
@@ -4587,8 +4603,20 @@ function renderModuleContent(moduleKey, tab) {
         // VTID-01086: Memory Garden UI Deepening
         container.appendChild(renderMemoryGardenView());
     } else if (moduleKey === 'admin' && tab === 'users') {
-        // VTID-01172: Admin Dev Users - exafy_admin toggle
-        container.appendChild(renderAdminDevUsersView());
+        // VTID-01195: Admin Users v1 - Split layout with user list + detail
+        container.appendChild(renderAdminUsersView());
+    } else if (moduleKey === 'admin' && tab === 'permissions') {
+        // VTID-01195: Admin Permissions v1 - Permission keys + scope
+        container.appendChild(renderAdminPermissionsView());
+    } else if (moduleKey === 'admin' && tab === 'tenants') {
+        // VTID-01195: Admin Tenants v1 - Tenant list + plan/limits
+        container.appendChild(renderAdminTenantsView());
+    } else if (moduleKey === 'admin' && tab === 'content-moderation') {
+        // VTID-01195: Admin Content Moderation v1 - Report queue + actions
+        container.appendChild(renderAdminContentModerationView());
+    } else if (moduleKey === 'admin' && tab === 'identity-access') {
+        // VTID-01195: Admin Identity Access v1 - Auth status + access logs
+        container.appendChild(renderAdminIdentityAccessView());
     } else if (moduleKey === 'agents' && tab === 'registered-agents') {
         // VTID-01173: Agents Control Plane v1 - Registered Agents (Worker Orchestrator)
         container.appendChild(renderRegisteredAgentsView());
@@ -7763,6 +7791,695 @@ function renderAdminDevUsersView() {
     }
 
     container.appendChild(content);
+
+    return container;
+}
+
+// ===========================================================================
+// VTID-01195: Command Hub Admin Screens v1
+// ===========================================================================
+
+/**
+ * VTID-01195: Placeholder user data for Admin Users screen
+ * This is static mock data - data source not wired in v1
+ */
+var adminUsersMockData = [
+    { id: '1', email: 'admin@vitana.io', role: 'Admin', tenant: 'Vitana Core', status: 'Active' },
+    { id: '2', email: 'dev@vitana.io', role: 'Developer', tenant: 'Vitana Core', status: 'Active' },
+    { id: '3', email: 'user@tenant1.com', role: 'User', tenant: 'Tenant Alpha', status: 'Active' },
+    { id: '4', email: 'support@vitana.io', role: 'Support', tenant: 'Vitana Core', status: 'Inactive' }
+];
+
+/**
+ * VTID-01195: Admin Users View - Split layout with user list + detail panel
+ * v1 skeleton - data source not wired
+ */
+function renderAdminUsersView() {
+    var container = document.createElement('div');
+    container.className = 'admin-screen-container admin-users-container';
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'admin-screen-header';
+    header.innerHTML = '<h2>Users</h2><p class="admin-screen-subtitle">Manage user accounts, roles, and tenant assignments</p>';
+    container.appendChild(header);
+
+    // Not-wired banner
+    var banner = document.createElement('div');
+    banner.className = 'admin-not-wired-banner';
+    banner.innerHTML = '<span class="admin-not-wired-icon">&#9888;</span> Data source not connected yet — showing placeholder data';
+    container.appendChild(banner);
+
+    // Split layout
+    var splitLayout = document.createElement('div');
+    splitLayout.className = 'admin-split-layout';
+
+    // Left panel: search + list
+    var leftPanel = document.createElement('div');
+    leftPanel.className = 'admin-split-left';
+
+    // Search input
+    var searchWrapper = document.createElement('div');
+    searchWrapper.className = 'admin-search-wrapper';
+    var searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'search-field admin-search-input';
+    searchInput.placeholder = 'Search by email...';
+    searchInput.value = state.adminUsersSearchQuery;
+    searchInput.oninput = function(e) {
+        state.adminUsersSearchQuery = e.target.value;
+        renderApp();
+    };
+    searchWrapper.appendChild(searchInput);
+    leftPanel.appendChild(searchWrapper);
+
+    // User list table
+    var listContainer = document.createElement('div');
+    listContainer.className = 'admin-list-container';
+
+    var table = document.createElement('table');
+    table.className = 'admin-list-table';
+
+    var thead = document.createElement('thead');
+    thead.innerHTML = '<tr><th>Email</th><th>Role</th><th>Tenant</th><th>Status</th></tr>';
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    var filteredUsers = adminUsersMockData.filter(function(u) {
+        if (!state.adminUsersSearchQuery) return true;
+        return u.email.toLowerCase().includes(state.adminUsersSearchQuery.toLowerCase());
+    });
+
+    filteredUsers.forEach(function(user) {
+        var row = document.createElement('tr');
+        row.className = 'admin-list-row clickable-row';
+        if (state.adminUsersSelectedId === user.id) {
+            row.classList.add('selected');
+        }
+        row.onclick = function() {
+            state.adminUsersSelectedId = user.id;
+            renderApp();
+        };
+
+        row.innerHTML = '<td class="admin-cell-email">' + user.email + '</td>' +
+            '<td><span class="admin-role-badge admin-role-' + user.role.toLowerCase() + '">' + user.role + '</span></td>' +
+            '<td>' + user.tenant + '</td>' +
+            '<td><span class="admin-status-badge admin-status-' + user.status.toLowerCase() + '">' + user.status + '</span></td>';
+
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    listContainer.appendChild(table);
+    leftPanel.appendChild(listContainer);
+    splitLayout.appendChild(leftPanel);
+
+    // Right panel: detail view
+    var rightPanel = document.createElement('div');
+    rightPanel.className = 'admin-split-right';
+
+    if (state.adminUsersSelectedId) {
+        var selectedUser = adminUsersMockData.find(function(u) { return u.id === state.adminUsersSelectedId; });
+        if (selectedUser) {
+            rightPanel.innerHTML = '<div class="admin-detail-panel">' +
+                '<div class="admin-detail-header">' +
+                '<h3>' + selectedUser.email + '</h3>' +
+                '<button class="admin-detail-close-btn" onclick="state.adminUsersSelectedId = null; renderApp();">&times;</button>' +
+                '</div>' +
+                '<div class="admin-detail-section">' +
+                '<h4>User Summary</h4>' +
+                '<div class="admin-detail-grid">' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">User ID:</span><span class="admin-detail-value">' + selectedUser.id + '</span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Email:</span><span class="admin-detail-value">' + selectedUser.email + '</span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Status:</span><span class="admin-status-badge admin-status-' + selectedUser.status.toLowerCase() + '">' + selectedUser.status + '</span></div>' +
+                '</div>' +
+                '</div>' +
+                '<div class="admin-detail-section">' +
+                '<h4>Role & Access</h4>' +
+                '<div class="admin-badges-row"><span class="admin-role-badge admin-role-' + selectedUser.role.toLowerCase() + '">' + selectedUser.role + '</span></div>' +
+                '</div>' +
+                '<div class="admin-detail-section">' +
+                '<h4>Tenant Assignment</h4>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Primary Tenant:</span><span class="admin-detail-value">' + selectedUser.tenant + '</span></div>' +
+                '</div>' +
+                '<div class="admin-detail-actions">' +
+                '<button class="btn btn-secondary" disabled>Edit User</button>' +
+                '<button class="btn btn-danger" disabled>Deactivate</button>' +
+                '</div>' +
+                '</div>';
+        }
+    } else {
+        rightPanel.innerHTML = '<div class="admin-detail-empty"><span class="admin-detail-empty-icon">&#128100;</span><p>Select a user from the list to view details</p></div>';
+    }
+    splitLayout.appendChild(rightPanel);
+    container.appendChild(splitLayout);
+
+    return container;
+}
+
+/**
+ * VTID-01195: Placeholder permission data for Admin Permissions screen
+ */
+var adminPermissionsMockData = [
+    { key: 'admin.users.read', description: 'Read user accounts', scope: 'Global' },
+    { key: 'admin.users.write', description: 'Create and edit user accounts', scope: 'Global' },
+    { key: 'admin.tenants.manage', description: 'Manage tenant settings', scope: 'Tenant' },
+    { key: 'tasks.create', description: 'Create new tasks', scope: 'Tenant' },
+    { key: 'tasks.approve', description: 'Approve task execution', scope: 'Tenant' },
+    { key: 'governance.rules.edit', description: 'Edit governance rules', scope: 'Global' }
+];
+
+/**
+ * VTID-01195: Admin Permissions View - Permission keys + scope
+ */
+function renderAdminPermissionsView() {
+    var container = document.createElement('div');
+    container.className = 'admin-screen-container admin-permissions-container';
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'admin-screen-header';
+    header.innerHTML = '<h2>Permissions</h2><p class="admin-screen-subtitle">View and manage permission keys and their scopes</p>';
+    container.appendChild(header);
+
+    // Not-wired banner
+    var banner = document.createElement('div');
+    banner.className = 'admin-not-wired-banner';
+    banner.innerHTML = '<span class="admin-not-wired-icon">&#9888;</span> Data source not connected yet — showing placeholder data';
+    container.appendChild(banner);
+
+    // Split layout
+    var splitLayout = document.createElement('div');
+    splitLayout.className = 'admin-split-layout';
+
+    // Left panel
+    var leftPanel = document.createElement('div');
+    leftPanel.className = 'admin-split-left';
+
+    // Search
+    var searchWrapper = document.createElement('div');
+    searchWrapper.className = 'admin-search-wrapper';
+    var searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'search-field admin-search-input';
+    searchInput.placeholder = 'Search permission key...';
+    searchInput.value = state.adminPermissionsSearchQuery;
+    searchInput.oninput = function(e) {
+        state.adminPermissionsSearchQuery = e.target.value;
+        renderApp();
+    };
+    searchWrapper.appendChild(searchInput);
+    leftPanel.appendChild(searchWrapper);
+
+    // Permissions list
+    var listContainer = document.createElement('div');
+    listContainer.className = 'admin-list-container';
+
+    var table = document.createElement('table');
+    table.className = 'admin-list-table';
+
+    var thead = document.createElement('thead');
+    thead.innerHTML = '<tr><th>Key</th><th>Description</th><th>Scope</th></tr>';
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    var filteredPerms = adminPermissionsMockData.filter(function(p) {
+        if (!state.adminPermissionsSearchQuery) return true;
+        return p.key.toLowerCase().includes(state.adminPermissionsSearchQuery.toLowerCase()) ||
+               p.description.toLowerCase().includes(state.adminPermissionsSearchQuery.toLowerCase());
+    });
+
+    filteredPerms.forEach(function(perm) {
+        var row = document.createElement('tr');
+        row.className = 'admin-list-row clickable-row';
+        if (state.adminPermissionsSelectedKey === perm.key) {
+            row.classList.add('selected');
+        }
+        row.onclick = function() {
+            state.adminPermissionsSelectedKey = perm.key;
+            renderApp();
+        };
+
+        row.innerHTML = '<td class="admin-cell-key"><code>' + perm.key + '</code></td>' +
+            '<td>' + perm.description + '</td>' +
+            '<td><span class="admin-scope-badge admin-scope-' + perm.scope.toLowerCase() + '">' + perm.scope + '</span></td>';
+
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    listContainer.appendChild(table);
+    leftPanel.appendChild(listContainer);
+    splitLayout.appendChild(leftPanel);
+
+    // Right panel
+    var rightPanel = document.createElement('div');
+    rightPanel.className = 'admin-split-right';
+
+    if (state.adminPermissionsSelectedKey) {
+        var selectedPerm = adminPermissionsMockData.find(function(p) { return p.key === state.adminPermissionsSelectedKey; });
+        if (selectedPerm) {
+            rightPanel.innerHTML = '<div class="admin-detail-panel">' +
+                '<div class="admin-detail-header">' +
+                '<h3><code>' + selectedPerm.key + '</code></h3>' +
+                '<button class="admin-detail-close-btn" onclick="state.adminPermissionsSelectedKey = null; renderApp();">&times;</button>' +
+                '</div>' +
+                '<div class="admin-detail-section">' +
+                '<h4>Permission Details</h4>' +
+                '<div class="admin-detail-grid">' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Key:</span><span class="admin-detail-value"><code>' + selectedPerm.key + '</code></span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Description:</span><span class="admin-detail-value">' + selectedPerm.description + '</span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Scope:</span><span class="admin-scope-badge admin-scope-' + selectedPerm.scope.toLowerCase() + '">' + selectedPerm.scope + '</span></div>' +
+                '</div>' +
+                '</div>' +
+                '<div class="admin-detail-section">' +
+                '<h4>Roles with this Permission</h4>' +
+                '<div class="admin-placeholder-list">' +
+                '<div class="admin-placeholder-item"><span class="admin-role-badge admin-role-admin">Admin</span></div>' +
+                '<div class="admin-placeholder-item"><span class="admin-role-badge admin-role-developer">Developer</span></div>' +
+                '</div>' +
+                '<p class="admin-detail-note">Role assignments are placeholder data</p>' +
+                '</div>' +
+                '</div>';
+        }
+    } else {
+        rightPanel.innerHTML = '<div class="admin-detail-empty"><span class="admin-detail-empty-icon">&#128273;</span><p>Select a permission from the list to view details</p></div>';
+    }
+    splitLayout.appendChild(rightPanel);
+    container.appendChild(splitLayout);
+
+    return container;
+}
+
+/**
+ * VTID-01195: Placeholder tenant data for Admin Tenants screen
+ */
+var adminTenantsMockData = [
+    { id: 't1', name: 'Vitana Core', plan: 'Enterprise', status: 'Active' },
+    { id: 't2', name: 'Tenant Alpha', plan: 'Professional', status: 'Active' },
+    { id: 't3', name: 'Tenant Beta', plan: 'Starter', status: 'Trial' },
+    { id: 't4', name: 'Demo Tenant', plan: 'Free', status: 'Inactive' }
+];
+
+/**
+ * VTID-01195: Admin Tenants View - Tenant list + plan/limits
+ */
+function renderAdminTenantsView() {
+    var container = document.createElement('div');
+    container.className = 'admin-screen-container admin-tenants-container';
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'admin-screen-header';
+    header.innerHTML = '<h2>Tenants</h2><p class="admin-screen-subtitle">View and manage tenant organizations and their plans</p>';
+    container.appendChild(header);
+
+    // Not-wired banner
+    var banner = document.createElement('div');
+    banner.className = 'admin-not-wired-banner';
+    banner.innerHTML = '<span class="admin-not-wired-icon">&#9888;</span> Data source not connected yet — showing placeholder data';
+    container.appendChild(banner);
+
+    // Split layout
+    var splitLayout = document.createElement('div');
+    splitLayout.className = 'admin-split-layout';
+
+    // Left panel
+    var leftPanel = document.createElement('div');
+    leftPanel.className = 'admin-split-left';
+
+    // Search
+    var searchWrapper = document.createElement('div');
+    searchWrapper.className = 'admin-search-wrapper';
+    var searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'search-field admin-search-input';
+    searchInput.placeholder = 'Search tenant...';
+    searchInput.value = state.adminTenantsSearchQuery;
+    searchInput.oninput = function(e) {
+        state.adminTenantsSearchQuery = e.target.value;
+        renderApp();
+    };
+    searchWrapper.appendChild(searchInput);
+    leftPanel.appendChild(searchWrapper);
+
+    // Tenants list
+    var listContainer = document.createElement('div');
+    listContainer.className = 'admin-list-container';
+
+    var table = document.createElement('table');
+    table.className = 'admin-list-table';
+
+    var thead = document.createElement('thead');
+    thead.innerHTML = '<tr><th>Tenant</th><th>Plan</th><th>Status</th></tr>';
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    var filteredTenants = adminTenantsMockData.filter(function(t) {
+        if (!state.adminTenantsSearchQuery) return true;
+        return t.name.toLowerCase().includes(state.adminTenantsSearchQuery.toLowerCase());
+    });
+
+    filteredTenants.forEach(function(tenant) {
+        var row = document.createElement('tr');
+        row.className = 'admin-list-row clickable-row';
+        if (state.adminTenantsSelectedId === tenant.id) {
+            row.classList.add('selected');
+        }
+        row.onclick = function() {
+            state.adminTenantsSelectedId = tenant.id;
+            renderApp();
+        };
+
+        row.innerHTML = '<td class="admin-cell-tenant">' + tenant.name + '</td>' +
+            '<td><span class="admin-plan-badge admin-plan-' + tenant.plan.toLowerCase() + '">' + tenant.plan + '</span></td>' +
+            '<td><span class="admin-status-badge admin-status-' + tenant.status.toLowerCase() + '">' + tenant.status + '</span></td>';
+
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    listContainer.appendChild(table);
+    leftPanel.appendChild(listContainer);
+    splitLayout.appendChild(leftPanel);
+
+    // Right panel
+    var rightPanel = document.createElement('div');
+    rightPanel.className = 'admin-split-right';
+
+    if (state.adminTenantsSelectedId) {
+        var selectedTenant = adminTenantsMockData.find(function(t) { return t.id === state.adminTenantsSelectedId; });
+        if (selectedTenant) {
+            rightPanel.innerHTML = '<div class="admin-detail-panel">' +
+                '<div class="admin-detail-header">' +
+                '<h3>' + selectedTenant.name + '</h3>' +
+                '<button class="admin-detail-close-btn" onclick="state.adminTenantsSelectedId = null; renderApp();">&times;</button>' +
+                '</div>' +
+                '<div class="admin-detail-section">' +
+                '<h4>Tenant Details</h4>' +
+                '<div class="admin-detail-grid">' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Tenant ID:</span><span class="admin-detail-value">' + selectedTenant.id + '</span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Name:</span><span class="admin-detail-value">' + selectedTenant.name + '</span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Plan:</span><span class="admin-plan-badge admin-plan-' + selectedTenant.plan.toLowerCase() + '">' + selectedTenant.plan + '</span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Status:</span><span class="admin-status-badge admin-status-' + selectedTenant.status.toLowerCase() + '">' + selectedTenant.status + '</span></div>' +
+                '</div>' +
+                '</div>' +
+                '<div class="admin-detail-section">' +
+                '<h4>Limits & Quotas</h4>' +
+                '<div class="admin-limits-grid">' +
+                '<div class="admin-limit-item"><span class="admin-limit-label">Users</span><span class="admin-limit-value">—</span></div>' +
+                '<div class="admin-limit-item"><span class="admin-limit-label">Storage</span><span class="admin-limit-value">—</span></div>' +
+                '<div class="admin-limit-item"><span class="admin-limit-label">API Calls/mo</span><span class="admin-limit-value">—</span></div>' +
+                '<div class="admin-limit-item"><span class="admin-limit-label">Tasks/day</span><span class="admin-limit-value">—</span></div>' +
+                '</div>' +
+                '<p class="admin-detail-note">Limits data not available yet</p>' +
+                '</div>' +
+                '<div class="admin-detail-section">' +
+                '<h4>Feature Flags</h4>' +
+                '<div class="admin-flags-list">' +
+                '<div class="admin-flag-item"><span class="admin-flag-name">advanced_analytics</span><span class="admin-flag-value admin-flag-unknown">—</span></div>' +
+                '<div class="admin-flag-item"><span class="admin-flag-name">custom_workflows</span><span class="admin-flag-value admin-flag-unknown">—</span></div>' +
+                '<div class="admin-flag-item"><span class="admin-flag-name">api_access</span><span class="admin-flag-value admin-flag-unknown">—</span></div>' +
+                '</div>' +
+                '<p class="admin-detail-note">Feature flags data not available yet</p>' +
+                '</div>' +
+                '</div>';
+        }
+    } else {
+        rightPanel.innerHTML = '<div class="admin-detail-empty"><span class="admin-detail-empty-icon">&#127970;</span><p>Select a tenant from the list to view details</p></div>';
+    }
+    splitLayout.appendChild(rightPanel);
+    container.appendChild(splitLayout);
+
+    return container;
+}
+
+/**
+ * VTID-01195: Placeholder moderation report data
+ */
+var adminModerationMockData = [
+    { id: 'r1', type: 'Spam', status: 'Pending', reporter: 'user@example.com', reportedAt: '2025-01-15T10:30:00Z' },
+    { id: 'r2', type: 'Abuse', status: 'Pending', reporter: 'admin@vitana.io', reportedAt: '2025-01-14T15:45:00Z' },
+    { id: 'r3', type: 'Inappropriate', status: 'Reviewed', reporter: 'support@vitana.io', reportedAt: '2025-01-13T09:00:00Z' },
+    { id: 'r4', type: 'Other', status: 'Resolved', reporter: 'user2@example.com', reportedAt: '2025-01-12T14:20:00Z' }
+];
+
+/**
+ * VTID-01195: Admin Content Moderation View - Report queue + actions
+ */
+function renderAdminContentModerationView() {
+    var container = document.createElement('div');
+    container.className = 'admin-screen-container admin-moderation-container';
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'admin-screen-header';
+    header.innerHTML = '<h2>Content Moderation</h2><p class="admin-screen-subtitle">Review and manage content moderation reports</p>';
+    container.appendChild(header);
+
+    // Not-wired banner
+    var banner = document.createElement('div');
+    banner.className = 'admin-not-wired-banner';
+    banner.innerHTML = '<span class="admin-not-wired-icon">&#9888;</span> Data source not connected yet — showing placeholder data';
+    container.appendChild(banner);
+
+    // Filters row
+    var filtersRow = document.createElement('div');
+    filtersRow.className = 'admin-filters-row';
+
+    // Type filter
+    var typeFilter = document.createElement('select');
+    typeFilter.className = 'admin-filter-select';
+    typeFilter.innerHTML = '<option value="">All Types</option><option value="Spam">Spam</option><option value="Abuse">Abuse</option><option value="Inappropriate">Inappropriate</option><option value="Other">Other</option>';
+    typeFilter.value = state.adminModerationTypeFilter;
+    typeFilter.onchange = function(e) {
+        state.adminModerationTypeFilter = e.target.value;
+        renderApp();
+    };
+    filtersRow.appendChild(typeFilter);
+
+    // Status filter
+    var statusFilter = document.createElement('select');
+    statusFilter.className = 'admin-filter-select';
+    statusFilter.innerHTML = '<option value="">All Statuses</option><option value="Pending">Pending</option><option value="Reviewed">Reviewed</option><option value="Resolved">Resolved</option>';
+    statusFilter.value = state.adminModerationStatusFilter;
+    statusFilter.onchange = function(e) {
+        state.adminModerationStatusFilter = e.target.value;
+        renderApp();
+    };
+    filtersRow.appendChild(statusFilter);
+
+    container.appendChild(filtersRow);
+
+    // Split layout
+    var splitLayout = document.createElement('div');
+    splitLayout.className = 'admin-split-layout';
+
+    // Left panel - report list
+    var leftPanel = document.createElement('div');
+    leftPanel.className = 'admin-split-left';
+
+    var listContainer = document.createElement('div');
+    listContainer.className = 'admin-list-container admin-moderation-list';
+
+    var filteredReports = adminModerationMockData.filter(function(r) {
+        if (state.adminModerationTypeFilter && r.type !== state.adminModerationTypeFilter) return false;
+        if (state.adminModerationStatusFilter && r.status !== state.adminModerationStatusFilter) return false;
+        return true;
+    });
+
+    filteredReports.forEach(function(report) {
+        var card = document.createElement('div');
+        card.className = 'admin-report-card clickable-row';
+        if (state.adminModerationSelectedId === report.id) {
+            card.classList.add('selected');
+        }
+        card.onclick = function() {
+            state.adminModerationSelectedId = report.id;
+            renderApp();
+        };
+
+        var reportDate = new Date(report.reportedAt);
+        card.innerHTML = '<div class="admin-report-card-header">' +
+            '<span class="admin-type-badge admin-type-' + report.type.toLowerCase() + '">' + report.type + '</span>' +
+            '<span class="admin-status-badge admin-status-' + report.status.toLowerCase() + '">' + report.status + '</span>' +
+            '</div>' +
+            '<div class="admin-report-card-body">' +
+            '<div class="admin-report-meta">Report #' + report.id + '</div>' +
+            '<div class="admin-report-meta">By: ' + report.reporter + '</div>' +
+            '<div class="admin-report-meta">' + reportDate.toLocaleDateString() + '</div>' +
+            '</div>';
+
+        listContainer.appendChild(card);
+    });
+
+    if (filteredReports.length === 0) {
+        listContainer.innerHTML = '<div class="admin-empty-list">No reports match the selected filters</div>';
+    }
+
+    leftPanel.appendChild(listContainer);
+    splitLayout.appendChild(leftPanel);
+
+    // Right panel - report detail
+    var rightPanel = document.createElement('div');
+    rightPanel.className = 'admin-split-right';
+
+    if (state.adminModerationSelectedId) {
+        var selectedReport = adminModerationMockData.find(function(r) { return r.id === state.adminModerationSelectedId; });
+        if (selectedReport) {
+            var reportDate = new Date(selectedReport.reportedAt);
+            rightPanel.innerHTML = '<div class="admin-detail-panel">' +
+                '<div class="admin-detail-header">' +
+                '<h3>Report #' + selectedReport.id + '</h3>' +
+                '<button class="admin-detail-close-btn" onclick="state.adminModerationSelectedId = null; renderApp();">&times;</button>' +
+                '</div>' +
+                '<div class="admin-detail-section">' +
+                '<h4>Report Details</h4>' +
+                '<div class="admin-detail-grid">' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Type:</span><span class="admin-type-badge admin-type-' + selectedReport.type.toLowerCase() + '">' + selectedReport.type + '</span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Status:</span><span class="admin-status-badge admin-status-' + selectedReport.status.toLowerCase() + '">' + selectedReport.status + '</span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Reporter:</span><span class="admin-detail-value">' + selectedReport.reporter + '</span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Reported At:</span><span class="admin-detail-value">' + reportDate.toLocaleString() + '</span></div>' +
+                '</div>' +
+                '</div>' +
+                '<div class="admin-detail-section">' +
+                '<h4>Content</h4>' +
+                '<div class="admin-content-preview">' +
+                '<p class="admin-placeholder-text">Content preview not available — data source not wired</p>' +
+                '</div>' +
+                '</div>' +
+                '<div class="admin-detail-section">' +
+                '<h4>Moderation Notes</h4>' +
+                '<textarea class="admin-notes-textarea" placeholder="Add moderation notes..." disabled></textarea>' +
+                '</div>' +
+                '<div class="admin-detail-actions">' +
+                '<button class="btn btn-primary" disabled>Approve</button>' +
+                '<button class="btn btn-danger" disabled>Remove Content</button>' +
+                '<button class="btn btn-secondary" disabled>Dismiss Report</button>' +
+                '</div>' +
+                '</div>';
+        }
+    } else {
+        rightPanel.innerHTML = '<div class="admin-detail-empty"><span class="admin-detail-empty-icon">&#128221;</span><p>Select a report from the list to view details</p></div>';
+    }
+    splitLayout.appendChild(rightPanel);
+    container.appendChild(splitLayout);
+
+    return container;
+}
+
+/**
+ * VTID-01195: Admin Identity Access View - Auth status + role switching + access logs
+ */
+function renderAdminIdentityAccessView() {
+    var container = document.createElement('div');
+    container.className = 'admin-screen-container admin-identity-container';
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'admin-screen-header';
+    header.innerHTML = '<h2>Identity & Access</h2><p class="admin-screen-subtitle">Authentication status, role switching rules, and access audit logs</p>';
+    container.appendChild(header);
+
+    // Not-wired banner
+    var banner = document.createElement('div');
+    banner.className = 'admin-not-wired-banner';
+    banner.innerHTML = '<span class="admin-not-wired-icon">&#9888;</span> Data source not connected yet — showing placeholder data';
+    container.appendChild(banner);
+
+    // Panels container
+    var panelsContainer = document.createElement('div');
+    panelsContainer.className = 'admin-panels-container';
+
+    // Authentication Status Panel
+    var authPanel = document.createElement('div');
+    authPanel.className = 'admin-panel';
+    authPanel.innerHTML = '<div class="admin-panel-header">' +
+        '<h3>Authentication Status</h3>' +
+        '</div>' +
+        '<div class="admin-panel-body">' +
+        '<div class="admin-auth-status">' +
+        '<div class="admin-auth-item">' +
+        '<span class="admin-auth-label">Auth Provider:</span>' +
+        '<span class="admin-auth-value">Supabase</span>' +
+        '</div>' +
+        '<div class="admin-auth-item">' +
+        '<span class="admin-auth-label">Session Status:</span>' +
+        '<span class="admin-auth-value admin-auth-status-active">Active</span>' +
+        '</div>' +
+        '<div class="admin-auth-item">' +
+        '<span class="admin-auth-label">MFA Enabled:</span>' +
+        '<span class="admin-auth-value">—</span>' +
+        '</div>' +
+        '<div class="admin-auth-item">' +
+        '<span class="admin-auth-label">Last Login:</span>' +
+        '<span class="admin-auth-value">—</span>' +
+        '</div>' +
+        '<div class="admin-auth-item">' +
+        '<span class="admin-auth-label">Session Expiry:</span>' +
+        '<span class="admin-auth-value">—</span>' +
+        '</div>' +
+        '</div>' +
+        '<p class="admin-detail-note">Session details will be populated when auth is fully wired</p>' +
+        '</div>';
+    panelsContainer.appendChild(authPanel);
+
+    // Role Switching Rules Panel
+    var rolePanel = document.createElement('div');
+    rolePanel.className = 'admin-panel';
+    rolePanel.innerHTML = '<div class="admin-panel-header">' +
+        '<h3>Role Switching Rules</h3>' +
+        '</div>' +
+        '<div class="admin-panel-body">' +
+        '<div class="admin-rules-list">' +
+        '<div class="admin-rule-item">' +
+        '<span class="admin-rule-icon">&#10003;</span>' +
+        '<span class="admin-rule-text">Users can switch between their assigned roles</span>' +
+        '</div>' +
+        '<div class="admin-rule-item">' +
+        '<span class="admin-rule-icon">&#10003;</span>' +
+        '<span class="admin-rule-text">Role changes are logged to the audit trail</span>' +
+        '</div>' +
+        '<div class="admin-rule-item">' +
+        '<span class="admin-rule-icon">&#10003;</span>' +
+        '<span class="admin-rule-text">Admin role requires elevated permissions</span>' +
+        '</div>' +
+        '<div class="admin-rule-item">' +
+        '<span class="admin-rule-icon">&#10003;</span>' +
+        '<span class="admin-rule-text">Developer role grants access to Command Hub</span>' +
+        '</div>' +
+        '<div class="admin-rule-item">' +
+        '<span class="admin-rule-icon">&#10003;</span>' +
+        '<span class="admin-rule-text">Role context persists across sessions (localStorage)</span>' +
+        '</div>' +
+        '</div>' +
+        '</div>';
+    panelsContainer.appendChild(rolePanel);
+
+    // Access Logs Panel
+    var logsPanel = document.createElement('div');
+    logsPanel.className = 'admin-panel admin-panel-full';
+    logsPanel.innerHTML = '<div class="admin-panel-header">' +
+        '<h3>Access Logs</h3>' +
+        '<button class="btn btn-secondary btn-sm" disabled>Export</button>' +
+        '</div>' +
+        '<div class="admin-panel-body">' +
+        '<table class="admin-logs-table">' +
+        '<thead><tr><th>Timestamp</th><th>User</th><th>Action</th><th>Resource</th><th>Result</th></tr></thead>' +
+        '<tbody>' +
+        '<tr class="admin-log-row">' +
+        '<td class="admin-log-ts">—</td>' +
+        '<td class="admin-log-user">—</td>' +
+        '<td class="admin-log-action">—</td>' +
+        '<td class="admin-log-resource">—</td>' +
+        '<td class="admin-log-result">—</td>' +
+        '</tr>' +
+        '</tbody>' +
+        '</table>' +
+        '<div class="admin-logs-empty">' +
+        '<p>Access logs will be displayed when data source is connected</p>' +
+        '</div>' +
+        '</div>';
+    panelsContainer.appendChild(logsPanel);
+
+    container.appendChild(panelsContainer);
 
     return container;
 }
