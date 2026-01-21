@@ -5,6 +5,7 @@
  * Uses the same event emitter pattern as the gateway.
  */
 
+import fetch from 'node-fetch';
 import { randomUUID } from 'crypto';
 import { OasisEventPayload, RunnerConfig, TaskDomain, TerminalOutcome } from '../types';
 
