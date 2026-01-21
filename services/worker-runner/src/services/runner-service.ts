@@ -147,10 +147,7 @@ export class WorkerRunner {
     const success = await sendHeartbeat(this.config, this.activeVtid || undefined);
     if (success) {
       this.metrics.last_heartbeat_at = new Date().toISOString();
-      // Emit heartbeat event occasionally (not every time to reduce noise)
-      if (Math.random() < 0.1) {
-        await runnerEvents.heartbeat(this.config, this.activeVtid || undefined);
-      }
+      // Heartbeats are telemetry, not state changes - log only, no OASIS event
     }
   }
 
@@ -180,7 +177,8 @@ export class WorkerRunner {
       // Filter for eligible tasks
       const eligible = tasks.filter((task) => this.isTaskEligible(task));
 
-      await runnerEvents.polled(this.config, count, eligible.length);
+      // Log for debugging (no OASIS event - polling is telemetry, not state change)
+      console.log(`[${VTID}] Polled: ${count} pending, ${eligible.length} eligible`);
 
       if (eligible.length === 0) {
         this.metrics.state = 'idle';

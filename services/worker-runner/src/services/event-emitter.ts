@@ -71,10 +71,18 @@ export async function emitOasisEvent(
 
 /**
  * Worker Runner Event Helpers
+ *
+ * EVENT TAXONOMY:
+ * - State-change events (lifecycle/decision): Always emit to OASIS
+ * - Telemetry events (heartbeat/polled): Log only, NOT for OASIS
+ *
+ * OASIS is for STATE TRANSITIONS and DECISIONS — not loops.
+ * Polling ≠ progress. Heartbeat ≠ event. Repetition ≠ signal.
  */
 export const runnerEvents = {
   /**
    * Emit worker registered event
+   * Category: lifecycle (state change - emit to OASIS)
    */
   registered: (config: RunnerConfig) =>
     emitOasisEvent(config, {
@@ -94,6 +102,9 @@ export const runnerEvents = {
 
   /**
    * Emit heartbeat event
+   * @deprecated TELEMETRY ONLY - Do not use for OASIS events.
+   * Heartbeats are background telemetry, not state changes.
+   * Use logging instead. Reserved for future Streams/Agents views.
    */
   heartbeat: (config: RunnerConfig, activeVtid?: string) =>
     emitOasisEvent(config, {
@@ -111,6 +122,9 @@ export const runnerEvents = {
 
   /**
    * Emit polled event
+   * @deprecated TELEMETRY ONLY - Do not use for OASIS events.
+   * Polling loops are background telemetry, not state changes.
+   * Use logging instead. Reserved for future Streams/Agents views.
    */
   polled: (
     config: RunnerConfig,

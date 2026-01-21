@@ -224,8 +224,8 @@ describe('WorkerRunner', () => {
       // Wait for poll to complete
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // Should have polled with 3 tasks but only 1 eligible
-      expect(runnerEvents.polled).toHaveBeenCalled();
+      // polled event is no longer emitted (telemetry, not state change)
+      // Only state-change events (claimed, completed, etc.) go to OASIS
 
       // Should have claimed the eligible task
       expect(claimTask).toHaveBeenCalledWith(testConfig, 'VTID-01001');
