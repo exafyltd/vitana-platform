@@ -1,0 +1,61 @@
+{
+  "name": "worker-runner",
+  "vtid": "VTID-01200",
+  "version": "1.0.0",
+  "description": "Worker Runner Execution Plane - Autonomous task execution service",
+  "layer": "DEV",
+  "module": "WORKFORCE",
+  "type": "service",
+  "runtime": "nodejs",
+  "port": 8080,
+  "healthcheck": {
+    "path": "/health",
+    "interval": "30s",
+    "timeout": "5s",
+    "retries": 3
+  },
+  "dependencies": [
+    "@google-cloud/vertexai",
+    "express",
+    "typescript"
+  ],
+  "environment": {
+    "required": [
+      "GATEWAY_URL",
+      "SUPABASE_URL",
+      "SUPABASE_SERVICE_ROLE"
+    ],
+    "optional": [
+      "PORT",
+      "LOG_LEVEL",
+      "WORKER_ID_PREFIX",
+      "POLL_INTERVAL_MS",
+      "AUTOPILOT_LOOP_ENABLED",
+      "GOOGLE_CLOUD_PROJECT",
+      "VERTEX_LOCATION",
+      "VERTEX_MODEL"
+    ]
+  },
+  "resources": {
+    "cpu": "1",
+    "memory": "512Mi",
+    "minInstances": 1,
+    "maxInstances": 3
+  },
+  "labels": {
+    "app": "worker-runner",
+    "component": "execution-plane",
+    "managed-by": "vitana-platform"
+  },
+  "provider": {
+    "primary": "gemini",
+    "fallback": "claude",
+    "model_preference": "gemini-2.5-pro"
+  },
+  "governance": {
+    "respect_execution_gate": true,
+    "memory_first_check": true,
+    "max_concurrent_per_worker": 1,
+    "idempotent_completion": true
+  }
+}
