@@ -122,13 +122,14 @@ export async function sendHeartbeat(
 
 /**
  * Poll for pending tasks
+ * VTID-01202: Pass worker_id to include tasks claimed by this worker
  */
 export async function pollPendingTasks(
   config: RunnerConfig
 ): Promise<{ tasks: PendingTask[]; count: number }> {
   const result = await gatewayRequest<{ tasks: PendingTask[]; count: number }>(
     config,
-    '/api/v1/worker/orchestrator/tasks/pending',
+    `/api/v1/worker/orchestrator/tasks/pending?worker_id=${encodeURIComponent(config.workerId)}`,
     { method: 'GET' }
   );
 
