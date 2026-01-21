@@ -900,31 +900,42 @@ workerOrchestratorRouter.get('/api/v1/worker/orchestrator/workers', async (_req:
 /**
  * GET /api/v1/worker/orchestrator/tasks/pending
  *
- * VTID-01201: Get claimable scheduled tasks from vtid_ledger
+ * VTID-01201 + VTID-01202: Get claimable tasks from vtid_ledger
  *
  * Returns tasks that are:
- * - status = 'scheduled'
+ * - status = 'in_progress'
  * - spec_status = 'approved'
  * - is_terminal = false (or null treated as false)
- * - claim window is free: claimed_by IS NULL OR claim_expires_at < now()
+ * - Claim inclusion:
+ *   - claimed_by IS NULL (unclaimed)
+ *   - OR claimed_by = worker_id (claimed by requesting worker)
+ *   - OR claim_expires_at < now() (expired claim)
+ *
+ * Query params:
+ * - worker_id: If provided, includes tasks claimed by this worker
+ * - limit: Max tasks to return (default 100, max 200)
  *
  * Ordered by created_at ASC (oldest first), limited to 100 tasks.
  */
 workerOrchestratorRouter.get('/api/v1/worker/orchestrator/tasks/pending', async (req: Request, res: Response) => {
-  const LOG_VTID = '[VTID-01201]';
+  const LOG_VTID = '[VTID-01202]';
   try {
     const limitParam = req.query.limit;
     const limit = Math.min(Math.max(parseInt(String(limitParam)) || 100, 1), 200);
     const now = new Date().toISOString();
 
-    // Query vtid_ledger directly for claimable scheduled tasks
+    // VTID-01202: Parse worker_id query param for claim inclusion
+    const workerIdParam = req.query.worker_id;
+    const workerId = workerIdParam ? String(workerIdParam) : null;
+
+    // Query vtid_ledger directly for eligible tasks
     // Supabase REST API doesn't support complex OR in WHERE, so we query with
     // base filters and then filter claim window in code
     const queryResult = await supabaseRequest<any[]>(
       `/rest/v1/vtid_ledger?` +
-      `status=eq.scheduled&` +
+      `status=eq.in_progress&` +
       `spec_status=eq.approved&` +
-      `select=vtid,title,summary,status,layer,module,created_at,updated_at,claimed_by,claim_expires_at,is_terminal,spec_status&` +
+      `select=vtid,title,summary,status,layer,module,created_at,updated_at,claimed_by,claim_expires_at,claim_started_at,is_terminal,spec_status&` +
       `order=created_at.asc&` +
       `limit=${limit * 2}` // Fetch extra to allow for filtering
     );
@@ -934,19 +945,23 @@ workerOrchestratorRouter.get('/api/v1/worker/orchestrator/tasks/pending', async 
       return res.status(500).json({ ok: false, error: queryResult.error });
     }
 
-    // Filter for claimable tasks:
+    // VTID-01202: Filter for eligible tasks with claim inclusion logic:
     // - is_terminal must be false or null
-    // - claim window must be free: claimed_by IS NULL OR claim_expires_at < now
+    // - Claim inclusion:
+    //   - claimed_by IS NULL (unclaimed)
+    //   - OR claimed_by = worker_id (requesting worker's own claimed task)
+    //   - OR claim_expires_at < now (expired claim)
     const claimableTasks = (queryResult.data || [])
       .filter(task => {
         // is_terminal must be false or null
         if (task.is_terminal === true) return false;
 
-        // Claim window check: unclaimed OR expired claim
+        // Claim inclusion check
         const isUnclaimed = task.claimed_by === null || task.claimed_by === undefined;
+        const isClaimedByWorker = workerId && task.claimed_by === workerId;
         const isExpired = task.claim_expires_at && new Date(task.claim_expires_at) < new Date(now);
 
-        return isUnclaimed || isExpired;
+        return isUnclaimed || isClaimedByWorker || isExpired;
       })
       .slice(0, limit)
       .map(task => ({
@@ -960,26 +975,28 @@ workerOrchestratorRouter.get('/api/v1/worker/orchestrator/tasks/pending', async 
         updated_at: task.updated_at,
         claimed_by: task.claimed_by || null,
         claim_expires_at: task.claim_expires_at || null,
+        claim_started_at: task.claim_started_at || null,
       }));
 
-    console.log(`${LOG_VTID} Pending tasks query: ${claimableTasks.length} claimable scheduled tasks found`);
+    console.log(`${LOG_VTID} Pending tasks query: ${claimableTasks.length} eligible tasks found (worker_id=${workerId || 'none'})`);
 
     // Emit telemetry event for observability
     await emitOasisEvent({
-      vtid: 'VTID-01201',
+      vtid: 'VTID-01202',
       type: 'vtid.stage.worker_orchestrator.pending_served' as any,
       source: 'worker-orchestrator',
       status: 'info',
-      message: `Served ${claimableTasks.length} claimable scheduled tasks`,
+      message: `Served ${claimableTasks.length} eligible tasks (worker_id=${workerId || 'none'})`,
       payload: {
         count: claimableTasks.length,
         eligible_count: claimableTasks.length,
         limit,
+        worker_id: workerId,
         filters: {
-          status: 'scheduled',
+          status: 'in_progress',
           spec_status: 'approved',
           is_terminal: false,
-          claim_window: 'free'
+          claim_inclusion: 'unclaimed_or_claimed_by_worker_or_expired'
         }
       }
     });
@@ -988,8 +1005,9 @@ workerOrchestratorRouter.get('/api/v1/worker/orchestrator/tasks/pending', async 
       ok: true,
       tasks: claimableTasks,
       count: claimableTasks.length,
-      vtid: 'VTID-01183',
+      vtid: 'VTID-01202',
       timestamp: new Date().toISOString(),
+      worker_id: workerId,
     });
   } catch (error: any) {
     console.error(`${LOG_PREFIX} Get pending tasks error:`, error);

@@ -26,6 +26,7 @@ export type RunnerState = 'idle' | 'polling' | 'claiming' | 'executing' | 'compl
 
 /**
  * Pending task from orchestrator
+ * VTID-01202: Added claim_started_at for visibility
  */
 export interface PendingTask {
   vtid: string;
@@ -39,6 +40,7 @@ export interface PendingTask {
   is_terminal: boolean;
   claimed_by?: string | null;
   claim_expires_at?: string | null;
+  claim_started_at?: string | null;
   metadata?: Record<string, unknown>;
 }
 

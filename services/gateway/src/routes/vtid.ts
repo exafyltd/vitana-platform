@@ -885,6 +885,7 @@ router.get("/:vtid", async (req: Request, res: Response) => {
 
     // Return response with stageTimeline
     // VTID-01188: Include spec pipeline columns
+    // VTID-01202: Include claim fields for debugging visibility
     return res.status(200).json({
       ok: true,
       data: {
@@ -912,6 +913,10 @@ router.get("/:vtid", async (req: Request, res: Response) => {
         spec_approved_by: row.spec_approved_by || null,
         spec_approved_at: row.spec_approved_at || null,
         spec_last_error: row.spec_last_error || null,
+        // VTID-01202: Claim fields for visibility/debugging
+        claimed_by: row.claimed_by || null,
+        claim_expires_at: row.claim_expires_at || null,
+        claim_started_at: row.claim_started_at || null,
       }
     });
   } catch (e: any) {
