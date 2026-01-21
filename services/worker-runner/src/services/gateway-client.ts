@@ -5,6 +5,7 @@
  * Handles registration, heartbeat, polling, claiming, routing, completion, and release.
  */
 
+import fetch, { RequestInit } from 'node-fetch';
 import {
   RunnerConfig,
   PendingTask,
@@ -29,14 +30,21 @@ async function gatewayRequest<T>(
   const url = `${config.gatewayUrl}${path}`;
 
   try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'X-Worker-ID': config.workerId,
+      'X-VTID': VTID,
+    };
+
+    // Merge additional headers if provided
+    if (options.headers) {
+      const optHeaders = options.headers as Record<string, string>;
+      Object.assign(headers, optHeaders);
+    }
+
     const response = await fetch(url, {
       ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Worker-ID': config.workerId,
-        'X-VTID': VTID,
-        ...(options.headers || {}),
-      },
+      headers,
     });
 
     const data = await response.json().catch(() => ({})) as Record<string, unknown>;
