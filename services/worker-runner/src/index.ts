@@ -34,9 +34,9 @@ let runner: WorkerRunner | null = null;
 // =============================================================================
 
 /**
- * Basic health check
+ * Basic health check (canonical endpoint per claude.md rule #15)
  */
-app.get('/health', (_req: Request, res: Response) => {
+app.get('/alive', (_req: Request, res: Response) => {
   if (!runner) {
     res.status(503).json({
       status: 'unhealthy',
