@@ -900,16 +900,94 @@ workerOrchestratorRouter.get('/api/v1/worker/orchestrator/workers', async (_req:
 /**
  * GET /api/v1/worker/orchestrator/tasks/pending
  *
- * Get tasks available for workers to claim
+ * VTID-01201: Get claimable scheduled tasks from vtid_ledger
+ *
+ * Returns tasks that are:
+ * - status = 'scheduled'
+ * - spec_status = 'approved'
+ * - is_terminal = false (or null treated as false)
+ * - claim window is free: claimed_by IS NULL OR claim_expires_at < now()
+ *
+ * Ordered by created_at ASC (oldest first), limited to 100 tasks.
  */
-workerOrchestratorRouter.get('/api/v1/worker/orchestrator/tasks/pending', async (_req: Request, res: Response) => {
+workerOrchestratorRouter.get('/api/v1/worker/orchestrator/tasks/pending', async (req: Request, res: Response) => {
+  const LOG_VTID = '[VTID-01201]';
   try {
-    const result = await callRpc<any[]>('get_pending_worker_tasks', { p_limit: 50 });
+    const limitParam = req.query.limit;
+    const limit = Math.min(Math.max(parseInt(String(limitParam)) || 100, 1), 200);
+    const now = new Date().toISOString();
+
+    // Query vtid_ledger directly for claimable scheduled tasks
+    // Supabase REST API doesn't support complex OR in WHERE, so we query with
+    // base filters and then filter claim window in code
+    const queryResult = await supabaseRequest<any[]>(
+      `/rest/v1/vtid_ledger?` +
+      `status=eq.scheduled&` +
+      `spec_status=eq.approved&` +
+      `select=vtid,title,summary,status,layer,module,created_at,updated_at,claimed_by,claim_expires_at,is_terminal,spec_status&` +
+      `order=created_at.asc&` +
+      `limit=${limit * 2}` // Fetch extra to allow for filtering
+    );
+
+    if (!queryResult.ok) {
+      console.error(`${LOG_VTID} Failed to query vtid_ledger:`, queryResult.error);
+      return res.status(500).json({ ok: false, error: queryResult.error });
+    }
+
+    // Filter for claimable tasks:
+    // - is_terminal must be false or null
+    // - claim window must be free: claimed_by IS NULL OR claim_expires_at < now
+    const claimableTasks = (queryResult.data || [])
+      .filter(task => {
+        // is_terminal must be false or null
+        if (task.is_terminal === true) return false;
+
+        // Claim window check: unclaimed OR expired claim
+        const isUnclaimed = task.claimed_by === null || task.claimed_by === undefined;
+        const isExpired = task.claim_expires_at && new Date(task.claim_expires_at) < new Date(now);
+
+        return isUnclaimed || isExpired;
+      })
+      .slice(0, limit)
+      .map(task => ({
+        vtid: task.vtid,
+        title: task.title,
+        summary: task.summary,
+        status: task.status,
+        layer: task.layer,
+        module: task.module,
+        created_at: task.created_at,
+        updated_at: task.updated_at,
+        claimed_by: task.claimed_by || null,
+        claim_expires_at: task.claim_expires_at || null,
+      }));
+
+    console.log(`${LOG_VTID} Pending tasks query: ${claimableTasks.length} claimable scheduled tasks found`);
+
+    // Emit telemetry event for observability
+    await emitOasisEvent({
+      vtid: 'VTID-01201',
+      type: 'vtid.stage.worker_orchestrator.pending_served' as any,
+      source: 'worker-orchestrator',
+      status: 'info',
+      message: `Served ${claimableTasks.length} claimable scheduled tasks`,
+      payload: {
+        count: claimableTasks.length,
+        eligible_count: claimableTasks.length,
+        limit,
+        filters: {
+          status: 'scheduled',
+          spec_status: 'approved',
+          is_terminal: false,
+          claim_window: 'free'
+        }
+      }
+    });
 
     return res.status(200).json({
       ok: true,
-      tasks: result.data || [],
-      count: result.data?.length || 0,
+      tasks: claimableTasks,
+      count: claimableTasks.length,
       vtid: 'VTID-01183',
       timestamp: new Date().toISOString(),
     });
