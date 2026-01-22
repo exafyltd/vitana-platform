@@ -969,6 +969,8 @@ workerOrchestratorRouter.get('/api/v1/worker/orchestrator/tasks/pending', async 
         title: task.title,
         summary: task.summary,
         status: task.status,
+        spec_status: task.spec_status,
+        is_terminal: task.is_terminal || false,
         layer: task.layer,
         module: task.module,
         created_at: task.created_at,
