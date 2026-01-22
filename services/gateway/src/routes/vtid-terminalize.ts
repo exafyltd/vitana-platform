@@ -1,5 +1,6 @@
 /**
  * VTID-01169: Deploy → Ledger Terminalization (IN_PROGRESS → COMPLETED)
+ * VTID-01204: Pipeline Integrity Gates - Require full pipeline completion before terminalization
  *
  * Provides the authoritative write path for VTID terminalization.
  *
@@ -7,11 +8,16 @@
  *   POST /api/v1/oasis/vtid/terminalize  - Mark VTID as terminal (success/failed/cancelled)
  *   POST /api/v1/scheduler/terminalize-repair - Repair stuck VTIDs that have deploy success events
  *
- * HARD GOVERNANCE:
+ * HARD GOVERNANCE (VTID-01204):
  * - vtid_ledger is the SINGLE SOURCE OF TRUTH for terminal state
  * - Idempotent writes only (safe to retry)
  * - All state transitions logged to OASIS events
  * - No breaking changes to existing endpoints
+ * - CRITICAL: Tasks can ONLY be marked completed after FULL PIPELINE COMPLETION:
+ *   1. PR must be created (pr.created event or pr_number field)
+ *   2. PR must be merged (merged event or merge_sha field)
+ *   3. Validator must pass (validation.passed event)
+ *   4. Deploy must succeed (deploy.success event)
  */
 
 import { Router, Request, Response } from 'express';
@@ -19,7 +25,227 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 
 const VTID = 'VTID-01169';
+const VTID_INTEGRITY = 'VTID-01204'; // Pipeline integrity gates
 const router = Router();
+
+// =============================================================================
+// VTID-01204: Pipeline Integrity Gate - Required Events for Completion
+// =============================================================================
+
+/**
+ * Pipeline stages that MUST be completed before marking a task as terminal.
+ * Each stage is verified by checking for specific OASIS events.
+ */
+interface PipelineEvidence {
+  has_pr_created: boolean;
+  has_merged: boolean;
+  has_validator_passed: boolean;
+  has_deploy_success: boolean;
+  pr_number?: string;
+  merge_sha?: string;
+  events_found: string[];
+}
+
+/**
+ * Check if a VTID has completed the full autonomous pipeline.
+ * CRITICAL: This prevents false completion claims.
+ *
+ * Required evidence for completion:
+ * 1. PR Created: vtid.stage.pr.created, cicd.github.create_pr.success, or pr_number field
+ * 2. Merged: vtid.stage.merged, cicd.github.safe_merge.executed, or merge_sha field
+ * 3. Validator Passed: autopilot.validation.passed, vtid.stage.validated
+ * 4. Deploy Success: deploy.*.success, vtid.stage.deploy.success
+ */
+async function checkPipelineEvidence(
+  supabaseUrl: string,
+  svcKey: string,
+  vtid: string
+): Promise<PipelineEvidence> {
+  const evidence: PipelineEvidence = {
+    has_pr_created: false,
+    has_merged: false,
+    has_validator_passed: false,
+    has_deploy_success: false,
+    events_found: [],
+  };
+
+  try {
+    // Check ledger for direct evidence (pr_number, merge_sha)
+    const ledgerResp = await fetch(
+      `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}&select=pr_number,pr_url,merge_sha,validator_result`,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+      }
+    );
+
+    if (ledgerResp.ok) {
+      const ledgerData = (await ledgerResp.json()) as any[];
+      if (ledgerData.length > 0) {
+        const task = ledgerData[0];
+        if (task.pr_number || task.pr_url) {
+          evidence.has_pr_created = true;
+          evidence.pr_number = task.pr_number;
+          evidence.events_found.push('ledger:pr_number');
+        }
+        if (task.merge_sha) {
+          evidence.has_merged = true;
+          evidence.merge_sha = task.merge_sha;
+          evidence.events_found.push('ledger:merge_sha');
+        }
+        if (task.validator_result === 'passed' || task.validator_result === 'success') {
+          evidence.has_validator_passed = true;
+          evidence.events_found.push('ledger:validator_result');
+        }
+      }
+    }
+
+    // Check OASIS events for pipeline stage completion
+    // Query all relevant events for this VTID
+    const eventsResp = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_events?vtid=eq.${vtid}&select=topic,status,message,created_at&order=created_at.desc&limit=500`,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+      }
+    );
+
+    if (eventsResp.ok) {
+      const events = (await eventsResp.json()) as any[];
+
+      for (const event of events) {
+        const topic = event.topic?.toLowerCase() || '';
+
+        // PR Created evidence
+        if (
+          topic.includes('pr.created') ||
+          topic.includes('create_pr.success') ||
+          topic.includes('pull_request.opened')
+        ) {
+          evidence.has_pr_created = true;
+          evidence.events_found.push(`event:${event.topic}`);
+        }
+
+        // Merged evidence
+        if (
+          topic.includes('.merged') ||
+          topic.includes('safe_merge.executed') ||
+          topic.includes('safe_merge.success') ||
+          topic.includes('pull_request.merged')
+        ) {
+          evidence.has_merged = true;
+          evidence.events_found.push(`event:${event.topic}`);
+        }
+
+        // Validator passed evidence
+        if (
+          topic.includes('validation.passed') ||
+          topic.includes('validated') ||
+          topic.includes('validator.success')
+        ) {
+          evidence.has_validator_passed = true;
+          evidence.events_found.push(`event:${event.topic}`);
+        }
+
+        // Deploy success evidence
+        if (
+          topic.includes('deploy') &&
+          (topic.includes('success') || event.status === 'success')
+        ) {
+          evidence.has_deploy_success = true;
+          evidence.events_found.push(`event:${event.topic}`);
+        }
+
+        // Lifecycle completed (indicates full pipeline)
+        if (topic === 'vtid.lifecycle.completed') {
+          evidence.has_pr_created = true;
+          evidence.has_merged = true;
+          evidence.has_validator_passed = true;
+          evidence.has_deploy_success = true;
+          evidence.events_found.push('event:vtid.lifecycle.completed');
+        }
+      }
+    }
+  } catch (e: any) {
+    console.error(`[${VTID_INTEGRITY}] Error checking pipeline evidence for ${vtid}:`, e.message);
+  }
+
+  return evidence;
+}
+
+/**
+ * Validate that pipeline evidence is sufficient for completion.
+ * Returns { valid: true } if all required stages are complete.
+ * Returns { valid: false, missing: [...] } if stages are missing.
+ */
+function validatePipelineEvidence(
+  evidence: PipelineEvidence,
+  outcome: 'success' | 'failed' | 'cancelled'
+): { valid: boolean; missing: string[] } {
+  // For failed/cancelled outcomes, we don't require full pipeline
+  if (outcome !== 'success') {
+    return { valid: true, missing: [] };
+  }
+
+  const missing: string[] = [];
+
+  if (!evidence.has_pr_created) {
+    missing.push('PR_CREATED');
+  }
+  if (!evidence.has_merged) {
+    missing.push('MERGED');
+  }
+  if (!evidence.has_validator_passed) {
+    missing.push('VALIDATOR_PASSED');
+  }
+  if (!evidence.has_deploy_success) {
+    missing.push('DEPLOY_SUCCESS');
+  }
+
+  return {
+    valid: missing.length === 0,
+    missing,
+  };
+}
+
+/**
+ * Check if pipeline integrity gates can be bypassed.
+ * Only allowed for:
+ * - Explicit governance override key
+ * - Admin/governance role
+ * - Failed/cancelled outcomes (don't need full pipeline)
+ */
+function canBypassPipelineGates(
+  req: Request,
+  outcome: 'success' | 'failed' | 'cancelled'
+): { allowed: boolean; reason: string } {
+  // Failed/cancelled outcomes don't need full pipeline
+  if (outcome !== 'success') {
+    return { allowed: true, reason: `outcome=${outcome}` };
+  }
+
+  const role = req.headers['x-vitana-role'] as string | undefined;
+  const overrideKey = req.headers['x-governance-override-key'] as string | undefined;
+  const expectedOverrideKey = process.env.GOVERNANCE_OVERRIDE_KEY;
+
+  // Allow with valid governance override key
+  if (expectedOverrideKey && overrideKey === expectedOverrideKey) {
+    return { allowed: true, reason: 'governance_override_key' };
+  }
+
+  // Allow for governance role
+  if (role === 'governance') {
+    return { allowed: true, reason: 'role=governance' };
+  }
+
+  return { allowed: false, reason: 'Pipeline integrity gates require full pipeline completion or governance override' };
+}
 
 // =============================================================================
 // Schema Definitions
@@ -195,6 +421,51 @@ router.post('/api/v1/oasis/vtid/terminalize', async (req: Request, res: Response
       });
     }
 
+    // VTID-01204: Pipeline Integrity Gate - Check for full pipeline completion
+    const bypassCheck = canBypassPipelineGates(req, outcome);
+    if (!bypassCheck.allowed) {
+      console.log(`[${VTID_INTEGRITY}] Checking pipeline evidence for ${vtid}`);
+      const evidence = await checkPipelineEvidence(supabaseUrl, svcKey, vtid);
+      const validation = validatePipelineEvidence(evidence, outcome);
+
+      if (!validation.valid) {
+        console.warn(
+          `[${VTID_INTEGRITY}] BLOCKED: ${vtid} missing pipeline stages: ${validation.missing.join(', ')}`
+        );
+
+        // Emit governance audit event for blocked terminalization
+        await emitOasisEvent(supabaseUrl, svcKey, {
+          vtid,
+          topic: 'vtid.governance.terminalize_blocked',
+          status: 'warning',
+          message: `Terminalization blocked for ${vtid}: missing pipeline stages`,
+          metadata: {
+            vtid,
+            outcome,
+            actor,
+            missing_stages: validation.missing,
+            evidence_found: evidence.events_found,
+            blocked_at: new Date().toISOString(),
+            governance_vtid: VTID_INTEGRITY,
+          },
+        });
+
+        return res.status(400).json({
+          ok: false,
+          error: 'PIPELINE_INCOMPLETE',
+          message: `Cannot mark ${vtid} as completed: missing required pipeline stages`,
+          missing_stages: validation.missing,
+          evidence_found: evidence.events_found,
+          hint: 'Task must complete PR creation, merge, validation, and deploy before terminalization',
+          governance_vtid: VTID_INTEGRITY,
+        });
+      }
+
+      console.log(`[${VTID_INTEGRITY}] Pipeline evidence verified for ${vtid}: ${evidence.events_found.join(', ')}`);
+    } else {
+      console.log(`[${VTID_INTEGRITY}] Pipeline gate bypassed for ${vtid}: ${bypassCheck.reason}`);
+    }
+
     // Step 3: Update vtid_ledger with terminal fields
     const timestamp = new Date().toISOString();
     const newStatus = outcome === 'success' ? 'completed' : outcome === 'failed' ? 'failed' : 'cancelled';
@@ -281,10 +552,16 @@ router.post('/api/v1/oasis/vtid/terminalize', async (req: Request, res: Response
 /**
  * Repair stuck VTIDs that should be terminal.
  *
+ * VTID-01204: Now requires FULL PIPELINE COMPLETION, not just deploy success.
+ *
  * Finds VTIDs where:
  * - is_terminal = false
  * - status = 'in_progress' (or similar active status)
- * - oasis_events contains vtid.stage.deploy.success OR deploy.*.success
+ * - MUST have ALL of:
+ *   1. PR created event (vtid.stage.pr.created, cicd.github.create_pr.success)
+ *   2. Merged event (vtid.stage.merged, cicd.github.safe_merge.executed)
+ *   3. Validator passed event (autopilot.validation.passed)
+ *   4. Deploy success event (deploy.*.success, vtid.stage.deploy.success)
  *
  * For matching VTIDs, calls terminalize function and marks terminal.
  *
@@ -299,7 +576,7 @@ router.post('/api/v1/oasis/vtid/terminalize', async (req: Request, res: Response
  *   "ok": true,
  *   "scanned": 100,
  *   "terminalized": 5,
- *   "skipped_already_terminal": 2,
+ *   "skipped_incomplete_pipeline": 10,
  *   "errors": 0,
  *   "details": [...]
  * }
@@ -363,63 +640,44 @@ router.post('/api/v1/scheduler/terminalize-repair', async (req: Request, res: Re
       });
     }
 
-    // Step 2: For each non-terminal VTID, check if deploy success event exists
-    const vtidList = nonTerminalVtids.map((v: any) => v.vtid);
-    const vtidFilter = `vtid=in.(${vtidList.join(',')})`;
-
-    // Fetch deploy success events for these VTIDs
-    const eventsResp = await fetch(
-      `${supabaseUrl}/rest/v1/oasis_events?${vtidFilter}&or=(topic.like.deploy.%.success,topic.eq.vtid.stage.deploy.success,topic.eq.vtid.lifecycle.completed)&limit=1000`,
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: svcKey,
-          Authorization: `Bearer ${svcKey}`,
-        },
-      }
-    );
-
-    let deploySuccessEvents: any[] = [];
-    if (eventsResp.ok) {
-      deploySuccessEvents = (await eventsResp.json()) as any[];
-    }
-
-    // Build set of VTIDs with deploy success
-    const vtidsWithDeploySuccess = new Set<string>();
-    for (const event of deploySuccessEvents) {
-      if (event.vtid) {
-        vtidsWithDeploySuccess.add(event.vtid);
-      }
-    }
-
-    console.log(`[${VTID}] Repair: ${vtidsWithDeploySuccess.size} VTIDs have deploy success events`);
-
-    // Step 3: Terminalize VTIDs that have deploy success but aren't terminal
+    // VTID-01204: For each non-terminal VTID, check for FULL PIPELINE completion
+    // Not just deploy success - must have PR created, merged, validated, AND deployed
     const results: any[] = [];
     let terminalized = 0;
-    let skippedNoDeploySuccess = 0;
+    let skippedIncompletePipeline = 0;
     let errors = 0;
+
+    console.log(`[${VTID_INTEGRITY}] Repair: Checking full pipeline evidence for ${nonTerminalVtids.length} VTIDs`);
 
     for (const vtidRow of nonTerminalVtids) {
       const vtid = vtidRow.vtid;
 
-      if (!vtidsWithDeploySuccess.has(vtid)) {
-        // No deploy success event - skip
-        skippedNoDeploySuccess++;
+      // Check for FULL pipeline evidence (not just deploy success)
+      const evidence = await checkPipelineEvidence(supabaseUrl, svcKey, vtid);
+      const validation = validatePipelineEvidence(evidence, 'success');
+
+      if (!validation.valid) {
+        // Pipeline incomplete - skip this VTID
+        skippedIncompletePipeline++;
         results.push({
           vtid,
           action: 'skipped',
-          reason: 'no_deploy_success_event',
+          reason: 'incomplete_pipeline',
+          missing_stages: validation.missing,
+          evidence_found: evidence.events_found,
         });
         continue;
       }
 
-      // This VTID has deploy success but isn't terminal - repair it
+      // This VTID has FULL pipeline completion but isn't terminal - repair it
+      console.log(`[${VTID_INTEGRITY}] ${vtid} has full pipeline evidence: ${evidence.events_found.join(', ')}`);
+
       if (dryRun) {
         results.push({
           vtid,
           action: 'would_terminalize',
           current_status: vtidRow.status,
+          evidence_found: evidence.events_found,
         });
         terminalized++;
         continue;
@@ -446,19 +704,27 @@ router.post('/api/v1/scheduler/terminalize-repair', async (req: Request, res: Re
       });
 
       if (updateResp.ok) {
-        // Emit terminalize event
+        // Emit terminalize event with pipeline evidence
         await emitOasisEvent(supabaseUrl, svcKey, {
           vtid,
           topic: 'vtid.terminalize.success',
           status: 'success',
-          message: `VTID ${vtid} terminalized by repair job`,
+          message: `VTID ${vtid} terminalized by repair job (full pipeline verified)`,
           metadata: {
             vtid,
             outcome: 'success',
             actor: 'repair',
             previous_status: vtidRow.status,
-            repair_reason: 'deploy_success_event_present',
+            repair_reason: 'full_pipeline_verified',
+            pipeline_evidence: {
+              pr_created: evidence.has_pr_created,
+              merged: evidence.has_merged,
+              validator_passed: evidence.has_validator_passed,
+              deploy_success: evidence.has_deploy_success,
+            },
+            evidence_events: evidence.events_found,
             repaired_at: timestamp,
+            governance_vtid: VTID_INTEGRITY,
           },
         });
 
@@ -467,6 +733,7 @@ router.post('/api/v1/scheduler/terminalize-repair', async (req: Request, res: Re
           vtid,
           action: 'terminalized',
           previous_status: vtidRow.status,
+          evidence_found: evidence.events_found,
         });
       } else {
         errors++;
@@ -485,32 +752,38 @@ router.post('/api/v1/scheduler/terminalize-repair', async (req: Request, res: Re
       vtid: VTID,
       topic: 'vtid.terminalizer.repair.summary',
       status: errors > 0 ? 'warning' : 'success',
-      message: `Repair job completed: ${terminalized} terminalized, ${errors} errors`,
+      message: `Repair job completed: ${terminalized} terminalized, ${skippedIncompletePipeline} skipped (incomplete pipeline), ${errors} errors`,
       service: 'vtid-terminalize-repair',
       role: 'GOVERNANCE',
       metadata: {
         scanned: nonTerminalVtids.length,
         terminalized,
-        skipped_no_deploy_success: skippedNoDeploySuccess,
+        skipped_incomplete_pipeline: skippedIncompletePipeline,
         errors,
         dry_run: dryRun,
         elapsed_ms,
         repaired_vtids: results.filter((r) => r.action === 'terminalized').map((r) => r.vtid),
+        skipped_vtids: results.filter((r) => r.action === 'skipped').map((r) => ({
+          vtid: r.vtid,
+          missing: r.missing_stages,
+        })),
+        governance_vtid: VTID_INTEGRITY,
       },
     });
 
     console.log(
-      `[${VTID}] Repair complete: scanned=${nonTerminalVtids.length}, terminalized=${terminalized}, skipped=${skippedNoDeploySuccess}, errors=${errors}, elapsed=${elapsed_ms}ms`
+      `[${VTID_INTEGRITY}] Repair complete: scanned=${nonTerminalVtids.length}, terminalized=${terminalized}, skipped_incomplete=${skippedIncompletePipeline}, errors=${errors}, elapsed=${elapsed_ms}ms`
     );
 
     return res.status(200).json({
       ok: true,
       scanned: nonTerminalVtids.length,
       terminalized,
-      skipped_no_deploy_success: skippedNoDeploySuccess,
+      skipped_incomplete_pipeline: skippedIncompletePipeline,
       errors,
       dry_run: dryRun,
       elapsed_ms,
+      governance_vtid: VTID_INTEGRITY,
       details: results,
     });
   } catch (e: any) {
