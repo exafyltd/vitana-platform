@@ -180,7 +180,10 @@ export interface VerificationOutcome {
 const FRONTEND_KEYWORDS = [
   'Command Hub', 'UI', 'CSS', 'SPA', 'CSP', 'styles', 'orb overlay',
   'frontend', 'component', 'layout', 'button', 'modal', 'form', 'input',
-  'display', 'render', 'view', 'page', 'template', 'tailwind', 'web', 'browser'
+  'display', 'render', 'view', 'page', 'template', 'tailwind', 'web', 'browser',
+  // VTID-01206: Added missing frontend keywords for better domain detection
+  'sidebar', 'navigation', 'nav', 'menu', 'color', 'theme', 'styling',
+  'visual', 'appearance', 'icon', 'header', 'footer', 'toolbar', 'panel'
 ];
 
 const BACKEND_KEYWORDS = [
