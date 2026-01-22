@@ -185,10 +185,10 @@ ${task.spec_content || 'No specification provided. Infer requirements from the t
 
 ${
   routing.governance
-    ? `Passed: ${routing.governance.summary.passed}/${routing.governance.summary.total}
+    ? `Passed: ${routing.governance.summary?.passed ?? 0}/${routing.governance.summary?.total ?? 0}
 Proceed: ${routing.governance.proceed}
 Evaluations:
-${routing.governance.evaluations.map((e) => `- ${e.skill}: ${e.passed ? '✓' : '✗'} ${e.message}`).join('\n')}`
+${(routing.governance.evaluations || []).map((e) => `- ${e.skill}: ${e.passed ? '✓' : '✗'} ${e.message}`).join('\n') || 'None'}`
     : 'No governance evaluation performed.'
 }
 
