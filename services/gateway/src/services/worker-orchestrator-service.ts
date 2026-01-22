@@ -175,35 +175,87 @@ export interface VerificationOutcome {
 
 // =============================================================================
 // Domain Detection Keywords
+// VTID-01206: Comprehensive keyword mapping for Vitana platform
+// Covers: AI, Agents, Skills, Contextual Intelligence, Databases, Knowledge Bases,
+//         6 User Roles, Analytics, System Performance, and all platform areas
 // =============================================================================
 
 const FRONTEND_KEYWORDS = [
+  // Core UI
   'Command Hub', 'UI', 'CSS', 'SPA', 'CSP', 'styles', 'orb overlay',
   'frontend', 'component', 'layout', 'button', 'modal', 'form', 'input',
   'display', 'render', 'view', 'page', 'template', 'tailwind', 'web', 'browser',
-  // VTID-01206: Added missing frontend keywords for better domain detection
   'sidebar', 'navigation', 'nav', 'menu', 'color', 'theme', 'styling',
-  'visual', 'appearance', 'icon', 'header', 'footer', 'toolbar', 'panel'
+  'visual', 'appearance', 'icon', 'header', 'footer', 'toolbar', 'panel',
+  // User Role Screens (6 roles: Community, Admin, Dev, System, Professional/Staff, Patient)
+  'community screen', 'admin screen', 'dev screen', 'system screen',
+  'professional screen', 'staff screen', 'patient screen', 'solutions screen',
+  'community dashboard', 'admin dashboard', 'dev dashboard', 'system dashboard',
+  'professional dashboard', 'staff dashboard', 'patient dashboard',
+  'role-based view', 'user interface', 'role screen',
+  // Analytics & Reporting UI
+  'chart', 'graph', 'visualization', 'dashboard widget', 'report view',
+  'metrics display', 'analytics dashboard', 'performance chart', 'data viz',
+  // ORB & Voice UI
+  'orb', 'voice ui', 'speech bubble', 'transcript', 'live stream',
+  'avatar', 'animation', 'overlay', 'toast', 'notification', 'alert box',
+  // Screen inventory (87 screens)
+  'screen inventory', 'route', 'tab', 'dialog', 'drawer', 'popover', 'tooltip'
 ];
 
 const BACKEND_KEYWORDS = [
+  // Core API
   'endpoint', 'api/v1', 'gateway', 'controller', 'route mount', 'SSE',
   'operator', 'service', 'middleware', 'handler', 'API', 'REST', 'POST',
   'GET', 'PATCH', 'DELETE', 'express', 'router', 'request', 'response',
   'authentication', 'authorization', 'CICD', 'deploy',
-  // VTID-01206: Added governance, infrastructure, workflow keywords
+  // Governance & Compliance
   'governance', 'rule', 'policy', 'compliance', 'validation', 'preflight',
+  'audit', 'permission', 'access control', 'RLS', 'tenant isolation',
+  // Infrastructure & DevOps
   'infrastructure', 'cloud run', 'GCP', 'environment', 'secrets', 'env var',
   'workflow', 'github action', 'pipeline', 'CI', 'CD', 'build', 'test runner',
-  'worker', 'orchestrator', 'execution', 'terminalize', 'dispatch'
+  'worker', 'orchestrator', 'execution', 'terminalize', 'dispatch',
+  'docker', 'container', 'artifact registry', 'deployment', 'rollback',
+  // AI Processing & LLM
+  'LLM', 'Gemini', 'Vertex AI', 'Claude', 'OpenAI', 'model', 'prompt',
+  'AI routing', 'model fallback', 'token', 'completion', 'chat',
+  'embedding generation', 'AI provider', 'inference', 'streaming response',
+  // Agents & Orchestration
+  'agent', 'CrewAI', 'multi-agent', 'agent orchestration', 'subagent',
+  'planner agent', 'worker agent', 'verification agent', 'autonomous',
+  // Skills & Capabilities
+  'skill', 'skill chain', 'preflight skill', 'capability', 'tool use',
+  'function calling', 'skill registry', 'skill execution',
+  // System Performance & Monitoring
+  'performance', 'monitoring', 'health check', 'heartbeat', 'latency',
+  'throughput', 'error rate', 'SLA', 'uptime', 'metrics collection',
+  'logging', 'tracing', 'observability', 'alerting'
 ];
 
 const MEMORY_KEYWORDS = [
-  'supabase', 'rpc', 'vectors', 'qdrant', 'mem0', 'embedding', 'context',
-  'memory', 'migration', 'database', 'table', 'schema', 'index', 'query',
-  'OASIS', 'ledger', 'tenant', 'user context',
-  // VTID-01206: Added event, vtid tracking keywords
-  'event', 'vtid_ledger', 'oasis_events', 'oasis_specs', 'projection'
+  // Database & Storage
+  'supabase', 'rpc', 'postgres', 'SQL', 'database', 'table', 'schema',
+  'migration', 'index', 'query', 'insert', 'update', 'delete', 'select',
+  'foreign key', 'primary key', 'constraint', 'trigger', 'function',
+  // OASIS & Ledger
+  'OASIS', 'ledger', 'vtid_ledger', 'oasis_events', 'oasis_specs',
+  'event', 'projection', 'event sourcing', 'state machine', 'lifecycle',
+  // Knowledge Base & Vectors
+  'vectors', 'qdrant', 'mem0', 'embedding', 'semantic search', 'RAG',
+  'knowledge base', 'document store', 'chunking', 'retrieval',
+  'similarity', 'cosine', 'vector store', 'pgvector',
+  // Contextual Intelligence (D44, D48, D49)
+  'context', 'memory', 'user context', 'tenant', 'personalization',
+  'D44 predictive', 'D48 opportunity', 'D49 risk', 'contextual signal',
+  'recommendation', 'intelligence', 'insight', 'pattern', 'proactive',
+  // Analytics Data
+  'analytics', 'metrics', 'telemetry', 'tracking', 'measurement',
+  'data warehouse', 'aggregation', 'time series', 'historical data',
+  // User & Tenant Data (6 roles)
+  'user data', 'tenant data', 'profile', 'preferences', 'settings',
+  'community data', 'admin data', 'patient data', 'staff data',
+  'professional data', 'role data', 'dev data', 'system data'
 ];
 
 // =============================================================================
