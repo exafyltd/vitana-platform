@@ -176,86 +176,112 @@ export interface VerificationOutcome {
 // =============================================================================
 // Domain Detection Keywords
 // VTID-01206: Comprehensive keyword mapping for Vitana platform
-// Covers: AI, Agents, Skills, Contextual Intelligence, Databases, Knowledge Bases,
-//         6 User Roles, Analytics, System Performance, and all platform areas
 // =============================================================================
 
 const FRONTEND_KEYWORDS = [
-  // Core UI
-  'Command Hub', 'UI', 'CSS', 'SPA', 'CSP', 'styles', 'orb overlay',
-  'frontend', 'component', 'layout', 'button', 'modal', 'form', 'input',
-  'display', 'render', 'view', 'page', 'template', 'tailwind', 'web', 'browser',
-  'sidebar', 'navigation', 'nav', 'menu', 'color', 'theme', 'styling',
-  'visual', 'appearance', 'icon', 'header', 'footer', 'toolbar', 'panel',
-  // User Role Screens (6 roles: Community, Admin, Dev, System, Professional/Staff, Patient)
-  'community screen', 'admin screen', 'dev screen', 'system screen',
-  'professional screen', 'staff screen', 'patient screen', 'solutions screen',
-  'community dashboard', 'admin dashboard', 'dev dashboard', 'system dashboard',
-  'professional dashboard', 'staff dashboard', 'patient dashboard',
-  'role-based view', 'user interface', 'role screen',
-  // Analytics & Reporting UI
-  'chart', 'graph', 'visualization', 'dashboard widget', 'report view',
-  'metrics display', 'analytics dashboard', 'performance chart', 'data viz',
-  // ORB & Voice UI
-  'orb', 'voice ui', 'speech bubble', 'transcript', 'live stream',
-  'avatar', 'animation', 'overlay', 'toast', 'notification', 'alert box',
-  // Screen inventory (87 screens)
-  'screen inventory', 'route', 'tab', 'dialog', 'drawer', 'popover', 'tooltip'
+  // Core Web Technologies
+  'HTML', 'CSS', 'JavaScript', 'TypeScript', 'React', 'DOM', 'JSX', 'TSX',
+  // UI Components
+  'button', 'modal', 'form', 'input', 'dropdown', 'select', 'checkbox', 'radio',
+  'textarea', 'slider', 'toggle', 'switch', 'card', 'table', 'list', 'grid',
+  // Layout & Structure
+  'layout', 'flex', 'flexbox', 'responsive', 'mobile', 'desktop', 'tablet',
+  'breakpoint', 'container', 'wrapper', 'section', 'div', 'span',
+  // Styling & Theming
+  'color', 'theme', 'dark mode', 'light mode', 'font', 'typography', 'spacing',
+  'margin', 'padding', 'border', 'shadow', 'gradient', 'tailwind', 'styled',
+  // Navigation & Routing
+  'sidebar', 'navbar', 'menu', 'navigation', 'nav', 'breadcrumb', 'tab', 'link',
+  'header', 'footer', 'toolbar', 'panel', 'drawer', 'popover', 'tooltip',
+  // User Roles (6 roles - atomic)
+  'community', 'admin', 'patient', 'staff', 'professional', 'solutions',
+  // Visual Elements
+  'icon', 'image', 'avatar', 'logo', 'banner', 'carousel', 'gallery',
+  'chart', 'graph', 'visualization', 'diagram', 'progress', 'spinner', 'loader',
+  // Accessibility
+  'WCAG', 'aria', 'a11y', 'accessibility', 'screen reader', 'keyboard',
+  // User Interaction
+  'click', 'hover', 'focus', 'blur', 'scroll', 'drag', 'drop', 'touch', 'gesture',
+  // State & Data Binding
+  'useState', 'redux', 'context', 'store', 'state', 'props', 'binding',
+  // Animation & Transitions
+  'animation', 'transition', 'keyframe', 'motion', 'fade', 'slide',
+  // Vitana UI Specifics
+  'Command Hub', 'orb', 'overlay', 'toast', 'notification', 'alert',
+  'SPA', 'CSP', 'frontend', 'UI', 'UX', 'interface', 'screen', 'view', 'page',
+  'dashboard', 'widget', 'component', 'template', 'render', 'display'
 ];
 
 const BACKEND_KEYWORDS = [
-  // Core API
-  'endpoint', 'api/v1', 'gateway', 'controller', 'route mount', 'SSE',
-  'operator', 'service', 'middleware', 'handler', 'API', 'REST', 'POST',
-  'GET', 'PATCH', 'DELETE', 'express', 'router', 'request', 'response',
-  'authentication', 'authorization', 'CICD', 'deploy',
-  // Governance & Compliance
-  'governance', 'rule', 'policy', 'compliance', 'validation', 'preflight',
-  'audit', 'permission', 'access control', 'RLS', 'tenant isolation',
-  // Infrastructure & DevOps
-  'infrastructure', 'cloud run', 'GCP', 'environment', 'secrets', 'env var',
-  'workflow', 'github action', 'pipeline', 'CI', 'CD', 'build', 'test runner',
-  'worker', 'orchestrator', 'execution', 'terminalize', 'dispatch',
-  'docker', 'container', 'artifact registry', 'deployment', 'rollback',
-  // AI Processing & LLM
-  'LLM', 'Gemini', 'Vertex AI', 'Claude', 'OpenAI', 'model', 'prompt',
-  'AI routing', 'model fallback', 'token', 'completion', 'chat',
-  'embedding generation', 'AI provider', 'inference', 'streaming response',
+  // AI & LLM Providers
+  'Gemini', 'Claude', 'Anthropic', 'OpenAI', 'GPT', 'Vertex AI', 'Azure AI',
+  'Bedrock', 'Mistral', 'Llama', 'Cohere', 'AI21',
+  // AI Core Concepts
+  'LLM', 'prompt', 'completion', 'token', 'context window', 'temperature',
+  'top_p', 'top_k', 'max_tokens', 'system prompt', 'user prompt', 'assistant',
+  // AI Processing Types
+  'chat', 'embedding', 'vision', 'multimodal', 'image recognition',
+  'speech', 'TTS', 'STT', 'text to speech', 'speech to text', 'transcription',
+  // AI/ML Concepts
+  'inference', 'fine-tune', 'training', 'model', 'neural', 'NLP', 'ML',
+  'deep learning', 'machine learning', 'transformer', 'attention',
+  // AI Tools & Capabilities
+  'function calling', 'tool use', 'structured output', 'JSON mode', 'streaming',
+  'chain of thought', 'reasoning', 'planning', 'reflection',
   // Agents & Orchestration
-  'agent', 'CrewAI', 'multi-agent', 'agent orchestration', 'subagent',
-  'planner agent', 'worker agent', 'verification agent', 'autonomous',
+  'agent', 'CrewAI', 'multi-agent', 'autonomous', 'orchestration', 'subagent',
+  'planner', 'executor', 'verifier', 'coordinator', 'dispatcher',
   // Skills & Capabilities
-  'skill', 'skill chain', 'preflight skill', 'capability', 'tool use',
-  'function calling', 'skill registry', 'skill execution',
-  // System Performance & Monitoring
-  'performance', 'monitoring', 'health check', 'heartbeat', 'latency',
-  'throughput', 'error rate', 'SLA', 'uptime', 'metrics collection',
-  'logging', 'tracing', 'observability', 'alerting'
+  'skill', 'capability', 'chain', 'preflight', 'validation', 'execution',
+  'skill registry', 'skill chain', 'tool registry',
+  // API & Backend Core
+  'endpoint', 'API', 'REST', 'GraphQL', 'POST', 'GET', 'PUT', 'PATCH', 'DELETE',
+  'middleware', 'router', 'handler', 'controller', 'service', 'route',
+  'request', 'response', 'authentication', 'authorization', 'JWT', 'OAuth',
+  // Infrastructure & DevOps
+  'deploy', 'deployment', 'CI', 'CD', 'CICD', 'pipeline', 'workflow',
+  'docker', 'container', 'kubernetes', 'GCP', 'cloud run', 'cloud function',
+  'artifact registry', 'secrets', 'environment', 'config', 'rollback',
+  // Governance & Compliance
+  'governance', 'rule', 'policy', 'compliance', 'audit', 'permission',
+  'access control', 'RLS', 'tenant isolation', 'security',
+  // System Performance
+  'performance', 'monitoring', 'health', 'heartbeat', 'latency', 'throughput',
+  'error rate', 'SLA', 'uptime', 'logging', 'tracing', 'observability', 'alerting',
+  // Vitana Backend Specifics
+  'gateway', 'operator', 'worker', 'orchestrator', 'terminalize', 'dispatch',
+  'SSE', 'websocket', 'express', 'node', 'backend'
 ];
 
 const MEMORY_KEYWORDS = [
-  // Database & Storage
-  'supabase', 'rpc', 'postgres', 'SQL', 'database', 'table', 'schema',
-  'migration', 'index', 'query', 'insert', 'update', 'delete', 'select',
-  'foreign key', 'primary key', 'constraint', 'trigger', 'function',
-  // OASIS & Ledger
+  // Database Core
+  'database', 'DB', 'supabase', 'postgres', 'PostgreSQL', 'SQL', 'NoSQL',
+  'table', 'schema', 'migration', 'query', 'index', 'constraint',
+  'insert', 'update', 'delete', 'select', 'join', 'transaction',
+  'foreign key', 'primary key', 'trigger', 'function', 'stored procedure',
+  // OASIS & Event System
   'OASIS', 'ledger', 'vtid_ledger', 'oasis_events', 'oasis_specs',
-  'event', 'projection', 'event sourcing', 'state machine', 'lifecycle',
-  // Knowledge Base & Vectors
-  'vectors', 'qdrant', 'mem0', 'embedding', 'semantic search', 'RAG',
-  'knowledge base', 'document store', 'chunking', 'retrieval',
-  'similarity', 'cosine', 'vector store', 'pgvector',
-  // Contextual Intelligence (D44, D48, D49)
-  'context', 'memory', 'user context', 'tenant', 'personalization',
-  'D44 predictive', 'D48 opportunity', 'D49 risk', 'contextual signal',
-  'recommendation', 'intelligence', 'insight', 'pattern', 'proactive',
-  // Analytics Data
+  'event', 'event sourcing', 'projection', 'state machine', 'lifecycle',
+  'vtid', 'task state', 'terminal', 'status transition',
+  // Vector & Embeddings
+  'vector', 'embedding', 'qdrant', 'pgvector', 'similarity', 'cosine',
+  'semantic search', 'RAG', 'retrieval', 'nearest neighbor', 'ANN',
+  // Knowledge Base
+  'knowledge base', 'document', 'chunking', 'indexing', 'corpus',
+  'mem0', 'memory store', 'long-term memory', 'short-term memory',
+  // Contextual Intelligence
+  'context', 'user context', 'tenant', 'personalization', 'recommendation',
+  'D44', 'D48', 'D49', 'predictive', 'opportunity', 'risk', 'signal',
+  'intelligence', 'insight', 'pattern', 'proactive', 'anticipation',
+  // Analytics & Data
   'analytics', 'metrics', 'telemetry', 'tracking', 'measurement',
-  'data warehouse', 'aggregation', 'time series', 'historical data',
-  // User & Tenant Data (6 roles)
+  'data warehouse', 'aggregation', 'time series', 'historical',
+  'reporting', 'statistics', 'KPI', 'dashboard data',
+  // User & Tenant Data
   'user data', 'tenant data', 'profile', 'preferences', 'settings',
-  'community data', 'admin data', 'patient data', 'staff data',
-  'professional data', 'role data', 'dev data', 'system data'
+  'session', 'cache', 'storage', 'persistence', 'data model',
+  // Vitana Memory Specifics
+  'memory', 'context retrieval', 'memory injection', 'recall'
 ];
 
 // =============================================================================
