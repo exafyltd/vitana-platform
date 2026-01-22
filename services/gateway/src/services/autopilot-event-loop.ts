@@ -121,8 +121,9 @@ async function fetchOasisEvents(
     let url = `${supabaseUrl}/rest/v1/oasis_events?select=*&order=created_at.asc,id.asc&limit=${limit}`;
 
     if (cursor) {
-      // Use cursor as created_at filter
-      url += `&created_at=gte.${encodeURIComponent(cursor)}`;
+      // VTID-01204: Use gt (greater than) to avoid re-fetching already processed events
+      // Previously used gte which caused the cursor to get stuck
+      url += `&created_at=gt.${encodeURIComponent(cursor)}`;
     }
 
     const response = await fetch(url, {
@@ -710,7 +711,20 @@ async function runLoopIteration(): Promise<void> {
   try {
     // Get current cursor - use timestamp, not cursor ID
     const state = await getLoopState();
-    const cursor = state?.last_event_timestamp || null;
+    let cursor = state?.last_event_timestamp || null;
+
+    // VTID-01204: Auto-reset cursor if it's more than 1 hour old
+    // This prevents the loop from getting stuck on old events
+    if (cursor) {
+      const cursorAge = Date.now() - new Date(cursor).getTime();
+      const ONE_HOUR_MS = 60 * 60 * 1000;
+      if (cursorAge > ONE_HOUR_MS) {
+        const newCursor = new Date(Date.now() - 60000).toISOString(); // 1 minute ago
+        console.log(`${LOG_PREFIX} Cursor is ${Math.round(cursorAge / 60000)} minutes old, auto-resetting to ${newCursor}`);
+        await updateLoopCursor(newCursor, newCursor);
+        cursor = newCursor;
+      }
+    }
 
     // Fetch events
     const { ok, events, error } = await fetchOasisEvents(cursor, currentConfig.batchSize);
@@ -722,7 +736,10 @@ async function runLoopIteration(): Promise<void> {
     }
 
     if (events.length === 0) {
-      // No new events
+      // No new events - log periodically for visibility
+      if (Math.random() < 0.01) { // Log ~1% of empty polls
+        console.log(`${LOG_PREFIX} No new events after cursor: ${cursor || 'null'}`);
+      }
       return;
     }
 
