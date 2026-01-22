@@ -121,8 +121,9 @@ async function fetchOasisEvents(
     let url = `${supabaseUrl}/rest/v1/oasis_events?select=*&order=created_at.asc,id.asc&limit=${limit}`;
 
     if (cursor) {
-      // Use cursor as created_at filter
-      url += `&created_at=gte.${encodeURIComponent(cursor)}`;
+      // VTID-01204: Use gt (greater than) to avoid re-fetching already processed events
+      // Previously used gte which caused the cursor to get stuck
+      url += `&created_at=gt.${encodeURIComponent(cursor)}`;
     }
 
     const response = await fetch(url, {
@@ -438,29 +439,56 @@ async function triggerActionForState(
 
 /**
  * Trigger dispatch to worker orchestrator
+ * VTID-01204: Now actually calls worker orchestrator to trigger execution
  */
 async function triggerDispatch(vtid: string, event: OasisEvent): Promise<ActionResult> {
   // Get spec from event metadata or fetch from ledger
   const meta = event.metadata || event.meta || {};
-  const title = (meta.title || event.title || vtid) as string;
-  const specContent = (meta.spec_content || meta.description || '') as string;
+  let title = (meta.title || event.title || vtid) as string;
+  let specContent = (meta.spec_content || meta.description || '') as string;
 
-  if (!specContent) {
-    // Try to fetch from vtid_ledger
-    const ledgerData = await fetchVtidFromLedger(vtid);
-    if (!ledgerData) {
-      return { ok: false, error: 'No spec content available' };
-    }
-
-    // Start autopilot run with ledger data
-    await startAutopilotRun(vtid, ledgerData.title || vtid, ledgerData.description || '');
-  } else {
-    await startAutopilotRun(vtid, title, specContent);
+  // Try to fetch from vtid_ledger if no spec content
+  const ledgerData = await fetchVtidFromLedger(vtid);
+  if (!specContent && ledgerData) {
+    specContent = ledgerData.description || ledgerData.summary || '';
+    title = ledgerData.title || title;
   }
 
-  // Note: Actual worker dispatch would happen via worker-orchestrator
-  // This just ensures the run is initialized
-  return { ok: true, data: { vtid, dispatched: true } };
+  // Start autopilot run
+  await startAutopilotRun(vtid, title, specContent);
+
+  // VTID-01204: Actually dispatch to worker orchestrator
+  const gatewayUrl = process.env.GATEWAY_URL || 'http://localhost:8080';
+  try {
+    console.log(`${LOG_PREFIX} Dispatching ${vtid} to worker orchestrator`);
+
+    const routeResponse = await fetch(`${gatewayUrl}/api/v1/worker/orchestrator/route`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        vtid,
+        title,
+        task_family: ledgerData?.layer || 'DEV',
+        spec_content: specContent,
+        run_id: `run-${vtid}-${Date.now()}`,
+      }),
+    });
+
+    const routeResult = await routeResponse.json() as { ok?: boolean; error?: string; domain?: string };
+
+    if (!routeResponse.ok || !routeResult.ok) {
+      console.error(`${LOG_PREFIX} Worker orchestrator route failed for ${vtid}: ${routeResult.error}`);
+      // Don't fail the dispatch - worker can still claim from pending queue
+      return { ok: true, data: { vtid, dispatched: true, route_failed: true, error: routeResult.error } };
+    }
+
+    console.log(`${LOG_PREFIX} Successfully dispatched ${vtid} to domain: ${routeResult.domain}`);
+    return { ok: true, data: { vtid, dispatched: true, domain: routeResult.domain } };
+  } catch (error) {
+    console.error(`${LOG_PREFIX} Failed to call worker orchestrator for ${vtid}: ${error}`);
+    // Don't fail - task is still in pending queue for workers to claim
+    return { ok: true, data: { vtid, dispatched: true, route_error: String(error) } };
+  }
 }
 
 /**
@@ -601,6 +629,8 @@ async function triggerVerify(vtid: string, event: OasisEvent): Promise<ActionRes
 async function fetchVtidFromLedger(vtid: string): Promise<{
   title?: string;
   description?: string;
+  summary?: string;
+  layer?: string;
 } | null> {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
@@ -609,7 +639,7 @@ async function fetchVtidFromLedger(vtid: string): Promise<{
 
   try {
     const response = await fetch(
-      `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}&select=title,summary`,
+      `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}&select=title,summary,layer`,
       {
         headers: {
           'apikey': supabaseKey,
@@ -620,12 +650,14 @@ async function fetchVtidFromLedger(vtid: string): Promise<{
 
     if (!response.ok) return null;
 
-    const data = await response.json() as Array<{ title?: string; summary?: string }>;
+    const data = await response.json() as Array<{ title?: string; summary?: string; layer?: string }>;
     if (!data || data.length === 0) return null;
 
     return {
       title: data[0].title,
       description: data[0].summary,
+      summary: data[0].summary,
+      layer: data[0].layer,
     };
   } catch {
     return null;
@@ -679,7 +711,20 @@ async function runLoopIteration(): Promise<void> {
   try {
     // Get current cursor - use timestamp, not cursor ID
     const state = await getLoopState();
-    const cursor = state?.last_event_timestamp || null;
+    let cursor = state?.last_event_timestamp || null;
+
+    // VTID-01204: Auto-reset cursor if it's more than 1 hour old
+    // This prevents the loop from getting stuck on old events
+    if (cursor) {
+      const cursorAge = Date.now() - new Date(cursor).getTime();
+      const ONE_HOUR_MS = 60 * 60 * 1000;
+      if (cursorAge > ONE_HOUR_MS) {
+        const newCursor = new Date(Date.now() - 60000).toISOString(); // 1 minute ago
+        console.log(`${LOG_PREFIX} Cursor is ${Math.round(cursorAge / 60000)} minutes old, auto-resetting to ${newCursor}`);
+        await updateLoopCursor(newCursor, newCursor);
+        cursor = newCursor;
+      }
+    }
 
     // Fetch events
     const { ok, events, error } = await fetchOasisEvents(cursor, currentConfig.batchSize);
@@ -691,7 +736,10 @@ async function runLoopIteration(): Promise<void> {
     }
 
     if (events.length === 0) {
-      // No new events
+      // No new events - log periodically for visibility
+      if (Math.random() < 0.01) { // Log ~1% of empty polls
+        console.log(`${LOG_PREFIX} No new events after cursor: ${cursor || 'null'}`);
+      }
       return;
     }
 
