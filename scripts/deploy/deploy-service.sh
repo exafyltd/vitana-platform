@@ -147,7 +147,8 @@ if [ "$CLOUD_RUN_SERVICE" = "gateway" ]; then
 elif [ "$CLOUD_RUN_SERVICE" = "worker-runner" ]; then
   # VTID-01202: Worker-runner requires gateway URL and Supabase credentials
   echo -e "${YELLOW}VTID-01202: Binding secrets for worker-runner service...${NC}"
-  GATEWAY_URL_VALUE="${GATEWAY_URL:-https://gateway-q74ibpv6ia-uc.a.run.app}"
+  # VTID-01206: Updated to current gateway URL
+  GATEWAY_URL_VALUE="${GATEWAY_URL:-https://gateway-86804897789.us-central1.run.app}"
   gcloud run deploy "$CLOUD_RUN_SERVICE" \
     --project "$PROJECT" \
     --region "$REGION" \
@@ -212,8 +213,8 @@ echo -e "${YELLOW}Using git commit: ${GIT_COMMIT}${NC}"
 # =============================================================================
 echo -e "${YELLOW}VTID-0510: Recording software version...${NC}"
 
-# Canonical Dev Sandbox Gateway (LOCKED)
-GATEWAY_URL="${GATEWAY_URL:-https://gateway-q74ibpv6ia-uc.a.run.app}"
+# Canonical Dev Sandbox Gateway (VTID-01206: Updated to current URL)
+GATEWAY_URL="${GATEWAY_URL:-https://gateway-86804897789.us-central1.run.app}"
 
 # Record the deployment version using operator API
 if curl -fsS "${GATEWAY_URL}/api/v1/operator/deployments" \
