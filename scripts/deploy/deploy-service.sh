@@ -146,7 +146,9 @@ if [ "$CLOUD_RUN_SERVICE" = "gateway" ]; then
     --quiet
 elif [ "$CLOUD_RUN_SERVICE" = "worker-runner" ]; then
   # VTID-01202: Worker-runner requires gateway URL and Supabase credentials
+  # VTID-01206: Worker-runner MUST have min-instances=1 to maintain polling for canonical pipeline
   echo -e "${YELLOW}VTID-01202: Binding secrets for worker-runner service...${NC}"
+  echo -e "${YELLOW}VTID-01206: Setting min-instances=1 to prevent scale-to-zero (canonical pipeline requires constant polling)${NC}"
   GATEWAY_URL_VALUE="${GATEWAY_URL:-https://gateway-q74ibpv6ia-uc.a.run.app}"
   gcloud run deploy "$CLOUD_RUN_SERVICE" \
     --project "$PROJECT" \
@@ -154,6 +156,7 @@ elif [ "$CLOUD_RUN_SERVICE" = "worker-runner" ]; then
     --source "$SOURCE_PATH" \
     --platform managed \
     --allow-unauthenticated \
+    --min-instances=1 \
     --set-env-vars "ENVIRONMENT=${ENVIRONMENT},GATEWAY_URL=${GATEWAY_URL_VALUE}" \
     --set-secrets "SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest" \
     --quiet
