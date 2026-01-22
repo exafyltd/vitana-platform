@@ -32,43 +32,58 @@ import { runPreflightChain, listSkills, getPreflightChains } from '../services/s
 export const workerOrchestratorRouter = Router();
 
 // =============================================================================
-// VTID-01175: Governance Control for skip_verification
+// VTID-01175 + VTID-01204: Governance Control for skip_verification
 // =============================================================================
 
 /**
  * Check if skip_verification is allowed based on governance rules.
- * Allowed when:
- * - Environment is dev/sandbox (VITANA_ENVIRONMENT contains 'dev' or 'sandbox')
+ *
+ * VTID-01204: STRICTER ENFORCEMENT - Prevents false completion claims
+ *
+ * Allowed ONLY when:
+ * - Environment is explicitly 'test' or 'ci' (NOT dev/sandbox - those still need verification)
  * - Request includes valid governance_override_key (for admin use)
- * - Caller is staff/admin role (checked via x-vitana-role header)
+ * - Caller is governance role specifically (not just admin/staff)
+ *
+ * BLOCKED for:
+ * - Production environments
+ * - Dev/sandbox environments (these should still run verification)
+ * - Missing domain or result (these indicate incomplete work)
  */
 function isSkipVerificationAllowed(req: Request): { allowed: boolean; reason: string } {
   const env = process.env.VITANA_ENVIRONMENT || 'production';
   const role = req.headers['x-vitana-role'] as string | undefined;
   const overrideKey = req.headers['x-governance-override-key'] as string | undefined;
   const expectedOverrideKey = process.env.GOVERNANCE_OVERRIDE_KEY;
+  const envLower = env.toLowerCase();
 
-  // Allow in dev/sandbox environments
-  if (env.toLowerCase().includes('dev') || env.toLowerCase().includes('sandbox')) {
+  // VTID-01204: Only allow skip in explicit test/CI environments
+  // Dev and sandbox environments should still run verification to catch issues early
+  if (envLower === 'test' || envLower === 'ci' || envLower === 'testing') {
     return { allowed: true, reason: `environment=${env}` };
   }
 
-  // Allow with valid governance override key
+  // Allow with valid governance override key (explicit admin action)
   if (expectedOverrideKey && overrideKey === expectedOverrideKey) {
     return { allowed: true, reason: 'governance_override_key' };
   }
 
-  // Allow for staff/admin roles
-  if (role === 'admin' || role === 'staff' || role === 'governance') {
+  // VTID-01204: Only governance role can skip - not admin/staff
+  // This prevents accidental bypasses
+  if (role === 'governance') {
     return { allowed: true, reason: `role=${role}` };
   }
 
-  return { allowed: false, reason: 'skip_verification requires dev environment, admin role, or governance override key' };
+  return {
+    allowed: false,
+    reason: 'skip_verification requires test environment, governance role, or governance override key (VTID-01204)',
+  };
 }
 
 /**
  * Emit OASIS governance event when skip_verification is used.
- * This creates an audit trail for all verification bypasses.
+ * VTID-01204: This creates an audit trail for all verification bypasses.
+ * These events are critical for governance compliance tracking.
  */
 async function emitSkipVerificationEvent(
   vtid: string,
@@ -81,7 +96,7 @@ async function emitSkipVerificationEvent(
     type: 'vtid.governance.verification_skipped' as any,
     source: 'worker-orchestrator',
     status: 'warning',
-    message: `Verification skipped for ${vtid} at ${endpoint}`,
+    message: `[VTID-01204] Verification skipped for ${vtid} at ${endpoint} - AUDIT REQUIRED`,
     payload: {
       vtid,
       endpoint,
@@ -89,7 +104,9 @@ async function emitSkipVerificationEvent(
       domain: requestInfo.domain,
       run_id: requestInfo.run_id,
       caller_ip: requestInfo.caller_ip,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      governance_vtid: 'VTID-01204',
+      severity: 'audit_required',
     }
   });
 }
