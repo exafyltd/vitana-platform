@@ -317,7 +317,7 @@ async function fetchSpec(vtid: string): Promise<OasisSpec | null> {
     const row = data[0];
     return {
       vtid: row.vtid,
-      content: row.content || row.spec_content || row.markdown || "",
+      content: row.spec_markdown || row.content || row.spec_content || "",
       version: row.version,
       created_at: row.created_at,
     };

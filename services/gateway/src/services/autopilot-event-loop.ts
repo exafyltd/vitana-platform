@@ -448,11 +448,23 @@ async function triggerDispatch(vtid: string, event: OasisEvent): Promise<ActionR
   let title = (meta.title || event.title || vtid) as string;
   let specContent = (meta.spec_content || meta.description || '') as string;
 
-  // Try to fetch from vtid_ledger if no spec content
+  // Try to fetch from vtid_ledger for title/layer info
   const ledgerData = await fetchVtidFromLedger(vtid);
-  if (!specContent && ledgerData) {
-    specContent = ledgerData.description || ledgerData.summary || '';
+  if (ledgerData) {
     title = ledgerData.title || title;
+  }
+
+  // VTID-01206: Fetch full spec from oasis_specs (where 3-step spec flow stores it)
+  if (!specContent) {
+    const oasisSpec = await fetchSpecFromOasis(vtid);
+    if (oasisSpec) {
+      specContent = oasisSpec;
+      console.log(`${LOG_PREFIX} Using spec from oasis_specs for ${vtid}`);
+    } else if (ledgerData) {
+      // Fallback to summary (not ideal but better than nothing)
+      specContent = ledgerData.description || ledgerData.summary || '';
+      console.log(`${LOG_PREFIX} Warning: No spec in oasis_specs for ${vtid}, using ledger summary`);
+    }
   }
 
   // Start autopilot run
@@ -687,6 +699,45 @@ async function fetchVtidFromLedger(vtid: string): Promise<{
       layer: data[0].layer,
     };
   } catch {
+    return null;
+  }
+}
+
+/**
+ * VTID-01206: Fetch approved spec from oasis_specs table
+ * This is where the 3-step spec flow stores the full spec content
+ */
+async function fetchSpecFromOasis(vtid: string): Promise<string | null> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+
+  if (!supabaseUrl || !supabaseKey) return null;
+
+  try {
+    const response = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_specs?vtid=eq.${encodeURIComponent(vtid)}&select=spec_markdown&order=created_at.desc&limit=1`,
+      {
+        headers: {
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      console.warn(`${LOG_PREFIX} Failed to fetch oasis_specs for ${vtid}: ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json() as Array<{ spec_markdown?: string }>;
+    if (!data || data.length === 0 || !data[0].spec_markdown) {
+      return null;
+    }
+
+    console.log(`${LOG_PREFIX} Found spec in oasis_specs for ${vtid} (${data[0].spec_markdown.length} chars)`);
+    return data[0].spec_markdown;
+  } catch (error) {
+    console.warn(`${LOG_PREFIX} Error fetching oasis_specs for ${vtid}: ${error}`);
     return null;
   }
 }
