@@ -176,6 +176,8 @@ export interface VerificationOutcome {
 // =============================================================================
 // Domain Detection Keywords
 // VTID-01206: Comprehensive keyword mapping for Vitana platform
+// Based on actual platform inventory: 8 intelligence domains, 23+ engines (D20-D51),
+// 87 screens, 71+ API routes, 3 tenants (Maxina, AlKalma, Earthlings)
 // =============================================================================
 
 const FRONTEND_KEYWORDS = [
@@ -190,11 +192,11 @@ const FRONTEND_KEYWORDS = [
   // Styling & Theming
   'color', 'theme', 'dark mode', 'light mode', 'font', 'typography', 'spacing',
   'margin', 'padding', 'border', 'shadow', 'gradient', 'tailwind', 'styled',
-  // Navigation & Routing
+  // Navigation & Routing (87 screens)
   'sidebar', 'navbar', 'menu', 'navigation', 'nav', 'breadcrumb', 'tab', 'link',
   'header', 'footer', 'toolbar', 'panel', 'drawer', 'popover', 'tooltip',
-  // User Roles (6 roles - atomic)
-  'community', 'admin', 'patient', 'staff', 'professional', 'solutions',
+  // User Roles (6 roles)
+  'community', 'admin', 'patient', 'staff', 'professional', 'solutions', 'dev', 'system',
   // Visual Elements
   'icon', 'image', 'avatar', 'logo', 'banner', 'carousel', 'gallery',
   'chart', 'graph', 'visualization', 'diagram', 'progress', 'spinner', 'loader',
@@ -206,6 +208,28 @@ const FRONTEND_KEYWORDS = [
   'useState', 'redux', 'context', 'store', 'state', 'props', 'binding',
   // Animation & Transitions
   'animation', 'transition', 'keyframe', 'motion', 'fade', 'slide',
+  // Voice & Speech UI
+  'voice', 'voice ui', 'speech bubble', 'transcript', 'waveform', 'audio player',
+  'microphone', 'speaker', 'voice input', 'voice output',
+  // Health & Longevity UI
+  'vitana index', 'health score', 'longevity', 'biomarker chart', 'sleep chart',
+  'nutrition tracker', 'fitness display', 'mental health', 'wellness',
+  // Matchmaking & Social UI
+  'match card', 'profile card', 'compatibility', 'connection', 'relationship',
+  'group card', 'event card', 'live room', 'meetup',
+  // Commerce & Wallet UI
+  'wallet', 'credits', 'balance', 'checkout', 'cart', 'payment', 'pricing',
+  'marketplace', 'product card', 'service card', 'order',
+  // Messenger & Sharing UI
+  'messenger', 'chat bubble', 'message list', 'sharing', 'share button',
+  'social share', 'invite', 'notification',
+  // Discovery & Shopping UI
+  'discover', 'browse', 'search results', 'filter', 'sort', 'category',
+  'shopping', 'catalog', 'wishlist', 'favorites',
+  // Diary & Reflection UI
+  'diary', 'journal', 'entry', 'reflection', 'gratitude', 'mood',
+  // Tenant-specific UI
+  'Maxina', 'AlKalma', 'Earthlings', 'boat', 'retreat', 'clinic',
   // Vitana UI Specifics
   'Command Hub', 'orb', 'overlay', 'toast', 'notification', 'alert',
   'SPA', 'CSP', 'frontend', 'UI', 'UX', 'interface', 'screen', 'view', 'page',
@@ -219,9 +243,13 @@ const BACKEND_KEYWORDS = [
   // AI Core Concepts
   'LLM', 'prompt', 'completion', 'token', 'context window', 'temperature',
   'top_p', 'top_k', 'max_tokens', 'system prompt', 'user prompt', 'assistant',
-  // AI Processing Types
-  'chat', 'embedding', 'vision', 'multimodal', 'image recognition',
-  'speech', 'TTS', 'STT', 'text to speech', 'speech to text', 'transcription',
+  // Voice & Speech Processing (TTS/STT)
+  'TTS', 'STT', 'text to speech', 'speech to text', 'transcription',
+  'voice recognition', 'speech synthesis', 'audio processing', 'voice cloning',
+  'whisper', 'elevenlabs', 'google speech', 'azure speech',
+  // Multimodal & Vision
+  'multimodal', 'vision', 'image recognition', 'image analysis', 'OCR',
+  'document parsing', 'visual understanding',
   // AI/ML Concepts
   'inference', 'fine-tune', 'training', 'model', 'neural', 'NLP', 'ML',
   'deep learning', 'machine learning', 'transformer', 'attention',
@@ -231,6 +259,20 @@ const BACKEND_KEYWORDS = [
   // Agents & Orchestration
   'agent', 'CrewAI', 'multi-agent', 'autonomous', 'orchestration', 'subagent',
   'planner', 'executor', 'verifier', 'coordinator', 'dispatcher',
+  // Automation & Autonomy
+  'automation', 'autonomy', 'autopilot', 'autonomous mode', 'auto-pilot',
+  'scheduled task', 'background job', 'cron', 'trigger',
+  // Intelligence Engines (D20-D51)
+  'intent detection', 'domain routing', 'context assembly',
+  'situational awareness', 'emotional cognitive', 'availability readiness',
+  'environmental mobility', 'social context', 'financial sensitivity',
+  'health capacity', 'taste alignment', 'life stage', 'boundary consent',
+  'longitudinal adaptation', 'signal detection', 'opportunity forecasting',
+  'anticipatory guidance', 'social alignment', 'opportunity surfacing',
+  'risk mitigation', 'trajectory reinforcement', 'overload detection',
+  // Matchmaking & Compatibility Logic
+  'matchmaking', 'match algorithm', 'compatibility score', 'recommendation engine',
+  'people matching', 'group matching', 'event matching', 'service matching',
   // Skills & Capabilities
   'skill', 'capability', 'chain', 'preflight', 'validation', 'execution',
   'skill registry', 'skill chain', 'tool registry',
@@ -238,13 +280,19 @@ const BACKEND_KEYWORDS = [
   'endpoint', 'API', 'REST', 'GraphQL', 'POST', 'GET', 'PUT', 'PATCH', 'DELETE',
   'middleware', 'router', 'handler', 'controller', 'service', 'route',
   'request', 'response', 'authentication', 'authorization', 'JWT', 'OAuth',
+  // Commerce & Token Logic
+  'credits', 'VTN', 'token', 'wallet logic', 'transaction processing',
+  'payment gateway', 'stripe', 'billing', 'subscription', 'staking',
+  // Health & Longevity Processing
+  'wearable integration', 'lab report parsing', 'biomarker processing',
+  'health compute', 'longevity signal', 'daily recompute',
   // Infrastructure & DevOps
   'deploy', 'deployment', 'CI', 'CD', 'CICD', 'pipeline', 'workflow',
   'docker', 'container', 'kubernetes', 'GCP', 'cloud run', 'cloud function',
   'artifact registry', 'secrets', 'environment', 'config', 'rollback',
   // Governance & Compliance
   'governance', 'rule', 'policy', 'compliance', 'audit', 'permission',
-  'access control', 'RLS', 'tenant isolation', 'security',
+  'access control', 'RLS', 'tenant isolation', 'security', 'consent',
   // System Performance
   'performance', 'monitoring', 'health', 'heartbeat', 'latency', 'throughput',
   'error rate', 'SLA', 'uptime', 'logging', 'tracing', 'observability', 'alerting',
@@ -269,19 +317,39 @@ const MEMORY_KEYWORDS = [
   // Knowledge Base
   'knowledge base', 'document', 'chunking', 'indexing', 'corpus',
   'mem0', 'memory store', 'long-term memory', 'short-term memory',
-  // Contextual Intelligence
+  // Health & Longevity Data (Vitana Index - 5 Pillars)
+  'biomarker', 'biomarkers', 'lab result', 'wearable data', 'health data',
+  'physical health', 'mental health', 'nutritional health', 'social health', 'environmental health',
+  'sleep data', 'nutrition data', 'fitness data', 'stress data', 'hydration',
+  'vitana index', 'longevity score', 'health score',
+  // Relationship & Social Data
+  'relationship graph', 'relationship data', 'match history', 'compatibility data',
+  'connection data', 'social graph', 'community data', 'group membership',
+  'event attendance', 'live room history',
+  // Diary & Reflection Data
+  'diary entry', 'journal data', 'reflection data', 'gratitude log',
+  'mood history', 'habit data', 'values', 'meaning',
+  // Commerce & Wallet Data
+  'wallet data', 'credit balance', 'transaction history', 'order history',
+  'purchase data', 'subscription data', 'payment history',
+  'product catalog', 'services catalog', 'offers data',
+  // Tenant Data (Maxina, AlKalma, Earthlings)
+  'Maxina data', 'AlKalma data', 'Earthlings data', 'tenant data',
+  'care program', 'retreat booking', 'telemedicine',
+  // Contextual Intelligence (D44, D48, D49)
   'context', 'user context', 'tenant', 'personalization', 'recommendation',
-  'D44', 'D48', 'D49', 'predictive', 'opportunity', 'risk', 'signal',
+  'D44', 'D48', 'D49', 'predictive signal', 'opportunity', 'risk signal',
   'intelligence', 'insight', 'pattern', 'proactive', 'anticipation',
-  // Analytics & Data
+  // Analytics & Metrics Data
   'analytics', 'metrics', 'telemetry', 'tracking', 'measurement',
   'data warehouse', 'aggregation', 'time series', 'historical',
   'reporting', 'statistics', 'KPI', 'dashboard data',
-  // User & Tenant Data
-  'user data', 'tenant data', 'profile', 'preferences', 'settings',
+  // User & Profile Data
+  'user data', 'profile', 'preferences', 'settings', 'constraints',
   'session', 'cache', 'storage', 'persistence', 'data model',
   // Vitana Memory Specifics
-  'memory', 'context retrieval', 'memory injection', 'recall'
+  'memory', 'context retrieval', 'memory injection', 'recall',
+  'memory governance', 'memory visibility', 'memory export'
 ];
 
 // =============================================================================
