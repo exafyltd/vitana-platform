@@ -439,8 +439,8 @@ async function triggerActionForState(
 
 /**
  * Trigger dispatch to worker orchestrator
- * VTID-01204: Now actually calls worker orchestrator to trigger execution
- * VTID-01206: Push-based execution - calls worker-runner directly to wake it up
+ * VTID-01204: Routes through worker orchestrator, worker-runner claims from pending queue
+ * VTID-01206: Fetches spec from oasis_specs (where 3-step spec flow stores it)
  */
 async function triggerDispatch(vtid: string, event: OasisEvent): Promise<ActionResult> {
   // Get spec from event metadata or fetch from ledger
@@ -496,37 +496,11 @@ async function triggerDispatch(vtid: string, event: OasisEvent): Promise<ActionR
     }
 
     console.log(`${LOG_PREFIX} Successfully routed ${vtid} to domain: ${routeResult.domain}`);
+    return { ok: true, data: { vtid, dispatched: true, domain: routeResult.domain } };
   } catch (error) {
     console.error(`${LOG_PREFIX} Failed to call worker orchestrator for ${vtid}: ${error}`);
-    // Continue to trigger worker-runner anyway
-  }
-
-  // VTID-01206: Push-based execution - call worker-runner directly to wake it up and execute
-  // This eliminates the need for polling and ensures immediate execution
-  const workerRunnerUrl = process.env.WORKER_RUNNER_URL || 'https://worker-runner-86804897789.us-central1.run.app';
-  try {
-    console.log(`${LOG_PREFIX} Triggering worker-runner for immediate execution of ${vtid}`);
-
-    const triggerResponse = await fetch(`${workerRunnerUrl}/api/v1/trigger`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ vtid }),
-    });
-
-    const triggerResult = await triggerResponse.json() as { ok?: boolean; error?: string };
-
-    if (!triggerResponse.ok || !triggerResult.ok) {
-      console.warn(`${LOG_PREFIX} Worker-runner trigger failed for ${vtid}: ${triggerResult.error}`);
-      // Don't fail - task is still in pending queue
-      return { ok: true, data: { vtid, dispatched: true, trigger_failed: true, error: triggerResult.error } };
-    }
-
-    console.log(`${LOG_PREFIX} Successfully triggered worker-runner for ${vtid}`);
-    return { ok: true, data: { vtid, dispatched: true, triggered: true } };
-  } catch (error) {
-    console.error(`${LOG_PREFIX} Failed to trigger worker-runner for ${vtid}: ${error}`);
-    // Don't fail - task is still in pending queue for workers to claim
-    return { ok: true, data: { vtid, dispatched: true, trigger_error: String(error) } };
+    // Task is still in pending queue for worker-runner to claim via polling
+    return { ok: true, data: { vtid, dispatched: true, route_error: String(error) } };
   }
 }
 
