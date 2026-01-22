@@ -339,7 +339,7 @@ async function emitOasisEvent(
  * - is_terminal = true
  * - terminal_outcome = outcome
  * - completed_at = now()
- * - status = 'completed' (for success) or 'failed'
+ * - status = 'completed' (for success) or 'rejected' (for failed - shows red)
  */
 router.post('/api/v1/oasis/vtid/terminalize', async (req: Request, res: Response) => {
   console.log(`[${VTID}] POST /api/v1/oasis/vtid/terminalize`);
@@ -467,8 +467,9 @@ router.post('/api/v1/oasis/vtid/terminalize', async (req: Request, res: Response
     }
 
     // Step 3: Update vtid_ledger with terminal fields
+    // VTID-01206: Use 'rejected' for failed tasks (shows red), 'completed' for success (shows green)
     const timestamp = new Date().toISOString();
-    const newStatus = outcome === 'success' ? 'completed' : outcome === 'failed' ? 'failed' : 'cancelled';
+    const newStatus = outcome === 'success' ? 'completed' : outcome === 'failed' ? 'rejected' : 'cancelled';
 
     const updatePayload = {
       status: newStatus,
