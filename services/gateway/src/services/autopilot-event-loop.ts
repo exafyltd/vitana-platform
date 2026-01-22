@@ -628,6 +628,8 @@ async function triggerVerify(vtid: string, event: OasisEvent): Promise<ActionRes
 async function fetchVtidFromLedger(vtid: string): Promise<{
   title?: string;
   description?: string;
+  summary?: string;
+  layer?: string;
 } | null> {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
@@ -636,7 +638,7 @@ async function fetchVtidFromLedger(vtid: string): Promise<{
 
   try {
     const response = await fetch(
-      `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}&select=title,summary`,
+      `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}&select=title,summary,layer`,
       {
         headers: {
           'apikey': supabaseKey,
@@ -647,12 +649,14 @@ async function fetchVtidFromLedger(vtid: string): Promise<{
 
     if (!response.ok) return null;
 
-    const data = await response.json() as Array<{ title?: string; summary?: string }>;
+    const data = await response.json() as Array<{ title?: string; summary?: string; layer?: string }>;
     if (!data || data.length === 0) return null;
 
     return {
       title: data[0].title,
       description: data[0].summary,
+      summary: data[0].summary,
+      layer: data[0].layer,
     };
   } catch {
     return null;
