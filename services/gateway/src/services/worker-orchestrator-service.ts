@@ -190,13 +190,20 @@ const BACKEND_KEYWORDS = [
   'endpoint', 'api/v1', 'gateway', 'controller', 'route mount', 'SSE',
   'operator', 'service', 'middleware', 'handler', 'API', 'REST', 'POST',
   'GET', 'PATCH', 'DELETE', 'express', 'router', 'request', 'response',
-  'authentication', 'authorization', 'CICD', 'deploy'
+  'authentication', 'authorization', 'CICD', 'deploy',
+  // VTID-01206: Added governance, infrastructure, workflow keywords
+  'governance', 'rule', 'policy', 'compliance', 'validation', 'preflight',
+  'infrastructure', 'cloud run', 'GCP', 'environment', 'secrets', 'env var',
+  'workflow', 'github action', 'pipeline', 'CI', 'CD', 'build', 'test runner',
+  'worker', 'orchestrator', 'execution', 'terminalize', 'dispatch'
 ];
 
 const MEMORY_KEYWORDS = [
   'supabase', 'rpc', 'vectors', 'qdrant', 'mem0', 'embedding', 'context',
   'memory', 'migration', 'database', 'table', 'schema', 'index', 'query',
-  'OASIS', 'ledger', 'tenant', 'user context'
+  'OASIS', 'ledger', 'tenant', 'user context',
+  // VTID-01206: Added event, vtid tracking keywords
+  'event', 'vtid_ledger', 'oasis_events', 'oasis_specs', 'projection'
 ];
 
 // =============================================================================
@@ -219,14 +226,23 @@ const BACKEND_PATH_PATTERNS = [
   /\/routes\//,
   /\/controllers\//,
   /\/services\//,
-  /\/middleware\//
+  /\/middleware\//,
+  // VTID-01206: Added CI/CD, infrastructure, workflow patterns
+  /\.github\/workflows\//,
+  /scripts\/deploy\//,
+  /scripts\//,
+  /Dockerfile/,
+  /\.yaml$/,
+  /\.yml$/
 ];
 
 const MEMORY_PATH_PATTERNS = [
   /supabase\/migrations\//,
   /services\/agents\/memory-indexer\//,
   /\/memory\//,
-  /\.sql$/
+  /\.sql$/,
+  // VTID-01206: Added OASIS/database patterns
+  /DATABASE_SCHEMA\.md/
 ];
 
 // =============================================================================
