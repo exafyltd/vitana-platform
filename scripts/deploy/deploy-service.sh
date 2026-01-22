@@ -144,6 +144,19 @@ if [ "$CLOUD_RUN_SERVICE" = "gateway" ]; then
     --set-env-vars "ENVIRONMENT=${ENVIRONMENT}" \
     --set-secrets "GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest,SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest,SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest,SUPABASE_JWT_SECRET=SUPABASE_JWT_SECRET:latest,GITHUB_TOKEN=GITHUB_TOKEN:latest,GH_TOKEN=GITHUB_TOKEN:latest,GITHUB_SAFE_MERGE_TOKEN=GITHUB_TOKEN:latest,DEV_AUTH_SECRET=DEV_AUTH_SECRET:latest,DEV_TEST_USER_EMAIL=DEV_TEST_USER_EMAIL:latest,DEV_TEST_USER_PASSWORD=DEV_TEST_USER_PASSWORD:latest,DEV_JWT_SECRET=DEV_JWT_SECRET:latest" \
     --quiet
+elif [ "$CLOUD_RUN_SERVICE" = "worker-runner" ]; then
+  # VTID-01202: Worker-runner requires gateway URL and Supabase credentials
+  echo -e "${YELLOW}VTID-01202: Binding secrets for worker-runner service...${NC}"
+  GATEWAY_URL_VALUE="${GATEWAY_URL:-https://gateway-q74ibpv6ia-uc.a.run.app}"
+  gcloud run deploy "$CLOUD_RUN_SERVICE" \
+    --project "$PROJECT" \
+    --region "$REGION" \
+    --source "$SOURCE_PATH" \
+    --platform managed \
+    --allow-unauthenticated \
+    --set-env-vars "ENVIRONMENT=${ENVIRONMENT},GATEWAY_URL=${GATEWAY_URL_VALUE}" \
+    --set-secrets "SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest" \
+    --quiet
 else
   gcloud run deploy "$CLOUD_RUN_SERVICE" \
     --project "$PROJECT" \
