@@ -438,29 +438,56 @@ async function triggerActionForState(
 
 /**
  * Trigger dispatch to worker orchestrator
+ * VTID-01204: Now actually calls worker orchestrator to trigger execution
  */
 async function triggerDispatch(vtid: string, event: OasisEvent): Promise<ActionResult> {
   // Get spec from event metadata or fetch from ledger
   const meta = event.metadata || event.meta || {};
-  const title = (meta.title || event.title || vtid) as string;
-  const specContent = (meta.spec_content || meta.description || '') as string;
+  let title = (meta.title || event.title || vtid) as string;
+  let specContent = (meta.spec_content || meta.description || '') as string;
 
-  if (!specContent) {
-    // Try to fetch from vtid_ledger
-    const ledgerData = await fetchVtidFromLedger(vtid);
-    if (!ledgerData) {
-      return { ok: false, error: 'No spec content available' };
-    }
-
-    // Start autopilot run with ledger data
-    await startAutopilotRun(vtid, ledgerData.title || vtid, ledgerData.description || '');
-  } else {
-    await startAutopilotRun(vtid, title, specContent);
+  // Try to fetch from vtid_ledger if no spec content
+  const ledgerData = await fetchVtidFromLedger(vtid);
+  if (!specContent && ledgerData) {
+    specContent = ledgerData.description || ledgerData.summary || '';
+    title = ledgerData.title || title;
   }
 
-  // Note: Actual worker dispatch would happen via worker-orchestrator
-  // This just ensures the run is initialized
-  return { ok: true, data: { vtid, dispatched: true } };
+  // Start autopilot run
+  await startAutopilotRun(vtid, title, specContent);
+
+  // VTID-01204: Actually dispatch to worker orchestrator
+  const gatewayUrl = process.env.GATEWAY_URL || 'http://localhost:8080';
+  try {
+    console.log(`${LOG_PREFIX} Dispatching ${vtid} to worker orchestrator`);
+
+    const routeResponse = await fetch(`${gatewayUrl}/api/v1/worker/orchestrator/route`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        vtid,
+        title,
+        task_family: ledgerData?.layer || 'DEV',
+        spec_content: specContent,
+        run_id: `run-${vtid}-${Date.now()}`,
+      }),
+    });
+
+    const routeResult = await routeResponse.json() as { ok?: boolean; error?: string; domain?: string };
+
+    if (!routeResponse.ok || !routeResult.ok) {
+      console.error(`${LOG_PREFIX} Worker orchestrator route failed for ${vtid}: ${routeResult.error}`);
+      // Don't fail the dispatch - worker can still claim from pending queue
+      return { ok: true, data: { vtid, dispatched: true, route_failed: true, error: routeResult.error } };
+    }
+
+    console.log(`${LOG_PREFIX} Successfully dispatched ${vtid} to domain: ${routeResult.domain}`);
+    return { ok: true, data: { vtid, dispatched: true, domain: routeResult.domain } };
+  } catch (error) {
+    console.error(`${LOG_PREFIX} Failed to call worker orchestrator for ${vtid}: ${error}`);
+    // Don't fail - task is still in pending queue for workers to claim
+    return { ok: true, data: { vtid, dispatched: true, route_error: String(error) } };
+  }
 }
 
 /**
