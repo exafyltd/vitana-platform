@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { buildStageTimeline, defaultStageTimeline, type TimelineEvent, type StageTimelineEntry } from '../lib/stage-mapping';
+import { buildStageTimeline, defaultStageTimeline, mapRawToStage, type TimelineEvent, type StageTimelineEntry } from '../lib/stage-mapping';
 
 export const router = Router();
 
@@ -281,6 +281,131 @@ router.get('/api/v1/vtid/:vtid', async (req: Request, res: Response) => {
       }
     });
   } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * GET /api/v1/vtid/:vtid/execution-status
+ *
+ * VTID-01209: Real-time execution status for pipeline tracking.
+ * Returns current step, total steps, stage, and recent events for live monitoring.
+ *
+ * Response:
+ * - vtid: The task identifier
+ * - status: Current task status (scheduled, in_progress, completed, failed)
+ * - isActive: true if task is currently executing
+ * - totalSteps: Total number of events/steps recorded
+ * - currentStep: Current step number (1-indexed)
+ * - currentStepName: Description of current step (from latest event)
+ * - currentStage: Current macro stage (PLANNER, WORKER, VALIDATOR, DEPLOY)
+ * - stageTimeline: 4-stage status array
+ * - startedAt: Execution start timestamp
+ * - elapsedMs: Milliseconds since execution started
+ * - recentEvents: Last 5 events (newest first)
+ */
+router.get('/api/v1/vtid/:vtid/execution-status', async (req: Request, res: Response) => {
+  try {
+    const { vtid } = req.params;
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+    if (!svcKey || !supabaseUrl) return res.status(500).json({ error: "Misconfigured" });
+
+    // Fetch VTID from ledger to get status
+    const vtidResp = await fetch(`${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}&select=vtid,status,title,updated_at`, {
+      headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` },
+    });
+
+    if (!vtidResp.ok) return res.status(502).json({ error: "Query failed" });
+    const vtidData = await vtidResp.json() as any[];
+    if (vtidData.length === 0) return res.status(404).json({ error: "VTID not found", vtid });
+
+    const row = vtidData[0];
+    const taskStatus = (row.status || '').toLowerCase();
+
+    // Determine if task is actively executing
+    const activeStatuses = ['in_progress', 'running', 'active', 'allocated', 'validating'];
+    const isActive = activeStatuses.includes(taskStatus);
+
+    // Fetch ALL events for this VTID (ordered by created_at ascending)
+    const eventsResp = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_events?vtid=eq.${vtid}&select=id,created_at,vtid,kind,status,title,task_stage,source,layer,message&order=created_at.asc`,
+      {
+        headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` },
+      }
+    );
+
+    if (!eventsResp.ok) {
+      return res.status(502).json({ error: "Events query failed" });
+    }
+
+    const events = await eventsResp.json() as (TimelineEvent & { message?: string })[];
+    const totalSteps = events.length;
+
+    // Build stage timeline
+    const stageTimeline = totalSteps > 0 ? buildStageTimeline(events) : defaultStageTimeline();
+
+    // Find current stage (latest non-PENDING stage, or first RUNNING)
+    let currentStage: string = 'PLANNER';
+    for (const entry of stageTimeline) {
+      if (entry.status === 'RUNNING') {
+        currentStage = entry.stage;
+        break;
+      }
+      if (entry.status === 'SUCCESS' || entry.status === 'ERROR') {
+        currentStage = entry.stage;
+      }
+    }
+
+    // Get latest event for current step info
+    const latestEvent = events.length > 0 ? events[events.length - 1] : null;
+    const currentStep = totalSteps;
+    const currentStepName = latestEvent
+      ? (latestEvent.title || latestEvent.kind || latestEvent.message || 'Processing...')
+      : 'Waiting to start...';
+
+    // Calculate execution timing
+    const firstEvent = events.length > 0 ? events[0] : null;
+    const startedAt = firstEvent?.created_at || null;
+    const elapsedMs = startedAt ? Date.now() - new Date(startedAt).getTime() : 0;
+
+    // Get recent events (last 5, newest first)
+    const recentEvents = events.slice(-5).reverse().map(e => ({
+      id: e.id,
+      timestamp: e.created_at,
+      stage: e.task_stage || mapRawToStage(e.kind, e.title, e.status) || 'UNKNOWN',
+      name: e.title || e.kind || e.message || 'Event',
+      status: e.status || 'info'
+    }));
+
+    return res.json({
+      ok: true,
+      data: {
+        vtid,
+        title: row.title,
+        status: taskStatus,
+        isActive,
+
+        // Step tracking
+        totalSteps,
+        currentStep,
+        currentStepName,
+        currentStage,
+
+        // Timeline
+        stageTimeline,
+
+        // Timing
+        startedAt,
+        elapsedMs,
+        lastUpdated: latestEvent?.created_at || row.updated_at,
+
+        // Recent activity
+        recentEvents
+      }
+    });
+  } catch (e: any) {
+    console.error('[VTID-01209] Execution status error:', e);
     return res.status(500).json({ error: e.message });
   }
 });
