@@ -10508,6 +10508,7 @@ function renderTelemetryStreamPanel() {
     var thead = document.createElement('thead');
     thead.innerHTML = '<tr>' +
         '<th>Time</th>' +
+        '<th>Source</th>' +
         '<th>VTID</th>' +
         '<th>Stage</th>' +
         '<th>Provider</th>' +
@@ -10525,7 +10526,7 @@ function renderTelemetryStreamPanel() {
 
     if (events.length === 0) {
         var emptyRow = document.createElement('tr');
-        emptyRow.innerHTML = '<td colspan="10" class="telemetry-empty">No telemetry events found for the selected filters.</td>';
+        emptyRow.innerHTML = '<td colspan="11" class="telemetry-empty">No telemetry events found for the selected filters.</td>';
         tbody.appendChild(emptyRow);
     } else {
         events.forEach(function(ev) {
@@ -10533,6 +10534,18 @@ function renderTelemetryStreamPanel() {
             row.className = ev.error_code ? 'telemetry-row-error' : 'telemetry-row-ok';
 
             var time = ev.created_at ? new Date(ev.created_at).toLocaleTimeString() : '-';
+            // VTID-01208: Determine source from service field
+            var source = 'Unknown';
+            var sourceClass = 'unknown';
+            if (ev.service === 'orb-assistant') {
+                source = 'ORB';
+                sourceClass = 'orb';
+            } else if (ev.service === 'gemini-operator' || ev.service === 'operator') {
+                source = 'Operator';
+                sourceClass = 'operator';
+            } else if (ev.service) {
+                source = ev.service;
+            }
             var vtid = ev.vtid || '-';
             var stage = ev.stage || '-';
             var provider = ev.provider || '-';
@@ -10544,6 +10557,7 @@ function renderTelemetryStreamPanel() {
             var status = ev.error_code ? 'Error' : 'OK';
 
             row.innerHTML = '<td>' + time + '</td>' +
+                '<td><span class="telemetry-source-badge telemetry-source-' + sourceClass + '">' + source + '</span></td>' +
                 '<td class="telemetry-vtid">' + vtid + '</td>' +
                 '<td><span class="telemetry-stage-badge telemetry-stage-' + stage + '">' + stage + '</span></td>' +
                 '<td>' + provider + '</td>' +
