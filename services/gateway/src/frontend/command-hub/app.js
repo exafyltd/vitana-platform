@@ -2723,6 +2723,42 @@ const state = {
         },
         // Debug
         showRawLedger: false
+    },
+
+    // VTID-01208: LLM Telemetry + Model Provenance + Runtime Routing Control
+    agentsTelemetry: {
+        // Routing Policy
+        policy: null,
+        providers: [],
+        models: [],
+        recommended: null,
+        policyLoading: false,
+        policyFetched: false,
+        policyError: null,
+        // Telemetry events
+        events: [],
+        eventsLoading: false,
+        eventsFetched: false,
+        eventsError: null,
+        // Filters
+        filters: {
+            vtid: '',
+            stage: '',
+            provider: '',
+            model: '',
+            service: '',
+            status: '',
+            timeWindow: '1h'
+        },
+        // UI state
+        activeTab: 'telemetry', // 'telemetry' | 'routing'
+        showAuditLog: false,
+        auditRecords: [],
+        auditLoading: false,
+        // Edit state
+        editingPolicy: null,
+        saveInProgress: false,
+        saveError: null
     }
 };
 
@@ -4680,6 +4716,9 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'agents' && tab === 'pipelines') {
         // VTID-01174: Agents Control Plane v2 - Pipelines (Runs + Traces)
         container.appendChild(renderAgentsPipelinesView());
+    } else if (moduleKey === 'agents' && tab === 'telemetry') {
+        // VTID-01208: LLM Telemetry + Model Provenance + Runtime Routing Control
+        container.appendChild(renderAgentsTelemetryView());
     } else {
         // Placeholder for other modules
         const placeholder = document.createElement('div');
@@ -9776,6 +9815,466 @@ function renderAgentsPipelinesView() {
     container.appendChild(debugSection);
 
     return container;
+}
+
+// ===========================================================================
+// VTID-01208: LLM Telemetry + Model Provenance + Runtime Routing Control
+// ===========================================================================
+
+/**
+ * VTID-01208: Fetch LLM routing policy from API
+ */
+async function fetchLLMRoutingPolicy() {
+    if (state.agentsTelemetry.policyLoading) return;
+
+    state.agentsTelemetry.policyLoading = true;
+    state.agentsTelemetry.policyError = null;
+    renderApp();
+
+    try {
+        var response = await fetch('/api/v1/llm/routing-policy', {
+            headers: withVitanaContextHeaders({})
+        });
+
+        if (!response.ok) {
+            var errorText = await response.text();
+            console.error('[VTID-01208] Policy fetch failed:', response.status, errorText);
+            state.agentsTelemetry.policyError = 'Failed to load routing policy: ' + response.status;
+        } else {
+            var data = await response.json();
+            if (data.ok && data.data) {
+                state.agentsTelemetry.policy = data.data.policy;
+                state.agentsTelemetry.providers = data.data.providers || [];
+                state.agentsTelemetry.models = data.data.models || [];
+                state.agentsTelemetry.recommended = data.data.recommended;
+                console.log('[VTID-01208] Policy loaded:', data.data.policy ? 'v' + data.data.policy.version : 'none');
+            } else {
+                state.agentsTelemetry.policyError = data.error || 'Invalid response format';
+            }
+        }
+    } catch (err) {
+        console.error('[VTID-01208] Policy fetch error:', err);
+        state.agentsTelemetry.policyError = 'Network error: ' + err.message;
+    }
+
+    state.agentsTelemetry.policyLoading = false;
+    state.agentsTelemetry.policyFetched = true;
+    renderApp();
+}
+
+/**
+ * VTID-01208: Fetch LLM telemetry events from API
+ */
+async function fetchLLMTelemetryEvents() {
+    if (state.agentsTelemetry.eventsLoading) return;
+
+    state.agentsTelemetry.eventsLoading = true;
+    state.agentsTelemetry.eventsError = null;
+    renderApp();
+
+    try {
+        var filters = state.agentsTelemetry.filters;
+        var params = new URLSearchParams();
+
+        if (filters.vtid) params.append('vtid', filters.vtid);
+        if (filters.stage) params.append('stage', filters.stage);
+        if (filters.provider) params.append('provider', filters.provider);
+        if (filters.model) params.append('model', filters.model);
+        if (filters.service) params.append('service', filters.service);
+        if (filters.status) params.append('status', filters.status);
+        params.append('limit', '100');
+
+        // Time window
+        var hoursMap = { '15m': 0.25, '1h': 1, '24h': 24, '7d': 168 };
+        var hours = hoursMap[filters.timeWindow] || 1;
+        var since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+        params.append('since', since);
+
+        var response = await fetch('/api/v1/llm/telemetry?' + params.toString(), {
+            headers: withVitanaContextHeaders({})
+        });
+
+        if (!response.ok) {
+            var errorText = await response.text();
+            console.error('[VTID-01208] Telemetry fetch failed:', response.status, errorText);
+            state.agentsTelemetry.eventsError = 'Failed to load telemetry: ' + response.status;
+            state.agentsTelemetry.events = [];
+        } else {
+            var data = await response.json();
+            if (data.ok && data.data && Array.isArray(data.data.events)) {
+                state.agentsTelemetry.events = data.data.events;
+                console.log('[VTID-01208] Telemetry loaded:', data.data.events.length, 'events');
+            } else {
+                state.agentsTelemetry.events = [];
+                state.agentsTelemetry.eventsError = data.error || 'Invalid response format';
+            }
+        }
+    } catch (err) {
+        console.error('[VTID-01208] Telemetry fetch error:', err);
+        state.agentsTelemetry.eventsError = 'Network error: ' + err.message;
+        state.agentsTelemetry.events = [];
+    }
+
+    state.agentsTelemetry.eventsLoading = false;
+    state.agentsTelemetry.eventsFetched = true;
+    renderApp();
+}
+
+/**
+ * VTID-01208: Render the Agents Telemetry view
+ */
+function renderAgentsTelemetryView() {
+    var container = document.createElement('div');
+    container.className = 'telemetry-container';
+
+    // Auto-fetch if not loaded
+    if (!state.agentsTelemetry.policyFetched && !state.agentsTelemetry.policyLoading) {
+        fetchLLMRoutingPolicy();
+    }
+    if (!state.agentsTelemetry.eventsFetched && !state.agentsTelemetry.eventsLoading) {
+        fetchLLMTelemetryEvents();
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'telemetry-header';
+
+    var title = document.createElement('h2');
+    title.textContent = 'LLM Telemetry & Routing';
+    header.appendChild(title);
+
+    // Tab buttons
+    var tabBar = document.createElement('div');
+    tabBar.className = 'telemetry-tab-bar';
+
+    var tabs = [
+        { key: 'telemetry', label: 'Telemetry Stream' },
+        { key: 'routing', label: 'Routing Policy' }
+    ];
+
+    tabs.forEach(function(t) {
+        var btn = document.createElement('button');
+        btn.className = 'telemetry-tab-btn' + (state.agentsTelemetry.activeTab === t.key ? ' active' : '');
+        btn.textContent = t.label;
+        btn.onclick = function() {
+            state.agentsTelemetry.activeTab = t.key;
+            renderApp();
+        };
+        tabBar.appendChild(btn);
+    });
+
+    header.appendChild(tabBar);
+    container.appendChild(header);
+
+    // Render active tab content
+    if (state.agentsTelemetry.activeTab === 'routing') {
+        container.appendChild(renderTelemetryRoutingPanel());
+    } else {
+        container.appendChild(renderTelemetryStreamPanel());
+    }
+
+    return container;
+}
+
+/**
+ * VTID-01208: Render the Telemetry Stream panel
+ */
+function renderTelemetryStreamPanel() {
+    var panel = document.createElement('div');
+    panel.className = 'telemetry-stream-panel';
+
+    // Filters bar
+    var filtersBar = document.createElement('div');
+    filtersBar.className = 'telemetry-filters-bar';
+
+    // VTID filter
+    var vtidInput = document.createElement('input');
+    vtidInput.type = 'text';
+    vtidInput.className = 'telemetry-filter-input';
+    vtidInput.placeholder = 'Filter by VTID...';
+    vtidInput.value = state.agentsTelemetry.filters.vtid;
+    vtidInput.onchange = function(e) {
+        state.agentsTelemetry.filters.vtid = e.target.value;
+        state.agentsTelemetry.eventsFetched = false;
+        fetchLLMTelemetryEvents();
+    };
+    filtersBar.appendChild(vtidInput);
+
+    // Stage filter
+    var stageSelect = document.createElement('select');
+    stageSelect.className = 'telemetry-filter-select';
+    stageSelect.innerHTML = '<option value="">All Stages</option>' +
+        '<option value="planner">Planner</option>' +
+        '<option value="worker">Worker</option>' +
+        '<option value="validator">Validator</option>' +
+        '<option value="operator">Operator</option>' +
+        '<option value="memory">Memory</option>';
+    stageSelect.value = state.agentsTelemetry.filters.stage;
+    stageSelect.onchange = function(e) {
+        state.agentsTelemetry.filters.stage = e.target.value;
+        state.agentsTelemetry.eventsFetched = false;
+        fetchLLMTelemetryEvents();
+    };
+    filtersBar.appendChild(stageSelect);
+
+    // Provider filter
+    var providerSelect = document.createElement('select');
+    providerSelect.className = 'telemetry-filter-select';
+    providerSelect.innerHTML = '<option value="">All Providers</option>' +
+        '<option value="anthropic">Anthropic</option>' +
+        '<option value="vertex">Vertex AI</option>' +
+        '<option value="openai">OpenAI</option>';
+    providerSelect.value = state.agentsTelemetry.filters.provider;
+    providerSelect.onchange = function(e) {
+        state.agentsTelemetry.filters.provider = e.target.value;
+        state.agentsTelemetry.eventsFetched = false;
+        fetchLLMTelemetryEvents();
+    };
+    filtersBar.appendChild(providerSelect);
+
+    // Time window
+    var timeSelect = document.createElement('select');
+    timeSelect.className = 'telemetry-filter-select';
+    timeSelect.innerHTML = '<option value="15m">Last 15m</option>' +
+        '<option value="1h">Last 1h</option>' +
+        '<option value="24h">Last 24h</option>' +
+        '<option value="7d">Last 7d</option>';
+    timeSelect.value = state.agentsTelemetry.filters.timeWindow;
+    timeSelect.onchange = function(e) {
+        state.agentsTelemetry.filters.timeWindow = e.target.value;
+        state.agentsTelemetry.eventsFetched = false;
+        fetchLLMTelemetryEvents();
+    };
+    filtersBar.appendChild(timeSelect);
+
+    // Refresh button
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-secondary';
+    refreshBtn.textContent = state.agentsTelemetry.eventsLoading ? 'Loading...' : 'Refresh';
+    refreshBtn.disabled = state.agentsTelemetry.eventsLoading;
+    refreshBtn.onclick = function() {
+        state.agentsTelemetry.eventsFetched = false;
+        fetchLLMTelemetryEvents();
+    };
+    filtersBar.appendChild(refreshBtn);
+
+    panel.appendChild(filtersBar);
+
+    // Error message
+    if (state.agentsTelemetry.eventsError) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'telemetry-error';
+        errorDiv.textContent = state.agentsTelemetry.eventsError;
+        panel.appendChild(errorDiv);
+    }
+
+    // Loading state
+    if (state.agentsTelemetry.eventsLoading) {
+        var loadingDiv = document.createElement('div');
+        loadingDiv.className = 'telemetry-loading';
+        loadingDiv.textContent = 'Loading telemetry events...';
+        panel.appendChild(loadingDiv);
+        return panel;
+    }
+
+    // Events table
+    var table = document.createElement('table');
+    table.className = 'telemetry-table';
+
+    var thead = document.createElement('thead');
+    thead.innerHTML = '<tr>' +
+        '<th>Time</th>' +
+        '<th>VTID</th>' +
+        '<th>Stage</th>' +
+        '<th>Provider</th>' +
+        '<th>Model</th>' +
+        '<th>Latency</th>' +
+        '<th>Tokens</th>' +
+        '<th>Cost</th>' +
+        '<th>Fallback</th>' +
+        '<th>Status</th>' +
+        '</tr>';
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    var events = state.agentsTelemetry.events || [];
+
+    if (events.length === 0) {
+        var emptyRow = document.createElement('tr');
+        emptyRow.innerHTML = '<td colspan="10" class="telemetry-empty">No telemetry events found for the selected filters.</td>';
+        tbody.appendChild(emptyRow);
+    } else {
+        events.forEach(function(ev) {
+            var row = document.createElement('tr');
+            row.className = ev.error_code ? 'telemetry-row-error' : 'telemetry-row-ok';
+
+            var time = ev.created_at ? new Date(ev.created_at).toLocaleTimeString() : '-';
+            var vtid = ev.vtid || '-';
+            var stage = ev.stage || '-';
+            var provider = ev.provider || '-';
+            var model = ev.model ? ev.model.replace('claude-3-5-sonnet-20241022', 'claude-3.5-sonnet').replace('gemini-1.5-', 'gem-1.5-') : '-';
+            var latency = ev.latency_ms ? ev.latency_ms + 'ms' : '-';
+            var tokens = (ev.input_tokens || 0) + '/' + (ev.output_tokens || 0);
+            var cost = ev.cost_estimate_usd ? '$' + ev.cost_estimate_usd.toFixed(4) : '-';
+            var fallback = ev.fallback_used ? 'Y' : 'N';
+            var status = ev.error_code ? 'Error' : 'OK';
+
+            row.innerHTML = '<td>' + time + '</td>' +
+                '<td class="telemetry-vtid">' + vtid + '</td>' +
+                '<td><span class="telemetry-stage-badge telemetry-stage-' + stage + '">' + stage + '</span></td>' +
+                '<td>' + provider + '</td>' +
+                '<td class="telemetry-model">' + model + '</td>' +
+                '<td>' + latency + '</td>' +
+                '<td>' + tokens + '</td>' +
+                '<td>' + cost + '</td>' +
+                '<td class="telemetry-fallback-' + (ev.fallback_used ? 'yes' : 'no') + '">' + fallback + '</td>' +
+                '<td class="telemetry-status-' + (ev.error_code ? 'error' : 'ok') + '">' + status + '</td>';
+
+            tbody.appendChild(row);
+        });
+    }
+
+    table.appendChild(tbody);
+    panel.appendChild(table);
+
+    // Stats
+    var stats = document.createElement('div');
+    stats.className = 'telemetry-stats';
+    stats.textContent = 'Showing ' + events.length + ' events';
+    panel.appendChild(stats);
+
+    return panel;
+}
+
+/**
+ * VTID-01208: Render the Routing Policy panel
+ */
+function renderTelemetryRoutingPanel() {
+    var panel = document.createElement('div');
+    panel.className = 'telemetry-routing-panel';
+
+    // Error message
+    if (state.agentsTelemetry.policyError) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'telemetry-error';
+        errorDiv.textContent = state.agentsTelemetry.policyError;
+        panel.appendChild(errorDiv);
+    }
+
+    // Loading state
+    if (state.agentsTelemetry.policyLoading) {
+        var loadingDiv = document.createElement('div');
+        loadingDiv.className = 'telemetry-loading';
+        loadingDiv.textContent = 'Loading routing policy...';
+        panel.appendChild(loadingDiv);
+        return panel;
+    }
+
+    var policy = state.agentsTelemetry.policy;
+    var recommended = state.agentsTelemetry.recommended;
+
+    // Policy info
+    var infoDiv = document.createElement('div');
+    infoDiv.className = 'routing-policy-info';
+    if (policy) {
+        infoDiv.innerHTML = '<strong>Active Policy:</strong> v' + policy.version + ' (' + (policy.environment || 'DEV') + ')' +
+            '<br><small>Activated: ' + (policy.activated_at ? new Date(policy.activated_at).toLocaleString() : 'N/A') + '</small>';
+    } else {
+        infoDiv.innerHTML = '<strong>No active policy</strong> - using safe defaults';
+    }
+    panel.appendChild(infoDiv);
+
+    // Policy table
+    var table = document.createElement('table');
+    table.className = 'routing-policy-table';
+
+    var thead = document.createElement('thead');
+    thead.innerHTML = '<tr>' +
+        '<th>Stage</th>' +
+        '<th>Primary Provider</th>' +
+        '<th>Primary Model</th>' +
+        '<th>Fallback Provider</th>' +
+        '<th>Fallback Model</th>' +
+        '</tr>';
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    var stages = ['planner', 'worker', 'validator', 'operator', 'memory'];
+    var policyData = policy ? policy.policy : recommended;
+
+    stages.forEach(function(stage) {
+        var config = policyData ? policyData[stage] : null;
+        var recConfig = recommended ? recommended[stage] : null;
+        var row = document.createElement('tr');
+
+        var stageName = stage.charAt(0).toUpperCase() + stage.slice(1);
+        var primaryProvider = config ? config.primary_provider : '-';
+        var primaryModel = config ? config.primary_model : '-';
+        var fallbackProvider = config ? config.fallback_provider : '-';
+        var fallbackModel = config ? config.fallback_model : '-';
+
+        // Check if non-recommended
+        var primaryNonRec = recConfig && config && (config.primary_provider !== recConfig.primary_provider || config.primary_model !== recConfig.primary_model);
+        var fallbackNonRec = recConfig && config && (config.fallback_provider !== recConfig.fallback_provider || config.fallback_model !== recConfig.fallback_model);
+
+        row.innerHTML = '<td><strong>' + stageName + '</strong></td>' +
+            '<td>' + primaryProvider + '</td>' +
+            '<td class="' + (primaryNonRec ? 'routing-non-recommended' : '') + '">' + formatModelName(primaryModel) + '</td>' +
+            '<td>' + fallbackProvider + '</td>' +
+            '<td class="' + (fallbackNonRec ? 'routing-non-recommended' : '') + '">' + formatModelName(fallbackModel) + '</td>';
+
+        tbody.appendChild(row);
+    });
+
+    table.appendChild(tbody);
+    panel.appendChild(table);
+
+    // Action buttons
+    var actions = document.createElement('div');
+    actions.className = 'routing-policy-actions';
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-secondary';
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.onclick = function() {
+        state.agentsTelemetry.policyFetched = false;
+        fetchLLMRoutingPolicy();
+    };
+    actions.appendChild(refreshBtn);
+
+    panel.appendChild(actions);
+
+    // Recommended defaults
+    if (recommended) {
+        var recSection = document.createElement('div');
+        recSection.className = 'routing-recommended-section';
+
+        var recTitle = document.createElement('h4');
+        recTitle.textContent = 'Safe Defaults (Recommended)';
+        recSection.appendChild(recTitle);
+
+        var recPre = document.createElement('pre');
+        recPre.className = 'routing-recommended-json';
+        recPre.textContent = JSON.stringify(recommended, null, 2);
+        recSection.appendChild(recPre);
+
+        panel.appendChild(recSection);
+    }
+
+    return panel;
+}
+
+/**
+ * VTID-01208: Format model name for display
+ */
+function formatModelName(model) {
+    if (!model) return '-';
+    return model
+        .replace('claude-3-5-sonnet-20241022', 'Claude 3.5 Sonnet')
+        .replace('claude-3-opus-20240229', 'Claude 3 Opus')
+        .replace('gemini-2.5-pro', 'Gemini 2.5 Pro')
+        .replace('gemini-1.5-pro', 'Gemini 1.5 Pro')
+        .replace('gemini-1.5-flash', 'Gemini 1.5 Flash');
 }
 
 /**

@@ -762,9 +762,15 @@ async function initMeContext() {
  * Returns identity (user_id, email, tenant_id, exafy_admin), profile, memberships.
  * Updates state.user with real name/avatar for profile capsule display.
  *
+ * VTID-01196: Now accepts fallbackEmail to preserve user info if API fails.
+ *
+ * @param {string} [fallbackEmail] - Email to use if API call fails
  * @returns {Promise<Object|null>} The auth identity or null on error
  */
-async function fetchAuthMe() {
+async function fetchAuthMe(fallbackEmail) {
+    // VTID-01196: Use stored login email as fallback
+    var emailFallback = fallbackEmail || state.loginUserEmail || '';
+
     if (!state.authToken) {
         console.log('[VTID-01171] No auth token, skipping auth/me fetch');
         // Set fallback user for unauthenticated state
@@ -791,21 +797,25 @@ async function fetchAuthMe() {
             var errorMsg = data.error || 'Failed to fetch auth identity';
             console.error('[VTID-01171] fetchAuthMe error:', errorMsg);
 
-            if (response.status === 401) {
-                // Clear invalid auth token
-                state.authToken = null;
-                localStorage.removeItem('vitana.authToken');
-            }
+            // VTID-01196: NEVER clear token on /auth/me failure
+            // Token should only be cleared on explicit logout
+            // The /auth/me endpoint may fail due to server-side JWT issues, but the token is still valid
 
             state.authIdentityError = errorMsg;
             state.authIdentityLoading = false;
 
-            // Set fallback user
+            // VTID-01196: Set fallback user - use stored email or extract from token if possible
+            var storedEmail = emailFallback || state.loginUserEmail || localStorage.getItem('vitana.userEmail') || '';
+            var fallbackName = storedEmail ? storedEmail.split('@')[0] : 'User';
+            var fallbackInitials = generateInitials(storedEmail || 'User');
             state.user = {
-                name: 'User',
-                role: 'User',
-                avatar: '?'
+                name: fallbackName,
+                role: state.viewRole || 'User',
+                avatar: fallbackInitials,
+                email: storedEmail || null,
+                avatarUrl: null
             };
+            console.warn('[VTID-01196] fetchAuthMe failed, using fallback. Token preserved.');
             return null;
         }
 
@@ -850,12 +860,18 @@ async function fetchAuthMe() {
         state.authIdentityError = err.message || 'Network error';
         state.authIdentityLoading = false;
 
-        // Set fallback user
+        // VTID-01196: Set fallback user - use stored email, token preserved
+        var storedEmail = emailFallback || state.loginUserEmail || localStorage.getItem('vitana.userEmail') || '';
+        var fallbackName = storedEmail ? storedEmail.split('@')[0] : 'User';
+        var fallbackInitials = generateInitials(storedEmail || 'User');
         state.user = {
-            name: 'User',
-            role: 'User',
-            avatar: '?'
+            name: fallbackName,
+            role: state.viewRole || 'User',
+            avatar: fallbackInitials,
+            email: storedEmail || null,
+            avatarUrl: null
         };
+        console.warn('[VTID-01196] fetchAuthMe exception, using fallback. Token preserved.');
         return null;
     }
 }
@@ -921,7 +937,7 @@ async function doLogin(email, password) {
             return { ok: false, error: data.error, message: errorMsg };
         }
 
-        console.log('[VTID-01186] doLogin success, user_id=', data.user?.id);
+        console.log('[VTID-01186] doLogin success, user_id=', data.user?.id, 'email=', data.user?.email || email);
 
         // Store the access token
         state.authToken = data.access_token;
@@ -931,6 +947,13 @@ async function doLogin(email, password) {
         if (data.refresh_token) {
             localStorage.setItem('vitana.refreshToken', data.refresh_token);
         }
+
+        // VTID-01196: Store login email as fallback for profile display
+        // This ensures we can show user info even if /auth/me fails
+        // Store in both state and localStorage for persistence across page refresh
+        var loginEmail = data.user?.email || email;
+        state.loginUserEmail = loginEmail;
+        localStorage.setItem('vitana.userEmail', loginEmail);
 
         state.loginLoading = false;
         state.loginError = null;
@@ -948,8 +971,25 @@ async function doLogin(email, password) {
         state.tasksError = null;
         state.governanceRulesError = null;
 
-        // Fetch full identity
-        await fetchAuthMe();
+        // VTID-01196: Set user state from login response immediately
+        // Use profile data if available (includes avatar_url from app_users)
+        var loginProfile = data.profile || {};
+        var displayName = loginProfile.display_name || (loginEmail ? loginEmail.split('@')[0] : 'User');
+        var avatarUrl = loginProfile.avatar_url || null;
+        var initialInitials = generateInitials(loginProfile.display_name || loginEmail || 'User');
+
+        state.user = {
+            name: displayName,
+            role: state.viewRole || 'User',
+            avatar: initialInitials,
+            email: loginEmail,
+            avatarUrl: avatarUrl
+        };
+        console.log('[VTID-01196] User state from login:', { name: displayName, avatarUrl: avatarUrl ? 'yes' : 'no' });
+        renderApp(); // Show immediate feedback
+
+        // Fetch full identity (will update with avatar_url if available)
+        await fetchAuthMe(loginEmail);
 
         // Also fetch me context to update MeState
         await fetchMeContext();
@@ -977,11 +1017,13 @@ function doLogout() {
     state.authToken = null;
     state.authIdentity = null;
     state.meContext = null;
+    state.loginUserEmail = null; // VTID-01196: Clear login email fallback
     MeState.loaded = false;
     MeState.me = null;
     localStorage.removeItem('vitana.authToken');
     localStorage.removeItem('vitana.refreshToken');
     localStorage.removeItem('vitana.viewRole');
+    localStorage.removeItem('vitana.userEmail');
 
     // Clear ORB conversation on logout
     if (typeof orbClearConversationState === 'function') {
@@ -2306,6 +2348,8 @@ const state = {
     loginPassword: '',
     loginLoading: false,
     loginError: null,
+    // VTID-01196: Store login email as fallback for profile display
+    loginUserEmail: null,
 
     // Docs / Screen Inventory
     screenInventory: null,
@@ -2331,6 +2375,13 @@ const state = {
     // VTID-0407: Governance Blocked Modal
     showGovernanceBlockedModal: false,
     governanceBlockedData: null, // { level, violations, service, vtid }
+
+    // VTID-01194: Execution Approval Confirmation Modal
+    // "IN_PROGRESS = Explicit Human Approval to Execute"
+    showExecutionApprovalModal: false,
+    executionApprovalVtid: null,
+    executionApprovalReason: '',
+    executionApprovalLoading: false,
 
     // Toast Notifications (VTID-0517)
     toasts: [],
@@ -2672,6 +2723,42 @@ const state = {
         },
         // Debug
         showRawLedger: false
+    },
+
+    // VTID-01208: LLM Telemetry + Model Provenance + Runtime Routing Control
+    agentsTelemetry: {
+        // Routing Policy
+        policy: null,
+        providers: [],
+        models: [],
+        recommended: null,
+        policyLoading: false,
+        policyFetched: false,
+        policyError: null,
+        // Telemetry events
+        events: [],
+        eventsLoading: false,
+        eventsFetched: false,
+        eventsError: null,
+        // Filters
+        filters: {
+            vtid: '',
+            stage: '',
+            provider: '',
+            model: '',
+            service: '',
+            status: '',
+            timeWindow: '1h'
+        },
+        // UI state
+        activeTab: 'telemetry', // 'telemetry' | 'routing'
+        showAuditLog: false,
+        auditRecords: [],
+        auditLoading: false,
+        // Edit state
+        editingPolicy: null,
+        saveInProgress: false,
+        saveError: null
     }
 };
 
@@ -3829,6 +3916,9 @@ function renderApp() {
     // VTID-0407: Governance Blocked Modal
     if (state.showGovernanceBlockedModal) root.appendChild(renderGovernanceBlockedModal());
 
+    // VTID-01194: Execution Approval Confirmation Modal
+    if (state.showExecutionApprovalModal) root.appendChild(renderExecutionApprovalModal());
+
     // VTID-01180: Autopilot Recommendations Modal
     if (state.showAutopilotRecommendationsModal) root.appendChild(renderAutopilotRecommendationsModal());
 
@@ -4626,6 +4716,9 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'agents' && tab === 'pipelines') {
         // VTID-01174: Agents Control Plane v2 - Pipelines (Runs + Traces)
         container.appendChild(renderAgentsPipelinesView());
+    } else if (moduleKey === 'agents' && tab === 'telemetry') {
+        // VTID-01208: LLM Telemetry + Model Provenance + Runtime Routing Control
+        container.appendChild(renderAgentsTelemetryView());
     } else {
         // Placeholder for other modules
         const placeholder = document.createElement('div');
@@ -5769,45 +5862,12 @@ function renderTaskDrawer() {
                     showToast('Cannot activate: spec must be approved first', 'warning');
                     return;
                 }
-                // VTID-01009: Emit lifecycle.started to OASIS (authoritative)
-                activateBtn.disabled = true;
-                activateBtn.textContent = 'Activating...';
-                try {
-                    var response = await fetch('/api/v1/vtid/lifecycle/start', {
-                        method: 'POST',
-                        headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
-                        body: JSON.stringify({
-                            vtid: vtid,
-                            source: 'command-hub',
-                            summary: vtid + ': Activated from Command Hub'
-                        })
-                    });
-                    var result = await response.json();
-                    if (result.ok) {
-                        // VTID-01009: Clear any stale local override since OASIS is now authoritative
-                        clearTaskStatusOverride(vtid);
-                        showToast('Task activated: ' + vtid + ' → In Progress', 'success');
-                        // Close drawer and refresh authoritative data
-                        state.selectedTask = null;
-                        state.selectedTaskDetail = null;
-                        state.drawerSpecVtid = null;
-                        state.drawerSpecText = '';
-                        state.drawerSpecEditing = false;
-                        // Refresh tasks from OASIS-derived board endpoint
-                        await fetchTasks();
-                    } else {
-                        // VTID-01009: API failed - show error, do NOT fake local override
-                        showToast('Activation failed: ' + (result.error || 'Unknown error'), 'error');
-                        activateBtn.disabled = false;
-                        activateBtn.textContent = 'Activate';
-                    }
-                } catch (e) {
-                    // VTID-01009: Network/server error - show error, do NOT fake local override
-                    console.error('[VTID-01009] Activate failed:', e);
-                    showToast('Activation failed: Network error', 'error');
-                    activateBtn.disabled = false;
-                    activateBtn.textContent = 'Activate';
-                }
+                // VTID-01194: Show confirmation modal instead of direct activation
+                // "Moving this task to In Progress will immediately start autonomous execution."
+                state.executionApprovalVtid = vtid;
+                state.executionApprovalReason = '';
+                state.showExecutionApprovalModal = true;
+                renderApp();
             };
             specActions.appendChild(activateBtn);
 
@@ -6360,7 +6420,7 @@ function renderProfileModal() {
         emailGroup.appendChild(emailInput);
         loginForm.appendChild(emailGroup);
 
-        // Password input
+        // Password input with visibility toggle
         const passwordGroup = document.createElement('div');
         passwordGroup.className = 'form-group';
         passwordGroup.style.marginBottom = '16px';
@@ -6373,6 +6433,11 @@ function renderProfileModal() {
         passwordLabel.style.fontWeight = '500';
         passwordGroup.appendChild(passwordLabel);
 
+        // Password input wrapper for eye icon
+        const passwordWrapper = document.createElement('div');
+        passwordWrapper.style.position = 'relative';
+        passwordWrapper.style.width = '100%';
+
         const passwordInput = document.createElement('input');
         passwordInput.type = 'password';
         passwordInput.id = 'login-password';
@@ -6380,7 +6445,7 @@ function renderProfileModal() {
         passwordInput.placeholder = 'Enter your password';
         passwordInput.value = state.loginPassword || '';
         passwordInput.style.width = '100%';
-        passwordInput.style.padding = '8px 12px';
+        passwordInput.style.padding = '8px 40px 8px 12px';
         passwordInput.style.border = '1px solid var(--border-color, #ccc)';
         passwordInput.style.borderRadius = '4px';
         passwordInput.style.boxSizing = 'border-box';
@@ -6394,7 +6459,38 @@ function renderProfileModal() {
                 doLogin(state.loginEmail, state.loginPassword);
             }
         };
-        passwordGroup.appendChild(passwordInput);
+        passwordWrapper.appendChild(passwordInput);
+
+        // Eye icon toggle button
+        const eyeToggle = document.createElement('button');
+        eyeToggle.type = 'button';
+        eyeToggle.className = 'password-toggle';
+        eyeToggle.style.position = 'absolute';
+        eyeToggle.style.right = '8px';
+        eyeToggle.style.top = '50%';
+        eyeToggle.style.transform = 'translateY(-50%)';
+        eyeToggle.style.background = 'none';
+        eyeToggle.style.border = 'none';
+        eyeToggle.style.cursor = 'pointer';
+        eyeToggle.style.padding = '4px';
+        eyeToggle.style.color = 'var(--text-secondary, #888)';
+        eyeToggle.style.fontSize = '1.1rem';
+        eyeToggle.innerHTML = '&#128065;'; // Eye icon (👁)
+        eyeToggle.title = 'Show password';
+        eyeToggle.onclick = function() {
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                eyeToggle.innerHTML = '&#128064;'; // Eyes icon (👀)
+                eyeToggle.title = 'Hide password';
+            } else {
+                passwordInput.type = 'password';
+                eyeToggle.innerHTML = '&#128065;'; // Eye icon (👁)
+                eyeToggle.title = 'Show password';
+            }
+        };
+        passwordWrapper.appendChild(eyeToggle);
+
+        passwordGroup.appendChild(passwordWrapper);
         loginForm.appendChild(passwordGroup);
 
         // Error message
@@ -6474,7 +6570,7 @@ function renderProfileModal() {
     name.textContent = state.user.name || 'User';
     body.appendChild(name);
 
-    // VTID-01171: Show email if available
+    // VTID-01171: Show email if available (centered under name)
     if (state.user.email) {
         const emailEl = document.createElement('div');
         emailEl.className = 'profile-email';
@@ -6482,6 +6578,7 @@ function renderProfileModal() {
         emailEl.style.color = 'var(--text-secondary, #666)';
         emailEl.style.fontSize = '0.875rem';
         emailEl.style.marginBottom = '8px';
+        emailEl.style.textAlign = 'center';
         body.appendChild(emailEl);
     }
 
@@ -6560,102 +6657,10 @@ function renderProfileModal() {
         VIEW_ROLES = ['Admin'];
     }
 
-    // VTID-01186: Role list with clickable items (matching vitana-v1 design)
-    const roleList = document.createElement('div');
-    roleList.className = 'profile-role-list';
-    roleList.style.margin = '0 0 16px 0';
-    roleList.style.padding = '0';
-
-    // Helper function to handle role click
-    async function handleRoleClick(newRole) {
-        const previousRole = state.viewRole;
-        state.viewRole = newRole;
-        renderApp();
-
-        var result = await setActiveRole(newRole);
-        if (result.ok) {
-            localStorage.setItem('vitana.viewRole', newRole);
-            showToast('Role set to ' + newRole, 'success');
-            // VTID-01186: Navigate to role-specific default screen
-            state.showProfileModal = false;
-            navigateToRoleDefaultScreen(newRole);
-            renderApp();
-        } else {
-            state.viewRole = previousRole;
-            if (MeState.me) {
-                MeState.me.active_role = previousRole.toLowerCase();
-            }
-            renderApp();
-            showToast(result.error || 'Failed to change role', 'error');
-        }
-    }
-
-    VIEW_ROLES.forEach(function(r) {
-        const roleItem = document.createElement('div');
-        roleItem.className = 'profile-role-item';
-        roleItem.style.display = 'flex';
-        roleItem.style.alignItems = 'center';
-        roleItem.style.padding = '10px 16px';
-        roleItem.style.cursor = 'pointer';
-        roleItem.style.borderRadius = '6px';
-        roleItem.style.marginBottom = '4px';
-        roleItem.style.transition = 'background-color 0.15s';
-
-        const isSelected = r === state.viewRole;
-        if (isSelected) {
-            roleItem.style.backgroundColor = 'rgba(59, 130, 246, 0.15)';
-        }
-
-        // Dot indicator
-        const dot = document.createElement('span');
-        dot.style.width = '8px';
-        dot.style.height = '8px';
-        dot.style.borderRadius = '50%';
-        dot.style.marginRight = '12px';
-        dot.style.flexShrink = '0';
-        if (isSelected) {
-            dot.style.backgroundColor = 'var(--color-accent, #4a90d9)';
-        } else {
-            dot.style.backgroundColor = 'transparent';
-            dot.style.border = '1px solid var(--color-border, #444)';
-        }
-        roleItem.appendChild(dot);
-
-        // Role text
-        const roleText = document.createElement('span');
-        roleText.textContent = r;
-        roleText.style.color = isSelected ? 'var(--color-accent, #4a90d9)' : 'var(--color-text-primary, #fff)';
-        roleItem.appendChild(roleText);
-
-        // Hover effect
-        roleItem.onmouseenter = function() {
-            if (!isSelected) {
-                roleItem.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
-            }
-        };
-        roleItem.onmouseleave = function() {
-            if (!isSelected) {
-                roleItem.style.backgroundColor = 'transparent';
-            }
-        };
-
-        // Click handler
-        roleItem.onclick = function() {
-            if (!isSelected) {
-                handleRoleClick(r);
-            }
-        };
-
-        roleList.appendChild(roleItem);
-    });
-    body.appendChild(roleList);
-
-    // VTID-01186: Dropdown selector (secondary, for accessibility)
+    // VTID-01196: Single dropdown for role selection (removed duplicate list)
     const roleSwitcher = document.createElement('div');
     roleSwitcher.className = 'profile-role-switcher';
-    roleSwitcher.style.borderTop = '1px solid var(--color-border, #333)';
-    roleSwitcher.style.paddingTop = '16px';
-    roleSwitcher.style.marginTop = '8px';
+    roleSwitcher.style.marginTop = '16px';
 
     const roleSelect = document.createElement('select');
     roleSelect.className = 'profile-role-select';
@@ -9810,6 +9815,466 @@ function renderAgentsPipelinesView() {
     container.appendChild(debugSection);
 
     return container;
+}
+
+// ===========================================================================
+// VTID-01208: LLM Telemetry + Model Provenance + Runtime Routing Control
+// ===========================================================================
+
+/**
+ * VTID-01208: Fetch LLM routing policy from API
+ */
+async function fetchLLMRoutingPolicy() {
+    if (state.agentsTelemetry.policyLoading) return;
+
+    state.agentsTelemetry.policyLoading = true;
+    state.agentsTelemetry.policyError = null;
+    renderApp();
+
+    try {
+        var response = await fetch('/api/v1/llm/routing-policy', {
+            headers: withVitanaContextHeaders({})
+        });
+
+        if (!response.ok) {
+            var errorText = await response.text();
+            console.error('[VTID-01208] Policy fetch failed:', response.status, errorText);
+            state.agentsTelemetry.policyError = 'Failed to load routing policy: ' + response.status;
+        } else {
+            var data = await response.json();
+            if (data.ok && data.data) {
+                state.agentsTelemetry.policy = data.data.policy;
+                state.agentsTelemetry.providers = data.data.providers || [];
+                state.agentsTelemetry.models = data.data.models || [];
+                state.agentsTelemetry.recommended = data.data.recommended;
+                console.log('[VTID-01208] Policy loaded:', data.data.policy ? 'v' + data.data.policy.version : 'none');
+            } else {
+                state.agentsTelemetry.policyError = data.error || 'Invalid response format';
+            }
+        }
+    } catch (err) {
+        console.error('[VTID-01208] Policy fetch error:', err);
+        state.agentsTelemetry.policyError = 'Network error: ' + err.message;
+    }
+
+    state.agentsTelemetry.policyLoading = false;
+    state.agentsTelemetry.policyFetched = true;
+    renderApp();
+}
+
+/**
+ * VTID-01208: Fetch LLM telemetry events from API
+ */
+async function fetchLLMTelemetryEvents() {
+    if (state.agentsTelemetry.eventsLoading) return;
+
+    state.agentsTelemetry.eventsLoading = true;
+    state.agentsTelemetry.eventsError = null;
+    renderApp();
+
+    try {
+        var filters = state.agentsTelemetry.filters;
+        var params = new URLSearchParams();
+
+        if (filters.vtid) params.append('vtid', filters.vtid);
+        if (filters.stage) params.append('stage', filters.stage);
+        if (filters.provider) params.append('provider', filters.provider);
+        if (filters.model) params.append('model', filters.model);
+        if (filters.service) params.append('service', filters.service);
+        if (filters.status) params.append('status', filters.status);
+        params.append('limit', '100');
+
+        // Time window
+        var hoursMap = { '15m': 0.25, '1h': 1, '24h': 24, '7d': 168 };
+        var hours = hoursMap[filters.timeWindow] || 1;
+        var since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+        params.append('since', since);
+
+        var response = await fetch('/api/v1/llm/telemetry?' + params.toString(), {
+            headers: withVitanaContextHeaders({})
+        });
+
+        if (!response.ok) {
+            var errorText = await response.text();
+            console.error('[VTID-01208] Telemetry fetch failed:', response.status, errorText);
+            state.agentsTelemetry.eventsError = 'Failed to load telemetry: ' + response.status;
+            state.agentsTelemetry.events = [];
+        } else {
+            var data = await response.json();
+            if (data.ok && data.data && Array.isArray(data.data.events)) {
+                state.agentsTelemetry.events = data.data.events;
+                console.log('[VTID-01208] Telemetry loaded:', data.data.events.length, 'events');
+            } else {
+                state.agentsTelemetry.events = [];
+                state.agentsTelemetry.eventsError = data.error || 'Invalid response format';
+            }
+        }
+    } catch (err) {
+        console.error('[VTID-01208] Telemetry fetch error:', err);
+        state.agentsTelemetry.eventsError = 'Network error: ' + err.message;
+        state.agentsTelemetry.events = [];
+    }
+
+    state.agentsTelemetry.eventsLoading = false;
+    state.agentsTelemetry.eventsFetched = true;
+    renderApp();
+}
+
+/**
+ * VTID-01208: Render the Agents Telemetry view
+ */
+function renderAgentsTelemetryView() {
+    var container = document.createElement('div');
+    container.className = 'telemetry-container';
+
+    // Auto-fetch if not loaded
+    if (!state.agentsTelemetry.policyFetched && !state.agentsTelemetry.policyLoading) {
+        fetchLLMRoutingPolicy();
+    }
+    if (!state.agentsTelemetry.eventsFetched && !state.agentsTelemetry.eventsLoading) {
+        fetchLLMTelemetryEvents();
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'telemetry-header';
+
+    var title = document.createElement('h2');
+    title.textContent = 'LLM Telemetry & Routing';
+    header.appendChild(title);
+
+    // Tab buttons
+    var tabBar = document.createElement('div');
+    tabBar.className = 'telemetry-tab-bar';
+
+    var tabs = [
+        { key: 'telemetry', label: 'Telemetry Stream' },
+        { key: 'routing', label: 'Routing Policy' }
+    ];
+
+    tabs.forEach(function(t) {
+        var btn = document.createElement('button');
+        btn.className = 'telemetry-tab-btn' + (state.agentsTelemetry.activeTab === t.key ? ' active' : '');
+        btn.textContent = t.label;
+        btn.onclick = function() {
+            state.agentsTelemetry.activeTab = t.key;
+            renderApp();
+        };
+        tabBar.appendChild(btn);
+    });
+
+    header.appendChild(tabBar);
+    container.appendChild(header);
+
+    // Render active tab content
+    if (state.agentsTelemetry.activeTab === 'routing') {
+        container.appendChild(renderTelemetryRoutingPanel());
+    } else {
+        container.appendChild(renderTelemetryStreamPanel());
+    }
+
+    return container;
+}
+
+/**
+ * VTID-01208: Render the Telemetry Stream panel
+ */
+function renderTelemetryStreamPanel() {
+    var panel = document.createElement('div');
+    panel.className = 'telemetry-stream-panel';
+
+    // Filters bar
+    var filtersBar = document.createElement('div');
+    filtersBar.className = 'telemetry-filters-bar';
+
+    // VTID filter
+    var vtidInput = document.createElement('input');
+    vtidInput.type = 'text';
+    vtidInput.className = 'telemetry-filter-input';
+    vtidInput.placeholder = 'Filter by VTID...';
+    vtidInput.value = state.agentsTelemetry.filters.vtid;
+    vtidInput.onchange = function(e) {
+        state.agentsTelemetry.filters.vtid = e.target.value;
+        state.agentsTelemetry.eventsFetched = false;
+        fetchLLMTelemetryEvents();
+    };
+    filtersBar.appendChild(vtidInput);
+
+    // Stage filter
+    var stageSelect = document.createElement('select');
+    stageSelect.className = 'telemetry-filter-select';
+    stageSelect.innerHTML = '<option value="">All Stages</option>' +
+        '<option value="planner">Planner</option>' +
+        '<option value="worker">Worker</option>' +
+        '<option value="validator">Validator</option>' +
+        '<option value="operator">Operator</option>' +
+        '<option value="memory">Memory</option>';
+    stageSelect.value = state.agentsTelemetry.filters.stage;
+    stageSelect.onchange = function(e) {
+        state.agentsTelemetry.filters.stage = e.target.value;
+        state.agentsTelemetry.eventsFetched = false;
+        fetchLLMTelemetryEvents();
+    };
+    filtersBar.appendChild(stageSelect);
+
+    // Provider filter
+    var providerSelect = document.createElement('select');
+    providerSelect.className = 'telemetry-filter-select';
+    providerSelect.innerHTML = '<option value="">All Providers</option>' +
+        '<option value="anthropic">Anthropic</option>' +
+        '<option value="vertex">Vertex AI</option>' +
+        '<option value="openai">OpenAI</option>';
+    providerSelect.value = state.agentsTelemetry.filters.provider;
+    providerSelect.onchange = function(e) {
+        state.agentsTelemetry.filters.provider = e.target.value;
+        state.agentsTelemetry.eventsFetched = false;
+        fetchLLMTelemetryEvents();
+    };
+    filtersBar.appendChild(providerSelect);
+
+    // Time window
+    var timeSelect = document.createElement('select');
+    timeSelect.className = 'telemetry-filter-select';
+    timeSelect.innerHTML = '<option value="15m">Last 15m</option>' +
+        '<option value="1h">Last 1h</option>' +
+        '<option value="24h">Last 24h</option>' +
+        '<option value="7d">Last 7d</option>';
+    timeSelect.value = state.agentsTelemetry.filters.timeWindow;
+    timeSelect.onchange = function(e) {
+        state.agentsTelemetry.filters.timeWindow = e.target.value;
+        state.agentsTelemetry.eventsFetched = false;
+        fetchLLMTelemetryEvents();
+    };
+    filtersBar.appendChild(timeSelect);
+
+    // Refresh button
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-secondary';
+    refreshBtn.textContent = state.agentsTelemetry.eventsLoading ? 'Loading...' : 'Refresh';
+    refreshBtn.disabled = state.agentsTelemetry.eventsLoading;
+    refreshBtn.onclick = function() {
+        state.agentsTelemetry.eventsFetched = false;
+        fetchLLMTelemetryEvents();
+    };
+    filtersBar.appendChild(refreshBtn);
+
+    panel.appendChild(filtersBar);
+
+    // Error message
+    if (state.agentsTelemetry.eventsError) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'telemetry-error';
+        errorDiv.textContent = state.agentsTelemetry.eventsError;
+        panel.appendChild(errorDiv);
+    }
+
+    // Loading state
+    if (state.agentsTelemetry.eventsLoading) {
+        var loadingDiv = document.createElement('div');
+        loadingDiv.className = 'telemetry-loading';
+        loadingDiv.textContent = 'Loading telemetry events...';
+        panel.appendChild(loadingDiv);
+        return panel;
+    }
+
+    // Events table
+    var table = document.createElement('table');
+    table.className = 'telemetry-table';
+
+    var thead = document.createElement('thead');
+    thead.innerHTML = '<tr>' +
+        '<th>Time</th>' +
+        '<th>VTID</th>' +
+        '<th>Stage</th>' +
+        '<th>Provider</th>' +
+        '<th>Model</th>' +
+        '<th>Latency</th>' +
+        '<th>Tokens</th>' +
+        '<th>Cost</th>' +
+        '<th>Fallback</th>' +
+        '<th>Status</th>' +
+        '</tr>';
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    var events = state.agentsTelemetry.events || [];
+
+    if (events.length === 0) {
+        var emptyRow = document.createElement('tr');
+        emptyRow.innerHTML = '<td colspan="10" class="telemetry-empty">No telemetry events found for the selected filters.</td>';
+        tbody.appendChild(emptyRow);
+    } else {
+        events.forEach(function(ev) {
+            var row = document.createElement('tr');
+            row.className = ev.error_code ? 'telemetry-row-error' : 'telemetry-row-ok';
+
+            var time = ev.created_at ? new Date(ev.created_at).toLocaleTimeString() : '-';
+            var vtid = ev.vtid || '-';
+            var stage = ev.stage || '-';
+            var provider = ev.provider || '-';
+            var model = ev.model ? ev.model.replace('claude-3-5-sonnet-20241022', 'claude-3.5-sonnet').replace('gemini-1.5-', 'gem-1.5-') : '-';
+            var latency = ev.latency_ms ? ev.latency_ms + 'ms' : '-';
+            var tokens = (ev.input_tokens || 0) + '/' + (ev.output_tokens || 0);
+            var cost = ev.cost_estimate_usd ? '$' + ev.cost_estimate_usd.toFixed(4) : '-';
+            var fallback = ev.fallback_used ? 'Y' : 'N';
+            var status = ev.error_code ? 'Error' : 'OK';
+
+            row.innerHTML = '<td>' + time + '</td>' +
+                '<td class="telemetry-vtid">' + vtid + '</td>' +
+                '<td><span class="telemetry-stage-badge telemetry-stage-' + stage + '">' + stage + '</span></td>' +
+                '<td>' + provider + '</td>' +
+                '<td class="telemetry-model">' + model + '</td>' +
+                '<td>' + latency + '</td>' +
+                '<td>' + tokens + '</td>' +
+                '<td>' + cost + '</td>' +
+                '<td class="telemetry-fallback-' + (ev.fallback_used ? 'yes' : 'no') + '">' + fallback + '</td>' +
+                '<td class="telemetry-status-' + (ev.error_code ? 'error' : 'ok') + '">' + status + '</td>';
+
+            tbody.appendChild(row);
+        });
+    }
+
+    table.appendChild(tbody);
+    panel.appendChild(table);
+
+    // Stats
+    var stats = document.createElement('div');
+    stats.className = 'telemetry-stats';
+    stats.textContent = 'Showing ' + events.length + ' events';
+    panel.appendChild(stats);
+
+    return panel;
+}
+
+/**
+ * VTID-01208: Render the Routing Policy panel
+ */
+function renderTelemetryRoutingPanel() {
+    var panel = document.createElement('div');
+    panel.className = 'telemetry-routing-panel';
+
+    // Error message
+    if (state.agentsTelemetry.policyError) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'telemetry-error';
+        errorDiv.textContent = state.agentsTelemetry.policyError;
+        panel.appendChild(errorDiv);
+    }
+
+    // Loading state
+    if (state.agentsTelemetry.policyLoading) {
+        var loadingDiv = document.createElement('div');
+        loadingDiv.className = 'telemetry-loading';
+        loadingDiv.textContent = 'Loading routing policy...';
+        panel.appendChild(loadingDiv);
+        return panel;
+    }
+
+    var policy = state.agentsTelemetry.policy;
+    var recommended = state.agentsTelemetry.recommended;
+
+    // Policy info
+    var infoDiv = document.createElement('div');
+    infoDiv.className = 'routing-policy-info';
+    if (policy) {
+        infoDiv.innerHTML = '<strong>Active Policy:</strong> v' + policy.version + ' (' + (policy.environment || 'DEV') + ')' +
+            '<br><small>Activated: ' + (policy.activated_at ? new Date(policy.activated_at).toLocaleString() : 'N/A') + '</small>';
+    } else {
+        infoDiv.innerHTML = '<strong>No active policy</strong> - using safe defaults';
+    }
+    panel.appendChild(infoDiv);
+
+    // Policy table
+    var table = document.createElement('table');
+    table.className = 'routing-policy-table';
+
+    var thead = document.createElement('thead');
+    thead.innerHTML = '<tr>' +
+        '<th>Stage</th>' +
+        '<th>Primary Provider</th>' +
+        '<th>Primary Model</th>' +
+        '<th>Fallback Provider</th>' +
+        '<th>Fallback Model</th>' +
+        '</tr>';
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    var stages = ['planner', 'worker', 'validator', 'operator', 'memory'];
+    var policyData = policy ? policy.policy : recommended;
+
+    stages.forEach(function(stage) {
+        var config = policyData ? policyData[stage] : null;
+        var recConfig = recommended ? recommended[stage] : null;
+        var row = document.createElement('tr');
+
+        var stageName = stage.charAt(0).toUpperCase() + stage.slice(1);
+        var primaryProvider = config ? config.primary_provider : '-';
+        var primaryModel = config ? config.primary_model : '-';
+        var fallbackProvider = config ? config.fallback_provider : '-';
+        var fallbackModel = config ? config.fallback_model : '-';
+
+        // Check if non-recommended
+        var primaryNonRec = recConfig && config && (config.primary_provider !== recConfig.primary_provider || config.primary_model !== recConfig.primary_model);
+        var fallbackNonRec = recConfig && config && (config.fallback_provider !== recConfig.fallback_provider || config.fallback_model !== recConfig.fallback_model);
+
+        row.innerHTML = '<td><strong>' + stageName + '</strong></td>' +
+            '<td>' + primaryProvider + '</td>' +
+            '<td class="' + (primaryNonRec ? 'routing-non-recommended' : '') + '">' + formatModelName(primaryModel) + '</td>' +
+            '<td>' + fallbackProvider + '</td>' +
+            '<td class="' + (fallbackNonRec ? 'routing-non-recommended' : '') + '">' + formatModelName(fallbackModel) + '</td>';
+
+        tbody.appendChild(row);
+    });
+
+    table.appendChild(tbody);
+    panel.appendChild(table);
+
+    // Action buttons
+    var actions = document.createElement('div');
+    actions.className = 'routing-policy-actions';
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-secondary';
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.onclick = function() {
+        state.agentsTelemetry.policyFetched = false;
+        fetchLLMRoutingPolicy();
+    };
+    actions.appendChild(refreshBtn);
+
+    panel.appendChild(actions);
+
+    // Recommended defaults
+    if (recommended) {
+        var recSection = document.createElement('div');
+        recSection.className = 'routing-recommended-section';
+
+        var recTitle = document.createElement('h4');
+        recTitle.textContent = 'Safe Defaults (Recommended)';
+        recSection.appendChild(recTitle);
+
+        var recPre = document.createElement('pre');
+        recPre.className = 'routing-recommended-json';
+        recPre.textContent = JSON.stringify(recommended, null, 2);
+        recSection.appendChild(recPre);
+
+        panel.appendChild(recSection);
+    }
+
+    return panel;
+}
+
+/**
+ * VTID-01208: Format model name for display
+ */
+function formatModelName(model) {
+    if (!model) return '-';
+    return model
+        .replace('claude-3-5-sonnet-20241022', 'Claude 3.5 Sonnet')
+        .replace('claude-3-opus-20240229', 'Claude 3 Opus')
+        .replace('gemini-2.5-pro', 'Gemini 2.5 Pro')
+        .replace('gemini-1.5-pro', 'Gemini 1.5 Pro')
+        .replace('gemini-1.5-flash', 'Gemini 1.5 Flash');
 }
 
 /**
@@ -16194,6 +16659,238 @@ function renderGovernanceBlockedModal() {
         renderApp();
     };
     footer.appendChild(dismissBtn);
+
+    modal.appendChild(footer);
+    overlay.appendChild(modal);
+    return overlay;
+}
+
+/**
+ * VTID-01194: Execution Approval Confirmation Modal
+ * "Moving this task to In Progress will immediately start autonomous execution."
+ *
+ * This modal is REQUIRED per VTID-01194 spec before moving a task to IN_PROGRESS.
+ * IN_PROGRESS = Explicit Human Approval to Execute
+ *
+ * Features:
+ * - Clear warning message about autonomous execution
+ * - Optional reason field for audit trail
+ * - Confirm/Cancel buttons
+ */
+function renderExecutionApprovalModal() {
+    if (!state.showExecutionApprovalModal || !state.executionApprovalVtid) {
+        return null;
+    }
+
+    var vtid = state.executionApprovalVtid;
+
+    var overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.onclick = function(e) {
+        if (e.target === overlay && !state.executionApprovalLoading) {
+            state.showExecutionApprovalModal = false;
+            state.executionApprovalVtid = null;
+            state.executionApprovalReason = '';
+            renderApp();
+        }
+    };
+
+    var modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.cssText = 'max-width: 480px; background: #1e293b; border: 1px solid rgba(74,222,128,0.3); box-shadow: 0 0 40px rgba(74,222,128,0.15);';
+
+    // === HEADER ===
+    var header = document.createElement('div');
+    header.className = 'modal-header';
+    header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.1);';
+
+    var titleRow = document.createElement('div');
+    titleRow.style.cssText = 'display: flex; align-items: center; gap: 10px;';
+
+    var iconSpan = document.createElement('span');
+    iconSpan.style.cssText = 'font-size: 22px;';
+    iconSpan.textContent = '\u26A1'; // Lightning bolt - execution
+    titleRow.appendChild(iconSpan);
+
+    var title = document.createElement('span');
+    title.textContent = 'Approve Execution';
+    title.style.cssText = 'font-size: 18px; font-weight: 600; color: #4ade80;';
+    titleRow.appendChild(title);
+
+    header.appendChild(titleRow);
+
+    var closeBtn = document.createElement('button');
+    closeBtn.innerHTML = '&times;';
+    closeBtn.style.cssText = 'background: none; border: none; color: #888; font-size: 28px; cursor: pointer; padding: 0; line-height: 1;';
+    closeBtn.disabled = state.executionApprovalLoading;
+    closeBtn.onclick = function() {
+        if (!state.executionApprovalLoading) {
+            state.showExecutionApprovalModal = false;
+            state.executionApprovalVtid = null;
+            state.executionApprovalReason = '';
+            renderApp();
+        }
+    };
+    header.appendChild(closeBtn);
+    modal.appendChild(header);
+
+    // === BODY ===
+    var body = document.createElement('div');
+    body.className = 'modal-body';
+    body.style.cssText = 'padding: 20px;';
+
+    // VTID badge
+    var vtidBadge = document.createElement('div');
+    vtidBadge.style.cssText = 'display: inline-block; padding: 6px 12px; background: rgba(96,165,250,0.15); border: 1px solid rgba(96,165,250,0.3); border-radius: 6px; font-size: 14px; font-weight: 600; color: #60a5fa; font-family: ui-monospace, monospace; margin-bottom: 16px;';
+    vtidBadge.textContent = vtid;
+    body.appendChild(vtidBadge);
+
+    // Warning message section (VTID-01194 required text)
+    var warningSection = document.createElement('div');
+    warningSection.style.cssText = 'margin-bottom: 20px; padding: 16px; background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.25); border-radius: 8px;';
+
+    var warningIcon = document.createElement('div');
+    warningIcon.style.cssText = 'font-size: 24px; margin-bottom: 8px;';
+    warningIcon.textContent = '\u26A0\uFE0F'; // Warning sign
+    warningSection.appendChild(warningIcon);
+
+    var warningTitle = document.createElement('div');
+    warningTitle.style.cssText = 'font-weight: 600; color: #fbbf24; margin-bottom: 8px; font-size: 15px;';
+    warningTitle.textContent = 'Autonomous Execution Warning';
+    warningSection.appendChild(warningTitle);
+
+    var warningText = document.createElement('p');
+    warningText.style.cssText = 'margin: 0; color: #f8fafc; font-size: 14px; line-height: 1.6;';
+    warningText.textContent = 'Moving this task to In Progress will immediately start autonomous execution. The system will begin working on this task automatically.';
+    warningSection.appendChild(warningText);
+
+    body.appendChild(warningSection);
+
+    // What will happen section
+    var whatHappensSection = document.createElement('div');
+    whatHappensSection.style.cssText = 'margin-bottom: 20px; padding: 14px; background: rgba(255,255,255,0.03); border-radius: 8px;';
+
+    var whatHappensTitle = document.createElement('div');
+    whatHappensTitle.style.cssText = 'font-weight: 500; color: #94a3b8; margin-bottom: 10px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;';
+    whatHappensTitle.textContent = 'What will happen:';
+    whatHappensSection.appendChild(whatHappensTitle);
+
+    var stepsList = document.createElement('ul');
+    stepsList.style.cssText = 'margin: 0; padding-left: 18px; color: #cbd5e1; font-size: 13px; line-height: 1.8;';
+    var steps = [
+        'Task status changes to IN_PROGRESS',
+        'Execution approval event emitted to OASIS',
+        'Worker dispatched to begin autonomous work',
+        'Progress tracked in Command Hub'
+    ];
+    steps.forEach(function(step) {
+        var li = document.createElement('li');
+        li.textContent = step;
+        stepsList.appendChild(li);
+    });
+    whatHappensSection.appendChild(stepsList);
+
+    body.appendChild(whatHappensSection);
+
+    // Optional reason field (audit-friendly per VTID-01194)
+    var reasonSection = document.createElement('div');
+    reasonSection.style.cssText = 'margin-bottom: 8px;';
+
+    var reasonLabel = document.createElement('label');
+    reasonLabel.style.cssText = 'display: block; font-size: 13px; color: #94a3b8; margin-bottom: 6px;';
+    reasonLabel.textContent = 'Reason (optional, for audit trail):';
+    reasonSection.appendChild(reasonLabel);
+
+    var reasonInput = document.createElement('input');
+    reasonInput.type = 'text';
+    reasonInput.placeholder = 'e.g., Approved after review, Testing new feature...';
+    reasonInput.style.cssText = 'width: 100%; padding: 10px 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; color: #f8fafc; font-size: 14px; box-sizing: border-box;';
+    reasonInput.value = state.executionApprovalReason || '';
+    reasonInput.disabled = state.executionApprovalLoading;
+    reasonInput.oninput = function(e) {
+        state.executionApprovalReason = e.target.value;
+    };
+    reasonSection.appendChild(reasonInput);
+
+    body.appendChild(reasonSection);
+    modal.appendChild(body);
+
+    // === FOOTER ===
+    var footer = document.createElement('div');
+    footer.className = 'modal-footer';
+    footer.style.cssText = 'display: flex; justify-content: flex-end; align-items: center; gap: 12px; padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.1);';
+
+    var cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.cssText = 'padding: 10px 20px; background: rgba(255,255,255,0.1); border: none; border-radius: 6px; color: #fff; cursor: pointer;';
+    cancelBtn.disabled = state.executionApprovalLoading;
+    cancelBtn.onclick = function() {
+        if (!state.executionApprovalLoading) {
+            state.showExecutionApprovalModal = false;
+            state.executionApprovalVtid = null;
+            state.executionApprovalReason = '';
+            renderApp();
+        }
+    };
+    footer.appendChild(cancelBtn);
+
+    var confirmBtn = document.createElement('button');
+    confirmBtn.className = 'btn btn-success';
+    confirmBtn.textContent = state.executionApprovalLoading ? 'Approving...' : 'Approve & Start Execution';
+    confirmBtn.style.cssText = 'padding: 10px 20px; background: #22c55e; border: none; border-radius: 6px; color: #fff; cursor: pointer; font-weight: 600;';
+    confirmBtn.disabled = state.executionApprovalLoading;
+    confirmBtn.onclick = async function() {
+        state.executionApprovalLoading = true;
+        renderApp();
+
+        try {
+            // VTID-01194: Call lifecycle/start with approval_reason
+            var response = await fetch('/api/v1/vtid/lifecycle/start', {
+                method: 'POST',
+                headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({
+                    vtid: vtid,
+                    source: 'command-hub',
+                    summary: vtid + ': Execution approved from Command Hub',
+                    approval_reason: state.executionApprovalReason || null
+                })
+            });
+            var result = await response.json();
+
+            if (result.ok) {
+                // Clear modal state
+                state.showExecutionApprovalModal = false;
+                state.executionApprovalVtid = null;
+                state.executionApprovalReason = '';
+                state.executionApprovalLoading = false;
+
+                // Clear task selection and override
+                clearTaskStatusOverride(vtid);
+                state.selectedTask = null;
+                state.selectedTaskDetail = null;
+                state.drawerSpecVtid = null;
+                state.drawerSpecText = '';
+                state.drawerSpecEditing = false;
+
+                // Show success toast
+                showToast('Execution approved: ' + vtid + ' \u2192 Autonomous execution started', 'success');
+
+                // Refresh tasks
+                await fetchTasks();
+            } else {
+                state.executionApprovalLoading = false;
+                showToast('Approval failed: ' + (result.error || 'Unknown error'), 'error');
+                renderApp();
+            }
+        } catch (e) {
+            console.error('[VTID-01194] Execution approval failed:', e);
+            state.executionApprovalLoading = false;
+            showToast('Approval failed: Network error', 'error');
+            renderApp();
+        }
+    };
+    footer.appendChild(confirmBtn);
 
     modal.appendChild(footer);
     overlay.appendChild(modal);

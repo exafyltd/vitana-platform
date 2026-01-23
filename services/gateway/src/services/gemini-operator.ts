@@ -37,6 +37,14 @@ import {
 import { emitOasisEvent } from './oasis-event-service';
 // VTID-0538: Knowledge Hub integration
 import { executeKnowledgeSearch, KNOWLEDGE_SEARCH_TOOL_DEFINITION } from './knowledge-hub';
+// VTID-01208: LLM Telemetry
+import {
+  startLLMCall,
+  completeLLMCall,
+  failLLMCall,
+  LLMCallContext,
+  hashPrompt
+} from './llm-telemetry-service';
 
 // Environment config
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -1191,14 +1199,27 @@ async function callVertexWithTools(
   text: string,
   threadId: string,
   conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
-  customSystemInstruction?: string
+  customSystemInstruction?: string,
+  vtid?: string | null
 ): Promise<{
   reply: string;
   toolCalls?: GeminiToolCall[];
+  telemetryContext?: LLMCallContext;
 }> {
   if (!vertexAI) {
     throw new Error('Vertex AI not initialized');
   }
+
+  // VTID-01208: Start LLM telemetry tracking
+  const llmContext = await startLLMCall({
+    vtid: vtid || null,
+    threadId,
+    service: 'gemini-operator',
+    stage: 'operator',
+    provider: 'vertex',
+    model: VERTEX_MODEL,
+    prompt: text,
+  });
 
   // VTID-01106: Use custom system instruction if provided (for ORB memory context)
   const systemPrompt = customSystemInstruction || `${OPERATOR_SYSTEM_PROMPT}\n\nCurrent thread: ${threadId}`;
@@ -1237,36 +1258,58 @@ async function callVertexWithTools(
 
   const request = { contents };
 
-  console.log(`[VTID-01023] Calling Vertex AI: model=${VERTEX_MODEL}, history_messages=${conversationHistory.length}`);
-  const response = await generativeModel.generateContent(request);
+  try {
+    console.log(`[VTID-01023] Calling Vertex AI: model=${VERTEX_MODEL}, history_messages=${conversationHistory.length}`);
+    const response = await generativeModel.generateContent(request);
 
-  const candidate = response.response?.candidates?.[0];
-  const content = candidate?.content;
+    const candidate = response.response?.candidates?.[0];
+    const content = candidate?.content;
 
-  if (!content) {
-    return { reply: 'I apologize, but I could not generate a response. Please try again.' };
-  }
+    // VTID-01208: Extract usage metadata if available
+    const usageMetadata = (response.response as any)?.usageMetadata;
+    const inputTokens = usageMetadata?.promptTokenCount;
+    const outputTokens = usageMetadata?.candidatesTokenCount;
 
-  // Check for function calls
-  const functionCallParts = content.parts?.filter((part: Part) => 'functionCall' in part);
+    if (!content) {
+      // VTID-01208: Complete telemetry for empty response
+      await completeLLMCall(llmContext, { inputTokens, outputTokens });
+      return { reply: 'I apologize, but I could not generate a response. Please try again.', telemetryContext: llmContext };
+    }
 
-  if (functionCallParts && functionCallParts.length > 0) {
-    const toolCalls: GeminiToolCall[] = functionCallParts.map((fc: Part) => {
-      const functionCall = (fc as any).functionCall;
-      return {
-        name: functionCall.name,
-        args: functionCall.args || {}
-      };
+    // Check for function calls
+    const functionCallParts = content.parts?.filter((part: Part) => 'functionCall' in part);
+
+    if (functionCallParts && functionCallParts.length > 0) {
+      const toolCalls: GeminiToolCall[] = functionCallParts.map((fc: Part) => {
+        const functionCall = (fc as any).functionCall;
+        return {
+          name: functionCall.name,
+          args: functionCall.args || {}
+        };
+      });
+      console.log(`[VTID-01023] Vertex AI returned ${toolCalls.length} tool call(s)`);
+
+      // VTID-01208: Complete telemetry for tool call response
+      await completeLLMCall(llmContext, { inputTokens, outputTokens });
+      return { reply: '', toolCalls, telemetryContext: llmContext };
+    }
+
+    // Extract text response
+    const textPart = content.parts?.find((part: Part) => 'text' in part);
+    const reply = textPart ? (textPart as any).text : '';
+    console.log(`[VTID-01023] Vertex AI returned text response (${reply.length} chars)`);
+
+    // VTID-01208: Complete telemetry for text response
+    await completeLLMCall(llmContext, { inputTokens, outputTokens });
+    return { reply, telemetryContext: llmContext };
+  } catch (error: any) {
+    // VTID-01208: Record failure in telemetry
+    await failLLMCall(llmContext, {
+      code: 'VERTEX_ERROR',
+      message: error.message || 'Unknown Vertex AI error'
     });
-    console.log(`[VTID-01023] Vertex AI returned ${toolCalls.length} tool call(s)`);
-    return { reply: '', toolCalls };
+    throw error;
   }
-
-  // Extract text response
-  const textPart = content.parts?.find((part: Part) => 'text' in part);
-  const reply = textPart ? (textPart as any).text : '';
-  console.log(`[VTID-01023] Vertex AI returned text response (${reply.length} chars)`);
-  return { reply };
 }
 
 /**
@@ -1524,14 +1567,27 @@ async function callGeminiWithTools(
   text: string,
   threadId: string,
   conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
-  customSystemInstruction?: string
+  customSystemInstruction?: string,
+  vtid?: string | null
 ): Promise<{
   reply: string;
   toolCalls?: GeminiToolCall[];
+  telemetryContext?: LLMCallContext;
 }> {
   if (!GOOGLE_GEMINI_API_KEY) {
     throw new Error('GOOGLE_GEMINI_API_KEY not configured');
   }
+
+  // VTID-01208: Start LLM telemetry tracking
+  const llmContext = await startLLMCall({
+    vtid: vtid || null,
+    threadId,
+    service: 'gemini-operator',
+    stage: 'operator',
+    provider: 'vertex',
+    model: 'gemini-pro',
+    prompt: text,
+  });
 
   // VTID-01027: Build contents array with conversation history
   const contents: Array<{ role: string; parts: Array<{ text: string }> }> = [];
@@ -1567,46 +1623,63 @@ async function callGeminiWithTools(
     }
   };
 
-  console.log(`[VTID-01027] Calling Gemini API with ${conversationHistory.length} history messages`);
+  try {
+    console.log(`[VTID-01027] Calling Gemini API with ${conversationHistory.length} history messages`);
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GOOGLE_GEMINI_API_KEY}`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(requestBody)
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GOOGLE_GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
     }
-  );
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
+    const result = await response.json() as any;
+    const candidate = result.candidates?.[0];
+    const content = candidate?.content;
+
+    // VTID-01208: Extract usage metadata if available
+    const usageMetadata = result.usageMetadata;
+    const inputTokens = usageMetadata?.promptTokenCount;
+    const outputTokens = usageMetadata?.candidatesTokenCount;
+
+    if (!content) {
+      await completeLLMCall(llmContext, { inputTokens, outputTokens });
+      return { reply: 'I apologize, but I could not generate a response. Please try again.', telemetryContext: llmContext };
+    }
+
+    // Check for function calls
+    const functionCalls = content.parts?.filter((part: any) => part.functionCall);
+
+    if (functionCalls && functionCalls.length > 0) {
+      const toolCalls: GeminiToolCall[] = functionCalls.map((fc: any) => ({
+        name: fc.functionCall.name,
+        args: fc.functionCall.args || {}
+      }));
+      await completeLLMCall(llmContext, { inputTokens, outputTokens });
+      return { reply: '', toolCalls, telemetryContext: llmContext };
+    }
+
+    // Extract text response
+    const textPart = content.parts?.find((part: any) => part.text);
+    await completeLLMCall(llmContext, { inputTokens, outputTokens });
+    return { reply: textPart?.text || '', telemetryContext: llmContext };
+  } catch (error: any) {
+    // VTID-01208: Record failure in telemetry
+    await failLLMCall(llmContext, {
+      code: 'GEMINI_API_ERROR',
+      message: error.message || 'Unknown Gemini API error'
+    });
+    throw error;
   }
-
-  const result = await response.json() as any;
-  const candidate = result.candidates?.[0];
-  const content = candidate?.content;
-
-  if (!content) {
-    return { reply: 'I apologize, but I could not generate a response. Please try again.' };
-  }
-
-  // Check for function calls
-  const functionCalls = content.parts?.filter((part: any) => part.functionCall);
-
-  if (functionCalls && functionCalls.length > 0) {
-    const toolCalls: GeminiToolCall[] = functionCalls.map((fc: any) => ({
-      name: fc.functionCall.name,
-      args: fc.functionCall.args || {}
-    }));
-    return { reply: '', toolCalls };
-  }
-
-  // Extract text response
-  const textPart = content.parts?.find((part: any) => part.text);
-  return { reply: textPart?.text || '' };
 }
 
 /**
