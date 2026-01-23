@@ -67,13 +67,15 @@ export const IDENTITY_DEFAULTS = {
 
 /**
  * Task domains for routing
+ * VTID-01207: Added 'infra' and 'ai' domains for specialized workers
  */
-export type TaskDomain = 'frontend' | 'backend' | 'memory' | 'mixed';
+export type TaskDomain = 'frontend' | 'backend' | 'memory' | 'infra' | 'ai' | 'mixed';
 
 /**
  * Worker subagent identifiers
+ * VTID-01207: Added worker-infra and worker-ai
  */
-export type WorkerSubagent = 'worker-frontend' | 'worker-backend' | 'worker-memory';
+export type WorkerSubagent = 'worker-frontend' | 'worker-backend' | 'worker-memory' | 'worker-infra' | 'worker-ai';
 
 /**
  * Change budget limits
@@ -236,32 +238,41 @@ const FRONTEND_KEYWORDS = [
   'dashboard', 'widget', 'component', 'template', 'render', 'display'
 ];
 
-const BACKEND_KEYWORDS = [
+/**
+ * VTID-01207: AI Domain Keywords
+ * For worker-ai: LLM, TTS/STT, multimodal, agents, intelligence engines
+ */
+const AI_KEYWORDS = [
   // AI & LLM Providers
   'Gemini', 'Claude', 'Anthropic', 'OpenAI', 'GPT', 'Vertex AI', 'Azure AI',
-  'Bedrock', 'Mistral', 'Llama', 'Cohere', 'AI21',
+  'Bedrock', 'Mistral', 'Llama', 'Cohere', 'AI21', 'Hugging Face', 'Replicate',
   // AI Core Concepts
-  'LLM', 'prompt', 'completion', 'token', 'context window', 'temperature',
-  'top_p', 'top_k', 'max_tokens', 'system prompt', 'user prompt', 'assistant',
+  'LLM', 'prompt', 'completion', 'context window', 'temperature',
+  'top_p', 'top_k', 'max_tokens', 'system prompt', 'user prompt', 'assistant message',
+  'prompt engineering', 'prompt template', 'few-shot', 'zero-shot', 'chain-of-thought',
   // Voice & Speech Processing (TTS/STT)
   'TTS', 'STT', 'text to speech', 'speech to text', 'transcription',
   'voice recognition', 'speech synthesis', 'audio processing', 'voice cloning',
-  'whisper', 'elevenlabs', 'google speech', 'azure speech',
+  'whisper', 'elevenlabs', 'google speech', 'azure speech', 'deepgram',
+  'voice model', 'voice engine', 'speech engine',
   // Multimodal & Vision
   'multimodal', 'vision', 'image recognition', 'image analysis', 'OCR',
-  'document parsing', 'visual understanding',
+  'document parsing', 'visual understanding', 'image generation', 'DALL-E',
+  'stable diffusion', 'midjourney', 'image embedding',
   // AI/ML Concepts
-  'inference', 'fine-tune', 'training', 'model', 'neural', 'NLP', 'ML',
-  'deep learning', 'machine learning', 'transformer', 'attention',
+  'inference', 'fine-tune', 'fine-tuning', 'training', 'neural', 'NLP', 'ML',
+  'deep learning', 'machine learning', 'transformer', 'attention mechanism',
+  'embedding', 'vector embedding', 'semantic', 'cosine similarity',
   // AI Tools & Capabilities
-  'function calling', 'tool use', 'structured output', 'JSON mode', 'streaming',
-  'chain of thought', 'reasoning', 'planning', 'reflection',
+  'function calling', 'tool use', 'structured output', 'JSON mode', 'streaming response',
+  'chain of thought', 'reasoning', 'planning', 'reflection', 'self-correction',
   // Agents & Orchestration
-  'agent', 'CrewAI', 'multi-agent', 'autonomous', 'orchestration', 'subagent',
-  'planner', 'executor', 'verifier', 'coordinator', 'dispatcher',
+  'agent', 'CrewAI', 'multi-agent', 'autonomous agent', 'orchestration', 'subagent',
+  'planner agent', 'executor agent', 'verifier agent', 'coordinator', 'dispatcher',
+  'agent framework', 'LangChain', 'LlamaIndex', 'AutoGPT', 'agent loop',
   // Automation & Autonomy
   'automation', 'autonomy', 'autopilot', 'autonomous mode', 'auto-pilot',
-  'scheduled task', 'background job', 'cron', 'trigger',
+  'scheduled task', 'background job', 'cron', 'trigger', 'batch processing',
   // Intelligence Engines (D20-D51)
   'intent detection', 'domain routing', 'context assembly',
   'situational awareness', 'emotional cognitive', 'availability readiness',
@@ -270,35 +281,97 @@ const BACKEND_KEYWORDS = [
   'longitudinal adaptation', 'signal detection', 'opportunity forecasting',
   'anticipatory guidance', 'social alignment', 'opportunity surfacing',
   'risk mitigation', 'trajectory reinforcement', 'overload detection',
-  // Matchmaking & Compatibility Logic
+  'contextual intelligence', 'predictive intelligence', 'proactive intelligence',
+  // Skills & AI Capabilities
+  'skill', 'capability', 'skill chain', 'preflight skill', 'skill registry',
+  'tool registry', 'skill execution', 'AI skill',
+  // Matchmaking & Recommendation AI
   'matchmaking', 'match algorithm', 'compatibility score', 'recommendation engine',
   'people matching', 'group matching', 'event matching', 'service matching',
-  // Skills & Capabilities
-  'skill', 'capability', 'chain', 'preflight', 'validation', 'execution',
-  'skill registry', 'skill chain', 'tool registry',
+  'collaborative filtering', 'content-based filtering', 'hybrid recommendation',
+  // Health & Longevity AI Processing
+  'wearable integration', 'lab report parsing', 'biomarker processing',
+  'health compute', 'longevity signal', 'daily recompute', 'health AI',
+  'predictive health', 'health scoring',
+  // AI-specific Vitana terms
+  'ORB', 'orb intelligence', 'vitana ai', 'ai processing', 'ai engine'
+];
+
+/**
+ * VTID-01207: Infrastructure Domain Keywords
+ * For worker-infra: CI/CD, DevOps, deployment, governance, monitoring
+ */
+const INFRA_KEYWORDS = [
+  // CI/CD & Build
+  'CI', 'CD', 'CICD', 'CI/CD', 'continuous integration', 'continuous deployment',
+  'pipeline', 'build', 'build pipeline', 'release', 'release pipeline',
+  'GitHub Actions', 'Cloud Build', 'Jenkins', 'CircleCI', 'GitLab CI',
+  'artifact', 'artifact registry', 'npm publish', 'docker build',
+  // Deployment & Infrastructure
+  'deploy', 'deployment', 'rollback', 'rollout', 'canary', 'blue-green',
+  'docker', 'container', 'Dockerfile', 'docker-compose', 'containerization',
+  'kubernetes', 'k8s', 'helm', 'pod', 'deployment.yaml', 'service.yaml',
+  'GCP', 'Google Cloud', 'cloud run', 'cloud function', 'cloud scheduler',
+  'AWS', 'Lambda', 'ECS', 'Azure', 'Azure Functions',
+  'Terraform', 'Pulumi', 'CloudFormation', 'infrastructure as code', 'IaC',
+  // Configuration & Secrets
+  'secrets', 'secret manager', 'environment variable', 'env var', 'config',
+  'configuration', '.env', 'config.yaml', 'settings', 'feature flag',
+  // Networking & Security Infrastructure
+  'VPC', 'network', 'firewall', 'load balancer', 'CDN', 'DNS', 'SSL', 'TLS',
+  'IAM', 'service account', 'role', 'permission', 'RBAC',
+  'ingress', 'egress', 'proxy', 'reverse proxy', 'nginx', 'traefik',
+  // Governance & Compliance
+  'governance', 'rule', 'policy', 'compliance', 'audit', 'audit log',
+  'access control', 'RLS', 'row level security', 'tenant isolation',
+  'security scan', 'vulnerability', 'CVE', 'OWASP', 'penetration test',
+  'SOC2', 'HIPAA', 'GDPR', 'data protection', 'privacy',
+  // Monitoring & Observability
+  'monitoring', 'metrics', 'alerting', 'alert', 'dashboard',
+  'logging', 'log aggregation', 'tracing', 'distributed tracing', 'observability',
+  'Prometheus', 'Grafana', 'Datadog', 'New Relic', 'Cloud Monitoring',
+  'health check', 'heartbeat', 'latency', 'throughput', 'error rate',
+  'SLA', 'SLO', 'SLI', 'uptime', 'availability', 'reliability',
+  'APM', 'application performance', 'performance monitoring',
+  // DevOps & Operations
+  'DevOps', 'SRE', 'site reliability', 'incident', 'incident response',
+  'on-call', 'runbook', 'playbook', 'disaster recovery', 'backup',
+  'scaling', 'auto-scaling', 'horizontal scaling', 'vertical scaling',
+  'cost optimization', 'FinOps', 'cloud cost',
+  // Version Control & Git
+  'git', 'branch', 'merge', 'pull request', 'PR', 'code review',
+  'commit', 'tag', 'release tag', 'version', 'semver',
+  // Vitana Infrastructure Specifics
+  'worker-runner', 'gateway deployment', 'service mesh', 'microservice'
+];
+
+/**
+ * Backend Domain Keywords (API, business logic, commerce)
+ * VTID-01207: Trimmed to exclude AI and infra keywords now handled by dedicated workers
+ */
+const BACKEND_KEYWORDS = [
   // API & Backend Core
   'endpoint', 'API', 'REST', 'GraphQL', 'POST', 'GET', 'PUT', 'PATCH', 'DELETE',
   'middleware', 'router', 'handler', 'controller', 'service', 'route',
   'request', 'response', 'authentication', 'authorization', 'JWT', 'OAuth',
+  'CORS', 'rate limit', 'throttle', 'validation', 'sanitization',
   // Commerce & Token Logic
   'credits', 'VTN', 'token', 'wallet logic', 'transaction processing',
   'payment gateway', 'stripe', 'billing', 'subscription', 'staking',
-  // Health & Longevity Processing
-  'wearable integration', 'lab report parsing', 'biomarker processing',
-  'health compute', 'longevity signal', 'daily recompute',
-  // Infrastructure & DevOps
-  'deploy', 'deployment', 'CI', 'CD', 'CICD', 'pipeline', 'workflow',
-  'docker', 'container', 'kubernetes', 'GCP', 'cloud run', 'cloud function',
-  'artifact registry', 'secrets', 'environment', 'config', 'rollback',
-  // Governance & Compliance
-  'governance', 'rule', 'policy', 'compliance', 'audit', 'permission',
-  'access control', 'RLS', 'tenant isolation', 'security', 'consent',
-  // System Performance
-  'performance', 'monitoring', 'health', 'heartbeat', 'latency', 'throughput',
-  'error rate', 'SLA', 'uptime', 'logging', 'tracing', 'observability', 'alerting',
+  'checkout', 'order processing', 'invoice', 'refund', 'pricing logic',
+  // Business Logic
+  'business rule', 'domain logic', 'use case', 'workflow logic',
+  'state machine', 'event handler', 'command handler', 'query handler',
+  // Integration & External Services
+  'webhook', 'callback', 'integration', 'third-party', 'external API',
+  'OAuth provider', 'SSO', 'SAML', 'identity provider',
+  // Data Processing
+  'data transform', 'ETL', 'data pipeline', 'batch job', 'queue',
+  'message queue', 'pub/sub', 'event bus', 'async processing',
   // Vitana Backend Specifics
   'gateway', 'operator', 'worker', 'orchestrator', 'terminalize', 'dispatch',
-  'SSE', 'websocket', 'express', 'node', 'backend'
+  'SSE', 'websocket', 'express', 'node', 'backend', 'server',
+  'OASIS API', 'VTID API', 'ledger API'
 ];
 
 const MEMORY_KEYWORDS = [
@@ -366,20 +439,54 @@ const FRONTEND_PATH_PATTERNS = [
 ];
 
 const BACKEND_PATH_PATTERNS = [
-  /services\/gateway\/src\//,
-  /services\/.*\/src\//,
-  /\.ts$/,
+  /services\/gateway\/src\/routes\//,
+  /services\/gateway\/src\/controllers\//,
+  /services\/.*\/src\/routes\//,
+  /services\/.*\/src\/controllers\//,
   /\/routes\//,
   /\/controllers\//,
-  /\/services\//,
-  /\/middleware\//,
-  // VTID-01206: Added CI/CD, infrastructure, workflow patterns
+  /\/middleware\//
+];
+
+/**
+ * VTID-01207: Infrastructure path patterns for worker-infra
+ */
+const INFRA_PATH_PATTERNS = [
   /\.github\/workflows\//,
+  /\.github\/actions\//,
   /scripts\/deploy\//,
+  /scripts\/ci\//,
+  /scripts\/infra\//,
   /scripts\//,
   /Dockerfile/,
-  /\.yaml$/,
-  /\.yml$/
+  /docker-compose/,
+  /\.dockerfile$/,
+  /cloudbuild\.yaml$/,
+  /terraform\//,
+  /pulumi\//,
+  /k8s\//,
+  /kubernetes\//,
+  /helm\//,
+  /\.tf$/,
+  /Makefile/,
+  /\.sh$/
+];
+
+/**
+ * VTID-01207: AI/Agent path patterns for worker-ai
+ */
+const AI_PATH_PATTERNS = [
+  /services\/agents\//,
+  /services\/gateway\/src\/services\/.*-intelligence/,
+  /services\/gateway\/src\/services\/orb/,
+  /services\/gateway\/src\/services\/ai/,
+  /services\/gateway\/src\/services\/skills/,
+  /\/agents\//,
+  /\/intelligence\//,
+  /\/ai\//,
+  /\/llm\//,
+  /\/prompts\//,
+  /\.prompt\.md$/
 ];
 
 const MEMORY_PATH_PATTERNS = [
@@ -395,10 +502,15 @@ const MEMORY_PATH_PATTERNS = [
 // Default Change Budgets
 // =============================================================================
 
+/**
+ * VTID-01207: Updated to include infra and ai domain budgets
+ */
 const DEFAULT_BUDGETS: Record<TaskDomain, ChangeBudget> = {
   frontend: { max_files: 10, max_directories: 5 },
   backend: { max_files: 15, max_directories: 8 },
   memory: { max_files: 5, max_directories: 3 },
+  infra: { max_files: 10, max_directories: 6 },
+  ai: { max_files: 12, max_directories: 5 },
   mixed: { max_files: 20, max_directories: 10 }
 };
 
@@ -464,6 +576,7 @@ async function emitSubagentEvent(
 
 /**
  * Detect domain from keywords in title/spec
+ * VTID-01207: Added infra and ai domain detection
  */
 function detectDomainFromKeywords(text: string): TaskDomain[] {
   const normalizedText = text.toLowerCase();
@@ -472,6 +585,16 @@ function detectDomainFromKeywords(text: string): TaskDomain[] {
   // Check frontend keywords
   if (FRONTEND_KEYWORDS.some(kw => normalizedText.includes(kw.toLowerCase()))) {
     domains.push('frontend');
+  }
+
+  // Check AI keywords (VTID-01207)
+  if (AI_KEYWORDS.some(kw => normalizedText.includes(kw.toLowerCase()))) {
+    domains.push('ai');
+  }
+
+  // Check infra keywords (VTID-01207)
+  if (INFRA_KEYWORDS.some(kw => normalizedText.includes(kw.toLowerCase()))) {
+    domains.push('infra');
   }
 
   // Check backend keywords
@@ -489,20 +612,38 @@ function detectDomainFromKeywords(text: string): TaskDomain[] {
 
 /**
  * Detect domain from target paths
+ * VTID-01207: Added infra and ai path detection
  */
 function detectDomainFromPaths(paths: string[]): TaskDomain[] {
   const domains: TaskDomain[] = [];
 
   for (const path of paths) {
+    // Check frontend paths
     if (FRONTEND_PATH_PATTERNS.some(pattern => pattern.test(path))) {
       if (!domains.includes('frontend')) domains.push('frontend');
     }
+
+    // Check AI paths (VTID-01207) - agents, intelligence, skills
+    if (AI_PATH_PATTERNS.some(pattern => pattern.test(path))) {
+      if (!domains.includes('ai')) domains.push('ai');
+    }
+
+    // Check infra paths (VTID-01207) - CI/CD, deploy scripts, Docker
+    if (INFRA_PATH_PATTERNS.some(pattern => pattern.test(path))) {
+      if (!domains.includes('infra')) domains.push('infra');
+    }
+
+    // Check backend paths (excluding frontend, infra, and ai paths)
     if (BACKEND_PATH_PATTERNS.some(pattern => pattern.test(path))) {
-      // Exclude frontend paths from backend detection
-      if (!FRONTEND_PATH_PATTERNS.some(p => p.test(path))) {
+      const isFrontend = FRONTEND_PATH_PATTERNS.some(p => p.test(path));
+      const isInfra = INFRA_PATH_PATTERNS.some(p => p.test(path));
+      const isAi = AI_PATH_PATTERNS.some(p => p.test(path));
+      if (!isFrontend && !isInfra && !isAi) {
         if (!domains.includes('backend')) domains.push('backend');
       }
     }
+
+    // Check memory paths
     if (MEMORY_PATH_PATTERNS.some(pattern => pattern.test(path))) {
       if (!domains.includes('memory')) domains.push('memory');
     }
@@ -548,6 +689,7 @@ function inferTaskDomain(payload: WorkOrderPayload): TaskDomain {
 
 /**
  * Get subagent ID for domain
+ * VTID-01207: Added worker-infra and worker-ai routing
  */
 function getSubagentForDomain(domain: TaskDomain): WorkerSubagent | null {
   switch (domain) {
@@ -557,6 +699,10 @@ function getSubagentForDomain(domain: TaskDomain): WorkerSubagent | null {
       return 'worker-backend';
     case 'memory':
       return 'worker-memory';
+    case 'infra':
+      return 'worker-infra';
+    case 'ai':
+      return 'worker-ai';
     case 'mixed':
       return null; // Mixed requires splitting
     default:
@@ -570,6 +716,9 @@ function getSubagentForDomain(domain: TaskDomain): WorkerSubagent | null {
 
 /**
  * Validate that target paths are allowed for a domain
+ */
+/**
+ * VTID-01207: Updated to handle infra and ai domains
  */
 function validatePathsForDomain(
   domain: TaskDomain,
@@ -609,6 +758,14 @@ function validatePathsForDomain(
       case 'memory':
         isValid = MEMORY_PATH_PATTERNS.some(pattern => pattern.test(path));
         break;
+
+      case 'infra':
+        isValid = INFRA_PATH_PATTERNS.some(pattern => pattern.test(path));
+        break;
+
+      case 'ai':
+        isValid = AI_PATH_PATTERNS.some(pattern => pattern.test(path));
+        break;
     }
 
     if (!isValid) {
@@ -646,8 +803,9 @@ function validatePayload(payload: WorkOrderPayload): { valid: boolean; errors: s
   }
 
   // Validate task_domain if provided
+  // VTID-01207: Added infra and ai to valid domains
   if (payload.task_domain) {
-    const validDomains: TaskDomain[] = ['frontend', 'backend', 'memory', 'mixed'];
+    const validDomains: TaskDomain[] = ['frontend', 'backend', 'memory', 'infra', 'ai', 'mixed'];
     if (!validDomains.includes(payload.task_domain)) {
       errors.push(`task_domain must be one of: ${validDomains.join(', ')}`);
     }
@@ -1241,6 +1399,9 @@ export const _internal = {
   FRONTEND_KEYWORDS,
   BACKEND_KEYWORDS,
   MEMORY_KEYWORDS,
+  // VTID-01207: Added infra and ai keyword exports
+  INFRA_KEYWORDS,
+  AI_KEYWORDS,
   DEFAULT_BUDGETS,
   // VTID-01175: Verification internals
   VERIFICATION_ENGINE_URL,

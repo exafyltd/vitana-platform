@@ -81,12 +81,41 @@ const SKILL_TO_GOVERNANCE_RULE: Record<string, { rule_id: string; rule_name: str
     rule_id: 'GOV-A11Y-R.1',
     rule_name: 'ACCESSIBILITY_VALIDATION',
   },
+  // VTID-01207: Infra domain skills
+  'worker.infra.validate_deploy_config': {
+    rule_id: 'GOV-INFRA-R.1',
+    rule_name: 'DEPLOY_CONFIG_VALIDATION',
+  },
+  'worker.infra.check_secrets_policy': {
+    rule_id: 'GOV-INFRA-R.2',
+    rule_name: 'SECRETS_POLICY_CHECK',
+  },
+  'worker.infra.validate_ci_pipeline': {
+    rule_id: 'GOV-INFRA-R.3',
+    rule_name: 'CI_PIPELINE_VALIDATION',
+  },
+  // VTID-01207: AI domain skills
+  'worker.ai.validate_model_config': {
+    rule_id: 'GOV-AI-R.1',
+    rule_name: 'MODEL_CONFIG_VALIDATION',
+  },
+  'worker.ai.check_prompt_safety': {
+    rule_id: 'GOV-AI-R.2',
+    rule_name: 'PROMPT_SAFETY_CHECK',
+  },
+  'worker.ai.validate_agent_permissions': {
+    rule_id: 'GOV-AI-R.3',
+    rule_name: 'AGENT_PERMISSIONS_VALIDATION',
+  },
 };
 
 // =============================================================================
 // Preflight Chain Definitions (from VTID-01164)
 // =============================================================================
 
+/**
+ * VTID-01207: Added infra and ai preflight chains
+ */
 const PREFLIGHT_CHAINS: Record<string, string[]> = {
   frontend: [
     'worker.common.check_memory_first',
@@ -102,12 +131,29 @@ const PREFLIGHT_CHAINS: Record<string, string[]> = {
     'worker.memory.validate_rls_policy',
     'worker.memory.preview_migration',
   ],
+  // VTID-01207: Infrastructure domain chain
+  infra: [
+    'worker.common.check_memory_first',
+    'worker.infra.validate_deploy_config',
+    'worker.infra.check_secrets_policy',
+    'worker.infra.validate_ci_pipeline',
+  ],
+  // VTID-01207: AI/Agent domain chain
+  ai: [
+    'worker.common.check_memory_first',
+    'worker.ai.validate_model_config',
+    'worker.ai.check_prompt_safety',
+    'worker.ai.validate_agent_permissions',
+  ],
 };
 
 // =============================================================================
 // Skill Definitions (registered skills from VTID-01164)
 // =============================================================================
 
+/**
+ * VTID-01207: Added infra and ai skill definitions
+ */
 const SKILL_DEFINITIONS = [
   { skill_id: 'worker.common.check_memory_first', name: 'Check Memory First', domain: 'common' },
   { skill_id: 'worker.backend.security_scan', name: 'Backend Security Scan', domain: 'backend' },
@@ -115,6 +161,14 @@ const SKILL_DEFINITIONS = [
   { skill_id: 'worker.memory.preview_migration', name: 'Preview Migration', domain: 'memory' },
   { skill_id: 'worker.backend.analyze_service', name: 'Analyze Service', domain: 'backend' },
   { skill_id: 'worker.frontend.validate_accessibility', name: 'Validate Accessibility', domain: 'frontend' },
+  // VTID-01207: Infra domain skills
+  { skill_id: 'worker.infra.validate_deploy_config', name: 'Validate Deploy Config', domain: 'infra' },
+  { skill_id: 'worker.infra.check_secrets_policy', name: 'Check Secrets Policy', domain: 'infra' },
+  { skill_id: 'worker.infra.validate_ci_pipeline', name: 'Validate CI Pipeline', domain: 'infra' },
+  // VTID-01207: AI domain skills
+  { skill_id: 'worker.ai.validate_model_config', name: 'Validate Model Config', domain: 'ai' },
+  { skill_id: 'worker.ai.check_prompt_safety', name: 'Check Prompt Safety', domain: 'ai' },
+  { skill_id: 'worker.ai.validate_agent_permissions', name: 'Validate Agent Permissions', domain: 'ai' },
 ];
 
 // =============================================================================
@@ -157,6 +211,7 @@ async function executeSkillAsGovernance(
     let issues: unknown[] = [];
 
     // Execute skill based on ID
+    // VTID-01207: Added infra and ai skill cases
     switch (skillId) {
       case 'worker.common.check_memory_first':
         ({ ok, recommendation } = await runCheckMemoryFirst(vtid, context));
@@ -175,6 +230,26 @@ async function executeSkillAsGovernance(
         break;
       case 'worker.frontend.validate_accessibility':
         ({ ok, recommendation, issues } = await runValidateAccessibility(vtid, context));
+        break;
+      // VTID-01207: Infra skills
+      case 'worker.infra.validate_deploy_config':
+        ({ ok, recommendation, issues } = await runValidateDeployConfig(vtid, context));
+        break;
+      case 'worker.infra.check_secrets_policy':
+        ({ ok, recommendation, issues } = await runCheckSecretsPolicy(vtid, context));
+        break;
+      case 'worker.infra.validate_ci_pipeline':
+        ({ ok, recommendation, issues } = await runValidateCiPipeline(vtid, context));
+        break;
+      // VTID-01207: AI skills
+      case 'worker.ai.validate_model_config':
+        ({ ok, recommendation, issues } = await runValidateModelConfig(vtid, context));
+        break;
+      case 'worker.ai.check_prompt_safety':
+        ({ ok, recommendation, issues } = await runCheckPromptSafety(vtid, context));
+        break;
+      case 'worker.ai.validate_agent_permissions':
+        ({ ok, recommendation, issues } = await runValidateAgentPermissions(vtid, context));
         break;
     }
 
@@ -329,15 +404,198 @@ async function runValidateAccessibility(vtid: string, context: PreflightContext)
 }
 
 // =============================================================================
+// VTID-01207: Infra Domain Skills
+// =============================================================================
+
+async function runValidateDeployConfig(vtid: string, context: PreflightContext): Promise<SkillResult> {
+  console.log(`[GOV-INFRA-R.1] validate_deploy_config: Checking deployment configuration`);
+  const issues: unknown[] = [];
+
+  // Check for Dockerfile or deployment files
+  const deployFiles = context.target_paths.filter(p =>
+    p.includes('Dockerfile') || p.includes('deploy') || p.endsWith('.yaml') || p.endsWith('.yml')
+  );
+
+  if (deployFiles.length === 0) {
+    return { ok: true, recommendation: 'no_deploy_files', issues: [] };
+  }
+
+  // Check for potentially dangerous patterns
+  for (const path of deployFiles) {
+    if (path.includes('prod') && !context.query.toLowerCase().includes('production')) {
+      issues.push({
+        severity: 'warning',
+        path,
+        message: 'Production deployment file modified without explicit production intent',
+      });
+    }
+  }
+
+  return {
+    ok: issues.filter((i: any) => i.severity === 'critical').length === 0,
+    recommendation: issues.length > 0 ? 'review_deploy_config' : 'deploy_config_ok',
+    issues,
+  };
+}
+
+async function runCheckSecretsPolicy(vtid: string, context: PreflightContext): Promise<SkillResult> {
+  console.log(`[GOV-INFRA-R.2] check_secrets_policy: Checking secrets policy`);
+  const issues: unknown[] = [];
+
+  // Check for hardcoded secrets patterns
+  const sensitivePatterns = ['.env', 'credentials', 'secret', 'apikey', 'api_key', 'password'];
+  for (const path of context.target_paths) {
+    const lowerPath = path.toLowerCase();
+    for (const pattern of sensitivePatterns) {
+      if (lowerPath.includes(pattern)) {
+        issues.push({
+          severity: 'high',
+          path,
+          message: `Potential secrets file detected: ${pattern}`,
+        });
+      }
+    }
+  }
+
+  return {
+    ok: issues.length === 0,
+    recommendation: issues.length > 0 ? 'review_secrets_policy' : 'secrets_policy_ok',
+    issues,
+  };
+}
+
+async function runValidateCiPipeline(vtid: string, context: PreflightContext): Promise<SkillResult> {
+  console.log(`[GOV-INFRA-R.3] validate_ci_pipeline: Checking CI pipeline configuration`);
+  const issues: unknown[] = [];
+
+  // Check for CI/CD workflow files
+  const ciFiles = context.target_paths.filter(p =>
+    p.includes('.github/workflows') || p.includes('cloudbuild') || p.includes('jenkins')
+  );
+
+  if (ciFiles.length === 0) {
+    return { ok: true, recommendation: 'no_ci_files', issues: [] };
+  }
+
+  // Flag any CI file changes for review
+  for (const path of ciFiles) {
+    issues.push({
+      severity: 'info',
+      path,
+      message: 'CI/CD pipeline modification requires review',
+    });
+  }
+
+  return {
+    ok: true, // Info-level issues don't block
+    recommendation: 'ci_pipeline_review_recommended',
+    issues,
+  };
+}
+
+// =============================================================================
+// VTID-01207: AI Domain Skills
+// =============================================================================
+
+async function runValidateModelConfig(vtid: string, context: PreflightContext): Promise<SkillResult> {
+  console.log(`[GOV-AI-R.1] validate_model_config: Checking AI model configuration`);
+  const issues: unknown[] = [];
+
+  // Check for model configuration files
+  const modelFiles = context.target_paths.filter(p =>
+    p.includes('model') || p.includes('llm') || p.includes('prompt') || p.includes('ai')
+  );
+
+  if (modelFiles.length === 0) {
+    return { ok: true, recommendation: 'no_model_files', issues: [] };
+  }
+
+  // Check for potentially expensive model configurations
+  const queryLower = context.query.toLowerCase();
+  if (queryLower.includes('gpt-4') || queryLower.includes('opus') || queryLower.includes('claude-3')) {
+    issues.push({
+      severity: 'info',
+      path: 'model_config',
+      message: 'High-cost model configuration detected - verify budget approval',
+    });
+  }
+
+  return {
+    ok: true,
+    recommendation: issues.length > 0 ? 'review_model_config' : 'model_config_ok',
+    issues,
+  };
+}
+
+async function runCheckPromptSafety(vtid: string, context: PreflightContext): Promise<SkillResult> {
+  console.log(`[GOV-AI-R.2] check_prompt_safety: Checking prompt safety`);
+  const issues: unknown[] = [];
+
+  // Check for prompt-related files
+  const promptFiles = context.target_paths.filter(p =>
+    p.includes('prompt') || p.endsWith('.prompt.md') || p.includes('system_prompt')
+  );
+
+  if (promptFiles.length === 0) {
+    return { ok: true, recommendation: 'no_prompt_files', issues: [] };
+  }
+
+  // Flag prompt modifications for safety review
+  issues.push({
+    severity: 'info',
+    path: 'prompts',
+    message: 'Prompt modifications should be reviewed for safety and alignment',
+  });
+
+  return {
+    ok: true,
+    recommendation: 'prompt_safety_review_recommended',
+    issues,
+  };
+}
+
+async function runValidateAgentPermissions(vtid: string, context: PreflightContext): Promise<SkillResult> {
+  console.log(`[GOV-AI-R.3] validate_agent_permissions: Checking agent permissions`);
+  const issues: unknown[] = [];
+
+  // Check for agent configuration files
+  const agentFiles = context.target_paths.filter(p =>
+    p.includes('agent') || p.includes('skill') || p.includes('capability')
+  );
+
+  if (agentFiles.length === 0) {
+    return { ok: true, recommendation: 'no_agent_files', issues: [] };
+  }
+
+  // Flag any agent permission changes
+  for (const path of agentFiles) {
+    if (path.includes('permission') || path.includes('capability')) {
+      issues.push({
+        severity: 'warning',
+        path,
+        message: 'Agent permission modification requires governance review',
+      });
+    }
+  }
+
+  return {
+    ok: issues.filter((i: any) => i.severity === 'critical').length === 0,
+    recommendation: issues.length > 0 ? 'review_agent_permissions' : 'agent_permissions_ok',
+    issues,
+  };
+}
+
+// =============================================================================
 // Public API
 // =============================================================================
 
 /**
  * Run preflight chain for a domain
  * Returns governance evaluations in the same format as the governance system
+ * VTID-01207: Added infra and ai domain support
  */
 export async function runPreflightChain(
-  domain: 'frontend' | 'backend' | 'memory',
+  domain: 'frontend' | 'backend' | 'memory' | 'infra' | 'ai',
   vtid: string,
   context: PreflightContext
 ): Promise<PreflightChainResult> {
