@@ -1,14 +1,29 @@
 """
 Centralized LLM Router for Vitana Platform
 Routes LLM requests based on agent role with fallback support and cost optimization.
+
+VTID-01208: Added LLM telemetry emission for all calls.
 """
 
 import os
+import sys
 import time
 import uuid
 from typing import Optional, Dict, Any
 from enum import Enum
 import requests
+
+# VTID-01208: Add shared module to path for telemetry
+_shared_path = os.path.join(os.path.dirname(__file__), '..', '..', 'shared')
+if _shared_path not in sys.path:
+    sys.path.insert(0, _shared_path)
+
+try:
+    from llm_telemetry import LLMTelemetry, LLMStage as TelemetryStage
+    HAS_TELEMETRY = True
+except ImportError:
+    HAS_TELEMETRY = False
+    print("[LLM Router] Warning: Telemetry module not available")
 
 class AgentRole(Enum):
     """Agent roles with specific routing policies"""
@@ -34,49 +49,112 @@ class LLMRouter:
         }
     }
     
-    def __init__(self):
+    # VTID-01208: Role to telemetry stage mapping
+    ROLE_TO_STAGE = {
+        AgentRole.PLANNER: TelemetryStage.PLANNER if HAS_TELEMETRY else None,
+        AgentRole.WORKER: TelemetryStage.WORKER if HAS_TELEMETRY else None,
+        AgentRole.VALIDATOR: TelemetryStage.VALIDATOR if HAS_TELEMETRY else None,
+    }
+
+    def __init__(self, service_name: str = "conductor"):
         self.oasis_url = os.getenv("OASIS_GATEWAY_URL", "https://oasis-gateway.vitana.ai")
         self.anthropic_key = os.getenv("ANTHROPIC_API_KEY")
         self.project_id = os.getenv("GCP_PROJECT_ID", "lovable-vitana-vers1")
-    
-    def complete(self, role: AgentRole, prompt: str, max_tokens: int = 4000, 
-                 temperature: float = 0.7, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        self.service_name = service_name
+
+        # VTID-01208: Initialize telemetry
+        if HAS_TELEMETRY:
+            self.telemetry = LLMTelemetry(service=service_name)
+        else:
+            self.telemetry = None
+
+    def complete(self, role: AgentRole, prompt: str, max_tokens: int = 4000,
+                 temperature: float = 0.7, metadata: Optional[Dict[str, Any]] = None,
+                 vtid: Optional[str] = None) -> Dict[str, Any]:
         """Route LLM request based on agent role"""
         start_time = time.time()
         request_id = str(uuid.uuid4())
-        
+
         policy = self.ROUTING_POLICY[role]
-        
+        primary_provider = policy["primary"]["provider"]
+        primary_model = policy["primary"]["model"]
+        fallback_provider = policy["fallback"]["provider"]
+        fallback_model = policy["fallback"]["model"]
+
+        # VTID-01208: Start telemetry tracking
+        telemetry_context = None
+        if self.telemetry and HAS_TELEMETRY:
+            stage = self.ROLE_TO_STAGE.get(role)
+            if stage:
+                telemetry_context = self.telemetry.start_call(
+                    vtid=vtid,
+                    stage=stage,
+                    provider=primary_provider,
+                    model=primary_model,
+                    prompt=prompt
+                )
+
         try:
             result = self._call_llm(
-                provider=policy["primary"]["provider"],
-                model=policy["primary"]["model"],
+                provider=primary_provider,
+                model=primary_model,
                 prompt=prompt,
                 max_tokens=max_tokens,
                 temperature=temperature
             )
             result["fallback_used"] = False
+
+            # VTID-01208: Complete telemetry
+            if telemetry_context and self.telemetry:
+                self.telemetry.complete_call(
+                    telemetry_context,
+                    input_tokens=result.get("tokens", {}).get("input"),
+                    output_tokens=result.get("tokens", {}).get("output"),
+                    fallback_used=False
+                )
+
         except Exception as primary_error:
             print(f"⚠️ Primary model failed: {primary_error}")
             try:
                 result = self._call_llm(
-                    provider=policy["fallback"]["provider"],
-                    model=policy["fallback"]["model"],
+                    provider=fallback_provider,
+                    model=fallback_model,
                     prompt=prompt,
                     max_tokens=max_tokens,
                     temperature=temperature
                 )
                 result["fallback_used"] = True
+
+                # VTID-01208: Complete telemetry with fallback
+                if telemetry_context and self.telemetry:
+                    self.telemetry.complete_call(
+                        telemetry_context,
+                        input_tokens=result.get("tokens", {}).get("input"),
+                        output_tokens=result.get("tokens", {}).get("output"),
+                        fallback_used=True,
+                        fallback_from=primary_model,
+                        fallback_to=fallback_model
+                    )
+
             except Exception as fallback_error:
+                # VTID-01208: Record failure
+                if telemetry_context and self.telemetry:
+                    self.telemetry.fail_call(
+                        telemetry_context,
+                        error=str(fallback_error),
+                        fallback_used=True,
+                        fallback_from=primary_model,
+                        fallback_to=fallback_model
+                    )
                 raise Exception(f"Both models failed: {fallback_error}")
-        
+
         result["latency_ms"] = int((time.time() - start_time) * 1000)
         result["request_id"] = request_id
         result["role"] = role.value
-        
+
         oasis_event_id = self._log_to_oasis("llm_call", {**result, "metadata": metadata})
         result["oasis_event_id"] = oasis_event_id
-        
+
         return result
     
     def _call_llm(self, provider: str, model: str, prompt: str, 
@@ -160,9 +238,9 @@ class LLMRouter:
 
 _router_instance = None
 
-def get_router() -> LLMRouter:
+def get_router(service_name: str = "conductor") -> LLMRouter:
     """Get singleton router instance"""
     global _router_instance
     if _router_instance is None:
-        _router_instance = LLMRouter()
+        _router_instance = LLMRouter(service_name=service_name)
     return _router_instance

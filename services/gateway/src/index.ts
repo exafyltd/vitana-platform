@@ -184,6 +184,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const autopilotRecommendationsRouter = require('./routes/autopilot-recommendations').default;
   // VTID-01188: Unified "Generate Spec" Pipeline Routes
   const { specsRouter } = require('./routes/specs');
+  // VTID-01208: LLM Routing Policy & Telemetry API
+  const llmRouter = require('./routes/llm').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -352,6 +354,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01148: Approvals API v1 — Pending Queue + Count + Approve/Reject (Gateway + OASIS-backed)
   mountRouterSync(app, '/api/v1/approvals', approvalsRouter, { owner: 'approvals-api' });
+
+  // VTID-01208: LLM Routing Policy & Telemetry API
+  mountRouterSync(app, '/api/v1/llm', llmRouter, { owner: 'llm-routing-telemetry' });
 
   // VTID-01163 + VTID-01183: Worker Sub-Agents + Orchestrator + Connector
   mountRouterSync(app, '/', workerOrchestratorRouter, { owner: 'worker-orchestrator' });
