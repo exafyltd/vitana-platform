@@ -2232,6 +2232,13 @@ const state = {
     // VTID-0527: VTID detail with stageTimeline from API
     selectedTaskDetail: null,
     selectedTaskDetailLoading: false,
+    // VTID-01209: Real-time execution status for pipeline tracking
+    executionStatus: null,
+    executionStatusLoading: false,
+    executionStatusPollInterval: null,
+    // VTID-01209: Active in-progress VTIDs for ticker views
+    activeExecutions: [],
+    activeExecutionsPollInterval: null,
     taskSearchQuery: '',
     taskDateFilter: '',
     // VTID-01079: Board metadata for "Load More" completed tasks
@@ -4985,9 +4992,16 @@ function createTaskCard(task) {
         state.selectedTask = task;
         state.selectedTaskDetail = null;
         state.selectedTaskDetailLoading = true;
+        state.executionStatus = null;
+        state.executionStatusLoading = false;
         renderApp();
         // VTID-0527: Fetch full VTID detail with stageTimeline
         fetchVtidDetail(task.vtid);
+        // VTID-01209: Start execution status polling for in-progress tasks
+        var col = mapStatusToColumnWithOverride(task.vtid, task.status, task.oasisColumn);
+        if (col === 'In Progress') {
+            startExecutionStatusPolling(task.vtid);
+        }
     };
 
     // VTID-01005: Title (larger, prominent)
@@ -5431,6 +5445,10 @@ function renderTaskDrawer() {
         state.selectedTask = null;
         state.selectedTaskDetail = null;
         state.selectedTaskDetailLoading = false;
+        // VTID-01209: Stop execution status polling and clear state
+        stopExecutionStatusPolling();
+        state.executionStatus = null;
+        state.executionStatusLoading = false;
         // DEV-COMHU-2025-0013: Clear drawer spec state on close
         state.drawerSpecVtid = null;
         state.drawerSpecText = '';
@@ -5938,6 +5956,13 @@ function renderTaskDrawer() {
 
     content.appendChild(specSection);
 
+    // VTID-01209: Add real-time execution status for in-progress tasks
+    var execStatusColumn = mapStatusToColumnWithOverride(vtid, task.status, task.oasisColumn);
+    if (execStatusColumn === 'In Progress') {
+        var executionStatusSection = renderTaskExecutionStatus(state.executionStatus, { variant: 'drawer' });
+        content.appendChild(executionStatusSection);
+    }
+
     // VTID-0527: Add detailed stage timeline view
     const stageDetail = renderTaskStageDetail(state.selectedTask);
     content.appendChild(stageDetail);
@@ -6128,6 +6153,230 @@ function renderTaskEventHistory(vtid) {
 
     container.appendChild(list);
     return container;
+}
+
+/**
+ * VTID-01209: Render real-time task execution status component.
+ * Shows "Step X of N" progress for in-progress tasks with live updates.
+ * Can be embedded in Task Drawer, Operator Ticker, and Command Hub Ticker.
+ *
+ * @param {Object} executionData - Data from /api/v1/vtid/:vtid/execution-status
+ * @param {Object} options - Rendering options
+ * @param {string} options.variant - 'drawer' | 'ticker-inline' | 'ticker-card'
+ * @param {boolean} options.showRecent - Whether to show recent events (default: true)
+ * @returns {HTMLElement}
+ */
+function renderTaskExecutionStatus(executionData, options) {
+    options = options || {};
+    var variant = options.variant || 'drawer';
+    var showRecent = options.showRecent !== false;
+
+    var container = document.createElement('div');
+    container.className = 'task-execution-status task-execution-status-' + variant;
+
+    if (!executionData) {
+        container.innerHTML = '<div class="execution-status-loading">Loading execution status...</div>';
+        return container;
+    }
+
+    // Header with LIVE badge
+    var header = document.createElement('div');
+    header.className = 'execution-status-header';
+
+    if (executionData.isActive) {
+        var liveBadge = document.createElement('span');
+        liveBadge.className = 'execution-status-live-badge';
+        liveBadge.innerHTML = '<span class="live-dot"></span> LIVE';
+        header.appendChild(liveBadge);
+    }
+
+    var vtidLabel = document.createElement('span');
+    vtidLabel.className = 'execution-status-vtid';
+    vtidLabel.textContent = executionData.vtid;
+    header.appendChild(vtidLabel);
+
+    var statusBadge = document.createElement('span');
+    statusBadge.className = 'execution-status-badge execution-status-badge-' + executionData.status;
+    statusBadge.textContent = executionData.status.replace(/_/g, ' ');
+    header.appendChild(statusBadge);
+
+    container.appendChild(header);
+
+    // Progress section
+    var progressSection = document.createElement('div');
+    progressSection.className = 'execution-status-progress';
+
+    // Step counter
+    var stepCounter = document.createElement('div');
+    stepCounter.className = 'execution-step-counter';
+
+    var currentStep = executionData.currentStep || 0;
+    var totalSteps = executionData.totalSteps || 0;
+    var progressPercent = totalSteps > 0 ? Math.round((currentStep / Math.max(totalSteps, 1)) * 100) : 0;
+
+    // For in-progress, we show an estimated progress (assume more steps to come)
+    if (executionData.isActive && totalSteps > 0) {
+        // Active tasks: show actual count but estimate total based on stage
+        var stageMultiplier = { 'PLANNER': 4, 'WORKER': 2.5, 'VALIDATOR': 1.5, 'DEPLOY': 1.2 };
+        var mult = stageMultiplier[executionData.currentStage] || 2;
+        var estimatedTotal = Math.max(totalSteps, Math.ceil(totalSteps * mult));
+        progressPercent = Math.min(Math.round((currentStep / estimatedTotal) * 100), 95);
+    }
+
+    stepCounter.innerHTML = '<span class="step-current">Step ' + currentStep + '</span>' +
+        '<span class="step-separator"> of </span>' +
+        '<span class="step-total">' + (executionData.isActive ? '~' + totalSteps + '+' : totalSteps) + '</span>';
+    progressSection.appendChild(stepCounter);
+
+    // Progress bar
+    var progressBar = document.createElement('div');
+    progressBar.className = 'execution-progress-bar';
+    if (executionData.isActive) {
+        progressBar.classList.add('execution-progress-bar-active');
+    }
+
+    var progressFill = document.createElement('div');
+    progressFill.className = 'execution-progress-fill';
+    progressFill.style.width = progressPercent + '%';
+
+    var progressText = document.createElement('span');
+    progressText.className = 'execution-progress-text';
+    progressText.textContent = progressPercent + '%';
+
+    progressBar.appendChild(progressFill);
+    progressBar.appendChild(progressText);
+    progressSection.appendChild(progressBar);
+
+    container.appendChild(progressSection);
+
+    // Current step info
+    var currentSection = document.createElement('div');
+    currentSection.className = 'execution-current-step';
+
+    var currentLabel = document.createElement('div');
+    currentLabel.className = 'execution-current-label';
+    currentLabel.textContent = 'Current:';
+    currentSection.appendChild(currentLabel);
+
+    var currentName = document.createElement('div');
+    currentName.className = 'execution-current-name';
+    currentName.textContent = executionData.currentStepName || 'Processing...';
+    currentSection.appendChild(currentName);
+
+    // Stage and elapsed time
+    var metaRow = document.createElement('div');
+    metaRow.className = 'execution-meta-row';
+
+    var stageBadge = document.createElement('span');
+    stageBadge.className = 'execution-stage-badge execution-stage-' + (executionData.currentStage || 'unknown').toLowerCase();
+    stageBadge.textContent = executionData.currentStage || 'UNKNOWN';
+    metaRow.appendChild(stageBadge);
+
+    if (executionData.elapsedMs > 0) {
+        var elapsedSpan = document.createElement('span');
+        elapsedSpan.className = 'execution-elapsed';
+        elapsedSpan.innerHTML = '&#9201; ' + formatElapsedTime(executionData.elapsedMs);
+        metaRow.appendChild(elapsedSpan);
+    }
+
+    currentSection.appendChild(metaRow);
+    container.appendChild(currentSection);
+
+    // Recent events (if enabled and available)
+    if (showRecent && executionData.recentEvents && executionData.recentEvents.length > 0) {
+        var recentSection = document.createElement('div');
+        recentSection.className = 'execution-recent-events';
+
+        var recentLabel = document.createElement('div');
+        recentLabel.className = 'execution-recent-label';
+        recentLabel.textContent = 'Recent:';
+        recentSection.appendChild(recentLabel);
+
+        var recentList = document.createElement('div');
+        recentList.className = 'execution-recent-list';
+
+        executionData.recentEvents.slice(0, 3).forEach(function(ev, idx) {
+            var eventRow = document.createElement('div');
+            eventRow.className = 'execution-recent-item';
+            if (idx === 0) eventRow.classList.add('execution-recent-item-latest');
+
+            var statusIcon = document.createElement('span');
+            statusIcon.className = 'execution-recent-icon';
+            if (ev.status === 'success' || ev.status === 'completed') {
+                statusIcon.textContent = '✓';
+                statusIcon.classList.add('icon-success');
+            } else if (ev.status === 'error' || ev.status === 'failure') {
+                statusIcon.textContent = '✗';
+                statusIcon.classList.add('icon-error');
+            } else {
+                statusIcon.textContent = '•';
+                statusIcon.classList.add('icon-info');
+            }
+            eventRow.appendChild(statusIcon);
+
+            var eventName = document.createElement('span');
+            eventName.className = 'execution-recent-name';
+            eventName.textContent = ev.name;
+            eventRow.appendChild(eventName);
+
+            var eventTime = document.createElement('span');
+            eventTime.className = 'execution-recent-time';
+            eventTime.textContent = formatRelativeTime(ev.timestamp);
+            eventRow.appendChild(eventTime);
+
+            recentList.appendChild(eventRow);
+        });
+
+        recentSection.appendChild(recentList);
+        container.appendChild(recentSection);
+    }
+
+    // Last updated timestamp
+    if (executionData.lastUpdated) {
+        var lastUpdated = document.createElement('div');
+        lastUpdated.className = 'execution-last-updated';
+        lastUpdated.textContent = 'Updated: ' + formatRelativeTime(executionData.lastUpdated);
+        container.appendChild(lastUpdated);
+    }
+
+    return container;
+}
+
+/**
+ * VTID-01209: Format elapsed time in human-readable format.
+ * @param {number} ms - Elapsed milliseconds
+ * @returns {string}
+ */
+function formatElapsedTime(ms) {
+    if (ms < 1000) return 'just now';
+    var seconds = Math.floor(ms / 1000);
+    if (seconds < 60) return seconds + 's elapsed';
+    var minutes = Math.floor(seconds / 60);
+    var secs = seconds % 60;
+    if (minutes < 60) return minutes + 'm ' + secs + 's elapsed';
+    var hours = Math.floor(minutes / 60);
+    var mins = minutes % 60;
+    return hours + 'h ' + mins + 'm elapsed';
+}
+
+/**
+ * VTID-01209: Format timestamp as relative time.
+ * @param {string} timestamp - ISO timestamp
+ * @returns {string}
+ */
+function formatRelativeTime(timestamp) {
+    if (!timestamp) return '';
+    var diff = Date.now() - new Date(timestamp).getTime();
+    if (diff < 0) return 'just now';
+    var seconds = Math.floor(diff / 1000);
+    if (seconds < 10) return 'just now';
+    if (seconds < 60) return seconds + 's ago';
+    var minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return minutes + 'm ago';
+    var hours = Math.floor(minutes / 60);
+    if (hours < 24) return hours + 'h ago';
+    var days = Math.floor(hours / 24);
+    return days + 'd ago';
 }
 
 /**
@@ -7415,6 +7664,154 @@ async function fetchVtidDetail(vtid) {
     } finally {
         state.selectedTaskDetailLoading = false;
         renderApp();
+    }
+}
+
+/**
+ * VTID-01209: Fetch real-time execution status for a specific VTID.
+ * Called by polling mechanism when viewing in-progress tasks.
+ */
+async function fetchExecutionStatus(vtid) {
+    console.log('[VTID-01209] Fetching execution status:', vtid);
+
+    try {
+        const response = await fetch('/api/v1/vtid/' + encodeURIComponent(vtid) + '/execution-status');
+        if (!response.ok) {
+            throw new Error('Execution status fetch failed: ' + response.status);
+        }
+
+        const result = await response.json();
+        console.log('[VTID-01209] Execution status loaded:', result);
+
+        if (result.ok && result.data) {
+            state.executionStatus = result.data;
+            renderApp();
+        }
+    } catch (error) {
+        console.error('[VTID-01209] Failed to fetch execution status:', error);
+    }
+}
+
+/**
+ * VTID-01209: Start polling for execution status of the selected task.
+ * Only polls if task is in active status (in_progress, running, etc.)
+ */
+function startExecutionStatusPolling(vtid) {
+    // Clear any existing polling
+    stopExecutionStatusPolling();
+
+    console.log('[VTID-01209] Starting execution status polling for:', vtid);
+
+    // Initial fetch
+    fetchExecutionStatus(vtid);
+
+    // Poll every 5 seconds
+    state.executionStatusPollInterval = setInterval(function() {
+        // Stop polling if drawer is closed or different task selected
+        if (!state.selectedTask || state.selectedTask.vtid !== vtid) {
+            stopExecutionStatusPolling();
+            return;
+        }
+
+        // Stop polling if task is no longer active
+        if (state.executionStatus && !state.executionStatus.isActive) {
+            console.log('[VTID-01209] Task no longer active, stopping polling');
+            stopExecutionStatusPolling();
+            return;
+        }
+
+        fetchExecutionStatus(vtid);
+    }, 5000);
+}
+
+/**
+ * VTID-01209: Stop polling for execution status.
+ */
+function stopExecutionStatusPolling() {
+    if (state.executionStatusPollInterval) {
+        console.log('[VTID-01209] Stopping execution status polling');
+        clearInterval(state.executionStatusPollInterval);
+        state.executionStatusPollInterval = null;
+    }
+}
+
+/**
+ * VTID-01209: Fetch active executions for ticker views.
+ * Returns all in-progress tasks with their execution status.
+ */
+async function fetchActiveExecutions() {
+    console.log('[VTID-01209] Fetching active executions');
+
+    try {
+        // First get in-progress tasks
+        const tasksResponse = await fetch('/api/v1/commandhub/board?limit=50');
+        if (!tasksResponse.ok) {
+            throw new Error('Tasks fetch failed: ' + tasksResponse.status);
+        }
+
+        const tasksResult = await tasksResponse.json();
+        if (!tasksResult.ok) return;
+
+        // Filter to in-progress only
+        const inProgressTasks = (tasksResult.data || []).filter(function(task) {
+            var col = (task.oasisColumn || task.column || '').toUpperCase();
+            return col === 'IN_PROGRESS';
+        });
+
+        if (inProgressTasks.length === 0) {
+            state.activeExecutions = [];
+            return;
+        }
+
+        // Fetch execution status for each in-progress task
+        var activeExecutions = [];
+        for (var i = 0; i < inProgressTasks.length; i++) {
+            var task = inProgressTasks[i];
+            try {
+                var response = await fetch('/api/v1/vtid/' + encodeURIComponent(task.vtid) + '/execution-status');
+                if (response.ok) {
+                    var result = await response.json();
+                    if (result.ok && result.data) {
+                        activeExecutions.push(result.data);
+                    }
+                }
+            } catch (e) {
+                console.warn('[VTID-01209] Failed to fetch execution status for', task.vtid, e);
+            }
+        }
+
+        state.activeExecutions = activeExecutions;
+        console.log('[VTID-01209] Active executions loaded:', activeExecutions.length);
+    } catch (error) {
+        console.error('[VTID-01209] Failed to fetch active executions:', error);
+    }
+}
+
+/**
+ * VTID-01209: Start polling for active executions (for ticker views).
+ */
+function startActiveExecutionsPolling() {
+    stopActiveExecutionsPolling();
+
+    console.log('[VTID-01209] Starting active executions polling');
+
+    // Initial fetch
+    fetchActiveExecutions();
+
+    // Poll every 10 seconds
+    state.activeExecutionsPollInterval = setInterval(function() {
+        fetchActiveExecutions();
+    }, 10000);
+}
+
+/**
+ * VTID-01209: Stop polling for active executions.
+ */
+function stopActiveExecutionsPolling() {
+    if (state.activeExecutionsPollInterval) {
+        console.log('[VTID-01209] Stopping active executions polling');
+        clearInterval(state.activeExecutionsPollInterval);
+        state.activeExecutionsPollInterval = null;
     }
 }
 
@@ -9649,6 +10046,8 @@ function renderAgentsPipelinesView() {
     // Auto-fetch if not loaded
     if (!state.agentsPipelines.fetched && !state.agentsPipelines.loading) {
         fetchPipelinesData();
+        // VTID-01209: Also fetch active executions for live pipeline status
+        fetchActiveExecutions();
     }
 
     // Header
@@ -9673,6 +10072,8 @@ function renderAgentsPipelinesView() {
         state.agentsPipelines.fetched = false;
         state.agentsPipelines.eventsCache = {}; // Clear events cache
         fetchPipelinesData();
+        // VTID-01209: Also refresh active executions
+        fetchActiveExecutions();
     };
     header.appendChild(refreshBtn);
 
@@ -9738,6 +10139,29 @@ function renderAgentsPipelinesView() {
 
     // API Status Strip
     container.appendChild(renderPipelinesApiStatusStrip());
+
+    // VTID-01209: Active Executions - real-time pipeline status for in-progress VTIDs
+    if (state.activeExecutions && state.activeExecutions.length > 0) {
+        var activeSection = document.createElement('div');
+        activeSection.className = 'pipelines-active-executions';
+
+        var activeHeader = document.createElement('div');
+        activeHeader.className = 'pipelines-active-header';
+        activeHeader.innerHTML = '<span class="live-indicator"><span class="live-dot"></span> LIVE</span> ' +
+            state.activeExecutions.length + ' Active Pipeline' + (state.activeExecutions.length > 1 ? 's' : '');
+        activeSection.appendChild(activeHeader);
+
+        var activeGrid = document.createElement('div');
+        activeGrid.className = 'pipelines-active-grid';
+
+        state.activeExecutions.forEach(function(execData) {
+            var execCard = renderTaskExecutionStatus(execData, { variant: 'ticker-card', showRecent: true });
+            activeGrid.appendChild(execCard);
+        });
+
+        activeSection.appendChild(activeGrid);
+        container.appendChild(activeSection);
+    }
 
     // Error panel (if any errors)
     var errorPanel = renderPipelinesErrorPanel();
@@ -14851,6 +15275,8 @@ function renderOperatorOverlay() {
     backdrop.onclick = (e) => {
         if (e.target === backdrop) {
             state.isOperatorOpen = false;
+            // VTID-01209: Stop active executions polling when closing
+            stopActiveExecutionsPolling();
             renderApp();
         }
     };
@@ -14880,6 +15306,8 @@ function renderOperatorOverlay() {
     closeBtn.innerHTML = '&times;';
     closeBtn.onclick = () => {
         state.isOperatorOpen = false;
+        // VTID-01209: Stop active executions polling when closing
+        stopActiveExecutionsPolling();
         renderApp();
     };
     header.appendChild(closeBtn);
@@ -15434,6 +15862,24 @@ function renderOperatorTicker() {
         `;
     }
     container.appendChild(statusBanner);
+
+    // VTID-01209: Active Executions section - show in-progress tasks with pipeline status
+    if (state.activeExecutions && state.activeExecutions.length > 0) {
+        var activeSection = document.createElement('div');
+        activeSection.className = 'ticker-active-executions';
+
+        var activeHeader = document.createElement('div');
+        activeHeader.className = 'ticker-active-header';
+        activeHeader.innerHTML = '<span class="active-header-badge">' + state.activeExecutions.length + ' ACTIVE</span> Pipeline Executions';
+        activeSection.appendChild(activeHeader);
+
+        state.activeExecutions.forEach(function(execData) {
+            var execCard = renderTaskExecutionStatus(execData, { variant: 'ticker-card', showRecent: false });
+            activeSection.appendChild(execCard);
+        });
+
+        container.appendChild(activeSection);
+    }
 
     // VTID-0600: Ticker filter toolbar
     var filterToolbar = document.createElement('div');
@@ -17496,6 +17942,9 @@ async function startOperatorLiveTicker() {
 
         // VTID-0526-D: Start auto-refresh for stage counters during active execution
         startTelemetryAutoRefresh();
+
+        // VTID-01209: Start active executions polling for ticker display
+        startActiveExecutionsPolling();
 
         renderApp();
 
