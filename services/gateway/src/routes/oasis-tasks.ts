@@ -526,7 +526,7 @@ oasisTasksRouter.delete('/api/v1/oasis/tasks/:id', async (req: Request, res: Res
 //
 // Behavior:
 //   - Validates VTID format (VTID-\d{4,})
-//   - Updates vtid_ledger: status=completed, is_terminal=true, terminal_outcome, completed_at
+//   - Updates vtid_ledger: status=completed/rejected based on outcome, is_terminal=true, terminal_outcome, completed_at
 //   - Idempotent: if already completed+terminal, returns ok with already_completed: true
 //   - Emits OASIS event: vtid.lifecycle.terminal_completion
 // ===========================================================================
@@ -603,9 +603,11 @@ oasisTasksRouter.post('/api/v1/oasis/tasks/:vtid/complete', async (req: Request,
     }
 
     // Step 3: Update task to terminal completion state
+    // VTID-01206: Set status based on outcome - 'rejected' for failed (shows red), 'completed' for success (shows green)
     const timestamp = new Date().toISOString();
+    const newStatus = terminal_outcome === 'success' ? 'completed' : terminal_outcome === 'failed' ? 'rejected' : 'cancelled';
     const updatePayload = {
-      status: 'completed',
+      status: newStatus,
       is_terminal: true,
       terminal_outcome: terminal_outcome,
       completed_at: timestamp,
@@ -649,7 +651,7 @@ oasisTasksRouter.post('/api/v1/oasis/tasks/:vtid/complete', async (req: Request,
         action: 'terminal_completion',
         previous_status: task.status,
         previous_is_terminal: task.is_terminal,
-        new_status: 'completed',
+        new_status: newStatus,
         is_terminal: true,
         terminal_outcome: terminal_outcome,
         completed_at: timestamp,

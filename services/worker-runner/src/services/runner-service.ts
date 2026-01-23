@@ -429,6 +429,53 @@ export class WorkerRunner {
   }
 
   /**
+   * VTID-01206: Trigger execution of a specific VTID immediately
+   * Called by gateway when task moves to in_progress - push model instead of polling
+   */
+  async triggerExecution(vtid: string): Promise<{ ok: boolean; error?: string }> {
+    console.log(`[${VTID}] Trigger execution received for ${vtid}`);
+
+    // Check if already processing a task
+    if (this.activeVtid) {
+      console.log(`[${VTID}] Already processing ${this.activeVtid}, cannot trigger ${vtid}`);
+      return { ok: false, error: `Already processing ${this.activeVtid}` };
+    }
+
+    // Check if autopilot is enabled
+    if (!this.config.autopilotEnabled) {
+      console.log(`[${VTID}] Autopilot disabled, cannot trigger ${vtid}`);
+      return { ok: false, error: 'Autopilot disabled' };
+    }
+
+    // Fetch the task from pending queue to get full details
+    try {
+      const { tasks } = await pollPendingTasks(this.config);
+      const task = tasks.find(t => t.vtid === vtid);
+
+      if (!task) {
+        console.log(`[${VTID}] Task ${vtid} not found in pending queue`);
+        return { ok: false, error: 'Task not found in pending queue' };
+      }
+
+      // Check eligibility
+      if (!this.isTaskEligible(task)) {
+        console.log(`[${VTID}] Task ${vtid} not eligible for execution`);
+        return { ok: false, error: 'Task not eligible (check status, spec_status, is_terminal)' };
+      }
+
+      // Process the task immediately
+      console.log(`[${VTID}] Starting immediate execution of ${vtid}`);
+      await this.processTask(task);
+
+      return { ok: true };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`[${VTID}] Trigger execution error for ${vtid}: ${errorMessage}`);
+      return { ok: false, error: errorMessage };
+    }
+  }
+
+  /**
    * Get current metrics
    */
   getMetrics(): RunnerMetrics {

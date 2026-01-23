@@ -317,7 +317,7 @@ async function fetchSpec(vtid: string): Promise<OasisSpec | null> {
     const row = data[0];
     return {
       vtid: row.vtid,
-      content: row.content || row.spec_content || row.markdown || "",
+      content: row.spec_markdown || row.content || row.spec_content || "",
       version: row.version,
       created_at: row.created_at,
     };
@@ -411,9 +411,10 @@ async function markTerminal(
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) return false;
 
   try {
+    // VTID-01206: Use 'rejected' for failed tasks (shows red), 'completed' for success (shows green)
     const timestamp = new Date().toISOString();
     const payload = {
-      status: outcome === "success" ? "completed" : "failed",
+      status: outcome === "success" ? "completed" : "rejected",
       is_terminal: true,
       terminal_outcome: outcome,
       completed_at: timestamp,

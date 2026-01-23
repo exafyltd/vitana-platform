@@ -115,11 +115,14 @@ async function emitSkipVerificationEvent(
 // Request Schemas
 // =============================================================================
 
+/**
+ * VTID-01207: Added 'infra' and 'ai' to task_domain enum
+ */
 const WorkOrderSchema = z.object({
   vtid: z.string().regex(/^VTID-\d{4,}$/, 'Invalid VTID format'),
   title: z.string().min(1, 'Title is required'),
   task_family: z.string().default('DEV'),
-  task_domain: z.enum(['frontend', 'backend', 'memory', 'mixed']).optional(),
+  task_domain: z.enum(['frontend', 'backend', 'memory', 'infra', 'ai', 'mixed']).optional(),
   target_paths: z.array(z.string()).optional(),
   change_budget: z.object({
     max_files: z.number().min(1).optional(),
@@ -129,9 +132,12 @@ const WorkOrderSchema = z.object({
   run_id: z.string().optional()
 });
 
+/**
+ * VTID-01207: Added 'infra' and 'ai' to domain enum
+ */
 const SubagentEventSchema = z.object({
   vtid: z.string().regex(/^VTID-\d{4,}$/, 'Invalid VTID format'),
-  domain: z.enum(['frontend', 'backend', 'memory']),
+  domain: z.enum(['frontend', 'backend', 'memory', 'infra', 'ai']),
   run_id: z.string(),
   started_at: z.string().datetime().optional(), // VTID-01175: For file modification verification
   skip_verification: z.boolean().optional(), // VTID-01175: Opt-out (for testing/legacy)
@@ -145,10 +151,13 @@ const SubagentEventSchema = z.object({
   }).optional()
 });
 
+/**
+ * VTID-01207: Added 'infra' and 'ai' to domain enum
+ */
 const OrchestratorCompleteSchema = z.object({
   vtid: z.string().regex(/^VTID-\d{4,}$/, 'Invalid VTID format'),
   run_id: z.string(),
-  domain: z.enum(['frontend', 'backend', 'memory', 'mixed']).optional(), // VTID-01175: For verification
+  domain: z.enum(['frontend', 'backend', 'memory', 'infra', 'ai', 'mixed']).optional(), // VTID-01175: For verification
   success: z.boolean(),
   summary: z.string().optional(),
   error: z.string().optional(),
@@ -204,12 +213,13 @@ workerOrchestratorRouter.post('/api/v1/worker/orchestrator/route', async (req: R
 
     // Step 2: Run governance preflight chain (VTID-01164/01167) if domain is not 'mixed'
     // Preflight checks are GOVERNANCE EVALUATIONS - same format, same registry, same truth
+    // VTID-01207: Added infra and ai domain support
     let governanceResult: Awaited<ReturnType<typeof runPreflightChain>> | null = null;
     if (domain !== 'mixed') {
       console.log(`[VTID-01167] Running governance preflight chain for domain: ${domain}`);
       try {
         governanceResult = await runPreflightChain(
-          domain as 'frontend' | 'backend' | 'memory',
+          domain as 'frontend' | 'backend' | 'memory' | 'infra' | 'ai',
           payload.vtid,
           {
             query: payload.title + (payload.spec_content ? ` ${payload.spec_content}` : ''),
@@ -262,11 +272,14 @@ workerOrchestratorRouter.post('/api/v1/worker/orchestrator/route', async (req: R
  *
  * Emit subagent start event (called when subagent begins work)
  */
+/**
+ * VTID-01207: Added 'infra' and 'ai' to domain enum
+ */
 workerOrchestratorRouter.post('/api/v1/worker/subagent/start', async (req: Request, res: Response) => {
   try {
     const schema = z.object({
       vtid: z.string().regex(/^VTID-\d{4,}$/, 'Invalid VTID format'),
-      domain: z.enum(['frontend', 'backend', 'memory']),
+      domain: z.enum(['frontend', 'backend', 'memory', 'infra', 'ai']),
       run_id: z.string()
     });
 
@@ -572,17 +585,22 @@ workerOrchestratorRouter.post('/api/v1/worker/orchestrator/complete', async (req
  *
  * Health check for orchestrator service
  */
+/**
+ * VTID-01207: Added worker-infra and worker-ai to health check
+ */
 workerOrchestratorRouter.get('/api/v1/worker/orchestrator/health', (_req: Request, res: Response) => {
   return res.status(200).json({
     ok: true,
     service: 'worker-orchestrator',
-    version: '1.0.0',
+    version: '1.1.0',
     vtid: 'VTID-01163',
     timestamp: new Date().toISOString(),
     subagents: {
       'worker-frontend': { status: 'available', domain: 'frontend' },
       'worker-backend': { status: 'available', domain: 'backend' },
-      'worker-memory': { status: 'available', domain: 'memory' }
+      'worker-memory': { status: 'available', domain: 'memory' },
+      'worker-infra': { status: 'available', domain: 'infra' },
+      'worker-ai': { status: 'available', domain: 'ai' }
     },
     endpoints: {
       route: 'POST /api/v1/worker/orchestrator/route',
@@ -597,6 +615,9 @@ workerOrchestratorRouter.get('/api/v1/worker/orchestrator/health', (_req: Reques
  * GET /api/v1/worker/subagents
  *
  * List available subagents with their configurations
+ */
+/**
+ * VTID-01207: Added worker-infra and worker-ai to subagents list
  */
 workerOrchestratorRouter.get('/api/v1/worker/subagents', (_req: Request, res: Response) => {
   return res.status(200).json({
@@ -616,8 +637,8 @@ workerOrchestratorRouter.get('/api/v1/worker/subagents', (_req: Request, res: Re
         id: 'worker-backend',
         domain: 'backend',
         allowed_paths: [
-          'services/gateway/src/**',
-          'services/**/src/**'
+          'services/gateway/src/routes/**',
+          'services/gateway/src/controllers/**'
         ],
         guardrails: ['Route mount validation', 'Path restrictions'],
         default_budget: { max_files: 15, max_directories: 8 }
@@ -631,6 +652,32 @@ workerOrchestratorRouter.get('/api/v1/worker/subagents', (_req: Request, res: Re
         ],
         guardrails: ['Tenant context', 'RPC signatures', 'Migration naming'],
         default_budget: { max_files: 5, max_directories: 3 }
+      },
+      {
+        id: 'worker-infra',
+        domain: 'infra',
+        allowed_paths: [
+          '.github/workflows/**',
+          'scripts/**',
+          'Dockerfile',
+          'docker-compose*.yml',
+          'terraform/**',
+          'k8s/**'
+        ],
+        guardrails: ['CI/CD validation', 'Secrets policy', 'Deploy config review'],
+        default_budget: { max_files: 10, max_directories: 6 }
+      },
+      {
+        id: 'worker-ai',
+        domain: 'ai',
+        allowed_paths: [
+          'services/agents/**',
+          'services/gateway/src/services/skills/**',
+          'services/gateway/src/services/*-intelligence/**',
+          'services/gateway/src/services/orb/**'
+        ],
+        guardrails: ['Model config validation', 'Prompt safety', 'Agent permissions'],
+        default_budget: { max_files: 12, max_directories: 5 }
       }
     ]
   });

@@ -439,7 +439,8 @@ async function triggerActionForState(
 
 /**
  * Trigger dispatch to worker orchestrator
- * VTID-01204: Now actually calls worker orchestrator to trigger execution
+ * VTID-01204: Routes through worker orchestrator, worker-runner claims from pending queue
+ * VTID-01206: Fetches spec from oasis_specs (where 3-step spec flow stores it)
  */
 async function triggerDispatch(vtid: string, event: OasisEvent): Promise<ActionResult> {
   // Get spec from event metadata or fetch from ledger
@@ -447,17 +448,29 @@ async function triggerDispatch(vtid: string, event: OasisEvent): Promise<ActionR
   let title = (meta.title || event.title || vtid) as string;
   let specContent = (meta.spec_content || meta.description || '') as string;
 
-  // Try to fetch from vtid_ledger if no spec content
+  // Try to fetch from vtid_ledger for title/layer info
   const ledgerData = await fetchVtidFromLedger(vtid);
-  if (!specContent && ledgerData) {
-    specContent = ledgerData.description || ledgerData.summary || '';
+  if (ledgerData) {
     title = ledgerData.title || title;
+  }
+
+  // VTID-01206: Fetch full spec from oasis_specs (where 3-step spec flow stores it)
+  if (!specContent) {
+    const oasisSpec = await fetchSpecFromOasis(vtid);
+    if (oasisSpec) {
+      specContent = oasisSpec;
+      console.log(`${LOG_PREFIX} Using spec from oasis_specs for ${vtid}`);
+    } else if (ledgerData) {
+      // Fallback to summary (not ideal but better than nothing)
+      specContent = ledgerData.description || ledgerData.summary || '';
+      console.log(`${LOG_PREFIX} Warning: No spec in oasis_specs for ${vtid}, using ledger summary`);
+    }
   }
 
   // Start autopilot run
   await startAutopilotRun(vtid, title, specContent);
 
-  // VTID-01204: Actually dispatch to worker orchestrator
+  // VTID-01204: Route through worker orchestrator
   const gatewayUrl = process.env.GATEWAY_URL || 'http://localhost:8080';
   try {
     console.log(`${LOG_PREFIX} Dispatching ${vtid} to worker orchestrator`);
@@ -482,11 +495,11 @@ async function triggerDispatch(vtid: string, event: OasisEvent): Promise<ActionR
       return { ok: true, data: { vtid, dispatched: true, route_failed: true, error: routeResult.error } };
     }
 
-    console.log(`${LOG_PREFIX} Successfully dispatched ${vtid} to domain: ${routeResult.domain}`);
+    console.log(`${LOG_PREFIX} Successfully routed ${vtid} to domain: ${routeResult.domain}`);
     return { ok: true, data: { vtid, dispatched: true, domain: routeResult.domain } };
   } catch (error) {
     console.error(`${LOG_PREFIX} Failed to call worker orchestrator for ${vtid}: ${error}`);
-    // Don't fail - task is still in pending queue for workers to claim
+    // Task is still in pending queue for worker-runner to claim via polling
     return { ok: true, data: { vtid, dispatched: true, route_error: String(error) } };
   }
 }
@@ -660,6 +673,45 @@ async function fetchVtidFromLedger(vtid: string): Promise<{
       layer: data[0].layer,
     };
   } catch {
+    return null;
+  }
+}
+
+/**
+ * VTID-01206: Fetch approved spec from oasis_specs table
+ * This is where the 3-step spec flow stores the full spec content
+ */
+async function fetchSpecFromOasis(vtid: string): Promise<string | null> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+
+  if (!supabaseUrl || !supabaseKey) return null;
+
+  try {
+    const response = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_specs?vtid=eq.${encodeURIComponent(vtid)}&select=spec_markdown&order=created_at.desc&limit=1`,
+      {
+        headers: {
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      console.warn(`${LOG_PREFIX} Failed to fetch oasis_specs for ${vtid}: ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json() as Array<{ spec_markdown?: string }>;
+    if (!data || data.length === 0 || !data[0].spec_markdown) {
+      return null;
+    }
+
+    console.log(`${LOG_PREFIX} Found spec in oasis_specs for ${vtid} (${data[0].spec_markdown.length} chars)`);
+    return data[0].spec_markdown;
+  } catch (error) {
+    console.warn(`${LOG_PREFIX} Error fetching oasis_specs for ${vtid}: ${error}`);
     return null;
   }
 }

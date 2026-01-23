@@ -108,6 +108,48 @@ app.get('/live', (_req: Request, res: Response) => {
   res.json({ live: true });
 });
 
+/**
+ * VTID-01206: Trigger execution of a specific VTID immediately
+ * Called by gateway when task moves to in_progress - push model instead of polling
+ */
+app.post('/api/v1/trigger', async (req: Request, res: Response) => {
+  const { vtid } = req.body;
+
+  if (!vtid || typeof vtid !== 'string') {
+    res.status(400).json({
+      ok: false,
+      error: 'Missing or invalid vtid parameter',
+    });
+    return;
+  }
+
+  if (!runner) {
+    res.status(503).json({
+      ok: false,
+      error: 'Runner not initialized',
+    });
+    return;
+  }
+
+  console.log(`[${VTID}] Trigger endpoint called for ${vtid}`);
+
+  const result = await runner.triggerExecution(vtid);
+
+  if (result.ok) {
+    res.status(200).json({
+      ok: true,
+      vtid,
+      message: `Execution triggered for ${vtid}`,
+    });
+  } else {
+    res.status(400).json({
+      ok: false,
+      vtid,
+      error: result.error,
+    });
+  }
+});
+
 // =============================================================================
 // Startup
 // =============================================================================

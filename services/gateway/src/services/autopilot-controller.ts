@@ -831,8 +831,9 @@ async function updateLedgerTerminal(vtid: string, outcome: 'success' | 'failed')
         'apikey': supabaseKey,
         'Authorization': `Bearer ${supabaseKey}`,
       },
+      // VTID-01206: Use 'rejected' for failed tasks (shows red), 'completed' for success (shows green)
       body: JSON.stringify({
-        status: 'completed',
+        status: outcome === 'success' ? 'completed' : 'rejected',
         is_terminal: true,
         terminal_outcome: outcome,
         completed_at: timestamp,
