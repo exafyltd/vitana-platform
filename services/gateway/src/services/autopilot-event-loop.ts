@@ -470,7 +470,7 @@ async function triggerDispatch(vtid: string, event: OasisEvent): Promise<ActionR
   // Start autopilot run
   await startAutopilotRun(vtid, title, specContent);
 
-  // VTID-01204: First route through governance
+  // VTID-01204: Route through worker orchestrator
   const gatewayUrl = process.env.GATEWAY_URL || 'http://localhost:8080';
   try {
     console.log(`${LOG_PREFIX} Dispatching ${vtid} to worker orchestrator`);
