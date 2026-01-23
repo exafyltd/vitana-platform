@@ -456,7 +456,14 @@ export type CicdEventType =
   | 'vtid.spec.generate.completed'
   | 'vtid.spec.validation.completed'
   | 'vtid.spec.approved'
-  | 'vtid.execution.activation.blocked';
+  | 'vtid.execution.activation.blocked'
+  // VTID-01208: LLM Telemetry & Routing Policy Events
+  | 'llm.call.started'
+  | 'llm.call.completed'
+  | 'llm.call.failed'
+  | 'governance.llm_policy.updated'
+  | 'governance.llm_policy.activated'
+  | 'governance.llm_policy.reset';
 
 export interface CicdOasisEvent {
   vtid: string;
