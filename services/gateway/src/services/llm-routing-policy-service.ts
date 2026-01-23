@@ -53,15 +53,21 @@ async function supabaseFetch<T>(
   }
 
   try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'apikey': config.key,
+      'Authorization': `Bearer ${config.key}`,
+    };
+    if (options.method === 'POST') {
+      headers['Prefer'] = 'return=representation';
+    }
+
     const response = await fetch(`${config.url}/rest/v1/${path}`, {
       ...options,
       headers: {
-        'Content-Type': 'application/json',
-        'apikey': config.key,
-        'Authorization': `Bearer ${config.key}`,
-        'Prefer': options.method === 'POST' ? 'return=representation' : undefined,
-        ...options.headers,
-      } as HeadersInit,
+        ...headers,
+        ...(options.headers as Record<string, string>),
+      },
     });
 
     if (!response.ok) {
@@ -69,7 +75,7 @@ async function supabaseFetch<T>(
       return { ok: false, error: `${response.status}: ${errorText}` };
     }
 
-    const data = await response.json();
+    const data = await response.json() as T;
     return { ok: true, data };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -449,7 +455,7 @@ export async function getOrCreateVTIDPolicySnapshot(
   // Emit event for new snapshot
   await emitOasisEvent({
     vtid,
-    type: 'vtid.execution.started',
+    type: 'vtid.execute.started',
     source: 'llm-routing-policy-service',
     status: 'info',
     message: `Policy v${version} locked for VTID execution`,

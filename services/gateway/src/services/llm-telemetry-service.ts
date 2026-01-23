@@ -110,7 +110,7 @@ export async function startLLMCall(params: {
     source: params.service,
     status: 'info',
     message: `LLM call started: ${params.stage} using ${params.provider}/${params.model}`,
-    payload,
+    payload: payload as unknown as Record<string, unknown>,
   });
 
   return context;
@@ -170,7 +170,7 @@ export async function completeLLMCall(
     source: context.service,
     status: 'success',
     message: `LLM call completed: ${context.stage} in ${latencyMs}ms${result.fallbackUsed ? ' (fallback)' : ''}`,
-    payload,
+    payload: payload as unknown as Record<string, unknown>,
   });
 }
 
@@ -217,7 +217,7 @@ export async function failLLMCall(
     source: context.service,
     status: 'error',
     message: `LLM call failed: ${context.stage} - ${error.message}`,
-    payload,
+    payload: payload as unknown as Record<string, unknown>,
   });
 }
 
