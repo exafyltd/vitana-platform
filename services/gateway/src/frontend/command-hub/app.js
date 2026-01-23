@@ -2671,6 +2671,61 @@ const state = {
         showDiaryModal: false  // Diary entry modal state
     },
 
+    // Intelligence & Memory DEV: Knowledge Graph, Embeddings, Recall, Inspector
+    intelligence: {
+        // Knowledge Graph
+        knowledgeGraph: {
+            nodes: [],
+            edges: [],
+            stats: null,
+            loading: false,
+            error: null,
+            fetched: false,
+            selectedNode: null,
+            filterType: 'all',   // 'all', 'entity', 'concept', 'memory'
+            searchQuery: ''
+        },
+        // Embeddings
+        embeddings: {
+            collections: [],
+            stats: null,
+            loading: false,
+            error: null,
+            fetched: false,
+            selectedCollection: null,
+            searchQuery: '',
+            searchResults: [],
+            searchLoading: false
+        },
+        // Recall
+        recall: {
+            testQuery: '',
+            results: [],
+            loading: false,
+            error: null,
+            history: [],
+            selectedResult: null,
+            filters: {
+                source: 'all',
+                minScore: 0
+            }
+        },
+        // Inspector
+        inspector: {
+            sessions: [],
+            selectedSession: null,
+            loading: false,
+            error: null,
+            fetched: false,
+            filters: {
+                surface: 'all',    // 'all', 'operator', 'orb', 'api'
+                status: 'all',     // 'all', 'success', 'error', 'pending'
+                dateRange: '24h'   // '1h', '24h', '7d', '30d'
+            },
+            expandedTools: {}      // Track expanded tool calls
+        }
+    },
+
     // VTID-01173: Agents Control Plane v1 - Worker Orchestrator Registry
     agentsRegistry: {
         // API response data
@@ -4700,6 +4755,18 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'intelligence-memory-dev' && tab === 'memory-vault') {
         // VTID-01086: Memory Garden UI Deepening
         container.appendChild(renderMemoryGardenView());
+    } else if (moduleKey === 'intelligence-memory-dev' && tab === 'knowledge-graph') {
+        // Intelligence & Memory: Knowledge Graph visualization
+        container.appendChild(renderKnowledgeGraphView());
+    } else if (moduleKey === 'intelligence-memory-dev' && tab === 'embeddings') {
+        // Intelligence & Memory: Embeddings management
+        container.appendChild(renderEmbeddingsView());
+    } else if (moduleKey === 'intelligence-memory-dev' && tab === 'recall') {
+        // Intelligence & Memory: Recall testing and debugging
+        container.appendChild(renderRecallView());
+    } else if (moduleKey === 'intelligence-memory-dev' && tab === 'inspector') {
+        // Intelligence & Memory: AI Inspector for debugging
+        container.appendChild(renderInspectorView());
     } else if (moduleKey === 'admin' && tab === 'users') {
         // VTID-01195: Admin Users v1 - Split layout with user list + detail
         container.appendChild(renderAdminUsersView());
@@ -14880,6 +14947,920 @@ function renderDiaryEntryModal() {
     overlay.appendChild(modal);
 
     return overlay;
+}
+
+// ============================================================================
+// INTELLIGENCE & MEMORY DEV SCREENS
+// Vitana AI Assistant Intelligence Hub - Knowledge Graph, Embeddings, Recall, Inspector
+// ============================================================================
+
+/**
+ * Intelligence & Memory: Knowledge Graph View
+ * Visualizes entity relationships, concepts, and memory connections
+ */
+function renderKnowledgeGraphView() {
+    var container = document.createElement('div');
+    container.className = 'intelligence-container knowledge-graph-container';
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'intelligence-header';
+
+    var titleSection = document.createElement('div');
+    titleSection.className = 'intelligence-title-section';
+
+    var title = document.createElement('h2');
+    title.textContent = 'Knowledge Graph';
+    titleSection.appendChild(title);
+
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Entity relationships and concept connections powering the AI Assistant';
+    titleSection.appendChild(subtitle);
+
+    header.appendChild(titleSection);
+    container.appendChild(header);
+
+    // Stats bar
+    var statsBar = document.createElement('div');
+    statsBar.className = 'intelligence-stats-bar';
+
+    var stats = state.intelligence.knowledgeGraph.stats || {
+        nodes: 0,
+        edges: 0,
+        entities: 0,
+        concepts: 0,
+        memories: 0
+    };
+
+    var statItems = [
+        { label: 'Total Nodes', value: stats.nodes || 0, icon: 'node' },
+        { label: 'Connections', value: stats.edges || 0, icon: 'edge' },
+        { label: 'Entities', value: stats.entities || 0, icon: 'entity' },
+        { label: 'Concepts', value: stats.concepts || 0, icon: 'concept' },
+        { label: 'Memories', value: stats.memories || 0, icon: 'memory' }
+    ];
+
+    statItems.forEach(function(stat) {
+        var statCard = document.createElement('div');
+        statCard.className = 'stat-card';
+        statCard.innerHTML = '<div class="stat-icon stat-icon-' + stat.icon + '">' + getKnowledgeGraphIcon(stat.icon) + '</div>' +
+            '<div class="stat-content"><div class="stat-value">' + stat.value.toLocaleString() + '</div>' +
+            '<div class="stat-label">' + stat.label + '</div></div>';
+        statsBar.appendChild(statCard);
+    });
+
+    container.appendChild(statsBar);
+
+    // Toolbar
+    var toolbar = document.createElement('div');
+    toolbar.className = 'intelligence-toolbar';
+
+    var searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'search-field';
+    searchInput.placeholder = 'Search nodes...';
+    searchInput.value = state.intelligence.knowledgeGraph.searchQuery;
+    searchInput.oninput = function(e) {
+        state.intelligence.knowledgeGraph.searchQuery = e.target.value;
+        renderApp();
+    };
+    toolbar.appendChild(searchInput);
+
+    var filterSelect = document.createElement('select');
+    filterSelect.className = 'filter-select';
+    var filterOptions = [
+        { value: 'all', label: 'All Types' },
+        { value: 'entity', label: 'Entities' },
+        { value: 'concept', label: 'Concepts' },
+        { value: 'memory', label: 'Memories' }
+    ];
+    filterOptions.forEach(function(opt) {
+        var option = document.createElement('option');
+        option.value = opt.value;
+        option.textContent = opt.label;
+        option.selected = state.intelligence.knowledgeGraph.filterType === opt.value;
+        filterSelect.appendChild(option);
+    });
+    filterSelect.onchange = function(e) {
+        state.intelligence.knowledgeGraph.filterType = e.target.value;
+        renderApp();
+    };
+    toolbar.appendChild(filterSelect);
+
+    container.appendChild(toolbar);
+
+    // Main content - split layout
+    var mainContent = document.createElement('div');
+    mainContent.className = 'knowledge-graph-main';
+
+    // Left: Graph visualization placeholder
+    var graphPanel = document.createElement('div');
+    graphPanel.className = 'knowledge-graph-panel';
+
+    var graphPlaceholder = document.createElement('div');
+    graphPlaceholder.className = 'graph-visualization-placeholder';
+    graphPlaceholder.innerHTML = '<div class="graph-placeholder-content">' +
+        '<div class="graph-icon">' + getKnowledgeGraphIcon('graph') + '</div>' +
+        '<div class="graph-placeholder-title">Knowledge Graph Visualization</div>' +
+        '<div class="graph-placeholder-desc">Interactive graph visualization will render here.<br>Connect to vector database to populate nodes.</div>' +
+        '<button class="btn btn-primary" onclick="alert(\'Knowledge graph sync coming soon\')">Sync from Vector DB</button>' +
+        '</div>';
+    graphPanel.appendChild(graphPlaceholder);
+
+    mainContent.appendChild(graphPanel);
+
+    // Right: Node detail panel
+    var detailPanel = document.createElement('div');
+    detailPanel.className = 'knowledge-graph-detail';
+
+    var detailTitle = document.createElement('h3');
+    detailTitle.textContent = 'Node Details';
+    detailPanel.appendChild(detailTitle);
+
+    var selectedNode = state.intelligence.knowledgeGraph.selectedNode;
+    if (selectedNode) {
+        var nodeDetail = document.createElement('div');
+        nodeDetail.className = 'node-detail-content';
+        nodeDetail.innerHTML = '<div class="node-detail-field"><span class="field-label">ID:</span> ' + selectedNode.id + '</div>' +
+            '<div class="node-detail-field"><span class="field-label">Type:</span> ' + selectedNode.type + '</div>' +
+            '<div class="node-detail-field"><span class="field-label">Label:</span> ' + selectedNode.label + '</div>' +
+            '<div class="node-detail-field"><span class="field-label">Connections:</span> ' + (selectedNode.connections || 0) + '</div>';
+        detailPanel.appendChild(nodeDetail);
+    } else {
+        var noSelection = document.createElement('div');
+        noSelection.className = 'no-selection-message';
+        noSelection.textContent = 'Select a node to view details';
+        detailPanel.appendChild(noSelection);
+    }
+
+    // Recent nodes list
+    var recentTitle = document.createElement('h4');
+    recentTitle.textContent = 'Recent Nodes';
+    recentTitle.className = 'detail-section-title';
+    detailPanel.appendChild(recentTitle);
+
+    var recentList = document.createElement('div');
+    recentList.className = 'recent-nodes-list';
+
+    // Mock recent nodes for UI scaffolding
+    var mockRecentNodes = [
+        { id: 'usr_001', type: 'entity', label: 'User Profile' },
+        { id: 'mem_142', type: 'memory', label: 'Health Routine' },
+        { id: 'con_089', type: 'concept', label: 'Sleep Quality' }
+    ];
+
+    mockRecentNodes.forEach(function(node) {
+        var nodeItem = document.createElement('div');
+        nodeItem.className = 'recent-node-item node-type-' + node.type;
+        nodeItem.innerHTML = '<span class="node-type-badge">' + node.type.charAt(0).toUpperCase() + '</span>' +
+            '<span class="node-label">' + node.label + '</span>';
+        nodeItem.onclick = function() {
+            state.intelligence.knowledgeGraph.selectedNode = node;
+            renderApp();
+        };
+        recentList.appendChild(nodeItem);
+    });
+
+    detailPanel.appendChild(recentList);
+    mainContent.appendChild(detailPanel);
+
+    container.appendChild(mainContent);
+
+    return container;
+}
+
+/**
+ * Intelligence & Memory: Embeddings View
+ * Manage vector collections and semantic search
+ */
+function renderEmbeddingsView() {
+    var container = document.createElement('div');
+    container.className = 'intelligence-container embeddings-container';
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'intelligence-header';
+
+    var titleSection = document.createElement('div');
+    titleSection.className = 'intelligence-title-section';
+
+    var title = document.createElement('h2');
+    title.textContent = 'Embeddings';
+    titleSection.appendChild(title);
+
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Vector collections powering semantic search and memory retrieval';
+    titleSection.appendChild(subtitle);
+
+    header.appendChild(titleSection);
+
+    // Actions
+    var actions = document.createElement('div');
+    actions.className = 'intelligence-actions';
+
+    var syncBtn = document.createElement('button');
+    syncBtn.className = 'btn btn-secondary';
+    syncBtn.textContent = 'Sync Collections';
+    syncBtn.onclick = function() {
+        showToast('Syncing collections...', 'info');
+    };
+    actions.appendChild(syncBtn);
+
+    header.appendChild(actions);
+    container.appendChild(header);
+
+    // Stats bar
+    var statsBar = document.createElement('div');
+    statsBar.className = 'intelligence-stats-bar';
+
+    var embeddingStats = state.intelligence.embeddings.stats || {
+        collections: 0,
+        totalVectors: 0,
+        dimensions: 1536,
+        avgQueryTime: 0
+    };
+
+    var statItems = [
+        { label: 'Collections', value: embeddingStats.collections || 3 },
+        { label: 'Total Vectors', value: embeddingStats.totalVectors || 12458 },
+        { label: 'Dimensions', value: embeddingStats.dimensions || 1536 },
+        { label: 'Avg Query (ms)', value: embeddingStats.avgQueryTime || 45 }
+    ];
+
+    statItems.forEach(function(stat) {
+        var statCard = document.createElement('div');
+        statCard.className = 'stat-card';
+        statCard.innerHTML = '<div class="stat-value">' + stat.value.toLocaleString() + '</div>' +
+            '<div class="stat-label">' + stat.label + '</div>';
+        statsBar.appendChild(statCard);
+    });
+
+    container.appendChild(statsBar);
+
+    // Main content - Collections grid + Search panel
+    var mainContent = document.createElement('div');
+    mainContent.className = 'embeddings-main';
+
+    // Left: Collections
+    var collectionsPanel = document.createElement('div');
+    collectionsPanel.className = 'embeddings-collections-panel';
+
+    var collectionsTitle = document.createElement('h3');
+    collectionsTitle.textContent = 'Vector Collections';
+    collectionsPanel.appendChild(collectionsTitle);
+
+    var collectionsGrid = document.createElement('div');
+    collectionsGrid.className = 'collections-grid';
+
+    // Mock collections for UI scaffolding
+    var mockCollections = [
+        { id: 'memories', name: 'User Memories', vectors: 8234, status: 'active', model: 'text-embedding-3-small' },
+        { id: 'knowledge', name: 'Knowledge Base', vectors: 3156, status: 'active', model: 'text-embedding-3-small' },
+        { id: 'conversations', name: 'Conversations', vectors: 1068, status: 'indexing', model: 'text-embedding-3-small' }
+    ];
+
+    mockCollections.forEach(function(col) {
+        var colCard = document.createElement('div');
+        colCard.className = 'collection-card' + (state.intelligence.embeddings.selectedCollection === col.id ? ' selected' : '');
+        colCard.innerHTML = '<div class="collection-header">' +
+            '<span class="collection-name">' + col.name + '</span>' +
+            '<span class="collection-status status-' + col.status + '">' + col.status + '</span>' +
+            '</div>' +
+            '<div class="collection-stats">' +
+            '<div class="collection-stat"><span class="stat-num">' + col.vectors.toLocaleString() + '</span> vectors</div>' +
+            '<div class="collection-model">' + col.model + '</div>' +
+            '</div>';
+        colCard.onclick = function() {
+            state.intelligence.embeddings.selectedCollection = col.id;
+            renderApp();
+        };
+        collectionsGrid.appendChild(colCard);
+    });
+
+    collectionsPanel.appendChild(collectionsGrid);
+    mainContent.appendChild(collectionsPanel);
+
+    // Right: Semantic Search Test
+    var searchPanel = document.createElement('div');
+    searchPanel.className = 'embeddings-search-panel';
+
+    var searchTitle = document.createElement('h3');
+    searchTitle.textContent = 'Semantic Search Test';
+    searchPanel.appendChild(searchTitle);
+
+    var searchForm = document.createElement('div');
+    searchForm.className = 'search-form';
+
+    var searchInput = document.createElement('textarea');
+    searchInput.className = 'search-textarea';
+    searchInput.placeholder = 'Enter text to find similar vectors...';
+    searchInput.rows = 3;
+    searchInput.value = state.intelligence.embeddings.searchQuery;
+    searchInput.oninput = function(e) {
+        state.intelligence.embeddings.searchQuery = e.target.value;
+    };
+    searchForm.appendChild(searchInput);
+
+    var searchBtn = document.createElement('button');
+    searchBtn.className = 'btn btn-primary';
+    searchBtn.textContent = state.intelligence.embeddings.searchLoading ? 'Searching...' : 'Search Vectors';
+    searchBtn.disabled = state.intelligence.embeddings.searchLoading;
+    searchBtn.onclick = function() {
+        if (!state.intelligence.embeddings.searchQuery.trim()) {
+            showToast('Enter a search query', 'warning');
+            return;
+        }
+        // Mock search results
+        state.intelligence.embeddings.searchLoading = true;
+        renderApp();
+        setTimeout(function() {
+            state.intelligence.embeddings.searchResults = [
+                { id: 'vec_001', score: 0.94, text: 'User prefers morning workouts around 6am', collection: 'memories' },
+                { id: 'vec_002', score: 0.89, text: 'Sleep quality improves with consistent schedule', collection: 'knowledge' },
+                { id: 'vec_003', score: 0.85, text: 'Discussed exercise routines last week', collection: 'conversations' }
+            ];
+            state.intelligence.embeddings.searchLoading = false;
+            renderApp();
+        }, 800);
+    };
+    searchForm.appendChild(searchBtn);
+
+    searchPanel.appendChild(searchForm);
+
+    // Search results
+    var resultsContainer = document.createElement('div');
+    resultsContainer.className = 'search-results-container';
+
+    var results = state.intelligence.embeddings.searchResults || [];
+    if (results.length > 0) {
+        var resultsTitle = document.createElement('h4');
+        resultsTitle.textContent = 'Results (' + results.length + ')';
+        resultsContainer.appendChild(resultsTitle);
+
+        results.forEach(function(result) {
+            var resultCard = document.createElement('div');
+            resultCard.className = 'search-result-card';
+            resultCard.innerHTML = '<div class="result-header">' +
+                '<span class="result-score">' + (result.score * 100).toFixed(0) + '% match</span>' +
+                '<span class="result-collection">' + result.collection + '</span>' +
+                '</div>' +
+                '<div class="result-text">' + result.text + '</div>';
+            resultsContainer.appendChild(resultCard);
+        });
+    } else if (!state.intelligence.embeddings.searchLoading) {
+        var noResults = document.createElement('div');
+        noResults.className = 'no-results-message';
+        noResults.textContent = 'Enter a query to test semantic search';
+        resultsContainer.appendChild(noResults);
+    }
+
+    searchPanel.appendChild(resultsContainer);
+    mainContent.appendChild(searchPanel);
+
+    container.appendChild(mainContent);
+
+    return container;
+}
+
+/**
+ * Intelligence & Memory: Recall View
+ * Test and debug memory retrieval across all sources
+ */
+function renderRecallView() {
+    var container = document.createElement('div');
+    container.className = 'intelligence-container recall-container';
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'intelligence-header';
+
+    var titleSection = document.createElement('div');
+    titleSection.className = 'intelligence-title-section';
+
+    var title = document.createElement('h2');
+    title.textContent = 'Recall';
+    titleSection.appendChild(title);
+
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Test memory retrieval and debug recall accuracy';
+    titleSection.appendChild(subtitle);
+
+    header.appendChild(titleSection);
+    container.appendChild(header);
+
+    // Main content - Query panel + Results
+    var mainContent = document.createElement('div');
+    mainContent.className = 'recall-main';
+
+    // Query panel
+    var queryPanel = document.createElement('div');
+    queryPanel.className = 'recall-query-panel';
+
+    var queryTitle = document.createElement('h3');
+    queryTitle.textContent = 'Test Query';
+    queryPanel.appendChild(queryTitle);
+
+    var queryInput = document.createElement('textarea');
+    queryInput.className = 'recall-query-input';
+    queryInput.placeholder = 'Enter a natural language query to test recall...\n\nExample: "What are my exercise habits?"';
+    queryInput.rows = 4;
+    queryInput.value = state.intelligence.recall.testQuery;
+    queryInput.oninput = function(e) {
+        state.intelligence.recall.testQuery = e.target.value;
+    };
+    queryPanel.appendChild(queryInput);
+
+    // Filters row
+    var filtersRow = document.createElement('div');
+    filtersRow.className = 'recall-filters';
+
+    var sourceFilter = document.createElement('select');
+    sourceFilter.className = 'filter-select';
+    var sourceOptions = [
+        { value: 'all', label: 'All Sources' },
+        { value: 'memories', label: 'Memories' },
+        { value: 'knowledge', label: 'Knowledge Base' },
+        { value: 'conversations', label: 'Conversations' }
+    ];
+    sourceOptions.forEach(function(opt) {
+        var option = document.createElement('option');
+        option.value = opt.value;
+        option.textContent = opt.label;
+        option.selected = state.intelligence.recall.filters.source === opt.value;
+        sourceFilter.appendChild(option);
+    });
+    sourceFilter.onchange = function(e) {
+        state.intelligence.recall.filters.source = e.target.value;
+        renderApp();
+    };
+    filtersRow.appendChild(sourceFilter);
+
+    var minScoreLabel = document.createElement('label');
+    minScoreLabel.className = 'min-score-label';
+    minScoreLabel.textContent = 'Min Score: ';
+    var minScoreInput = document.createElement('input');
+    minScoreInput.type = 'range';
+    minScoreInput.className = 'min-score-slider';
+    minScoreInput.min = '0';
+    minScoreInput.max = '100';
+    minScoreInput.value = state.intelligence.recall.filters.minScore;
+    var minScoreValue = document.createElement('span');
+    minScoreValue.className = 'min-score-value';
+    minScoreValue.textContent = state.intelligence.recall.filters.minScore + '%';
+    minScoreInput.oninput = function(e) {
+        state.intelligence.recall.filters.minScore = parseInt(e.target.value);
+        minScoreValue.textContent = e.target.value + '%';
+    };
+    minScoreLabel.appendChild(minScoreInput);
+    minScoreLabel.appendChild(minScoreValue);
+    filtersRow.appendChild(minScoreLabel);
+
+    queryPanel.appendChild(filtersRow);
+
+    // Run query button
+    var runBtn = document.createElement('button');
+    runBtn.className = 'btn btn-primary btn-lg';
+    runBtn.textContent = state.intelligence.recall.loading ? 'Running Recall...' : 'Run Recall Query';
+    runBtn.disabled = state.intelligence.recall.loading;
+    runBtn.onclick = function() {
+        if (!state.intelligence.recall.testQuery.trim()) {
+            showToast('Enter a query to test', 'warning');
+            return;
+        }
+        state.intelligence.recall.loading = true;
+        renderApp();
+        // Mock recall results
+        setTimeout(function() {
+            state.intelligence.recall.results = [
+                { id: 'rec_001', source: 'memories', score: 0.92, text: 'Morning jogs at 6:30am, 3 times per week', metadata: { category: 'health_wellness', timestamp: '2024-01-15' } },
+                { id: 'rec_002', source: 'memories', score: 0.88, text: 'Prefers outdoor activities over gym workouts', metadata: { category: 'lifestyle_routines', timestamp: '2024-01-10' } },
+                { id: 'rec_003', source: 'knowledge', score: 0.81, text: 'Cardiovascular exercise benefits include improved heart health', metadata: { source: 'health_kb', timestamp: '2023-12-01' } },
+                { id: 'rec_004', source: 'conversations', score: 0.76, text: 'Discussed starting a new workout routine', metadata: { session: 'conv_234', timestamp: '2024-01-18' } }
+            ];
+            state.intelligence.recall.loading = false;
+            // Add to history
+            state.intelligence.recall.history.unshift({
+                query: state.intelligence.recall.testQuery,
+                resultCount: state.intelligence.recall.results.length,
+                timestamp: new Date().toISOString()
+            });
+            if (state.intelligence.recall.history.length > 10) {
+                state.intelligence.recall.history = state.intelligence.recall.history.slice(0, 10);
+            }
+            renderApp();
+        }, 1000);
+    };
+    queryPanel.appendChild(runBtn);
+
+    mainContent.appendChild(queryPanel);
+
+    // Results panel
+    var resultsPanel = document.createElement('div');
+    resultsPanel.className = 'recall-results-panel';
+
+    var resultsTitle = document.createElement('h3');
+    resultsTitle.textContent = 'Recall Results';
+    resultsPanel.appendChild(resultsTitle);
+
+    var results = state.intelligence.recall.results || [];
+    if (state.intelligence.recall.loading) {
+        var loadingDiv = document.createElement('div');
+        loadingDiv.className = 'recall-loading';
+        loadingDiv.innerHTML = '<div class="loading-spinner"></div><div>Running recall query...</div>';
+        resultsPanel.appendChild(loadingDiv);
+    } else if (results.length > 0) {
+        var resultsList = document.createElement('div');
+        resultsList.className = 'recall-results-list';
+
+        results.forEach(function(result, idx) {
+            var resultCard = document.createElement('div');
+            resultCard.className = 'recall-result-card' + (state.intelligence.recall.selectedResult === result.id ? ' selected' : '');
+
+            var scoreBar = document.createElement('div');
+            scoreBar.className = 'result-score-bar';
+            scoreBar.innerHTML = '<div class="score-fill" style="width: ' + (result.score * 100) + '%"></div>';
+
+            var resultHeader = document.createElement('div');
+            resultHeader.className = 'result-header';
+            resultHeader.innerHTML = '<span class="result-rank">#' + (idx + 1) + '</span>' +
+                '<span class="result-score-text">' + (result.score * 100).toFixed(0) + '% match</span>' +
+                '<span class="result-source source-' + result.source + '">' + result.source + '</span>';
+
+            var resultText = document.createElement('div');
+            resultText.className = 'result-text';
+            resultText.textContent = result.text;
+
+            var resultMeta = document.createElement('div');
+            resultMeta.className = 'result-metadata';
+            if (result.metadata) {
+                Object.keys(result.metadata).forEach(function(key) {
+                    resultMeta.innerHTML += '<span class="meta-item"><span class="meta-key">' + key + ':</span> ' + result.metadata[key] + '</span>';
+                });
+            }
+
+            resultCard.appendChild(scoreBar);
+            resultCard.appendChild(resultHeader);
+            resultCard.appendChild(resultText);
+            resultCard.appendChild(resultMeta);
+
+            resultCard.onclick = function() {
+                state.intelligence.recall.selectedResult = result.id;
+                renderApp();
+            };
+
+            resultsList.appendChild(resultCard);
+        });
+
+        resultsPanel.appendChild(resultsList);
+    } else {
+        var emptyState = document.createElement('div');
+        emptyState.className = 'recall-empty-state';
+        emptyState.innerHTML = '<div class="empty-icon">' + getKnowledgeGraphIcon('search') + '</div>' +
+            '<div class="empty-title">No results yet</div>' +
+            '<div class="empty-desc">Enter a query and click "Run Recall Query" to test memory retrieval</div>';
+        resultsPanel.appendChild(emptyState);
+    }
+
+    mainContent.appendChild(resultsPanel);
+
+    // History sidebar
+    var historyPanel = document.createElement('div');
+    historyPanel.className = 'recall-history-panel';
+
+    var historyTitle = document.createElement('h3');
+    historyTitle.textContent = 'Query History';
+    historyPanel.appendChild(historyTitle);
+
+    var history = state.intelligence.recall.history || [];
+    if (history.length > 0) {
+        var historyList = document.createElement('div');
+        historyList.className = 'history-list';
+
+        history.forEach(function(item) {
+            var historyItem = document.createElement('div');
+            historyItem.className = 'history-item';
+            historyItem.innerHTML = '<div class="history-query">' + item.query.substring(0, 50) + (item.query.length > 50 ? '...' : '') + '</div>' +
+                '<div class="history-meta">' + item.resultCount + ' results</div>';
+            historyItem.onclick = function() {
+                state.intelligence.recall.testQuery = item.query;
+                renderApp();
+            };
+            historyList.appendChild(historyItem);
+        });
+
+        historyPanel.appendChild(historyList);
+    } else {
+        var noHistory = document.createElement('div');
+        noHistory.className = 'no-history';
+        noHistory.textContent = 'No query history yet';
+        historyPanel.appendChild(noHistory);
+    }
+
+    mainContent.appendChild(historyPanel);
+
+    container.appendChild(mainContent);
+
+    return container;
+}
+
+/**
+ * Intelligence & Memory: Inspector View
+ * Debug AI sessions, tool calls, and reasoning traces
+ */
+function renderInspectorView() {
+    var container = document.createElement('div');
+    container.className = 'intelligence-container inspector-container';
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'intelligence-header';
+
+    var titleSection = document.createElement('div');
+    titleSection.className = 'intelligence-title-section';
+
+    var title = document.createElement('h2');
+    title.textContent = 'Inspector';
+    titleSection.appendChild(title);
+
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Debug AI sessions, tool calls, and reasoning traces across all surfaces';
+    titleSection.appendChild(subtitle);
+
+    header.appendChild(titleSection);
+    container.appendChild(header);
+
+    // Filters bar
+    var filtersBar = document.createElement('div');
+    filtersBar.className = 'inspector-filters-bar';
+
+    // Surface filter
+    var surfaceFilter = document.createElement('select');
+    surfaceFilter.className = 'filter-select';
+    var surfaceOptions = [
+        { value: 'all', label: 'All Surfaces' },
+        { value: 'operator', label: 'Operator Console' },
+        { value: 'orb', label: 'ORB' },
+        { value: 'api', label: 'Direct API' }
+    ];
+    surfaceOptions.forEach(function(opt) {
+        var option = document.createElement('option');
+        option.value = opt.value;
+        option.textContent = opt.label;
+        option.selected = state.intelligence.inspector.filters.surface === opt.value;
+        surfaceFilter.appendChild(option);
+    });
+    surfaceFilter.onchange = function(e) {
+        state.intelligence.inspector.filters.surface = e.target.value;
+        renderApp();
+    };
+    filtersBar.appendChild(surfaceFilter);
+
+    // Status filter
+    var statusFilter = document.createElement('select');
+    statusFilter.className = 'filter-select';
+    var statusOptions = [
+        { value: 'all', label: 'All Status' },
+        { value: 'success', label: 'Success' },
+        { value: 'error', label: 'Error' },
+        { value: 'pending', label: 'Pending' }
+    ];
+    statusOptions.forEach(function(opt) {
+        var option = document.createElement('option');
+        option.value = opt.value;
+        option.textContent = opt.label;
+        option.selected = state.intelligence.inspector.filters.status === opt.value;
+        statusFilter.appendChild(option);
+    });
+    statusFilter.onchange = function(e) {
+        state.intelligence.inspector.filters.status = e.target.value;
+        renderApp();
+    };
+    filtersBar.appendChild(statusFilter);
+
+    // Time range filter
+    var timeFilter = document.createElement('select');
+    timeFilter.className = 'filter-select';
+    var timeOptions = [
+        { value: '1h', label: 'Last Hour' },
+        { value: '24h', label: 'Last 24 Hours' },
+        { value: '7d', label: 'Last 7 Days' },
+        { value: '30d', label: 'Last 30 Days' }
+    ];
+    timeOptions.forEach(function(opt) {
+        var option = document.createElement('option');
+        option.value = opt.value;
+        option.textContent = opt.label;
+        option.selected = state.intelligence.inspector.filters.dateRange === opt.value;
+        timeFilter.appendChild(option);
+    });
+    timeFilter.onchange = function(e) {
+        state.intelligence.inspector.filters.dateRange = e.target.value;
+        renderApp();
+    };
+    filtersBar.appendChild(timeFilter);
+
+    container.appendChild(filtersBar);
+
+    // Main content - Sessions list + Detail
+    var mainContent = document.createElement('div');
+    mainContent.className = 'inspector-main';
+
+    // Sessions list
+    var sessionsPanel = document.createElement('div');
+    sessionsPanel.className = 'inspector-sessions-panel';
+
+    var sessionsTitle = document.createElement('h3');
+    sessionsTitle.textContent = 'AI Sessions';
+    sessionsPanel.appendChild(sessionsTitle);
+
+    // Mock sessions for UI scaffolding
+    var mockSessions = [
+        { id: 'sess_001', surface: 'operator', status: 'success', query: 'What is the status of VTID-01208?', toolCalls: 2, duration: 1250, timestamp: '2024-01-23T14:32:00Z' },
+        { id: 'sess_002', surface: 'orb', status: 'success', query: 'Tell me about my sleep patterns', toolCalls: 3, duration: 2100, timestamp: '2024-01-23T14:28:00Z' },
+        { id: 'sess_003', surface: 'operator', status: 'error', query: 'Deploy gateway to production', toolCalls: 1, duration: 450, timestamp: '2024-01-23T14:15:00Z', error: 'Governance blocked: L2 violation' },
+        { id: 'sess_004', surface: 'api', status: 'success', query: 'Search knowledge base for API docs', toolCalls: 1, duration: 890, timestamp: '2024-01-23T13:55:00Z' }
+    ];
+
+    var sessionsList = document.createElement('div');
+    sessionsList.className = 'sessions-list';
+
+    mockSessions.forEach(function(session) {
+        var sessionCard = document.createElement('div');
+        sessionCard.className = 'session-card' + (state.intelligence.inspector.selectedSession === session.id ? ' selected' : '');
+
+        var sessionHeader = document.createElement('div');
+        sessionHeader.className = 'session-header';
+        sessionHeader.innerHTML = '<span class="session-surface surface-' + session.surface + '">' + session.surface + '</span>' +
+            '<span class="session-status status-' + session.status + '">' + session.status + '</span>' +
+            '<span class="session-time">' + formatRelativeTime(session.timestamp) + '</span>';
+
+        var sessionQuery = document.createElement('div');
+        sessionQuery.className = 'session-query';
+        sessionQuery.textContent = session.query;
+
+        var sessionMeta = document.createElement('div');
+        sessionMeta.className = 'session-meta';
+        sessionMeta.innerHTML = '<span class="meta-item">' + session.toolCalls + ' tool calls</span>' +
+            '<span class="meta-item">' + session.duration + 'ms</span>';
+
+        if (session.error) {
+            var errorDiv = document.createElement('div');
+            errorDiv.className = 'session-error';
+            errorDiv.textContent = session.error;
+            sessionCard.appendChild(errorDiv);
+        }
+
+        sessionCard.appendChild(sessionHeader);
+        sessionCard.appendChild(sessionQuery);
+        sessionCard.appendChild(sessionMeta);
+
+        sessionCard.onclick = function() {
+            state.intelligence.inspector.selectedSession = session.id;
+            renderApp();
+        };
+
+        sessionsList.appendChild(sessionCard);
+    });
+
+    sessionsPanel.appendChild(sessionsList);
+    mainContent.appendChild(sessionsPanel);
+
+    // Detail panel
+    var detailPanel = document.createElement('div');
+    detailPanel.className = 'inspector-detail-panel';
+
+    var selectedId = state.intelligence.inspector.selectedSession;
+    var selectedSession = mockSessions.find(function(s) { return s.id === selectedId; });
+
+    if (selectedSession) {
+        var detailTitle = document.createElement('h3');
+        detailTitle.textContent = 'Session Details';
+        detailPanel.appendChild(detailTitle);
+
+        // Session info
+        var sessionInfo = document.createElement('div');
+        sessionInfo.className = 'session-info';
+        sessionInfo.innerHTML = '<div class="info-row"><span class="info-label">Session ID:</span> ' + selectedSession.id + '</div>' +
+            '<div class="info-row"><span class="info-label">Surface:</span> ' + selectedSession.surface + '</div>' +
+            '<div class="info-row"><span class="info-label">Status:</span> <span class="status-badge status-' + selectedSession.status + '">' + selectedSession.status + '</span></div>' +
+            '<div class="info-row"><span class="info-label">Duration:</span> ' + selectedSession.duration + 'ms</div>' +
+            '<div class="info-row"><span class="info-label">Timestamp:</span> ' + new Date(selectedSession.timestamp).toLocaleString() + '</div>';
+        detailPanel.appendChild(sessionInfo);
+
+        // Query
+        var querySection = document.createElement('div');
+        querySection.className = 'detail-section';
+        querySection.innerHTML = '<h4>User Query</h4><div class="query-box">' + selectedSession.query + '</div>';
+        detailPanel.appendChild(querySection);
+
+        // Tool calls
+        var toolsSection = document.createElement('div');
+        toolsSection.className = 'detail-section';
+
+        var toolsTitle = document.createElement('h4');
+        toolsTitle.textContent = 'Tool Calls (' + selectedSession.toolCalls + ')';
+        toolsSection.appendChild(toolsTitle);
+
+        // Mock tool calls
+        var mockToolCalls = [
+            { name: 'autopilot_get_status', args: { vtid: 'VTID-01208' }, result: { status: 'completed', title: 'LLM Telemetry' }, duration: 320 },
+            { name: 'knowledge_search', args: { query: 'VTID-01208 details' }, result: { found: true, matches: 3 }, duration: 180 }
+        ];
+
+        var toolsList = document.createElement('div');
+        toolsList.className = 'tools-list';
+
+        mockToolCalls.forEach(function(tool, idx) {
+            var toolCard = document.createElement('div');
+            toolCard.className = 'tool-card';
+
+            var toolHeader = document.createElement('div');
+            toolHeader.className = 'tool-header';
+            toolHeader.innerHTML = '<span class="tool-name">' + tool.name + '</span>' +
+                '<span class="tool-duration">' + tool.duration + 'ms</span>';
+
+            var expanded = state.intelligence.inspector.expandedTools[selectedSession.id + '_' + idx];
+
+            var toggleBtn = document.createElement('button');
+            toggleBtn.className = 'tool-toggle-btn';
+            toggleBtn.textContent = expanded ? 'Collapse' : 'Expand';
+            toggleBtn.onclick = function(e) {
+                e.stopPropagation();
+                var key = selectedSession.id + '_' + idx;
+                state.intelligence.inspector.expandedTools[key] = !state.intelligence.inspector.expandedTools[key];
+                renderApp();
+            };
+            toolHeader.appendChild(toggleBtn);
+
+            toolCard.appendChild(toolHeader);
+
+            if (expanded) {
+                var toolDetails = document.createElement('div');
+                toolDetails.className = 'tool-details';
+                toolDetails.innerHTML = '<div class="tool-args"><strong>Arguments:</strong><pre>' + JSON.stringify(tool.args, null, 2) + '</pre></div>' +
+                    '<div class="tool-result"><strong>Result:</strong><pre>' + JSON.stringify(tool.result, null, 2) + '</pre></div>';
+                toolCard.appendChild(toolDetails);
+            }
+
+            toolsList.appendChild(toolCard);
+        });
+
+        toolsSection.appendChild(toolsList);
+        detailPanel.appendChild(toolsSection);
+
+    } else {
+        var noSelection = document.createElement('div');
+        noSelection.className = 'no-selection-state';
+        noSelection.innerHTML = '<div class="empty-icon">' + getKnowledgeGraphIcon('inspect') + '</div>' +
+            '<div class="empty-title">Select a session</div>' +
+            '<div class="empty-desc">Click on a session to view tool calls and reasoning traces</div>';
+        detailPanel.appendChild(noSelection);
+    }
+
+    mainContent.appendChild(detailPanel);
+
+    container.appendChild(mainContent);
+
+    return container;
+}
+
+/**
+ * Helper: Get SVG icons for Knowledge Graph and Intelligence screens
+ */
+function getKnowledgeGraphIcon(type) {
+    var icons = {
+        node: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="8"/></svg>',
+        edge: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>',
+        entity: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>',
+        concept: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>',
+        memory: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 6h-8l-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V6h5.17l2 2H20v10z"/></svg>',
+        graph: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="18" r="3"/><circle cx="12" cy="12" r="3"/><line x1="6" y1="6" x2="12" y2="12" stroke="currentColor" stroke-width="1.5"/><line x1="18" y1="6" x2="12" y2="12" stroke="currentColor" stroke-width="1.5"/><line x1="6" y1="18" x2="12" y2="12" stroke="currentColor" stroke-width="1.5"/><line x1="18" y1="18" x2="12" y2="12" stroke="currentColor" stroke-width="1.5"/></svg>',
+        search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
+        inspect: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>'
+    };
+    return icons[type] || icons.node;
+}
+
+/**
+ * Helper: Format relative time
+ */
+function formatRelativeTime(timestamp) {
+    var now = new Date();
+    var then = new Date(timestamp);
+    var diffMs = now - then;
+    var diffMins = Math.floor(diffMs / 60000);
+    var diffHours = Math.floor(diffMs / 3600000);
+    var diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return diffMins + 'm ago';
+    if (diffHours < 24) return diffHours + 'h ago';
+    if (diffDays < 7) return diffDays + 'd ago';
+    return then.toLocaleDateString();
 }
 
 /**
