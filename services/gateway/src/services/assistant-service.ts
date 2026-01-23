@@ -17,6 +17,12 @@ import { GoogleGenerativeAI, GenerateContentResult } from '@google/generative-ai
 import { randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
 import { AssistantContext, AssistantChatResponse } from '../types/assistant';
+// VTID-01208: LLM Telemetry
+import {
+  startLLMCall,
+  completeLLMCall,
+  failLLMCall,
+} from './llm-telemetry-service';
 
 // Gemini API configuration (AI Studio API key)
 // NOTE: Lazy initialization - do NOT throw at import time!
@@ -132,12 +138,24 @@ async function generateWithFallback(
 /**
  * VTID-0150-B/VTID-0151-C: Call Gemini API for assistant response
  * Uses API key authentication with model fallback.
+ * VTID-01208: Added LLM telemetry instrumentation.
  */
 async function callGemini(
   message: string,
   context: AssistantContext
 ): Promise<{ reply: string; tokens_in: number; tokens_out: number; model: string }> {
   const systemPrompt = buildSystemPrompt(context);
+
+  // VTID-01208: Start LLM telemetry - service='orb-assistant' to differentiate from Operator
+  const llmContext = await startLLMCall({
+    vtid: null, // ORB assistant doesn't have a VTID context
+    threadId: context.sessionId,
+    service: 'orb-assistant',
+    stage: 'operator',
+    provider: 'vertex',
+    model: PRIMARY_MODEL,
+    prompt: message,
+  });
 
   try {
     console.log(`[VTID-0151-C] Calling Gemini API (primary=${PRIMARY_MODEL}, fallback=${FALLBACK_MODEL})`);
@@ -150,6 +168,8 @@ async function callGemini(
     const content = candidate?.content;
 
     if (!content) {
+      // VTID-01208: Complete telemetry even for empty responses
+      await completeLLMCall(llmContext, { inputTokens: 0, outputTokens: 0 });
       return {
         reply: 'I apologize, but I could not generate a response. Please try again.',
         tokens_in: 0,
@@ -170,9 +190,26 @@ async function callGemini(
 
     console.log(`[VTID-0151-C] Gemini API response received (model=${lastUsedModel}), tokens_in=${tokens_in}, tokens_out=${tokens_out}`);
 
+    // VTID-01208: Complete LLM telemetry
+    const usedFallback = lastUsedModel !== PRIMARY_MODEL;
+    await completeLLMCall(llmContext, {
+      inputTokens: tokens_in,
+      outputTokens: tokens_out,
+      fallbackUsed: usedFallback,
+      fallbackFrom: usedFallback ? PRIMARY_MODEL : undefined,
+      fallbackTo: usedFallback ? lastUsedModel : undefined,
+    });
+
     return { reply, tokens_in, tokens_out, model: lastUsedModel };
   } catch (error: any) {
     console.error(`[VTID-0151-C] Gemini API call failed:`, error.message);
+
+    // VTID-01208: Record failed LLM call
+    await failLLMCall(llmContext, {
+      code: 'GEMINI_API_ERROR',
+      message: error.message,
+    });
+
     return {
       reply: `I encountered an error while processing your request. Please try again.
 
