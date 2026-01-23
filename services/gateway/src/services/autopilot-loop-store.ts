@@ -645,6 +645,20 @@ export async function markRunFailed(
   });
 }
 
+/**
+ * Mark run as completed (VTID-01208: supports recovery from failed state)
+ * This is called when terminalization succeeds, even after a prior failure.
+ */
+export async function markRunCompleted(vtid: string): Promise<boolean> {
+  const timestamp = new Date().toISOString();
+  return updateRunState(vtid, {
+    state: 'completed',
+    completed_at: timestamp,
+    error: null,
+    error_code: null,
+  });
+}
+
 // =============================================================================
 // Exports
 // =============================================================================
@@ -676,4 +690,5 @@ export default {
   setBackoffLock,
   getActiveRuns,
   markRunFailed,
+  markRunCompleted, // VTID-01208: Recovery from failed state
 };

@@ -386,19 +386,20 @@ export async function verifySpecIntegrity(vtid: string): Promise<boolean> {
 
 /**
  * Valid state transitions
+ * VTID-01208: Added recovery transition from failed → completed for terminalization success
  */
 const VALID_TRANSITIONS: Record<AutopilotState, AutopilotState[]> = {
-  'allocated': ['in_progress', 'failed'],
-  'in_progress': ['building', 'failed'],
-  'building': ['pr_created', 'failed'],
-  'pr_created': ['reviewing', 'failed'],
-  'reviewing': ['validated', 'failed'],
-  'validated': ['merged', 'failed'],
-  'merged': ['deploying', 'failed'],
-  'deploying': ['verifying', 'failed'],
+  'allocated': ['in_progress', 'failed', 'completed'],
+  'in_progress': ['building', 'failed', 'completed'],
+  'building': ['pr_created', 'failed', 'completed'],
+  'pr_created': ['reviewing', 'failed', 'completed'],
+  'reviewing': ['validated', 'failed', 'completed'],
+  'validated': ['merged', 'failed', 'completed'],
+  'merged': ['deploying', 'failed', 'completed'],
+  'deploying': ['verifying', 'failed', 'completed'],
   'verifying': ['completed', 'failed'],
   'completed': [],  // Terminal - no transitions
-  'failed': [],     // Terminal - no transitions
+  'failed': ['completed'],  // VTID-01208: Allow recovery to completed on terminalization success
 };
 
 /**

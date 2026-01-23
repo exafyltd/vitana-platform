@@ -103,10 +103,13 @@ const STATE_ORDER: Record<AutopilotState, number> = {
 };
 
 /**
- * Check if transition is forward (or to failed)
+ * Check if transition is forward (or to failed, or recovery from failed to completed)
+ * VTID-01208: Added recovery transition from failed → completed for terminalization success
  */
 function isForwardTransition(from: AutopilotState, to: AutopilotState): boolean {
   if (to === 'failed') return true; // Failed is always allowed
+  // VTID-01208: Allow recovery from failed to completed (terminalization success)
+  if (from === 'failed' && to === 'completed') return true;
   return STATE_ORDER[to] > STATE_ORDER[from];
 }
 
@@ -346,6 +349,34 @@ export const EVENT_MAPPING_RULES: EventMappingRule[] = [
     toState: 'completed',
     description: 'Verification passed - mark completed (terminalize)',
   },
+
+  // -------------------------------------------------------------------------
+  // VTID-01208: TERMINALIZATION SUCCESS → COMPLETED (from any non-terminal state)
+  // -------------------------------------------------------------------------
+  // This is the AUTHORITATIVE completion signal. When vtid-terminalize marks a task
+  // as terminal with success, the autopilot state MUST be updated to completed.
+  // This fixes the race condition where worker_runner.error triggers 'failed' state
+  // but the retry succeeds and terminalization completes.
+  {
+    eventTypes: [
+      'vtid.terminalize.success',       // VTID-01169: Terminalize endpoint success
+      'worker_runner.terminalized',     // VTID-01183: Worker runner terminalization success
+    ],
+    fromStates: ['allocated', 'in_progress', 'building', 'pr_created', 'reviewing', 'validated', 'merged', 'deploying', 'verifying', 'failed'],
+    toState: 'completed',
+    description: 'VTID-01208: Terminalization success - authoritative completion signal',
+    condition: (event) => {
+      // Only transition to completed if the terminalization outcome is success
+      const meta = event.metadata || event.meta || {};
+      const outcome = meta.outcome || meta.terminal_outcome;
+      // If outcome is explicitly 'failed' or 'cancelled', don't transition to completed
+      if (outcome === 'failed' || outcome === 'cancelled') {
+        return false;
+      }
+      // Default: if terminalize.success event, assume success
+      return true;
+    },
+  },
   {
     eventTypes: [
       'autopilot.verification.failed',
@@ -481,8 +512,22 @@ export function mapEventToTransition(
 ): MappingResult {
   const eventType = normalizeEventType(event);
 
-  // Terminal states don't accept transitions
-  if (currentState === 'completed' || currentState === 'failed') {
+  // Terminal states don't accept transitions EXCEPT for terminalize success
+  // VTID-01208: Allow recovery from 'failed' to 'completed' when terminalization succeeds
+  // This handles the race condition where worker_runner.error triggers 'failed'
+  // but the retry succeeds and terminalization completes successfully.
+  const isTerminalizationSuccess =
+    eventType === 'vtid.terminalize.success' ||
+    eventType === 'worker_runner.terminalized';
+
+  if (currentState === 'completed') {
+    return {
+      matched: false,
+      reason: `VTID is in terminal state: ${currentState}`,
+    };
+  }
+
+  if (currentState === 'failed' && !isTerminalizationSuccess) {
     return {
       matched: false,
       reason: `VTID is in terminal state: ${currentState}`,
