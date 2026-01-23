@@ -52,6 +52,7 @@ import {
   canAttemptAction,
   setBackoffLock,
   markRunFailed,
+  markRunCompleted, // VTID-01208: Recovery from failed state
   LoopStats,
   ProcessedEvent,
   RunState,
@@ -347,7 +348,13 @@ async function performTransition(
       await markVerifying(vtid);
       break;
     case 'completed':
+      // VTID-01208: Update both in-memory controller and persistent run state
+      // This handles recovery from failed state when terminalization succeeds
+      if (fromState === 'failed') {
+        console.log(`${LOG_PREFIX} VTID-01208: Recovering ${vtid} from failed → completed (terminalization success)`);
+      }
       await markCompleted(vtid);
+      await markRunCompleted(vtid); // Update persistent run state
       break;
     case 'failed':
       const errorMsg = (event.message || event.metadata?.error || 'Unknown error') as string;

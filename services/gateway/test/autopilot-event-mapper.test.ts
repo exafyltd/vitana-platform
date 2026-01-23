@@ -291,7 +291,8 @@ describe('Autopilot Event Mapper - VTID-01179', () => {
 
     it('should return empty array for terminal states', () => {
       expect(getValidNextStates('completed')).toEqual([]);
-      expect(getValidNextStates('failed')).toEqual([]);
+      // VTID-01208: 'failed' can now transition to 'completed' on terminalization success
+      expect(getValidNextStates('failed')).toEqual(['completed']);
     });
   });
 
