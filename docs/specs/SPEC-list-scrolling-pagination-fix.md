@@ -5,6 +5,7 @@
 **Author:** Claude
 **Date:** 2026-01-24
 **Priority:** CRITICAL
+**Scope:** FRONTEND ONLY
 
 ---
 
@@ -26,14 +27,22 @@
 
 **REFERENCE IMPLEMENTATION:** OASIS > Events screen (WORKING CORRECTLY)
 
-**UX DESIGN RULE:** Every screen that displays a list MUST have:
-1. **Scrollable content area** with proper overflow handling
-2. **"Load More" button** at the bottom of the scrollable content
-3. **Pagination state management** (limit, offset, hasMore)
+**SCOPE:** This is a **FRONTEND-ONLY** fix. No backend API changes required.
 
 ---
 
-## 2. Universal 3-Row Structure
+## 2. UX Design Rule (MANDATORY)
+
+**EVERY SCREEN THAT DISPLAYS A LIST MUST HAVE:**
+
+1. **Scrollable content area** using `.list-scroll-container` class
+2. **Sticky table headers** so column names stay visible while scrolling
+3. **Item count** displayed in Row 3 toolbar
+4. **Load More button** for screens with paginated APIs
+
+---
+
+## 3. Universal 3-Row Structure
 
 All list screens MUST follow this exact structure:
 
@@ -58,133 +67,100 @@ All list screens MUST follow this exact structure:
 
 ---
 
-## 3. Reference Implementation: OASIS Events
+## 4. Screen Classification
 
-**File:** `services/gateway/src/frontend/command-hub/app.js`
+### 4.1 Screens WITH Pagination (Add Load More)
 
-### 3.1 State Structure (Lines 2650-2670)
+These screens have APIs that already support `limit`/`offset`:
 
-```javascript
-oasisEvents: {
-    items: [],
-    loading: false,
-    error: null,
-    fetched: false,
-    selectedEvent: null,
-    filters: {
-        topic: '',
-        service: '',
-        status: ''
-    },
-    pagination: {
-        limit: 50,
-        offset: 0,
-        hasMore: true
-    }
+| Screen | API Endpoint | Has Pagination |
+|--------|--------------|----------------|
+| OASIS Events | `/api/v1/oasis/events` | ✅ YES |
+| Telemetry | `/api/v1/agents/telemetry` | ✅ YES |
+| Governance History | `/api/v1/governance/history` | ✅ YES |
+| Governance Evaluations | `/api/v1/governance/evaluations` | ✅ YES |
+
+### 4.2 Screens WITHOUT Pagination (Scrolling Only)
+
+These screens return small/static data sets - just add scrolling:
+
+| Screen | Reason | Action |
+|--------|--------|--------|
+| Registered Agents | Static list (5-6 subagents) | Add scroll container |
+| Skills | Static registry (~15 skills) | Add scroll container |
+| Pipelines | VTID ledger view | Add scroll container |
+| Governance Rules | Loaded from config (~66 rules) | Add scroll container |
+| Governance Categories | Small set (~10 categories) | Add scroll container |
+| Governance Controls | Moderate set | Add scroll container |
+| Governance Violations | From database | Add scroll container + Load More |
+| Governance Proposals | From database | Add scroll container + Load More |
+
+---
+
+## 5. Required CSS Fix
+
+**Problem:** Parent containers have `overflow: hidden` which blocks scrolling.
+
+**File:** `services/gateway/src/frontend/command-hub/styles.css`
+
+### 5.1 Fix Agents Container
+
+```css
+/* BEFORE (BROKEN) */
+.agents-registry-container {
+  padding: 16px 24px;
+  max-width: 1400px;
+  /* NO overflow - content overflows viewport */
+}
+
+/* AFTER (FIXED) */
+.agents-registry-container {
+  padding: 16px 24px;
+  max-width: 1400px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.agents-registry-content {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 ```
 
-### 3.2 Render Pattern (Lines 12895-13064)
+### 5.2 Fix Governance Container
 
-```javascript
-function renderOasisEventsView() {
-    var container = document.createElement('div');
-    container.className = 'oasis-events-view';
-
-    // Row 3: Toolbar
-    var toolbar = document.createElement('div');
-    toolbar.className = 'list-toolbar';
-
-    var filters = document.createElement('div');
-    filters.className = 'list-toolbar__filters';
-    // ... add filter dropdowns ...
-
-    var metadata = document.createElement('div');
-    metadata.className = 'list-toolbar__metadata';
-    metadata.textContent = items.length + ' events';
-
-    toolbar.appendChild(filters);
-    toolbar.appendChild(metadata);
-    container.appendChild(toolbar);
-
-    // Scrollable Content
-    var content = document.createElement('div');
-    content.className = 'list-scroll-container oasis-events-content';
-
-    // Table with sticky header
-    var table = document.createElement('table');
-    table.className = 'list-table oasis-events-table';
-    // ... build table ...
-    content.appendChild(table);
-
-    // Load More button (INSIDE scroll container)
-    if (state.oasisEvents.pagination.hasMore || state.oasisEvents.loading) {
-        var loadMoreContainer = document.createElement('div');
-        loadMoreContainer.className = 'load-more-container';
-
-        var loadMoreBtn = document.createElement('button');
-        loadMoreBtn.className = 'load-more-btn';
-        loadMoreBtn.textContent = state.oasisEvents.loading ? 'Loading...' : 'Load More';
-        loadMoreBtn.onclick = function() { loadMoreOasisEvents(); };
-
-        loadMoreContainer.appendChild(loadMoreBtn);
-        content.appendChild(loadMoreContainer);
-    }
-
-    container.appendChild(content);
-    return container;
-}
-```
-
-### 3.3 Fetch with Pagination (Lines 2950-3010)
-
-```javascript
-async function fetchOasisEvents(filters, append) {
-    if (state.oasisEvents.loading) return;
-    if (append && !state.oasisEvents.pagination.hasMore) return;
-
-    state.oasisEvents.loading = true;
-    renderApp();
-
-    try {
-        var pagination = state.oasisEvents.pagination;
-        var offset = append ? pagination.offset : 0;
-
-        var params = new URLSearchParams({
-            limit: pagination.limit,
-            offset: offset
-        });
-
-        var response = await fetch('/api/v1/oasis/events?' + params);
-        var result = await response.json();
-
-        if (append) {
-            state.oasisEvents.items = [...state.oasisEvents.items, ...result.data];
-        } else {
-            state.oasisEvents.items = result.data;
-        }
-
-        state.oasisEvents.pagination = {
-            limit: pagination.limit,
-            offset: offset + result.data.length,
-            hasMore: result.pagination?.has_more ?? result.data.length === pagination.limit
-        };
-    } catch (error) {
-        state.oasisEvents.error = error.message;
-    } finally {
-        state.oasisEvents.loading = false;
-        renderApp();
-    }
+```css
+/* BEFORE (BROKEN) */
+.governance-rules-container {
+  padding: 1.5rem;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;  /* BLOCKS child scrolling */
 }
 
-function loadMoreOasisEvents() {
-    fetchOasisEvents(state.oasisEvents.filters, true);
+/* AFTER (FIXED) */
+.governance-rules-container {
+  padding: 1.5rem;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;  /* Allow flex shrinking */
+}
+
+.governance-rules-content {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 ```
 
 ---
 
-## 4. Required CSS Classes
+## 6. Required CSS Classes
 
 **File:** `services/gateway/src/frontend/command-hub/styles.css`
 
@@ -268,542 +244,162 @@ These classes already exist (Lines 11259-11507) and MUST be used:
 
 ---
 
-## 5. Screen-by-Screen Fixes
+## 7. Screen-by-Screen Changes
 
-### 5.1 Agents > Registered Agents
+### 7.1 Agents > Registered Agents
 
-**Current State:** NO scrolling, NO pagination, loads all data at once
+**File:** `app.js` - `renderRegisteredAgentsView()` (Line ~9432)
 
-**Location:** `renderRegisteredAgentsView()` (Lines 9432-9512)
+**Changes:**
+1. Wrap content in `.list-scroll-container` div
+2. Add item count to toolbar
+3. NO Load More needed (static data)
 
-**Changes Required:**
+### 7.2 Agents > Skills
 
-| Change | Description |
-|--------|-------------|
-| ADD | Pagination state to `state.agentsRegistry.registeredAgents` |
-| ADD | `list-scroll-container` class to content wrapper |
-| ADD | Load More button at bottom |
-| MODIFY | `fetchAgentsRegistryData()` to support offset/limit |
+**File:** `app.js` - `renderSkillsTable()` (Line ~9518)
 
-**Target State:**
-```javascript
-state.agentsRegistry = {
-    // ... existing fields ...
-    registeredAgents: {
-        items: [],
-        loading: false,
-        pagination: {
-            limit: 50,
-            offset: 0,
-            hasMore: true
-        }
-    }
-};
-```
+**Changes:**
+1. Wrap table in `.list-scroll-container` div
+2. Add item count to toolbar
+3. NO Load More needed (static registry)
 
-**Render Pattern:**
-```javascript
-function renderRegisteredAgentsView() {
-    var container = document.createElement('div');
-    container.className = 'agents-registry-view';
+### 7.3 Agents > Pipelines
 
-    // Row 3: Toolbar
-    var toolbar = document.createElement('div');
-    toolbar.className = 'list-toolbar';
-    // ... filters on left, count on right ...
-    container.appendChild(toolbar);
+**File:** `app.js` - `renderPipelinesView()` (Line ~10042)
 
-    // Scrollable Content
-    var content = document.createElement('div');
-    content.className = 'list-scroll-container';
+**Changes:**
+1. Change container class to use proper flex layout
+2. Wrap table in `.list-scroll-container` div
+3. Add item count to toolbar
+4. NO Load More needed (VTID ledger is limited)
 
-    // Health cards section
-    // ... existing health cards ...
+### 7.4 Agents > Telemetry
 
-    // Subagents table
-    // ... existing table ...
+**File:** `app.js` - `renderTelemetryView()` (Line ~10350)
 
-    // Load More button
-    if (state.agentsRegistry.registeredAgents.pagination.hasMore) {
-        var loadMoreContainer = document.createElement('div');
-        loadMoreContainer.className = 'load-more-container';
-        // ... button ...
-        content.appendChild(loadMoreContainer);
-    }
+**Changes:**
+1. Wrap table in `.list-scroll-container` div
+2. Add item count to toolbar ("18 events")
+3. ADD Load More button (API supports pagination)
+4. Add pagination state management
 
-    container.appendChild(content);
-    return container;
-}
-```
+### 7.5 Governance > Rules
 
----
+**File:** `app.js` - `renderGovernanceRulesView()` (Line ~10783)
 
-### 5.2 Agents > Skills
+**Changes:**
+1. Change `.governance-rules-container` to allow child scroll
+2. Wrap table in `.list-scroll-container` div
+3. Keep existing toolbar with count ("66 of 66 rules")
+4. NO Load More needed (rules loaded from config)
 
-**Current State:** NO scrolling, NO pagination, renders `renderSkillsTable()` without limit
+### 7.6 Governance > Categories
 
-**Location:** `renderSkillsTable()` (Lines 9518-9561)
+**File:** `app.js` - `renderGovernanceCategoriesView()` (Line ~11940)
 
-**Changes Required:**
+**Changes:**
+1. Wrap category list in `.list-scroll-container`
+2. Add item count
+3. NO Load More needed (small set)
 
-| Change | Description |
-|--------|-------------|
-| ADD | Pagination state to `state.agentsRegistry.skills` |
-| ADD | `list-scroll-container` class to table wrapper |
-| ADD | Load More button at bottom |
-| ADD | Item count in toolbar |
-| MODIFY | Skills fetch to support offset/limit |
+### 7.7 Governance > Evaluations
 
-**Target State:**
-```javascript
-state.agentsRegistry.skills = {
-    items: [],
-    loading: false,
-    pagination: {
-        limit: 50,
-        offset: 0,
-        hasMore: true
-    }
-};
-```
+**File:** `app.js` - `renderGovernanceEvaluationsView()` (Line ~11256)
+
+**Changes:**
+1. Wrap table in `.list-scroll-container`
+2. Add item count
+3. ADD Load More if API supports pagination
+
+### 7.8 Governance > Violations, Proposals, Controls
+
+**Changes for each:**
+1. Wrap content in `.list-scroll-container`
+2. Add item count
+3. Add Load More if data comes from database
 
 ---
 
-### 5.3 Agents > Pipelines
+## 8. Implementation Checklist
 
-**Current State:** Has `overflow-y: auto` on main container, but NO Load More button
-
-**Location:** `renderPipelinesView()` (Lines 10042-10350)
-
-**Changes Required:**
-
-| Change | Description |
-|--------|-------------|
-| ADD | Pagination state |
-| ADD | Load More button at bottom of table |
-| ADD | Proper `list-scroll-container` class |
-| MODIFY | Fetch function to support offset/limit |
-
----
-
-### 5.4 Agents > Telemetry
-
-**Current State:** NO scrolling, NO pagination
-
-**Location:** `renderTelemetryView()` (Lines 10350-10406)
-
-**Changes Required:**
-
-| Change | Description |
-|--------|-------------|
-| ADD | Pagination state to `state.agentsTelemetry` |
-| ADD | `list-scroll-container` class |
-| ADD | Load More button |
-| ADD | Item count in toolbar ("18 events" as shown in screenshot) |
-| MODIFY | Fetch function to support offset/limit |
-
-**Target State:**
-```javascript
-state.agentsTelemetry = {
-    items: [],
-    loading: false,
-    error: null,
-    filters: { /* ... */ },
-    pagination: {
-        limit: 50,
-        offset: 0,
-        hasMore: true
-    }
-};
-```
-
----
-
-### 5.5 Governance > Rules
-
-**Current State:** Has table-wrapper with `overflow: auto`, but NO Load More button
-
-**Location:** `renderGovernanceRulesView()` (Lines 10783-11256)
-
-**Current CSS Problem (Lines 2893-2999):**
-```css
-.governance-rules-container {
-    overflow: hidden;  /* WRONG - blocks scrolling */
-}
-.governance-rules-table-wrapper {
-    overflow: auto;    /* Scrolling in wrong place */
-}
-```
-
-**Changes Required:**
-
-| Change | Description |
-|--------|-------------|
-| ADD | Pagination state to `state.governanceRules` |
-| CHANGE | State from array to object with items/pagination |
-| ADD | `list-scroll-container` class to content |
-| ADD | Load More button at bottom |
-| FIX | CSS `overflow: hidden` to proper flex layout |
-
-**Target State:**
-```javascript
-// BEFORE (WRONG):
-governanceRules: [],
-
-// AFTER (CORRECT):
-governanceRules: {
-    items: [],
-    loading: false,
-    error: null,
-    filters: {
-        search: '',
-        level: '',
-        category: '',
-        source: ''
-    },
-    pagination: {
-        limit: 50,
-        offset: 0,
-        hasMore: true
-    }
-}
-```
-
----
-
-### 5.6 Governance > Categories
-
-**Current State:** Two-column layout, NO pagination, loads all at once
-
-**Location:** `renderGovernanceCategoriesView()` (Lines 11940-12140)
-
-**Changes Required:**
-
-| Change | Description |
-|--------|-------------|
-| ADD | Pagination state |
-| ADD | `list-scroll-container` to category list |
-| ADD | Load More button |
-
----
-
-### 5.7 Governance > Evaluations
-
-**Current State:** Simple array-based state, NO pagination
-
-**Location:** `renderGovernanceEvaluationsView()` (Lines 11256-11522)
-
-**Changes Required:**
-
-| Change | Description |
-|--------|-------------|
-| ADD | Pagination state |
-| ADD | `list-scroll-container` class |
-| ADD | Load More button |
-
----
-
-### 5.8 Governance > Violations
-
-**Current State:** NO pagination
-
-**Location:** Part of governance section
-
-**Changes Required:**
-
-| Change | Description |
-|--------|-------------|
-| ADD | Pagination state |
-| ADD | `list-scroll-container` class |
-| ADD | Load More button |
-
----
-
-### 5.9 Governance > Proposals
-
-**Current State:** NO pagination
-
-**Location:** Part of governance section
-
-**Changes Required:**
-
-| Change | Description |
-|--------|-------------|
-| ADD | Pagination state |
-| ADD | `list-scroll-container` class |
-| ADD | Load More button |
-
----
-
-### 5.10 Governance > Controls
-
-**Current State:** NO pagination, loads all controls at once
-
-**Location:** `renderGovernanceControlsView()` (Lines 12328-12675)
-
-**Changes Required:**
-
-| Change | Description |
-|--------|-------------|
-| ADD | Pagination state |
-| ADD | `list-scroll-container` class |
-| ADD | Load More button |
-
----
-
-### 5.11 Governance > History (ALREADY HAS PAGINATION - VERIFY ONLY)
-
-**Current State:** HAS pagination (Lines 11487-11505), HAS Load More button (Lines 11745-11760)
-
-**Verify:**
-- [ ] Uses standard `list-scroll-container` class
-- [ ] Load More button styled consistently
-- [ ] Scrolling works correctly
-
----
-
-## 6. Implementation Checklist
-
-### Phase 1: CSS Foundation
-- [ ] Verify `.list-scroll-container` class exists in styles.css
-- [ ] Verify `.list-toolbar` class exists
-- [ ] Verify `.load-more-container` and `.load-more-btn` classes exist
-- [ ] Fix any conflicting `overflow: hidden` rules on parent containers
+### Phase 1: CSS Fixes (Immediate)
+- [ ] Fix `.agents-registry-container` overflow
+- [ ] Fix `.governance-rules-container` overflow
+- [ ] Verify `.list-scroll-container` class exists
+- [ ] Verify `.load-more-container` class exists
 
 ### Phase 2: Agents Section
-- [ ] Add pagination state to `agentsRegistry.registeredAgents`
-- [ ] Add pagination state to `agentsRegistry.skills`
-- [ ] Add pagination state to pipelines
-- [ ] Add pagination state to telemetry
-- [ ] Implement `loadMoreRegisteredAgents()` function
-- [ ] Implement `loadMoreSkills()` function
-- [ ] Implement `loadMorePipelines()` function
-- [ ] Implement `loadMoreTelemetry()` function
-- [ ] Add Load More buttons to all 4 views
-- [ ] Verify scrolling works on all 4 views
+- [ ] Add scroll container to Registered Agents
+- [ ] Add scroll container to Skills
+- [ ] Add scroll container to Pipelines
+- [ ] Add scroll container + Load More to Telemetry
+- [ ] Add item counts to all toolbars
 
 ### Phase 3: Governance Section
-- [ ] Convert `governanceRules` from array to object with pagination
-- [ ] Add pagination state to categories
-- [ ] Add pagination state to evaluations
-- [ ] Add pagination state to violations
-- [ ] Add pagination state to proposals
-- [ ] Add pagination state to controls
-- [ ] Implement `loadMore*()` functions for all views
-- [ ] Add Load More buttons to all views
-- [ ] Verify scrolling works on all views
+- [ ] Add scroll container to Rules
+- [ ] Add scroll container to Categories
+- [ ] Add scroll container to Evaluations
+- [ ] Add scroll container to Violations
+- [ ] Add scroll container to Proposals
+- [ ] Add scroll container to Controls
+- [ ] Add Load More where needed
 
-### Phase 4: API Updates
-- [ ] Add `offset` and `limit` params to registered agents API
-- [ ] Add `offset` and `limit` params to skills API
-- [ ] Add `offset` and `limit` params to pipelines API
-- [ ] Add `offset` and `limit` params to telemetry API
-- [ ] Add `offset` and `limit` params to governance rules API
-- [ ] Add `offset` and `limit` params to governance categories API
-- [ ] Add `offset` and `limit` params to governance evaluations API
-- [ ] Add `offset` and `limit` params to governance violations API
-- [ ] Add `offset` and `limit` params to governance proposals API
-- [ ] Add `offset` and `limit` params to governance controls API
-
-### Phase 5: Testing
-- [ ] Test each screen with 100+ items
-- [ ] Test Load More button shows loading state
-- [ ] Test Load More button hides when no more data
-- [ ] Test filter changes reset pagination
-- [ ] Test scrolling is smooth
-- [ ] Test sticky headers work
+### Phase 4: Testing
+- [ ] Verify all screens scroll properly
+- [ ] Verify sticky headers work
+- [ ] Verify Load More loads additional data
+- [ ] Test with different viewport sizes
 
 ---
 
-## 7. Files to Modify
+## 9. Files to Modify
 
 | File | Changes |
 |------|---------|
-| `services/gateway/src/frontend/command-hub/app.js` | All render functions, state definitions, fetch functions |
-| `services/gateway/src/frontend/command-hub/styles.css` | Fix overflow issues, add any missing classes |
-| `services/gateway/src/routes/agents.ts` | Add pagination to agents endpoints |
-| `services/gateway/src/routes/governance.ts` | Add pagination to governance endpoints |
+| `services/gateway/src/frontend/command-hub/app.js` | All render functions |
+| `services/gateway/src/frontend/command-hub/styles.css` | Fix overflow on containers |
 
----
-
-## 8. Code Template
-
-Use this template for ALL list views:
-
-```javascript
-// === STATE TEMPLATE ===
-state.moduleName = {
-    items: [],
-    loading: false,
-    error: null,
-    fetched: false,
-    filters: { /* screen-specific filters */ },
-    pagination: {
-        limit: 50,
-        offset: 0,
-        hasMore: true
-    }
-};
-
-// === FETCH TEMPLATE ===
-async function fetchModuleData(append) {
-    if (state.moduleName.loading) return;
-    if (append && !state.moduleName.pagination.hasMore) return;
-
-    state.moduleName.loading = true;
-    renderApp();
-
-    try {
-        var pagination = state.moduleName.pagination;
-        var offset = append ? pagination.offset : 0;
-
-        var params = new URLSearchParams({
-            limit: pagination.limit,
-            offset: offset
-        });
-        // Add filters to params...
-
-        var response = await fetch('/api/v1/endpoint?' + params);
-        var result = await response.json();
-
-        if (append) {
-            state.moduleName.items = [...state.moduleName.items, ...result.data];
-        } else {
-            state.moduleName.items = result.data;
-        }
-
-        state.moduleName.pagination = {
-            limit: pagination.limit,
-            offset: offset + result.data.length,
-            hasMore: result.pagination?.has_more ?? result.data.length === pagination.limit
-        };
-
-        state.moduleName.fetched = true;
-        state.moduleName.error = null;
-    } catch (error) {
-        state.moduleName.error = error.message;
-    } finally {
-        state.moduleName.loading = false;
-        renderApp();
-    }
-}
-
-function loadMoreModuleData() {
-    fetchModuleData(true);
-}
-
-function handleModuleFilterChange() {
-    state.moduleName.pagination.offset = 0;
-    state.moduleName.pagination.hasMore = true;
-    fetchModuleData(false);
-}
-
-// === RENDER TEMPLATE ===
-function renderModuleView() {
-    var container = document.createElement('div');
-    container.className = 'module-view';
-
-    // Row 3: Toolbar
-    var toolbar = document.createElement('div');
-    toolbar.className = 'list-toolbar';
-
-    var filters = document.createElement('div');
-    filters.className = 'list-toolbar__filters';
-    // Add filter dropdowns/search...
-
-    var metadata = document.createElement('div');
-    metadata.className = 'list-toolbar__metadata';
-    metadata.textContent = state.moduleName.items.length + ' items';
-
-    toolbar.appendChild(filters);
-    toolbar.appendChild(metadata);
-    container.appendChild(toolbar);
-
-    // Scrollable Content
-    var content = document.createElement('div');
-    content.className = 'list-scroll-container';
-
-    // Table
-    var table = document.createElement('table');
-    table.className = 'list-table';
-    // ... build thead and tbody ...
-    content.appendChild(table);
-
-    // Load More button (ALWAYS inside scroll container)
-    if (state.moduleName.pagination.hasMore || state.moduleName.loading) {
-        var loadMoreContainer = document.createElement('div');
-        loadMoreContainer.className = 'load-more-container';
-
-        var loadMoreBtn = document.createElement('button');
-        loadMoreBtn.className = 'load-more-btn' + (state.moduleName.loading ? ' loading' : '');
-        loadMoreBtn.disabled = state.moduleName.loading;
-        loadMoreBtn.textContent = state.moduleName.loading ? 'Loading...' : 'Load More';
-        loadMoreBtn.onclick = function() { loadMoreModuleData(); };
-
-        loadMoreContainer.appendChild(loadMoreBtn);
-        content.appendChild(loadMoreContainer);
-    }
-
-    container.appendChild(content);
-    return container;
-}
-```
-
----
-
-## 9. API Response Template
-
-All list APIs MUST return pagination metadata:
-
-```json
-{
-  "data": [...],
-  "pagination": {
-    "limit": 50,
-    "offset": 50,
-    "has_more": true,
-    "total": 1234
-  }
-}
-```
+**NO BACKEND CHANGES REQUIRED**
 
 ---
 
 ## 10. Success Criteria
 
-1. **ALL list screens are scrollable** - Content does not overflow viewport
-2. **ALL list screens have Load More button** - Visible when more data exists
-3. **Load More shows loading state** - Button text changes, spinner appears
-4. **Load More hides when exhausted** - Button disappears when `hasMore: false`
-5. **Filters reset pagination** - Changing filters resets offset to 0
-6. **Consistent styling** - All screens use same `.list-toolbar`, `.list-scroll-container`, `.load-more-btn` classes
-7. **Sticky headers** - Table headers stay visible while scrolling
-8. **Performance** - Smooth scrolling with 1000+ items loaded
+1. **ALL 10 screens scroll properly** - No content overflow
+2. **Sticky headers work** - Column names visible while scrolling
+3. **Item counts displayed** - Users see how many items loaded
+4. **Load More works** - For screens with paginated data
+5. **Consistent styling** - All screens use standard classes
 
 ---
 
-## 11. UX Design Rule (MANDATORY)
+## 11. Reference: OASIS Events (Working Example)
 
-**EVERY SCREEN THAT DISPLAYS A LIST MUST HAVE:**
+The OASIS Events screen is the reference implementation. Key elements:
 
-1. **Row 3 Toolbar** - Filters on left, item count on right
-2. **Scrollable Content Area** - Using `.list-scroll-container` class
-3. **Sticky Table Headers** - Headers visible while scrolling
-4. **Load More Button** - At the bottom of scrollable content
-5. **Pagination State** - `{ limit: 50, offset: 0, hasMore: true }`
-6. **Fetch with Append** - `fetchData(append)` function pattern
+**State with pagination:**
+```javascript
+oasisEvents: {
+    items: [],
+    pagination: { limit: 50, offset: 0, hasMore: true }
+}
+```
 
-**NO EXCEPTIONS. ENFORCE THIS ON EVERY NEW SCREEN.**
+**Render with scroll container:**
+```javascript
+var content = document.createElement('div');
+content.className = 'list-scroll-container oasis-events-content';
+```
 
----
+**Load More button:**
+```javascript
+if (state.oasisEvents.pagination.hasMore) {
+    var loadMoreBtn = document.createElement('button');
+    loadMoreBtn.className = 'load-more-btn';
+    loadMoreBtn.textContent = 'Load More';
+    loadMoreBtn.onclick = loadMoreOasisEvents;
+}
+```
 
-## 12. Visual Reference
-
-Screenshot showing correct implementation (OASIS > Events):
-
-- Row 3: `[All Topics ▼] [All Status ▼]` on left, `50 events` on right
-- Scrollable table with sticky header
-- "Load More" button at bottom
-- Clean, consistent styling
-
-This is the TEMPLATE for all other screens.
+Use this pattern for all other screens.
