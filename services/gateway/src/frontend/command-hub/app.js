@@ -2679,11 +2679,16 @@ const state = {
             edges: [],
             stats: null,
             loading: false,
+            loadingMore: false,
             error: null,
             fetched: false,
             selectedNode: null,
             filterType: 'all',   // 'all', 'entity', 'concept', 'memory'
-            searchQuery: ''
+            searchQuery: '',
+            // Pagination
+            offset: 0,
+            limit: 50,
+            hasMore: true
         },
         // Embeddings
         embeddings: {
@@ -2695,26 +2700,36 @@ const state = {
             selectedCollection: null,
             searchQuery: '',
             searchResults: [],
-            searchLoading: false
+            searchLoading: false,
+            // Pagination for search results
+            searchOffset: 0,
+            searchLimit: 20,
+            searchHasMore: false
         },
         // Recall
         recall: {
             testQuery: '',
             results: [],
             loading: false,
+            loadingMore: false,
             error: null,
             history: [],
             selectedResult: null,
             filters: {
                 source: 'all',
                 minScore: 0
-            }
+            },
+            // Pagination
+            offset: 0,
+            limit: 20,
+            hasMore: true
         },
         // Inspector
         inspector: {
             sessions: [],
             selectedSession: null,
             loading: false,
+            loadingMore: false,
             error: null,
             fetched: false,
             filters: {
@@ -2722,7 +2737,11 @@ const state = {
                 status: 'all',     // 'all', 'success', 'error', 'pending'
                 dateRange: '24h'   // '1h', '24h', '7d', '30d'
             },
-            expandedTools: {}      // Track expanded tool calls
+            expandedTools: {},     // Track expanded tool calls
+            // Pagination
+            offset: 0,
+            limit: 25,
+            hasMore: true
         }
     },
 
@@ -15123,6 +15142,32 @@ function renderKnowledgeGraphView() {
     });
 
     detailPanel.appendChild(recentList);
+
+    // Load More button for nodes
+    if (state.intelligence.knowledgeGraph.hasMore) {
+        var loadMoreContainer = document.createElement('div');
+        loadMoreContainer.className = 'load-more-container';
+
+        var loadMoreBtn = document.createElement('button');
+        loadMoreBtn.className = 'load-more-btn' + (state.intelligence.knowledgeGraph.loadingMore ? ' loading' : '');
+        loadMoreBtn.disabled = state.intelligence.knowledgeGraph.loadingMore;
+        loadMoreBtn.textContent = state.intelligence.knowledgeGraph.loadingMore ? 'Loading...' : 'Load More Nodes';
+        loadMoreBtn.onclick = function() {
+            state.intelligence.knowledgeGraph.loadingMore = true;
+            renderApp();
+            // Mock loading more nodes
+            setTimeout(function() {
+                state.intelligence.knowledgeGraph.offset += state.intelligence.knowledgeGraph.limit;
+                state.intelligence.knowledgeGraph.loadingMore = false;
+                // In real implementation: fetch more nodes and append
+                state.intelligence.knowledgeGraph.hasMore = false; // Mock: no more data
+                renderApp();
+            }, 800);
+        };
+        loadMoreContainer.appendChild(loadMoreBtn);
+        detailPanel.appendChild(loadMoreContainer);
+    }
+
     mainContent.appendChild(detailPanel);
 
     container.appendChild(mainContent);
@@ -15309,6 +15354,30 @@ function renderEmbeddingsView() {
                 '<div class="result-text">' + result.text + '</div>';
             resultsContainer.appendChild(resultCard);
         });
+
+        // Load More button for search results
+        if (state.intelligence.embeddings.searchHasMore) {
+            var loadMoreContainer = document.createElement('div');
+            loadMoreContainer.className = 'load-more-container';
+
+            var loadMoreBtn = document.createElement('button');
+            loadMoreBtn.className = 'load-more-btn' + (state.intelligence.embeddings.searchLoading ? ' loading' : '');
+            loadMoreBtn.disabled = state.intelligence.embeddings.searchLoading;
+            loadMoreBtn.textContent = state.intelligence.embeddings.searchLoading ? 'Loading...' : 'Load More Results';
+            loadMoreBtn.onclick = function() {
+                state.intelligence.embeddings.searchLoading = true;
+                renderApp();
+                // Mock loading more results
+                setTimeout(function() {
+                    state.intelligence.embeddings.searchOffset += state.intelligence.embeddings.searchLimit;
+                    state.intelligence.embeddings.searchLoading = false;
+                    state.intelligence.embeddings.searchHasMore = false; // Mock: no more
+                    renderApp();
+                }, 800);
+            };
+            loadMoreContainer.appendChild(loadMoreBtn);
+            resultsContainer.appendChild(loadMoreContainer);
+        }
     } else if (!state.intelligence.embeddings.searchLoading) {
         var noResults = document.createElement('div');
         noResults.className = 'no-results-message';
@@ -15515,6 +15584,31 @@ function renderRecallView() {
         });
 
         resultsPanel.appendChild(resultsList);
+
+        // Load More button for recall results
+        if (state.intelligence.recall.hasMore && results.length >= state.intelligence.recall.limit) {
+            var loadMoreContainer = document.createElement('div');
+            loadMoreContainer.className = 'load-more-container';
+
+            var loadMoreBtn = document.createElement('button');
+            loadMoreBtn.className = 'load-more-btn' + (state.intelligence.recall.loadingMore ? ' loading' : '');
+            loadMoreBtn.disabled = state.intelligence.recall.loadingMore;
+            loadMoreBtn.textContent = state.intelligence.recall.loadingMore ? 'Loading...' : 'Load More Results';
+            loadMoreBtn.onclick = function() {
+                state.intelligence.recall.loadingMore = true;
+                renderApp();
+                // Mock loading more results
+                setTimeout(function() {
+                    state.intelligence.recall.offset += state.intelligence.recall.limit;
+                    state.intelligence.recall.loadingMore = false;
+                    // In real implementation: fetch more results and append
+                    state.intelligence.recall.hasMore = false; // Mock: no more data
+                    renderApp();
+                }, 800);
+            };
+            loadMoreContainer.appendChild(loadMoreBtn);
+            resultsPanel.appendChild(loadMoreContainer);
+        }
     } else {
         var emptyState = document.createElement('div');
         emptyState.className = 'recall-empty-state';
@@ -15727,6 +15821,32 @@ function renderInspectorView() {
     });
 
     sessionsPanel.appendChild(sessionsList);
+
+    // Load More button for sessions
+    if (state.intelligence.inspector.hasMore) {
+        var loadMoreContainer = document.createElement('div');
+        loadMoreContainer.className = 'load-more-container';
+
+        var loadMoreBtn = document.createElement('button');
+        loadMoreBtn.className = 'load-more-btn' + (state.intelligence.inspector.loadingMore ? ' loading' : '');
+        loadMoreBtn.disabled = state.intelligence.inspector.loadingMore;
+        loadMoreBtn.textContent = state.intelligence.inspector.loadingMore ? 'Loading...' : 'Load More Sessions';
+        loadMoreBtn.onclick = function() {
+            state.intelligence.inspector.loadingMore = true;
+            renderApp();
+            // Mock loading more sessions
+            setTimeout(function() {
+                state.intelligence.inspector.offset += state.intelligence.inspector.limit;
+                state.intelligence.inspector.loadingMore = false;
+                // In real implementation: fetch more sessions and append
+                state.intelligence.inspector.hasMore = false; // Mock: no more data
+                renderApp();
+            }, 800);
+        };
+        loadMoreContainer.appendChild(loadMoreBtn);
+        sessionsPanel.appendChild(loadMoreContainer);
+    }
+
     mainContent.appendChild(sessionsPanel);
 
     // Detail panel
