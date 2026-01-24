@@ -334,5 +334,17 @@
       "status": "scheduled",
       "timestamp": "2025-11-26T08:00:00Z"
     }
+  },
+  {
+    "type": "task_update",
+    "data": {
+      "vtid": "VTID-01210",
+      "layer": "comms",
+      "module": "command hub",
+      "title": "Live Ticker Formatting Fix & UX Improvements",
+      "objective": "Fix formatting degradation bug and implement summary view with progress counter replacing verbose event lists.",
+      "status": "scheduled",
+      "timestamp": "2026-01-24T09:00:00Z"
+    }
   }
 ]
