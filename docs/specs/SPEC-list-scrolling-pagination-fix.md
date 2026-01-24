@@ -11,7 +11,7 @@
 
 ## 1. Executive Summary
 
-**PROBLEM:** Multiple list screens in Vitana DEV are NOT scrollable, making them unusable when data exceeds the viewport.
+**PROBLEM:** Multiple list screens in Vitana DEV are NOT scrollable and lack "Load More" pagination buttons, making them unusable when data exceeds the viewport.
 
 **AFFECTED SCREENS:**
 - Agents > Registered Agents
@@ -38,15 +38,40 @@
 1. **Scrollable content area** using `.list-scroll-container` class
 2. **Sticky table headers** so column names stay visible while scrolling
 3. **Item count** displayed in Row 3 toolbar
-4. **Load More button** for screens with paginated APIs (Events, Telemetry, etc.)
+4. **Load More button** for screens with paginated APIs
 
 ---
 
-## 3. Screen Classification
+## 3. Universal 3-Row Structure
 
-### 3.1 Screens WITH Pagination (Add Load More)
+All list screens MUST follow this exact structure:
 
-These screens have APIs that support `limit`/`offset` and MUST show Load More:
+```
+┌────────────────────────────────────────────────────────────┐
+│ AUTOPILOT | OPERATOR | PUBLISH          ● LIVE    ↻       │ ← Row 1: Global top bar (DO NOT CHANGE)
+├────────────────────────────────────────────────────────────┤
+│ Tab1 | Tab2 | Tab3 | Tab4 | Tab5                          │ ← Row 2: Section tab navigation (DO NOT CHANGE)
+├────────────────────────────────────────────────────────────┤
+│ [Filters...] [Search...]                         XX items │ ← Row 3: Toolbar (filters left, count right)
+├────────────────────────────────────────────────────────────┤
+│ Column1 | Column2 | Column3 | Column4                     │ ← Sticky table header
+├────────────────────────────────────────────────────────────┤
+│ Row 1 data...                                             │
+│ Row 2 data...                                             │
+│ Row 3 data...                                     SCROLL  │ ← Scrollable content area
+│ ...                                                  ↓    │
+├────────────────────────────────────────────────────────────┤
+│                    [ Load More ]                          │ ← Load More button (inside scroll area)
+└────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 4. Screen Classification
+
+### 4.1 Screens WITH Pagination (Add Load More)
+
+These screens have APIs that already support `limit`/`offset`:
 
 | Screen | API Endpoint | Has Pagination |
 |--------|--------------|----------------|
@@ -55,7 +80,7 @@ These screens have APIs that support `limit`/`offset` and MUST show Load More:
 | Governance History | `/api/v1/governance/history` | ✅ YES |
 | Governance Evaluations | `/api/v1/governance/evaluations` | ✅ YES |
 
-### 3.2 Screens WITHOUT Pagination (Scrolling Only)
+### 4.2 Screens WITHOUT Pagination (Scrolling Only)
 
 These screens return small/static data sets - just add scrolling:
 
@@ -72,13 +97,13 @@ These screens return small/static data sets - just add scrolling:
 
 ---
 
-## 4. Required CSS Fix
+## 5. Required CSS Fix
 
 **Problem:** Parent containers have `overflow: hidden` which blocks scrolling.
 
 **File:** `services/gateway/src/frontend/command-hub/styles.css`
 
-### 4.1 Fix Agents Container
+### 5.1 Fix Agents Container
 
 ```css
 /* BEFORE (BROKEN) */
@@ -105,7 +130,7 @@ These screens return small/static data sets - just add scrolling:
 }
 ```
 
-### 4.2 Fix Governance Container
+### 5.2 Fix Governance Container
 
 ```css
 /* BEFORE (BROKEN) */
@@ -135,67 +160,14 @@ These screens return small/static data sets - just add scrolling:
 
 ---
 
-## 5. Implementation Pattern
+## 6. Required CSS Classes
 
-### 5.1 View Container Structure
+**File:** `services/gateway/src/frontend/command-hub/styles.css`
 
-All list views MUST use this structure:
-
-```javascript
-function renderListView() {
-    var container = document.createElement('div');
-    container.className = 'list-view-container';  // flex column, height: 100%
-
-    // Row 3: Toolbar (filters + count)
-    var toolbar = document.createElement('div');
-    toolbar.className = 'list-toolbar';
-
-    var filters = document.createElement('div');
-    filters.className = 'list-toolbar__filters';
-    // ... add filter elements ...
-
-    var metadata = document.createElement('div');
-    metadata.className = 'list-toolbar__metadata';
-    metadata.textContent = items.length + ' items';
-
-    toolbar.appendChild(filters);
-    toolbar.appendChild(metadata);
-    container.appendChild(toolbar);
-
-    // Scrollable Content Area
-    var content = document.createElement('div');
-    content.className = 'list-scroll-container';  // flex: 1, overflow-y: auto
-
-    // Table with sticky header
-    var table = document.createElement('table');
-    table.className = 'list-table';
-    // ... build table ...
-    content.appendChild(table);
-
-    // Load More button (ONLY if API supports pagination)
-    if (hasPagination && hasMoreItems) {
-        var loadMoreContainer = document.createElement('div');
-        loadMoreContainer.className = 'load-more-container';
-
-        var loadMoreBtn = document.createElement('button');
-        loadMoreBtn.className = 'load-more-btn';
-        loadMoreBtn.textContent = 'Load More';
-        loadMoreBtn.onclick = function() { loadMoreItems(); };
-
-        loadMoreContainer.appendChild(loadMoreBtn);
-        content.appendChild(loadMoreContainer);
-    }
-
-    container.appendChild(content);
-    return container;
-}
-```
-
-### 5.2 Required CSS Classes
-
-These classes already exist in `styles.css` (Lines 11259-11507):
+These classes already exist (Lines 11259-11507) and MUST be used:
 
 ```css
+/* Row 3 Toolbar */
 .list-toolbar {
   display: flex;
   align-items: center;
@@ -204,46 +176,77 @@ These classes already exist in `styles.css` (Lines 11259-11507):
   border-bottom: 1px solid var(--color-border, #333);
   background: var(--color-bg-secondary, #1a1a2e);
   min-height: 48px;
+  gap: 12px;
 }
 
 .list-toolbar__filters {
   display: flex;
   gap: 8px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .list-toolbar__metadata {
   color: var(--color-text-secondary, #888);
   font-size: 13px;
+  white-space: nowrap;
 }
 
+/* Scrollable Content Container */
 .list-scroll-container {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
 }
 
+/* Load More Button */
 .load-more-container {
   display: flex;
   justify-content: center;
   padding: 24px 16px;
+  border-top: 1px solid var(--color-border, #333);
 }
 
 .load-more-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   padding: 10px 24px;
+  min-width: 120px;
   background: var(--color-bg-tertiary, #252540);
   border: 1px solid var(--color-border, #333);
   border-radius: 6px;
   color: var(--color-text-primary, #fff);
+  font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.load-more-btn:hover:not(:disabled) {
+  background: var(--color-bg-hover, #2a2a4a);
+  border-color: var(--color-border-hover, #555);
+}
+
+.load-more-btn.loading::after {
+  content: '';
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-left: 8px;
+  border: 2px solid var(--color-border, #333);
+  border-top-color: var(--color-accent, #4a9eff);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
 }
 ```
 
 ---
 
-## 6. Screen-by-Screen Changes
+## 7. Screen-by-Screen Changes
 
-### 6.1 Agents > Registered Agents
+### 7.1 Agents > Registered Agents
 
 **File:** `app.js` - `renderRegisteredAgentsView()` (Line ~9432)
 
@@ -252,7 +255,7 @@ These classes already exist in `styles.css` (Lines 11259-11507):
 2. Add item count to toolbar
 3. NO Load More needed (static data)
 
-### 6.2 Agents > Skills
+### 7.2 Agents > Skills
 
 **File:** `app.js` - `renderSkillsTable()` (Line ~9518)
 
@@ -261,7 +264,7 @@ These classes already exist in `styles.css` (Lines 11259-11507):
 2. Add item count to toolbar
 3. NO Load More needed (static registry)
 
-### 6.3 Agents > Pipelines
+### 7.3 Agents > Pipelines
 
 **File:** `app.js` - `renderPipelinesView()` (Line ~10042)
 
@@ -271,7 +274,7 @@ These classes already exist in `styles.css` (Lines 11259-11507):
 3. Add item count to toolbar
 4. NO Load More needed (VTID ledger is limited)
 
-### 6.4 Agents > Telemetry
+### 7.4 Agents > Telemetry
 
 **File:** `app.js` - `renderTelemetryView()` (Line ~10350)
 
@@ -281,7 +284,7 @@ These classes already exist in `styles.css` (Lines 11259-11507):
 3. ADD Load More button (API supports pagination)
 4. Add pagination state management
 
-### 6.5 Governance > Rules
+### 7.5 Governance > Rules
 
 **File:** `app.js` - `renderGovernanceRulesView()` (Line ~10783)
 
@@ -291,7 +294,7 @@ These classes already exist in `styles.css` (Lines 11259-11507):
 3. Keep existing toolbar with count ("66 of 66 rules")
 4. NO Load More needed (rules loaded from config)
 
-### 6.6 Governance > Categories
+### 7.6 Governance > Categories
 
 **File:** `app.js` - `renderGovernanceCategoriesView()` (Line ~11940)
 
@@ -300,7 +303,7 @@ These classes already exist in `styles.css` (Lines 11259-11507):
 2. Add item count
 3. NO Load More needed (small set)
 
-### 6.7 Governance > Evaluations
+### 7.7 Governance > Evaluations
 
 **File:** `app.js` - `renderGovernanceEvaluationsView()` (Line ~11256)
 
@@ -309,7 +312,7 @@ These classes already exist in `styles.css` (Lines 11259-11507):
 2. Add item count
 3. ADD Load More if API supports pagination
 
-### 6.8 Governance > Violations, Proposals, Controls
+### 7.8 Governance > Violations, Proposals, Controls
 
 **Changes for each:**
 1. Wrap content in `.list-scroll-container`
@@ -318,7 +321,7 @@ These classes already exist in `styles.css` (Lines 11259-11507):
 
 ---
 
-## 7. Implementation Checklist
+## 8. Implementation Checklist
 
 ### Phase 1: CSS Fixes (Immediate)
 - [ ] Fix `.agents-registry-container` overflow
@@ -350,7 +353,7 @@ These classes already exist in `styles.css` (Lines 11259-11507):
 
 ---
 
-## 8. Files to Modify
+## 9. Files to Modify
 
 | File | Changes |
 |------|---------|
@@ -361,7 +364,7 @@ These classes already exist in `styles.css` (Lines 11259-11507):
 
 ---
 
-## 9. Success Criteria
+## 10. Success Criteria
 
 1. **ALL 10 screens scroll properly** - No content overflow
 2. **Sticky headers work** - Column names visible while scrolling
@@ -371,7 +374,7 @@ These classes already exist in `styles.css` (Lines 11259-11507):
 
 ---
 
-## 10. Reference: OASIS Events (Working Example)
+## 11. Reference: OASIS Events (Working Example)
 
 The OASIS Events screen is the reference implementation. Key elements:
 
