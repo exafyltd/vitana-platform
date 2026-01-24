@@ -1,6 +1,6 @@
 # Specification: Universal List Scrolling and Pagination Fix
 
-**VTID:** VTID-01210
+**VTID:** VTID-01211
 **Status:** Draft
 **Author:** Claude
 **Date:** 2026-01-24
