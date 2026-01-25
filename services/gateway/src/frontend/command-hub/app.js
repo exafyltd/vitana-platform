@@ -2799,6 +2799,7 @@ const state = {
         longevity: null,       // Longevity panel data
         longevityLoading: false,
         longevityError: null,
+        longevityFetched: false,    // Prevent duplicate longevity fetches
         showDiaryModal: false,      // Diary entry modal state
         showCategoryModal: false,   // Category detail modal state
         selectedCategory: null,     // Current category key
@@ -14761,19 +14762,39 @@ async function fetchMemoryGardenProgress() {
  * VTID-01086: Fetch longevity summary for the Longevity Focus panel
  */
 async function fetchLongevitySummary() {
-    if (state.memoryGarden.longevityLoading) return;
+    // Prevent duplicate fetches
+    if (state.memoryGarden.longevityLoading || state.memoryGarden.longevityFetched) return;
 
     state.memoryGarden.longevityLoading = true;
     state.memoryGarden.longevityError = null;
-    renderApp();
+
+    // Default fallback data
+    var fallbackLongevity = {
+        sleep: { trend: 'stable', value: 7.2, unit: 'hrs' },
+        stress: { trend: 'moderate', value: 42, unit: 'score' },
+        movement: { trend: 'moderate', value: 6500, unit: 'steps' },
+        recommendation: {
+            type: 'community',
+            title: 'Morning Wellness Circle',
+            description: 'Join others focused on healthy morning routines'
+        }
+    };
 
     try {
         const token = state.authToken;
         if (!token) {
-            throw new Error('Not authenticated');
+            console.warn('[VTID-01086] Not authenticated, using longevity fallback');
+            state.memoryGarden.longevity = fallbackLongevity;
+            state.memoryGarden.longevityLoading = false;
+            state.memoryGarden.longevityFetched = true;
+            renderApp();
+            return;
         }
 
-        // Use memory/retrieve endpoint with longevity intent (as per spec)
+        // Add timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+
         const response = await fetch('/api/v1/memory/retrieve', {
             method: 'POST',
             headers: {
@@ -14784,52 +14805,35 @@ async function fetchLongevitySummary() {
                 intent: 'longevity',
                 mode: 'summary',
                 include: ['garden', 'longevity', 'community', 'diary']
-            })
+            }),
+            signal: controller.signal
         });
 
-        // If endpoint doesn't exist yet, use placeholder data
-        if (response.status === 404 || response.status === 503) {
-            console.warn('[VTID-01086] Longevity retrieve endpoint not available, using placeholder');
-            state.memoryGarden.longevity = {
-                sleep: { trend: 'stable', value: 7.2, unit: 'hrs' },
-                stress: { trend: 'moderate', value: 42, unit: 'score' },
-                movement: { trend: 'moderate', value: 6500, unit: 'steps' },
-                recommendation: {
-                    type: 'community',
-                    title: 'Morning Wellness Circle',
-                    description: 'Join others focused on healthy morning routines'
-                }
-            };
+        clearTimeout(timeoutId);
+
+        // Use fallback for any error status
+        if (!response.ok) {
+            console.warn('[VTID-01086] Longevity endpoint returned ' + response.status + ', using fallback');
+            state.memoryGarden.longevity = fallbackLongevity;
             state.memoryGarden.longevityLoading = false;
+            state.memoryGarden.longevityFetched = true;
             renderApp();
             return;
-        }
-
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.error || 'Failed to fetch longevity data');
         }
 
         const data = await response.json();
         state.memoryGarden.longevity = data;
         state.memoryGarden.longevityLoading = false;
+        state.memoryGarden.longevityFetched = true;
         state.memoryGarden.longevityError = null;
 
         console.log('[VTID-01086] Longevity summary fetched');
     } catch (err) {
-        console.error('[VTID-01086] Error fetching longevity:', err);
+        console.warn('[VTID-01086] Longevity fetch failed, using fallback:', err.message);
+        state.memoryGarden.longevity = fallbackLongevity;
         state.memoryGarden.longevityLoading = false;
-        // Use placeholder on error
-        state.memoryGarden.longevity = {
-            sleep: { trend: 'stable', value: 7.2, unit: 'hrs' },
-            stress: { trend: 'moderate', value: 42, unit: 'score' },
-            movement: { trend: 'moderate', value: 6500, unit: 'steps' },
-            recommendation: {
-                type: 'community',
-                title: 'Morning Wellness Circle',
-                description: 'Join others focused on healthy morning routines'
-            }
-        };
+        state.memoryGarden.longevityFetched = true;
+        state.memoryGarden.longevityError = null;
     }
 
     renderApp();
@@ -14863,6 +14867,8 @@ function renderMemoryGardenView() {
     // Auto-fetch if not yet fetched and not loading
     if (!state.memoryGarden.fetched && !state.memoryGarden.loading) {
         fetchMemoryGardenProgress();
+    }
+    if (!state.memoryGarden.longevityFetched && !state.memoryGarden.longevityLoading) {
         fetchLongevitySummary();
     }
 
