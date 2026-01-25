@@ -16221,24 +16221,6 @@ function getKnowledgeGraphIcon(type) {
 }
 
 /**
- * Helper: Format relative time
- */
-function formatRelativeTime(timestamp) {
-    var now = new Date();
-    var then = new Date(timestamp);
-    var diffMs = now - then;
-    var diffMins = Math.floor(diffMs / 60000);
-    var diffHours = Math.floor(diffMs / 3600000);
-    var diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return 'just now';
-    if (diffMins < 60) return diffMins + 'm ago';
-    if (diffHours < 24) return diffHours + 'h ago';
-    if (diffDays < 7) return diffDays + 'd ago';
-    return then.toLocaleDateString();
-}
-
-/**
  * VTID-01154: GitHub-Authoritative Approvals Feed (SPEC-02)
  *
  * Table columns (only these): PR | Branch | CI | Mergeable | VTID | Action
