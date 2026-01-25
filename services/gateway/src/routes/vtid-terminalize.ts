@@ -35,14 +35,18 @@ const router = Router();
 /**
  * Pipeline stages that MUST be completed before marking a task as terminal.
  * Each stage is verified by checking for specific OASIS events.
+ *
+ * VTID-01215 FIX: Added has_git_commits to verify actual code work was done.
  */
 interface PipelineEvidence {
   has_pr_created: boolean;
   has_merged: boolean;
   has_validator_passed: boolean;
   has_deploy_success: boolean;
+  has_git_commits: boolean;  // VTID-01215: Require git commits to prove work was done
   pr_number?: string;
   merge_sha?: string;
+  commit_count?: number;
   events_found: string[];
 }
 
@@ -66,6 +70,8 @@ async function checkPipelineEvidence(
     has_merged: false,
     has_validator_passed: false,
     has_deploy_success: false,
+    has_git_commits: false,  // VTID-01215: Initialize git commits check
+    commit_count: 0,
     events_found: [],
   };
 
@@ -168,8 +174,57 @@ async function checkPipelineEvidence(
           evidence.has_merged = true;
           evidence.has_validator_passed = true;
           evidence.has_deploy_success = true;
+          evidence.has_git_commits = true; // VTID-01215: Lifecycle completed implies commits exist
           evidence.events_found.push('event:vtid.lifecycle.completed');
         }
+      }
+    }
+
+    // VTID-01215: Check for git commits with this VTID in the message
+    // This is the CRITICAL check - no commits = no actual work done
+    try {
+      const githubToken = process.env.GITHUB_SAFE_MERGE_TOKEN || process.env.GITHUB_TOKEN;
+      const githubRepo = process.env.GITHUB_REPO || 'exafyltd/vitana-platform';
+
+      if (githubToken && !evidence.has_git_commits) {
+        // Search for commits containing the VTID in the message
+        const searchResp = await fetch(
+          `https://api.github.com/search/commits?q=repo:${githubRepo}+${vtid}&per_page=5`,
+          {
+            headers: {
+              Authorization: `Bearer ${githubToken}`,
+              Accept: 'application/vnd.github.cloak-preview+json',
+            },
+          }
+        );
+
+        if (searchResp.ok) {
+          const searchData = await searchResp.json() as any;
+          const commitCount = searchData.total_count || 0;
+
+          if (commitCount > 0) {
+            evidence.has_git_commits = true;
+            evidence.commit_count = commitCount;
+            evidence.events_found.push(`github:${commitCount}_commits`);
+            console.log(`[${VTID_INTEGRITY}] Found ${commitCount} git commits for ${vtid}`);
+          } else {
+            console.warn(`[${VTID_INTEGRITY}] NO GIT COMMITS found for ${vtid} - task may be falsely completed`);
+          }
+        } else {
+          console.warn(`[${VTID_INTEGRITY}] GitHub API error checking commits for ${vtid}: ${searchResp.status}`);
+          // On API error, check if we have merge_sha as fallback evidence
+          if (evidence.merge_sha) {
+            evidence.has_git_commits = true;
+            evidence.events_found.push('fallback:merge_sha_exists');
+          }
+        }
+      }
+    } catch (gitError: any) {
+      console.warn(`[${VTID_INTEGRITY}] Git commit check error for ${vtid}: ${gitError.message}`);
+      // On error, check if we have merge_sha as fallback evidence
+      if (evidence.merge_sha) {
+        evidence.has_git_commits = true;
+        evidence.events_found.push('fallback:merge_sha_exists');
       }
     }
   } catch (e: any) {
@@ -194,6 +249,12 @@ function validatePipelineEvidence(
   }
 
   const missing: string[] = [];
+
+  // VTID-01215: Git commits check is now FIRST and CRITICAL
+  // If no commits exist, the task CANNOT be marked as completed
+  if (!evidence.has_git_commits) {
+    missing.push('GIT_COMMITS');
+  }
 
   if (!evidence.has_pr_created) {
     missing.push('PR_CREATED');

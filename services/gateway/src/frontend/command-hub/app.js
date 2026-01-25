@@ -3053,56 +3053,44 @@ function stopOasisEventsAutoRefresh() {
 }
 
 /**
- * VTID-0600: Fetch Command Hub Events (filtered operational events)
- * Only fetches events relevant to supervision: deploy.*, governance.*, cicd.*, autopilot.*
+ * VTID-01215: Fetch Command Hub Operational Events
+ * Uses dedicated operational-events API with server-side category normalization
  */
 async function fetchCommandHubEvents() {
-    console.log('[VTID-0600] Fetching Command Hub events...');
+    console.log('[VTID-01215] Fetching operational events...');
     state.commandHubEvents.loading = true;
     renderApp();
 
     try {
-        const response = await fetch('/api/v1/oasis/events?limit=100');
+        // Build query params from state filters
+        var params = new URLSearchParams();
+        params.set('topic', state.commandHubEvents.filters.topic || 'all');
+        params.set('status', state.commandHubEvents.filters.status || 'all');
+        params.set('limit', '50');
+
+        var url = '/api/v1/commandhub/operational-events?' + params.toString();
+        console.log('[VTID-01215] Fetching:', url);
+
+        const response = await fetch(url);
         if (!response.ok) {
-            throw new Error('Command Hub events fetch failed: ' + response.status);
+            var errorText = await response.text();
+            throw new Error('Operational events fetch failed: ' + response.status + ' - ' + errorText);
         }
 
-        const data = await response.json();
-        var allEvents = Array.isArray(data) ? data : [];
+        const result = await response.json();
 
-        // Filter to operational events only
-        var operationalTopics = ['deploy', 'governance', 'cicd', 'autopilot', 'operator'];
-        var filteredEvents = allEvents.filter(function(event) {
-            var topic = (event.topic || '').toLowerCase();
-            return operationalTopics.some(function(prefix) {
-                return topic.startsWith(prefix);
-            });
-        });
-
-        // Apply additional filters from state
-        if (state.commandHubEvents.filters.topic) {
-            var topicFilter = state.commandHubEvents.filters.topic.toLowerCase();
-            filteredEvents = filteredEvents.filter(function(e) {
-                return (e.topic || '').toLowerCase().includes(topicFilter);
-            });
-        }
-        if (state.commandHubEvents.filters.service) {
-            filteredEvents = filteredEvents.filter(function(e) {
-                return e.service === state.commandHubEvents.filters.service;
-            });
-        }
-        if (state.commandHubEvents.filters.status) {
-            filteredEvents = filteredEvents.filter(function(e) {
-                return e.status === state.commandHubEvents.filters.status;
-            });
+        if (!result.ok) {
+            throw new Error(result.error || 'API returned error');
         }
 
-        console.log('[VTID-0600] Command Hub events filtered:', filteredEvents.length);
-        state.commandHubEvents.items = filteredEvents;
+        var items = (result.data && result.data.items) || [];
+        console.log('[VTID-01215] Received ' + items.length + ' operational events');
+
+        state.commandHubEvents.items = items;
         state.commandHubEvents.error = null;
         state.commandHubEvents.fetched = true;
     } catch (error) {
-        console.error('[VTID-0600] Failed to fetch Command Hub events:', error);
+        console.error('[VTID-01215] Failed to fetch operational events:', error);
         state.commandHubEvents.error = error.message;
         state.commandHubEvents.items = [];
     } finally {
@@ -13361,32 +13349,35 @@ function renderCommandHubEventsView() {
     var toolbar = document.createElement('div');
     toolbar.className = 'command-hub-events-toolbar';
 
-    // Topic filter
+    // VTID-01215: Topic/Category filter - matches API categories
     var topicFilter = document.createElement('select');
     topicFilter.className = 'form-control filter-select';
     topicFilter.innerHTML =
-        '<option value="">All Types</option>' +
-        '<option value="deploy">Deployments</option>' +
-        '<option value="governance">Governance</option>' +
+        '<option value="all">All Types</option>' +
+        '<option value="deployments">Deployments</option>' +
         '<option value="cicd">CI/CD</option>' +
+        '<option value="governance">Governance</option>' +
         '<option value="autopilot">Autopilot</option>' +
-        '<option value="operator">Operator</option>';
-    topicFilter.value = state.commandHubEvents.filters.topic || '';
+        '<option value="operator">Operator</option>' +
+        '<option value="lifecycle">Lifecycle</option>' +
+        '<option value="system">System</option>';
+    topicFilter.value = state.commandHubEvents.filters.topic || 'all';
     topicFilter.onchange = function(e) {
         state.commandHubEvents.filters.topic = e.target.value;
         fetchCommandHubEvents();
     };
     toolbar.appendChild(topicFilter);
 
-    // Status filter
+    // VTID-01215: Status filter - matches API status values
     var statusFilter = document.createElement('select');
     statusFilter.className = 'form-control filter-select';
     statusFilter.innerHTML =
-        '<option value="">All Status</option>' +
-        '<option value="success">Success</option>' +
-        '<option value="error">Error/Blocked</option>' +
-        '<option value="info">Info</option>';
-    statusFilter.value = state.commandHubEvents.filters.status || '';
+        '<option value="all">All Status</option>' +
+        '<option value="SUCCESS">Success</option>' +
+        '<option value="FAILED">Failed</option>' +
+        '<option value="INFO">Info</option>' +
+        '<option value="WARN">Warning</option>';
+    statusFilter.value = state.commandHubEvents.filters.status || 'all';
     statusFilter.onchange = function(e) {
         state.commandHubEvents.filters.status = e.target.value;
         fetchCommandHubEvents();
@@ -13414,14 +13405,22 @@ function renderCommandHubEventsView() {
     } else if (state.commandHubEvents.error) {
         content.innerHTML = '<div class="placeholder-content error-text">Error: ' + state.commandHubEvents.error + '</div>';
     } else if (state.commandHubEvents.items.length === 0) {
-        content.innerHTML = '<div class="placeholder-content">No operational events found.</div>';
+        // VTID-01215: More helpful empty state message
+        var filterInfo = '';
+        if (state.commandHubEvents.filters.topic && state.commandHubEvents.filters.topic !== 'all') {
+            filterInfo = ' for category "' + state.commandHubEvents.filters.topic + '"';
+        }
+        if (state.commandHubEvents.filters.status && state.commandHubEvents.filters.status !== 'all') {
+            filterInfo += (filterInfo ? ' and' : ' for') + ' status "' + state.commandHubEvents.filters.status + '"';
+        }
+        content.innerHTML = '<div class="placeholder-content">No operational events found' + filterInfo + '.</div>';
     } else {
         var table = document.createElement('table');
         table.className = 'command-hub-events-table';
 
         var thead = document.createElement('thead');
         var headerRow = document.createElement('tr');
-        ['Priority', 'Time', 'Type', 'VTID', 'Status', 'Summary'].forEach(function(h) {
+        ['Priority', 'Time', 'Category', 'VTID', 'Status', 'Summary'].forEach(function(h) {
             var th = document.createElement('th');
             th.textContent = h;
             headerRow.appendChild(th);
@@ -13447,11 +13446,11 @@ function renderCommandHubEventsView() {
             timeCell.textContent = formatEventTimestamp(event.created_at);
             row.appendChild(timeCell);
 
-            // Type
+            // VTID-01215: Category (from API normalization)
             var typeCell = document.createElement('td');
             var typeBadge = document.createElement('span');
-            typeBadge.className = 'event-type-badge';
-            typeBadge.textContent = (event.topic || '').split('.')[0];
+            typeBadge.className = 'event-type-badge category-' + (event.category || 'system');
+            typeBadge.textContent = event.category || (event.topic || '').split('.')[0];
             typeCell.appendChild(typeBadge);
             row.appendChild(typeCell);
 

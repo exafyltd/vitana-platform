@@ -700,6 +700,10 @@ export async function markVerifying(vtid: string): Promise<boolean> {
 /**
  * Mark as completed (terminal success)
  * This updates the vtid_ledger and emits terminal event
+ *
+ * VTID-01215 FIX: Now calls the terminalize API endpoint which has
+ * pipeline integrity gates (including git commit verification).
+ * This prevents false completion claims when no actual work was done.
  */
 export async function markCompleted(
   vtid: string,
@@ -713,8 +717,61 @@ export async function markCompleted(
     await emitVerificationResult(vtid, run.id, verificationResult);
   }
 
-  // Update ledger to terminal state
-  await updateLedgerTerminal(vtid, 'success');
+  // VTID-01215 FIX: Call the terminalize API endpoint instead of direct ledger update
+  // This ensures pipeline integrity gates (including git commit check) are enforced
+  const gatewayUrl = process.env.GATEWAY_URL || 'http://localhost:8080';
+  try {
+    const terminalizeResp = await fetch(`${gatewayUrl}/api/v1/oasis/vtid/terminalize`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        vtid,
+        outcome: 'success',
+        actor: 'autodeploy',
+      }),
+    });
+
+    if (!terminalizeResp.ok) {
+      const errorData = await terminalizeResp.json().catch(() => ({}));
+      const errorMsg = (errorData as any)?.error || `HTTP ${terminalizeResp.status}`;
+      const missingStages = (errorData as any)?.missing_stages || [];
+
+      console.error(`[VTID-01215] Terminalization BLOCKED for ${vtid}: ${errorMsg}`);
+
+      if (missingStages.length > 0) {
+        console.error(`[VTID-01215] Missing pipeline stages: ${missingStages.join(', ')}`);
+
+        // Emit governance event for blocked completion
+        await emitOasisEvent({
+          vtid,
+          type: 'governance.completion.blocked' as any,
+          source: 'autopilot-controller',
+          status: 'error',
+          message: `VTID ${vtid} completion blocked: missing pipeline stages`,
+          payload: {
+            vtid,
+            missing_stages: missingStages,
+            blocked_at: new Date().toISOString(),
+            vtid_ref: 'VTID-01215',
+          },
+        });
+      }
+
+      // Don't transition to completed state if terminalization failed
+      return false;
+    }
+
+    const terminalizeData = await terminalizeResp.json() as any;
+    console.log(`[VTID-01215] Terminalization successful for ${vtid}: ${JSON.stringify(terminalizeData)}`);
+  } catch (termError: any) {
+    console.error(`[VTID-01215] Terminalization API error for ${vtid}:`, termError.message);
+    // Fallback to direct ledger update only if API is unreachable
+    // This maintains backward compatibility while preferring the gated path
+    console.warn(`[VTID-01215] Falling back to direct ledger update for ${vtid}`);
+    await updateLedgerTerminal(vtid, 'success');
+  }
 
   return transitionState(run, 'completed', 'verification_passed', {
     verification_passed: verificationResult?.passed ?? true,

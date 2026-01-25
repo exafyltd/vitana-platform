@@ -75,6 +75,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const governanceRouter = require('./routes/governance').default;
   // VTID-01181: Governance Controls v1 - System Arming Panel
   const governanceControlsRouter = require('./routes/governance-controls').default;
+  // VTID-01215: Command Hub Operational Events API (curated events for supervisor oversight)
+  const operationalEventsRouter = require('./routes/commandhub-operational-events').default;
   const { oasisTasksRouter } = require('./routes/oasis-tasks');
   const { oasisVtidLedgerRouter } = require('./routes/oasis-vtid-ledger');
   const cicdRouter = require('./routes/cicd').default;
@@ -514,6 +516,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01058: Board adapter - SINGLE SOURCE OF TRUTH for board data
   mountRouterSync(app, '/api/v1/commandhub/board', boardAdapter, { owner: 'board-adapter' });
+
+  // VTID-01215: Command Hub Operational Events API (curated events for supervisor oversight)
+  mountRouterSync(app, '/api/v1/commandhub/operational-events', operationalEventsRouter, { owner: 'operational-events' });
 
   // Tasks router (root path)
   mountRouterSync(app, '/', tasksRouter, { owner: 'tasks' });
