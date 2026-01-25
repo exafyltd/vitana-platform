@@ -9459,56 +9459,103 @@ body {
   line-height: 1.5;
 }
 
-/* Memory Garden Grid */
+/* Memory Garden Grid - Production-style layout */
 .memory-garden-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 16px;
 }
 
 .memory-garden-card {
-  background: var(--card-bg, #1e1e1e);
+  background: linear-gradient(135deg, rgba(40, 40, 40, 0.9) 0%, rgba(30, 30, 30, 0.95) 100%);
   border: 1px solid var(--border-color, #333);
-  border-radius: 12px;
-  padding: 16px;
-  transition: border-color 0.2s, transform 0.2s;
+  border-radius: 16px;
+  padding: 20px;
+  transition: all 0.3s ease;
   cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.memory-garden-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  opacity: 0.08;
+  transition: opacity 0.3s;
+  pointer-events: none;
 }
 
 .memory-garden-card:hover {
-  border-color: var(--accent, #2196f3);
-  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
 }
 
+.memory-garden-card:hover::before {
+  opacity: 0.15;
+}
+
+/* Category-specific gradient accents - matching production Memory Garden */
+.memory-garden-card[data-category="personal_identity"]::before { background: linear-gradient(135deg, #ff6b9d, #ff8a65); }
+.memory-garden-card[data-category="health_wellness"]::before { background: linear-gradient(135deg, #4ecdc4, #44a08d); }
+.memory-garden-card[data-category="lifestyle_routines"]::before { background: linear-gradient(135deg, #667eea, #764ba2); }
+.memory-garden-card[data-category="business_projects"]::before { background: linear-gradient(135deg, #f093fb, #f5576c); }
+.memory-garden-card[data-category="network_relationships"]::before { background: linear-gradient(135deg, #4facfe, #00f2fe); }
+.memory-garden-card[data-category="learning_knowledge"]::before { background: linear-gradient(135deg, #43e97b, #38f9d7); }
+.memory-garden-card[data-category="finance_assets"]::before { background: linear-gradient(135deg, #fa709a, #fee140); }
+.memory-garden-card[data-category="location_environment"]::before { background: linear-gradient(135deg, #a8edea, #fed6e3); }
+.memory-garden-card[data-category="digital_footprint"]::before { background: linear-gradient(135deg, #d299c2, #fef9d7); }
+.memory-garden-card[data-category="values_aspirations"]::before { background: linear-gradient(135deg, #89f7fe, #66a6ff); }
+.memory-garden-card[data-category="autopilot_context"]::before { background: linear-gradient(135deg, #cd9cf2, #f6f3ff); }
+.memory-garden-card[data-category="future_plans"]::before { background: linear-gradient(135deg, #ffecd2, #fcb69f); }
+.memory-garden-card[data-category="uncategorized"]::before { background: linear-gradient(135deg, #868f96, #596164); }
+
 .memory-garden-card .card-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
-  background: rgba(33, 150, 243, 0.1);
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.1);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 12px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
 }
 
 .memory-garden-card .card-icon svg {
   width: 24px;
   height: 24px;
-  fill: var(--accent, #2196f3);
+  fill: var(--text-primary, #e0e0e0);
+}
+
+.memory-garden-card .card-content {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  z-index: 1;
 }
 
 .memory-garden-card .card-label {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--text-primary, #e0e0e0);
   margin-bottom: 4px;
-  text-transform: capitalize;
 }
 
 .memory-garden-card .card-count {
   font-size: 13px;
   color: var(--text-secondary, #888);
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .card-progress-container {
@@ -9540,11 +9587,138 @@ body {
   text-align: right;
 }
 
+.memory-garden-card .card-stats-row {
+  font-size: 13px;
+  color: var(--text-secondary, #888);
+  margin-bottom: 6px;
+}
+
 .memory-garden-card .card-description {
+  font-size: 13px;
+  color: var(--text-muted, #999);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+/* Category Detail Modal */
+.category-detail-modal {
+  max-width: 700px;
+  width: 95vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.category-detail-modal .modal-header {
+  background: linear-gradient(135deg, rgba(60, 60, 60, 0.95) 0%, rgba(40, 40, 40, 0.95) 100%);
+  border-radius: 16px 16px 0 0;
+  padding: 20px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.category-detail-modal .modal-header-icon {
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.category-detail-modal .modal-header-icon svg {
+  width: 24px;
+  height: 24px;
+  fill: white;
+}
+
+.category-detail-modal .modal-header-text {
+  flex: 1;
+}
+
+.category-detail-modal .modal-header-text h3 {
+  font-size: 18px;
+  font-weight: 600;
+  color: white;
+  margin: 0 0 4px 0;
+}
+
+.category-detail-modal .modal-header-text .memory-count {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.category-detail-modal .modal-body {
+  padding: 20px 24px;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 200px;
+}
+
+.category-detail-modal .subcategory-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.category-detail-modal .subcategory-tab {
+  padding: 6px 12px;
+  background: var(--card-bg, #2a2a2a);
+  border: 1px solid var(--border-color, #444);
+  border-radius: 16px;
+  color: var(--text-secondary, #888);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.category-detail-modal .subcategory-tab:hover {
+  border-color: var(--accent, #2196f3);
+}
+
+.category-detail-modal .subcategory-tab.active {
+  background: var(--accent, #2196f3);
+  border-color: var(--accent, #2196f3);
+  color: white;
+}
+
+.category-detail-modal .memories-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.category-detail-modal .memory-item {
+  padding: 12px 16px;
+  background: var(--card-bg, #2a2a2a);
+  border: 1px solid var(--border-color, #333);
+  border-radius: 8px;
+}
+
+.category-detail-modal .memory-item-content {
+  color: var(--text-primary, #e0e0e0);
+  font-size: 14px;
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+.category-detail-modal .memory-item-meta {
   font-size: 12px;
   color: var(--text-muted, #666);
-  margin-top: 8px;
-  line-height: 1.4;
+}
+
+.category-detail-modal .empty-memories {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-muted, #666);
+}
+
+.category-detail-modal .empty-memories p {
+  margin: 8px 0;
 }
 
 /* Diary Entry Modal */
