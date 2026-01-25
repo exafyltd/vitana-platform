@@ -387,6 +387,41 @@ function truncateContent(content: string, maxLength: number = CONTEXT_CONFIG.MAX
   return content.substring(0, maxLength - 3) + '...';
 }
 
+/**
+ * VTID-01192: Format timestamp for memory provenance display
+ * Shows when information was memorized so AI can answer "when did you learn this?"
+ */
+function formatTimestamp(isoString: string): string {
+  try {
+    const date = new Date(isoString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffMinutes = Math.floor(diffMs / (1000 * 60));
+
+    // Format as relative time for recent, absolute for older
+    if (diffMinutes < 60) {
+      return `${diffMinutes} minutes ago`;
+    } else if (diffHours < 24) {
+      return `${diffHours} hours ago`;
+    } else if (diffDays < 7) {
+      return `${diffDays} days ago`;
+    } else {
+      // Show absolute date for older memories
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    }
+  } catch {
+    return isoString;
+  }
+}
+
 // =============================================================================
 // VTID-01112: Deterministic Ranking Algorithm
 // =============================================================================
@@ -1099,15 +1134,18 @@ export function formatContextForPrompt(bundle: ContextBundle): string {
     if (!domainMemories || domainMemories.length === 0) continue;
 
     lines.push(`### ${domain.charAt(0).toUpperCase() + domain.slice(1)}`);
-    // VTID-01192: Show ALL memories, not just 5 - unlimited mode
+    // VTID-01192: Show ALL memories with timestamps for provenance tracking
     for (const memory of domainMemories) {
       const direction = memory.content_json?.direction;
       const prefix = direction === 'user' ? 'User' : direction === 'assistant' ? 'Assistant' : '';
       const content = memory.content;
+      // Format timestamp for human readability
+      const timestamp = memory.occurred_at ? formatTimestamp(memory.occurred_at) : '';
+      const timestampSuffix = timestamp ? ` [memorized: ${timestamp}]` : '';
       if (prefix) {
-        lines.push(`- ${prefix}: "${content}"`);
+        lines.push(`- ${prefix}: "${content}"${timestampSuffix}`);
       } else {
-        lines.push(`- ${content}`);
+        lines.push(`- ${content}${timestampSuffix}`);
       }
     }
     lines.push('');
@@ -1116,9 +1154,11 @@ export function formatContextForPrompt(bundle: ContextBundle): string {
   // Long-term patterns
   if (bundle.long_term_patterns.length > 0) {
     lines.push('### Known Patterns');
-    // VTID-01192: Show ALL patterns, not just 5 - unlimited mode
+    // VTID-01192: Show ALL patterns with timestamps for provenance
     for (const pattern of bundle.long_term_patterns) {
-      lines.push(`- **${pattern.title}**: ${pattern.summary}`);
+      const firstSeen = pattern.first_seen ? formatTimestamp(pattern.first_seen) : '';
+      const timestampInfo = firstSeen ? ` [first learned: ${firstSeen}]` : '';
+      lines.push(`- **${pattern.title}**: ${pattern.summary}${timestampInfo}`);
     }
     lines.push('');
   }
