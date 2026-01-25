@@ -43,21 +43,21 @@ import { emitOasisEvent } from './oasis-event-service';
  * This enables "infinite memory" without prompt bloat.
  */
 export const CONTEXT_CONFIG = {
-  // Max items per domain (safety limit)
-  MAX_ITEMS_PER_DOMAIN: 10,
-  // Max total memory items
-  MAX_MEMORY_ITEMS: 50,
-  // Max diary entries
-  MAX_DIARY_ENTRIES: 10,
-  // Max garden nodes
-  MAX_GARDEN_NODES: 20,
-
   // ==========================================================================
-  // VTID-01192: UNLIMITED CONTEXT MODE (Testing Period)
+  // VTID-01192: UNLIMITED MODE - ALL LIMITS REMOVED FOR TESTING
   // ==========================================================================
-  // NO LIMITS. Pass everything to the LLM. Test with full context.
+  // NO LIMITS ANYWHERE. Pass EVERYTHING to the LLM.
   // We will add intelligent limits AFTER we have a working memory solution.
   // ==========================================================================
+
+  // UNLIMITED - was 10
+  MAX_ITEMS_PER_DOMAIN: 1000,
+  // UNLIMITED - was 50
+  MAX_MEMORY_ITEMS: 5000,
+  // UNLIMITED - was 10
+  MAX_DIARY_ENTRIES: 1000,
+  // UNLIMITED - was 20
+  MAX_GARDEN_NODES: 1000,
 
   /**
    * UNLIMITED - No ceiling during testing.
@@ -84,13 +84,13 @@ export const CONTEXT_CONFIG = {
   MAX_RECENT_EVENTS: 10000,
 
   // ==========================================================================
-  // END VTID-01192 UNLIMITED CONTEXT MODE
+  // END VTID-01192 UNLIMITED MODE
   // ==========================================================================
 
   // Default lookback hours for memory
   DEFAULT_LOOKBACK_HOURS: 168, // 7 days
-  // Max content length per item (truncation)
-  MAX_CONTENT_LENGTH: 500,
+  // Max content length per item - INCREASED from 500
+  MAX_CONTENT_LENGTH: 5000,
   // Sensitive domains that require explicit expansion
   SENSITIVE_DOMAINS: ['health'] as const,
   /**
@@ -1099,7 +1099,8 @@ export function formatContextForPrompt(bundle: ContextBundle): string {
     if (!domainMemories || domainMemories.length === 0) continue;
 
     lines.push(`### ${domain.charAt(0).toUpperCase() + domain.slice(1)}`);
-    for (const memory of domainMemories.slice(0, 5)) {
+    // VTID-01192: Show ALL memories, not just 5 - unlimited mode
+    for (const memory of domainMemories) {
       const direction = memory.content_json?.direction;
       const prefix = direction === 'user' ? 'User' : direction === 'assistant' ? 'Assistant' : '';
       const content = memory.content;
@@ -1115,7 +1116,8 @@ export function formatContextForPrompt(bundle: ContextBundle): string {
   // Long-term patterns
   if (bundle.long_term_patterns.length > 0) {
     lines.push('### Known Patterns');
-    for (const pattern of bundle.long_term_patterns.slice(0, 5)) {
+    // VTID-01192: Show ALL patterns, not just 5 - unlimited mode
+    for (const pattern of bundle.long_term_patterns) {
       lines.push(`- **${pattern.title}**: ${pattern.summary}`);
     }
     lines.push('');
