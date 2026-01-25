@@ -254,6 +254,35 @@ Legacy DEV-* items are listed as ignored. NO repo scanning permitted.`,
         },
         required: []
       }
+    },
+    // VTID-01192: Code execution tool for calculations and data processing
+    {
+      name: 'run_code',
+      description: `Execute JavaScript code to perform calculations, date math, data processing, or any computation.
+Use this tool when the user asks for:
+- Math calculations ("what is 15% of 230?")
+- Date calculations ("how many days between two dates?", "what day of week is my birthday?")
+- Age calculations ("how old am I?", "age difference between two people")
+- Unit conversions ("convert 100 miles to kilometers")
+- Data transformations
+- Any computation that requires code execution
+
+The code runs in a sandboxed JavaScript environment with access to Date, Math, JSON, and standard JS functions.
+Return results as a string or JSON that can be displayed to the user.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          code: {
+            type: 'string',
+            description: 'JavaScript code to execute. Must return a value or call console.log() to produce output.'
+          },
+          description: {
+            type: 'string',
+            description: 'Brief description of what this code does (for logging/debugging).'
+          }
+        },
+        required: ['code']
+      }
     }
   ]
 };
@@ -1064,6 +1093,98 @@ function formatDiscoverTasksMessage(
   return lines.join('\n');
 }
 
+// ==================== VTID-01192: Code Execution Tool ====================
+
+/**
+ * VTID-01192: Execute JavaScript code in a sandboxed environment
+ * Provides calculation capabilities similar to ChatGPT Code Interpreter
+ */
+async function executeRunCode(
+  args: { code: string; description?: string },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  const { code, description } = args;
+  console.log(`[VTID-01192] run_code called: ${description || code.substring(0, 50)}...`);
+
+  try {
+    // Create a sandboxed context with safe globals
+    const vm = require('vm');
+
+    // Capture console.log output
+    const logs: string[] = [];
+    const mockConsole = {
+      log: (...args: any[]) => logs.push(args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')),
+      error: (...args: any[]) => logs.push('ERROR: ' + args.map(a => String(a)).join(' ')),
+      warn: (...args: any[]) => logs.push('WARN: ' + args.map(a => String(a)).join(' ')),
+    };
+
+    // Safe sandbox context
+    const sandbox = {
+      console: mockConsole,
+      Math,
+      Date,
+      JSON,
+      parseInt,
+      parseFloat,
+      isNaN,
+      isFinite,
+      Number,
+      String,
+      Boolean,
+      Array,
+      Object,
+      RegExp,
+      Error,
+      // Utility functions for common calculations
+      daysBetween: (date1: Date, date2: Date) => Math.abs(Math.floor((date2.getTime() - date1.getTime()) / (1000 * 60 * 60 * 24))),
+      yearsBetween: (date1: Date, date2: Date) => Math.abs(date2.getFullYear() - date1.getFullYear()),
+      formatDate: (date: Date) => date.toISOString().split('T')[0],
+    };
+
+    // Wrap code to capture return value
+    const wrappedCode = `
+      (function() {
+        ${code}
+      })()
+    `;
+
+    // Execute with timeout (5 seconds max)
+    const script = new vm.Script(wrappedCode);
+    const context = vm.createContext(sandbox);
+    const result = script.runInContext(context, { timeout: 5000 });
+
+    // Build output from return value and console logs
+    let output = '';
+    if (logs.length > 0) {
+      output += logs.join('\n');
+    }
+    if (result !== undefined && result !== null) {
+      if (output) output += '\n';
+      output += typeof result === 'object' ? JSON.stringify(result, null, 2) : String(result);
+    }
+
+    if (!output) {
+      output = 'Code executed successfully (no output)';
+    }
+
+    console.log(`[VTID-01192] run_code result: ${output.substring(0, 100)}...`);
+
+    return {
+      ok: true,
+      data: {
+        output,
+        message: output
+      }
+    };
+  } catch (error: any) {
+    console.error(`[VTID-01192] run_code error:`, error.message);
+    return {
+      ok: false,
+      error: `Code execution failed: ${error.message}`
+    };
+  }
+}
+
 // ==================== Main Tool Router ====================
 
 /**
@@ -1120,6 +1241,14 @@ export async function executeTool(
         );
         break;
 
+      // VTID-01192: Code execution for calculations
+      case 'run_code':
+        result = await executeRunCode(
+          args as { code: string; description?: string },
+          threadId
+        );
+        break;
+
       default:
         result = {
           ok: false,
@@ -1162,14 +1291,21 @@ const OPERATOR_SYSTEM_PROMPT = `You are a helpful AI assistant with access to th
 - autopilot_get_status: Check the status of an existing task by VTID
 - autopilot_list_recent_tasks: List recent tasks
 - knowledge_search: Search Vitana documentation (use for Vitana-specific questions like "What is OASIS?", "Explain the Vitana Index", etc.)
+- run_code: Execute JavaScript code for calculations, date math, conversions, data processing
 
 **When to use tools:**
 - Task creation requests (e.g., "Create a task to deploy gateway") → use autopilot_create_task
 - Status checks (e.g., "Status of VTID-0540") → use autopilot_get_status
 - Task listing (e.g., "Show recent tasks") → use autopilot_list_recent_tasks
 - Vitana-specific questions → use knowledge_search
+- Calculations, date math, age calculations, unit conversions → use run_code
 
-**For all other questions** (math, general knowledge, coding, etc.), answer directly without using tools.
+**IMPORTANT: Always use run_code for ANY calculation:**
+- "How old am I?" → run_code
+- "Days between two dates" → run_code
+- "What percentage is X of Y?" → run_code
+- "Convert miles to kilometers" → run_code
+- "Age difference between people" → run_code
 
 Be helpful, accurate, and concise. If a task is blocked by governance, explain the reason clearly.`;
 
