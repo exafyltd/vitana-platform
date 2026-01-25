@@ -1732,15 +1732,89 @@ function updateVtidLedgerList(list, items) {
 /**
  * VTID-01002: Updates ticker events list incrementally.
  */
+/**
+ * VTID-01210: Updates ticker events list with heartbeat collapsing.
+ * Matches the rendering logic from renderOperatorTicker().
+ */
 function updateTickerEventsList(list, events) {
     while (list.firstChild) {
         list.removeChild(list.firstChild);
     }
 
+    if (!events || events.length === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'ticker-empty';
+        empty.textContent = 'Waiting for events...';
+        list.appendChild(empty);
+        return;
+    }
+
+    // Classify events by severity
+    var heartbeatEvents = [];
+    var otherEvents = [];
+
     events.forEach(function(event) {
+        var type = (event.type || '').toLowerCase();
+        var content = (event.content || '').toLowerCase();
+
+        var isHeartbeat = type === 'heartbeat' || type === 'ping' ||
+            content.includes('heartbeat') || content.includes('health') ||
+            content.includes('served 0 eligible');
+
+        if (state.tickerCollapseHeartbeat && isHeartbeat) {
+            heartbeatEvents.push(event);
+        } else {
+            otherEvents.push(event);
+        }
+    });
+
+    // Render other events
+    otherEvents.forEach(function(event) {
         var item = createTickerEventItem(event);
         list.appendChild(item);
     });
+
+    // Render collapsed heartbeat section
+    if (state.tickerCollapseHeartbeat && heartbeatEvents.length > 0) {
+        var heartbeatSection = document.createElement('div');
+        heartbeatSection.className = 'ticker-heartbeat-collapsed';
+
+        var lastHeartbeat = heartbeatEvents[0]?.timestamp || 'N/A';
+
+        var heartbeatHeader = document.createElement('div');
+        heartbeatHeader.className = 'ticker-heartbeat-header';
+        heartbeatHeader.innerHTML =
+            '<span class="heartbeat-icon">♡</span>' +
+            '<span class="heartbeat-count">' + heartbeatEvents.length + ' heartbeats</span>' +
+            '<span class="heartbeat-last">(last: ' + lastHeartbeat + ')</span>' +
+            '<button class="ticker-expand-btn">Expand ▼</button>';
+        heartbeatHeader.onclick = function() {
+            heartbeatSection.classList.toggle('expanded');
+            var btn = heartbeatHeader.querySelector('.ticker-expand-btn');
+            btn.textContent = heartbeatSection.classList.contains('expanded') ? 'Collapse ▲' : 'Expand ▼';
+        };
+        heartbeatSection.appendChild(heartbeatHeader);
+
+        var heartbeatList = document.createElement('div');
+        heartbeatList.className = 'ticker-heartbeat-list';
+
+        heartbeatEvents.slice(0, 10).forEach(function(event) {
+            var item = document.createElement('div');
+            item.className = 'ticker-item ticker-item-low ticker-item-mini';
+            item.innerHTML = '<span class="ticker-timestamp">' + event.timestamp + '</span> ' + (event.content || '');
+            heartbeatList.appendChild(item);
+        });
+
+        if (heartbeatEvents.length > 10) {
+            var moreNote = document.createElement('div');
+            moreNote.className = 'ticker-more-note';
+            moreNote.textContent = '... and ' + (heartbeatEvents.length - 10) + ' more heartbeat events';
+            heartbeatList.appendChild(moreNote);
+        }
+
+        heartbeatSection.appendChild(heartbeatList);
+        list.appendChild(heartbeatSection);
+    }
 }
 
 /**
@@ -1962,29 +2036,86 @@ function createVtidLedgerItem(item) {
 
 /**
  * VTID-01002: Creates a ticker event item element.
+ * VTID-01210: Updated to match full rendering from renderOperatorTicker()
+ *             with severity dots, VTID badges, and consistent styling.
  * @param {Object} event - Ticker event data
  * @returns {HTMLElement} Ticker item element
  */
 function createTickerEventItem(event) {
-    var item = document.createElement('div');
-    item.className = 'ticker-event-item ticker-event-' + (event.type || 'info');
+    // Classify severity
+    var type = (event.type || '').toLowerCase();
+    var content = (event.content || '').toLowerCase();
+    var severity = 'info';
 
-    var timestamp = document.createElement('span');
+    if (type === 'error' || content.includes('failed') || content.includes('blocked') || content.includes('denied')) {
+        severity = 'critical';
+    } else if (type === 'governance' || type === 'deploy' || content.includes('success') || content.includes('allowed')) {
+        severity = 'important';
+    } else if (type === 'heartbeat' || type === 'ping' || content.includes('heartbeat') || content.includes('health') || content.includes('served 0 eligible')) {
+        severity = 'low';
+    }
+
+    var item = document.createElement('div');
+    item.className = 'ticker-item ticker-item-' + severity;
+
+    // Add status-based class for deploy events
+    if (event.topic && event.topic.includes('.success')) {
+        item.classList.add('ticker-item-success');
+    } else if (event.topic && (event.topic.includes('.failed') || event.topic.includes('.blocked'))) {
+        item.classList.add('ticker-item-error');
+    }
+
+    // Severity indicator dot
+    var severityDot = document.createElement('span');
+    severityDot.className = 'ticker-severity-dot ticker-severity-' + severity;
+    item.appendChild(severityDot);
+
+    // Timestamp
+    var timestamp = document.createElement('div');
     timestamp.className = 'ticker-timestamp';
     timestamp.textContent = event.timestamp || '';
     item.appendChild(timestamp);
 
-    var content = document.createElement('span');
-    content.className = 'ticker-content';
-    content.textContent = event.content || '';
-    item.appendChild(content);
-
+    // Stage badge (if present)
     if (event.task_stage) {
-        var stage = document.createElement('span');
-        stage.className = 'ticker-stage ticker-stage-' + event.task_stage.toLowerCase();
-        stage.textContent = event.task_stage.charAt(0);  // VTID-01210: Use single char to match renderOperatorTicker
-        stage.title = event.task_stage;  // Full text on hover
-        item.appendChild(stage);
+        var stageBadge = document.createElement('div');
+        stageBadge.className = 'ticker-stage ticker-stage-' + event.task_stage.toLowerCase();
+        stageBadge.textContent = event.task_stage.charAt(0);
+        stageBadge.title = event.task_stage;
+        item.appendChild(stageBadge);
+    }
+
+    // VTID badge (if present)
+    if (event.vtid) {
+        var vtidBadge = document.createElement('div');
+        vtidBadge.className = 'ticker-vtid';
+        vtidBadge.textContent = event.vtid;
+        vtidBadge.title = 'VTID: ' + event.vtid;
+        item.appendChild(vtidBadge);
+    }
+
+    // SWV badge (if present)
+    if (event.swv) {
+        var swvBadge = document.createElement('div');
+        swvBadge.className = 'ticker-swv';
+        swvBadge.textContent = event.swv;
+        swvBadge.title = 'SWV: ' + event.swv;
+        item.appendChild(swvBadge);
+    }
+
+    // Content
+    var contentEl = document.createElement('div');
+    contentEl.className = 'ticker-content';
+    contentEl.textContent = event.content || '';
+    item.appendChild(contentEl);
+
+    // Type label
+    var typeLabel = event.topic && event.topic.startsWith('deploy.') ? event.topic : event.type;
+    if (typeLabel) {
+        var typeEl = document.createElement('div');
+        typeEl.className = 'ticker-type ticker-type-' + (event.type || 'info');
+        typeEl.textContent = typeLabel;
+        item.appendChild(typeEl);
     }
 
     return item;
