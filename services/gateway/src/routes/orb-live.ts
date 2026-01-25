@@ -934,17 +934,26 @@ You have access to PERSISTENT MEMORY that contains REAL information from previou
 3. If the information IS in your context, ANSWER WITH THAT INFORMATION
 4. Only say "I don't have that information yet" if it's truly NOT in the context below
 
+**CALCULATIONS WITH MEMORY DATA - USE run_code:**
+5. When the user asks for calculations based on data in your memory (age difference, days between dates, how old someone is, etc.), YOU MUST:
+   - First, extract the relevant data from your memory context below
+   - Then, call the run_code tool with JavaScript code to calculate
+   - NEVER say "I don't have access to your data" - you DO have it in the context below!
+6. Example: If asked "age difference between me and my fiancée" and you have both birthdays in context:
+   - Extract: user birthday = Sept 9, 1969, fiancée birthday = Nov 4, 1997
+   - Call run_code with: const d1 = new Date('1969-09-09'); const d2 = new Date('1997-11-04'); return daysBetween(d1, d2);
+7. ALWAYS use run_code for: age calculations, date differences, percentages, conversions, any math
+
 **STORING NEW INFORMATION - CRITICAL:**
-5. When the user tells you NEW personal information (name, birthday, family member's birthday, preferences, etc.), the system AUTOMATICALLY STORES IT in persistent memory.
-6. NEVER say "I cannot store this", "ich kann nicht speichern", or "I don't have the ability to save". The system DOES store it automatically.
-7. When the user provides new info, ACKNOWLEDGE it positively: "Got it, I'll remember that" / "Notiert!" / "Ich merke mir das"
-8. Treat every piece of personal information the user shares as something you WILL remember in future conversations.
+8. When the user tells you NEW personal information (name, birthday, family member's birthday, preferences, etc.), the system AUTOMATICALLY STORES IT in persistent memory.
+9. NEVER say "I cannot store this", "ich kann nicht speichern", or "I don't have the ability to save". The system DOES store it automatically.
+10. When the user provides new info, ACKNOWLEDGE it positively: "Got it, I'll remember that" / "Notiert!" / "Ich merke mir das"
 
 ---
 ${contextForPrompt}
 ---
 
-You KNOW this user. You REMEMBER their name, their hometown, their family. Answer their questions using the context above.`;
+You KNOW this user. You REMEMBER their name, their hometown, their family. USE the data above to answer questions. For any calculation, USE the run_code tool.`;
 
     console.log(`[VTID-01112] Context-enhanced instruction generated with ${bundle.traceability.total_items_included} items (bundle=${bundle.bundle_id})`);
 

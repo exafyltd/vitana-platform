@@ -1358,7 +1358,19 @@ async function callVertexWithTools(
   });
 
   // VTID-01106: Use custom system instruction if provided (for ORB memory context)
-  const systemPrompt = customSystemInstruction || `${OPERATOR_SYSTEM_PROMPT}\n\nCurrent thread: ${threadId}`;
+  // VTID-01192: ALWAYS include tool instructions - merge with custom instruction
+  const toolInstructions = `
+**Available tools (ALWAYS use for calculations):**
+- run_code: Execute JavaScript code for calculations, date math, conversions
+
+**CRITICAL: When you have data in your context and need to calculate:**
+- Age difference, days between dates, percentages → CALL run_code
+- Extract the dates/numbers from context, then call run_code with JS code
+- NEVER say "I don't have access" when data IS in your context`;
+
+  const systemPrompt = customSystemInstruction
+    ? `${customSystemInstruction}\n\n${toolInstructions}`
+    : `${OPERATOR_SYSTEM_PROMPT}\n\nCurrent thread: ${threadId}`;
 
   const generativeModel = vertexAI.getGenerativeModel({
     model: VERTEX_MODEL,
@@ -1743,7 +1755,19 @@ async function callGeminiWithTools(
   });
 
   // VTID-01106: Use custom system instruction if provided (for ORB memory context)
-  const systemPrompt = customSystemInstruction || `${OPERATOR_SYSTEM_PROMPT}\n\nCurrent thread: ${threadId}`;
+  // VTID-01192: ALWAYS include tool instructions - merge with custom instruction
+  const geminiToolInstructions = `
+**Available tools (ALWAYS use for calculations):**
+- run_code: Execute JavaScript code for calculations, date math, conversions
+
+**CRITICAL: When you have data in your context and need to calculate:**
+- Age difference, days between dates, percentages → CALL run_code
+- Extract the dates/numbers from context, then call run_code with JS code
+- NEVER say "I don't have access" when data IS in your context`;
+
+  const systemPrompt = customSystemInstruction
+    ? `${customSystemInstruction}\n\n${geminiToolInstructions}`
+    : `${OPERATOR_SYSTEM_PROMPT}\n\nCurrent thread: ${threadId}`;
 
   const requestBody = {
     contents,
