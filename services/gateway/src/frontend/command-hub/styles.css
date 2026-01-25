@@ -2331,6 +2331,44 @@ body {
   color: #10b981;
 }
 
+/* VTID-01210: Summary view progress counter */
+.ticker-summary-row {
+  gap: 0.75rem;
+}
+
+.ticker-progress-counter {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  background: rgba(16, 185, 129, 0.1);
+  padding: 0.25rem 0.75rem;
+  border-radius: 6px;
+  margin-left: 0.5rem;
+}
+
+.ticker-progress-completed {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #10b981;
+}
+
+.ticker-progress-of {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+.ticker-progress-total {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.ticker-progress-label {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  margin-left: 0.25rem;
+}
+
 .ticker-hint {
   font-size: 0.8rem;
   color: var(--color-text-secondary);
@@ -7388,6 +7426,7 @@ body {
 .ticker-heartbeat-header {
   display: flex;
   align-items: center;
+  gap: 0.5rem;
   padding: 0.75rem 1rem;
   background: var(--color-sidebar-bg);
   cursor: pointer;
@@ -7397,6 +7436,46 @@ body {
 
 .ticker-heartbeat-header:hover {
   background: rgba(149, 165, 166, 0.15);
+}
+
+/* VTID-01210: Heartbeat indicator styles */
+.heartbeat-icon {
+  color: #10b981;
+  font-size: 1rem;
+  animation: heartbeat-pulse 2s infinite;
+}
+
+@keyframes heartbeat-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.1); opacity: 0.8; }
+}
+
+.heartbeat-count {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.heartbeat-last {
+  color: var(--color-text-tertiary);
+  font-size: 0.8rem;
+}
+
+.ticker-expand-btn {
+  margin-left: auto;
+  padding: 0.25rem 0.5rem;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+  transition: all 0.2s;
+}
+
+.ticker-expand-btn:hover {
+  background: var(--color-surface);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 .ticker-heartbeat-list {

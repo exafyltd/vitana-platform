@@ -1982,7 +1982,8 @@ function createTickerEventItem(event) {
     if (event.task_stage) {
         var stage = document.createElement('span');
         stage.className = 'ticker-stage ticker-stage-' + event.task_stage.toLowerCase();
-        stage.textContent = event.task_stage;
+        stage.textContent = event.task_stage.charAt(0);  // VTID-01210: Use single char to match renderOperatorTicker
+        stage.title = event.task_stage;  // Full text on hover
         item.appendChild(stage);
     }
 
@@ -15951,19 +15952,28 @@ function renderOperatorTicker() {
     const snapshot = state.operatorHeartbeatSnapshot;
 
     if (isLive) {
+        // VTID-01210: Summary view with progress counter
+        const completedCount = snapshot?.tasks?.by_status?.completed || 0;
+        const totalCount = snapshot?.tasks?.total || counters.PLANNER + counters.WORKER + counters.VALIDATOR + counters.DEPLOY;
+        const inProgressCount = snapshot?.tasks?.by_status?.in_progress || 0;
+
         statusBanner.innerHTML = `
-            <div class="ticker-status-row">
-                <span class="ticker-status-label">Status:</span>
+            <div class="ticker-status-row ticker-summary-row">
+                <span class="ticker-status-label">STATUS:</span>
                 <span class="ticker-status-value status-live">LIVE</span>
-                <span class="ticker-status-label">Tasks:</span>
-                <span class="ticker-status-value">${snapshot?.tasks?.total || counters.PLANNER + counters.WORKER + counters.VALIDATOR + counters.DEPLOY}</span>
+                <span class="ticker-progress-counter">
+                    <span class="ticker-progress-completed">${completedCount}</span>
+                    <span class="ticker-progress-of">of</span>
+                    <span class="ticker-progress-total">${totalCount}</span>
+                    <span class="ticker-progress-label">tasks completed</span>
+                </span>
                 <span class="ticker-status-label">CICD:</span>
-                <span class="ticker-status-value status-${snapshot?.cicd?.status || 'ok'}">${snapshot?.cicd?.status || 'OK'}</span>
+                <span class="ticker-status-value status-${snapshot?.cicd?.status || 'ok'}">${(snapshot?.cicd?.status || 'OK').toUpperCase()}</span>
             </div>
             <div class="ticker-status-row ticker-status-tasks">
                 <span>Scheduled: ${snapshot?.tasks?.by_status?.scheduled || 0}</span>
-                <span>In Progress: ${snapshot?.tasks?.by_status?.in_progress || 0}</span>
-                <span>Completed: ${snapshot?.tasks?.by_status?.completed || 0}</span>
+                <span>In Progress: ${inProgressCount}</span>
+                <span>Completed: ${completedCount}</span>
             </div>
             <div class="ticker-status-row ticker-stage-counters">
                 <span class="stage-counter stage-planner" title="Planning stage events">
@@ -16173,16 +16183,26 @@ function renderOperatorTicker() {
             eventsList.appendChild(item);
         });
 
-        // Render collapsed heartbeat section
+        // VTID-01210: Render collapsed heartbeat section as a single indicator line
         if (state.tickerCollapseHeartbeat && heartbeatEvents.length > 0) {
             var heartbeatSection = document.createElement('div');
             heartbeatSection.className = 'ticker-heartbeat-collapsed';
 
+            // Get last heartbeat timestamp
+            var lastHeartbeat = heartbeatEvents[0]?.timestamp || 'N/A';
+
             var heartbeatHeader = document.createElement('div');
             heartbeatHeader.className = 'ticker-heartbeat-header';
-            heartbeatHeader.innerHTML = '<span class="ticker-severity-dot ticker-severity-low"></span> Heartbeat/Health events (' + heartbeatEvents.length + ')';
+            heartbeatHeader.innerHTML = `
+                <span class="heartbeat-icon">♡</span>
+                <span class="heartbeat-count">${heartbeatEvents.length} heartbeats</span>
+                <span class="heartbeat-last">(last: ${lastHeartbeat})</span>
+                <button class="ticker-expand-btn">Expand ▼</button>
+            `;
             heartbeatHeader.onclick = function() {
                 heartbeatSection.classList.toggle('expanded');
+                var btn = heartbeatHeader.querySelector('.ticker-expand-btn');
+                btn.textContent = heartbeatSection.classList.contains('expanded') ? 'Collapse ▲' : 'Expand ▼';
             };
             heartbeatSection.appendChild(heartbeatHeader);
 
