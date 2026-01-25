@@ -53,39 +53,38 @@ export const CONTEXT_CONFIG = {
   MAX_GARDEN_NODES: 20,
 
   // ==========================================================================
-  // VTID-01192: TOKEN BUDGET CONFIGURATION (Replaces hard count limits)
+  // VTID-01192: UNLIMITED CONTEXT MODE (Testing Period)
+  // ==========================================================================
+  // NO LIMITS. Pass everything to the LLM. Test with full context.
+  // We will add intelligent limits AFTER we have a working memory solution.
   // ==========================================================================
 
   /**
-   * Total token budget ceiling for assembled context.
-   * This is the hard limit - context will never exceed this.
+   * UNLIMITED - No ceiling during testing.
+   * Gemini 2.0 supports 1M+ tokens. Use it.
    */
-  TOKEN_BUDGET_TOTAL: 8000,
+  TOKEN_BUDGET_TOTAL: 1000000,
 
   /**
-   * Token budgets per component.
-   * Assembly prioritizes by rank_score within each budget.
+   * UNLIMITED - Pass full conversation history.
    */
-  TOKEN_BUDGET_RECENT_TURNS: 3000,    // Conversation history
-  TOKEN_BUDGET_SEMANTIC_RECALL: 3000, // Memory items from semantic search
-  TOKEN_BUDGET_FACTS: 1000,           // Pinned identity facts
-  TOKEN_BUDGET_SUMMARY: 1000,         // Thread summary
+  TOKEN_BUDGET_RECENT_TURNS: 500000,
+  TOKEN_BUDGET_SEMANTIC_RECALL: 250000,
+  TOKEN_BUDGET_FACTS: 100000,
+  TOKEN_BUDGET_SUMMARY: 100000,
 
   /**
-   * Minimum recent turns to ALWAYS include (never drop below this).
-   * Ensures basic continuity even with long messages.
+   * Keep all recent turns.
    */
-  MIN_RECENT_TURNS: 6,
+  MIN_RECENT_TURNS: 1000,
 
   /**
-   * DEPRECATED: Hard count limit - kept for backwards compatibility only.
-   * Token budgeting is now the primary mechanism.
-   * @deprecated Use TOKEN_BUDGET_RECENT_TURNS instead
+   * NO LIMIT on recent events.
    */
-  MAX_RECENT_EVENTS: 100, // Increased from 15 - token budget is the real limit
+  MAX_RECENT_EVENTS: 10000,
 
   // ==========================================================================
-  // END VTID-01192 TOKEN BUDGET CONFIGURATION
+  // END VTID-01192 UNLIMITED CONTEXT MODE
   // ==========================================================================
 
   // Default lookback hours for memory
