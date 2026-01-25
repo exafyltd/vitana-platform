@@ -2575,6 +2575,7 @@ const state = {
         error: null,
         fetched: false,
         selectedEvent: null,
+        hideNoise: true, // VTID-01211: Hide heartbeat/polling noise by default
         filters: {
             topic: '',
             service: '',
@@ -3006,8 +3007,8 @@ function getEventSeverity(event) {
         return EVENT_SEVERITY.IMPORTANT;
     }
 
-    // Low: heartbeat, ping, routine checks
-    if (topic.includes('heartbeat') || topic.includes('ping') || topic.includes('health')) {
+    // Low: heartbeat, ping, routine checks, worker polling noise
+    if (topic.includes('heartbeat') || topic.includes('ping') || topic.includes('health') || topic.includes('pending_served')) {
         return EVENT_SEVERITY.LOW;
     }
 
@@ -13136,12 +13137,35 @@ function renderOasisEventsView() {
     };
     filtersCluster.appendChild(statusFilter);
 
+    // VTID-01211: Hide Noise checkbox (filters out worker polling/heartbeat)
+    var hideNoiseLabel = document.createElement('label');
+    hideNoiseLabel.className = 'filter-checkbox-label';
+    hideNoiseLabel.style.cssText = 'display: flex; align-items: center; gap: 4px; margin-left: 12px; font-size: 12px; cursor: pointer;';
+    var hideNoiseCheckbox = document.createElement('input');
+    hideNoiseCheckbox.type = 'checkbox';
+    hideNoiseCheckbox.checked = state.oasisEvents.hideNoise;
+    hideNoiseCheckbox.onchange = function(e) {
+        state.oasisEvents.hideNoise = e.target.checked;
+        renderApp();
+    };
+    hideNoiseLabel.appendChild(hideNoiseCheckbox);
+    hideNoiseLabel.appendChild(document.createTextNode(' Hide Noise'));
+    filtersCluster.appendChild(hideNoiseLabel);
+
     toolbar.appendChild(filtersCluster);
 
-    // Right: Item count
+    // Right: Item count (VTID-01211: Show filtered count if noise is hidden)
     var metadataCluster = document.createElement('div');
     metadataCluster.className = 'list-toolbar__metadata';
-    metadataCluster.textContent = state.oasisEvents.items.length + ' events';
+    var filteredCount = state.oasisEvents.items.length;
+    if (state.oasisEvents.hideNoise) {
+        filteredCount = state.oasisEvents.items.filter(function(e) {
+            return getEventSeverity(e) !== EVENT_SEVERITY.LOW;
+        }).length;
+        metadataCluster.textContent = filteredCount + ' events (' + (state.oasisEvents.items.length - filteredCount) + ' noise hidden)';
+    } else {
+        metadataCluster.textContent = filteredCount + ' events';
+    }
     toolbar.appendChild(metadataCluster);
 
     container.appendChild(toolbar);
@@ -13175,7 +13199,15 @@ function renderOasisEventsView() {
 
         // Body
         var tbody = document.createElement('tbody');
-        state.oasisEvents.items.forEach(function(event) {
+        // VTID-01211: Filter out noise events if hideNoise is enabled
+        var displayItems = state.oasisEvents.items;
+        if (state.oasisEvents.hideNoise) {
+            displayItems = state.oasisEvents.items.filter(function(event) {
+                var severity = getEventSeverity(event);
+                return severity !== EVENT_SEVERITY.LOW;
+            });
+        }
+        displayItems.forEach(function(event) {
             var row = document.createElement('tr');
             row.className = 'oasis-event-row clickable-row';
             var severity = getEventSeverity(event);
@@ -17183,7 +17215,7 @@ function renderOperatorTicker() {
                 eventCopy.severity = 'critical';
             } else if (type === 'governance' || type === 'deploy' || content.includes('success') || content.includes('allowed')) {
                 eventCopy.severity = 'important';
-            } else if (type === 'heartbeat' || type === 'ping' || content.includes('heartbeat') || content.includes('health')) {
+            } else if (type === 'heartbeat' || type === 'ping' || content.includes('heartbeat') || content.includes('health') || content.includes('served 0 eligible') || content.includes('pending_served') || (event.topic && event.topic.includes('pending_served'))) {
                 eventCopy.severity = 'low';
             } else {
                 eventCopy.severity = 'info';
