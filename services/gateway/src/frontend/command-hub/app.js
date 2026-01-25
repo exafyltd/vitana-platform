@@ -2715,6 +2715,12 @@ const state = {
         expandedVtids: {},   // VTID -> boolean (expanded trace view)
         loading: false,
         fetched: false,
+        // VTID-01211: Pagination state for Load More
+        pagination: {
+            limit: 50,
+            offset: 0,
+            hasMore: true
+        },
         // API timing/status
         timing: {
             ledger: null,
@@ -2747,6 +2753,12 @@ const state = {
         eventsLoading: false,
         eventsFetched: false,
         eventsError: null,
+        // VTID-01211: Pagination state for Load More
+        pagination: {
+            limit: 50,
+            offset: 0,
+            hasMore: true
+        },
         // Filters
         filters: {
             vtid: '',
@@ -9566,18 +9578,24 @@ function renderAgentsSkillsView() {
 
 /**
  * VTID-01174: Fetch pipelines data from VTID Ledger API
- * Uses GET /api/v1/oasis/vtid-ledger?limit=50 for all VTIDs with stage timelines
+ * VTID-01211: Added pagination support for Load More
+ * @param {boolean} append - If true, append to existing items (Load More)
  */
-async function fetchPipelinesData() {
+async function fetchPipelinesData(append) {
     if (state.agentsPipelines.loading) return;
+    if (append && !state.agentsPipelines.pagination.hasMore) return;
 
     state.agentsPipelines.loading = true;
-    state.agentsPipelines.errors = { ledger: null, events: null };
+    if (!append) {
+        state.agentsPipelines.errors = { ledger: null, events: null };
+    }
     renderApp();
 
+    var pagination = state.agentsPipelines.pagination;
+    var offset = append ? pagination.offset : 0;
     var ledgerStart = Date.now();
     try {
-        var response = await fetch('/api/v1/oasis/vtid-ledger?limit=100', {
+        var response = await fetch('/api/v1/oasis/vtid-ledger?limit=' + pagination.limit + '&offset=' + offset, {
             headers: withVitanaContextHeaders({})
         });
         var ledgerElapsed = Date.now() - ledgerStart;
@@ -9588,14 +9606,25 @@ async function fetchPipelinesData() {
             var errorText = await response.text();
             console.error('[VTID-01174] Ledger fetch failed:', response.status, errorText);
             state.agentsPipelines.errors.ledger = { status: response.status, message: errorText };
-            state.agentsPipelines.items = [];
+            if (!append) state.agentsPipelines.items = [];
         } else {
             var data = await response.json();
             if (data.ok && Array.isArray(data.data)) {
-                state.agentsPipelines.items = data.data;
-                console.log('[VTID-01174] Fetched', data.data.length, 'pipelines');
+                var newItems = data.data;
+                if (append) {
+                    state.agentsPipelines.items = state.agentsPipelines.items.concat(newItems);
+                } else {
+                    state.agentsPipelines.items = newItems;
+                }
+                // VTID-01211: Update pagination state
+                state.agentsPipelines.pagination = {
+                    limit: pagination.limit,
+                    offset: offset + newItems.length,
+                    hasMore: data.pagination ? data.pagination.has_more : newItems.length === pagination.limit
+                };
+                console.log('[VTID-01174] Fetched', newItems.length, 'pipelines, hasMore:', state.agentsPipelines.pagination.hasMore);
             } else {
-                state.agentsPipelines.items = [];
+                if (!append) state.agentsPipelines.items = [];
                 state.agentsPipelines.errors.ledger = { status: response.status, message: 'Invalid response format' };
             }
         }
@@ -9604,12 +9633,19 @@ async function fetchPipelinesData() {
         state.agentsPipelines.timing.ledger = Date.now() - ledgerStart;
         state.agentsPipelines.status.ledger = 0;
         state.agentsPipelines.errors.ledger = { status: 0, message: err.message };
-        state.agentsPipelines.items = [];
+        if (!append) state.agentsPipelines.items = [];
     }
 
     state.agentsPipelines.loading = false;
     state.agentsPipelines.fetched = true;
     renderApp();
+}
+
+/**
+ * VTID-01211: Load more pipelines (pagination)
+ */
+function loadMorePipelines() {
+    fetchPipelinesData(true);
 }
 
 /**
@@ -10071,6 +10107,9 @@ function renderAgentsPipelinesView() {
     refreshBtn.onclick = function() {
         state.agentsPipelines.fetched = false;
         state.agentsPipelines.eventsCache = {}; // Clear events cache
+        // VTID-01211: Reset pagination on refresh
+        state.agentsPipelines.pagination.offset = 0;
+        state.agentsPipelines.pagination.hasMore = true;
         fetchPipelinesData();
         // VTID-01209: Also refresh active executions
         fetchActiveExecutions();
@@ -10212,6 +10251,23 @@ function renderAgentsPipelinesView() {
         filteredItems.forEach(function(item) {
             list.appendChild(renderPipelineRow(item));
         });
+
+        // VTID-01211: Load More button
+        if (state.agentsPipelines.pagination.hasMore || state.agentsPipelines.loading) {
+            var loadMoreContainer = document.createElement('div');
+            loadMoreContainer.className = 'load-more-container';
+
+            var loadMoreBtn = document.createElement('button');
+            loadMoreBtn.className = 'load-more-btn' + (state.agentsPipelines.loading ? ' loading' : '');
+            loadMoreBtn.disabled = state.agentsPipelines.loading;
+            loadMoreBtn.textContent = state.agentsPipelines.loading ? 'Loading...' : 'Load More';
+            loadMoreBtn.onclick = function() {
+                loadMorePipelines();
+            };
+
+            loadMoreContainer.appendChild(loadMoreBtn);
+            list.appendChild(loadMoreContainer);
+        }
     }
 
     container.appendChild(list);
@@ -10288,9 +10344,12 @@ async function fetchLLMRoutingPolicy() {
 
 /**
  * VTID-01208: Fetch LLM telemetry events from API
+ * VTID-01211: Added pagination support for Load More
+ * @param {boolean} append - If true, append to existing events (Load More)
  */
-async function fetchLLMTelemetryEvents() {
+async function fetchLLMTelemetryEvents(append) {
     if (state.agentsTelemetry.eventsLoading) return;
+    if (append && !state.agentsTelemetry.pagination.hasMore) return;
 
     state.agentsTelemetry.eventsLoading = true;
     state.agentsTelemetry.eventsError = null;
@@ -10298,6 +10357,8 @@ async function fetchLLMTelemetryEvents() {
 
     try {
         var filters = state.agentsTelemetry.filters;
+        var pagination = state.agentsTelemetry.pagination;
+        var offset = append ? pagination.offset : 0;
         var params = new URLSearchParams();
 
         if (filters.vtid) params.append('vtid', filters.vtid);
@@ -10306,7 +10367,8 @@ async function fetchLLMTelemetryEvents() {
         if (filters.model) params.append('model', filters.model);
         if (filters.service) params.append('service', filters.service);
         if (filters.status) params.append('status', filters.status);
-        params.append('limit', '100');
+        params.append('limit', pagination.limit.toString());
+        params.append('offset', offset.toString());
 
         // Time window
         var hoursMap = { '15m': 0.25, '1h': 1, '24h': 24, '7d': 168 };
@@ -10322,26 +10384,44 @@ async function fetchLLMTelemetryEvents() {
             var errorText = await response.text();
             console.error('[VTID-01208] Telemetry fetch failed:', response.status, errorText);
             state.agentsTelemetry.eventsError = 'Failed to load telemetry: ' + response.status;
-            state.agentsTelemetry.events = [];
+            if (!append) state.agentsTelemetry.events = [];
         } else {
             var data = await response.json();
             if (data.ok && data.data && Array.isArray(data.data.events)) {
-                state.agentsTelemetry.events = data.data.events;
-                console.log('[VTID-01208] Telemetry loaded:', data.data.events.length, 'events');
+                var newEvents = data.data.events;
+                if (append) {
+                    state.agentsTelemetry.events = state.agentsTelemetry.events.concat(newEvents);
+                } else {
+                    state.agentsTelemetry.events = newEvents;
+                }
+                // VTID-01211: Update pagination state
+                state.agentsTelemetry.pagination = {
+                    limit: pagination.limit,
+                    offset: offset + newEvents.length,
+                    hasMore: data.pagination ? data.pagination.has_more : newEvents.length === pagination.limit
+                };
+                console.log('[VTID-01208] Telemetry loaded:', newEvents.length, 'events, hasMore:', state.agentsTelemetry.pagination.hasMore);
             } else {
-                state.agentsTelemetry.events = [];
+                if (!append) state.agentsTelemetry.events = [];
                 state.agentsTelemetry.eventsError = data.error || 'Invalid response format';
             }
         }
     } catch (err) {
         console.error('[VTID-01208] Telemetry fetch error:', err);
         state.agentsTelemetry.eventsError = 'Network error: ' + err.message;
-        state.agentsTelemetry.events = [];
+        if (!append) state.agentsTelemetry.events = [];
     }
 
     state.agentsTelemetry.eventsLoading = false;
     state.agentsTelemetry.eventsFetched = true;
     renderApp();
+}
+
+/**
+ * VTID-01211: Load more telemetry events (pagination)
+ */
+function loadMoreTelemetryEvents() {
+    fetchLLMTelemetryEvents(true);
 }
 
 /**
@@ -10420,6 +10500,8 @@ function renderTelemetryStreamPanel() {
     vtidInput.onchange = function(e) {
         state.agentsTelemetry.filters.vtid = e.target.value;
         state.agentsTelemetry.eventsFetched = false;
+        state.agentsTelemetry.pagination.offset = 0;
+        state.agentsTelemetry.pagination.hasMore = true;
         fetchLLMTelemetryEvents();
     };
     filtersBar.appendChild(vtidInput);
@@ -10437,6 +10519,8 @@ function renderTelemetryStreamPanel() {
     stageSelect.onchange = function(e) {
         state.agentsTelemetry.filters.stage = e.target.value;
         state.agentsTelemetry.eventsFetched = false;
+        state.agentsTelemetry.pagination.offset = 0;
+        state.agentsTelemetry.pagination.hasMore = true;
         fetchLLMTelemetryEvents();
     };
     filtersBar.appendChild(stageSelect);
@@ -10452,6 +10536,8 @@ function renderTelemetryStreamPanel() {
     providerSelect.onchange = function(e) {
         state.agentsTelemetry.filters.provider = e.target.value;
         state.agentsTelemetry.eventsFetched = false;
+        state.agentsTelemetry.pagination.offset = 0;
+        state.agentsTelemetry.pagination.hasMore = true;
         fetchLLMTelemetryEvents();
     };
     filtersBar.appendChild(providerSelect);
@@ -10467,6 +10553,8 @@ function renderTelemetryStreamPanel() {
     timeSelect.onchange = function(e) {
         state.agentsTelemetry.filters.timeWindow = e.target.value;
         state.agentsTelemetry.eventsFetched = false;
+        state.agentsTelemetry.pagination.offset = 0;
+        state.agentsTelemetry.pagination.hasMore = true;
         fetchLLMTelemetryEvents();
     };
     filtersBar.appendChild(timeSelect);
@@ -10478,6 +10566,8 @@ function renderTelemetryStreamPanel() {
     refreshBtn.disabled = state.agentsTelemetry.eventsLoading;
     refreshBtn.onclick = function() {
         state.agentsTelemetry.eventsFetched = false;
+        state.agentsTelemetry.pagination.offset = 0;
+        state.agentsTelemetry.pagination.hasMore = true;
         fetchLLMTelemetryEvents();
     };
     filtersBar.appendChild(refreshBtn);
@@ -10580,6 +10670,23 @@ function renderTelemetryStreamPanel() {
     stats.className = 'telemetry-stats';
     stats.textContent = 'Showing ' + events.length + ' events';
     panel.appendChild(stats);
+
+    // VTID-01211: Load More button
+    if (state.agentsTelemetry.pagination.hasMore || state.agentsTelemetry.eventsLoading) {
+        var loadMoreContainer = document.createElement('div');
+        loadMoreContainer.className = 'load-more-container';
+
+        var loadMoreBtn = document.createElement('button');
+        loadMoreBtn.className = 'load-more-btn' + (state.agentsTelemetry.eventsLoading ? ' loading' : '');
+        loadMoreBtn.disabled = state.agentsTelemetry.eventsLoading;
+        loadMoreBtn.textContent = state.agentsTelemetry.eventsLoading ? 'Loading...' : 'Load More';
+        loadMoreBtn.onclick = function() {
+            loadMoreTelemetryEvents();
+        };
+
+        loadMoreContainer.appendChild(loadMoreBtn);
+        panel.appendChild(loadMoreContainer);
+    }
 
     return panel;
 }
@@ -13716,13 +13823,30 @@ function renderVtidsView() {
     content.dataset.scrollRetain = 'true';
     content.dataset.scrollKey = 'vtids-list';
 
-    if (state.vtidProjection.loading) {
+    if (state.vtidProjection.loading && state.vtidProjection.items.length === 0) {
         content.innerHTML = '<div class="placeholder-content">Loading VTIDs...</div>';
     } else if (state.vtidProjection.items.length === 0 && !state.vtidProjection.error) {
         content.innerHTML = '<div class="placeholder-content">No VTIDs found.</div>';
     } else if (state.vtidProjection.items.length > 0) {
         // Use projection table renderer with 5 columns
         content.appendChild(renderVtidProjectionTable(state.vtidProjection.items));
+
+        // VTID-01211: Add Load More button
+        if (state.vtidProjection.pagination.hasMore || state.vtidProjection.loading) {
+            var loadMoreContainer = document.createElement('div');
+            loadMoreContainer.className = 'load-more-container';
+
+            var loadMoreBtn = document.createElement('button');
+            loadMoreBtn.className = 'load-more-btn' + (state.vtidProjection.loading ? ' loading' : '');
+            loadMoreBtn.disabled = state.vtidProjection.loading;
+            loadMoreBtn.textContent = state.vtidProjection.loading ? 'Loading...' : 'Load More';
+            loadMoreBtn.onclick = function() {
+                loadMoreVtidProjection();
+            };
+
+            loadMoreContainer.appendChild(loadMoreBtn);
+            content.appendChild(loadMoreContainer);
+        }
     }
 
     container.appendChild(content);
