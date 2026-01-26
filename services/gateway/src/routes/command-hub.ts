@@ -15,7 +15,7 @@ const router = Router();
 router.get('/', (req: Request, res: Response) => {
   try {
     // CSP compliant - no inline scripts or styles
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; media-src 'self' data:");
     const htmlPath = path.join(__dirname, '../frontend/command-hub/index.html');
     res.sendFile(htmlPath);
   } catch (error) {
@@ -120,7 +120,7 @@ router.get('/*', (req: Request, res: Response, next: Function) => {
   }
 
   try {
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; media-src 'self' data:");
     const htmlPath = path.join(__dirname, '../frontend/command-hub/index.html');
     res.sendFile(htmlPath);
   } catch (error) {
