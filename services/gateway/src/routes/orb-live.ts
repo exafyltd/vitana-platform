@@ -476,6 +476,17 @@ const GEMINI_TTS_VOICES: Record<string, { name: string; languageCode: string }> 
   'ru': { name: 'Kore', languageCode: 'ru-RU' }
 };
 
+// VTID-01219: Neural2 TTS voices for improved German and English performance
+// Neural2 voices provide lower latency and more natural speech synthesis
+// Female voices selected per specification
+const NEURAL2_TTS_VOICES: Record<string, { name: string; languageCode: string }> = {
+  'de': { name: 'de-DE-Neural2-G', languageCode: 'de-DE' },  // Female German
+  'en': { name: 'en-US-Neural2-H', languageCode: 'en-US' },  // Female English
+};
+
+// Languages that should use Neural2 instead of Gemini TTS
+const NEURAL2_ENABLED_LANGUAGES = ['en', 'de'];
+
 /**
  * VTID-01155: Convert raw PCM audio data to WAV format
  * Gemini TTS returns audio/L16;codec=pcm;rate=24000 (16-bit PCM at 24kHz mono)
@@ -3317,9 +3328,12 @@ router.post('/live/stream/send', async (req: Request, res: Response) => {
 });
 
 /**
- * VTID-01155: POST /tts - Google Cloud TTS with Gemini voices
+ * VTID-01155: POST /tts - Google Cloud TTS
+ * VTID-01219: Neural2 voices for German (de-DE-Neural2-G) and English (en-US-Neural2-H)
  *
- * Text-to-speech using Google Cloud Text-to-Speech API with Gemini model.
+ * Text-to-speech using Google Cloud Text-to-Speech API.
+ * - German/English: Uses Neural2 voices for improved latency and natural speech
+ * - Other languages: Uses Gemini TTS model
  * Uses ADC (Application Default Credentials) - automatic on Cloud Run.
  * Returns MP3 audio directly (no PCM conversion needed).
  *
@@ -3335,11 +3349,12 @@ router.post('/live/stream/send', async (req: Request, res: Response) => {
  *   "ok": true,
  *   "audio_b64": "...",
  *   "mime": "audio/mp3",
- *   "voice": "Kore"
+ *   "voice": "de-DE-Neural2-G",
+ *   "voice_type": "Neural2"
  * }
  */
 router.post('/tts', async (req: Request, res: Response) => {
-  console.log('[VTID-01155] POST /orb/tts (Cloud TTS with Gemini)');
+  console.log('[VTID-01219] POST /orb/tts (Cloud TTS with Neural2/Gemini)');
 
   const body = req.body as TtsRequest;
 
@@ -3358,21 +3373,29 @@ router.post('/tts', async (req: Request, res: Response) => {
   }
 
   const lang = normalizeLang(body.lang || 'en');
-  const voiceConfig = GEMINI_TTS_VOICES[lang] || GEMINI_TTS_VOICES['en'];
+
+  // VTID-01219: Use Neural2 voices for German and English, Gemini for others
+  const useNeural2 = NEURAL2_ENABLED_LANGUAGES.includes(lang);
+  const voiceConfig = useNeural2
+    ? (NEURAL2_TTS_VOICES[lang] || GEMINI_TTS_VOICES['en'])
+    : (GEMINI_TTS_VOICES[lang] || GEMINI_TTS_VOICES['en']);
+  const voiceType = useNeural2 ? 'Neural2' : 'Gemini';
 
   // Emit request event
   await emitTtsEvent('vtid.tts.request', {
     lang,
     voice: voiceConfig.name,
+    voice_type: voiceType,
     text_length: text.length
   });
 
   // Check if TTS client is available
   if (!ttsClient) {
-    console.warn('[VTID-01155] TTS: Google Cloud TTS client not initialized');
+    console.warn('[VTID-01219] TTS: Google Cloud TTS client not initialized');
     await emitTtsEvent('vtid.tts.failure', {
       lang,
       voice: voiceConfig.name,
+      voice_type: voiceType,
       error: 'TTS client not initialized'
     });
     return res.status(503).json({
@@ -3382,17 +3405,24 @@ router.post('/tts', async (req: Request, res: Response) => {
   }
 
   try {
-    console.log(`[VTID-01155] TTS request: voice=${voiceConfig.name}, lang=${voiceConfig.languageCode}, text_length=${text.length}`);
+    console.log(`[VTID-01219] TTS request: voice=${voiceConfig.name}, type=${voiceType}, lang=${voiceConfig.languageCode}, text_length=${text.length}`);
 
-    // Use Google Cloud Text-to-Speech API with Gemini model
+    // VTID-01219: Build request differently for Neural2 vs Gemini voices
+    // Neural2 voices don't need modelName - voice name includes model type
+    // Gemini voices require modelName parameter
+    const voiceParams: any = {
+      languageCode: voiceConfig.languageCode,
+      name: voiceConfig.name,
+    };
+
+    // Only add modelName for Gemini voices (not Neural2)
+    if (!useNeural2) {
+      voiceParams.modelName = 'gemini-2.5-flash-tts';
+    }
+
     const request: protos.google.cloud.texttospeech.v1.ISynthesizeSpeechRequest = {
       input: { text: text },
-      voice: {
-        languageCode: voiceConfig.languageCode,
-        name: voiceConfig.name,
-        // @ts-ignore - modelName is supported but types may be outdated
-        modelName: 'gemini-2.5-flash-tts'
-      },
+      voice: voiceParams,
       audioConfig: {
         audioEncoding: 'MP3' as any,  // Returns MP3 directly
         speakingRate: 1.0,
@@ -3403,10 +3433,11 @@ router.post('/tts', async (req: Request, res: Response) => {
     const [response] = await ttsClient.synthesizeSpeech(request);
 
     if (!response.audioContent) {
-      console.error('[VTID-01155] No audio content in TTS response');
+      console.error('[VTID-01219] No audio content in TTS response');
       await emitTtsEvent('vtid.tts.failure', {
         lang,
         voice: voiceConfig.name,
+        voice_type: voiceType,
         error: 'No audio content in response'
       });
       return res.status(500).json({
@@ -3424,27 +3455,30 @@ router.post('/tts', async (req: Request, res: Response) => {
     await emitTtsEvent('vtid.tts.success', {
       lang,
       voice: voiceConfig.name,
+      voice_type: voiceType,
       text_length: text.length,
       audio_bytes: audioB64.length,
       mime_type: 'audio/mp3'
     });
 
-    console.log(`[VTID-01155] TTS success: lang=${lang}, voice=${voiceConfig.name}, text_length=${text.length}, audio_bytes=${audioB64.length}`);
+    console.log(`[VTID-01219] TTS success: lang=${lang}, voice=${voiceConfig.name}, type=${voiceType}, text_length=${text.length}, audio_bytes=${audioB64.length}`);
 
     return res.status(200).json({
       ok: true,
       audio_b64: audioB64,
       mime: 'audio/mp3',
       voice: voiceConfig.name,
+      voice_type: voiceType,
       lang
     });
 
   } catch (error: any) {
-    console.error('[VTID-01155] TTS error:', error);
+    console.error('[VTID-01219] TTS error:', error);
 
     await emitTtsEvent('vtid.tts.failure', {
       lang,
       voice: voiceConfig.name,
+      voice_type: voiceType,
       error: error.message
     });
 
@@ -3461,6 +3495,7 @@ router.post('/tts', async (req: Request, res: Response) => {
  * VTID-01113: Added intent detection status
  * VTID-01118: Added cross-turn state engine status
  * VTID-01155: Added Live session and TTS status
+ * VTID-01219: Added Neural2 voice configuration status
  */
 router.get('/health', (_req: Request, res: Response) => {
   const hasGeminiKey = !!GEMINI_API_KEY;
@@ -3469,7 +3504,7 @@ router.get('/health', (_req: Request, res: Response) => {
   return res.status(200).json({
     ok: true,
     service: 'orb-live',
-    vtid: ['DEV-COMHU-2025-0014', 'VTID-0135', 'VTID-01039', 'VTID-01106', 'VTID-01107', 'VTID-01113', 'VTID-01118', 'VTID-01155'],
+    vtid: ['DEV-COMHU-2025-0014', 'VTID-0135', 'VTID-01039', 'VTID-01106', 'VTID-01107', 'VTID-01113', 'VTID-01118', 'VTID-01155', 'VTID-01219'],
     model: GEMINI_MODEL,
     transport: 'SSE',
     gemini_configured: hasGeminiKey,
@@ -3507,6 +3542,17 @@ router.get('/health', (_req: Request, res: Response) => {
       audio_in_rate: '16kHz PCM',
       audio_out_rate: '24kHz PCM',
       video_format: 'JPEG 768x768 @ 1 FPS'
+    },
+    // VTID-01219: Neural2 TTS voice configuration
+    neural2_tts: {
+      enabled: true,
+      vtid: 'VTID-01219',
+      enabled_languages: NEURAL2_ENABLED_LANGUAGES,
+      voices: {
+        de: NEURAL2_TTS_VOICES['de']?.name,
+        en: NEURAL2_TTS_VOICES['en']?.name
+      },
+      fallback: 'Gemini TTS for other languages'
     },
     timestamp: new Date().toISOString()
   });
