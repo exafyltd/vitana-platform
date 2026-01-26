@@ -476,23 +476,26 @@ const GEMINI_TTS_VOICES: Record<string, { name: string; languageCode: string }> 
   'ru': { name: 'Kore', languageCode: 'ru-RU' }
 };
 
-// VTID-01219: Neural2 TTS voices for ALL languages
+// VTID-01219: TTS voices for ALL languages
 // Neural2 voices provide lower latency and more natural speech synthesis
 // Gemini TTS "Kore" voice DOES NOT WORK due to @google-cloud/text-to-speech
 // library stripping modelName field during protobuf serialization.
-// Female voices selected per specification (using -A or -G variants)
+// Female voices selected per specification
+// Neural2 available: de, en, fr, es
+// WaveNet fallback: ar, zh, ru (Neural2 not available)
+// Standard fallback: sr (neither Neural2 nor WaveNet available)
 const NEURAL2_TTS_VOICES: Record<string, { name: string; languageCode: string }> = {
-  'de': { name: 'de-DE-Neural2-G', languageCode: 'de-DE' },  // Female German (new)
-  'en': { name: 'en-US-Neural2-H', languageCode: 'en-US' },  // Female English (new)
-  'fr': { name: 'fr-FR-Neural2-A', languageCode: 'fr-FR' },  // Female French
-  'es': { name: 'es-ES-Neural2-A', languageCode: 'es-ES' },  // Female Spanish
-  'ar': { name: 'ar-XA-Neural2-A', languageCode: 'ar-XA' },  // Female Arabic
-  'zh': { name: 'cmn-CN-Neural2-A', languageCode: 'cmn-CN' }, // Female Chinese Mandarin
-  'ru': { name: 'ru-RU-Neural2-A', languageCode: 'ru-RU' },  // Female Russian
-  'sr': { name: 'sr-RS-Standard-A', languageCode: 'sr-RS' }, // Female Serbian (Neural2 not available, using Standard)
+  'de': { name: 'de-DE-Neural2-G', languageCode: 'de-DE' },  // Female German - Neural2
+  'en': { name: 'en-US-Neural2-H', languageCode: 'en-US' },  // Female English - Neural2
+  'fr': { name: 'fr-FR-Neural2-A', languageCode: 'fr-FR' },  // Female French - Neural2
+  'es': { name: 'es-ES-Neural2-A', languageCode: 'es-ES' },  // Female Spanish - Neural2
+  'ar': { name: 'ar-XA-Wavenet-D', languageCode: 'ar-XA' },  // Female Arabic - WaveNet (Neural2 N/A)
+  'zh': { name: 'cmn-CN-Wavenet-A', languageCode: 'cmn-CN' }, // Female Chinese - WaveNet (Neural2 N/A)
+  'ru': { name: 'ru-RU-Wavenet-A', languageCode: 'ru-RU' },  // Female Russian - WaveNet (Neural2 N/A)
+  'sr': { name: 'sr-RS-Standard-A', languageCode: 'sr-RS' }, // Female Serbian - Standard (Neural2/WaveNet N/A)
 };
 
-// ALL languages now use Neural2 (or Standard for Serbian)
+// ALL languages use best available voice (Neural2 > WaveNet > Standard)
 const NEURAL2_ENABLED_LANGUAGES = ['en', 'de', 'fr', 'es', 'ar', 'zh', 'ru', 'sr'];
 
 /**
