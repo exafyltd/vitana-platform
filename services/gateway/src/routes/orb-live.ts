@@ -476,16 +476,24 @@ const GEMINI_TTS_VOICES: Record<string, { name: string; languageCode: string }> 
   'ru': { name: 'Kore', languageCode: 'ru-RU' }
 };
 
-// VTID-01219: Neural2 TTS voices for improved German and English performance
+// VTID-01219: Neural2 TTS voices for ALL languages
 // Neural2 voices provide lower latency and more natural speech synthesis
-// Female voices selected per specification
+// Gemini TTS "Kore" voice DOES NOT WORK due to @google-cloud/text-to-speech
+// library stripping modelName field during protobuf serialization.
+// Female voices selected per specification (using -A or -G variants)
 const NEURAL2_TTS_VOICES: Record<string, { name: string; languageCode: string }> = {
-  'de': { name: 'de-DE-Neural2-G', languageCode: 'de-DE' },  // Female German
-  'en': { name: 'en-US-Neural2-H', languageCode: 'en-US' },  // Female English
+  'de': { name: 'de-DE-Neural2-G', languageCode: 'de-DE' },  // Female German (new)
+  'en': { name: 'en-US-Neural2-H', languageCode: 'en-US' },  // Female English (new)
+  'fr': { name: 'fr-FR-Neural2-A', languageCode: 'fr-FR' },  // Female French
+  'es': { name: 'es-ES-Neural2-A', languageCode: 'es-ES' },  // Female Spanish
+  'ar': { name: 'ar-XA-Neural2-A', languageCode: 'ar-XA' },  // Female Arabic
+  'zh': { name: 'cmn-CN-Neural2-A', languageCode: 'cmn-CN' }, // Female Chinese Mandarin
+  'ru': { name: 'ru-RU-Neural2-A', languageCode: 'ru-RU' },  // Female Russian
+  'sr': { name: 'sr-RS-Standard-A', languageCode: 'sr-RS' }, // Female Serbian (Neural2 not available, using Standard)
 };
 
-// Languages that should use Neural2 instead of Gemini TTS
-const NEURAL2_ENABLED_LANGUAGES = ['en', 'de'];
+// ALL languages now use Neural2 (or Standard for Serbian)
+const NEURAL2_ENABLED_LANGUAGES = ['en', 'de', 'fr', 'es', 'ar', 'zh', 'ru', 'sr'];
 
 /**
  * VTID-01155: Convert raw PCM audio data to WAV format
@@ -3543,16 +3551,22 @@ router.get('/health', (_req: Request, res: Response) => {
       audio_out_rate: '24kHz PCM',
       video_format: 'JPEG 768x768 @ 1 FPS'
     },
-    // VTID-01219: Neural2 TTS voice configuration
+    // VTID-01219: Neural2 TTS voice configuration (ALL languages)
     neural2_tts: {
       enabled: true,
       vtid: 'VTID-01219',
       enabled_languages: NEURAL2_ENABLED_LANGUAGES,
       voices: {
         de: NEURAL2_TTS_VOICES['de']?.name,
-        en: NEURAL2_TTS_VOICES['en']?.name
+        en: NEURAL2_TTS_VOICES['en']?.name,
+        fr: NEURAL2_TTS_VOICES['fr']?.name,
+        es: NEURAL2_TTS_VOICES['es']?.name,
+        ar: NEURAL2_TTS_VOICES['ar']?.name,
+        zh: NEURAL2_TTS_VOICES['zh']?.name,
+        ru: NEURAL2_TTS_VOICES['ru']?.name,
+        sr: NEURAL2_TTS_VOICES['sr']?.name
       },
-      fallback: 'Gemini TTS for other languages'
+      note: 'Gemini TTS disabled - modelName stripped by protobuf serialization'
     },
     timestamp: new Date().toISOString()
   });
