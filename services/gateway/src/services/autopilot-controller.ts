@@ -749,25 +749,29 @@ export async function markFailed(
     // Update ledger to terminal state
     await updateLedgerTerminal(vtid, 'failed');
 
+    // VTID-01219: Use explicit error code, never 'unknown_error'
+    const effectiveErrorCode = errorCode || 'UNCLASSIFIED_ERROR';
     await emitStateTransition({
       vtid,
       run_id: failedRun.id,
       from_state: 'allocated',
       to_state: 'failed',
-      trigger: errorCode || 'unknown_error',
-      metadata: { error },
+      trigger: effectiveErrorCode,
+      metadata: { error, error_code: effectiveErrorCode },
     });
 
     return true;
   }
 
   run.error = error;
-  run.error_code = errorCode;
+  // VTID-01219: Use explicit error code, never generic 'error'
+  const effectiveErrorCode = errorCode || 'UNCLASSIFIED_ERROR';
+  run.error_code = effectiveErrorCode;
 
   // Update ledger to terminal state
   await updateLedgerTerminal(vtid, 'failed');
 
-  return transitionState(run, 'failed', errorCode || 'error', { error });
+  return transitionState(run, 'failed', effectiveErrorCode, { error, error_code: effectiveErrorCode });
 }
 
 // =============================================================================

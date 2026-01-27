@@ -64,6 +64,10 @@ import {
   normalizeEventType,
   AutopilotAction,
 } from './autopilot-event-mapper';
+import {
+  enforceSpecGate,
+  SpecGateErrorCode,
+} from './spec-gate-service';
 
 // =============================================================================
 // Types
@@ -357,8 +361,10 @@ async function performTransition(
       await markRunCompleted(vtid); // Update persistent run state
       break;
     case 'failed':
-      const errorMsg = (event.message || event.metadata?.error || 'Unknown error') as string;
-      await markFailed(vtid, errorMsg);
+      // VTID-01219: Extract error code and message with explicit fallback
+      const errorCode = (event.metadata?.error_code || event.metadata?.errorCode || 'UNCLASSIFIED_ERROR') as string;
+      const errorMsg = (event.message || event.metadata?.error || `Transition to failed state (${errorCode})`) as string;
+      await markFailed(vtid, errorMsg, errorCode);
       break;
   }
 
@@ -447,32 +453,42 @@ async function triggerActionForState(
 /**
  * Trigger dispatch to worker orchestrator
  * VTID-01204: Routes through worker orchestrator, worker-runner claims from pending queue
- * VTID-01206: Fetches spec from oasis_specs (where 3-step spec flow stores it)
+ * VTID-01219: EARLY SPEC GATE - enforces spec existence BEFORE any dispatch work
  */
 async function triggerDispatch(vtid: string, event: OasisEvent): Promise<ActionResult> {
-  // Get spec from event metadata or fetch from ledger
-  const meta = event.metadata || event.meta || {};
-  let title = (meta.title || event.title || vtid) as string;
-  let specContent = (meta.spec_content || meta.description || '') as string;
+  // ==========================================================================
+  // VTID-01219: EARLY SPEC GATE - Check spec BEFORE any dispatch work
+  // This is the canonical spec gate. No fallback. No secondary tables.
+  // ==========================================================================
+  const specGate = await enforceSpecGate(vtid);
 
-  // Try to fetch from vtid_ledger for title/layer info
+  if (!specGate.allowed) {
+    // Spec gate blocked - fail with explicit error code
+    console.error(`${LOG_PREFIX} SPEC GATE BLOCKED for ${vtid}: ${specGate.error_code} - ${specGate.error_message}`);
+
+    // Mark run as failed with explicit error code
+    await markRunFailed(vtid, specGate.error_message || 'Spec gate failed', specGate.error_code as string);
+
+    return {
+      ok: false,
+      error: specGate.error_message,
+      data: {
+        vtid,
+        error_code: specGate.error_code,
+        blocked: true,
+      },
+    };
+  }
+
+  // Spec gate passed - proceed with dispatch
+  const spec = specGate.spec!;
+  const title = spec.title || vtid;
+  const specContent = spec.spec_markdown;
+
+  console.log(`${LOG_PREFIX} Spec gate PASSED for ${vtid} - proceeding with dispatch`);
+
+  // Try to fetch from vtid_ledger for layer info only (not spec content)
   const ledgerData = await fetchVtidFromLedger(vtid);
-  if (ledgerData) {
-    title = ledgerData.title || title;
-  }
-
-  // VTID-01206: Fetch full spec from oasis_specs (where 3-step spec flow stores it)
-  if (!specContent) {
-    const oasisSpec = await fetchSpecFromOasis(vtid);
-    if (oasisSpec) {
-      specContent = oasisSpec;
-      console.log(`${LOG_PREFIX} Using spec from oasis_specs for ${vtid}`);
-    } else if (ledgerData) {
-      // Fallback to summary (not ideal but better than nothing)
-      specContent = ledgerData.description || ledgerData.summary || '';
-      console.log(`${LOG_PREFIX} Warning: No spec in oasis_specs for ${vtid}, using ledger summary`);
-    }
-  }
 
   // Start autopilot run
   await startAutopilotRun(vtid, title, specContent);
@@ -494,20 +510,40 @@ async function triggerDispatch(vtid: string, event: OasisEvent): Promise<ActionR
       }),
     });
 
-    const routeResult = await routeResponse.json() as { ok?: boolean; error?: string; domain?: string };
+    const routeResult = await routeResponse.json() as { ok?: boolean; error?: string; error_code?: string; domain?: string };
 
     if (!routeResponse.ok || !routeResult.ok) {
-      console.error(`${LOG_PREFIX} Worker orchestrator route failed for ${vtid}: ${routeResult.error}`);
-      // Don't fail the dispatch - worker can still claim from pending queue
-      return { ok: true, data: { vtid, dispatched: true, route_failed: true, error: routeResult.error } };
+      // VTID-01219: Use explicit error code instead of silent success
+      const errorCode = routeResult.error_code || 'DISPATCH_ROUTE_NOT_FOUND';
+      console.error(`${LOG_PREFIX} Worker orchestrator route failed for ${vtid}: ${routeResult.error} (${errorCode})`);
+
+      return {
+        ok: false,
+        error: routeResult.error || 'Route failed',
+        data: {
+          vtid,
+          error_code: errorCode,
+          dispatched: false,
+        },
+      };
     }
 
     console.log(`${LOG_PREFIX} Successfully routed ${vtid} to domain: ${routeResult.domain}`);
     return { ok: true, data: { vtid, dispatched: true, domain: routeResult.domain } };
   } catch (error) {
-    console.error(`${LOG_PREFIX} Failed to call worker orchestrator for ${vtid}: ${error}`);
-    // Task is still in pending queue for worker-runner to claim via polling
-    return { ok: true, data: { vtid, dispatched: true, route_error: String(error) } };
+    // VTID-01219: Use explicit error code for dispatch failures
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error(`${LOG_PREFIX} Failed to call worker orchestrator for ${vtid}: ${errorMsg}`);
+
+    return {
+      ok: false,
+      error: errorMsg,
+      data: {
+        vtid,
+        error_code: 'DISPATCH_FAILED',
+        dispatched: false,
+      },
+    };
   }
 }
 
