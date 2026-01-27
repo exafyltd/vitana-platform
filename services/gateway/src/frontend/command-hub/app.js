@@ -2369,6 +2369,20 @@ const state = {
     versionHistory: [],
     selectedVersionId: null,
 
+    // VTID-01212: Enriched Deployment History with provenance, validation, governance
+    enrichedDeploymentHistory: [],
+    selectedDeployment: null,       // Selected row for detail drawer
+    deploymentDrawerOpen: false,    // Drawer visibility
+    deploymentFilters: {
+        health: [],                 // ['trusted', 'warning', 'failed']
+        trigger: [],                // ['AUTOPILOT', 'MANUAL', 'CI']
+        days: 7                     // Time window in days
+    },
+    deploymentSearch: '',           // Search query
+    deploymentSelectedIndex: -1,    // For keyboard navigation
+    deploymentEvents: [],           // OASIS events for selected deployment
+    deploymentEventsLoading: false,
+
     // Publish Modal (VTID-0517)
     showPublishModal: false,
 
@@ -3790,6 +3804,173 @@ async function fetchDeploymentHistory() {
 function loadVersionHistory() {
     // Return current state (populated by fetchDeploymentHistory)
     return state.versionHistory || [];
+}
+
+/**
+ * VTID-01212: Fetch enriched deployment history from new API
+ * Returns deployments with provenance, validation, governance, and health status
+ */
+async function fetchEnrichedDeploymentHistory() {
+    console.log('[VTID-01212] Fetching enriched deployment history...');
+
+    try {
+        // Build query params from filters
+        var params = new URLSearchParams();
+        params.append('limit', '50');
+        params.append('days', String(state.deploymentFilters.days || 7));
+
+        if (state.deploymentFilters.health && state.deploymentFilters.health.length > 0) {
+            params.append('health', state.deploymentFilters.health.join(','));
+        }
+        if (state.deploymentFilters.trigger && state.deploymentFilters.trigger.length > 0) {
+            params.append('trigger', state.deploymentFilters.trigger.join(','));
+        }
+        if (state.deploymentSearch) {
+            params.append('search', state.deploymentSearch);
+        }
+
+        var response = await fetch('/api/v1/operator/deployments/history?' + params.toString());
+        if (!response.ok) {
+            throw new Error('Enriched deployment history fetch failed: ' + response.status);
+        }
+
+        var data = await response.json();
+        console.log('[VTID-01212] Enriched deployment history loaded:', data);
+
+        if (!data.ok) {
+            throw new Error(data.error || 'API returned error');
+        }
+
+        return data.items || [];
+    } catch (error) {
+        console.error('[VTID-01212] Failed to fetch enriched deployment history:', error);
+        return [];
+    }
+}
+
+/**
+ * VTID-01212: Fetch OASIS events for a specific deployment
+ */
+async function fetchDeploymentEvents(deployId) {
+    console.log('[VTID-01212] Fetching events for deployment:', deployId);
+
+    try {
+        var response = await fetch('/api/v1/operator/deployments/history/' + deployId + '/events?limit=20');
+        if (!response.ok) {
+            throw new Error('Deployment events fetch failed: ' + response.status);
+        }
+
+        var data = await response.json();
+        return data.events || [];
+    } catch (error) {
+        console.error('[VTID-01212] Failed to fetch deployment events:', error);
+        return [];
+    }
+}
+
+/**
+ * VTID-01212: Open deployment detail drawer
+ */
+async function openDeploymentDrawer(deployment) {
+    state.selectedDeployment = deployment;
+    state.deploymentDrawerOpen = true;
+    state.deploymentEventsLoading = true;
+    state.deploymentEvents = [];
+    renderApp();
+
+    // Fetch events for this deployment
+    var events = await fetchDeploymentEvents(deployment.deploy_id);
+    state.deploymentEvents = events;
+    state.deploymentEventsLoading = false;
+    renderApp();
+}
+
+/**
+ * VTID-01212: Close deployment detail drawer
+ */
+function closeDeploymentDrawer() {
+    state.selectedDeployment = null;
+    state.deploymentDrawerOpen = false;
+    state.deploymentEvents = [];
+    state.deploymentSelectedIndex = -1;
+    renderApp();
+}
+
+/**
+ * VTID-01212: Handle deployment history keyboard navigation
+ */
+function handleDeploymentKeyNav(event) {
+    if (state.operatorActiveTab !== 'history') return;
+
+    var deployments = state.enrichedDeploymentHistory || [];
+    if (deployments.length === 0) return;
+
+    switch (event.key) {
+        case 'ArrowDown':
+        case 'j':
+            event.preventDefault();
+            state.deploymentSelectedIndex = Math.min(
+                state.deploymentSelectedIndex + 1,
+                deployments.length - 1
+            );
+            renderApp();
+            break;
+        case 'ArrowUp':
+        case 'k':
+            event.preventDefault();
+            state.deploymentSelectedIndex = Math.max(
+                state.deploymentSelectedIndex - 1,
+                0
+            );
+            renderApp();
+            break;
+        case 'Enter':
+            event.preventDefault();
+            if (state.deploymentSelectedIndex >= 0 && state.deploymentSelectedIndex < deployments.length) {
+                openDeploymentDrawer(deployments[state.deploymentSelectedIndex]);
+            }
+            break;
+        case 'Escape':
+            if (state.deploymentDrawerOpen) {
+                event.preventDefault();
+                closeDeploymentDrawer();
+            }
+            break;
+        case '/':
+            // Focus search box
+            event.preventDefault();
+            var searchInput = document.querySelector('.deployment-search-input');
+            if (searchInput) searchInput.focus();
+            break;
+        case 'r':
+            // Refresh
+            if (!event.ctrlKey && !event.metaKey) {
+                event.preventDefault();
+                refreshEnrichedDeploymentHistory();
+            }
+            break;
+    }
+}
+
+/**
+ * VTID-01212: Refresh enriched deployment history
+ */
+async function refreshEnrichedDeploymentHistory() {
+    state.historyLoading = true;
+    state.historyError = null;
+    renderApp();
+
+    try {
+        state.enrichedDeploymentHistory = await fetchEnrichedDeploymentHistory();
+        // Also update versionHistory for backwards compatibility with publish modal
+        state.versionHistory = await fetchDeploymentHistory();
+        state.historyError = null;
+    } catch (error) {
+        state.historyError = error.message;
+    } finally {
+        state.historyLoading = false;
+        renderApp();
+    }
 }
 
 /**
@@ -16090,128 +16271,205 @@ function renderOperatorTicker() {
 }
 
 /**
- * VTID-0524: Renders the operator history tab showing deployment history
- * with VTID + SWV + status + timestamp
+ * VTID-01212: Renders the operator history tab showing enriched deployment history
+ * with health indicator, VTID, service, trigger, outcome, and timestamp
+ * Includes filter bar, search, and detail drawer
  */
 function renderOperatorHistory() {
-    const container = document.createElement('div');
+    var container = document.createElement('div');
     container.className = 'history-container';
 
     // Header
-    const header = document.createElement('div');
+    var header = document.createElement('div');
     header.className = 'history-header';
 
-    const title = document.createElement('span');
+    var title = document.createElement('span');
     title.textContent = 'Deployment History';
     header.appendChild(title);
 
-    // SPEC-01: Per-view refresh buttons removed - use global refresh icon in header
-
     container.appendChild(header);
 
+    // VTID-01212: Filter bar
+    var filterBar = document.createElement('div');
+    filterBar.className = 'deployment-filter-bar';
+
+    // Search input
+    var searchWrapper = document.createElement('div');
+    searchWrapper.className = 'deployment-search-wrapper';
+    var searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'deployment-search-input';
+    searchInput.placeholder = 'Search VTID, service...';
+    searchInput.value = state.deploymentSearch || '';
+    searchInput.oninput = function(e) {
+        state.deploymentSearch = e.target.value;
+        // Debounced refresh
+        clearTimeout(window.deploymentSearchTimeout);
+        window.deploymentSearchTimeout = setTimeout(refreshEnrichedDeploymentHistory, 300);
+    };
+    searchWrapper.appendChild(searchInput);
+    filterBar.appendChild(searchWrapper);
+
+    // Health filter dropdown
+    var healthFilter = document.createElement('select');
+    healthFilter.className = 'deployment-filter-select';
+    healthFilter.innerHTML = '<option value="">Health: All</option><option value="trusted">Trusted</option><option value="warning">Warning</option><option value="failed">Failed</option>';
+    healthFilter.value = state.deploymentFilters.health[0] || '';
+    healthFilter.onchange = function(e) {
+        state.deploymentFilters.health = e.target.value ? [e.target.value] : [];
+        refreshEnrichedDeploymentHistory();
+    };
+    filterBar.appendChild(healthFilter);
+
+    // Trigger filter dropdown
+    var triggerFilter = document.createElement('select');
+    triggerFilter.className = 'deployment-filter-select';
+    triggerFilter.innerHTML = '<option value="">Trigger: All</option><option value="MANUAL">Manual</option><option value="AUTOPILOT">Autopilot</option><option value="CI">CI</option>';
+    triggerFilter.value = state.deploymentFilters.trigger[0] || '';
+    triggerFilter.onchange = function(e) {
+        state.deploymentFilters.trigger = e.target.value ? [e.target.value] : [];
+        refreshEnrichedDeploymentHistory();
+    };
+    filterBar.appendChild(triggerFilter);
+
+    // Days filter dropdown
+    var daysFilter = document.createElement('select');
+    daysFilter.className = 'deployment-filter-select';
+    daysFilter.innerHTML = '<option value="1">Last 24h</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option>';
+    daysFilter.value = String(state.deploymentFilters.days || 7);
+    daysFilter.onchange = function(e) {
+        state.deploymentFilters.days = parseInt(e.target.value);
+        refreshEnrichedDeploymentHistory();
+    };
+    filterBar.appendChild(daysFilter);
+
+    container.appendChild(filterBar);
+
     // Content
-    const content = document.createElement('div');
+    var content = document.createElement('div');
     content.className = 'history-content';
 
     if (state.historyLoading) {
         content.innerHTML = '<div class="history-loading">Loading deployment history...</div>';
     } else if (state.historyError) {
-        const errorDiv = document.createElement('div');
+        var errorDiv = document.createElement('div');
         errorDiv.className = 'history-error';
         errorDiv.textContent = 'Error: ' + state.historyError;
         content.appendChild(errorDiv);
-    } else if (!state.versionHistory || state.versionHistory.length === 0) {
-        content.innerHTML = '<div class="history-empty">No deployments yet. Click Refresh to load.</div>';
+    } else if (!state.enrichedDeploymentHistory || state.enrichedDeploymentHistory.length === 0) {
+        // Check if we have old-style data but no enriched data
+        if (state.versionHistory && state.versionHistory.length > 0) {
+            content.innerHTML = '<div class="history-loading">Upgrading to enriched view...</div>';
+        } else {
+            content.innerHTML = '<div class="history-empty">No deployments yet. Click Refresh to load.</div>';
+        }
         // Auto-fetch on first open if empty
         if (!state.historyLoading) {
-            setTimeout(async () => {
-                state.historyLoading = true;
-                renderApp();
-                try {
-                    state.versionHistory = await fetchDeploymentHistory();
-                } catch (error) {
-                    state.historyError = error.message;
-                } finally {
-                    state.historyLoading = false;
-                    renderApp();
-                }
+            setTimeout(async function() {
+                await refreshEnrichedDeploymentHistory();
             }, 100);
         }
     } else {
-        // VTID-0524 + VTID-0600: Render deployment history table with human-readable meaning
-        const table = document.createElement('table');
-        table.className = 'history-table';
+        // VTID-01212: Render enriched deployment history table
+        var table = document.createElement('table');
+        table.className = 'history-table history-table-enriched';
 
-        const thead = document.createElement('thead');
-        const theadTr = document.createElement('tr');
+        var thead = document.createElement('thead');
+        var theadTr = document.createElement('tr');
 
-        // VTID-0600: Added 'Summary', 'Triggered By', and 'Meaning' columns
-        ['VTID', 'Service', 'SWV', 'Timestamp', 'Status', 'Summary', 'Triggered By'].forEach(function(headerText) {
-            const th = document.createElement('th');
+        // VTID-01212: 6 columns as per spec
+        ['Health', 'VTID', 'Service', 'Trigger', 'Outcome', 'Timestamp'].forEach(function(headerText) {
+            var th = document.createElement('th');
             th.textContent = headerText;
+            if (headerText === 'Health') th.className = 'col-health';
             theadTr.appendChild(th);
         });
         thead.appendChild(theadTr);
         table.appendChild(thead);
 
-        const tbody = document.createElement('tbody');
-        state.versionHistory.forEach(function(deploy) {
-            const tr = document.createElement('tr');
+        var tbody = document.createElement('tbody');
+        state.enrichedDeploymentHistory.forEach(function(deploy, index) {
+            var tr = document.createElement('tr');
+            tr.className = 'history-row history-row-' + deploy.health;
 
-            // VTID column
-            const vtidTd = document.createElement('td');
+            // Add selected state
+            if (index === state.deploymentSelectedIndex) {
+                tr.className += ' history-row-selected';
+            }
+
+            // Row click handler to open drawer
+            tr.onclick = function() {
+                state.deploymentSelectedIndex = index;
+                openDeploymentDrawer(deploy);
+            };
+
+            // 1. Health indicator column
+            var healthTd = document.createElement('td');
+            healthTd.className = 'history-health';
+            var healthIcon = document.createElement('span');
+            healthIcon.className = 'health-icon health-icon-' + deploy.health;
+            if (deploy.health === 'trusted') {
+                healthIcon.textContent = '\u2713'; // checkmark
+                healthIcon.title = 'Trusted: VTID present, validation passed, governance approved';
+            } else if (deploy.health === 'warning') {
+                healthIcon.textContent = '\u26A0'; // warning triangle
+                healthIcon.title = 'Warning: Missing VTID or validation unknown/skipped';
+            } else if (deploy.health === 'failed') {
+                healthIcon.textContent = '\u2717'; // X mark
+                healthIcon.title = 'Failed: Validation failed or deployment failed';
+            } else {
+                healthIcon.textContent = '?';
+                healthIcon.title = 'Unknown: Insufficient evidence';
+            }
+            // Add tooltip with breakdown
+            healthIcon.setAttribute('data-tooltip', buildHealthTooltip(deploy));
+            healthTd.appendChild(healthIcon);
+            tr.appendChild(healthTd);
+
+            // 2. VTID column
+            var vtidTd = document.createElement('td');
             vtidTd.className = 'history-vtid';
-            vtidTd.textContent = deploy.vtid || '-';
+            if (deploy.vtid) {
+                vtidTd.textContent = deploy.vtid;
+            } else {
+                var noVtid = document.createElement('span');
+                noVtid.className = 'no-vtid';
+                noVtid.textContent = '\u2014'; // em dash
+                noVtid.title = 'No VTID linked (non-governed deploy)';
+                vtidTd.appendChild(noVtid);
+            }
             tr.appendChild(vtidTd);
 
-            // Service column
-            const serviceTd = document.createElement('td');
+            // 3. Service column
+            var serviceTd = document.createElement('td');
             serviceTd.className = 'history-service';
             serviceTd.textContent = deploy.service || '-';
             tr.appendChild(serviceTd);
 
-            // SWV column
-            const swvTd = document.createElement('td');
-            swvTd.className = 'history-swv';
-            swvTd.textContent = deploy.swv || '-';
-            tr.appendChild(swvTd);
+            // 4. Trigger column (badge)
+            var triggerTd = document.createElement('td');
+            triggerTd.className = 'history-trigger';
+            var triggerBadge = document.createElement('span');
+            triggerBadge.className = 'trigger-badge trigger-' + deploy.trigger_source.toLowerCase();
+            triggerBadge.textContent = deploy.trigger_source;
+            triggerBadge.title = 'Triggered by: ' + deploy.triggered_by;
+            triggerTd.appendChild(triggerBadge);
+            tr.appendChild(triggerTd);
 
-            // Timestamp column
-            const timeTd = document.createElement('td');
+            // 5. Outcome column (badge)
+            var outcomeTd = document.createElement('td');
+            outcomeTd.className = 'history-outcome';
+            var outcomeBadge = document.createElement('span');
+            outcomeBadge.className = 'outcome-badge outcome-' + deploy.outcome;
+            outcomeBadge.textContent = deploy.outcome.toUpperCase();
+            outcomeTd.appendChild(outcomeBadge);
+            tr.appendChild(outcomeTd);
+
+            // 6. Timestamp column
+            var timeTd = document.createElement('td');
             timeTd.className = 'history-time';
-            timeTd.textContent = deploy.createdAt ? new Date(deploy.createdAt).toLocaleString() : '-';
+            timeTd.textContent = deploy.timestamp ? formatShortTimestamp(deploy.timestamp) : '-';
             tr.appendChild(timeTd);
-
-            // Status column with color coding
-            const statusTd = document.createElement('td');
-            statusTd.className = 'history-status';
-            const statusBadge = document.createElement('span');
-            statusBadge.className = 'history-status-badge';
-            if (deploy.status === 'success') {
-                statusBadge.className += ' history-status-success';
-            } else if (deploy.status === 'failure') {
-                statusBadge.className += ' history-status-failed';
-            }
-            statusBadge.textContent = deploy.status || 'unknown';
-            statusTd.appendChild(statusBadge);
-            tr.appendChild(statusTd);
-
-            // VTID-0600: Event Summary column (derived from VTID and service)
-            const summaryTd = document.createElement('td');
-            summaryTd.className = 'history-summary';
-            var summary = generateDeploySummary(deploy);
-            summaryTd.textContent = summary;
-            tr.appendChild(summaryTd);
-
-            // VTID-0600: Triggered By column
-            const triggeredByTd = document.createElement('td');
-            triggeredByTd.className = 'history-triggered-by';
-            var triggeredBy = deploy.initiator || 'user';
-            var triggeredByBadge = document.createElement('span');
-            triggeredByBadge.className = 'history-trigger-badge history-trigger-' + triggeredBy.toLowerCase();
-            triggeredByBadge.textContent = triggeredBy === 'agent' ? 'CI/CD' : 'User';
-            triggeredByTd.appendChild(triggeredByBadge);
-            tr.appendChild(triggeredByTd);
 
             tbody.appendChild(tr);
         });
@@ -16220,7 +16478,249 @@ function renderOperatorHistory() {
     }
 
     container.appendChild(content);
+
+    // VTID-01212: Add detail drawer if open
+    if (state.deploymentDrawerOpen && state.selectedDeployment) {
+        container.appendChild(renderDeploymentDrawer());
+    }
+
     return container;
+}
+
+/**
+ * VTID-01212: Build health tooltip content
+ */
+function buildHealthTooltip(deploy) {
+    var lines = [
+        'VTID: ' + (deploy.vtid ? '\u2713 ' + deploy.vtid : '\u2717 Missing'),
+        'Validation: ' + formatStatusIcon(deploy.validation_status) + ' ' + deploy.validation_status,
+        'Governance: ' + formatStatusIcon(deploy.governance_status) + ' ' + deploy.governance_status,
+        'Pipeline: ' + formatPipelineCompact(deploy.pipeline)
+    ];
+    return lines.join('\n');
+}
+
+/**
+ * VTID-01212: Format status icon
+ */
+function formatStatusIcon(status) {
+    if (status === 'PASSED' || status === 'APPROVED') return '\u2713';
+    if (status === 'FAILED' || status === 'BLOCKED') return '\u2717';
+    return '?';
+}
+
+/**
+ * VTID-01212: Format pipeline stages compactly
+ */
+function formatPipelineCompact(pipeline) {
+    if (!pipeline) return '?/?/?/?';
+    var stages = ['planner', 'worker', 'validator', 'deploy'];
+    return stages.map(function(s) {
+        var stage = pipeline[s];
+        if (stage && stage.status === 'passed') return s.charAt(0).toUpperCase() + '\u2713';
+        if (stage && stage.status === 'failed') return s.charAt(0).toUpperCase() + '\u2717';
+        return s.charAt(0).toUpperCase() + '?';
+    }).join(' ');
+}
+
+/**
+ * VTID-01212: Format timestamp in short form (Jan 23, 18:10)
+ */
+function formatShortTimestamp(isoString) {
+    var date = new Date(isoString);
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+           ', ' + date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+/**
+ * VTID-01212: Render deployment detail drawer
+ */
+function renderDeploymentDrawer() {
+    var deploy = state.selectedDeployment;
+    if (!deploy) return document.createElement('div');
+
+    var drawer = document.createElement('div');
+    drawer.className = 'deployment-drawer open';
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'deployment-drawer-header';
+
+    var backBtn = document.createElement('button');
+    backBtn.className = 'drawer-back-btn';
+    backBtn.innerHTML = '\u2190';
+    backBtn.onclick = closeDeploymentDrawer;
+    header.appendChild(backBtn);
+
+    var titleSpan = document.createElement('span');
+    titleSpan.className = 'drawer-title';
+    titleSpan.textContent = 'Deployment Detail';
+    header.appendChild(titleSpan);
+
+    var closeBtn = document.createElement('button');
+    closeBtn.className = 'drawer-close-btn';
+    closeBtn.innerHTML = '\u00D7';
+    closeBtn.onclick = closeDeploymentDrawer;
+    header.appendChild(closeBtn);
+
+    drawer.appendChild(header);
+
+    // Content
+    var content = document.createElement('div');
+    content.className = 'deployment-drawer-content';
+
+    // Section 1: Header info
+    var headerSection = document.createElement('div');
+    headerSection.className = 'drawer-section drawer-section-header';
+
+    var vtidLine = document.createElement('div');
+    vtidLine.className = 'drawer-vtid-line';
+    vtidLine.innerHTML = '<span class="drawer-vtid">' + (deploy.vtid || '<span class="no-vtid">No VTID</span>') + '</span>' +
+                         '<span class="outcome-badge outcome-' + deploy.outcome + '">' + deploy.outcome.toUpperCase() + '</span>';
+    headerSection.appendChild(vtidLine);
+
+    var metaLine = document.createElement('div');
+    metaLine.className = 'drawer-meta-line';
+    metaLine.textContent = deploy.service + ' \u00B7 ' + deploy.deploy_id + ' \u00B7 ' + formatShortTimestamp(deploy.timestamp);
+    headerSection.appendChild(metaLine);
+
+    content.appendChild(headerSection);
+
+    // Section 2: Provenance
+    var provenanceSection = document.createElement('div');
+    provenanceSection.className = 'drawer-section';
+    provenanceSection.innerHTML = '<h3>\u25BC PROVENANCE</h3>';
+
+    var provenanceGrid = document.createElement('div');
+    provenanceGrid.className = 'drawer-grid';
+    provenanceGrid.innerHTML =
+        '<div class="drawer-grid-row"><span class="label">Trigger:</span><span class="trigger-badge trigger-' + deploy.trigger_source.toLowerCase() + '">' + deploy.trigger_source + '</span></div>' +
+        '<div class="drawer-grid-row"><span class="label">Triggered By:</span><span class="value">' + deploy.triggered_by + '</span></div>' +
+        '<div class="drawer-grid-row"><span class="label">Environment:</span><span class="value">' + deploy.env + '</span></div>';
+    provenanceSection.appendChild(provenanceGrid);
+    content.appendChild(provenanceSection);
+
+    // Section 3: Validation & Governance
+    var validationSection = document.createElement('div');
+    validationSection.className = 'drawer-section';
+    validationSection.innerHTML = '<h3>\u25BC VALIDATION & GOVERNANCE</h3>';
+
+    var validationGrid = document.createElement('div');
+    validationGrid.className = 'drawer-grid';
+    var validationClass = deploy.validation_status === 'PASSED' ? 'status-passed' :
+                          deploy.validation_status === 'FAILED' ? 'status-failed' : 'status-unknown';
+    var governanceClass = deploy.governance_status === 'APPROVED' ? 'status-passed' :
+                          deploy.governance_status === 'BLOCKED' ? 'status-failed' : 'status-unknown';
+    validationGrid.innerHTML =
+        '<div class="drawer-grid-row"><span class="label">Validation:</span><span class="status-badge ' + validationClass + '">' + deploy.validation_status + '</span></div>' +
+        '<div class="drawer-grid-row"><span class="label">Governance:</span><span class="status-badge ' + governanceClass + '">' + deploy.governance_status + (deploy.governance_level ? ' (' + deploy.governance_level + ')' : '') + '</span></div>';
+    if (deploy.evidence && deploy.evidence.validation_topic) {
+        validationGrid.innerHTML += '<div class="drawer-grid-row"><span class="label">Evidence:</span><span class="value mono">' + deploy.evidence.validation_topic + '</span></div>';
+    }
+    validationSection.appendChild(validationGrid);
+    content.appendChild(validationSection);
+
+    // Section 4: Pipeline Stages
+    var pipelineSection = document.createElement('div');
+    pipelineSection.className = 'drawer-section';
+    pipelineSection.innerHTML = '<h3>\u25BC PIPELINE STAGES</h3>';
+
+    var pipelineList = document.createElement('div');
+    pipelineList.className = 'pipeline-stages';
+
+    var stages = [
+        { key: 'planner', label: 'PLANNER' },
+        { key: 'worker', label: 'WORKER' },
+        { key: 'validator', label: 'VALIDATOR' },
+        { key: 'deploy', label: 'DEPLOY' }
+    ];
+
+    stages.forEach(function(s) {
+        var stage = deploy.pipeline[s.key];
+        var stageDiv = document.createElement('div');
+        stageDiv.className = 'pipeline-stage pipeline-stage-' + (stage ? stage.status : 'unknown');
+        var icon = stage && stage.status === 'passed' ? '\u2713' : stage && stage.status === 'failed' ? '\u2717' : '?';
+        stageDiv.innerHTML = '<span class="stage-icon">' + icon + '</span>' +
+                             '<span class="stage-label">' + s.label + '</span>' +
+                             (stage && stage.completed_at ? '<span class="stage-time">' + formatShortTimestamp(stage.completed_at) + '</span>' : '');
+        pipelineList.appendChild(stageDiv);
+    });
+
+    pipelineSection.appendChild(pipelineList);
+    content.appendChild(pipelineSection);
+
+    // Section 5: Raw Events (collapsed)
+    var eventsSection = document.createElement('div');
+    eventsSection.className = 'drawer-section drawer-section-collapsed';
+
+    var eventsHeader = document.createElement('h3');
+    eventsHeader.className = 'collapsible-header';
+    eventsHeader.innerHTML = '\u25B6 RAW EVENTS (' + (state.deploymentEvents ? state.deploymentEvents.length : 0) + ')';
+    eventsHeader.onclick = function() {
+        eventsSection.classList.toggle('drawer-section-collapsed');
+        eventsHeader.innerHTML = eventsSection.classList.contains('drawer-section-collapsed') ?
+            '\u25B6 RAW EVENTS (' + (state.deploymentEvents ? state.deploymentEvents.length : 0) + ')' :
+            '\u25BC RAW EVENTS (' + (state.deploymentEvents ? state.deploymentEvents.length : 0) + ')';
+    };
+    eventsSection.appendChild(eventsHeader);
+
+    var eventsList = document.createElement('div');
+    eventsList.className = 'events-list';
+
+    if (state.deploymentEventsLoading) {
+        eventsList.innerHTML = '<div class="events-loading">Loading events...</div>';
+    } else if (state.deploymentEvents && state.deploymentEvents.length > 0) {
+        state.deploymentEvents.forEach(function(event) {
+            var eventDiv = document.createElement('div');
+            eventDiv.className = 'event-item event-item-' + event.status;
+            eventDiv.innerHTML =
+                '<div class="event-time">' + formatShortTimestamp(event.created_at) + '</div>' +
+                '<div class="event-topic">' + event.topic + '</div>' +
+                '<div class="event-message">' + (event.message || '').substring(0, 100) + '</div>';
+            eventsList.appendChild(eventDiv);
+        });
+    } else {
+        eventsList.innerHTML = '<div class="events-empty">No events found</div>';
+    }
+
+    eventsSection.appendChild(eventsList);
+    content.appendChild(eventsSection);
+
+    // Section 6: Related Links (collapsed)
+    if (deploy.evidence && (deploy.evidence.pr_number || deploy.evidence.merge_sha || deploy.evidence.workflow_run_id)) {
+        var linksSection = document.createElement('div');
+        linksSection.className = 'drawer-section drawer-section-collapsed';
+
+        var linksHeader = document.createElement('h3');
+        linksHeader.className = 'collapsible-header';
+        linksHeader.innerHTML = '\u25B6 RELATED LINKS';
+        linksHeader.onclick = function() {
+            linksSection.classList.toggle('drawer-section-collapsed');
+            linksHeader.innerHTML = linksSection.classList.contains('drawer-section-collapsed') ?
+                '\u25B6 RELATED LINKS' : '\u25BC RELATED LINKS';
+        };
+        linksSection.appendChild(linksHeader);
+
+        var linksList = document.createElement('div');
+        linksList.className = 'links-list';
+
+        if (deploy.evidence.pr_number) {
+            linksList.innerHTML += '<div class="link-item">PR #' + deploy.evidence.pr_number + '</div>';
+        }
+        if (deploy.evidence.merge_sha) {
+            linksList.innerHTML += '<div class="link-item">Commit: ' + deploy.evidence.merge_sha.substring(0, 7) + '</div>';
+        }
+        if (deploy.evidence.workflow_run_id) {
+            linksList.innerHTML += '<div class="link-item">Workflow #' + deploy.evidence.workflow_run_id + '</div>';
+        }
+
+        linksSection.appendChild(linksList);
+        content.appendChild(linksSection);
+    }
+
+    drawer.appendChild(content);
+
+    return drawer;
 }
 
 // --- Publish Modal (VTID-0517) ---
@@ -21406,6 +21906,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         renderApp();
+
+        // VTID-01212: Global keyboard listener for deployment history navigation
+        document.addEventListener('keydown', function(e) {
+            // Only handle if operator console is open and on history tab
+            if (state.isOperatorOpen && state.operatorActiveTab === 'history') {
+                // Don't intercept if typing in an input
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+                    return;
+                }
+                handleDeploymentKeyNav(e);
+            }
+        });
 
         // VTID-01049: Load Me Context (authoritative role) on boot
         fetchMeContext().then(function(result) {

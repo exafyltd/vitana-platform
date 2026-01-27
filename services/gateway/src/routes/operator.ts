@@ -61,6 +61,12 @@ import {
 } from '../services/task-intake-service';
 import { OperatorChatMessageSchema, OperatorChatRole, OperatorChatMode } from '../types/operator-chat';
 import { getDeploymentHistory, getNextSWV, insertSoftwareVersion } from '../lib/versioning';
+// VTID-01212: Enriched deployment history with provenance, validation, and governance
+import {
+  getEnrichedDeploymentHistory,
+  getDeploymentEvents,
+  DeploymentHistoryParams
+} from '../services/deployment-history-service';
 // VTID-0525-B: naturalLanguageService disabled for MVP - using simple command matching
 // import { naturalLanguageService } from '../services/natural-language-service';
 import {
@@ -941,6 +947,99 @@ router.post('/command', async (req: Request, res: Response) => {
 });
 
 // ==================== VTID-0510 Routes ====================
+
+// ==================== VTID-01212 Routes ====================
+// Enriched deployment history with provenance, validation, and governance
+
+/**
+ * GET /deployments/history → /api/v1/operator/deployments/history
+ * VTID-01212: Enriched deployment history with:
+ * - VTID traceability
+ * - Deployment provenance (Autopilot vs Manual vs CI)
+ * - Validation Engine approval status
+ * - Pipeline stage evidence (PL/WO/VA/DE)
+ * - Composite health indicator
+ */
+router.get('/deployments/history', async (req: Request, res: Response) => {
+  console.log('[VTID-01212] Enriched deployment history request');
+
+  try {
+    const params: DeploymentHistoryParams = {
+      limit: Math.min(parseInt(req.query.limit as string) || 50, 200),
+      cursor: req.query.cursor as string | undefined,
+      health: req.query.health as string | undefined,
+      trigger: req.query.trigger as string | undefined,
+      search: req.query.search as string | undefined,
+      days: parseInt(req.query.days as string) || 7
+    };
+
+    const result = await getEnrichedDeploymentHistory(params);
+
+    if (!result.ok) {
+      return res.status(502).json({
+        ok: false,
+        error: 'Failed to fetch enriched deployment history',
+        detail: result.error
+      });
+    }
+
+    console.log(`[VTID-01212] Returning ${result.items.length} enriched deployments`);
+
+    return res.status(200).json({
+      ok: true,
+      items: result.items,
+      next_cursor: result.next_cursor,
+      total_count: result.total_count
+    });
+
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[VTID-01212] Error: ${errorMessage}`);
+    return res.status(500).json({
+      ok: false,
+      error: 'Internal server error',
+      detail: errorMessage
+    });
+  }
+});
+
+/**
+ * GET /deployments/history/:deployId/events → /api/v1/operator/deployments/history/:deployId/events
+ * VTID-01212: Get OASIS events for a specific deployment
+ */
+router.get('/deployments/history/:deployId/events', async (req: Request, res: Response) => {
+  const { deployId } = req.params;
+  console.log(`[VTID-01212] Deployment events request for ${deployId}`);
+
+  try {
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+    const result = await getDeploymentEvents(deployId, limit);
+
+    if (!result.ok) {
+      return res.status(502).json({
+        ok: false,
+        error: 'Failed to fetch deployment events',
+        detail: result.error
+      });
+    }
+
+    console.log(`[VTID-01212] Returning ${result.events.length} events for ${deployId}`);
+
+    return res.status(200).json({
+      ok: true,
+      events: result.events
+    });
+
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[VTID-01212] Error: ${errorMessage}`);
+    return res.status(500).json({
+      ok: false,
+      error: 'Internal server error',
+      detail: errorMessage
+    });
+  }
+});
 
 /**
  * GET /deployments → /api/v1/operator/deployments
