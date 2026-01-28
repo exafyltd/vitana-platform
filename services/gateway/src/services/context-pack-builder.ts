@@ -221,13 +221,24 @@ async function fetchKnowledgeHits(
 }
 
 // =============================================================================
-// Web Search Retrieval (Placeholder - needs external integration)
+// Web Search Retrieval via Perplexity MCP
 // =============================================================================
 
 /**
- * Fetch web search hits
- * NOTE: This is a placeholder. Web search integration needs to be configured
- * with a provider (e.g., Serper, Google Search API, Bing API)
+ * Fetch web search hits via Perplexity MCP
+ *
+ * GOVERNANCE REQUIREMENT (per Vitana standards):
+ * - Web search MUST use Perplexity via MCP as the approved provider
+ * - Must follow Ask/Research schemas with recency filters
+ * - Must include citations in response
+ * - Validator must verify citations are present
+ *
+ * TODO: Integrate with Perplexity MCP provider:
+ * - Route through MCP connector at /api/v1/mcp/perplexity
+ * - Use research schema with recency_days filter
+ * - Extract citations from response
+ *
+ * Until integrated, returns empty results.
  */
 async function fetchWebHits(
   query: string,
@@ -235,9 +246,11 @@ async function fetchWebHits(
 ): Promise<{ hits: WebHit[]; latency_ms: number }> {
   const startTime = Date.now();
 
-  // TODO: Implement web search integration
-  // For now, return empty results
-  console.log(`[VTID-01216] Web search not implemented yet for query: ${query.substring(0, 50)}`);
+  // TODO: Route through Perplexity MCP provider
+  // - Use Ask schema for quick factual queries
+  // - Use Research schema for deeper exploration
+  // - Include recency filter based on query intent
+  console.log(`[VTID-01216] Web search via Perplexity MCP not yet integrated for: ${query.substring(0, 50)}`);
 
   return {
     hits: [],
