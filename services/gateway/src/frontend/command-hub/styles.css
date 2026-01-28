@@ -13952,3 +13952,470 @@ body {
   overflow-x: auto;
   max-height: 300px;
 }
+
+/* =============================================================================
+ * VTID-01216: Intelligence Panel Styles
+ * Operator Console panels for Context Pack, Retrieval Trace, and Tool Calls
+ * ============================================================================= */
+
+/* Intelligence Panel Toggle Button */
+.intel-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 6px;
+  color: var(--color-accent);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.intel-toggle-btn:hover {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: var(--color-accent);
+}
+
+.intel-toggle-btn.has-data {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.3);
+  color: #10b981;
+}
+
+/* Intelligence Panel Container */
+.intelligence-panel {
+  position: fixed;
+  right: 0;
+  top: var(--header-height);
+  width: 420px;
+  height: calc(100vh - var(--header-height));
+  background: var(--color-sidebar-bg);
+  border-left: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  z-index: 1000;
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.3);
+  animation: slideInRight 0.3s ease;
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* Panel Header */
+.intel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.intel-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.intel-close-btn {
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0.25rem;
+  line-height: 1;
+  transition: color 0.2s ease;
+}
+
+.intel-close-btn:hover {
+  color: var(--color-text-primary);
+}
+
+/* Panel Body */
+.intel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+/* Sections */
+.intel-section {
+  margin-bottom: 1.5rem;
+}
+
+.intel-section-header {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-secondary);
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* Tab Navigation */
+.intel-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.intel-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.375rem 0.75rem;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.intel-tab:hover {
+  border-color: var(--color-accent);
+  color: var(--color-text-primary);
+}
+
+.intel-tab.active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: white;
+}
+
+.intel-tab .tab-icon {
+  font-size: 0.875rem;
+}
+
+.intel-tab .tab-label {
+  display: none;
+}
+
+@media (min-width: 500px) {
+  .intel-tab .tab-label {
+    display: inline;
+  }
+}
+
+/* Tab Content */
+.intel-tab-content {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* Empty State */
+.intel-empty {
+  padding: 2rem;
+  text-align: center;
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+}
+
+/* Item List */
+.intel-list {
+  padding: 0.5rem;
+}
+
+.intel-item {
+  background: var(--color-sidebar-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.intel-item:last-child {
+  margin-bottom: 0;
+}
+
+.item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.item-category,
+.item-title,
+.item-vtid,
+.item-tool-name,
+.item-policy-id {
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: var(--color-accent);
+}
+
+.item-score {
+  font-size: 0.7rem;
+  padding: 0.125rem 0.375rem;
+  background: rgba(59, 130, 246, 0.2);
+  border-radius: 4px;
+  color: var(--color-accent);
+}
+
+.item-content {
+  font-size: 0.8rem;
+  color: var(--color-text-primary);
+  line-height: 1.4;
+  margin-bottom: 0.5rem;
+}
+
+.item-meta {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+}
+
+.item-source,
+.item-date {
+  opacity: 0.8;
+}
+
+.item-link {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.item-link:hover {
+  text-decoration: underline;
+}
+
+.item-status {
+  font-size: 0.7rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.item-status.status-in-progress {
+  background: rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+}
+
+.item-status.status-scheduled {
+  background: rgba(96, 165, 250, 0.2);
+  color: #60a5fa;
+}
+
+.item-status.status-completed {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+
+.item-status.status-ok {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+
+.item-status.status-error {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+.item-error {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 4px;
+  font-size: 0.75rem;
+  color: #ef4444;
+}
+
+/* Tool Health Items */
+.tool-health-item.healthy {
+  border-left: 3px solid #10b981;
+}
+
+.tool-health-item.unhealthy {
+  border-left: 3px solid #ef4444;
+}
+
+/* Retrieval Trace */
+.retrieval-trace {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 1rem;
+}
+
+.trace-section {
+  margin-bottom: 1rem;
+}
+
+.trace-section:last-child {
+  margin-bottom: 0;
+}
+
+.trace-header {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin-bottom: 0.5rem;
+}
+
+.trace-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  padding: 0.25rem 0;
+}
+
+.trace-label {
+  color: var(--color-text-secondary);
+}
+
+.trace-value {
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.trace-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.trace-source {
+  padding: 0.25rem 0.5rem;
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 4px;
+  font-size: 0.75rem;
+  color: var(--color-accent);
+}
+
+/* Tool Calls Panel */
+.tool-calls-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.tool-call-item {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.75rem;
+}
+
+.tool-call-item.success {
+  border-left: 3px solid #10b981;
+}
+
+.tool-call-item.error {
+  border-left: 3px solid #ef4444;
+}
+
+.tool-call-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.tool-name {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--color-accent);
+}
+
+.tool-status {
+  font-size: 0.7rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.tool-status.success {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+
+.tool-status.error {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+.tool-duration {
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+  margin-left: auto;
+}
+
+.tool-call-section {
+  margin-bottom: 0.75rem;
+}
+
+.tool-call-section:last-child {
+  margin-bottom: 0;
+}
+
+.section-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin-bottom: 0.25rem;
+}
+
+.tool-json {
+  background: var(--color-sidebar-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 0.5rem;
+  margin: 0 0 0.5rem 0;
+  font-size: 0.7rem;
+  color: var(--color-text-primary);
+  overflow-x: auto;
+  max-height: 150px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.copy-btn {
+  padding: 0.25rem 0.5rem;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.copy-btn:hover {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: white;
+}
+
+.tool-call-error {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 4px;
+}
+
+.error-message {
+  font-size: 0.75rem;
+  color: #ef4444;
+}
