@@ -78,6 +78,14 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
+      - name: Install dependencies
+        working-directory: services/gateway
+        run: npm ci
+
+      - name: Build gateway
+        working-directory: services/gateway
+        run: npm run build
+
       - name: Command Hub Bundle Syntax Check
         run: |
           echo "🔍 VTID-01011: Command Hub Bundle Syntax Gate"

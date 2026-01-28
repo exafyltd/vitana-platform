@@ -85,6 +85,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const autopilotPromptsRouter = require('./routes/autopilot-prompts').default;
   const assistantRouter = require('./routes/assistant').default;
   const orbLiveRouter = require('./routes/orb-live').default;
+  // VTID-01216: Unified Conversation Intelligence Layer (ORB + Operator shared brain)
+  const conversationRouter = require('./routes/conversation').default;
   // VTID-01046: Me Context Routes - role context and role switching
   const meRouter = require('./routes/me').default;
   // VTID-01047: Dev Token Mint Endpoint (Cloud-Shell Friendly)
@@ -384,6 +386,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // DEV-COMHU-2025-0014: ORB Multimodal v1 - Live Voice Session (Gemini API, SSE)
   mountRouterSync(app, '/api/v1/orb', orbLiveRouter, { owner: 'orb-live' });
+
+  // VTID-01216: Unified Conversation Intelligence Layer (ORB + Operator shared brain)
+  mountRouterSync(app, '/api/v1/conversation', conversationRouter, { owner: 'conversation-intelligence' });
 
   // VTID-01046: Me Context - role context and active role switching
   mountRouterSync(app, '/api/v1/me', meRouter, { owner: 'me-context' });

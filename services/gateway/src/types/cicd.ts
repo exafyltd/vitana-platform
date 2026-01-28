@@ -463,7 +463,18 @@ export type CicdEventType =
   | 'llm.call.failed'
   | 'governance.llm_policy.updated'
   | 'governance.llm_policy.activated'
-  | 'governance.llm_policy.reset';
+  | 'governance.llm_policy.reset'
+  // VTID-01216: Unified Conversation Intelligence Layer Events
+  | 'conversation.turn.received'
+  | 'conversation.turn.completed'
+  | 'conversation.retrieval.router_decision'
+  | 'conversation.retrieval.memory.completed'
+  | 'conversation.retrieval.knowledge.completed'
+  | 'conversation.retrieval.web.completed'
+  | 'conversation.context_pack.built'
+  | 'conversation.model.called'
+  | 'conversation.tool.called'
+  | 'conversation.tool.health_check';
 
 export interface CicdOasisEvent {
   vtid: string;
