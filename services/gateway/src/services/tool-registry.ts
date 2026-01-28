@@ -215,6 +215,114 @@ const TOOL_REGISTRY: Map<string, ToolDefinition> = new Map([
       vtid: 'VTID-01159',
     },
   ],
+
+  // ===== VTID-01221: Autopilot Recommendation Sync Tools =====
+  [
+    'autopilot_get_recommendations',
+    {
+      name: 'autopilot_get_recommendations',
+      description: `Fetch recommended next actions from Autopilot for the current context.
+Call this tool BEFORE giving "next steps" advice when:
+- User asks "what next", "what should I do", "what do we do now"
+- A VTID is selected or being discussed
+- A pipeline/deploy is in progress
+
+Returns prioritized recommendations with rationale, suggested commands, and verification steps.
+Autopilot is the single source of truth for "what to do next".`,
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          role: {
+            type: 'string',
+            enum: ['developer', 'infra', 'admin'],
+            description: 'User role context for filtering recommendations.',
+          },
+          ui_context: {
+            type: 'object',
+            properties: {
+              surface: { type: 'string', description: 'Current UI surface (e.g., command-hub, operator-console)' },
+              screen: { type: 'string', description: 'Current screen/view name' },
+              selection: { type: 'string', description: 'Currently selected item (if any)' },
+            },
+            description: 'Current UI context for contextual recommendations.',
+          },
+          vtid: {
+            type: 'string',
+            description: 'Optional VTID to get recommendations for a specific task.',
+          },
+          time_window_minutes: {
+            type: 'integer',
+            description: 'Look-back window for recent activity context. Default: 120.',
+          },
+        },
+        required: [],
+      },
+      allowed_roles: ['operator', 'admin', 'developer', 'system'],
+      enabled: true,
+      category: 'autopilot',
+      vtid: 'VTID-01221',
+    },
+  ],
+
+  // ===== VTID-01221: Deterministic Fallback Tools =====
+  [
+    'oasis_analyze_vtid',
+    {
+      name: 'oasis_analyze_vtid',
+      description: `Analyze a VTID by querying OASIS events to build an evidence report.
+Use this as a FALLBACK when Autopilot recommendations are unavailable.
+Returns timeline of events, current status, and deterministic analysis.`,
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          vtid: {
+            type: 'string',
+            description: 'The VTID to analyze (e.g., VTID-01216).',
+          },
+          include_events: {
+            type: 'boolean',
+            description: 'Include raw event timeline. Default: true.',
+          },
+          limit: {
+            type: 'integer',
+            description: 'Max events to include. Default: 50.',
+          },
+        },
+        required: ['vtid'],
+      },
+      allowed_roles: ['operator', 'admin', 'developer', 'system'],
+      enabled: true,
+      category: 'fallback',
+      vtid: 'VTID-01221',
+    },
+  ],
+  [
+    'dev_verify_deploy_checklist',
+    {
+      name: 'dev_verify_deploy_checklist',
+      description: `Run post-deploy verification checklist for a VTID.
+Use this as a FALLBACK when Autopilot recommendations are unavailable.
+Returns checklist items with pass/fail status based on OASIS evidence.`,
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          vtid: {
+            type: 'string',
+            description: 'The VTID to verify deployment for.',
+          },
+          service: {
+            type: 'string',
+            description: 'Optional service name to filter checks.',
+          },
+        },
+        required: ['vtid'],
+      },
+      allowed_roles: ['operator', 'admin', 'developer', 'system'],
+      enabled: true,
+      category: 'fallback',
+      vtid: 'VTID-01221',
+    },
+  ],
 ]);
 
 // =============================================================================
