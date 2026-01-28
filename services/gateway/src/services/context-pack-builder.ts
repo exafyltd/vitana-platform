@@ -225,20 +225,13 @@ async function fetchKnowledgeHits(
 // =============================================================================
 
 /**
- * Fetch web search hits via Perplexity MCP
+ * Fetch web search hits via Perplexity API
  *
  * GOVERNANCE REQUIREMENT (per Vitana standards):
- * - Web search MUST use Perplexity via MCP as the approved provider
+ * - Web search MUST use Perplexity as the approved provider
  * - Must follow Ask/Research schemas with recency filters
  * - Must include citations in response
  * - Validator must verify citations are present
- *
- * TODO: Integrate with Perplexity MCP provider:
- * - Route through MCP connector at /api/v1/mcp/perplexity
- * - Use research schema with recency_days filter
- * - Extract citations from response
- *
- * Until integrated, returns empty results.
  */
 async function fetchWebHits(
   query: string,
@@ -246,16 +239,78 @@ async function fetchWebHits(
 ): Promise<{ hits: WebHit[]; latency_ms: number }> {
   const startTime = Date.now();
 
-  // TODO: Route through Perplexity MCP provider
-  // - Use Ask schema for quick factual queries
-  // - Use Research schema for deeper exploration
-  // - Include recency filter based on query intent
-  console.log(`[VTID-01216] Web search via Perplexity MCP not yet integrated for: ${query.substring(0, 50)}`);
+  const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY;
+  if (!PERPLEXITY_API_KEY) {
+    console.warn('[VTID-01216] PERPLEXITY_API_KEY not configured - web search disabled');
+    return { hits: [], latency_ms: Date.now() - startTime };
+  }
 
-  return {
-    hits: [],
-    latency_ms: Date.now() - startTime,
-  };
+  try {
+    const response = await fetch('https://api.perplexity.ai/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${PERPLEXITY_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'llama-3.1-sonar-small-128k-online',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a helpful assistant. Provide concise, factual answers with citations. Format each fact on its own line.',
+          },
+          {
+            role: 'user',
+            content: query,
+          },
+        ],
+        max_tokens: 1024,
+        return_citations: true,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.warn(`[VTID-01216] Perplexity API error: ${response.status} - ${errorText}`);
+      return { hits: [], latency_ms: Date.now() - startTime };
+    }
+
+    const data = await response.json() as {
+      choices: Array<{ message: { content: string } }>;
+      citations?: string[];
+    };
+
+    const content = data.choices[0]?.message?.content || '';
+    const citations = data.citations || [];
+
+    // Parse response into web hits
+    const hits: WebHit[] = [];
+    const sentences = content.split(/\.\s+/).filter(s => s.trim().length > 20);
+
+    for (let i = 0; i < Math.min(sentences.length, limit); i++) {
+      const sentence = sentences[i].trim();
+      if (sentence) {
+        hits.push({
+          id: `web-${i}`,
+          title: sentence.substring(0, 80) + (sentence.length > 80 ? '...' : ''),
+          snippet: sentence.substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
+          url: citations[i] || citations[0] || 'https://perplexity.ai',
+          citation: citations[i] || citations[0] || '[Perplexity AI]',
+          relevance_score: 1 - (i * 0.1),
+        });
+      }
+    }
+
+    console.log(`[VTID-01216] Perplexity returned ${hits.length} web hits for: ${query.substring(0, 50)}`);
+
+    return {
+      hits: hits.slice(0, CONTEXT_PACK_CONFIG.MAX_WEB_HITS),
+      latency_ms: Date.now() - startTime,
+    };
+  } catch (error: any) {
+    console.error(`[VTID-01216] Perplexity API error: ${error.message}`);
+    return { hits: [], latency_ms: Date.now() - startTime };
+  }
 }
 
 // =============================================================================
@@ -305,12 +360,13 @@ async function checkToolHealth(): Promise<ToolHealthStatus[]> {
     last_checked: now,
   });
 
-  // Web Search (not implemented yet)
+  // Web Search via Perplexity
+  const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY;
   tools.push({
     name: 'web_search',
-    available: false,
+    available: !!PERPLEXITY_API_KEY,
     last_checked: now,
-    error: 'Web search integration not configured',
+    error: PERPLEXITY_API_KEY ? undefined : 'PERPLEXITY_API_KEY not configured',
   });
 
   return tools;
