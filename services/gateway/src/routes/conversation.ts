@@ -132,7 +132,7 @@ router.post('/turn', async (req: Request, res: Response) => {
     }
 
     const input = validation.data;
-    const { channel, tenant_id, user_id, role, message, ui_context, vtid } = input;
+    const { channel, tenant_id, user_id, role, message, ui_context, vtid, options } = input;
 
     // Log turn received
     await emitOasisEvent({
@@ -163,7 +163,11 @@ router.post('/turn', async (req: Request, res: Response) => {
     });
 
     // Step 1: Compute retrieval router decision
-    const routerDecision = computeRetrievalRouterDecision(message.text, { channel });
+    const routerDecision = computeRetrievalRouterDecision(message.text, {
+      channel,
+      force_sources: options?.force_sources,
+      limit_overrides: options?.limit_overrides as Record<'memory_garden' | 'knowledge_hub' | 'web_search', number> | undefined,
+    });
 
     // Log router decision
     await logRetrievalRouterDecision(routerDecision, {
