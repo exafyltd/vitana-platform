@@ -20,6 +20,23 @@ const OperationalEventsQuerySchema = z.object({
   cursor: z.string().optional(),
 });
 
+// VTID-01215: Noise topics to EXCLUDE from operational events
+// These are high-frequency telemetry events that drown out actual operational events
+const NOISE_TOPIC_PATTERNS: RegExp[] = [
+  /pending_served/i,          // Worker orchestrator polling (every 5s)
+  /heartbeat/i,               // Heartbeat pings
+  /health_check/i,            // Health checks
+  /\.poll\./i,                // Polling events
+  /\.ping$/i,                 // Ping events
+  /telemetry\./i,             // Telemetry events
+];
+
+// Check if a topic is noise
+function isNoiseTopic(topic: string | null | undefined): boolean {
+  if (!topic) return false;
+  return NOISE_TOPIC_PATTERNS.some(pattern => pattern.test(topic));
+}
+
 // Category mapping rules - map raw event topics to operational categories
 const CATEGORY_MAPPINGS: Record<string, RegExp[]> = {
   deployments: [
@@ -126,9 +143,10 @@ operationalEventsRouter.get("/", async (req: Request, res: Response) => {
 
     const { topic, status, limit, cursor } = queryValidation.data;
 
-    // Build Supabase query - fetch more than needed for client-side category filtering
-    // We need to over-fetch because category filtering happens after retrieval
-    const fetchLimit = Math.min(limit * 4, 500);
+    // Build Supabase query - fetch more than needed for filtering
+    // We need to over-fetch because noise filtering + category filtering happens after retrieval
+    // VTID-01215: Increased multiplier to account for high noise ratio in the database
+    const fetchLimit = Math.min(limit * 10, 1000);
     let queryParams = `limit=${fetchLimit}&order=created_at.desc`;
 
     // Apply cursor for pagination (before timestamp)
@@ -159,8 +177,12 @@ operationalEventsRouter.get("/", async (req: Request, res: Response) => {
 
     const rawEvents = (await resp.json()) as any[];
 
+    // VTID-01215: Filter out noise events FIRST (polling, heartbeats, etc.)
+    const filteredRawEvents = rawEvents.filter((event: any) => !isNoiseTopic(event.topic));
+    console.log(`[VTID-01215] Filtered ${rawEvents.length - filteredRawEvents.length} noise events, ${filteredRawEvents.length} remaining`);
+
     // Transform and categorize events
-    let items = rawEvents.map((event: any) => {
+    let items = filteredRawEvents.map((event: any) => {
       const category = categorizeEvent(event.topic);
       const normalizedStatus = normalizeStatus(event.status);
 
