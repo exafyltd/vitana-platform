@@ -29,7 +29,6 @@ import { processWithGemini } from './gemini-operator';
 import { getGeminiToolDefinitions, logToolExecution } from './tool-registry';
 import { classifyCategory } from '../routes/memory';
 import { writeMemoryItemWithIdentity } from './orb-memory-bridge';
-import { isUnifiedConversationEnabled } from './system-controls-service';
 
 // =============================================================================
 // Thread Management
@@ -442,6 +441,10 @@ Instructions:
 - ${channel === 'orb' ? 'Keep responses brief and natural for voice' : 'You can use markdown formatting and be more detailed'}`;
 }
 
-// Re-export isUnifiedConversationEnabled from system-controls-service
-// This uses DB-backed governance controls instead of env vars (VTID-01216)
-export { isUnifiedConversationEnabled } from './system-controls-service';
+/**
+ * Check if the unified conversation API is enabled
+ * This allows gradual rollout by checking an environment variable
+ */
+export function isUnifiedConversationEnabled(): boolean {
+  return process.env.UNIFIED_CONVERSATION_ENABLED !== 'false';
+}
