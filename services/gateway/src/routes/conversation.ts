@@ -541,6 +541,8 @@ router.get('/tools', (_req: Request, res: Response) => {
 // =============================================================================
 
 router.get('/health', (_req: Request, res: Response) => {
+  const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY;
+
   res.status(200).json({
     ok: true,
     service: 'conversation-api',
@@ -550,7 +552,7 @@ router.get('/health', (_req: Request, res: Response) => {
     features: {
       memory_garden: true,
       knowledge_hub: true,
-      web_search: false, // Not implemented yet
+      web_search: !!PERPLEXITY_API_KEY,
       streaming: true,
     },
   });
