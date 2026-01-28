@@ -85,6 +85,14 @@ export const ConversationTurnRequestSchema = z.object({
 
   /** Optional VTID link */
   vtid: z.string().optional(),
+
+  /** Options for controlling retrieval and routing */
+  options: z.object({
+    /** Force specific retrieval sources (overrides router) */
+    force_sources: z.array(z.enum(RETRIEVAL_SOURCES)).optional(),
+    /** Limit overrides per source */
+    limit_overrides: z.record(z.number()).optional(),
+  }).optional(),
 });
 
 export type ConversationTurnRequest = z.infer<typeof ConversationTurnRequestSchema>;
