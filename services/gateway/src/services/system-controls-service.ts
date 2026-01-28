@@ -446,3 +446,27 @@ export async function isAutopilotExecutionArmed(): Promise<boolean> {
   // Normal operation: ARMED
   return true;
 }
+
+/**
+ * VTID-01216: Check if unified conversation intelligence is enabled.
+ *
+ * When enabled, both ORB and Operator route through the shared
+ * /api/v1/conversation/turn endpoint for consistent intelligence.
+ *
+ * This is controlled via the 'unified_conversation_enabled' system control:
+ * - Default: DISABLED (false)
+ * - Enable via POST /api/v1/governance/controls/unified_conversation_enabled
+ * - Requires reason + duration for auditing
+ *
+ * Returns true if DB control 'unified_conversation_enabled' is enabled.
+ */
+export async function isUnifiedConversationEnabled(): Promise<boolean> {
+  const control = await getSystemControl('unified_conversation_enabled');
+
+  // Control missing or not enabled = disabled
+  if (!control || !control.enabled) {
+    return false;
+  }
+
+  return true;
+}
