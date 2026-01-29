@@ -20470,7 +20470,7 @@ async function orbLiveStart() {
         state.orb.liveAudioContext = audioContext;
 
         var source = audioContext.createMediaStreamSource(stream);
-        var processor = audioContext.createScriptProcessor(640, 1, 1); // 640 samples = 40ms at 16kHz
+        var processor = audioContext.createScriptProcessor(1024, 1, 1); // 1024 samples = 64ms at 16kHz (must be power of 2)
 
         // Energy threshold for VAD (silence gating)
         var energyThreshold = 0.005;
@@ -21515,8 +21515,8 @@ async function geminiLiveStartAudioCapture() {
     state.orb.geminiLiveAudioContext = audioContext;
 
     var source = audioContext.createMediaStreamSource(stream);
-    // 640 samples = 40ms at 16kHz
-    var processor = audioContext.createScriptProcessor(640, 1, 1);
+    // 1024 samples = 64ms at 16kHz (must be power of 2)
+    var processor = audioContext.createScriptProcessor(1024, 1, 1);
 
     processor.onaudioprocess = function(e) {
         if (!state.orb.geminiLiveActive || state.orb.voiceState === 'MUTED') return;
