@@ -135,8 +135,11 @@ import {
   buildMemoryIndexerEnhancedInstruction
 } from '../services/memory-indexer-client';
 // VTID-01219: Gemini Live API WebSocket for real-time voice-to-voice
-import WebSocket from 'ws';
+// VTID-01222: WebSocket server for client connections
+import WebSocket, { WebSocketServer } from 'ws';
 import { GoogleAuth } from 'google-auth-library';
+import { Server as HttpServer, IncomingMessage } from 'http';
+import { parse as parseUrl } from 'url';
 
 const router = Router();
 
@@ -4021,5 +4024,542 @@ router.get('/health', (_req: Request, res: Response) => {
     timestamp: new Date().toISOString()
   });
 });
+
+// =============================================================================
+// VTID-01222: WebSocket Server for Client-to-Gateway Communication
+// =============================================================================
+
+/**
+ * VTID-01222: WebSocket message types from client
+ */
+interface WsClientMessage {
+  type: 'start' | 'audio' | 'video' | 'end_turn' | 'stop' | 'ping';
+  // Start message fields
+  lang?: string;
+  voice_style?: string;
+  response_modalities?: string[];
+  // Audio message fields
+  data_b64?: string;
+  mime?: string;
+  // Video message fields
+  source?: 'screen' | 'camera';
+  width?: number;
+  height?: number;
+}
+
+/**
+ * VTID-01222: WebSocket session state
+ */
+interface WsClientSession {
+  sessionId: string;
+  clientWs: WebSocket;
+  liveSession: GeminiLiveSession | null;
+  connected: boolean;
+  lastActivity: Date;
+  clientIP: string;
+}
+
+// Track WebSocket client sessions
+const wsClientSessions = new Map<string, WsClientSession>();
+
+/**
+ * VTID-01222: Initialize WebSocket server for ORB client connections
+ * Attaches a WebSocketServer to the HTTP server for the /api/v1/orb/live/ws path
+ *
+ * @param server - The HTTP server instance from Express
+ */
+export function initializeOrbWebSocket(server: HttpServer): void {
+  console.log('[VTID-01222] Initializing ORB WebSocket server...');
+
+  // Create WebSocket server attached to HTTP server
+  const wss = new WebSocketServer({
+    server,
+    path: '/api/v1/orb/live/ws'
+  });
+
+  wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
+    handleWebSocketConnection(ws, req);
+  });
+
+  wss.on('error', (error) => {
+    console.error('[VTID-01222] WebSocket server error:', error);
+  });
+
+  console.log('[VTID-01222] ORB WebSocket server initialized at /api/v1/orb/live/ws');
+
+  // Cleanup expired WebSocket sessions every 5 minutes
+  setInterval(() => {
+    const now = Date.now();
+    for (const [sessionId, session] of wsClientSessions.entries()) {
+      if (now - session.lastActivity.getTime() > SESSION_TIMEOUT_MS) {
+        console.log(`[VTID-01222] WebSocket session expired: ${sessionId}`);
+        cleanupWsSession(sessionId);
+      }
+    }
+  }, 5 * 60 * 1000);
+}
+
+/**
+ * VTID-01222: Handle new WebSocket connection from client
+ */
+function handleWebSocketConnection(ws: WebSocket, req: IncomingMessage): void {
+  const clientIP = (req.headers['x-forwarded-for'] as string || req.socket.remoteAddress || 'unknown').split(',')[0].trim();
+  const sessionId = `ws-${randomUUID()}`;
+
+  console.log(`[VTID-01222] WebSocket connected: ${sessionId} from ${clientIP}`);
+
+  // Check connection limit
+  if (!checkConnectionLimit(clientIP)) {
+    console.warn(`[VTID-01222] Connection limit exceeded for IP: ${clientIP}`);
+    ws.close(4029, 'Too many connections');
+    return;
+  }
+
+  incrementConnection(clientIP);
+
+  // Create client session
+  const clientSession: WsClientSession = {
+    sessionId,
+    clientWs: ws,
+    liveSession: null,
+    connected: true,
+    lastActivity: new Date(),
+    clientIP
+  };
+
+  wsClientSessions.set(sessionId, clientSession);
+
+  // Send connection acknowledgment
+  sendWsMessage(ws, {
+    type: 'connected',
+    session_id: sessionId,
+    message: 'WebSocket connected. Send "start" message to begin Live API session.'
+  });
+
+  // Handle incoming messages
+  ws.on('message', async (data: Buffer) => {
+    try {
+      const message = JSON.parse(data.toString()) as WsClientMessage;
+      clientSession.lastActivity = new Date();
+      await handleWsClientMessage(clientSession, message);
+    } catch (err: any) {
+      console.error(`[VTID-01222] Error processing message for ${sessionId}:`, err.message);
+      sendWsMessage(ws, {
+        type: 'error',
+        message: 'Invalid message format',
+        details: err.message
+      });
+    }
+  });
+
+  // Handle client disconnect
+  ws.on('close', (code, reason) => {
+    console.log(`[VTID-01222] WebSocket disconnected: ${sessionId}, code=${code}, reason=${reason}`);
+    cleanupWsSession(sessionId);
+    decrementConnection(clientIP);
+  });
+
+  // Handle errors
+  ws.on('error', (error) => {
+    console.error(`[VTID-01222] WebSocket error for ${sessionId}:`, error);
+    cleanupWsSession(sessionId);
+    decrementConnection(clientIP);
+  });
+}
+
+/**
+ * VTID-01222: Handle messages from WebSocket client
+ */
+async function handleWsClientMessage(clientSession: WsClientSession, message: WsClientMessage): Promise<void> {
+  const { sessionId, clientWs, liveSession } = clientSession;
+
+  switch (message.type) {
+    case 'ping':
+      sendWsMessage(clientWs, { type: 'pong', timestamp: Date.now() });
+      break;
+
+    case 'start':
+      await handleWsStartMessage(clientSession, message);
+      break;
+
+    case 'audio':
+      if (!liveSession || !liveSession.active) {
+        sendWsMessage(clientWs, { type: 'error', message: 'No active session. Send "start" first.' });
+        return;
+      }
+      await handleWsAudioMessage(clientSession, message);
+      break;
+
+    case 'video':
+      if (!liveSession || !liveSession.active) {
+        sendWsMessage(clientWs, { type: 'error', message: 'No active session. Send "start" first.' });
+        return;
+      }
+      handleWsVideoMessage(clientSession, message);
+      break;
+
+    case 'end_turn':
+      if (!liveSession || !liveSession.active) {
+        sendWsMessage(clientWs, { type: 'error', message: 'No active session.' });
+        return;
+      }
+      handleWsEndTurn(clientSession);
+      break;
+
+    case 'stop':
+      handleWsStopSession(clientSession);
+      break;
+
+    default:
+      sendWsMessage(clientWs, { type: 'error', message: `Unknown message type: ${message.type}` });
+  }
+}
+
+/**
+ * VTID-01222: Handle "start" message - Create Live API session
+ */
+async function handleWsStartMessage(clientSession: WsClientSession, message: WsClientMessage): Promise<void> {
+  const { sessionId, clientWs } = clientSession;
+
+  // Check if session already exists
+  if (clientSession.liveSession && clientSession.liveSession.active) {
+    sendWsMessage(clientWs, { type: 'error', message: 'Session already active' });
+    return;
+  }
+
+  const lang = normalizeLang(message.lang || 'en');
+  const responseModalities = message.response_modalities || ['audio', 'text'];
+
+  console.log(`[VTID-01222] Starting Live API session: ${sessionId}, lang=${lang}`);
+
+  // Create Gemini Live session
+  const liveSession: GeminiLiveSession = {
+    sessionId,
+    lang,
+    voiceStyle: message.voice_style,
+    responseModalities,
+    upstreamWs: null,
+    sseResponse: null,  // Not used for WebSocket clients
+    active: true,
+    createdAt: new Date(),
+    lastActivity: new Date(),
+    audioInChunks: 0,
+    videoInFrames: 0,
+    audioOutChunks: 0
+  };
+
+  clientSession.liveSession = liveSession;
+  liveSessions.set(sessionId, liveSession);
+
+  // Connect to Vertex AI Live API
+  if (!googleAuth || !VERTEX_PROJECT_ID) {
+    console.warn(`[VTID-01222] Live API not available for ${sessionId} - missing auth or project ID`);
+    sendWsMessage(clientWs, {
+      type: 'session_started',
+      session_id: sessionId,
+      live_api_connected: false,
+      message: 'Session created but Live API not available (missing credentials)',
+      meta: {
+        lang,
+        voice: LIVE_API_VOICES[lang] || LIVE_API_VOICES['en'],
+        model: VERTEX_LIVE_MODEL
+      }
+    });
+    return;
+  }
+
+  try {
+    console.log(`[VTID-01222] Connecting to Vertex AI Live API for session ${sessionId}...`);
+
+    const upstreamWs = await connectToLiveAPI(
+      liveSession,
+      // Audio response handler - forward to client via WebSocket
+      (audioB64: string) => {
+        if (clientWs.readyState === WebSocket.OPEN) {
+          try {
+            // Convert PCM to WAV for browser playback
+            const wavB64 = pcmToWav(audioB64, 24000, 1, 16);
+            sendWsMessage(clientWs, {
+              type: 'audio',
+              data_b64: wavB64,
+              mime: 'audio/wav',
+              chunk_number: liveSession.audioOutChunks
+            });
+          } catch (err) {
+            console.error(`[VTID-01222] Error sending audio to client ${sessionId}:`, err);
+          }
+        }
+      },
+      // Text response handler - forward to client via WebSocket
+      (text: string) => {
+        if (clientWs.readyState === WebSocket.OPEN) {
+          sendWsMessage(clientWs, {
+            type: 'transcript',
+            text
+          });
+        }
+      },
+      // Error handler
+      (error: Error) => {
+        console.error(`[VTID-01222] Live API error for ${sessionId}:`, error);
+        if (clientWs.readyState === WebSocket.OPEN) {
+          sendWsMessage(clientWs, {
+            type: 'error',
+            message: 'Live API connection error',
+            details: error.message
+          });
+        }
+      }
+    );
+
+    liveSession.upstreamWs = upstreamWs;
+
+    // Listen for upstream WebSocket close
+    upstreamWs.on('close', (code, reason) => {
+      console.log(`[VTID-01222] Upstream WebSocket closed for ${sessionId}: code=${code}`);
+      if (clientWs.readyState === WebSocket.OPEN) {
+        sendWsMessage(clientWs, {
+          type: 'live_api_disconnected',
+          code,
+          reason: reason?.toString()
+        });
+      }
+    });
+
+    console.log(`[VTID-01222] Live API connected for session ${sessionId}`);
+
+    // Emit OASIS event
+    emitLiveSessionEvent('vtid.live.session.start', {
+      session_id: sessionId,
+      lang,
+      voice: LIVE_API_VOICES[lang] || LIVE_API_VOICES['en'],
+      response_modalities: responseModalities,
+      transport: 'websocket'
+    }).catch(() => {});
+
+    sendWsMessage(clientWs, {
+      type: 'session_started',
+      session_id: sessionId,
+      live_api_connected: true,
+      meta: {
+        lang,
+        voice: LIVE_API_VOICES[lang] || LIVE_API_VOICES['en'],
+        model: VERTEX_LIVE_MODEL,
+        audio_in_rate: 16000,
+        audio_out_rate: 24000
+      }
+    });
+
+  } catch (err: any) {
+    console.error(`[VTID-01222] Failed to connect Live API for ${sessionId}:`, err.message);
+
+    sendWsMessage(clientWs, {
+      type: 'session_started',
+      session_id: sessionId,
+      live_api_connected: false,
+      error: err.message,
+      meta: {
+        lang,
+        voice: LIVE_API_VOICES[lang] || LIVE_API_VOICES['en'],
+        model: VERTEX_LIVE_MODEL
+      }
+    });
+  }
+}
+
+/**
+ * VTID-01222: Handle audio message from client
+ */
+async function handleWsAudioMessage(clientSession: WsClientSession, message: WsClientMessage): Promise<void> {
+  const { sessionId, clientWs, liveSession } = clientSession;
+
+  if (!liveSession) return;
+
+  if (!message.data_b64) {
+    sendWsMessage(clientWs, { type: 'error', message: 'Missing data_b64 in audio message' });
+    return;
+  }
+
+  liveSession.audioInChunks++;
+  liveSession.lastActivity = new Date();
+
+  // Emit OASIS event (sample every 10th chunk)
+  if (liveSession.audioInChunks % 10 === 0) {
+    emitLiveSessionEvent('vtid.live.audio.in.chunk', {
+      session_id: sessionId,
+      chunk_number: liveSession.audioInChunks,
+      bytes: message.data_b64.length,
+      rate: 16000,
+      transport: 'websocket'
+    }).catch(() => {});
+  }
+
+  // Forward to Live API if connected
+  if (liveSession.upstreamWs && liveSession.upstreamWs.readyState === WebSocket.OPEN) {
+    const sent = sendAudioToLiveAPI(
+      liveSession.upstreamWs,
+      message.data_b64,
+      message.mime || 'audio/pcm;rate=16000'
+    );
+
+    if (!sent) {
+      console.warn(`[VTID-01222] Failed to forward audio chunk for ${sessionId}`);
+    }
+  } else {
+    // No Live API connection - send acknowledgment
+    if (liveSession.audioInChunks % 5 === 0) {
+      sendWsMessage(clientWs, {
+        type: 'audio_ack',
+        chunk_number: liveSession.audioInChunks,
+        live_api: false
+      });
+    }
+  }
+}
+
+/**
+ * VTID-01222: Handle video frame from client
+ */
+function handleWsVideoMessage(clientSession: WsClientSession, message: WsClientMessage): void {
+  const { sessionId, clientWs, liveSession } = clientSession;
+
+  if (!liveSession) return;
+
+  if (!message.data_b64) {
+    sendWsMessage(clientWs, { type: 'error', message: 'Missing data_b64 in video message' });
+    return;
+  }
+
+  liveSession.videoInFrames++;
+  liveSession.lastActivity = new Date();
+
+  // Emit OASIS event
+  emitLiveSessionEvent('vtid.live.video.in.frame', {
+    session_id: sessionId,
+    source: message.source || 'unknown',
+    frame_number: liveSession.videoInFrames,
+    bytes: message.data_b64.length,
+    transport: 'websocket'
+  }).catch(() => {});
+
+  console.log(`[VTID-01222] Video frame received: ${sessionId}, source=${message.source}, frame=${liveSession.videoInFrames}`);
+
+  // Acknowledge frame receipt
+  sendWsMessage(clientWs, {
+    type: 'video_ack',
+    source: message.source,
+    frame_number: liveSession.videoInFrames
+  });
+}
+
+/**
+ * VTID-01222: Handle end of turn signal
+ */
+function handleWsEndTurn(clientSession: WsClientSession): void {
+  const { sessionId, clientWs, liveSession } = clientSession;
+
+  if (!liveSession) return;
+
+  if (liveSession.upstreamWs && liveSession.upstreamWs.readyState === WebSocket.OPEN) {
+    const sent = sendEndOfTurn(liveSession.upstreamWs);
+    if (sent) {
+      console.log(`[VTID-01222] End of turn sent to Live API: ${sessionId}`);
+      sendWsMessage(clientWs, { type: 'end_turn_ack', live_api: true });
+    } else {
+      sendWsMessage(clientWs, { type: 'end_turn_ack', live_api: false, message: 'Failed to send' });
+    }
+  } else {
+    sendWsMessage(clientWs, { type: 'end_turn_ack', live_api: false, message: 'No Live API connection' });
+  }
+}
+
+/**
+ * VTID-01222: Handle stop session message
+ */
+function handleWsStopSession(clientSession: WsClientSession): void {
+  const { sessionId, clientWs, liveSession } = clientSession;
+
+  console.log(`[VTID-01222] Stopping session: ${sessionId}`);
+
+  if (liveSession) {
+    liveSession.active = false;
+
+    // Close upstream WebSocket
+    if (liveSession.upstreamWs) {
+      try {
+        liveSession.upstreamWs.close();
+      } catch (e) {
+        // Ignore
+      }
+      liveSession.upstreamWs = null;
+    }
+
+    // Emit OASIS event
+    emitLiveSessionEvent('vtid.live.session.stop', {
+      session_id: sessionId,
+      audio_in_chunks: liveSession.audioInChunks,
+      audio_out_chunks: liveSession.audioOutChunks,
+      video_frames: liveSession.videoInFrames,
+      transport: 'websocket'
+    }).catch(() => {});
+
+    liveSessions.delete(sessionId);
+  }
+
+  clientSession.liveSession = null;
+
+  sendWsMessage(clientWs, {
+    type: 'session_stopped',
+    session_id: sessionId
+  });
+}
+
+/**
+ * VTID-01222: Cleanup WebSocket session
+ */
+function cleanupWsSession(sessionId: string): void {
+  const clientSession = wsClientSessions.get(sessionId);
+  if (!clientSession) return;
+
+  // Close Live API session if active
+  if (clientSession.liveSession) {
+    clientSession.liveSession.active = false;
+
+    if (clientSession.liveSession.upstreamWs) {
+      try {
+        clientSession.liveSession.upstreamWs.close();
+      } catch (e) {
+        // Ignore
+      }
+    }
+
+    liveSessions.delete(sessionId);
+  }
+
+  // Close client WebSocket if open
+  if (clientSession.clientWs.readyState === WebSocket.OPEN) {
+    try {
+      clientSession.clientWs.close(1000, 'Session cleanup');
+    } catch (e) {
+      // Ignore
+    }
+  }
+
+  wsClientSessions.delete(sessionId);
+  console.log(`[VTID-01222] WebSocket session cleaned up: ${sessionId}`);
+}
+
+/**
+ * VTID-01222: Send message to WebSocket client
+ */
+function sendWsMessage(ws: WebSocket, message: Record<string, unknown>): void {
+  if (ws.readyState === WebSocket.OPEN) {
+    try {
+      ws.send(JSON.stringify(message));
+    } catch (err) {
+      console.error('[VTID-01222] Error sending WebSocket message:', err);
+    }
+  }
+}
 
 export default router;

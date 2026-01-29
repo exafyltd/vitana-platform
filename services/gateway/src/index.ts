@@ -85,6 +85,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const autopilotPromptsRouter = require('./routes/autopilot-prompts').default;
   const assistantRouter = require('./routes/assistant').default;
   const orbLiveRouter = require('./routes/orb-live').default;
+  // VTID-01222: WebSocket server initialization for ORB Live API
+  const { initializeOrbWebSocket } = require('./routes/orb-live');
   // VTID-01216: Unified Conversation Intelligence Layer (ORB + Operator shared brain)
   const conversationRouter = require('./routes/conversation').default;
   // VTID-01046: Me Context Routes - role context and role switching
@@ -560,13 +562,22 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // Start server
   if (process.env.NODE_ENV !== 'test') {
-    app.listen(PORT, async () => {
+    // VTID-01222: Capture HTTP server instance for WebSocket attachment
+    const server = app.listen(PORT, async () => {
       console.log('✅ Gateway server running on port ' + PORT);
       console.log('📊 Command Hub: http://localhost:' + PORT + '/command-hub');
       console.log('🔌 SSE Stream: http://localhost:' + PORT + '/api/v1/events/stream');
       console.log('Gateway: debug /debug/governance-ping route registered');
       console.log('Gateway: governance routes mounted at /api/v1/governance');
       console.log('Gateway: operator routes mounted at /api/v1/operator (VTID-0510)');
+
+      // VTID-01222: Initialize ORB WebSocket server for Live API
+      try {
+        initializeOrbWebSocket(server);
+        console.log('🔊 ORB WebSocket server initialized at /api/v1/orb/live/ws (VTID-01222)');
+      } catch (error) {
+        console.warn('⚠️ ORB WebSocket server initialization failed (non-fatal):', error);
+      }
 
       // VTID-01178: Initialize autopilot controller (ensure VTIDs exist in ledger)
       try {
