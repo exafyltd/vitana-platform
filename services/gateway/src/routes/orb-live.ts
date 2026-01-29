@@ -610,9 +610,10 @@ async function connectToLiveAPI(
   console.log(`[VTID-01219] Using model: ${VERTEX_LIVE_MODEL}`);
 
   return new Promise((resolve, reject) => {
-    // Create WebSocket with auth header and subprotocol
-    // The subprotocol is CRITICAL for Vertex AI Live API
-    const ws = new WebSocket(wsUrl, ['google.cloud.aiplatform'], {
+    // Create WebSocket with auth header only (NO subprotocol)
+    // Vertex AI Live API does NOT use WebSocket subprotocol negotiation
+    // Confirmed: https://github.com/GoogleCloudPlatform/generative-ai/blob/main/gemini/multimodal-live-api/intro_multimodal_live_api.ipynb
+    const ws = new WebSocket(wsUrl, {
       headers: {
         'Authorization': `Bearer ${accessToken}`
       }
