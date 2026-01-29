@@ -601,6 +601,11 @@ async function connectToLiveAPI(
 ): Promise<WebSocket> {
   console.log(`[VTID-01219] connectToLiveAPI called for session ${session.sessionId}`);
 
+  // VTID-01222: Fail fast if project/location missing
+  if (!VERTEX_PROJECT_ID || !VERTEX_LOCATION) {
+    throw new Error('Missing VERTEX_PROJECT_ID or VERTEX_LOCATION');
+  }
+
   // Get access token
   const accessToken = await getAccessToken();
   console.log(`[VTID-01219] Got access token (length: ${accessToken.length})`);
@@ -611,13 +616,20 @@ async function connectToLiveAPI(
 
   console.log(`[VTID-01219] Connecting to Live API: ${wsUrl}`);
   console.log(`[VTID-01219] Using model: ${VERTEX_LIVE_MODEL}`);
+  console.log(`[VTID-01219] Project: ${VERTEX_PROJECT_ID}, Location: ${VERTEX_LOCATION}`);
 
   return new Promise((resolve, reject) => {
-    // Create WebSocket with auth header and subprotocol
-    // The subprotocol is CRITICAL for Vertex AI Live API
-    const ws = new WebSocket(wsUrl, ['google.cloud.aiplatform'], {
+    // VTID-01222: Fixed WebSocket connection with proper headers
+    // The subprotocol + routing headers are CRITICAL for Vertex AI Live API
+    const protocol = 'google.cloud.aiplatform';
+
+    const ws = new WebSocket(wsUrl, protocol, {
       headers: {
-        'Authorization': `Bearer ${accessToken}`
+        'Authorization': `Bearer ${accessToken}`,
+        'x-goog-user-project': VERTEX_PROJECT_ID,
+        'x-goog-request-params': `location=${VERTEX_LOCATION}`,
+        // Belt-and-suspenders: force protocol header explicitly
+        'Sec-WebSocket-Protocol': protocol
       }
     });
 
