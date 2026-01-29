@@ -19873,6 +19873,12 @@ function orbOverlaySendMessage() {
     var message = state.orb.chatInputValue;
     if (!message || !message.trim()) return;
 
+    // VTID-01219: Initialize orbSessionId if not set (required for /orb/chat endpoint)
+    if (!state.orb.orbSessionId) {
+        state.orb.orbSessionId = 'orb-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+        console.log('[VTID-01219] Generated orbSessionId for text input:', state.orb.orbSessionId);
+    }
+
     // VTID-01069-F: Add user message to liveTranscript (overlay uses this, not chatMessages)
     state.orb.liveTranscript.push({
         id: Date.now(),
@@ -21443,21 +21449,32 @@ async function geminiLiveStop() {
  * VTID-01155: Handle messages from Live SSE stream
  */
 function geminiLiveHandleMessage(msg) {
-    console.log('[VTID-01155] Live message:', msg.type);
+    console.log('[VTID-01155] Live message:', msg.type, msg);
 
     switch (msg.type) {
         case 'ready':
             console.log('[VTID-01155] Live stream ready:', msg.meta);
+            // Show connection status
+            state.orb.liveTranscript.push({
+                id: Date.now(),
+                role: 'assistant',
+                text: msg.live_api_connected ? 'Voice-to-voice connected. Start speaking!' : 'Connected (text mode)',
+                timestamp: new Date().toISOString()
+            });
+            renderApp();
             break;
 
+        case 'audio':
         case 'audio_out':
-            // Queue audio for playback (PCM 24kHz)
+            // Queue audio for playback (WAV from backend)
             if (msg.data_b64) {
-                geminiLivePlayAudio(msg.data_b64);
+                console.log('[VTID-01219] Received audio chunk, size:', msg.data_b64.length);
+                geminiLivePlayAudio(msg.data_b64, msg.mime || 'audio/wav');
             }
             break;
 
         case 'text':
+        case 'transcript':
             // Display text response
             if (msg.text) {
                 state.orb.liveTranscript.push({
@@ -21471,6 +21488,32 @@ function geminiLiveHandleMessage(msg) {
             }
             break;
 
+        case 'input_transcript':
+            // User's speech transcription from Gemini
+            if (msg.text) {
+                console.log('[VTID-01219] User said:', msg.text);
+                state.orb.liveTranscript.push({
+                    id: Date.now(),
+                    role: 'user',
+                    text: msg.text,
+                    timestamp: new Date().toISOString()
+                });
+                scrollOrbLiveTranscript();
+                renderApp();
+            }
+            break;
+
+        case 'output_transcript':
+            // Model's response transcription
+            if (msg.text) {
+                console.log('[VTID-01219] Model said:', msg.text);
+            }
+            break;
+
+        case 'turn_complete':
+            console.log('[VTID-01219] Turn complete');
+            break;
+
         case 'interrupted':
             // Model was interrupted, flush audio queue
             state.orb.geminiLiveAudioQueue = [];
@@ -21482,13 +21525,24 @@ function geminiLiveHandleMessage(msg) {
             // Acknowledgements, no action needed
             break;
 
+        case 'error':
+            console.error('[VTID-01219] Live API error:', msg.message);
+            state.orb.liveTranscript.push({
+                id: Date.now(),
+                role: 'assistant',
+                text: 'Connection error: ' + (msg.message || 'Unknown error'),
+                timestamp: new Date().toISOString()
+            });
+            renderApp();
+            break;
+
         case 'session_ended':
             console.log('[VTID-01155] Session ended by server');
             geminiLiveStop();
             break;
 
         default:
-            console.log('[VTID-01155] Unknown message type:', msg.type);
+            console.log('[VTID-01155] Unknown message type:', msg.type, msg);
     }
 }
 
@@ -21686,7 +21740,25 @@ function geminiLiveSendFrame(base64Data, source) {
 /**
  * VTID-01155: Play audio from Live session (PCM 24kHz)
  */
-function geminiLivePlayAudio(base64Data) {
+function geminiLivePlayAudio(base64Data, mimeType) {
+    console.log('[VTID-01219] Playing audio, mime:', mimeType, 'size:', base64Data.length);
+
+    // For WAV audio, use Audio element for simpler playback
+    if (mimeType && mimeType.includes('wav')) {
+        var audio = new Audio('data:audio/wav;base64,' + base64Data);
+        audio.onended = function() {
+            console.log('[VTID-01219] Audio chunk playback complete');
+        };
+        audio.onerror = function(e) {
+            console.error('[VTID-01219] Audio playback error:', e);
+        };
+        audio.play().catch(function(e) {
+            console.error('[VTID-01219] Audio play failed:', e);
+        });
+        return;
+    }
+
+    // For raw PCM, use Web Audio API
     // Decode base64 to ArrayBuffer
     var binaryString = atob(base64Data);
     var bytes = new Uint8Array(binaryString.length);
