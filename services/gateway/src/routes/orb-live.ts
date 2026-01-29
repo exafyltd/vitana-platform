@@ -603,9 +603,8 @@ async function connectToLiveAPI(
   console.log(`[VTID-01219] Got access token (length: ${accessToken.length})`);
 
   // Build WebSocket URL for Vertex AI Live API
-  // Format: wss://{LOCATION}-aiplatform.googleapis.com/ws/google.cloud.aiplatform.v1.LlmBidiService/BidiGenerateContent
-  // NOTE: Use v1, not v1beta1 (per official documentation)
-  const wsUrl = `wss://${VERTEX_LOCATION}-aiplatform.googleapis.com/ws/google.cloud.aiplatform.v1.LlmBidiService/BidiGenerateContent`;
+  // NOTE: Live API is in beta, use v1beta1 endpoint
+  const wsUrl = `wss://${VERTEX_LOCATION}-aiplatform.googleapis.com/ws/google.cloud.aiplatform.v1beta1.LlmBidiService/BidiGenerateContent`;
 
   console.log(`[VTID-01219] Connecting to Live API: ${wsUrl}`);
 
@@ -631,24 +630,22 @@ async function connectToLiveAPI(
     ws.on('open', () => {
       console.log(`[VTID-01219] Live API WebSocket connected for session ${session.sessionId}`);
 
-      // Send setup message with model and configuration (Gemini Live API uses camelCase!)
+      // Send setup message with model and configuration
+      // Vertex AI uses snake_case (unlike Google AI which uses camelCase)
       const setupMessage = {
         setup: {
           model: `projects/${VERTEX_PROJECT_ID}/locations/${VERTEX_LOCATION}/publishers/google/models/${VERTEX_LIVE_MODEL}`,
-          generationConfig: {
-            responseModalities: session.responseModalities.includes('audio') ? ['AUDIO'] : ['TEXT'],
-            speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: {
-                  voiceName: LIVE_API_VOICES[session.lang] || LIVE_API_VOICES['en']
+          generation_config: {
+            response_modalities: session.responseModalities.includes('audio') ? ['AUDIO'] : ['TEXT'],
+            speech_config: {
+              voice_config: {
+                prebuilt_voice_config: {
+                  voice_name: LIVE_API_VOICES[session.lang] || LIVE_API_VOICES['en']
                 }
               }
-            },
-            // Enable transcription for both input and output
-            inputAudioTranscription: {},
-            outputAudioTranscription: {}
+            }
           },
-          systemInstruction: {
+          system_instruction: {
             parts: [{
               text: buildLiveSystemInstruction(session.lang, session.voiceStyle || 'friendly, calm, empathetic')
             }]
@@ -669,8 +666,8 @@ async function connectToLiveAPI(
         const message = JSON.parse(rawData);
         console.log(`[VTID-01219] Parsed message keys: ${Object.keys(message).join(', ')}`);
 
-        // Check for setup completion (API uses camelCase)
-        if (message.setupComplete) {
+        // Check for setup completion (handle both snake_case and camelCase)
+        if (message.setup_complete || message.setupComplete) {
           console.log(`[VTID-01219] Live API setup complete for session ${session.sessionId}`);
           setupComplete = true;
           clearTimeout(connectionTimeout);
@@ -678,12 +675,14 @@ async function connectToLiveAPI(
           return;
         }
 
-        // Handle server content (audio/text responses) - API uses camelCase
-        if (message.serverContent) {
-          const content = message.serverContent;
+        // Handle server content (audio/text responses) - handle both formats
+        const serverContent = message.server_content || message.serverContent;
+        if (serverContent) {
+          const content = serverContent;
 
-          // Check if turn is complete
-          if (content.turnComplete) {
+          // Check if turn is complete (handle both formats)
+          const turnComplete = content.turn_complete || content.turnComplete;
+          if (turnComplete) {
             console.log(`[VTID-01219] Turn complete for session ${session.sessionId}`);
             // Notify client that response is complete
             if (session.sseResponse) {
@@ -692,13 +691,16 @@ async function connectToLiveAPI(
             return;
           }
 
-          // Process model turn content
-          if (content.modelTurn && content.modelTurn.parts) {
-            for (const part of content.modelTurn.parts) {
-              // Handle audio response
-              if (part.inlineData && part.inlineData.mimeType?.startsWith('audio/')) {
+          // Process model turn content (handle both formats)
+          const modelTurn = content.model_turn || content.modelTurn;
+          if (modelTurn && modelTurn.parts) {
+            for (const part of modelTurn.parts) {
+              // Handle audio response (handle both formats)
+              const inlineData = part.inline_data || part.inlineData;
+              const mimeType = inlineData?.mime_type || inlineData?.mimeType;
+              if (inlineData && mimeType?.startsWith('audio/')) {
                 session.audioOutChunks++;
-                const audioB64 = part.inlineData.data;
+                const audioB64 = inlineData.data;
                 console.log(`[VTID-01219] Received audio chunk ${session.audioOutChunks}, size: ${audioB64.length}`);
                 onAudioResponse(audioB64);
 
@@ -719,24 +721,27 @@ async function connectToLiveAPI(
             }
           }
 
-          // Handle input/output transcriptions if present
-          if (content.inputTranscription) {
-            console.log(`[VTID-01219] Input transcription: ${content.inputTranscription}`);
+          // Handle input/output transcriptions if present (handle both formats)
+          const inputTranscription = content.input_transcription || content.inputTranscription;
+          const outputTranscription = content.output_transcription || content.outputTranscription;
+          if (inputTranscription) {
+            console.log(`[VTID-01219] Input transcription: ${inputTranscription}`);
             if (session.sseResponse) {
-              session.sseResponse.write(`data: ${JSON.stringify({ type: 'input_transcript', text: content.inputTranscription })}\n\n`);
+              session.sseResponse.write(`data: ${JSON.stringify({ type: 'input_transcript', text: inputTranscription })}\n\n`);
             }
           }
-          if (content.outputTranscription) {
-            console.log(`[VTID-01219] Output transcription: ${content.outputTranscription}`);
+          if (outputTranscription) {
+            console.log(`[VTID-01219] Output transcription: ${outputTranscription}`);
             if (session.sseResponse) {
-              session.sseResponse.write(`data: ${JSON.stringify({ type: 'output_transcript', text: content.outputTranscription })}\n\n`);
+              session.sseResponse.write(`data: ${JSON.stringify({ type: 'output_transcript', text: outputTranscription })}\n\n`);
             }
           }
         }
 
-        // Handle tool calls (if any)
-        if (message.toolCall) {
-          console.log(`[VTID-01219] Tool call received for session ${session.sessionId}:`, message.toolCall);
+        // Handle tool calls (if any) - handle both formats
+        const toolCall = message.tool_call || message.toolCall;
+        if (toolCall) {
+          console.log(`[VTID-01219] Tool call received for session ${session.sessionId}:`, toolCall);
           // For now, we don't support tool calls in Live API
         }
 
@@ -777,11 +782,11 @@ function sendAudioToLiveAPI(ws: WebSocket, audioB64: string, mimeType: string = 
     return false;
   }
 
-  // Build realtime input message (Gemini Live API uses camelCase!)
+  // Build realtime input message (Vertex AI uses snake_case)
   const message = {
-    realtimeInput: {
-      mediaChunks: [{
-        mimeType: mimeType,
+    realtime_input: {
+      media_chunks: [{
+        mime_type: mimeType,
         data: audioB64
       }]
     }
@@ -800,10 +805,10 @@ function sendEndOfTurn(ws: WebSocket): boolean {
     return false;
   }
 
-  // Gemini Live API uses camelCase
+  // Vertex AI uses snake_case
   const message = {
-    clientContent: {
-      turnComplete: true
+    client_content: {
+      turn_complete: true
     }
   };
 
