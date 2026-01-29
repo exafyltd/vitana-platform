@@ -611,25 +611,22 @@ async function connectToLiveAPI(
   console.log(`[VTID-01219] Got access token (length: ${accessToken.length})`);
 
   // Build WebSocket URL for Vertex AI Live API
-  // Use v1 endpoint (v1beta1 is legacy)
-  const wsUrl = `wss://${VERTEX_LOCATION}-aiplatform.googleapis.com/ws/google.cloud.aiplatform.v1.LlmBidiService/BidiGenerateContent`;
+  // VTID-01222: Use generativelanguage service path for Live API (bidi streaming)
+  // The LlmBidiService path doesn't support the subprotocol handshake correctly
+  const wsUrl = `wss://${VERTEX_LOCATION}-aiplatform.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService/BidiGenerateContent`;
 
   console.log(`[VTID-01219] Connecting to Live API: ${wsUrl}`);
   console.log(`[VTID-01219] Using model: ${VERTEX_LIVE_MODEL}`);
   console.log(`[VTID-01219] Project: ${VERTEX_PROJECT_ID}, Location: ${VERTEX_LOCATION}`);
 
   return new Promise((resolve, reject) => {
-    // VTID-01222: Fixed WebSocket connection with proper headers
-    // The subprotocol + routing headers are CRITICAL for Vertex AI Live API
-    const protocol = 'google.cloud.aiplatform';
-
-    const ws = new WebSocket(wsUrl, protocol, {
+    // VTID-01222: Connect without subprotocol requirement
+    // The generativelanguage service doesn't require the aiplatform subprotocol
+    const ws = new WebSocket(wsUrl, {
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'x-goog-user-project': VERTEX_PROJECT_ID,
-        'x-goog-request-params': `location=${VERTEX_LOCATION}`,
-        // Belt-and-suspenders: force protocol header explicitly
-        'Sec-WebSocket-Protocol': protocol
+        'x-goog-request-params': `location=${VERTEX_LOCATION}`
       }
     });
 
