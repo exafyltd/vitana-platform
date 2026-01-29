@@ -455,7 +455,10 @@ const liveSessions = new Map<string, GeminiLiveSession>();
 // VTID-01155: Vertex AI Live API configuration
 const VERTEX_PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID || '';
 const VERTEX_LOCATION = process.env.VERTEX_AI_LOCATION || 'us-central1';
-const VERTEX_LIVE_MODEL = 'gemini-2.0-flash-live-preview-04-09';  // Live API model for bidiGenerateContent (2.5 naming doesn't exist in this format)
+// Live API models - try GA model first, fallback to legacy
+// Source: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/models/gemini/2-5-flash-live-api
+const VERTEX_LIVE_MODEL = 'gemini-live-2.5-flash-native-audio';  // GA model (recommended)
+const VERTEX_LIVE_MODEL_FALLBACK = 'gemini-2.0-flash-live-preview-04-09';  // Legacy (deprecated Mar 2026)
 const VERTEX_TTS_MODEL = 'gemini-2.5-flash-tts';  // Cloud TTS with Gemini voices
 
 // VTID-01155: Google Cloud Text-to-Speech client with Gemini voices
@@ -656,7 +659,10 @@ async function connectToLiveAPI(
         }
       };
 
-      console.log(`[VTID-01219] Sending setup message:`, JSON.stringify(setupMessage).substring(0, 500));
+      const fullModelPath = `projects/${VERTEX_PROJECT_ID}/locations/${VERTEX_LOCATION}/publishers/google/models/${VERTEX_LIVE_MODEL}`;
+      console.log(`[VTID-01219] Full model path: ${fullModelPath}`);
+      console.log(`[VTID-01219] Setup message keys: ${Object.keys(setupMessage.setup).join(', ')}`);
+      console.log(`[VTID-01219] generation_config: ${JSON.stringify(setupMessage.setup.generation_config)}`);
       ws.send(JSON.stringify(setupMessage));
       console.log(`[VTID-01219] Setup message sent for session ${session.sessionId}`);
     });
@@ -765,11 +771,14 @@ async function connectToLiveAPI(
 
     // Handle WebSocket close
     ws.on('close', (code, reason) => {
-      console.log(`[VTID-01219] Live API WebSocket closed for session ${session.sessionId}: code=${code}, reason=${reason}`);
+      // Decode reason buffer to string if needed
+      const reasonStr = reason ? (Buffer.isBuffer(reason) ? reason.toString('utf8') : String(reason)) : 'no reason';
+      console.log(`[VTID-01219] Live API WebSocket closed for session ${session.sessionId}: code=${code}, reason=${reasonStr}`);
+      console.log(`[VTID-01219] Close code meanings: 1007=invalid payload, 1008=policy violation, 1011=server error`);
       clearTimeout(connectionTimeout);
       session.upstreamWs = null;
       if (!setupComplete) {
-        reject(new Error(`WebSocket closed before setup: code=${code}, reason=${reason}`));
+        reject(new Error(`WebSocket closed before setup: code=${code}, reason=${reasonStr}`));
       }
     });
   });
@@ -802,6 +811,7 @@ function sendAudioToLiveAPI(ws: WebSocket, audioB64: string, mimeType: string = 
 /**
  * VTID-01219: Send end of turn signal to Live API
  * Tells Gemini that user has finished speaking
+ * Format from: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/live-api/streamed-conversations
  */
 function sendEndOfTurn(ws: WebSocket): boolean {
   if (ws.readyState !== WebSocket.OPEN) {
@@ -809,8 +819,10 @@ function sendEndOfTurn(ws: WebSocket): boolean {
   }
 
   // Vertex AI uses snake_case
+  // Official format requires turns array even for end-of-turn signal
   const message = {
     client_content: {
+      turns: [],  // Empty turns array when just signaling end of turn
       turn_complete: true
     }
   };
