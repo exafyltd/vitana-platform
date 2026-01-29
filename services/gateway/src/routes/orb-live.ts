@@ -195,6 +195,8 @@ const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 // Allowed origins (dev sandbox)
 const ALLOWED_ORIGINS = [
   'https://gateway-536750820055.us-central1.run.app',
+  'https://gateway-q74ibpv6ia-uc.a.run.app',
+  'https://gateway-86804897789.us-central1.run.app',
   'http://localhost:8080',
   'http://localhost:3000',
   'http://127.0.0.1:8080',
