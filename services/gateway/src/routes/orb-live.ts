@@ -643,7 +643,10 @@ async function connectToLiveAPI(
                   voiceName: LIVE_API_VOICES[session.lang] || LIVE_API_VOICES['en']
                 }
               }
-            }
+            },
+            // Enable transcription for both input and output
+            inputAudioTranscription: {},
+            outputAudioTranscription: {}
           },
           systemInstruction: {
             parts: [{

@@ -2693,6 +2693,7 @@ const state = {
         geminiLiveEventSource: null,  // SSE EventSource for Live stream
         geminiLiveAudioContext: null, // AudioContext for PCM playback
         geminiLiveAudioQueue: [],     // Queue of audio chunks to play
+        geminiLiveAudioPlaying: false, // Whether audio is currently playing
         geminiLiveFrameInterval: null, // Interval for capturing video frames
         geminiLiveAudioStream: null,  // MediaStream for audio capture
         geminiLiveAudioProcessor: null, // ScriptProcessorNode for audio
@@ -20202,6 +20203,10 @@ function renderOrbOverlay() {
     closeBtn.addEventListener('click', function(e) {
         e.stopPropagation();
         orbVoiceStop();
+        // VTID-01219: Also stop Gemini Live session when closing orb
+        if (state.orb.geminiLiveActive) {
+            geminiLiveStop();
+        }
         state.orb.overlayVisible = false;
         state.orb.chatDrawerOpen = false;
         renderApp();
@@ -21440,6 +21445,7 @@ async function geminiLiveStop() {
     state.orb.geminiLiveSessionId = null;
     state.orb.geminiLiveActive = false;
     state.orb.geminiLiveAudioQueue = [];
+    state.orb.geminiLiveAudioPlaying = false;
 
     console.log('[VTID-01155] Live session stopped');
     renderApp();
@@ -21738,58 +21744,92 @@ function geminiLiveSendFrame(base64Data, source) {
 }
 
 /**
- * VTID-01155: Play audio from Live session (PCM 24kHz)
+ * VTID-01155: Play audio from Live session
+ * Queue audio chunks and play sequentially to avoid overlapping
  */
 function geminiLivePlayAudio(base64Data, mimeType) {
-    console.log('[VTID-01219] Playing audio, mime:', mimeType, 'size:', base64Data.length);
+    console.log('[VTID-01219] Queueing audio, mime:', mimeType, 'size:', base64Data.length);
 
-    // For WAV audio, use Audio element for simpler playback
+    // Add to queue
+    state.orb.geminiLiveAudioQueue.push({ data: base64Data, mime: mimeType });
+
+    // Start playback if not already playing
+    if (!state.orb.geminiLiveAudioPlaying) {
+        geminiLivePlayNextAudio();
+    }
+}
+
+/**
+ * VTID-01219: Play next audio chunk from queue
+ */
+function geminiLivePlayNextAudio() {
+    if (state.orb.geminiLiveAudioQueue.length === 0) {
+        state.orb.geminiLiveAudioPlaying = false;
+        console.log('[VTID-01219] Audio queue empty');
+        return;
+    }
+
+    state.orb.geminiLiveAudioPlaying = true;
+    var chunk = state.orb.geminiLiveAudioQueue.shift();
+    var base64Data = chunk.data;
+    var mimeType = chunk.mime;
+
+    // For WAV audio, use Audio element
     if (mimeType && mimeType.includes('wav')) {
         var audio = new Audio('data:audio/wav;base64,' + base64Data);
         audio.onended = function() {
-            console.log('[VTID-01219] Audio chunk playback complete');
+            console.log('[VTID-01219] Audio chunk complete, queue:', state.orb.geminiLiveAudioQueue.length);
+            geminiLivePlayNextAudio(); // Play next chunk
         };
         audio.onerror = function(e) {
-            console.error('[VTID-01219] Audio playback error:', e);
+            console.error('[VTID-01219] Audio error:', e);
+            geminiLivePlayNextAudio(); // Continue with next chunk
         };
         audio.play().catch(function(e) {
             console.error('[VTID-01219] Audio play failed:', e);
+            geminiLivePlayNextAudio();
         });
         return;
     }
 
     // For raw PCM, use Web Audio API
-    // Decode base64 to ArrayBuffer
-    var binaryString = atob(base64Data);
-    var bytes = new Uint8Array(binaryString.length);
-    for (var i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
+    try {
+        var binaryString = atob(base64Data);
+        var bytes = new Uint8Array(binaryString.length);
+        for (var i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        // Create AudioContext if not exists (use device sample rate for better compatibility)
+        if (!state.orb.geminiLiveAudioContext || state.orb.geminiLiveAudioContext.state === 'closed') {
+            state.orb.geminiLiveAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        var audioContext = state.orb.geminiLiveAudioContext;
+        var inputSampleRate = 24000; // Gemini outputs 24kHz
+
+        // Convert Int16 PCM to Float32
+        var int16Array = new Int16Array(bytes.buffer);
+        var floatArray = new Float32Array(int16Array.length);
+        for (var j = 0; j < int16Array.length; j++) {
+            floatArray[j] = int16Array[j] / 32768.0;
+        }
+
+        // Create audio buffer at input sample rate
+        var audioBuffer = audioContext.createBuffer(1, floatArray.length, inputSampleRate);
+        audioBuffer.copyToChannel(floatArray, 0);
+
+        var source = audioContext.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioContext.destination);
+        source.onended = function() {
+            geminiLivePlayNextAudio(); // Play next chunk
+        };
+        source.start();
+    } catch (e) {
+        console.error('[VTID-01219] PCM playback error:', e);
+        geminiLivePlayNextAudio();
     }
-
-    // Create AudioContext at 24kHz if not exists
-    if (!state.orb.geminiLiveAudioContext || state.orb.geminiLiveAudioContext.state === 'closed') {
-        state.orb.geminiLiveAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
-    }
-
-    var audioContext = state.orb.geminiLiveAudioContext;
-
-    // Convert Int16 PCM to Float32
-    var int16Array = new Int16Array(bytes.buffer);
-    var floatArray = new Float32Array(int16Array.length);
-    for (var j = 0; j < int16Array.length; j++) {
-        floatArray[j] = int16Array[j] / 32768.0;
-    }
-
-    // Create audio buffer and play
-    var audioBuffer = audioContext.createBuffer(1, floatArray.length, 24000);
-    audioBuffer.copyToChannel(floatArray, 0);
-
-    var source = audioContext.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(audioContext.destination);
-    source.start();
-
-    console.log('[VTID-01155] Playing audio chunk');
 }
 
 /**
