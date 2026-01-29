@@ -455,7 +455,7 @@ const liveSessions = new Map<string, GeminiLiveSession>();
 // VTID-01155: Vertex AI Live API configuration
 const VERTEX_PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID || '';
 const VERTEX_LOCATION = process.env.VERTEX_AI_LOCATION || 'us-central1';
-const VERTEX_LIVE_MODEL = 'gemini-2.5-flash-live-preview-04-09';  // Live API model - MUST use 2.5 for bidiGenerateContent
+const VERTEX_LIVE_MODEL = 'gemini-2.0-flash-live-preview-04-09';  // Live API model for bidiGenerateContent (2.5 naming doesn't exist in this format)
 const VERTEX_TTS_MODEL = 'gemini-2.5-flash-tts';  // Cloud TTS with Gemini voices
 
 // VTID-01155: Google Cloud Text-to-Speech client with Gemini voices
@@ -603,8 +603,9 @@ async function connectToLiveAPI(
   console.log(`[VTID-01219] Got access token (length: ${accessToken.length})`);
 
   // Build WebSocket URL for Vertex AI Live API
-  // Use v1 endpoint (v1beta1 is legacy)
-  const wsUrl = `wss://${VERTEX_LOCATION}-aiplatform.googleapis.com/ws/google.cloud.aiplatform.v1.LlmBidiService/BidiGenerateContent`;
+  // Use v1beta1 endpoint (matches Google's official examples)
+  // Ref: https://github.com/GoogleCloudPlatform/generative-ai/blob/main/gemini/multimodal-live-api/websocket-demo-app
+  const wsUrl = `wss://${VERTEX_LOCATION}-aiplatform.googleapis.com/ws/google.cloud.aiplatform.v1beta1.LlmBidiService/BidiGenerateContent`;
 
   console.log(`[VTID-01219] Connecting to Live API: ${wsUrl}`);
   console.log(`[VTID-01219] Using model: ${VERTEX_LIVE_MODEL}`);
