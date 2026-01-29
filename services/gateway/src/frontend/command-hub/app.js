@@ -2696,7 +2696,8 @@ const state = {
         geminiLiveFrameInterval: null, // Interval for capturing video frames
         geminiLiveAudioStream: null,  // MediaStream for audio capture
         geminiLiveAudioProcessor: null, // ScriptProcessorNode for audio
-        geminiTtsAudio: null          // Current Gemini-TTS Audio element for barge-in
+        geminiTtsAudio: null,         // Current Gemini-TTS Audio element for barge-in
+        useLiveApi: true              // VTID-01219: Use Gemini Live API for voice-to-voice
     },
 
     // VTID-0600: Operational Visibility Foundation State
@@ -20779,6 +20780,13 @@ function isWebSpeechSupported() {
  */
 function orbVoiceStart() {
     console.log('[VTID-0135] Starting voice conversation...');
+
+    // VTID-01219: Use Gemini Live API for true voice-to-voice
+    if (state.orb.useLiveApi) {
+        console.log('[VTID-01219] Using Gemini Live API for voice-to-voice');
+        geminiLiveStart();
+        return;
+    }
 
     // VTID-01064: Set connecting state during initialization
     setOrbState('connecting');
