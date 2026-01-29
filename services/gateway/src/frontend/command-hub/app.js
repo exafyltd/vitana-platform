@@ -2691,7 +2691,8 @@ const state = {
         geminiLiveSessionId: null,    // Current Gemini Live session ID
         geminiLiveActive: false,      // Whether Live session is active
         geminiLiveEventSource: null,  // SSE EventSource for Live stream
-        geminiLiveAudioContext: null, // AudioContext for PCM playback
+        geminiLiveAudioCaptureContext: null, // AudioContext for 16kHz microphone capture
+        geminiLiveAudioPlaybackContext: null, // AudioContext for 24kHz audio playback (SEPARATE from capture!)
         geminiLiveAudioQueue: [],     // Queue of audio chunks to play
         geminiLiveAudioPlaying: false, // Whether audio is currently playing
         geminiLiveFrameInterval: null, // Interval for capturing video frames
@@ -21418,9 +21419,16 @@ async function geminiLiveStop() {
         state.orb.geminiLiveAudioProcessor = null;
     }
 
-    if (state.orb.geminiLiveAudioContext) {
-        state.orb.geminiLiveAudioContext.close().catch(function() {});
-        state.orb.geminiLiveAudioContext = null;
+    // Close CAPTURE AudioContext (16kHz)
+    if (state.orb.geminiLiveAudioCaptureContext) {
+        state.orb.geminiLiveAudioCaptureContext.close().catch(function() {});
+        state.orb.geminiLiveAudioCaptureContext = null;
+    }
+
+    // Close PLAYBACK AudioContext (24kHz)
+    if (state.orb.geminiLiveAudioPlaybackContext) {
+        state.orb.geminiLiveAudioPlaybackContext.close().catch(function() {});
+        state.orb.geminiLiveAudioPlaybackContext = null;
     }
 
     // Close SSE connection
@@ -21570,9 +21578,10 @@ async function geminiLiveStartAudioCapture() {
 
     state.orb.geminiLiveAudioStream = stream;
 
-    // Create AudioContext at 16kHz
+    // Create CAPTURE AudioContext at 16kHz (separate from playback!)
+    // Source: https://deepwiki.com/google-gemini/live-api-web-console/2.4-audio-and-media-processing-pipeline
     var audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-    state.orb.geminiLiveAudioContext = audioContext;
+    state.orb.geminiLiveAudioCaptureContext = audioContext;
 
     var source = audioContext.createMediaStreamSource(stream);
     // 1024 samples = 64ms at 16kHz (must be power of 2)
@@ -21792,7 +21801,9 @@ function geminiLivePlayNextAudio() {
         return;
     }
 
-    // For raw PCM, use Web Audio API
+    // For raw PCM, use Web Audio API with DEDICATED 24kHz PLAYBACK CONTEXT
+    // CRITICAL: Must use separate AudioContext from capture (16kHz) to avoid pitch/speed issues
+    // Source: https://deepwiki.com/google-gemini/live-api-web-console/2.4-audio-and-media-processing-pipeline
     try {
         var binaryString = atob(base64Data);
         var bytes = new Uint8Array(binaryString.length);
@@ -21800,12 +21811,13 @@ function geminiLivePlayNextAudio() {
             bytes[i] = binaryString.charCodeAt(i);
         }
 
-        // Create AudioContext if not exists (use device sample rate for better compatibility)
-        if (!state.orb.geminiLiveAudioContext || state.orb.geminiLiveAudioContext.state === 'closed') {
-            state.orb.geminiLiveAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+        // Create PLAYBACK AudioContext at 24kHz if not exists (SEPARATE from capture context!)
+        if (!state.orb.geminiLiveAudioPlaybackContext || state.orb.geminiLiveAudioPlaybackContext.state === 'closed') {
+            state.orb.geminiLiveAudioPlaybackContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+            console.log('[VTID-01219] Created playback AudioContext at 24kHz');
         }
 
-        var audioContext = state.orb.geminiLiveAudioContext;
+        var audioContext = state.orb.geminiLiveAudioPlaybackContext;
         var inputSampleRate = 24000; // Gemini outputs 24kHz
 
         // Convert Int16 PCM to Float32
@@ -21815,7 +21827,7 @@ function geminiLivePlayNextAudio() {
             floatArray[j] = int16Array[j] / 32768.0;
         }
 
-        // Create audio buffer at input sample rate
+        // Create audio buffer at 24kHz (matches both context and input)
         var audioBuffer = audioContext.createBuffer(1, floatArray.length, inputSampleRate);
         audioBuffer.copyToChannel(floatArray, 0);
 
