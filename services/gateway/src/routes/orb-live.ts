@@ -611,9 +611,9 @@ async function connectToLiveAPI(
   console.log(`[VTID-01219] Got access token (length: ${accessToken.length})`);
 
   // Build WebSocket URL for Vertex AI Live API
-  // VTID-01222: Use generativelanguage service path for Live API (bidi streaming)
-  // The LlmBidiService path doesn't support the subprotocol handshake correctly
-  const wsUrl = `wss://${VERTEX_LOCATION}-aiplatform.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService/BidiGenerateContent`;
+  // VTID-01222: Include model in URL path for Vertex AI routing
+  const modelPath = `projects/${VERTEX_PROJECT_ID}/locations/${VERTEX_LOCATION}/publishers/google/models/${VERTEX_LIVE_MODEL}`;
+  const wsUrl = `wss://${VERTEX_LOCATION}-aiplatform.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService/BidiGenerateContent?model=${encodeURIComponent(modelPath)}`;
 
   console.log(`[VTID-01219] Connecting to Live API: ${wsUrl}`);
   console.log(`[VTID-01219] Using model: ${VERTEX_LIVE_MODEL}`);
