@@ -595,8 +595,11 @@ async function connectToLiveAPI(
   onTextResponse: (text: string) => void,
   onError: (error: Error) => void
 ): Promise<WebSocket> {
+  console.log(`[VTID-01219] connectToLiveAPI called for session ${session.sessionId}`);
+
   // Get access token
   const accessToken = await getAccessToken();
+  console.log(`[VTID-01219] Got access token (length: ${accessToken.length})`);
 
   // Build WebSocket URL for Vertex AI Live API
   // Format: wss://{LOCATION}-aiplatform.googleapis.com/ws/google.cloud.aiplatform.v1beta1.LlmBidiService/BidiGenerateContent
@@ -645,7 +648,10 @@ async function connectToLiveAPI(
   // Handle incoming messages from Gemini
   ws.on('message', (data: WebSocket.Data) => {
     try {
-      const message = JSON.parse(data.toString());
+      const rawData = data.toString();
+      console.log(`[VTID-01219] Received message from Gemini (length: ${rawData.length})`);
+      const message = JSON.parse(rawData);
+      console.log(`[VTID-01219] Parsed message keys: ${Object.keys(message).join(', ')}`);
 
       // Check for setup completion
       if (message.setupComplete) {
