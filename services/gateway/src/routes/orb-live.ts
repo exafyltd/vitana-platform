@@ -606,9 +606,9 @@ async function connectToLiveAPI(
   console.log(`[VTID-01219] Got access token (length: ${accessToken.length})`);
 
   // Build WebSocket URL for Vertex AI Live API
-  // Use v1beta1 endpoint (matches Google's official examples)
-  // Ref: https://github.com/GoogleCloudPlatform/generative-ai/blob/main/gemini/multimodal-live-api/websocket-demo-app
-  const wsUrl = `wss://${VERTEX_LOCATION}-aiplatform.googleapis.com/ws/google.cloud.aiplatform.v1beta1.LlmBidiService/BidiGenerateContent`;
+  // Use v1 endpoint for GA native audio models (v1beta1 returns "model not found" for native audio)
+  // Ref: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/model-reference/multimodal-live
+  const wsUrl = `wss://${VERTEX_LOCATION}-aiplatform.googleapis.com/ws/google.cloud.aiplatform.v1.LlmBidiService/BidiGenerateContent`;
 
   console.log(`[VTID-01219] Connecting to Live API: ${wsUrl}`);
   console.log(`[VTID-01219] Using model: ${VERTEX_LIVE_MODEL}`);
@@ -774,7 +774,8 @@ async function connectToLiveAPI(
       // Decode reason buffer to string if needed
       const reasonStr = reason ? (Buffer.isBuffer(reason) ? reason.toString('utf8') : String(reason)) : 'no reason';
       console.log(`[VTID-01219] Live API WebSocket closed for session ${session.sessionId}: code=${code}, reason=${reasonStr}`);
-      console.log(`[VTID-01219] Close code meanings: 1007=invalid payload, 1008=policy violation, 1011=server error`);
+      console.log(`[VTID-01219] Close code meanings: 1006=abnormal, 1007=invalid payload, 1008=policy violation (model not found/access denied), 1011=server error`);
+      console.log(`[VTID-01219] Connection details: wsUrl=${wsUrl}, model=${VERTEX_LIVE_MODEL}, location=${VERTEX_LOCATION}`);
       clearTimeout(connectionTimeout);
       session.upstreamWs = null;
       if (!setupComplete) {
