@@ -63,8 +63,10 @@ function getJwtSecret(): Uint8Array | null {
  * Verify a Supabase JWT and extract identity claims.
  * @param token - The JWT string
  * @returns Identity object or null if verification fails
+ *
+ * VTID-01223: Exported for WebSocket auth in orb-live.ts
  */
-async function verifyAndExtractIdentity(
+export async function verifyAndExtractIdentity(
   token: string
 ): Promise<{ identity: SupabaseIdentity; claims: jose.JWTPayload } | null> {
   const secret = getJwtSecret();
