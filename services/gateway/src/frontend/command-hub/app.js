@@ -11400,7 +11400,7 @@ function renderVoiceLabExperimentsPanel() {
     // Audit hint footer
     var auditDiv = document.createElement('div');
     auditDiv.className = 'voice-lab-audit-hint';
-    auditDiv.innerHTML = '<p>Changes are audited to OASIS (VTID-01218B)</p>';
+    auditDiv.innerHTML = '<p>All configuration changes are logged for audit purposes.</p>';
     panel.appendChild(auditDiv);
 
     return panel;
