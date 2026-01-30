@@ -3403,8 +3403,9 @@ async function emitVoiceLabEvent(
   eventType: VoiceLabEventType,
   payload: VoiceLabTelemetryPayload
 ): Promise<void> {
+  console.log(`[VTID-01218A] Emitting Voice LAB event: ${eventType} for session ${payload.session_id}`);
   try {
-    await emitOasisEvent({
+    const result = await emitOasisEvent({
       vtid: 'VTID-01218A',
       type: eventType,
       source: 'gateway',
@@ -3418,8 +3419,9 @@ async function emitVoiceLabEvent(
         timestamp: new Date().toISOString()
       }
     });
+    console.log(`[VTID-01218A] Voice LAB event result: ${JSON.stringify(result)}`);
   } catch (err: any) {
-    console.warn(`[VTID-01218A] Failed to emit ${eventType}:`, err.message);
+    console.error(`[VTID-01218A] Failed to emit ${eventType}:`, err.message, err.stack);
   }
 }
 
