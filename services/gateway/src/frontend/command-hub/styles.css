@@ -14419,3 +14419,280 @@ body {
   font-size: 0.75rem;
   color: #ef4444;
 }
+
+/* ===========================================================================
+   VTID-01218E: Voice LAB Styles
+   =========================================================================== */
+
+.voice-lab-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 1rem;
+  background: var(--color-bg);
+}
+
+.voice-lab-header {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.voice-lab-title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.voice-lab-subtitle {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+}
+
+/* Voice LAB Tab Bar */
+.voice-lab-tab-bar {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+  padding: 0.25rem;
+  background: var(--color-sidebar-bg);
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+}
+
+.voice-lab-tab-btn {
+  padding: 0.5rem 1rem;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.voice-lab-tab-btn:hover {
+  background: rgba(59, 130, 246, 0.1);
+  color: var(--color-text-primary);
+}
+
+.voice-lab-tab-btn.active {
+  background: var(--color-accent);
+  color: white;
+}
+
+/* Voice LAB Content */
+.voice-lab-content {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* Voice LAB Placeholder Panel */
+.voice-lab-placeholder-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  padding: 2rem;
+  background: var(--color-sidebar-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.voice-lab-placeholder-icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  opacity: 0.5;
+}
+
+.voice-lab-placeholder-heading {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.25rem;
+  color: var(--color-text-primary);
+}
+
+.voice-lab-placeholder-message {
+  margin: 0 0 1rem 0;
+  font-size: 1rem;
+  color: var(--color-accent);
+  font-weight: 500;
+}
+
+.voice-lab-placeholder-details {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  max-width: 400px;
+}
+
+/* Voice LAB ORB Live Panel */
+.voice-lab-orb-live-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.voice-lab-sessions-section {
+  background: var(--color-sidebar-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.voice-lab-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.voice-lab-section-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.voice-lab-refresh-btn {
+  padding: 0.375rem 0.75rem;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.voice-lab-refresh-btn:hover {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: white;
+}
+
+/* Voice LAB Loading/Empty States */
+.voice-lab-loading,
+.voice-lab-empty {
+  padding: 2rem;
+  text-align: center;
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+}
+
+/* Voice LAB Sessions Table */
+.voice-lab-sessions-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.voice-lab-sessions-table th,
+.voice-lab-sessions-table td {
+  padding: 0.75rem 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.voice-lab-sessions-table th {
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.voice-lab-sessions-table td {
+  color: var(--color-text-primary);
+}
+
+.voice-lab-sessions-table tr.session-active td.session-status {
+  color: #10b981;
+  font-weight: 500;
+}
+
+.voice-lab-sessions-table tr.session-ended td.session-status {
+  color: var(--color-text-secondary);
+}
+
+.voice-lab-sessions-table td.session-id {
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 0.8rem;
+}
+
+.voice-lab-view-btn {
+  padding: 0.25rem 0.5rem;
+  background: transparent;
+  border: 1px solid var(--color-accent);
+  border-radius: 4px;
+  color: var(--color-accent);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.voice-lab-view-btn:hover {
+  background: var(--color-accent);
+  color: white;
+}
+
+/* Voice LAB Session Drawer */
+.voice-lab-drawer {
+  margin-top: 1rem;
+  background: var(--color-sidebar-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.voice-lab-drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background: rgba(59, 130, 246, 0.1);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.voice-lab-drawer-header h3 {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.voice-lab-drawer-close {
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  transition: color 0.2s ease;
+}
+
+.voice-lab-drawer-close:hover {
+  color: var(--color-text-primary);
+}
+
+.voice-lab-drawer-content {
+  padding: 1rem;
+}
+
+.voice-lab-session-info p {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.875rem;
+  color: var(--color-text-primary);
+}
+
+.voice-lab-drawer-placeholder {
+  color: var(--color-text-secondary);
+  font-style: italic;
+}

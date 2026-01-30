@@ -134,6 +134,12 @@ import {
   getMemoryContext,
   buildMemoryIndexerEnhancedInstruction
 } from '../services/memory-indexer-client';
+// VTID-01219: Gemini Live API WebSocket for real-time voice-to-voice
+// VTID-01222: WebSocket server for client connections
+import WebSocket, { WebSocketServer } from 'ws';
+import { GoogleAuth } from 'google-auth-library';
+import { Server as HttpServer, IncomingMessage } from 'http';
+import { parse as parseUrl } from 'url';
 
 const router = Router();
 
@@ -192,6 +198,8 @@ const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 // Allowed origins (dev sandbox)
 const ALLOWED_ORIGINS = [
   'https://gateway-536750820055.us-central1.run.app',
+  'https://gateway-q74ibpv6ia-uc.a.run.app',
+  'https://gateway-86804897789.us-central1.run.app',
   'http://localhost:8080',
   'http://localhost:3000',
   'http://127.0.0.1:8080',
@@ -450,7 +458,7 @@ const liveSessions = new Map<string, GeminiLiveSession>();
 // VTID-01155: Vertex AI Live API configuration
 const VERTEX_PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID || '';
 const VERTEX_LOCATION = process.env.VERTEX_AI_LOCATION || 'us-central1';
-const VERTEX_LIVE_MODEL = 'gemini-2.0-flash-live-001';  // Live API model
+const VERTEX_LIVE_MODEL = 'gemini-live-2.5-flash-native-audio';  // Live API model for BidiGenerateContent
 const VERTEX_TTS_MODEL = 'gemini-2.5-flash-tts';  // Cloud TTS with Gemini voices
 
 // VTID-01155: Google Cloud Text-to-Speech client with Gemini voices
@@ -497,6 +505,328 @@ const NEURAL2_TTS_VOICES: Record<string, { name: string; languageCode: string }>
 
 // ALL languages use best available voice (Neural2 > WaveNet > Standard)
 const NEURAL2_ENABLED_LANGUAGES = ['en', 'de', 'fr', 'es', 'ar', 'zh', 'ru', 'sr'];
+
+// =============================================================================
+// VTID-01219: Gemini Live API WebSocket Implementation
+// Real-time bidirectional audio streaming for voice-to-voice
+// =============================================================================
+
+// Google Auth client for getting access tokens
+let googleAuth: GoogleAuth | null = null;
+try {
+  googleAuth = new GoogleAuth({
+    scopes: ['https://www.googleapis.com/auth/cloud-platform']
+  });
+  console.log('[VTID-01219] Google Auth client initialized for Live API');
+} catch (err: any) {
+  console.warn('[VTID-01219] Failed to initialize Google Auth:', err.message);
+}
+
+/**
+ * VTID-01219: Get access token for Vertex AI Live API
+ * Uses Application Default Credentials (ADC) - automatic on Cloud Run
+ */
+async function getAccessToken(): Promise<string> {
+  if (!googleAuth) {
+    throw new Error('Google Auth client not initialized');
+  }
+  const client = await googleAuth.getClient();
+  const tokenResponse = await client.getAccessToken();
+  if (!tokenResponse.token) {
+    throw new Error('Failed to get access token');
+  }
+  return tokenResponse.token;
+}
+
+/**
+ * VTID-01219: Live API voice names (Vertex AI voices)
+ * These are different from Cloud TTS voices
+ */
+const LIVE_API_VOICES: Record<string, string> = {
+  'en': 'Aoede',    // English - warm, clear
+  'de': 'Kore',     // German
+  'fr': 'Charon',   // French
+  'es': 'Fenrir',   // Spanish
+  'ar': 'Aoede',    // Arabic - fallback to English voice
+  'zh': 'Kore',     // Chinese - fallback
+  'ru': 'Aoede',    // Russian - fallback
+  'sr': 'Aoede'     // Serbian - fallback
+};
+
+/**
+ * VTID-01219: Build system instruction for Live API
+ */
+function buildLiveSystemInstruction(lang: string, voiceStyle: string): string {
+  const languageNames: Record<string, string> = {
+    'en': 'English',
+    'de': 'German',
+    'fr': 'French',
+    'es': 'Spanish',
+    'ar': 'Arabic',
+    'zh': 'Chinese',
+    'ru': 'Russian',
+    'sr': 'Serbian'
+  };
+
+  return `You are Vitana, an AI health companion assistant powered by Gemini Live.
+
+LANGUAGE: Respond ONLY in ${languageNames[lang] || 'English'}.
+
+VOICE STYLE: ${voiceStyle}
+
+ROLE:
+- You are a caring health companion for elderly users
+- Focus on medication reminders, health tips, and wellness support
+- Be warm, patient, and empathetic
+- Keep responses concise for voice interaction (2-3 sentences max)
+- Use natural conversational tone
+
+IMPORTANT:
+- This is a real-time voice conversation
+- Listen actively and respond naturally
+- If interrupted, gracefully handle the interruption
+- Confirm important information when needed`;
+}
+
+/**
+ * VTID-01219: Connect to Vertex AI Live API WebSocket
+ * Establishes bidirectional audio streaming connection
+ * Returns a Promise that resolves only after WebSocket is open and setup is complete
+ */
+async function connectToLiveAPI(
+  session: GeminiLiveSession,
+  onAudioResponse: (audioB64: string) => void,
+  onTextResponse: (text: string) => void,
+  onError: (error: Error) => void
+): Promise<WebSocket> {
+  console.log(`[VTID-01219] connectToLiveAPI called for session ${session.sessionId}`);
+
+  // VTID-01222: Fail fast if project/location missing
+  if (!VERTEX_PROJECT_ID || !VERTEX_LOCATION) {
+    throw new Error('Missing VERTEX_PROJECT_ID or VERTEX_LOCATION');
+  }
+
+  // Get access token
+  const accessToken = await getAccessToken();
+  console.log(`[VTID-01219] Got access token (length: ${accessToken.length})`);
+
+  // Build WebSocket URL for Vertex AI Live API
+  // VTID-01222: Correct endpoint per Google documentation
+  // https://github.com/GoogleCloudPlatform/generative-ai/blob/main/gemini/multimodal-live-api/intro_multimodal_live_api.ipynb
+  const wsUrl = `wss://${VERTEX_LOCATION}-aiplatform.googleapis.com/ws/google.cloud.aiplatform.v1.LlmBidiService/BidiGenerateContent`;
+
+  console.log(`[VTID-01219] Connecting to Live API: ${wsUrl}`);
+  console.log(`[VTID-01219] Using model: ${VERTEX_LIVE_MODEL}`);
+  console.log(`[VTID-01219] Project: ${VERTEX_PROJECT_ID}, Location: ${VERTEX_LOCATION}`);
+
+  return new Promise((resolve, reject) => {
+    // VTID-01222: Connect WITHOUT subprotocol - Google's official examples don't use one
+    // Only Authorization header is required per documentation
+    const ws = new WebSocket(wsUrl, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    let setupComplete = false;
+    const connectionTimeout = setTimeout(() => {
+      if (!setupComplete) {
+        console.error(`[VTID-01219] Live API connection timeout for session ${session.sessionId}`);
+        ws.close();
+        reject(new Error('Live API connection timeout'));
+      }
+    }, 15000); // 15 second timeout
+
+    // Connection opened - send setup message
+    ws.on('open', () => {
+      console.log(`[VTID-01219] Live API WebSocket connected for session ${session.sessionId}`);
+
+      // Send setup message with model and configuration
+      // Vertex AI uses snake_case (unlike Google AI which uses camelCase)
+      const setupMessage = {
+        setup: {
+          model: `projects/${VERTEX_PROJECT_ID}/locations/${VERTEX_LOCATION}/publishers/google/models/${VERTEX_LIVE_MODEL}`,
+          generation_config: {
+            response_modalities: session.responseModalities.includes('audio') ? ['AUDIO'] : ['TEXT'],
+            speech_config: {
+              voice_config: {
+                prebuilt_voice_config: {
+                  voice_name: LIVE_API_VOICES[session.lang] || LIVE_API_VOICES['en']
+                }
+              }
+            }
+          },
+          system_instruction: {
+            parts: [{
+              text: buildLiveSystemInstruction(session.lang, session.voiceStyle || 'friendly, calm, empathetic')
+            }]
+          }
+        }
+      };
+
+      console.log(`[VTID-01219] Sending setup message:`, JSON.stringify(setupMessage).substring(0, 500));
+      ws.send(JSON.stringify(setupMessage));
+      console.log(`[VTID-01219] Setup message sent for session ${session.sessionId}`);
+    });
+
+    // Handle incoming messages from Gemini
+    ws.on('message', (data: WebSocket.Data) => {
+      try {
+        const rawData = data.toString();
+        console.log(`[VTID-01219] Received message from Gemini (length: ${rawData.length}): ${rawData.substring(0, 300)}`);
+        const message = JSON.parse(rawData);
+        console.log(`[VTID-01219] Parsed message keys: ${Object.keys(message).join(', ')}`);
+
+        // Check for setup completion (handle both snake_case and camelCase)
+        if (message.setup_complete || message.setupComplete) {
+          console.log(`[VTID-01219] Live API setup complete for session ${session.sessionId}`);
+          setupComplete = true;
+          clearTimeout(connectionTimeout);
+          resolve(ws); // NOW we resolve the promise - connection is ready!
+          return;
+        }
+
+        // Handle server content (audio/text responses) - handle both formats
+        const serverContent = message.server_content || message.serverContent;
+        if (serverContent) {
+          const content = serverContent;
+
+          // Check if turn is complete (handle both formats)
+          const turnComplete = content.turn_complete || content.turnComplete;
+          if (turnComplete) {
+            console.log(`[VTID-01219] Turn complete for session ${session.sessionId}`);
+            // Notify client that response is complete
+            if (session.sseResponse) {
+              session.sseResponse.write(`data: ${JSON.stringify({ type: 'turn_complete' })}\n\n`);
+            }
+            return;
+          }
+
+          // Process model turn content (handle both formats)
+          const modelTurn = content.model_turn || content.modelTurn;
+          if (modelTurn && modelTurn.parts) {
+            for (const part of modelTurn.parts) {
+              // Handle audio response (handle both formats)
+              const inlineData = part.inline_data || part.inlineData;
+              const mimeType = inlineData?.mime_type || inlineData?.mimeType;
+              if (inlineData && mimeType?.startsWith('audio/')) {
+                session.audioOutChunks++;
+                const audioB64 = inlineData.data;
+                console.log(`[VTID-01219] Received audio chunk ${session.audioOutChunks}, size: ${audioB64.length}`);
+                onAudioResponse(audioB64);
+
+                // Emit OASIS event for audio output
+                emitLiveSessionEvent('vtid.live.audio.out.chunk', {
+                  session_id: session.sessionId,
+                  chunk_number: session.audioOutChunks,
+                  bytes: audioB64.length,
+                  rate: 24000
+                }).catch(() => {});
+              }
+
+              // Handle text response
+              if (part.text) {
+                console.log(`[VTID-01219] Received text: ${part.text.substring(0, 100)}`);
+                onTextResponse(part.text);
+              }
+            }
+          }
+
+          // Handle input/output transcriptions if present (handle both formats)
+          const inputTranscription = content.input_transcription || content.inputTranscription;
+          const outputTranscription = content.output_transcription || content.outputTranscription;
+          if (inputTranscription) {
+            console.log(`[VTID-01219] Input transcription: ${inputTranscription}`);
+            if (session.sseResponse) {
+              session.sseResponse.write(`data: ${JSON.stringify({ type: 'input_transcript', text: inputTranscription })}\n\n`);
+            }
+          }
+          if (outputTranscription) {
+            console.log(`[VTID-01219] Output transcription: ${outputTranscription}`);
+            if (session.sseResponse) {
+              session.sseResponse.write(`data: ${JSON.stringify({ type: 'output_transcript', text: outputTranscription })}\n\n`);
+            }
+          }
+        }
+
+        // Handle tool calls (if any) - handle both formats
+        const toolCall = message.tool_call || message.toolCall;
+        if (toolCall) {
+          console.log(`[VTID-01219] Tool call received for session ${session.sessionId}:`, toolCall);
+          // For now, we don't support tool calls in Live API
+        }
+
+      } catch (err) {
+        console.error(`[VTID-01219] Error parsing Live API message:`, err);
+      }
+    });
+
+    // Handle WebSocket errors
+    ws.on('error', (error) => {
+      console.error(`[VTID-01219] Live API WebSocket error for session ${session.sessionId}:`, error);
+      clearTimeout(connectionTimeout);
+      if (!setupComplete) {
+        reject(error);
+      }
+      onError(error);
+    });
+
+    // Handle WebSocket close
+    ws.on('close', (code, reason) => {
+      console.log(`[VTID-01219] Live API WebSocket closed for session ${session.sessionId}: code=${code}, reason=${reason}`);
+      clearTimeout(connectionTimeout);
+      session.upstreamWs = null;
+      if (!setupComplete) {
+        reject(new Error(`WebSocket closed before setup: code=${code}, reason=${reason}`));
+      }
+    });
+  });
+}
+
+/**
+ * VTID-01219: Send audio chunk to Live API
+ * Forwards audio from client to Gemini for real-time processing
+ */
+function sendAudioToLiveAPI(ws: WebSocket, audioB64: string, mimeType: string = 'audio/pcm;rate=16000'): boolean {
+  if (ws.readyState !== WebSocket.OPEN) {
+    console.warn('[VTID-01219] Cannot send audio - WebSocket not open, state:', ws.readyState);
+    return false;
+  }
+
+  // Build realtime input message (Vertex AI uses snake_case)
+  const message = {
+    realtime_input: {
+      media_chunks: [{
+        mime_type: mimeType,
+        data: audioB64
+      }]
+    }
+  };
+
+  ws.send(JSON.stringify(message));
+  return true;
+}
+
+/**
+ * VTID-01219: Send end of turn signal to Live API
+ * Tells Gemini that user has finished speaking
+ */
+function sendEndOfTurn(ws: WebSocket): boolean {
+  if (ws.readyState !== WebSocket.OPEN) {
+    return false;
+  }
+
+  // Vertex AI uses snake_case
+  const message = {
+    client_content: {
+      turn_complete: true
+    }
+  };
+
+  ws.send(JSON.stringify(message));
+  return true;
+}
 
 /**
  * VTID-01155: Convert raw PCM audio data to WAV format
@@ -3016,6 +3346,83 @@ async function emitTtsEvent(
   }
 }
 
+// =============================================================================
+// VTID-01218A: Voice LAB Live Telemetry Events
+// =============================================================================
+
+/**
+ * VTID-01218A: Voice LAB telemetry event types
+ */
+type VoiceLabEventType =
+  | 'voice.live.session.started'
+  | 'voice.live.session.ended'
+  | 'voice.live.turn.started'
+  | 'voice.live.turn.completed'
+  | 'voice.live.turn.interrupted'
+  | 'voice.live.playback.cleared'
+  | 'voice.live.error';
+
+/**
+ * VTID-01218A: Voice LAB telemetry payload interface
+ * Includes all fields required for fragmentation debugging per CTO spec
+ */
+interface VoiceLabTelemetryPayload {
+  session_id: string;
+  // Core metrics
+  turn_number?: number;
+  chunk_ms?: number;
+  input_rate?: number;
+  output_rate?: number;
+  // Latency metrics
+  first_audio_ms?: number;
+  turn_ms?: number;
+  // Fragmentation debugging (CTO required)
+  interrupted_count?: number;
+  playback_queue_ms?: number;
+  end_turn_source?: 'client' | 'server_vad' | 'timeout' | null;
+  interrupt_reason?: string | null;
+  playback_clear_triggered?: boolean;
+  // Session metadata
+  lang?: string;
+  voice?: string;
+  audio_in_chunks?: number;
+  audio_out_chunks?: number;
+  video_frames?: number;
+  duration_ms?: number;
+  error_message?: string;
+  error_code?: string;
+  // Transport info
+  transport?: 'websocket' | 'sse';
+}
+
+/**
+ * VTID-01218A: Emit Voice LAB telemetry event to OASIS
+ * Used for ORB Live observability and fragmentation debugging
+ */
+async function emitVoiceLabEvent(
+  eventType: VoiceLabEventType,
+  payload: VoiceLabTelemetryPayload
+): Promise<void> {
+  try {
+    await emitOasisEvent({
+      vtid: 'VTID-01218A',
+      type: eventType,
+      source: 'gateway',
+      status: eventType === 'voice.live.error' ? 'error' : 'info',
+      message: `Voice LAB: ${eventType} for session ${payload.session_id}`,
+      payload: {
+        ...payload,
+        service: 'gateway',
+        component: 'orb-live',
+        env: isDevSandbox() ? 'dev-sandbox' : 'production',
+        timestamp: new Date().toISOString()
+      }
+    });
+  } catch (err: any) {
+    console.warn(`[VTID-01218A] Failed to emit ${eventType}:`, err.message);
+  }
+}
+
 /**
  * VTID-01155: Normalize language code to 2-letter ISO
  */
@@ -3178,7 +3585,7 @@ router.post('/live/session/stop', async (req: Request, res: Response) => {
  * Query params:
  * - session_id: The live session ID
  */
-router.get('/live/stream', (req: Request, res: Response) => {
+router.get('/live/stream', async (req: Request, res: Response) => {
   console.log('[VTID-01155] GET /orb/live/stream');
 
   const sessionId = req.query.session_id as string;
@@ -3213,14 +3620,80 @@ router.get('/live/stream', (req: Request, res: Response) => {
   session.sseResponse = res;
   session.lastActivity = new Date();
 
+  // VTID-01219: Connect to Vertex AI Live API WebSocket
+  let liveApiConnected = false;
+  if (googleAuth && VERTEX_PROJECT_ID) {
+    try {
+      console.log(`[VTID-01219] Connecting to Vertex AI Live API for session ${sessionId}...`);
+
+      const ws = await connectToLiveAPI(
+        session,
+        // Audio response handler - forward to client via SSE
+        (audioB64: string) => {
+          if (session.sseResponse) {
+            try {
+              // Convert PCM to WAV for browser playback
+              const wavB64 = pcmToWav(audioB64, 24000, 1, 16);
+              session.sseResponse.write(`data: ${JSON.stringify({
+                type: 'audio',
+                data_b64: wavB64,
+                mime: 'audio/wav',
+                chunk_number: session.audioOutChunks
+              })}\n\n`);
+            } catch (err) {
+              console.error('[VTID-01219] Error sending audio to client:', err);
+            }
+          }
+        },
+        // Text response handler - forward to client via SSE
+        (text: string) => {
+          if (session.sseResponse) {
+            try {
+              session.sseResponse.write(`data: ${JSON.stringify({
+                type: 'transcript',
+                text
+              })}\n\n`);
+            } catch (err) {
+              console.error('[VTID-01219] Error sending transcript to client:', err);
+            }
+          }
+        },
+        // Error handler
+        (error: Error) => {
+          console.error(`[VTID-01219] Live API error for session ${sessionId}:`, error);
+          if (session.sseResponse) {
+            try {
+              session.sseResponse.write(`data: ${JSON.stringify({
+                type: 'error',
+                message: 'Live API connection error'
+              })}\n\n`);
+            } catch (err) {
+              // Ignore
+            }
+          }
+        }
+      );
+
+      session.upstreamWs = ws;
+      liveApiConnected = true;
+      console.log(`[VTID-01219] Live API WebSocket connected for session ${sessionId}`);
+    } catch (err: any) {
+      console.error(`[VTID-01219] Failed to connect Live API for session ${sessionId}:`, err.message);
+      // Continue without Live API - will fall back to simulated responses
+    }
+  } else {
+    console.warn('[VTID-01219] Live API not available - missing auth or project ID');
+  }
+
   // Send ready event with session config
   res.write(`data: ${JSON.stringify({
     type: 'ready',
     session_id: sessionId,
+    live_api_connected: liveApiConnected,
     meta: {
       model: VERTEX_LIVE_MODEL,
       lang: session.lang,
-      voice: getVoiceForLang(session.lang),
+      voice: liveApiConnected ? LIVE_API_VOICES[session.lang] || LIVE_API_VOICES['en'] : getVoiceForLang(session.lang),
       audio_out_rate: 24000,  // 24kHz output
       audio_in_rate: 16000    // 16kHz input
     }
@@ -3242,6 +3715,15 @@ router.get('/live/stream', (req: Request, res: Response) => {
     decrementConnection(clientIP);
     if (session.sseResponse === res) {
       session.sseResponse = null;
+    }
+    // VTID-01219: Close upstream WebSocket on client disconnect
+    if (session.upstreamWs) {
+      try {
+        session.upstreamWs.close();
+      } catch (e) {
+        // Ignore
+      }
+      session.upstreamWs = null;
     }
   });
 });
@@ -3291,17 +3773,27 @@ router.post('/live/stream/send', async (req: Request, res: Response) => {
         }).catch(() => {});
       }
 
-      // TODO: Forward to Vertex Live API upstream WebSocket
-      // For now, simulate processing and respond via SSE
-      console.log(`[VTID-01155] Audio chunk received: session=${effectiveSessionId}, chunk=${session.audioInChunks}`);
+      // VTID-01219: Forward audio to Vertex Live API WebSocket
+      if (session.upstreamWs && session.upstreamWs.readyState === WebSocket.OPEN) {
+        // Forward audio to Live API for real-time processing
+        const sent = sendAudioToLiveAPI(session.upstreamWs, body.data_b64, body.mime || 'audio/pcm');
+        if (sent) {
+          console.log(`[VTID-01219] Audio chunk forwarded to Live API: session=${effectiveSessionId}, chunk=${session.audioInChunks}`);
+        } else {
+          console.warn(`[VTID-01219] Failed to forward audio chunk: session=${effectiveSessionId}`);
+        }
+      } else {
+        // Fallback: Log when Live API not connected
+        console.log(`[VTID-01155] Audio chunk received (no Live API): session=${effectiveSessionId}, chunk=${session.audioInChunks}`);
 
-      // Simulated response (in production, this comes from Live API)
-      if (session.sseResponse && session.audioInChunks % 5 === 0) {
-        // Acknowledge receipt
-        session.sseResponse.write(`data: ${JSON.stringify({
-          type: 'audio_ack',
-          chunk_number: session.audioInChunks
-        })}\n\n`);
+        // Send acknowledgment via SSE (fallback behavior)
+        if (session.sseResponse && session.audioInChunks % 5 === 0) {
+          session.sseResponse.write(`data: ${JSON.stringify({
+            type: 'audio_ack',
+            chunk_number: session.audioInChunks,
+            live_api: false
+          })}\n\n`);
+        }
       }
 
     } else if (body.type === 'video') {
@@ -3336,6 +3828,49 @@ router.post('/live/stream/send', async (req: Request, res: Response) => {
     console.error(`[VTID-01155] Stream send error:`, error);
     return res.status(500).json({ ok: false, error: error.message });
   }
+});
+
+/**
+ * VTID-01219: POST /live/stream/end-turn - Signal end of user turn
+ *
+ * Client calls this when user stops speaking (voice activity detection).
+ * Tells Gemini Live API that the user has finished their input.
+ *
+ * Request:
+ * { "session_id": "live-xxx" }
+ *
+ * Response:
+ * { "ok": true }
+ */
+router.post('/live/stream/end-turn', async (req: Request, res: Response) => {
+  const { session_id } = req.query;
+  const body = req.body as { session_id?: string };
+  const effectiveSessionId = (session_id as string) || body.session_id;
+
+  if (!effectiveSessionId) {
+    return res.status(400).json({ ok: false, error: 'session_id required' });
+  }
+
+  const session = liveSessions.get(effectiveSessionId);
+  if (!session) {
+    return res.status(404).json({ ok: false, error: 'Session not found' });
+  }
+
+  if (!session.active) {
+    return res.status(400).json({ ok: false, error: 'Session not active' });
+  }
+
+  // VTID-01219: Send end of turn to Live API
+  if (session.upstreamWs && session.upstreamWs.readyState === WebSocket.OPEN) {
+    const sent = sendEndOfTurn(session.upstreamWs);
+    if (sent) {
+      console.log(`[VTID-01219] End of turn sent to Live API: session=${effectiveSessionId}`);
+      return res.status(200).json({ ok: true, message: 'End of turn signaled' });
+    }
+  }
+
+  console.log(`[VTID-01219] End of turn (no Live API): session=${effectiveSessionId}`);
+  return res.status(200).json({ ok: true, message: 'End of turn acknowledged (no Live API)' });
 });
 
 /**
@@ -3574,5 +4109,700 @@ router.get('/health', (_req: Request, res: Response) => {
     timestamp: new Date().toISOString()
   });
 });
+
+// =============================================================================
+// VTID-01222: WebSocket Server for Client-to-Gateway Communication
+// =============================================================================
+
+/**
+ * VTID-01222: WebSocket message types from client
+ */
+interface WsClientMessage {
+  type: 'start' | 'audio' | 'video' | 'end_turn' | 'stop' | 'ping';
+  // Start message fields
+  lang?: string;
+  voice_style?: string;
+  response_modalities?: string[];
+  // Audio message fields
+  data_b64?: string;
+  mime?: string;
+  // Video message fields
+  source?: 'screen' | 'camera';
+  width?: number;
+  height?: number;
+}
+
+/**
+ * VTID-01222: WebSocket session state
+ * VTID-01218A: Extended with turn metrics for Voice LAB telemetry
+ */
+interface WsClientSession {
+  sessionId: string;
+  clientWs: WebSocket;
+  liveSession: GeminiLiveSession | null;
+  connected: boolean;
+  lastActivity: Date;
+  clientIP: string;
+  // VTID-01218A: Turn metrics for Voice LAB telemetry
+  turnMetrics: {
+    turnCount: number;
+    currentTurnStartedAt: Date | null;
+    firstAudioReceivedAt: Date | null;
+    firstAudioSentAt: Date | null;
+    lastEndTurnSource: 'client' | 'server_vad' | 'timeout' | null;
+    interruptedCount: number;
+    lastInterruptReason: string | null;
+    playbackClearTriggered: boolean;
+    inputRate: number;  // samples per second
+    outputRate: number; // samples per second
+  };
+}
+
+// Track WebSocket client sessions
+const wsClientSessions = new Map<string, WsClientSession>();
+
+/**
+ * VTID-01222: Initialize WebSocket server for ORB client connections
+ * Attaches a WebSocketServer to the HTTP server for the /api/v1/orb/live/ws path
+ *
+ * @param server - The HTTP server instance from Express
+ */
+export function initializeOrbWebSocket(server: HttpServer): void {
+  console.log('[VTID-01222] Initializing ORB WebSocket server...');
+
+  // Create WebSocket server attached to HTTP server
+  const wss = new WebSocketServer({
+    server,
+    path: '/api/v1/orb/live/ws'
+  });
+
+  wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
+    handleWebSocketConnection(ws, req);
+  });
+
+  wss.on('error', (error) => {
+    console.error('[VTID-01222] WebSocket server error:', error);
+  });
+
+  console.log('[VTID-01222] ORB WebSocket server initialized at /api/v1/orb/live/ws');
+
+  // Cleanup expired WebSocket sessions every 5 minutes
+  setInterval(() => {
+    const now = Date.now();
+    for (const [sessionId, session] of wsClientSessions.entries()) {
+      if (now - session.lastActivity.getTime() > SESSION_TIMEOUT_MS) {
+        console.log(`[VTID-01222] WebSocket session expired: ${sessionId}`);
+        cleanupWsSession(sessionId);
+      }
+    }
+  }, 5 * 60 * 1000);
+}
+
+/**
+ * VTID-01222: Handle new WebSocket connection from client
+ */
+function handleWebSocketConnection(ws: WebSocket, req: IncomingMessage): void {
+  const clientIP = (req.headers['x-forwarded-for'] as string || req.socket.remoteAddress || 'unknown').split(',')[0].trim();
+  const sessionId = `ws-${randomUUID()}`;
+
+  console.log(`[VTID-01222] WebSocket connected: ${sessionId} from ${clientIP}`);
+
+  // Check connection limit
+  if (!checkConnectionLimit(clientIP)) {
+    console.warn(`[VTID-01222] Connection limit exceeded for IP: ${clientIP}`);
+    ws.close(4029, 'Too many connections');
+    return;
+  }
+
+  incrementConnection(clientIP);
+
+  // Create client session
+  // VTID-01218A: Initialize with turn metrics for telemetry
+  const clientSession: WsClientSession = {
+    sessionId,
+    clientWs: ws,
+    liveSession: null,
+    connected: true,
+    lastActivity: new Date(),
+    clientIP,
+    turnMetrics: {
+      turnCount: 0,
+      currentTurnStartedAt: null,
+      firstAudioReceivedAt: null,
+      firstAudioSentAt: null,
+      lastEndTurnSource: null,
+      interruptedCount: 0,
+      lastInterruptReason: null,
+      playbackClearTriggered: false,
+      inputRate: 16000,
+      outputRate: 24000
+    }
+  };
+
+  wsClientSessions.set(sessionId, clientSession);
+
+  // Send connection acknowledgment
+  sendWsMessage(ws, {
+    type: 'connected',
+    session_id: sessionId,
+    message: 'WebSocket connected. Send "start" message to begin Live API session.'
+  });
+
+  // Handle incoming messages
+  ws.on('message', async (data: Buffer) => {
+    try {
+      const message = JSON.parse(data.toString()) as WsClientMessage;
+      clientSession.lastActivity = new Date();
+      await handleWsClientMessage(clientSession, message);
+    } catch (err: any) {
+      console.error(`[VTID-01222] Error processing message for ${sessionId}:`, err.message);
+      sendWsMessage(ws, {
+        type: 'error',
+        message: 'Invalid message format',
+        details: err.message
+      });
+    }
+  });
+
+  // Handle client disconnect
+  ws.on('close', (code, reason) => {
+    console.log(`[VTID-01222] WebSocket disconnected: ${sessionId}, code=${code}, reason=${reason}`);
+    cleanupWsSession(sessionId);
+    decrementConnection(clientIP);
+  });
+
+  // Handle errors
+  ws.on('error', (error) => {
+    console.error(`[VTID-01222] WebSocket error for ${sessionId}:`, error);
+    cleanupWsSession(sessionId);
+    decrementConnection(clientIP);
+  });
+}
+
+/**
+ * VTID-01222: Handle messages from WebSocket client
+ */
+async function handleWsClientMessage(clientSession: WsClientSession, message: WsClientMessage): Promise<void> {
+  const { sessionId, clientWs, liveSession } = clientSession;
+
+  switch (message.type) {
+    case 'ping':
+      sendWsMessage(clientWs, { type: 'pong', timestamp: Date.now() });
+      break;
+
+    case 'start':
+      await handleWsStartMessage(clientSession, message);
+      break;
+
+    case 'audio':
+      if (!liveSession || !liveSession.active) {
+        sendWsMessage(clientWs, { type: 'error', message: 'No active session. Send "start" first.' });
+        return;
+      }
+      await handleWsAudioMessage(clientSession, message);
+      break;
+
+    case 'video':
+      if (!liveSession || !liveSession.active) {
+        sendWsMessage(clientWs, { type: 'error', message: 'No active session. Send "start" first.' });
+        return;
+      }
+      handleWsVideoMessage(clientSession, message);
+      break;
+
+    case 'end_turn':
+      if (!liveSession || !liveSession.active) {
+        sendWsMessage(clientWs, { type: 'error', message: 'No active session.' });
+        return;
+      }
+      handleWsEndTurn(clientSession);
+      break;
+
+    case 'stop':
+      handleWsStopSession(clientSession);
+      break;
+
+    default:
+      sendWsMessage(clientWs, { type: 'error', message: `Unknown message type: ${message.type}` });
+  }
+}
+
+/**
+ * VTID-01222: Handle "start" message - Create Live API session
+ */
+async function handleWsStartMessage(clientSession: WsClientSession, message: WsClientMessage): Promise<void> {
+  const { sessionId, clientWs } = clientSession;
+
+  // Check if session already exists
+  if (clientSession.liveSession && clientSession.liveSession.active) {
+    sendWsMessage(clientWs, { type: 'error', message: 'Session already active' });
+    return;
+  }
+
+  const lang = normalizeLang(message.lang || 'en');
+  const responseModalities = message.response_modalities || ['audio', 'text'];
+
+  console.log(`[VTID-01222] Starting Live API session: ${sessionId}, lang=${lang}`);
+
+  // Create Gemini Live session
+  const liveSession: GeminiLiveSession = {
+    sessionId,
+    lang,
+    voiceStyle: message.voice_style,
+    responseModalities,
+    upstreamWs: null,
+    sseResponse: null,  // Not used for WebSocket clients
+    active: true,
+    createdAt: new Date(),
+    lastActivity: new Date(),
+    audioInChunks: 0,
+    videoInFrames: 0,
+    audioOutChunks: 0
+  };
+
+  clientSession.liveSession = liveSession;
+  liveSessions.set(sessionId, liveSession);
+
+  // Connect to Vertex AI Live API
+  if (!googleAuth || !VERTEX_PROJECT_ID) {
+    console.warn(`[VTID-01222] Live API not available for ${sessionId} - missing auth or project ID`);
+    sendWsMessage(clientWs, {
+      type: 'session_started',
+      session_id: sessionId,
+      live_api_connected: false,
+      message: 'Session created but Live API not available (missing credentials)',
+      meta: {
+        lang,
+        voice: LIVE_API_VOICES[lang] || LIVE_API_VOICES['en'],
+        model: VERTEX_LIVE_MODEL
+      }
+    });
+    return;
+  }
+
+  try {
+    console.log(`[VTID-01222] Connecting to Vertex AI Live API for session ${sessionId}...`);
+
+    const upstreamWs = await connectToLiveAPI(
+      liveSession,
+      // Audio response handler - forward to client via WebSocket
+      // VTID-01218A: Extended with first audio timing tracking
+      (audioB64: string) => {
+        if (clientWs.readyState === WebSocket.OPEN) {
+          try {
+            // VTID-01218A: Track first audio sent for latency measurement
+            if (clientSession.turnMetrics.firstAudioSentAt === null) {
+              clientSession.turnMetrics.firstAudioSentAt = new Date();
+            }
+
+            // Convert PCM to WAV for browser playback
+            const wavB64 = pcmToWav(audioB64, 24000, 1, 16);
+            sendWsMessage(clientWs, {
+              type: 'audio',
+              data_b64: wavB64,
+              mime: 'audio/wav',
+              chunk_number: liveSession.audioOutChunks
+            });
+          } catch (err) {
+            console.error(`[VTID-01222] Error sending audio to client ${sessionId}:`, err);
+          }
+        }
+      },
+      // Text response handler - forward to client via WebSocket
+      (text: string) => {
+        if (clientWs.readyState === WebSocket.OPEN) {
+          sendWsMessage(clientWs, {
+            type: 'transcript',
+            text
+          });
+        }
+      },
+      // Error handler
+      // VTID-01218A: Extended with error telemetry
+      (error: Error) => {
+        console.error(`[VTID-01222] Live API error for ${sessionId}:`, error);
+
+        // VTID-01218A: Emit Voice LAB error telemetry
+        emitVoiceLabEvent('voice.live.error', {
+          session_id: sessionId,
+          error_message: error.message,
+          error_code: 'live_api_runtime_error',
+          turn_number: clientSession.turnMetrics.turnCount,
+          transport: 'websocket'
+        }).catch(() => {});
+
+        if (clientWs.readyState === WebSocket.OPEN) {
+          sendWsMessage(clientWs, {
+            type: 'error',
+            message: 'Live API connection error',
+            details: error.message
+          });
+        }
+      }
+    );
+
+    liveSession.upstreamWs = upstreamWs;
+
+    // Listen for upstream WebSocket close
+    upstreamWs.on('close', (code, reason) => {
+      console.log(`[VTID-01222] Upstream WebSocket closed for ${sessionId}: code=${code}`);
+      if (clientWs.readyState === WebSocket.OPEN) {
+        sendWsMessage(clientWs, {
+          type: 'live_api_disconnected',
+          code,
+          reason: reason?.toString()
+        });
+      }
+    });
+
+    console.log(`[VTID-01222] Live API connected for session ${sessionId}`);
+
+    // Emit OASIS event
+    emitLiveSessionEvent('vtid.live.session.start', {
+      session_id: sessionId,
+      lang,
+      voice: LIVE_API_VOICES[lang] || LIVE_API_VOICES['en'],
+      response_modalities: responseModalities,
+      transport: 'websocket'
+    }).catch(() => {});
+
+    // VTID-01218A: Emit Voice LAB session started telemetry
+    emitVoiceLabEvent('voice.live.session.started', {
+      session_id: sessionId,
+      lang,
+      voice: LIVE_API_VOICES[lang] || LIVE_API_VOICES['en'],
+      input_rate: clientSession.turnMetrics.inputRate,
+      output_rate: clientSession.turnMetrics.outputRate,
+      transport: 'websocket'
+    }).catch(() => {});
+
+    sendWsMessage(clientWs, {
+      type: 'session_started',
+      session_id: sessionId,
+      live_api_connected: true,
+      meta: {
+        lang,
+        voice: LIVE_API_VOICES[lang] || LIVE_API_VOICES['en'],
+        model: VERTEX_LIVE_MODEL,
+        audio_in_rate: 16000,
+        audio_out_rate: 24000
+      }
+    });
+
+  } catch (err: any) {
+    console.error(`[VTID-01222] Failed to connect Live API for ${sessionId}:`, err.message);
+
+    // VTID-01218A: Emit Voice LAB error telemetry
+    emitVoiceLabEvent('voice.live.error', {
+      session_id: sessionId,
+      error_message: err.message,
+      error_code: 'live_api_connection_failed',
+      lang,
+      transport: 'websocket'
+    }).catch(() => {});
+
+    sendWsMessage(clientWs, {
+      type: 'session_started',
+      session_id: sessionId,
+      live_api_connected: false,
+      error: err.message,
+      meta: {
+        lang,
+        voice: LIVE_API_VOICES[lang] || LIVE_API_VOICES['en'],
+        model: VERTEX_LIVE_MODEL
+      }
+    });
+  }
+}
+
+/**
+ * VTID-01222: Handle audio message from client
+ * VTID-01218A: Extended with turn tracking for Voice LAB telemetry
+ */
+async function handleWsAudioMessage(clientSession: WsClientSession, message: WsClientMessage): Promise<void> {
+  const { sessionId, clientWs, liveSession, turnMetrics } = clientSession;
+
+  if (!liveSession) return;
+
+  if (!message.data_b64) {
+    sendWsMessage(clientWs, { type: 'error', message: 'Missing data_b64 in audio message' });
+    return;
+  }
+
+  liveSession.audioInChunks++;
+  liveSession.lastActivity = new Date();
+
+  // VTID-01218A: Track turn start on first audio chunk
+  if (turnMetrics.currentTurnStartedAt === null) {
+    turnMetrics.turnCount++;
+    turnMetrics.currentTurnStartedAt = new Date();
+    turnMetrics.firstAudioReceivedAt = new Date();
+    turnMetrics.firstAudioSentAt = null;  // Reset for this turn
+    turnMetrics.playbackClearTriggered = false;
+
+    // Emit turn started telemetry
+    emitVoiceLabEvent('voice.live.turn.started', {
+      session_id: sessionId,
+      turn_number: turnMetrics.turnCount,
+      input_rate: turnMetrics.inputRate,
+      output_rate: turnMetrics.outputRate,
+      interrupted_count: turnMetrics.interruptedCount,
+      transport: 'websocket'
+    }).catch(() => {});
+  }
+
+  // Emit OASIS event (sample every 10th chunk)
+  if (liveSession.audioInChunks % 10 === 0) {
+    emitLiveSessionEvent('vtid.live.audio.in.chunk', {
+      session_id: sessionId,
+      chunk_number: liveSession.audioInChunks,
+      bytes: message.data_b64.length,
+      rate: 16000,
+      transport: 'websocket'
+    }).catch(() => {});
+  }
+
+  // Forward to Live API if connected
+  if (liveSession.upstreamWs && liveSession.upstreamWs.readyState === WebSocket.OPEN) {
+    const sent = sendAudioToLiveAPI(
+      liveSession.upstreamWs,
+      message.data_b64,
+      message.mime || 'audio/pcm;rate=16000'
+    );
+
+    if (!sent) {
+      console.warn(`[VTID-01222] Failed to forward audio chunk for ${sessionId}`);
+    }
+  } else {
+    // No Live API connection - send acknowledgment
+    if (liveSession.audioInChunks % 5 === 0) {
+      sendWsMessage(clientWs, {
+        type: 'audio_ack',
+        chunk_number: liveSession.audioInChunks,
+        live_api: false
+      });
+    }
+  }
+}
+
+/**
+ * VTID-01222: Handle video frame from client
+ */
+function handleWsVideoMessage(clientSession: WsClientSession, message: WsClientMessage): void {
+  const { sessionId, clientWs, liveSession } = clientSession;
+
+  if (!liveSession) return;
+
+  if (!message.data_b64) {
+    sendWsMessage(clientWs, { type: 'error', message: 'Missing data_b64 in video message' });
+    return;
+  }
+
+  liveSession.videoInFrames++;
+  liveSession.lastActivity = new Date();
+
+  // Emit OASIS event
+  emitLiveSessionEvent('vtid.live.video.in.frame', {
+    session_id: sessionId,
+    source: message.source || 'unknown',
+    frame_number: liveSession.videoInFrames,
+    bytes: message.data_b64.length,
+    transport: 'websocket'
+  }).catch(() => {});
+
+  console.log(`[VTID-01222] Video frame received: ${sessionId}, source=${message.source}, frame=${liveSession.videoInFrames}`);
+
+  // Acknowledge frame receipt
+  sendWsMessage(clientWs, {
+    type: 'video_ack',
+    source: message.source,
+    frame_number: liveSession.videoInFrames
+  });
+}
+
+/**
+ * VTID-01222: Handle end of turn signal
+ * VTID-01218A: Extended with turn completion telemetry for Voice LAB
+ */
+function handleWsEndTurn(clientSession: WsClientSession): void {
+  const { sessionId, clientWs, liveSession, turnMetrics } = clientSession;
+
+  if (!liveSession) return;
+
+  // VTID-01218A: Calculate turn metrics
+  const turnMs = turnMetrics.currentTurnStartedAt
+    ? Date.now() - turnMetrics.currentTurnStartedAt.getTime()
+    : null;
+  const firstAudioMs = turnMetrics.firstAudioReceivedAt && turnMetrics.firstAudioSentAt
+    ? turnMetrics.firstAudioSentAt.getTime() - turnMetrics.firstAudioReceivedAt.getTime()
+    : null;
+
+  // Track end turn source (client-initiated)
+  turnMetrics.lastEndTurnSource = 'client';
+
+  if (liveSession.upstreamWs && liveSession.upstreamWs.readyState === WebSocket.OPEN) {
+    const sent = sendEndOfTurn(liveSession.upstreamWs);
+    if (sent) {
+      console.log(`[VTID-01222] End of turn sent to Live API: ${sessionId}`);
+
+      // VTID-01218A: Emit turn completed telemetry
+      emitVoiceLabEvent('voice.live.turn.completed', {
+        session_id: sessionId,
+        turn_number: turnMetrics.turnCount,
+        turn_ms: turnMs ?? undefined,
+        first_audio_ms: firstAudioMs ?? undefined,
+        end_turn_source: turnMetrics.lastEndTurnSource,
+        interrupted_count: turnMetrics.interruptedCount,
+        playback_clear_triggered: turnMetrics.playbackClearTriggered,
+        input_rate: turnMetrics.inputRate,
+        output_rate: turnMetrics.outputRate,
+        audio_in_chunks: liveSession.audioInChunks,
+        audio_out_chunks: liveSession.audioOutChunks,
+        transport: 'websocket'
+      }).catch(() => {});
+
+      // Reset turn state for next turn
+      turnMetrics.currentTurnStartedAt = null;
+      turnMetrics.firstAudioReceivedAt = null;
+      turnMetrics.firstAudioSentAt = null;
+
+      sendWsMessage(clientWs, { type: 'end_turn_ack', live_api: true });
+    } else {
+      sendWsMessage(clientWs, { type: 'end_turn_ack', live_api: false, message: 'Failed to send' });
+    }
+  } else {
+    sendWsMessage(clientWs, { type: 'end_turn_ack', live_api: false, message: 'No Live API connection' });
+  }
+}
+
+/**
+ * VTID-01222: Handle stop session message
+ * VTID-01218A: Extended with session ended telemetry for Voice LAB
+ */
+function handleWsStopSession(clientSession: WsClientSession): void {
+  const { sessionId, clientWs, liveSession, turnMetrics } = clientSession;
+
+  console.log(`[VTID-01222] Stopping session: ${sessionId}`);
+
+  if (liveSession) {
+    // VTID-01218A: Calculate session duration
+    const durationMs = Date.now() - liveSession.createdAt.getTime();
+
+    liveSession.active = false;
+
+    // Close upstream WebSocket
+    if (liveSession.upstreamWs) {
+      try {
+        liveSession.upstreamWs.close();
+      } catch (e) {
+        // Ignore
+      }
+      liveSession.upstreamWs = null;
+    }
+
+    // Emit OASIS event
+    emitLiveSessionEvent('vtid.live.session.stop', {
+      session_id: sessionId,
+      audio_in_chunks: liveSession.audioInChunks,
+      audio_out_chunks: liveSession.audioOutChunks,
+      video_frames: liveSession.videoInFrames,
+      transport: 'websocket'
+    }).catch(() => {});
+
+    // VTID-01218A: Emit Voice LAB session ended telemetry
+    emitVoiceLabEvent('voice.live.session.ended', {
+      session_id: sessionId,
+      duration_ms: durationMs,
+      turn_number: turnMetrics.turnCount,
+      interrupted_count: turnMetrics.interruptedCount,
+      audio_in_chunks: liveSession.audioInChunks,
+      audio_out_chunks: liveSession.audioOutChunks,
+      video_frames: liveSession.videoInFrames,
+      lang: liveSession.lang,
+      input_rate: turnMetrics.inputRate,
+      output_rate: turnMetrics.outputRate,
+      transport: 'websocket'
+    }).catch(() => {});
+
+    liveSessions.delete(sessionId);
+  }
+
+  clientSession.liveSession = null;
+
+  sendWsMessage(clientWs, {
+    type: 'session_stopped',
+    session_id: sessionId
+  });
+}
+
+/**
+ * VTID-01222: Cleanup WebSocket session
+ * VTID-01218A: Extended with session ended telemetry for Voice LAB
+ */
+function cleanupWsSession(sessionId: string): void {
+  const clientSession = wsClientSessions.get(sessionId);
+  if (!clientSession) return;
+
+  // Close Live API session if active
+  if (clientSession.liveSession) {
+    const liveSession = clientSession.liveSession;
+    const turnMetrics = clientSession.turnMetrics;
+
+    // VTID-01218A: Calculate session duration
+    const durationMs = Date.now() - liveSession.createdAt.getTime();
+
+    liveSession.active = false;
+
+    if (liveSession.upstreamWs) {
+      try {
+        liveSession.upstreamWs.close();
+      } catch (e) {
+        // Ignore
+      }
+    }
+
+    // VTID-01218A: Emit Voice LAB session ended telemetry (on cleanup)
+    emitVoiceLabEvent('voice.live.session.ended', {
+      session_id: sessionId,
+      duration_ms: durationMs,
+      turn_number: turnMetrics.turnCount,
+      interrupted_count: turnMetrics.interruptedCount,
+      audio_in_chunks: liveSession.audioInChunks,
+      audio_out_chunks: liveSession.audioOutChunks,
+      video_frames: liveSession.videoInFrames,
+      lang: liveSession.lang,
+      input_rate: turnMetrics.inputRate,
+      output_rate: turnMetrics.outputRate,
+      transport: 'websocket'
+    }).catch(() => {});
+
+    liveSessions.delete(sessionId);
+  }
+
+  // Close client WebSocket if open
+  if (clientSession.clientWs.readyState === WebSocket.OPEN) {
+    try {
+      clientSession.clientWs.close(1000, 'Session cleanup');
+    } catch (e) {
+      // Ignore
+    }
+  }
+
+  wsClientSessions.delete(sessionId);
+  console.log(`[VTID-01222] WebSocket session cleaned up: ${sessionId}`);
+}
+
+/**
+ * VTID-01222: Send message to WebSocket client
+ */
+function sendWsMessage(ws: WebSocket, message: Record<string, unknown>): void {
+  if (ws.readyState === WebSocket.OPEN) {
+    try {
+      ws.send(JSON.stringify(message));
+    } catch (err) {
+      console.error('[VTID-01222] Error sending WebSocket message:', err);
+    }
+  }
+}
 
 export default router;

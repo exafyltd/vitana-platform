@@ -204,6 +204,14 @@ export type CicdEventType =
   | 'orb.session.ended'
   // VTID-01039: ORB Conversation Aggregation
   | 'orb.session.summary'
+  // VTID-01218A: Voice LAB Live Observability Events
+  | 'voice.live.session.started'
+  | 'voice.live.session.ended'
+  | 'voice.live.turn.started'
+  | 'voice.live.turn.completed'
+  | 'voice.live.turn.interrupted'
+  | 'voice.live.playback.cleared'
+  | 'voice.live.error'
   // VTID-01032: Multi-service deploy selection event
   | 'cicd.deploy.selection'
   // VTID-01033: CICD Concurrency Lock Events

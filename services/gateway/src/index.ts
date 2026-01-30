@@ -85,6 +85,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const autopilotPromptsRouter = require('./routes/autopilot-prompts').default;
   const assistantRouter = require('./routes/assistant').default;
   const orbLiveRouter = require('./routes/orb-live').default;
+  // VTID-01222: WebSocket server initialization for ORB Live API
+  const { initializeOrbWebSocket } = require('./routes/orb-live');
+  // VTID-01218A: Voice LAB - ORB Live Observability API
+  const voiceLabRouter = require('./routes/voice-lab').default;
   // VTID-01216: Unified Conversation Intelligence Layer (ORB + Operator shared brain)
   const conversationRouter = require('./routes/conversation').default;
   // VTID-01046: Me Context Routes - role context and role switching
@@ -387,6 +391,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // DEV-COMHU-2025-0014: ORB Multimodal v1 - Live Voice Session (Gemini API, SSE)
   mountRouterSync(app, '/api/v1/orb', orbLiveRouter, { owner: 'orb-live' });
 
+  // VTID-01218A: Voice LAB - ORB Live Observability API
+  mountRouterSync(app, '/api/v1/voice-lab', voiceLabRouter, { owner: 'voice-lab' });
+
   // VTID-01216: Unified Conversation Intelligence Layer (ORB + Operator shared brain)
   mountRouterSync(app, '/api/v1/conversation', conversationRouter, { owner: 'conversation-intelligence' });
 
@@ -547,6 +554,16 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // Command Hub router handles HTML routes and API (after static files)
   mountRouterSync(app, '/command-hub', commandHubRouter, { owner: 'command-hub-ui' });
 
+  // VTID-01218A: Voice LAB static files
+  const voiceLabStaticPath = path.join(__dirname, 'frontend/voice-lab');
+  app.use('/voice-lab', express.static(voiceLabStaticPath, {
+    etag: false,
+    lastModified: false,
+    setHeaders: (res) => {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    }
+  }));
+
   // VTID-01063: SSE service router NOT mounted - duplicate of /api/v1/events/stream in events.ts
   // The sseService.broadcast() method is still available for real-time push (used by auto-logger)
   // but the canonical SSE endpoint is the database-polling route in events.ts
@@ -560,13 +577,22 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // Start server
   if (process.env.NODE_ENV !== 'test') {
-    app.listen(PORT, async () => {
+    // VTID-01222: Capture HTTP server instance for WebSocket attachment
+    const server = app.listen(PORT, async () => {
       console.log('✅ Gateway server running on port ' + PORT);
       console.log('📊 Command Hub: http://localhost:' + PORT + '/command-hub');
       console.log('🔌 SSE Stream: http://localhost:' + PORT + '/api/v1/events/stream');
       console.log('Gateway: debug /debug/governance-ping route registered');
       console.log('Gateway: governance routes mounted at /api/v1/governance');
       console.log('Gateway: operator routes mounted at /api/v1/operator (VTID-0510)');
+
+      // VTID-01222: Initialize ORB WebSocket server for Live API
+      try {
+        initializeOrbWebSocket(server);
+        console.log('🔊 ORB WebSocket server initialized at /api/v1/orb/live/ws (VTID-01222)');
+      } catch (error) {
+        console.warn('⚠️ ORB WebSocket server initialization failed (non-fatal):', error);
+      }
 
       // VTID-01178: Initialize autopilot controller (ensure VTIDs exist in ledger)
       try {
