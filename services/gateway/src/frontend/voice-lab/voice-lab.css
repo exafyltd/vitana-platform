@@ -431,6 +431,25 @@ body {
   margin-top: 0.25rem;
 }
 
+/* Utility classes for JS-generated content */
+.vlab-mt-sm {
+  margin-top: 0.75rem;
+}
+
+.vlab-text-muted {
+  color: #64748b;
+  font-size: 0.875rem;
+}
+
+.vlab-text-center {
+  text-align: center;
+  padding: 2rem;
+}
+
+.vlab-text-warning {
+  color: #f59e0b;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .vlab-controls {

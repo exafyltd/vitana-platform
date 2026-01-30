@@ -19,6 +19,8 @@ const VoiceLab = (function() {
     sessionsTbody: null,
     drawer: null,
     drawerBody: null,
+    drawerOverlay: null,
+    drawerCloseBtn: null,
   };
 
   // Initialize
@@ -31,10 +33,25 @@ const VoiceLab = (function() {
     elements.sessionsTbody = document.getElementById('sessions-tbody');
     elements.drawer = document.getElementById('session-drawer');
     elements.drawerBody = document.getElementById('drawer-body');
+    elements.drawerOverlay = document.getElementById('drawer-overlay');
+    elements.drawerCloseBtn = document.getElementById('drawer-close-btn');
 
     // Bind events
     elements.statusFilter.addEventListener('change', onStatusFilterChange);
     elements.refreshBtn.addEventListener('click', refreshSessions);
+
+    // CSP-compliant drawer close handlers
+    elements.drawerOverlay.addEventListener('click', closeDrawer);
+    elements.drawerCloseBtn.addEventListener('click', closeDrawer);
+
+    // CSP-compliant event delegation for session details buttons
+    elements.sessionsTbody.addEventListener('click', function(e) {
+      const btn = e.target.closest('[data-session-id]');
+      if (btn) {
+        const sessionId = btn.getAttribute('data-session-id');
+        openSession(sessionId);
+      }
+    });
 
     // Initial load
     refreshSessions();
@@ -138,7 +155,7 @@ const VoiceLab = (function() {
           <td>${session.audio_out_chunks}</td>
           <td>${session.interrupted_count}</td>
           <td>
-            <button class="vlab-btn vlab-btn-secondary vlab-btn-sm" onclick="VoiceLab.openSession('${session.session_id}')">
+            <button class="vlab-btn vlab-btn-secondary vlab-btn-sm" data-session-id="${session.session_id}">
               Details
             </button>
           </td>
@@ -212,7 +229,7 @@ const VoiceLab = (function() {
             <div class="vlab-metric-label">Interrupts</div>
           </div>
         </div>
-        <div class="vlab-metrics-row" style="margin-top: 0.75rem;">
+        <div class="vlab-metrics-row vlab-mt-sm">
           <div class="vlab-metric-card">
             <div class="vlab-metric-value">${s.input_rate || 16000}</div>
             <div class="vlab-metric-label">Input Rate</div>
@@ -264,7 +281,7 @@ const VoiceLab = (function() {
 
   function renderTurnTimeline() {
     if (currentTurns.length === 0) {
-      return '<p style="color: #64748b; font-size: 0.875rem;">No turns recorded</p>';
+      return '<p class="vlab-text-muted">No turns recorded</p>';
     }
 
     return currentTurns.map(turn => {
@@ -285,7 +302,7 @@ const VoiceLab = (function() {
             <div class="vlab-timeline-metrics">
               <span>Duration: ${turnDuration}</span>
               <span>First Audio: ${firstAudio}</span>
-              ${turn.playback_clear_triggered ? '<span style="color: #f59e0b;">Playback Cleared</span>' : ''}
+              ${turn.playback_clear_triggered ? '<span class="vlab-text-warning">Playback Cleared</span>' : ''}
             </div>
           </div>
         </div>
@@ -296,7 +313,7 @@ const VoiceLab = (function() {
   // Drawer Functions
   async function openSession(sessionId) {
     elements.drawer.classList.remove('vlab-drawer-hidden');
-    elements.drawerBody.innerHTML = '<p style="text-align: center; padding: 2rem; color: #64748b;">Loading session details...</p>';
+    elements.drawerBody.innerHTML = '<p class="vlab-text-muted vlab-text-center">Loading session details...</p>';
 
     // Fetch session detail and turns in parallel
     const [session, turns] = await Promise.all([

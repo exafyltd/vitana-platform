@@ -59,11 +59,11 @@
 
     <!-- Session Drawer (Hidden by default) -->
     <div id="session-drawer" class="vlab-drawer vlab-drawer-hidden">
-      <div class="vlab-drawer-overlay" onclick="VoiceLab.closeDrawer()"></div>
+      <div class="vlab-drawer-overlay" id="drawer-overlay"></div>
       <div class="vlab-drawer-content">
         <div class="vlab-drawer-header">
           <h2>Session Details</h2>
-          <button class="vlab-drawer-close" onclick="VoiceLab.closeDrawer()">&times;</button>
+          <button class="vlab-drawer-close" id="drawer-close-btn">&times;</button>
         </div>
         <div class="vlab-drawer-body" id="drawer-body">
           <!-- Session details will be populated here -->
