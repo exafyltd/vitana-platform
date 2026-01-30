@@ -87,6 +87,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const orbLiveRouter = require('./routes/orb-live').default;
   // VTID-01222: WebSocket server initialization for ORB Live API
   const { initializeOrbWebSocket } = require('./routes/orb-live');
+  // VTID-01218A: Voice LAB - ORB Live Observability API
+  const voiceLabRouter = require('./routes/voice-lab').default;
   // VTID-01216: Unified Conversation Intelligence Layer (ORB + Operator shared brain)
   const conversationRouter = require('./routes/conversation').default;
   // VTID-01046: Me Context Routes - role context and role switching
@@ -389,6 +391,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // DEV-COMHU-2025-0014: ORB Multimodal v1 - Live Voice Session (Gemini API, SSE)
   mountRouterSync(app, '/api/v1/orb', orbLiveRouter, { owner: 'orb-live' });
 
+  // VTID-01218A: Voice LAB - ORB Live Observability API
+  mountRouterSync(app, '/api/v1/voice-lab', voiceLabRouter, { owner: 'voice-lab' });
+
   // VTID-01216: Unified Conversation Intelligence Layer (ORB + Operator shared brain)
   mountRouterSync(app, '/api/v1/conversation', conversationRouter, { owner: 'conversation-intelligence' });
 
@@ -548,6 +553,16 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // Command Hub router handles HTML routes and API (after static files)
   mountRouterSync(app, '/command-hub', commandHubRouter, { owner: 'command-hub-ui' });
+
+  // VTID-01218A: Voice LAB static files
+  const voiceLabStaticPath = path.join(__dirname, 'frontend/voice-lab');
+  app.use('/voice-lab', express.static(voiceLabStaticPath, {
+    etag: false,
+    lastModified: false,
+    setHeaders: (res) => {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    }
+  }));
 
   // VTID-01063: SSE service router NOT mounted - duplicate of /api/v1/events/stream in events.ts
   // The sseService.broadcast() method is still available for real-time push (used by auto-logger)

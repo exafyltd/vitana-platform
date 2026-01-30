@@ -7,7 +7,7 @@
     "dev": "tsx watch src/index.ts",
     "prebuild": "rm -rf dist",
     "build": "tsc && npm run copy-frontend",
-    "copy-frontend": "mkdir -p dist/frontend/command-hub && cp -r src/frontend/command-hub/* dist/frontend/command-hub/",
+    "copy-frontend": "mkdir -p dist/frontend/command-hub && cp -r src/frontend/command-hub/* dist/frontend/command-hub/ && mkdir -p dist/frontend/voice-lab && cp -r src/frontend/voice-lab/* dist/frontend/voice-lab/",
     "start": "node dist/index.js",
     "test": "jest",
     "lint": "eslint src/**/*.ts",
