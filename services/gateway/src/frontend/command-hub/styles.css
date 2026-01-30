@@ -15007,3 +15007,78 @@ body {
   font-size: 0.75rem;
   color: var(--color-text-secondary);
 }
+
+/* VTID-01218B: Config Snapshot */
+.voice-lab-config-snapshot {
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  max-width: 600px;
+}
+
+.voice-lab-config-snapshot h4 {
+  margin: 0 0 0.75rem 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.voice-lab-config-snapshot .snapshot-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.5rem;
+}
+
+.voice-lab-config-snapshot .snapshot-item {
+  font-size: 0.8rem;
+  color: var(--color-text-primary);
+}
+
+.voice-lab-config-snapshot .snapshot-item strong {
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+
+/* Kill Switch Styling */
+.voice-lab-kill-switch {
+  padding: 1rem;
+  background: rgba(239, 68, 68, 0.05);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+}
+
+.voice-lab-kill-switch label {
+  color: #ef4444 !important;
+}
+
+.voice-lab-kill-switch .toggle-label.status-active {
+  color: #22c55e;
+  font-weight: 600;
+}
+
+.voice-lab-kill-switch .toggle-label.status-ended {
+  color: #ef4444;
+  font-weight: 600;
+}
+
+/* Audit Hint Footer */
+.voice-lab-audit-hint {
+  margin-top: 2rem;
+  padding: 0.75rem 1rem;
+  background: rgba(34, 197, 94, 0.1);
+  border-left: 3px solid #22c55e;
+  border-radius: 0 6px 6px 0;
+  max-width: 500px;
+}
+
+.voice-lab-audit-hint p {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #22c55e;
+  font-weight: 500;
+}

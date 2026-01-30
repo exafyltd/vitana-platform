@@ -2476,9 +2476,11 @@ const state = {
         sessionDetailsLoading: false,
         // VTID-01218B: Runtime controls (Experiments tab)
         runtimeControls: {
-            chunk_ms: 200,
+            orb_live_enabled: true,       // Kill switch - false falls back to non-live
+            experiment_id: 'baseline',    // Experiment label for telemetry grouping
+            chunk_ms: 20,                 // Audio chunk size (20/30/40ms recommended)
             clear_on_interrupt: true,
-            debounce_ms: 100,
+            debounce_ms: 50,
             model: 'gemini-2.0-flash-exp'
         },
         runtimeControlsSaving: false
@@ -11222,10 +11224,27 @@ function renderVoiceLabPlaceholderPanel(screenName, vtid) {
 
 /**
  * VTID-01218B: Render Experiments panel with runtime controls
+ * Includes: kill switch, experiment selector, chunk size, clear on interrupt, debounce, model
  */
 function renderVoiceLabExperimentsPanel() {
     var panel = document.createElement('div');
     panel.className = 'voice-lab-experiments-panel';
+
+    var controls = state.voiceLab.runtimeControls;
+
+    // Current Config Snapshot
+    var snapshotSection = document.createElement('div');
+    snapshotSection.className = 'voice-lab-config-snapshot';
+    snapshotSection.innerHTML = '<h4>Current Runtime Config</h4>' +
+        '<div class="snapshot-grid">' +
+        '<span class="snapshot-item"><strong>ORB Live:</strong> ' + (controls.orb_live_enabled ? '<span class="status-active">Enabled</span>' : '<span class="status-ended">Disabled</span>') + '</span>' +
+        '<span class="snapshot-item"><strong>Experiment:</strong> ' + controls.experiment_id + '</span>' +
+        '<span class="snapshot-item"><strong>Chunk:</strong> ' + controls.chunk_ms + 'ms</span>' +
+        '<span class="snapshot-item"><strong>Debounce:</strong> ' + controls.debounce_ms + 'ms</span>' +
+        '<span class="snapshot-item"><strong>Clear on Interrupt:</strong> ' + (controls.clear_on_interrupt ? 'Yes' : 'No') + '</span>' +
+        '<span class="snapshot-item"><strong>Model:</strong> ' + controls.model.split('-').slice(-2).join('-') + '</span>' +
+        '</div>';
+    panel.appendChild(snapshotSection);
 
     // Header
     var header = document.createElement('div');
@@ -11246,14 +11265,49 @@ function renderVoiceLabExperimentsPanel() {
     var form = document.createElement('div');
     form.className = 'voice-lab-controls-form';
 
-    var controls = state.voiceLab.runtimeControls;
+    // ORB Live Kill Switch (CRITICAL)
+    var killSwitchGroup = document.createElement('div');
+    killSwitchGroup.className = 'voice-lab-control-group voice-lab-kill-switch';
+    killSwitchGroup.innerHTML = '<label for="vl-orb-live-enabled">ORB Live Enabled</label>' +
+        '<div class="toggle-wrapper">' +
+        '<input type="checkbox" id="vl-orb-live-enabled" ' + (controls.orb_live_enabled ? 'checked' : '') + '>' +
+        '<span class="toggle-label ' + (controls.orb_live_enabled ? 'status-active' : 'status-ended') + '">' + (controls.orb_live_enabled ? 'ENABLED' : 'DISABLED - Fallback to non-live') + '</span>' +
+        '</div>' +
+        '<p class="control-hint">Kill switch. When disabled, falls back to non-live ORB mode.</p>';
+    form.appendChild(killSwitchGroup);
 
-    // Chunk Size control
+    // Experiment ID Selector
+    var experimentGroup = document.createElement('div');
+    experimentGroup.className = 'voice-lab-control-group';
+    var experimentOptions = [
+        { value: 'baseline', label: 'Baseline (default settings)' },
+        { value: 'chunking_v1', label: 'Chunking v1 (20ms chunks)' },
+        { value: 'interrupt_clear_v1', label: 'Interrupt Clear v1' },
+        { value: 'debounce_v1', label: 'Debounce v1 (50ms)' },
+        { value: 'combined_v1', label: 'Combined v1 (all fixes)' }
+    ];
+    var experimentSelectHtml = '<label for="vl-experiment-id">Experiment</label><select id="vl-experiment-id">';
+    experimentOptions.forEach(function(opt) {
+        experimentSelectHtml += '<option value="' + opt.value + '"' + (controls.experiment_id === opt.value ? ' selected' : '') + '>' + opt.label + '</option>';
+    });
+    experimentSelectHtml += '</select><p class="control-hint">Experiment label for telemetry grouping. Required for Metrics analysis.</p>';
+    experimentGroup.innerHTML = experimentSelectHtml;
+    form.appendChild(experimentGroup);
+
+    // Chunk Size control (DROPDOWN - constrained to safe values)
     var chunkGroup = document.createElement('div');
     chunkGroup.className = 'voice-lab-control-group';
-    chunkGroup.innerHTML = '<label for="vl-chunk-ms">Audio Chunk Size (ms)</label>' +
-        '<input type="number" id="vl-chunk-ms" min="50" max="500" step="50" value="' + controls.chunk_ms + '">' +
-        '<p class="control-hint">Size of audio chunks sent to the model. Lower = more responsive, higher = more stable.</p>';
+    var chunkOptions = [
+        { value: 20, label: '20ms (recommended)' },
+        { value: 30, label: '30ms' },
+        { value: 40, label: '40ms' }
+    ];
+    var chunkSelectHtml = '<label for="vl-chunk-ms">Audio Chunk Size</label><select id="vl-chunk-ms">';
+    chunkOptions.forEach(function(opt) {
+        chunkSelectHtml += '<option value="' + opt.value + '"' + (controls.chunk_ms === opt.value ? ' selected' : '') + '>' + opt.label + '</option>';
+    });
+    chunkSelectHtml += '</select><p class="control-hint">Size of audio chunks sent to model. 20-40ms optimal for Gemini Live.</p>';
+    chunkGroup.innerHTML = chunkSelectHtml;
     form.appendChild(chunkGroup);
 
     // Clear on Interrupt toggle
@@ -11267,12 +11321,22 @@ function renderVoiceLabExperimentsPanel() {
         '<p class="control-hint">When user interrupts, clear pending audio playback immediately.</p>';
     form.appendChild(clearGroup);
 
-    // Debounce control
+    // Debounce control (DROPDOWN - constrained)
     var debounceGroup = document.createElement('div');
     debounceGroup.className = 'voice-lab-control-group';
-    debounceGroup.innerHTML = '<label for="vl-debounce-ms">Input Debounce (ms)</label>' +
-        '<input type="number" id="vl-debounce-ms" min="0" max="500" step="25" value="' + controls.debounce_ms + '">' +
-        '<p class="control-hint">Delay before processing audio input. Helps reduce fragmentation.</p>';
+    var debounceOptions = [
+        { value: 0, label: '0ms (no debounce)' },
+        { value: 25, label: '25ms' },
+        { value: 50, label: '50ms (recommended)' },
+        { value: 75, label: '75ms' },
+        { value: 100, label: '100ms' }
+    ];
+    var debounceSelectHtml = '<label for="vl-debounce-ms">Input Debounce</label><select id="vl-debounce-ms">';
+    debounceOptions.forEach(function(opt) {
+        debounceSelectHtml += '<option value="' + opt.value + '"' + (controls.debounce_ms === opt.value ? ' selected' : '') + '>' + opt.label + '</option>';
+    });
+    debounceSelectHtml += '</select><p class="control-hint">Delay before processing audio input. Helps reduce fragmentation.</p>';
+    debounceGroup.innerHTML = debounceSelectHtml;
     form.appendChild(debounceGroup);
 
     // Model selection
@@ -11304,9 +11368,11 @@ function renderVoiceLabExperimentsPanel() {
     saveBtn.addEventListener('click', function() {
         // Read values from form
         var newControls = {
-            chunk_ms: parseInt(document.getElementById('vl-chunk-ms').value) || 200,
+            orb_live_enabled: document.getElementById('vl-orb-live-enabled').checked,
+            experiment_id: document.getElementById('vl-experiment-id').value,
+            chunk_ms: parseInt(document.getElementById('vl-chunk-ms').value) || 20,
             clear_on_interrupt: document.getElementById('vl-clear-interrupt').checked,
-            debounce_ms: parseInt(document.getElementById('vl-debounce-ms').value) || 100,
+            debounce_ms: parseInt(document.getElementById('vl-debounce-ms').value) || 50,
             model: document.getElementById('vl-model').value
         };
         saveVoiceLabRuntimeControls(newControls);
@@ -11318,9 +11384,11 @@ function renderVoiceLabExperimentsPanel() {
     resetBtn.textContent = 'Reset to Defaults';
     resetBtn.addEventListener('click', function() {
         state.voiceLab.runtimeControls = {
-            chunk_ms: 200,
+            orb_live_enabled: true,
+            experiment_id: 'baseline',
+            chunk_ms: 20,
             clear_on_interrupt: true,
-            debounce_ms: 100,
+            debounce_ms: 50,
             model: 'gemini-2.0-flash-exp'
         };
         renderApp();
@@ -11329,11 +11397,11 @@ function renderVoiceLabExperimentsPanel() {
 
     panel.appendChild(actions);
 
-    // Status message
-    var statusDiv = document.createElement('div');
-    statusDiv.className = 'voice-lab-controls-status';
-    statusDiv.innerHTML = '<p class="info-text">Note: Runtime controls are stored locally. Backend integration coming in VTID-01218C.</p>';
-    panel.appendChild(statusDiv);
+    // Audit hint footer
+    var auditDiv = document.createElement('div');
+    auditDiv.className = 'voice-lab-audit-hint';
+    auditDiv.innerHTML = '<p>Changes are audited to OASIS (VTID-01218B)</p>';
+    panel.appendChild(auditDiv);
 
     return panel;
 }
