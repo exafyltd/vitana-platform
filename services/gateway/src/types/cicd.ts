@@ -474,7 +474,14 @@ export type CicdEventType =
   | 'conversation.context_pack.built'
   | 'conversation.model.called'
   | 'conversation.tool.called'
-  | 'conversation.tool.health_check';
+  | 'conversation.tool.health_check'
+  // VTID-01221: ORB and Autopilot Recommendation Sync Events
+  | 'autopilot.recommendations.requested'
+  | 'autopilot.recommendations.received'
+  | 'autopilot.recommendations.failed'
+  | 'dev.recommendation.presented'
+  | 'dev.recommendation.selected'
+  | 'dev.fallback.tool_used';
 
 export interface CicdOasisEvent {
   vtid: string;

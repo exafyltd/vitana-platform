@@ -29,6 +29,13 @@ export type ConversationChannel = typeof CONVERSATION_CHANNELS[number];
 export const MESSAGE_TYPES = ['text', 'voice_transcript'] as const;
 export type MessageType = typeof MESSAGE_TYPES[number];
 
+/**
+ * Retrieval sources available
+ * NOTE: Defined here before ConversationTurnRequestSchema to avoid forward reference
+ */
+export const RETRIEVAL_SOURCES = ['memory_garden', 'knowledge_hub', 'web_search'] as const;
+export type RetrievalSource = typeof RETRIEVAL_SOURCES[number];
+
 // =============================================================================
 // Conversation Turn Request
 // =============================================================================
@@ -100,12 +107,6 @@ export type ConversationTurnRequest = z.infer<typeof ConversationTurnRequestSche
 // =============================================================================
 // Retrieval Router Types
 // =============================================================================
-
-/**
- * Retrieval sources available
- */
-export const RETRIEVAL_SOURCES = ['memory_garden', 'knowledge_hub', 'web_search'] as const;
-export type RetrievalSource = typeof RETRIEVAL_SOURCES[number];
 
 /**
  * Routing rules for retrieval
@@ -359,7 +360,7 @@ export interface ToolDefinition {
   enabled: boolean;
 
   /** Tool category */
-  category: 'autopilot' | 'knowledge' | 'memory' | 'system' | 'custom';
+  category: 'autopilot' | 'knowledge' | 'memory' | 'system' | 'custom' | 'fallback';
 
   /** Average latency in ms */
   avg_latency_ms?: number;

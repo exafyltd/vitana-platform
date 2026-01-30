@@ -288,6 +288,22 @@ export function resetDebounce(sessionId: string): void {
 // =============================================================================
 
 /**
+ * Map internal format types to telemetry format types
+ */
+function mapFormatToTelemetry(format: SyncBriefResult['format']): 'sync-brief' | 'list' | 'inline' {
+  switch (format) {
+    case 'sync-brief':
+      return 'sync-brief';
+    case 'fallback':
+      return 'list';  // Fallback is presented as a list
+    case 'empty':
+      return 'inline';  // Empty state is inline
+    default:
+      return 'sync-brief';
+  }
+}
+
+/**
  * Emit telemetry when recommendations are presented via Sync Brief
  */
 export async function emitSyncBriefPresented(
@@ -296,11 +312,12 @@ export async function emitSyncBriefPresented(
   channel: 'orb' | 'operator' | 'panel'
 ): Promise<void> {
   if (result.recommendationIds.length > 0) {
+    const telemetryFormat = mapFormatToTelemetry(result.format);
     await recommendationSyncEvents.recommendationPresented(
       vtid,
       result.recommendationIds,
       channel,
-      result.format
+      telemetryFormat
     ).catch(err => {
       console.warn(`[VTID-01221] Failed to emit presentation event: ${err.message}`);
     });
