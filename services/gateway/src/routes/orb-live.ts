@@ -3502,6 +3502,13 @@ router.post('/live/session/start', async (req: Request, res: Response) => {
     voice: getVoiceForLang(lang)
   });
 
+  // VTID-01218A: Emit Voice LAB telemetry for session tracking
+  await emitVoiceLabEvent('voice.live.session.started', {
+    session_id: sessionId,
+    lang,
+    voice: getVoiceForLang(lang)
+  });
+
   console.log(`[VTID-01155] Live session created: ${sessionId} (lang=${lang})`);
 
   return res.status(200).json({
@@ -3568,6 +3575,15 @@ router.post('/live/session/stop', async (req: Request, res: Response) => {
     video_in_frames: session.videoInFrames,
     audio_out_chunks: session.audioOutChunks,
     duration_ms: Date.now() - session.createdAt.getTime()
+  });
+
+  // VTID-01218A: Emit Voice LAB telemetry for session tracking
+  await emitVoiceLabEvent('voice.live.session.ended', {
+    session_id,
+    audio_in_chunks: session.audioInChunks,
+    audio_out_chunks: session.audioOutChunks,
+    lang: session.lang,
+    voice: getVoiceForLang(session.lang)
   });
 
   // Remove from store
