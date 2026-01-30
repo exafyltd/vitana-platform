@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vitana Voice LAB - ORB Live Operations</title>
+  <link rel="stylesheet" href="/voice-lab/voice-lab.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header class="vlab-header">
+      <h1>Voice LAB</h1>
+      <div class="vlab-header-subtitle">ORB Live Operations - VTID-01218A</div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="vlab-main">
+      <!-- Controls Bar -->
+      <div class="vlab-controls">
+        <div class="vlab-controls-left">
+          <select id="status-filter" class="vlab-select">
+            <option value="all">All Sessions</option>
+            <option value="active">Active Only</option>
+            <option value="ended">Ended Only</option>
+          </select>
+          <button id="refresh-btn" class="vlab-btn vlab-btn-primary">Refresh</button>
+        </div>
+        <div class="vlab-controls-right">
+          <span id="session-count" class="vlab-badge">0 sessions</span>
+          <span id="last-updated" class="vlab-timestamp">--</span>
+        </div>
+      </div>
+
+      <!-- Sessions Table -->
+      <div class="vlab-table-container">
+        <table class="vlab-table" id="sessions-table">
+          <thead>
+            <tr>
+              <th>Session ID</th>
+              <th>Status</th>
+              <th>Started</th>
+              <th>Duration</th>
+              <th>Turns</th>
+              <th>Audio In</th>
+              <th>Audio Out</th>
+              <th>Interrupts</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="sessions-tbody">
+            <tr class="vlab-loading-row">
+              <td colspan="9">Loading sessions...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+
+    <!-- Session Drawer (Hidden by default) -->
+    <div id="session-drawer" class="vlab-drawer vlab-drawer-hidden">
+      <div class="vlab-drawer-overlay" onclick="VoiceLab.closeDrawer()"></div>
+      <div class="vlab-drawer-content">
+        <div class="vlab-drawer-header">
+          <h2>Session Details</h2>
+          <button class="vlab-drawer-close" onclick="VoiceLab.closeDrawer()">&times;</button>
+        </div>
+        <div class="vlab-drawer-body" id="drawer-body">
+          <!-- Session details will be populated here -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/voice-lab/voice-lab.js"></script>
+</body>
+</html>

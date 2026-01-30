@@ -3346,6 +3346,83 @@ async function emitTtsEvent(
   }
 }
 
+// =============================================================================
+// VTID-01218A: Voice LAB Live Telemetry Events
+// =============================================================================
+
+/**
+ * VTID-01218A: Voice LAB telemetry event types
+ */
+type VoiceLabEventType =
+  | 'voice.live.session.started'
+  | 'voice.live.session.ended'
+  | 'voice.live.turn.started'
+  | 'voice.live.turn.completed'
+  | 'voice.live.turn.interrupted'
+  | 'voice.live.playback.cleared'
+  | 'voice.live.error';
+
+/**
+ * VTID-01218A: Voice LAB telemetry payload interface
+ * Includes all fields required for fragmentation debugging per CTO spec
+ */
+interface VoiceLabTelemetryPayload {
+  session_id: string;
+  // Core metrics
+  turn_number?: number;
+  chunk_ms?: number;
+  input_rate?: number;
+  output_rate?: number;
+  // Latency metrics
+  first_audio_ms?: number;
+  turn_ms?: number;
+  // Fragmentation debugging (CTO required)
+  interrupted_count?: number;
+  playback_queue_ms?: number;
+  end_turn_source?: 'client' | 'server_vad' | 'timeout' | null;
+  interrupt_reason?: string | null;
+  playback_clear_triggered?: boolean;
+  // Session metadata
+  lang?: string;
+  voice?: string;
+  audio_in_chunks?: number;
+  audio_out_chunks?: number;
+  video_frames?: number;
+  duration_ms?: number;
+  error_message?: string;
+  error_code?: string;
+  // Transport info
+  transport?: 'websocket' | 'sse';
+}
+
+/**
+ * VTID-01218A: Emit Voice LAB telemetry event to OASIS
+ * Used for ORB Live observability and fragmentation debugging
+ */
+async function emitVoiceLabEvent(
+  eventType: VoiceLabEventType,
+  payload: VoiceLabTelemetryPayload
+): Promise<void> {
+  try {
+    await emitOasisEvent({
+      vtid: 'VTID-01218A',
+      type: eventType,
+      source: 'gateway',
+      status: eventType === 'voice.live.error' ? 'error' : 'info',
+      message: `Voice LAB: ${eventType} for session ${payload.session_id}`,
+      payload: {
+        ...payload,
+        service: 'gateway',
+        component: 'orb-live',
+        env: isDevSandbox() ? 'dev-sandbox' : 'production',
+        timestamp: new Date().toISOString()
+      }
+    });
+  } catch (err: any) {
+    console.warn(`[VTID-01218A] Failed to emit ${eventType}:`, err.message);
+  }
+}
+
 /**
  * VTID-01155: Normalize language code to 2-letter ISO
  */
@@ -4057,6 +4134,7 @@ interface WsClientMessage {
 
 /**
  * VTID-01222: WebSocket session state
+ * VTID-01218A: Extended with turn metrics for Voice LAB telemetry
  */
 interface WsClientSession {
   sessionId: string;
@@ -4065,6 +4143,19 @@ interface WsClientSession {
   connected: boolean;
   lastActivity: Date;
   clientIP: string;
+  // VTID-01218A: Turn metrics for Voice LAB telemetry
+  turnMetrics: {
+    turnCount: number;
+    currentTurnStartedAt: Date | null;
+    firstAudioReceivedAt: Date | null;
+    firstAudioSentAt: Date | null;
+    lastEndTurnSource: 'client' | 'server_vad' | 'timeout' | null;
+    interruptedCount: number;
+    lastInterruptReason: string | null;
+    playbackClearTriggered: boolean;
+    inputRate: number;  // samples per second
+    outputRate: number; // samples per second
+  };
 }
 
 // Track WebSocket client sessions
@@ -4126,13 +4217,26 @@ function handleWebSocketConnection(ws: WebSocket, req: IncomingMessage): void {
   incrementConnection(clientIP);
 
   // Create client session
+  // VTID-01218A: Initialize with turn metrics for telemetry
   const clientSession: WsClientSession = {
     sessionId,
     clientWs: ws,
     liveSession: null,
     connected: true,
     lastActivity: new Date(),
-    clientIP
+    clientIP,
+    turnMetrics: {
+      turnCount: 0,
+      currentTurnStartedAt: null,
+      firstAudioReceivedAt: null,
+      firstAudioSentAt: null,
+      lastEndTurnSource: null,
+      interruptedCount: 0,
+      lastInterruptReason: null,
+      playbackClearTriggered: false,
+      inputRate: 16000,
+      outputRate: 24000
+    }
   };
 
   wsClientSessions.set(sessionId, clientSession);
@@ -4282,9 +4386,15 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     const upstreamWs = await connectToLiveAPI(
       liveSession,
       // Audio response handler - forward to client via WebSocket
+      // VTID-01218A: Extended with first audio timing tracking
       (audioB64: string) => {
         if (clientWs.readyState === WebSocket.OPEN) {
           try {
+            // VTID-01218A: Track first audio sent for latency measurement
+            if (clientSession.turnMetrics.firstAudioSentAt === null) {
+              clientSession.turnMetrics.firstAudioSentAt = new Date();
+            }
+
             // Convert PCM to WAV for browser playback
             const wavB64 = pcmToWav(audioB64, 24000, 1, 16);
             sendWsMessage(clientWs, {
@@ -4308,8 +4418,19 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
         }
       },
       // Error handler
+      // VTID-01218A: Extended with error telemetry
       (error: Error) => {
         console.error(`[VTID-01222] Live API error for ${sessionId}:`, error);
+
+        // VTID-01218A: Emit Voice LAB error telemetry
+        emitVoiceLabEvent('voice.live.error', {
+          session_id: sessionId,
+          error_message: error.message,
+          error_code: 'live_api_runtime_error',
+          turn_number: clientSession.turnMetrics.turnCount,
+          transport: 'websocket'
+        }).catch(() => {});
+
         if (clientWs.readyState === WebSocket.OPEN) {
           sendWsMessage(clientWs, {
             type: 'error',
@@ -4345,6 +4466,16 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       transport: 'websocket'
     }).catch(() => {});
 
+    // VTID-01218A: Emit Voice LAB session started telemetry
+    emitVoiceLabEvent('voice.live.session.started', {
+      session_id: sessionId,
+      lang,
+      voice: LIVE_API_VOICES[lang] || LIVE_API_VOICES['en'],
+      input_rate: clientSession.turnMetrics.inputRate,
+      output_rate: clientSession.turnMetrics.outputRate,
+      transport: 'websocket'
+    }).catch(() => {});
+
     sendWsMessage(clientWs, {
       type: 'session_started',
       session_id: sessionId,
@@ -4360,6 +4491,15 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
 
   } catch (err: any) {
     console.error(`[VTID-01222] Failed to connect Live API for ${sessionId}:`, err.message);
+
+    // VTID-01218A: Emit Voice LAB error telemetry
+    emitVoiceLabEvent('voice.live.error', {
+      session_id: sessionId,
+      error_message: err.message,
+      error_code: 'live_api_connection_failed',
+      lang,
+      transport: 'websocket'
+    }).catch(() => {});
 
     sendWsMessage(clientWs, {
       type: 'session_started',
@@ -4377,9 +4517,10 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
 
 /**
  * VTID-01222: Handle audio message from client
+ * VTID-01218A: Extended with turn tracking for Voice LAB telemetry
  */
 async function handleWsAudioMessage(clientSession: WsClientSession, message: WsClientMessage): Promise<void> {
-  const { sessionId, clientWs, liveSession } = clientSession;
+  const { sessionId, clientWs, liveSession, turnMetrics } = clientSession;
 
   if (!liveSession) return;
 
@@ -4390,6 +4531,25 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
 
   liveSession.audioInChunks++;
   liveSession.lastActivity = new Date();
+
+  // VTID-01218A: Track turn start on first audio chunk
+  if (turnMetrics.currentTurnStartedAt === null) {
+    turnMetrics.turnCount++;
+    turnMetrics.currentTurnStartedAt = new Date();
+    turnMetrics.firstAudioReceivedAt = new Date();
+    turnMetrics.firstAudioSentAt = null;  // Reset for this turn
+    turnMetrics.playbackClearTriggered = false;
+
+    // Emit turn started telemetry
+    emitVoiceLabEvent('voice.live.turn.started', {
+      session_id: sessionId,
+      turn_number: turnMetrics.turnCount,
+      input_rate: turnMetrics.inputRate,
+      output_rate: turnMetrics.outputRate,
+      interrupted_count: turnMetrics.interruptedCount,
+      transport: 'websocket'
+    }).catch(() => {});
+  }
 
   // Emit OASIS event (sample every 10th chunk)
   if (liveSession.audioInChunks % 10 === 0) {
@@ -4462,16 +4622,50 @@ function handleWsVideoMessage(clientSession: WsClientSession, message: WsClientM
 
 /**
  * VTID-01222: Handle end of turn signal
+ * VTID-01218A: Extended with turn completion telemetry for Voice LAB
  */
 function handleWsEndTurn(clientSession: WsClientSession): void {
-  const { sessionId, clientWs, liveSession } = clientSession;
+  const { sessionId, clientWs, liveSession, turnMetrics } = clientSession;
 
   if (!liveSession) return;
+
+  // VTID-01218A: Calculate turn metrics
+  const turnMs = turnMetrics.currentTurnStartedAt
+    ? Date.now() - turnMetrics.currentTurnStartedAt.getTime()
+    : null;
+  const firstAudioMs = turnMetrics.firstAudioReceivedAt && turnMetrics.firstAudioSentAt
+    ? turnMetrics.firstAudioSentAt.getTime() - turnMetrics.firstAudioReceivedAt.getTime()
+    : null;
+
+  // Track end turn source (client-initiated)
+  turnMetrics.lastEndTurnSource = 'client';
 
   if (liveSession.upstreamWs && liveSession.upstreamWs.readyState === WebSocket.OPEN) {
     const sent = sendEndOfTurn(liveSession.upstreamWs);
     if (sent) {
       console.log(`[VTID-01222] End of turn sent to Live API: ${sessionId}`);
+
+      // VTID-01218A: Emit turn completed telemetry
+      emitVoiceLabEvent('voice.live.turn.completed', {
+        session_id: sessionId,
+        turn_number: turnMetrics.turnCount,
+        turn_ms: turnMs ?? undefined,
+        first_audio_ms: firstAudioMs ?? undefined,
+        end_turn_source: turnMetrics.lastEndTurnSource,
+        interrupted_count: turnMetrics.interruptedCount,
+        playback_clear_triggered: turnMetrics.playbackClearTriggered,
+        input_rate: turnMetrics.inputRate,
+        output_rate: turnMetrics.outputRate,
+        audio_in_chunks: liveSession.audioInChunks,
+        audio_out_chunks: liveSession.audioOutChunks,
+        transport: 'websocket'
+      }).catch(() => {});
+
+      // Reset turn state for next turn
+      turnMetrics.currentTurnStartedAt = null;
+      turnMetrics.firstAudioReceivedAt = null;
+      turnMetrics.firstAudioSentAt = null;
+
       sendWsMessage(clientWs, { type: 'end_turn_ack', live_api: true });
     } else {
       sendWsMessage(clientWs, { type: 'end_turn_ack', live_api: false, message: 'Failed to send' });
@@ -4483,13 +4677,17 @@ function handleWsEndTurn(clientSession: WsClientSession): void {
 
 /**
  * VTID-01222: Handle stop session message
+ * VTID-01218A: Extended with session ended telemetry for Voice LAB
  */
 function handleWsStopSession(clientSession: WsClientSession): void {
-  const { sessionId, clientWs, liveSession } = clientSession;
+  const { sessionId, clientWs, liveSession, turnMetrics } = clientSession;
 
   console.log(`[VTID-01222] Stopping session: ${sessionId}`);
 
   if (liveSession) {
+    // VTID-01218A: Calculate session duration
+    const durationMs = Date.now() - liveSession.createdAt.getTime();
+
     liveSession.active = false;
 
     // Close upstream WebSocket
@@ -4511,6 +4709,21 @@ function handleWsStopSession(clientSession: WsClientSession): void {
       transport: 'websocket'
     }).catch(() => {});
 
+    // VTID-01218A: Emit Voice LAB session ended telemetry
+    emitVoiceLabEvent('voice.live.session.ended', {
+      session_id: sessionId,
+      duration_ms: durationMs,
+      turn_number: turnMetrics.turnCount,
+      interrupted_count: turnMetrics.interruptedCount,
+      audio_in_chunks: liveSession.audioInChunks,
+      audio_out_chunks: liveSession.audioOutChunks,
+      video_frames: liveSession.videoInFrames,
+      lang: liveSession.lang,
+      input_rate: turnMetrics.inputRate,
+      output_rate: turnMetrics.outputRate,
+      transport: 'websocket'
+    }).catch(() => {});
+
     liveSessions.delete(sessionId);
   }
 
@@ -4524,6 +4737,7 @@ function handleWsStopSession(clientSession: WsClientSession): void {
 
 /**
  * VTID-01222: Cleanup WebSocket session
+ * VTID-01218A: Extended with session ended telemetry for Voice LAB
  */
 function cleanupWsSession(sessionId: string): void {
   const clientSession = wsClientSessions.get(sessionId);
@@ -4531,15 +4745,36 @@ function cleanupWsSession(sessionId: string): void {
 
   // Close Live API session if active
   if (clientSession.liveSession) {
-    clientSession.liveSession.active = false;
+    const liveSession = clientSession.liveSession;
+    const turnMetrics = clientSession.turnMetrics;
 
-    if (clientSession.liveSession.upstreamWs) {
+    // VTID-01218A: Calculate session duration
+    const durationMs = Date.now() - liveSession.createdAt.getTime();
+
+    liveSession.active = false;
+
+    if (liveSession.upstreamWs) {
       try {
-        clientSession.liveSession.upstreamWs.close();
+        liveSession.upstreamWs.close();
       } catch (e) {
         // Ignore
       }
     }
+
+    // VTID-01218A: Emit Voice LAB session ended telemetry (on cleanup)
+    emitVoiceLabEvent('voice.live.session.ended', {
+      session_id: sessionId,
+      duration_ms: durationMs,
+      turn_number: turnMetrics.turnCount,
+      interrupted_count: turnMetrics.interruptedCount,
+      audio_in_chunks: liveSession.audioInChunks,
+      audio_out_chunks: liveSession.audioOutChunks,
+      video_frames: liveSession.videoInFrames,
+      lang: liveSession.lang,
+      input_rate: turnMetrics.inputRate,
+      output_rate: turnMetrics.outputRate,
+      transport: 'websocket'
+    }).catch(() => {});
 
     liveSessions.delete(sessionId);
   }
