@@ -135,6 +135,7 @@ async function queryVoiceLabEvents(
     if (filters.offset) params.push(`offset=${filters.offset}`);
 
     query += params.join('&');
+    console.log(`[VTID-01218A] OASIS query: ${query.replace(config.key, '***')}`);
 
     const resp = await fetch(query, {
       headers: {
@@ -145,11 +146,14 @@ async function queryVoiceLabEvents(
     });
 
     if (!resp.ok) {
-      console.error(`[VTID-01218A] OASIS query failed: ${resp.status} ${resp.statusText}`);
+      const errorText = await resp.text();
+      console.error(`[VTID-01218A] OASIS query failed: ${resp.status} ${resp.statusText} - ${errorText}`);
       return [];
     }
 
-    return await resp.json() as any[];
+    const results = await resp.json() as any[];
+    console.log(`[VTID-01218A] OASIS query returned ${results.length} results`);
+    return results;
   } catch (err: any) {
     console.error(`[VTID-01218A] OASIS query error:`, err.message);
     return [];
@@ -194,17 +198,20 @@ router.get('/live/sessions', async (req: Request, res: Response) => {
     const { status, limit, offset } = query.data;
 
     // Query session started events
+    console.log('[VTID-01218A] Querying session.started events...');
     const sessionStartEvents = await queryVoiceLabEvents({
       eventTypes: ['voice.live.session.started'],
       limit: limit + 50, // Get more to account for filtering
       offset,
     });
+    console.log(`[VTID-01218A] Found ${sessionStartEvents.length} session.started events`);
 
     // Query session ended events
     const sessionEndEvents = await queryVoiceLabEvents({
       eventTypes: ['voice.live.session.ended'],
       limit: 200, // Get recent ended sessions
     });
+    console.log(`[VTID-01218A] Found ${sessionEndEvents.length} session.ended events`);
 
     // Build session map
     const sessionEndMap = new Map<string, any>();
@@ -434,6 +441,89 @@ router.get('/health', (_req: Request, res: Response) => {
     vtid: 'VTID-01218A',
     timestamp: new Date().toISOString(),
   });
+});
+
+/**
+ * GET /api/v1/voice-lab/debug/events
+ *
+ * Debug endpoint to check if voice.live events exist in OASIS
+ */
+router.get('/debug/events', async (_req: Request, res: Response) => {
+  console.log('[VTID-01218A] GET /voice-lab/debug/events');
+
+  const config = getSupabaseConfig();
+  if (!config) {
+    return res.status(500).json({
+      ok: false,
+      error: 'Supabase not configured',
+    });
+  }
+
+  try {
+    // Query ALL events with voice.live topic (no VTID filter)
+    const query = `${config.url}/rest/v1/oasis_events?topic=like.voice.live.*&order=created_at.desc&limit=20`;
+
+    const resp = await fetch(query, {
+      headers: {
+        'apikey': config.key,
+        'Authorization': `Bearer ${config.key}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!resp.ok) {
+      const errorText = await resp.text();
+      return res.status(resp.status).json({
+        ok: false,
+        error: `Query failed: ${resp.status}`,
+        details: errorText,
+      });
+    }
+
+    const events = await resp.json() as any[];
+
+    // Also check for events with VTID-01218A
+    const vtidQuery = `${config.url}/rest/v1/oasis_events?vtid=eq.VTID-01218A&order=created_at.desc&limit=20`;
+    const vtidResp = await fetch(vtidQuery, {
+      headers: {
+        'apikey': config.key,
+        'Authorization': `Bearer ${config.key}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const vtidEvents = vtidResp.ok ? await vtidResp.json() as any[] : [];
+
+    return res.json({
+      ok: true,
+      voice_live_events: {
+        count: events.length,
+        events: events.map((e: any) => ({
+          id: e.id,
+          topic: e.topic,
+          vtid: e.vtid,
+          created_at: e.created_at,
+          session_id: e.metadata?.session_id,
+        })),
+      },
+      vtid_01218a_events: {
+        count: vtidEvents.length,
+        events: vtidEvents.map((e: any) => ({
+          id: e.id,
+          topic: e.topic,
+          vtid: e.vtid,
+          created_at: e.created_at,
+          session_id: e.metadata?.session_id,
+        })),
+      },
+    });
+  } catch (err: any) {
+    console.error('[VTID-01218A] Debug query error:', err.message);
+    return res.status(500).json({
+      ok: false,
+      error: err.message,
+    });
+  }
 });
 
 export default router;
