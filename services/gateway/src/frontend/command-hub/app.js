@@ -2460,12 +2460,28 @@ const state = {
     historyError: null,
 
     // VTID-01218E: Voice LAB State
+    // VTID-01218B: Enhanced with auto-refresh, session details, turns, runtime controls
     voiceLab: {
         activeSubTab: 'orb-live', // Default sub-tab
         sessions: [],
         sessionsLoading: false,
         sessionsFetched: false, // Tracks if initial fetch was attempted
-        selectedSession: null
+        selectedSession: null,
+        // VTID-01218B: Auto-refresh
+        autoRefreshEnabled: true,
+        autoRefreshIntervalId: null,
+        // VTID-01218B: Session details and turns
+        selectedSessionDetails: null,
+        selectedSessionTurns: [],
+        sessionDetailsLoading: false,
+        // VTID-01218B: Runtime controls (Experiments tab)
+        runtimeControls: {
+            chunk_ms: 200,
+            clear_on_interrupt: true,
+            debounce_ms: 100,
+            model: 'gemini-2.0-flash-exp'
+        },
+        runtimeControlsSaving: false
     },
 
     // User (fallback values - will be replaced by authIdentity when available)
@@ -11121,12 +11137,18 @@ function renderVoiceLabView() {
     var content = document.createElement('div');
     content.className = 'voice-lab-content';
 
+    // VTID-01218B: Stop auto-refresh when leaving ORB Live tab
+    if (state.voiceLab.activeSubTab !== 'orb-live') {
+        stopVoiceLabAutoRefresh();
+    }
+
     switch (state.voiceLab.activeSubTab) {
         case 'orb-live':
             content.appendChild(renderVoiceLabOrbLivePanel());
             break;
         case 'experiments':
-            content.appendChild(renderVoiceLabPlaceholderPanel('Experiments', 'VTID-01218B'));
+            // VTID-01218B: Runtime controls panel
+            content.appendChild(renderVoiceLabExperimentsPanel());
             break;
         case 'providers':
             content.appendChild(renderVoiceLabPlaceholderPanel('Providers', 'VTID-01218D'));
@@ -11199,11 +11221,171 @@ function renderVoiceLabPlaceholderPanel(screenName, vtid) {
 }
 
 /**
+ * VTID-01218B: Render Experiments panel with runtime controls
+ */
+function renderVoiceLabExperimentsPanel() {
+    var panel = document.createElement('div');
+    panel.className = 'voice-lab-experiments-panel';
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'voice-lab-experiments-header';
+
+    var title = document.createElement('h3');
+    title.textContent = 'Runtime Controls';
+    header.appendChild(title);
+
+    var subtitle = document.createElement('p');
+    subtitle.className = 'voice-lab-experiments-subtitle';
+    subtitle.textContent = 'Configure ORB Live voice session parameters. Changes apply to new sessions.';
+    header.appendChild(subtitle);
+
+    panel.appendChild(header);
+
+    // Controls form
+    var form = document.createElement('div');
+    form.className = 'voice-lab-controls-form';
+
+    var controls = state.voiceLab.runtimeControls;
+
+    // Chunk Size control
+    var chunkGroup = document.createElement('div');
+    chunkGroup.className = 'voice-lab-control-group';
+    chunkGroup.innerHTML = '<label for="vl-chunk-ms">Audio Chunk Size (ms)</label>' +
+        '<input type="number" id="vl-chunk-ms" min="50" max="500" step="50" value="' + controls.chunk_ms + '">' +
+        '<p class="control-hint">Size of audio chunks sent to the model. Lower = more responsive, higher = more stable.</p>';
+    form.appendChild(chunkGroup);
+
+    // Clear on Interrupt toggle
+    var clearGroup = document.createElement('div');
+    clearGroup.className = 'voice-lab-control-group';
+    clearGroup.innerHTML = '<label for="vl-clear-interrupt">Clear Playback on Interrupt</label>' +
+        '<div class="toggle-wrapper">' +
+        '<input type="checkbox" id="vl-clear-interrupt" ' + (controls.clear_on_interrupt ? 'checked' : '') + '>' +
+        '<span class="toggle-label">' + (controls.clear_on_interrupt ? 'Enabled' : 'Disabled') + '</span>' +
+        '</div>' +
+        '<p class="control-hint">When user interrupts, clear pending audio playback immediately.</p>';
+    form.appendChild(clearGroup);
+
+    // Debounce control
+    var debounceGroup = document.createElement('div');
+    debounceGroup.className = 'voice-lab-control-group';
+    debounceGroup.innerHTML = '<label for="vl-debounce-ms">Input Debounce (ms)</label>' +
+        '<input type="number" id="vl-debounce-ms" min="0" max="500" step="25" value="' + controls.debounce_ms + '">' +
+        '<p class="control-hint">Delay before processing audio input. Helps reduce fragmentation.</p>';
+    form.appendChild(debounceGroup);
+
+    // Model selection
+    var modelGroup = document.createElement('div');
+    modelGroup.className = 'voice-lab-control-group';
+    var modelOptions = [
+        { value: 'gemini-2.0-flash-exp', label: 'Gemini 2.0 Flash (Experimental)' },
+        { value: 'gemini-2.0-flash-live-001', label: 'Gemini 2.0 Flash Live' },
+        { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' }
+    ];
+    var modelSelectHtml = '<label for="vl-model">Voice Model</label><select id="vl-model">';
+    modelOptions.forEach(function(opt) {
+        modelSelectHtml += '<option value="' + opt.value + '"' + (controls.model === opt.value ? ' selected' : '') + '>' + opt.label + '</option>';
+    });
+    modelSelectHtml += '</select><p class="control-hint">Model used for voice responses. Flash models offer lower latency.</p>';
+    modelGroup.innerHTML = modelSelectHtml;
+    form.appendChild(modelGroup);
+
+    panel.appendChild(form);
+
+    // Action buttons
+    var actions = document.createElement('div');
+    actions.className = 'voice-lab-controls-actions';
+
+    var saveBtn = document.createElement('button');
+    saveBtn.className = 'voice-lab-save-btn';
+    saveBtn.textContent = state.voiceLab.runtimeControlsSaving ? 'Saving...' : 'Save Changes';
+    saveBtn.disabled = state.voiceLab.runtimeControlsSaving;
+    saveBtn.addEventListener('click', function() {
+        // Read values from form
+        var newControls = {
+            chunk_ms: parseInt(document.getElementById('vl-chunk-ms').value) || 200,
+            clear_on_interrupt: document.getElementById('vl-clear-interrupt').checked,
+            debounce_ms: parseInt(document.getElementById('vl-debounce-ms').value) || 100,
+            model: document.getElementById('vl-model').value
+        };
+        saveVoiceLabRuntimeControls(newControls);
+    });
+    actions.appendChild(saveBtn);
+
+    var resetBtn = document.createElement('button');
+    resetBtn.className = 'voice-lab-reset-btn';
+    resetBtn.textContent = 'Reset to Defaults';
+    resetBtn.addEventListener('click', function() {
+        state.voiceLab.runtimeControls = {
+            chunk_ms: 200,
+            clear_on_interrupt: true,
+            debounce_ms: 100,
+            model: 'gemini-2.0-flash-exp'
+        };
+        renderApp();
+    });
+    actions.appendChild(resetBtn);
+
+    panel.appendChild(actions);
+
+    // Status message
+    var statusDiv = document.createElement('div');
+    statusDiv.className = 'voice-lab-controls-status';
+    statusDiv.innerHTML = '<p class="info-text">Note: Runtime controls are stored locally. Backend integration coming in VTID-01218C.</p>';
+    panel.appendChild(statusDiv);
+
+    return panel;
+}
+
+/**
+ * VTID-01218B: Save runtime controls
+ */
+function saveVoiceLabRuntimeControls(controls) {
+    console.log('[VTID-01218B] Saving runtime controls:', controls);
+    state.voiceLab.runtimeControlsSaving = true;
+    renderApp();
+
+    // For now, just save to state (backend integration in future VTID)
+    setTimeout(function() {
+        state.voiceLab.runtimeControls = controls;
+        state.voiceLab.runtimeControlsSaving = false;
+        // Store in localStorage for persistence
+        try {
+            localStorage.setItem('voiceLab.runtimeControls', JSON.stringify(controls));
+        } catch (e) {
+            console.warn('[VTID-01218B] Failed to persist controls:', e);
+        }
+        renderApp();
+    }, 500);
+}
+
+/**
+ * VTID-01218B: Load runtime controls from localStorage
+ */
+function loadVoiceLabRuntimeControls() {
+    try {
+        var stored = localStorage.getItem('voiceLab.runtimeControls');
+        if (stored) {
+            var controls = JSON.parse(stored);
+            state.voiceLab.runtimeControls = Object.assign({}, state.voiceLab.runtimeControls, controls);
+            console.log('[VTID-01218B] Loaded runtime controls from localStorage');
+        }
+    } catch (e) {
+        console.warn('[VTID-01218B] Failed to load controls:', e);
+    }
+}
+
+/**
  * VTID-01218E: Render ORB Live panel - active sessions and turn timeline
+ * VTID-01218B: Enhanced with auto-refresh, visual alerts
  */
 function renderVoiceLabOrbLivePanel() {
     var panel = document.createElement('div');
     panel.className = 'voice-lab-orb-live-panel';
+
+    // VTID-01218B: Start auto-refresh when entering this panel
+    startVoiceLabAutoRefresh();
 
     // Auto-fetch sessions (only on first render)
     if (!state.voiceLab.sessionsLoading && !state.voiceLab.sessionsFetched) {
@@ -11221,15 +11403,38 @@ function renderVoiceLabOrbLivePanel() {
     sessionsTitle.textContent = 'Active Sessions';
     sessionsHeader.appendChild(sessionsTitle);
 
+    // VTID-01218B: Header controls (auto-refresh toggle + refresh button)
+    var headerControls = document.createElement('div');
+    headerControls.className = 'voice-lab-header-controls';
+
+    // Auto-refresh toggle
+    var autoRefreshLabel = document.createElement('label');
+    autoRefreshLabel.className = 'voice-lab-auto-refresh-label';
+    var autoRefreshCheckbox = document.createElement('input');
+    autoRefreshCheckbox.type = 'checkbox';
+    autoRefreshCheckbox.checked = state.voiceLab.autoRefreshEnabled;
+    autoRefreshCheckbox.addEventListener('change', function() {
+        state.voiceLab.autoRefreshEnabled = autoRefreshCheckbox.checked;
+        if (autoRefreshCheckbox.checked) {
+            startVoiceLabAutoRefresh();
+        } else {
+            stopVoiceLabAutoRefresh();
+        }
+    });
+    autoRefreshLabel.appendChild(autoRefreshCheckbox);
+    autoRefreshLabel.appendChild(document.createTextNode(' Auto-refresh (2s)'));
+    headerControls.appendChild(autoRefreshLabel);
+
     var refreshBtn = document.createElement('button');
     refreshBtn.className = 'voice-lab-refresh-btn';
     refreshBtn.textContent = 'Refresh';
     refreshBtn.addEventListener('click', function() {
-        state.voiceLab.sessionsFetched = false; // Reset to allow re-fetch
+        state.voiceLab.sessionsFetched = false;
         fetchVoiceLabSessions();
     });
-    sessionsHeader.appendChild(refreshBtn);
+    headerControls.appendChild(refreshBtn);
 
+    sessionsHeader.appendChild(headerControls);
     sessionsSection.appendChild(sessionsHeader);
 
     // Sessions table or loading state
@@ -11253,6 +11458,7 @@ function renderVoiceLabOrbLivePanel() {
             '<th>Started</th>' +
             '<th>Status</th>' +
             '<th>Turns</th>' +
+            '<th>Alerts</th>' +
             '<th>Last Activity</th>' +
             '<th>Actions</th>' +
             '</tr>';
@@ -11266,10 +11472,37 @@ function renderVoiceLabOrbLivePanel() {
             var startedAt = session.startedAt ? new Date(session.startedAt).toLocaleTimeString() : '-';
             var lastActivity = session.lastActivity ? new Date(session.lastActivity).toLocaleTimeString() : '-';
 
+            // VTID-01218B: Visual alerts
+            var alerts = [];
+            var alertClass = '';
+            if (session.turnCount === 0 && !session.connected) {
+                alerts.push('No turns');
+                alertClass = 'alert-red';
+            }
+            if (session.interruptedCount > 0) {
+                alerts.push(session.interruptedCount + ' interrupts');
+                if (!alertClass) alertClass = 'alert-orange';
+            }
+            if (session.errorCount > 0) {
+                alerts.push(session.errorCount + ' errors');
+                if (!alertClass) alertClass = 'alert-red';
+            }
+
+            var alertsHtml = alerts.length > 0
+                ? '<span class="voice-lab-alert ' + alertClass + '">' + alerts.join(', ') + '</span>'
+                : '<span class="voice-lab-ok">OK</span>';
+
+            // VTID-01218B: Turns with color coding
+            var turnsClass = '';
+            if (session.turnCount === 0 && !session.connected) {
+                turnsClass = 'turns-zero';
+            }
+
             row.innerHTML = '<td class="session-id">' + (session.sessionId || '-').substring(0, 8) + '...</td>' +
                 '<td>' + startedAt + '</td>' +
-                '<td class="session-status">' + (session.connected ? 'Active' : 'Ended') + '</td>' +
-                '<td>' + (session.turnCount || 0) + '</td>' +
+                '<td class="session-status">' + (session.connected ? '<span class="status-active">Active</span>' : '<span class="status-ended">Ended</span>') + '</td>' +
+                '<td class="' + turnsClass + '">' + (session.turnCount || 0) + '</td>' +
+                '<td>' + alertsHtml + '</td>' +
                 '<td>' + lastActivity + '</td>' +
                 '<td></td>';
 
@@ -11303,6 +11536,7 @@ function renderVoiceLabOrbLivePanel() {
 
 /**
  * VTID-01218E: Render session details drawer
+ * VTID-01218B: Enhanced with actual session details and turn timeline
  */
 function renderVoiceLabSessionDrawer() {
     var drawer = document.createElement('div');
@@ -11320,6 +11554,8 @@ function renderVoiceLabSessionDrawer() {
     closeBtn.textContent = '\u00D7';
     closeBtn.addEventListener('click', function() {
         state.voiceLab.selectedSession = null;
+        state.voiceLab.selectedSessionDetails = null;
+        state.voiceLab.selectedSessionTurns = [];
         renderApp();
     });
     drawerHeader.appendChild(closeBtn);
@@ -11329,14 +11565,120 @@ function renderVoiceLabSessionDrawer() {
     var drawerContent = document.createElement('div');
     drawerContent.className = 'voice-lab-drawer-content';
 
+    // Loading state
+    if (state.voiceLab.sessionDetailsLoading) {
+        var loadingDiv = document.createElement('div');
+        loadingDiv.className = 'voice-lab-loading';
+        loadingDiv.textContent = 'Loading session details...';
+        drawerContent.appendChild(loadingDiv);
+        drawer.appendChild(drawerContent);
+        return drawer;
+    }
+
+    var details = state.voiceLab.selectedSessionDetails;
+
+    // Session Summary
     var sessionInfo = document.createElement('div');
     sessionInfo.className = 'voice-lab-session-info';
-    sessionInfo.innerHTML = '<p><strong>Session:</strong> ' + state.voiceLab.selectedSession + '</p>' +
-        '<p class="voice-lab-drawer-placeholder">Turn timeline and detailed metrics will appear here.</p>';
 
+    var summaryHtml = '<p><strong>Session:</strong> ' + state.voiceLab.selectedSession + '</p>';
+
+    if (details) {
+        summaryHtml += '<div class="voice-lab-metrics-grid">';
+        summaryHtml += '<div class="metric"><span class="label">Status</span><span class="value ' + (details.status === 'active' ? 'status-active' : 'status-ended') + '">' + (details.status || '-') + '</span></div>';
+        summaryHtml += '<div class="metric"><span class="label">Language</span><span class="value">' + (details.lang || '-') + '</span></div>';
+        summaryHtml += '<div class="metric"><span class="label">Voice</span><span class="value">' + (details.voice || '-') + '</span></div>';
+        summaryHtml += '<div class="metric"><span class="label">Total Turns</span><span class="value">' + (details.turn_count || 0) + '</span></div>';
+        summaryHtml += '<div class="metric"><span class="label">Audio In</span><span class="value">' + (details.audio_in_chunks || 0) + ' chunks</span></div>';
+        summaryHtml += '<div class="metric"><span class="label">Audio Out</span><span class="value">' + (details.audio_out_chunks || 0) + ' chunks</span></div>';
+        if (details.duration_ms) {
+            summaryHtml += '<div class="metric"><span class="label">Duration</span><span class="value">' + (details.duration_ms / 1000).toFixed(1) + 's</span></div>';
+        }
+        if (details.interrupted_count > 0) {
+            summaryHtml += '<div class="metric alert-metric"><span class="label">Interrupts</span><span class="value alert-orange">' + details.interrupted_count + '</span></div>';
+        }
+        if (details.error_count > 0) {
+            summaryHtml += '<div class="metric alert-metric"><span class="label">Errors</span><span class="value alert-red">' + details.error_count + '</span></div>';
+        }
+        summaryHtml += '</div>';
+    }
+
+    sessionInfo.innerHTML = summaryHtml;
     drawerContent.appendChild(sessionInfo);
-    drawer.appendChild(drawerContent);
 
+    // Turn Timeline
+    var turns = state.voiceLab.selectedSessionTurns;
+    if (turns && turns.length > 0) {
+        var turnsSection = document.createElement('div');
+        turnsSection.className = 'voice-lab-turns-section';
+
+        var turnsTitle = document.createElement('h4');
+        turnsTitle.textContent = 'Turn Timeline (' + turns.length + ' turns)';
+        turnsSection.appendChild(turnsTitle);
+
+        var turnsTable = document.createElement('table');
+        turnsTable.className = 'voice-lab-turns-table';
+
+        var turnsHead = document.createElement('thead');
+        turnsHead.innerHTML = '<tr>' +
+            '<th>#</th>' +
+            '<th>Started</th>' +
+            '<th>Duration</th>' +
+            '<th>First Audio</th>' +
+            '<th>End Source</th>' +
+            '<th>Status</th>' +
+            '</tr>';
+        turnsTable.appendChild(turnsHead);
+
+        var turnsBody = document.createElement('tbody');
+        turns.forEach(function(turn) {
+            var row = document.createElement('tr');
+
+            var startTime = turn.started_at ? new Date(turn.started_at).toLocaleTimeString() : '-';
+            var durationMs = turn.turn_ms ? turn.turn_ms + 'ms' : '-';
+            var firstAudioMs = turn.first_audio_ms ? turn.first_audio_ms + 'ms' : '-';
+            var endSource = turn.end_turn_source || '-';
+
+            // VTID-01218B: Visual alerts for latency
+            var firstAudioClass = '';
+            if (turn.first_audio_ms && turn.first_audio_ms > 800) {
+                firstAudioClass = 'alert-orange';
+            } else if (turn.first_audio_ms && turn.first_audio_ms > 1200) {
+                firstAudioClass = 'alert-red';
+            }
+
+            // Status indicators
+            var statusHtml = '';
+            if (turn.was_interrupted) {
+                statusHtml = '<span class="turn-status alert-orange">Interrupted</span>';
+            } else if (turn.playback_clear_triggered) {
+                statusHtml = '<span class="turn-status alert-orange">Cleared</span>';
+            } else if (turn.ended_at) {
+                statusHtml = '<span class="turn-status status-ok">Complete</span>';
+            } else {
+                statusHtml = '<span class="turn-status status-active">In Progress</span>';
+            }
+
+            row.innerHTML = '<td>' + turn.turn_number + '</td>' +
+                '<td>' + startTime + '</td>' +
+                '<td>' + durationMs + '</td>' +
+                '<td class="' + firstAudioClass + '">' + firstAudioMs + '</td>' +
+                '<td>' + endSource + '</td>' +
+                '<td>' + statusHtml + '</td>';
+
+            turnsBody.appendChild(row);
+        });
+        turnsTable.appendChild(turnsBody);
+        turnsSection.appendChild(turnsTable);
+        drawerContent.appendChild(turnsSection);
+    } else if (!state.voiceLab.sessionDetailsLoading) {
+        var noTurns = document.createElement('p');
+        noTurns.className = 'voice-lab-no-turns';
+        noTurns.textContent = 'No turns recorded for this session.';
+        drawerContent.appendChild(noTurns);
+    }
+
+    drawer.appendChild(drawerContent);
     return drawer;
 }
 
@@ -11383,11 +11725,113 @@ function fetchVoiceLabSessions() {
 }
 
 /**
- * VTID-01218E: Fetch session details from API
+ * VTID-01218B: Fetch session details and turns from API
  */
 function fetchVoiceLabSessionDetails(sessionId) {
-    // For now, just update state - full implementation in VTID-01218C
-    console.log('[VTID-01218E] Fetching details for session:', sessionId);
+    console.log('[VTID-01218B] Fetching details for session:', sessionId);
+    state.voiceLab.sessionDetailsLoading = true;
+    state.voiceLab.selectedSessionDetails = null;
+    state.voiceLab.selectedSessionTurns = [];
+    renderApp();
+
+    // Fetch session details and turns in parallel
+    Promise.all([
+        fetch('/api/v1/voice-lab/live/sessions/' + sessionId).then(function(r) { return r.json(); }),
+        fetch('/api/v1/voice-lab/live/sessions/' + sessionId + '/turns').then(function(r) { return r.json(); })
+    ])
+    .then(function(results) {
+        var detailsResp = results[0];
+        var turnsResp = results[1];
+
+        if (detailsResp.ok && detailsResp.session) {
+            state.voiceLab.selectedSessionDetails = detailsResp.session;
+        }
+        if (turnsResp.ok && turnsResp.turns) {
+            state.voiceLab.selectedSessionTurns = turnsResp.turns;
+        }
+        state.voiceLab.sessionDetailsLoading = false;
+        renderApp();
+    })
+    .catch(function(err) {
+        console.error('[VTID-01218B] Error fetching session details:', err);
+        state.voiceLab.sessionDetailsLoading = false;
+        renderApp();
+    });
+}
+
+/**
+ * VTID-01218B: Start auto-refresh polling for Voice LAB sessions
+ */
+function startVoiceLabAutoRefresh() {
+    if (state.voiceLab.autoRefreshIntervalId) {
+        return; // Already running
+    }
+    console.log('[VTID-01218B] Starting auto-refresh (2s interval)');
+    state.voiceLab.autoRefreshIntervalId = setInterval(function() {
+        if (state.voiceLab.activeSubTab === 'orb-live' && state.voiceLab.autoRefreshEnabled) {
+            fetchVoiceLabSessionsSilent();
+        }
+    }, 2000);
+}
+
+/**
+ * VTID-01218B: Stop auto-refresh polling
+ */
+function stopVoiceLabAutoRefresh() {
+    if (state.voiceLab.autoRefreshIntervalId) {
+        console.log('[VTID-01218B] Stopping auto-refresh');
+        clearInterval(state.voiceLab.autoRefreshIntervalId);
+        state.voiceLab.autoRefreshIntervalId = null;
+    }
+}
+
+/**
+ * VTID-01218B: Silent fetch (no loading state, for auto-refresh)
+ */
+function fetchVoiceLabSessionsSilent() {
+    fetch('/api/v1/voice-lab/live/sessions')
+        .then(function(resp) {
+            if (!resp.ok) throw new Error('Failed to fetch sessions');
+            return resp.json();
+        })
+        .then(function(data) {
+            var sessions = (data.sessions || []).map(function(s) {
+                return {
+                    sessionId: s.session_id,
+                    connected: s.status === 'active',
+                    startedAt: s.started_at,
+                    endedAt: s.ended_at,
+                    lastActivity: s.ended_at || s.started_at,
+                    turnCount: s.turn_count,
+                    durationMs: s.duration_ms,
+                    lang: s.lang,
+                    errorCount: s.error_count,
+                    interruptedCount: s.interrupted_count,
+                    firstAudioMs: s.first_audio_ms
+                };
+            });
+            state.voiceLab.sessions = sessions;
+            // Update DOM without full re-render to preserve scroll/focus
+            updateVoiceLabSessionsTable();
+        })
+        .catch(function(err) {
+            console.error('[VTID-01218B] Silent fetch error:', err);
+        });
+}
+
+/**
+ * VTID-01218B: Update sessions table without full re-render
+ */
+function updateVoiceLabSessionsTable() {
+    var tbody = document.querySelector('.voice-lab-sessions-table tbody');
+    if (!tbody) {
+        // Table doesn't exist yet, do full render
+        renderApp();
+        return;
+    }
+
+    // For simplicity in this increment, just re-render
+    // Future: DOM diffing for smoother updates
     renderApp();
 }
 
