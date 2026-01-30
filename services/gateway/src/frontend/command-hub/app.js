@@ -2267,7 +2267,8 @@ const NAVIGATION_CONFIG = [
             { "key": "latency", "path": "/command-hub/diagnostics/latency/" },
             { "key": "errors", "path": "/command-hub/diagnostics/errors/" },
             { "key": "sse", "path": "/command-hub/diagnostics/sse/" },
-            { "key": "debug-panel", "path": "/command-hub/diagnostics/debug-panel/" }
+            { "key": "debug-panel", "path": "/command-hub/diagnostics/debug-panel/" },
+            { "key": "voice-lab", "path": "/command-hub/diagnostics/voice-lab/" }
         ]
     },
     {
@@ -2457,6 +2458,14 @@ const state = {
     historyEvents: [],
     historyLoading: false,
     historyError: null,
+
+    // VTID-01218E: Voice LAB State
+    voiceLab: {
+        activeSubTab: 'orb-live', // Default sub-tab
+        sessions: [],
+        sessionsLoading: false,
+        selectedSession: null
+    },
 
     // User (fallback values - will be replaced by authIdentity when available)
     user: {
@@ -4962,6 +4971,9 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'agents' && tab === 'telemetry') {
         // VTID-01208: LLM Telemetry + Model Provenance + Runtime Routing Control
         container.appendChild(renderAgentsTelemetryView());
+    } else if (moduleKey === 'diagnostics' && tab === 'voice-lab') {
+        // VTID-01218E: Voice LAB - ORB Live Observability
+        container.appendChild(renderVoiceLabView());
     } else {
         // Placeholder for other modules
         const placeholder = document.createElement('div');
@@ -11044,6 +11056,320 @@ function formatModelName(model) {
         .replace('gemini-2.5-pro', 'Gemini 2.5 Pro')
         .replace('gemini-1.5-pro', 'Gemini 1.5 Pro')
         .replace('gemini-1.5-flash', 'Gemini 1.5 Flash');
+}
+
+// ===========================================================================
+// VTID-01218E: Voice LAB View - ORB Live Observability
+// ===========================================================================
+
+/**
+ * VTID-01218E: Voice LAB sub-tabs configuration
+ */
+var VOICE_LAB_TABS = [
+    { key: 'orb-live', label: 'ORB Live', path: '/command-hub/diagnostics/voice-lab/' },
+    { key: 'experiments', label: 'Experiments', path: '/command-hub/diagnostics/voice-lab/experiments/' },
+    { key: 'providers', label: 'Providers', path: '/command-hub/diagnostics/voice-lab/providers/' },
+    { key: 'sessions', label: 'Sessions', path: '/command-hub/diagnostics/voice-lab/sessions/' },
+    { key: 'metrics', label: 'Metrics', path: '/command-hub/diagnostics/voice-lab/metrics/' },
+    { key: 'governance', label: 'Governance', path: '/command-hub/diagnostics/voice-lab/governance/' }
+];
+
+/**
+ * VTID-01218E: Render Voice LAB view with 6 sub-tabs
+ */
+function renderVoiceLabView() {
+    var container = document.createElement('div');
+    container.className = 'voice-lab-container';
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'voice-lab-header';
+
+    var title = document.createElement('h2');
+    title.className = 'voice-lab-title';
+    title.textContent = 'Voice LAB';
+    header.appendChild(title);
+
+    var subtitle = document.createElement('span');
+    subtitle.className = 'voice-lab-subtitle';
+    subtitle.textContent = 'ORB Live Observability & Debugging';
+    header.appendChild(subtitle);
+
+    container.appendChild(header);
+
+    // Sub-tab navigation
+    var tabBar = document.createElement('div');
+    tabBar.className = 'voice-lab-tab-bar';
+
+    VOICE_LAB_TABS.forEach(function(tab) {
+        var btn = document.createElement('button');
+        btn.className = 'voice-lab-tab-btn' + (state.voiceLab.activeSubTab === tab.key ? ' active' : '');
+        btn.textContent = tab.label;
+        btn.setAttribute('data-tab', tab.key);
+        btn.addEventListener('click', function() {
+            state.voiceLab.activeSubTab = tab.key;
+            history.pushState(null, '', tab.path);
+            renderApp();
+        });
+        tabBar.appendChild(btn);
+    });
+
+    container.appendChild(tabBar);
+
+    // Content area
+    var content = document.createElement('div');
+    content.className = 'voice-lab-content';
+
+    switch (state.voiceLab.activeSubTab) {
+        case 'orb-live':
+            content.appendChild(renderVoiceLabOrbLivePanel());
+            break;
+        case 'experiments':
+            content.appendChild(renderVoiceLabPlaceholderPanel('Experiments', 'VTID-01218B'));
+            break;
+        case 'providers':
+            content.appendChild(renderVoiceLabPlaceholderPanel('Providers', 'VTID-01218D'));
+            break;
+        case 'sessions':
+            content.appendChild(renderVoiceLabPlaceholderPanel('Sessions', 'VTID-01218C'));
+            break;
+        case 'metrics':
+            content.appendChild(renderVoiceLabPlaceholderPanel('Metrics', 'VTID-01218D'));
+            break;
+        case 'governance':
+            content.appendChild(renderVoiceLabPlaceholderPanel('Governance', 'VTID-01218D'));
+            break;
+        default:
+            content.appendChild(renderVoiceLabOrbLivePanel());
+    }
+
+    container.appendChild(content);
+
+    return container;
+}
+
+/**
+ * VTID-01218E: Render placeholder panel for upcoming features
+ */
+function renderVoiceLabPlaceholderPanel(screenName, vtid) {
+    var panel = document.createElement('div');
+    panel.className = 'voice-lab-placeholder-panel';
+
+    var icon = document.createElement('div');
+    icon.className = 'voice-lab-placeholder-icon';
+    icon.textContent = '\u23F3'; // Hourglass
+    panel.appendChild(icon);
+
+    var heading = document.createElement('h3');
+    heading.className = 'voice-lab-placeholder-heading';
+    heading.textContent = screenName;
+    panel.appendChild(heading);
+
+    var message = document.createElement('p');
+    message.className = 'voice-lab-placeholder-message';
+    message.textContent = 'Coming next in ' + vtid;
+    panel.appendChild(message);
+
+    var details = document.createElement('p');
+    details.className = 'voice-lab-placeholder-details';
+
+    switch (screenName) {
+        case 'Experiments':
+            details.textContent = 'Runtime controls and feature flags for ORB Live voice sessions.';
+            break;
+        case 'Providers':
+            details.textContent = 'Voice provider configuration and model selection.';
+            break;
+        case 'Sessions':
+            details.textContent = 'Historical session browser with full forensics and playback.';
+            break;
+        case 'Metrics':
+            details.textContent = 'Aggregated metrics, latency distributions, and success rates.';
+            break;
+        case 'Governance':
+            details.textContent = 'Voice governance rules and compliance monitoring.';
+            break;
+        default:
+            details.textContent = 'This feature is under development.';
+    }
+    panel.appendChild(details);
+
+    return panel;
+}
+
+/**
+ * VTID-01218E: Render ORB Live panel - active sessions and turn timeline
+ */
+function renderVoiceLabOrbLivePanel() {
+    var panel = document.createElement('div');
+    panel.className = 'voice-lab-orb-live-panel';
+
+    // Auto-fetch sessions
+    if (!state.voiceLab.sessionsLoading && state.voiceLab.sessions.length === 0) {
+        fetchVoiceLabSessions();
+    }
+
+    // Active Sessions Section
+    var sessionsSection = document.createElement('div');
+    sessionsSection.className = 'voice-lab-sessions-section';
+
+    var sessionsHeader = document.createElement('div');
+    sessionsHeader.className = 'voice-lab-section-header';
+
+    var sessionsTitle = document.createElement('h3');
+    sessionsTitle.textContent = 'Active Sessions';
+    sessionsHeader.appendChild(sessionsTitle);
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'voice-lab-refresh-btn';
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.addEventListener('click', function() {
+        fetchVoiceLabSessions();
+    });
+    sessionsHeader.appendChild(refreshBtn);
+
+    sessionsSection.appendChild(sessionsHeader);
+
+    // Sessions table or loading state
+    if (state.voiceLab.sessionsLoading) {
+        var loadingDiv = document.createElement('div');
+        loadingDiv.className = 'voice-lab-loading';
+        loadingDiv.textContent = 'Loading sessions...';
+        sessionsSection.appendChild(loadingDiv);
+    } else if (state.voiceLab.sessions.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'voice-lab-empty';
+        emptyDiv.textContent = 'No active voice sessions';
+        sessionsSection.appendChild(emptyDiv);
+    } else {
+        var table = document.createElement('table');
+        table.className = 'voice-lab-sessions-table';
+
+        var thead = document.createElement('thead');
+        thead.innerHTML = '<tr>' +
+            '<th>Session ID</th>' +
+            '<th>Started</th>' +
+            '<th>Status</th>' +
+            '<th>Turns</th>' +
+            '<th>Last Activity</th>' +
+            '<th>Actions</th>' +
+            '</tr>';
+        table.appendChild(thead);
+
+        var tbody = document.createElement('tbody');
+        state.voiceLab.sessions.forEach(function(session) {
+            var row = document.createElement('tr');
+            row.className = session.connected ? 'session-active' : 'session-ended';
+
+            var startedAt = session.startedAt ? new Date(session.startedAt).toLocaleTimeString() : '-';
+            var lastActivity = session.lastActivity ? new Date(session.lastActivity).toLocaleTimeString() : '-';
+
+            row.innerHTML = '<td class="session-id">' + (session.sessionId || '-').substring(0, 8) + '...</td>' +
+                '<td>' + startedAt + '</td>' +
+                '<td class="session-status">' + (session.connected ? 'Active' : 'Ended') + '</td>' +
+                '<td>' + (session.turnCount || 0) + '</td>' +
+                '<td>' + lastActivity + '</td>' +
+                '<td></td>';
+
+            // Add view details button in the Actions cell
+            var actionsCell = row.querySelector('td:last-child');
+            var viewBtn = document.createElement('button');
+            viewBtn.className = 'voice-lab-view-btn';
+            viewBtn.textContent = 'Details';
+            viewBtn.setAttribute('data-session-id', session.sessionId);
+            viewBtn.addEventListener('click', function() {
+                state.voiceLab.selectedSession = session.sessionId;
+                fetchVoiceLabSessionDetails(session.sessionId);
+            });
+            actionsCell.appendChild(viewBtn);
+
+            tbody.appendChild(row);
+        });
+        table.appendChild(tbody);
+        sessionsSection.appendChild(table);
+    }
+
+    panel.appendChild(sessionsSection);
+
+    // Session Details Drawer (if selected)
+    if (state.voiceLab.selectedSession) {
+        panel.appendChild(renderVoiceLabSessionDrawer());
+    }
+
+    return panel;
+}
+
+/**
+ * VTID-01218E: Render session details drawer
+ */
+function renderVoiceLabSessionDrawer() {
+    var drawer = document.createElement('div');
+    drawer.className = 'voice-lab-drawer';
+
+    var drawerHeader = document.createElement('div');
+    drawerHeader.className = 'voice-lab-drawer-header';
+
+    var drawerTitle = document.createElement('h3');
+    drawerTitle.textContent = 'Session Details';
+    drawerHeader.appendChild(drawerTitle);
+
+    var closeBtn = document.createElement('button');
+    closeBtn.className = 'voice-lab-drawer-close';
+    closeBtn.textContent = '\u00D7';
+    closeBtn.addEventListener('click', function() {
+        state.voiceLab.selectedSession = null;
+        renderApp();
+    });
+    drawerHeader.appendChild(closeBtn);
+
+    drawer.appendChild(drawerHeader);
+
+    var drawerContent = document.createElement('div');
+    drawerContent.className = 'voice-lab-drawer-content';
+
+    var sessionInfo = document.createElement('div');
+    sessionInfo.className = 'voice-lab-session-info';
+    sessionInfo.innerHTML = '<p><strong>Session:</strong> ' + state.voiceLab.selectedSession + '</p>' +
+        '<p class="voice-lab-drawer-placeholder">Turn timeline and detailed metrics will appear here.</p>';
+
+    drawerContent.appendChild(sessionInfo);
+    drawer.appendChild(drawerContent);
+
+    return drawer;
+}
+
+/**
+ * VTID-01218E: Fetch Voice LAB sessions from API
+ */
+function fetchVoiceLabSessions() {
+    state.voiceLab.sessionsLoading = true;
+    renderApp();
+
+    fetch('/api/v1/voice-lab/live/sessions')
+        .then(function(resp) {
+            if (!resp.ok) throw new Error('Failed to fetch sessions');
+            return resp.json();
+        })
+        .then(function(data) {
+            state.voiceLab.sessions = data || [];
+            state.voiceLab.sessionsLoading = false;
+            renderApp();
+        })
+        .catch(function(err) {
+            console.error('[VTID-01218E] Error fetching sessions:', err);
+            state.voiceLab.sessions = [];
+            state.voiceLab.sessionsLoading = false;
+            renderApp();
+        });
+}
+
+/**
+ * VTID-01218E: Fetch session details from API
+ */
+function fetchVoiceLabSessionDetails(sessionId) {
+    // For now, just update state - full implementation in VTID-01218C
+    console.log('[VTID-01218E] Fetching details for session:', sessionId);
+    renderApp();
 }
 
 /**

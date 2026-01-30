@@ -152,7 +152,8 @@ export const NAVIGATION_CONFIG = [
       { key: 'latency', label: 'Latency' },
       { key: 'errors', label: 'Errors' },
       { key: 'sse', label: 'SSE' },
-      { key: 'debug-panel', label: 'Debug Panel' }
+      { key: 'debug-panel', label: 'Debug Panel' },
+      { key: 'voice-lab', label: 'Voice LAB' }
     ]
   },
   {
