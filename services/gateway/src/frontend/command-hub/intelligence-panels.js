@@ -16,10 +16,15 @@
 
 const IntelligenceState = {
   isOpen: false,
-  activeTab: 'memory', // 'memory', 'knowledge', 'web', 'vtids', 'policies', 'tools'
+  activeTab: 'memory', // 'memory', 'knowledge', 'web', 'vtids', 'policies', 'tools', 'recommendations'
   contextPack: null,
   toolCalls: [],
   lastRetrievalTrace: null,
+  // VTID-01221: Autopilot Recommendations state
+  recommendations: [],
+  recommendationsLoading: false,
+  recommendationsError: null,
+  recommendationsLastFetch: null,
 };
 
 // =============================================================================
@@ -37,6 +42,8 @@ function renderContextPackTabs() {
     { key: 'vtids', label: 'Active VTIDs', icon: '📋' },
     { key: 'policies', label: 'Policies', icon: '📜' },
     { key: 'tools', label: 'Tool Health', icon: '🔧' },
+    // VTID-01221: Autopilot Recommendations tab
+    { key: 'recommendations', label: 'Autopilot Recs', icon: '🎯' },
   ];
 
   return `
@@ -209,6 +216,107 @@ function renderToolHealth(toolHealth) {
   `;
 }
 
+// =============================================================================
+// VTID-01221: Autopilot Recommendations Panel
+// =============================================================================
+
+/**
+ * Render Autopilot Recommendations (CSP-safe: no inline handlers)
+ * Uses data-* attributes for event binding
+ */
+function renderAutopilotRecommendations() {
+  const { recommendations, recommendationsLoading, recommendationsError, recommendationsLastFetch } = IntelligenceState;
+
+  // Loading state
+  if (recommendationsLoading) {
+    return `
+      <div class="intel-loading">
+        <div class="loading-spinner"></div>
+        <span>Loading recommendations...</span>
+      </div>
+    `;
+  }
+
+  // Error state
+  if (recommendationsError) {
+    return `
+      <div class="intel-error">
+        <div class="error-message">${escapeHtml(recommendationsError)}</div>
+        <button class="refresh-btn" data-action="refresh-recommendations">Retry</button>
+      </div>
+    `;
+  }
+
+  // Empty state
+  if (!recommendations || recommendations.length === 0) {
+    return `
+      <div class="intel-empty">
+        <p>No recommendations available</p>
+        <button class="refresh-btn" data-action="refresh-recommendations">Fetch Recommendations</button>
+      </div>
+    `;
+  }
+
+  // Render recommendations list
+  return `
+    <div class="recommendations-panel">
+      <div class="recommendations-header">
+        <span class="recommendations-count">${recommendations.length} recommendation(s)</span>
+        <button class="refresh-btn" data-action="refresh-recommendations">Refresh</button>
+        ${recommendationsLastFetch ? `<span class="last-fetch">Last: ${formatDate(recommendationsLastFetch)}</span>` : ''}
+      </div>
+      <div class="intel-list recommendations-list">
+        ${recommendations.map((rec, index) => renderRecommendationItem(rec, index)).join('')}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Render a single recommendation item (CSP-safe)
+ */
+function renderRecommendationItem(rec, index) {
+  const priorityClass = `priority-${rec.priority || 'medium'}`;
+  const approvalBadge = rec.requires_approval
+    ? '<span class="badge approval-required">Needs Approval</span>'
+    : '';
+
+  return `
+    <div class="intel-item recommendation-item ${priorityClass}" data-rec-id="${escapeHtml(rec.id)}">
+      <div class="item-header">
+        <span class="item-title">${escapeHtml(rec.title)}</span>
+        <span class="item-priority badge-${rec.priority || 'medium'}">${(rec.priority || 'medium').toUpperCase()}</span>
+        ${approvalBadge}
+      </div>
+
+      <div class="item-rationale">${escapeHtml(rec.rationale || '')}</div>
+
+      ${rec.suggested_commands && rec.suggested_commands.length > 0 ? `
+        <div class="item-commands">
+          <div class="commands-label">Commands:</div>
+          <pre class="commands-content">${escapeHtml(rec.suggested_commands.join('\n'))}</pre>
+          <button class="copy-btn" data-action="copy-commands" data-rec-index="${index}">Copy</button>
+        </div>
+      ` : ''}
+
+      ${rec.verification && rec.verification.length > 0 ? `
+        <div class="item-verification">
+          <div class="verification-label">Verification:</div>
+          <ul class="verification-list">
+            ${rec.verification.map(v => `<li>${escapeHtml(v)}</li>`).join('')}
+          </ul>
+        </div>
+      ` : ''}
+
+      ${rec.related_vtids && rec.related_vtids.length > 0 ? `
+        <div class="item-meta">
+          <span class="related-vtids">Related: ${rec.related_vtids.map(v => escapeHtml(v)).join(', ')}</span>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
 /**
  * Render the active tab content
  */
@@ -232,6 +340,9 @@ function renderTabContent() {
       return renderPolicies(pack.tenant_policies);
     case 'tools':
       return renderToolHealth(pack.tool_health);
+    // VTID-01221: Autopilot Recommendations
+    case 'recommendations':
+      return renderAutopilotRecommendations();
     default:
       return '<div class="intel-empty">Select a tab</div>';
   }
@@ -493,7 +604,126 @@ function updateIntelligenceUI() {
   const panelContainer = document.getElementById('intel-panel-container');
   if (panelContainer) {
     panelContainer.innerHTML = renderIntelligencePanel();
+    // VTID-01221: Bind CSP-safe event handlers after DOM update
+    bindRecommendationEventHandlers(panelContainer);
   }
+}
+
+// =============================================================================
+// VTID-01221: Autopilot Recommendations Functions
+// =============================================================================
+
+/**
+ * Fetch recommendations from Autopilot API
+ */
+async function fetchRecommendations() {
+  console.log('[VTID-01221] Fetching recommendations...');
+
+  IntelligenceState.recommendationsLoading = true;
+  IntelligenceState.recommendationsError = null;
+  updateIntelligenceUI();
+
+  try {
+    const response = await fetch('/api/v1/autopilot/recommendations?status=new,active&limit=20', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    if (!data.ok) {
+      throw new Error(data.error || 'Unknown error');
+    }
+
+    IntelligenceState.recommendations = data.recommendations || [];
+    IntelligenceState.recommendationsLastFetch = new Date().toISOString();
+    IntelligenceState.recommendationsError = null;
+
+    console.log(`[VTID-01221] Fetched ${IntelligenceState.recommendations.length} recommendations`);
+  } catch (error) {
+    console.error('[VTID-01221] Failed to fetch recommendations:', error);
+    IntelligenceState.recommendationsError = error.message || 'Failed to fetch recommendations';
+  } finally {
+    IntelligenceState.recommendationsLoading = false;
+    updateIntelligenceUI();
+  }
+}
+
+/**
+ * Copy recommendation commands to clipboard
+ */
+function copyRecommendationCommands(recIndex) {
+  const rec = IntelligenceState.recommendations[recIndex];
+  if (!rec || !rec.suggested_commands || rec.suggested_commands.length === 0) {
+    showToast('No commands to copy');
+    return;
+  }
+
+  const text = rec.suggested_commands.join('\n');
+
+  navigator.clipboard.writeText(text).then(() => {
+    showToast('Commands copied to clipboard');
+  }).catch(err => {
+    console.error('[VTID-01221] Failed to copy commands:', err);
+    showToast('Failed to copy commands');
+  });
+}
+
+/**
+ * Update recommendations from external source (e.g., tool call result)
+ */
+function updateRecommendations(recommendations) {
+  IntelligenceState.recommendations = recommendations || [];
+  IntelligenceState.recommendationsLastFetch = new Date().toISOString();
+  IntelligenceState.recommendationsLoading = false;
+  IntelligenceState.recommendationsError = null;
+  updateIntelligenceUI();
+}
+
+/**
+ * VTID-01221: CSP-safe event handler binding
+ * Uses event delegation to handle actions via data-* attributes
+ */
+function bindRecommendationEventHandlers(container) {
+  if (!container) return;
+
+  // Use event delegation - attach one listener to parent
+  container.addEventListener('click', function(event) {
+    const target = event.target;
+
+    // Handle refresh recommendations button
+    if (target.matches('[data-action="refresh-recommendations"]')) {
+      event.preventDefault();
+      fetchRecommendations();
+      return;
+    }
+
+    // Handle copy commands button
+    if (target.matches('[data-action="copy-commands"]')) {
+      event.preventDefault();
+      const recIndex = parseInt(target.getAttribute('data-rec-index'), 10);
+      if (!isNaN(recIndex)) {
+        copyRecommendationCommands(recIndex);
+      }
+      return;
+    }
+
+    // Handle tab clicks (convert inline onclick to delegated)
+    if (target.matches('.intel-tab')) {
+      event.preventDefault();
+      const tabKey = target.getAttribute('data-tab-key');
+      if (tabKey) {
+        setIntelActiveTab(tabKey);
+      }
+      return;
+    }
+  });
 }
 
 // =============================================================================
@@ -549,5 +779,10 @@ window.copyToClipboard = copyToClipboard;
 window.renderIntelligenceToggle = renderIntelligenceToggle;
 window.renderIntelligencePanel = renderIntelligencePanel;
 window.updateIntelligenceUI = updateIntelligenceUI;
+// VTID-01221: Autopilot Recommendations functions
+window.fetchRecommendations = fetchRecommendations;
+window.updateRecommendations = updateRecommendations;
+window.copyRecommendationCommands = copyRecommendationCommands;
 
 console.log('[VTID-01216] Intelligence Panels loaded');
+console.log('[VTID-01221] Autopilot Recommendations Panel loaded');

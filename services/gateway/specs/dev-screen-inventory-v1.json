@@ -112,7 +112,8 @@
       "latency",
       "errors",
       "sse",
-      "debug-panel"
+      "debug-panel",
+      "voice-lab"
     ],
     "models-evaluations": [
       "models",
@@ -144,6 +145,6 @@
     ]
   },
   "screen_inventory": {
-    "total_screens": 87
+    "total_screens": 88
   }
 }

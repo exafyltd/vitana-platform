@@ -2038,4 +2038,171 @@ export const taskDiscoveryGovernanceEvents = {
     }),
 };
 
+// =============================================================================
+// VTID-01221: Recommendation Sync Events
+// =============================================================================
+// These events track the recommendation sync between ORB/Operator and Autopilot.
+// They provide audit trail and telemetry for the "single brain, multiple surfaces" pattern.
+
+/**
+ * VTID-01221: Recommendation Sync Events for Developer Copilot
+ */
+export const recommendationSyncEvents = {
+  /**
+   * Emit when recommendations are requested from Autopilot
+   * Fired when ORB/Operator calls autopilot_get_recommendations tool
+   */
+  recommendationsRequested: (
+    vtid: string | null,
+    context: {
+      source: 'orb' | 'operator' | 'api';
+      role?: string;
+      surface?: string;
+      screen?: string;
+      user_id?: string;
+      thread_id?: string;
+    }
+  ) =>
+    emitOasisEvent({
+      vtid: vtid || 'VTID-01221',
+      type: 'autopilot.recommendations.requested',
+      source: `conversation-${context.source}`,
+      status: 'info',
+      message: `Recommendations requested from ${context.source}${context.role ? ` by ${context.role}` : ''}`,
+      payload: {
+        ...context,
+        requested_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit when recommendations are successfully received from Autopilot
+   */
+  recommendationsReceived: (
+    vtid: string | null,
+    count: number,
+    recommendationIds: string[],
+    source: 'orb' | 'operator' | 'api',
+    durationMs: number
+  ) =>
+    emitOasisEvent({
+      vtid: vtid || 'VTID-01221',
+      type: 'autopilot.recommendations.received',
+      source: 'autopilot-recommendation-engine',
+      status: 'success',
+      message: `${count} recommendation(s) received from Autopilot`,
+      payload: {
+        count,
+        recommendation_ids: recommendationIds,
+        requester: source,
+        duration_ms: durationMs,
+        received_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit when recommendations request fails
+   * Triggers fallback to deterministic tools
+   */
+  recommendationsFailed: (
+    vtid: string | null,
+    error: string,
+    source: 'orb' | 'operator' | 'api',
+    fallbackTriggered: boolean
+  ) =>
+    emitOasisEvent({
+      vtid: vtid || 'VTID-01221',
+      type: 'autopilot.recommendations.failed',
+      source: 'autopilot-recommendation-engine',
+      status: 'error',
+      message: `Failed to fetch recommendations: ${error}`,
+      payload: {
+        error,
+        requester: source,
+        fallback_triggered: fallbackTriggered,
+        failed_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit when recommendations are presented to the user
+   * Tracks which recommendations were shown in which surface
+   */
+  recommendationPresented: (
+    vtid: string | null,
+    recommendationIds: string[],
+    channel: 'orb' | 'operator' | 'panel',
+    format: 'sync-brief' | 'list' | 'inline'
+  ) =>
+    emitOasisEvent({
+      vtid: vtid || 'VTID-01221',
+      type: 'dev.recommendation.presented',
+      source: `conversation-${channel}`,
+      status: 'info',
+      message: `Presented ${recommendationIds.length} recommendation(s) via ${channel}`,
+      payload: {
+        recommendation_ids: recommendationIds,
+        channel,
+        format,
+        presented_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit when user selects/acts on a recommendation
+   */
+  recommendationSelected: (
+    vtid: string | null,
+    recommendationId: string,
+    action: 'execute' | 'view' | 'copy' | 'dismiss',
+    channel: 'orb' | 'operator' | 'panel'
+  ) =>
+    emitOasisEvent({
+      vtid: vtid || 'VTID-01221',
+      type: 'dev.recommendation.selected',
+      source: 'user-action',
+      status: 'info',
+      message: `User ${action}d recommendation ${recommendationId}`,
+      payload: {
+        recommendation_id: recommendationId,
+        action,
+        channel,
+        selected_at: new Date().toISOString(),
+      },
+    }),
+
+  /**
+   * Emit when fallback tools are used (Autopilot unavailable)
+   */
+  fallbackToolUsed: (
+    vtid: string | null,
+    toolName: 'oasis_analyze_vtid' | 'dev_verify_deploy_checklist',
+    reason: string,
+    source: 'orb' | 'operator'
+  ) =>
+    emitOasisEvent({
+      vtid: vtid || 'VTID-01221',
+      type: 'dev.fallback.tool_used',
+      source: `conversation-${source}`,
+      status: 'warning',
+      message: `Fallback tool ${toolName} used: ${reason}`,
+      payload: {
+        tool_name: toolName,
+        reason,
+        requester: source,
+        used_at: new Date().toISOString(),
+      },
+    }),
+};
+
+// Event type constants for VTID-01221
+export const RECOMMENDATION_SYNC_EVENT_TYPES = [
+  'autopilot.recommendations.requested',
+  'autopilot.recommendations.received',
+  'autopilot.recommendations.failed',
+  'dev.recommendation.presented',
+  'dev.recommendation.selected',
+  'dev.fallback.tool_used',
+];
+
 export default cicdEvents;

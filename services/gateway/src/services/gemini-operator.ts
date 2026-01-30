@@ -34,7 +34,9 @@ import {
   CreatedTask,
   TaskStatusResponse
 } from './operator-service';
-import { emitOasisEvent } from './oasis-event-service';
+import { emitOasisEvent, recommendationSyncEvents } from './oasis-event-service';
+// VTID-01221: Sync Brief formatter for recommendation presentation
+import { formatSyncBrief, isWhatNextIntent, shouldFetchRecommendations, SyncBriefContext, Recommendation } from './sync-brief-formatter';
 // VTID-0538: Knowledge Hub integration
 import { executeKnowledgeSearch, KNOWLEDGE_SEARCH_TOOL_DEFINITION } from './knowledge-hub';
 // VTID-01208: LLM Telemetry
@@ -282,6 +284,94 @@ Return results as a string or JSON that can be displayed to the user.`,
           }
         },
         required: ['code']
+      }
+    },
+    // VTID-01221: Autopilot Recommendation Sync - Primary tool
+    {
+      name: 'autopilot_get_recommendations',
+      description: `Fetch recommended next actions from Autopilot for the current context.
+
+ALWAYS call this tool BEFORE giving "next steps" advice when:
+- User asks "what next", "what should I do", "what do we do now", "recommend"
+- A VTID is selected or being discussed
+- A pipeline/deploy is in progress or just completed
+
+Returns prioritized recommendations with rationale, commands, and verification steps.
+Autopilot is the SINGLE SOURCE OF TRUTH for "what to do next".
+Do NOT invent recommendations if this tool returns results.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          role: {
+            type: 'string',
+            enum: ['developer', 'infra', 'admin'],
+            description: 'User role context for filtering recommendations.'
+          },
+          ui_context: {
+            type: 'object',
+            properties: {
+              surface: { type: 'string' },
+              screen: { type: 'string' },
+              selection: { type: 'string' }
+            },
+            description: 'Current UI context.'
+          },
+          vtid: {
+            type: 'string',
+            description: 'Optional VTID to get recommendations for a specific task.'
+          },
+          time_window_minutes: {
+            type: 'integer',
+            description: 'Look-back window for recent activity context. Default: 120.'
+          }
+        },
+        required: []
+      }
+    },
+    // VTID-01221: Fallback tool - VTID analysis
+    {
+      name: 'oasis_analyze_vtid',
+      description: `Analyze a VTID by querying OASIS events to build an evidence report.
+Use this ONLY as a FALLBACK when autopilot_get_recommendations fails or is unavailable.
+Returns timeline of events, current status, and deterministic analysis based on OASIS data.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          vtid: {
+            type: 'string',
+            description: 'The VTID to analyze (e.g., VTID-01216).'
+          },
+          include_events: {
+            type: 'boolean',
+            description: 'Include raw event timeline. Default: true.'
+          },
+          limit: {
+            type: 'integer',
+            description: 'Max events to include. Default: 50.'
+          }
+        },
+        required: ['vtid']
+      }
+    },
+    // VTID-01221: Fallback tool - Deploy verification
+    {
+      name: 'dev_verify_deploy_checklist',
+      description: `Run post-deploy verification checklist for a VTID.
+Use this ONLY as a FALLBACK when autopilot_get_recommendations fails or is unavailable.
+Returns checklist items with pass/fail status based on OASIS evidence.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          vtid: {
+            type: 'string',
+            description: 'The VTID to verify deployment for.'
+          },
+          service: {
+            type: 'string',
+            description: 'Optional service name to filter checks.'
+          }
+        },
+        required: ['vtid']
       }
     }
   ]
@@ -1185,6 +1275,546 @@ async function executeRunCode(
   }
 }
 
+// ==================== VTID-01221: Autopilot Recommendation Sync Tools ====================
+
+/**
+ * VTID-01221: Execute autopilot_get_recommendations tool
+ * Fetches recommendations from Autopilot API and formats via Sync Brief
+ */
+async function executeGetRecommendations(
+  args: {
+    role?: string;
+    ui_context?: { surface?: string; screen?: string; selection?: string };
+    vtid?: string;
+    time_window_minutes?: number;
+  },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  const LOG = '[VTID-01221]';
+  const startTime = Date.now();
+  const { role, ui_context, vtid, time_window_minutes = 120 } = args;
+
+  console.log(`${LOG} autopilot_get_recommendations called: vtid=${vtid || 'none'}, role=${role || 'developer'}`);
+
+  // Rate limiting check
+  if (!shouldFetchRecommendations(threadId)) {
+    console.log(`${LOG} Request debounced for thread ${threadId}`);
+    return {
+      ok: true,
+      data: {
+        debounced: true,
+        message: 'Recommendations request rate-limited. Please wait a moment before asking again.',
+      },
+    };
+  }
+
+  // Emit request event
+  await recommendationSyncEvents.recommendationsRequested(vtid || null, {
+    source: 'operator',
+    role,
+    surface: ui_context?.surface,
+    screen: ui_context?.screen,
+    thread_id: threadId,
+  }).catch(() => {});
+
+  try {
+    // Call the existing recommendations API
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error('Supabase not configured');
+    }
+
+    // Build query params for the recommendations API
+    const queryParams = new URLSearchParams({
+      status: 'new,active',
+      limit: '10',
+    });
+
+    const response = await fetch(
+      `${supabaseUrl}/rest/v1/rpc/get_autopilot_recommendations`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({
+          p_status: ['new', 'active'],
+          p_limit: 10,
+          p_offset: 0,
+          p_user_id: null,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Recommendations API error: ${response.status} - ${errorText}`);
+    }
+
+    const rawRecommendations = await response.json() as any[];
+    const durationMs = Date.now() - startTime;
+
+    // Transform to Recommendation format
+    const recommendations: Recommendation[] = rawRecommendations.map(r => ({
+      id: r.id,
+      title: r.title,
+      priority: r.priority || 'medium',
+      rationale: r.rationale || r.description || '',
+      suggested_commands: r.suggested_commands || [],
+      verification: r.verification_steps || [],
+      related_vtids: r.related_vtids || (r.vtid ? [r.vtid] : []),
+      requires_approval: r.requires_approval || false,
+      source: r.source_type,
+    }));
+
+    // Filter by VTID if specified
+    let filteredRecs = recommendations;
+    if (vtid) {
+      filteredRecs = recommendations.filter(r =>
+        r.related_vtids?.includes(vtid) || r.rationale?.includes(vtid)
+      );
+      // If no VTID-specific recs, return all but note the filter
+      if (filteredRecs.length === 0) {
+        filteredRecs = recommendations;
+      }
+    }
+
+    // Emit received event
+    await recommendationSyncEvents.recommendationsReceived(
+      vtid || null,
+      filteredRecs.length,
+      filteredRecs.map(r => r.id),
+      'operator',
+      durationMs
+    ).catch(() => {});
+
+    // Format as Sync Brief
+    const syncBriefContext: SyncBriefContext = {
+      vtid,
+      uiContext: ui_context,
+      recommendations: filteredRecs,
+      isFallback: false,
+    };
+
+    const syncBrief = formatSyncBrief(syncBriefContext);
+
+    console.log(`${LOG} Returning ${filteredRecs.length} recommendations in ${durationMs}ms`);
+
+    return {
+      ok: true,
+      data: {
+        recommendations: filteredRecs,
+        count: filteredRecs.length,
+        formatted: syncBrief.formatted,
+        message: syncBrief.formatted,
+        vtid: 'VTID-01221',
+      },
+    };
+  } catch (error: any) {
+    const durationMs = Date.now() - startTime;
+    console.error(`${LOG} Failed to fetch recommendations:`, error.message);
+
+    // Emit failure event
+    await recommendationSyncEvents.recommendationsFailed(
+      vtid || null,
+      error.message,
+      'operator',
+      true
+    ).catch(() => {});
+
+    // Return with fallback suggestion
+    return {
+      ok: false,
+      error: `Failed to fetch Autopilot recommendations: ${error.message}`,
+      data: {
+        fallback_available: true,
+        fallback_tools: ['oasis_analyze_vtid', 'dev_verify_deploy_checklist'],
+        message: `Autopilot unavailable. Use fallback tools (oasis_analyze_vtid, dev_verify_deploy_checklist) for deterministic analysis.`,
+      },
+    };
+  }
+}
+
+/**
+ * VTID-01221: Execute oasis_analyze_vtid fallback tool
+ * Builds deterministic evidence report from OASIS events
+ */
+async function executeAnalyzeVTID(
+  args: { vtid: string; include_events?: boolean; limit?: number },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  const LOG = '[VTID-01221]';
+  const { vtid, include_events = true, limit = 50 } = args;
+
+  console.log(`${LOG} oasis_analyze_vtid called: vtid=${vtid}`);
+
+  // Emit fallback tool usage
+  await recommendationSyncEvents.fallbackToolUsed(
+    vtid,
+    'oasis_analyze_vtid',
+    'Autopilot recommendations unavailable',
+    'operator'
+  ).catch(() => {});
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+
+  if (!supabaseUrl || !supabaseKey) {
+    return {
+      ok: false,
+      error: 'OASIS not configured - cannot analyze VTID',
+    };
+  }
+
+  try {
+    // Query OASIS events for this VTID
+    const eventLimit = Math.min(Math.max(limit, 1), 100);
+    const queryUrl = `${supabaseUrl}/rest/v1/oasis_events?vtid=eq.${encodeURIComponent(vtid)}&order=created_at.desc&limit=${eventLimit}`;
+
+    const response = await fetch(queryUrl, {
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`OASIS query failed: ${response.status} - ${errorText}`);
+    }
+
+    const events = await response.json() as Array<{
+      id: string;
+      created_at: string;
+      topic: string;
+      status: string;
+      message: string;
+      metadata?: Record<string, unknown>;
+    }>;
+
+    // Build analysis report
+    const analysis = buildVTIDAnalysis(vtid, events);
+
+    // Format output
+    const lines: string[] = [];
+    lines.push(`## VTID Analysis: ${vtid}`);
+    lines.push('');
+    lines.push(`**Status:** ${analysis.currentStatus}`);
+    lines.push(`**Events:** ${events.length} recorded`);
+    lines.push(`**First Activity:** ${analysis.firstActivity || 'N/A'}`);
+    lines.push(`**Last Activity:** ${analysis.lastActivity || 'N/A'}`);
+    lines.push('');
+
+    if (analysis.summary.length > 0) {
+      lines.push('### Summary');
+      analysis.summary.forEach(s => lines.push(`- ${s}`));
+      lines.push('');
+    }
+
+    if (include_events && events.length > 0) {
+      lines.push('### Event Timeline (Recent)');
+      events.slice(0, 10).forEach(e => {
+        const time = new Date(e.created_at).toLocaleString();
+        lines.push(`- **${e.topic}** [${e.status}] - ${e.message} _(${time})_`);
+      });
+      if (events.length > 10) {
+        lines.push(`_...and ${events.length - 10} more events_`);
+      }
+    }
+
+    lines.push('');
+    lines.push('---');
+    lines.push('_This is a fallback analysis from OASIS. For AI-generated recommendations, Autopilot must be available._');
+
+    const message = lines.join('\n');
+
+    return {
+      ok: true,
+      data: {
+        vtid,
+        current_status: analysis.currentStatus,
+        event_count: events.length,
+        first_activity: analysis.firstActivity,
+        last_activity: analysis.lastActivity,
+        summary: analysis.summary,
+        events: include_events ? events.slice(0, limit) : [],
+        message,
+        is_fallback: true,
+      },
+    };
+  } catch (error: any) {
+    console.error(`${LOG} VTID analysis failed:`, error.message);
+    return {
+      ok: false,
+      error: `VTID analysis failed: ${error.message}`,
+    };
+  }
+}
+
+/**
+ * Build summary analysis from OASIS events
+ */
+function buildVTIDAnalysis(vtid: string, events: any[]): {
+  currentStatus: string;
+  firstActivity: string | null;
+  lastActivity: string | null;
+  summary: string[];
+} {
+  if (events.length === 0) {
+    return {
+      currentStatus: 'unknown',
+      firstActivity: null,
+      lastActivity: null,
+      summary: ['No events found for this VTID'],
+    };
+  }
+
+  // Sort by time (oldest first for summary)
+  const sortedByTime = [...events].sort((a, b) =>
+    new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
+
+  const firstActivity = sortedByTime[0]?.created_at || null;
+  const lastActivity = sortedByTime[sortedByTime.length - 1]?.created_at || null;
+
+  // Determine current status from most recent events
+  const recent = events.slice(0, 5);
+  let currentStatus = 'in_progress';
+
+  for (const e of recent) {
+    const topic = e.topic || '';
+    const status = e.status || '';
+
+    if (topic.includes('completed') || topic.includes('success')) {
+      currentStatus = 'completed';
+      break;
+    } else if (topic.includes('failed') || status === 'error') {
+      currentStatus = 'failed';
+      break;
+    } else if (topic.includes('blocked')) {
+      currentStatus = 'blocked';
+      break;
+    } else if (topic.includes('deploy')) {
+      currentStatus = 'deploying';
+    } else if (topic.includes('merge')) {
+      currentStatus = 'merged';
+    } else if (topic.includes('pr_created')) {
+      currentStatus = 'pr_created';
+    }
+  }
+
+  // Build summary
+  const summary: string[] = [];
+  const topics = new Set(events.map(e => e.topic));
+
+  if (topics.has('cicd.github.create_pr.succeeded')) {
+    summary.push('PR was created');
+  }
+  if (topics.has('cicd.github.safe_merge.executed')) {
+    summary.push('PR was merged');
+  }
+  if (topics.has('deploy.gateway.success')) {
+    summary.push('Deployment succeeded');
+  }
+  if (topics.has('deploy.gateway.failed')) {
+    summary.push('Deployment failed');
+  }
+  if (topics.has('governance.deploy.blocked')) {
+    summary.push('Deployment was blocked by governance');
+  }
+
+  const errorEvents = events.filter(e => e.status === 'error');
+  if (errorEvents.length > 0) {
+    summary.push(`${errorEvents.length} error event(s) recorded`);
+  }
+
+  return { currentStatus, firstActivity, lastActivity, summary };
+}
+
+/**
+ * VTID-01221: Execute dev_verify_deploy_checklist fallback tool
+ * Builds verification checklist from OASIS evidence
+ */
+async function executeVerifyDeployChecklist(
+  args: { vtid: string; service?: string },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  const LOG = '[VTID-01221]';
+  const { vtid, service } = args;
+
+  console.log(`${LOG} dev_verify_deploy_checklist called: vtid=${vtid}, service=${service || 'all'}`);
+
+  // Emit fallback tool usage
+  await recommendationSyncEvents.fallbackToolUsed(
+    vtid,
+    'dev_verify_deploy_checklist',
+    'Autopilot recommendations unavailable',
+    'operator'
+  ).catch(() => {});
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+
+  if (!supabaseUrl || !supabaseKey) {
+    return {
+      ok: false,
+      error: 'OASIS not configured - cannot verify deployment',
+    };
+  }
+
+  try {
+    // Query deployment-related events for this VTID
+    const queryUrl = `${supabaseUrl}/rest/v1/oasis_events?vtid=eq.${encodeURIComponent(vtid)}&order=created_at.desc&limit=100`;
+
+    const response = await fetch(queryUrl, {
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`OASIS query failed: ${response.status} - ${errorText}`);
+    }
+
+    const events = await response.json() as Array<{
+      topic: string;
+      status: string;
+      message: string;
+      metadata?: Record<string, unknown>;
+    }>;
+
+    // Build checklist from events
+    const checklist = buildDeployChecklist(events, service);
+
+    // Format output
+    const lines: string[] = [];
+    lines.push(`## Deploy Verification: ${vtid}`);
+    if (service) {
+      lines.push(`Service: ${service}`);
+    }
+    lines.push('');
+
+    const passedCount = checklist.filter(c => c.passed).length;
+    const totalCount = checklist.length;
+    const allPassed = passedCount === totalCount;
+
+    lines.push(`**Result:** ${allPassed ? 'PASSED' : 'INCOMPLETE'} (${passedCount}/${totalCount})`);
+    lines.push('');
+
+    lines.push('### Checklist');
+    checklist.forEach(item => {
+      const icon = item.passed ? '[x]' : '[ ]';
+      const evidence = item.evidence ? ` _(${item.evidence})_` : '';
+      lines.push(`- ${icon} ${item.check}${evidence}`);
+    });
+
+    lines.push('');
+    lines.push('---');
+    lines.push('_This is a fallback verification from OASIS evidence. For AI-generated recommendations, Autopilot must be available._');
+
+    const message = lines.join('\n');
+
+    return {
+      ok: true,
+      data: {
+        vtid,
+        service,
+        all_passed: allPassed,
+        passed_count: passedCount,
+        total_count: totalCount,
+        checklist,
+        message,
+        is_fallback: true,
+      },
+    };
+  } catch (error: any) {
+    console.error(`${LOG} Deploy verification failed:`, error.message);
+    return {
+      ok: false,
+      error: `Deploy verification failed: ${error.message}`,
+    };
+  }
+}
+
+/**
+ * Build deploy verification checklist from OASIS events
+ */
+function buildDeployChecklist(
+  events: Array<{ topic: string; status: string; message: string; metadata?: Record<string, unknown> }>,
+  service?: string
+): Array<{ check: string; passed: boolean; evidence?: string }> {
+  const topics = new Set(events.map(e => e.topic));
+  const statuses = new Map(events.map(e => [e.topic, e.status]));
+
+  const checklist: Array<{ check: string; passed: boolean; evidence?: string }> = [];
+
+  // PR Created
+  const prCreated = topics.has('cicd.github.create_pr.succeeded');
+  checklist.push({
+    check: 'PR created',
+    passed: prCreated,
+    evidence: prCreated ? 'cicd.github.create_pr.succeeded' : undefined,
+  });
+
+  // Governance passed
+  const govPassed = !topics.has('governance.deploy.blocked');
+  checklist.push({
+    check: 'Governance checks passed',
+    passed: govPassed,
+    evidence: topics.has('governance.deploy.allowed') ? 'governance.deploy.allowed' : undefined,
+  });
+
+  // PR merged
+  const prMerged = topics.has('cicd.github.safe_merge.executed') || topics.has('cicd.merge.success');
+  checklist.push({
+    check: 'PR merged',
+    passed: prMerged,
+    evidence: prMerged ? 'cicd.github.safe_merge.executed' : undefined,
+  });
+
+  // Deploy requested
+  const deployRequested = topics.has('cicd.deploy.service.requested');
+  checklist.push({
+    check: 'Deploy triggered',
+    passed: deployRequested,
+    evidence: deployRequested ? 'cicd.deploy.service.requested' : undefined,
+  });
+
+  // Deploy succeeded
+  const deploySucceeded = topics.has('deploy.gateway.success') || topics.has('cicd.deploy.service.succeeded');
+  checklist.push({
+    check: 'Deploy completed successfully',
+    passed: deploySucceeded,
+    evidence: deploySucceeded ? 'deploy.gateway.success' : undefined,
+  });
+
+  // No errors
+  const hasErrors = events.some(e => e.status === 'error');
+  checklist.push({
+    check: 'No error events',
+    passed: !hasErrors,
+    evidence: hasErrors ? 'Error events found' : undefined,
+  });
+
+  // VTID lifecycle completed
+  const lifecycleCompleted = topics.has('vtid.lifecycle.completed');
+  checklist.push({
+    check: 'VTID lifecycle completed',
+    passed: lifecycleCompleted,
+    evidence: lifecycleCompleted ? 'vtid.lifecycle.completed' : undefined,
+  });
+
+  return checklist;
+}
+
 // ==================== Main Tool Router ====================
 
 /**
@@ -1245,6 +1875,35 @@ export async function executeTool(
       case 'run_code':
         result = await executeRunCode(
           args as { code: string; description?: string },
+          threadId
+        );
+        break;
+
+      // VTID-01221: Autopilot Recommendation Sync - Primary tool
+      case 'autopilot_get_recommendations':
+        result = await executeGetRecommendations(
+          args as {
+            role?: string;
+            ui_context?: { surface?: string; screen?: string; selection?: string };
+            vtid?: string;
+            time_window_minutes?: number;
+          },
+          threadId
+        );
+        break;
+
+      // VTID-01221: Fallback tool - VTID analysis
+      case 'oasis_analyze_vtid':
+        result = await executeAnalyzeVTID(
+          args as { vtid: string; include_events?: boolean; limit?: number },
+          threadId
+        );
+        break;
+
+      // VTID-01221: Fallback tool - Deploy verification
+      case 'dev_verify_deploy_checklist':
+        result = await executeVerifyDeployChecklist(
+          args as { vtid: string; service?: string },
           threadId
         );
         break;

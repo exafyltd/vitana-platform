@@ -31,6 +31,7 @@ export type MessageType = typeof MESSAGE_TYPES[number];
 
 /**
  * Retrieval sources available
+ * NOTE: Defined here before ConversationTurnRequestSchema to avoid forward reference
  */
 export const RETRIEVAL_SOURCES = ['memory_garden', 'knowledge_hub', 'web_search'] as const;
 export type RetrievalSource = typeof RETRIEVAL_SOURCES[number];
@@ -359,7 +360,7 @@ export interface ToolDefinition {
   enabled: boolean;
 
   /** Tool category */
-  category: 'autopilot' | 'knowledge' | 'memory' | 'system' | 'custom';
+  category: 'autopilot' | 'knowledge' | 'memory' | 'system' | 'custom' | 'fallback';
 
   /** Average latency in ms */
   avg_latency_ms?: number;
