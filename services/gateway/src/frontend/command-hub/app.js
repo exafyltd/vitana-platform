@@ -11823,6 +11823,18 @@ function fetchVoiceLabSessionsSilent() {
  * VTID-01218B: Update sessions table without full re-render
  */
 function updateVoiceLabSessionsTable() {
+    // VTID-01218B: Don't re-render if a modal is open (login, etc.) - preserves input focus
+    var modalOpen = document.querySelector('.auth-modal, .login-modal, .modal-overlay, .modal-backdrop');
+    if (modalOpen) {
+        return;
+    }
+
+    // Don't re-render if there's an active input focus
+    var activeElement = document.activeElement;
+    if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+        return;
+    }
+
     var tbody = document.querySelector('.voice-lab-sessions-table tbody');
     if (!tbody) {
         // Table doesn't exist yet, do full render
