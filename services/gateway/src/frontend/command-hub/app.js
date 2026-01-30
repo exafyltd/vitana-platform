@@ -2464,6 +2464,7 @@ const state = {
         activeSubTab: 'orb-live', // Default sub-tab
         sessions: [],
         sessionsLoading: false,
+        sessionsFetched: false, // Tracks if initial fetch was attempted
         selectedSession: null
     },
 
@@ -11204,8 +11205,8 @@ function renderVoiceLabOrbLivePanel() {
     var panel = document.createElement('div');
     panel.className = 'voice-lab-orb-live-panel';
 
-    // Auto-fetch sessions
-    if (!state.voiceLab.sessionsLoading && state.voiceLab.sessions.length === 0) {
+    // Auto-fetch sessions (only on first render)
+    if (!state.voiceLab.sessionsLoading && !state.voiceLab.sessionsFetched) {
         fetchVoiceLabSessions();
     }
 
@@ -11224,6 +11225,7 @@ function renderVoiceLabOrbLivePanel() {
     refreshBtn.className = 'voice-lab-refresh-btn';
     refreshBtn.textContent = 'Refresh';
     refreshBtn.addEventListener('click', function() {
+        state.voiceLab.sessionsFetched = false; // Reset to allow re-fetch
         fetchVoiceLabSessions();
     });
     sessionsHeader.appendChild(refreshBtn);
@@ -11351,14 +11353,31 @@ function fetchVoiceLabSessions() {
             return resp.json();
         })
         .then(function(data) {
-            state.voiceLab.sessions = data || [];
+            // VTID-01218E: Map API response (snake_case) to frontend format (camelCase)
+            var sessions = (data.sessions || []).map(function(s) {
+                return {
+                    sessionId: s.session_id,
+                    connected: s.status === 'active',
+                    startedAt: s.started_at,
+                    endedAt: s.ended_at,
+                    lastActivity: s.ended_at || s.started_at,
+                    turnCount: s.turn_count,
+                    durationMs: s.duration_ms,
+                    lang: s.lang,
+                    errorCount: s.error_count,
+                    interruptedCount: s.interrupted_count
+                };
+            });
+            state.voiceLab.sessions = sessions;
             state.voiceLab.sessionsLoading = false;
+            state.voiceLab.sessionsFetched = true;
             renderApp();
         })
         .catch(function(err) {
             console.error('[VTID-01218E] Error fetching sessions:', err);
             state.voiceLab.sessions = [];
             state.voiceLab.sessionsLoading = false;
+            state.voiceLab.sessionsFetched = true;
             renderApp();
         });
 }
