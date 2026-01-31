@@ -525,5 +525,71 @@ CREATE TABLE risk_mitigations (
 
 ---
 
+## 🎭 VISUAL VERIFICATION DATA STRUCTURES
+
+### Visual Verification Result (VTID-01200)
+**Purpose:** Post-deploy visual testing results stored in `verification_result` JSONB field
+**Used by:**
+- `services/gateway/src/services/visual-verification.ts` (Visual testing service)
+- `services/gateway/src/services/autopilot-verification.ts` (Verification orchestrator)
+- `services/mcp-gateway/src/connectors/playwright-mcp.ts` (Browser automation)
+
+**Data Structure:**
+```typescript
+interface VisualVerificationResult {
+  passed: boolean;                    // Overall pass/fail
+  page_load_passed: boolean;          // Can page load without errors?
+  journeys_passed: boolean;           // All user journeys passed?
+  accessibility_passed: boolean;      // WCAG compliance check
+  screenshots: string[];              // Base64 encoded screenshots
+  journey_results: JourneyResult[];   // Individual journey test results
+  accessibility_violations: Array<{   // A11y violations found
+    id: string;
+    impact: string;
+    description: string;
+  }>;
+  issues: string[];                   // List of issues found
+  verified_at: string;                // ISO timestamp
+}
+
+interface JourneyResult {
+  name: string;                       // Journey name (e.g., "homepage_load")
+  passed: boolean;                    // Journey pass/fail
+  steps_passed: number;               // Number of steps that passed
+  steps_failed: number;               // Number of steps that failed
+  duration_ms: number;                // Journey execution time
+  errors: string[];                   // List of error messages
+}
+```
+
+**Journey Definitions:**
+- **Frontend journeys** (domain === 'frontend'):
+  - `homepage_load` (critical) - Homepage loads without errors
+  - `navigation_sidebar` - Sidebar navigation exists
+  - `messages_page` - Messages page loads
+  - `health_page` - Health page loads
+
+- **Backend journeys** (domain === 'backend' | 'api'):
+  - `api_health_check` (critical) - /alive endpoint returns healthy
+
+**Integration:**
+- Visual verification runs as Step 4 in `runVerification()` after acceptance assertions
+- Results stored in `vtid_ledger.metadata.verification_result.visual_verification_result`
+- Emits OASIS events: `autopilot.verification.visual.{started|completed|failed}`
+- Non-blocking: Visual test failures are warnings, not blockers
+
+**Environment Variables:**
+```bash
+MCP_GATEWAY_URL=http://localhost:3001          # MCP Gateway endpoint
+FRONTEND_URL=https://temp-vitana-v1.lovable.app # Frontend URL for testing
+VISUAL_TEST_SCREENSHOTS_DIR=/tmp/visual-tests  # Screenshot storage directory
+PLAYWRIGHT_HEADLESS=true                        # Run browser in headless mode
+PLAYWRIGHT_VIEWPORT_WIDTH=1280                  # Browser viewport width
+PLAYWRIGHT_VIEWPORT_HEIGHT=720                  # Browser viewport height
+PLAYWRIGHT_TIMEOUT=30000                        # Test timeout in ms
+```
+
+---
+
 **Remember:** This file is the SINGLE SOURCE OF TRUTH for table names.
 When in doubt, CHECK HERE FIRST! 🎯

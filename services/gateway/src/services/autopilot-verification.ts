@@ -28,6 +28,10 @@ import {
   getSpecTargetPaths,
   type VtidSpec,
 } from './vtid-spec-service';
+import {
+  runVisualVerification,
+  type VisualVerificationResponse,
+} from './visual-verification';
 
 // =============================================================================
 // Types
@@ -99,7 +103,7 @@ const SERVICE_URLS: Record<string, string> = {
 
 async function emitVerificationEvent(
   vtid: string,
-  stage: 'started' | 'health_check' | 'csp_check' | 'acceptance' | 'completed' | 'failed',
+  stage: 'started' | 'health_check' | 'csp_check' | 'acceptance' | 'visual' | 'completed' | 'failed',
   status: 'info' | 'success' | 'warning' | 'error',
   message: string,
   payload: Record<string, unknown> = {}
@@ -526,14 +530,52 @@ export async function runVerification(request: VerificationRequest): Promise<Ver
       issues.push(...acceptance.failed_assertions);
     }
 
+    // Step 4: Visual Testing (VTID-01200)
+    console.log(`[VTID-01178] Running visual verification for ${vtid}...`);
+    let visualVerification: VisualVerificationResponse;
+    try {
+      visualVerification = await runVisualVerification({
+        vtid,
+        service,
+        environment,
+        deploy_url,
+      });
+
+      await emitVerificationEvent(
+        vtid,
+        'visual',
+        visualVerification.passed ? 'success' : 'warning',
+        visualVerification.passed
+          ? `Visual verification passed for ${vtid}`
+          : `Visual verification failed: ${visualVerification.result?.issues.join(', ') || visualVerification.error}`,
+        {
+          passed: visualVerification.passed,
+          page_load_passed: visualVerification.result?.page_load_passed,
+          journeys_passed: visualVerification.result?.journeys_passed,
+          accessibility_passed: visualVerification.result?.accessibility_passed,
+          issues: visualVerification.result?.issues || [],
+        }
+      );
+
+      if (!visualVerification.passed && visualVerification.result?.issues) {
+        issues.push(...visualVerification.result.issues);
+      }
+    } catch (error) {
+      // Visual verification errors are warnings, not blockers
+      console.warn(`[VTID-01178] Visual verification error for ${vtid}:`, error);
+      visualVerification = { ok: false, passed: false, error: String(error) };
+    }
+
     // Final result
-    // Health check is required, CSP and acceptance are warnings
+    // Health check is required, CSP/acceptance/visual are warnings
     const passed = healthCheck.passed;
     const result: VerificationResult = {
       passed,
       health_check_passed: healthCheck.passed,
       acceptance_assertions_passed: acceptance.passed,
       csp_check_passed: cspCheck.passed,
+      visual_verification_passed: visualVerification.passed,
+      visual_verification_result: visualVerification.result,
       issues,
       verified_at: new Date().toISOString(),
     };
@@ -547,6 +589,7 @@ export async function runVerification(request: VerificationRequest): Promise<Ver
         health_check_passed: healthCheck.passed,
         csp_check_passed: cspCheck.passed,
         acceptance_passed: acceptance.passed,
+        visual_verification_passed: visualVerification.passed,
       });
 
       console.log(`[VTID-01178] Verification PASSED for ${vtid} - marked as completed`);
