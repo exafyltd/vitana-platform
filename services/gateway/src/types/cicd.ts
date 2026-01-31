@@ -204,14 +204,6 @@ export type CicdEventType =
   | 'orb.session.ended'
   // VTID-01039: ORB Conversation Aggregation
   | 'orb.session.summary'
-  // VTID-01218A: Voice LAB Live Observability Events
-  | 'voice.live.session.started'
-  | 'voice.live.session.ended'
-  | 'voice.live.turn.started'
-  | 'voice.live.turn.completed'
-  | 'voice.live.turn.interrupted'
-  | 'voice.live.playback.cleared'
-  | 'voice.live.error'
   // VTID-01032: Multi-service deploy selection event
   | 'cicd.deploy.selection'
   // VTID-01033: CICD Concurrency Lock Events
@@ -483,13 +475,10 @@ export type CicdEventType =
   | 'conversation.model.called'
   | 'conversation.tool.called'
   | 'conversation.tool.health_check'
-  // VTID-01221: ORB and Autopilot Recommendation Sync Events
-  | 'autopilot.recommendations.requested'
-  | 'autopilot.recommendations.received'
-  | 'autopilot.recommendations.failed'
-  | 'dev.recommendation.presented'
-  | 'dev.recommendation.selected'
-  | 'dev.fallback.tool_used';
+  // VTID-01224: ORB Live API Context Bootstrap & Tool Execution Events
+  | 'orb.live.context.bootstrap'
+  | 'orb.live.context.bootstrap.skipped'
+  | 'orb.live.tool.executed';
 
 export interface CicdOasisEvent {
   vtid: string;
