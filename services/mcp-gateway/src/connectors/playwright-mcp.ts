@@ -199,7 +199,7 @@ class PlaywrightMcpConnector {
       await page.goto(params.url, { waitUntil: 'networkidle' });
 
       // Get accessibility tree snapshot
-      const snapshot = await page.accessibility.snapshot();
+      const snapshot = await (page as any).accessibility.snapshot();
 
       // Basic accessibility validation
       // In production, integrate with axe-core or similar
