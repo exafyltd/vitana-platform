@@ -14924,7 +14924,20 @@ body {
   color: var(--color-text-primary);
   font-size: 0.875rem;
   width: 100%;
-  max-width: 200px;
+  max-width: 300px;
+}
+
+/* Dropdown option styling for dark theme */
+.voice-lab-control-group select option {
+  background: #1e293b;
+  color: #f1f5f9;
+  padding: 0.5rem;
+}
+
+.voice-lab-control-group select option:hover,
+.voice-lab-control-group select option:checked {
+  background: #3b82f6;
+  color: white;
 }
 
 .voice-lab-control-group input[type="number"]:focus,
