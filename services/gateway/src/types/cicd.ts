@@ -475,7 +475,7 @@ export type CicdEventType =
   | 'conversation.model.called'
   | 'conversation.tool.called'
   | 'conversation.tool.health_check'
-  // VTID-01223: ORB Live API Context Bootstrap & Tool Execution Events
+  // VTID-01224: ORB Live API Context Bootstrap & Tool Execution Events
   | 'orb.live.context.bootstrap'
   | 'orb.live.context.bootstrap.skipped'
   | 'orb.live.tool.executed';

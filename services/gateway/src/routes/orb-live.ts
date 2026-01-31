@@ -79,25 +79,25 @@ import {
   MemoryIdentity
 } from '../services/orb-memory-bridge';
 // VTID-01186: Auth middleware for identity propagation
-// VTID-01223: Added verifyAndExtractIdentity for WebSocket auth
+// VTID-01224: Added verifyAndExtractIdentity for WebSocket auth
 import {
   optionalAuth,
   AuthenticatedRequest,
   verifyAndExtractIdentity,
   SupabaseIdentity
 } from '../middleware/auth-supabase-jwt';
-// VTID-01223: Context Pack Builder for Live API intelligence
+// VTID-01224: Context Pack Builder for Live API intelligence
 import {
   buildContextPack,
   formatContextPackForLLM,
   BuildContextPackInput,
   CONTEXT_PACK_CONFIG
 } from '../services/context-pack-builder';
-// VTID-01223: Retrieval Router for context source decisions
+// VTID-01224: Retrieval Router for context source decisions
 import { computeRetrievalRouterDecision } from '../services/retrieval-router';
-// VTID-01223: Context Lens for memory access control
+// VTID-01224: Context Lens for memory access control
 import { ContextLens, createContextLens } from '../types/context-lens';
-// VTID-01223: Conversation types for thread continuity
+// VTID-01224: Conversation types for thread continuity
 import { ContextPack } from '../types/conversation';
 // VTID-01112: Context Assembly Engine (D20 Core Intelligence)
 import {
@@ -415,7 +415,7 @@ const SUPPORTED_LIVE_LANGUAGES = ['en', 'de', 'fr', 'es', 'ar', 'zh', 'sr', 'ru'
 
 /**
  * VTID-01155: Gemini Live session state
- * VTID-01223: Extended with identity and context fields for intelligence stack
+ * VTID-01224: Extended with identity and context fields for intelligence stack
  */
 interface GeminiLiveSession {
   sessionId: string;
@@ -430,13 +430,13 @@ interface GeminiLiveSession {
   audioInChunks: number;
   videoInFrames: number;
   audioOutChunks: number;
-  // VTID-01223: Identity for context retrieval (server-verified from JWT)
+  // VTID-01224: Identity for context retrieval (server-verified from JWT)
   identity?: SupabaseIdentity;
-  // VTID-01223: Thread continuity
+  // VTID-01224: Thread continuity
   thread_id?: string;
   conversation_id?: string;
   turn_count: number;
-  // VTID-01223: Bootstrap context (injected into system instruction)
+  // VTID-01224: Bootstrap context (injected into system instruction)
   contextInstruction?: string;
   contextPack?: ContextPack;
   contextBootstrapLatencyMs?: number;
@@ -582,11 +582,11 @@ const LIVE_API_VOICES: Record<string, string> = {
 };
 
 // =============================================================================
-// VTID-01223: Live API Context Bootstrap Configuration
+// VTID-01224: Live API Context Bootstrap Configuration
 // =============================================================================
 
 /**
- * VTID-01223: Configuration for context bootstrap at session start
+ * VTID-01224: Configuration for context bootstrap at session start
  */
 const LIVE_CONTEXT_CONFIG = {
   /** Maximum time (ms) to wait for context bootstrap before connecting without it */
@@ -602,7 +602,7 @@ const LIVE_CONTEXT_CONFIG = {
 };
 
 /**
- * VTID-01223: Build bootstrap context pack for Live API session
+ * VTID-01224: Build bootstrap context pack for Live API session
  * Uses latency caps to avoid delaying voice connection
  *
  * @param identity - Server-verified user identity
@@ -668,7 +668,7 @@ async function buildBootstrapContextPack(
     const latencyMs = Date.now() - startTime;
 
     if (!contextPack) {
-      console.warn(`[VTID-01223] Context bootstrap timed out after ${latencyMs}ms for session ${sessionId}`);
+      console.warn(`[VTID-01224] Context bootstrap timed out after ${latencyMs}ms for session ${sessionId}`);
       return {
         latencyMs,
         skippedReason: 'timeout',
@@ -683,7 +683,7 @@ async function buildBootstrapContextPack(
       contextInstruction = contextInstruction.substring(0, LIVE_CONTEXT_CONFIG.MAX_CONTEXT_CHARS) + '\n[...truncated]';
     }
 
-    console.log(`[VTID-01223] Context bootstrap complete: ${latencyMs}ms, memory=${contextPack.memory_hits?.length || 0}, knowledge=${contextPack.knowledge_hits?.length || 0}`);
+    console.log(`[VTID-01224] Context bootstrap complete: ${latencyMs}ms, memory=${contextPack.memory_hits?.length || 0}, knowledge=${contextPack.knowledge_hits?.length || 0}`);
 
     return {
       contextPack,
@@ -691,7 +691,7 @@ async function buildBootstrapContextPack(
       latencyMs,
     };
   } catch (err: any) {
-    console.error(`[VTID-01223] Context bootstrap error for session ${sessionId}:`, err.message);
+    console.error(`[VTID-01224] Context bootstrap error for session ${sessionId}:`, err.message);
     return {
       latencyMs: Date.now() - startTime,
       skippedReason: `error: ${err.message}`,
@@ -700,7 +700,7 @@ async function buildBootstrapContextPack(
 }
 
 /**
- * VTID-01223: Build Live API tool declarations for function calling
+ * VTID-01224: Build Live API tool declarations for function calling
  * These tools enable dynamic context retrieval during the conversation
  */
 function buildLiveApiTools(): object[] {
@@ -760,7 +760,7 @@ function buildLiveApiTools(): object[] {
 }
 
 /**
- * VTID-01223: Execute a Live API tool call
+ * VTID-01224: Execute a Live API tool call
  * Handles search_memory, search_knowledge, and search_web tools
  *
  * @param session - The Live session (for identity access)
@@ -834,7 +834,7 @@ async function executeLiveApiTool(
           .map((hit: any) => `[${hit.category_key || 'memory'}] ${hit.content}`)
           .join('\n');
 
-        console.log(`[VTID-01223] search_memory executed: ${memoryHits.length} hits, ${Date.now() - startTime}ms`);
+        console.log(`[VTID-01224] search_memory executed: ${memoryHits.length} hits, ${Date.now() - startTime}ms`);
         return {
           success: true,
           result: `Found ${memoryHits.length} relevant memories:\n${formatted}`,
@@ -879,7 +879,7 @@ async function executeLiveApiTool(
           .map((hit: any) => `**${hit.title || 'Knowledge'}**\n${hit.snippet || hit.content}`)
           .join('\n\n');
 
-        console.log(`[VTID-01223] search_knowledge executed: ${knowledgeHits.length} hits, ${Date.now() - startTime}ms`);
+        console.log(`[VTID-01224] search_knowledge executed: ${knowledgeHits.length} hits, ${Date.now() - startTime}ms`);
         return {
           success: true,
           result: `Found ${knowledgeHits.length} relevant knowledge items:\n${formatted}`,
@@ -924,7 +924,7 @@ async function executeLiveApiTool(
           .map((hit: any) => `**${hit.title || 'Web Result'}**\n${hit.snippet || hit.content}\nSource: ${hit.url || hit.citation || 'web'}`)
           .join('\n\n');
 
-        console.log(`[VTID-01223] search_web executed: ${webHits.length} hits, ${Date.now() - startTime}ms`);
+        console.log(`[VTID-01224] search_web executed: ${webHits.length} hits, ${Date.now() - startTime}ms`);
         return {
           success: true,
           result: `Found ${webHits.length} relevant web results:\n${formatted}`,
@@ -939,7 +939,7 @@ async function executeLiveApiTool(
         };
     }
   } catch (err: any) {
-    console.error(`[VTID-01223] Tool execution error (${toolName}):`, err.message);
+    console.error(`[VTID-01224] Tool execution error (${toolName}):`, err.message);
     return {
       success: false,
       result: '',
@@ -949,7 +949,7 @@ async function executeLiveApiTool(
 }
 
 /**
- * VTID-01223: Send function response back to Live API
+ * VTID-01224: Send function response back to Live API
  * After executing a tool, send the result back to Gemini
  */
 function sendFunctionResponseToLiveAPI(
@@ -959,7 +959,7 @@ function sendFunctionResponseToLiveAPI(
   result: { success: boolean; result: string; error?: string }
 ): boolean {
   if (ws.readyState !== WebSocket.OPEN) {
-    console.warn('[VTID-01223] Cannot send function response - WebSocket not open');
+    console.warn('[VTID-01224] Cannot send function response - WebSocket not open');
     return false;
   }
 
@@ -978,14 +978,14 @@ function sendFunctionResponseToLiveAPI(
     },
   };
 
-  console.log(`[VTID-01223] Sending function response for ${toolName}: ${result.result.substring(0, 100)}...`);
+  console.log(`[VTID-01224] Sending function response for ${toolName}: ${result.result.substring(0, 100)}...`);
   ws.send(JSON.stringify(responseMessage));
   return true;
 }
 
 /**
  * VTID-01219: Build system instruction for Live API
- * VTID-01223: Extended to accept bootstrap context
+ * VTID-01224: Extended to accept bootstrap context
  */
 function buildLiveSystemInstruction(
   lang: string,
@@ -1028,7 +1028,7 @@ IMPORTANT:
 - Confirm important information when needed
 - Use tools to provide accurate, personalized responses`;
 
-  // VTID-01223: Append bootstrap context if available
+  // VTID-01224: Append bootstrap context if available
   if (bootstrapContext) {
     instruction += `\n\n${bootstrapContext}`;
   }
@@ -1092,7 +1092,7 @@ async function connectToLiveAPI(
 
       // Send setup message with model and configuration
       // Vertex AI uses snake_case (unlike Google AI which uses camelCase)
-      // VTID-01223: Include tools and bootstrap context
+      // VTID-01224: Include tools and bootstrap context
       const setupMessage = {
         setup: {
           model: `projects/${VERTEX_PROJECT_ID}/locations/${VERTEX_LOCATION}/publishers/google/models/${VERTEX_LIVE_MODEL}`,
@@ -1108,7 +1108,7 @@ async function connectToLiveAPI(
           },
           system_instruction: {
             parts: [{
-              // VTID-01223: Pass bootstrap context to system instruction
+              // VTID-01224: Pass bootstrap context to system instruction
               text: buildLiveSystemInstruction(
                 session.lang,
                 session.voiceStyle || 'friendly, calm, empathetic',
@@ -1116,14 +1116,14 @@ async function connectToLiveAPI(
               )
             }]
           },
-          // VTID-01223: Include tools for dynamic context retrieval during conversation
+          // VTID-01224: Include tools for dynamic context retrieval during conversation
           tools: session.identity ? buildLiveApiTools() : []
         }
       };
 
       const setupPreview = JSON.stringify(setupMessage).substring(0, 800);
       console.log(`[VTID-01219] Sending setup message:`, setupPreview);
-      console.log(`[VTID-01223] Setup includes: tools=${session.identity ? 3 : 0}, contextChars=${session.contextInstruction?.length || 0}`);
+      console.log(`[VTID-01224] Setup includes: tools=${session.identity ? 3 : 0}, contextChars=${session.contextInstruction?.length || 0}`);
       ws.send(JSON.stringify(setupMessage));
       console.log(`[VTID-01219] Setup message sent for session ${session.sessionId}`);
     });
@@ -1208,10 +1208,10 @@ async function connectToLiveAPI(
           }
         }
 
-        // VTID-01223: Handle tool calls (function calling) - execute and respond
+        // VTID-01224: Handle tool calls (function calling) - execute and respond
         const toolCall = message.tool_call || message.toolCall;
         if (toolCall) {
-          console.log(`[VTID-01223] Tool call received for session ${session.sessionId}:`, JSON.stringify(toolCall).substring(0, 500));
+          console.log(`[VTID-01224] Tool call received for session ${session.sessionId}:`, JSON.stringify(toolCall).substring(0, 500));
 
           // Extract function calls (handle both formats)
           const functionCalls = toolCall.function_calls || toolCall.functionCalls || [];
@@ -1220,7 +1220,7 @@ async function connectToLiveAPI(
             const toolArgs = fc.args || {};
             const callId = fc.id || randomUUID();
 
-            console.log(`[VTID-01223] Executing tool: ${toolName} with args: ${JSON.stringify(toolArgs)}`);
+            console.log(`[VTID-01224] Executing tool: ${toolName} with args: ${JSON.stringify(toolArgs)}`);
 
             // Execute the tool asynchronously
             executeLiveApiTool(session, toolName, toolArgs)
@@ -1230,7 +1230,7 @@ async function connectToLiveAPI(
 
                 // Emit OASIS event for tool execution
                 emitOasisEvent({
-                  vtid: 'VTID-01223',
+                  vtid: 'VTID-01224',
                   type: 'orb.live.tool.executed',
                   source: 'orb-live-ws',
                   status: result.success ? 'info' : 'warning',
@@ -1246,7 +1246,7 @@ async function connectToLiveAPI(
                 }).catch(() => {});
               })
               .catch((err) => {
-                console.error(`[VTID-01223] Tool execution error:`, err);
+                console.error(`[VTID-01224] Tool execution error:`, err);
                 sendFunctionResponseToLiveAPI(ws, callId, toolName, {
                   success: false,
                   result: '',
@@ -3909,7 +3909,7 @@ router.post('/live/session/start', async (req: Request, res: Response) => {
     audioInChunks: 0,
     videoInFrames: 0,
     audioOutChunks: 0,
-    // VTID-01223: Required fields for context
+    // VTID-01224: Required fields for context
     turn_count: 0,
   };
 
@@ -4540,7 +4540,7 @@ router.get('/health', (_req: Request, res: Response) => {
 
 /**
  * VTID-01222: WebSocket message types from client
- * VTID-01223: Added auth_token for server-verified identity
+ * VTID-01224: Added auth_token for server-verified identity
  */
 interface WsClientMessage {
   type: 'start' | 'audio' | 'video' | 'end_turn' | 'stop' | 'ping';
@@ -4548,7 +4548,7 @@ interface WsClientMessage {
   lang?: string;
   voice_style?: string;
   response_modalities?: string[];
-  // VTID-01223: Auth token for identity (client CAN send, server MUST verify)
+  // VTID-01224: Auth token for identity (client CAN send, server MUST verify)
   // Prefer passing token via query param (?token=) or Authorization header on WS upgrade
   auth_token?: string;
   // Audio message fields
@@ -4562,7 +4562,7 @@ interface WsClientMessage {
 
 /**
  * VTID-01222: WebSocket session state
- * VTID-01223: Added identity for context retrieval
+ * VTID-01224: Added identity for context retrieval
  */
 interface WsClientSession {
   sessionId: string;
@@ -4571,7 +4571,7 @@ interface WsClientSession {
   connected: boolean;
   lastActivity: Date;
   clientIP: string;
-  // VTID-01223: Server-verified identity from JWT
+  // VTID-01224: Server-verified identity from JWT
   identity?: SupabaseIdentity;
 }
 
@@ -4617,7 +4617,7 @@ export function initializeOrbWebSocket(server: HttpServer): void {
 
 /**
  * VTID-01222: Handle new WebSocket connection from client
- * VTID-01223: Extract and verify auth token from query params or headers
+ * VTID-01224: Extract and verify auth token from query params or headers
  */
 async function handleWebSocketConnection(ws: WebSocket, req: IncomingMessage): Promise<void> {
   const clientIP = (req.headers['x-forwarded-for'] as string || req.socket.remoteAddress || 'unknown').split(',')[0].trim();
@@ -4634,7 +4634,7 @@ async function handleWebSocketConnection(ws: WebSocket, req: IncomingMessage): P
 
   incrementConnection(clientIP);
 
-  // VTID-01223: Extract auth token from query params or Authorization header
+  // VTID-01224: Extract auth token from query params or Authorization header
   // Priority: 1. ?token= query param  2. Authorization: Bearer header  3. Sec-WebSocket-Protocol
   let identity: SupabaseIdentity | undefined;
   const url = parseUrl(req.url || '', true);
@@ -4650,15 +4650,15 @@ async function handleWebSocketConnection(ws: WebSocket, req: IncomingMessage): P
       const result = await verifyAndExtractIdentity(token);
       if (result) {
         identity = result.identity;
-        console.log(`[VTID-01223] WebSocket authenticated: user=${identity.user_id}, tenant=${identity.tenant_id}`);
+        console.log(`[VTID-01224] WebSocket authenticated: user=${identity.user_id}, tenant=${identity.tenant_id}`);
       } else {
-        console.warn(`[VTID-01223] WebSocket auth failed for ${sessionId}: invalid token`);
+        console.warn(`[VTID-01224] WebSocket auth failed for ${sessionId}: invalid token`);
       }
     } catch (err: any) {
-      console.warn(`[VTID-01223] WebSocket auth error for ${sessionId}: ${err.message}`);
+      console.warn(`[VTID-01224] WebSocket auth error for ${sessionId}: ${err.message}`);
     }
   } else {
-    console.log(`[VTID-01223] WebSocket unauthenticated: ${sessionId} (no token provided)`);
+    console.log(`[VTID-01224] WebSocket unauthenticated: ${sessionId} (no token provided)`);
   }
 
   // Create client session
@@ -4669,7 +4669,7 @@ async function handleWebSocketConnection(ws: WebSocket, req: IncomingMessage): P
     connected: true,
     lastActivity: new Date(),
     clientIP,
-    identity  // VTID-01223: Server-verified identity
+    identity  // VTID-01224: Server-verified identity
   };
 
   wsClientSessions.set(sessionId, clientSession);
@@ -4781,14 +4781,14 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
 
   console.log(`[VTID-01222] Starting Live API session: ${sessionId}, lang=${lang}`);
 
-  // VTID-01223: Build bootstrap context if authenticated
+  // VTID-01224: Build bootstrap context if authenticated
   let contextInstruction: string | undefined;
   let contextPack: ContextPack | undefined;
   let contextBootstrapLatencyMs: number | undefined;
   let contextBootstrapSkippedReason: string | undefined;
 
   if (identity && identity.tenant_id && identity.user_id) {
-    console.log(`[VTID-01223] Building bootstrap context for session ${sessionId}...`);
+    console.log(`[VTID-01224] Building bootstrap context for session ${sessionId}...`);
     const bootstrapResult = await buildBootstrapContextPack(identity, sessionId);
 
     contextInstruction = bootstrapResult.contextInstruction;
@@ -4796,10 +4796,10 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     contextBootstrapLatencyMs = bootstrapResult.latencyMs;
     contextBootstrapSkippedReason = bootstrapResult.skippedReason;
 
-    // VTID-01223: Emit OASIS telemetry for context bootstrap
+    // VTID-01224: Emit OASIS telemetry for context bootstrap
     if (bootstrapResult.skippedReason) {
       emitOasisEvent({
-        vtid: 'VTID-01223',
+        vtid: 'VTID-01224',
         type: 'orb.live.context.bootstrap.skipped',
         source: 'orb-live-ws',
         status: 'warning',
@@ -4814,7 +4814,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       }).catch(() => {});
     } else {
       emitOasisEvent({
-        vtid: 'VTID-01223',
+        vtid: 'VTID-01224',
         type: 'orb.live.context.bootstrap',
         source: 'orb-live-ws',
         status: 'info',
@@ -4832,11 +4832,11 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     }
   } else {
     contextBootstrapSkippedReason = 'unauthenticated';
-    console.log(`[VTID-01223] Skipping context bootstrap for ${sessionId}: unauthenticated`);
+    console.log(`[VTID-01224] Skipping context bootstrap for ${sessionId}: unauthenticated`);
 
     // Emit skip event
     emitOasisEvent({
-      vtid: 'VTID-01223',
+      vtid: 'VTID-01224',
       type: 'orb.live.context.bootstrap.skipped',
       source: 'orb-live-ws',
       status: 'info',
@@ -4862,7 +4862,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     audioInChunks: 0,
     videoInFrames: 0,
     audioOutChunks: 0,
-    // VTID-01223: Identity and context
+    // VTID-01224: Identity and context
     identity,
     thread_id: sessionId,
     turn_count: 0,
@@ -4959,7 +4959,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       voice: LIVE_API_VOICES[lang] || LIVE_API_VOICES['en'],
       response_modalities: responseModalities,
       transport: 'websocket',
-      // VTID-01223: Include context bootstrap info
+      // VTID-01224: Include context bootstrap info
       authenticated: !!identity,
       tenant_id: identity?.tenant_id || null,
       user_id: identity?.user_id || null,
@@ -4977,7 +4977,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       type: 'session_started',
       session_id: sessionId,
       live_api_connected: true,
-      // VTID-01223: Include context bootstrap status
+      // VTID-01224: Include context bootstrap status
       context_bootstrap: {
         included: !!contextInstruction,
         latency_ms: contextBootstrapLatencyMs || 0,

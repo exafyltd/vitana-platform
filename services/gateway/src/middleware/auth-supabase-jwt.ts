@@ -64,7 +64,7 @@ function getJwtSecret(): Uint8Array | null {
  * @param token - The JWT string
  * @returns Identity object or null if verification fails
  *
- * VTID-01223: Exported for WebSocket auth in orb-live.ts
+ * VTID-01224: Exported for WebSocket auth in orb-live.ts
  */
 export async function verifyAndExtractIdentity(
   token: string
