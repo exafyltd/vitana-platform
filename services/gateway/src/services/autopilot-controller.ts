@@ -122,12 +122,15 @@ export interface ValidatorIssue {
 
 /**
  * Verification result - post-deploy checks
+ * VTID-01200: Added visual verification fields
  */
 export interface VerificationResult {
   passed: boolean;
   health_check_passed: boolean;
   acceptance_assertions_passed: boolean;
   csp_check_passed: boolean;
+  visual_verification_passed?: boolean;
+  visual_verification_result?: any;
   issues: string[];
   verified_at: string;
 }
