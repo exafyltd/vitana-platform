@@ -60,6 +60,8 @@ class PlaywrightMcpConnector {
   private config: PlaywrightMcpConfig;
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
+  private currentPage: Page | null = null;
+  private pageTimeout: NodeJS.Timeout | null = null;
 
   constructor() {
     this.config = {
@@ -120,41 +122,68 @@ class PlaywrightMcpConnector {
 
   /**
    * Navigate to a URL
+   * VTID-01223 FIX: Keep page open for subsequent operations
    */
   private async navigate(params: NavigateParams): Promise<{ ok: boolean; url: string; title: string }> {
     await this.initBrowser();
-    const page = await this.context!.newPage();
 
-    try {
-      await page.goto(params.url, {
-        waitUntil: params.waitUntil || 'networkidle',
-        timeout: params.timeout || this.config.timeout,
-      });
-
-      const title = await page.title();
-
-      return {
-        ok: true,
-        url: page.url(),
-        title,
-      };
-    } finally {
-      await page.close();
+    // Close previous page if exists
+    if (this.currentPage) {
+      await this.currentPage.close().catch(() => {});
+      this.currentPage = null;
     }
+
+    // Clear previous timeout
+    if (this.pageTimeout) {
+      clearTimeout(this.pageTimeout);
+    }
+
+    // Create new page and store it
+    this.currentPage = await this.context!.newPage();
+
+    await this.currentPage.goto(params.url, {
+      waitUntil: params.waitUntil || 'networkidle',
+      timeout: params.timeout || this.config.timeout,
+    });
+
+    const title = await this.currentPage.title();
+
+    // Auto-cleanup page after 60 seconds of inactivity
+    this.pageTimeout = setTimeout(() => {
+      if (this.currentPage) {
+        this.currentPage.close().catch(() => {});
+        this.currentPage = null;
+      }
+    }, 60000);
+
+    return {
+      ok: true,
+      url: this.currentPage.url(),
+      title,
+    };
   }
 
   /**
    * Capture screenshot
+   * VTID-01223 FIX: Use currentPage if available
    */
   private async screenshot(params: ScreenshotParams): Promise<{ ok: boolean; screenshot?: string; path?: string }> {
     await this.initBrowser();
-    const page = await this.context!.newPage();
 
-    try {
+    let page = this.currentPage;
+    let shouldClosePage = false;
+
+    // If no current page or URL specified, create new page
+    if (!page || params.url) {
+      page = await this.context!.newPage();
+      shouldClosePage = true;
+
       if (params.url) {
         await page.goto(params.url, { waitUntil: 'networkidle' });
       }
+    }
 
+    try {
       const screenshotOptions: any = {
         fullPage: params.fullPage !== false,
       };
@@ -180,7 +209,10 @@ class PlaywrightMcpConnector {
         path: params.path,
       };
     } finally {
-      await page.close();
+      // Only close if we created a new page
+      if (shouldClosePage) {
+        await page.close();
+      }
     }
   }
 
