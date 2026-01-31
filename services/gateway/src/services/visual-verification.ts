@@ -178,7 +178,7 @@ async function callPlaywrightMcp(method: string, params: any): Promise<any> {
       throw new Error(`MCP call failed: ${response.status} - ${errorText}`);
     }
 
-    const result = await response.json();
+    const result = await response.json() as { ok: boolean; result?: any; error?: string };
     if (!result.ok) {
       throw new Error(result.error || 'MCP call failed');
     }
