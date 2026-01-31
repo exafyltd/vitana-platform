@@ -3650,12 +3650,12 @@ router.get('/live/stream', async (req: Request, res: Response) => {
         (audioB64: string) => {
           if (session.sseResponse) {
             try {
-              // Convert PCM to WAV for browser playback
-              const wavB64 = pcmToWav(audioB64, 24000, 1, 16);
+              // FIX: Send raw PCM to client for scheduled playback (no WAV conversion)
+              // Client uses Web Audio API scheduling to eliminate gaps between chunks
               session.sseResponse.write(`data: ${JSON.stringify({
                 type: 'audio',
-                data_b64: wavB64,
-                mime: 'audio/wav',
+                data_b64: audioB64,
+                mime: 'audio/pcm',
                 chunk_number: session.audioOutChunks
               })}\n\n`);
             } catch (err) {
