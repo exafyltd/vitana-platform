@@ -2722,6 +2722,7 @@ const state = {
         geminiLiveAudioContext: null, // AudioContext for PCM playback
         geminiLiveAudioQueue: [],     // Queue of audio chunks to play
         geminiLiveAudioPlaying: false, // Whether audio is currently playing
+        geminiLiveLastScheduledEnd: 0, // FIX: Track when last audio ends for seamless playback
         geminiLiveFrameInterval: null, // Interval for capturing video frames
         geminiLiveAudioStream: null,  // MediaStream for audio capture
         geminiLiveAudioProcessor: null, // ScriptProcessorNode for audio
@@ -22292,6 +22293,9 @@ async function geminiLiveStop() {
         state.orb.geminiLiveAudioContext = null;
     }
 
+    // FIX: Reset audio scheduling for clean reconnect
+    state.orb.geminiLiveLastScheduledEnd = 0;
+
     // Close SSE connection
     if (state.orb.geminiLiveEventSource) {
         state.orb.geminiLiveEventSource.close();
@@ -22694,7 +22698,17 @@ function geminiLivePlayNextAudio() {
         source.onended = function() {
             geminiLivePlayNextAudio(); // Play next chunk
         };
-        source.start();
+
+        // FIX: Schedule playback to start immediately after previous chunk ends
+        var now = audioContext.currentTime;
+        var nextStartTime = Math.max(now, state.orb.geminiLiveLastScheduledEnd);
+        source.start(nextStartTime);
+
+        // Track when this segment will end for next scheduling
+        var duration = audioBuffer.duration;
+        state.orb.geminiLiveLastScheduledEnd = nextStartTime + duration;
+
+        console.log('[AUDIO FIX] Scheduled playback at ' + nextStartTime.toFixed(3) + 's (now: ' + now.toFixed(3) + 's), duration: ' + duration.toFixed(3) + 's');
     } catch (e) {
         console.error('[VTID-01219] PCM playback error:', e);
         geminiLivePlayNextAudio();
