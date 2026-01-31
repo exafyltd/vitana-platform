@@ -192,6 +192,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const { specsRouter } = require('./routes/specs');
   // VTID-01208: LLM Routing Policy & Telemetry API
   const llmRouter = require('./routes/llm').default;
+  // VTID-01223: Interactive Visual Testing API
+  const visualInteractiveRouter = require('./routes/visual-interactive').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -363,6 +365,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01208: LLM Routing Policy & Telemetry API
   mountRouterSync(app, '/api/v1/llm', llmRouter, { owner: 'llm-routing-telemetry' });
+
+  // VTID-01223: Interactive Visual Testing API
+  mountRouterSync(app, '/api/v1/visual', visualInteractiveRouter, { owner: 'visual-interactive-testing' });
 
   // VTID-01163 + VTID-01183: Worker Sub-Agents + Orchestrator + Connector
   mountRouterSync(app, '/', workerOrchestratorRouter, { owner: 'worker-orchestrator' });
