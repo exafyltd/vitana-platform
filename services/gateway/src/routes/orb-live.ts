@@ -455,6 +455,10 @@ type LiveStreamMessage = LiveStreamAudioChunk | LiveStreamVideoFrame;
 // VTID-01155: In-memory Live session store
 const liveSessions = new Map<string, GeminiLiveSession>();
 
+// FIX: Grace period for reconnection (30 seconds)
+const LIVE_SESSION_GRACE_PERIOD_MS = 30 * 1000;
+const disconnectedSessions = new Map<string, { session: GeminiLiveSession; disconnectedAt: number }>();
+
 // VTID-01155: Vertex AI Live API configuration
 const VERTEX_PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID || '';
 const VERTEX_LOCATION = process.env.VERTEX_AI_LOCATION || 'us-central1';
@@ -1350,6 +1354,17 @@ function cleanupExpiredSessions(): void {
 
 // Cleanup expired sessions every 5 minutes
 setInterval(cleanupExpiredSessions, 5 * 60 * 1000);
+
+// FIX: Cleanup disconnected sessions after grace period (every 10 seconds)
+setInterval(() => {
+  const now = Date.now();
+  for (const [sessionId, { disconnectedAt }] of disconnectedSessions.entries()) {
+    if (now - disconnectedAt > LIVE_SESSION_GRACE_PERIOD_MS) {
+      disconnectedSessions.delete(sessionId);
+      console.log(`[ORB-LIVE] Session permanently deleted after grace period: ${sessionId}`);
+    }
+  }
+}, 10 * 1000);
 
 /**
  * Call Gemini API with audio transcription request
@@ -3765,7 +3780,20 @@ router.post('/live/stream/send', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: 'session_id required' });
   }
 
-  const session = liveSessions.get(effectiveSessionId);
+  let session = liveSessions.get(effectiveSessionId);
+
+  // FIX: Check grace period for disconnected sessions (allow reconnection)
+  if (!session) {
+    const disconnected = disconnectedSessions.get(effectiveSessionId);
+    if (disconnected) {
+      console.log(`[ORB-LIVE] Restoring session from grace period: ${effectiveSessionId}`);
+      session = disconnected.session;
+      session.active = true;
+      liveSessions.set(effectiveSessionId, session);
+      disconnectedSessions.delete(effectiveSessionId);
+    }
+  }
+
   if (!session) {
     return res.status(404).json({ ok: false, error: 'Session not found' });
   }
@@ -4794,7 +4822,13 @@ function cleanupWsSession(sessionId: string): void {
       transport: 'websocket'
     }).catch(() => {});
 
+    // FIX: Move to grace period instead of immediate deletion (allow reconnection)
     liveSessions.delete(sessionId);
+    disconnectedSessions.set(sessionId, {
+      session: liveSession,
+      disconnectedAt: Date.now()
+    });
+    console.log(`[ORB-LIVE] Session moved to grace period: ${sessionId}`);
   }
 
   // Close client WebSocket if open
