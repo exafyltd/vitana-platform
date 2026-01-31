@@ -15,13 +15,17 @@ COPY src ./src
 RUN npm run build
 
 # Runtime stage
-FROM node:20-alpine AS runner
+FROM node:20-slim AS runner
 
 WORKDIR /app
 
 # Install only production dependencies
 COPY package*.json ./
 RUN npm install --omit=dev
+
+# Install Playwright browsers with system dependencies
+# VTID-01223: Install Chromium for visual verification
+RUN npx playwright install --with-deps chromium
 
 # Copy built JS only
 COPY --from=builder /app/dist ./dist
