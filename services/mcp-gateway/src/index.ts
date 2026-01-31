@@ -6,6 +6,7 @@ import { perplexityMcpConnector } from './connectors/perplexity-mcp';
 import { linearMcpConnector } from './connectors/linear-mcp';
 import { context7McpConnector } from './connectors/context7-mcp';
 import { testspriteMcpConnector } from './connectors/testsprite-mcp';
+import { playwrightMcpConnector } from './connectors/playwright-mcp';
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -21,6 +22,7 @@ const connectors: Record<string, any> = {
   'linear-mcp': linearMcpConnector,
   'context7-mcp': context7McpConnector,
   'testsprite-mcp': testspriteMcpConnector,
+  'playwright': playwrightMcpConnector,
 };
 
 // Health check

@@ -163,10 +163,14 @@ function getJourneysForDomain(domain: string, baseUrl: string): JourneyDefinitio
  */
 async function callPlaywrightMcp(method: string, params: any): Promise<any> {
   try {
-    const response = await fetch(`${CONFIG.mcpGatewayUrl}/api/v1/mcp/playwright/${method}`, {
+    const response = await fetch(`${CONFIG.mcpGatewayUrl}/mcp/call`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
+      body: JSON.stringify({
+        server: 'playwright',
+        method: method,
+        params: params,
+      }),
     });
 
     if (!response.ok) {
@@ -174,7 +178,12 @@ async function callPlaywrightMcp(method: string, params: any): Promise<any> {
       throw new Error(`MCP call failed: ${response.status} - ${errorText}`);
     }
 
-    return response.json();
+    const result = await response.json() as { ok: boolean; result?: any; error?: string };
+    if (!result.ok) {
+      throw new Error(result.error || 'MCP call failed');
+    }
+
+    return result.result;
   } catch (error) {
     console.error(`[VTID-01200] MCP call error (${method}):`, error);
     throw error;
