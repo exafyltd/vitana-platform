@@ -11,9 +11,9 @@ kind: Service
 metadata:
   name: cognee-extractor
   labels:
-    vtid: VTID-01225
-    vt_layer: AICOR
-    vt_module: COGNEE
+    vtid: vtid-01225
+    vt_layer: aicor
+    vt_module: cognee
     cloud.googleapis.com/location: us-central1
   annotations:
     run.googleapis.com/description: "VTID-01225: Stateless entity extraction engine for ORB voice transcripts"
@@ -36,7 +36,7 @@ spec:
         # run.googleapis.com/vpc-access-connector: projects/lovable-vitana-vers1/locations/us-central1/connectors/vitana-vpc-connector
 
       labels:
-        vtid: VTID-01225
+        vtid: vtid-01225
     spec:
       # Container concurrency - how many requests per instance
       containerConcurrency: 10
