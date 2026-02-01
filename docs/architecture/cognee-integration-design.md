@@ -1,9 +1,10 @@
 # Cognee Integration Design for Vitana Platform
 
-**VTID**: VTID-COGNEE-001
-**Status**: Design
+**VTID**: VTID-01225
+**Status**: Implementation
 **Author**: Claude
 **Date**: 2026-02-01
+**Migration**: `20260201000000_vtid_01225_cognee_extractor.sql`
 
 ## Executive Summary
 
