@@ -473,7 +473,106 @@ gcloud logging read "resource.type=cloud_run_revision AND resource.labels.servic
 
 ---
 
-## 12. DOCUMENT REFERENCES
+## 12. ORB VOICE-TO-VOICE AUDIO SETTINGS (CRITICAL)
+
+### Overview
+The ORB uses Gemini Live API for real-time voice-to-voice communication. Audio flows bidirectionally:
+- **Input**: Browser microphone → PCM 16kHz → Gateway → Gemini Live API
+- **Output**: Gemini Live API → PCM 24kHz → Gateway → Browser Web Audio API
+
+### Critical Audio Configuration
+
+| Setting | Value | Location |
+|---------|-------|----------|
+| **Input Sample Rate** | 16000 Hz (16kHz) | Client captures at 16kHz |
+| **Input Format** | PCM 16-bit signed, mono | `audio/pcm;rate=16000` |
+| **Output Sample Rate** | 24000 Hz (24kHz) | Gemini outputs at 24kHz |
+| **Output Format** | PCM 16-bit signed, mono | `audio/pcm;rate=24000` |
+
+### Server-Side Audio Handler (orb-live.ts)
+
+**CRITICAL**: The server MUST send raw PCM, NOT WAV. WAV causes audio breakups.
+
+```typescript
+// ✅ CORRECT - Send raw PCM for seamless playback
+session.sseResponse.write(`data: ${JSON.stringify({
+  type: 'audio',
+  data_b64: audioB64,           // Raw PCM from Gemini
+  mime: 'audio/pcm;rate=24000', // MUST include rate
+  chunk_number: session.audioOutChunks
+})}\n\n`);
+
+// ❌ WRONG - WAV causes gaps between chunks
+const wavB64 = pcmToWav(audioB64, 24000, 1, 16);
+session.sseResponse.write(`data: ${JSON.stringify({
+  type: 'audio',
+  data_b64: wavB64,
+  mime: 'audio/wav',  // This causes breakups!
+  chunk_number: session.audioOutChunks
+})}\n\n`);
+```
+
+### Client-Side Audio Playback (app.js)
+
+Two playback paths exist - only PCM path provides seamless audio:
+
+| Path | Trigger | Method | Result |
+|------|---------|--------|--------|
+| **WAV** | `mime.includes('wav')` | Audio element + onended | ❌ Gaps between chunks |
+| **PCM** | All other mimes | Web Audio API + scheduling | ✅ Seamless playback |
+
+**PCM Scheduled Playback** (lines 22668-22715):
+```javascript
+// Schedule next chunk to start exactly when previous ends
+var nextStartTime = Math.max(now, state.orb.geminiLiveLastScheduledEnd);
+source.start(nextStartTime);  // NO GAP
+state.orb.geminiLiveLastScheduledEnd = nextStartTime + duration;
+```
+
+### Audio Code Locations
+
+| Component | File | Lines |
+|-----------|------|-------|
+| SSE Audio Handler | `services/gateway/src/routes/orb-live.ts` | ~4100-4118 |
+| WebSocket Audio Handler | `services/gateway/src/routes/orb-live.ts` | ~4947-4963 |
+| pcmToWav function | `services/gateway/src/routes/orb-live.ts` | ~1337-1370 |
+| Client PCM playback | `services/gateway/src/frontend/command-hub/app.js` | ~22668-22715 |
+| Client WAV playback | `services/gateway/src/frontend/command-hub/app.js` | ~22651-22665 |
+
+### Debugging Audio Issues
+
+**Console logs to look for:**
+
+| Log Message | Meaning |
+|-------------|---------|
+| `[AUDIO FIX] Scheduled playback at...` | ✅ PCM path (good) |
+| `[VTID-01219] Audio chunk complete, queue: N` | ❌ WAV path (causes gaps) |
+| `[VTID-01219] Audio queue empty` | Playback finished |
+
+### Root Cause of Audio Breakups
+
+When the server sends `audio/wav`:
+1. Client detects WAV mime type
+2. Uses `new Audio()` element for playback
+3. Each chunk plays independently with `onended` callback
+4. Gap occurs between `onended` firing and next `audio.play()`
+
+When the server sends `audio/pcm;rate=24000`:
+1. Client detects non-WAV mime type
+2. Uses Web Audio API with `AudioContext`
+3. Chunks are **scheduled** to start at exact timestamps
+4. `source.start(nextStartTime)` ensures no gaps
+
+### IF-THEN Rules for Audio
+
+1. **IF** audio breaks up between chunks → **THEN** check server sends `audio/pcm;rate=24000`, not `audio/wav`
+2. **IF** console shows "Audio chunk complete, queue: N" → **THEN** server is sending WAV (wrong)
+3. **IF** console shows "Scheduled playback at..." → **THEN** server is sending PCM (correct)
+4. **IF** audio plays too fast/slow → **THEN** check sample rate matches (24kHz for output)
+
+---
+
+## 13. DOCUMENT REFERENCES
 
 | Document | Purpose |
 |----------|---------|
@@ -500,5 +599,6 @@ Key VTIDs that established patterns:
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-02-01 | Added ORB Voice-to-Voice Audio Settings (Section 12) - PCM vs WAV, scheduled playback | VTID-01219 |
 | 2026-01-21 | Added ALWAYS/NEVER/IF-THEN core rules | VTID-01200 |
 | 2026-01-21 | Initial creation with technical reference | VTID-01200 |
