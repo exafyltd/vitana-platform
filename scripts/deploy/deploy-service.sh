@@ -162,9 +162,9 @@ elif [ "$CLOUD_RUN_SERVICE" = "worker-runner" ]; then
     --set-secrets "SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest" \
     --quiet
 elif [ "$CLOUD_RUN_SERVICE" = "cognee-extractor" ]; then
-  # VTID-01225: Cognee Extractor - uses Vertex AI (Gemini) for entity extraction
-  # Internal-only ingress, no secrets needed (uses ADC for Vertex AI)
-  echo -e "${YELLOW}VTID-01225: Deploying Cognee Extractor with Vertex AI config...${NC}"
+  # VTID-01225: Cognee Extractor - uses Gemini API for entity extraction
+  # Internal-only ingress, shares GOOGLE_GEMINI_API_KEY with gateway
+  echo -e "${YELLOW}VTID-01225: Deploying Cognee Extractor with Gemini API config...${NC}"
   gcloud run deploy "$CLOUD_RUN_SERVICE" \
     --project "$PROJECT" \
     --region "$REGION" \
@@ -172,7 +172,8 @@ elif [ "$CLOUD_RUN_SERVICE" = "cognee-extractor" ]; then
     --platform managed \
     --no-allow-unauthenticated \
     --ingress internal \
-    --set-env-vars "ENVIRONMENT=${ENVIRONMENT},LLM_PROVIDER=google,LLM_MODEL=gemini-2.0-flash,GOOGLE_CLOUD_PROJECT=${PROJECT},VERTEX_LOCATION=${REGION}" \
+    --set-env-vars "ENVIRONMENT=${ENVIRONMENT},LLM_PROVIDER=gemini,LLM_MODEL=gemini/gemini-2.0-flash,GOOGLE_CLOUD_PROJECT=${PROJECT}" \
+    --set-secrets "GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest" \
     --quiet
   # Note: Internal ingress services in same project can communicate without explicit IAM binding
   echo -e "${GREEN}Cognee Extractor deployed with internal-only ingress.${NC}"
@@ -204,20 +205,44 @@ echo -e "${GREEN}Service URL: ${SERVICE_URL}${NC}"
 # =============================================================================
 # STEP 3 — Post-deploy health check
 # =============================================================================
-echo -e "${YELLOW}Running post-deploy health check: ${SERVICE_URL}${HEALTH_PATH}${NC}"
 
-# Wait a moment for service to stabilize
-sleep 5
+# Check if service has internal-only ingress (can't curl from outside)
+INGRESS=$(gcloud run services describe "$CLOUD_RUN_SERVICE" \
+  --project "$PROJECT" \
+  --region "$REGION" \
+  --format='value(spec.template.metadata.annotations."run.googleapis.com/ingress")' 2>/dev/null || echo "all")
 
-if curl -fsS "${SERVICE_URL}${HEALTH_PATH}" -o /tmp/health_response.json; then
-  echo -e "${GREEN}Health check PASSED${NC}"
-  echo -e "${CYAN}Response:${NC}"
-  cat /tmp/health_response.json | jq '.' 2>/dev/null || cat /tmp/health_response.json
-  echo ""
+if [ "$INGRESS" = "internal" ] || [ "$INGRESS" = "internal-and-cloud-load-balancing" ]; then
+  echo -e "${YELLOW}Service has internal-only ingress - checking Cloud Run status instead...${NC}"
+  # For internal services, verify via Cloud Run API that latest revision is serving
+  SERVING_STATUS=$(gcloud run services describe "$CLOUD_RUN_SERVICE" \
+    --project "$PROJECT" \
+    --region "$REGION" \
+    --format='value(status.conditions[0].status)' 2>/dev/null || echo "Unknown")
+
+  if [ "$SERVING_STATUS" = "True" ]; then
+    echo -e "${GREEN}Health check PASSED (internal service is serving)${NC}"
+  else
+    echo -e "${RED}Health check FAILED: Service status is ${SERVING_STATUS}${NC}"
+    echo -e "${RED}Check Cloud Run logs: gcloud run services logs read ${CLOUD_RUN_SERVICE} --region=${REGION}${NC}"
+    exit 1
+  fi
 else
-  echo -e "${RED}Health check FAILED: ${SERVICE_URL}${HEALTH_PATH}${NC}"
-  echo -e "${RED}Deployment may have issues. Check Cloud Run logs.${NC}"
-  exit 1
+  echo -e "${YELLOW}Running post-deploy health check: ${SERVICE_URL}${HEALTH_PATH}${NC}"
+
+  # Wait a moment for service to stabilize
+  sleep 5
+
+  if curl -fsS "${SERVICE_URL}${HEALTH_PATH}" -o /tmp/health_response.json; then
+    echo -e "${GREEN}Health check PASSED${NC}"
+    echo -e "${CYAN}Response:${NC}"
+    cat /tmp/health_response.json | jq '.' 2>/dev/null || cat /tmp/health_response.json
+    echo ""
+  else
+    echo -e "${RED}Health check FAILED: ${SERVICE_URL}${HEALTH_PATH}${NC}"
+    echo -e "${RED}Deployment may have issues. Check Cloud Run logs.${NC}"
+    exit 1
+  fi
 fi
 
 # =============================================================================
