@@ -478,7 +478,20 @@ export type CicdEventType =
   // VTID-01224: ORB Live API Context Bootstrap & Tool Execution Events
   | 'orb.live.context.bootstrap'
   | 'orb.live.context.bootstrap.skipped'
-  | 'orb.live.tool.executed';
+  | 'orb.live.tool.executed'
+  // VTID-01225: Cognee Entity Extraction Events
+  | 'cognee.extraction.started'
+  | 'cognee.extraction.completed'
+  | 'cognee.extraction.timeout'
+  | 'cognee.extraction.persisted'
+  | 'cognee.extraction.error'
+  // Dev Recommendations and Fallback Events (pre-existing)
+  | 'autopilot.recommendations.requested'
+  | 'autopilot.recommendations.received'
+  | 'autopilot.recommendations.failed'
+  | 'dev.recommendation.presented'
+  | 'dev.recommendation.selected'
+  | 'dev.fallback.tool_used';
 
 export interface CicdOasisEvent {
   vtid: string;
