@@ -18,6 +18,7 @@ metadata:
   annotations:
     run.googleapis.com/description: "VTID-01225: Stateless entity extraction engine for ORB voice transcripts"
     run.googleapis.com/ingress: internal
+    run.googleapis.com/launch-stage: BETA
 spec:
   template:
     metadata:
