@@ -49,7 +49,7 @@ spec:
       serviceAccountName: cognee-extractor@lovable-vitana-vers1.iam.gserviceaccount.com
 
       containers:
-        - image: gcr.io/lovable-vitana-vers1/cognee-extractor:latest
+        - image: us-central1-docker.pkg.dev/lovable-vitana-vers1/vitana-services/cognee-extractor:latest
           ports:
             - containerPort: 8080
               name: http1
