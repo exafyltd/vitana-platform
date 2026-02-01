@@ -1,0 +1,10 @@
+{
+  "name": "@vitana/cognee-extractor",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "uvicorn main:app --reload --port 8080",
+    "start": "uvicorn main:app --host 0.0.0.0 --port 8080",
+    "test": "pytest"
+  }
+}
