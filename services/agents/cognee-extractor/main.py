@@ -35,10 +35,14 @@ logger = logging.getLogger('cognee-extractor')
 # Configuration
 # =============================================================================
 
-# LLM Configuration (uses Cognee defaults if not set)
-LLM_API_KEY = os.getenv('LLM_API_KEY')
-LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'openai')
-LLM_MODEL = os.getenv('LLM_MODEL', 'gpt-4o-mini')
+# LLM Configuration - Uses Vertex AI (Gemini) to match Vitana's existing stack
+# On Cloud Run, uses ADC (Application Default Credentials) for auth
+LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'google')
+LLM_MODEL = os.getenv('LLM_MODEL', 'gemini-2.0-flash')
+
+# Google Cloud project for Vertex AI (matches gateway config)
+GCP_PROJECT = os.getenv('GOOGLE_CLOUD_PROJECT') or os.getenv('GCP_PROJECT') or 'lovable-vitana-vers1'
+GCP_LOCATION = os.getenv('VERTEX_LOCATION', 'us-central1')
 
 # Service Configuration
 SERVICE_NAME = 'cognee-extractor'
@@ -376,17 +380,21 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     logger.info(f'[{VTID}] Starting {SERVICE_NAME}...')
 
-    # Configure Cognee LLM if API key provided
-    if LLM_API_KEY:
-        try:
-            cognee.config.set_llm_config({
-                'provider': LLM_PROVIDER,
-                'model': LLM_MODEL,
-                'api_key': LLM_API_KEY
-            })
-            logger.info(f'[{VTID}] Configured Cognee with {LLM_PROVIDER}/{LLM_MODEL}')
-        except Exception as e:
-            logger.warning(f'[{VTID}] Failed to configure Cognee LLM: {e}')
+    # Configure Cognee LLM with Vertex AI (Gemini)
+    # Uses ADC (Application Default Credentials) on Cloud Run - no API key needed
+    try:
+        cognee.config.set_llm_config({
+            'provider': LLM_PROVIDER,  # 'google' for Gemini
+            'model': LLM_MODEL,        # 'gemini-2.0-flash'
+            'project_id': GCP_PROJECT,
+            'location': GCP_LOCATION,
+        })
+        logger.info(
+            f'[{VTID}] Configured Cognee with {LLM_PROVIDER}/{LLM_MODEL} '
+            f'(project={GCP_PROJECT}, location={GCP_LOCATION})'
+        )
+    except Exception as e:
+        logger.warning(f'[{VTID}] Failed to configure Cognee LLM: {e}')
 
     logger.info(f'[{VTID}] {SERVICE_NAME} ready')
     yield

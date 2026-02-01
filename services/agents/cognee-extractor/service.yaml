@@ -64,16 +64,16 @@ spec:
 
           # Environment variables
           env:
-            # LLM Configuration
+            # LLM Configuration - Uses Vertex AI (Gemini) to match Vitana stack
+            # Auth via ADC (Application Default Credentials) - no API key needed
             - name: LLM_PROVIDER
-              value: "openai"
+              value: "google"
             - name: LLM_MODEL
-              value: "gpt-4o-mini"
-            - name: LLM_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: cognee-secrets
-                  key: llm-api-key
+              value: "gemini-2.0-flash"
+            - name: GOOGLE_CLOUD_PROJECT
+              value: "lovable-vitana-vers1"
+            - name: VERTEX_LOCATION
+              value: "us-central1"
 
             # Service configuration
             - name: PORT
