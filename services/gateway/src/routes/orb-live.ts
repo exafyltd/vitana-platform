@@ -443,6 +443,8 @@ interface GeminiLiveSession {
   contextPack?: ContextPack;
   contextBootstrapLatencyMs?: number;
   contextBootstrapSkippedReason?: string;
+  // VTID-01225: Transcript accumulation for Cognee extraction
+  transcriptTurns: Array<{ role: 'user' | 'assistant'; text: string; timestamp: string }>;
 }
 
 /**
@@ -1201,12 +1203,24 @@ async function connectToLiveAPI(
             if (session.sseResponse) {
               session.sseResponse.write(`data: ${JSON.stringify({ type: 'input_transcript', text: inputTranscription })}\n\n`);
             }
+            // VTID-01225: Accumulate user transcript for Cognee extraction
+            session.transcriptTurns.push({
+              role: 'user',
+              text: inputTranscription,
+              timestamp: new Date().toISOString()
+            });
           }
           if (outputTranscription) {
             console.log(`[VTID-01219] Output transcription: ${outputTranscription}`);
             if (session.sseResponse) {
               session.sseResponse.write(`data: ${JSON.stringify({ type: 'output_transcript', text: outputTranscription })}\n\n`);
             }
+            // VTID-01225: Accumulate assistant transcript for Cognee extraction
+            session.transcriptTurns.push({
+              role: 'assistant',
+              text: outputTranscription,
+              timestamp: new Date().toISOString()
+            });
           }
         }
 
@@ -3958,6 +3972,8 @@ router.post('/live/session/start', async (req: Request, res: Response) => {
     audioOutChunks: 0,
     // VTID-01224: Required fields for context
     turn_count: 0,
+    // VTID-01225: Transcript accumulation for Cognee extraction
+    transcriptTurns: [],
   };
 
   // Store session
@@ -4038,6 +4054,26 @@ router.post('/live/session/stop', async (req: Request, res: Response) => {
     audio_out_chunks: session.audioOutChunks,
     duration_ms: Date.now() - session.createdAt.getTime()
   });
+
+  // VTID-01225: Fire-and-forget Cognee entity extraction from live session transcript
+  if (cogneeExtractorClient.isEnabled() && session.transcriptTurns && session.transcriptTurns.length > 0) {
+    const fullTranscript = session.transcriptTurns
+      .map(turn => `${turn.role}: ${turn.text}`)
+      .join('\n');
+
+    // Use identity from session if available, otherwise use defaults
+    const tenantId = session.identity?.tenant_id || process.env.DEV_SANDBOX_TENANT_ID || '00000000-0000-0000-0000-000000000001';
+    const userId = session.identity?.id || process.env.DEV_SANDBOX_USER_ID || '00000000-0000-0000-0000-000000000099';
+
+    cogneeExtractorClient.extractAsync({
+      transcript: fullTranscript,
+      tenant_id: tenantId,
+      user_id: userId,
+      session_id: session_id,
+      active_role: 'community'
+    });
+    console.log(`[VTID-01225] Cognee extraction queued for live session: ${session_id} (${session.transcriptTurns.length} turns)`);
+  }
 
   // Remove from store
   liveSessions.delete(session_id);
@@ -4917,6 +4953,8 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     contextPack,
     contextBootstrapLatencyMs,
     contextBootstrapSkippedReason,
+    // VTID-01225: Transcript accumulation for Cognee extraction
+    transcriptTurns: [],
   };
 
   clientSession.liveSession = liveSession;
