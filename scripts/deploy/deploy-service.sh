@@ -174,14 +174,8 @@ elif [ "$CLOUD_RUN_SERVICE" = "cognee-extractor" ]; then
     --ingress internal \
     --set-env-vars "ENVIRONMENT=${ENVIRONMENT},LLM_PROVIDER=google,LLM_MODEL=gemini-2.0-flash,GOOGLE_CLOUD_PROJECT=${PROJECT},VERTEX_LOCATION=${REGION}" \
     --quiet
-  # Grant gateway permission to invoke cognee-extractor
-  echo -e "${YELLOW}Granting gateway invoke permissions...${NC}"
-  gcloud run services add-iam-policy-binding "$CLOUD_RUN_SERVICE" \
-    --project "$PROJECT" \
-    --region "$REGION" \
-    --member="serviceAccount:gateway@${PROJECT}.iam.gserviceaccount.com" \
-    --role="roles/run.invoker" \
-    --quiet || true
+  # Note: Internal ingress services in same project can communicate without explicit IAM binding
+  echo -e "${GREEN}Cognee Extractor deployed with internal-only ingress.${NC}"
 else
   gcloud run deploy "$CLOUD_RUN_SERVICE" \
     --project "$PROJECT" \
