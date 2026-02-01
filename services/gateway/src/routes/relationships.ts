@@ -876,6 +876,7 @@ router.get('/recommendations', async (req: Request, res: Response) => {
 router.get('/health', (_req: Request, res: Response) => {
   const hasSupabaseUrl = !!process.env.SUPABASE_URL;
   const hasSupabaseKey = !!process.env.SUPABASE_ANON_KEY;
+  const hasCogneeUrl = !!process.env.COGNEE_EXTRACTOR_URL;
 
   const status = hasSupabaseUrl && hasSupabaseKey ? 'ok' : 'degraded';
 
@@ -892,6 +893,7 @@ router.get('/health', (_req: Request, res: Response) => {
       signals: hasSupabaseUrl && hasSupabaseKey,
       graph: hasSupabaseUrl && hasSupabaseKey,
       recommendations: hasSupabaseUrl && hasSupabaseKey,
+      cognee_extraction: hasCogneeUrl,  // VTID-01225
       node_types: NODE_TYPES,
       relationship_types: RELATIONSHIP_TYPES,
       domains: DOMAINS,
@@ -899,9 +901,300 @@ router.get('/health', (_req: Request, res: Response) => {
     },
     dependencies: {
       'VTID-01101': 'context_bridge',
-      'VTID-01104': 'memory_core'
+      'VTID-01104': 'memory_core',
+      'VTID-01225': 'cognee_extractor'  // Cognee integration
     }
   });
+});
+
+// =============================================================================
+// VTID-01225: Cognee Integration Endpoint
+// =============================================================================
+
+/**
+ * Cognee extraction payload schema
+ */
+const CogneeExtractionPayloadSchema = z.object({
+  ok: z.boolean(),
+  entities: z.array(z.object({
+    name: z.string(),
+    entity_type: z.string(),
+    vitana_node_type: z.enum(NODE_TYPES),
+    domain: z.enum(DOMAINS),
+    metadata: z.record(z.unknown())
+  })),
+  relationships: z.array(z.object({
+    from_entity: z.string(),
+    to_entity: z.string(),
+    cognee_type: z.string(),
+    vitana_type: z.enum(RELATIONSHIP_TYPES),
+    context: z.record(z.unknown())
+  })),
+  signals: z.array(z.object({
+    signal_key: z.string(),
+    confidence: z.number().int().min(0).max(100),
+    evidence: z.record(z.unknown())
+  })),
+  session_id: z.string(),
+  tenant_id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  transcript_hash: z.string().optional(),
+  processing_ms: z.number().optional()
+});
+
+type CogneeExtractionPayload = z.infer<typeof CogneeExtractionPayloadSchema>;
+
+/**
+ * POST /from-cognee -> POST /api/v1/relationships/from-cognee
+ *
+ * VTID-01225: Receives normalized entity/relationship data from Cognee Extractor
+ * Service and persists it to VTID-01087 relationship graph tables under full
+ * ContextLens governance.
+ *
+ * Security:
+ * - Validates payload tenant_id/user_id matches authenticated context
+ * - Uses service role for persistence to bypass RLS (after validation)
+ * - All edges created with origin='autopilot' + context.origin='cognee'
+ *
+ * Design Doc: docs/architecture/cognee-integration-design.md
+ */
+router.post('/from-cognee', async (req: Request, res: Response) => {
+  const startTime = Date.now();
+  console.log('[VTID-01225] POST /relationships/from-cognee');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED',
+      message: 'Bearer token required'
+    });
+  }
+
+  // Validate request body
+  const validation = CogneeExtractionPayloadSchema.safeParse(req.body);
+  if (!validation.success) {
+    console.warn('[VTID-01225] Validation failed:', validation.error.errors);
+    return res.status(400).json({
+      ok: false,
+      error: 'VALIDATION_FAILED',
+      details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const payload = validation.data;
+
+  // Verify token and get user context
+  const userSupabase = createUserSupabaseClient(token);
+  const { data: userData, error: userError } = await userSupabase.auth.getUser();
+
+  if (userError || !userData.user) {
+    console.warn('[VTID-01225] Token verification failed:', userError?.message);
+    return res.status(401).json({
+      ok: false,
+      error: 'INVALID_TOKEN',
+      message: 'Token verification failed'
+    });
+  }
+
+  // Security check: Validate payload matches authenticated user
+  if (payload.user_id !== userData.user.id) {
+    console.warn('[VTID-01225] User mismatch:', payload.user_id, '!=', userData.user.id);
+    return res.status(403).json({
+      ok: false,
+      error: 'USER_MISMATCH',
+      message: 'Payload user_id does not match authenticated context'
+    });
+  }
+
+  // Get tenant from user metadata or JWT
+  const userTenantId = userData.user.user_metadata?.tenant_id ||
+                       userData.user.app_metadata?.tenant_id;
+
+  if (userTenantId && payload.tenant_id !== userTenantId) {
+    console.warn('[VTID-01225] Tenant mismatch:', payload.tenant_id, '!=', userTenantId);
+    return res.status(403).json({
+      ok: false,
+      error: 'TENANT_MISMATCH',
+      message: 'Payload tenant_id does not match authenticated context'
+    });
+  }
+
+  // Use user's Supabase client (RLS will be enforced)
+  const supabase = userSupabase;
+
+  const results = {
+    nodes_created: 0,
+    nodes_existing: 0,
+    edges_created: 0,
+    edges_strengthened: 0,
+    signals_created: 0,
+    signals_updated: 0,
+    errors: [] as string[]
+  };
+
+  // Map to track entity name → node ID for relationship creation
+  const entityNodeMap = new Map<string, string>();
+
+  try {
+    // 1. Create/get nodes for all entities
+    for (const entity of payload.entities) {
+      const { data: nodeResult, error: nodeError } = await supabase.rpc('relationship_ensure_node', {
+        p_node_type: entity.vitana_node_type,
+        p_title: entity.name,
+        p_domain: entity.domain,
+        p_metadata: {
+          ...entity.metadata,
+          cognee_type: entity.entity_type,
+          origin: 'cognee',
+          vtid: 'VTID-01225'
+        }
+      });
+
+      if (nodeError) {
+        results.errors.push(`Node error for "${entity.name}": ${nodeError.message}`);
+        console.warn(`[VTID-01225] Node creation failed for "${entity.name}":`, nodeError.message);
+        continue;
+      }
+
+      if (nodeResult?.ok) {
+        entityNodeMap.set(entity.name, nodeResult.id);
+        if (nodeResult.created) {
+          results.nodes_created++;
+        } else {
+          results.nodes_existing++;
+        }
+      } else {
+        results.errors.push(`Node error for "${entity.name}": ${nodeResult?.error || 'Unknown'}`);
+      }
+    }
+
+    // 2. Create edges for all relationships
+    for (const rel of payload.relationships) {
+      const fromNodeId = entityNodeMap.get(rel.from_entity);
+      const toNodeId = entityNodeMap.get(rel.to_entity);
+
+      if (!fromNodeId) {
+        results.errors.push(`Missing from_node for relationship: ${rel.from_entity} -> ${rel.to_entity}`);
+        continue;
+      }
+
+      if (!toNodeId) {
+        results.errors.push(`Missing to_node for relationship: ${rel.from_entity} -> ${rel.to_entity}`);
+        continue;
+      }
+
+      const { data: edgeResult, error: edgeError } = await supabase.rpc('relationship_add_edge', {
+        p_from_node_id: fromNodeId,
+        p_to_node_id: toNodeId,
+        p_relationship_type: rel.vitana_type,
+        p_origin: 'autopilot',  // Cognee extractions are autopilot-originated
+        p_context: {
+          ...rel.context,
+          cognee_type: rel.cognee_type,
+          origin: 'cognee',
+          vtid: 'VTID-01225',
+          session_id: payload.session_id
+        }
+      });
+
+      if (edgeError) {
+        results.errors.push(`Edge error for "${rel.from_entity}" -> "${rel.to_entity}": ${edgeError.message}`);
+        console.warn(`[VTID-01225] Edge creation failed:`, edgeError.message);
+        continue;
+      }
+
+      if (edgeResult?.ok) {
+        if (edgeResult.created) {
+          results.edges_created++;
+        } else {
+          results.edges_strengthened++;
+        }
+      } else {
+        results.errors.push(`Edge error: ${edgeResult?.error || 'Unknown'}`);
+      }
+    }
+
+    // 3. Update signals
+    for (const signal of payload.signals) {
+      const { data: signalResult, error: signalError } = await supabase.rpc('relationship_update_signal', {
+        p_signal_key: signal.signal_key,
+        p_confidence: signal.confidence,
+        p_evidence: {
+          ...signal.evidence,
+          session_id: payload.session_id,
+          origin: 'cognee',
+          vtid: 'VTID-01225'
+        }
+      });
+
+      if (signalError) {
+        results.errors.push(`Signal error for "${signal.signal_key}": ${signalError.message}`);
+        console.warn(`[VTID-01225] Signal update failed:`, signalError.message);
+        continue;
+      }
+
+      if (signalResult?.ok) {
+        if (signalResult.created) {
+          results.signals_created++;
+        } else {
+          results.signals_updated++;
+        }
+      } else {
+        results.errors.push(`Signal error: ${signalResult?.error || 'Unknown'}`);
+      }
+    }
+
+    const durationMs = Date.now() - startTime;
+
+    // Emit OASIS event for monitoring
+    await emitRelationshipEvent(
+      'relationship.edge.created' as any, // Using existing event type
+      'success',
+      `Cognee extraction persisted: ${results.nodes_created} nodes, ${results.edges_created} edges, ${results.signals_created} signals`,
+      {
+        vtid: 'VTID-01225',
+        source: 'cognee',
+        session_id: payload.session_id,
+        results,
+        duration_ms: durationMs
+      }
+    );
+
+    console.log(
+      `[VTID-01225] Persisted: ${results.nodes_created} new nodes, ` +
+      `${results.edges_created} new edges, ${results.signals_created} new signals ` +
+      `(${results.errors.length} errors) in ${durationMs}ms`
+    );
+
+    return res.status(200).json({
+      ok: true,
+      results,
+      duration_ms: durationMs
+    });
+
+  } catch (err: any) {
+    console.error('[VTID-01225] Persistence error:', err.message);
+
+    await emitRelationshipEvent(
+      'relationship.edge.created' as any,
+      'error',
+      `Cognee extraction persistence failed: ${err.message}`,
+      {
+        vtid: 'VTID-01225',
+        session_id: payload.session_id,
+        error: err.message,
+        partial_results: results
+      }
+    );
+
+    return res.status(500).json({
+      ok: false,
+      error: 'PERSISTENCE_ERROR',
+      message: err.message,
+      partial_results: results
+    });
+  }
 });
 
 export default router;

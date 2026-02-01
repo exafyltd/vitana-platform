@@ -46,6 +46,8 @@ import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
+// VTID-01225: Cognee Entity Extraction Integration
+import { cogneeExtractorClient, type CogneeExtractionRequest } from '../services/cognee-extractor-client';
 // VTID-01149: Unified Task-Creation Intake
 import {
   detectTaskCreationIntent,
@@ -3219,6 +3221,26 @@ router.post('/end-session', async (req: Request, res: Response) => {
     }).catch(err => console.warn('[VTID-01039] Failed to emit orb.session.summary:', err.message));
 
     console.log(`[VTID-01039] Session finalized: ${orb_session_id} (${transcript.summary.turns_count} turns, ${durationSec}s)`);
+
+    // VTID-01225: Fire-and-forget Cognee entity extraction from transcript
+    if (cogneeExtractorClient.isEnabled() && transcript.turns.length > 0) {
+      const fullTranscript = transcript.turns
+        .map(turn => `${turn.role}: ${turn.text}`)
+        .join('\n');
+
+      // Note: Using dev sandbox defaults since OrbSessionTranscript doesn't track user context
+      const tenantId = process.env.DEV_SANDBOX_TENANT_ID || '00000000-0000-0000-0000-000000000001';
+      const userId = process.env.DEV_SANDBOX_USER_ID || '00000000-0000-0000-0000-000000000099';
+
+      cogneeExtractorClient.extractAsync({
+        transcript: fullTranscript,
+        tenant_id: tenantId,
+        user_id: userId,
+        session_id: orb_session_id,
+        active_role: 'community'
+      });
+      console.log(`[VTID-01225] Cognee extraction queued for session: ${orb_session_id}`);
+    }
   }
 
   return res.status(200).json({ ok: true });
@@ -3450,6 +3472,31 @@ router.post('/session/finalize', async (req: Request, res: Response) => {
   }).catch(err => console.warn('[VTID-01039] Failed to emit orb.session.summary:', err.message));
 
   console.log(`[VTID-01039] Session finalized: ${orb_session_id} (${transcript.summary.turns_count} turns, ${transcript.summary.duration_sec}s)`);
+
+  // VTID-01225: Fire-and-forget Cognee entity extraction from transcript
+  // Only extract if there are turns and cognee is enabled
+  if (cogneeExtractorClient.isEnabled() && transcript.turns.length > 0) {
+    // Combine all turns into a single transcript text
+    const fullTranscript = transcript.turns
+      .map(turn => `${turn.role}: ${turn.text}`)
+      .join('\n');
+
+    // Note: Using dev sandbox defaults since OrbSessionTranscript doesn't track user context
+    const tenantId = process.env.DEV_SANDBOX_TENANT_ID || '00000000-0000-0000-0000-000000000001';
+    const userId = process.env.DEV_SANDBOX_USER_ID || '00000000-0000-0000-0000-000000000099';
+
+    const extractionRequest: CogneeExtractionRequest = {
+      transcript: fullTranscript,
+      tenant_id: tenantId,
+      user_id: userId,
+      session_id: orb_session_id,
+      active_role: 'community'  // Default role for voice sessions
+    };
+
+    // Fire-and-forget - don't await, don't block response
+    cogneeExtractorClient.extractAsync(extractionRequest);
+    console.log(`[VTID-01225] Cognee extraction queued for session: ${orb_session_id}`);
+  }
 
   return res.status(200).json({
     ok: true,

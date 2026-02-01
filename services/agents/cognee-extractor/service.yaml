@@ -1,0 +1,115 @@
+# VTID-01225: Cognee Entity Extraction Service
+# Cloud Run Service Configuration
+#
+# Deploy with:
+#   gcloud run services replace service.yaml --region=us-central1
+#
+# Or via GitHub Actions workflow
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: cognee-extractor
+  labels:
+    vtid: VTID-01225
+    vt_layer: AICOR
+    vt_module: COGNEE
+    cloud.googleapis.com/location: us-central1
+  annotations:
+    run.googleapis.com/description: "VTID-01225: Stateless entity extraction engine for ORB voice transcripts"
+    run.googleapis.com/ingress: internal
+spec:
+  template:
+    metadata:
+      annotations:
+        # Scaling configuration
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "5"
+
+        # CPU is not throttled when processing
+        run.googleapis.com/cpu-throttling: "false"
+
+        # Startup CPU boost for faster cold starts
+        run.googleapis.com/startup-cpu-boost: "true"
+
+        # VPC connector for internal communication (if needed)
+        # run.googleapis.com/vpc-access-connector: projects/lovable-vitana-vers1/locations/us-central1/connectors/vitana-vpc-connector
+
+      labels:
+        vtid: VTID-01225
+    spec:
+      # Container concurrency - how many requests per instance
+      containerConcurrency: 10
+
+      # Request timeout (60 seconds for extraction processing)
+      timeoutSeconds: 60
+
+      # Service account with minimal permissions
+      serviceAccountName: cognee-extractor@lovable-vitana-vers1.iam.gserviceaccount.com
+
+      containers:
+        - image: gcr.io/lovable-vitana-vers1/cognee-extractor:latest
+          ports:
+            - containerPort: 8080
+              name: http1
+
+          # Resource limits
+          resources:
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+
+          # Environment variables
+          env:
+            # LLM Configuration
+            - name: LLM_PROVIDER
+              value: "openai"
+            - name: LLM_MODEL
+              value: "gpt-4o-mini"
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cognee-secrets
+                  key: llm-api-key
+
+            # Service configuration
+            - name: PORT
+              value: "8080"
+            - name: ENV
+              value: "production"
+
+            # DO NOT SET - uses Cognee defaults
+            # ENABLE_BACKEND_ACCESS_CONTROL: disabled (Vitana handles governance)
+            # VECTOR_DB_PROVIDER: uses default (LanceDB)
+            # GRAPH_DB_PROVIDER: uses default (Kuzu)
+
+          # Health check
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 30
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 10
+            failureThreshold: 3
+
+  # Traffic configuration
+  traffic:
+    - percent: 100
+      latestRevision: true

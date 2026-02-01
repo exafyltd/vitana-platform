@@ -1,0 +1,83 @@
+{
+  "name": "AGENT-COGNEE-EXTRACTOR",
+  "vt_layer": "AICOR",
+  "vt_module": "COGNEE",
+  "vtid": "VTID-01225",
+  "version": "1.0.0",
+  "description": "Cognee Entity Extraction Service - Stateless entity extraction engine for ORB voice transcripts. Outputs normalized entities/relationships for VTID-01087 relationship graph.",
+  "provider_policy": {
+    "llm": {
+      "provider": "openai",
+      "model": "gpt-4o-mini"
+    },
+    "graph_store": {
+      "provider": "cognee_default",
+      "note": "Uses Cognee's default Kuzu graph store - stateless extraction only"
+    },
+    "vector_store": {
+      "provider": "cognee_default",
+      "note": "Uses Cognee's default LanceDB - no persistence (pruned after extraction)"
+    }
+  },
+  "required_env": [
+    "LLM_API_KEY"
+  ],
+  "optional_env": [
+    "LLM_PROVIDER",
+    "LLM_MODEL"
+  ],
+  "features": [
+    "cognee_entity_extraction",
+    "relationship_normalization",
+    "signal_detection",
+    "stateless_processing",
+    "dataset_per_tenant"
+  ],
+  "constraints": {
+    "no_cognee_ebac": true,
+    "dataset_per_tenant": true,
+    "stateless_extraction": true,
+    "advisory_outputs": true
+  },
+  "extraction_rules": {
+    "entity_types": [
+      "person", "group", "event", "service", "product", "location", "live_room"
+    ],
+    "relationship_types": [
+      "friend", "member", "attendee", "interested", "using", "visited", "following"
+    ],
+    "domains": [
+      "community", "health", "business", "lifestyle"
+    ],
+    "origin": "autopilot"
+  },
+  "telemetry": {
+    "oasis_events": [
+      "cognee.extraction.started",
+      "cognee.extraction.completed",
+      "cognee.extraction.timeout",
+      "cognee.extraction.persisted",
+      "cognee.extraction.error"
+    ]
+  },
+  "runtime": {
+    "type": "cloud-run",
+    "min_instances": 0,
+    "max_instances": 5,
+    "cpu": "2",
+    "memory": "4Gi",
+    "timeout_seconds": 60
+  },
+  "dependencies": {
+    "vtid_01087": "relationship_graph_memory",
+    "vtid_01224": "orb_live_api",
+    "gateway": "POST /api/v1/relationships/from-cognee"
+  },
+  "packages": {
+    "cognee": ">=0.5.1",
+    "fastapi": ">=0.109.0",
+    "uvicorn": ">=0.27.0",
+    "pydantic": ">=2.0.0"
+  },
+  "design_doc": "docs/architecture/cognee-integration-design.md"
+}
