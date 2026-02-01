@@ -3225,11 +3225,12 @@ router.post('/end-session', async (req: Request, res: Response) => {
     // VTID-01225: Fire-and-forget Cognee entity extraction from transcript
     if (cogneeExtractorClient.isEnabled() && transcript.turns.length > 0) {
       const fullTranscript = transcript.turns
-        .map(turn => `${turn.role}: ${turn.content}`)
+        .map(turn => `${turn.role}: ${turn.text}`)
         .join('\n');
 
-      const tenantId = transcript.tenant_id || process.env.DEV_SANDBOX_TENANT_ID || '00000000-0000-0000-0000-000000000001';
-      const userId = transcript.user_id || process.env.DEV_SANDBOX_USER_ID || '00000000-0000-0000-0000-000000000099';
+      // Note: Using dev sandbox defaults since OrbSessionTranscript doesn't track user context
+      const tenantId = process.env.DEV_SANDBOX_TENANT_ID || '00000000-0000-0000-0000-000000000001';
+      const userId = process.env.DEV_SANDBOX_USER_ID || '00000000-0000-0000-0000-000000000099';
 
       cogneeExtractorClient.extractAsync({
         transcript: fullTranscript,
@@ -3477,13 +3478,12 @@ router.post('/session/finalize', async (req: Request, res: Response) => {
   if (cogneeExtractorClient.isEnabled() && transcript.turns.length > 0) {
     // Combine all turns into a single transcript text
     const fullTranscript = transcript.turns
-      .map(turn => `${turn.role}: ${turn.content}`)
+      .map(turn => `${turn.role}: ${turn.text}`)
       .join('\n');
 
-    // Get user context from the first turn or request
-    // Note: We use dev sandbox defaults if no context available
-    const tenantId = transcript.tenant_id || process.env.DEV_SANDBOX_TENANT_ID || '00000000-0000-0000-0000-000000000001';
-    const userId = transcript.user_id || process.env.DEV_SANDBOX_USER_ID || '00000000-0000-0000-0000-000000000099';
+    // Note: Using dev sandbox defaults since OrbSessionTranscript doesn't track user context
+    const tenantId = process.env.DEV_SANDBOX_TENANT_ID || '00000000-0000-0000-0000-000000000001';
+    const userId = process.env.DEV_SANDBOX_USER_ID || '00000000-0000-0000-0000-000000000099';
 
     const extractionRequest: CogneeExtractionRequest = {
       transcript: fullTranscript,
