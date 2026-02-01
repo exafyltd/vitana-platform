@@ -1232,7 +1232,7 @@ async function connectToLiveAPI(
                   chunk_number: session.audioOutChunks,
                   bytes: audioB64.length,
                   rate: 24000
-                }).catch(() => {});
+                }).catch(() => { });
               }
 
               // Handle text response
@@ -1338,7 +1338,7 @@ async function connectToLiveAPI(
                     result_preview: result.result.substring(0, 200),
                     error: result.error || null,
                   },
-                }).catch(() => {});
+                }).catch(() => { });
               })
               .catch((err) => {
                 console.error(`[VTID-01224] Tool execution error:`, err);
@@ -2473,7 +2473,7 @@ router.post('/chat', optionalAuth, async (req: AuthenticatedRequest, res: Respon
 
   // VTID-01186: Extract identity from authenticated request or fallback to DEV_IDENTITY
   const identity = getMemoryIdentity(req);
-  console.log(`[VTID-01186] POST /orb/chat received (user=${identity.user_id ? identity.user_id.substring(0,8) + '...' : 'none'})`);
+  console.log(`[VTID-01186] POST /orb/chat received (user=${identity.user_id ? identity.user_id.substring(0, 8) + '...' : 'none'})`);
 
   // Validate required fields
   if (!body.orb_session_id || !body.input_text) {
@@ -2570,7 +2570,7 @@ router.post('/chat', optionalAuth, async (req: AuthenticatedRequest, res: Respon
       workspace_scope: 'dev'
     }).then(result => {
       if (result.ok && !result.skipped) {
-        console.log(`[VTID-01186] User message written to memory: ${result.id} (user=${identity.user_id.substring(0,8)}...)`);
+        console.log(`[VTID-01186] User message written to memory: ${result.id} (user=${identity.user_id.substring(0, 8)}...)`);
         emitMemoryWriteEvent('memory.write.user_message', {
           memory_id: result.id,
           category_key: result.category_key,
@@ -3112,7 +3112,7 @@ router.post('/chat', optionalAuth, async (req: AuthenticatedRequest, res: Respon
         workspace_scope: 'dev'
       }).then(result => {
         if (result.ok && !result.skipped) {
-          console.log(`[VTID-01186] Assistant message written to memory: ${result.id} (user=${identity.user_id.substring(0,8)}...)`);
+          console.log(`[VTID-01186] Assistant message written to memory: ${result.id} (user=${identity.user_id.substring(0, 8)}...)`);
           emitMemoryWriteEvent('memory.write.assistant_message', {
             memory_id: result.id,
             category_key: result.category_key,
@@ -3173,7 +3173,7 @@ router.post('/chat', optionalAuth, async (req: AuthenticatedRequest, res: Respon
       memory_injected: Boolean(memoryContext?.ok && memoryContext?.items?.length > 0)
     };
 
-// VTID-01113: Add intent bundle to response for visibility (spec section 5)
+    // VTID-01113: Add intent bundle to response for visibility (spec section 5)
     const intentDebug = {
       intent_bundle_id: intentBundle.bundle_id,
       primary_intent: intentBundle.primary_intent,
@@ -4569,7 +4569,7 @@ router.post('/live/stream/send', requireAuthWithTenant, async (req: Authenticate
           chunk_number: session.audioInChunks,
           bytes: body.data_b64.length,
           rate: 16000
-        }).catch(() => {});
+        }).catch(() => { });
       }
 
       // VTID-01219: Forward audio to Vertex Live API WebSocket
@@ -4607,7 +4607,7 @@ router.post('/live/stream/send', requireAuthWithTenant, async (req: Authenticate
         frame_number: session.videoInFrames,
         bytes: videoBody.data_b64.length,
         fps: 1
-      }).catch(() => {});
+      }).catch(() => { });
 
       console.log(`[VTID-01155] Video frame received: session=${effectiveSessionId}, source=${videoBody.source}, frame=${session.videoInFrames}`);
 
@@ -5219,7 +5219,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
           reason: bootstrapResult.skippedReason,
           using_dev_identity: !identity,
         },
-      }).catch(() => {});
+      }).catch(() => { });
     } else {
       emitOasisEvent({
         vtid: 'VTID-01224',
@@ -5237,7 +5237,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
           context_chars: contextInstruction?.length || 0,
           using_dev_identity: !identity,
         },
-      }).catch(() => {});
+      }).catch(() => { });
     }
   } else {
     contextBootstrapSkippedReason = 'unauthenticated';
@@ -5254,7 +5254,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
         session_id: sessionId,
         reason: 'unauthenticated',
       },
-    }).catch(() => {});
+    }).catch(() => { });
   }
 
   // Create Gemini Live session with identity and context
@@ -5384,7 +5384,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
         knowledge_hits: contextPack?.knowledge_hits?.length || 0,
         tools_enabled: !!identity,
       },
-    }).catch(() => {});
+    }).catch(() => { });
 
     sendWsMessage(clientWs, {
       type: 'session_started',
@@ -5450,7 +5450,7 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
       bytes: message.data_b64.length,
       rate: 16000,
       transport: 'websocket'
-    }).catch(() => {});
+    }).catch(() => { });
   }
 
   // Forward to Live API if connected
@@ -5499,7 +5499,7 @@ function handleWsVideoMessage(clientSession: WsClientSession, message: WsClientM
     frame_number: liveSession.videoInFrames,
     bytes: message.data_b64.length,
     transport: 'websocket'
-  }).catch(() => {});
+  }).catch(() => { });
 
   console.log(`[VTID-01222] Video frame received: ${sessionId}, source=${message.source}, frame=${liveSession.videoInFrames}`);
 
@@ -5560,7 +5560,7 @@ function handleWsStopSession(clientSession: WsClientSession): void {
       audio_out_chunks: liveSession.audioOutChunks,
       video_frames: liveSession.videoInFrames,
       transport: 'websocket'
-    }).catch(() => {});
+    }).catch(() => { });
 
     liveSessions.delete(sessionId);
   }
