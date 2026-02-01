@@ -23,6 +23,7 @@ NC="\033[0m"
 # =============================================================================
 declare -A SERVICE_MAPPINGS=(
   ["vitana-verification-engine"]="services/agents/vitana-orchestrator:/health:vitana-verification-engine"
+  ["cognee-extractor"]="services/agents/cognee-extractor:/health:cognee-extractor"
 )
 
 # =============================================================================
@@ -160,6 +161,27 @@ elif [ "$CLOUD_RUN_SERVICE" = "worker-runner" ]; then
     --set-env-vars "ENVIRONMENT=${ENVIRONMENT},GATEWAY_URL=${GATEWAY_URL_VALUE}" \
     --set-secrets "SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest" \
     --quiet
+elif [ "$CLOUD_RUN_SERVICE" = "cognee-extractor" ]; then
+  # VTID-01225: Cognee Extractor - uses Vertex AI (Gemini) for entity extraction
+  # Internal-only ingress, no secrets needed (uses ADC for Vertex AI)
+  echo -e "${YELLOW}VTID-01225: Deploying Cognee Extractor with Vertex AI config...${NC}"
+  gcloud run deploy "$CLOUD_RUN_SERVICE" \
+    --project "$PROJECT" \
+    --region "$REGION" \
+    --source "$SOURCE_PATH" \
+    --platform managed \
+    --no-allow-unauthenticated \
+    --ingress internal \
+    --set-env-vars "ENVIRONMENT=${ENVIRONMENT},LLM_PROVIDER=google,LLM_MODEL=gemini-2.0-flash,GOOGLE_CLOUD_PROJECT=${PROJECT},VERTEX_LOCATION=${REGION}" \
+    --quiet
+  # Grant gateway permission to invoke cognee-extractor
+  echo -e "${YELLOW}Granting gateway invoke permissions...${NC}"
+  gcloud run services add-iam-policy-binding "$CLOUD_RUN_SERVICE" \
+    --project "$PROJECT" \
+    --region "$REGION" \
+    --member="serviceAccount:gateway@${PROJECT}.iam.gserviceaccount.com" \
+    --role="roles/run.invoker" \
+    --quiet || true
 else
   gcloud run deploy "$CLOUD_RUN_SERVICE" \
     --project "$PROJECT" \
