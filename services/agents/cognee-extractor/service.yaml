@@ -76,8 +76,6 @@ spec:
               value: "us-central1"
 
             # Service configuration
-            - name: PORT
-              value: "8080"
             - name: ENV
               value: "production"
 
