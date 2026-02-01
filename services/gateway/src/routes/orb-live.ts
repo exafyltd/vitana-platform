@@ -4247,7 +4247,7 @@ router.post('/live/stream/send', async (req: Request, res: Response) => {
       // VTID-01219: Forward audio to Vertex Live API WebSocket
       if (session.upstreamWs && session.upstreamWs.readyState === WebSocket.OPEN) {
         // Forward audio to Live API for real-time processing
-        const sent = sendAudioToLiveAPI(session.upstreamWs, body.data_b64, body.mime || 'audio/pcm');
+        const sent = sendAudioToLiveAPI(session.upstreamWs, body.data_b64, body.mime || 'audio/pcm;rate=16000');
         if (sent) {
           console.log(`[VTID-01219] Audio chunk forwarded to Live API: session=${effectiveSessionId}, chunk=${session.audioInChunks}`);
         } else {
