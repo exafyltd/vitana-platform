@@ -7818,8 +7818,6 @@ async function fetchTasks() {
     renderApp();
 
     try {
-        // VTID-01079: Use OASIS-derived board endpoint
-        // limit param only affects COMPLETED column (SCHEDULED/IN_PROGRESS are unlimited)
         var response = await fetch('/api/v1/commandhub/board?limit=50');
         if (!response.ok) throw new Error('Command Hub board fetch failed: ' + response.status);
 
@@ -7878,6 +7876,15 @@ async function fetchTasks() {
         // VTID-01055: Track which VTIDs came from API for ghost detection
         lastApiVtids = new Set(byVtid.keys());
 
+        // SYNC FIX: Update state.selectedTask pointer to the fresh object from the new list
+        if (state.selectedTask && state.selectedTask.vtid) {
+            const freshTask = state.tasks.find(t => t.vtid === state.selectedTask.vtid);
+            if (freshTask) {
+                console.log('[SYNC] Updating state.selectedTask pointer after fetchTasks');
+                state.selectedTask = freshTask;
+            }
+        }
+
         // VTID-01055: Count tasks per column for debug logging (manual refresh only)
         if (isManualRefresh) {
             var scheduled = 0, inProgress = 0, completed = 0;
@@ -7926,6 +7933,13 @@ async function fetchVtidDetail(vtid) {
 
         if (result.ok && result.data) {
             state.selectedTaskDetail = result.data;
+
+            // SYNC FIX: Ensure state.selectedTask (summary-level) is aligned with detail-level status
+            if (state.selectedTask && state.selectedTask.vtid === vtid) {
+                console.log('[SYNC] Updating state.selectedTask status/spec_status from detail fetch');
+                state.selectedTask.status = result.data.status || state.selectedTask.status;
+                state.selectedTask.spec_status = result.data.spec_status || state.selectedTask.spec_status;
+            }
         }
     } catch (error) {
         console.error('[VTID-0527] Failed to fetch VTID detail:', error);
@@ -19812,7 +19826,7 @@ function renderExecutionApprovalModal() {
             var result = await response.json();
 
             if (result.ok) {
-                // Clear modal state
+                // Clear modal state IMMEDIATELY for responsiveness
                 state.showExecutionApprovalModal = false;
                 state.executionApprovalVtid = null;
                 state.executionApprovalReason = '';
@@ -19829,8 +19843,9 @@ function renderExecutionApprovalModal() {
                 // Show success toast
                 showToast('Execution approved: ' + vtid + ' \u2192 Autonomous execution started', 'success');
 
-                // Refresh tasks
-                await fetchTasks();
+                // Trigger refresh but don't block UI close on it
+                fetchTasks();
+                renderApp();
             } else {
                 state.executionApprovalLoading = false;
                 showToast('Approval failed: ' + (result.error || 'Unknown error'), 'error');
