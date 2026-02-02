@@ -75,6 +75,7 @@ import {
   getDebugSnapshot,
   writeDevMemoryItem,
   writeMemoryItemWithIdentity,
+  fetchRecentConversationForCognee,  // VTID-01225: For Cognee extraction
   DEV_IDENTITY,
   MEMORY_CONFIG,
   OrbMemoryContext,
@@ -4071,24 +4072,50 @@ router.post('/live/session/stop', async (req: Request, res: Response) => {
     duration_ms: Date.now() - session.createdAt.getTime()
   });
 
-  // VTID-01225: Fire-and-forget Cognee entity extraction from live session transcript
-  if (cogneeExtractorClient.isEnabled() && session.transcriptTurns && session.transcriptTurns.length > 0) {
-    const fullTranscript = session.transcriptTurns
-      .map(turn => `${turn.role}: ${turn.text}`)
-      .join('\n');
+  // VTID-01225: Fire-and-forget Cognee entity extraction from memory_items
+  // Query conversation from memory_items instead of relying on transcriptTurns (Gemini doesn't return transcription)
+  if (cogneeExtractorClient.isEnabled() && session.identity) {
+    const tenantId = session.identity.tenant_id;
+    const userId = session.identity.id;
 
-    // Use identity from session if available, otherwise use defaults
-    const tenantId = session.identity?.tenant_id || process.env.DEV_SANDBOX_TENANT_ID || '00000000-0000-0000-0000-000000000001';
-    const userId = session.identity?.id || process.env.DEV_SANDBOX_USER_ID || '00000000-0000-0000-0000-000000000099';
+    // Fetch conversation from memory_items asynchronously
+    fetchRecentConversationForCognee(tenantId, userId, session.createdAt, new Date())
+      .then(transcript => {
+        if (transcript && transcript.length > 50) {  // Only extract if meaningful content
+          cogneeExtractorClient.extractAsync({
+            transcript,
+            tenant_id: tenantId,
+            user_id: userId,
+            session_id: session_id,
+            active_role: 'community'
+          });
+          console.log(`[VTID-01225] Cognee extraction queued for live session: ${session_id}`);
+        } else {
+          console.log(`[VTID-01225] No meaningful transcript for Cognee extraction: ${session_id}`);
+        }
+      })
+      .catch(err => {
+        console.error(`[VTID-01225] Failed to fetch conversation for Cognee: ${err.message}`);
+      });
+  } else if (cogneeExtractorClient.isEnabled()) {
+    // Fallback for unauthenticated sessions - use defaults
+    const tenantId = process.env.DEV_SANDBOX_TENANT_ID || '00000000-0000-0000-0000-000000000001';
+    const userId = process.env.DEV_SANDBOX_USER_ID || '00000000-0000-0000-0000-000000000099';
 
-    cogneeExtractorClient.extractAsync({
-      transcript: fullTranscript,
-      tenant_id: tenantId,
-      user_id: userId,
-      session_id: session_id,
-      active_role: 'community'
-    });
-    console.log(`[VTID-01225] Cognee extraction queued for live session: ${session_id} (${session.transcriptTurns.length} turns)`);
+    fetchRecentConversationForCognee(tenantId, userId, session.createdAt, new Date())
+      .then(transcript => {
+        if (transcript && transcript.length > 50) {
+          cogneeExtractorClient.extractAsync({
+            transcript,
+            tenant_id: tenantId,
+            user_id: userId,
+            session_id: session_id,
+            active_role: 'community'
+          });
+          console.log(`[VTID-01225] Cognee extraction queued (fallback) for: ${session_id}`);
+        }
+      })
+      .catch(() => {});
   }
 
   // Remove from store
