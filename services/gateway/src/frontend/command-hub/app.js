@@ -24031,17 +24031,13 @@ document.addEventListener('DOMContentLoaded', () => {
         renderApp();
 
         // VTID-01049: Load Me Context (authoritative role) on boot
-        fetchMeContext().then(function(result) {
-            if (!result.ok && result.error) {
-                // Only show toast for 404/500 errors, not for 401 (not signed in)
-                if (result.error !== 'Not signed in') {
-                    showToast(result.error, 'error');
-                }
-            }
-            // Re-render to update profile badge with authoritative role
+        fetchMeContext().then(function(me) {
+            // fetchMeContext() returns me OR null (e.g. not signed in / 401 / network error)
+            if (!me) { renderApp(); return; }
             renderApp();
         }).catch(function(err) {
             console.error('[VTID-01049] fetchMeContext failed:', err);
+            renderApp();
         });
 
         // VTID-01171: Fetch auth identity for profile display
