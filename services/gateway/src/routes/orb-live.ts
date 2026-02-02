@@ -1158,6 +1158,10 @@ async function connectToLiveAPI(
         if (serverContent) {
           const content = serverContent;
 
+          // VTID-01225: Log full server_content structure to debug transcription
+          const contentKeys = Object.keys(content);
+          console.log(`[VTID-01225] server_content keys: ${contentKeys.join(', ')}`);
+
           // Check if turn is complete (handle both formats)
           const turnComplete = content.turn_complete || content.turnComplete;
           if (turnComplete) {
