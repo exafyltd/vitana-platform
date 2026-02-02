@@ -478,7 +478,15 @@ export type CicdEventType =
   // VTID-01224: ORB Live API Context Bootstrap & Tool Execution Events
   | 'orb.live.context.bootstrap'
   | 'orb.live.context.bootstrap.skipped'
-  | 'orb.live.tool.executed';
+  | 'orb.live.tool.executed'
+  // Autopilot recommendations events
+  | 'autopilot.recommendations.requested'
+  | 'autopilot.recommendations.received'
+  | 'autopilot.recommendations.failed'
+  // Dev recommendation events
+  | 'dev.recommendation.presented'
+  | 'dev.recommendation.selected'
+  | 'dev.fallback.tool_used';
 
 export interface CicdOasisEvent {
   vtid: string;
