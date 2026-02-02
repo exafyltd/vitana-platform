@@ -446,6 +446,8 @@ interface GeminiLiveSession {
   contextBootstrapSkippedReason?: string;
   // VTID-01225: Transcript accumulation for Cognee extraction
   transcriptTurns: Array<{ role: 'user' | 'assistant'; text: string; timestamp: string }>;
+  // VTID-01225: Buffer for accumulating output transcription chunks until turn completes
+  outputTranscriptBuffer: string;
 }
 
 /**
@@ -1167,6 +1169,42 @@ async function connectToLiveAPI(
           const turnComplete = content.turn_complete || content.turnComplete;
           if (turnComplete) {
             console.log(`[VTID-01219] Turn complete for session ${session.sessionId}`);
+
+            // VTID-01225: Write accumulated assistant transcript to memory_items and transcriptTurns
+            if (session.outputTranscriptBuffer.length > 0) {
+              const fullTranscript = session.outputTranscriptBuffer.trim();
+              console.log(`[VTID-01225] Writing assistant turn to memory: "${fullTranscript.substring(0, 100)}..."`);
+
+              // Add to transcriptTurns for in-memory accumulation
+              session.transcriptTurns.push({
+                role: 'assistant',
+                text: fullTranscript,
+                timestamp: new Date().toISOString()
+              });
+
+              // Write to memory_items for persistence
+              if (session.identity && session.identity.tenant_id) {
+                const memoryIdentity: MemoryIdentity = {
+                  user_id: session.identity.user_id,
+                  tenant_id: session.identity.tenant_id  // TypeScript now knows this is string
+                };
+                writeMemoryItemWithIdentity(memoryIdentity, {
+                  source: 'orb_voice',
+                  content: fullTranscript,
+                  content_json: {
+                    direction: 'assistant',
+                    channel: 'orb',
+                    mode: 'live_voice',
+                    orb_session_id: session.sessionId,
+                    conversation_id: session.conversation_id
+                  },
+                }).catch(err => console.warn(`[VTID-01225] Failed to write assistant transcript to memory: ${err.message}`));
+              }
+
+              // Clear buffer for next turn
+              session.outputTranscriptBuffer = '';
+            }
+
             // Notify client that response is complete
             if (session.sseResponse) {
               session.sseResponse.write(`data: ${JSON.stringify({ type: 'turn_complete' })}\n\n`);
@@ -1226,18 +1264,32 @@ async function connectToLiveAPI(
               text: inputTranscription,
               timestamp: new Date().toISOString()
             });
+            // VTID-01225: Write user transcription to memory_items immediately (rare - Gemini native audio usually doesn't provide this)
+            if (session.identity && session.identity.tenant_id) {
+              const memoryIdentity: MemoryIdentity = {
+                user_id: session.identity.user_id,
+                tenant_id: session.identity.tenant_id
+              };
+              writeMemoryItemWithIdentity(memoryIdentity, {
+                source: 'orb_voice',
+                content: inputTranscription,
+                content_json: {
+                  direction: 'user',
+                  channel: 'orb',
+                  mode: 'live_voice',
+                  orb_session_id: session.sessionId,
+                  conversation_id: session.conversation_id
+                },
+              }).catch(err => console.warn(`[VTID-01225] Failed to write user transcript to memory: ${err.message}`));
+            }
           }
           if (outputTranscription) {
             console.log(`[VTID-01219] Output transcription: ${outputTranscription}`);
             if (session.sseResponse) {
               session.sseResponse.write(`data: ${JSON.stringify({ type: 'output_transcript', text: outputTranscription })}\n\n`);
             }
-            // VTID-01225: Accumulate assistant transcript for Cognee extraction
-            session.transcriptTurns.push({
-              role: 'assistant',
-              text: outputTranscription,
-              timestamp: new Date().toISOString()
-            });
+            // VTID-01225: Accumulate output transcription chunks in buffer (will be written on turnComplete)
+            session.outputTranscriptBuffer += outputTranscription;
           }
         }
 
@@ -3991,6 +4043,7 @@ router.post('/live/session/start', async (req: Request, res: Response) => {
     turn_count: 0,
     // VTID-01225: Transcript accumulation for Cognee extraction
     transcriptTurns: [],
+    outputTranscriptBuffer: '',
   };
 
   // Store session
@@ -4998,6 +5051,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     contextBootstrapSkippedReason,
     // VTID-01225: Transcript accumulation for Cognee extraction
     transcriptTurns: [],
+    outputTranscriptBuffer: '',
   };
 
   clientSession.liveSession = liveSession;
