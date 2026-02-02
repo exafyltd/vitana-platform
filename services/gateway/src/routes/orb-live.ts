@@ -4074,9 +4074,9 @@ router.post('/live/session/stop', async (req: Request, res: Response) => {
 
   // VTID-01225: Fire-and-forget Cognee entity extraction from memory_items
   // Query conversation from memory_items instead of relying on transcriptTurns (Gemini doesn't return transcription)
-  if (cogneeExtractorClient.isEnabled() && session.identity) {
+  if (cogneeExtractorClient.isEnabled() && session.identity && session.identity.tenant_id) {
     const tenantId = session.identity.tenant_id;
-    const userId = session.identity.id;
+    const userId = session.identity.user_id;
 
     // Fetch conversation from memory_items asynchronously
     fetchRecentConversationForCognee(tenantId, userId, session.createdAt, new Date())
