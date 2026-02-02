@@ -4152,15 +4152,15 @@ router.get('/live/stream', async (req: Request, res: Response) => {
       const ws = await connectToLiveAPI(
         session,
         // Audio response handler - forward to client via SSE
+        // FIX: Send raw PCM for Web Audio API scheduled playback (eliminates gaps between chunks)
         (audioB64: string) => {
           if (session.sseResponse) {
             try {
-              // Convert PCM to WAV for browser playback
-              const wavB64 = pcmToWav(audioB64, 24000, 1, 16);
+              // Send raw PCM - client uses Web Audio API scheduling for seamless playback
               session.sseResponse.write(`data: ${JSON.stringify({
                 type: 'audio',
-                data_b64: wavB64,
-                mime: 'audio/wav',
+                data_b64: audioB64,
+                mime: 'audio/pcm;rate=24000',
                 chunk_number: session.audioOutChunks
               })}\n\n`);
             } catch (err) {
@@ -4299,7 +4299,7 @@ router.post('/live/stream/send', async (req: Request, res: Response) => {
       // VTID-01219: Forward audio to Vertex Live API WebSocket
       if (session.upstreamWs && session.upstreamWs.readyState === WebSocket.OPEN) {
         // Forward audio to Live API for real-time processing
-        const sent = sendAudioToLiveAPI(session.upstreamWs, body.data_b64, body.mime || 'audio/pcm');
+        const sent = sendAudioToLiveAPI(session.upstreamWs, body.data_b64, body.mime || 'audio/pcm;rate=16000');
         if (sent) {
           console.log(`[VTID-01219] Audio chunk forwarded to Live API: session=${effectiveSessionId}, chunk=${session.audioInChunks}`);
         } else {
@@ -4999,15 +4999,15 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     const upstreamWs = await connectToLiveAPI(
       liveSession,
       // Audio response handler - forward to client via WebSocket
+      // FIX: Send raw PCM for Web Audio API scheduled playback (eliminates gaps between chunks)
       (audioB64: string) => {
         if (clientWs.readyState === WebSocket.OPEN) {
           try {
-            // Convert PCM to WAV for browser playback
-            const wavB64 = pcmToWav(audioB64, 24000, 1, 16);
+            // Send raw PCM - client uses Web Audio API scheduling for seamless playback
             sendWsMessage(clientWs, {
               type: 'audio',
-              data_b64: wavB64,
-              mime: 'audio/wav',
+              data_b64: audioB64,
+              mime: 'audio/pcm;rate=24000',
               chunk_number: liveSession.audioOutChunks
             });
           } catch (err) {
