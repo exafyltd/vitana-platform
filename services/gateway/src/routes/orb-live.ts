@@ -1200,8 +1200,16 @@ async function connectToLiveAPI(
           }
 
           // Handle input/output transcriptions if present (handle both formats)
-          const inputTranscription = content.input_transcription || content.inputTranscription;
-          const outputTranscription = content.output_transcription || content.outputTranscription;
+          // VTID-01225: Gemini returns transcription as object with .text property
+          const inputTransObj = content.input_transcription || content.inputTranscription;
+          const outputTransObj = content.output_transcription || content.outputTranscription;
+          // Debug: Log raw transcription objects to understand Gemini response format
+          if (inputTransObj || outputTransObj) {
+            console.log(`[VTID-01225] Raw transcription objects - input: ${JSON.stringify(inputTransObj)}, output: ${JSON.stringify(outputTransObj)}`);
+          }
+          // Extract text - handle both object format (.text) and direct string format
+          const inputTranscription = typeof inputTransObj === 'string' ? inputTransObj : inputTransObj?.text;
+          const outputTranscription = typeof outputTransObj === 'string' ? outputTransObj : outputTransObj?.text;
           if (inputTranscription) {
             console.log(`[VTID-01219] Input transcription: ${inputTranscription}`);
             if (session.sseResponse) {
