@@ -1097,6 +1097,7 @@ async function connectToLiveAPI(
       // Send setup message with model and configuration
       // Vertex AI uses snake_case (unlike Google AI which uses camelCase)
       // VTID-01224: Include tools and bootstrap context
+      // VTID-01225: Enable input/output transcription for Cognee extraction
       const setupMessage = {
         setup: {
           model: `projects/${VERTEX_PROJECT_ID}/locations/${VERTEX_LOCATION}/publishers/google/models/${VERTEX_LIVE_MODEL}`,
@@ -1108,7 +1109,10 @@ async function connectToLiveAPI(
                   voice_name: LIVE_API_VOICES[session.lang] || LIVE_API_VOICES['en']
                 }
               }
-            }
+            },
+            // VTID-01225: Enable transcription for display and Cognee extraction
+            output_audio_transcription: {},
+            input_audio_transcription: {}
           },
           system_instruction: {
             parts: [{
