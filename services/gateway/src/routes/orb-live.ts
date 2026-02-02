@@ -1109,11 +1109,11 @@ async function connectToLiveAPI(
                   voice_name: LIVE_API_VOICES[session.lang] || LIVE_API_VOICES['en']
                 }
               }
-            },
-            // VTID-01225: Enable transcription for display and Cognee extraction
-            output_audio_transcription: {},
-            input_audio_transcription: {}
+            }
           },
+          // VTID-01225: Enable transcription at setup level (not in generation_config)
+          output_audio_transcription: {},
+          input_audio_transcription: {},
           system_instruction: {
             parts: [{
               // VTID-01224: Pass bootstrap context to system instruction
