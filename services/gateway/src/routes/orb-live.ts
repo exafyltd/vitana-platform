@@ -490,7 +490,8 @@ const liveSessions = new Map<string, GeminiLiveSession>();
 // VTID-01155: Vertex AI Live API configuration
 const VERTEX_PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID || '';
 const VERTEX_LOCATION = process.env.VERTEX_AI_LOCATION || 'us-central1';
-const VERTEX_LIVE_MODEL = 'gemini-live-2.5-flash-native-audio';  // Live API model for BidiGenerateContent
+// VTID-01225: Use preview model that supports input/output audio transcription
+const VERTEX_LIVE_MODEL = 'gemini-2.5-flash-native-audio-preview-12-2025';  // Live API model for BidiGenerateContent
 const VERTEX_TTS_MODEL = 'gemini-2.5-flash-tts';  // Cloud TTS with Gemini voices
 
 // VTID-01155: Google Cloud Text-to-Speech client with Gemini voices
