@@ -265,12 +265,13 @@ export async function fetchRecentConversationForCognee(
   }
 
   try {
+    // VTID-01225: Include all ORB-related sources for comprehensive conversation capture
     const { data, error } = await client
       .from('memory_items')
       .select('content, content_json, occurred_at')
       .eq('tenant_id', tenantId)
       .eq('user_id', userId)
-      .in('source', ['orb_voice', 'orb_text'])
+      .in('source', ['orb_voice', 'orb_text', 'orb', 'orb-live-ws'])
       .gte('occurred_at', startTime.toISOString())
       .lte('occurred_at', endTime.toISOString())
       .order('occurred_at', { ascending: true })

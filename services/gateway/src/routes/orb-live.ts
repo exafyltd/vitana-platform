@@ -376,6 +376,7 @@ interface OrbTranscriptTurn {
 
 /**
  * VTID-01039: Persisted transcript for ORB session
+ * VTID-01225: Extended with tenant_id/user_id for Cognee extraction
  */
 interface OrbSessionTranscript {
   orb_session_id: string;
@@ -383,6 +384,9 @@ interface OrbSessionTranscript {
   turns: OrbTranscriptTurn[];
   started_at: string;
   finalized: boolean;
+  // VTID-01225: Identity for Cognee extraction persistence
+  tenant_id?: string;
+  user_id?: string;
   summary?: {
     title: string;
     bullets: string[];
@@ -3307,9 +3311,9 @@ router.post('/end-session', async (req: Request, res: Response) => {
         .map(turn => `${turn.role}: ${turn.text}`)
         .join('\n');
 
-      // Note: Using dev sandbox defaults since OrbSessionTranscript doesn't track user context
-      const tenantId = process.env.DEV_SANDBOX_TENANT_ID || '00000000-0000-0000-0000-000000000001';
-      const userId = process.env.DEV_SANDBOX_USER_ID || '00000000-0000-0000-0000-000000000099';
+      // VTID-01225: Use identity from transcript if available, fall back to env vars
+      const tenantId = transcript.tenant_id || process.env.DEV_SANDBOX_TENANT_ID || '00000000-0000-0000-0000-000000000001';
+      const userId = transcript.user_id || process.env.DEV_SANDBOX_USER_ID || '00000000-0000-0000-0000-000000000099';
 
       cogneeExtractorClient.extractAsync({
         transcript: fullTranscript,
@@ -3318,7 +3322,7 @@ router.post('/end-session', async (req: Request, res: Response) => {
         session_id: orb_session_id,
         active_role: 'community'
       });
-      console.log(`[VTID-01225] Cognee extraction queued for session: ${orb_session_id}`);
+      console.log(`[VTID-01225] Cognee extraction queued for session: ${orb_session_id} (tenant=${tenantId.substring(0, 8)}..., user=${userId.substring(0, 8)}...)`);
     }
   }
 
@@ -3405,6 +3409,7 @@ function generateSessionSummary(turns: OrbTranscriptTurn[]): {
 
 /**
  * VTID-01039: POST /session/append - Append a turn to transcript
+ * VTID-01225: Extended to accept tenant_id/user_id for Cognee extraction
  *
  * Request:
  * {
@@ -3412,11 +3417,13 @@ function generateSessionSummary(turns: OrbTranscriptTurn[]): {
  *   "conversation_id": "string|null",
  *   "role": "user|assistant",
  *   "text": "string",
- *   "ts": "iso"
+ *   "ts": "iso",
+ *   "tenant_id": "uuid (optional)",
+ *   "user_id": "uuid (optional)"
  * }
  */
 router.post('/session/append', (req: Request, res: Response) => {
-  const { orb_session_id, conversation_id, role, text, ts } = req.body;
+  const { orb_session_id, conversation_id, role, text, ts, tenant_id, user_id } = req.body;
 
   if (!orb_session_id || !role || !text) {
     return res.status(400).json({
@@ -3440,10 +3447,13 @@ router.post('/session/append', (req: Request, res: Response) => {
       conversation_id: conversation_id || null,
       turns: [],
       started_at: new Date().toISOString(),
-      finalized: false
+      finalized: false,
+      // VTID-01225: Capture identity for Cognee extraction
+      tenant_id: tenant_id || undefined,
+      user_id: user_id || undefined
     };
     orbTranscripts.set(orb_session_id, transcript);
-    console.log(`[VTID-01039] Transcript created: ${orb_session_id}`);
+    console.log(`[VTID-01039] Transcript created: ${orb_session_id} (tenant=${tenant_id || 'none'}, user=${user_id || 'none'})`);
   }
 
   if (transcript.finalized) {
@@ -3456,6 +3466,14 @@ router.post('/session/append', (req: Request, res: Response) => {
   // Update conversation_id if provided and not set
   if (conversation_id && !transcript.conversation_id) {
     transcript.conversation_id = conversation_id;
+  }
+
+  // VTID-01225: Update identity if provided and not set
+  if (tenant_id && !transcript.tenant_id) {
+    transcript.tenant_id = tenant_id;
+  }
+  if (user_id && !transcript.user_id) {
+    transcript.user_id = user_id;
   }
 
   // Append turn
@@ -3560,9 +3578,9 @@ router.post('/session/finalize', async (req: Request, res: Response) => {
       .map(turn => `${turn.role}: ${turn.text}`)
       .join('\n');
 
-    // Note: Using dev sandbox defaults since OrbSessionTranscript doesn't track user context
-    const tenantId = process.env.DEV_SANDBOX_TENANT_ID || '00000000-0000-0000-0000-000000000001';
-    const userId = process.env.DEV_SANDBOX_USER_ID || '00000000-0000-0000-0000-000000000099';
+    // VTID-01225: Use identity from transcript if available, fall back to env vars
+    const tenantId = transcript.tenant_id || process.env.DEV_SANDBOX_TENANT_ID || '00000000-0000-0000-0000-000000000001';
+    const userId = transcript.user_id || process.env.DEV_SANDBOX_USER_ID || '00000000-0000-0000-0000-000000000099';
 
     const extractionRequest: CogneeExtractionRequest = {
       transcript: fullTranscript,
@@ -3574,7 +3592,7 @@ router.post('/session/finalize', async (req: Request, res: Response) => {
 
     // Fire-and-forget - don't await, don't block response
     cogneeExtractorClient.extractAsync(extractionRequest);
-    console.log(`[VTID-01225] Cognee extraction queued for session: ${orb_session_id}`);
+    console.log(`[VTID-01225] Cognee extraction queued for session: ${orb_session_id} (tenant=${tenantId.substring(0, 8)}..., user=${userId.substring(0, 8)}...)`);
   }
 
   return res.status(200).json({
