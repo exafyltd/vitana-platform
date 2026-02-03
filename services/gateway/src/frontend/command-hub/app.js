@@ -90,46 +90,7 @@ function navigateToRoleDefaultScreen(role) {
     console.log('[VTID-01186] Navigated to role default screen:', lowerRole, '->', defaultScreen.section + '/' + (tab ? tab.key : ''));
 }
 
-/**
- * VTID-01049: Fetch Me Context from Gateway
- * Called on app boot to load authoritative role from server.
- * @returns {Promise<{ok: boolean, me?: object, error?: string}>}
- */
-async function fetchMeContext() {
-    try {
-        var response = await fetch('/api/v1/me');
-        if (response.status === 401) {
-            // Not signed in - keep UI usable
-            MeState.loaded = true;
-            MeState.me = null;
-            return { ok: false, error: 'Not signed in' };
-        }
-        if (!response.ok) {
-            // 404/500 - show toast but don't break UI
-            MeState.loaded = true;
-            return { ok: false, error: 'Role context unavailable (Gateway /me)' };
-        }
-        var data = await response.json();
-        if (data.ok && data.me) {
-            MeState.loaded = true;
-            MeState.me = data.me;
-            // Sync viewRole with authoritative active_role
-            if (data.me.active_role) {
-                // Capitalize first letter for display
-                var displayRole = data.me.active_role.charAt(0).toUpperCase() + data.me.active_role.slice(1);
-                state.viewRole = displayRole;
-                localStorage.setItem('vitana.viewRole', displayRole);
-            }
-            return { ok: true, me: data.me };
-        }
-        MeState.loaded = true;
-        return { ok: false, error: 'Invalid response from /me' };
-    } catch (err) {
-        console.error('[VTID-01049] fetchMeContext error:', err);
-        MeState.loaded = true;
-        return { ok: false, error: 'Network error loading role context' };
-    }
-}
+// VTID-01049: Redundant fetchMeContext removed. Using consolidated version at line 610.
 
 /**
  * VTID-01049: Set Active Role via Gateway API
@@ -607,6 +568,10 @@ function buildContextHeaders(additionalHeaders) {
  * @param {boolean} silentRefresh - If true, don't update loading state
  * @returns {Promise<Object|null>} The me context object or null on error
  */
+/**
+ * VTID-01049: Authoritative Me Context Fetch.
+ * Now unified to handle both /me and /auth/me synchronization.
+ */
 async function fetchMeContext(silentRefresh) {
     if (!state.authToken) {
         console.log('[VTID-01049] No auth token, skipping me context fetch');
@@ -619,6 +584,7 @@ async function fetchMeContext(silentRefresh) {
     }
 
     try {
+        // VTID-01049: Fetch core context (role/tenant)
         var response = await fetch('/api/v1/me', {
             method: 'GET',
             headers: buildContextHeaders()
@@ -631,11 +597,9 @@ async function fetchMeContext(silentRefresh) {
             console.error('[VTID-01049] fetchMeContext error:', errorMsg);
 
             if (response.status === 401) {
-                // Clear invalid auth token
-                state.authToken = null;
-                localStorage.removeItem('vitana.authToken');
-                // VTID-01109: Clear ORB conversation on logout/auth failure
-                orbClearConversationState();
+                console.warn('[VTID-01049] 401 Unauthorized - Clearing session');
+                doLogout(); // Use existing logout to clear all state
+                return null;
             }
 
             state.meContextError = errorMsg;
@@ -645,12 +609,13 @@ async function fetchMeContext(silentRefresh) {
 
         console.log('[VTID-01049] fetchMeContext success:', data.me);
         state.meContext = data.me;
+        MeState.me = data.me;
+        MeState.loaded = true;
         state.meContextLoading = false;
         state.meContextError = null;
 
-        // VTID-01049: Sync viewRole with authoritative active_role
+        // VTID-01049: Sync viewRole with authoritative active_role from server
         if (data.me.active_role) {
-            // Capitalize first letter to match UI format (e.g., 'developer' -> 'Developer')
             var capitalizedRole = data.me.active_role.charAt(0).toUpperCase() + data.me.active_role.slice(1);
             state.viewRole = capitalizedRole;
             localStorage.setItem('vitana.viewRole', capitalizedRole);
@@ -731,6 +696,25 @@ async function setActiveRole(role) {
         }
 
         showToast('Switched to ' + state.viewRole + ' role', 'success');
+
+        // VTID-01049: Trigger full data refresh after successful role switch
+        // This ensures no stale data from the previous role context remains.
+        console.log('[VTID-01049] Role switch successful. Refreshing all data...');
+        renderApp(); // Immediate UI update (shows loading states if any)
+
+        // Refresh all major data streams in parallel
+        Promise.all([
+            fetchTasks(),
+            fetchTelemetrySnapshot(),
+            fetchApprovals(true),
+            fetchAutopilotRecommendationsCount()
+        ]).then(() => {
+            console.log('[VTID-01049] Data refresh complete.');
+            renderApp();
+        }).catch(err => {
+            console.error('[VTID-01049] Error during data refresh:', err);
+        });
+
         return data.me;
     } catch (err) {
         console.error('[VTID-01049] setActiveRole exception:', err);
@@ -739,19 +723,7 @@ async function setActiveRole(role) {
     }
 }
 
-/**
- * VTID-01049: Initialize me context on app boot.
- * Fetches me context from Gateway if auth token is available.
- */
-async function initMeContext() {
-    if (state.authToken) {
-        console.log('[VTID-01049] Auth token found, fetching me context...');
-        await fetchMeContext();
-        renderApp();
-    } else {
-        console.log('[VTID-01049] No auth token, me context not available');
-    }
-}
+// VTID-01049: Redundant initMeContext removed. Auth boot is now handled in DOMContentLoaded.
 
 // ===========================================================================
 // VTID-01171: Auth Identity from /api/v1/auth/me
@@ -797,9 +769,12 @@ async function fetchAuthMe(fallbackEmail) {
             var errorMsg = data.error || 'Failed to fetch auth identity';
             console.error('[VTID-01171] fetchAuthMe error:', errorMsg);
 
-            // VTID-01196: NEVER clear token on /auth/me failure
-            // Token should only be cleared on explicit logout
-            // The /auth/me endpoint may fail due to server-side JWT issues, but the token is still valid
+            // VTID-01196: Handle 401 reliably
+            if (response.status === 401) {
+                console.warn('[VTID-01171] 401 Unauthorized from /auth/me - Clearing session');
+                doLogout();
+                return null;
+            }
 
             state.authIdentityError = errorMsg;
             state.authIdentityLoading = false;
@@ -7045,6 +7020,26 @@ function renderProfileModal() {
         };
         loginForm.appendChild(loginBtn);
 
+        // VTID-01186: Add "Reset Session" button for recovery
+        const resetSessionBtn = document.createElement('button');
+        resetSessionBtn.className = 'btn';
+        resetSessionBtn.textContent = 'Reset Local Session';
+        resetSessionBtn.style.width = '100%';
+        resetSessionBtn.style.marginTop = '12px';
+        resetSessionBtn.style.padding = '8px';
+        resetSessionBtn.style.fontSize = '0.8rem';
+        resetSessionBtn.style.color = 'var(--text-secondary, #666)';
+        resetSessionBtn.style.background = 'none';
+        resetSessionBtn.style.border = '1px solid var(--border-color, #ccc)';
+        resetSessionBtn.style.borderRadius = '4px';
+        resetSessionBtn.style.cursor = 'pointer';
+        resetSessionBtn.onclick = function () {
+            if (confirm('This will clear your local session and tokens. Continue?')) {
+                doLogout();
+            }
+        };
+        loginForm.appendChild(resetSessionBtn);
+
         body.appendChild(loginForm);
         modal.appendChild(body);
 
@@ -7103,26 +7098,27 @@ function renderProfileModal() {
     // VTID-01171: Show role badge
     const badge = document.createElement('div');
     badge.className = 'profile-role-badge';
-    // Use authIdentity > MeState > viewRole fallback chain
-    if (state.authIdentity && state.authIdentity.identity) {
+
+    // Deterministic priority: 
+    // 1. Authoritative MeContext (from /api/v1/me)
+    // 2. AuthIdentity (from /api/v1/auth/me)
+    // 3. Fallback to state.viewRole
+    if (state.meContext && state.meContext.active_role) {
+        var role = state.meContext.active_role;
+        badge.textContent = role.charAt(0).toUpperCase() + role.slice(1);
+    } else if (state.authIdentity && state.authIdentity.identity) {
         if (state.authIdentity.identity.exafy_admin) {
             badge.textContent = 'Admin';
         } else if (state.authIdentity.memberships && state.authIdentity.memberships.length > 0) {
-            var role = state.authIdentity.memberships[0].role || 'user';
-            badge.textContent = role.charAt(0).toUpperCase() + role.slice(1);
+            var mRole = state.authIdentity.memberships[0].role || 'user';
+            badge.textContent = mRole.charAt(0).toUpperCase() + mRole.slice(1);
         } else {
             badge.textContent = 'User';
         }
-    } else if (state.authIdentityLoading) {
+    } else if (state.meContextLoading || state.authIdentityLoading) {
         badge.textContent = 'Loading...';
-    } else if (MeState.me && MeState.me.active_role) {
-        badge.textContent = MeState.me.active_role.charAt(0).toUpperCase() + MeState.me.active_role.slice(1);
-    } else if (!MeState.loaded) {
-        badge.textContent = 'Loading...';
-    } else if (MeState.loaded && !MeState.me) {
-        badge.textContent = 'Not signed in';
     } else {
-        badge.textContent = state.viewRole; // Fallback
+        badge.textContent = state.viewRole || 'User';
     }
     body.appendChild(badge);
 
@@ -24132,7 +24128,7 @@ function orbSendMessage(message) {
 
 // --- Init ---
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     console.log('App v4 starting...');
     try {
         // Init Router
@@ -24149,47 +24145,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
         renderApp();
 
-        // VTID-01049: Load Me Context (authoritative role) on boot
-        fetchMeContext().then(function(me) {
-            // fetchMeContext() returns me OR null (e.g. not signed in / 401 / network error)
-            if (!me) { renderApp(); return; }
-            renderApp();
-        }).catch(function (err) {
-            console.error('[VTID-01049] fetchMeContext failed:', err);
-            renderApp();
-        });
+        // VTID-01046: Unified Auth Boot Sequence
+        // Synchronize identity and context before loading other data
+        console.log('[VTID-01046] Booting Auth...');
+        if (state.authToken) {
+            await Promise.all([
+                fetchMeContext(),
+                fetchAuthMe()
+            ]);
+            console.log('[VTID-01046] Auth boot complete');
+        } else {
+            console.log('[VTID-01046] Guest session - marking MeState loaded');
+            MeState.loaded = true;
+            MeState.me = null;
+        }
 
-        // VTID-01171: Fetch auth identity for profile display
-        fetchAuthMe().then(function (data) {
-            if (data) {
-                console.log('[VTID-01171] Auth identity loaded:', data.identity?.email);
-            }
-            // Re-render to update profile capsule with real data
-            renderApp();
-        }).catch(function (err) {
-            console.error('[VTID-01171] fetchAuthMe failed:', err);
-        });
+        // Final UI refresh after auth data is in
+        renderApp();
 
-        fetchTasks();
-
-        // VTID-01049: Initialize me context (authoritative role + identity)
-        initMeContext();
+        // Load data in parallel after auth is established
+        Promise.all([
+            fetchTasks(),
+            fetchTelemetrySnapshot(),
+            fetchApprovals(true),
+            fetchAutopilotRecommendationsCount()
+        ]).catch(err => console.error('Data Fetch Error:', err));
 
         // VTID-01038: Load TTS voices for ORB
         orbLoadTtsVoices();
 
-        // VTID-0527: Fetch telemetry snapshot for task stage timelines
-        fetchTelemetrySnapshot();
-
-        // VTID-0520: Start CI/CD health polling
+        // VTID-0520: Start Background Polling
         startCicdHealthPolling();
-
-        // VTID-01151: Fetch initial approvals (silent) and start polling (20s)
-        fetchApprovals(true);
         startApprovalsBadgePolling();
 
-        // VTID-01180: Fetch autopilot recommendations count for badge
-        fetchAutopilotRecommendationsCount();
     } catch (e) {
         console.error('Critical Render Error:', e);
         document.body.innerHTML = `<div class="critical-error"><h1>Critical Error</h1><pre>${e.stack}</pre></div>`;
