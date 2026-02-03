@@ -324,8 +324,10 @@ class CogneeExtractorClient {
     const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
-      console.warn('[VTID-01225] Supabase not configured for persistence');
-      return;
+      // VTID-01225: This is a critical configuration error that should be surfaced
+      const error = new Error(`[VTID-01225] Supabase not configured for persistence: URL=${!!SUPABASE_URL}, SERVICE_ROLE=${!!SUPABASE_SERVICE_ROLE}`);
+      console.error(error.message);
+      throw error;
     }
 
     // Persist to relationship_nodes via RPC
@@ -339,9 +341,13 @@ class CogneeExtractorClient {
             Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
           },
           body: JSON.stringify({
-            p_node_type: entity.vitana_node_type || 'entity',
+            // VTID-01225: Valid node_types: person, group, event, service, product, location, live_room
+            // Default to 'person' instead of invalid 'entity'
+            p_node_type: entity.vitana_node_type || 'person',
             p_title: entity.name,
-            p_domain: entity.domain || 'personal',
+            // VTID-01225: Valid domains: community, health, business, lifestyle
+            // Default to 'community' instead of invalid 'personal'
+            p_domain: entity.domain || 'community',
             p_metadata: {
               entity_type: entity.entity_type,
               origin: 'cognee',
@@ -355,10 +361,15 @@ class CogneeExtractorClient {
         });
 
         if (!response.ok) {
-          console.warn(`[VTID-01225] Node creation failed for "${entity.name}": ${response.status}`);
+          // VTID-01225: Read error body to understand why RPC failed
+          const errorBody = await response.text().catch(() => 'Unable to read error body');
+          console.error(`[VTID-01225] Node creation failed for "${entity.name}": ${response.status} - ${errorBody}`);
+        } else {
+          const nodeResult = await response.json().catch(() => null);
+          console.log(`[VTID-01225] Node created for "${entity.name}":`, nodeResult);
         }
       } catch (err) {
-        console.warn(`[VTID-01225] Node persist error for "${entity.name}":`, err);
+        console.error(`[VTID-01225] Node persist error for "${entity.name}":`, err instanceof Error ? err.message : err);
       }
     }
 
@@ -446,9 +457,13 @@ class CogneeExtractorClient {
 
         if (response.ok) {
           console.log(`[VTID-01225] Persisted to memory_items: ${entity.name} (${categoryKey})`);
+        } else {
+          // VTID-01225: Read error body to understand why INSERT failed
+          const errorBody = await response.text().catch(() => 'Unable to read error body');
+          console.error(`[VTID-01225] memory_items INSERT failed for "${entity.name}": ${response.status} - ${errorBody}`);
         }
       } catch (err) {
-        console.warn(`[VTID-01225] Memory items persist error for "${entity.name}":`, err);
+        console.error(`[VTID-01225] Memory items persist error for "${entity.name}":`, err instanceof Error ? err.message : err);
       }
     }
 
