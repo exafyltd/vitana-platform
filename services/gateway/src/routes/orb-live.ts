@@ -75,6 +75,7 @@ import {
   getDebugSnapshot,
   writeDevMemoryItem,
   writeMemoryItemWithIdentity,
+  fetchRecentConversationForCognee,  // VTID-01225: For Cognee extraction
   DEV_IDENTITY,
   MEMORY_CONFIG,
   OrbMemoryContext,
@@ -443,6 +444,10 @@ interface GeminiLiveSession {
   contextPack?: ContextPack;
   contextBootstrapLatencyMs?: number;
   contextBootstrapSkippedReason?: string;
+  // VTID-01225: Transcript accumulation for Cognee extraction
+  transcriptTurns: Array<{ role: 'user' | 'assistant'; text: string; timestamp: string }>;
+  // VTID-01225: Buffer for accumulating output transcription chunks until turn completes
+  outputTranscriptBuffer: string;
 }
 
 /**
@@ -1068,6 +1073,7 @@ async function connectToLiveAPI(
       // Send setup message with model and configuration
       // Vertex AI uses snake_case (unlike Google AI which uses camelCase)
       // VTID-01224: Include tools and bootstrap context
+      // VTID-01225: Enable input/output transcription for Cognee extraction
       const setupMessage = {
         setup: {
           model: `projects/${VERTEX_PROJECT_ID}/locations/${VERTEX_LOCATION}/publishers/google/models/${VERTEX_LIVE_MODEL}`,
@@ -1081,6 +1087,9 @@ async function connectToLiveAPI(
               }
             }
           },
+          // VTID-01225: Enable transcription at setup level (not in generation_config)
+          output_audio_transcription: {},
+          input_audio_transcription: {},
           system_instruction: {
             parts: [{
               // VTID-01224: Pass bootstrap context to system instruction
@@ -1125,10 +1134,64 @@ async function connectToLiveAPI(
         if (serverContent) {
           const content = serverContent;
 
+          // VTID-01225: Log full server_content structure to debug transcription
+          const contentKeys = Object.keys(content);
+          console.log(`[VTID-01225] server_content keys: ${contentKeys.join(', ')}`);
+
           // Check if turn is complete (handle both formats)
           const turnComplete = content.turn_complete || content.turnComplete;
           if (turnComplete) {
             console.log(`[VTID-01219] Turn complete for session ${session.sessionId}`);
+
+            // VTID-01225: Write accumulated assistant transcript to memory_items and transcriptTurns
+            if (session.outputTranscriptBuffer.length > 0) {
+              const fullTranscript = session.outputTranscriptBuffer.trim();
+              console.log(`[VTID-01225] Writing assistant turn to memory: "${fullTranscript.substring(0, 100)}..."`);
+
+              // Add to transcriptTurns for in-memory accumulation
+              session.transcriptTurns.push({
+                role: 'assistant',
+                text: fullTranscript,
+                timestamp: new Date().toISOString()
+              });
+
+              // Write to memory_items for persistence
+              // Use session identity if available, otherwise fall back to DEV_IDENTITY in dev-sandbox
+              let memoryIdentity: MemoryIdentity | null = null;
+              if (session.identity && session.identity.tenant_id) {
+                memoryIdentity = {
+                  user_id: session.identity.user_id,
+                  tenant_id: session.identity.tenant_id
+                };
+              } else if (isDevSandbox()) {
+                console.log(`[VTID-01225] No session identity, using DEV_IDENTITY fallback`);
+                memoryIdentity = {
+                  user_id: DEV_IDENTITY.USER_ID,
+                  tenant_id: DEV_IDENTITY.TENANT_ID
+                };
+              } else {
+                console.warn(`[VTID-01225] Cannot write to memory: no identity and not dev-sandbox`);
+              }
+
+              if (memoryIdentity) {
+                console.log(`[VTID-01225] Writing transcript to memory_items for user ${memoryIdentity.user_id.substring(0, 8)}...`);
+                writeMemoryItemWithIdentity(memoryIdentity, {
+                  source: 'orb_voice',
+                  content: fullTranscript,
+                  content_json: {
+                    direction: 'assistant',
+                    channel: 'orb',
+                    mode: 'live_voice',
+                    orb_session_id: session.sessionId,
+                    conversation_id: session.conversation_id
+                  },
+                }).catch(err => console.warn(`[VTID-01225] Failed to write assistant transcript to memory: ${err.message}`));
+              }
+
+              // Clear buffer for next turn
+              session.outputTranscriptBuffer = '';
+            }
+
             // Notify client that response is complete
             if (session.sseResponse) {
               session.sseResponse.write(`data: ${JSON.stringify({ type: 'turn_complete' })}\n\n`);
@@ -1167,12 +1230,53 @@ async function connectToLiveAPI(
           }
 
           // Handle input/output transcriptions if present (handle both formats)
-          const inputTranscription = content.input_transcription || content.inputTranscription;
-          const outputTranscription = content.output_transcription || content.outputTranscription;
+          // VTID-01225: Gemini returns transcription as object with .text property
+          const inputTransObj = content.input_transcription || content.inputTranscription;
+          const outputTransObj = content.output_transcription || content.outputTranscription;
+          // Debug: Log raw transcription objects to understand Gemini response format
+          if (inputTransObj || outputTransObj) {
+            console.log(`[VTID-01225] Raw transcription objects - input: ${JSON.stringify(inputTransObj)}, output: ${JSON.stringify(outputTransObj)}`);
+          }
+          // Extract text - handle both object format (.text) and direct string format
+          const inputTranscription = typeof inputTransObj === 'string' ? inputTransObj : inputTransObj?.text;
+          const outputTranscription = typeof outputTransObj === 'string' ? outputTransObj : outputTransObj?.text;
           if (inputTranscription) {
             console.log(`[VTID-01219] Input transcription: ${inputTranscription}`);
             if (session.sseResponse) {
               session.sseResponse.write(`data: ${JSON.stringify({ type: 'input_transcript', text: inputTranscription })}\n\n`);
+            }
+            // VTID-01225: Accumulate user transcript for Cognee extraction
+            session.transcriptTurns.push({
+              role: 'user',
+              text: inputTranscription,
+              timestamp: new Date().toISOString()
+            });
+            // VTID-01225: Write user transcription to memory_items immediately (rare - Gemini native audio usually doesn't provide this)
+            // Use session identity if available, otherwise fall back to DEV_IDENTITY in dev-sandbox
+            let userMemoryIdentity: MemoryIdentity | null = null;
+            if (session.identity && session.identity.tenant_id) {
+              userMemoryIdentity = {
+                user_id: session.identity.user_id,
+                tenant_id: session.identity.tenant_id
+              };
+            } else if (isDevSandbox()) {
+              userMemoryIdentity = {
+                user_id: DEV_IDENTITY.USER_ID,
+                tenant_id: DEV_IDENTITY.TENANT_ID
+              };
+            }
+            if (userMemoryIdentity) {
+              writeMemoryItemWithIdentity(userMemoryIdentity, {
+                source: 'orb_voice',
+                content: inputTranscription,
+                content_json: {
+                  direction: 'user',
+                  channel: 'orb',
+                  mode: 'live_voice',
+                  orb_session_id: session.sessionId,
+                  conversation_id: session.conversation_id
+                },
+              }).catch(err => console.warn(`[VTID-01225] Failed to write user transcript to memory: ${err.message}`));
             }
           }
           if (outputTranscription) {
@@ -1180,6 +1284,8 @@ async function connectToLiveAPI(
             if (session.sseResponse) {
               session.sseResponse.write(`data: ${JSON.stringify({ type: 'output_transcript', text: outputTranscription })}\n\n`);
             }
+            // VTID-01225: Accumulate output transcription chunks in buffer (will be written on turnComplete)
+            session.outputTranscriptBuffer += outputTranscription;
           }
         }
 
@@ -3810,6 +3916,121 @@ router.get('/debug/tts', async (req: Request, res: Response) => {
 });
 
 // =============================================================================
+// VTID-01225: Context Bootstrap Test Endpoint (Voice LAB)
+// =============================================================================
+
+/**
+ * VTID-01225: GET /debug/context-bootstrap - Test context bootstrap for Voice LAB
+ *
+ * Tests the exact same code path used by Gemini Live sessions to bootstrap
+ * memory context. Useful for verifying memory recall without starting a full
+ * ORB session.
+ *
+ * Query params:
+ * - user_id: Optional user ID (defaults to DEV_IDENTITY.USER_ID)
+ * - tenant_id: Optional tenant ID (defaults to DEV_IDENTITY.TENANT_ID)
+ * - role: Optional role (defaults to DEV_IDENTITY.ACTIVE_ROLE)
+ *
+ * Response:
+ * {
+ *   "ok": true/false,
+ *   "identity": { user_id, tenant_id, role },
+ *   "bootstrap_result": {
+ *     "latency_ms": 123,
+ *     "memory_hits": 5,
+ *     "knowledge_hits": 0,
+ *     "context_chars": 1234,
+ *     "skipped_reason": null or "error: ..."
+ *   },
+ *   "context_preview": "first 500 chars of context...",
+ *   "memory_items": [ { category, content_preview, relevance } ],
+ *   "timestamp": "ISO"
+ * }
+ */
+router.get('/debug/context-bootstrap', async (req: Request, res: Response) => {
+  console.log('[VTID-01225] Debug context-bootstrap endpoint accessed');
+
+  // Build identity from query params or use DEV_IDENTITY
+  const userId = (req.query.user_id as string) || DEV_IDENTITY.USER_ID;
+  const tenantId = (req.query.tenant_id as string) || DEV_IDENTITY.TENANT_ID;
+  const role = (req.query.role as string) || DEV_IDENTITY.ACTIVE_ROLE;
+
+  // Create a synthetic SupabaseIdentity (same as in handleWsStartMessage)
+  const testIdentity: SupabaseIdentity = {
+    user_id: userId,
+    tenant_id: tenantId,
+    role: role,
+    email: 'context-bootstrap-test@vitana.local',
+    exafy_admin: false,
+    aud: 'authenticated',
+    exp: null,
+    iat: null
+  };
+
+  const testSessionId = `test-bootstrap-${Date.now()}`;
+
+  console.log(`[VTID-01225] Testing context bootstrap for user=${userId.substring(0, 8)}..., tenant=${tenantId.substring(0, 8)}...`);
+
+  try {
+    // Call the exact same function used by Live sessions
+    const bootstrapResult = await buildBootstrapContextPack(testIdentity, testSessionId);
+
+    // Extract memory items from context pack for detailed response
+    const memoryItems = bootstrapResult.contextPack?.memory_hits?.map(hit => ({
+      category: hit.category_key,
+      content_preview: hit.content.substring(0, 100) + (hit.content.length > 100 ? '...' : ''),
+      relevance_score: hit.relevance_score,
+      importance: hit.importance,
+      occurred_at: hit.occurred_at,
+      source: hit.source
+    })) || [];
+
+    const response = {
+      ok: !bootstrapResult.skippedReason,
+      identity: {
+        user_id: userId,
+        tenant_id: tenantId,
+        role: role,
+        is_dev_identity: userId === DEV_IDENTITY.USER_ID && tenantId === DEV_IDENTITY.TENANT_ID
+      },
+      bootstrap_result: {
+        latency_ms: bootstrapResult.latencyMs,
+        memory_hits: bootstrapResult.contextPack?.memory_hits?.length || 0,
+        knowledge_hits: bootstrapResult.contextPack?.knowledge_hits?.length || 0,
+        web_hits: bootstrapResult.contextPack?.web_hits?.length || 0,
+        context_chars: bootstrapResult.contextInstruction?.length || 0,
+        skipped_reason: bootstrapResult.skippedReason || null
+      },
+      context_preview: bootstrapResult.contextInstruction?.substring(0, 1000) || null,
+      memory_items: memoryItems,
+      full_context_instruction: bootstrapResult.contextInstruction || null,
+      timestamp: new Date().toISOString(),
+      test_session_id: testSessionId
+    };
+
+    // Log summary
+    console.log(`[VTID-01225] Context bootstrap test complete: latency=${bootstrapResult.latencyMs}ms, memory=${response.bootstrap_result.memory_hits}, context_chars=${response.bootstrap_result.context_chars}`);
+
+    return res.status(200).json(response);
+
+  } catch (err: any) {
+    console.error('[VTID-01225] Context bootstrap test error:', err.message);
+    return res.status(200).json({
+      ok: false,
+      identity: {
+        user_id: userId,
+        tenant_id: tenantId,
+        role: role
+      },
+      error: err.message,
+      stack: err.stack?.substring(0, 500),
+      timestamp: new Date().toISOString(),
+      test_session_id: testSessionId
+    });
+  }
+});
+
+// =============================================================================
 // VTID-01155: Gemini Live Multimodal Session Endpoints
 // =============================================================================
 
@@ -3931,6 +4152,9 @@ router.post('/live/session/start', async (req: Request, res: Response) => {
     audioOutChunks: 0,
     // VTID-01224: Required fields for context
     turn_count: 0,
+    // VTID-01225: Transcript accumulation for Cognee extraction
+    transcriptTurns: [],
+    outputTranscriptBuffer: '',
   };
 
   // Store session
@@ -4011,6 +4235,52 @@ router.post('/live/session/stop', async (req: Request, res: Response) => {
     audio_out_chunks: session.audioOutChunks,
     duration_ms: Date.now() - session.createdAt.getTime()
   });
+
+  // VTID-01225: Fire-and-forget Cognee entity extraction from memory_items
+  // Query conversation from memory_items instead of relying on transcriptTurns (Gemini doesn't return transcription)
+  if (cogneeExtractorClient.isEnabled() && session.identity && session.identity.tenant_id) {
+    const tenantId = session.identity.tenant_id;
+    const userId = session.identity.user_id;
+
+    // Fetch conversation from memory_items asynchronously
+    fetchRecentConversationForCognee(tenantId, userId, session.createdAt, new Date())
+      .then(transcript => {
+        if (transcript && transcript.length > 50) {  // Only extract if meaningful content
+          cogneeExtractorClient.extractAsync({
+            transcript,
+            tenant_id: tenantId,
+            user_id: userId,
+            session_id: session_id,
+            active_role: 'community'
+          });
+          console.log(`[VTID-01225] Cognee extraction queued for live session: ${session_id}`);
+        } else {
+          console.log(`[VTID-01225] No meaningful transcript for Cognee extraction: ${session_id}`);
+        }
+      })
+      .catch(err => {
+        console.error(`[VTID-01225] Failed to fetch conversation for Cognee: ${err.message}`);
+      });
+  } else if (cogneeExtractorClient.isEnabled()) {
+    // Fallback for unauthenticated sessions - use defaults
+    const tenantId = process.env.DEV_SANDBOX_TENANT_ID || '00000000-0000-0000-0000-000000000001';
+    const userId = process.env.DEV_SANDBOX_USER_ID || '00000000-0000-0000-0000-000000000099';
+
+    fetchRecentConversationForCognee(tenantId, userId, session.createdAt, new Date())
+      .then(transcript => {
+        if (transcript && transcript.length > 50) {
+          cogneeExtractorClient.extractAsync({
+            transcript,
+            tenant_id: tenantId,
+            user_id: userId,
+            session_id: session_id,
+            active_role: 'community'
+          });
+          console.log(`[VTID-01225] Cognee extraction queued (fallback) for: ${session_id}`);
+        }
+      })
+      .catch(() => {});
+  }
 
   // Remove from store
   liveSessions.delete(session_id);
@@ -4802,14 +5072,33 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
   console.log(`[VTID-01222] Starting Live API session: ${sessionId}, lang=${lang}`);
 
   // VTID-01224: Build bootstrap context if authenticated
+  // VTID-01225: Added DEV_IDENTITY fallback for memory recall in dev-sandbox mode
   let contextInstruction: string | undefined;
   let contextPack: ContextPack | undefined;
   let contextBootstrapLatencyMs: number | undefined;
   let contextBootstrapSkippedReason: string | undefined;
 
-  if (identity && identity.tenant_id && identity.user_id) {
-    console.log(`[VTID-01224] Building bootstrap context for session ${sessionId}...`);
-    const bootstrapResult = await buildBootstrapContextPack(identity, sessionId);
+  // Determine effective identity for context bootstrap (same pattern as memory writes)
+  // Create a synthetic SupabaseIdentity for dev-sandbox mode
+  const devSandboxIdentity: SupabaseIdentity = {
+    user_id: DEV_IDENTITY.USER_ID,
+    tenant_id: DEV_IDENTITY.TENANT_ID,
+    role: DEV_IDENTITY.ACTIVE_ROLE,
+    email: 'dev-sandbox@vitana.local',
+    exafy_admin: false,
+    aud: 'authenticated',
+    exp: null,
+    iat: null
+  };
+  const effectiveBootstrapIdentity: SupabaseIdentity | null = (identity && identity.tenant_id && identity.user_id)
+    ? identity
+    : isDevSandbox()
+      ? devSandboxIdentity
+      : null;
+
+  if (effectiveBootstrapIdentity) {
+    console.log(`[VTID-01224] Building bootstrap context for session ${sessionId}${!identity ? ' (using DEV_IDENTITY fallback)' : ''}...`);
+    const bootstrapResult = await buildBootstrapContextPack(effectiveBootstrapIdentity, sessionId);
 
     contextInstruction = bootstrapResult.contextInstruction;
     contextPack = bootstrapResult.contextPack;
@@ -4826,10 +5115,11 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
         message: `Context bootstrap skipped: ${bootstrapResult.skippedReason}`,
         payload: {
           session_id: sessionId,
-          tenant_id: identity.tenant_id,
-          user_id: identity.user_id,
+          tenant_id: effectiveBootstrapIdentity.tenant_id,
+          user_id: effectiveBootstrapIdentity.user_id,
           latency_ms: bootstrapResult.latencyMs,
           reason: bootstrapResult.skippedReason,
+          using_dev_identity: !identity,
         },
       }).catch(() => {});
     } else {
@@ -4838,15 +5128,16 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
         type: 'orb.live.context.bootstrap',
         source: 'orb-live-ws',
         status: 'info',
-        message: `Context bootstrap complete: ${bootstrapResult.latencyMs}ms`,
+        message: `Context bootstrap complete: ${bootstrapResult.latencyMs}ms${!identity ? ' (DEV_IDENTITY)' : ''}`,
         payload: {
           session_id: sessionId,
-          tenant_id: identity.tenant_id,
-          user_id: identity.user_id,
+          tenant_id: effectiveBootstrapIdentity.tenant_id,
+          user_id: effectiveBootstrapIdentity.user_id,
           latency_ms: bootstrapResult.latencyMs,
           memory_hits: contextPack?.memory_hits?.length || 0,
           knowledge_hits: contextPack?.knowledge_hits?.length || 0,
           context_chars: contextInstruction?.length || 0,
+          using_dev_identity: !identity,
         },
       }).catch(() => {});
     }
@@ -4869,6 +5160,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
   }
 
   // Create Gemini Live session with identity and context
+  // VTID-01225: Use effectiveBootstrapIdentity so memory writes also work in dev-sandbox
   const liveSession: GeminiLiveSession = {
     sessionId,
     lang,
@@ -4882,14 +5174,17 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     audioInChunks: 0,
     videoInFrames: 0,
     audioOutChunks: 0,
-    // VTID-01224: Identity and context
-    identity,
+    // VTID-01224: Identity and context (use effective identity for dev-sandbox fallback)
+    identity: effectiveBootstrapIdentity || identity,
     thread_id: sessionId,
     turn_count: 0,
     contextInstruction,
     contextPack,
     contextBootstrapLatencyMs,
     contextBootstrapSkippedReason,
+    // VTID-01225: Transcript accumulation for Cognee extraction
+    transcriptTurns: [],
+    outputTranscriptBuffer: '',
   };
 
   clientSession.liveSession = liveSession;

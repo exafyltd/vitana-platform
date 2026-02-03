@@ -2727,6 +2727,7 @@ const state = {
         geminiLiveAudioStream: null,  // MediaStream for audio capture
         geminiLiveAudioProcessor: null, // ScriptProcessorNode for audio
         geminiTtsAudio: null,         // Current Gemini-TTS Audio element for barge-in
+        geminiLiveTranscriber: null,  // VTID-01225: Parallel Web Speech for transcript display
         useLiveApi: true              // VTID-01219: Use Gemini Live API for voice-to-voice
     },
 
@@ -22247,6 +22248,9 @@ async function geminiLiveStart() {
         // 4. Start frame capture if screen/camera active
         geminiLiveStartFrameCapture();
 
+        // 5. VTID-01225: Start parallel transcriber for UI display
+        geminiLiveStartTranscriber();
+
         renderApp();
 
     } catch (error) {
@@ -22274,6 +22278,9 @@ async function geminiLiveStop() {
         clearInterval(state.orb.geminiLiveFrameInterval);
         state.orb.geminiLiveFrameInterval = null;
     }
+
+    // VTID-01225: Stop parallel transcriber
+    geminiLiveStopTranscriber();
 
     // Stop audio capture
     if (state.orb.geminiLiveAudioStream) {
@@ -22522,6 +22529,122 @@ function geminiLiveStartFrameCapture() {
     }, 1000);
 
     console.log('[VTID-01155] Frame capture started');
+}
+
+/**
+ * VTID-01225: Start parallel Web Speech API for transcript display
+ * Runs alongside Gemini Live to show user's spoken words in UI
+ * Does NOT send text to backend - Gemini already has the audio
+ */
+function geminiLiveStartTranscriber() {
+    // Check browser support
+    var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        console.warn('[VTID-01225] Web Speech API not supported - transcripts will not be displayed');
+        return;
+    }
+
+    // Stop any existing transcriber
+    if (state.orb.geminiLiveTranscriber) {
+        try {
+            state.orb.geminiLiveTranscriber.stop();
+        } catch (e) {}
+        state.orb.geminiLiveTranscriber = null;
+    }
+
+    var recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = state.orb.orbLang || 'en-US';
+
+    var lastProcessedIndex = -1;
+
+    recognition.onstart = function() {
+        console.log('[VTID-01225] Parallel transcriber started');
+    };
+
+    recognition.onresult = function(event) {
+        var finalTranscript = '';
+        var interimTranscript = '';
+
+        // Process results starting from where we left off
+        var startIndex = Math.max(event.resultIndex, lastProcessedIndex + 1);
+        for (var i = startIndex; i < event.results.length; i++) {
+            var transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+                finalTranscript += transcript;
+                lastProcessedIndex = i;
+            } else {
+                interimTranscript += transcript;
+            }
+        }
+
+        // Update interim display
+        state.orb.interimTranscript = interimTranscript;
+
+        // Add final transcript to chat UI
+        if (finalTranscript) {
+            console.log('[VTID-01225] User said:', finalTranscript);
+            state.orb.interimTranscript = '';
+
+            // Add to transcript display (user's spoken words)
+            state.orb.liveTranscript.push({
+                id: Date.now(),
+                role: 'user',
+                text: finalTranscript.trim(),
+                mode: 'voice',
+                timestamp: new Date().toISOString()
+            });
+
+            // Persist conversation state
+            orbSaveConversationState();
+            scrollOrbLiveTranscript();
+        }
+
+        renderApp();
+    };
+
+    recognition.onerror = function(event) {
+        // Ignore no-speech errors - common when audio is sent to Gemini
+        if (event.error === 'no-speech' || event.error === 'aborted') {
+            return;
+        }
+        console.warn('[VTID-01225] Transcriber error:', event.error);
+    };
+
+    recognition.onend = function() {
+        // Auto-restart if session still active
+        if (state.orb.geminiLiveActive && state.orb.geminiLiveTranscriber) {
+            console.log('[VTID-01225] Restarting transcriber...');
+            lastProcessedIndex = -1;
+            try {
+                recognition.start();
+            } catch (e) {
+                console.warn('[VTID-01225] Failed to restart transcriber:', e);
+            }
+        }
+    };
+
+    try {
+        recognition.start();
+        state.orb.geminiLiveTranscriber = recognition;
+        console.log('[VTID-01225] Parallel transcription enabled for UI display');
+    } catch (e) {
+        console.error('[VTID-01225] Failed to start transcriber:', e);
+    }
+}
+
+/**
+ * VTID-01225: Stop parallel transcriber
+ */
+function geminiLiveStopTranscriber() {
+    if (state.orb.geminiLiveTranscriber) {
+        try {
+            state.orb.geminiLiveTranscriber.stop();
+        } catch (e) {}
+        state.orb.geminiLiveTranscriber = null;
+        console.log('[VTID-01225] Parallel transcriber stopped');
+    }
 }
 
 /**

@@ -7,8 +7,9 @@
   "description": "Cognee Entity Extraction Service - Stateless entity extraction engine for ORB voice transcripts. Outputs normalized entities/relationships for VTID-01087 relationship graph.",
   "provider_policy": {
     "llm": {
-      "provider": "openai",
-      "model": "gpt-4o-mini"
+      "provider": "google",
+      "model": "gemini-2.0-flash",
+      "note": "Uses Vertex AI with ADC (Application Default Credentials) - matches Vitana stack"
     },
     "graph_store": {
       "provider": "cognee_default",
@@ -20,11 +21,16 @@
     }
   },
   "required_env": [
-    "LLM_API_KEY"
+    "GOOGLE_CLOUD_PROJECT"
   ],
   "optional_env": [
+    "VERTEX_LOCATION",
     "LLM_PROVIDER",
     "LLM_MODEL"
+  ],
+  "not_required": [
+    "LLM_API_KEY",
+    "OPENAI_API_KEY"
   ],
   "features": [
     "cognee_entity_extraction",
