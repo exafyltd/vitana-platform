@@ -362,19 +362,59 @@ class CogneeExtractorClient {
       }
     }
 
-    // Persist ALL entities to memory_items with proper category classification
-    // Uses Vitana's 7 memory categories: personal, company, conversation, preferences, goals, health, relationships
+    // VTID-01192: Persist entities as STRUCTURED FACTS using write_fact() RPC
+    // This is the proper memory system with provenance, supersession, and confidence
     for (const entity of result.entities) {
       try {
-        // Build rich content from entity
+        // Convert entity to fact_key and fact_value
+        const { factKey, factValue, entityScope } = this.entityToFact(entity);
+
+        if (!factKey || !factValue) {
+          console.debug(`[VTID-01225] Skipping entity without fact mapping: ${entity.name}`);
+          continue;
+        }
+
+        // Call write_fact() RPC (VTID-01192) - the proper way to store facts
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/write_fact`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: SUPABASE_SERVICE_ROLE,
+            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+          },
+          body: JSON.stringify({
+            p_tenant_id: request.tenant_id,
+            p_user_id: request.user_id,
+            p_fact_key: factKey,
+            p_fact_value: factValue,
+            p_entity: entityScope, // 'self' for user facts, 'disclosed' for facts about others
+            p_fact_value_type: this.getFactValueType(entity),
+            p_provenance_source: 'assistant_inferred', // Cognee extraction
+            p_provenance_confidence: 0.85, // High confidence from NLP extraction
+          }),
+        });
+
+        if (response.ok) {
+          const factId = await response.json();
+          console.log(`[VTID-01225] Persisted fact via write_fact(): ${factKey}="${factValue}" (id=${factId})`);
+        } else {
+          const errorText = await response.text();
+          console.warn(`[VTID-01225] write_fact failed for "${factKey}": ${response.status} - ${errorText}`);
+        }
+      } catch (err) {
+        console.warn(`[VTID-01225] Fact persist error for "${entity.name}":`, err);
+      }
+    }
+
+    // Also persist to memory_items for backwards compatibility with existing retrieval
+    // This ensures both the new facts system AND legacy retrieval work
+    for (const entity of result.entities) {
+      try {
         const memoryContent = entity.metadata?.value
           ? `${entity.name}: ${entity.metadata.value}`
           : entity.name;
 
-        // Map Cognee entity types to Vitana memory categories
         const categoryKey = this.mapEntityToCategory(entity);
-
-        // Set importance based on entity type (personal info = highest)
         const importance = this.getEntityImportance(entity, categoryKey);
 
         const response = await fetch(`${SUPABASE_URL}/rest/v1/memory_items`, {
@@ -405,12 +445,10 @@ class CogneeExtractorClient {
         });
 
         if (response.ok) {
-          console.log(`[VTID-01225] Persisted entity to memory_items: ${entity.name} (${categoryKey}, importance=${importance})`);
-        } else {
-          console.warn(`[VTID-01225] Memory persist failed for "${entity.name}": ${response.status}`);
+          console.log(`[VTID-01225] Persisted to memory_items: ${entity.name} (${categoryKey})`);
         }
       } catch (err) {
-        console.warn(`[VTID-01225] Memory persist error for "${entity.name}":`, err);
+        console.warn(`[VTID-01225] Memory items persist error for "${entity.name}":`, err);
       }
     }
 
@@ -592,6 +630,131 @@ class CogneeExtractorClient {
 
     // Default importance for conversation entities
     return 40;
+  }
+
+  /**
+   * VTID-01225 + VTID-01192: Convert Cognee entity to fact_key/fact_value for write_fact()
+   *
+   * Fact keys use semantic naming: user_name, user_birthday, fiancee_name, etc.
+   * This enables proper supersession (new fact replaces old) and retrieval.
+   */
+  private entityToFact(entity: CogneeEntity): { factKey: string; factValue: string; entityScope: string } {
+    const entityType = entity.entity_type?.toUpperCase() || '';
+    const name = entity.name?.toLowerCase() || '';
+    const value = entity.metadata?.value || entity.name;
+
+    // Determine if this is about the user ('self') or someone else ('disclosed')
+    let entityScope = 'self';
+    let factKey = '';
+    let factValue = String(value);
+
+    // Personal identity facts
+    if (name.includes('name') || entityType === 'PERSON') {
+      // Check if it's about user or someone else
+      if (name.includes('my name') || name.includes('mein name') || name.includes('ich heiße')) {
+        factKey = 'user_name';
+        entityScope = 'self';
+      } else if (name.includes('fiancée') || name.includes('verlobte') || name.includes('fiancee')) {
+        factKey = 'fiancee_name';
+        entityScope = 'disclosed';
+      } else if (name.includes('wife') || name.includes('frau') || name.includes('husband') || name.includes('mann')) {
+        factKey = 'spouse_name';
+        entityScope = 'disclosed';
+      } else if (name.includes('mother') || name.includes('mutter')) {
+        factKey = 'mother_name';
+        entityScope = 'disclosed';
+      } else if (name.includes('father') || name.includes('vater')) {
+        factKey = 'father_name';
+        entityScope = 'disclosed';
+      } else {
+        factKey = 'user_name';
+        entityScope = 'self';
+      }
+    }
+    // Birthday/age facts
+    else if (name.includes('birthday') || name.includes('geburtstag') || name.includes('geburtsdatum') || name.includes('born')) {
+      if (name.includes('fiancée') || name.includes('verlobte')) {
+        factKey = 'fiancee_birthday';
+        entityScope = 'disclosed';
+      } else {
+        factKey = 'user_birthday';
+        entityScope = 'self';
+      }
+    }
+    // Location facts
+    else if (name.includes('hometown') || name.includes('heimatstadt')) {
+      factKey = 'user_hometown';
+      entityScope = 'self';
+    }
+    else if (name.includes('wohnort') || name.includes('residence') || name.includes('live in') || name.includes('wohne')) {
+      factKey = 'user_residence';
+      entityScope = 'self';
+    }
+    // Company/work facts
+    else if (name.includes('company') || name.includes('firma') || name.includes('unternehmen') || name.includes('business')) {
+      factKey = 'user_company';
+      entityScope = 'self';
+    }
+    else if (name.includes('job') || name.includes('beruf') || name.includes('occupation') || name.includes('work')) {
+      factKey = 'user_occupation';
+      entityScope = 'self';
+    }
+    // Health facts
+    else if (name.includes('medication') || name.includes('medikament')) {
+      factKey = 'user_medication';
+      entityScope = 'self';
+    }
+    else if (name.includes('allergy') || name.includes('allergie')) {
+      factKey = 'user_allergy';
+      entityScope = 'self';
+    }
+    else if (name.includes('condition') || name.includes('diagnosis') || name.includes('krankheit')) {
+      factKey = 'user_health_condition';
+      entityScope = 'self';
+    }
+    // Preference facts
+    else if (name.includes('prefer') || name.includes('favorite') || name.includes('liebling')) {
+      factKey = `user_preference_${this.sanitizeKey(name)}`;
+      entityScope = 'self';
+    }
+    // Goal facts
+    else if (name.includes('goal') || name.includes('ziel') || name.includes('plan')) {
+      factKey = `user_goal_${this.sanitizeKey(name)}`;
+      entityScope = 'self';
+    }
+    // Generic entity - create fact key from name
+    else {
+      factKey = `entity_${this.sanitizeKey(name)}`;
+      entityScope = 'self';
+    }
+
+    return { factKey, factValue, entityScope };
+  }
+
+  /**
+   * Determine fact_value_type based on entity
+   */
+  private getFactValueType(entity: CogneeEntity): string {
+    const name = entity.name?.toLowerCase() || '';
+
+    if (name.includes('birthday') || name.includes('date') || name.includes('geburtstag')) {
+      return 'date';
+    }
+    if (name.includes('age') || name.includes('alter') || name.includes('count')) {
+      return 'number';
+    }
+    return 'text';
+  }
+
+  /**
+   * Sanitize string for use as fact key (lowercase, underscores)
+   */
+  private sanitizeKey(str: string): string {
+    return str
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .substring(0, 50);
   }
 }
 
