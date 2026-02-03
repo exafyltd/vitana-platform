@@ -11,13 +11,14 @@ kind: Service
 metadata:
   name: cognee-extractor
   labels:
-    vtid: VTID-01225
-    vt_layer: AICOR
-    vt_module: COGNEE
+    vtid: vtid-01225
+    vt_layer: aicor
+    vt_module: cognee
     cloud.googleapis.com/location: us-central1
   annotations:
     run.googleapis.com/description: "VTID-01225: Stateless entity extraction engine for ORB voice transcripts"
     run.googleapis.com/ingress: internal
+    run.googleapis.com/launch-stage: BETA
 spec:
   template:
     metadata:
@@ -36,7 +37,7 @@ spec:
         # run.googleapis.com/vpc-access-connector: projects/lovable-vitana-vers1/locations/us-central1/connectors/vitana-vpc-connector
 
       labels:
-        vtid: VTID-01225
+        vtid: vtid-01225
     spec:
       # Container concurrency - how many requests per instance
       containerConcurrency: 10
@@ -48,7 +49,7 @@ spec:
       serviceAccountName: cognee-extractor@lovable-vitana-vers1.iam.gserviceaccount.com
 
       containers:
-        - image: gcr.io/lovable-vitana-vers1/cognee-extractor:latest
+        - image: us-central1-docker.pkg.dev/lovable-vitana-vers1/vitana-services/cognee-extractor:latest
           ports:
             - containerPort: 8080
               name: http1
@@ -64,20 +65,18 @@ spec:
 
           # Environment variables
           env:
-            # LLM Configuration
+            # LLM Configuration - Uses Vertex AI (Gemini) to match Vitana stack
+            # Auth via ADC (Application Default Credentials) - no API key needed
             - name: LLM_PROVIDER
-              value: "openai"
+              value: "google"
             - name: LLM_MODEL
-              value: "gpt-4o-mini"
-            - name: LLM_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: cognee-secrets
-                  key: llm-api-key
+              value: "gemini-2.0-flash"
+            - name: GOOGLE_CLOUD_PROJECT
+              value: "lovable-vitana-vers1"
+            - name: VERTEX_LOCATION
+              value: "us-central1"
 
             # Service configuration
-            - name: PORT
-              value: "8080"
             - name: ENV
               value: "production"
 
