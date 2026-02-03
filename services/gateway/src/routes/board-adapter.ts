@@ -181,9 +181,10 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
     let allEvents: any[] = [];
     if (vtidList.length > 0) {
       // PostgREST IN filter: vtid=in.(VTID-01020,VTID-01021,...)
+      // VTID-01227: Add LIMIT to prevent disk IO exhaustion (was unbounded, causing Supabase IO budget depletion)
       const vtidFilter = `vtid=in.(${vtidList.join(',')})`;
       const eventsResp = await fetch(
-        `${supaUrl}/rest/v1/oasis_events?${vtidFilter}&order=created_at.desc`,
+        `${supaUrl}/rest/v1/oasis_events?${vtidFilter}&order=created_at.desc&limit=5000`,
         { headers: { apikey: supaKey, Authorization: `Bearer ${supaKey}` } }
       );
       if (eventsResp.ok) {

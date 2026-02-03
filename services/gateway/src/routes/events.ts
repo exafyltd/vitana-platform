@@ -1305,8 +1305,9 @@ router.post("/api/v1/vtid/lifecycle/backfill", async (req: Request, res: Respons
     const terminalVtids = await ledgerResp.json() as any[];
 
     // Step 2: Get existing terminal lifecycle events
+    // VTID-01227: Add LIMIT to prevent disk IO exhaustion
     const eventsResp = await fetch(
-      `${supabaseUrl}/rest/v1/oasis_events?or=(topic.eq.vtid.lifecycle.completed,topic.eq.vtid.lifecycle.failed)`,
+      `${supabaseUrl}/rest/v1/oasis_events?or=(topic.eq.vtid.lifecycle.completed,topic.eq.vtid.lifecycle.failed)&limit=10000`,
       { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } }
     );
 

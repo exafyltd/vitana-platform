@@ -222,8 +222,9 @@ router.get("/api/v1/devhub/feed", async (req: Request, res: Response) => {
   
   const pollInterval = setInterval(async () => {
     try {
+      // VTID-01227: Add LIMIT to prevent disk IO exhaustion
       const resp = await fetch(
-        `${supabaseUrl}/rest/v1/oasis_events?created_at=gt.${lastEventTime.toISOString()}&order=created_at.asc`,
+        `${supabaseUrl}/rest/v1/oasis_events?created_at=gt.${lastEventTime.toISOString()}&order=created_at.asc&limit=50`,
         {
           headers: {
             "Content-Type": "application/json",
@@ -248,7 +249,7 @@ router.get("/api/v1/devhub/feed", async (req: Request, res: Response) => {
     } catch (err) {
       console.error("❌ SSE: Error polling for new events:", err);
     }
-  }, 2000);
+  }, 5000); // VTID-01227: Increased from 2s to 5s to reduce DB load
   
   const heartbeatInterval = setInterval(() => {
     try {
