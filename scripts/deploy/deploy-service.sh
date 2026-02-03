@@ -165,19 +165,19 @@ elif [ "$CLOUD_RUN_SERVICE" = "worker-runner" ]; then
     --quiet
 elif [ "$CLOUD_RUN_SERVICE" = "cognee-extractor" ]; then
   # VTID-01225: Cognee Extractor - uses Gemini API for entity extraction
-  # Internal-only ingress, shares GOOGLE_GEMINI_API_KEY with gateway
+  # Internal-only ingress with allow-unauthenticated (network security via internal ingress)
   echo -e "${YELLOW}VTID-01225: Deploying Cognee Extractor with Gemini API config...${NC}"
   gcloud run deploy "$CLOUD_RUN_SERVICE" \
     --project "$PROJECT" \
     --region "$REGION" \
     --source "$SOURCE_PATH" \
     --platform managed \
-    --no-allow-unauthenticated \
+    --allow-unauthenticated \
     --ingress internal \
     --set-env-vars "ENVIRONMENT=${ENVIRONMENT},LLM_PROVIDER=gemini,LLM_MODEL=gemini/gemini-2.0-flash,GOOGLE_CLOUD_PROJECT=${PROJECT}" \
     --set-secrets "GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest" \
     --quiet
-  # Note: Internal ingress services in same project can communicate without explicit IAM binding
+  # Note: Internal ingress provides network-level security - only Cloud Run services in same project can call
   echo -e "${GREEN}Cognee Extractor deployed with internal-only ingress.${NC}"
 else
   gcloud run deploy "$CLOUD_RUN_SERVICE" \
