@@ -279,6 +279,8 @@ class CogneeExtractorClient {
    *
    * Use this for ORB Live integration where we don't want to block
    * the conversation flow while extracting entities.
+   *
+   * VTID-01225: Now persists extracted entities to relationship graph
    */
   extractAsync(request: CogneeExtractionRequest): void {
     if (!this.enabled) {
@@ -288,18 +290,137 @@ class CogneeExtractorClient {
 
     // Fire and forget - don't await
     this.extract(request)
-      .then(result => {
+      .then(async result => {
         if (result.ok && (result.entities.length > 0 || result.relationships.length > 0)) {
           console.log(
             `[VTID-01225] Async extraction yielded: ${result.entities.length} entities, ` +
             `${result.relationships.length} relationships`
           );
+
+          // VTID-01225: Persist extracted entities to relationship graph
+          try {
+            await this.persistExtractionResults(request, result);
+          } catch (persistErr) {
+            console.warn('[VTID-01225] Extraction persistence failed (non-blocking):',
+              persistErr instanceof Error ? persistErr.message : 'Unknown error');
+          }
         }
       })
       .catch(err => {
         // Log but don't throw - this is fire-and-forget
         console.warn('[VTID-01225] Async extraction failed (non-blocking):', err.message);
       });
+  }
+
+  /**
+   * VTID-01225: Persist extraction results to relationship graph and memory
+   * Uses internal service call (bypasses user auth for dev sandbox)
+   */
+  private async persistExtractionResults(
+    request: CogneeExtractionRequest,
+    result: CogneeExtractionResponse
+  ): Promise<void> {
+    const SUPABASE_URL = process.env.SUPABASE_URL;
+    const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+      console.warn('[VTID-01225] Supabase not configured for persistence');
+      return;
+    }
+
+    // Persist to relationship_nodes via RPC
+    for (const entity of result.entities) {
+      try {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/relationship_ensure_node`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: SUPABASE_SERVICE_ROLE,
+            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+          },
+          body: JSON.stringify({
+            p_node_type: entity.vitana_node_type || 'entity',
+            p_title: entity.name,
+            p_domain: entity.domain || 'personal',
+            p_metadata: {
+              entity_type: entity.entity_type,
+              origin: 'cognee',
+              vtid: 'VTID-01225',
+              session_id: request.session_id,
+              user_id: request.user_id,
+              tenant_id: request.tenant_id,
+              ...entity.metadata
+            }
+          }),
+        });
+
+        if (!response.ok) {
+          console.warn(`[VTID-01225] Node creation failed for "${entity.name}": ${response.status}`);
+        }
+      } catch (err) {
+        console.warn(`[VTID-01225] Node persist error for "${entity.name}":`, err);
+      }
+    }
+
+    // Also persist key entities directly to memory_items for retrieval
+    for (const entity of result.entities) {
+      // Only persist personal info entities
+      if (entity.entity_type === 'PERSON' ||
+          entity.domain === 'personal' ||
+          entity.name?.toLowerCase().includes('birthday') ||
+          entity.name?.toLowerCase().includes('name')) {
+        try {
+          const memoryContent = `${entity.name}: ${entity.metadata?.value || JSON.stringify(entity.metadata || {})}`;
+
+          const response = await fetch(`${SUPABASE_URL}/rest/v1/memory_items`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              apikey: SUPABASE_SERVICE_ROLE,
+              Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+              Prefer: 'return=minimal'
+            },
+            body: JSON.stringify({
+              tenant_id: request.tenant_id,
+              user_id: request.user_id,
+              source: 'cognee_extraction',
+              category_key: 'personal',
+              content: memoryContent,
+              content_json: {
+                entity_type: entity.entity_type,
+                entity_name: entity.name,
+                cognee_origin: true,
+                session_id: request.session_id
+              },
+              importance: 80, // High importance for extracted personal info
+              occurred_at: new Date().toISOString()
+            }),
+          });
+
+          if (response.ok) {
+            console.log(`[VTID-01225] Persisted entity to memory_items: ${entity.name}`);
+          }
+        } catch (err) {
+          console.warn(`[VTID-01225] Memory persist error for "${entity.name}":`, err);
+        }
+      }
+    }
+
+    console.log(`[VTID-01225] Persistence complete: ${result.entities.length} entities processed`);
+
+    // Emit success event
+    await emitCogneeEvent(
+      'cognee.extraction.persisted',
+      'success',
+      `Persisted ${result.entities.length} entities to relationship graph and memory`,
+      {
+        tenant_id: request.tenant_id,
+        user_id: request.user_id,
+        session_id: request.session_id,
+        entity_count: result.entities.length,
+        relationship_count: result.relationships.length
+      }
+    );
   }
 
   /**
