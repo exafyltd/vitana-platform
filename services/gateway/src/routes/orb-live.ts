@@ -636,70 +636,42 @@ async function buildBootstrapContextPack(
   }
 
   try {
-    // Create context lens for memory access
-    const lens: ContextLens = createContextLens(identity.tenant_id, identity.user_id, {
-      workspace_scope: 'product',
-      active_role: identity.role || undefined,
-    });
-
-    // Bootstrap router decision: memory only (knowledge_hub uses slow LLM call)
-    // VTID-01225: Knowledge hub calls generateAnswer() which invokes Gemini - too slow for bootstrap
-    const routerDecision = computeRetrievalRouterDecision('session bootstrap context', {
-      channel: 'orb',
-      force_sources: ['memory_garden'],
-      limit_overrides: {
-        memory_garden: LIVE_CONTEXT_CONFIG.MAX_MEMORY_ITEMS,
-        knowledge_hub: 0,
-        web_search: 0,
-      },
-    });
-
-    // Build context pack with timeout
-    const contextPackPromise = buildContextPack({
-      lens,
-      query: 'session bootstrap - recent highlights and user context',
-      channel: 'orb',
-      thread_id: sessionId,
-      turn_number: 0,
-      conversation_start: new Date().toISOString(),
-      role: identity.role || 'user',
-      router_decision: routerDecision,
-    });
-
-    // Race against timeout
-    const timeoutPromise = new Promise<null>((resolve) =>
-      setTimeout(() => resolve(null), LIVE_CONTEXT_CONFIG.BOOTSTRAP_TIMEOUT_MS)
+    // VTID-01225: Use fetchDevMemoryContext directly - it works and is fast
+    // The buildContextPack path uses memory_get_context RPC which returns 0 results
+    const memoryContext = await fetchDevMemoryContext(
+      LIVE_CONTEXT_CONFIG.MAX_MEMORY_ITEMS
     );
-
-    const contextPack = await Promise.race([contextPackPromise, timeoutPromise]);
 
     const latencyMs = Date.now() - startTime;
 
-    if (!contextPack) {
-      console.warn(`[VTID-01224] Context bootstrap timed out after ${latencyMs}ms for session ${sessionId}`);
+    if (!memoryContext.ok || memoryContext.items.length === 0) {
+      console.warn(`[VTID-01225] Memory context fetch returned ${memoryContext.items.length} items for session ${sessionId}`);
+      // Still return the formatted context even if no items (contains user info)
+      if (memoryContext.formatted_context) {
+        return {
+          contextInstruction: memoryContext.formatted_context,
+          latencyMs,
+        };
+      }
       return {
         latencyMs,
-        skippedReason: 'timeout',
+        skippedReason: memoryContext.error || 'no_memory_items',
       };
     }
 
-    // Format context for system instruction
-    let contextInstruction = formatContextPackForLLM(contextPack);
+    // Format the memory context for injection
+    const contextInstruction = memoryContext.formatted_context.length > LIVE_CONTEXT_CONFIG.MAX_CONTEXT_CHARS
+      ? memoryContext.formatted_context.substring(0, LIVE_CONTEXT_CONFIG.MAX_CONTEXT_CHARS) + '\n[...truncated]'
+      : memoryContext.formatted_context;
 
-    // Truncate if too long
-    if (contextInstruction.length > LIVE_CONTEXT_CONFIG.MAX_CONTEXT_CHARS) {
-      contextInstruction = contextInstruction.substring(0, LIVE_CONTEXT_CONFIG.MAX_CONTEXT_CHARS) + '\n[...truncated]';
-    }
-
-    console.log(`[VTID-01224] Context bootstrap complete: ${latencyMs}ms, memory=${contextPack.memory_hits?.length || 0}, knowledge=${contextPack.knowledge_hits?.length || 0}`);
+    console.log(`[VTID-01225] Context bootstrap complete: ${latencyMs}ms, memory=${memoryContext.items.length}`);
 
     return {
-      contextPack,
       contextInstruction,
       latencyMs,
     };
   } catch (err: any) {
-    console.error(`[VTID-01224] Context bootstrap error for session ${sessionId}:`, err.message);
+    console.error(`[VTID-01225] Context bootstrap error for session ${sessionId}:`, err.message);
     return {
       latencyMs: Date.now() - startTime,
       skippedReason: `error: ${err.message}`,
