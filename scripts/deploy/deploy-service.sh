@@ -166,6 +166,7 @@ elif [ "$CLOUD_RUN_SERVICE" = "worker-runner" ]; then
 elif [ "$CLOUD_RUN_SERVICE" = "cognee-extractor" ]; then
   # VTID-01225: Cognee Extractor - uses Gemini API for entity extraction
   # Internal-only ingress with allow-unauthenticated (network security via internal ingress)
+  # Cognee initialization takes ~25-30 seconds, so we need more CPU/memory and longer startup
   echo -e "${YELLOW}VTID-01225: Deploying Cognee Extractor with Gemini API config...${NC}"
   gcloud run deploy "$CLOUD_RUN_SERVICE" \
     --project "$PROJECT" \
@@ -174,6 +175,9 @@ elif [ "$CLOUD_RUN_SERVICE" = "cognee-extractor" ]; then
     --platform managed \
     --allow-unauthenticated \
     --ingress internal \
+    --cpu=1 \
+    --memory=1Gi \
+    --cpu-boost \
     --set-env-vars "ENVIRONMENT=${ENVIRONMENT},LLM_PROVIDER=gemini,LLM_MODEL=gemini/gemini-2.0-flash,GOOGLE_CLOUD_PROJECT=${PROJECT}" \
     --set-secrets "GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest" \
     --quiet
