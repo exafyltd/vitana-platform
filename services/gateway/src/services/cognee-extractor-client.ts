@@ -362,47 +362,55 @@ class CogneeExtractorClient {
       }
     }
 
-    // Also persist key entities directly to memory_items for retrieval
+    // Persist ALL entities to memory_items with proper category classification
+    // Uses Vitana's 7 memory categories: personal, company, conversation, preferences, goals, health, relationships
     for (const entity of result.entities) {
-      // Only persist personal info entities
-      if (entity.entity_type === 'PERSON' ||
-          entity.domain === 'personal' ||
-          entity.name?.toLowerCase().includes('birthday') ||
-          entity.name?.toLowerCase().includes('name')) {
-        try {
-          const memoryContent = `${entity.name}: ${entity.metadata?.value || JSON.stringify(entity.metadata || {})}`;
+      try {
+        // Build rich content from entity
+        const memoryContent = entity.metadata?.value
+          ? `${entity.name}: ${entity.metadata.value}`
+          : entity.name;
 
-          const response = await fetch(`${SUPABASE_URL}/rest/v1/memory_items`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              apikey: SUPABASE_SERVICE_ROLE,
-              Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-              Prefer: 'return=minimal'
+        // Map Cognee entity types to Vitana memory categories
+        const categoryKey = this.mapEntityToCategory(entity);
+
+        // Set importance based on entity type (personal info = highest)
+        const importance = this.getEntityImportance(entity, categoryKey);
+
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/memory_items`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: SUPABASE_SERVICE_ROLE,
+            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+            Prefer: 'return=minimal'
+          },
+          body: JSON.stringify({
+            tenant_id: request.tenant_id,
+            user_id: request.user_id,
+            source: 'cognee_extraction',
+            category_key: categoryKey,
+            content: memoryContent,
+            content_json: {
+              entity_type: entity.entity_type,
+              entity_name: entity.name,
+              cognee_domain: entity.domain,
+              cognee_origin: true,
+              session_id: request.session_id,
+              metadata: entity.metadata
             },
-            body: JSON.stringify({
-              tenant_id: request.tenant_id,
-              user_id: request.user_id,
-              source: 'cognee_extraction',
-              category_key: 'personal',
-              content: memoryContent,
-              content_json: {
-                entity_type: entity.entity_type,
-                entity_name: entity.name,
-                cognee_origin: true,
-                session_id: request.session_id
-              },
-              importance: 80, // High importance for extracted personal info
-              occurred_at: new Date().toISOString()
-            }),
-          });
+            importance: importance,
+            occurred_at: new Date().toISOString()
+          }),
+        });
 
-          if (response.ok) {
-            console.log(`[VTID-01225] Persisted entity to memory_items: ${entity.name}`);
-          }
-        } catch (err) {
-          console.warn(`[VTID-01225] Memory persist error for "${entity.name}":`, err);
+        if (response.ok) {
+          console.log(`[VTID-01225] Persisted entity to memory_items: ${entity.name} (${categoryKey}, importance=${importance})`);
+        } else {
+          console.warn(`[VTID-01225] Memory persist failed for "${entity.name}": ${response.status}`);
         }
+      } catch (err) {
+        console.warn(`[VTID-01225] Memory persist error for "${entity.name}":`, err);
       }
     }
 
@@ -453,6 +461,137 @@ class CogneeExtractorClient {
       console.warn('[VTID-01225] Health check failed:', err instanceof Error ? err.message : 'Unknown error');
       return { healthy: false };
     }
+  }
+
+  /**
+   * VTID-01225: Map Cognee entity types to Vitana memory categories
+   * Categories: personal, company, conversation, preferences, goals, health, relationships
+   */
+  private mapEntityToCategory(entity: CogneeEntity): string {
+    const entityType = entity.entity_type?.toUpperCase() || '';
+    const domain = entity.domain?.toLowerCase() || '';
+    const name = entity.name?.toLowerCase() || '';
+
+    // Personal identity: names, birthdays, locations, contact info
+    if (entityType === 'PERSON' ||
+        domain === 'personal' ||
+        name.includes('birthday') || name.includes('geburtstag') ||
+        name.includes('name') || name.includes('age') || name.includes('alter') ||
+        name.includes('address') || name.includes('adresse') ||
+        name.includes('phone') || name.includes('telefon') ||
+        name.includes('email') ||
+        name.includes('hometown') || name.includes('heimatstadt') ||
+        name.includes('wohnort') || name.includes('location')) {
+      return 'personal';
+    }
+
+    // Company/business entities
+    if (entityType === 'ORGANIZATION' || entityType === 'COMPANY' ||
+        domain === 'business' || domain === 'company' ||
+        name.includes('company') || name.includes('firma') ||
+        name.includes('business') || name.includes('unternehmen') ||
+        name.includes('job') || name.includes('work') || name.includes('beruf')) {
+      return 'company';
+    }
+
+    // Health-related entities
+    if (entityType === 'MEDICAL' || entityType === 'HEALTH' ||
+        domain === 'health' || domain === 'medical' ||
+        name.includes('health') || name.includes('gesundheit') ||
+        name.includes('medication') || name.includes('medikament') ||
+        name.includes('doctor') || name.includes('arzt') ||
+        name.includes('symptom') || name.includes('illness') ||
+        name.includes('disease') || name.includes('krankheit')) {
+      return 'health';
+    }
+
+    // Relationship entities (family, friends, partners)
+    if (entityType === 'RELATIONSHIP' ||
+        domain === 'family' || domain === 'relationship' ||
+        name.includes('wife') || name.includes('husband') || name.includes('frau') || name.includes('mann') ||
+        name.includes('partner') || name.includes('fiancée') || name.includes('verlobte') ||
+        name.includes('child') || name.includes('kind') ||
+        name.includes('mother') || name.includes('mutter') ||
+        name.includes('father') || name.includes('vater') ||
+        name.includes('friend') || name.includes('freund') ||
+        name.includes('family') || name.includes('familie')) {
+      return 'relationships';
+    }
+
+    // Preferences (likes, dislikes, favorites)
+    if (domain === 'preference' ||
+        name.includes('prefer') || name.includes('favorite') ||
+        name.includes('like') || name.includes('love') ||
+        name.includes('hate') || name.includes('dislike') ||
+        name.includes('liebling') || name.includes('bevorzug')) {
+      return 'preferences';
+    }
+
+    // Goals and plans
+    if (domain === 'goal' || domain === 'plan' ||
+        name.includes('goal') || name.includes('ziel') ||
+        name.includes('plan') || name.includes('want to') ||
+        name.includes('dream') || name.includes('traum') ||
+        name.includes('aspire') || name.includes('achieve')) {
+      return 'goals';
+    }
+
+    // Default to conversation for uncategorized entities
+    return 'conversation';
+  }
+
+  /**
+   * VTID-01225: Determine importance score based on entity type and category
+   * Personal identity info gets highest importance (80-100)
+   * Relationships and health get medium-high (60-80)
+   * Other categories get moderate importance (40-60)
+   */
+  private getEntityImportance(entity: CogneeEntity, category: string): number {
+    const entityType = entity.entity_type?.toUpperCase() || '';
+    const name = entity.name?.toLowerCase() || '';
+
+    // Highest priority: Core personal identity
+    if (category === 'personal') {
+      // Name and birthday are most critical
+      if (name.includes('name') || name.includes('birthday') || name.includes('geburtstag')) {
+        return 100;
+      }
+      // Location and contact info very important
+      if (name.includes('hometown') || name.includes('address') || name.includes('wohnort')) {
+        return 90;
+      }
+      return 80;
+    }
+
+    // High priority: Relationships (family, partners)
+    if (category === 'relationships') {
+      if (name.includes('wife') || name.includes('husband') || name.includes('partner') ||
+          name.includes('fiancée') || name.includes('verlobte')) {
+        return 85;
+      }
+      return 70;
+    }
+
+    // High priority: Health info
+    if (category === 'health') {
+      if (name.includes('medication') || name.includes('allergy')) {
+        return 80;
+      }
+      return 65;
+    }
+
+    // Medium priority: Company/work info
+    if (category === 'company') {
+      return 60;
+    }
+
+    // Medium priority: Preferences and goals
+    if (category === 'preferences' || category === 'goals') {
+      return 55;
+    }
+
+    // Default importance for conversation entities
+    return 40;
   }
 }
 
