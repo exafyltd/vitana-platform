@@ -496,9 +496,230 @@ Key VTIDs that established patterns:
 
 ---
 
+---
+
+## 14. MEMORY & INTELLIGENCE ARCHITECTURE (VTID-01225)
+
+This section documents the complete Memory & Intelligence stack, including how data flows from input (ORB/Operator Console) through extraction, storage, and retrieval for personalized responses.
+
+### Data Input Channels
+
+| Channel | Technology | Entry Point |
+|---------|------------|-------------|
+| **ORB Voice** | Gemini Live API v2 (WebSocket) | `orb-live.ts` |
+| **Operator Console** | REST API (Text/Tasks) | `conversation.ts` |
+
+### Memory Garden Categories (13 Total)
+
+| Category Key | Display Name | Source Mappings |
+|--------------|--------------|-----------------|
+| `personal_identity` | Personal Identity | personal_identity |
+| `health_wellness` | Health & Wellness | health |
+| `lifestyle_routines` | Lifestyle & Routines | preferences |
+| `network_relationships` | Network & Relationships | relationships, community, events_meetups |
+| `learning_knowledge` | Learning & Knowledge | learning, education, skills |
+| `business_projects` | Business & Projects | tasks |
+| `finance_assets` | Finance & Assets | products_services |
+| `location_environment` | Location & Environment | location, travel |
+| `digital_footprint` | Digital Footprint | digital, online |
+| `values_aspirations` | Values & Aspirations | goals |
+| `autopilot_context` | Autopilot & Context | autopilot |
+| `future_plans` | Future Plans | plans, milestones |
+| `uncategorized` | Uncategorized | conversation, notes |
+
+### Process Flow (Sync - User Response Path)
+
+```
+User Input (ORB/Operator)
+       │
+       ▼
+┌──────────────────────────────────────────┐
+│  1. Write raw conversation               │
+│     writeMemoryItemWithIdentity()        │
+│     → memory_items (category: conv)      │
+└──────────────────────────────────────────┘
+       │
+       ▼
+┌──────────────────────────────────────────┐
+│  2. Retrieval Router (D2)                │
+│     retrieval-router.ts                  │
+│                                          │
+│     Rules (priority order):              │
+│     • vitana_system (100) → Knowledge    │
+│     • personal_history (90) → Memory     │
+│     • health_personal (85) → Memory      │
+│     • external_current (80) → Web        │
+│     • general_knowledge (50) → Knowledge │
+└──────────────────────────────────────────┘
+       │
+       ▼
+┌──────────────────────────────────────────┐
+│  3. Context Pack Builder                 │
+│     buildContextPack() /                 │
+│     buildBootstrapContextPack()          │
+│                                          │
+│     Sources:                             │
+│     • Memory Garden (fetchDevMemory)     │
+│     • Knowledge Hub (searchKnowledge)    │
+│     • Web Search (disabled in bootstrap) │
+└──────────────────────────────────────────┘
+       │
+       ▼
+┌──────────────────────────────────────────┐
+│  4. LLM Generation (Gemini)              │
+│                                          │
+│     System Instruction includes:         │
+│     - User context from memory           │
+│     - Personalization data               │
+│     - Domain-specific knowledge          │
+└──────────────────────────────────────────┘
+       │
+       ▼
+   Response to User
+```
+
+### Process Flow (Async - Extraction & Persistence)
+
+```
+Session End / Conversation Complete
+       │
+       ▼
+┌──────────────────────────────────────────┐
+│  1. Cognee Extraction                    │
+│     cogneeExtractorClient.extractAsync() │
+│                                          │
+│     Extracts:                            │
+│     • PERSON entities                    │
+│     • DATE entities                      │
+│     • LOCATION entities                  │
+│     • RELATIONSHIP entities              │
+└──────────────────────────────────────────┘
+       │
+       ▼
+┌──────────────────────────────────────────┐
+│  2. Persist Extraction Results           │
+│     persistExtractionResults()           │
+│                                          │
+│     A. RELATIONSHIP GRAPH (VTID-01087)   │
+│        → relationship_ensure_node() RPC  │
+│        → relationship_nodes table        │
+│                                          │
+│     B. MEMORY FACTS (VTID-01192)         │
+│        → write_fact() RPC                │
+│        → memory_facts table              │
+│        → Semantic keys: user_name,       │
+│          user_birthday, fiancee_name     │
+│        → Provenance: assistant_inferred  │
+│        → Auto-supersession built-in      │
+│                                          │
+│     C. MEMORY ITEMS (Legacy)             │
+│        → Direct INSERT                   │
+│        → memory_items table              │
+│        → Uses source category mapping    │
+└──────────────────────────────────────────┘
+```
+
+### Database Schema (Memory & Intelligence)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      MEMORY GARDEN                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  memory_facts (VTID-01192)     memory_items (VTID-01104)       │
+│  ┌──────────────────────┐      ┌──────────────────────┐        │
+│  │ fact_key             │      │ category_key         │        │
+│  │ fact_value           │      │ content              │        │
+│  │ entity (self/discl)  │      │ content_json         │        │
+│  │ provenance_source    │      │ importance           │        │
+│  │ provenance_confidence│      │ embedding (pgvector) │        │
+│  └──────────────────────┘      └──────────────────────┘        │
+│                                         │                       │
+│                          memory_category_mapping                │
+│                          ┌──────────────────────┐               │
+│                          │ source → garden      │               │
+│                          │ health → health_well │               │
+│                          │ tasks → business_proj│               │
+│                          └──────────────────────┘               │
+│                                                                 │
+│  memory_garden_config (13 categories)                           │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │ personal_identity, health_wellness, lifestyle_routines,  │   │
+│  │ network_relationships, learning_knowledge, business_proj, │   │
+│  │ finance_assets, location_environment, digital_footprint, │   │
+│  │ values_aspirations, autopilot_context, future_plans,     │   │
+│  │ uncategorized                                             │   │
+│  └──────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                   RELATIONSHIP GRAPH (VTID-01087)               │
+├─────────────────────────────────────────────────────────────────┤
+│  relationship_nodes → relationship_edges → relationship_signals │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
+│  │ node_type       │  │ from_node_id    │  │ signal_type     │  │
+│  │ display_name    │  │ to_node_id      │  │ signal_value    │  │
+│  │ metadata        │  │ relation_type   │  │ computed_at     │  │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `services/gateway/src/services/cognee-extractor-client.ts` | Cognee extraction + persistence |
+| `services/gateway/src/services/retrieval-router.ts` | Routing decisions for context sources |
+| `services/gateway/src/services/context-pack-builder.ts` | Builds context pack for LLM |
+| `services/gateway/src/services/orb-memory-bridge.ts` | Memory read/write bridge |
+| `services/gateway/src/routes/orb-live.ts` | ORB Live API session handling |
+| `supabase/migrations/20260119000000_vtid_01192_infinite_memory_v2.sql` | memory_facts + write_fact() |
+| `supabase/migrations/20260203000000_vtid_01225_extend_memory_category_mapping.sql` | Extended 13 categories |
+
+### Retrieval Router Rules
+
+| Rule Name | Priority | Triggers | Primary Source |
+|-----------|----------|----------|----------------|
+| `vitana_system` | 100 | "vitana", "oasis" | Knowledge Hub |
+| `personal_history` | 90 | "remember", "my name", "told you" | Memory Garden |
+| `health_personal` | 85 | "my health", "my sleep" | Memory Garden |
+| `external_current` | 80 | "news", "weather", "stock price" | Web Search |
+| `general_knowledge` | 50 | "what is", "how to" | Knowledge Hub |
+
+### write_fact() RPC (VTID-01192)
+
+```sql
+write_fact(
+  p_tenant_id UUID,
+  p_user_id UUID,
+  p_fact_key TEXT,           -- Semantic key: user_name, user_birthday, fiancee_name
+  p_fact_value TEXT,         -- The value: "Dragan Alexander", "September 9, 1969"
+  p_entity TEXT,             -- 'self' or 'disclosed'
+  p_fact_value_type TEXT,    -- 'text', 'date', 'number'
+  p_provenance_source TEXT,  -- 'user_stated', 'assistant_inferred'
+  p_provenance_confidence FLOAT -- 0.0 to 1.0
+) RETURNS UUID
+```
+
+**Features:**
+- Auto-supersession: New fact with same key replaces old
+- Provenance tracking: Source and confidence stored
+- Entity scope: Distinguishes user facts vs facts about others
+
+### Critical Fix (VTID-01225)
+
+**Before:** `extractAsync()` called Cognee, logged results, then **dropped them**
+**After:** `extractAsync()` calls Cognee, then **persists to 3 storage systems**:
+1. `relationship_nodes` via `relationship_ensure_node()` RPC
+2. `memory_facts` via `write_fact()` RPC
+3. `memory_items` for legacy retrieval compatibility
+
+---
+
 ## CHANGE LOG
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-02-03 | Added Memory & Intelligence Architecture section | VTID-01225 |
 | 2026-01-21 | Added ALWAYS/NEVER/IF-THEN core rules | VTID-01200 |
 | 2026-01-21 | Initial creation with technical reference | VTID-01200 |
