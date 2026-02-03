@@ -70,6 +70,7 @@ async function fetchMeContext(silentRefresh) {
 - Remove lines 98-132 and 140-182 (dead code)
 - Consolidate on `state.meContext` pattern only
 - Remove `MeState` object entirely
+- **CRITICAL:** Enforce single source of truth - eliminate `withVitanaContextHeaders()` entirely OR make it a strict wrapper around `buildContextHeaders()`. Having both will cause infinite regressions.
 
 ---
 
@@ -310,10 +311,15 @@ const DEFAULT_EVIDENCE_TIMEOUT = {
 - Reduce timeout to 5-10 minutes
 - Implement exponential backoff (5s, 10s, 20s, 40s...)
 - Add "work order pickup timeout" (fail if not started within 60 seconds)
+- **CRITICAL:** Timeout reduction MUST be paired with explicit evidence tracking:
+  - `worker.claimed` - external worker acknowledged work order
+  - `worker.started` - worker began execution
+  - `worker.completed` - worker finished with success/error
+  - Without this, you're just failing faster without improving debuggability
 
 ---
 
-### Issue B4: VALIDATOR ALWAYS SUCCEEDS (HIGH)
+### Issue B4: VALIDATOR NOT ENFORCING WORKER SUCCESS EVIDENCE (HIGH)
 
 **Severity:** HIGH
 **Impact:** Validator passes even when Worker failed
@@ -327,7 +333,7 @@ async function executeValidator(ctx: ExecutionContext) {
     // VAL-RULE-003: Task must not be terminal
 
     // Comment says: "Final validation deferred to CI/CD governance gate"
-    // So validator ALWAYS succeeds if basic rules pass!
+    // So validator succeeds if basic existence rules pass!
 
     return { success: true, validation: { rules_checked: 3, passed: true } };
 }
@@ -336,18 +342,21 @@ async function executeValidator(ctx: ExecutionContext) {
 **This explains the pattern:** Worker ERROR + Validator SUCCESS
 - Worker fails (evidence timeout)
 - Validator only checks if task/spec exist (they do)
-- Validator succeeds regardless of worker outcome
+- **Validator is not enforcing required evidence for worker success**
+
+**Precise Claim:** Validator is not hard-gated on worker completion evidence. Even if validator does *some* checks, if it doesn't hard-gate on worker success, the system shows this broken pattern.
 
 **Fix Required:**
-- Validator should check worker stage completed successfully
-- Add rule: VAL-RULE-004: Worker stage must have succeeded
+- Validator MUST check worker stage completed successfully before proceeding
+- Add rule: VAL-RULE-004: Worker evidence `worker.completed` with `outcome: success` required
+- Validator should fail-fast if worker evidence is missing or shows error
 
 ---
 
-### Issue B5: DEPLOY VERIFICATION IS NOT DEPLOYMENT (HIGH)
+### Issue B5: DEPLOY VERIFICATION NOT TIED TO VTID DEPLOYMENT EVIDENCE (HIGH)
 
 **Severity:** HIGH
-**Impact:** Deploy stage checks health endpoints, not actual deployment
+**Impact:** Deploy stage checks health endpoints, not actual deployment for this VTID
 
 **Location:** Lines 1020-1082
 
@@ -361,15 +370,19 @@ async function executeDeployVerification(ctx: ExecutionContext) {
 }
 ```
 
+**Precise Claim:** Verification is not tied to **the merged commit / revision / deployment evidence** for this specific VTID. If it only checks "service is up", you get:
+- False positives: service is up but VTID code wasn't deployed
+- Misleading failures: service temporarily unhealthy but VTID code was deployed
+
 **Problem:**
-- Checks internal endpoints, not deployed changes
+- Checks generic health endpoints, not VTID-specific deployment
 - No integration with actual CI/CD deployment status
 - Deploy stage can fail due to network timeout even if deployment succeeded
 
 **Fix Required:**
-- Integrate with GitHub Actions deployment status API
-- Check Cloud Run revision for expected version
-- Add commit SHA verification
+- Integrate with GitHub Actions deployment status API for the specific PR/commit
+- Check Cloud Run revision contains expected commit SHA
+- Verify the merged PR/commit for this VTID is in the running revision
 
 ---
 
