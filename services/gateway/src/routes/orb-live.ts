@@ -642,13 +642,14 @@ async function buildBootstrapContextPack(
       active_role: identity.role || undefined,
     });
 
-    // Bootstrap router decision: memory + knowledge, no web search
+    // Bootstrap router decision: memory only (knowledge_hub uses slow LLM call)
+    // VTID-01225: Knowledge hub calls generateAnswer() which invokes Gemini - too slow for bootstrap
     const routerDecision = computeRetrievalRouterDecision('session bootstrap context', {
       channel: 'orb',
-      force_sources: ['memory_garden', 'knowledge_hub'],
+      force_sources: ['memory_garden'],
       limit_overrides: {
         memory_garden: LIVE_CONTEXT_CONFIG.MAX_MEMORY_ITEMS,
-        knowledge_hub: LIVE_CONTEXT_CONFIG.MAX_KNOWLEDGE_ITEMS,
+        knowledge_hub: 0,
         web_search: 0,
       },
     });
