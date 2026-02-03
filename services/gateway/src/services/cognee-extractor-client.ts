@@ -502,48 +502,47 @@ class CogneeExtractorClient {
   }
 
   /**
-   * VTID-01225: Map Cognee entity types to Vitana memory categories
-   * Categories: personal, company, conversation, preferences, goals, health, relationships
+   * VTID-01225: Map Cognee entity types to Memory Garden categories
+   *
+   * MUST use valid source categories from memory_category_mapping:
+   * - conversation → uncategorized
+   * - health → health_wellness
+   * - relationships → network_relationships
+   * - community → network_relationships
+   * - preferences → lifestyle_routines
+   * - goals → values_aspirations
+   * - tasks → business_projects
+   * - products_services → finance_assets
+   * - events_meetups → network_relationships
+   * - notes → uncategorized
+   *
+   * Memory Garden has 13 categories total:
+   * personal_identity, health_wellness, lifestyle_routines, network_relationships,
+   * learning_knowledge, business_projects, finance_assets, location_environment,
+   * digital_footprint, values_aspirations, autopilot_context, future_plans, uncategorized
+   *
+   * Note: Personal identity facts are stored via write_fact() in memory_facts table.
+   * memory_items provides supplementary context using source categories above.
    */
   private mapEntityToCategory(entity: CogneeEntity): string {
     const entityType = entity.entity_type?.toUpperCase() || '';
     const domain = entity.domain?.toLowerCase() || '';
     const name = entity.name?.toLowerCase() || '';
 
-    // Personal identity: names, birthdays, locations, contact info
-    if (entityType === 'PERSON' ||
-        domain === 'personal' ||
-        name.includes('birthday') || name.includes('geburtstag') ||
-        name.includes('name') || name.includes('age') || name.includes('alter') ||
-        name.includes('address') || name.includes('adresse') ||
-        name.includes('phone') || name.includes('telefon') ||
-        name.includes('email') ||
-        name.includes('hometown') || name.includes('heimatstadt') ||
-        name.includes('wohnort') || name.includes('location')) {
-      return 'personal';
-    }
-
-    // Company/business entities
-    if (entityType === 'ORGANIZATION' || entityType === 'COMPANY' ||
-        domain === 'business' || domain === 'company' ||
-        name.includes('company') || name.includes('firma') ||
-        name.includes('business') || name.includes('unternehmen') ||
-        name.includes('job') || name.includes('work') || name.includes('beruf')) {
-      return 'company';
-    }
-
-    // Health-related entities
+    // Health-related entities → 'health' (maps to health_wellness)
     if (entityType === 'MEDICAL' || entityType === 'HEALTH' ||
         domain === 'health' || domain === 'medical' ||
         name.includes('health') || name.includes('gesundheit') ||
         name.includes('medication') || name.includes('medikament') ||
         name.includes('doctor') || name.includes('arzt') ||
         name.includes('symptom') || name.includes('illness') ||
-        name.includes('disease') || name.includes('krankheit')) {
+        name.includes('disease') || name.includes('krankheit') ||
+        name.includes('fitness') || name.includes('exercise') ||
+        name.includes('sleep') || name.includes('schlaf')) {
       return 'health';
     }
 
-    // Relationship entities (family, friends, partners)
+    // Relationship entities (family, friends, partners) → 'relationships' (maps to network_relationships)
     if (entityType === 'RELATIONSHIP' ||
         domain === 'family' || domain === 'relationship' ||
         name.includes('wife') || name.includes('husband') || name.includes('frau') || name.includes('mann') ||
@@ -552,83 +551,155 @@ class CogneeExtractorClient {
         name.includes('mother') || name.includes('mutter') ||
         name.includes('father') || name.includes('vater') ||
         name.includes('friend') || name.includes('freund') ||
-        name.includes('family') || name.includes('familie')) {
+        name.includes('family') || name.includes('familie') ||
+        name.includes('colleague') || name.includes('kollege')) {
       return 'relationships';
     }
 
-    // Preferences (likes, dislikes, favorites)
-    if (domain === 'preference' ||
+    // Community/events → 'community' (maps to network_relationships)
+    if (domain === 'community' || domain === 'event' ||
+        name.includes('community') || name.includes('gemeinschaft') ||
+        name.includes('event') || name.includes('veranstaltung') ||
+        name.includes('meetup') || name.includes('treffen') ||
+        name.includes('group') || name.includes('gruppe')) {
+      return 'community';
+    }
+
+    // Business/company/work entities → 'tasks' (maps to business_projects)
+    if (entityType === 'ORGANIZATION' || entityType === 'COMPANY' ||
+        domain === 'business' || domain === 'company' || domain === 'work' ||
+        name.includes('company') || name.includes('firma') ||
+        name.includes('business') || name.includes('unternehmen') ||
+        name.includes('job') || name.includes('work') || name.includes('beruf') ||
+        name.includes('project') || name.includes('projekt') ||
+        name.includes('task') || name.includes('aufgabe') ||
+        name.includes('meeting') || name.includes('besprechung')) {
+      return 'tasks';
+    }
+
+    // Products/services/commerce → 'products_services' (maps to finance_assets)
+    if (domain === 'commerce' || domain === 'product' || domain === 'service' ||
+        name.includes('product') || name.includes('produkt') ||
+        name.includes('service') || name.includes('dienstleistung') ||
+        name.includes('purchase') || name.includes('kauf') ||
+        name.includes('subscription') || name.includes('abo')) {
+      return 'products_services';
+    }
+
+    // Preferences (likes, dislikes, favorites) → 'preferences' (maps to lifestyle_routines)
+    if (domain === 'preference' || domain === 'lifestyle' ||
         name.includes('prefer') || name.includes('favorite') ||
         name.includes('like') || name.includes('love') ||
         name.includes('hate') || name.includes('dislike') ||
-        name.includes('liebling') || name.includes('bevorzug')) {
+        name.includes('liebling') || name.includes('bevorzug') ||
+        name.includes('routine') || name.includes('habit') ||
+        name.includes('gewohnheit')) {
       return 'preferences';
     }
 
-    // Goals and plans
-    if (domain === 'goal' || domain === 'plan' ||
+    // Goals and aspirations → 'goals' (maps to values_aspirations)
+    if (domain === 'goal' || domain === 'aspiration' || domain === 'value' ||
         name.includes('goal') || name.includes('ziel') ||
-        name.includes('plan') || name.includes('want to') ||
         name.includes('dream') || name.includes('traum') ||
-        name.includes('aspire') || name.includes('achieve')) {
+        name.includes('aspire') || name.includes('achieve') ||
+        name.includes('value') || name.includes('wert') ||
+        name.includes('believe') || name.includes('glaub')) {
       return 'goals';
     }
 
-    // Default to conversation for uncategorized entities
+    // Personal identity facts → 'notes' (maps to uncategorized)
+    // Note: Structured personal identity is stored in memory_facts via write_fact()
+    // This is just supplementary context for full-text search
+    if (entityType === 'PERSON' ||
+        domain === 'personal' || domain === 'identity' ||
+        name.includes('birthday') || name.includes('geburtstag') ||
+        name.includes('name') || name.includes('age') || name.includes('alter') ||
+        name.includes('address') || name.includes('adresse') ||
+        name.includes('phone') || name.includes('telefon') ||
+        name.includes('email') ||
+        name.includes('hometown') || name.includes('heimatstadt') ||
+        name.includes('wohnort') || name.includes('location') ||
+        name.includes('residence') || name.includes('live in')) {
+      return 'notes'; // Personal identity → notes → uncategorized (structured data in memory_facts)
+    }
+
+    // Default to conversation (maps to uncategorized)
     return 'conversation';
   }
 
   /**
    * VTID-01225: Determine importance score based on entity type and category
-   * Personal identity info gets highest importance (80-100)
-   * Relationships and health get medium-high (60-80)
-   * Other categories get moderate importance (40-60)
+   *
+   * Importance scores by category (maps to garden categories):
+   * - notes (personal identity → uncategorized): 80-100 (structured data in memory_facts)
+   * - relationships (→ network_relationships): 70-85
+   * - health (→ health_wellness): 65-80
+   * - tasks (→ business_projects): 60
+   * - preferences/goals (→ lifestyle_routines/values_aspirations): 55
+   * - conversation/community (→ uncategorized/network): 40-50
    */
   private getEntityImportance(entity: CogneeEntity, category: string): number {
-    const entityType = entity.entity_type?.toUpperCase() || '';
     const name = entity.name?.toLowerCase() || '';
 
-    // Highest priority: Core personal identity
-    if (category === 'personal') {
+    // Highest priority: Personal identity stored in 'notes' (structured facts go to memory_facts)
+    if (category === 'notes') {
       // Name and birthday are most critical
       if (name.includes('name') || name.includes('birthday') || name.includes('geburtstag')) {
         return 100;
       }
       // Location and contact info very important
-      if (name.includes('hometown') || name.includes('address') || name.includes('wohnort')) {
+      if (name.includes('hometown') || name.includes('address') || name.includes('wohnort') ||
+          name.includes('residence') || name.includes('location')) {
         return 90;
       }
       return 80;
     }
 
-    // High priority: Relationships (family, partners)
+    // High priority: Relationships (family, partners) → network_relationships
     if (category === 'relationships') {
       if (name.includes('wife') || name.includes('husband') || name.includes('partner') ||
-          name.includes('fiancée') || name.includes('verlobte')) {
+          name.includes('fiancée') || name.includes('verlobte') || name.includes('spouse')) {
         return 85;
+      }
+      if (name.includes('mother') || name.includes('father') || name.includes('child') ||
+          name.includes('parent') || name.includes('family')) {
+        return 80;
       }
       return 70;
     }
 
-    // High priority: Health info
+    // High priority: Community/events → network_relationships
+    if (category === 'community' || category === 'events_meetups') {
+      return 65;
+    }
+
+    // High priority: Health info → health_wellness
     if (category === 'health') {
-      if (name.includes('medication') || name.includes('allergy')) {
+      if (name.includes('medication') || name.includes('allergy') || name.includes('condition')) {
         return 80;
       }
       return 65;
     }
 
-    // Medium priority: Company/work info
-    if (category === 'company') {
+    // Medium priority: Business/work info → business_projects
+    if (category === 'tasks') {
+      if (name.includes('company') || name.includes('job') || name.includes('beruf')) {
+        return 70;
+      }
       return 60;
     }
 
-    // Medium priority: Preferences and goals
+    // Medium priority: Products/services → finance_assets
+    if (category === 'products_services') {
+      return 55;
+    }
+
+    // Medium priority: Preferences and goals → lifestyle_routines/values_aspirations
     if (category === 'preferences' || category === 'goals') {
       return 55;
     }
 
-    // Default importance for conversation entities
+    // Default importance for conversation entities → uncategorized
     return 40;
   }
 
