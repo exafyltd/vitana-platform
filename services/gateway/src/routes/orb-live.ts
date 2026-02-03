@@ -3943,6 +3943,121 @@ router.get('/debug/tts', async (req: Request, res: Response) => {
 });
 
 // =============================================================================
+// VTID-01225: Context Bootstrap Test Endpoint (Voice LAB)
+// =============================================================================
+
+/**
+ * VTID-01225: GET /debug/context-bootstrap - Test context bootstrap for Voice LAB
+ *
+ * Tests the exact same code path used by Gemini Live sessions to bootstrap
+ * memory context. Useful for verifying memory recall without starting a full
+ * ORB session.
+ *
+ * Query params:
+ * - user_id: Optional user ID (defaults to DEV_IDENTITY.USER_ID)
+ * - tenant_id: Optional tenant ID (defaults to DEV_IDENTITY.TENANT_ID)
+ * - role: Optional role (defaults to DEV_IDENTITY.ACTIVE_ROLE)
+ *
+ * Response:
+ * {
+ *   "ok": true/false,
+ *   "identity": { user_id, tenant_id, role },
+ *   "bootstrap_result": {
+ *     "latency_ms": 123,
+ *     "memory_hits": 5,
+ *     "knowledge_hits": 0,
+ *     "context_chars": 1234,
+ *     "skipped_reason": null or "error: ..."
+ *   },
+ *   "context_preview": "first 500 chars of context...",
+ *   "memory_items": [ { category, content_preview, relevance } ],
+ *   "timestamp": "ISO"
+ * }
+ */
+router.get('/debug/context-bootstrap', async (req: Request, res: Response) => {
+  console.log('[VTID-01225] Debug context-bootstrap endpoint accessed');
+
+  // Build identity from query params or use DEV_IDENTITY
+  const userId = (req.query.user_id as string) || DEV_IDENTITY.USER_ID;
+  const tenantId = (req.query.tenant_id as string) || DEV_IDENTITY.TENANT_ID;
+  const role = (req.query.role as string) || DEV_IDENTITY.ACTIVE_ROLE;
+
+  // Create a synthetic SupabaseIdentity (same as in handleWsStartMessage)
+  const testIdentity: SupabaseIdentity = {
+    user_id: userId,
+    tenant_id: tenantId,
+    role: role,
+    email: 'context-bootstrap-test@vitana.local',
+    exafy_admin: false,
+    aud: 'authenticated',
+    exp: null,
+    iat: null
+  };
+
+  const testSessionId = `test-bootstrap-${Date.now()}`;
+
+  console.log(`[VTID-01225] Testing context bootstrap for user=${userId.substring(0, 8)}..., tenant=${tenantId.substring(0, 8)}...`);
+
+  try {
+    // Call the exact same function used by Live sessions
+    const bootstrapResult = await buildBootstrapContextPack(testIdentity, testSessionId);
+
+    // Extract memory items from context pack for detailed response
+    const memoryItems = bootstrapResult.contextPack?.memory_hits?.map(hit => ({
+      category: hit.category_key,
+      content_preview: hit.content.substring(0, 100) + (hit.content.length > 100 ? '...' : ''),
+      relevance_score: hit.relevance_score,
+      importance: hit.importance,
+      occurred_at: hit.occurred_at,
+      source: hit.source
+    })) || [];
+
+    const response = {
+      ok: !bootstrapResult.skippedReason,
+      identity: {
+        user_id: userId,
+        tenant_id: tenantId,
+        role: role,
+        is_dev_identity: userId === DEV_IDENTITY.USER_ID && tenantId === DEV_IDENTITY.TENANT_ID
+      },
+      bootstrap_result: {
+        latency_ms: bootstrapResult.latencyMs,
+        memory_hits: bootstrapResult.contextPack?.memory_hits?.length || 0,
+        knowledge_hits: bootstrapResult.contextPack?.knowledge_hits?.length || 0,
+        web_hits: bootstrapResult.contextPack?.web_hits?.length || 0,
+        context_chars: bootstrapResult.contextInstruction?.length || 0,
+        skipped_reason: bootstrapResult.skippedReason || null
+      },
+      context_preview: bootstrapResult.contextInstruction?.substring(0, 1000) || null,
+      memory_items: memoryItems,
+      full_context_instruction: bootstrapResult.contextInstruction || null,
+      timestamp: new Date().toISOString(),
+      test_session_id: testSessionId
+    };
+
+    // Log summary
+    console.log(`[VTID-01225] Context bootstrap test complete: latency=${bootstrapResult.latencyMs}ms, memory=${response.bootstrap_result.memory_hits}, context_chars=${response.bootstrap_result.context_chars}`);
+
+    return res.status(200).json(response);
+
+  } catch (err: any) {
+    console.error('[VTID-01225] Context bootstrap test error:', err.message);
+    return res.status(200).json({
+      ok: false,
+      identity: {
+        user_id: userId,
+        tenant_id: tenantId,
+        role: role
+      },
+      error: err.message,
+      stack: err.stack?.substring(0, 500),
+      timestamp: new Date().toISOString(),
+      test_session_id: testSessionId
+    });
+  }
+});
+
+// =============================================================================
 // VTID-01155: Gemini Live Multimodal Session Endpoints
 // =============================================================================
 
