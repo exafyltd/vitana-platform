@@ -327,9 +327,9 @@ router.get('/api/v1/vtid/:vtid/execution-status', async (req: Request, res: Resp
     const activeStatuses = ['in_progress', 'running', 'active', 'allocated', 'validating'];
     const isActive = activeStatuses.includes(taskStatus);
 
-    // Fetch ALL events for this VTID (ordered by created_at ascending)
+    // VTID-01227: Add LIMIT to prevent disk IO exhaustion on busy VTIDs
     const eventsResp = await fetch(
-      `${supabaseUrl}/rest/v1/oasis_events?vtid=eq.${vtid}&select=id,created_at,vtid,kind,status,title,task_stage,source,layer,message&order=created_at.asc`,
+      `${supabaseUrl}/rest/v1/oasis_events?vtid=eq.${vtid}&select=id,created_at,vtid,kind,status,title,task_stage,source,layer,message&order=created_at.asc&limit=500`,
       {
         headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` },
       }

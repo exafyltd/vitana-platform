@@ -365,9 +365,10 @@ router.get("/snapshot", async (req: Request, res: Response) => {
       // Fallback: count from events in memory (less accurate but works without RPC)
       console.log("[Telemetry Snapshot] RPC not available, counting from events");
 
-      // Fetch all events with stage in time window for counting
+      // VTID-01227: Add LIMIT to prevent disk IO exhaustion (sample-based counting is acceptable)
+      // Fetch events with stage in time window for counting
       const countResp = await fetch(
-        `${supabaseUrl}/rest/v1/oasis_events?select=task_stage&created_at=gte.${since}&task_stage=not.is.null`,
+        `${supabaseUrl}/rest/v1/oasis_events?select=task_stage&created_at=gte.${since}&task_stage=not.is.null&limit=2000`,
         {
           headers: {
             "Content-Type": "application/json",
