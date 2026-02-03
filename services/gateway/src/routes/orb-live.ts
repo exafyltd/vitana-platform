@@ -4984,14 +4984,33 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
   console.log(`[VTID-01222] Starting Live API session: ${sessionId}, lang=${lang}`);
 
   // VTID-01224: Build bootstrap context if authenticated
+  // VTID-01225: Added DEV_IDENTITY fallback for memory recall in dev-sandbox mode
   let contextInstruction: string | undefined;
   let contextPack: ContextPack | undefined;
   let contextBootstrapLatencyMs: number | undefined;
   let contextBootstrapSkippedReason: string | undefined;
 
-  if (identity && identity.tenant_id && identity.user_id) {
-    console.log(`[VTID-01224] Building bootstrap context for session ${sessionId}...`);
-    const bootstrapResult = await buildBootstrapContextPack(identity, sessionId);
+  // Determine effective identity for context bootstrap (same pattern as memory writes)
+  // Create a synthetic SupabaseIdentity for dev-sandbox mode
+  const devSandboxIdentity: SupabaseIdentity = {
+    user_id: DEV_IDENTITY.USER_ID,
+    tenant_id: DEV_IDENTITY.TENANT_ID,
+    role: DEV_IDENTITY.ACTIVE_ROLE,
+    email: 'dev-sandbox@vitana.local',
+    exafy_admin: false,
+    aud: 'authenticated',
+    exp: null,
+    iat: null
+  };
+  const effectiveBootstrapIdentity: SupabaseIdentity | null = (identity && identity.tenant_id && identity.user_id)
+    ? identity
+    : isDevSandbox()
+      ? devSandboxIdentity
+      : null;
+
+  if (effectiveBootstrapIdentity) {
+    console.log(`[VTID-01224] Building bootstrap context for session ${sessionId}${!identity ? ' (using DEV_IDENTITY fallback)' : ''}...`);
+    const bootstrapResult = await buildBootstrapContextPack(effectiveBootstrapIdentity, sessionId);
 
     contextInstruction = bootstrapResult.contextInstruction;
     contextPack = bootstrapResult.contextPack;
@@ -5008,10 +5027,11 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
         message: `Context bootstrap skipped: ${bootstrapResult.skippedReason}`,
         payload: {
           session_id: sessionId,
-          tenant_id: identity.tenant_id,
-          user_id: identity.user_id,
+          tenant_id: effectiveBootstrapIdentity.tenant_id,
+          user_id: effectiveBootstrapIdentity.user_id,
           latency_ms: bootstrapResult.latencyMs,
           reason: bootstrapResult.skippedReason,
+          using_dev_identity: !identity,
         },
       }).catch(() => {});
     } else {
@@ -5020,15 +5040,16 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
         type: 'orb.live.context.bootstrap',
         source: 'orb-live-ws',
         status: 'info',
-        message: `Context bootstrap complete: ${bootstrapResult.latencyMs}ms`,
+        message: `Context bootstrap complete: ${bootstrapResult.latencyMs}ms${!identity ? ' (DEV_IDENTITY)' : ''}`,
         payload: {
           session_id: sessionId,
-          tenant_id: identity.tenant_id,
-          user_id: identity.user_id,
+          tenant_id: effectiveBootstrapIdentity.tenant_id,
+          user_id: effectiveBootstrapIdentity.user_id,
           latency_ms: bootstrapResult.latencyMs,
           memory_hits: contextPack?.memory_hits?.length || 0,
           knowledge_hits: contextPack?.knowledge_hits?.length || 0,
           context_chars: contextInstruction?.length || 0,
+          using_dev_identity: !identity,
         },
       }).catch(() => {});
     }
@@ -5051,6 +5072,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
   }
 
   // Create Gemini Live session with identity and context
+  // VTID-01225: Use effectiveBootstrapIdentity so memory writes also work in dev-sandbox
   const liveSession: GeminiLiveSession = {
     sessionId,
     lang,
@@ -5064,8 +5086,8 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     audioInChunks: 0,
     videoInFrames: 0,
     audioOutChunks: 0,
-    // VTID-01224: Identity and context
-    identity,
+    // VTID-01224: Identity and context (use effective identity for dev-sandbox fallback)
+    identity: effectiveBootstrapIdentity || identity,
     thread_id: sessionId,
     turn_count: 0,
     contextInstruction,
