@@ -592,7 +592,7 @@ const LIVE_API_VOICES: Record<string, string> = {
  */
 const LIVE_CONTEXT_CONFIG = {
   /** Maximum time (ms) to wait for context bootstrap before connecting without it */
-  BOOTSTRAP_TIMEOUT_MS: 500,
+  BOOTSTRAP_TIMEOUT_MS: 2000,
   /** Maximum memory items to include in bootstrap */
   MAX_MEMORY_ITEMS: 8,
   /** Maximum knowledge items to include in bootstrap */
