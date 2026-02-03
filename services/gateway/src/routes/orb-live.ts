@@ -1183,11 +1183,25 @@ async function connectToLiveAPI(
               });
 
               // Write to memory_items for persistence
+              // Use session identity if available, otherwise fall back to DEV_IDENTITY in dev-sandbox
+              let memoryIdentity: MemoryIdentity | null = null;
               if (session.identity && session.identity.tenant_id) {
-                const memoryIdentity: MemoryIdentity = {
+                memoryIdentity = {
                   user_id: session.identity.user_id,
-                  tenant_id: session.identity.tenant_id  // TypeScript now knows this is string
+                  tenant_id: session.identity.tenant_id
                 };
+              } else if (isDevSandbox()) {
+                console.log(`[VTID-01225] No session identity, using DEV_IDENTITY fallback`);
+                memoryIdentity = {
+                  user_id: DEV_IDENTITY.USER_ID,
+                  tenant_id: DEV_IDENTITY.TENANT_ID
+                };
+              } else {
+                console.warn(`[VTID-01225] Cannot write to memory: no identity and not dev-sandbox`);
+              }
+
+              if (memoryIdentity) {
+                console.log(`[VTID-01225] Writing transcript to memory_items for user ${memoryIdentity.user_id.substring(0, 8)}...`);
                 writeMemoryItemWithIdentity(memoryIdentity, {
                   source: 'orb_voice',
                   content: fullTranscript,
@@ -1265,12 +1279,21 @@ async function connectToLiveAPI(
               timestamp: new Date().toISOString()
             });
             // VTID-01225: Write user transcription to memory_items immediately (rare - Gemini native audio usually doesn't provide this)
+            // Use session identity if available, otherwise fall back to DEV_IDENTITY in dev-sandbox
+            let userMemoryIdentity: MemoryIdentity | null = null;
             if (session.identity && session.identity.tenant_id) {
-              const memoryIdentity: MemoryIdentity = {
+              userMemoryIdentity = {
                 user_id: session.identity.user_id,
                 tenant_id: session.identity.tenant_id
               };
-              writeMemoryItemWithIdentity(memoryIdentity, {
+            } else if (isDevSandbox()) {
+              userMemoryIdentity = {
+                user_id: DEV_IDENTITY.USER_ID,
+                tenant_id: DEV_IDENTITY.TENANT_ID
+              };
+            }
+            if (userMemoryIdentity) {
+              writeMemoryItemWithIdentity(userMemoryIdentity, {
                 source: 'orb_voice',
                 content: inputTranscription,
                 content_json: {
