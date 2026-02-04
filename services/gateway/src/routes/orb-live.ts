@@ -4178,7 +4178,38 @@ router.post('/live/session/start', async (req: Request, res: Response) => {
   // Generate session ID
   const sessionId = `live-${randomUUID()}`;
 
-  // Create session object
+  // VTID-01225: Build bootstrap context for memory recall in dev-sandbox mode
+  // Same pattern as WebSocket handler - fetch memory BEFORE creating session
+  let contextInstruction: string | undefined;
+  let contextBootstrapLatencyMs: number | undefined;
+
+  if (isDevSandbox()) {
+    console.log(`[VTID-01225] Building bootstrap context for SSE session ${sessionId} (DEV_IDENTITY fallback)...`);
+    const devSandboxIdentity: SupabaseIdentity = {
+      user_id: DEV_IDENTITY.USER_ID,
+      tenant_id: DEV_IDENTITY.TENANT_ID,
+      role: DEV_IDENTITY.ACTIVE_ROLE,
+      email: 'dev-sandbox@vitana.local',
+      exafy_admin: false,
+      aud: 'authenticated',
+      exp: null,
+      iat: null
+    };
+
+    const bootstrapResult = await buildBootstrapContextPack(devSandboxIdentity, sessionId);
+    contextInstruction = bootstrapResult.contextInstruction;
+    contextBootstrapLatencyMs = bootstrapResult.latencyMs;
+
+    if (bootstrapResult.skippedReason) {
+      console.warn(`[VTID-01225] Context bootstrap skipped for SSE session ${sessionId}: ${bootstrapResult.skippedReason}`);
+    } else {
+      console.log(`[VTID-01225] Context bootstrap complete for SSE session ${sessionId}: ${contextBootstrapLatencyMs}ms, contextChars=${contextInstruction?.length || 0}`);
+    }
+  } else {
+    console.log(`[VTID-01225] Skipping context bootstrap for SSE session ${sessionId}: not dev-sandbox`);
+  }
+
+  // Create session object with memory context
   const session: GeminiLiveSession = {
     sessionId,
     lang,
@@ -4194,6 +4225,9 @@ router.post('/live/session/start', async (req: Request, res: Response) => {
     audioOutChunks: 0,
     // VTID-01224: Required fields for context
     turn_count: 0,
+    // VTID-01225: Memory context for Live API system instruction
+    contextInstruction,
+    contextBootstrapLatencyMs,
     // VTID-01225: Transcript accumulation for Cognee extraction
     transcriptTurns: [],
     outputTranscriptBuffer: '',
