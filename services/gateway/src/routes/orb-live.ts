@@ -83,8 +83,10 @@ import {
 } from '../services/orb-memory-bridge';
 // VTID-01186: Auth middleware for identity propagation
 // VTID-01224: Added verifyAndExtractIdentity for WebSocket auth
+// VTID-01226: Added requireAuthWithTenant for Orb endpoint auth enforcement
 import {
   optionalAuth,
+  requireAuthWithTenant,
   AuthenticatedRequest,
   verifyAndExtractIdentity,
   SupabaseIdentity
@@ -4124,11 +4126,13 @@ function getVoiceForLang(lang: string): string {
 
 /**
  * VTID-01155: POST /live/session/start - Start Gemini Live API session
+ * VTID-01226: Added requireAuthWithTenant middleware for multi-tenant auth
  *
  * Creates a Live API session for real-time audio/video streaming.
  * Gateway maintains upstream WebSocket to Vertex Live API.
  *
  * Request:
+ * Headers: Authorization: Bearer <supabase_jwt>
  * {
  *   "lang": "en|de|fr|es|ar|zh|sr|ru",
  *   "voice_style": "friendly, calm, empathetic (optional)",
@@ -4137,14 +4141,22 @@ function getVoiceForLang(lang: string): string {
  *
  * Response:
  * { "ok": true, "session_id": "live-xxx" }
+ *
+ * Errors:
+ * - 401 UNAUTHENTICATED: Missing or invalid JWT
+ * - 400 TENANT_REQUIRED: No active_tenant_id in JWT app_metadata
  */
-router.post('/live/session/start', async (req: Request, res: Response) => {
-  console.log('[VTID-01155] POST /orb/live/session/start');
+router.post('/live/session/start', requireAuthWithTenant, async (req: AuthenticatedRequest, res: Response) => {
+  console.log('[VTID-01226] POST /orb/live/session/start (authenticated)');
 
   // Validate origin
   if (!validateOrigin(req)) {
     return res.status(403).json({ ok: false, error: 'Origin not allowed' });
   }
+
+  // VTID-01226: Identity is guaranteed by requireAuthWithTenant middleware
+  const identity = req.identity!;
+  console.log(`[VTID-01226] Session start: user=${identity.user_id}, tenant=${identity.tenant_id}`);
 
   const body = req.body as LiveSessionStartRequest;
   const lang = normalizeLang(body.lang || 'en');
@@ -4154,7 +4166,7 @@ router.post('/live/session/start', async (req: Request, res: Response) => {
   // Generate session ID
   const sessionId = `live-${randomUUID()}`;
 
-  // Create session object
+  // Create session object with identity attached
   const session: GeminiLiveSession = {
     sessionId,
     lang,
@@ -4173,20 +4185,24 @@ router.post('/live/session/start', async (req: Request, res: Response) => {
     // VTID-01225: Transcript accumulation for Cognee extraction
     transcriptTurns: [],
     outputTranscriptBuffer: '',
+    // VTID-01226: Store identity for context/memory scoping
+    identity,
   };
 
   // Store session
   liveSessions.set(sessionId, session);
 
-  // Emit OASIS event
+  // Emit OASIS event with identity context
   await emitLiveSessionEvent('vtid.live.session.start', {
     session_id: sessionId,
+    user_id: identity.user_id,
+    tenant_id: identity.tenant_id,
     lang,
     modalities: responseModalities,
     voice: getVoiceForLang(lang)
   });
 
-  console.log(`[VTID-01155] Live session created: ${sessionId} (lang=${lang})`);
+  console.log(`[VTID-01226] Live session created: ${sessionId} (user=${identity.user_id}, tenant=${identity.tenant_id}, lang=${lang})`);
 
   return res.status(200).json({
     ok: true,
@@ -4202,16 +4218,24 @@ router.post('/live/session/start', async (req: Request, res: Response) => {
 
 /**
  * VTID-01155: POST /live/session/stop - Stop Gemini Live session
+ * VTID-01226: Added requireAuthWithTenant middleware for multi-tenant auth
  *
  * Stops upstream session and cleans resources.
  *
  * Request:
+ * Headers: Authorization: Bearer <supabase_jwt>
  * { "session_id": "live-xxx" }
+ *
+ * Errors:
+ * - 401 UNAUTHENTICATED: Missing or invalid JWT
+ * - 400 TENANT_REQUIRED: No active_tenant_id in JWT app_metadata
+ * - 403 FORBIDDEN: User doesn't own this session
  */
-router.post('/live/session/stop', async (req: Request, res: Response) => {
-  console.log('[VTID-01155] POST /orb/live/session/stop');
+router.post('/live/session/stop', requireAuthWithTenant, async (req: AuthenticatedRequest, res: Response) => {
+  console.log('[VTID-01226] POST /orb/live/session/stop (authenticated)');
 
   const { session_id } = req.body;
+  const identity = req.identity!;
 
   if (!session_id) {
     return res.status(400).json({ ok: false, error: 'session_id required' });
@@ -4220,6 +4244,12 @@ router.post('/live/session/stop', async (req: Request, res: Response) => {
   const session = liveSessions.get(session_id);
   if (!session) {
     return res.status(404).json({ ok: false, error: 'Session not found' });
+  }
+
+  // VTID-01226: Verify user owns this session
+  if (session.identity && session.identity.user_id !== identity.user_id) {
+    console.warn(`[VTID-01226] Session ownership mismatch: session=${session.identity.user_id}, request=${identity.user_id}`);
+    return res.status(403).json({ ok: false, error: 'FORBIDDEN', message: 'You do not own this session' });
   }
 
   // Close upstream WebSocket if exists
@@ -4279,26 +4309,8 @@ router.post('/live/session/stop', async (req: Request, res: Response) => {
       .catch(err => {
         console.error(`[VTID-01225] Failed to fetch conversation for Cognee: ${err.message}`);
       });
-  } else if (cogneeExtractorClient.isEnabled()) {
-    // Fallback for unauthenticated sessions - use defaults
-    const tenantId = process.env.DEV_SANDBOX_TENANT_ID || '00000000-0000-0000-0000-000000000001';
-    const userId = process.env.DEV_SANDBOX_USER_ID || '00000000-0000-0000-0000-000000000099';
-
-    fetchRecentConversationForCognee(tenantId, userId, session.createdAt, new Date())
-      .then(transcript => {
-        if (transcript && transcript.length > 50) {
-          cogneeExtractorClient.extractAsync({
-            transcript,
-            tenant_id: tenantId,
-            user_id: userId,
-            session_id: session_id,
-            active_role: 'community'
-          });
-          console.log(`[VTID-01225] Cognee extraction queued (fallback) for: ${session_id}`);
-        }
-      })
-      .catch(() => {});
   }
+  // VTID-01226: Removed fallback for unauthenticated sessions - auth is now required
 
   // Remove from store
   liveSessions.delete(session_id);
@@ -4310,19 +4322,43 @@ router.post('/live/session/stop', async (req: Request, res: Response) => {
 
 /**
  * VTID-01155: GET /live/stream - SSE endpoint for bidirectional streaming
+ * VTID-01226: Added token validation from query param for multi-tenant auth
  *
  * Client connects to this SSE endpoint to receive audio output from the model.
  * Client sends audio/video data via POST /live/stream/send
  *
  * Query params:
  * - session_id: The live session ID
+ * - token: Supabase JWT (required for auth - EventSource doesn't support headers)
+ *
+ * Errors:
+ * - 401 UNAUTHENTICATED: Missing or invalid token
+ * - 400 TENANT_REQUIRED: No active_tenant_id in JWT app_metadata
+ * - 403 FORBIDDEN: User doesn't own this session
  */
 router.get('/live/stream', async (req: Request, res: Response) => {
-  console.log('[VTID-01155] GET /orb/live/stream');
+  console.log('[VTID-01226] GET /orb/live/stream (with token validation)');
 
   const sessionId = req.query.session_id as string;
+  const token = req.query.token as string;
+
   if (!sessionId) {
     return res.status(400).json({ ok: false, error: 'session_id required' });
+  }
+
+  // VTID-01226: Validate token from query param (EventSource doesn't support headers)
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED', message: 'Missing token query parameter' });
+  }
+
+  const authResult = await verifyAndExtractIdentity(token);
+  if (!authResult) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED', message: 'Invalid or expired token' });
+  }
+
+  const identity = authResult.identity;
+  if (!identity.tenant_id) {
+    return res.status(400).json({ ok: false, error: 'TENANT_REQUIRED', message: 'No active_tenant_id in JWT app_metadata' });
   }
 
   const session = liveSessions.get(sessionId);
@@ -4333,6 +4369,14 @@ router.get('/live/stream', async (req: Request, res: Response) => {
   if (!session.active) {
     return res.status(400).json({ ok: false, error: 'Session not active' });
   }
+
+  // VTID-01226: Verify user owns this session
+  if (session.identity && session.identity.user_id !== identity.user_id) {
+    console.warn(`[VTID-01226] SSE ownership mismatch: session=${session.identity.user_id}, request=${identity.user_id}`);
+    return res.status(403).json({ ok: false, error: 'FORBIDDEN', message: 'You do not own this session' });
+  }
+
+  console.log(`[VTID-01226] SSE auth verified: user=${identity.user_id}, tenant=${identity.tenant_id}, session=${sessionId}`);
 
   // Check connection limit
   const clientIP = getClientIP(req);
@@ -4462,18 +4506,26 @@ router.get('/live/stream', async (req: Request, res: Response) => {
 
 /**
  * VTID-01155: POST /live/stream/send - Send audio/video data to Live session
+ * VTID-01226: Added requireAuthWithTenant middleware for multi-tenant auth
  *
  * Client sends audio chunks (PCM 16kHz) or video frames (JPEG) to this endpoint.
  * Gateway forwards to Vertex Live API and relays responses via SSE.
  *
  * Request:
+ * Headers: Authorization: Bearer <supabase_jwt>
  * For audio: { "type": "audio", "data_b64": "...", "mime": "audio/pcm;rate=16000" }
  * For video: { "type": "video", "source": "screen|camera", "data_b64": "...", "width": 768, "height": 768 }
+ *
+ * Errors:
+ * - 401 UNAUTHENTICATED: Missing or invalid JWT
+ * - 400 TENANT_REQUIRED: No active_tenant_id in JWT app_metadata
+ * - 403 FORBIDDEN: User doesn't own this session
  */
-router.post('/live/stream/send', async (req: Request, res: Response) => {
+router.post('/live/stream/send', requireAuthWithTenant, async (req: AuthenticatedRequest, res: Response) => {
   const { session_id } = req.query;
   const body = req.body as LiveStreamMessage & { session_id?: string };
   const effectiveSessionId = (session_id as string) || body.session_id;
+  const identity = req.identity!;
 
   if (!effectiveSessionId) {
     return res.status(400).json({ ok: false, error: 'session_id required' });
@@ -4486,6 +4538,11 @@ router.post('/live/stream/send', async (req: Request, res: Response) => {
 
   if (!session.active) {
     return res.status(400).json({ ok: false, error: 'Session not active' });
+  }
+
+  // VTID-01226: Verify user owns this session
+  if (session.identity && session.identity.user_id !== identity.user_id) {
+    return res.status(403).json({ ok: false, error: 'FORBIDDEN', message: 'You do not own this session' });
   }
 
   session.lastActivity = new Date();
@@ -4564,20 +4621,28 @@ router.post('/live/stream/send', async (req: Request, res: Response) => {
 
 /**
  * VTID-01219: POST /live/stream/end-turn - Signal end of user turn
+ * VTID-01226: Added requireAuthWithTenant middleware for multi-tenant auth
  *
  * Client calls this when user stops speaking (voice activity detection).
  * Tells Gemini Live API that the user has finished their input.
  *
  * Request:
+ * Headers: Authorization: Bearer <supabase_jwt>
  * { "session_id": "live-xxx" }
  *
  * Response:
  * { "ok": true }
+ *
+ * Errors:
+ * - 401 UNAUTHENTICATED: Missing or invalid JWT
+ * - 400 TENANT_REQUIRED: No active_tenant_id in JWT app_metadata
+ * - 403 FORBIDDEN: User doesn't own this session
  */
-router.post('/live/stream/end-turn', async (req: Request, res: Response) => {
+router.post('/live/stream/end-turn', requireAuthWithTenant, async (req: AuthenticatedRequest, res: Response) => {
   const { session_id } = req.query;
   const body = req.body as { session_id?: string };
   const effectiveSessionId = (session_id as string) || body.session_id;
+  const identity = req.identity!;
 
   if (!effectiveSessionId) {
     return res.status(400).json({ ok: false, error: 'session_id required' });
@@ -4590,6 +4655,11 @@ router.post('/live/stream/end-turn', async (req: Request, res: Response) => {
 
   if (!session.active) {
     return res.status(400).json({ ok: false, error: 'Session not active' });
+  }
+
+  // VTID-01226: Verify user owns this session
+  if (session.identity && session.identity.user_id !== identity.user_id) {
+    return res.status(403).json({ ok: false, error: 'FORBIDDEN', message: 'You do not own this session' });
   }
 
   // VTID-01219: Send end of turn to Live API
