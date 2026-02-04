@@ -602,14 +602,14 @@ const LIVE_API_VOICES: Record<string, string> = {
 const LIVE_CONTEXT_CONFIG = {
   /** Maximum time (ms) to wait for context bootstrap before connecting without it */
   BOOTSTRAP_TIMEOUT_MS: 2000,
-  /** Maximum memory items to include in bootstrap */
-  MAX_MEMORY_ITEMS: 8,
+  /** Maximum memory items to include in bootstrap - VTID-01225: Increased to include all personal info */
+  MAX_MEMORY_ITEMS: 50,
   /** Maximum knowledge items to include in bootstrap */
   MAX_KNOWLEDGE_ITEMS: 4,
   /** Skip web search at bootstrap (no query yet) */
   SKIP_WEB_SEARCH: true,
-  /** Maximum total context characters for system instruction */
-  MAX_CONTEXT_CHARS: 4000,
+  /** Maximum total context characters for system instruction - VTID-01225: Increased to match chat path */
+  MAX_CONTEXT_CHARS: 8000,
 };
 
 /**
@@ -987,6 +987,10 @@ function buildLiveSystemInstruction(
     'sr': 'Serbian'
   };
 
+  // VTID-01225: Build instruction with or without memory context
+  // When memory is available, include MANDATORY rules to use it
+  const hasMemory = !!bootstrapContext && bootstrapContext.length > 50;
+
   let instruction = `You are Vitana, an AI health companion assistant powered by Gemini Live.
 
 LANGUAGE: Respond ONLY in ${languageNames[lang] || 'English'}.
@@ -1000,21 +1004,41 @@ ROLE:
 - Keep responses concise for voice interaction (2-3 sentences max)
 - Use natural conversational tone
 
-TOOLS:
-- Use search_memory to recall information the user has shared before
-- Use search_knowledge for Vitana platform and health information
-- Use search_web for current events, news, and external information
-
 IMPORTANT:
 - This is a real-time voice conversation
 - Listen actively and respond naturally
-- If interrupted, gracefully handle the interruption
-- Confirm important information when needed
-- Use tools to provide accurate, personalized responses`;
+- If interrupted, gracefully handle the interruption`;
 
-  // VTID-01224: Append bootstrap context if available
+  // VTID-01225: Add mandatory memory rules ONLY when memory context is available
+  if (hasMemory) {
+    instruction += `
+
+## CRITICAL: You Have Persistent Memory About This User
+
+You have access to PERSISTENT MEMORY containing REAL information from previous conversations.
+This is NOT hypothetical - this is ACTUAL stored data about this specific user.
+
+**MANDATORY MEMORY RULES - FOLLOW THESE EXACTLY:**
+1. NEVER say "I don't remember", "ich erinnere mich nicht", "I don't know your name", "ich kenne Ihren Namen nicht"
+2. When asked about name, hometown, birthday, family - CHECK THE MEMORY CONTEXT BELOW FIRST
+3. If the information IS in your memory context, ANSWER WITH THAT INFORMATION immediately
+4. Only say "I don't have that information yet" if it's truly NOT in the context below
+5. You KNOW this user. You REMEMBER their details. USE the memory data to answer questions.
+
+**WHEN USER SHARES NEW INFORMATION:**
+6. The system AUTOMATICALLY STORES new personal information (names, birthdays, preferences)
+7. NEVER say "I cannot store this" - the system DOES store it automatically
+8. Acknowledge positively: "Got it!" / "Notiert!" / "Ich merke mir das"`;
+  }
+
+  // VTID-01225: Append bootstrap context with clear marker
   if (bootstrapContext) {
-    instruction += `\n\n${bootstrapContext}`;
+    instruction += `
+
+---
+## YOUR MEMORY CONTEXT (USE THIS DATA):
+${bootstrapContext}
+---`;
   }
 
   return instruction;
