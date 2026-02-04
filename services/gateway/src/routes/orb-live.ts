@@ -215,6 +215,7 @@ const sessions = new Map<string, OrbLiveSession>();
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 
 // Allowed origins (dev sandbox)
+// VTID-01225: Added Lovable preview domains
 const ALLOWED_ORIGINS = [
   'https://gateway-536750820055.us-central1.run.app',
   'https://gateway-q74ibpv6ia-uc.a.run.app',
@@ -222,7 +223,15 @@ const ALLOWED_ORIGINS = [
   'http://localhost:8080',
   'http://localhost:3000',
   'http://127.0.0.1:8080',
-  'http://127.0.0.1:3000'
+  'http://127.0.0.1:3000',
+  'https://temp-vitana-v1.lovable.app',
+  'https://id-preview--vitana-v1.lovable.app',
+];
+
+// VTID-01225: Patterns for dynamic Lovable preview domains
+const ALLOWED_ORIGIN_PATTERNS = [
+  /^https:\/\/[a-f0-9-]+\.lovableproject\.com$/,  // Lovable project previews (UUID format)
+  /^https:\/\/.*\.lovable\.app$/,                  // All lovable.app subdomains
 ];
 
 // Connection limit per IP (dev sandbox)
@@ -1698,7 +1707,20 @@ async function emitOrbSessionEnded(orbSessionId: string, conversationId: string)
 function validateOrigin(req: Request): boolean {
   const origin = req.get('origin') || req.get('referer') || '';
   if (!origin) return true; // Allow requests without origin (e.g., curl)
-  return ALLOWED_ORIGINS.some(allowed => origin.startsWith(allowed));
+
+  // Check exact matches
+  if (ALLOWED_ORIGINS.some(allowed => origin.startsWith(allowed))) {
+    return true;
+  }
+
+  // VTID-01225: Check pattern matches for dynamic Lovable domains
+  for (const pattern of ALLOWED_ORIGIN_PATTERNS) {
+    if (pattern.test(origin)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**
