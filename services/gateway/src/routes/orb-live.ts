@@ -4392,19 +4392,33 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
     return res.status(400).json({ ok: false, error: 'session_id required' });
   }
 
-  // VTID-01226: Validate token from query param (EventSource doesn't support headers)
-  if (!token) {
-    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED', message: 'Missing token query parameter' });
+  // VTID-ORBC: Resolve identity from token OR dev-sandbox fallback
+  let identity: SupabaseIdentity | null = null;
+
+  if (token) {
+    // Token provided - verify it
+    const authResult = await verifyAndExtractIdentity(token);
+    if (authResult && authResult.identity.tenant_id) {
+      identity = authResult.identity;
+    }
   }
 
-  const authResult = await verifyAndExtractIdentity(token);
-  if (!authResult) {
-    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED', message: 'Invalid or expired token' });
+  // If no identity from token, try dev-sandbox fallback
+  if (!identity && isDevSandbox()) {
+    identity = {
+      user_id: DEV_IDENTITY.USER_ID,
+      tenant_id: DEV_IDENTITY.TENANT_ID,
+      email: null,
+      exafy_admin: false,
+      role: DEV_IDENTITY.ACTIVE_ROLE,
+      aud: null,
+      exp: null,
+      iat: null,
+    };
   }
 
-  const identity = authResult.identity;
-  if (!identity.tenant_id) {
-    return res.status(400).json({ ok: false, error: 'TENANT_REQUIRED', message: 'No active_tenant_id in JWT app_metadata' });
+  if (!identity) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED', message: 'Missing or invalid token query parameter' });
   }
 
   const session = liveSessions.get(sessionId);
@@ -4416,13 +4430,14 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
     return res.status(400).json({ ok: false, error: 'Session not active' });
   }
 
-  // VTID-01226: Verify user owns this session
-  if (session.identity && session.identity.user_id !== identity.user_id) {
-    console.warn(`[VTID-01226] SSE ownership mismatch: session=${session.identity.user_id}, request=${identity.user_id}`);
+  // VTID-ORBC: Verify user owns this session (skip for DEV_IDENTITY sessions)
+  if (session.identity && session.identity.user_id !== DEV_IDENTITY.USER_ID &&
+      session.identity.user_id !== identity.user_id) {
+    console.warn(`[VTID-ORBC] SSE ownership mismatch: session=${session.identity.user_id}, request=${identity.user_id}`);
     return res.status(403).json({ ok: false, error: 'FORBIDDEN', message: 'You do not own this session' });
   }
 
-  console.log(`[VTID-01226] SSE auth verified: user=${identity.user_id}, tenant=${identity.tenant_id}, session=${sessionId}`);
+  console.log(`[VTID-ORBC] SSE stream: user=${identity.user_id}, tenant=${identity.tenant_id}, session=${sessionId}, source=${token ? 'jwt' : 'dev-sandbox'}`);
 
   // Check connection limit
   const clientIP = getClientIP(req);
