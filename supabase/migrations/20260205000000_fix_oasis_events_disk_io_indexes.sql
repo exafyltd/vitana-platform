@@ -22,25 +22,27 @@
 -- Covers: SSE polling (3s interval), execution status, gemini-operator queries,
 --         lifecycle checks, task event timeline
 -- This is the single most impactful index for reducing sequential scans.
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_oasis_events_vtid_created_desc
+-- Note: Not using CONCURRENTLY because Supabase migrations run inside a transaction.
+-- On a 305k row table, non-concurrent index creation completes in seconds.
+CREATE INDEX IF NOT EXISTS idx_oasis_events_vtid_created_desc
   ON public.oasis_events (vtid, created_at DESC);
 
 -- Priority 2: topic + created_at DESC
 -- Covers: Events list endpoint, governance history, operator history,
 --         lifecycle terminal event lookups
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_oasis_events_topic_created_desc
+CREATE INDEX IF NOT EXISTS idx_oasis_events_topic_created_desc
   ON public.oasis_events (topic, created_at DESC);
 
 -- Priority 3: status + created_at DESC
 -- Covers: API events filtering by status, terminal event detection
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_oasis_events_status_created_desc
+CREATE INDEX IF NOT EXISTS idx_oasis_events_status_created_desc
   ON public.oasis_events (status, created_at DESC);
 
 -- Priority 4: created_at + task_stage (for time-windowed stage queries)
 -- Covers: Telemetry stage counting with time filter (created_at >= X AND task_stage IS NOT NULL)
 -- The existing (task_stage, created_at DESC) partial index only helps when task_stage is the
 -- leading filter; this covers the reverse access pattern.
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_oasis_events_created_task_stage
+CREATE INDEX IF NOT EXISTS idx_oasis_events_created_task_stage
   ON public.oasis_events (created_at, task_stage)
   WHERE task_stage IS NOT NULL;
 
