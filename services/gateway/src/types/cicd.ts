@@ -485,7 +485,7 @@ export type CicdEventType =
   | 'cognee.extraction.timeout'
   | 'cognee.extraction.persisted'
   | 'cognee.extraction.error'
-  // Dev Recommendations and Fallback Events (pre-existing)
+  // VTID-01221: Autopilot Recommendation Sync Events
   | 'autopilot.recommendations.requested'
   | 'autopilot.recommendations.received'
   | 'autopilot.recommendations.failed'

@@ -132,12 +132,14 @@ echo -e "${GREEN}Source path verified: ${SOURCE_PATH}${NC}"
 echo -e "${YELLOW}Deploying ${CLOUD_RUN_SERVICE} to Cloud Run...${NC}"
 
 # VTID-01125: Gateway requires additional secrets for ORB intelligence
+# VTID-ORBC: Added LOVABLE_JWT_SECRET for dual Supabase project auth
 # Secrets are stored in GCP Secret Manager and bound at deploy time
 # NOTE: --set-secrets REPLACES all secrets, so we must include ALL required secrets here
 if [ "$CLOUD_RUN_SERVICE" = "gateway" ]; then
   echo -e "${YELLOW}VTID-01125: Binding secrets for gateway service...${NC}"
   # VTID-01225: Add Cognee Extractor URL for entity extraction
   COGNEE_URL="https://cognee-extractor-q74ibpv6ia-uc.a.run.app"
+  echo -e "${YELLOW}VTID-ORBC: Including LOVABLE_JWT_SECRET for dual-project auth...${NC}"
   gcloud run deploy "$CLOUD_RUN_SERVICE" \
     --project "$PROJECT" \
     --region "$REGION" \
@@ -145,7 +147,7 @@ if [ "$CLOUD_RUN_SERVICE" = "gateway" ]; then
     --platform managed \
     --allow-unauthenticated \
     --set-env-vars "ENVIRONMENT=${ENVIRONMENT},AUTOPILOT_LOOP_ENABLED=true,GOOGLE_CLOUD_PROJECT=lovable-vitana-vers1,COGNEE_EXTRACTOR_URL=${COGNEE_URL}" \
-    --set-secrets "GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest,SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest,SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest,SUPABASE_JWT_SECRET=SUPABASE_JWT_SECRET:latest,GITHUB_TOKEN=GITHUB_TOKEN:latest,GH_TOKEN=GITHUB_TOKEN:latest,GITHUB_SAFE_MERGE_TOKEN=GITHUB_TOKEN:latest,DEV_AUTH_SECRET=DEV_AUTH_SECRET:latest,DEV_TEST_USER_EMAIL=DEV_TEST_USER_EMAIL:latest,DEV_TEST_USER_PASSWORD=DEV_TEST_USER_PASSWORD:latest,DEV_JWT_SECRET=DEV_JWT_SECRET:latest,PERPLEXITY_API_KEY=PERPLEXITY_API_KEY:latest" \
+    --set-secrets "GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest,SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest,SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest,SUPABASE_JWT_SECRET=SUPABASE_JWT_SECRET:latest,LOVABLE_JWT_SECRET=LOVABLE_JWT_SECRET:latest,GITHUB_TOKEN=GITHUB_TOKEN:latest,GH_TOKEN=GITHUB_TOKEN:latest,GITHUB_SAFE_MERGE_TOKEN=GITHUB_TOKEN:latest,DEV_AUTH_SECRET=DEV_AUTH_SECRET:latest,DEV_TEST_USER_EMAIL=DEV_TEST_USER_EMAIL:latest,DEV_TEST_USER_PASSWORD=DEV_TEST_USER_PASSWORD:latest,DEV_JWT_SECRET=DEV_JWT_SECRET:latest,PERPLEXITY_API_KEY=PERPLEXITY_API_KEY:latest" \
     --quiet
 elif [ "$CLOUD_RUN_SERVICE" = "worker-runner" ]; then
   # VTID-01202: Worker-runner requires gateway URL and Supabase credentials

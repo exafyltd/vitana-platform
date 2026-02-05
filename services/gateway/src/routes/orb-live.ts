@@ -83,13 +83,14 @@ import {
 } from '../services/orb-memory-bridge';
 // VTID-01186: Auth middleware for identity propagation
 // VTID-01224: Added verifyAndExtractIdentity for WebSocket auth
-// VTID-01226: Added requireAuthWithTenant for Orb endpoint auth enforcement
+// VTID-ORBC: Added AuthSource for dual JWT support
 import {
   optionalAuth,
   requireAuthWithTenant,
   AuthenticatedRequest,
   verifyAndExtractIdentity,
-  SupabaseIdentity
+  SupabaseIdentity,
+  AuthSource
 } from '../middleware/auth-supabase-jwt';
 // VTID-01224: Context Pack Builder for Live API intelligence
 import {
@@ -290,6 +291,39 @@ function getMemoryIdentity(req: AuthenticatedRequest): MemoryIdentity {
 function hasValidIdentity(req: AuthenticatedRequest): boolean {
   const identity = getMemoryIdentity(req);
   return !!identity.user_id && !!identity.tenant_id;
+}
+
+/**
+ * VTID-ORBC: Resolve ORB identity from request.
+ * Unified identity resolution for all ORB endpoints:
+ *   1. If optionalAuth attached a verified identity → use it
+ *   2. If dev-sandbox → fall back to DEV_IDENTITY
+ *   3. In production without valid JWT → return null (endpoint decides how to handle)
+ *
+ * @returns SupabaseIdentity or null if no identity available
+ */
+function resolveOrbIdentity(req: AuthenticatedRequest): SupabaseIdentity | null {
+  // JWT-verified identity from optionalAuth middleware (Platform or Lovable)
+  if (req.identity && req.identity.user_id) {
+    return req.identity;
+  }
+
+  // Dev-sandbox fallback: synthetic identity for local/dev testing
+  if (isDevSandbox()) {
+    return {
+      user_id: DEV_IDENTITY.USER_ID,
+      tenant_id: DEV_IDENTITY.TENANT_ID,
+      exafy_admin: false,
+      email: null,
+      role: DEV_IDENTITY.ACTIVE_ROLE,
+      aud: null,
+      exp: null,
+      iat: null,
+    };
+  }
+
+  // No identity available
+  return null;
 }
 
 // =============================================================================
@@ -1232,7 +1266,7 @@ async function connectToLiveAPI(
                   chunk_number: session.audioOutChunks,
                   bytes: audioB64.length,
                   rate: 24000
-                }).catch(() => {});
+                }).catch(() => { });
               }
 
               // Handle text response
@@ -1338,7 +1372,7 @@ async function connectToLiveAPI(
                     result_preview: result.result.substring(0, 200),
                     error: result.error || null,
                   },
-                }).catch(() => {});
+                }).catch(() => { });
               })
               .catch((err) => {
                 console.error(`[VTID-01224] Tool execution error:`, err);
@@ -2473,7 +2507,7 @@ router.post('/chat', optionalAuth, async (req: AuthenticatedRequest, res: Respon
 
   // VTID-01186: Extract identity from authenticated request or fallback to DEV_IDENTITY
   const identity = getMemoryIdentity(req);
-  console.log(`[VTID-01186] POST /orb/chat received (user=${identity.user_id ? identity.user_id.substring(0,8) + '...' : 'none'})`);
+  console.log(`[VTID-01186] POST /orb/chat received (user=${identity.user_id ? identity.user_id.substring(0, 8) + '...' : 'none'})`);
 
   // Validate required fields
   if (!body.orb_session_id || !body.input_text) {
@@ -2570,7 +2604,7 @@ router.post('/chat', optionalAuth, async (req: AuthenticatedRequest, res: Respon
       workspace_scope: 'dev'
     }).then(result => {
       if (result.ok && !result.skipped) {
-        console.log(`[VTID-01186] User message written to memory: ${result.id} (user=${identity.user_id.substring(0,8)}...)`);
+        console.log(`[VTID-01186] User message written to memory: ${result.id} (user=${identity.user_id.substring(0, 8)}...)`);
         emitMemoryWriteEvent('memory.write.user_message', {
           memory_id: result.id,
           category_key: result.category_key,
@@ -3112,7 +3146,7 @@ router.post('/chat', optionalAuth, async (req: AuthenticatedRequest, res: Respon
         workspace_scope: 'dev'
       }).then(result => {
         if (result.ok && !result.skipped) {
-          console.log(`[VTID-01186] Assistant message written to memory: ${result.id} (user=${identity.user_id.substring(0,8)}...)`);
+          console.log(`[VTID-01186] Assistant message written to memory: ${result.id} (user=${identity.user_id.substring(0, 8)}...)`);
           emitMemoryWriteEvent('memory.write.assistant_message', {
             memory_id: result.id,
             category_key: result.category_key,
@@ -3173,7 +3207,7 @@ router.post('/chat', optionalAuth, async (req: AuthenticatedRequest, res: Respon
       memory_injected: Boolean(memoryContext?.ok && memoryContext?.items?.length > 0)
     };
 
-// VTID-01113: Add intent bundle to response for visibility (spec section 5)
+    // VTID-01113: Add intent bundle to response for visibility (spec section 5)
     const intentDebug = {
       intent_bundle_id: intentBundle.bundle_id,
       primary_intent: intentBundle.primary_intent,
@@ -4156,17 +4190,19 @@ function getVoiceForLang(lang: string): string {
  * - 401 UNAUTHENTICATED: Missing or invalid JWT
  * - 400 TENANT_REQUIRED: No active_tenant_id in JWT app_metadata
  */
-router.post('/live/session/start', requireAuthWithTenant, async (req: AuthenticatedRequest, res: Response) => {
-  console.log('[VTID-01226] POST /orb/live/session/start (authenticated)');
+router.post('/live/session/start', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  console.log('[VTID-ORBC] POST /orb/live/session/start');
 
   // Validate origin
   if (!validateOrigin(req)) {
     return res.status(403).json({ ok: false, error: 'Origin not allowed' });
   }
 
-  // VTID-01226: Identity is guaranteed by requireAuthWithTenant middleware
-  const identity = req.identity!;
-  console.log(`[VTID-01226] Session start: user=${identity.user_id}, tenant=${identity.tenant_id}`);
+  // VTID-ORBC: Resolve identity (JWT or dev-sandbox fallback)
+  const orbIdentity = resolveOrbIdentity(req);
+  if (!orbIdentity && !isDevSandbox()) {
+    return res.status(401).json({ ok: false, error: 'Authentication required for live sessions' });
+  }
 
   const body = req.body as LiveSessionStartRequest;
   const lang = normalizeLang(body.lang || 'en');
@@ -4195,8 +4231,8 @@ router.post('/live/session/start', requireAuthWithTenant, async (req: Authentica
     // VTID-01225: Transcript accumulation for Cognee extraction
     transcriptTurns: [],
     outputTranscriptBuffer: '',
-    // VTID-01226: Store identity for context/memory scoping
-    identity,
+    // VTID-ORBC: Attach resolved identity to session
+    identity: orbIdentity || undefined,
   };
 
   // Store session
@@ -4205,14 +4241,14 @@ router.post('/live/session/start', requireAuthWithTenant, async (req: Authentica
   // Emit OASIS event with identity context
   await emitLiveSessionEvent('vtid.live.session.start', {
     session_id: sessionId,
-    user_id: identity.user_id,
-    tenant_id: identity.tenant_id,
+    user_id: orbIdentity?.user_id || 'anonymous',
+    tenant_id: orbIdentity?.tenant_id || null,
     lang,
     modalities: responseModalities,
     voice: getVoiceForLang(lang)
   });
 
-  console.log(`[VTID-01226] Live session created: ${sessionId} (user=${identity.user_id}, tenant=${identity.tenant_id}, lang=${lang})`);
+  console.log(`[VTID-ORBC] Live session created: ${sessionId} (user=${orbIdentity?.user_id || 'anonymous'}, tenant=${orbIdentity?.tenant_id || 'none'}, lang=${lang})`);
 
   return res.status(200).json({
     ok: true,
@@ -4241,8 +4277,8 @@ router.post('/live/session/start', requireAuthWithTenant, async (req: Authentica
  * - 400 TENANT_REQUIRED: No active_tenant_id in JWT app_metadata
  * - 403 FORBIDDEN: User doesn't own this session
  */
-router.post('/live/session/stop', requireAuthWithTenant, async (req: AuthenticatedRequest, res: Response) => {
-  console.log('[VTID-01226] POST /orb/live/session/stop (authenticated)');
+router.post('/live/session/stop', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  console.log('[VTID-ORBC] POST /orb/live/session/stop');
 
   const { session_id } = req.body;
   const identity = req.identity!;
@@ -4346,8 +4382,8 @@ router.post('/live/session/stop', requireAuthWithTenant, async (req: Authenticat
  * - 400 TENANT_REQUIRED: No active_tenant_id in JWT app_metadata
  * - 403 FORBIDDEN: User doesn't own this session
  */
-router.get('/live/stream', async (req: Request, res: Response) => {
-  console.log('[VTID-01226] GET /orb/live/stream (with token validation)');
+router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  console.log('[VTID-ORBC] GET /orb/live/stream');
 
   const sessionId = req.query.session_id as string;
   const token = req.query.token as string;
@@ -4531,7 +4567,7 @@ router.get('/live/stream', async (req: Request, res: Response) => {
  * - 400 TENANT_REQUIRED: No active_tenant_id in JWT app_metadata
  * - 403 FORBIDDEN: User doesn't own this session
  */
-router.post('/live/stream/send', requireAuthWithTenant, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   const { session_id } = req.query;
   const body = req.body as LiveStreamMessage & { session_id?: string };
   const effectiveSessionId = (session_id as string) || body.session_id;
@@ -4569,7 +4605,7 @@ router.post('/live/stream/send', requireAuthWithTenant, async (req: Authenticate
           chunk_number: session.audioInChunks,
           bytes: body.data_b64.length,
           rate: 16000
-        }).catch(() => {});
+        }).catch(() => { });
       }
 
       // VTID-01219: Forward audio to Vertex Live API WebSocket
@@ -4607,7 +4643,7 @@ router.post('/live/stream/send', requireAuthWithTenant, async (req: Authenticate
         frame_number: session.videoInFrames,
         bytes: videoBody.data_b64.length,
         fps: 1
-      }).catch(() => {});
+      }).catch(() => { });
 
       console.log(`[VTID-01155] Video frame received: session=${effectiveSessionId}, source=${videoBody.source}, frame=${session.videoInFrames}`);
 
@@ -4648,7 +4684,7 @@ router.post('/live/stream/send', requireAuthWithTenant, async (req: Authenticate
  * - 400 TENANT_REQUIRED: No active_tenant_id in JWT app_metadata
  * - 403 FORBIDDEN: User doesn't own this session
  */
-router.post('/live/stream/end-turn', requireAuthWithTenant, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/live/stream/end-turn', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   const { session_id } = req.query;
   const body = req.body as { session_id?: string };
   const effectiveSessionId = (session_id as string) || body.session_id;
@@ -4711,7 +4747,7 @@ router.post('/live/stream/end-turn', requireAuthWithTenant, async (req: Authenti
  *   "voice_type": "Neural2"
  * }
  */
-router.post('/tts', async (req: Request, res: Response) => {
+router.post('/tts', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   console.log('[VTID-01219] POST /orb/tts (Cloud TTS with Neural2/Gemini)');
 
   const body = req.body as TtsRequest;
@@ -5219,7 +5255,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
           reason: bootstrapResult.skippedReason,
           using_dev_identity: !identity,
         },
-      }).catch(() => {});
+      }).catch(() => { });
     } else {
       emitOasisEvent({
         vtid: 'VTID-01224',
@@ -5237,7 +5273,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
           context_chars: contextInstruction?.length || 0,
           using_dev_identity: !identity,
         },
-      }).catch(() => {});
+      }).catch(() => { });
     }
   } else {
     contextBootstrapSkippedReason = 'unauthenticated';
@@ -5254,7 +5290,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
         session_id: sessionId,
         reason: 'unauthenticated',
       },
-    }).catch(() => {});
+    }).catch(() => { });
   }
 
   // Create Gemini Live session with identity and context
@@ -5384,7 +5420,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
         knowledge_hits: contextPack?.knowledge_hits?.length || 0,
         tools_enabled: !!identity,
       },
-    }).catch(() => {});
+    }).catch(() => { });
 
     sendWsMessage(clientWs, {
       type: 'session_started',
@@ -5450,7 +5486,7 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
       bytes: message.data_b64.length,
       rate: 16000,
       transport: 'websocket'
-    }).catch(() => {});
+    }).catch(() => { });
   }
 
   // Forward to Live API if connected
@@ -5499,7 +5535,7 @@ function handleWsVideoMessage(clientSession: WsClientSession, message: WsClientM
     frame_number: liveSession.videoInFrames,
     bytes: message.data_b64.length,
     transport: 'websocket'
-  }).catch(() => {});
+  }).catch(() => { });
 
   console.log(`[VTID-01222] Video frame received: ${sessionId}, source=${message.source}, frame=${liveSession.videoInFrames}`);
 
@@ -5560,7 +5596,7 @@ function handleWsStopSession(clientSession: WsClientSession): void {
       audio_out_chunks: liveSession.audioOutChunks,
       video_frames: liveSession.videoInFrames,
       transport: 'websocket'
-    }).catch(() => {});
+    }).catch(() => { });
 
     liveSessions.delete(sessionId);
   }
