@@ -4282,7 +4282,7 @@ router.post('/live/session/stop', optionalAuth, async (req: AuthenticatedRequest
   console.log('[VTID-ORBC] POST /orb/live/session/stop');
 
   const { session_id } = req.body;
-  const identity = req.identity!;
+  const orbIdentity = resolveOrbIdentity(req);
 
   if (!session_id) {
     return res.status(400).json({ ok: false, error: 'session_id required' });
@@ -4293,9 +4293,9 @@ router.post('/live/session/stop', optionalAuth, async (req: AuthenticatedRequest
     return res.status(404).json({ ok: false, error: 'Session not found' });
   }
 
-  // VTID-01226: Verify user owns this session
-  if (session.identity && session.identity.user_id !== identity.user_id) {
-    console.warn(`[VTID-01226] Session ownership mismatch: session=${session.identity.user_id}, request=${identity.user_id}`);
+  // VTID-ORBC: Verify user owns this session (skip if dev-sandbox)
+  if (session.identity && orbIdentity && orbIdentity.user_id !== DEV_IDENTITY.USER_ID && session.identity.user_id !== orbIdentity.user_id) {
+    console.warn(`[VTID-ORBC] Session ownership mismatch: session=${session.identity.user_id}, request=${orbIdentity.user_id}`);
     return res.status(403).json({ ok: false, error: 'FORBIDDEN', message: 'You do not own this session' });
   }
 

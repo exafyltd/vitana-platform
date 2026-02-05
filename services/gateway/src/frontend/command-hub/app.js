@@ -22208,9 +22208,14 @@ async function geminiLiveStart() {
     try {
         // 1. Start Live session via API
         var lang = state.orb.orbLang || 'en-US';
+        // VTID-ORBC: Include auth token for dual JWT auth support
+        var startHeaders = { 'Content-Type': 'application/json' };
+        if (state.authToken) {
+            startHeaders['Authorization'] = 'Bearer ' + state.authToken;
+        }
         var response = await fetch('/api/v1/orb/live/session/start', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: startHeaders,
             body: JSON.stringify({
                 lang: lang,
                 voice_style: 'friendly, calm, empathetic',
@@ -22229,7 +22234,12 @@ async function geminiLiveStart() {
         console.log('[VTID-01155] Live session started:', data.session_id);
 
         // 2. Connect to SSE stream
-        var eventSource = new EventSource('/api/v1/orb/live/stream?session_id=' + data.session_id);
+        // VTID-ORBC: Pass auth token via query param (EventSource doesn't support headers)
+        var sseUrl = '/api/v1/orb/live/stream?session_id=' + data.session_id;
+        if (state.authToken) {
+            sseUrl += '&token=' + encodeURIComponent(state.authToken);
+        }
+        var eventSource = new EventSource(sseUrl);
 
         eventSource.onopen = function () {
             console.log('[VTID-01155] Live stream connected');
@@ -22502,9 +22512,14 @@ async function geminiLiveStartAudioCapture() {
 function geminiLiveSendAudio(base64Data) {
     if (!state.orb.geminiLiveSessionId || !state.orb.geminiLiveActive) return;
 
+    // VTID-ORBC: Include auth token for dual JWT auth support
+    var sendHeaders = { 'Content-Type': 'application/json' };
+    if (state.authToken) {
+        sendHeaders['Authorization'] = 'Bearer ' + state.authToken;
+    }
     fetch('/api/v1/orb/live/stream/send?session_id=' + state.orb.geminiLiveSessionId, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: sendHeaders,
         body: JSON.stringify({
             type: 'audio',
             data_b64: base64Data,
@@ -22735,9 +22750,14 @@ function geminiLiveCaptureAndSendFrame(stream, source) {
 function geminiLiveSendFrame(base64Data, source) {
     if (!state.orb.geminiLiveSessionId || !state.orb.geminiLiveActive) return;
 
+    // VTID-ORBC: Include auth token for dual JWT auth support
+    var frameHeaders = { 'Content-Type': 'application/json' };
+    if (state.authToken) {
+        frameHeaders['Authorization'] = 'Bearer ' + state.authToken;
+    }
     fetch('/api/v1/orb/live/stream/send?session_id=' + state.orb.geminiLiveSessionId, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: frameHeaders,
         body: JSON.stringify({
             type: 'video',
             source: source,
