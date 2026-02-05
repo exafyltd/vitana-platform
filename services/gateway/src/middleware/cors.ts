@@ -2,6 +2,7 @@ import cors from "cors";
 import { Express, Request, Response, NextFunction } from "express";
 
 // VTID-01176: Allowed CORS origins for gateway
+// VTID-01226: Added Lovable dynamic origins (*.lovableproject.com, *.lovable.app)
 // vitana-dev-gateway is deprecated but kept for backward compatibility during transition
 const ALLOWED_ORIGINS = [
   "https://vitana-gateway-86804897789.us-central1.run.app",  // Canonical gateway
@@ -11,9 +12,20 @@ const ALLOWED_ORIGINS = [
   "https://id-preview--vitana-v1.lovable.app",               // Lovable preview
 ];
 
+// VTID-01226: Dynamic origin patterns for Lovable-hosted frontends
+const ALLOWED_ORIGIN_PATTERNS = [
+  /^https:\/\/[a-z0-9-]+\.lovableproject\.com$/,  // Lovable project previews
+  /^https:\/\/[a-z0-9-]+\.lovable\.app$/,         // Lovable app domains
+];
+
+function isOriginAllowed(origin: string): boolean {
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
+  return ALLOWED_ORIGIN_PATTERNS.some(pattern => pattern.test(origin));
+}
+
 export const corsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+    if (!origin || isOriginAllowed(origin)) {
       callback(null, true);
     } else {
       callback(new Error("Not allowed by CORS"));
