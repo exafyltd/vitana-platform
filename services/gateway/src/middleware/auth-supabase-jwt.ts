@@ -1,9 +1,14 @@
 /**
  * VTID-01157: Supabase JWT Auth Middleware (Dev Onboarding MVP)
+ * VTID-ORBC: Unified auth with dual JWT secrets (Platform + Lovable)
  *
  * Purpose: Verify Supabase HS256 JWT tokens and extract identity claims.
- * This middleware validates the JWT signature using SUPABASE_JWT_SECRET
- * and attaches identity information to the request object.
+ * Supports two JWT secrets simultaneously:
+ *   1. SUPABASE_JWT_SECRET — Platform Supabase project
+ *   2. LOVABLE_JWT_SECRET  — Lovable Supabase project (temp_vitana_v1)
+ *
+ * Tries Platform secret first, then Lovable secret. Attaches auth_source
+ * to the request so downstream code knows which project the token came from.
  *
  * SECURITY: Does NOT call Supabase to validate tokens - just verifies signature + exp/nbf.
  */
@@ -26,11 +31,17 @@ export interface SupabaseIdentity {
 }
 
 /**
+ * Auth source: which Supabase project signed the JWT
+ */
+export type AuthSource = 'platform' | 'lovable';
+
+/**
  * Extended Express Request with identity attached
  */
 export interface AuthenticatedRequest extends Request {
   identity?: SupabaseIdentity;
   auth_raw_claims?: jose.JWTPayload;
+  auth_source?: AuthSource;
 }
 
 /**
@@ -47,65 +58,76 @@ function getBearerToken(req: Request): string | null {
 }
 
 /**
- * Get the JWT secret from environment.
- * Supabase uses HS256 with a shared secret.
+ * VTID-ORBC: JWT secret sources — Platform first, Lovable second.
+ * Returns array of { secret, source } to try in order.
  */
-function getJwtSecret(): Uint8Array | null {
-  const secret = process.env.SUPABASE_JWT_SECRET;
-  if (!secret) {
-    console.error('[VTID-01157] SUPABASE_JWT_SECRET not configured');
-    return null;
+function getJwtSecrets(): Array<{ secret: Uint8Array; source: AuthSource }> {
+  const secrets: Array<{ secret: Uint8Array; source: AuthSource }> = [];
+  const platformSecret = process.env.SUPABASE_JWT_SECRET;
+  const lovableSecret = process.env.LOVABLE_JWT_SECRET;
+
+  if (platformSecret) {
+    secrets.push({ secret: new TextEncoder().encode(platformSecret), source: 'platform' });
   }
-  return new TextEncoder().encode(secret);
+  if (lovableSecret) {
+    secrets.push({ secret: new TextEncoder().encode(lovableSecret), source: 'lovable' });
+  }
+
+  if (secrets.length === 0) {
+    console.error('[VTID-ORBC] No JWT secrets configured (need SUPABASE_JWT_SECRET or LOVABLE_JWT_SECRET)');
+  }
+
+  return secrets;
 }
 
 /**
- * Verify a Supabase JWT and extract identity claims.
- * @param token - The JWT string
- * @returns Identity object or null if verification fails
+ * Extract identity claims from a verified JWT payload.
+ */
+function extractIdentity(payload: jose.JWTPayload): SupabaseIdentity {
+  const appMetadata = (payload.app_metadata as Record<string, unknown>) || {};
+  return {
+    user_id: payload.sub || '',
+    email: (payload.email as string) || null,
+    tenant_id: (appMetadata.active_tenant_id as string) || null,
+    exafy_admin: appMetadata.exafy_admin === true,
+    role: (payload.role as string) || null,
+    aud: Array.isArray(payload.aud) ? payload.aud[0] : (payload.aud as string) || null,
+    exp: typeof payload.exp === 'number' ? payload.exp : null,
+    iat: typeof payload.iat === 'number' ? payload.iat : null,
+  };
+}
+
+/**
+ * VTID-ORBC: Verify a JWT against all configured secrets.
+ * Tries SUPABASE_JWT_SECRET (Platform) first, then LOVABLE_JWT_SECRET (Lovable).
+ * Returns identity + source on first successful verification.
  *
  * VTID-01224: Exported for WebSocket auth in orb-live.ts
  */
 export async function verifyAndExtractIdentity(
   token: string
-): Promise<{ identity: SupabaseIdentity; claims: jose.JWTPayload } | null> {
-  const secret = getJwtSecret();
-  if (!secret) {
+): Promise<{ identity: SupabaseIdentity; claims: jose.JWTPayload; auth_source: AuthSource } | null> {
+  const secrets = getJwtSecrets();
+  if (secrets.length === 0) {
     return null;
   }
 
-  try {
-    // Verify JWT signature, expiration, and not-before
-    const { payload } = await jose.jwtVerify(token, secret, {
-      algorithms: ['HS256'],
-    });
-
-    // Extract identity from claims
-    const appMetadata = (payload.app_metadata as Record<string, unknown>) || {};
-
-    const identity: SupabaseIdentity = {
-      user_id: payload.sub || '',
-      email: (payload.email as string) || null,
-      tenant_id: (appMetadata.active_tenant_id as string) || null,
-      exafy_admin: appMetadata.exafy_admin === true,
-      role: (payload.role as string) || null,
-      aud: Array.isArray(payload.aud) ? payload.aud[0] : (payload.aud as string) || null,
-      exp: typeof payload.exp === 'number' ? payload.exp : null,
-      iat: typeof payload.iat === 'number' ? payload.iat : null,
-    };
-
-    return { identity, claims: payload };
-  } catch (error: any) {
-    // Log verification failures for debugging
-    if (error.code === 'ERR_JWT_EXPIRED') {
-      console.warn('[VTID-01157] JWT expired');
-    } else if (error.code === 'ERR_JWS_SIGNATURE_VERIFICATION_FAILED') {
-      console.warn('[VTID-01157] JWT signature verification failed');
-    } else {
-      console.warn('[VTID-01157] JWT verification failed:', error.message);
+  for (const { secret, source } of secrets) {
+    try {
+      const { payload } = await jose.jwtVerify(token, secret, {
+        algorithms: ['HS256'],
+      });
+      const identity = extractIdentity(payload);
+      console.log(`[VTID-ORBC] JWT verified via ${source} secret: user=${identity.user_id}`);
+      return { identity, claims: payload, auth_source: source };
+    } catch (_error: any) {
+      // Continue to next secret
     }
-    return null;
   }
+
+  // All secrets failed — log the last error type for debugging
+  console.warn('[VTID-ORBC] JWT verification failed against all configured secrets');
+  return null;
 }
 
 /**
@@ -143,6 +165,7 @@ export async function requireAuth(
   // Attach identity to request
   req.identity = result.identity;
   req.auth_raw_claims = result.claims;
+  req.auth_source = result.auth_source;
 
   next();
 }
@@ -163,6 +186,7 @@ export async function optionalAuth(
     if (result) {
       req.identity = result.identity;
       req.auth_raw_claims = result.claims;
+      req.auth_source = result.auth_source;
     }
   }
 
@@ -270,6 +294,7 @@ export async function requireAuthWithTenant(
 
   req.identity = result.identity;
   req.auth_raw_claims = result.claims;
+  req.auth_source = result.auth_source;
 
   // Require tenant_id
   if (!req.identity.tenant_id) {
@@ -321,6 +346,7 @@ export async function requireAdminAuth(
 
   req.identity = result.identity;
   req.auth_raw_claims = result.claims;
+  req.auth_source = result.auth_source;
 
   // Then, require exafy_admin
   if (!req.identity.exafy_admin) {
