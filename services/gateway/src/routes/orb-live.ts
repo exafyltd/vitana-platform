@@ -4646,7 +4646,10 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
         }
       } else {
         // Fallback: Log when Live API not connected
-        console.log(`[VTID-01155] Audio chunk received (no Live API): session=${effectiveSessionId}, chunk=${session.audioInChunks}`);
+        // Log every 50th chunk to avoid flooding, but include diagnostic info
+        if (session.audioInChunks % 50 === 0) {
+          console.log(`[VTID-ORBC] Audio NO-LIVE-API: session=${effectiveSessionId}, chunk=${session.audioInChunks}, wsState=${session.upstreamWs?.readyState ?? 'NULL'}, projectId=${VERTEX_PROJECT_ID || 'EMPTY'}, hasAuth=${!!googleAuth}`);
+        }
 
         // Send acknowledgment via SSE (fallback behavior)
         if (session.sseResponse && session.audioInChunks % 5 === 0) {
