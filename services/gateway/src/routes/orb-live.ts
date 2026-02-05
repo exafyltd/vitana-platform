@@ -542,6 +542,7 @@ const liveSessions = new Map<string, GeminiLiveSession>();
 const VERTEX_PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID || '';
 const VERTEX_LOCATION = process.env.VERTEX_AI_LOCATION || 'us-central1';
 const VERTEX_LIVE_MODEL = 'gemini-live-2.5-flash-native-audio';  // Live API model for BidiGenerateContent
+console.log(`[VTID-ORBC] Vertex config at startup: PROJECT_ID=${VERTEX_PROJECT_ID || 'EMPTY'}, LOCATION=${VERTEX_LOCATION}`);
 const VERTEX_TTS_MODEL = 'gemini-2.5-flash-tts';  // Cloud TTS with Gemini voices
 
 // VTID-01155: Google Cloud Text-to-Speech client with Gemini voices
@@ -4459,6 +4460,7 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
 
   // VTID-01219: Connect to Vertex AI Live API WebSocket
   let liveApiConnected = false;
+  console.log(`[VTID-ORBC] Live API check: googleAuth=${!!googleAuth}, VERTEX_PROJECT_ID=${VERTEX_PROJECT_ID || 'EMPTY'}, sessionId=${sessionId}`);
   if (googleAuth && VERTEX_PROJECT_ID) {
     try {
       console.log(`[VTID-01219] Connecting to Vertex AI Live API for session ${sessionId}...`);
