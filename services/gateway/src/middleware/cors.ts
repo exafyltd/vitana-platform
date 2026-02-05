@@ -28,6 +28,7 @@ export const corsOptions = {
     if (!origin || isOriginAllowed(origin)) {
       callback(null, true);
     } else {
+      console.warn(`[CORS] Blocked origin: ${origin}`);
       callback(new Error("Not allowed by CORS"));
     }
   },
