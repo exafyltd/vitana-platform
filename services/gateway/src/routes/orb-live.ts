@@ -217,14 +217,22 @@ const sessions = new Map<string, OrbLiveSession>();
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 
 // Allowed origins (dev sandbox)
+// VTID-01226: Added Lovable dynamic origins for frontend integration
 const ALLOWED_ORIGINS = [
   'https://gateway-536750820055.us-central1.run.app',
   'https://gateway-q74ibpv6ia-uc.a.run.app',
   'https://gateway-86804897789.us-central1.run.app',
+  'https://id-preview--vitana-v1.lovable.app',
   'http://localhost:8080',
   'http://localhost:3000',
   'http://127.0.0.1:8080',
   'http://127.0.0.1:3000'
+];
+
+// VTID-01226: Dynamic origin patterns for Lovable-hosted frontends
+const ALLOWED_ORIGIN_PATTERNS = [
+  /^https:\/\/[a-z0-9-]+\.lovableproject\.com$/,
+  /^https:\/\/[a-z0-9-]+\.lovable\.app$/,
 ];
 
 // Connection limit per IP (dev sandbox)
@@ -1673,10 +1681,12 @@ async function emitOrbSessionEnded(orbSessionId: string, conversationId: string)
 // Helpers
 // =============================================================================
 
+// VTID-01226: Updated to support dynamic Lovable origin patterns
 function validateOrigin(req: Request): boolean {
   const origin = req.get('origin') || req.get('referer') || '';
   if (!origin) return true; // Allow requests without origin (e.g., curl)
-  return ALLOWED_ORIGINS.some(allowed => origin.startsWith(allowed));
+  if (ALLOWED_ORIGINS.some(allowed => origin.startsWith(allowed))) return true;
+  return ALLOWED_ORIGIN_PATTERNS.some(pattern => pattern.test(origin));
 }
 
 /**
