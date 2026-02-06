@@ -57,6 +57,8 @@ import { processWithGemini } from '../services/gemini-operator';
 // Memory auto-write for conversation turns
 import { classifyCategory } from './memory';
 import { writeMemoryItemWithIdentity } from '../services/orb-memory-bridge';
+// VTID-01225: Cognee entity extraction from conversation turns
+import { cogneeExtractorClient } from '../services/cognee-extractor-client';
 
 const router = Router();
 
@@ -319,6 +321,25 @@ Instructions:
       console.warn(`[VTID-01216] Memory write failed:`, memoryError.message);
     }
 
+    // Step 6: VTID-01225 - Fire-and-forget Cognee extraction from conversation
+    // Extracts entities, relationships, and signals for the memory garden
+    try {
+      const conversationText = `User: ${message.text}\nAssistant: ${reply}`;
+      if (conversationText.length > 50) {
+        cogneeExtractorClient.extractAsync({
+          transcript: conversationText,
+          tenant_id,
+          user_id,
+          session_id: thread.thread_id,
+          active_role: role,
+        });
+        console.log(`[VTID-01225] Cognee extraction queued for conversation turn: ${thread.thread_id}`);
+      }
+    } catch (cogneeError: any) {
+      // Non-blocking - don't fail the conversation turn
+      console.warn(`[VTID-01225] Cognee extraction trigger failed:`, cogneeError.message);
+    }
+
     // Build response
     const response: ConversationTurnResponse = {
       ok: true,
@@ -484,6 +505,18 @@ Instructions:
         timestamp: new Date().toISOString(),
         sequence: sequence
       })}\n\n`);
+
+      // VTID-01225: Fire-and-forget Cognee extraction from streamed conversation
+      const streamedText = `User: ${input.message.text}\nAssistant: ${geminiResult.reply}`;
+      if (streamedText.length > 50) {
+        cogneeExtractorClient.extractAsync({
+          transcript: streamedText,
+          tenant_id: input.tenant_id,
+          user_id: input.user_id,
+          session_id: thread.thread_id,
+          active_role: input.role,
+        });
+      }
 
     } catch (llmError: any) {
       res.write(`data: ${JSON.stringify({ type: 'error', data: llmError.message, timestamp: new Date().toISOString(), sequence: 999 })}\n\n`);

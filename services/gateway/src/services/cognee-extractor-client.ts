@@ -97,7 +97,7 @@ interface CogneeHealthResponse {
  * Emit a Cognee-related OASIS event
  */
 async function emitCogneeEvent(
-  type: 'cognee.extraction.started' | 'cognee.extraction.completed' | 'cognee.extraction.timeout' | 'cognee.extraction.error' | 'cognee.extraction.persisted',
+  type: 'cognee.extraction.started' | 'cognee.extraction.completed' | 'cognee.extraction.timeout' | 'cognee.extraction.error' | 'cognee.extraction.persisted' | 'cognee.persistence.partial_failure',
   status: 'info' | 'success' | 'warning' | 'error',
   message: string,
   payload: Record<string, unknown>
@@ -339,12 +339,19 @@ class CogneeExtractorClient {
     // Track entity name → node ID for edge creation
     const entityNodeMap = new Map<string, string>();
 
-    // Persistence counters
+    // Persistence counters (success + failure)
     let nodesCreated = 0;
     let nodesExisting = 0;
+    let nodesFailed = 0;
     let edgesCreated = 0;
     let edgesSkipped = 0;
+    let edgesFailed = 0;
     let signalsPersisted = 0;
+    let signalsFailed = 0;
+    let factsPersisted = 0;
+    let factsFailed = 0;
+    let memoryItemsPersisted = 0;
+    let memoryItemsFailed = 0;
 
     // ---- STEP 1: Persist nodes via direct table INSERT ----
     // VTID-01225: Using direct INSERT instead of relationship_ensure_node RPC because
@@ -402,10 +409,12 @@ class CogneeExtractorClient {
             console.log(`[VTID-01225] Node created: "${entity.name}" (${nodeType}) → ${inserted[0].id}`);
           }
         } else {
+          nodesFailed++;
           const errorBody = await insertResponse.text().catch(() => 'Unknown');
           console.error(`[VTID-01225] Node INSERT failed for "${entity.name}": ${insertResponse.status} - ${errorBody}`);
         }
       } catch (err) {
+        nodesFailed++;
         console.error(`[VTID-01225] Node persist error for "${entity.name}":`, err instanceof Error ? err.message : err);
       }
     }
@@ -458,10 +467,12 @@ class CogneeExtractorClient {
           edgesCreated++;
           console.log(`[VTID-01225] Edge: "${rel.from_entity}" -[${rel.vitana_type}]-> "${rel.to_entity}"`);
         } else {
+          edgesFailed++;
           const errorBody = await edgeResponse.text().catch(() => 'Unknown');
           console.warn(`[VTID-01225] Edge INSERT failed: ${edgeResponse.status} - ${errorBody}`);
         }
       } catch (err) {
+        edgesFailed++;
         console.error(`[VTID-01225] Edge persist error:`, err instanceof Error ? err.message : err);
       }
     }
@@ -499,10 +510,12 @@ class CogneeExtractorClient {
           signalsPersisted++;
           console.log(`[VTID-01225] Signal: "${signal.signal_key}" (confidence: ${signal.confidence})`);
         } else {
+          signalsFailed++;
           const errorBody = await signalResponse.text().catch(() => 'Unknown');
           console.warn(`[VTID-01225] Signal INSERT failed: ${signalResponse.status} - ${errorBody}`);
         }
       } catch (err) {
+        signalsFailed++;
         console.error(`[VTID-01225] Signal persist error:`, err instanceof Error ? err.message : err);
       }
     }
@@ -536,13 +549,16 @@ class CogneeExtractorClient {
         });
 
         if (response.ok) {
+          factsPersisted++;
           const factId = await response.json();
           console.log(`[VTID-01225] Persisted fact via write_fact(): ${factKey}="${factValue}" (id=${factId})`);
         } else {
+          factsFailed++;
           const errorText = await response.text();
           console.warn(`[VTID-01225] write_fact failed for "${factKey}": ${response.status} - ${errorText}`);
         }
       } catch (err) {
+        factsFailed++;
         console.warn(`[VTID-01225] Fact persist error for "${entity.name}":`, err);
       }
     }
@@ -581,42 +597,77 @@ class CogneeExtractorClient {
         });
 
         if (response.ok) {
+          memoryItemsPersisted++;
           console.log(`[VTID-01225] Persisted to memory_items: ${entity.name} (${categoryKey})`);
         } else {
+          memoryItemsFailed++;
           // VTID-01225: Read error body to understand why INSERT failed
           const errorBody = await response.text().catch(() => 'Unable to read error body');
           console.error(`[VTID-01225] memory_items INSERT failed for "${entity.name}": ${response.status} - ${errorBody}`);
         }
       } catch (err) {
+        memoryItemsFailed++;
         console.error(`[VTID-01225] Memory items persist error for "${entity.name}":`, err instanceof Error ? err.message : err);
       }
     }
 
+    const totalFailures = nodesFailed + edgesFailed + signalsFailed + factsFailed + memoryItemsFailed;
+
     console.log(
       `[VTID-01225] Persistence complete: ` +
-      `${nodesCreated} nodes created, ${nodesExisting} existing, ` +
-      `${edgesCreated} edges, ${edgesSkipped} edges skipped, ` +
-      `${signalsPersisted} signals, ` +
-      `${result.entities.length} entities processed`
+      `${nodesCreated} nodes created, ${nodesExisting} existing, ${nodesFailed} failed | ` +
+      `${edgesCreated} edges, ${edgesSkipped} skipped, ${edgesFailed} failed | ` +
+      `${signalsPersisted} signals, ${signalsFailed} failed | ` +
+      `${factsPersisted} facts, ${factsFailed} failed | ` +
+      `${memoryItemsPersisted} memory_items, ${memoryItemsFailed} failed`
     );
 
-    // Emit success event
+    // VTID-01225: Emit partial_failure event if any persistence operations failed
+    if (totalFailures > 0) {
+      await emitCogneeEvent(
+        'cognee.persistence.partial_failure',
+        'warning',
+        `Partial persistence failure: ${totalFailures} operations failed`,
+        {
+          tenant_id: request.tenant_id,
+          user_id: request.user_id,
+          session_id: request.session_id,
+          nodes_failed: nodesFailed,
+          edges_failed: edgesFailed,
+          signals_failed: signalsFailed,
+          facts_failed: factsFailed,
+          memory_items_failed: memoryItemsFailed,
+          total_failures: totalFailures,
+        }
+      );
+    }
+
+    // Emit success event with full counters
     await emitCogneeEvent(
       'cognee.extraction.persisted',
-      'success',
-      `Persisted: ${nodesCreated} nodes, ${edgesCreated} edges, ${signalsPersisted} signals, ${result.entities.length} facts`,
+      totalFailures > 0 ? 'warning' : 'success',
+      `Persisted: ${nodesCreated} nodes, ${edgesCreated} edges, ${signalsPersisted} signals, ${factsPersisted} facts, ${memoryItemsPersisted} items` +
+        (totalFailures > 0 ? ` (${totalFailures} failures)` : ''),
       {
         tenant_id: request.tenant_id,
         user_id: request.user_id,
         session_id: request.session_id,
         nodes_created: nodesCreated,
         nodes_existing: nodesExisting,
+        nodes_failed: nodesFailed,
         edges_created: edgesCreated,
         edges_skipped: edgesSkipped,
+        edges_failed: edgesFailed,
         signals_persisted: signalsPersisted,
+        signals_failed: signalsFailed,
+        facts_persisted: factsPersisted,
+        facts_failed: factsFailed,
+        memory_items_persisted: memoryItemsPersisted,
+        memory_items_failed: memoryItemsFailed,
+        total_failures: totalFailures,
         entity_count: result.entities.length,
         relationship_count: result.relationships.length,
-        signal_count: result.signals.length
+        signal_count: result.signals.length,
       }
     );
   }

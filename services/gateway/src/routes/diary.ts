@@ -21,6 +21,8 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
+// VTID-01225: Cognee entity extraction from diary entries
+import { cogneeExtractorClient } from '../services/cognee-extractor-client';
 
 const router = Router();
 
@@ -464,9 +466,9 @@ interface ExtractionResult {
 
 /**
  * Trigger extraction hooks after diary entry submission
- * - Always call memory_extract_garden_nodes
- * - If relationships template: attempt name detection for relationship signals
- * - Update user_topic_profile
+ * - VTID-01225: Fire Cognee extraction for entity/relationship/signal detection
+ * - Detect names for relationship signals (deterministic, immediate)
+ * - Track tags for topic profile
  */
 async function triggerExtractionHooks(
   token: string,
@@ -482,11 +484,21 @@ async function triggerExtractionHooks(
   };
 
   try {
-    const supabase = createUserSupabaseClient(token);
+    // 1. VTID-01225: Fire Cognee extraction (entities, relationships, signals)
+    // This replaces the placeholder - Cognee does the heavy lifting
+    if (userId && tenantId && entry.content.length > 20) {
+      cogneeExtractorClient.extractAsync({
+        transcript: entry.content,
+        tenant_id: tenantId,
+        user_id: userId,
+        session_id: `diary-${entryId}`,
+        active_role: 'community',
+      });
+      result.garden_nodes_triggered = true;
+      console.log(`[VTID-01225] Cognee extraction queued for diary entry: ${entryId}`);
+    }
 
-    // 1. Trigger memory garden node extraction
-    // This is a placeholder - actual RPC would be memory_extract_garden_nodes
-    // For now, we emit an OASIS event to track when extraction should happen
+    // Emit OASIS event for extraction tracking
     await emitDiaryEvent(
       'memory.garden.extract.triggered',
       'info',
@@ -496,26 +508,23 @@ async function triggerExtractionHooks(
         template_type: entry.template_type,
         content_length: entry.content.length,
         user_id: userId,
-        tenant_id: tenantId
+        tenant_id: tenantId,
+        cognee_enabled: cogneeExtractorClient.isEnabled(),
       }
     );
-    result.garden_nodes_triggered = true;
 
-    // 2. If relationships template, detect names for relationship signals
+    // 2. If relationships template, detect names for relationship signals (deterministic)
     if (entry.template_type === 'relationships_social') {
       const textToAnalyze = entry.content + ' ' + (entry.people_mentioned || '');
       const detectedNames = detectPeopleNames(textToAnalyze);
 
       if (detectedNames.length > 0) {
         result.relationship_signals = detectedNames;
-
-        // Log relationship signals (actual edge creation would be handled by a separate service)
         console.log(`[VTID-01097] Relationship signals detected: ${detectedNames.join(', ')}`);
       }
     }
 
-    // 3. Update user_topic_profile (placeholder - would call actual RPC)
-    // For now, we track the tags used for future topic profile updates
+    // 3. Track tags for topic profile updates
     if (entry.tags && entry.tags.length > 0) {
       result.topic_profile_updated = true;
       console.log(`[VTID-01097] Topic profile update: ${entry.tags.join(', ')}`);
@@ -677,8 +686,17 @@ router.post('/entry', async (req: Request, res: Response) => {
 
     const memoryId = data?.id || entryId;
 
+    // VTID-01225: Extract userId/tenantId from JWT for Cognee extraction
+    let jwtUserId: string | undefined;
+    let jwtTenantId: string | undefined;
+    try {
+      const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+      jwtUserId = payload.sub;
+      jwtTenantId = payload.app_metadata?.active_tenant_id;
+    } catch { /* non-critical */ }
+
     // Trigger extraction hooks
-    const extractionResult = await triggerExtractionHooks(token, memoryId, entry);
+    const extractionResult = await triggerExtractionHooks(token, memoryId, entry, jwtUserId, jwtTenantId);
 
     // Emit OASIS event
     await emitDiaryEvent(
