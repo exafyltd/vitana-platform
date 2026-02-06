@@ -225,8 +225,10 @@ const ALLOWED_ORIGINS = [
   'https://gateway-86804897789.us-central1.run.app',
   'https://id-preview--vitana-v1.lovable.app',
   'http://localhost:8080',
+  'http://localhost:8081',  // VTID-01225: Mobile dev server
   'http://localhost:3000',
   'http://127.0.0.1:8080',
+  'http://127.0.0.1:8081',  // VTID-01225: Mobile dev server
   'http://127.0.0.1:3000'
 ];
 
