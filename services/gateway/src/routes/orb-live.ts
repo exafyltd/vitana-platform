@@ -5188,14 +5188,18 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     exp: null,
     iat: null
   };
-  const effectiveBootstrapIdentity: SupabaseIdentity | null = (identity && identity.tenant_id && identity.user_id)
-    ? identity
-    : isDevSandbox()
-      ? devSandboxIdentity
+  // VTID-01225: In dev-sandbox mode, ALWAYS use DEV_IDENTITY for consistency
+  // This ensures all voice sessions share the same memory bank regardless of JWT auth
+  // Without this, Lovable clients sending JWT would get empty memory (different user_id)
+  const effectiveBootstrapIdentity: SupabaseIdentity | null = isDevSandbox()
+    ? devSandboxIdentity  // Always use DEV_IDENTITY in dev-sandbox for memory consistency
+    : (identity && identity.tenant_id && identity.user_id)
+      ? identity
       : null;
 
   if (effectiveBootstrapIdentity) {
-    console.log(`[VTID-01224] Building bootstrap context for session ${sessionId}${!identity ? ' (using DEV_IDENTITY fallback)' : ''}...`);
+    const usingDevIdentity = isDevSandbox();
+    console.log(`[VTID-01224] Building bootstrap context for session ${sessionId}${usingDevIdentity ? ' (DEV_IDENTITY - dev-sandbox mode)' : ''}...`);
     const bootstrapResult = await buildBootstrapContextPack(effectiveBootstrapIdentity, sessionId);
 
     contextInstruction = bootstrapResult.contextInstruction;
