@@ -97,7 +97,7 @@ interface CogneeHealthResponse {
  * Emit a Cognee-related OASIS event
  */
 async function emitCogneeEvent(
-  type: 'cognee.extraction.started' | 'cognee.extraction.completed' | 'cognee.extraction.timeout' | 'cognee.extraction.error' | 'cognee.extraction.persisted',
+  type: 'cognee.extraction.started' | 'cognee.extraction.completed' | 'cognee.extraction.timeout' | 'cognee.extraction.error' | 'cognee.extraction.persisted' | 'cognee.persistence.partial_failure',
   status: 'info' | 'success' | 'warning' | 'error',
   message: string,
   payload: Record<string, unknown>
@@ -291,10 +291,10 @@ class CogneeExtractorClient {
     // Fire and forget - don't await
     this.extract(request)
       .then(async result => {
-        if (result.ok && (result.entities.length > 0 || result.relationships.length > 0)) {
+        if (result.ok && (result.entities.length > 0 || result.relationships.length > 0 || result.signals.length > 0)) {
           console.log(
             `[VTID-01225] Async extraction yielded: ${result.entities.length} entities, ` +
-            `${result.relationships.length} relationships`
+            `${result.relationships.length} relationships, ${result.signals.length} signals`
           );
 
           // VTID-01225: Persist extracted entities to relationship graph
@@ -324,52 +324,199 @@ class CogneeExtractorClient {
     const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
-      // VTID-01225: This is a critical configuration error that should be surfaced
       const error = new Error(`[VTID-01225] Supabase not configured for persistence: URL=${!!SUPABASE_URL}, SERVICE_ROLE=${!!SUPABASE_SERVICE_ROLE}`);
       console.error(error.message);
       throw error;
     }
 
-    // Persist to relationship_nodes via RPC
+    // VTID-01225: Common headers for service_role REST API calls
+    const serviceHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      apikey: SUPABASE_SERVICE_ROLE,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+    };
+
+    // Track entity name → node ID for edge creation
+    const entityNodeMap = new Map<string, string>();
+
+    // Persistence counters (success + failure)
+    let nodesCreated = 0;
+    let nodesExisting = 0;
+    let nodesFailed = 0;
+    let edgesCreated = 0;
+    let edgesSkipped = 0;
+    let edgesFailed = 0;
+    let signalsPersisted = 0;
+    let signalsFailed = 0;
+    let factsPersisted = 0;
+    let factsFailed = 0;
+    let memoryItemsPersisted = 0;
+    let memoryItemsFailed = 0;
+
+    // ---- STEP 1: Persist nodes via direct table INSERT ----
+    // VTID-01225: Using direct INSERT instead of relationship_ensure_node RPC because
+    // the RPC derives tenant/user from JWT context (current_tenant_id/auth.uid) which
+    // is not available in fire-and-forget service_role calls. Direct INSERT with
+    // service_role bypasses RLS and works correctly.
     for (const entity of result.entities) {
       try {
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/relationship_ensure_node`, {
+        const nodeType = entity.vitana_node_type || 'person';
+        const domain = entity.domain || 'community';
+
+        // Check if node already exists (dedup by tenant + type + title)
+        const checkUrl = `${SUPABASE_URL}/rest/v1/relationship_nodes?` +
+          `tenant_id=eq.${request.tenant_id}&` +
+          `node_type=eq.${encodeURIComponent(nodeType)}&` +
+          `title=eq.${encodeURIComponent(entity.name)}&` +
+          `select=id&limit=1`;
+
+        const checkResponse = await fetch(checkUrl, { headers: serviceHeaders });
+
+        if (checkResponse.ok) {
+          const existing = await checkResponse.json();
+          if (Array.isArray(existing) && existing.length > 0) {
+            entityNodeMap.set(entity.name, existing[0].id);
+            nodesExisting++;
+            continue;
+          }
+        }
+
+        // Insert new node
+        const insertResponse = await fetch(`${SUPABASE_URL}/rest/v1/relationship_nodes`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: SUPABASE_SERVICE_ROLE,
-            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-          },
+          headers: { ...serviceHeaders, Prefer: 'return=representation' },
           body: JSON.stringify({
-            // VTID-01225: Valid node_types: person, group, event, service, product, location, live_room
-            // Default to 'person' instead of invalid 'entity'
-            p_node_type: entity.vitana_node_type || 'person',
-            p_title: entity.name,
-            // VTID-01225: Valid domains: community, health, business, lifestyle
-            // Default to 'community' instead of invalid 'personal'
-            p_domain: entity.domain || 'community',
-            p_metadata: {
+            tenant_id: request.tenant_id,
+            node_type: nodeType,
+            title: entity.name,
+            domain: domain,
+            metadata: {
               entity_type: entity.entity_type,
               origin: 'cognee',
               vtid: 'VTID-01225',
               session_id: request.session_id,
               user_id: request.user_id,
-              tenant_id: request.tenant_id,
-              ...entity.metadata
-            }
+              ...entity.metadata,
+            },
           }),
         });
 
-        if (!response.ok) {
-          // VTID-01225: Read error body to understand why RPC failed
-          const errorBody = await response.text().catch(() => 'Unable to read error body');
-          console.error(`[VTID-01225] Node creation failed for "${entity.name}": ${response.status} - ${errorBody}`);
+        if (insertResponse.ok) {
+          const inserted = await insertResponse.json();
+          if (Array.isArray(inserted) && inserted.length > 0) {
+            entityNodeMap.set(entity.name, inserted[0].id);
+            nodesCreated++;
+            console.log(`[VTID-01225] Node created: "${entity.name}" (${nodeType}) → ${inserted[0].id}`);
+          }
         } else {
-          const nodeResult = await response.json().catch(() => null);
-          console.log(`[VTID-01225] Node created for "${entity.name}":`, nodeResult);
+          nodesFailed++;
+          const errorBody = await insertResponse.text().catch(() => 'Unknown');
+          console.error(`[VTID-01225] Node INSERT failed for "${entity.name}": ${insertResponse.status} - ${errorBody}`);
         }
       } catch (err) {
+        nodesFailed++;
         console.error(`[VTID-01225] Node persist error for "${entity.name}":`, err instanceof Error ? err.message : err);
+      }
+    }
+
+    // ---- STEP 2: Persist edges via direct table INSERT ----
+    // VTID-01225: Creates relationship edges between extracted entities.
+    // Uses ON CONFLICT DO NOTHING (ignore-duplicates) to avoid overwriting
+    // existing edge strength. New edges start at strength=10.
+    // Unique constraint: (tenant_id, user_id, from_node_id, to_node_id, relationship_type)
+    for (const rel of result.relationships) {
+      try {
+        const fromNodeId = entityNodeMap.get(rel.from_entity);
+        const toNodeId = entityNodeMap.get(rel.to_entity);
+
+        if (!fromNodeId || !toNodeId) {
+          edgesSkipped++;
+          console.debug(`[VTID-01225] Edge skipped (missing node): "${rel.from_entity}" -> "${rel.to_entity}"`);
+          continue;
+        }
+
+        const today = new Date().toISOString().split('T')[0];
+        const edgeResponse = await fetch(
+          `${SUPABASE_URL}/rest/v1/relationship_edges?` +
+          `on_conflict=tenant_id,user_id,from_node_id,to_node_id,relationship_type`,
+          {
+            method: 'POST',
+            headers: { ...serviceHeaders, Prefer: 'resolution=ignore-duplicates, return=minimal' },
+            body: JSON.stringify({
+              tenant_id: request.tenant_id,
+              user_id: request.user_id,
+              from_node_id: fromNodeId,
+              to_node_id: toNodeId,
+              relationship_type: rel.vitana_type,
+              strength: 10,
+              origin: 'autopilot',
+              context: {
+                ...rel.context,
+                cognee_type: rel.cognee_type,
+                origin: 'cognee',
+                vtid: 'VTID-01225',
+                session_id: request.session_id,
+              },
+              first_seen: today,
+              last_seen: today,
+            }),
+          }
+        );
+
+        if (edgeResponse.ok || edgeResponse.status === 201) {
+          edgesCreated++;
+          console.log(`[VTID-01225] Edge: "${rel.from_entity}" -[${rel.vitana_type}]-> "${rel.to_entity}"`);
+        } else {
+          edgesFailed++;
+          const errorBody = await edgeResponse.text().catch(() => 'Unknown');
+          console.warn(`[VTID-01225] Edge INSERT failed: ${edgeResponse.status} - ${errorBody}`);
+        }
+      } catch (err) {
+        edgesFailed++;
+        console.error(`[VTID-01225] Edge persist error:`, err instanceof Error ? err.message : err);
+      }
+    }
+
+    // ---- STEP 3: Persist signals via direct table UPSERT ----
+    // VTID-01225: Upserts behavioral signals extracted from transcripts.
+    // Uses ON CONFLICT DO UPDATE (merge-duplicates) to update confidence
+    // when the same signal is detected again.
+    // Unique constraint: (tenant_id, user_id, signal_key)
+    for (const signal of result.signals) {
+      try {
+        const signalResponse = await fetch(
+          `${SUPABASE_URL}/rest/v1/relationship_signals?` +
+          `on_conflict=tenant_id,user_id,signal_key`,
+          {
+            method: 'POST',
+            headers: { ...serviceHeaders, Prefer: 'resolution=merge-duplicates, return=minimal' },
+            body: JSON.stringify({
+              tenant_id: request.tenant_id,
+              user_id: request.user_id,
+              signal_key: signal.signal_key,
+              confidence: signal.confidence,
+              evidence: {
+                ...signal.evidence,
+                session_id: request.session_id,
+                origin: 'cognee',
+                vtid: 'VTID-01225',
+              },
+              updated_at: new Date().toISOString(),
+            }),
+          }
+        );
+
+        if (signalResponse.ok || signalResponse.status === 201) {
+          signalsPersisted++;
+          console.log(`[VTID-01225] Signal: "${signal.signal_key}" (confidence: ${signal.confidence})`);
+        } else {
+          signalsFailed++;
+          const errorBody = await signalResponse.text().catch(() => 'Unknown');
+          console.warn(`[VTID-01225] Signal INSERT failed: ${signalResponse.status} - ${errorBody}`);
+        }
+      } catch (err) {
+        signalsFailed++;
+        console.error(`[VTID-01225] Signal persist error:`, err instanceof Error ? err.message : err);
       }
     }
 
@@ -388,11 +535,7 @@ class CogneeExtractorClient {
         // Call write_fact() RPC (VTID-01192) - the proper way to store facts
         const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/write_fact`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: SUPABASE_SERVICE_ROLE,
-            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-          },
+          headers: serviceHeaders,
           body: JSON.stringify({
             p_tenant_id: request.tenant_id,
             p_user_id: request.user_id,
@@ -406,13 +549,16 @@ class CogneeExtractorClient {
         });
 
         if (response.ok) {
+          factsPersisted++;
           const factId = await response.json();
           console.log(`[VTID-01225] Persisted fact via write_fact(): ${factKey}="${factValue}" (id=${factId})`);
         } else {
+          factsFailed++;
           const errorText = await response.text();
           console.warn(`[VTID-01225] write_fact failed for "${factKey}": ${response.status} - ${errorText}`);
         }
       } catch (err) {
+        factsFailed++;
         console.warn(`[VTID-01225] Fact persist error for "${entity.name}":`, err);
       }
     }
@@ -430,12 +576,7 @@ class CogneeExtractorClient {
 
         const response = await fetch(`${SUPABASE_URL}/rest/v1/memory_items`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: SUPABASE_SERVICE_ROLE,
-            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-            Prefer: 'return=minimal'
-          },
+          headers: { ...serviceHeaders, Prefer: 'return=minimal' },
           body: JSON.stringify({
             tenant_id: request.tenant_id,
             user_id: request.user_id,
@@ -456,30 +597,77 @@ class CogneeExtractorClient {
         });
 
         if (response.ok) {
+          memoryItemsPersisted++;
           console.log(`[VTID-01225] Persisted to memory_items: ${entity.name} (${categoryKey})`);
         } else {
+          memoryItemsFailed++;
           // VTID-01225: Read error body to understand why INSERT failed
           const errorBody = await response.text().catch(() => 'Unable to read error body');
           console.error(`[VTID-01225] memory_items INSERT failed for "${entity.name}": ${response.status} - ${errorBody}`);
         }
       } catch (err) {
+        memoryItemsFailed++;
         console.error(`[VTID-01225] Memory items persist error for "${entity.name}":`, err instanceof Error ? err.message : err);
       }
     }
 
-    console.log(`[VTID-01225] Persistence complete: ${result.entities.length} entities processed`);
+    const totalFailures = nodesFailed + edgesFailed + signalsFailed + factsFailed + memoryItemsFailed;
 
-    // Emit success event
+    console.log(
+      `[VTID-01225] Persistence complete: ` +
+      `${nodesCreated} nodes created, ${nodesExisting} existing, ${nodesFailed} failed | ` +
+      `${edgesCreated} edges, ${edgesSkipped} skipped, ${edgesFailed} failed | ` +
+      `${signalsPersisted} signals, ${signalsFailed} failed | ` +
+      `${factsPersisted} facts, ${factsFailed} failed | ` +
+      `${memoryItemsPersisted} memory_items, ${memoryItemsFailed} failed`
+    );
+
+    // VTID-01225: Emit partial_failure event if any persistence operations failed
+    if (totalFailures > 0) {
+      await emitCogneeEvent(
+        'cognee.persistence.partial_failure',
+        'warning',
+        `Partial persistence failure: ${totalFailures} operations failed`,
+        {
+          tenant_id: request.tenant_id,
+          user_id: request.user_id,
+          session_id: request.session_id,
+          nodes_failed: nodesFailed,
+          edges_failed: edgesFailed,
+          signals_failed: signalsFailed,
+          facts_failed: factsFailed,
+          memory_items_failed: memoryItemsFailed,
+          total_failures: totalFailures,
+        }
+      );
+    }
+
+    // Emit success event with full counters
     await emitCogneeEvent(
       'cognee.extraction.persisted',
-      'success',
-      `Persisted ${result.entities.length} entities to relationship graph and memory`,
+      totalFailures > 0 ? 'warning' : 'success',
+      `Persisted: ${nodesCreated} nodes, ${edgesCreated} edges, ${signalsPersisted} signals, ${factsPersisted} facts, ${memoryItemsPersisted} items` +
+        (totalFailures > 0 ? ` (${totalFailures} failures)` : ''),
       {
         tenant_id: request.tenant_id,
         user_id: request.user_id,
         session_id: request.session_id,
+        nodes_created: nodesCreated,
+        nodes_existing: nodesExisting,
+        nodes_failed: nodesFailed,
+        edges_created: edgesCreated,
+        edges_skipped: edgesSkipped,
+        edges_failed: edgesFailed,
+        signals_persisted: signalsPersisted,
+        signals_failed: signalsFailed,
+        facts_persisted: factsPersisted,
+        facts_failed: factsFailed,
+        memory_items_persisted: memoryItemsPersisted,
+        memory_items_failed: memoryItemsFailed,
+        total_failures: totalFailures,
         entity_count: result.entities.length,
-        relationship_count: result.relationships.length
+        relationship_count: result.relationships.length,
+        signal_count: result.signals.length,
       }
     );
   }

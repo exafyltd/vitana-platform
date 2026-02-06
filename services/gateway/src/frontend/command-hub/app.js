@@ -2810,7 +2810,20 @@ const state = {
         showDiaryModal: false,      // Diary entry modal state
         showCategoryModal: false,   // Category detail modal state
         selectedCategory: null,     // Current category key
-        selectedCategoryData: null  // Current category data
+        selectedCategoryData: null, // Current category data
+        // VTID-01225: Live memory data for category modals and unified intelligence
+        categoryMemories: [],       // Memory items for selected category
+        categoryMemoriesLoading: false,
+        categoryMemoriesError: null,
+        facts: null,                // Structured facts from garden/summary
+        factsLoading: false,
+        factsFetched: false,
+        relationships: null,        // Relationship graph data { nodes, edges }
+        relationshipsLoading: false,
+        relationshipsFetched: false,
+        signals: null,              // Behavioral signals
+        signalsLoading: false,
+        signalsFetched: false
     },
 
     // Intelligence & Memory DEV: Knowledge Graph, Embeddings, Recall, Inspector
@@ -15741,6 +15754,227 @@ async function refreshMemoryGarden() {
 }
 
 /**
+ * VTID-01225: Fetch actual memory items for a specific garden category
+ * Calls GET /api/v1/memory/context/trusted with category filter
+ */
+async function fetchCategoryMemories(categoryKey) {
+    if (state.memoryGarden.categoryMemoriesLoading) return;
+
+    state.memoryGarden.categoryMemoriesLoading = true;
+    state.memoryGarden.categoryMemoriesError = null;
+    state.memoryGarden.categoryMemories = [];
+    renderApp();
+
+    // Map garden categories back to source category keys for the API
+    var categoryApiMap = {
+        personal_identity: 'notes,personal',
+        health_wellness: 'health',
+        lifestyle_routines: 'preferences',
+        network_relationships: 'relationships,community,events_meetups',
+        learning_knowledge: 'notes',
+        business_projects: 'tasks',
+        finance_assets: 'products_services',
+        location_environment: 'notes',
+        digital_footprint: 'notes',
+        values_aspirations: 'goals',
+        autopilot_context: 'conversation',
+        future_plans: 'goals',
+        uncategorized: 'conversation,notes'
+    };
+
+    var apiCategories = categoryApiMap[categoryKey] || categoryKey;
+
+    try {
+        var token = state.authToken;
+        if (!token) {
+            state.memoryGarden.categoryMemoriesLoading = false;
+            state.memoryGarden.categoryMemoriesError = 'Not authenticated';
+            renderApp();
+            return;
+        }
+
+        var controller = new AbortController();
+        var timeoutId = setTimeout(function () { controller.abort(); }, 8000);
+
+        var response = await fetch(
+            '/api/v1/memory/context/trusted?categories=' + encodeURIComponent(apiCategories) +
+            '&min_confidence=10&limit=50&include_low_confidence=true',
+            {
+                method: 'GET',
+                headers: {
+                    'Authorization': 'Bearer ' + token,
+                    'Content-Type': 'application/json'
+                },
+                signal: controller.signal
+            }
+        );
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            // Fallback: try the basic context endpoint
+            var fallbackResponse = await fetch(
+                '/api/v1/memory/context?categories=' + encodeURIComponent(apiCategories) + '&limit=50',
+                {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': 'Bearer ' + token,
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
+
+            if (fallbackResponse.ok) {
+                var fallbackData = await fallbackResponse.json();
+                state.memoryGarden.categoryMemories = fallbackData.items || [];
+            } else {
+                throw new Error('Failed to fetch memories');
+            }
+        } else {
+            var data = await response.json();
+            state.memoryGarden.categoryMemories = data.items || [];
+        }
+
+        console.log('[VTID-01225] Fetched ' + state.memoryGarden.categoryMemories.length + ' memories for ' + categoryKey);
+    } catch (err) {
+        console.error('[VTID-01225] Error fetching category memories:', err);
+        state.memoryGarden.categoryMemoriesError = err.message || 'Failed to load memories';
+    }
+
+    state.memoryGarden.categoryMemoriesLoading = false;
+    renderApp();
+}
+
+/**
+ * VTID-01225: Fetch structured facts from Memory Garden summary
+ */
+async function fetchMemoryFacts() {
+    if (state.memoryGarden.factsLoading || state.memoryGarden.factsFetched) return;
+
+    state.memoryGarden.factsLoading = true;
+
+    try {
+        var token = state.authToken;
+        if (!token) {
+            state.memoryGarden.factsLoading = false;
+            return;
+        }
+
+        var controller = new AbortController();
+        var timeoutId = setTimeout(function () { controller.abort(); }, 5000);
+
+        var response = await fetch('/api/v1/memory/garden/summary', {
+            method: 'GET',
+            headers: {
+                'Authorization': 'Bearer ' + token,
+                'Content-Type': 'application/json'
+            },
+            signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+            var data = await response.json();
+            state.memoryGarden.facts = data;
+            console.log('[VTID-01225] Memory facts fetched');
+        }
+    } catch (err) {
+        console.warn('[VTID-01225] Facts fetch failed:', err.message);
+    }
+
+    state.memoryGarden.factsLoading = false;
+    state.memoryGarden.factsFetched = true;
+    renderApp();
+}
+
+/**
+ * VTID-01225: Fetch relationship graph (nodes + edges)
+ */
+async function fetchRelationshipGraph() {
+    if (state.memoryGarden.relationshipsLoading || state.memoryGarden.relationshipsFetched) return;
+
+    state.memoryGarden.relationshipsLoading = true;
+
+    try {
+        var token = state.authToken;
+        if (!token) {
+            state.memoryGarden.relationshipsLoading = false;
+            return;
+        }
+
+        var controller = new AbortController();
+        var timeoutId = setTimeout(function () { controller.abort(); }, 5000);
+
+        var response = await fetch('/api/v1/relationships/graph?limit=50', {
+            method: 'GET',
+            headers: {
+                'Authorization': 'Bearer ' + token,
+                'Content-Type': 'application/json'
+            },
+            signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+            var data = await response.json();
+            state.memoryGarden.relationships = data;
+            console.log('[VTID-01225] Relationship graph fetched: ' + (data.nodes?.length || 0) + ' nodes, ' + (data.edges?.length || 0) + ' edges');
+        }
+    } catch (err) {
+        console.warn('[VTID-01225] Relationships fetch failed:', err.message);
+    }
+
+    state.memoryGarden.relationshipsLoading = false;
+    state.memoryGarden.relationshipsFetched = true;
+    renderApp();
+}
+
+/**
+ * VTID-01225: Fetch behavioral signals
+ */
+async function fetchBehavioralSignals() {
+    if (state.memoryGarden.signalsLoading || state.memoryGarden.signalsFetched) return;
+
+    state.memoryGarden.signalsLoading = true;
+
+    try {
+        var token = state.authToken;
+        if (!token) {
+            state.memoryGarden.signalsLoading = false;
+            return;
+        }
+
+        var controller = new AbortController();
+        var timeoutId = setTimeout(function () { controller.abort(); }, 5000);
+
+        var response = await fetch('/api/v1/relationships/signals?min_confidence=20', {
+            method: 'GET',
+            headers: {
+                'Authorization': 'Bearer ' + token,
+                'Content-Type': 'application/json'
+            },
+            signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+            var data = await response.json();
+            state.memoryGarden.signals = data.signals || [];
+            console.log('[VTID-01225] Behavioral signals fetched: ' + state.memoryGarden.signals.length);
+        }
+    } catch (err) {
+        console.warn('[VTID-01225] Signals fetch failed:', err.message);
+    }
+
+    state.memoryGarden.signalsLoading = false;
+    state.memoryGarden.signalsFetched = true;
+    renderApp();
+}
+
+/**
  * VTID-01086: Render the Memory Garden view
  */
 function renderMemoryGardenView() {
@@ -15753,6 +15987,16 @@ function renderMemoryGardenView() {
     }
     if (!state.memoryGarden.longevityFetched && !state.memoryGarden.longevityLoading) {
         fetchLongevitySummary();
+    }
+    // VTID-01225: Auto-fetch unified intelligence data
+    if (!state.memoryGarden.factsFetched && !state.memoryGarden.factsLoading) {
+        fetchMemoryFacts();
+    }
+    if (!state.memoryGarden.relationshipsFetched && !state.memoryGarden.relationshipsLoading) {
+        fetchRelationshipGraph();
+    }
+    if (!state.memoryGarden.signalsFetched && !state.memoryGarden.signalsLoading) {
+        fetchBehavioralSignals();
     }
 
     // Header with title and actions
@@ -15817,6 +16061,9 @@ function renderMemoryGardenView() {
 
     // Longevity Focus Today panel (first row)
     mainContent.appendChild(renderLongevityFocusPanel());
+
+    // VTID-01225: Unified Intelligence Summary (facts + relationships + signals)
+    mainContent.appendChild(renderUnifiedIntelligencePanel());
 
     // Category cards grid
     var grid = document.createElement('div');
@@ -16176,6 +16423,9 @@ function renderCategoryDetailModal() {
             state.memoryGarden.showCategoryModal = false;
             state.memoryGarden.selectedCategory = null;
             state.memoryGarden.selectedCategoryData = null;
+            // VTID-01225: Reset category memories so fresh data loads next time
+            state.memoryGarden.categoryMemories = [];
+            state.memoryGarden.categoryMemoriesError = null;
             renderApp();
         }
     };
@@ -16231,6 +16481,9 @@ function renderCategoryDetailModal() {
         state.memoryGarden.showCategoryModal = false;
         state.memoryGarden.selectedCategory = null;
         state.memoryGarden.selectedCategoryData = null;
+        // VTID-01225: Reset category memories
+        state.memoryGarden.categoryMemories = [];
+        state.memoryGarden.categoryMemoriesError = null;
         renderApp();
     };
     header.appendChild(closeBtn);
@@ -16265,17 +16518,80 @@ function renderCategoryDetailModal() {
     var memoriesList = document.createElement('div');
     memoriesList.className = 'memories-list';
 
-    if (memoryCount === 0) {
+    // VTID-01225: Auto-fetch real memories when modal opens
+    if (!state.memoryGarden.categoryMemoriesLoading &&
+        state.memoryGarden.categoryMemories.length === 0 &&
+        !state.memoryGarden.categoryMemoriesError &&
+        memoryCount > 0) {
+        fetchCategoryMemories(categoryKey);
+    }
+
+    if (state.memoryGarden.categoryMemoriesLoading) {
+        var loadingState = document.createElement('div');
+        loadingState.className = 'memories-loading';
+        loadingState.textContent = 'Loading memories...';
+        memoriesList.appendChild(loadingState);
+    } else if (state.memoryGarden.categoryMemoriesError) {
+        var errorState = document.createElement('div');
+        errorState.className = 'memories-error';
+        errorState.textContent = 'Error: ' + state.memoryGarden.categoryMemoriesError;
+        memoriesList.appendChild(errorState);
+    } else if (state.memoryGarden.categoryMemories.length === 0) {
         var emptyState = document.createElement('div');
         emptyState.className = 'empty-memories';
-        emptyState.innerHTML = '<p>No memories yet in this category.</p><p>Click "Add Memory" to get started.</p>';
+        emptyState.innerHTML = '<p>No memories yet in this category.</p><p>Click "Add Memory" or start a conversation to build your garden.</p>';
         memoriesList.appendChild(emptyState);
     } else {
-        // Show placeholder memories (real implementation would fetch from API)
-        var placeholderNote = document.createElement('div');
-        placeholderNote.className = 'memory-item';
-        placeholderNote.innerHTML = '<div class="memory-item-content">Memory items will appear here once loaded from the API.</div><div class="memory-item-meta">DEV mode placeholder</div>';
-        memoriesList.appendChild(placeholderNote);
+        // VTID-01225: Render REAL memory items from API
+        state.memoryGarden.categoryMemories.forEach(function (mem) {
+            var memItem = document.createElement('div');
+            memItem.className = 'memory-item';
+
+            var memContent = document.createElement('div');
+            memContent.className = 'memory-item-content';
+            memContent.textContent = mem.content || '(no content)';
+            memItem.appendChild(memContent);
+
+            var memMeta = document.createElement('div');
+            memMeta.className = 'memory-item-meta';
+
+            var parts = [];
+            if (mem.source) parts.push(mem.source);
+            if (mem.importance) parts.push('importance: ' + mem.importance);
+            if (mem.confidence_score !== undefined && mem.confidence_score !== null) {
+                parts.push('confidence: ' + mem.confidence_score + '%');
+            }
+            if (mem.occurred_at) {
+                try {
+                    parts.push(new Date(mem.occurred_at).toLocaleDateString());
+                } catch (e) { /* skip */ }
+            }
+            memMeta.textContent = parts.join(' · ');
+            memItem.appendChild(memMeta);
+
+            // Show content_json details if available
+            if (mem.content_json && typeof mem.content_json === 'object') {
+                var jsonKeys = Object.keys(mem.content_json).filter(function (k) {
+                    return k !== 'entity_type' && k !== 'cognee_origin' && k !== 'session_id';
+                });
+                if (jsonKeys.length > 0) {
+                    var details = document.createElement('div');
+                    details.className = 'memory-item-details';
+                    jsonKeys.slice(0, 5).forEach(function (k) {
+                        var val = mem.content_json[k];
+                        if (val !== null && val !== undefined && val !== '') {
+                            var tag = document.createElement('span');
+                            tag.className = 'memory-detail-tag';
+                            tag.textContent = k + ': ' + (typeof val === 'object' ? JSON.stringify(val) : String(val));
+                            details.appendChild(tag);
+                        }
+                    });
+                    memItem.appendChild(details);
+                }
+            }
+
+            memoriesList.appendChild(memItem);
+        });
     }
 
     body.appendChild(memoriesList);
@@ -16366,6 +16682,228 @@ function getCategorySubcategories(categoryKey) {
     };
 
     return subcategoryMap[categoryKey] || [];
+}
+
+// ============================================================================
+// VTID-01225: UNIFIED INTELLIGENCE PANEL
+// Shows structured facts, relationship connections, and behavioral signals
+// ============================================================================
+
+/**
+ * VTID-01225: Render the unified intelligence summary panel
+ * Displays facts, relationship connections, and signals at a glance
+ */
+function renderUnifiedIntelligencePanel() {
+    var panel = document.createElement('div');
+    panel.className = 'unified-intelligence-panel';
+
+    var panelHeader = document.createElement('div');
+    panelHeader.className = 'intelligence-panel-header';
+
+    var panelTitle = document.createElement('h3');
+    panelTitle.textContent = 'Intelligence Overview';
+    panelHeader.appendChild(panelTitle);
+
+    var panelSubtitle = document.createElement('span');
+    panelSubtitle.className = 'intelligence-panel-subtitle';
+    panelSubtitle.textContent = 'Facts, relationships & signals extracted from your conversations';
+    panelHeader.appendChild(panelSubtitle);
+
+    panel.appendChild(panelHeader);
+
+    // Three-column layout: Facts | Relationships | Signals
+    var columns = document.createElement('div');
+    columns.className = 'intelligence-columns';
+
+    // Column 1: Key Facts
+    var factsCol = document.createElement('div');
+    factsCol.className = 'intelligence-column facts-column';
+
+    var factsTitle = document.createElement('div');
+    factsTitle.className = 'column-title';
+    factsTitle.textContent = 'Key Facts';
+    factsCol.appendChild(factsTitle);
+
+    if (state.memoryGarden.factsLoading) {
+        var loading = document.createElement('div');
+        loading.className = 'column-loading';
+        loading.textContent = 'Loading...';
+        factsCol.appendChild(loading);
+    } else {
+        var factsData = state.memoryGarden.facts;
+        var factItems = [];
+
+        if (factsData) {
+            // Extract facts from garden summary
+            if (factsData.habits && factsData.habits.length > 0) {
+                factsData.habits.forEach(function (h) {
+                    factItems.push({ label: 'Habit', value: h.title || h.name || JSON.stringify(h), type: 'habit' });
+                });
+            }
+            if (factsData.health_signals && factsData.health_signals.length > 0) {
+                factsData.health_signals.forEach(function (s) {
+                    factItems.push({ label: 'Health', value: s.title || s.name || JSON.stringify(s), type: 'health' });
+                });
+            }
+            if (factsData.values && factsData.values.length > 0) {
+                factsData.values.forEach(function (v) {
+                    factItems.push({ label: 'Value', value: v.title || v.name || JSON.stringify(v), type: 'value' });
+                });
+            }
+            if (factsData.goals && factsData.goals.length > 0) {
+                factsData.goals.forEach(function (g) {
+                    factItems.push({ label: 'Goal', value: g.title || g.name || JSON.stringify(g), type: 'goal' });
+                });
+            }
+            if (factsData.patterns && factsData.patterns.length > 0) {
+                factsData.patterns.forEach(function (p) {
+                    factItems.push({ label: 'Pattern', value: p.title || p.name || JSON.stringify(p), type: 'pattern' });
+                });
+            }
+        }
+
+        if (factItems.length === 0) {
+            var emptyFacts = document.createElement('div');
+            emptyFacts.className = 'column-empty';
+            emptyFacts.textContent = 'No facts extracted yet. Start a conversation to build your knowledge base.';
+            factsCol.appendChild(emptyFacts);
+        } else {
+            factItems.slice(0, 8).forEach(function (fact) {
+                var item = document.createElement('div');
+                item.className = 'fact-item fact-type-' + fact.type;
+                item.innerHTML = '<span class="fact-label">' + fact.label + '</span>' +
+                    '<span class="fact-value">' + escapeHtmlSafe(String(fact.value)) + '</span>';
+                factsCol.appendChild(item);
+            });
+            if (factItems.length > 8) {
+                var more = document.createElement('div');
+                more.className = 'column-more';
+                more.textContent = '+ ' + (factItems.length - 8) + ' more facts';
+                factsCol.appendChild(more);
+            }
+        }
+    }
+
+    columns.appendChild(factsCol);
+
+    // Column 2: Relationship Connections
+    var relCol = document.createElement('div');
+    relCol.className = 'intelligence-column relationships-column';
+
+    var relTitle = document.createElement('div');
+    relTitle.className = 'column-title';
+    relTitle.textContent = 'Connections';
+    relCol.appendChild(relTitle);
+
+    if (state.memoryGarden.relationshipsLoading) {
+        var relLoading = document.createElement('div');
+        relLoading.className = 'column-loading';
+        relLoading.textContent = 'Loading...';
+        relCol.appendChild(relLoading);
+    } else {
+        var relData = state.memoryGarden.relationships;
+        var nodes = (relData && relData.nodes) ? relData.nodes : [];
+        var edges = (relData && relData.edges) ? relData.edges : [];
+
+        if (nodes.length === 0) {
+            var emptyRel = document.createElement('div');
+            emptyRel.className = 'column-empty';
+            emptyRel.textContent = 'No relationships mapped yet. Mention people, places, or groups in conversations.';
+            relCol.appendChild(emptyRel);
+        } else {
+            // Stats bar
+            var relStats = document.createElement('div');
+            relStats.className = 'rel-stats';
+            relStats.innerHTML = '<span class="rel-stat">' + nodes.length + ' entities</span>' +
+                '<span class="rel-stat">' + edges.length + ' connections</span>';
+            relCol.appendChild(relStats);
+
+            // Show nodes grouped by type
+            var nodesByType = {};
+            nodes.forEach(function (n) {
+                var type = n.node_type || 'other';
+                if (!nodesByType[type]) nodesByType[type] = [];
+                nodesByType[type].push(n);
+            });
+
+            var typeIcons = { person: 'person', group: 'group', event: 'event', location: 'location', service: 'service', product: 'product', live_room: 'live' };
+
+            Object.keys(nodesByType).slice(0, 5).forEach(function (type) {
+                var typeNodes = nodesByType[type];
+                var typeRow = document.createElement('div');
+                typeRow.className = 'rel-type-row';
+                typeRow.innerHTML = '<span class="rel-type-label">' + type + ' (' + typeNodes.length + ')</span>' +
+                    '<span class="rel-type-items">' +
+                    typeNodes.slice(0, 4).map(function (n) {
+                        return '<span class="rel-node-tag">' + escapeHtmlSafe(n.title || n.name || 'Unknown') + '</span>';
+                    }).join('') +
+                    (typeNodes.length > 4 ? '<span class="rel-node-more">+' + (typeNodes.length - 4) + '</span>' : '') +
+                    '</span>';
+                relCol.appendChild(typeRow);
+            });
+        }
+    }
+
+    columns.appendChild(relCol);
+
+    // Column 3: Behavioral Signals
+    var sigCol = document.createElement('div');
+    sigCol.className = 'intelligence-column signals-column';
+
+    var sigTitle = document.createElement('div');
+    sigTitle.className = 'column-title';
+    sigTitle.textContent = 'Signals';
+    sigCol.appendChild(sigTitle);
+
+    if (state.memoryGarden.signalsLoading) {
+        var sigLoading = document.createElement('div');
+        sigLoading.className = 'column-loading';
+        sigLoading.textContent = 'Loading...';
+        sigCol.appendChild(sigLoading);
+    } else {
+        var signals = state.memoryGarden.signals || [];
+
+        if (signals.length === 0) {
+            var emptySig = document.createElement('div');
+            emptySig.className = 'column-empty';
+            emptySig.textContent = 'No behavioral signals detected yet. Signals emerge from conversation patterns.';
+            sigCol.appendChild(emptySig);
+        } else {
+            signals.slice(0, 8).forEach(function (sig) {
+                var sigItem = document.createElement('div');
+                sigItem.className = 'signal-item';
+
+                var confidenceClass = sig.confidence >= 70 ? 'high' : sig.confidence >= 40 ? 'medium' : 'low';
+                sigItem.innerHTML = '<span class="signal-key">' + escapeHtmlSafe(sig.signal_key) + '</span>' +
+                    '<span class="signal-confidence confidence-' + confidenceClass + '">' + sig.confidence + '%</span>';
+                sigCol.appendChild(sigItem);
+            });
+            if (signals.length > 8) {
+                var moreSig = document.createElement('div');
+                moreSig.className = 'column-more';
+                moreSig.textContent = '+ ' + (signals.length - 8) + ' more signals';
+                sigCol.appendChild(moreSig);
+            }
+        }
+    }
+
+    columns.appendChild(sigCol);
+
+    panel.appendChild(columns);
+    return panel;
+}
+
+/**
+ * VTID-01225: Safe HTML escaping (standalone, doesn't depend on DOM)
+ */
+function escapeHtmlSafe(text) {
+    if (!text) return '';
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
 }
 
 // ============================================================================
