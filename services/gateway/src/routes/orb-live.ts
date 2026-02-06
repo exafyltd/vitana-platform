@@ -685,9 +685,9 @@ async function buildBootstrapContextPack(
   }
 
   try {
-    // VTID-01225: Use fetchDevMemoryContext directly - it works and is fast
-    // The buildContextPack path uses memory_get_context RPC which returns 0 results
-    const memoryContext = await fetchDevMemoryContext(
+    // VTID-01224: Use identity-scoped memory fetch so each user gets their own memory
+    const memoryContext = await fetchMemoryContextWithIdentity(
+      { user_id: identity.user_id, tenant_id: identity.tenant_id },
       LIVE_CONTEXT_CONFIG.MAX_MEMORY_ITEMS
     );
 
@@ -1949,9 +1949,9 @@ You KNOW this user. You REMEMBER their name, their hometown, their family. USE t
     };
   } catch (err: any) {
     console.warn('[VTID-01112] Context assembly error:', err.message);
-    // Fallback to legacy memory bridge
+    // Fallback to legacy memory bridge (identity-scoped)
     try {
-      const memoryContext = await fetchDevMemoryContext();
+      const memoryContext = await fetchMemoryContextWithIdentity(effectiveIdentity);
       if (!memoryContext.ok || memoryContext.items.length === 0) {
         return { instruction: baseInstructionNoMemory, memoryContext };
       }
