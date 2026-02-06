@@ -496,6 +496,8 @@ interface GeminiLiveSession {
   transcriptTurns: Array<{ role: 'user' | 'assistant'; text: string; timestamp: string }>;
   // VTID-01225: Buffer for accumulating output transcription chunks until turn completes
   outputTranscriptBuffer: string;
+  // Client WebSocket reference for forwarding transcriptions (WebSocket path only)
+  clientWs?: WebSocket;
 }
 
 /**
@@ -1140,6 +1142,17 @@ async function connectToLiveAPI(
           // VTID-01225: Enable transcription at setup level (not in generation_config)
           output_audio_transcription: {},
           input_audio_transcription: {},
+          // VTID-01219: Configure voice activity detection to prevent premature interruptions
+          // Default end_of_speech_sensitivity is HIGH which cuts off mid-sentence on brief pauses
+          realtime_input_config: {
+            automatic_activity_detection: {
+              disabled: false,
+              start_of_speech_sensitivity: 'START_OF_SPEECH_SENSITIVITY_HIGH',
+              end_of_speech_sensitivity: 'END_OF_SPEECH_SENSITIVITY_LOW',
+              silence_duration_ms: 1200,
+              prefix_padding_ms: 200,
+            }
+          },
           system_instruction: {
             parts: [{
               // VTID-01224: Pass bootstrap context to system instruction
@@ -1245,6 +1258,8 @@ async function connectToLiveAPI(
             // Notify client that response is complete
             if (session.sseResponse) {
               session.sseResponse.write(`data: ${JSON.stringify({ type: 'turn_complete' })}\n\n`);
+            } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+              sendWsMessage(session.clientWs, { type: 'turn_complete' });
             }
             return;
           }
@@ -1294,6 +1309,8 @@ async function connectToLiveAPI(
             console.log(`[VTID-01219] Input transcription: ${inputTranscription}`);
             if (session.sseResponse) {
               session.sseResponse.write(`data: ${JSON.stringify({ type: 'input_transcript', text: inputTranscription })}\n\n`);
+            } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+              sendWsMessage(session.clientWs, { type: 'input_transcript', text: inputTranscription });
             }
             // VTID-01225: Accumulate user transcript for Cognee extraction
             session.transcriptTurns.push({
@@ -1333,6 +1350,8 @@ async function connectToLiveAPI(
             console.log(`[VTID-01219] Output transcription: ${outputTranscription}`);
             if (session.sseResponse) {
               session.sseResponse.write(`data: ${JSON.stringify({ type: 'output_transcript', text: outputTranscription })}\n\n`);
+            } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+              sendWsMessage(session.clientWs, { type: 'output_transcript', text: outputTranscription });
             }
             // VTID-01225: Accumulate output transcription chunks in buffer (will be written on turnComplete)
             session.outputTranscriptBuffer += outputTranscription;
@@ -5401,6 +5420,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     responseModalities,
     upstreamWs: null,
     sseResponse: null,  // Not used for WebSocket clients
+    clientWs: clientSession.clientWs,  // Forward transcription events via WebSocket
     active: true,
     createdAt: new Date(),
     lastActivity: new Date(),

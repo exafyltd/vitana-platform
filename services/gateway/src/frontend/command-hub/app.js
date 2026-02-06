@@ -22411,14 +22411,37 @@ function geminiLiveHandleMessage(msg) {
             break;
 
         case 'output_transcript':
-            // Model's response transcription
+            // Model's response transcription - display in chat view
             if (msg.text) {
                 console.log('[VTID-01219] Model said:', msg.text);
+                // Accumulate output transcript chunks into the current assistant message
+                // Vertex LIVE API sends output_transcript in small incremental chunks
+                var lastMsg = state.orb.liveTranscript[state.orb.liveTranscript.length - 1];
+                if (lastMsg && lastMsg.role === 'assistant' && lastMsg._streaming) {
+                    // Append to existing streaming assistant message
+                    lastMsg.text += msg.text;
+                } else {
+                    // Start a new assistant message
+                    state.orb.liveTranscript.push({
+                        id: Date.now(),
+                        role: 'assistant',
+                        text: msg.text,
+                        _streaming: true,
+                        timestamp: new Date().toISOString()
+                    });
+                }
+                scrollOrbLiveTranscript();
+                renderApp();
             }
             break;
 
         case 'turn_complete':
             console.log('[VTID-01219] Turn complete');
+            // Finalize streaming assistant message
+            var lastStreamMsg = state.orb.liveTranscript[state.orb.liveTranscript.length - 1];
+            if (lastStreamMsg && lastStreamMsg._streaming) {
+                delete lastStreamMsg._streaming;
+            }
             break;
 
         case 'interrupted':
