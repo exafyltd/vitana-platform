@@ -4221,9 +4221,26 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
   let contextBootstrapLatencyMs: number | undefined;
   let contextBootstrapSkippedReason: string | undefined;
 
-  if (orbIdentity && orbIdentity.tenant_id && orbIdentity.user_id) {
-    console.log(`[VTID-01224] Building bootstrap context for SSE session ${sessionId}...`);
-    const bootstrapResult = await buildBootstrapContextPack(orbIdentity, sessionId);
+  // In dev-sandbox, use DEV_IDENTITY for context bootstrap so memory lookups
+  // match stored data (all memories stored under DEV_IDENTITY user_id).
+  const bootstrapIdentity: SupabaseIdentity | null = isDevSandbox()
+    ? {
+        user_id: DEV_IDENTITY.USER_ID,
+        tenant_id: DEV_IDENTITY.TENANT_ID,
+        role: DEV_IDENTITY.ACTIVE_ROLE,
+        email: 'dev-sandbox@vitana.local',
+        exafy_admin: false,
+        aud: 'authenticated',
+        exp: null,
+        iat: null,
+      }
+    : (orbIdentity && orbIdentity.tenant_id && orbIdentity.user_id)
+      ? orbIdentity
+      : null;
+
+  if (bootstrapIdentity) {
+    console.log(`[VTID-01224] Building bootstrap context for SSE session ${sessionId}${isDevSandbox() ? ' (DEV_IDENTITY)' : ''}...`);
+    const bootstrapResult = await buildBootstrapContextPack(bootstrapIdentity, sessionId);
 
     contextInstruction = bootstrapResult.contextInstruction;
     contextPack = bootstrapResult.contextPack;
@@ -4263,8 +4280,8 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     // VTID-01225: Transcript accumulation for Cognee extraction
     transcriptTurns: [],
     outputTranscriptBuffer: '',
-    // VTID-ORBC: Attach resolved identity to session
-    identity: orbIdentity || undefined,
+    // VTID-ORBC: Use DEV_IDENTITY in dev-sandbox so memory writes/reads use the same user_id
+    identity: bootstrapIdentity || orbIdentity || undefined,
   };
 
   // Store session
@@ -5300,10 +5317,13 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     exp: null,
     iat: null
   };
-  const effectiveBootstrapIdentity: SupabaseIdentity | null = (identity && identity.tenant_id && identity.user_id)
-    ? identity
-    : isDevSandbox()
-      ? devSandboxIdentity
+  // In dev-sandbox, ALWAYS use DEV_IDENTITY so memory lookups match stored data.
+  // All memories are stored under DEV_IDENTITY — a Lovable JWT would have a different
+  // user_id, causing empty memory results.
+  const effectiveBootstrapIdentity: SupabaseIdentity | null = isDevSandbox()
+    ? devSandboxIdentity
+    : (identity && identity.tenant_id && identity.user_id)
+      ? identity
       : null;
 
   if (effectiveBootstrapIdentity) {
