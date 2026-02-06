@@ -992,12 +992,13 @@ function sendFunctionResponseToLiveAPI(
     return false;
   }
 
-  // Build tool response message (Vertex AI format)
+  // Build tool response message (Vertex AI Live API format)
+  // Note: Vertex AI rejects unknown fields like 'id' in function_responses
+  // with WebSocket close code 1007. Only 'name' and 'response' are accepted.
   const responseMessage = {
     tool_response: {
       function_responses: [
         {
-          id: functionCallId,
           name: toolName,
           response: {
             output: result.success ? result.result : `Error: ${result.error}`,
