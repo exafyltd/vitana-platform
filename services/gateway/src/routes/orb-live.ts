@@ -4201,10 +4201,9 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
   }
 
   // VTID-ORBC: Resolve identity (JWT or dev-sandbox fallback)
+  // Allow anonymous sessions for lovable/external frontends — identity is used for
+  // memory scoping but is not required to start a live session.
   const orbIdentity = resolveOrbIdentity(req);
-  if (!orbIdentity && !isDevSandbox()) {
-    return res.status(401).json({ ok: false, error: 'Authentication required for live sessions' });
-  }
 
   const body = req.body as LiveSessionStartRequest;
   const lang = normalizeLang(body.lang || 'en');
@@ -4473,9 +4472,8 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
     };
   }
 
-  if (!identity) {
-    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED', message: 'Missing or invalid token query parameter' });
-  }
+  // Allow anonymous SSE connections for lovable/external frontends — identity is used
+  // for ownership checks but is not required to connect to a live session stream.
 
   const session = liveSessions.get(sessionId);
   if (!session) {
@@ -4486,14 +4484,14 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
     return res.status(400).json({ ok: false, error: 'Session not active' });
   }
 
-  // VTID-ORBC: Verify user owns this session (skip for DEV_IDENTITY sessions)
-  if (session.identity && session.identity.user_id !== DEV_IDENTITY.USER_ID &&
+  // VTID-ORBC: Verify user owns this session (skip for anonymous or DEV_IDENTITY sessions)
+  if (identity && session.identity && session.identity.user_id !== DEV_IDENTITY.USER_ID &&
       session.identity.user_id !== identity.user_id) {
     console.warn(`[VTID-ORBC] SSE ownership mismatch: session=${session.identity.user_id}, request=${identity.user_id}`);
     return res.status(403).json({ ok: false, error: 'FORBIDDEN', message: 'You do not own this session' });
   }
 
-  console.log(`[VTID-ORBC] SSE stream: user=${identity.user_id}, tenant=${identity.tenant_id}, session=${sessionId}, source=${token ? 'jwt' : 'dev-sandbox'}`);
+  console.log(`[VTID-ORBC] SSE stream: user=${identity?.user_id || 'anonymous'}, tenant=${identity?.tenant_id || 'none'}, session=${sessionId}, source=${token ? 'jwt' : identity ? 'dev-sandbox' : 'anonymous'}`);
 
   // Check connection limit
   const clientIP = getClientIP(req);
@@ -4644,15 +4642,9 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
   const body = req.body as LiveStreamMessage & { session_id?: string };
   const effectiveSessionId = (session_id as string) || body.session_id;
 
-  // VTID-ORBC: Resolve identity - JWT if present, DEV_IDENTITY in dev-sandbox, or 401
+  // VTID-ORBC: Resolve identity - JWT if present, DEV_IDENTITY in dev-sandbox, or anonymous.
+  // Allow anonymous requests for lovable/external frontends.
   const identity = resolveOrbIdentity(req);
-  if (!identity) {
-    return res.status(401).json({
-      ok: false,
-      error: 'UNAUTHENTICATED',
-      message: 'Missing or invalid Authorization header',
-    });
-  }
 
   if (!effectiveSessionId) {
     return res.status(400).json({ ok: false, error: 'session_id required' });
@@ -4667,8 +4659,8 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
     return res.status(400).json({ ok: false, error: 'Session not active' });
   }
 
-  // VTID-ORBC: Verify user owns this session (skip for DEV_IDENTITY sessions)
-  if (session.identity && session.identity.user_id !== DEV_IDENTITY.USER_ID &&
+  // VTID-ORBC: Verify user owns this session (skip for anonymous or DEV_IDENTITY sessions)
+  if (identity && session.identity && session.identity.user_id !== DEV_IDENTITY.USER_ID &&
       session.identity.user_id !== identity.user_id) {
     return res.status(403).json({ ok: false, error: 'FORBIDDEN', message: 'You do not own this session' });
   }
@@ -4774,15 +4766,9 @@ router.post('/live/stream/end-turn', optionalAuth, async (req: AuthenticatedRequ
   const body = req.body as { session_id?: string };
   const effectiveSessionId = (session_id as string) || body.session_id;
 
-  // VTID-ORBC: Resolve identity - JWT if present, DEV_IDENTITY in dev-sandbox, or 401
+  // VTID-ORBC: Resolve identity - JWT if present, DEV_IDENTITY in dev-sandbox, or anonymous.
+  // Allow anonymous requests for lovable/external frontends.
   const identity = resolveOrbIdentity(req);
-  if (!identity) {
-    return res.status(401).json({
-      ok: false,
-      error: 'UNAUTHENTICATED',
-      message: 'Missing or invalid Authorization header',
-    });
-  }
 
   if (!effectiveSessionId) {
     return res.status(400).json({ ok: false, error: 'session_id required' });
@@ -4797,8 +4783,8 @@ router.post('/live/stream/end-turn', optionalAuth, async (req: AuthenticatedRequ
     return res.status(400).json({ ok: false, error: 'Session not active' });
   }
 
-  // VTID-ORBC: Verify user owns this session (skip for DEV_IDENTITY sessions)
-  if (session.identity && session.identity.user_id !== DEV_IDENTITY.USER_ID &&
+  // VTID-ORBC: Verify user owns this session (skip for anonymous or DEV_IDENTITY sessions)
+  if (identity && session.identity && session.identity.user_id !== DEV_IDENTITY.USER_ID &&
       session.identity.user_id !== identity.user_id) {
     return res.status(403).json({ ok: false, error: 'FORBIDDEN', message: 'You do not own this session' });
   }

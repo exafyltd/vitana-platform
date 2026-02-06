@@ -22333,9 +22333,14 @@ async function geminiLiveStop() {
     // Stop session on backend
     if (state.orb.geminiLiveSessionId) {
         try {
+            // VTID-ORBC: Include auth token for dual JWT auth support
+            var stopHeaders = { 'Content-Type': 'application/json' };
+            if (state.authToken) {
+                stopHeaders['Authorization'] = 'Bearer ' + state.authToken;
+            }
             await fetch('/api/v1/orb/live/session/stop', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: stopHeaders,
                 body: JSON.stringify({ session_id: state.orb.geminiLiveSessionId })
             });
         } catch (e) {
