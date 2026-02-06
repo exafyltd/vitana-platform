@@ -291,10 +291,10 @@ class CogneeExtractorClient {
     // Fire and forget - don't await
     this.extract(request)
       .then(async result => {
-        if (result.ok && (result.entities.length > 0 || result.relationships.length > 0)) {
+        if (result.ok && (result.entities.length > 0 || result.relationships.length > 0 || result.signals.length > 0)) {
           console.log(
             `[VTID-01225] Async extraction yielded: ${result.entities.length} entities, ` +
-            `${result.relationships.length} relationships`
+            `${result.relationships.length} relationships, ${result.signals.length} signals`
           );
 
           // VTID-01225: Persist extracted entities to relationship graph
@@ -324,52 +324,186 @@ class CogneeExtractorClient {
     const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
-      // VTID-01225: This is a critical configuration error that should be surfaced
       const error = new Error(`[VTID-01225] Supabase not configured for persistence: URL=${!!SUPABASE_URL}, SERVICE_ROLE=${!!SUPABASE_SERVICE_ROLE}`);
       console.error(error.message);
       throw error;
     }
 
-    // Persist to relationship_nodes via RPC
+    // VTID-01225: Common headers for service_role REST API calls
+    const serviceHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      apikey: SUPABASE_SERVICE_ROLE,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+    };
+
+    // Track entity name → node ID for edge creation
+    const entityNodeMap = new Map<string, string>();
+
+    // Persistence counters
+    let nodesCreated = 0;
+    let nodesExisting = 0;
+    let edgesCreated = 0;
+    let edgesSkipped = 0;
+    let signalsPersisted = 0;
+
+    // ---- STEP 1: Persist nodes via direct table INSERT ----
+    // VTID-01225: Using direct INSERT instead of relationship_ensure_node RPC because
+    // the RPC derives tenant/user from JWT context (current_tenant_id/auth.uid) which
+    // is not available in fire-and-forget service_role calls. Direct INSERT with
+    // service_role bypasses RLS and works correctly.
     for (const entity of result.entities) {
       try {
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/relationship_ensure_node`, {
+        const nodeType = entity.vitana_node_type || 'person';
+        const domain = entity.domain || 'community';
+
+        // Check if node already exists (dedup by tenant + type + title)
+        const checkUrl = `${SUPABASE_URL}/rest/v1/relationship_nodes?` +
+          `tenant_id=eq.${request.tenant_id}&` +
+          `node_type=eq.${encodeURIComponent(nodeType)}&` +
+          `title=eq.${encodeURIComponent(entity.name)}&` +
+          `select=id&limit=1`;
+
+        const checkResponse = await fetch(checkUrl, { headers: serviceHeaders });
+
+        if (checkResponse.ok) {
+          const existing = await checkResponse.json();
+          if (Array.isArray(existing) && existing.length > 0) {
+            entityNodeMap.set(entity.name, existing[0].id);
+            nodesExisting++;
+            continue;
+          }
+        }
+
+        // Insert new node
+        const insertResponse = await fetch(`${SUPABASE_URL}/rest/v1/relationship_nodes`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: SUPABASE_SERVICE_ROLE,
-            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-          },
+          headers: { ...serviceHeaders, Prefer: 'return=representation' },
           body: JSON.stringify({
-            // VTID-01225: Valid node_types: person, group, event, service, product, location, live_room
-            // Default to 'person' instead of invalid 'entity'
-            p_node_type: entity.vitana_node_type || 'person',
-            p_title: entity.name,
-            // VTID-01225: Valid domains: community, health, business, lifestyle
-            // Default to 'community' instead of invalid 'personal'
-            p_domain: entity.domain || 'community',
-            p_metadata: {
+            tenant_id: request.tenant_id,
+            node_type: nodeType,
+            title: entity.name,
+            domain: domain,
+            metadata: {
               entity_type: entity.entity_type,
               origin: 'cognee',
               vtid: 'VTID-01225',
               session_id: request.session_id,
               user_id: request.user_id,
-              tenant_id: request.tenant_id,
-              ...entity.metadata
-            }
+              ...entity.metadata,
+            },
           }),
         });
 
-        if (!response.ok) {
-          // VTID-01225: Read error body to understand why RPC failed
-          const errorBody = await response.text().catch(() => 'Unable to read error body');
-          console.error(`[VTID-01225] Node creation failed for "${entity.name}": ${response.status} - ${errorBody}`);
+        if (insertResponse.ok) {
+          const inserted = await insertResponse.json();
+          if (Array.isArray(inserted) && inserted.length > 0) {
+            entityNodeMap.set(entity.name, inserted[0].id);
+            nodesCreated++;
+            console.log(`[VTID-01225] Node created: "${entity.name}" (${nodeType}) → ${inserted[0].id}`);
+          }
         } else {
-          const nodeResult = await response.json().catch(() => null);
-          console.log(`[VTID-01225] Node created for "${entity.name}":`, nodeResult);
+          const errorBody = await insertResponse.text().catch(() => 'Unknown');
+          console.error(`[VTID-01225] Node INSERT failed for "${entity.name}": ${insertResponse.status} - ${errorBody}`);
         }
       } catch (err) {
         console.error(`[VTID-01225] Node persist error for "${entity.name}":`, err instanceof Error ? err.message : err);
+      }
+    }
+
+    // ---- STEP 2: Persist edges via direct table INSERT ----
+    // VTID-01225: Creates relationship edges between extracted entities.
+    // Uses ON CONFLICT DO NOTHING (ignore-duplicates) to avoid overwriting
+    // existing edge strength. New edges start at strength=10.
+    // Unique constraint: (tenant_id, user_id, from_node_id, to_node_id, relationship_type)
+    for (const rel of result.relationships) {
+      try {
+        const fromNodeId = entityNodeMap.get(rel.from_entity);
+        const toNodeId = entityNodeMap.get(rel.to_entity);
+
+        if (!fromNodeId || !toNodeId) {
+          edgesSkipped++;
+          console.debug(`[VTID-01225] Edge skipped (missing node): "${rel.from_entity}" -> "${rel.to_entity}"`);
+          continue;
+        }
+
+        const today = new Date().toISOString().split('T')[0];
+        const edgeResponse = await fetch(
+          `${SUPABASE_URL}/rest/v1/relationship_edges?` +
+          `on_conflict=tenant_id,user_id,from_node_id,to_node_id,relationship_type`,
+          {
+            method: 'POST',
+            headers: { ...serviceHeaders, Prefer: 'resolution=ignore-duplicates, return=minimal' },
+            body: JSON.stringify({
+              tenant_id: request.tenant_id,
+              user_id: request.user_id,
+              from_node_id: fromNodeId,
+              to_node_id: toNodeId,
+              relationship_type: rel.vitana_type,
+              strength: 10,
+              origin: 'autopilot',
+              context: {
+                ...rel.context,
+                cognee_type: rel.cognee_type,
+                origin: 'cognee',
+                vtid: 'VTID-01225',
+                session_id: request.session_id,
+              },
+              first_seen: today,
+              last_seen: today,
+            }),
+          }
+        );
+
+        if (edgeResponse.ok || edgeResponse.status === 201) {
+          edgesCreated++;
+          console.log(`[VTID-01225] Edge: "${rel.from_entity}" -[${rel.vitana_type}]-> "${rel.to_entity}"`);
+        } else {
+          const errorBody = await edgeResponse.text().catch(() => 'Unknown');
+          console.warn(`[VTID-01225] Edge INSERT failed: ${edgeResponse.status} - ${errorBody}`);
+        }
+      } catch (err) {
+        console.error(`[VTID-01225] Edge persist error:`, err instanceof Error ? err.message : err);
+      }
+    }
+
+    // ---- STEP 3: Persist signals via direct table UPSERT ----
+    // VTID-01225: Upserts behavioral signals extracted from transcripts.
+    // Uses ON CONFLICT DO UPDATE (merge-duplicates) to update confidence
+    // when the same signal is detected again.
+    // Unique constraint: (tenant_id, user_id, signal_key)
+    for (const signal of result.signals) {
+      try {
+        const signalResponse = await fetch(
+          `${SUPABASE_URL}/rest/v1/relationship_signals?` +
+          `on_conflict=tenant_id,user_id,signal_key`,
+          {
+            method: 'POST',
+            headers: { ...serviceHeaders, Prefer: 'resolution=merge-duplicates, return=minimal' },
+            body: JSON.stringify({
+              tenant_id: request.tenant_id,
+              user_id: request.user_id,
+              signal_key: signal.signal_key,
+              confidence: signal.confidence,
+              evidence: {
+                ...signal.evidence,
+                session_id: request.session_id,
+                origin: 'cognee',
+                vtid: 'VTID-01225',
+              },
+              updated_at: new Date().toISOString(),
+            }),
+          }
+        );
+
+        if (signalResponse.ok || signalResponse.status === 201) {
+          signalsPersisted++;
+          console.log(`[VTID-01225] Signal: "${signal.signal_key}" (confidence: ${signal.confidence})`);
+        } else {
+          const errorBody = await signalResponse.text().catch(() => 'Unknown');
+          console.warn(`[VTID-01225] Signal INSERT failed: ${signalResponse.status} - ${errorBody}`);
+        }
+      } catch (err) {
+        console.error(`[VTID-01225] Signal persist error:`, err instanceof Error ? err.message : err);
       }
     }
 
@@ -388,11 +522,7 @@ class CogneeExtractorClient {
         // Call write_fact() RPC (VTID-01192) - the proper way to store facts
         const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/write_fact`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: SUPABASE_SERVICE_ROLE,
-            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-          },
+          headers: serviceHeaders,
           body: JSON.stringify({
             p_tenant_id: request.tenant_id,
             p_user_id: request.user_id,
@@ -430,12 +560,7 @@ class CogneeExtractorClient {
 
         const response = await fetch(`${SUPABASE_URL}/rest/v1/memory_items`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: SUPABASE_SERVICE_ROLE,
-            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-            Prefer: 'return=minimal'
-          },
+          headers: { ...serviceHeaders, Prefer: 'return=minimal' },
           body: JSON.stringify({
             tenant_id: request.tenant_id,
             user_id: request.user_id,
@@ -467,19 +592,31 @@ class CogneeExtractorClient {
       }
     }
 
-    console.log(`[VTID-01225] Persistence complete: ${result.entities.length} entities processed`);
+    console.log(
+      `[VTID-01225] Persistence complete: ` +
+      `${nodesCreated} nodes created, ${nodesExisting} existing, ` +
+      `${edgesCreated} edges, ${edgesSkipped} edges skipped, ` +
+      `${signalsPersisted} signals, ` +
+      `${result.entities.length} entities processed`
+    );
 
     // Emit success event
     await emitCogneeEvent(
       'cognee.extraction.persisted',
       'success',
-      `Persisted ${result.entities.length} entities to relationship graph and memory`,
+      `Persisted: ${nodesCreated} nodes, ${edgesCreated} edges, ${signalsPersisted} signals, ${result.entities.length} facts`,
       {
         tenant_id: request.tenant_id,
         user_id: request.user_id,
         session_id: request.session_id,
+        nodes_created: nodesCreated,
+        nodes_existing: nodesExisting,
+        edges_created: edgesCreated,
+        edges_skipped: edgesSkipped,
+        signals_persisted: signalsPersisted,
         entity_count: result.entities.length,
-        relationship_count: result.relationships.length
+        relationship_count: result.relationships.length,
+        signal_count: result.signals.length
       }
     );
   }
