@@ -4221,25 +4221,27 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
   let contextBootstrapLatencyMs: number | undefined;
   let contextBootstrapSkippedReason: string | undefined;
 
-  // In dev-sandbox, use DEV_IDENTITY for context bootstrap so memory lookups
-  // match stored data (all memories stored under DEV_IDENTITY user_id).
-  const bootstrapIdentity: SupabaseIdentity | null = isDevSandbox()
-    ? {
-        user_id: DEV_IDENTITY.USER_ID,
-        tenant_id: DEV_IDENTITY.TENANT_ID,
-        role: DEV_IDENTITY.ACTIVE_ROLE,
-        email: 'dev-sandbox@vitana.local',
-        exafy_admin: false,
-        aud: 'authenticated',
-        exp: null,
-        iat: null,
-      }
-    : (orbIdentity && orbIdentity.tenant_id && orbIdentity.user_id)
+  // JWT identity takes priority so each user builds their own memory.
+  // DEV_IDENTITY is fallback only when no JWT is present (anonymous/unauthenticated).
+  const bootstrapIdentity: SupabaseIdentity | null =
+    (orbIdentity && orbIdentity.tenant_id && orbIdentity.user_id)
       ? orbIdentity
-      : null;
+      : isDevSandbox()
+        ? {
+            user_id: DEV_IDENTITY.USER_ID,
+            tenant_id: DEV_IDENTITY.TENANT_ID,
+            role: DEV_IDENTITY.ACTIVE_ROLE,
+            email: 'dev-sandbox@vitana.local',
+            exafy_admin: false,
+            aud: 'authenticated',
+            exp: null,
+            iat: null,
+          }
+        : null;
 
   if (bootstrapIdentity) {
-    console.log(`[VTID-01224] Building bootstrap context for SSE session ${sessionId}${isDevSandbox() ? ' (DEV_IDENTITY)' : ''}...`);
+    const usingDevFallback = bootstrapIdentity.user_id === DEV_IDENTITY.USER_ID;
+    console.log(`[VTID-01224] Building bootstrap context for SSE session ${sessionId} user=${bootstrapIdentity.user_id.substring(0, 8)}...${usingDevFallback ? ' (DEV_IDENTITY fallback)' : ''}`);
     const bootstrapResult = await buildBootstrapContextPack(bootstrapIdentity, sessionId);
 
     contextInstruction = bootstrapResult.contextInstruction;
@@ -4280,7 +4282,7 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     // VTID-01225: Transcript accumulation for Cognee extraction
     transcriptTurns: [],
     outputTranscriptBuffer: '',
-    // VTID-ORBC: Use DEV_IDENTITY in dev-sandbox so memory writes/reads use the same user_id
+    // VTID-ORBC: JWT identity for per-user memory; DEV_IDENTITY only as fallback
     identity: bootstrapIdentity || orbIdentity || undefined,
   };
 
@@ -5317,17 +5319,18 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     exp: null,
     iat: null
   };
-  // In dev-sandbox, ALWAYS use DEV_IDENTITY so memory lookups match stored data.
-  // All memories are stored under DEV_IDENTITY — a Lovable JWT would have a different
-  // user_id, causing empty memory results.
-  const effectiveBootstrapIdentity: SupabaseIdentity | null = isDevSandbox()
-    ? devSandboxIdentity
-    : (identity && identity.tenant_id && identity.user_id)
+  // JWT identity takes priority so each user builds their own memory.
+  // DEV_IDENTITY is fallback only when no JWT is present (anonymous/unauthenticated).
+  const effectiveBootstrapIdentity: SupabaseIdentity | null =
+    (identity && identity.tenant_id && identity.user_id)
       ? identity
-      : null;
+      : isDevSandbox()
+        ? devSandboxIdentity
+        : null;
 
   if (effectiveBootstrapIdentity) {
-    console.log(`[VTID-01224] Building bootstrap context for session ${sessionId}${!identity ? ' (using DEV_IDENTITY fallback)' : ''}...`);
+    const usingDevFallbackWs = effectiveBootstrapIdentity.user_id === DEV_IDENTITY.USER_ID;
+    console.log(`[VTID-01224] Building bootstrap context for session ${sessionId} user=${effectiveBootstrapIdentity.user_id.substring(0, 8)}...${usingDevFallbackWs ? ' (DEV_IDENTITY fallback)' : ''}`);
     const bootstrapResult = await buildBootstrapContextPack(effectiveBootstrapIdentity, sessionId);
 
     contextInstruction = bootstrapResult.contextInstruction;
