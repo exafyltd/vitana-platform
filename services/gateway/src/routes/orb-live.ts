@@ -4214,7 +4214,33 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
   // Generate session ID
   const sessionId = `live-${randomUUID()}`;
 
-  // Create session object with identity attached
+  // VTID-01224: Build bootstrap context pack (memory + knowledge) for system instruction
+  // This was missing from the SSE path — only the WebSocket path had it
+  let contextInstruction: string | undefined;
+  let contextPack: ContextPack | undefined;
+  let contextBootstrapLatencyMs: number | undefined;
+  let contextBootstrapSkippedReason: string | undefined;
+
+  if (orbIdentity && orbIdentity.tenant_id && orbIdentity.user_id) {
+    console.log(`[VTID-01224] Building bootstrap context for SSE session ${sessionId}...`);
+    const bootstrapResult = await buildBootstrapContextPack(orbIdentity, sessionId);
+
+    contextInstruction = bootstrapResult.contextInstruction;
+    contextPack = bootstrapResult.contextPack;
+    contextBootstrapLatencyMs = bootstrapResult.latencyMs;
+    contextBootstrapSkippedReason = bootstrapResult.skippedReason;
+
+    if (bootstrapResult.skippedReason) {
+      console.warn(`[VTID-01224] Context bootstrap skipped for ${sessionId}: ${bootstrapResult.skippedReason}`);
+    } else {
+      console.log(`[VTID-01224] Context bootstrap complete for ${sessionId}: ${bootstrapResult.latencyMs}ms, chars=${contextInstruction?.length || 0}`);
+    }
+  } else {
+    contextBootstrapSkippedReason = 'no_identity';
+    console.log(`[VTID-01224] Skipping context bootstrap for ${sessionId}: no identity`);
+  }
+
+  // Create session object with identity and context attached
   const session: GeminiLiveSession = {
     sessionId,
     lang,
@@ -4228,8 +4254,12 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     audioInChunks: 0,
     videoInFrames: 0,
     audioOutChunks: 0,
-    // VTID-01224: Required fields for context
+    // VTID-01224: Context and identity
     turn_count: 0,
+    contextInstruction,
+    contextPack,
+    contextBootstrapLatencyMs,
+    contextBootstrapSkippedReason,
     // VTID-01225: Transcript accumulation for Cognee extraction
     transcriptTurns: [],
     outputTranscriptBuffer: '',
@@ -4250,7 +4280,7 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     voice: getVoiceForLang(lang)
   });
 
-  console.log(`[VTID-ORBC] Live session created: ${sessionId} (user=${orbIdentity?.user_id || 'anonymous'}, tenant=${orbIdentity?.tenant_id || 'none'}, lang=${lang})`);
+  console.log(`[VTID-ORBC] Live session created: ${sessionId} (user=${orbIdentity?.user_id || 'anonymous'}, tenant=${orbIdentity?.tenant_id || 'none'}, lang=${lang}, contextChars=${contextInstruction?.length || 0})`);
 
   return res.status(200).json({
     ok: true,
@@ -4259,7 +4289,12 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
       lang,
       voice: getVoiceForLang(lang),
       modalities: responseModalities,
-      model: VERTEX_LIVE_MODEL
+      model: VERTEX_LIVE_MODEL,
+      context_bootstrap: {
+        latency_ms: contextBootstrapLatencyMs,
+        context_chars: contextInstruction?.length || 0,
+        skipped_reason: contextBootstrapSkippedReason || null,
+      }
     }
   });
 });
