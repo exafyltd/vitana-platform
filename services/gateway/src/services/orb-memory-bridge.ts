@@ -321,7 +321,8 @@ export function shouldStoreInMemory(content: string, direction: 'user' | 'assist
   // Skip very short messages (less than 3 words) unless they contain key info
   if (wordCount < 3) {
     // Check if it contains important keywords despite being short
-    const hasImportantInfo = /\b(name|heiß|heiss|bin|from|aus|jahre|old|live|wohne|email|phone)\b/i.test(lower);
+    // VTID-01225: Expanded list - short messages like "I'm 35", "Vienna", "Exafy" carry key facts
+    const hasImportantInfo = /\b(name|heiß|heiss|bin|from|aus|jahre|old|live|wohne|email|phone|born|geboren|work|arbeit|job|beruf|city|stadt|allergy|allergie|married|verheiratet|single|divorced|hobby)\b/i.test(lower);
     if (!hasImportantInfo) {
       console.log(`[VTID-01109] Skipping trivial message (${wordCount} words): "${lower.substring(0, 30)}..."`);
       return false;
@@ -394,19 +395,29 @@ export function shouldStoreInMemory(content: string, direction: 'user' | 'assist
   }
 
   // Check if message contains meaningful personal/contextual information
+  // VTID-01225: Expanded keyword patterns - the old list missed many valid facts
+  // (e.g., "I enjoy swimming", "my hobby is painting", "I'm allergic to nuts")
   const hasMeaningfulContent =
     // Personal info patterns
-    /\b(name|heiß|heiss|ich bin|i am|from|aus|born|geboren|live|wohne|work|arbeit|email|phone|address|adresse)\b/i.test(lower) ||
+    /\b(name|heiß|heiss|ich bin|i am|i'm|from|aus|born|geboren|live|wohne|work|arbeit|email|phone|address|adresse|age|alter|jahre|years old)\b/i.test(lower) ||
     // Preference patterns
-    /\b(like|mag|love|liebe|prefer|bevorzuge|favorite|liebling|hate|hasse|always|immer|never|nie)\b/i.test(lower) ||
+    /\b(like|mag|love|liebe|prefer|bevorzuge|favorite|liebling|hate|hasse|always|immer|never|nie|enjoy|genießen|hobby|hobbies|interest|interessiert)\b/i.test(lower) ||
     // Relationship patterns
-    /\b(family|familie|friend|freund|partner|wife|frau|husband|mann|child|kind|mother|mutter|father|vater)\b/i.test(lower) ||
+    /\b(family|familie|friend|freund|partner|wife|frau|husband|mann|child|kind|mother|mutter|father|vater|brother|bruder|sister|schwester|son|sohn|daughter|tochter|fiancée|verlobte|colleague|kollege|boss|chef)\b/i.test(lower) ||
     // Goal patterns
-    /\b(want|will|möchte|plane|goal|ziel|hope|hoffe|dream|traum)\b/i.test(lower) ||
+    /\b(want|will|möchte|plane|goal|ziel|hope|hoffe|dream|traum|plan|planen|wish|wünsche|intend|vorhabe)\b/i.test(lower) ||
+    // Health patterns (previously missing entirely)
+    /\b(health|gesundheit|allergy|allergie|medication|medikament|doctor|arzt|diet|diät|exercise|sport|sleep|schlaf|illness|krank|condition|symptom|pain|schmerz|fitness|weight|gewicht)\b/i.test(lower) ||
+    // Location/travel patterns (previously missing)
+    /\b(city|stadt|country|land|move|umziehen|travel|reisen|hometown|heimat|neighborhood|viertel|apartment|wohnung|house|haus)\b/i.test(lower) ||
+    // Business/professional patterns (previously missing)
+    /\b(company|firma|unternehmen|business|geschäft|job|beruf|career|karriere|project|projekt|study|studium|university|universität|school|schule|degree|abschluss)\b/i.test(lower) ||
+    // Food/lifestyle patterns (previously missing)
+    /\b(eat|essen|cook|kochen|vegetarian|vegan|coffee|kaffee|tea|tee|alcohol|alkohol|smoke|rauchen|morning|morgen|evening|abend|routine|gewohnheit|habit)\b/i.test(lower) ||
     // Remember requests
     /\b(remember|merk|vergiss nicht|don't forget|wichtig|important)\b/i.test(lower) ||
-    // Substantive content (longer messages are more likely meaningful)
-    wordCount >= 8;
+    // Substantive content (lowered from 8 to 5 words for better capture)
+    wordCount >= 5;
 
   if (!hasMeaningfulContent) {
     console.log(`[VTID-01109] Skipping low-value ${direction} message (no meaningful keywords)`);
@@ -548,7 +559,9 @@ export async function writeMemoryItemWithIdentity(
 
   try {
     const occurredAt = params.occurred_at || new Date().toISOString();
-    const importance = params.importance || 10;
+    // VTID-01225: Raised default importance from 10 to 30 - user-provided information
+    // from voice/text should not be buried at the bottom of retrieval results
+    const importance = params.importance || 30;
     const contentJson = {
       ...params.content_json,
       workspace_scope: params.workspace_scope || 'dev',
@@ -558,12 +571,24 @@ export async function writeMemoryItemWithIdentity(
     // Auto-classify category if not provided
     const categoryKey = params.category_key || classifyDevCategory(params.content);
 
-    // Boost importance for personal/relationship categories
+    // VTID-01225: Boost importance based on category - ALL categories get meaningful scores
+    // Previously only personal (50) and relationships (40) were boosted, everything else stayed at 10
     let adjustedImportance = importance;
     if (categoryKey === 'personal') {
-      adjustedImportance = Math.max(importance, 50);
+      adjustedImportance = Math.max(importance, 60);
     } else if (categoryKey === 'relationships') {
+      adjustedImportance = Math.max(importance, 50);
+    } else if (categoryKey === 'health') {
+      adjustedImportance = Math.max(importance, 50);
+    } else if (categoryKey === 'goals') {
+      adjustedImportance = Math.max(importance, 45);
+    } else if (categoryKey === 'preferences') {
       adjustedImportance = Math.max(importance, 40);
+    }
+    // VTID-01225: Extra boost for user-direction messages (user explicitly said something)
+    const direction = params.content_json?.direction;
+    if (direction === 'user') {
+      adjustedImportance = Math.max(adjustedImportance, 35);
     }
 
     // Insert with authenticated identity
