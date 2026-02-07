@@ -10,6 +10,8 @@ const ALLOWED_ORIGINS = [
   "https://gateway-q74ibpv6ia-uc.a.run.app",                 // Cloud Run generated
   "https://vitana-dev-gateway-86804897789.us-central1.run.app", // Deprecated redirector
   "https://id-preview--vitana-v1.lovable.app",               // Lovable preview
+  "https://vitanaland.com",                                    // Production custom domain (mobile app)
+  "https://www.vitanaland.com",                                // Production custom domain (www)
 ];
 
 // VTID-01226: Dynamic origin patterns for Lovable-hosted frontends

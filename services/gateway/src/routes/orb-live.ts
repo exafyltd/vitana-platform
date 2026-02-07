@@ -224,6 +224,8 @@ const ALLOWED_ORIGINS = [
   'https://gateway-q74ibpv6ia-uc.a.run.app',
   'https://gateway-86804897789.us-central1.run.app',
   'https://id-preview--vitana-v1.lovable.app',
+  'https://vitanaland.com',                            // Production custom domain (mobile app)
+  'https://www.vitanaland.com',                        // Production custom domain (www)
   'http://localhost:8080',
   'http://localhost:8081',  // VTID-01225: Mobile dev server
   'http://localhost:3000',
