@@ -265,6 +265,9 @@ export interface ContextPack {
   /** UI context from request */
   ui_context?: UIContext;
 
+  /** Relationship graph context from cognee extraction (human-readable strings) */
+  relationship_context?: string[];
+
   /** Retrieval trace for debugging */
   retrieval_trace: {
     router_decision: RetrievalRouterDecision;

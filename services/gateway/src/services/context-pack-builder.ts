@@ -160,6 +160,163 @@ async function fetchMemoryHits(
 }
 
 /**
+ * Fetch structured facts from memory_facts table (written by cognee extraction pipeline)
+ * These are high-confidence extracted facts about the user that provide structured context.
+ */
+async function fetchMemoryFacts(
+  lens: ContextLens,
+  query: string,
+  limit: number = 20
+): Promise<{ facts: MemoryHit[]; latency_ms: number }> {
+  const startTime = Date.now();
+
+  try {
+    const SUPABASE_URL = process.env.SUPABASE_URL;
+    const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+      return { facts: [], latency_ms: Date.now() - startTime };
+    }
+
+    if (!lens.tenant_id || !lens.user_id) {
+      return { facts: [], latency_ms: Date.now() - startTime };
+    }
+
+    const url = `${SUPABASE_URL}/rest/v1/memory_facts?select=id,fact_key,fact_value,entity,confidence,provenance_source&tenant_id=eq.${lens.tenant_id}&user_id=eq.${lens.user_id}&order=confidence.desc&limit=${limit}`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_SERVICE_ROLE,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+      },
+    });
+
+    if (!response.ok) {
+      console.warn(`[VTID-01216] memory_facts retrieval failed: ${response.status}`);
+      return { facts: [], latency_ms: Date.now() - startTime };
+    }
+
+    const results = await response.json() as Array<{
+      id: string;
+      fact_key: string;
+      fact_value: string;
+      entity: string;
+      confidence: number;
+      provenance_source: string;
+    }>;
+
+    // Transform facts into MemoryHit objects with high relevance scores
+    const facts: MemoryHit[] = results.map((r) => ({
+      id: r.id,
+      category_key: `fact:${r.entity || 'general'}`,
+      content: `${r.fact_key}: ${r.fact_value}`,
+      importance: Math.round(r.confidence * 100),
+      occurred_at: new Date().toISOString(),
+      source: r.provenance_source || 'cognee_extraction',
+      relevance_score: Math.min(1, 0.85 + r.confidence * 0.15), // High base relevance for structured facts
+    }));
+
+    console.log(`[VTID-01216] memory_facts returned ${facts.length} structured facts`);
+
+    return {
+      facts,
+      latency_ms: Date.now() - startTime,
+    };
+  } catch (error: any) {
+    console.error(`[VTID-01216] memory_facts retrieval error: ${error.message}`);
+    return { facts: [], latency_ms: Date.now() - startTime };
+  }
+}
+
+/**
+ * Fetch relationship graph context from relationship_nodes and relationship_edges tables
+ * (written by cognee extraction pipeline). Returns human-readable relationship strings.
+ */
+async function fetchRelationshipContext(
+  lens: ContextLens,
+  limit: number = 15
+): Promise<{ context: string[]; latency_ms: number }> {
+  const startTime = Date.now();
+
+  try {
+    const SUPABASE_URL = process.env.SUPABASE_URL;
+    const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+      return { context: [], latency_ms: Date.now() - startTime };
+    }
+
+    if (!lens.tenant_id || !lens.user_id) {
+      return { context: [], latency_ms: Date.now() - startTime };
+    }
+
+    const headers = {
+      'Content-Type': 'application/json',
+      apikey: SUPABASE_SERVICE_ROLE,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+    };
+
+    // Fetch nodes and edges in parallel
+    const nodesUrl = `${SUPABASE_URL}/rest/v1/relationship_nodes?select=id,title,node_type,domain,metadata&tenant_id=eq.${lens.tenant_id}&order=created_at.desc&limit=${limit}`;
+    const edgesUrl = `${SUPABASE_URL}/rest/v1/relationship_edges?select=from_node_id,to_node_id,relationship_type,strength&tenant_id=eq.${lens.tenant_id}&user_id=eq.${lens.user_id}&order=strength.desc&limit=20`;
+
+    const [nodesResponse, edgesResponse] = await Promise.all([
+      fetch(nodesUrl, { method: 'GET', headers }),
+      fetch(edgesUrl, { method: 'GET', headers }),
+    ]);
+
+    if (!nodesResponse.ok || !edgesResponse.ok) {
+      console.warn(`[VTID-01216] relationship retrieval failed: nodes=${nodesResponse.status}, edges=${edgesResponse.status}`);
+      return { context: [], latency_ms: Date.now() - startTime };
+    }
+
+    const nodes = await nodesResponse.json() as Array<{
+      id: string;
+      title: string;
+      node_type: string;
+      domain: string;
+      metadata: Record<string, unknown>;
+    }>;
+
+    const edges = await edgesResponse.json() as Array<{
+      from_node_id: string;
+      to_node_id: string;
+      relationship_type: string;
+      strength: number;
+    }>;
+
+    // Build node lookup map
+    const nodeMap = new Map<string, { title: string; node_type: string }>();
+    for (const node of nodes) {
+      nodeMap.set(node.id, { title: node.title, node_type: node.node_type });
+    }
+
+    // Map edges to human-readable strings
+    const context: string[] = edges
+      .map((edge) => {
+        const fromNode = nodeMap.get(edge.from_node_id);
+        const toNode = nodeMap.get(edge.to_node_id);
+        if (!fromNode || !toNode) return null;
+
+        return `${fromNode.node_type}: ${fromNode.title} (${edge.relationship_type}) → connected to → ${toNode.title} (${toNode.node_type})`;
+      })
+      .filter((s): s is string => s !== null);
+
+    console.log(`[VTID-01216] relationship graph returned ${context.length} connections from ${nodes.length} nodes`);
+
+    return {
+      context,
+      latency_ms: Date.now() - startTime,
+    };
+  } catch (error: any) {
+    console.error(`[VTID-01216] relationship retrieval error: ${error.message}`);
+    return { context: [], latency_ms: Date.now() - startTime };
+  }
+}
+
+/**
  * Compute relevance score for a memory item
  */
 function computeRelevanceScore(
@@ -502,6 +659,8 @@ export async function buildContextPack(
   let memoryHits: MemoryHit[] = [];
   let knowledgeHits: KnowledgeHit[] = [];
   let webHits: WebHit[] = [];
+  let structuredFacts: MemoryHit[] = [];
+  let relationshipContext: string[] = [];
 
   // Memory Garden retrieval
   if (input.router_decision.sources_to_query.includes('memory_garden')) {
@@ -539,8 +698,37 @@ export async function buildContextPack(
     );
   }
 
+  // Memory Facts retrieval (cognee extraction pipeline output)
+  if (input.router_decision.sources_to_query.includes('memory_garden')) {
+    retrievalPromises.push(
+      fetchMemoryFacts(input.lens, input.query)
+        .then(result => {
+          structuredFacts = result.facts;
+        })
+    );
+  }
+
+  // Relationship Graph retrieval (cognee extraction pipeline output)
+  if (input.router_decision.sources_to_query.includes('memory_garden')) {
+    retrievalPromises.push(
+      fetchRelationshipContext(input.lens)
+        .then(result => {
+          relationshipContext = result.context;
+        })
+    );
+  }
+
   // Execute all retrievals in parallel
   await Promise.all(retrievalPromises);
+
+  // Merge structured facts into memory hits (prepend - higher priority)
+  if (structuredFacts.length > 0) {
+    memoryHits = [...structuredFacts, ...memoryHits];
+    // Re-sort by relevance and enforce limit
+    memoryHits.sort((a, b) => b.relevance_score - a.relevance_score);
+    memoryHits = memoryHits.slice(0, CONTEXT_PACK_CONFIG.MAX_MEMORY_HITS);
+    hitCounts.memory_garden = memoryHits.length;
+  }
 
   // Fetch tool health
   const toolHealth = await checkToolHealth();
@@ -560,6 +748,7 @@ export async function buildContextPack(
     estimateTokens(webHits) +
     estimateTokens(activeVtids) +
     estimateTokens(toolHealth) +
+    estimateTokens(relationshipContext) +
     500; // Overhead for other fields
 
   // Build the pack
@@ -593,6 +782,7 @@ export async function buildContextPack(
     tenant_policies: [], // TODO: Implement tenant policy retrieval
     tool_health: toolHealth,
     ui_context: input.ui_context,
+    relationship_context: relationshipContext.length > 0 ? relationshipContext : undefined,
 
     retrieval_trace: {
       router_decision: input.router_decision,
@@ -646,14 +836,38 @@ export function formatContextPackForLLM(pack: ContextPack): string {
   context += `Session: Turn ${pack.session_state.turn_number} via ${pack.session_state.channel}\n`;
   context += `</user_context>\n\n`;
 
+  // Structured facts section (from cognee extraction pipeline)
+  const structuredFactHits = pack.memory_hits.filter(h => h.category_key.startsWith('fact:'));
+  if (structuredFactHits.length > 0) {
+    context += `<structured_facts>\n`;
+    context += `The following are verified structured facts about the user:\n\n`;
+    for (const hit of structuredFactHits) {
+      context += `- ${hit.content}\n`;
+    }
+    context += `</structured_facts>\n\n`;
+  }
+
+  // Relationship graph section (from cognee extraction pipeline)
+  if (pack.relationship_context && pack.relationship_context.length > 0) {
+    context += `<relationship_graph>\n`;
+    context += `The following is the user's relationship graph:\n\n`;
+    for (const rel of pack.relationship_context) {
+      context += `- ${rel}\n`;
+    }
+    context += `</relationship_graph>\n\n`;
+  }
+
   // Memory section
   if (pack.memory_hits.length > 0) {
-    context += `<memory_context>\n`;
-    context += `The following information is from the user's personal memory:\n\n`;
-    for (const hit of pack.memory_hits) {
-      context += `[${hit.category_key}] ${hit.content}\n`;
+    const nonFactHits = pack.memory_hits.filter(h => !h.category_key.startsWith('fact:'));
+    if (nonFactHits.length > 0) {
+      context += `<memory_context>\n`;
+      context += `The following information is from the user's personal memory:\n\n`;
+      for (const hit of nonFactHits) {
+        context += `[${hit.category_key}] ${hit.content}\n`;
+      }
+      context += `</memory_context>\n\n`;
     }
-    context += `</memory_context>\n\n`;
   }
 
   // Knowledge section
