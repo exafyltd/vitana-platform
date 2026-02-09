@@ -28,8 +28,38 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { DailyClient } from '../services/daily-client';
+import Stripe from 'stripe';
+import rateLimit from 'express-rate-limit';
 
 const router = Router();
+
+// =============================================================================
+// VTID-01228: Rate Limiters
+// =============================================================================
+
+/**
+ * Rate limiter for Daily.co room creation (expensive operation)
+ * Limit: 5 requests per 15 minutes per IP
+ */
+const dailyRoomLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5,
+  message: { ok: false, error: 'RATE_LIMIT_EXCEEDED', message: 'Too many room creation requests' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+/**
+ * Rate limiter for purchase requests (prevent abuse)
+ * Limit: 10 requests per 15 minutes per IP
+ */
+const purchaseLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  message: { ok: false, error: 'RATE_LIMIT_EXCEEDED', message: 'Too many purchase requests' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
 
 // =============================================================================
 // VTID-01090: Constants & Types
@@ -344,7 +374,7 @@ router.post('/rooms/:id/end', async (req: Request, res: Response) => {
 /**
  * POST /rooms/:id/join -> POST /api/v1/live/rooms/:id/join
  *
- * Join a live room.
+ * Join a live room (VTID-01228: with access control for paid rooms).
  */
 router.post('/rooms/:id/join', async (req: Request, res: Response) => {
   const roomId = req.params.id;
@@ -359,6 +389,51 @@ router.post('/rooms/:id/join', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
   }
 
+  // VTID-01228: Access control for paid rooms
+  const { user_id } = req.body;
+  if (!user_id) {
+    return res.status(400).json({ ok: false, error: 'USER_ID_REQUIRED' });
+  }
+
+  try {
+    // Get room details to check access level
+    const roomResult = await callRpc(token, 'live_room_get', {
+      p_live_room_id: roomId
+    });
+
+    if (!roomResult.ok || !roomResult.data) {
+      return res.status(404).json({ ok: false, error: 'ROOM_NOT_FOUND' });
+    }
+
+    const room = roomResult.data;
+
+    // Check access for paid rooms
+    if (room.access_level === 'group') {
+      const accessResult = await callRpc(token, 'live_room_check_access', {
+        p_user_id: user_id,
+        p_room_id: roomId
+      });
+
+      if (!accessResult.ok || !accessResult.data) {
+        return res.status(403).json({
+          ok: false,
+          error: 'ACCESS_DENIED',
+          message: 'You must purchase access to join this room'
+        });
+      }
+
+      console.log(`[VTID-01228] Access verified for user ${user_id} to room ${roomId}`);
+    }
+  } catch (error: any) {
+    console.error('[VTID-01228] Error checking access:', error);
+    return res.status(500).json({
+      ok: false,
+      error: 'ACCESS_CHECK_FAILED',
+      message: error.message
+    });
+  }
+
+  // Proceed with join
   const result = await callRpc(token, 'live_room_join', {
     p_live_room_id: roomId
   });
@@ -480,7 +555,7 @@ router.post('/rooms/:id/leave', async (req: Request, res: Response) => {
  * Only the room host can create the Daily.co room.
  * Idempotent: Returns existing room URL if already created.
  */
-router.post('/rooms/:id/daily', async (req: Request, res: Response) => {
+router.post('/rooms/:id/daily', dailyRoomLimiter, async (req: Request, res: Response) => {
   const roomId = req.params.id;
   console.log(`[VTID-01228] POST /live/rooms/${roomId}/daily`);
 
@@ -654,6 +729,121 @@ router.delete('/rooms/:id/daily', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /rooms/:id/purchase -> POST /api/v1/live/rooms/:id/purchase
+ *
+ * VTID-01228: Purchase access to a paid live room via Stripe.
+ * Creates a Payment Intent for the room price.
+ */
+router.post('/rooms/:id/purchase', purchaseLimiter, async (req: Request, res: Response) => {
+  const roomId = req.params.id;
+  console.log(`[VTID-01228] POST /live/rooms/${roomId}/purchase`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  if (!roomId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+    return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
+  }
+
+  // Extract user_id from request body (frontend should include this)
+  const { user_id } = req.body;
+  if (!user_id) {
+    return res.status(400).json({ ok: false, error: 'USER_ID_REQUIRED' });
+  }
+
+  try {
+    // Get room details
+    const roomResult = await callRpc(token, 'live_room_get', {
+      p_live_room_id: roomId
+    });
+
+    if (!roomResult.ok || !roomResult.data) {
+      return res.status(404).json({ ok: false, error: 'ROOM_NOT_FOUND' });
+    }
+
+    const room = roomResult.data;
+
+    // Verify room requires payment
+    if (room.access_level !== 'group') {
+      return res.status(400).json({
+        ok: false,
+        error: 'ROOM_NOT_PAID',
+        message: 'This room does not require payment'
+      });
+    }
+
+    // Get price from metadata
+    const price = room.metadata?.price;
+    if (!price || typeof price !== 'number' || price <= 0) {
+      return res.status(500).json({
+        ok: false,
+        error: 'PRICE_NOT_CONFIGURED',
+        message: 'Room price is not properly configured'
+      });
+    }
+
+    // Initialize Stripe
+    const stripeKey = process.env.STRIPE_SECRET_KEY;
+    if (!stripeKey) {
+      console.error('[VTID-01228] STRIPE_SECRET_KEY not configured');
+      return res.status(500).json({
+        ok: false,
+        error: 'PAYMENT_NOT_CONFIGURED'
+      });
+    }
+
+    const stripe = new Stripe(stripeKey);
+
+    // Create Payment Intent
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(price * 100), // Convert dollars to cents
+      currency: 'usd',
+      metadata: {
+        room_id: roomId,
+        room_title: room.title,
+        user_id: user_id,
+        vtid: 'VTID-01228'
+      },
+      automatic_payment_methods: {
+        enabled: true
+      }
+    });
+
+    console.log(`[VTID-01228] Payment Intent created: ${paymentIntent.id} for room ${roomId}`);
+
+    // Emit OASIS event
+    await emitOasisEvent({
+      vtid: 'VTID-01228',
+      type: 'live.purchase.initiated' as any,
+      source: 'live-gateway',
+      status: 'success',
+      message: `Payment Intent created for room ${roomId}`,
+      payload: {
+        room_id: roomId,
+        payment_intent_id: paymentIntent.id,
+        amount: price
+      }
+    });
+
+    return res.json({
+      ok: true,
+      client_secret: paymentIntent.client_secret,
+      amount: price,
+      currency: 'usd'
+    });
+  } catch (error: any) {
+    console.error('[VTID-01228] Error creating payment intent:', error);
+    return res.status(500).json({
+      ok: false,
+      error: 'PURCHASE_FAILED',
+      message: error.message
+    });
+  }
+});
+
+/**
  * POST /rooms/:id/highlights -> POST /api/v1/live/rooms/:id/highlights
  *
  * Add a highlight to a live room.
@@ -793,6 +983,108 @@ router.get('/health', (_req: Request, res: Response) => {
       'VTID-01087': 'Relationship Graph'
     }
   });
+});
+
+/**
+ * POST /stripe/webhook -> POST /api/v1/live/stripe/webhook
+ *
+ * VTID-01228: Stripe webhook handler for payment events.
+ * Grants access to paid rooms upon successful payment.
+ *
+ * NOTE: This endpoint requires raw body for signature verification.
+ * The main app must configure express.raw() for this route.
+ */
+router.post('/stripe/webhook', async (req: Request, res: Response) => {
+  console.log(`[VTID-01228] POST /live/stripe/webhook`);
+
+  const stripeKey = process.env.STRIPE_SECRET_KEY;
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  if (!stripeKey || !webhookSecret) {
+    console.error('[VTID-01228] Stripe not configured');
+    return res.status(500).json({ ok: false, error: 'STRIPE_NOT_CONFIGURED' });
+  }
+
+  const stripe = new Stripe(stripeKey);
+  const sig = req.headers['stripe-signature'];
+
+  if (!sig) {
+    return res.status(400).json({ ok: false, error: 'NO_SIGNATURE' });
+  }
+
+  let event: Stripe.Event;
+
+  try {
+    // Verify webhook signature
+    event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+  } catch (err: any) {
+    console.error('[VTID-01228] Webhook signature verification failed:', err.message);
+    return res.status(400).json({ ok: false, error: 'INVALID_SIGNATURE' });
+  }
+
+  // Handle payment_intent.succeeded event
+  if (event.type === 'payment_intent.succeeded') {
+    const paymentIntent = event.data.object as Stripe.PaymentIntent;
+    const roomId = paymentIntent.metadata.room_id;
+
+    if (!roomId) {
+      console.error('[VTID-01228] Payment Intent missing room_id metadata');
+      return res.status(400).json({ ok: false, error: 'MISSING_METADATA' });
+    }
+
+    try {
+      // Grant access to the room
+      // Note: We need user_id from the payment intent
+      // For now, we'll store it in metadata when creating the payment intent
+      const userId = paymentIntent.metadata.user_id;
+
+      if (!userId) {
+        console.error('[VTID-01228] Payment Intent missing user_id metadata');
+        return res.status(400).json({ ok: false, error: 'MISSING_USER_ID' });
+      }
+
+      // Use service role to grant access (webhook has no user JWT)
+      const token = process.env.SUPABASE_SERVICE_ROLE;
+      if (!token) {
+        console.error('[VTID-01228] SUPABASE_SERVICE_ROLE not configured');
+        return res.status(500).json({ ok: false, error: 'SERVICE_ROLE_NOT_CONFIGURED' });
+      }
+
+      const grantResult = await callRpc(token, 'live_room_grant_access', {
+        p_user_id: userId,
+        p_room_id: roomId,
+        p_access_type: 'paid',
+        p_stripe_payment_intent_id: paymentIntent.id
+      });
+
+      if (!grantResult.ok) {
+        console.error('[VTID-01228] Failed to grant access:', grantResult.error);
+        return res.status(500).json({ ok: false, error: 'GRANT_FAILED' });
+      }
+
+      console.log(`[VTID-01228] Access granted: user ${userId} -> room ${roomId} (payment ${paymentIntent.id})`);
+
+      // Emit OASIS event
+      await emitOasisEvent({
+        vtid: 'VTID-01228',
+        type: 'live.purchase.completed' as any,
+        source: 'live-gateway',
+        status: 'success',
+        message: `Access granted for room ${roomId}`,
+        payload: {
+          room_id: roomId,
+          user_id: userId,
+          payment_intent_id: paymentIntent.id,
+          amount: paymentIntent.amount / 100
+        }
+      });
+    } catch (error: any) {
+      console.error('[VTID-01228] Error granting access:', error);
+      return res.status(500).json({ ok: false, error: 'GRANT_ERROR', message: error.message });
+    }
+  }
+
+  return res.json({ ok: true, received: true });
 });
 
 export default router;
