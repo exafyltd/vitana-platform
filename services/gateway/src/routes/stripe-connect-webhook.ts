@@ -14,9 +14,7 @@ import Stripe from 'stripe';
 const router = Router();
 
 // Initialize Stripe
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
-  apiVersion: '2024-12-18.acacia',
-});
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
 
 const STRIPE_CONNECT_WEBHOOK_SECRET = process.env.STRIPE_CONNECT_WEBHOOK_SECRET || '';
 

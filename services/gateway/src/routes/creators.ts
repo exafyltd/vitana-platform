@@ -15,9 +15,7 @@ import rateLimit from 'express-rate-limit';
 const router = Router();
 
 // Initialize Stripe
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
-  apiVersion: '2024-12-18.acacia',
-});
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://vitana-lovable-vers1.lovable.app';
 
