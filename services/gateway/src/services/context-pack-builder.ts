@@ -182,7 +182,7 @@ async function fetchMemoryFacts(
       return { facts: [], latency_ms: Date.now() - startTime };
     }
 
-    const url = `${SUPABASE_URL}/rest/v1/memory_facts?select=id,fact_key,fact_value,entity,confidence,provenance_source&tenant_id=eq.${lens.tenant_id}&user_id=eq.${lens.user_id}&order=confidence.desc&limit=${limit}`;
+    const url = `${SUPABASE_URL}/rest/v1/memory_facts?select=id,fact_key,fact_value,entity,provenance_confidence,provenance_source&tenant_id=eq.${lens.tenant_id}&user_id=eq.${lens.user_id}&superseded_by=is.null&order=provenance_confidence.desc&limit=${limit}`;
 
     const response = await fetch(url, {
       method: 'GET',
@@ -203,7 +203,7 @@ async function fetchMemoryFacts(
       fact_key: string;
       fact_value: string;
       entity: string;
-      confidence: number;
+      provenance_confidence: number;
       provenance_source: string;
     }>;
 
@@ -212,10 +212,10 @@ async function fetchMemoryFacts(
       id: r.id,
       category_key: `fact:${r.entity || 'general'}`,
       content: `${r.fact_key}: ${r.fact_value}`,
-      importance: Math.round(r.confidence * 100),
+      importance: Math.round(r.provenance_confidence * 100),
       occurred_at: new Date().toISOString(),
       source: r.provenance_source || 'cognee_extraction',
-      relevance_score: Math.min(1, 0.85 + r.confidence * 0.15), // High base relevance for structured facts
+      relevance_score: Math.min(1, 0.85 + r.provenance_confidence * 0.15),
     }));
 
     console.log(`[VTID-01216] memory_facts returned ${facts.length} structured facts`);

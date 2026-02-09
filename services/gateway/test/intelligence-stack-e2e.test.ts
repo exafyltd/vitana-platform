@@ -66,7 +66,7 @@ const mockFetch = jest.fn().mockImplementation(async (url: string, options?: Req
             fact_key: 'user_name',
             fact_value: 'Dragan Alexander',
             entity: 'self',
-            confidence: 0.95,
+            provenance_confidence: 0.95,
             provenance_source: 'assistant_inferred',
           },
           {
@@ -74,7 +74,7 @@ const mockFetch = jest.fn().mockImplementation(async (url: string, options?: Req
             fact_key: 'fiancee_name',
             fact_value: 'Mariia Maksina',
             entity: 'disclosed',
-            confidence: 0.92,
+            provenance_confidence: 0.92,
             provenance_source: 'assistant_inferred',
           },
           {
@@ -82,7 +82,7 @@ const mockFetch = jest.fn().mockImplementation(async (url: string, options?: Req
             fact_key: 'work_location',
             fact_value: 'Exafy, Santa Monica',
             entity: 'self',
-            confidence: 0.88,
+            provenance_confidence: 0.88,
             provenance_source: 'assistant_inferred',
           },
         ],
