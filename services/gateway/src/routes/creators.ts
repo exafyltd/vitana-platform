@@ -1,6 +1,6 @@
 /**
  * Creator Onboarding & Payment Routes
- * VTID-01230: Stripe Connect Express for Live Rooms creators
+ * VTID-01231: Stripe Connect Express Backend
  *
  * Enables creators to:
  * 1. Onboard to Stripe Connect Express

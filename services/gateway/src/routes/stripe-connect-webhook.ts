@@ -1,6 +1,6 @@
 /**
  * Stripe Connect Webhook Handler
- * VTID-01230: Handle Stripe Connect account updates
+ * VTID-01231: Handle Stripe Connect account updates
  *
  * Webhooks from Stripe when:
  * - Account onboarding completes

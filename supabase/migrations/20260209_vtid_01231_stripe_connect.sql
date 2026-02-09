@@ -1,5 +1,5 @@
 -- ============================================================================
--- VTID-01230: Stripe Connect Express for Live Rooms Creators
+-- VTID-01231: Stripe Connect Express Backend
 -- ============================================================================
 -- Enables creators to receive payments directly via Stripe Connect Express
 -- Platform takes 10% fee, creator receives 90%

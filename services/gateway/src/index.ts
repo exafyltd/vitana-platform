@@ -194,7 +194,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const llmRouter = require('./routes/llm').default;
   // VTID-01223: Interactive Visual Testing API
   const visualInteractiveRouter = require('./routes/visual-interactive').default;
-  // VTID-01230: Stripe Connect Express for Live Rooms Creators
+  // VTID-01231: Stripe Connect Express Backend
   const creatorsRouter = require('./routes/creators').default;
   const stripeConnectWebhookRouter = require('./routes/stripe-connect-webhook').default;
 
@@ -475,7 +475,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01090: Live Rooms + Events as Relationship Nodes
   mountRouterSync(app, '/api/v1/live', liveRouter, { owner: 'live' });
 
-  // VTID-01230: Stripe Connect Express for Live Rooms Creators
+  // VTID-01231: Stripe Connect Express Backend
   mountRouterSync(app, '/api/v1/creators', creatorsRouter, { owner: 'creators' });
   mountRouterSync(app, '/api/v1/stripe', stripeConnectWebhookRouter, { owner: 'stripe-connect-webhook' });
 
