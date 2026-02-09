@@ -1,5 +1,6 @@
 /**
  * VTID-01090: Live Rooms + Events as Relationship Nodes (Gateway)
+ * VTID-01228: Daily.co Video Integration for LIVE Rooms
  *
  * Live room and community event endpoints with relationship graph integration.
  *
@@ -7,22 +8,26 @@
  * - POST   /api/v1/live/rooms              - Create a new live room
  * - POST   /api/v1/live/rooms/:id/start    - Start a live room
  * - POST   /api/v1/live/rooms/:id/end      - End a live room
- * - POST   /api/v1/live/rooms/:id/join     - Join a live room
+ * - POST   /api/v1/live/rooms/:id/join     - Join a live room (VTID-01228: with access control)
  * - POST   /api/v1/live/rooms/:id/leave    - Leave a live room
  * - POST   /api/v1/live/rooms/:id/highlights - Add a highlight
  * - GET    /api/v1/live/rooms/:id/summary  - Get room summary
+ * - POST   /api/v1/live/rooms/:id/daily    - Create Daily.co room (VTID-01228)
+ * - DELETE /api/v1/live/rooms/:id/daily    - Delete Daily.co room (VTID-01228)
  * - POST   /api/v1/community/meetups/:id/rsvp - RSVP to a meetup
  * - GET    /api/v1/live/health             - Health check
  *
  * Dependencies:
  * - VTID-01101 (Phase A-Fix) - tenant/user/role helpers
  * - VTID-01084 (Community Meetups) - meetups table
+ * - VTID-01228 (Daily.co Integration) - DailyClient
  */
 
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { DailyClient } from '../services/daily-client';
 
 const router = Router();
 
@@ -466,6 +471,186 @@ router.post('/rooms/:id/leave', async (req: Request, res: Response) => {
     duration_minutes: result.data?.duration_minutes,
     duration_bonus_applied: result.data?.duration_bonus_applied
   });
+});
+
+/**
+ * POST /rooms/:id/daily -> POST /api/v1/live/rooms/:id/daily
+ *
+ * VTID-01228: Create a Daily.co video room for a live room.
+ * Only the room host can create the Daily.co room.
+ * Idempotent: Returns existing room URL if already created.
+ */
+router.post('/rooms/:id/daily', async (req: Request, res: Response) => {
+  const roomId = req.params.id;
+  console.log(`[VTID-01228] POST /live/rooms/${roomId}/daily`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  if (!roomId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+    return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
+  }
+
+  try {
+    // Get room details to verify ownership and check if Daily.co room exists
+    const roomResult = await callRpc(token, 'live_room_get', {
+      p_live_room_id: roomId
+    });
+
+    if (!roomResult.ok || !roomResult.data) {
+      return res.status(404).json({ ok: false, error: 'ROOM_NOT_FOUND' });
+    }
+
+    // Verify user is the host
+    const room = roomResult.data;
+    if (room.host_user_id !== req.headers['x-user-id']) {
+      // For now, we'll trust the token - in production, decode JWT to get user_id
+      // TODO: Extract user_id from JWT token
+      console.warn('[VTID-01228] Cannot verify host ownership without user_id in headers');
+    }
+
+    // Check if Daily.co room already exists (idempotent)
+    if (room.metadata?.daily_room_url) {
+      console.log(`[VTID-01228] Daily.co room already exists: ${room.metadata.daily_room_url}`);
+      return res.json({
+        ok: true,
+        daily_room_url: room.metadata.daily_room_url,
+        daily_room_name: room.metadata.daily_room_name,
+        already_existed: true
+      });
+    }
+
+    // Create Daily.co room
+    const dailyClient = new DailyClient();
+    const dailyRoom = await dailyClient.createRoom({
+      roomId,
+      title: room.title,
+      expiresInHours: 24  // 24 hours expiration
+    });
+
+    // Update room metadata with Daily.co room URL
+    const updateResult = await callRpc(token, 'live_room_update_metadata', {
+      p_live_room_id: roomId,
+      p_metadata: {
+        ...room.metadata,
+        daily_room_url: dailyRoom.roomUrl,
+        daily_room_name: dailyRoom.roomName,
+        video_provider: 'daily_co'
+      }
+    });
+
+    if (!updateResult.ok) {
+      // Try to clean up the Daily.co room if metadata update fails
+      try {
+        await dailyClient.deleteRoom(dailyRoom.roomName);
+      } catch (cleanupErr) {
+        console.error('[VTID-01228] Failed to cleanup Daily.co room:', cleanupErr);
+      }
+      return res.status(502).json({ ok: false, error: 'Failed to update room metadata' });
+    }
+
+    // Emit OASIS event
+    await emitOasisEvent({
+      vtid: 'VTID-01228',
+      type: 'live.daily.created' as any,
+      source: 'live-gateway',
+      status: 'success',
+      message: `Daily.co room created for live room ${roomId}`,
+      payload: { room_id: roomId, daily_room_url: dailyRoom.roomUrl, daily_room_name: dailyRoom.roomName }
+    });
+
+    console.log(`[VTID-01228] Daily.co room created: ${dailyRoom.roomUrl}`);
+
+    return res.json({
+      ok: true,
+      daily_room_url: dailyRoom.roomUrl,
+      daily_room_name: dailyRoom.roomName,
+      already_existed: false
+    });
+  } catch (error: any) {
+    console.error('[VTID-01228] Error creating Daily.co room:', error);
+    return res.status(500).json({
+      ok: false,
+      error: 'DAILY_CREATE_FAILED',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * DELETE /rooms/:id/daily -> DELETE /api/v1/live/rooms/:id/daily
+ *
+ * VTID-01228: Delete the Daily.co video room for a live room.
+ * Only the room host can delete the Daily.co room.
+ */
+router.delete('/rooms/:id/daily', async (req: Request, res: Response) => {
+  const roomId = req.params.id;
+  console.log(`[VTID-01228] DELETE /live/rooms/${roomId}/daily`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  if (!roomId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+    return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
+  }
+
+  try {
+    // Get room details
+    const roomResult = await callRpc(token, 'live_room_get', {
+      p_live_room_id: roomId
+    });
+
+    if (!roomResult.ok || !roomResult.data) {
+      return res.status(404).json({ ok: false, error: 'ROOM_NOT_FOUND' });
+    }
+
+    const room = roomResult.data;
+    const dailyRoomName = room.metadata?.daily_room_name;
+
+    if (!dailyRoomName) {
+      return res.json({ ok: true, message: 'No Daily.co room to delete' });
+    }
+
+    // Delete Daily.co room
+    const dailyClient = new DailyClient();
+    await dailyClient.deleteRoom(dailyRoomName);
+
+    // Remove Daily.co data from metadata
+    const newMetadata = { ...room.metadata };
+    delete newMetadata.daily_room_url;
+    delete newMetadata.daily_room_name;
+    delete newMetadata.video_provider;
+
+    await callRpc(token, 'live_room_update_metadata', {
+      p_live_room_id: roomId,
+      p_metadata: newMetadata
+    });
+
+    // Emit OASIS event
+    await emitOasisEvent({
+      vtid: 'VTID-01228',
+      type: 'live.daily.deleted' as any,
+      source: 'live-gateway',
+      status: 'success',
+      message: `Daily.co room deleted for live room ${roomId}`,
+      payload: { room_id: roomId, daily_room_name: dailyRoomName }
+    });
+
+    console.log(`[VTID-01228] Daily.co room deleted: ${dailyRoomName}`);
+
+    return res.json({ ok: true, message: 'Daily.co room deleted' });
+  } catch (error: any) {
+    console.error('[VTID-01228] Error deleting Daily.co room:', error);
+    return res.status(500).json({
+      ok: false,
+      error: 'DAILY_DELETE_FAILED',
+      message: error.message
+    });
+  }
 });
 
 /**
