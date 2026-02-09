@@ -75,6 +75,7 @@ interface ConversationThread {
   started_at: string;
   last_activity: string;
   conversation_id?: string;
+  history: Array<{ role: 'user' | 'assistant'; content: string }>;
 }
 
 // In-memory thread store (should be replaced with persistent storage in production)
@@ -105,6 +106,7 @@ function getOrCreateThread(
     turn_count: 0,
     started_at: new Date().toISOString(),
     last_activity: new Date().toISOString(),
+    history: [],
   };
 
   threads.set(id, newThread);
@@ -234,12 +236,21 @@ Instructions:
       const geminiResult = await processWithGemini({
         text: message.text,
         systemInstruction,
-        conversationHistory: [], // TODO: Add conversation history
+        conversationHistory: thread.history.slice(-10), // Last 10 turns
         threadId: thread.thread_id,
       });
 
       reply = geminiResult.reply;
       modelUsed = 'gemini-2.5-pro'; // TODO: Get from routing policy
+
+      // Track conversation history for context continuity
+      thread.history.push({ role: 'user', content: message.text });
+      thread.history.push({ role: 'assistant', content: reply });
+
+      // Prevent memory bloat by trimming to last 20 entries
+      if (thread.history.length > 20) {
+        thread.history = thread.history.slice(-20);
+      }
 
       // Process any tool calls
       if (geminiResult.toolResults && geminiResult.toolResults.length > 0) {

@@ -14,7 +14,7 @@ import { emitOasisEvent } from './oasis-event-service';
 // =============================================================================
 
 const COGNEE_EXTRACTOR_URL = process.env.COGNEE_EXTRACTOR_URL || 'http://cognee-extractor:8080';
-const TIMEOUT_MS = 30000; // 30 second timeout for extraction
+const TIMEOUT_MS = 10000; // 10 second timeout for extraction
 const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 1000;
 
@@ -139,6 +139,24 @@ class CogneeExtractorClient {
     } else {
       console.log(`[VTID-01225] Cognee Extractor Client initialized: ${this.baseUrl}`);
     }
+
+    CogneeExtractorClient.validateConfig();
+  }
+
+  /**
+   * VTID-01225: Validate required configuration at startup
+   * Logs warnings for missing environment variables that will cause failures later.
+   */
+  static validateConfig(): void {
+    if (!process.env.COGNEE_EXTRACTOR_URL) {
+      console.warn('[VTID-01225] Config warning: COGNEE_EXTRACTOR_URL is not set - extraction will be disabled');
+    }
+    if (!process.env.SUPABASE_URL) {
+      console.warn('[VTID-01225] Config warning: SUPABASE_URL is not set - persistence will fail');
+    }
+    if (!process.env.SUPABASE_SERVICE_ROLE) {
+      console.warn('[VTID-01225] Config warning: SUPABASE_SERVICE_ROLE is not set - persistence will fail');
+    }
   }
 
   /**
@@ -146,6 +164,32 @@ class CogneeExtractorClient {
    */
   isEnabled(): boolean {
     return this.enabled;
+  }
+
+  /**
+   * VTID-01225: Fetch with retry for persistence operations
+   */
+  private async fetchWithRetry(
+    url: string,
+    options: RequestInit,
+    maxRetries: number = 2,
+    label: string = 'persistence'
+  ): Promise<Response> {
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        if (attempt > 0) {
+          await sleep(500 * attempt); // 500ms, 1000ms backoff
+          console.log(`[VTID-01225] ${label} retry ${attempt}/${maxRetries}`);
+        }
+        const response = await fetch(url, options);
+        return response;
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        console.warn(`[VTID-01225] ${label} attempt ${attempt + 1} failed: ${lastError.message}`);
+      }
+    }
+    throw lastError || new Error(`${label} failed after ${maxRetries + 1} attempts`);
   }
 
   /**
@@ -365,7 +409,7 @@ class CogneeExtractorClient {
 
         // Check if node already exists (dedup by tenant + type + title)
         const checkUrl = `${SUPABASE_URL}/rest/v1/relationship_nodes?` +
-          `tenant_id=eq.${request.tenant_id}&` +
+          `tenant_id=eq.${encodeURIComponent(request.tenant_id)}&` +
           `node_type=eq.${encodeURIComponent(nodeType)}&` +
           `title=eq.${encodeURIComponent(entity.name)}&` +
           `select=id&limit=1`;
@@ -382,7 +426,7 @@ class CogneeExtractorClient {
         }
 
         // Insert new node
-        const insertResponse = await fetch(`${SUPABASE_URL}/rest/v1/relationship_nodes`, {
+        const insertResponse = await this.fetchWithRetry(`${SUPABASE_URL}/rest/v1/relationship_nodes`, {
           method: 'POST',
           headers: { ...serviceHeaders, Prefer: 'return=representation' },
           body: JSON.stringify({
@@ -399,7 +443,7 @@ class CogneeExtractorClient {
               ...entity.metadata,
             },
           }),
-        });
+        }, 2, 'node-insert');
 
         if (insertResponse.ok) {
           const inserted = await insertResponse.json();
@@ -436,7 +480,7 @@ class CogneeExtractorClient {
         }
 
         const today = new Date().toISOString().split('T')[0];
-        const edgeResponse = await fetch(
+        const edgeResponse = await this.fetchWithRetry(
           `${SUPABASE_URL}/rest/v1/relationship_edges?` +
           `on_conflict=tenant_id,user_id,from_node_id,to_node_id,relationship_type`,
           {
@@ -460,7 +504,8 @@ class CogneeExtractorClient {
               first_seen: today,
               last_seen: today,
             }),
-          }
+          },
+          2, 'edge-insert'
         );
 
         if (edgeResponse.ok || edgeResponse.status === 201) {
@@ -484,7 +529,7 @@ class CogneeExtractorClient {
     // Unique constraint: (tenant_id, user_id, signal_key)
     for (const signal of result.signals) {
       try {
-        const signalResponse = await fetch(
+        const signalResponse = await this.fetchWithRetry(
           `${SUPABASE_URL}/rest/v1/relationship_signals?` +
           `on_conflict=tenant_id,user_id,signal_key`,
           {
@@ -503,7 +548,8 @@ class CogneeExtractorClient {
               },
               updated_at: new Date().toISOString(),
             }),
-          }
+          },
+          2, 'signal-upsert'
         );
 
         if (signalResponse.ok || signalResponse.status === 201) {
@@ -533,7 +579,7 @@ class CogneeExtractorClient {
         }
 
         // Call write_fact() RPC (VTID-01192) - the proper way to store facts
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/write_fact`, {
+        const response = await this.fetchWithRetry(`${SUPABASE_URL}/rest/v1/rpc/write_fact`, {
           method: 'POST',
           headers: serviceHeaders,
           body: JSON.stringify({
@@ -546,7 +592,7 @@ class CogneeExtractorClient {
             p_provenance_source: 'assistant_inferred', // Cognee extraction
             p_provenance_confidence: 0.85, // High confidence from NLP extraction
           }),
-        });
+        }, 2, 'fact-write');
 
         if (response.ok) {
           factsPersisted++;
@@ -574,7 +620,7 @@ class CogneeExtractorClient {
         const categoryKey = this.mapEntityToCategory(entity);
         const importance = this.getEntityImportance(entity, categoryKey);
 
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/memory_items`, {
+        const response = await this.fetchWithRetry(`${SUPABASE_URL}/rest/v1/memory_items`, {
           method: 'POST',
           headers: { ...serviceHeaders, Prefer: 'return=minimal' },
           body: JSON.stringify({
@@ -594,7 +640,7 @@ class CogneeExtractorClient {
             importance: importance,
             occurred_at: new Date().toISOString()
           }),
-        });
+        }, 2, 'memory-item-insert');
 
         if (response.ok) {
           memoryItemsPersisted++;

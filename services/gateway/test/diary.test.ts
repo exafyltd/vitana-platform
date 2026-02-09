@@ -17,11 +17,20 @@ import express, { Router } from 'express';
 process.env.NODE_ENV = 'test';
 process.env.SUPABASE_URL = 'http://localhost:54321';
 process.env.SUPABASE_ANON_KEY = 'test-anon-key';
+process.env.COGNEE_EXTRACTOR_URL = 'http://localhost:9999';
 
 // Mock the OASIS event service
 const mockEmitOasisEvent = jest.fn().mockResolvedValue({ ok: true, event_id: 'test-event-id' });
 jest.mock('../src/services/oasis-event-service', () => ({
   emitOasisEvent: mockEmitOasisEvent,
+}));
+
+// Mock the cognee extractor client
+jest.mock('../src/services/cognee-extractor-client', () => ({
+  cogneeExtractorClient: {
+    extractAsync: jest.fn(),
+    isEnabled: jest.fn().mockReturnValue(true),
+  },
 }));
 
 // Mock the Supabase user client
@@ -34,6 +43,9 @@ jest.mock('../src/lib/supabase-user', () => ({
 
 // Import the diary router after mocks are set up
 import diaryRouter from '../src/routes/diary';
+
+// Valid mock JWT with sub and app_metadata.active_tenant_id for extraction tests
+const MOCK_JWT = 'eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJ0ZXN0LXVzZXItaWQiLCJhcHBfbWV0YWRhdGEiOnsiYWN0aXZlX3RlbmFudF9pZCI6InRlc3QtdGVuYW50LWlkIn19.signature';
 
 describe('VTID-01097: Guided Diary Templates', () => {
   let app: express.Application;
@@ -286,7 +298,7 @@ describe('VTID-01097: Guided Diary Templates', () => {
     it('should return extraction result with relationship signals for relationships template', async () => {
       const response = await request(app)
         .post('/api/v1/diary/entry')
-        .set('Authorization', 'Bearer test-token')
+        .set('Authorization', `Bearer ${MOCK_JWT}`)
         .send({
           content: 'Had lunch with John and Mary today',
           template_type: 'relationships_social',
