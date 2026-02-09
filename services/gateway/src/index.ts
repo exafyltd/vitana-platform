@@ -194,10 +194,16 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const llmRouter = require('./routes/llm').default;
   // VTID-01223: Interactive Visual Testing API
   const visualInteractiveRouter = require('./routes/visual-interactive').default;
+  // VTID-01230: Stripe Connect Express for Live Rooms Creators
+  const creatorsRouter = require('./routes/creators').default;
+  const stripeConnectWebhookRouter = require('./routes/stripe-connect-webhook').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
   app.use(sseHeaders);
+
+  // VTID-01230: Raw body parser for Stripe webhooks (MUST come BEFORE express.json())
+  app.use('/api/v1/stripe/webhook', express.raw({ type: 'application/json' }));
 
   // Middleware - IMPORTANT: JSON body parser must come before route handlers
   app.use(express.json());
@@ -468,6 +474,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01090: Live Rooms + Events as Relationship Nodes
   mountRouterSync(app, '/api/v1/live', liveRouter, { owner: 'live' });
+
+  // VTID-01230: Stripe Connect Express for Live Rooms Creators
+  mountRouterSync(app, '/api/v1/creators', creatorsRouter, { owner: 'creators' });
+  mountRouterSync(app, '/api/v1/stripe', stripeConnectWebhookRouter, { owner: 'stripe-connect-webhook' });
 
   // VTID-01097: Diary Templates - guided diary templates for memory quality
   mountRouterSync(app, '/api/v1/diary', diaryRouter, { owner: 'diary' });
