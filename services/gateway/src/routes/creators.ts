@@ -61,7 +61,7 @@ function getSupabaseCredentials(): { url: string; key: string } | null {
  * Helper: Call a Supabase RPC function with user token
  */
 async function callRpc(
-  token: string,
+  token: string | null,
   functionName: string,
   params: Record<string, unknown>
 ): Promise<{ ok: boolean; data?: any; error?: string }> {
@@ -76,7 +76,7 @@ async function callRpc(
       headers: {
         'Content-Type': 'application/json',
         'apikey': creds.key,
-        'Authorization': `Bearer ${token}`,
+        'Authorization': `Bearer ${token || ''}`,
         'Prefer': 'return=representation'
       },
       body: JSON.stringify(params)

@@ -43,7 +43,7 @@ function getServiceToken(): string {
  * Helper: Call a Supabase RPC function with service role token
  */
 async function callRpc(
-  token: string,
+  token: string | null,
   functionName: string,
   params: Record<string, unknown>
 ): Promise<{ ok: boolean; data?: any; error?: string }> {
@@ -58,7 +58,7 @@ async function callRpc(
       headers: {
         'Content-Type': 'application/json',
         'apikey': creds.key,
-        'Authorization': `Bearer ${token}`,
+        'Authorization': `Bearer ${token || ''}`,
         'Prefer': 'return=representation'
       },
       body: JSON.stringify(params)
