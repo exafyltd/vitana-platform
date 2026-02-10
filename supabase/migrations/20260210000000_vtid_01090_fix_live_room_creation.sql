@@ -17,65 +17,89 @@ COMMENT ON COLUMN live_rooms.metadata IS 'Room metadata including price, descrip
 -- Update live_room_create RPC to accept access_level and metadata
 -- ============================================================================
 
-CREATE OR REPLACE FUNCTION live_room_create(p_payload JSONB)
-RETURNS TABLE (
-  id UUID,
-  title TEXT,
-  description TEXT,
-  creator_user_id UUID,
-  tenant_id UUID,
-  access_level TEXT,
-  metadata JSONB,
-  created_at TIMESTAMPTZ
-)
+CREATE OR REPLACE FUNCTION public.live_room_create(p_payload JSONB)
+RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_tenant_id UUID;
-  v_user_id UUID;
+    v_tenant_id UUID;
+    v_user_id UUID;
+    v_title TEXT;
+    v_topic_keys TEXT[];
+    v_starts_at TIMESTAMPTZ;
+    v_access_level TEXT;
+    v_metadata JSONB;
+    v_room_id UUID;
 BEGIN
-  -- Get user ID from JWT
-  v_user_id := auth.uid();
-  IF v_user_id IS NULL THEN
-    RAISE EXCEPTION 'Authentication required';
-  END IF;
+    -- Get context
+    v_tenant_id := public.current_tenant_id();
+    v_user_id := public.current_user_id();
 
-  -- Get tenant ID from JWT or use current_tenant_id()
-  v_tenant_id := current_tenant_id();
-  IF v_tenant_id IS NULL THEN
-    RAISE EXCEPTION 'Tenant context required';
-  END IF;
+    IF v_tenant_id IS NULL THEN
+        RETURN jsonb_build_object('ok', false, 'error', 'TENANT_NOT_FOUND');
+    END IF;
 
-  -- Insert and return
-  RETURN QUERY
-  INSERT INTO live_rooms (
-    title,
-    description,
-    creator_user_id,
-    tenant_id,
-    access_level,
-    metadata
-  ) VALUES (
-    p_payload->>'title',
-    p_payload->>'description',
-    v_user_id,  -- Use JWT user ID
-    v_tenant_id,
-    COALESCE(p_payload->>'access_level', 'public'),
-    COALESCE((p_payload->>'metadata')::JSONB, '{}'::jsonb)
-  )
-  RETURNING
-    live_rooms.id,
-    live_rooms.title,
-    live_rooms.description,
-    live_rooms.creator_user_id,
-    live_rooms.tenant_id,
-    live_rooms.access_level,
-    live_rooms.metadata,
-    live_rooms.created_at;
+    IF v_user_id IS NULL THEN
+        RETURN jsonb_build_object('ok', false, 'error', 'UNAUTHENTICATED');
+    END IF;
+
+    -- Extract payload
+    v_title := p_payload->>'title';
+    v_topic_keys := ARRAY(SELECT jsonb_array_elements_text(COALESCE(p_payload->'topic_keys', '[]'::JSONB)));
+    v_starts_at := COALESCE((p_payload->>'starts_at')::TIMESTAMPTZ, NOW());
+    v_access_level := COALESCE(p_payload->>'access_level', 'public');
+    v_metadata := COALESCE(p_payload->'metadata', '{}'::JSONB);
+
+    IF v_title IS NULL OR v_title = '' THEN
+        RETURN jsonb_build_object('ok', false, 'error', 'INVALID_TITLE', 'message', 'title is required');
+    END IF;
+
+    -- Create room
+    INSERT INTO public.live_rooms (
+        tenant_id,
+        title,
+        topic_keys,
+        host_user_id,
+        starts_at,
+        access_level,
+        metadata
+    )
+    VALUES (
+        v_tenant_id,
+        v_title,
+        v_topic_keys,
+        v_user_id,
+        v_starts_at,
+        v_access_level,
+        v_metadata
+    )
+    RETURNING id INTO v_room_id;
+
+    -- Create host edge (person -> live_room)
+    PERFORM public.upsert_relationship_edge(
+        v_tenant_id,
+        'person',
+        v_user_id,
+        'live_room',
+        v_room_id,
+        'host',
+        10,  -- Host gets +10 strength
+        jsonb_build_object('created_at', NOW())
+    );
+
+    RETURN jsonb_build_object(
+        'ok', true,
+        'live_room_id', v_room_id,
+        'title', v_title,
+        'status', 'scheduled'
+    );
 END;
 $$;
 
 -- Grant execute permissions
-GRANT EXECUTE ON FUNCTION live_room_create(JSONB) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.live_room_create(JSONB) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.live_room_create(JSONB) TO service_role;
+
+COMMENT ON FUNCTION public.live_room_create IS 'VTID-01090-FIX: Create a new live room with access_level and metadata';
