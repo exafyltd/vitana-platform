@@ -64,7 +64,7 @@ async function callRpc(
   token: string | null,
   functionName: string,
   params: Record<string, unknown>
-): Promise<{ ok: boolean; data?: any; error?: string }> {
+): Promise<{ ok: boolean; data?: any; error?: string; message?: string }> {
   const creds = getSupabaseCredentials();
   if (!creds) {
     return { ok: false, error: 'Gateway misconfigured' };
