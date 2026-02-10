@@ -16,6 +16,17 @@ export interface DailyRoomResult {
   roomName: string;  // Room name (for idempotency and deletion)
 }
 
+export interface DailyMeetingTokenDetails {
+  roomName: string;       // Daily.co room name (e.g., "vitana-XXXXX")
+  expiresAt: number;      // Unix timestamp (seconds) when token expires
+  isOwner?: boolean;      // true for host, false for guest (default: false)
+  userName?: string;      // Display name in the call
+}
+
+export interface DailyMeetingTokenResult {
+  token: string;          // JWT meeting token
+}
+
 export class DailyClient {
   private apiKey: string;
   private apiBase = 'https://api.daily.co/v1';
@@ -119,5 +130,46 @@ export class DailyClient {
     }
 
     return response.json() as Promise<any>;
+  }
+
+  /**
+   * Create a per-session meeting token for Daily.co
+   *
+   * Meeting tokens control access to a room. Each token has an expiration
+   * and an isOwner flag. Leaked room URLs without a valid token cannot join.
+   *
+   * @param details Token details (room name, expiration, owner flag)
+   * @returns Meeting token JWT
+   */
+  async createMeetingToken(details: DailyMeetingTokenDetails): Promise<DailyMeetingTokenResult> {
+    const { roomName, expiresAt, isOwner = false, userName } = details;
+
+    const properties: Record<string, unknown> = {
+      room_name: roomName,
+      exp: expiresAt,
+      is_owner: isOwner,
+    };
+
+    if (userName) {
+      properties.user_name = userName;
+    }
+
+    const response = await fetch(`${this.apiBase}/meeting-tokens`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.apiKey}`
+      },
+      body: JSON.stringify({ properties })
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: response.statusText })) as { error?: string };
+      throw new Error(`Daily.co meeting token error: ${error.error || response.statusText}`);
+    }
+
+    const data = await response.json() as { token: string };
+
+    return { token: data.token };
   }
 }
