@@ -46,7 +46,7 @@ async function callRpc(
   token: string | null,
   functionName: string,
   params: Record<string, unknown>
-): Promise<{ ok: boolean; data?: any; error?: string }> {
+): Promise<{ ok: boolean; data?: any; error?: string; message?: string }> {
   const creds = getSupabaseCredentials();
   if (!creds) {
     return { ok: false, error: 'Gateway misconfigured' };
@@ -116,7 +116,7 @@ router.post('/webhook/connect', async (req: Request, res: Response) => {
     switch (event.type) {
       case 'account.updated': {
         const account = event.data.object as Stripe.Account;
-        
+
         console.log('[Connect Webhook] Account updated:', {
           account_id: account.id,
           charges_enabled: account.charges_enabled,

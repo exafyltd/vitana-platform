@@ -755,7 +755,7 @@ async function supabaseRequest<T>(
 async function callRpc<T>(
   functionName: string,
   params: Record<string, unknown>
-): Promise<{ ok: boolean; data?: T; error?: string }> {
+): Promise<{ ok: boolean; data?: T; error?: string; message?: string }> {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
 
