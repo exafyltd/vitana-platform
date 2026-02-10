@@ -105,17 +105,38 @@ router.post('/onboard', onboardRateLimit, async (req: Request, res: Response) =>
     const token = getBearerToken(req);
     const { return_url, refresh_url } = req.body;
 
+    // VTID-01230: Security Hardening - Validate return/refresh URLs
+    const allowedOrgin = FRONTEND_URL;
+    const validateUrl = (url?: string) => {
+      if (!url) return true;
+      try {
+        const u = new URL(url);
+        // Only allow same origin as FRONTEND_URL or window.location.origin (if provided by client)
+        return u.origin === new URL(allowedOrgin).origin;
+      } catch {
+        return false;
+      }
+    };
+
+    if (!validateUrl(return_url) || !validateUrl(refresh_url)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'INVALID_REDIRECT_URL',
+        message: 'Redirect URL must belong to the approved frontend domain'
+      });
+    }
+
     console.log('[Creator Onboard] Starting onboarding flow');
 
     // Check if user already has Stripe account
     const statusResult = await callRpc(token, 'get_user_stripe_status', {});
-    
+
     if (statusResult.data && statusResult.data.length > 0) {
       const existingAccount = statusResult.data[0].stripe_account_id;
-      
+
       if (existingAccount) {
         console.log('[Creator Onboard] User already has account:', existingAccount);
-        
+
         // Generate new onboarding link for existing account
         const accountLink = await stripe.accountLinks.create({
           account: existingAccount,
