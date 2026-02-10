@@ -102,7 +102,9 @@ const STRENGTH_INCREMENTS = {
 const CreateRoomSchema = z.object({
   title: z.string().min(1, 'Title is required'),
   topic_keys: z.array(z.string()).optional().default([]),
-  starts_at: z.string().datetime().optional()
+  starts_at: z.string().datetime().optional(),
+  access_level: z.enum(['public', 'group']).optional().default('public'),
+  metadata: z.record(z.any()).optional().default({})
 });
 
 const AddHighlightSchema = z.object({
@@ -170,20 +172,33 @@ async function callRpc(
 
     if (!response.ok) {
       const errorText = await response.text();
+
+      // VTID-01090-FIX: Detect "Access Denied" at DB level (often TENANT_NOT_FOUND)
+      if (errorText.includes('TENANT_NOT_FOUND') || errorText.includes('UNAUTHENTICATED')) {
+        console.error(`[VTID-01090] Auth failure in RPC ${functionName}: ${errorText}`);
+        return {
+          ok: false,
+          error: 'ACCESS_DENIED',
+          message: 'Room creation failed: tenant context missing. Please ensure you are logged in to a valid tenant.'
+        };
+      }
+
       console.error(`[VTID-01090] RPC ${functionName} failed: ${response.status} - ${errorText}`);
-      return { ok: false, error: `RPC failed: ${response.status}` };
+      return { ok: false, error: `RPC failed: ${response.status} - ${errorText}` };
     }
 
-    const data = await response.json() as Record<string, unknown>;
+    const data = await response.json() as Record<string, unknown> | Array<any>;
 
-    // Check for RPC-level errors
-    if (data && typeof data === 'object' && data.ok === false) {
-      return { ok: false, error: (data.error as string) || (data.message as string) || 'RPC returned error' };
+    // Check if the result itself indicates failure (PostgREST JSON response)
+    const result = Array.isArray(data) ? data[0] : data;
+
+    if (result && typeof result === 'object' && result.ok === false) {
+      return { ok: false, error: result.error as string || 'RPC execution failed' };
     }
 
-    return { ok: true, data };
+    return { ok: true, data: result };
   } catch (err: any) {
-    console.error(`[VTID-01090] RPC ${functionName} error:`, err.message);
+    console.error(`[VTID-01090] RPC ${functionName} exception:`, err.message);
     return { ok: false, error: err.message };
   }
 }
@@ -233,13 +248,39 @@ router.post('/rooms', async (req: Request, res: Response) => {
     });
   }
 
-  const { title, topic_keys, starts_at } = validation.data;
+  const { title, topic_keys, starts_at, access_level, metadata } = validation.data;
+
+  // VTID-01230: Enforce creator onboarding for paid rooms
+  if (access_level === 'group' && metadata?.price && Number(metadata.price) > 0) {
+    const creatorStatusResult = await callRpc(token, 'get_user_stripe_status', {});
+
+    if (!creatorStatusResult.ok || !creatorStatusResult.data || creatorStatusResult.data.length === 0) {
+      return res.status(403).json({
+        ok: false,
+        error: 'CREATOR_NOT_ONBOARDED',
+        message: 'Complete payment setup before creating paid rooms',
+      });
+    }
+
+    const creatorStatus = creatorStatusResult.data[0];
+    if (!creatorStatus.stripe_charges_enabled || !creatorStatus.stripe_payouts_enabled) {
+      return res.status(403).json({
+        ok: false,
+        error: 'CREATOR_NOT_ONBOARDED',
+        message: 'Complete payment setup before creating paid rooms. Both charges and payouts must be enabled.',
+      });
+    }
+
+    console.log('[VTID-01230] Creator onboarding verified for paid room creation');
+  }
 
   const result = await callRpc(token, 'live_room_create', {
     p_payload: {
       title,
       topic_keys,
-      starts_at
+      starts_at,
+      access_level,
+      metadata
     }
   });
 
@@ -295,7 +336,7 @@ router.post('/rooms/:id/start', async (req: Request, res: Response) => {
 
   if (!result.ok) {
     const statusCode = result.error?.includes('NOT_HOST') ? 403 :
-                       result.error?.includes('ROOM_NOT_FOUND') ? 404 : 502;
+      result.error?.includes('ROOM_NOT_FOUND') ? 404 : 502;
     return res.status(statusCode).json({ ok: false, error: result.error });
   }
 
@@ -344,7 +385,7 @@ router.post('/rooms/:id/end', async (req: Request, res: Response) => {
 
   if (!result.ok) {
     const statusCode = result.error?.includes('NOT_HOST') ? 403 :
-                       result.error?.includes('ROOM_NOT_FOUND') ? 404 : 502;
+      result.error?.includes('ROOM_NOT_FOUND') ? 404 : 502;
     return res.status(statusCode).json({ ok: false, error: result.error });
   }
 
@@ -440,7 +481,7 @@ router.post('/rooms/:id/join', async (req: Request, res: Response) => {
 
   if (!result.ok) {
     const statusCode = result.error?.includes('ROOM_NOT_FOUND') ? 404 :
-                       result.error?.includes('ROOM_NOT_LIVE') ? 409 : 502;
+      result.error?.includes('ROOM_NOT_LIVE') ? 409 : 502;
     return res.status(statusCode).json({ ok: false, error: result.error });
   }
 
@@ -505,7 +546,7 @@ router.post('/rooms/:id/leave', async (req: Request, res: Response) => {
 
   if (!result.ok) {
     const statusCode = result.error?.includes('NOT_IN_ROOM') ? 404 :
-                       result.error?.includes('ALREADY_LEFT') ? 409 : 502;
+      result.error?.includes('ALREADY_LEFT') ? 409 : 502;
     return res.status(statusCode).json({ ok: false, error: result.error });
   }
 
@@ -880,7 +921,7 @@ router.post('/rooms/:id/highlights', async (req: Request, res: Response) => {
 
   if (!result.ok) {
     const statusCode = result.error?.includes('ROOM_NOT_FOUND') ? 404 :
-                       result.error?.includes('ROOM_NOT_ACTIVE') ? 409 : 502;
+      result.error?.includes('ROOM_NOT_ACTIVE') ? 409 : 502;
     return res.status(statusCode).json({ ok: false, error: result.error });
   }
 

@@ -124,6 +124,11 @@ router.post('/onboard', onboardRateLimit, async (req: Request, res: Response) =>
           type: 'account_onboarding',
         });
 
+        // VTID-01230: Validate Stripe URL before returning
+        if (!accountLink.url.startsWith('https://connect.stripe.com/')) {
+          throw new Error('Invalid Stripe URL returned');
+        }
+
         return res.json({
           ok: true,
           onboarding_url: accountLink.url,
@@ -151,6 +156,11 @@ router.post('/onboard', onboardRateLimit, async (req: Request, res: Response) =>
       return_url: return_url || `${FRONTEND_URL}/creator/onboarded`,
       type: 'account_onboarding',
     });
+
+    // VTID-01230: Validate Stripe URL before returning
+    if (!accountLink.url.startsWith('https://connect.stripe.com/')) {
+      throw new Error('Invalid Stripe URL returned');
+    }
 
     // Store Stripe account ID in database
     const updateResult = await callRpc(token, 'update_user_stripe_account', {
@@ -250,6 +260,11 @@ router.get('/dashboard', async (req: Request, res: Response) => {
 
     // Generate Express dashboard login link
     const loginLink = await stripe.accounts.createLoginLink(stripeAccountId);
+
+    // VTID-01230: Validate Stripe URL before returning
+    if (!loginLink.url.startsWith('https://connect.stripe.com/')) {
+      throw new Error('Invalid Stripe dashboard URL returned');
+    }
 
     return res.json({
       ok: true,
