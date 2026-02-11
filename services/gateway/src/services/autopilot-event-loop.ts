@@ -539,19 +539,15 @@ async function triggerDispatch(vtid: string, event: OasisEvent): Promise<ActionR
 
   await emitOasisEvent({
     vtid,
-    topic: 'vtid.dispatch.failed',
-    kind: 'dispatch_failure',
-    status: 'failure',
-    title: `Dispatch failed for ${vtid} after ${MAX_RETRIES} retries`,
-    message: lastError,
-    role: 'AUTOPILOT',
-    layer: 'orchestration',
-    module: 'autopilot-event-loop',
-    source: 'autopilot',
-    metadata: {
+    type: 'dispatch_failed' as any,
+    source: 'autopilot-event-loop',
+    status: 'error',
+    message: `Dispatch failed for ${vtid} after ${MAX_RETRIES} retries: ${lastError}`,
+    payload: {
       attempts: MAX_RETRIES,
       last_error: lastError,
       vtid_ref: 'VTID-01229',
+      timestamp: new Date().toISOString(),
     },
   });
 
