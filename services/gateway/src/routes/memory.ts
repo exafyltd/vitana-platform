@@ -72,7 +72,8 @@ const CATEGORY_KEYS = [
   'products_services',
   'events_meetups',
   'notes',
-  'personal'  // VTID-DEBUG-03: Added for personal identity info
+  'personal',          // VTID-DEBUG-03: Added for personal identity info
+  'personal_identity'  // VTID-01086: Memory Garden category - maps to notes,personal
 ] as const;
 
 type CategoryKey = typeof CATEGORY_KEYS[number];

@@ -218,6 +218,31 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
     res.json({ status: 'ok', service: 'gateway', timestamp: new Date().toISOString() });
   });
 
+  // VTID-01225: Cognee Extractor health check endpoint
+  app.get('/api/v1/cognee/health', async (_req, res) => {
+    try {
+      const { cogneeExtractorClient } = require('./services/cognee-extractor-client');
+      const result = await cogneeExtractorClient.healthCheck();
+      const statusCode = result.healthy ? 200 : 503;
+      res.status(statusCode).json({
+        ok: result.healthy,
+        service: 'cognee-extractor',
+        vtid: 'VTID-01225',
+        configured: !!process.env.COGNEE_EXTRACTOR_URL,
+        ...result.details ? { details: result.details } : {},
+        timestamp: new Date().toISOString()
+      });
+    } catch (err) {
+      res.status(503).json({
+        ok: false,
+        service: 'cognee-extractor',
+        vtid: 'VTID-01225',
+        error: err instanceof Error ? err.message : 'Health check failed',
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
   // Debug route to verify this code is deployed
   app.get('/debug/governance-ping', (_req, res) => {
     res.json({ ok: true, message: 'governance debug route reached', timestamp: new Date().toISOString() });
