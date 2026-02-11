@@ -35,10 +35,16 @@ logger = logging.getLogger('cognee-extractor')
 # Configuration
 # =============================================================================
 
-# LLM Configuration (uses Cognee defaults if not set)
-LLM_API_KEY = os.getenv('LLM_API_KEY')
-LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'openai')
-LLM_MODEL = os.getenv('LLM_MODEL', 'gpt-4o-mini')
+# LLM Configuration - Uses Gemini API (same key as ORB)
+# Cognee requires API key authentication for Gemini
+LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'gemini')
+LLM_MODEL = os.getenv('LLM_MODEL', 'gemini/gemini-2.0-flash')
+LLM_API_KEY = os.getenv('GOOGLE_GEMINI_API_KEY') or os.getenv('LLM_API_KEY')
+LLM_ENDPOINT = os.getenv('LLM_ENDPOINT', 'https://generativelanguage.googleapis.com/')
+
+# Google Cloud project (for reference)
+GCP_PROJECT = os.getenv('GOOGLE_CLOUD_PROJECT') or os.getenv('GCP_PROJECT') or 'lovable-vitana-vers1'
+GCP_LOCATION = os.getenv('VERTEX_LOCATION', 'us-central1')
 
 # Service Configuration
 SERVICE_NAME = 'cognee-extractor'
@@ -376,17 +382,19 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     logger.info(f'[{VTID}] Starting {SERVICE_NAME}...')
 
-    # Configure Cognee LLM if API key provided
-    if LLM_API_KEY:
-        try:
-            cognee.config.set_llm_config({
-                'provider': LLM_PROVIDER,
-                'model': LLM_MODEL,
-                'api_key': LLM_API_KEY
-            })
+    # Configure Cognee LLM with Gemini API
+    # Uses same GOOGLE_GEMINI_API_KEY as gateway ORB
+    try:
+        if LLM_API_KEY:
+            cognee.config.set_llm_provider(LLM_PROVIDER)
+            cognee.config.set_llm_model(LLM_MODEL)
+            cognee.config.set_llm_api_key(LLM_API_KEY)
+            cognee.config.set_llm_endpoint(LLM_ENDPOINT)
             logger.info(f'[{VTID}] Configured Cognee with {LLM_PROVIDER}/{LLM_MODEL}')
-        except Exception as e:
-            logger.warning(f'[{VTID}] Failed to configure Cognee LLM: {e}')
+        else:
+            logger.warning(f'[{VTID}] No LLM_API_KEY provided - Cognee will use defaults')
+    except Exception as e:
+        logger.warning(f'[{VTID}] Failed to configure Cognee LLM: {e}')
 
     logger.info(f'[{VTID}] {SERVICE_NAME} ready')
     yield

@@ -245,6 +245,66 @@ function createMemoryClient(): SupabaseClient | null {
 }
 
 // =============================================================================
+// VTID-01225: Fetch Recent Conversation for Cognee Extraction
+// =============================================================================
+
+/**
+ * VTID-01225: Fetch recent conversation turns from memory_items for Cognee extraction
+ * Queries by user_id and time range to get conversation history
+ */
+export async function fetchRecentConversationForCognee(
+  tenantId: string,
+  userId: string,
+  startTime: Date,
+  endTime: Date = new Date()
+): Promise<string | null> {
+  const client = createMemoryClient();
+  if (!client) {
+    console.warn('[VTID-01225] No Supabase client for fetching conversation');
+    return null;
+  }
+
+  try {
+    // VTID-01225: Include all ORB-related sources for comprehensive conversation capture
+    const { data, error } = await client
+      .from('memory_items')
+      .select('content, content_json, occurred_at')
+      .eq('tenant_id', tenantId)
+      .eq('user_id', userId)
+      .in('source', ['orb_voice', 'orb_text', 'orb', 'orb-live-ws'])
+      .gte('occurred_at', startTime.toISOString())
+      .lte('occurred_at', endTime.toISOString())
+      .order('occurred_at', { ascending: true })
+      .limit(100);
+
+    if (error) {
+      console.error('[VTID-01225] Error fetching conversation:', error.message);
+      return null;
+    }
+
+    if (!data || data.length === 0) {
+      console.log('[VTID-01225] No conversation items found for time range');
+      return null;
+    }
+
+    // Build transcript from memory items
+    const transcript = data
+      .map(item => {
+        const direction = (item.content_json as any)?.direction || 'unknown';
+        const role = direction === 'user' ? 'User' : direction === 'assistant' ? 'Assistant' : 'Unknown';
+        return `${role}: ${item.content}`;
+      })
+      .join('\n');
+
+    console.log(`[VTID-01225] Built transcript from ${data.length} memory items`);
+    return transcript;
+  } catch (err: any) {
+    console.error('[VTID-01225] Exception fetching conversation:', err.message);
+    return null;
+  }
+}
+
+// =============================================================================
 // VTID-01106: Memory Context Fetching
 // =============================================================================
 

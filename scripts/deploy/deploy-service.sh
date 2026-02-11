@@ -23,6 +23,7 @@ NC="\033[0m"
 # =============================================================================
 declare -A SERVICE_MAPPINGS=(
   ["vitana-verification-engine"]="services/agents/vitana-orchestrator:/health:vitana-verification-engine"
+  ["cognee-extractor"]="services/agents/cognee-extractor:/health:cognee-extractor"
 )
 
 # =============================================================================
@@ -131,18 +132,22 @@ echo -e "${GREEN}Source path verified: ${SOURCE_PATH}${NC}"
 echo -e "${YELLOW}Deploying ${CLOUD_RUN_SERVICE} to Cloud Run...${NC}"
 
 # VTID-01125: Gateway requires additional secrets for ORB intelligence
+# VTID-ORBC: Added LOVABLE_JWT_SECRET for dual Supabase project auth
 # Secrets are stored in GCP Secret Manager and bound at deploy time
 # NOTE: --set-secrets REPLACES all secrets, so we must include ALL required secrets here
 if [ "$CLOUD_RUN_SERVICE" = "gateway" ]; then
   echo -e "${YELLOW}VTID-01125: Binding secrets for gateway service...${NC}"
+  # VTID-01225: Add Cognee Extractor URL for entity extraction
+  COGNEE_URL="https://cognee-extractor-q74ibpv6ia-uc.a.run.app"
+  echo -e "${YELLOW}VTID-ORBC: Including LOVABLE_JWT_SECRET for dual-project auth...${NC}"
   gcloud run deploy "$CLOUD_RUN_SERVICE" \
     --project "$PROJECT" \
     --region "$REGION" \
     --source "$SOURCE_PATH" \
     --platform managed \
     --allow-unauthenticated \
-    --set-env-vars "ENVIRONMENT=${ENVIRONMENT},AUTOPILOT_LOOP_ENABLED=true,GOOGLE_CLOUD_PROJECT=lovable-vitana-vers1" \
-    --set-secrets "GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest,SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest,SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest,SUPABASE_JWT_SECRET=SUPABASE_JWT_SECRET:latest,GITHUB_TOKEN=GITHUB_TOKEN:latest,GH_TOKEN=GITHUB_TOKEN:latest,GITHUB_SAFE_MERGE_TOKEN=GITHUB_TOKEN:latest,DEV_AUTH_SECRET=DEV_AUTH_SECRET:latest,DEV_TEST_USER_EMAIL=DEV_TEST_USER_EMAIL:latest,DEV_TEST_USER_PASSWORD=DEV_TEST_USER_PASSWORD:latest,DEV_JWT_SECRET=DEV_JWT_SECRET:latest,PERPLEXITY_API_KEY=PERPLEXITY_API_KEY:latest" \
+    --set-env-vars "ENVIRONMENT=${ENVIRONMENT},AUTOPILOT_LOOP_ENABLED=true,GOOGLE_CLOUD_PROJECT=lovable-vitana-vers1,COGNEE_EXTRACTOR_URL=${COGNEE_URL}" \
+    --set-secrets "GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest,SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest,SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest,SUPABASE_JWT_SECRET=SUPABASE_JWT_SECRET:latest,LOVABLE_JWT_SECRET=LOVABLE_JWT_SECRET:latest,GITHUB_TOKEN=GITHUB_TOKEN:latest,GH_TOKEN=GITHUB_TOKEN:latest,GITHUB_SAFE_MERGE_TOKEN=GITHUB_TOKEN:latest,DEV_AUTH_SECRET=DEV_AUTH_SECRET:latest,DEV_TEST_USER_EMAIL=DEV_TEST_USER_EMAIL:latest,DEV_TEST_USER_PASSWORD=DEV_TEST_USER_PASSWORD:latest,DEV_JWT_SECRET=DEV_JWT_SECRET:latest,PERPLEXITY_API_KEY=PERPLEXITY_API_KEY:latest" \
     --quiet
 elif [ "$CLOUD_RUN_SERVICE" = "worker-runner" ]; then
   # VTID-01202: Worker-runner requires gateway URL and Supabase credentials
@@ -160,6 +165,24 @@ elif [ "$CLOUD_RUN_SERVICE" = "worker-runner" ]; then
     --set-env-vars "ENVIRONMENT=${ENVIRONMENT},GATEWAY_URL=${GATEWAY_URL_VALUE}" \
     --set-secrets "SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest" \
     --quiet
+elif [ "$CLOUD_RUN_SERVICE" = "cognee-extractor" ]; then
+  # VTID-01225: Cognee Extractor - uses Gemini API for entity extraction
+  # Internal-only ingress with allow-unauthenticated (network security via internal ingress)
+  # Cognee initialization takes ~25-30 seconds, cpu-boost helps with cold starts
+  echo -e "${YELLOW}VTID-01225: Deploying Cognee Extractor with Gemini API config...${NC}"
+  gcloud run deploy "$CLOUD_RUN_SERVICE" \
+    --project "$PROJECT" \
+    --region "$REGION" \
+    --source "$SOURCE_PATH" \
+    --platform managed \
+    --allow-unauthenticated \
+    --ingress internal \
+    --cpu-boost \
+    --set-env-vars "ENVIRONMENT=${ENVIRONMENT},LLM_PROVIDER=gemini,LLM_MODEL=gemini/gemini-2.0-flash,GOOGLE_CLOUD_PROJECT=${PROJECT}" \
+    --set-secrets "GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest" \
+    --quiet
+  # Note: Internal ingress provides network-level security - only Cloud Run services in same project can call
+  echo -e "${GREEN}Cognee Extractor deployed with internal-only ingress.${NC}"
 else
   gcloud run deploy "$CLOUD_RUN_SERVICE" \
     --project "$PROJECT" \
@@ -188,20 +211,44 @@ echo -e "${GREEN}Service URL: ${SERVICE_URL}${NC}"
 # =============================================================================
 # STEP 3 — Post-deploy health check
 # =============================================================================
-echo -e "${YELLOW}Running post-deploy health check: ${SERVICE_URL}${HEALTH_PATH}${NC}"
 
-# Wait a moment for service to stabilize
-sleep 5
+# Check if service has internal-only ingress (can't curl from outside)
+INGRESS=$(gcloud run services describe "$CLOUD_RUN_SERVICE" \
+  --project "$PROJECT" \
+  --region "$REGION" \
+  --format='value(spec.template.metadata.annotations."run.googleapis.com/ingress")' 2>/dev/null || echo "all")
 
-if curl -fsS "${SERVICE_URL}${HEALTH_PATH}" -o /tmp/health_response.json; then
-  echo -e "${GREEN}Health check PASSED${NC}"
-  echo -e "${CYAN}Response:${NC}"
-  cat /tmp/health_response.json | jq '.' 2>/dev/null || cat /tmp/health_response.json
-  echo ""
+if [ "$INGRESS" = "internal" ] || [ "$INGRESS" = "internal-and-cloud-load-balancing" ]; then
+  echo -e "${YELLOW}Service has internal-only ingress - checking Cloud Run status instead...${NC}"
+  # For internal services, verify via Cloud Run API that latest revision is serving
+  SERVING_STATUS=$(gcloud run services describe "$CLOUD_RUN_SERVICE" \
+    --project "$PROJECT" \
+    --region "$REGION" \
+    --format='value(status.conditions[0].status)' 2>/dev/null || echo "Unknown")
+
+  if [ "$SERVING_STATUS" = "True" ]; then
+    echo -e "${GREEN}Health check PASSED (internal service is serving)${NC}"
+  else
+    echo -e "${RED}Health check FAILED: Service status is ${SERVING_STATUS}${NC}"
+    echo -e "${RED}Check Cloud Run logs: gcloud run services logs read ${CLOUD_RUN_SERVICE} --region=${REGION}${NC}"
+    exit 1
+  fi
 else
-  echo -e "${RED}Health check FAILED: ${SERVICE_URL}${HEALTH_PATH}${NC}"
-  echo -e "${RED}Deployment may have issues. Check Cloud Run logs.${NC}"
-  exit 1
+  echo -e "${YELLOW}Running post-deploy health check: ${SERVICE_URL}${HEALTH_PATH}${NC}"
+
+  # Wait a moment for service to stabilize
+  sleep 5
+
+  if curl -fsS "${SERVICE_URL}${HEALTH_PATH}" -o /tmp/health_response.json; then
+    echo -e "${GREEN}Health check PASSED${NC}"
+    echo -e "${CYAN}Response:${NC}"
+    cat /tmp/health_response.json | jq '.' 2>/dev/null || cat /tmp/health_response.json
+    echo ""
+  else
+    echo -e "${RED}Health check FAILED: ${SERVICE_URL}${HEALTH_PATH}${NC}"
+    echo -e "${RED}Deployment may have issues. Check Cloud Run logs.${NC}"
+    exit 1
+  fi
 fi
 
 # =============================================================================

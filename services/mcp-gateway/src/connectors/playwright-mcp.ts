@@ -91,6 +91,12 @@ class PlaywrightMcpConnector {
         return this.navigate(params);
       case 'browser.screenshot':
         return this.screenshot(params);
+      case 'browser.click':
+        return this.click(params);
+      case 'browser.type':
+        return this.type(params);
+      case 'browser.hover':
+        return this.hover(params);
       case 'browser.accessibility':
         return this.checkAccessibility(params);
       case 'journey.execute':
@@ -214,6 +220,54 @@ class PlaywrightMcpConnector {
         await page.close();
       }
     }
+  }
+
+  /**
+   * Click an element on the current page
+   * VTID-01223: Interactive UI testing
+   */
+  private async click(params: { selector: string; timeout?: number }): Promise<{ ok: boolean }> {
+    if (!this.currentPage) {
+      throw new Error('No active page. Navigate to a page first.');
+    }
+
+    await this.currentPage.click(params.selector, {
+      timeout: params.timeout || this.config.timeout,
+    });
+
+    return { ok: true };
+  }
+
+  /**
+   * Type text into an element on the current page
+   * VTID-01223: Interactive UI testing
+   */
+  private async type(params: { selector: string; text: string; timeout?: number }): Promise<{ ok: boolean }> {
+    if (!this.currentPage) {
+      throw new Error('No active page. Navigate to a page first.');
+    }
+
+    await this.currentPage.fill(params.selector, params.text, {
+      timeout: params.timeout || this.config.timeout,
+    });
+
+    return { ok: true };
+  }
+
+  /**
+   * Hover over an element on the current page
+   * VTID-01223: Interactive UI testing
+   */
+  private async hover(params: { selector: string; timeout?: number }): Promise<{ ok: boolean }> {
+    if (!this.currentPage) {
+      throw new Error('No active page. Navigate to a page first.');
+    }
+
+    await this.currentPage.hover(params.selector, {
+      timeout: params.timeout || this.config.timeout,
+    });
+
+    return { ok: true };
   }
 
   /**

@@ -76,6 +76,7 @@ export const CONTEXT_PACK_CONFIG = {
 
 /**
  * Fetch memory hits from Memory Garden
+ * Queries memory_items directly with user/tenant scoping (SERVICE_ROLE bypasses RLS)
  */
 async function fetchMemoryHits(
   lens: ContextLens,
@@ -93,21 +94,31 @@ async function fetchMemoryHits(
       return { hits: [], latency_ms: Date.now() - startTime };
     }
 
-    // Use the memory_get_context RPC function
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/memory_get_context`, {
-      method: 'POST',
+    if (!lens.tenant_id || !lens.user_id) {
+      console.warn('[VTID-01216] Missing tenant_id or user_id in lens');
+      return { hits: [], latency_ms: Date.now() - startTime };
+    }
+
+    // Query memory_items directly with user/tenant scoping
+    // The RPC memory_get_context relies on JWT context (auth.uid()) which doesn't
+    // work with SERVICE_ROLE key, so we query the table directly instead.
+    const maxAgeHours = lens.max_age_hours || 168; // 7 days default
+    const sinceDate = new Date();
+    sinceDate.setHours(sinceDate.getHours() - maxAgeHours);
+
+    let url = `${SUPABASE_URL}/rest/v1/memory_items?select=id,category_key,content,importance,occurred_at,source&tenant_id=eq.${lens.tenant_id}&user_id=eq.${lens.user_id}&order=importance.desc&limit=${limit}`;
+
+    if (lens.allowed_categories && lens.allowed_categories.length > 0) {
+      url += `&category_key=in.(${lens.allowed_categories.join(',')})`;
+    }
+
+    const response = await fetch(url, {
+      method: 'GET',
       headers: {
         'Content-Type': 'application/json',
         apikey: SUPABASE_SERVICE_ROLE,
         Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
       },
-      body: JSON.stringify({
-        p_tenant_id: lens.tenant_id,
-        p_user_id: lens.user_id,
-        p_limit: limit,
-        p_categories: lens.allowed_categories || null,
-        p_max_age_hours: lens.max_age_hours || 168, // 7 days default
-      }),
     });
 
     if (!response.ok) {

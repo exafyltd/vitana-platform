@@ -1,5 +1,6 @@
 /**
  * VTID-01200: Worker Runner - Execution Service
+ * VTID-01229: Added execution timeout to prevent hanging tasks
  *
  * Executes actual work via LLM (Gemini/Claude).
  * Uses Vertex AI for Gemini execution on Cloud Run.
@@ -10,6 +11,27 @@ import { randomUUID } from 'crypto';
 import { RunnerConfig, TaskDomain, ExecutionResult, PendingTask, RoutingResult } from '../types';
 
 const VTID = 'VTID-01200';
+
+// VTID-01229: Execution timeout configuration (30 minutes default)
+const EXECUTION_TIMEOUT_MS = parseInt(process.env.WORKER_EXECUTION_TIMEOUT_MS || '1800000', 10);
+
+/**
+ * VTID-01229: Promise timeout wrapper
+ * Wraps a promise with a timeout, rejecting if the promise takes too long
+ */
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operationName: string): Promise<T> {
+  let timeoutId: NodeJS.Timeout;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`${operationName} timed out after ${timeoutMs}ms (${Math.round(timeoutMs / 60000)} minutes)`));
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    clearTimeout(timeoutId);
+  });
+}
 
 // Vertex AI client (initialized lazily)
 let vertexAI: VertexAI | null = null;
@@ -297,15 +319,19 @@ export async function executeTask(
       },
     ];
 
-    // Generate content
-    console.log(`[${VTID}] Calling Vertex AI for ${task.vtid}...`);
-    const response = await generativeModel.generateContent({
-      contents,
-      systemInstruction: {
-        role: 'system',
-        parts: [{ text: systemPrompt }] as Part[],
-      },
-    });
+    // VTID-01229: Generate content with timeout to prevent hanging
+    console.log(`[${VTID}] Calling Vertex AI for ${task.vtid} (timeout: ${EXECUTION_TIMEOUT_MS}ms)...`);
+    const response = await withTimeout(
+      generativeModel.generateContent({
+        contents,
+        systemInstruction: {
+          role: 'system',
+          parts: [{ text: systemPrompt }] as Part[],
+        },
+      }),
+      EXECUTION_TIMEOUT_MS,
+      `LLM generation for ${task.vtid}`
+    );
 
     const candidate = response.response?.candidates?.[0];
     const content = candidate?.content;

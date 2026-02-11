@@ -64,14 +64,14 @@ function navigateToRoleDefaultScreen(role) {
     var defaultScreen = ROLE_DEFAULT_SCREENS[lowerRole] || ROLE_DEFAULT_SCREENS['community'];
 
     // Find the section config
-    var section = NAVIGATION_CONFIG.find(function(s) { return s.section === defaultScreen.section; });
+    var section = NAVIGATION_CONFIG.find(function (s) { return s.section === defaultScreen.section; });
     if (!section) {
         console.warn('[VTID-01186] Section not found for role:', lowerRole);
         return;
     }
 
     // Find the tab within the section
-    var tab = section.tabs.find(function(t) { return t.key === defaultScreen.tab; });
+    var tab = section.tabs.find(function (t) { return t.key === defaultScreen.tab; });
     if (!tab) {
         tab = section.tabs[0]; // Fallback to first tab
     }
@@ -90,118 +90,9 @@ function navigateToRoleDefaultScreen(role) {
     console.log('[VTID-01186] Navigated to role default screen:', lowerRole, '->', defaultScreen.section + '/' + (tab ? tab.key : ''));
 }
 
-/**
- * VTID-01049: Fetch Me Context from Gateway
- * Called on app boot to load authoritative role from server.
- * @returns {Promise<{ok: boolean, me?: object, error?: string}>}
- */
-async function fetchMeContext() {
-    try {
-        var response = await fetch('/api/v1/me');
-        if (response.status === 401) {
-            // Not signed in - keep UI usable
-            MeState.loaded = true;
-            MeState.me = null;
-            return { ok: false, error: 'Not signed in' };
-        }
-        if (!response.ok) {
-            // 404/500 - show toast but don't break UI
-            MeState.loaded = true;
-            return { ok: false, error: 'Role context unavailable (Gateway /me)' };
-        }
-        var data = await response.json();
-        if (data.ok && data.me) {
-            MeState.loaded = true;
-            MeState.me = data.me;
-            // Sync viewRole with authoritative active_role
-            if (data.me.active_role) {
-                // Capitalize first letter for display
-                var displayRole = data.me.active_role.charAt(0).toUpperCase() + data.me.active_role.slice(1);
-                state.viewRole = displayRole;
-                localStorage.setItem('vitana.viewRole', displayRole);
-            }
-            return { ok: true, me: data.me };
-        }
-        MeState.loaded = true;
-        return { ok: false, error: 'Invalid response from /me' };
-    } catch (err) {
-        console.error('[VTID-01049] fetchMeContext error:', err);
-        MeState.loaded = true;
-        return { ok: false, error: 'Network error loading role context' };
-    }
-}
-
-/**
- * VTID-01049: Set Active Role via Gateway API
- * Called when user changes role in Profile dropdown.
- * @param {string} role - Role to set (lowercase: community, patient, professional, staff, admin, developer)
- * @returns {Promise<{ok: boolean, error?: string}>}
- */
-async function setActiveRole(role) {
-    var lowerRole = role.toLowerCase();
-
-    // Validate role client-side
-    if (VALID_VIEW_ROLES.indexOf(lowerRole) === -1) {
-        return { ok: false, error: 'Invalid role: ' + role };
-    }
-
-    try {
-        var response = await fetch('/api/v1/me/active-role', {
-            method: 'POST',
-            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ role: lowerRole })
-        });
-
-        if (response.status === 401) {
-            return { ok: false, error: 'Not signed in.', code: 'UNAUTHENTICATED' };
-        }
-        if (response.status === 403) {
-            return { ok: false, error: "You don't have access to that role.", code: 'FORBIDDEN' };
-        }
-        if (response.status === 400) {
-            var errData = await response.json().catch(function() { return {}; });
-            return { ok: false, error: errData.message || 'Invalid role', code: 'INVALID_ROLE' };
-        }
-        if (!response.ok) {
-            return { ok: false, error: 'Failed to set role' };
-        }
-
-        var data = await response.json();
-        if (data.ok) {
-            // Update MeState with new active_role
-            if (MeState.me) {
-                MeState.me.active_role = lowerRole;
-            }
-            return { ok: true };
-        }
-        return { ok: false, error: data.message || 'Failed to set role' };
-    } catch (err) {
-        console.error('[VTID-01049] setActiveRole error:', err);
-        return { ok: false, error: 'Network error setting role' };
-    }
-}
-
-/**
- * VTID-01049: Add Vitana context headers to fetch requests
- * Adds X-Vitana-Active-Role, X-Vitana-Tenant, X-Vitana-User if MeState.me exists.
- * @param {Object} headers - Existing headers object
- * @returns {Object} Headers with Vitana context added
- */
-function withVitanaContextHeaders(headers) {
-    var h = Object.assign({}, headers || {});
-    if (MeState.me) {
-        if (MeState.me.active_role) {
-            h['X-Vitana-Active-Role'] = MeState.me.active_role;
-        }
-        if (MeState.me.tenant_id) {
-            h['X-Vitana-Tenant'] = MeState.me.tenant_id;
-        }
-        if (MeState.me.user_id) {
-            h['X-Vitana-User'] = MeState.me.user_id;
-        }
-    }
-    return h;
-}
+// VTID-01049: Redundant fetchMeContext removed. Using consolidated version at line 610.
+// VTID-01229: Dead setActiveRole (used MeState.me) removed. Using consolidated version at line 640.
+// VTID-01229: Dead withVitanaContextHeaders (used MeState.me) removed. Use buildContextHeaders instead.
 
 // ===========================================================================
 // VTID-01016: OASIS Event Authority - Deterministic Stage/Status Derivation
@@ -387,9 +278,9 @@ function isPlaceholderTitle(title) {
     if (!title) return true;
     var lowerTitle = title.toLowerCase();
     return lowerTitle === 'pending title' ||
-           lowerTitle === 'allocated - pending title' ||
-           lowerTitle === '' ||
-           lowerTitle === 'untitled';
+        lowerTitle === 'allocated - pending title' ||
+        lowerTitle === '' ||
+        lowerTitle === 'untitled';
 }
 
 /**
@@ -433,7 +324,7 @@ function getOperatorConversationId() {
             return existing;
         }
         // Generate new UUID v4
-        var uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        var uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
             var r = Math.random() * 16 | 0;
             var v = c === 'x' ? r : (r & 0x3 | 0x8);
             return v.toString(16);
@@ -548,7 +439,7 @@ function initOperatorChatSession() {
 
     // Convert history to chatMessages format for UI rendering
     if (history.length > 0 && state.chatMessages.length === 0) {
-        state.chatMessages = history.map(function(msg) {
+        state.chatMessages = history.map(function (msg) {
             return {
                 type: msg.role === 'user' ? 'user' : 'system',
                 content: msg.content,
@@ -607,6 +498,10 @@ function buildContextHeaders(additionalHeaders) {
  * @param {boolean} silentRefresh - If true, don't update loading state
  * @returns {Promise<Object|null>} The me context object or null on error
  */
+/**
+ * VTID-01049: Authoritative Me Context Fetch.
+ * Now unified to handle both /me and /auth/me synchronization.
+ */
 async function fetchMeContext(silentRefresh) {
     if (!state.authToken) {
         console.log('[VTID-01049] No auth token, skipping me context fetch');
@@ -619,6 +514,7 @@ async function fetchMeContext(silentRefresh) {
     }
 
     try {
+        // VTID-01049: Fetch core context (role/tenant)
         var response = await fetch('/api/v1/me', {
             method: 'GET',
             headers: buildContextHeaders()
@@ -631,11 +527,9 @@ async function fetchMeContext(silentRefresh) {
             console.error('[VTID-01049] fetchMeContext error:', errorMsg);
 
             if (response.status === 401) {
-                // Clear invalid auth token
-                state.authToken = null;
-                localStorage.removeItem('vitana.authToken');
-                // VTID-01109: Clear ORB conversation on logout/auth failure
-                orbClearConversationState();
+                console.warn('[VTID-01049] 401 Unauthorized - Clearing session');
+                doLogout(); // Use existing logout to clear all state
+                return null;
             }
 
             state.meContextError = errorMsg;
@@ -645,12 +539,14 @@ async function fetchMeContext(silentRefresh) {
 
         console.log('[VTID-01049] fetchMeContext success:', data.me);
         state.meContext = data.me;
+        // VTID-01229: MeState kept for backwards compatibility during transition
+        MeState.me = data.me;
+        MeState.loaded = true;
         state.meContextLoading = false;
         state.meContextError = null;
 
-        // VTID-01049: Sync viewRole with authoritative active_role
+        // VTID-01049: Sync viewRole with authoritative active_role from server
         if (data.me.active_role) {
-            // Capitalize first letter to match UI format (e.g., 'developer' -> 'Developer')
             var capitalizedRole = data.me.active_role.charAt(0).toUpperCase() + data.me.active_role.slice(1);
             state.viewRole = capitalizedRole;
             localStorage.setItem('vitana.viewRole', capitalizedRole);
@@ -731,6 +627,25 @@ async function setActiveRole(role) {
         }
 
         showToast('Switched to ' + state.viewRole + ' role', 'success');
+
+        // VTID-01049: Trigger full data refresh after successful role switch
+        // This ensures no stale data from the previous role context remains.
+        console.log('[VTID-01049] Role switch successful. Refreshing all data...');
+        renderApp(); // Immediate UI update (shows loading states if any)
+
+        // Refresh all major data streams in parallel
+        Promise.all([
+            fetchTasks(),
+            fetchTelemetrySnapshot(),
+            fetchApprovals(true),
+            fetchAutopilotRecommendationsCount()
+        ]).then(() => {
+            console.log('[VTID-01049] Data refresh complete.');
+            renderApp();
+        }).catch(err => {
+            console.error('[VTID-01049] Error during data refresh:', err);
+        });
+
         return data.me;
     } catch (err) {
         console.error('[VTID-01049] setActiveRole exception:', err);
@@ -739,19 +654,7 @@ async function setActiveRole(role) {
     }
 }
 
-/**
- * VTID-01049: Initialize me context on app boot.
- * Fetches me context from Gateway if auth token is available.
- */
-async function initMeContext() {
-    if (state.authToken) {
-        console.log('[VTID-01049] Auth token found, fetching me context...');
-        await fetchMeContext();
-        renderApp();
-    } else {
-        console.log('[VTID-01049] No auth token, me context not available');
-    }
-}
+// VTID-01049: Redundant initMeContext removed. Auth boot is now handled in DOMContentLoaded.
 
 // ===========================================================================
 // VTID-01171: Auth Identity from /api/v1/auth/me
@@ -797,9 +700,12 @@ async function fetchAuthMe(fallbackEmail) {
             var errorMsg = data.error || 'Failed to fetch auth identity';
             console.error('[VTID-01171] fetchAuthMe error:', errorMsg);
 
-            // VTID-01196: NEVER clear token on /auth/me failure
-            // Token should only be cleared on explicit logout
-            // The /auth/me endpoint may fail due to server-side JWT issues, but the token is still valid
+            // VTID-01196: Handle 401 reliably
+            if (response.status === 401) {
+                console.warn('[VTID-01171] 401 Unauthorized from /auth/me - Clearing session');
+                doLogout();
+                return null;
+            }
 
             state.authIdentityError = errorMsg;
             state.authIdentityLoading = false;
@@ -890,7 +796,7 @@ function generateInitials(input) {
     }
 
     // Split by space, dot, underscore, or hyphen
-    var parts = input.split(/[\s._-]+/).filter(function(p) { return p.length > 0; });
+    var parts = input.split(/[\s._-]+/).filter(function (p) { return p.length > 0; });
 
     if (parts.length === 0) return '?';
     if (parts.length === 1) {
@@ -1018,6 +924,7 @@ function doLogout() {
     state.authIdentity = null;
     state.meContext = null;
     state.loginUserEmail = null; // VTID-01196: Clear login email fallback
+    // VTID-01229: MeState kept for backwards compatibility during transition
     MeState.loaded = false;
     MeState.me = null;
     localStorage.removeItem('vitana.authToken');
@@ -1248,7 +1155,7 @@ var SCROLLABLE_SELECTORS_FALLBACK = [
  */
 function throttle(fn, wait) {
     var lastTime = 0;
-    return function() {
+    return function () {
         var now = Date.now();
         if (now - lastTime >= wait) {
             lastTime = now;
@@ -1295,7 +1202,7 @@ function discoverScrollContainers() {
 
     // Primary: discover via data-scroll-retain attribute
     var attributed = document.querySelectorAll('[data-scroll-retain="true"]');
-    attributed.forEach(function(el) {
+    attributed.forEach(function (el) {
         if (!seen.has(el)) {
             seen.add(el);
             containers.push(el);
@@ -1303,9 +1210,9 @@ function discoverScrollContainers() {
     });
 
     // Fallback: legacy selector list for unmarked containers
-    SCROLLABLE_SELECTORS_FALLBACK.forEach(function(selector) {
+    SCROLLABLE_SELECTORS_FALLBACK.forEach(function (selector) {
         var elements = document.querySelectorAll(selector);
-        elements.forEach(function(el) {
+        elements.forEach(function (el) {
             if (!seen.has(el)) {
                 seen.add(el);
                 containers.push(el);
@@ -1340,7 +1247,7 @@ function captureAllScrollPositions() {
     var routeKey = getScrollRouteKey();
 
     var containers = discoverScrollContainers();
-    containers.forEach(function(container, index) {
+    containers.forEach(function (container, index) {
         var key = getContainerKey(container, index);
         if (container.scrollTop > 0) {
             positions.set(key, container.scrollTop);
@@ -1351,7 +1258,7 @@ function captureAllScrollPositions() {
     if (!scrollPositions.has(routeKey)) {
         scrollPositions.set(routeKey, new Map());
     }
-    positions.forEach(function(value, key) {
+    positions.forEach(function (value, key) {
         scrollPositions.get(routeKey).set(key, value);
     });
 
@@ -1366,9 +1273,9 @@ function captureAllScrollPositions() {
 function restoreAllScrollPositions(positions) {
     if (!positions || positions.size === 0) return;
 
-    requestAnimationFrame(function() {
+    requestAnimationFrame(function () {
         var containers = discoverScrollContainers();
-        containers.forEach(function(container, index) {
+        containers.forEach(function (container, index) {
             var key = getContainerKey(container, index);
             if (positions.has(key)) {
                 container.scrollTop = positions.get(key);
@@ -1394,14 +1301,14 @@ function restoreScrollPositionsForRoute(routeKey) {
  */
 function attachScrollListeners() {
     var containers = discoverScrollContainers();
-    containers.forEach(function(container, index) {
+    containers.forEach(function (container, index) {
         // Skip if already has listener (marker attribute)
         if (container.dataset.scrollTracked) return;
         container.dataset.scrollTracked = 'true';
 
         var key = getContainerKey(container, index);
 
-        container.addEventListener('scroll', throttle(function() {
+        container.addEventListener('scroll', throttle(function () {
             saveScrollPosition(key, container.scrollTop);
         }, 100), { passive: true });
     });
@@ -1589,7 +1496,7 @@ function refreshOperatorContent() {
     var counterElements = document.querySelectorAll('.stage-counter-value');
     if (counterElements.length >= 4 && state.stageCounters) {
         var stages = ['PLANNER', 'WORKER', 'VALIDATOR', 'DEPLOY'];
-        stages.forEach(function(stage, i) {
+        stages.forEach(function (stage, i) {
             if (counterElements[i]) {
                 counterElements[i].textContent = state.stageCounters[stage] || 0;
             }
@@ -1613,7 +1520,7 @@ function updateOasisEventsTableBody(tbody, items) {
     }
 
     var filtered = filterOasisEvents(items);
-    filtered.forEach(function(event) {
+    filtered.forEach(function (event) {
         var row = createOasisEventRow(event);
         tbody.appendChild(row);
     });
@@ -1628,7 +1535,7 @@ function updateCommandHubEventsTableBody(tbody, items) {
     }
 
     var filtered = filterCommandHubEvents(items);
-    filtered.forEach(function(event) {
+    filtered.forEach(function (event) {
         var row = createCommandHubEventRow(event);
         tbody.appendChild(row);
     });
@@ -1642,7 +1549,7 @@ function updateVtidsTableBody(tbody, items) {
         tbody.removeChild(tbody.firstChild);
     }
 
-    items.forEach(function(vtid) {
+    items.forEach(function (vtid) {
         var row = createVtidRow(vtid);
         tbody.appendChild(row);
     });
@@ -1659,7 +1566,7 @@ function updateVtidsTableBodyFromProjection(tbody, items) {
         tbody.removeChild(tbody.firstChild);
     }
 
-    items.forEach(function(item) {
+    items.forEach(function (item) {
         try {
             if (!item) return;
 
@@ -1723,7 +1630,7 @@ function updateVtidLedgerList(list, items) {
         list.removeChild(list.firstChild);
     }
 
-    items.forEach(function(item) {
+    items.forEach(function (item) {
         var el = createVtidLedgerItem(item);
         list.appendChild(el);
     });
@@ -1753,7 +1660,7 @@ function updateTickerEventsList(list, events) {
     var heartbeatEvents = [];
     var otherEvents = [];
 
-    events.forEach(function(event) {
+    events.forEach(function (event) {
         var type = (event.type || '').toLowerCase();
         var content = (event.content || '').toLowerCase();
 
@@ -1769,7 +1676,7 @@ function updateTickerEventsList(list, events) {
     });
 
     // Render other events
-    otherEvents.forEach(function(event) {
+    otherEvents.forEach(function (event) {
         var item = createTickerEventItem(event);
         list.appendChild(item);
     });
@@ -1788,7 +1695,7 @@ function updateTickerEventsList(list, events) {
             '<span class="heartbeat-count">' + heartbeatEvents.length + ' heartbeats</span>' +
             '<span class="heartbeat-last">(last: ' + lastHeartbeat + ')</span>' +
             '<button class="ticker-expand-btn">Expand ▼</button>';
-        heartbeatHeader.onclick = function() {
+        heartbeatHeader.onclick = function () {
             heartbeatSection.classList.toggle('expanded');
             var btn = heartbeatHeader.querySelector('.ticker-expand-btn');
             btn.textContent = heartbeatSection.classList.contains('expanded') ? 'Collapse ▲' : 'Expand ▼';
@@ -1798,7 +1705,7 @@ function updateTickerEventsList(list, events) {
         var heartbeatList = document.createElement('div');
         heartbeatList.className = 'ticker-heartbeat-list';
 
-        heartbeatEvents.slice(0, 10).forEach(function(event) {
+        heartbeatEvents.slice(0, 10).forEach(function (event) {
             var item = document.createElement('div');
             item.className = 'ticker-item ticker-item-low ticker-item-mini';
             item.innerHTML = '<span class="ticker-timestamp">' + event.timestamp + '</span> ' + (event.content || '');
@@ -1825,7 +1732,7 @@ function updateTickerEventsList(list, events) {
 function filterOasisEvents(items) {
     if (!items) return [];
     var filters = state.oasisEvents.filters || {};
-    return items.filter(function(event) {
+    return items.filter(function (event) {
         if (filters.topic && !(event.topic || '').toLowerCase().includes(filters.topic.toLowerCase())) {
             return false;
         }
@@ -1847,7 +1754,7 @@ function filterOasisEvents(items) {
 function filterCommandHubEvents(items) {
     if (!items) return [];
     var filters = state.commandHubEvents.filters || {};
-    return items.filter(function(event) {
+    return items.filter(function (event) {
         if (filters.topic && !(event.topic || '').toLowerCase().includes(filters.topic.toLowerCase())) {
             return false;
         }
@@ -1872,7 +1779,7 @@ function createOasisEventRow(event) {
     row.className = 'oasis-event-row';
     var severity = getEventSeverity(event);
     row.dataset.severity = severity;
-    row.onclick = function() {
+    row.onclick = function () {
         state.oasisEvents.selectedEvent = event;
         renderApp();
     };
@@ -1933,7 +1840,7 @@ function createOasisEventRow(event) {
 function createCommandHubEventRow(event) {
     var row = document.createElement('tr');
     row.className = 'command-hub-event-row';
-    row.onclick = function() {
+    row.onclick = function () {
         state.commandHubEvents.selectedEvent = event;
         renderApp();
     };
@@ -2015,7 +1922,7 @@ function createVtidLedgerItem(item) {
     if (state.vtidLedger.selectedVtid === item.vtid) {
         el.classList.add('selected');
     }
-    el.onclick = function() {
+    el.onclick = function () {
         state.vtidLedger.selectedVtid = item.vtid;
         fetchVtidDetail(item.vtid);
         renderApp();
@@ -2727,6 +2634,7 @@ const state = {
         geminiLiveAudioStream: null,  // MediaStream for audio capture
         geminiLiveAudioProcessor: null, // ScriptProcessorNode for audio
         geminiTtsAudio: null,         // Current Gemini-TTS Audio element for barge-in
+        geminiLiveTranscriber: null,  // VTID-01225: Parallel Web Speech for transcript display
         useLiveApi: true              // VTID-01219: Use Gemini Live API for voice-to-voice
     },
 
@@ -2834,7 +2742,20 @@ const state = {
         showDiaryModal: false,      // Diary entry modal state
         showCategoryModal: false,   // Category detail modal state
         selectedCategory: null,     // Current category key
-        selectedCategoryData: null  // Current category data
+        selectedCategoryData: null, // Current category data
+        // VTID-01225: Live memory data for category modals and unified intelligence
+        categoryMemories: [],       // Memory items for selected category
+        categoryMemoriesLoading: false,
+        categoryMemoriesError: null,
+        facts: null,                // Structured facts from garden/summary
+        factsLoading: false,
+        factsFetched: false,
+        relationships: null,        // Relationship graph data { nodes, edges }
+        relationshipsLoading: false,
+        relationshipsFetched: false,
+        signals: null,              // Behavioral signals
+        signalsLoading: false,
+        signalsFetched: false
     },
 
     // Intelligence & Memory DEV: Knowledge Graph, Embeddings, Recall, Inspector
@@ -3050,19 +2971,19 @@ const STAGE_LABELS = {
  */
 function deriveTaskStageState(task, events) {
     // Filter events relevant to this task by vtid
-    const relevantEvents = events.filter(function(ev) {
+    const relevantEvents = events.filter(function (ev) {
         return ev.vtid === task.vtid;
     });
 
     // Build stage info
     const byStage = {};
-    TASK_STAGES.forEach(function(stage) {
-        const stageEvents = relevantEvents.filter(function(ev) {
+    TASK_STAGES.forEach(function (stage) {
+        const stageEvents = relevantEvents.filter(function (ev) {
             return ev.task_stage === stage;
         });
         byStage[stage] = {
             reached: stageEvents.length > 0,
-            latestEvent: stageEvents.length > 0 ? stageEvents.reduce(function(a, b) {
+            latestEvent: stageEvents.length > 0 ? stageEvents.reduce(function (a, b) {
                 return new Date(a.created_at) > new Date(b.created_at) ? a : b;
             }) : null,
             eventCount: stageEvents.length
@@ -3083,7 +3004,7 @@ function deriveTaskStageState(task, events) {
     const pending = [];
     let reachedCurrent = false;
 
-    TASK_STAGES.forEach(function(stage) {
+    TASK_STAGES.forEach(function (stage) {
         if (byStage[stage].reached) {
             if (stage === currentStage) {
                 reachedCurrent = true;
@@ -3283,7 +3204,7 @@ function startOasisEventsAutoRefresh() {
         clearInterval(state.oasisEvents.autoRefreshInterval);
     }
     state.oasisEvents.autoRefreshEnabled = true;
-    state.oasisEvents.autoRefreshInterval = setInterval(function() {
+    state.oasisEvents.autoRefreshInterval = setInterval(function () {
         if (state.oasisEvents.autoRefreshEnabled) {
             // VTID-01002: Use silentRefresh=true to preserve scroll positions
             fetchOasisEvents(state.oasisEvents.filters, true);
@@ -3324,9 +3245,9 @@ async function fetchCommandHubEvents() {
 
         // Filter to operational events only
         var operationalTopics = ['deploy', 'governance', 'cicd', 'autopilot', 'operator'];
-        var filteredEvents = allEvents.filter(function(event) {
+        var filteredEvents = allEvents.filter(function (event) {
             var topic = (event.topic || '').toLowerCase();
-            return operationalTopics.some(function(prefix) {
+            return operationalTopics.some(function (prefix) {
                 return topic.startsWith(prefix);
             });
         });
@@ -3334,17 +3255,17 @@ async function fetchCommandHubEvents() {
         // Apply additional filters from state
         if (state.commandHubEvents.filters.topic) {
             var topicFilter = state.commandHubEvents.filters.topic.toLowerCase();
-            filteredEvents = filteredEvents.filter(function(e) {
+            filteredEvents = filteredEvents.filter(function (e) {
                 return (e.topic || '').toLowerCase().includes(topicFilter);
             });
         }
         if (state.commandHubEvents.filters.service) {
-            filteredEvents = filteredEvents.filter(function(e) {
+            filteredEvents = filteredEvents.filter(function (e) {
                 return e.service === state.commandHubEvents.filters.service;
             });
         }
         if (state.commandHubEvents.filters.status) {
-            filteredEvents = filteredEvents.filter(function(e) {
+            filteredEvents = filteredEvents.filter(function (e) {
                 return e.status === state.commandHubEvents.filters.status;
             });
         }
@@ -3383,7 +3304,7 @@ async function fetchVtidsList() {
 
         // Group events by VTID
         var vtidMap = {};
-        events.forEach(function(event) {
+        events.forEach(function (event) {
             if (!event.vtid) return;
 
             if (!vtidMap[event.vtid]) {
@@ -3426,10 +3347,10 @@ async function fetchVtidsList() {
 
         // Convert to array and sort by latest event
         var vtidList = Object.values(vtidMap);
-        vtidList.forEach(function(v) {
+        vtidList.forEach(function (v) {
             v.services = Array.from(v.services);
         });
-        vtidList.sort(function(a, b) {
+        vtidList.sort(function (a, b) {
             var aTime = a.latestEvent ? new Date(a.latestEvent.created_at) : new Date(0);
             var bTime = b.latestEvent ? new Date(b.latestEvent.created_at) : new Date(0);
             return bTime - aTime;
@@ -3632,7 +3553,7 @@ var approvalsBadgePollingInterval = null;
 function startApprovalsBadgePolling() {
     if (approvalsBadgePollingInterval) return;
     console.log('[VTID-01151] Starting approvals polling (20s interval)');
-    approvalsBadgePollingInterval = setInterval(function() {
+    approvalsBadgePollingInterval = setInterval(function () {
         fetchApprovals(true); // silent=true for badge-only update
     }, 20000);
 }
@@ -3664,7 +3585,7 @@ async function fetchApprovals(silent) {
 
     try {
         var response = await fetch('/api/v1/cicd/approvals', {
-            headers: withVitanaContextHeaders({})
+            headers: buildContextHeaders({})
         });
         var data = await response.json();
 
@@ -3711,7 +3632,7 @@ async function approveApprovalItem(approvalId) {
     try {
         var response = await fetch('/api/v1/cicd/approvals/' + approvalId + '/approve', {
             method: 'POST',
-            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' })
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' })
         });
         var data = await response.json();
 
@@ -3772,7 +3693,7 @@ async function denyApprovalItem(approvalId, reason) {
     try {
         var response = await fetch('/api/v1/cicd/approvals/' + approvalId + '/deny', {
             method: 'POST',
-            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ reason: reason || 'Denied by user' })
         });
         var data = await response.json();
@@ -3806,7 +3727,7 @@ async function fetchGitHubFeed() {
 
     try {
         var response = await fetch('/api/v1/approvals/feed?limit=50', {
-            headers: withVitanaContextHeaders({})
+            headers: buildContextHeaders({})
         });
         var data = await response.json();
 
@@ -3859,7 +3780,7 @@ async function approveFeedItem(prNumber, branch, vtid) {
         // VTID-01168: Call new autonomous-pr-merge endpoint
         var response = await fetch('/api/v1/cicd/autonomous-pr-merge', {
             method: 'POST',
-            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 vtid: vtid,
                 pr_number: prNumber,
@@ -4014,7 +3935,7 @@ async function fetchDeploymentHistory() {
 
         // Map API response to version history format
         // API returns: swv_id, service, git_commit, status, initiator, deploy_type, environment, created_at
-        return deployments.map(function(d, index) {
+        return deployments.map(function (d, index) {
             return {
                 id: 'deploy-' + (d.swv_id || d.swv || index),
                 vtid: d.vtid || null,
@@ -4197,7 +4118,7 @@ function renderApp() {
     // VTID-01037: Setup scroll listener for transcript after overlay is rendered
     // VTID-01064: Enhanced transcript auto-follow - scroll to bottom after render
     if (state.orb.overlayVisible) {
-        requestAnimationFrame(function() {
+        requestAnimationFrame(function () {
             var transcriptContainer = document.querySelector('.orb-live-transcript');
             if (transcriptContainer) {
                 // VTID-01064: Always scroll to bottom first if auto-follow is enabled
@@ -4213,7 +4134,7 @@ function renderApp() {
 
     // VTID-0526-E: Restore chat textarea focus after render
     if (savedChatFocus) {
-        requestAnimationFrame(function() {
+        requestAnimationFrame(function () {
             var newTextarea = document.querySelector('.chat-textarea');
             if (newTextarea) {
                 newTextarea.focus();
@@ -4225,7 +4146,7 @@ function renderApp() {
 
     // DEV-COMHU-2025-0015: Restore task spec textarea focus after render
     if (savedSpecFocus) {
-        requestAnimationFrame(function() {
+        requestAnimationFrame(function () {
             var newSpecTextarea = document.querySelector('.task-spec-textarea');
             if (newSpecTextarea) {
                 newSpecTextarea.focus();
@@ -4238,7 +4159,7 @@ function renderApp() {
     // VTID-0539: Scroll anchoring - preserve scroll position or scroll to bottom based on user's position
     // Only auto-scroll if user was near bottom; otherwise preserve their scroll position
     if (state.isOperatorOpen && state.operatorActiveTab === 'chat' && !savedChatFocus) {
-        requestAnimationFrame(function() {
+        requestAnimationFrame(function () {
             var newMessagesContainer = document.querySelector('.chat-messages');
             if (newMessagesContainer && savedChatScroll) {
                 if (savedChatScroll.wasNearBottom) {
@@ -4381,7 +4302,7 @@ function renderOrbIdleElement() {
 
     // VTID-0135: Click handler - Starts voice conversation session
     // VTID-01109: Restore conversation state from localStorage if available
-    orb.addEventListener('click', function() {
+    orb.addEventListener('click', function () {
         console.log('[ORB] Opening overlay...');
         state.orb.overlayVisible = true;
         state.orb.liveError = null;
@@ -4405,7 +4326,7 @@ function renderOrbIdleElement() {
 
     // VTID-0135: Keyboard accessibility
     // VTID-01109: Restore conversation state from localStorage if available
-    orb.addEventListener('keydown', function(e) {
+    orb.addEventListener('keydown', function (e) {
         if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
             state.orb.overlayVisible = true;
@@ -4462,7 +4383,7 @@ function renderHeader() {
         // VTID-01180: Fetch recommendations from API
         try {
             const response = await fetch('/api/v1/autopilot/recommendations?status=new&limit=20', {
-                headers: withVitanaContextHeaders({})
+                headers: buildContextHeaders({})
             });
             if (!response.ok) {
                 throw new Error('Failed to fetch recommendations');
@@ -4754,7 +4675,7 @@ function renderVersionDropdown() {
         list.appendChild(emptyItem);
     } else {
         // VTID-0524: Render deployments (already sorted by created_at DESC from API)
-        state.versionHistory.forEach(function(version) {
+        state.versionHistory.forEach(function (version) {
             const item = document.createElement('div');
             item.className = 'version-dropdown__item';
             if (state.selectedVersionId === version.id) {
@@ -4808,7 +4729,7 @@ function renderVersionDropdown() {
             item.appendChild(meta);
 
             // Click handler
-            item.onclick = function(e) {
+            item.onclick = function (e) {
                 e.stopPropagation();
                 state.selectedVersionId = version.id;
                 const displayName = version.swv || version.vtid || version.label;
@@ -5214,7 +5135,7 @@ function renderTasksView() {
     // VTID-01055: Log API vs DOM card count for ghost detection (on manual refresh)
     if (isManualRefresh || state._logGhostCheck) {
         var domCards = board.querySelectorAll('.task-card');
-        var domVtids = Array.from(domCards).map(function(card) {
+        var domVtids = Array.from(domCards).map(function (card) {
             // Try to find VTID from card content
             var vtidLine = card.querySelector('.task-card-vtid');
             return vtidLine ? vtidLine.textContent.trim() : null;
@@ -5285,7 +5206,7 @@ function createTaskCard(task) {
     // VTID-01041: Make title editable for Scheduled column tasks
     if (columnStatus === 'Scheduled') {
         title.classList.add('task-card-title-editable');
-        title.onclick = function(e) {
+        title.onclick = function (e) {
             e.stopPropagation();
             startInlineTitleEdit(title, task);
         };
@@ -5424,7 +5345,7 @@ function startInlineTitleEdit(titleElement, task) {
     }
 
     // Event handlers
-    input.onkeydown = function(e) {
+    input.onkeydown = function (e) {
         if (e.key === 'Enter') {
             e.preventDefault();
             saveTitle();
@@ -5434,9 +5355,9 @@ function startInlineTitleEdit(titleElement, task) {
         }
     };
 
-    input.onblur = function() {
+    input.onblur = function () {
         // Small delay to allow click events to fire first
-        setTimeout(function() {
+        setTimeout(function () {
             if (input.parentNode === titleElement) {
                 saveTitle();
             }
@@ -5444,7 +5365,7 @@ function startInlineTitleEdit(titleElement, task) {
     };
 
     // Prevent card click from triggering
-    input.onclick = function(e) {
+    input.onclick = function (e) {
         e.stopPropagation();
     };
 }
@@ -5495,7 +5416,7 @@ function startDrawerTitleEdit(titleValueElement, task) {
     }
 
     // Event handlers
-    input.onkeydown = function(e) {
+    input.onkeydown = function (e) {
         if (e.key === 'Enter') {
             e.preventDefault();
             saveTitle();
@@ -5505,9 +5426,9 @@ function startDrawerTitleEdit(titleValueElement, task) {
         }
     };
 
-    input.onblur = function() {
+    input.onblur = function () {
         // Small delay to allow click events to fire first
-        setTimeout(function() {
+        setTimeout(function () {
             if (input.parentNode === titleValueElement) {
                 saveTitle();
             }
@@ -5515,7 +5436,7 @@ function startDrawerTitleEdit(titleValueElement, task) {
     };
 
     // Prevent row click from triggering
-    input.onclick = function(e) {
+    input.onclick = function (e) {
         e.stopPropagation();
     };
 }
@@ -5531,7 +5452,7 @@ function createTaskStageTimeline(task) {
     // Get stage state from telemetry events
     const stageState = deriveTaskStageState(task, state.telemetryEvents);
 
-    TASK_STAGES.forEach(function(stage) {
+    TASK_STAGES.forEach(function (stage) {
         const pill = document.createElement('span');
         const stageInfo = stageState.byStage[stage];
         const isCompleted = stageInfo && stageInfo.reached;
@@ -5608,19 +5529,19 @@ function renderTaskDrawer() {
     // VTID-01006: Check OASIS authority for completed tasks
     const vtidEvents = getEventsForVtid(vtid);
     const hasOasisEvents = vtidEvents && vtidEvents.length > 0;
-    const hasOasisCompletionEvent = vtidEvents.some(function(e) {
+    const hasOasisCompletionEvent = vtidEvents.some(function (e) {
         const topic = (e.topic || '').toLowerCase();
         return topic === 'vtid.lifecycle.completed' ||
-               topic === 'vtid.lifecycle.failed' ||
-               topic === 'deploy.gateway.success' ||
-               topic === 'deploy.gateway.failed' ||
-               topic === 'cicd.deploy.service.succeeded' ||
-               topic === 'cicd.github.safe_merge.executed';
+            topic === 'vtid.lifecycle.failed' ||
+            topic === 'deploy.gateway.success' ||
+            topic === 'deploy.gateway.failed' ||
+            topic === 'cicd.deploy.service.succeeded' ||
+            topic === 'cicd.github.safe_merge.executed';
     });
 
     // VTID-01006: Inconsistent state detection
     const isInconsistentState = (taskStatus === 'completed' || taskStatus === 'failed') &&
-                                !isTerminal && !hasOasisCompletionEvent;
+        !isTerminal && !hasOasisCompletionEvent;
 
     // DEV-COMHU-2025-0013: Initialize drawer spec state when opening for a new task
     if (state.drawerSpecVtid !== vtid) {
@@ -5663,7 +5584,7 @@ function renderTaskDrawer() {
 
     // VTID-01041: Make title clickable for editing (Scheduled tasks only)
     if (isScheduled && !isFinalMode) {
-        titleRow.onclick = function(e) {
+        titleRow.onclick = function (e) {
             e.stopPropagation();
             startDrawerTitleEdit(titleValue, task);
         };
@@ -5673,7 +5594,7 @@ function renderTaskDrawer() {
     // VTID-01010: Add target role badge(s) to drawer header
     const drawerTargetRoles = getTaskTargetRoles(task);
     if (drawerTargetRoles && drawerTargetRoles.length > 0) {
-        drawerTargetRoles.forEach(function(role) {
+        drawerTargetRoles.forEach(function (role) {
             const roleBadge = document.createElement('span');
             roleBadge.className = 'drawer-role-badge drawer-role-badge-' + role.toLowerCase();
             roleBadge.textContent = role;
@@ -5868,14 +5789,14 @@ function renderTaskDrawer() {
             generateBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-generate';
             generateBtn.textContent = 'Generate Spec';
             generateBtn.title = 'Generate spec from task description';
-            generateBtn.onclick = async function() {
+            generateBtn.onclick = async function () {
                 generateBtn.disabled = true;
                 generateBtn.textContent = 'Generating...';
                 try {
                     var seedNotes = state.drawerSpecText || state.selectedTask.summary || state.selectedTask.title || '';
                     var response = await fetch('/api/v1/specs/' + vtid + '/generate', {
                         method: 'POST',
-                        headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+                        headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
                         body: JSON.stringify({ seed_notes: seedNotes, source: 'commandhub' })
                     });
                     var result = await response.json();
@@ -5905,13 +5826,13 @@ function renderTaskDrawer() {
             validateBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-validate';
             validateBtn.textContent = 'Validate';
             validateBtn.title = 'Validate spec against governance rules';
-            validateBtn.onclick = async function() {
+            validateBtn.onclick = async function () {
                 validateBtn.disabled = true;
                 validateBtn.textContent = 'Validating...';
                 try {
                     var response = await fetch('/api/v1/specs/' + vtid + '/validate', {
                         method: 'POST',
-                        headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' })
+                        headers: buildContextHeaders({ 'Content-Type': 'application/json' })
                     });
                     var result = await response.json();
                     if (result.ok) {
@@ -5943,15 +5864,16 @@ function renderTaskDrawer() {
             approveBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-approve';
             approveBtn.textContent = 'Approve Spec';
             approveBtn.title = 'Approve spec for activation';
-            approveBtn.onclick = async function() {
+            approveBtn.onclick = async function () {
                 approveBtn.disabled = true;
                 approveBtn.textContent = 'Approving...';
                 try {
-                    var userId = MeState.me?.user_id || MeState.me?.email || 'unknown';
-                    var userRole = MeState.me?.active_role || 'operator';
+                    // VTID-01229: Use state.meContext instead of deprecated MeState.me
+                    var userId = state.meContext?.user_id || state.meContext?.email || 'unknown';
+                    var userRole = state.meContext?.active_role || 'operator';
                     var response = await fetch('/api/v1/specs/' + vtid + '/approve', {
                         method: 'POST',
-                        headers: withVitanaContextHeaders({
+                        headers: buildContextHeaders({
                             'Content-Type': 'application/json',
                             'x-user-id': userId,
                             'x-user-role': userRole
@@ -5983,12 +5905,12 @@ function renderTaskDrawer() {
             viewBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-view';
             viewBtn.textContent = 'View Spec';
             viewBtn.title = 'View generated spec';
-            viewBtn.onclick = async function() {
+            viewBtn.onclick = async function () {
                 viewBtn.disabled = true;
                 viewBtn.textContent = 'Loading...';
                 try {
                     var response = await fetch('/api/v1/specs/' + vtid, {
-                        headers: withVitanaContextHeaders({})
+                        headers: buildContextHeaders({})
                     });
                     var result = await response.json();
                     if (result.ok && result.spec) {
@@ -6005,7 +5927,7 @@ function renderTaskDrawer() {
                         viewer.appendChild(viewerContent);
                         specPipelineSection.appendChild(viewer);
                         viewBtn.textContent = 'Hide Spec';
-                        viewBtn.onclick = function() {
+                        viewBtn.onclick = function () {
                             viewer.remove();
                             viewBtn.textContent = 'View Spec';
                             viewBtn.onclick = arguments.callee;
@@ -6068,15 +5990,15 @@ function renderTaskDrawer() {
     // VTID-01006: Only attach editing handlers in active mode
     if (!isFinalMode) {
         // DEV-COMHU-2025-0015: Track editing state to prevent re-render interruptions
-        specTextarea.onfocus = function() {
+        specTextarea.onfocus = function () {
             state.drawerSpecEditing = true;
         };
         // DEV-COMHU-2025-0013: Update state on input without re-rendering (stable typing)
-        specTextarea.oninput = function(e) {
+        specTextarea.oninput = function (e) {
             state.drawerSpecText = e.target.value;
             state.drawerSpecEditing = true;
         };
-        specTextarea.onblur = function() {
+        specTextarea.onblur = function () {
             // Reset editing flag when user leaves the input
             state.drawerSpecEditing = false;
         };
@@ -6092,7 +6014,7 @@ function renderTaskDrawer() {
         var saveBtn = document.createElement('button');
         saveBtn.className = 'btn btn-primary task-spec-btn';
         saveBtn.textContent = 'Save';
-        saveBtn.onclick = function() {
+        saveBtn.onclick = function () {
             // DEV-COMHU-2025-0013: Save from stable state, not DOM query
             // DEV-COMHU-2025-0015: Show correct VTID in toast message
             if (saveTaskSpec(vtid, state.drawerSpecText)) {
@@ -6106,7 +6028,7 @@ function renderTaskDrawer() {
         var resetBtn = document.createElement('button');
         resetBtn.className = 'btn task-spec-btn';
         resetBtn.textContent = 'Reset';
-        resetBtn.onclick = function() {
+        resetBtn.onclick = function () {
             // DEV-COMHU-2025-0013: Reset from localStorage and update stable state
             state.drawerSpecText = getTaskSpec(vtid);
             var textarea = document.getElementById('task-spec-editor-' + vtid.replace(/[^a-zA-Z0-9]/g, '-'));
@@ -6142,7 +6064,7 @@ function renderTaskDrawer() {
                 activateBtn.title = 'Move task from Scheduled to In Progress';
             }
 
-            activateBtn.onclick = async function() {
+            activateBtn.onclick = async function () {
                 // VTID-01188: Double-check spec approval on click (in case state is stale)
                 if (!isSpecApproved) {
                     showToast('Cannot activate: spec must be approved first', 'warning');
@@ -6163,7 +6085,7 @@ function renderTaskDrawer() {
             deleteBtn.className = 'btn btn-danger task-spec-btn task-delete-btn';
             deleteBtn.textContent = 'Delete';
             deleteBtn.title = 'Delete scheduled task (voids VTID permanently)';
-            deleteBtn.onclick = async function() {
+            deleteBtn.onclick = async function () {
                 // VTID-01052: Confirm before deletion - this action is irreversible
                 var confirmMsg = 'Delete scheduled task ' + vtid + '?\n\n' +
                     'This will:\n' +
@@ -6181,7 +6103,7 @@ function renderTaskDrawer() {
                 try {
                     var response = await fetch('/api/v1/oasis/tasks/' + vtid, {
                         method: 'DELETE',
-                        headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' })
+                        headers: buildContextHeaders({ 'Content-Type': 'application/json' })
                     });
                     var result = await response.json();
                     if (result.ok) {
@@ -6249,7 +6171,7 @@ function renderTaskDrawer() {
  */
 function getEventsForVtid(vtid) {
     if (!vtid) return [];
-    return (state.events || []).filter(function(e) {
+    return (state.events || []).filter(function (e) {
         return e.vtid === vtid;
     });
 }
@@ -6271,7 +6193,7 @@ function renderTaskEventHistory(vtid) {
     const events = getEventsForVtid(vtid);
 
     // DEV-COMHU-2025-0015: Filter out noise events (internal/debug)
-    var filteredEvents = events.filter(function(e) {
+    var filteredEvents = events.filter(function (e) {
         // Skip internal system events and noise
         if (!e.topic) return false;
         if (e.topic.startsWith('internal.')) return false;
@@ -6291,14 +6213,14 @@ function renderTaskEventHistory(vtid) {
     list.className = 'task-event-history-list';
 
     // Show last 5 events, sorted by timestamp (newest first)
-    var sortedEvents = filteredEvents.slice().sort(function(a, b) {
+    var sortedEvents = filteredEvents.slice().sort(function (a, b) {
         var dateA = a.createdAt || a.created_at || '';
         var dateB = b.createdAt || b.created_at || '';
         if (!dateA || !dateB) return 0;
         return new Date(dateB) - new Date(dateA);
     });
 
-    sortedEvents.slice(0, 5).forEach(function(event, index) {
+    sortedEvents.slice(0, 5).forEach(function (event, index) {
         const item = document.createElement('div');
         item.className = 'task-event-history-item';
         item.dataset.eventIndex = index;
@@ -6378,7 +6300,7 @@ function renderTaskEventHistory(vtid) {
             { label: 'Full Message', value: event.message }
         ];
 
-        detailFields.forEach(function(field) {
+        detailFields.forEach(function (field) {
             if (field.value) {
                 const row = document.createElement('div');
                 row.className = 'task-event-detail-row';
@@ -6406,7 +6328,7 @@ function renderTaskEventHistory(vtid) {
         item.appendChild(detailDiv);
 
         // Click handler to expand/collapse
-        item.onclick = function() {
+        item.onclick = function () {
             var detail = this.querySelector('.task-event-history-detail');
             if (detail) {
                 var isOpen = detail.style.display !== 'none';
@@ -6563,7 +6485,7 @@ function renderTaskExecutionStatus(executionData, options) {
         var recentList = document.createElement('div');
         recentList.className = 'execution-recent-list';
 
-        executionData.recentEvents.slice(0, 3).forEach(function(ev, idx) {
+        executionData.recentEvents.slice(0, 3).forEach(function (ev, idx) {
             var eventRow = document.createElement('div');
             eventRow.className = 'execution-recent-item';
             if (idx === 0) eventRow.classList.add('execution-recent-item-latest');
@@ -6686,7 +6608,7 @@ function renderTaskStageDetail(task) {
 
     // VTID-01006: Validate completed tasks have all stages DONE
     if (isCompleted && apiTimeline) {
-        const pendingStages = apiTimeline.filter(function(e) {
+        const pendingStages = apiTimeline.filter(function (e) {
             return e.status === 'PENDING' || e.status === 'RUNNING';
         });
         if (pendingStages.length > 0) {
@@ -6694,7 +6616,7 @@ function renderTaskStageDetail(task) {
             warningDiv.className = 'task-stage-inconsistent-warning';
             warningDiv.innerHTML = '<strong>Stage inconsistency:</strong> Task is completed but ' +
                 pendingStages.length + ' stage(s) are not marked as DONE in OASIS. ' +
-                'Stages: ' + pendingStages.map(function(s) { return s.stage; }).join(', ');
+                'Stages: ' + pendingStages.map(function (s) { return s.stage; }).join(', ');
             container.appendChild(warningDiv);
         }
     }
@@ -6706,9 +6628,9 @@ function renderTaskStageDetail(task) {
         list.classList.add('task-stage-detail-list-locked');
     }
 
-    TASK_STAGES.forEach(function(stage) {
+    TASK_STAGES.forEach(function (stage) {
         // VTID-01006: Get stage info ONLY from API timeline (OASIS authority)
-        const apiEntry = apiTimeline ? apiTimeline.find(function(e) { return e.stage === stage; }) : null;
+        const apiEntry = apiTimeline ? apiTimeline.find(function (e) { return e.stage === stage; }) : null;
 
         // VTID-01006: Determine status from OASIS API only
         // VTID-0530: API now returns SUCCESS instead of COMPLETED
@@ -6737,9 +6659,9 @@ function renderTaskStageDetail(task) {
         // VTID-0530: Handle both SUCCESS and legacy COMPLETED
         const isSuccess = stageStatus === 'SUCCESS' || stageStatus === 'COMPLETED';
         const statusClass = stageStatus === 'ERROR' ? 'task-stage-detail-item-error' :
-                           isSuccess ? 'task-stage-detail-item-completed task-stage-detail-item-success' :
-                           stageStatus === 'RUNNING' ? 'task-stage-detail-item-current' :
-                           'task-stage-detail-item-pending';
+            isSuccess ? 'task-stage-detail-item-completed task-stage-detail-item-success' :
+                stageStatus === 'RUNNING' ? 'task-stage-detail-item-current' :
+                    'task-stage-detail-item-pending';
         item.className = 'task-stage-detail-item ' + statusClass;
 
         // Header row with stage name and status
@@ -6829,7 +6751,7 @@ function renderVtidStageTimeline() {
     const container = document.createElement('div');
     container.className = 'vtid-stage-timeline';
 
-    apiTimeline.forEach(function(entry) {
+    apiTimeline.forEach(function (entry) {
         const item = document.createElement('div');
         item.className = 'vtid-stage-timeline-item';
 
@@ -6931,7 +6853,7 @@ function renderProfileModal() {
         emailInput.style.borderRadius = '4px';
         emailInput.style.boxSizing = 'border-box';
         emailInput.disabled = state.loginLoading;
-        emailInput.oninput = function(e) {
+        emailInput.oninput = function (e) {
             state.loginEmail = e.target.value;
         };
         emailGroup.appendChild(emailInput);
@@ -6967,11 +6889,11 @@ function renderProfileModal() {
         passwordInput.style.borderRadius = '4px';
         passwordInput.style.boxSizing = 'border-box';
         passwordInput.disabled = state.loginLoading;
-        passwordInput.oninput = function(e) {
+        passwordInput.oninput = function (e) {
             state.loginPassword = e.target.value;
         };
         // Allow login on Enter key
-        passwordInput.onkeydown = function(e) {
+        passwordInput.onkeydown = function (e) {
             if (e.key === 'Enter' && !state.loginLoading) {
                 doLogin(state.loginEmail, state.loginPassword);
             }
@@ -6994,7 +6916,7 @@ function renderProfileModal() {
         eyeToggle.style.fontSize = '1.1rem';
         eyeToggle.innerHTML = '&#128065;'; // Eye icon (👁)
         eyeToggle.title = 'Show password';
-        eyeToggle.onclick = function() {
+        eyeToggle.onclick = function () {
             if (passwordInput.type === 'password') {
                 passwordInput.type = 'text';
                 eyeToggle.innerHTML = '&#128064;'; // Eyes icon (👀)
@@ -7037,12 +6959,32 @@ function renderProfileModal() {
         loginBtn.style.cursor = state.loginLoading ? 'not-allowed' : 'pointer';
         loginBtn.style.fontWeight = '500';
         loginBtn.disabled = state.loginLoading;
-        loginBtn.onclick = function() {
+        loginBtn.onclick = function () {
             if (!state.loginLoading) {
                 doLogin(state.loginEmail, state.loginPassword);
             }
         };
         loginForm.appendChild(loginBtn);
+
+        // VTID-01186: Add "Reset Session" button for recovery
+        const resetSessionBtn = document.createElement('button');
+        resetSessionBtn.className = 'btn';
+        resetSessionBtn.textContent = 'Reset Local Session';
+        resetSessionBtn.style.width = '100%';
+        resetSessionBtn.style.marginTop = '12px';
+        resetSessionBtn.style.padding = '8px';
+        resetSessionBtn.style.fontSize = '0.8rem';
+        resetSessionBtn.style.color = 'var(--text-secondary, #666)';
+        resetSessionBtn.style.background = 'none';
+        resetSessionBtn.style.border = '1px solid var(--border-color, #ccc)';
+        resetSessionBtn.style.borderRadius = '4px';
+        resetSessionBtn.style.cursor = 'pointer';
+        resetSessionBtn.onclick = function () {
+            if (confirm('This will clear your local session and tokens. Continue?')) {
+                doLogout();
+            }
+        };
+        loginForm.appendChild(resetSessionBtn);
 
         body.appendChild(loginForm);
         modal.appendChild(body);
@@ -7102,26 +7044,27 @@ function renderProfileModal() {
     // VTID-01171: Show role badge
     const badge = document.createElement('div');
     badge.className = 'profile-role-badge';
-    // Use authIdentity > MeState > viewRole fallback chain
-    if (state.authIdentity && state.authIdentity.identity) {
+
+    // Deterministic priority: 
+    // 1. Authoritative MeContext (from /api/v1/me)
+    // 2. AuthIdentity (from /api/v1/auth/me)
+    // 3. Fallback to state.viewRole
+    if (state.meContext && state.meContext.active_role) {
+        var role = state.meContext.active_role;
+        badge.textContent = role.charAt(0).toUpperCase() + role.slice(1);
+    } else if (state.authIdentity && state.authIdentity.identity) {
         if (state.authIdentity.identity.exafy_admin) {
             badge.textContent = 'Admin';
         } else if (state.authIdentity.memberships && state.authIdentity.memberships.length > 0) {
-            var role = state.authIdentity.memberships[0].role || 'user';
-            badge.textContent = role.charAt(0).toUpperCase() + role.slice(1);
+            var mRole = state.authIdentity.memberships[0].role || 'user';
+            badge.textContent = mRole.charAt(0).toUpperCase() + mRole.slice(1);
         } else {
             badge.textContent = 'User';
         }
-    } else if (state.authIdentityLoading) {
+    } else if (state.meContextLoading || state.authIdentityLoading) {
         badge.textContent = 'Loading...';
-    } else if (MeState.me && MeState.me.active_role) {
-        badge.textContent = MeState.me.active_role.charAt(0).toUpperCase() + MeState.me.active_role.slice(1);
-    } else if (!MeState.loaded) {
-        badge.textContent = 'Loading...';
-    } else if (MeState.loaded && !MeState.me) {
-        badge.textContent = 'Not signed in';
     } else {
-        badge.textContent = state.viewRole; // Fallback
+        badge.textContent = state.viewRole || 'User';
     }
     body.appendChild(badge);
 
@@ -7138,7 +7081,7 @@ function renderProfileModal() {
     editProfileLink.style.cursor = 'pointer';
     editProfileLink.style.fontSize = '0.9rem';
     editProfileLink.innerHTML = '<span style="font-size: 1rem;">&#9998;</span> Edit Profile';
-    editProfileLink.onclick = function() {
+    editProfileLink.onclick = function () {
         showToast('Edit Profile coming soon', 'info');
     };
     body.appendChild(editProfileLink);
@@ -7159,12 +7102,12 @@ function renderProfileModal() {
     var VIEW_ROLES = ['Community', 'Patient', 'Professional', 'Staff', 'Admin', 'Developer'];
     if (state.authIdentity && state.authIdentity.memberships && state.authIdentity.memberships.length > 0) {
         // Use roles from memberships
-        VIEW_ROLES = state.authIdentity.memberships.map(function(m) {
+        VIEW_ROLES = state.authIdentity.memberships.map(function (m) {
             var role = m.role || 'user';
             return role.charAt(0).toUpperCase() + role.slice(1);
         });
         // Ensure uniqueness
-        VIEW_ROLES = VIEW_ROLES.filter(function(r, i, arr) { return arr.indexOf(r) === i; });
+        VIEW_ROLES = VIEW_ROLES.filter(function (r, i, arr) { return arr.indexOf(r) === i; });
         // Add Admin if exafy_admin and not already in list
         if (state.authIdentity.identity && state.authIdentity.identity.exafy_admin && VIEW_ROLES.indexOf('Admin') === -1) {
             VIEW_ROLES.unshift('Admin');
@@ -7215,8 +7158,9 @@ function renderProfileModal() {
         } else {
             // Failure - revert to previous role
             state.viewRole = previousRole;
-            if (MeState.me) {
-                MeState.me.active_role = previousRole.toLowerCase();
+            // VTID-01229: Use state.meContext instead of deprecated MeState.me
+            if (state.meContext) {
+                state.meContext.active_role = previousRole.toLowerCase();
             }
             renderApp();
             showToast(result.error || 'Failed to change role', 'error');
@@ -7250,12 +7194,12 @@ function renderProfileModal() {
     logoutBtn.style.cursor = 'pointer';
     logoutBtn.style.transition = 'all 0.15s';
     logoutBtn.innerHTML = '<span style="font-size: 1.1rem;">&#x2192;</span> Sign Out';
-    logoutBtn.onmouseenter = function() {
+    logoutBtn.onmouseenter = function () {
         logoutBtn.style.backgroundColor = 'rgba(220, 53, 69, 0.1)';
         logoutBtn.style.borderColor = 'var(--danger-bg, #dc3545)';
         logoutBtn.style.color = 'var(--danger-bg, #dc3545)';
     };
-    logoutBtn.onmouseleave = function() {
+    logoutBtn.onmouseleave = function () {
         logoutBtn.style.backgroundColor = 'transparent';
         logoutBtn.style.borderColor = 'var(--color-border, #444)';
         logoutBtn.style.color = 'var(--color-text-primary, #fff)';
@@ -7321,14 +7265,14 @@ function renderTaskModal() {
     titleInput.className = 'form-control';
     titleInput.placeholder = 'Enter title';
     titleInput.value = state.modalDraftTitle;
-    titleInput.onfocus = function() {
+    titleInput.onfocus = function () {
         state.modalDraftEditing = true;
     };
-    titleInput.oninput = function(e) {
+    titleInput.oninput = function (e) {
         state.modalDraftTitle = e.target.value;
         state.modalDraftEditing = true;
     };
-    titleInput.onblur = function() {
+    titleInput.onblur = function () {
         state.modalDraftEditing = false;
     };
     titleGroup.appendChild(titleInput);
@@ -7363,7 +7307,7 @@ function renderTaskModal() {
     statusSelect.className = 'form-control';
     statusSelect.innerHTML = '<option value="Scheduled">Scheduled</option><option value="In Progress">In Progress</option><option value="Completed">Completed</option>';
     statusSelect.value = state.modalDraftStatus;
-    statusSelect.onchange = function(e) {
+    statusSelect.onchange = function (e) {
         state.modalDraftStatus = e.target.value;
     };
     statusGroup.appendChild(statusSelect);
@@ -7382,7 +7326,7 @@ function renderTaskModal() {
     roleContainer.className = 'target-role-selector';
 
     // Create checkbox for each role
-    TARGET_ROLES.forEach(function(role) {
+    TARGET_ROLES.forEach(function (role) {
         const roleOption = document.createElement('label');
         roleOption.className = 'target-role-option';
 
@@ -7390,20 +7334,20 @@ function renderTaskModal() {
         checkbox.type = 'checkbox';
         checkbox.value = role;
         checkbox.checked = state.modalDraftTargetRoles.includes(role);
-        checkbox.onchange = function(e) {
+        checkbox.onchange = function (e) {
             if (e.target.checked) {
                 // VTID-01010: INFRA is exclusive - clear others if INFRA selected
                 if (role === 'INFRA') {
                     state.modalDraftTargetRoles = ['INFRA'];
                 } else {
                     // Clear INFRA if another role is selected
-                    state.modalDraftTargetRoles = state.modalDraftTargetRoles.filter(function(r) { return r !== 'INFRA'; });
+                    state.modalDraftTargetRoles = state.modalDraftTargetRoles.filter(function (r) { return r !== 'INFRA'; });
                     if (!state.modalDraftTargetRoles.includes(role)) {
                         state.modalDraftTargetRoles.push(role);
                     }
                 }
             } else {
-                state.modalDraftTargetRoles = state.modalDraftTargetRoles.filter(function(r) { return r !== role; });
+                state.modalDraftTargetRoles = state.modalDraftTargetRoles.filter(function (r) { return r !== role; });
             }
             // Re-render to update checkbox states
             renderApp();
@@ -7446,14 +7390,14 @@ function renderTaskModal() {
     specTextarea.placeholder = 'Enter task specification here...';
     specTextarea.rows = 4;
     specTextarea.value = state.modalDraftSpec;
-    specTextarea.onfocus = function() {
+    specTextarea.onfocus = function () {
         state.modalDraftEditing = true;
     };
-    specTextarea.oninput = function(e) {
+    specTextarea.oninput = function (e) {
         state.modalDraftSpec = e.target.value;
         state.modalDraftEditing = true;
     };
-    specTextarea.onblur = function() {
+    specTextarea.onblur = function () {
         state.modalDraftEditing = false;
     };
     specGroup.appendChild(specTextarea);
@@ -7521,7 +7465,7 @@ function renderTaskModal() {
             // VTID-0542: Step 1 - Call the global allocator to get a VTID
             const allocResponse = await fetch('/api/v1/vtid/allocate', {
                 method: 'POST',
-                headers: withVitanaContextHeaders({
+                headers: buildContextHeaders({
                     'Content-Type': 'application/json'
                 }),
                 body: JSON.stringify({
@@ -7574,7 +7518,7 @@ function renderTaskModal() {
 
             const updateResponse = await fetch('/api/v1/oasis/tasks/' + encodeURIComponent(vtid), {
                 method: 'PATCH',
-                headers: withVitanaContextHeaders({
+                headers: buildContextHeaders({
                     'Content-Type': 'application/json'
                 }),
                 body: JSON.stringify(updatePayload)
@@ -7817,8 +7761,6 @@ async function fetchTasks() {
     renderApp();
 
     try {
-        // VTID-01079: Use OASIS-derived board endpoint
-        // limit param only affects COMPLETED column (SCHEDULED/IN_PROGRESS are unlimited)
         var response = await fetch('/api/v1/commandhub/board?limit=50');
         if (!response.ok) throw new Error('Command Hub board fetch failed: ' + response.status);
 
@@ -7845,7 +7787,7 @@ async function fetchTasks() {
         // VTID-01055: Reconcile by VTID to eliminate ghost cards
         // Build a Map keyed by VTID (latest entry wins; overwrites duplicates)
         var byVtid = new Map();
-        items.forEach(function(item) {
+        items.forEach(function (item) {
             if (!item.vtid) return; // Skip items without VTID
             var task = {
                 id: item.vtid,
@@ -7877,10 +7819,19 @@ async function fetchTasks() {
         // VTID-01055: Track which VTIDs came from API for ghost detection
         lastApiVtids = new Set(byVtid.keys());
 
+        // SYNC FIX: Update state.selectedTask pointer to the fresh object from the new list
+        if (state.selectedTask && state.selectedTask.vtid) {
+            const freshTask = state.tasks.find(t => t.vtid === state.selectedTask.vtid);
+            if (freshTask) {
+                console.log('[SYNC] Updating state.selectedTask pointer after fetchTasks');
+                state.selectedTask = freshTask;
+            }
+        }
+
         // VTID-01055: Count tasks per column for debug logging (manual refresh only)
         if (isManualRefresh) {
             var scheduled = 0, inProgress = 0, completed = 0;
-            state.tasks.forEach(function(t) {
+            state.tasks.forEach(function (t) {
                 var col = (t.oasisColumn || '').toUpperCase();
                 if (col === 'COMPLETED') {
                     completed++;
@@ -7925,6 +7876,13 @@ async function fetchVtidDetail(vtid) {
 
         if (result.ok && result.data) {
             state.selectedTaskDetail = result.data;
+
+            // SYNC FIX: Ensure state.selectedTask (summary-level) is aligned with detail-level status
+            if (state.selectedTask && state.selectedTask.vtid === vtid) {
+                console.log('[SYNC] Updating state.selectedTask status/spec_status from detail fetch');
+                state.selectedTask.status = result.data.status || state.selectedTask.status;
+                state.selectedTask.spec_status = result.data.spec_status || state.selectedTask.spec_status;
+            }
         }
     } catch (error) {
         console.error('[VTID-0527] Failed to fetch VTID detail:', error);
@@ -7974,7 +7932,7 @@ function startExecutionStatusPolling(vtid) {
     fetchExecutionStatus(vtid);
 
     // Poll every 5 seconds
-    state.executionStatusPollInterval = setInterval(function() {
+    state.executionStatusPollInterval = setInterval(function () {
         // Stop polling if drawer is closed or different task selected
         if (!state.selectedTask || state.selectedTask.vtid !== vtid) {
             stopExecutionStatusPolling();
@@ -8021,7 +7979,7 @@ async function fetchActiveExecutions() {
         if (!tasksResult.ok) return;
 
         // Filter to in-progress only
-        const inProgressTasks = (tasksResult.data || []).filter(function(task) {
+        const inProgressTasks = (tasksResult.data || []).filter(function (task) {
             var col = (task.oasisColumn || task.column || '').toUpperCase();
             return col === 'IN_PROGRESS';
         });
@@ -8067,7 +8025,7 @@ function startActiveExecutionsPolling() {
     fetchActiveExecutions();
 
     // Poll every 10 seconds
-    state.activeExecutionsPollInterval = setInterval(function() {
+    state.activeExecutionsPollInterval = setInterval(function () {
         fetchActiveExecutions();
     }, 10000);
 }
@@ -8303,10 +8261,10 @@ function renderAdminDevUsersView() {
     searchInput.className = 'search-field admin-dev-users-search';
     searchInput.placeholder = 'Search by email...';
     searchInput.value = state.adminDevUsersSearchQuery;
-    searchInput.oninput = function(e) {
+    searchInput.oninput = function (e) {
         state.adminDevUsersSearchQuery = e.target.value;
     };
-    searchInput.onkeypress = function(e) {
+    searchInput.onkeypress = function (e) {
         if (e.key === 'Enter') {
             fetchAdminDevUsers();
         }
@@ -8317,7 +8275,7 @@ function renderAdminDevUsersView() {
     var searchBtn = document.createElement('button');
     searchBtn.className = 'btn btn-secondary';
     searchBtn.textContent = 'Search';
-    searchBtn.onclick = function() {
+    searchBtn.onclick = function () {
         fetchAdminDevUsers();
     };
     toolbar.appendChild(searchBtn);
@@ -8333,10 +8291,10 @@ function renderAdminDevUsersView() {
     grantInput.className = 'form-control admin-dev-users-grant-input';
     grantInput.placeholder = 'Enter email to grant access...';
     grantInput.value = state.adminDevUsersGrantEmail;
-    grantInput.oninput = function(e) {
+    grantInput.oninput = function (e) {
         state.adminDevUsersGrantEmail = e.target.value;
     };
-    grantInput.onkeypress = function(e) {
+    grantInput.onkeypress = function (e) {
         if (e.key === 'Enter') {
             grantDevAccess(state.adminDevUsersGrantEmail);
         }
@@ -8347,7 +8305,7 @@ function renderAdminDevUsersView() {
     grantBtn.className = 'btn btn-primary';
     grantBtn.textContent = state.adminDevUsersGrantLoading ? 'Granting...' : 'Grant Dev Access';
     grantBtn.disabled = state.adminDevUsersGrantLoading;
-    grantBtn.onclick = function() {
+    grantBtn.onclick = function () {
         grantDevAccess(state.adminDevUsersGrantEmail);
     };
     toolbar.appendChild(grantBtn);
@@ -8381,7 +8339,7 @@ function renderAdminDevUsersView() {
         var retryBtn = document.createElement('button');
         retryBtn.className = 'btn btn-secondary';
         retryBtn.textContent = 'Retry';
-        retryBtn.onclick = function() {
+        retryBtn.onclick = function () {
             state.adminDevUsersError = null;
             fetchAdminDevUsers();
         };
@@ -8398,7 +8356,7 @@ function renderAdminDevUsersView() {
         // Header
         var thead = document.createElement('thead');
         var headerRow = document.createElement('tr');
-        ['Email', 'User ID', 'Status', 'Updated', 'Actions'].forEach(function(h) {
+        ['Email', 'User ID', 'Status', 'Updated', 'Actions'].forEach(function (h) {
             var th = document.createElement('th');
             th.textContent = h;
             headerRow.appendChild(th);
@@ -8408,7 +8366,7 @@ function renderAdminDevUsersView() {
 
         // Body
         var tbody = document.createElement('tbody');
-        state.adminDevUsers.forEach(function(user) {
+        state.adminDevUsers.forEach(function (user) {
             var row = document.createElement('tr');
 
             // Email
@@ -8448,7 +8406,7 @@ function renderAdminDevUsersView() {
             var revokeBtn = document.createElement('button');
             revokeBtn.className = 'btn btn-danger btn-sm';
             revokeBtn.textContent = 'Revoke';
-            revokeBtn.onclick = function() {
+            revokeBtn.onclick = function () {
                 revokeDevAccess(user.email);
             };
             actionsCell.appendChild(revokeBtn);
@@ -8516,7 +8474,7 @@ function renderAdminUsersView() {
     searchInput.className = 'search-field admin-search-input';
     searchInput.placeholder = 'Search by email...';
     searchInput.value = state.adminUsersSearchQuery;
-    searchInput.oninput = function(e) {
+    searchInput.oninput = function (e) {
         state.adminUsersSearchQuery = e.target.value;
         renderApp();
     };
@@ -8535,18 +8493,18 @@ function renderAdminUsersView() {
     table.appendChild(thead);
 
     var tbody = document.createElement('tbody');
-    var filteredUsers = adminUsersMockData.filter(function(u) {
+    var filteredUsers = adminUsersMockData.filter(function (u) {
         if (!state.adminUsersSearchQuery) return true;
         return u.email.toLowerCase().includes(state.adminUsersSearchQuery.toLowerCase());
     });
 
-    filteredUsers.forEach(function(user) {
+    filteredUsers.forEach(function (user) {
         var row = document.createElement('tr');
         row.className = 'admin-list-row clickable-row';
         if (state.adminUsersSelectedId === user.id) {
             row.classList.add('selected');
         }
-        row.onclick = function() {
+        row.onclick = function () {
             state.adminUsersSelectedId = user.id;
             renderApp();
         };
@@ -8568,7 +8526,7 @@ function renderAdminUsersView() {
     rightPanel.className = 'admin-split-right';
 
     if (state.adminUsersSelectedId) {
-        var selectedUser = adminUsersMockData.find(function(u) { return u.id === state.adminUsersSelectedId; });
+        var selectedUser = adminUsersMockData.find(function (u) { return u.id === state.adminUsersSelectedId; });
         if (selectedUser) {
             rightPanel.innerHTML = '<div class="admin-detail-panel">' +
                 '<div class="admin-detail-header">' +
@@ -8653,7 +8611,7 @@ function renderAdminPermissionsView() {
     searchInput.className = 'search-field admin-search-input';
     searchInput.placeholder = 'Search permission key...';
     searchInput.value = state.adminPermissionsSearchQuery;
-    searchInput.oninput = function(e) {
+    searchInput.oninput = function (e) {
         state.adminPermissionsSearchQuery = e.target.value;
         renderApp();
     };
@@ -8672,19 +8630,19 @@ function renderAdminPermissionsView() {
     table.appendChild(thead);
 
     var tbody = document.createElement('tbody');
-    var filteredPerms = adminPermissionsMockData.filter(function(p) {
+    var filteredPerms = adminPermissionsMockData.filter(function (p) {
         if (!state.adminPermissionsSearchQuery) return true;
         return p.key.toLowerCase().includes(state.adminPermissionsSearchQuery.toLowerCase()) ||
-               p.description.toLowerCase().includes(state.adminPermissionsSearchQuery.toLowerCase());
+            p.description.toLowerCase().includes(state.adminPermissionsSearchQuery.toLowerCase());
     });
 
-    filteredPerms.forEach(function(perm) {
+    filteredPerms.forEach(function (perm) {
         var row = document.createElement('tr');
         row.className = 'admin-list-row clickable-row';
         if (state.adminPermissionsSelectedKey === perm.key) {
             row.classList.add('selected');
         }
-        row.onclick = function() {
+        row.onclick = function () {
             state.adminPermissionsSelectedKey = perm.key;
             renderApp();
         };
@@ -8705,7 +8663,7 @@ function renderAdminPermissionsView() {
     rightPanel.className = 'admin-split-right';
 
     if (state.adminPermissionsSelectedKey) {
-        var selectedPerm = adminPermissionsMockData.find(function(p) { return p.key === state.adminPermissionsSelectedKey; });
+        var selectedPerm = adminPermissionsMockData.find(function (p) { return p.key === state.adminPermissionsSelectedKey; });
         if (selectedPerm) {
             rightPanel.innerHTML = '<div class="admin-detail-panel">' +
                 '<div class="admin-detail-header">' +
@@ -8784,7 +8742,7 @@ function renderAdminTenantsView() {
     searchInput.className = 'search-field admin-search-input';
     searchInput.placeholder = 'Search tenant...';
     searchInput.value = state.adminTenantsSearchQuery;
-    searchInput.oninput = function(e) {
+    searchInput.oninput = function (e) {
         state.adminTenantsSearchQuery = e.target.value;
         renderApp();
     };
@@ -8803,18 +8761,18 @@ function renderAdminTenantsView() {
     table.appendChild(thead);
 
     var tbody = document.createElement('tbody');
-    var filteredTenants = adminTenantsMockData.filter(function(t) {
+    var filteredTenants = adminTenantsMockData.filter(function (t) {
         if (!state.adminTenantsSearchQuery) return true;
         return t.name.toLowerCase().includes(state.adminTenantsSearchQuery.toLowerCase());
     });
 
-    filteredTenants.forEach(function(tenant) {
+    filteredTenants.forEach(function (tenant) {
         var row = document.createElement('tr');
         row.className = 'admin-list-row clickable-row';
         if (state.adminTenantsSelectedId === tenant.id) {
             row.classList.add('selected');
         }
-        row.onclick = function() {
+        row.onclick = function () {
             state.adminTenantsSelectedId = tenant.id;
             renderApp();
         };
@@ -8835,7 +8793,7 @@ function renderAdminTenantsView() {
     rightPanel.className = 'admin-split-right';
 
     if (state.adminTenantsSelectedId) {
-        var selectedTenant = adminTenantsMockData.find(function(t) { return t.id === state.adminTenantsSelectedId; });
+        var selectedTenant = adminTenantsMockData.find(function (t) { return t.id === state.adminTenantsSelectedId; });
         if (selectedTenant) {
             rightPanel.innerHTML = '<div class="admin-detail-panel">' +
                 '<div class="admin-detail-header">' +
@@ -8919,7 +8877,7 @@ function renderAdminContentModerationView() {
     typeFilter.className = 'admin-filter-select';
     typeFilter.innerHTML = '<option value="">All Types</option><option value="Spam">Spam</option><option value="Abuse">Abuse</option><option value="Inappropriate">Inappropriate</option><option value="Other">Other</option>';
     typeFilter.value = state.adminModerationTypeFilter;
-    typeFilter.onchange = function(e) {
+    typeFilter.onchange = function (e) {
         state.adminModerationTypeFilter = e.target.value;
         renderApp();
     };
@@ -8930,7 +8888,7 @@ function renderAdminContentModerationView() {
     statusFilter.className = 'admin-filter-select';
     statusFilter.innerHTML = '<option value="">All Statuses</option><option value="Pending">Pending</option><option value="Reviewed">Reviewed</option><option value="Resolved">Resolved</option>';
     statusFilter.value = state.adminModerationStatusFilter;
-    statusFilter.onchange = function(e) {
+    statusFilter.onchange = function (e) {
         state.adminModerationStatusFilter = e.target.value;
         renderApp();
     };
@@ -8949,19 +8907,19 @@ function renderAdminContentModerationView() {
     var listContainer = document.createElement('div');
     listContainer.className = 'admin-list-container admin-moderation-list';
 
-    var filteredReports = adminModerationMockData.filter(function(r) {
+    var filteredReports = adminModerationMockData.filter(function (r) {
         if (state.adminModerationTypeFilter && r.type !== state.adminModerationTypeFilter) return false;
         if (state.adminModerationStatusFilter && r.status !== state.adminModerationStatusFilter) return false;
         return true;
     });
 
-    filteredReports.forEach(function(report) {
+    filteredReports.forEach(function (report) {
         var card = document.createElement('div');
         card.className = 'admin-report-card clickable-row';
         if (state.adminModerationSelectedId === report.id) {
             card.classList.add('selected');
         }
-        card.onclick = function() {
+        card.onclick = function () {
             state.adminModerationSelectedId = report.id;
             renderApp();
         };
@@ -8992,7 +8950,7 @@ function renderAdminContentModerationView() {
     rightPanel.className = 'admin-split-right';
 
     if (state.adminModerationSelectedId) {
-        var selectedReport = adminModerationMockData.find(function(r) { return r.id === state.adminModerationSelectedId; });
+        var selectedReport = adminModerationMockData.find(function (r) { return r.id === state.adminModerationSelectedId; });
         if (selectedReport) {
             var reportDate = new Date(selectedReport.reportedAt);
             rightPanel.innerHTML = '<div class="admin-detail-panel">' +
@@ -9175,11 +9133,11 @@ async function fetchAgentsRegistry() {
         { key: 'skills', url: '/api/v1/worker/skills' }
     ];
 
-    var results = await Promise.all(endpoints.map(async function(ep) {
+    var results = await Promise.all(endpoints.map(async function (ep) {
         var startTime = Date.now();
         try {
             var response = await fetch(ep.url, {
-                headers: withVitanaContextHeaders({})
+                headers: buildContextHeaders({})
             });
             var elapsed = Date.now() - startTime;
             var data = null;
@@ -9188,7 +9146,7 @@ async function fetchAgentsRegistry() {
             if (response.ok) {
                 data = await response.json();
             } else {
-                errorText = await response.text().catch(function() { return 'Unknown error'; });
+                errorText = await response.text().catch(function () { return 'Unknown error'; });
             }
 
             return {
@@ -9211,7 +9169,7 @@ async function fetchAgentsRegistry() {
     }));
 
     // Process results
-    results.forEach(function(r) {
+    results.forEach(function (r) {
         state.agentsRegistry[r.key] = r.data;
         state.agentsRegistry.timing[r.key] = r.timing;
         state.agentsRegistry.status[r.key] = r.status;
@@ -9237,7 +9195,7 @@ function renderAgentsApiStatusStrip() {
         { key: 'skills', label: 'Skills' }
     ];
 
-    endpoints.forEach(function(ep) {
+    endpoints.forEach(function (ep) {
         var status = state.agentsRegistry.status[ep.key];
         var timing = state.agentsRegistry.timing[ep.key];
         var error = state.agentsRegistry.errors[ep.key];
@@ -9295,7 +9253,7 @@ function renderAgentsErrorPanel() {
     heading.textContent = 'API Errors';
     panel.appendChild(heading);
 
-    ['orchestratorHealth', 'subagents', 'skills'].forEach(function(key) {
+    ['orchestratorHealth', 'subagents', 'skills'].forEach(function (key) {
         var err = errors[key];
         if (!err) return;
 
@@ -9355,7 +9313,7 @@ function renderOrchestratorSummaryCard() {
         { label: 'Timestamp', value: health.timestamp ? new Date(health.timestamp).toLocaleString() : 'N/A' }
     ];
 
-    fields.forEach(function(f) {
+    fields.forEach(function (f) {
         var row = document.createElement('div');
         row.className = 'agents-info-row';
         row.innerHTML = '<span class="agents-info-label">' + f.label + ':</span><span class="agents-info-value">' + escapeHtml(f.value) + '</span>';
@@ -9376,7 +9334,7 @@ function renderOrchestratorSummaryCard() {
         var subList = document.createElement('div');
         subList.className = 'agents-subagent-badges';
 
-        health.subagents.forEach(function(sub) {
+        health.subagents.forEach(function (sub) {
             var badge = document.createElement('span');
             badge.className = 'agents-subagent-badge';
             var statusClass = (sub.status || '').toLowerCase() === 'active' ? 'badge-success' : 'badge-secondary';
@@ -9401,7 +9359,7 @@ function renderOrchestratorSummaryCard() {
         var epList = document.createElement('div');
         epList.className = 'agents-endpoint-list';
 
-        Object.keys(health.endpoints).forEach(function(key) {
+        Object.keys(health.endpoints).forEach(function (key) {
             var epItem = document.createElement('span');
             epItem.className = 'agents-endpoint-item';
             epItem.textContent = key;
@@ -9442,7 +9400,7 @@ function renderSubagentsTable() {
     // Header
     var thead = document.createElement('thead');
     var headerRow = document.createElement('tr');
-    ['ID', 'Domain', 'Allowed Paths', 'Guardrails', 'Default Budget'].forEach(function(h) {
+    ['ID', 'Domain', 'Allowed Paths', 'Guardrails', 'Default Budget'].forEach(function (h) {
         var th = document.createElement('th');
         th.textContent = h;
         headerRow.appendChild(th);
@@ -9452,7 +9410,7 @@ function renderSubagentsTable() {
 
     // Body
     var tbody = document.createElement('tbody');
-    subagents.subagents.forEach(function(sub) {
+    subagents.subagents.forEach(function (sub) {
         var row = document.createElement('tr');
 
         // ID
@@ -9472,7 +9430,7 @@ function renderSubagentsTable() {
         if (sub.allowed_paths && sub.allowed_paths.length > 0) {
             var pathsList = document.createElement('ul');
             pathsList.className = 'agents-list-compact';
-            sub.allowed_paths.forEach(function(p) {
+            sub.allowed_paths.forEach(function (p) {
                 var li = document.createElement('li');
                 li.textContent = p;
                 pathsList.appendChild(li);
@@ -9489,7 +9447,7 @@ function renderSubagentsTable() {
         if (sub.guardrails && sub.guardrails.length > 0) {
             var guardList = document.createElement('ul');
             guardList.className = 'agents-list-compact';
-            sub.guardrails.forEach(function(g) {
+            sub.guardrails.forEach(function (g) {
                 var li = document.createElement('li');
                 li.textContent = g;
                 guardList.appendChild(li);
@@ -9544,7 +9502,7 @@ function renderSkillsTable() {
     // Header
     var thead = document.createElement('thead');
     var headerRow = document.createElement('tr');
-    ['Skill ID', 'Name', 'Domain', 'Rule ID'].forEach(function(h) {
+    ['Skill ID', 'Name', 'Domain', 'Rule ID'].forEach(function (h) {
         var th = document.createElement('th');
         th.textContent = h;
         headerRow.appendChild(th);
@@ -9554,7 +9512,7 @@ function renderSkillsTable() {
 
     // Body
     var tbody = document.createElement('tbody');
-    skillsData.skills.forEach(function(skill) {
+    skillsData.skills.forEach(function (skill) {
         var row = document.createElement('tr');
 
         // Skill ID
@@ -9593,7 +9551,7 @@ function renderSkillsTable() {
         chainsSection.appendChild(chainsHeading);
 
         var chains = skillsData.preflight_chains;
-        ['frontend', 'backend', 'memory'].forEach(function(chainType) {
+        ['frontend', 'backend', 'memory'].forEach(function (chainType) {
             if (chains[chainType] && chains[chainType].length > 0) {
                 var chainDiv = document.createElement('div');
                 chainDiv.className = 'agents-chain-row';
@@ -9630,7 +9588,7 @@ function renderRawJsonDebug(key, label) {
     var toggle = document.createElement('button');
     toggle.className = 'agents-raw-json-toggle';
     toggle.textContent = (isExpanded ? '\u25BC' : '\u25B6') + ' Show raw JSON: ' + label;
-    toggle.onclick = function() {
+    toggle.onclick = function () {
         state.agentsRegistry[showKey] = !state.agentsRegistry[showKey];
         renderApp();
     };
@@ -9724,7 +9682,7 @@ function renderRegisteredAgentsView() {
     refreshBtn.className = 'btn btn-secondary agents-refresh-btn';
     refreshBtn.textContent = state.agentsRegistry.loading ? 'Loading...' : 'Refresh';
     refreshBtn.disabled = state.agentsRegistry.loading;
-    refreshBtn.onclick = function() {
+    refreshBtn.onclick = function () {
         state.agentsRegistry.fetched = false;
         fetchAgentsRegistry();
     };
@@ -9852,7 +9810,7 @@ async function fetchPipelinesData(append) {
     var ledgerStart = Date.now();
     try {
         var response = await fetch('/api/v1/oasis/vtid-ledger?limit=' + pagination.limit + '&offset=' + offset, {
-            headers: withVitanaContextHeaders({})
+            headers: buildContextHeaders({})
         });
         var ledgerElapsed = Date.now() - ledgerStart;
         state.agentsPipelines.timing.ledger = ledgerElapsed;
@@ -9918,7 +9876,7 @@ async function fetchVtidTraceEvents(vtid) {
 
     try {
         var response = await fetch('/api/v1/events?vtid=' + encodeURIComponent(vtid) + '&limit=200', {
-            headers: withVitanaContextHeaders({})
+            headers: buildContextHeaders({})
         });
         if (response.ok) {
             var data = await response.json();
@@ -9972,7 +9930,7 @@ function getFilteredPipelines() {
     var cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
 
     // Time window filter
-    items = items.filter(function(item) {
+    items = items.filter(function (item) {
         var itemDate = new Date(item.updated_at || item.created_at);
         return itemDate >= cutoff;
     });
@@ -9980,19 +9938,19 @@ function getFilteredPipelines() {
     // Status filter
     if (filter === 'active') {
         // Active: scheduled, allocated, in_progress
-        items = items.filter(function(item) {
+        items = items.filter(function (item) {
             var s = (item.status || '').toLowerCase();
             return s === 'scheduled' || s === 'allocated' || s === 'in_progress' || s === 'queued' || s === 'running';
         });
     } else if (filter === 'recent') {
         // Recent: completed successfully (done, complete, deployed, merged)
-        items = items.filter(function(item) {
+        items = items.filter(function (item) {
             var s = (item.status || '').toLowerCase();
             return s === 'done' || s === 'complete' || s === 'deployed' || s === 'merged' || s === 'closed';
         });
     } else if (filter === 'failed') {
         // Failed: error, failed, blocked
-        items = items.filter(function(item) {
+        items = items.filter(function (item) {
             var s = (item.status || '').toLowerCase();
             return s === 'failed' || s === 'error' || s === 'blocked';
         });
@@ -10019,7 +9977,7 @@ function getPipelineStatusClass(status) {
  */
 function getStageStatus(stageTimeline, stageName) {
     if (!stageTimeline || !Array.isArray(stageTimeline)) return 'pending';
-    var entry = stageTimeline.find(function(s) { return s.stage === stageName; });
+    var entry = stageTimeline.find(function (s) { return s.stage === stageName; });
     return entry ? (entry.status || 'pending') : 'pending';
 }
 
@@ -10034,7 +9992,7 @@ function renderPipelinesApiStatusStrip() {
         { key: 'ledger', label: 'VTID Ledger', url: '/api/v1/oasis/vtid-ledger' }
     ];
 
-    endpoints.forEach(function(ep) {
+    endpoints.forEach(function (ep) {
         var status = state.agentsPipelines.status[ep.key];
         var timing = state.agentsPipelines.timing[ep.key];
         var error = state.agentsPipelines.errors[ep.key];
@@ -10132,7 +10090,7 @@ function renderPipelineStageRibbon(stageTimeline) {
         { name: 'DEPLOY', label: 'D' }
     ];
 
-    stages.forEach(function(stageInfo) {
+    stages.forEach(function (stageInfo) {
         var status = getStageStatus(stageTimeline, stageInfo.name);
         var pill = document.createElement('span');
         pill.className = 'pipeline-stage-pill pipeline-stage-pill-' + stageInfo.name.toLowerCase();
@@ -10171,7 +10129,7 @@ function renderPipelineRow(item) {
     // Main row content
     var mainRow = document.createElement('div');
     mainRow.className = 'pipeline-row-main';
-    mainRow.onclick = function() {
+    mainRow.onclick = function () {
         togglePipelineExpand(item.vtid);
     };
 
@@ -10261,11 +10219,11 @@ function renderPipelineTraceView(item) {
     timeline.className = 'pipeline-trace-timeline';
 
     // Sort events by created_at ascending (oldest first)
-    var sortedEvents = events.slice().sort(function(a, b) {
+    var sortedEvents = events.slice().sort(function (a, b) {
         return new Date(a.created_at) - new Date(b.created_at);
     });
 
-    sortedEvents.forEach(function(ev) {
+    sortedEvents.forEach(function (ev) {
         var eventRow = document.createElement('div');
         eventRow.className = 'pipeline-trace-event';
 
@@ -10360,7 +10318,7 @@ function renderAgentsPipelinesView() {
     refreshBtn.className = 'btn btn-secondary pipelines-refresh-btn';
     refreshBtn.textContent = state.agentsPipelines.loading ? 'Loading...' : 'Refresh';
     refreshBtn.disabled = state.agentsPipelines.loading;
-    refreshBtn.onclick = function() {
+    refreshBtn.onclick = function () {
         state.agentsPipelines.fetched = false;
         state.agentsPipelines.eventsCache = {}; // Clear events cache
         // VTID-01211: Reset pagination on refresh
@@ -10389,14 +10347,14 @@ function renderAgentsPipelinesView() {
         { key: 'all', label: 'All' }
     ];
 
-    filters.forEach(function(f) {
+    filters.forEach(function (f) {
         var pill = document.createElement('button');
         pill.className = 'pipelines-filter-pill';
         if (state.agentsPipelines.activeFilter === f.key) {
             pill.classList.add('pipelines-filter-pill-active');
         }
         pill.textContent = f.label;
-        pill.onclick = function() {
+        pill.onclick = function () {
             state.agentsPipelines.activeFilter = f.key;
             renderApp();
         };
@@ -10415,14 +10373,14 @@ function renderAgentsPipelinesView() {
     timeGroup.appendChild(timeLabel);
 
     var timeWindows = ['1h', '24h', '48h', '7d'];
-    timeWindows.forEach(function(tw) {
+    timeWindows.forEach(function (tw) {
         var btn = document.createElement('button');
         btn.className = 'pipelines-time-btn';
         if (state.agentsPipelines.timeWindow === tw) {
             btn.classList.add('pipelines-time-btn-active');
         }
         btn.textContent = tw;
-        btn.onclick = function() {
+        btn.onclick = function () {
             state.agentsPipelines.timeWindow = tw;
             renderApp();
         };
@@ -10449,7 +10407,7 @@ function renderAgentsPipelinesView() {
         var activeGrid = document.createElement('div');
         activeGrid.className = 'pipelines-active-grid';
 
-        state.activeExecutions.forEach(function(execData) {
+        state.activeExecutions.forEach(function (execData) {
             var execCard = renderTaskExecutionStatus(execData, { variant: 'ticker-card', showRecent: true });
             activeGrid.appendChild(execCard);
         });
@@ -10480,11 +10438,11 @@ function renderAgentsPipelinesView() {
     var statsBar = document.createElement('div');
     statsBar.className = 'pipelines-stats';
     var totalItems = state.agentsPipelines.items.length;
-    var activeCount = state.agentsPipelines.items.filter(function(i) {
+    var activeCount = state.agentsPipelines.items.filter(function (i) {
         var s = (i.status || '').toLowerCase();
         return s === 'scheduled' || s === 'allocated' || s === 'in_progress' || s === 'queued' || s === 'running';
     }).length;
-    var failedCount = state.agentsPipelines.items.filter(function(i) {
+    var failedCount = state.agentsPipelines.items.filter(function (i) {
         var s = (i.status || '').toLowerCase();
         return s === 'failed' || s === 'error' || s === 'blocked';
     }).length;
@@ -10504,7 +10462,7 @@ function renderAgentsPipelinesView() {
         emptyDiv.textContent = 'No pipelines match the current filter.';
         list.appendChild(emptyDiv);
     } else {
-        filteredItems.forEach(function(item) {
+        filteredItems.forEach(function (item) {
             list.appendChild(renderPipelineRow(item));
         });
 
@@ -10517,7 +10475,7 @@ function renderAgentsPipelinesView() {
             loadMoreBtn.className = 'load-more-btn' + (state.agentsPipelines.loading ? ' loading' : '');
             loadMoreBtn.disabled = state.agentsPipelines.loading;
             loadMoreBtn.textContent = state.agentsPipelines.loading ? 'Loading...' : 'Load More';
-            loadMoreBtn.onclick = function() {
+            loadMoreBtn.onclick = function () {
                 loadMorePipelines();
             };
 
@@ -10535,7 +10493,7 @@ function renderAgentsPipelinesView() {
     var debugToggle = document.createElement('button');
     debugToggle.className = 'btn btn-sm btn-ghost';
     debugToggle.textContent = state.agentsPipelines.showRawLedger ? 'Hide Raw JSON' : 'Show Raw JSON';
-    debugToggle.onclick = function() {
+    debugToggle.onclick = function () {
         state.agentsPipelines.showRawLedger = !state.agentsPipelines.showRawLedger;
         renderApp();
     };
@@ -10569,7 +10527,7 @@ async function fetchLLMRoutingPolicy() {
 
     try {
         var response = await fetch('/api/v1/llm/routing-policy', {
-            headers: withVitanaContextHeaders({})
+            headers: buildContextHeaders({})
         });
 
         if (!response.ok) {
@@ -10633,7 +10591,7 @@ async function fetchLLMTelemetryEvents(append) {
         params.append('since', since);
 
         var response = await fetch('/api/v1/llm/telemetry?' + params.toString(), {
-            headers: withVitanaContextHeaders({})
+            headers: buildContextHeaders({})
         });
 
         if (!response.ok) {
@@ -10712,11 +10670,11 @@ function renderAgentsTelemetryView() {
         { key: 'routing', label: 'Routing Policy' }
     ];
 
-    tabs.forEach(function(t) {
+    tabs.forEach(function (t) {
         var btn = document.createElement('button');
         btn.className = 'telemetry-tab-btn' + (state.agentsTelemetry.activeTab === t.key ? ' active' : '');
         btn.textContent = t.label;
-        btn.onclick = function() {
+        btn.onclick = function () {
             state.agentsTelemetry.activeTab = t.key;
             renderApp();
         };
@@ -10753,7 +10711,7 @@ function renderTelemetryStreamPanel() {
     vtidInput.className = 'telemetry-filter-input';
     vtidInput.placeholder = 'Filter by VTID...';
     vtidInput.value = state.agentsTelemetry.filters.vtid;
-    vtidInput.onchange = function(e) {
+    vtidInput.onchange = function (e) {
         state.agentsTelemetry.filters.vtid = e.target.value;
         state.agentsTelemetry.eventsFetched = false;
         state.agentsTelemetry.pagination.offset = 0;
@@ -10772,7 +10730,7 @@ function renderTelemetryStreamPanel() {
         '<option value="operator">Operator</option>' +
         '<option value="memory">Memory</option>';
     stageSelect.value = state.agentsTelemetry.filters.stage;
-    stageSelect.onchange = function(e) {
+    stageSelect.onchange = function (e) {
         state.agentsTelemetry.filters.stage = e.target.value;
         state.agentsTelemetry.eventsFetched = false;
         state.agentsTelemetry.pagination.offset = 0;
@@ -10789,7 +10747,7 @@ function renderTelemetryStreamPanel() {
         '<option value="vertex">Vertex AI</option>' +
         '<option value="openai">OpenAI</option>';
     providerSelect.value = state.agentsTelemetry.filters.provider;
-    providerSelect.onchange = function(e) {
+    providerSelect.onchange = function (e) {
         state.agentsTelemetry.filters.provider = e.target.value;
         state.agentsTelemetry.eventsFetched = false;
         state.agentsTelemetry.pagination.offset = 0;
@@ -10806,7 +10764,7 @@ function renderTelemetryStreamPanel() {
         '<option value="24h">Last 24h</option>' +
         '<option value="7d">Last 7d</option>';
     timeSelect.value = state.agentsTelemetry.filters.timeWindow;
-    timeSelect.onchange = function(e) {
+    timeSelect.onchange = function (e) {
         state.agentsTelemetry.filters.timeWindow = e.target.value;
         state.agentsTelemetry.eventsFetched = false;
         state.agentsTelemetry.pagination.offset = 0;
@@ -10820,7 +10778,7 @@ function renderTelemetryStreamPanel() {
     refreshBtn.className = 'btn btn-secondary';
     refreshBtn.textContent = state.agentsTelemetry.eventsLoading ? 'Loading...' : 'Refresh';
     refreshBtn.disabled = state.agentsTelemetry.eventsLoading;
-    refreshBtn.onclick = function() {
+    refreshBtn.onclick = function () {
         state.agentsTelemetry.eventsFetched = false;
         state.agentsTelemetry.pagination.offset = 0;
         state.agentsTelemetry.pagination.hasMore = true;
@@ -10875,7 +10833,7 @@ function renderTelemetryStreamPanel() {
         emptyRow.innerHTML = '<td colspan="11" class="telemetry-empty">No telemetry events found for the selected filters.</td>';
         tbody.appendChild(emptyRow);
     } else {
-        events.forEach(function(ev) {
+        events.forEach(function (ev) {
             var row = document.createElement('tr');
             row.className = ev.error_code ? 'telemetry-row-error' : 'telemetry-row-ok';
 
@@ -10936,7 +10894,7 @@ function renderTelemetryStreamPanel() {
         loadMoreBtn.className = 'load-more-btn' + (state.agentsTelemetry.eventsLoading ? ' loading' : '');
         loadMoreBtn.disabled = state.agentsTelemetry.eventsLoading;
         loadMoreBtn.textContent = state.agentsTelemetry.eventsLoading ? 'Loading...' : 'Load More';
-        loadMoreBtn.onclick = function() {
+        loadMoreBtn.onclick = function () {
             loadMoreTelemetryEvents();
         };
 
@@ -11003,7 +10961,7 @@ function renderTelemetryRoutingPanel() {
     var stages = ['planner', 'worker', 'validator', 'operator', 'memory'];
     var policyData = policy ? policy.policy : recommended;
 
-    stages.forEach(function(stage) {
+    stages.forEach(function (stage) {
         var config = policyData ? policyData[stage] : null;
         var recConfig = recommended ? recommended[stage] : null;
         var row = document.createElement('tr');
@@ -11037,7 +10995,7 @@ function renderTelemetryRoutingPanel() {
     var refreshBtn = document.createElement('button');
     refreshBtn.className = 'btn btn-secondary';
     refreshBtn.textContent = 'Refresh';
-    refreshBtn.onclick = function() {
+    refreshBtn.onclick = function () {
         state.agentsTelemetry.policyFetched = false;
         fetchLLMRoutingPolicy();
     };
@@ -11121,12 +11079,12 @@ function renderVoiceLabView() {
     var tabBar = document.createElement('div');
     tabBar.className = 'voice-lab-tab-bar';
 
-    VOICE_LAB_TABS.forEach(function(tab) {
+    VOICE_LAB_TABS.forEach(function (tab) {
         var btn = document.createElement('button');
         btn.className = 'voice-lab-tab-btn' + (state.voiceLab.activeSubTab === tab.key ? ' active' : '');
         btn.textContent = tab.label;
         btn.setAttribute('data-tab', tab.key);
-        btn.addEventListener('click', function() {
+        btn.addEventListener('click', function () {
             state.voiceLab.activeSubTab = tab.key;
             history.pushState(null, '', tab.path);
             renderApp();
@@ -11288,7 +11246,7 @@ function renderVoiceLabExperimentsPanel() {
         { value: 'combined_v1', label: 'Combined v1 (all fixes)' }
     ];
     var experimentSelectHtml = '<label for="vl-experiment-id">Experiment</label><select id="vl-experiment-id">';
-    experimentOptions.forEach(function(opt) {
+    experimentOptions.forEach(function (opt) {
         experimentSelectHtml += '<option value="' + opt.value + '"' + (controls.experiment_id === opt.value ? ' selected' : '') + '>' + opt.label + '</option>';
     });
     experimentSelectHtml += '</select><p class="control-hint">Experiment label for telemetry grouping. Required for Metrics analysis.</p>';
@@ -11304,7 +11262,7 @@ function renderVoiceLabExperimentsPanel() {
         { value: 40, label: '40ms' }
     ];
     var chunkSelectHtml = '<label for="vl-chunk-ms">Audio Chunk Size</label><select id="vl-chunk-ms">';
-    chunkOptions.forEach(function(opt) {
+    chunkOptions.forEach(function (opt) {
         chunkSelectHtml += '<option value="' + opt.value + '"' + (controls.chunk_ms === opt.value ? ' selected' : '') + '>' + opt.label + '</option>';
     });
     chunkSelectHtml += '</select><p class="control-hint">Size of audio chunks sent to model. 20-40ms optimal for Gemini Live.</p>';
@@ -11333,7 +11291,7 @@ function renderVoiceLabExperimentsPanel() {
         { value: 100, label: '100ms' }
     ];
     var debounceSelectHtml = '<label for="vl-debounce-ms">Input Debounce</label><select id="vl-debounce-ms">';
-    debounceOptions.forEach(function(opt) {
+    debounceOptions.forEach(function (opt) {
         debounceSelectHtml += '<option value="' + opt.value + '"' + (controls.debounce_ms === opt.value ? ' selected' : '') + '>' + opt.label + '</option>';
     });
     debounceSelectHtml += '</select><p class="control-hint">Delay before processing audio input. Helps reduce fragmentation.</p>';
@@ -11349,7 +11307,7 @@ function renderVoiceLabExperimentsPanel() {
         { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' }
     ];
     var modelSelectHtml = '<label for="vl-model">Voice Model</label><select id="vl-model">';
-    modelOptions.forEach(function(opt) {
+    modelOptions.forEach(function (opt) {
         modelSelectHtml += '<option value="' + opt.value + '"' + (controls.model === opt.value ? ' selected' : '') + '>' + opt.label + '</option>';
     });
     modelSelectHtml += '</select><p class="control-hint">Model used for voice responses. Flash models offer lower latency.</p>';
@@ -11366,7 +11324,7 @@ function renderVoiceLabExperimentsPanel() {
     saveBtn.className = 'voice-lab-save-btn';
     saveBtn.textContent = state.voiceLab.runtimeControlsSaving ? 'Saving...' : 'Save Changes';
     saveBtn.disabled = state.voiceLab.runtimeControlsSaving;
-    saveBtn.addEventListener('click', function() {
+    saveBtn.addEventListener('click', function () {
         // Read values from form
         var newControls = {
             orb_live_enabled: document.getElementById('vl-orb-live-enabled').checked,
@@ -11383,7 +11341,7 @@ function renderVoiceLabExperimentsPanel() {
     var resetBtn = document.createElement('button');
     resetBtn.className = 'voice-lab-reset-btn';
     resetBtn.textContent = 'Reset to Defaults';
-    resetBtn.addEventListener('click', function() {
+    resetBtn.addEventListener('click', function () {
         state.voiceLab.runtimeControls = {
             orb_live_enabled: true,
             experiment_id: 'baseline',
@@ -11416,7 +11374,7 @@ function saveVoiceLabRuntimeControls(controls) {
     renderApp();
 
     // For now, just save to state (backend integration in future VTID)
-    setTimeout(function() {
+    setTimeout(function () {
         state.voiceLab.runtimeControls = controls;
         state.voiceLab.runtimeControlsSaving = false;
         // Store in localStorage for persistence
@@ -11482,7 +11440,7 @@ function renderVoiceLabOrbLivePanel() {
     var autoRefreshCheckbox = document.createElement('input');
     autoRefreshCheckbox.type = 'checkbox';
     autoRefreshCheckbox.checked = state.voiceLab.autoRefreshEnabled;
-    autoRefreshCheckbox.addEventListener('change', function() {
+    autoRefreshCheckbox.addEventListener('change', function () {
         state.voiceLab.autoRefreshEnabled = autoRefreshCheckbox.checked;
         if (autoRefreshCheckbox.checked) {
             startVoiceLabAutoRefresh();
@@ -11497,7 +11455,7 @@ function renderVoiceLabOrbLivePanel() {
     var refreshBtn = document.createElement('button');
     refreshBtn.className = 'voice-lab-refresh-btn';
     refreshBtn.textContent = 'Refresh';
-    refreshBtn.addEventListener('click', function() {
+    refreshBtn.addEventListener('click', function () {
         state.voiceLab.sessionsFetched = false;
         fetchVoiceLabSessions();
     });
@@ -11534,7 +11492,7 @@ function renderVoiceLabOrbLivePanel() {
         table.appendChild(thead);
 
         var tbody = document.createElement('tbody');
-        state.voiceLab.sessions.forEach(function(session) {
+        state.voiceLab.sessions.forEach(function (session) {
             var row = document.createElement('tr');
             row.className = session.connected ? 'session-active' : 'session-ended';
 
@@ -11581,7 +11539,7 @@ function renderVoiceLabOrbLivePanel() {
             viewBtn.className = 'voice-lab-view-btn';
             viewBtn.textContent = 'Details';
             viewBtn.setAttribute('data-session-id', session.sessionId);
-            viewBtn.addEventListener('click', function() {
+            viewBtn.addEventListener('click', function () {
                 state.voiceLab.selectedSession = session.sessionId;
                 fetchVoiceLabSessionDetails(session.sessionId);
             });
@@ -11621,7 +11579,7 @@ function renderVoiceLabSessionDrawer() {
     var closeBtn = document.createElement('button');
     closeBtn.className = 'voice-lab-drawer-close';
     closeBtn.textContent = '\u00D7';
-    closeBtn.addEventListener('click', function() {
+    closeBtn.addEventListener('click', function () {
         state.voiceLab.selectedSession = null;
         state.voiceLab.selectedSessionDetails = null;
         state.voiceLab.selectedSessionTurns = [];
@@ -11700,7 +11658,7 @@ function renderVoiceLabSessionDrawer() {
         turnsTable.appendChild(turnsHead);
 
         var turnsBody = document.createElement('tbody');
-        turns.forEach(function(turn) {
+        turns.forEach(function (turn) {
             var row = document.createElement('tr');
 
             var startTime = turn.started_at ? new Date(turn.started_at).toLocaleTimeString() : '-';
@@ -11759,13 +11717,13 @@ function fetchVoiceLabSessions() {
     renderApp();
 
     fetch('/api/v1/voice-lab/live/sessions')
-        .then(function(resp) {
+        .then(function (resp) {
             if (!resp.ok) throw new Error('Failed to fetch sessions');
             return resp.json();
         })
-        .then(function(data) {
+        .then(function (data) {
             // VTID-01218E: Map API response (snake_case) to frontend format (camelCase)
-            var sessions = (data.sessions || []).map(function(s) {
+            var sessions = (data.sessions || []).map(function (s) {
                 return {
                     sessionId: s.session_id,
                     connected: s.status === 'active',
@@ -11784,7 +11742,7 @@ function fetchVoiceLabSessions() {
             state.voiceLab.sessionsFetched = true;
             renderApp();
         })
-        .catch(function(err) {
+        .catch(function (err) {
             console.error('[VTID-01218E] Error fetching sessions:', err);
             state.voiceLab.sessions = [];
             state.voiceLab.sessionsLoading = false;
@@ -11805,27 +11763,27 @@ function fetchVoiceLabSessionDetails(sessionId) {
 
     // Fetch session details and turns in parallel
     Promise.all([
-        fetch('/api/v1/voice-lab/live/sessions/' + sessionId).then(function(r) { return r.json(); }),
-        fetch('/api/v1/voice-lab/live/sessions/' + sessionId + '/turns').then(function(r) { return r.json(); })
+        fetch('/api/v1/voice-lab/live/sessions/' + sessionId).then(function (r) { return r.json(); }),
+        fetch('/api/v1/voice-lab/live/sessions/' + sessionId + '/turns').then(function (r) { return r.json(); })
     ])
-    .then(function(results) {
-        var detailsResp = results[0];
-        var turnsResp = results[1];
+        .then(function (results) {
+            var detailsResp = results[0];
+            var turnsResp = results[1];
 
-        if (detailsResp.ok && detailsResp.session) {
-            state.voiceLab.selectedSessionDetails = detailsResp.session;
-        }
-        if (turnsResp.ok && turnsResp.turns) {
-            state.voiceLab.selectedSessionTurns = turnsResp.turns;
-        }
-        state.voiceLab.sessionDetailsLoading = false;
-        renderApp();
-    })
-    .catch(function(err) {
-        console.error('[VTID-01218B] Error fetching session details:', err);
-        state.voiceLab.sessionDetailsLoading = false;
-        renderApp();
-    });
+            if (detailsResp.ok && detailsResp.session) {
+                state.voiceLab.selectedSessionDetails = detailsResp.session;
+            }
+            if (turnsResp.ok && turnsResp.turns) {
+                state.voiceLab.selectedSessionTurns = turnsResp.turns;
+            }
+            state.voiceLab.sessionDetailsLoading = false;
+            renderApp();
+        })
+        .catch(function (err) {
+            console.error('[VTID-01218B] Error fetching session details:', err);
+            state.voiceLab.sessionDetailsLoading = false;
+            renderApp();
+        });
 }
 
 /**
@@ -11836,7 +11794,7 @@ function startVoiceLabAutoRefresh() {
         return; // Already running
     }
     console.log('[VTID-01218B] Starting auto-refresh (2s interval)');
-    state.voiceLab.autoRefreshIntervalId = setInterval(function() {
+    state.voiceLab.autoRefreshIntervalId = setInterval(function () {
         if (state.voiceLab.activeSubTab === 'orb-live' && state.voiceLab.autoRefreshEnabled) {
             fetchVoiceLabSessionsSilent();
         }
@@ -11859,12 +11817,12 @@ function stopVoiceLabAutoRefresh() {
  */
 function fetchVoiceLabSessionsSilent() {
     fetch('/api/v1/voice-lab/live/sessions')
-        .then(function(resp) {
+        .then(function (resp) {
             if (!resp.ok) throw new Error('Failed to fetch sessions');
             return resp.json();
         })
-        .then(function(data) {
-            var sessions = (data.sessions || []).map(function(s) {
+        .then(function (data) {
+            var sessions = (data.sessions || []).map(function (s) {
                 return {
                     sessionId: s.session_id,
                     connected: s.status === 'active',
@@ -11883,7 +11841,7 @@ function fetchVoiceLabSessionsSilent() {
             // Update DOM without full re-render to preserve scroll/focus
             updateVoiceLabSessionsTable();
         })
-        .catch(function(err) {
+        .catch(function (err) {
             console.error('[VTID-01218B] Silent fetch error:', err);
         });
 }
@@ -12445,7 +12403,7 @@ function getFilteredGovernanceEvaluations() {
     // Filter by result (allow/deny)
     if (state.governanceEvaluationsResultFilter) {
         var isAllow = state.governanceEvaluationsResultFilter === 'allow';
-        evals = evals.filter(function(ev) { return ev.allow === isAllow; });
+        evals = evals.filter(function (ev) { return ev.allow === isAllow; });
     }
 
     return evals;
@@ -12477,7 +12435,7 @@ function renderGovernanceEvaluationsView() {
         '<option value="allow">Allow</option>' +
         '<option value="deny">Deny</option>';
     resultSelect.value = state.governanceEvaluationsResultFilter || '';
-    resultSelect.onchange = function(e) {
+    resultSelect.onchange = function (e) {
         state.governanceEvaluationsResultFilter = e.target.value;
         renderApp();
     };
@@ -12545,7 +12503,7 @@ function renderGovernanceEvaluationsView() {
     var thead = document.createElement('thead');
     var headerRow = document.createElement('tr');
     var headers = ['Timestamp', 'Action', 'Service', 'Env', 'Result', 'Violated Rules'];
-    headers.forEach(function(headerText) {
+    headers.forEach(function (headerText) {
         var th = document.createElement('th');
         th.textContent = headerText;
         headerRow.appendChild(th);
@@ -12555,7 +12513,7 @@ function renderGovernanceEvaluationsView() {
 
     // Table body
     var tbody = document.createElement('tbody');
-    filteredEvals.forEach(function(evalItem) {
+    filteredEvals.forEach(function (evalItem) {
         var row = document.createElement('tr');
         row.className = 'gov-eval-row';
 
@@ -12595,14 +12553,14 @@ function renderGovernanceEvaluationsView() {
         var rulesTd = document.createElement('td');
         rulesTd.className = 'gov-eval-rules';
         if (evalItem.violated_rules && evalItem.violated_rules.length > 0) {
-            evalItem.violated_rules.forEach(function(rule) {
+            evalItem.violated_rules.forEach(function (rule) {
                 var chip = document.createElement('span');
                 chip.className = 'gov-rule-chip gov-rule-chip-' + rule.level.toLowerCase();
                 chip.innerHTML = '<span class="gov-rule-chip-id">' + escapeHtml(rule.rule_id) + '</span>' +
                     '<span class="gov-rule-chip-level">' + rule.level + '</span>';
                 chip.title = rule.domain + ' - ' + rule.level;
                 // VTID-0406: Click chip to open Rule Detail Drawer from VTID-0405
-                chip.onclick = function(e) {
+                chip.onclick = function (e) {
                     e.stopPropagation();
                     openRuleDetailByCode(rule.rule_id);
                 };
@@ -12647,7 +12605,7 @@ function formatEvalTimestamp(dateStr) {
  */
 function openRuleDetailByCode(ruleCode) {
     // Find the rule in the loaded governance rules
-    var rule = state.governanceRules.find(function(r) {
+    var rule = state.governanceRules.find(function (r) {
         return r.id === ruleCode;
     });
 
@@ -12657,8 +12615,8 @@ function openRuleDetailByCode(ruleCode) {
     } else {
         // If rules aren't loaded, fetch them first then try again
         console.log('[VTID-0406] Rule not in cache, fetching rules first:', ruleCode);
-        fetchGovernanceRules().then(function() {
-            var foundRule = state.governanceRules.find(function(r) {
+        fetchGovernanceRules().then(function () {
+            var foundRule = state.governanceRules.find(function (r) {
                 return r.id === ruleCode;
             });
             if (foundRule) {
@@ -12747,7 +12705,7 @@ function renderGovernanceHistoryView() {
         '<option value="governance.rule.created">Rule Created</option>' +
         '<option value="governance.rule.updated">Rule Updated</option>';
     typeSelect.value = state.governanceHistory.filters.type;
-    typeSelect.onchange = function(e) {
+    typeSelect.onchange = function (e) {
         state.governanceHistory.filters.type = e.target.value;
         state.governanceHistory.pagination.offset = 0;
         state.governanceHistory.fetched = false;
@@ -12767,7 +12725,7 @@ function renderGovernanceHistoryView() {
         '<option value="L3">L3</option>' +
         '<option value="L4">L4</option>';
     levelSelect.value = state.governanceHistory.filters.level;
-    levelSelect.onchange = function(e) {
+    levelSelect.onchange = function (e) {
         state.governanceHistory.filters.level = e.target.value;
         state.governanceHistory.pagination.offset = 0;
         state.governanceHistory.fetched = false;
@@ -12787,7 +12745,7 @@ function renderGovernanceHistoryView() {
         '<option value="validator">Validator</option>' +
         '<option value="system">System</option>';
     actorSelect.value = state.governanceHistory.filters.actor;
-    actorSelect.onchange = function(e) {
+    actorSelect.onchange = function (e) {
         state.governanceHistory.filters.actor = e.target.value;
         state.governanceHistory.pagination.offset = 0;
         state.governanceHistory.fetched = false;
@@ -12856,7 +12814,7 @@ function renderGovernanceHistoryView() {
     var thead = document.createElement('thead');
     var headerRow = document.createElement('tr');
     var headers = ['Timestamp', 'Type', 'Level', 'Actor', 'Summary', ''];
-    headers.forEach(function(headerText) {
+    headers.forEach(function (headerText) {
         var th = document.createElement('th');
         th.textContent = headerText;
         headerRow.appendChild(th);
@@ -12866,7 +12824,7 @@ function renderGovernanceHistoryView() {
 
     // Table body
     var tbody = document.createElement('tbody');
-    state.governanceHistory.items.forEach(function(event) {
+    state.governanceHistory.items.forEach(function (event) {
         var row = document.createElement('tr');
         row.className = 'gov-history-row';
         row.tabIndex = 0;
@@ -12924,11 +12882,11 @@ function renderGovernanceHistoryView() {
         row.appendChild(detailsTd);
 
         // Click handler to open drawer
-        row.onclick = function() {
+        row.onclick = function () {
             state.governanceHistory.selectedEvent = event;
             renderApp();
         };
-        row.onkeydown = function(e) {
+        row.onkeydown = function (e) {
             if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
                 state.governanceHistory.selectedEvent = event;
@@ -12947,7 +12905,7 @@ function renderGovernanceHistoryView() {
         var loadMoreBtn = document.createElement('button');
         loadMoreBtn.className = 'btn gov-history-load-more';
         loadMoreBtn.textContent = 'Load More';
-        loadMoreBtn.onclick = function() {
+        loadMoreBtn.onclick = function () {
             state.governanceHistory.pagination.offset += state.governanceHistory.pagination.limit;
             fetchGovernanceHistory();
         };
@@ -12981,7 +12939,7 @@ function renderGovernanceHistoryDrawer(event) {
     var closeBtn = document.createElement('button');
     closeBtn.className = 'drawer-close-btn';
     closeBtn.innerHTML = '×';
-    closeBtn.onclick = function() {
+    closeBtn.onclick = function () {
         state.governanceHistory.selectedEvent = null;
         renderApp();
     };
@@ -13037,13 +12995,13 @@ function renderGovernanceHistoryDrawer(event) {
         var rulesContainer = document.createElement('div');
         rulesContainer.className = 'gov-history-rules-chips';
 
-        event.details.violations.forEach(function(violation) {
+        event.details.violations.forEach(function (violation) {
             var chip = document.createElement('span');
             chip.className = 'gov-rule-chip gov-rule-chip-' + (violation.level || 'l2').toLowerCase();
             chip.innerHTML = '<span class="gov-rule-chip-id">' + escapeHtml(violation.rule_id) + '</span>' +
                 '<span class="gov-rule-chip-level">' + (violation.level || 'L2') + '</span>';
             chip.title = violation.message || 'Click to view rule details';
-            chip.onclick = function(e) {
+            chip.onclick = function (e) {
                 e.stopPropagation();
                 openRuleDetailByCode(violation.rule_id);
             };
@@ -13188,11 +13146,11 @@ function renderGovernanceCategoriesView() {
     leftColumn.className = 'gov-categories-list';
 
     var selectedId = state.governanceCategories.selectedCategoryId;
-    var selectedCategory = state.governanceCategories.items.find(function(c) {
+    var selectedCategory = state.governanceCategories.items.find(function (c) {
         return c.id === selectedId;
     }) || state.governanceCategories.items[0];
 
-    state.governanceCategories.items.forEach(function(cat) {
+    state.governanceCategories.items.forEach(function (cat) {
         var catBtn = document.createElement('button');
         catBtn.className = 'gov-category-item' + (cat.id === selectedCategory.id ? ' selected' : '');
         catBtn.setAttribute('role', 'option');
@@ -13222,7 +13180,7 @@ function renderGovernanceCategoriesView() {
 
         catBtn.appendChild(metaDiv);
 
-        catBtn.onclick = function() {
+        catBtn.onclick = function () {
             state.governanceCategories.selectedCategoryId = cat.id;
             renderApp();
         };
@@ -13274,7 +13232,7 @@ function renderGovernanceCategoriesView() {
 
         // Table body
         var tbody = document.createElement('tbody');
-        selectedCategory.rules.forEach(function(rule) {
+        selectedCategory.rules.forEach(function (rule) {
             var row = document.createElement('tr');
             row.className = 'gov-category-rule-row';
             row.tabIndex = 0;
@@ -13318,10 +13276,10 @@ function renderGovernanceCategoriesView() {
             row.appendChild(chevronCell);
 
             // Click handler to open rule drawer
-            row.onclick = function() {
+            row.onclick = function () {
                 openRuleDetailByCode(rule.rule_id);
             };
-            row.onkeydown = function(e) {
+            row.onkeydown = function (e) {
                 if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
                     openRuleDetailByCode(rule.rule_id);
@@ -13503,7 +13461,7 @@ function formatControlKey(key) {
     var keyMap = {
         'vtid_allocator_enabled': 'VTID Allocator'
     };
-    return keyMap[key] || key.replace(/_/g, ' ').replace(/\b\w/g, function(l) { return l.toUpperCase(); });
+    return keyMap[key] || key.replace(/_/g, ' ').replace(/\b\w/g, function (l) { return l.toUpperCase(); });
 }
 
 /**
@@ -13586,7 +13544,7 @@ function renderGovernanceControlsView() {
     var cardsContainer = document.createElement('div');
     cardsContainer.className = 'gov-controls-cards';
 
-    state.governanceControls.items.forEach(function(control) {
+    state.governanceControls.items.forEach(function (control) {
         var card = renderControlCard(control);
         cardsContainer.appendChild(card);
     });
@@ -13685,7 +13643,7 @@ function renderControlCard(control) {
     var toggleBtn = document.createElement('button');
     toggleBtn.className = 'gov-control-toggle-btn ' + (effectiveEnabled ? 'btn-disable' : 'btn-enable');
     toggleBtn.textContent = effectiveEnabled ? 'Disable' : 'Enable';
-    toggleBtn.onclick = function() {
+    toggleBtn.onclick = function () {
         state.governanceControls.selectedControlKey = control.key;
         if (effectiveEnabled) {
             state.governanceControls.showDisableModal = true;
@@ -13700,7 +13658,7 @@ function renderControlCard(control) {
     var historyLink = document.createElement('button');
     historyLink.className = 'gov-control-history-link';
     historyLink.textContent = 'View history';
-    historyLink.onclick = function() {
+    historyLink.onclick = function () {
         state.governanceControls.selectedControlKey = control.key;
         state.governanceControls.showHistoryDrawer = true;
         fetchControlHistory(control.key);
@@ -13718,7 +13676,7 @@ function renderControlCard(control) {
 function renderEnableModal() {
     var overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
-    overlay.onclick = function(e) {
+    overlay.onclick = function (e) {
         if (e.target === overlay) {
             state.governanceControls.showEnableModal = false;
             renderApp();
@@ -13752,7 +13710,7 @@ function renderEnableModal() {
     reasonInput.className = 'gov-control-modal-textarea';
     reasonInput.placeholder = 'Why are you enabling this control?';
     reasonInput.value = state.governanceControls.enableReason;
-    reasonInput.oninput = function(e) {
+    reasonInput.oninput = function (e) {
         state.governanceControls.enableReason = e.target.value;
     };
     modalBody.appendChild(reasonInput);
@@ -13773,14 +13731,14 @@ function renderEnableModal() {
         { value: 480, label: '8 hours' },
         { value: 1440, label: '24 hours' }
     ];
-    durations.forEach(function(d) {
+    durations.forEach(function (d) {
         var opt = document.createElement('option');
         opt.value = d.value;
         opt.textContent = d.label;
         opt.selected = d.value === state.governanceControls.enableDuration;
         durationSelect.appendChild(opt);
     });
-    durationSelect.onchange = function(e) {
+    durationSelect.onchange = function (e) {
         state.governanceControls.enableDuration = parseInt(e.target.value, 10);
     };
     modalBody.appendChild(durationSelect);
@@ -13802,7 +13760,7 @@ function renderEnableModal() {
     var cancelBtn = document.createElement('button');
     cancelBtn.className = 'gov-control-modal-cancel';
     cancelBtn.textContent = 'Cancel';
-    cancelBtn.onclick = function() {
+    cancelBtn.onclick = function () {
         state.governanceControls.showEnableModal = false;
         state.governanceControls.enableReason = '';
         state.governanceControls.actionError = null;
@@ -13814,7 +13772,7 @@ function renderEnableModal() {
     confirmBtn.className = 'gov-control-modal-confirm btn-enable';
     confirmBtn.textContent = state.governanceControls.actionLoading ? 'Enabling...' : 'Confirm Enable';
     confirmBtn.disabled = state.governanceControls.actionLoading || !state.governanceControls.enableReason.trim();
-    confirmBtn.onclick = function() {
+    confirmBtn.onclick = function () {
         if (state.governanceControls.enableReason.trim()) {
             enableControl(
                 state.governanceControls.selectedControlKey,
@@ -13837,7 +13795,7 @@ function renderEnableModal() {
 function renderDisableModal() {
     var overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
-    overlay.onclick = function(e) {
+    overlay.onclick = function (e) {
         if (e.target === overlay) {
             state.governanceControls.showDisableModal = false;
             renderApp();
@@ -13865,7 +13823,7 @@ function renderDisableModal() {
     reasonInput.className = 'gov-control-modal-textarea';
     reasonInput.placeholder = 'Why are you disabling this control?';
     reasonInput.value = state.governanceControls.disableReason;
-    reasonInput.oninput = function(e) {
+    reasonInput.oninput = function (e) {
         state.governanceControls.disableReason = e.target.value;
     };
     modalBody.appendChild(reasonInput);
@@ -13887,7 +13845,7 @@ function renderDisableModal() {
     var cancelBtn = document.createElement('button');
     cancelBtn.className = 'gov-control-modal-cancel';
     cancelBtn.textContent = 'Cancel';
-    cancelBtn.onclick = function() {
+    cancelBtn.onclick = function () {
         state.governanceControls.showDisableModal = false;
         state.governanceControls.disableReason = '';
         state.governanceControls.actionError = null;
@@ -13899,7 +13857,7 @@ function renderDisableModal() {
     confirmBtn.className = 'gov-control-modal-confirm btn-disable';
     confirmBtn.textContent = state.governanceControls.actionLoading ? 'Disabling...' : 'Confirm Disable';
     confirmBtn.disabled = state.governanceControls.actionLoading || !state.governanceControls.disableReason.trim();
-    confirmBtn.onclick = function() {
+    confirmBtn.onclick = function () {
         if (state.governanceControls.disableReason.trim()) {
             disableControl(
                 state.governanceControls.selectedControlKey,
@@ -13921,7 +13879,7 @@ function renderDisableModal() {
 function renderControlHistoryDrawer() {
     var overlay = document.createElement('div');
     overlay.className = 'drawer-overlay';
-    overlay.onclick = function(e) {
+    overlay.onclick = function (e) {
         if (e.target === overlay) {
             state.governanceControls.showHistoryDrawer = false;
             renderApp();
@@ -13942,7 +13900,7 @@ function renderControlHistoryDrawer() {
     var closeBtn = document.createElement('button');
     closeBtn.className = 'drawer-close-btn';
     closeBtn.innerHTML = '&#x2715;';
-    closeBtn.onclick = function() {
+    closeBtn.onclick = function () {
         state.governanceControls.showHistoryDrawer = false;
         renderApp();
     };
@@ -13973,7 +13931,7 @@ function renderControlHistoryDrawer() {
         var timeline = document.createElement('div');
         timeline.className = 'gov-control-history-timeline';
 
-        state.governanceControls.historyItems.forEach(function(item) {
+        state.governanceControls.historyItems.forEach(function (item) {
             var entry = document.createElement('div');
             entry.className = 'gov-control-history-entry';
 
@@ -14121,7 +14079,7 @@ function renderOasisEventsView() {
         '<option value="autopilot">Autopilot</option>' +
         '<option value="operator">Operator</option>';
     topicFilter.value = state.oasisEvents.filters.topic || '';
-    topicFilter.onchange = function(e) {
+    topicFilter.onchange = function (e) {
         state.oasisEvents.filters.topic = e.target.value;
         handleOasisFilterChange();
     };
@@ -14137,7 +14095,7 @@ function renderOasisEventsView() {
         '<option value="info">Info</option>' +
         '<option value="warning">Warning</option>';
     statusFilter.value = state.oasisEvents.filters.status || '';
-    statusFilter.onchange = function(e) {
+    statusFilter.onchange = function (e) {
         state.oasisEvents.filters.status = e.target.value;
         handleOasisFilterChange();
     };
@@ -14172,7 +14130,7 @@ function renderOasisEventsView() {
         // Sticky header
         var thead = document.createElement('thead');
         var headerRow = document.createElement('tr');
-        ['Severity', 'Timestamp', 'Topic', 'VTID', 'Service', 'Status', 'Message'].forEach(function(header) {
+        ['Severity', 'Timestamp', 'Topic', 'VTID', 'Service', 'Status', 'Message'].forEach(function (header) {
             var th = document.createElement('th');
             th.textContent = header;
             headerRow.appendChild(th);
@@ -14182,12 +14140,12 @@ function renderOasisEventsView() {
 
         // Body
         var tbody = document.createElement('tbody');
-        state.oasisEvents.items.forEach(function(event) {
+        state.oasisEvents.items.forEach(function (event) {
             var row = document.createElement('tr');
             row.className = 'oasis-event-row clickable-row';
             var severity = getEventSeverity(event);
             row.dataset.severity = severity;
-            row.onclick = function() {
+            row.onclick = function () {
                 state.oasisEvents.selectedEvent = event;
                 renderApp();
             };
@@ -14251,7 +14209,7 @@ function renderOasisEventsView() {
             loadMoreBtn.className = 'load-more-btn' + (state.oasisEvents.loading ? ' loading' : '');
             loadMoreBtn.disabled = state.oasisEvents.loading;
             loadMoreBtn.textContent = state.oasisEvents.loading ? 'Loading...' : 'Load More';
-            loadMoreBtn.onclick = function() {
+            loadMoreBtn.onclick = function () {
                 loadMoreOasisEvents();
             };
             loadMoreContainer.appendChild(loadMoreBtn);
@@ -14275,8 +14233,8 @@ function fetchOrbSessionTranscript(orbSessionId) {
     renderApp();
 
     fetch('/api/v1/orb/session/' + orbSessionId)
-        .then(function(res) { return res.json(); })
-        .then(function(data) {
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
             state.oasisEvents.orbTranscriptLoading = false;
             if (data.ok) {
                 state.oasisEvents.orbTranscript = data;
@@ -14285,7 +14243,7 @@ function fetchOrbSessionTranscript(orbSessionId) {
             }
             renderApp();
         })
-        .catch(function(err) {
+        .catch(function (err) {
             state.oasisEvents.orbTranscriptLoading = false;
             state.oasisEvents.orbTranscriptError = err.message || 'Network error';
             renderApp();
@@ -14327,7 +14285,7 @@ function renderOasisEventDrawer() {
     var closeBtn = document.createElement('button');
     closeBtn.className = 'drawer-close-btn';
     closeBtn.innerHTML = '&times;';
-    closeBtn.onclick = function() {
+    closeBtn.onclick = function () {
         state.oasisEvents.selectedEvent = null;
         state.oasisEvents.orbTranscript = null;
         state.oasisEvents.orbTranscriptError = null;
@@ -14374,7 +14332,7 @@ function renderOasisEventDrawer() {
                 var bulletsDiv = document.createElement('div');
                 bulletsDiv.className = 'orb-summary-bullets';
                 var bulletsList = document.createElement('ul');
-                summary.bullets.forEach(function(bullet) {
+                summary.bullets.forEach(function (bullet) {
                     var li = document.createElement('li');
                     li.textContent = bullet;
                     bulletsList.appendChild(li);
@@ -14391,7 +14349,7 @@ function renderOasisEventDrawer() {
                 actionsTitle.textContent = 'Suggested Actions:';
                 actionsDiv.appendChild(actionsTitle);
                 var actionsList = document.createElement('ul');
-                summary.actions.forEach(function(action) {
+                summary.actions.forEach(function (action) {
                     var li = document.createElement('li');
                     li.textContent = action;
                     actionsList.appendChild(li);
@@ -14429,7 +14387,7 @@ function renderOasisEventDrawer() {
             var turnsContainer = document.createElement('div');
             turnsContainer.className = 'orb-transcript-turns';
 
-            state.oasisEvents.orbTranscript.turns.forEach(function(turn) {
+            state.oasisEvents.orbTranscript.turns.forEach(function (turn) {
                 var turnDiv = document.createElement('div');
                 turnDiv.className = 'orb-transcript-turn orb-transcript-turn-' + turn.role;
 
@@ -14488,7 +14446,7 @@ function renderOasisEventDrawer() {
             { label: 'Message', value: event.message }
         ];
 
-        fields.forEach(function(field) {
+        fields.forEach(function (field) {
             if (field.value) {
                 var row = document.createElement('div');
                 row.className = 'drawer-field';
@@ -14572,7 +14530,7 @@ function renderCommandHubEventsView() {
         '<option value="autopilot">Autopilot</option>' +
         '<option value="operator">Operator</option>';
     topicFilter.value = state.commandHubEvents.filters.topic || '';
-    topicFilter.onchange = function(e) {
+    topicFilter.onchange = function (e) {
         state.commandHubEvents.filters.topic = e.target.value;
         fetchCommandHubEvents();
     };
@@ -14587,7 +14545,7 @@ function renderCommandHubEventsView() {
         '<option value="error">Error/Blocked</option>' +
         '<option value="info">Info</option>';
     statusFilter.value = state.commandHubEvents.filters.status || '';
-    statusFilter.onchange = function(e) {
+    statusFilter.onchange = function (e) {
         state.commandHubEvents.filters.status = e.target.value;
         fetchCommandHubEvents();
     };
@@ -14621,7 +14579,7 @@ function renderCommandHubEventsView() {
 
         var thead = document.createElement('thead');
         var headerRow = document.createElement('tr');
-        ['Priority', 'Time', 'Type', 'VTID', 'Status', 'Summary'].forEach(function(h) {
+        ['Priority', 'Time', 'Type', 'VTID', 'Status', 'Summary'].forEach(function (h) {
             var th = document.createElement('th');
             th.textContent = h;
             headerRow.appendChild(th);
@@ -14630,7 +14588,7 @@ function renderCommandHubEventsView() {
         table.appendChild(thead);
 
         var tbody = document.createElement('tbody');
-        state.commandHubEvents.items.forEach(function(event) {
+        state.commandHubEvents.items.forEach(function (event) {
             var row = document.createElement('tr');
             var severity = getEventSeverity(event);
             row.className = 'command-hub-event-row severity-row-' + severity;
@@ -14699,7 +14657,7 @@ function renderVtidLedgerTable(items) {
     // Header row with required columns
     var thead = document.createElement('thead');
     var headerRow = document.createElement('tr');
-    ['VTID', 'Task Family', 'Module', 'Title', 'Status', 'Created', 'Last Event'].forEach(function(h) {
+    ['VTID', 'Task Family', 'Module', 'Title', 'Status', 'Created', 'Last Event'].forEach(function (h) {
         var th = document.createElement('th');
         th.textContent = h;
         headerRow.appendChild(th);
@@ -14709,7 +14667,7 @@ function renderVtidLedgerTable(items) {
 
     // Body rows
     var tbody = document.createElement('tbody');
-    items.forEach(function(item) {
+    items.forEach(function (item) {
         var row = document.createElement('tr');
         row.className = 'vtid-row';
 
@@ -14779,7 +14737,7 @@ function renderVtidProjectionTable(items) {
     // Header row with 5 decision-grade columns
     var thead = document.createElement('thead');
     var headerRow = document.createElement('tr');
-    ['VTID', 'Title', 'Stage', 'Status', 'Attention'].forEach(function(h) {
+    ['VTID', 'Title', 'Stage', 'Status', 'Attention'].forEach(function (h) {
         var th = document.createElement('th');
         th.textContent = h;
         headerRow.appendChild(th);
@@ -14790,7 +14748,7 @@ function renderVtidProjectionTable(items) {
     // Body rows
     // VTID-01030: Try/catch per-row to prevent one bad VTID from crashing table
     var tbody = document.createElement('tbody');
-    items.forEach(function(item) {
+    items.forEach(function (item) {
         try {
             // VTID-01030: Skip null/undefined items
             if (!item) {
@@ -14934,7 +14892,7 @@ function renderVtidsView() {
             loadMoreBtn.className = 'load-more-btn' + (state.vtidProjection.loading ? ' loading' : '');
             loadMoreBtn.disabled = state.vtidProjection.loading;
             loadMoreBtn.textContent = state.vtidProjection.loading ? 'Loading...' : 'Load More';
-            loadMoreBtn.onclick = function() {
+            loadMoreBtn.onclick = function () {
                 loadMoreVtidProjection();
             };
 
@@ -14991,7 +14949,7 @@ async function fetchOasisVtidDetail(vtid) {
         if (eventsResp.ok) {
             var eventsData = await eventsResp.json();
             oasisVtidDetail.events = Array.isArray(eventsData) ? eventsData :
-                                     (eventsData.data ? eventsData.data : []);
+                (eventsData.data ? eventsData.data : []);
         } else {
             oasisVtidDetail.events = [];
         }
@@ -15023,7 +14981,7 @@ function renderOasisLedgerTableWithDrilldown(items) {
     // Header row
     var thead = document.createElement('thead');
     var headerRow = document.createElement('tr');
-    ['VTID', 'Title', 'Stage', 'Status', 'Attention', 'Last Update'].forEach(function(h) {
+    ['VTID', 'Title', 'Stage', 'Status', 'Attention', 'Last Update'].forEach(function (h) {
         var th = document.createElement('th');
         th.textContent = h;
         headerRow.appendChild(th);
@@ -15034,7 +14992,7 @@ function renderOasisLedgerTableWithDrilldown(items) {
     // Body rows
     // VTID-01030: Try/catch per-row to prevent one bad VTID from crashing table
     var tbody = document.createElement('tbody');
-    items.forEach(function(item) {
+    items.forEach(function (item) {
         try {
             // VTID-01030: Skip null/undefined items
             if (!item) {
@@ -15049,7 +15007,7 @@ function renderOasisLedgerTableWithDrilldown(items) {
             }
 
             // Click to show drilldown
-            row.onclick = function() {
+            row.onclick = function () {
                 fetchOasisVtidDetail(item.vtid);
             };
 
@@ -15144,7 +15102,7 @@ function renderOasisVtidDetailPanel() {
     var header = document.createElement('div');
     header.className = 'detail-header';
     header.innerHTML = '<h3>' + (data.vtid || 'Unknown VTID') + '</h3>' +
-                       '<span class="detail-title">' + (data.title || data.summary || '—') + '</span>';
+        '<span class="detail-title">' + (data.title || data.summary || '—') + '</span>';
     panel.appendChild(header);
 
     // Lifecycle & Timestamps section
@@ -15167,11 +15125,11 @@ function renderOasisVtidDetailPanel() {
         timelineSection.innerHTML = '<h4>Stage Timeline</h4>';
         var timelineGrid = document.createElement('div');
         timelineGrid.className = 'stage-timeline-grid';
-        data.stageTimeline.forEach(function(stage) {
+        data.stageTimeline.forEach(function (stage) {
             var stageItem = document.createElement('div');
             stageItem.className = 'stage-item stage-' + (stage.status || 'pending').toLowerCase();
             stageItem.innerHTML = '<span class="stage-name">' + stage.stage + '</span>' +
-                                  '<span class="stage-status">' + (stage.status || 'PENDING') + '</span>';
+                '<span class="stage-status">' + (stage.status || 'PENDING') + '</span>';
             timelineGrid.appendChild(stageItem);
         });
         timelineSection.appendChild(timelineGrid);
@@ -15188,7 +15146,7 @@ function renderOasisVtidDetailPanel() {
     } else {
         var eventsList = document.createElement('div');
         eventsList.className = 'events-list';
-        oasisVtidDetail.events.slice(0, 20).forEach(function(event) {
+        oasisVtidDetail.events.slice(0, 20).forEach(function (event) {
             var eventItem = document.createElement('div');
             eventItem.className = 'event-item event-' + (event.status || 'info').toLowerCase();
             eventItem.innerHTML =
@@ -15204,9 +15162,9 @@ function renderOasisVtidDetailPanel() {
     panel.appendChild(eventsSection);
 
     // Governance Decisions section (if any governance events)
-    var governanceEvents = oasisVtidDetail.events.filter(function(e) {
+    var governanceEvents = oasisVtidDetail.events.filter(function (e) {
         return (e.type || e.topic || '').toLowerCase().includes('governance') ||
-               (e.message || '').toLowerCase().includes('governance');
+            (e.message || '').toLowerCase().includes('governance');
     });
     if (governanceEvents.length > 0) {
         var governanceSection = document.createElement('div');
@@ -15214,7 +15172,7 @@ function renderOasisVtidDetailPanel() {
         governanceSection.innerHTML = '<h4>Governance Decisions</h4>';
         var govList = document.createElement('div');
         govList.className = 'governance-list';
-        governanceEvents.forEach(function(event) {
+        governanceEvents.forEach(function (event) {
             var govItem = document.createElement('div');
             govItem.className = 'governance-item';
             govItem.innerHTML =
@@ -15300,13 +15258,13 @@ function renderOasisVtidLedgerView() {
 
         // Body
         var tbody = document.createElement('tbody');
-        state.vtidProjection.items.forEach(function(item) {
+        state.vtidProjection.items.forEach(function (item) {
             var row = document.createElement('tr');
             row.className = 'vtid-ledger-row clickable-row';
             if (oasisVtidDetail.selectedVtid === item.vtid) {
                 row.classList.add('selected');
             }
-            row.onclick = function() {
+            row.onclick = function () {
                 fetchOasisVtidDetail(item.vtid);
             };
 
@@ -15364,7 +15322,7 @@ function renderOasisVtidLedgerView() {
             loadMoreBtn.className = 'load-more-btn' + (state.vtidProjection.loading ? ' loading' : '');
             loadMoreBtn.disabled = state.vtidProjection.loading;
             loadMoreBtn.textContent = state.vtidProjection.loading ? 'Loading...' : 'Load More';
-            loadMoreBtn.onclick = function(e) {
+            loadMoreBtn.onclick = function (e) {
                 e.preventDefault();
                 loadMoreVtidProjection();
             };
@@ -15399,7 +15357,7 @@ function renderOasisVtidLedgerDrawer() {
     var closeBtn = document.createElement('button');
     closeBtn.className = 'drawer-close-btn';
     closeBtn.innerHTML = '&times;';
-    closeBtn.onclick = function() {
+    closeBtn.onclick = function () {
         oasisVtidDetail.selectedVtid = null;
         oasisVtidDetail.data = null;
         oasisVtidDetail.events = [];
@@ -15448,11 +15406,11 @@ function renderOasisVtidLedgerDrawer() {
             timelineSection.innerHTML = '<h4>Stage Timeline</h4>';
             var timelineDiv = document.createElement('div');
             timelineDiv.className = 'stage-timeline';
-            data.stageTimeline.forEach(function(stage) {
+            data.stageTimeline.forEach(function (stage) {
                 var stageItem = document.createElement('div');
                 stageItem.className = 'stage-item stage-' + (stage.status || 'pending').toLowerCase();
                 stageItem.innerHTML = '<span class="stage-name">' + stage.stage + '</span>' +
-                                      '<span class="stage-status">' + (stage.status || 'PENDING') + '</span>';
+                    '<span class="stage-status">' + (stage.status || 'PENDING') + '</span>';
                 timelineDiv.appendChild(stageItem);
             });
             timelineSection.appendChild(timelineDiv);
@@ -15469,7 +15427,7 @@ function renderOasisVtidLedgerDrawer() {
         } else {
             var eventsList = document.createElement('div');
             eventsList.className = 'events-list';
-            oasisVtidDetail.events.slice(0, 20).forEach(function(event) {
+            oasisVtidDetail.events.slice(0, 20).forEach(function (event) {
                 var eventItem = document.createElement('div');
                 eventItem.className = 'event-item';
                 eventItem.innerHTML = '<div class="event-topic">' + (event.topic || '-') + '</div>' +
@@ -15600,7 +15558,7 @@ async function fetchMemoryGardenProgress() {
 
         // Merge with fallback to ensure all categories have descriptions
         if (data.categories) {
-            Object.keys(fallbackData.categories).forEach(function(key) {
+            Object.keys(fallbackData.categories).forEach(function (key) {
                 if (data.categories[key]) {
                     data.categories[key].description = data.categories[key].description || fallbackData.categories[key].description;
                 } else {
@@ -15730,6 +15688,227 @@ async function refreshMemoryGarden() {
 }
 
 /**
+ * VTID-01225: Fetch actual memory items for a specific garden category
+ * Calls GET /api/v1/memory/context/trusted with category filter
+ */
+async function fetchCategoryMemories(categoryKey) {
+    if (state.memoryGarden.categoryMemoriesLoading) return;
+
+    state.memoryGarden.categoryMemoriesLoading = true;
+    state.memoryGarden.categoryMemoriesError = null;
+    state.memoryGarden.categoryMemories = [];
+    renderApp();
+
+    // Map garden categories back to source category keys for the API
+    var categoryApiMap = {
+        personal_identity: 'notes,personal',
+        health_wellness: 'health',
+        lifestyle_routines: 'preferences',
+        network_relationships: 'relationships,community,events_meetups',
+        learning_knowledge: 'notes',
+        business_projects: 'tasks',
+        finance_assets: 'products_services',
+        location_environment: 'notes',
+        digital_footprint: 'notes',
+        values_aspirations: 'goals',
+        autopilot_context: 'conversation',
+        future_plans: 'goals',
+        uncategorized: 'conversation,notes'
+    };
+
+    var apiCategories = categoryApiMap[categoryKey] || categoryKey;
+
+    try {
+        var token = state.authToken;
+        if (!token) {
+            state.memoryGarden.categoryMemoriesLoading = false;
+            state.memoryGarden.categoryMemoriesError = 'Not authenticated';
+            renderApp();
+            return;
+        }
+
+        var controller = new AbortController();
+        var timeoutId = setTimeout(function () { controller.abort(); }, 8000);
+
+        var response = await fetch(
+            '/api/v1/memory/context/trusted?categories=' + encodeURIComponent(apiCategories) +
+            '&min_confidence=10&limit=50&include_low_confidence=true',
+            {
+                method: 'GET',
+                headers: {
+                    'Authorization': 'Bearer ' + token,
+                    'Content-Type': 'application/json'
+                },
+                signal: controller.signal
+            }
+        );
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            // Fallback: try the basic context endpoint
+            var fallbackResponse = await fetch(
+                '/api/v1/memory/context?categories=' + encodeURIComponent(apiCategories) + '&limit=50',
+                {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': 'Bearer ' + token,
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
+
+            if (fallbackResponse.ok) {
+                var fallbackData = await fallbackResponse.json();
+                state.memoryGarden.categoryMemories = fallbackData.items || [];
+            } else {
+                throw new Error('Failed to fetch memories');
+            }
+        } else {
+            var data = await response.json();
+            state.memoryGarden.categoryMemories = data.items || [];
+        }
+
+        console.log('[VTID-01225] Fetched ' + state.memoryGarden.categoryMemories.length + ' memories for ' + categoryKey);
+    } catch (err) {
+        console.error('[VTID-01225] Error fetching category memories:', err);
+        state.memoryGarden.categoryMemoriesError = err.message || 'Failed to load memories';
+    }
+
+    state.memoryGarden.categoryMemoriesLoading = false;
+    renderApp();
+}
+
+/**
+ * VTID-01225: Fetch structured facts from Memory Garden summary
+ */
+async function fetchMemoryFacts() {
+    if (state.memoryGarden.factsLoading || state.memoryGarden.factsFetched) return;
+
+    state.memoryGarden.factsLoading = true;
+
+    try {
+        var token = state.authToken;
+        if (!token) {
+            state.memoryGarden.factsLoading = false;
+            return;
+        }
+
+        var controller = new AbortController();
+        var timeoutId = setTimeout(function () { controller.abort(); }, 5000);
+
+        var response = await fetch('/api/v1/memory/garden/summary', {
+            method: 'GET',
+            headers: {
+                'Authorization': 'Bearer ' + token,
+                'Content-Type': 'application/json'
+            },
+            signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+            var data = await response.json();
+            state.memoryGarden.facts = data;
+            console.log('[VTID-01225] Memory facts fetched');
+        }
+    } catch (err) {
+        console.warn('[VTID-01225] Facts fetch failed:', err.message);
+    }
+
+    state.memoryGarden.factsLoading = false;
+    state.memoryGarden.factsFetched = true;
+    renderApp();
+}
+
+/**
+ * VTID-01225: Fetch relationship graph (nodes + edges)
+ */
+async function fetchRelationshipGraph() {
+    if (state.memoryGarden.relationshipsLoading || state.memoryGarden.relationshipsFetched) return;
+
+    state.memoryGarden.relationshipsLoading = true;
+
+    try {
+        var token = state.authToken;
+        if (!token) {
+            state.memoryGarden.relationshipsLoading = false;
+            return;
+        }
+
+        var controller = new AbortController();
+        var timeoutId = setTimeout(function () { controller.abort(); }, 5000);
+
+        var response = await fetch('/api/v1/relationships/graph?limit=50', {
+            method: 'GET',
+            headers: {
+                'Authorization': 'Bearer ' + token,
+                'Content-Type': 'application/json'
+            },
+            signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+            var data = await response.json();
+            state.memoryGarden.relationships = data;
+            console.log('[VTID-01225] Relationship graph fetched: ' + (data.nodes?.length || 0) + ' nodes, ' + (data.edges?.length || 0) + ' edges');
+        }
+    } catch (err) {
+        console.warn('[VTID-01225] Relationships fetch failed:', err.message);
+    }
+
+    state.memoryGarden.relationshipsLoading = false;
+    state.memoryGarden.relationshipsFetched = true;
+    renderApp();
+}
+
+/**
+ * VTID-01225: Fetch behavioral signals
+ */
+async function fetchBehavioralSignals() {
+    if (state.memoryGarden.signalsLoading || state.memoryGarden.signalsFetched) return;
+
+    state.memoryGarden.signalsLoading = true;
+
+    try {
+        var token = state.authToken;
+        if (!token) {
+            state.memoryGarden.signalsLoading = false;
+            return;
+        }
+
+        var controller = new AbortController();
+        var timeoutId = setTimeout(function () { controller.abort(); }, 5000);
+
+        var response = await fetch('/api/v1/relationships/signals?min_confidence=20', {
+            method: 'GET',
+            headers: {
+                'Authorization': 'Bearer ' + token,
+                'Content-Type': 'application/json'
+            },
+            signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+            var data = await response.json();
+            state.memoryGarden.signals = data.signals || [];
+            console.log('[VTID-01225] Behavioral signals fetched: ' + state.memoryGarden.signals.length);
+        }
+    } catch (err) {
+        console.warn('[VTID-01225] Signals fetch failed:', err.message);
+    }
+
+    state.memoryGarden.signalsLoading = false;
+    state.memoryGarden.signalsFetched = true;
+    renderApp();
+}
+
+/**
  * VTID-01086: Render the Memory Garden view
  */
 function renderMemoryGardenView() {
@@ -15742,6 +15921,16 @@ function renderMemoryGardenView() {
     }
     if (!state.memoryGarden.longevityFetched && !state.memoryGarden.longevityLoading) {
         fetchLongevitySummary();
+    }
+    // VTID-01225: Auto-fetch unified intelligence data
+    if (!state.memoryGarden.factsFetched && !state.memoryGarden.factsLoading) {
+        fetchMemoryFacts();
+    }
+    if (!state.memoryGarden.relationshipsFetched && !state.memoryGarden.relationshipsLoading) {
+        fetchRelationshipGraph();
+    }
+    if (!state.memoryGarden.signalsFetched && !state.memoryGarden.signalsLoading) {
+        fetchBehavioralSignals();
     }
 
     // Header with title and actions
@@ -15771,7 +15960,7 @@ function renderMemoryGardenView() {
     var addDiaryBtn = document.createElement('button');
     addDiaryBtn.className = 'btn btn-primary';
     addDiaryBtn.textContent = '+ Add Diary Entry';
-    addDiaryBtn.onclick = function() {
+    addDiaryBtn.onclick = function () {
         state.memoryGarden.showDiaryModal = true;
         renderApp();
     };
@@ -15807,6 +15996,9 @@ function renderMemoryGardenView() {
     // Longevity Focus Today panel (first row)
     mainContent.appendChild(renderLongevityFocusPanel());
 
+    // VTID-01225: Unified Intelligence Summary (facts + relationships + signals)
+    mainContent.appendChild(renderUnifiedIntelligencePanel());
+
     // Category cards grid
     var grid = document.createElement('div');
     grid.className = 'memory-garden-grid';
@@ -15818,7 +16010,7 @@ function renderMemoryGardenView() {
         'digital_footprint', 'values_aspirations', 'autopilot_context', 'future_plans', 'uncategorized'
     ];
 
-    categoryOrder.forEach(function(key) {
+    categoryOrder.forEach(function (key) {
         var cat = categories[key];
         if (cat) {
             grid.appendChild(renderMemoryGardenCard(key, cat));
@@ -15990,7 +16182,7 @@ function renderMemoryGardenCard(key, category) {
     card.dataset.category = key;
 
     // Click handler to open category detail modal
-    card.onclick = function() {
+    card.onclick = function () {
         state.memoryGarden.selectedCategory = key;
         state.memoryGarden.selectedCategoryData = category;
         state.memoryGarden.showCategoryModal = true;
@@ -16040,7 +16232,7 @@ function renderMemoryGardenCard(key, category) {
 function renderDiaryEntryModal() {
     var overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
-    overlay.onclick = function(e) {
+    overlay.onclick = function (e) {
         if (e.target === overlay) {
             state.memoryGarden.showDiaryModal = false;
             renderApp();
@@ -16061,7 +16253,7 @@ function renderDiaryEntryModal() {
     var closeBtn = document.createElement('button');
     closeBtn.className = 'modal-close-btn';
     closeBtn.textContent = '×';
-    closeBtn.onclick = function() {
+    closeBtn.onclick = function () {
         state.memoryGarden.showDiaryModal = false;
         renderApp();
     };
@@ -16094,7 +16286,7 @@ function renderDiaryEntryModal() {
     var cancelBtn = document.createElement('button');
     cancelBtn.className = 'btn btn-secondary';
     cancelBtn.textContent = 'Cancel';
-    cancelBtn.onclick = function() {
+    cancelBtn.onclick = function () {
         state.memoryGarden.showDiaryModal = false;
         renderApp();
     };
@@ -16103,7 +16295,7 @@ function renderDiaryEntryModal() {
     var saveBtn = document.createElement('button');
     saveBtn.className = 'btn btn-primary';
     saveBtn.textContent = 'Save Entry';
-    saveBtn.onclick = async function() {
+    saveBtn.onclick = async function () {
         var content = document.getElementById('diary-entry-text').value.trim();
         if (!content) {
             alert('Please enter some content');
@@ -16160,11 +16352,14 @@ function renderDiaryEntryModal() {
 function renderCategoryDetailModal() {
     var overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
-    overlay.onclick = function(e) {
+    overlay.onclick = function (e) {
         if (e.target === overlay) {
             state.memoryGarden.showCategoryModal = false;
             state.memoryGarden.selectedCategory = null;
             state.memoryGarden.selectedCategoryData = null;
+            // VTID-01225: Reset category memories so fresh data loads next time
+            state.memoryGarden.categoryMemories = [];
+            state.memoryGarden.categoryMemoriesError = null;
             renderApp();
         }
     };
@@ -16205,7 +16400,7 @@ function renderCategoryDetailModal() {
     var addBtn = document.createElement('button');
     addBtn.className = 'btn btn-primary';
     addBtn.textContent = '+ Add Memory';
-    addBtn.onclick = function() {
+    addBtn.onclick = function () {
         state.memoryGarden.showCategoryModal = false;
         state.memoryGarden.showDiaryModal = true;
         renderApp();
@@ -16216,10 +16411,13 @@ function renderCategoryDetailModal() {
     var closeBtn = document.createElement('button');
     closeBtn.className = 'modal-close-btn';
     closeBtn.textContent = '×';
-    closeBtn.onclick = function() {
+    closeBtn.onclick = function () {
         state.memoryGarden.showCategoryModal = false;
         state.memoryGarden.selectedCategory = null;
         state.memoryGarden.selectedCategoryData = null;
+        // VTID-01225: Reset category memories
+        state.memoryGarden.categoryMemories = [];
+        state.memoryGarden.categoryMemoriesError = null;
         renderApp();
     };
     header.appendChild(closeBtn);
@@ -16241,7 +16439,7 @@ function renderCategoryDetailModal() {
 
     // Add category-specific tabs based on the category
     var subcategories = getCategorySubcategories(categoryKey);
-    subcategories.forEach(function(sub) {
+    subcategories.forEach(function (sub) {
         var tab = document.createElement('button');
         tab.className = 'subcategory-tab';
         tab.textContent = sub.label + ' (0)';
@@ -16254,17 +16452,80 @@ function renderCategoryDetailModal() {
     var memoriesList = document.createElement('div');
     memoriesList.className = 'memories-list';
 
-    if (memoryCount === 0) {
+    // VTID-01225: Auto-fetch real memories when modal opens
+    if (!state.memoryGarden.categoryMemoriesLoading &&
+        state.memoryGarden.categoryMemories.length === 0 &&
+        !state.memoryGarden.categoryMemoriesError &&
+        memoryCount > 0) {
+        fetchCategoryMemories(categoryKey);
+    }
+
+    if (state.memoryGarden.categoryMemoriesLoading) {
+        var loadingState = document.createElement('div');
+        loadingState.className = 'memories-loading';
+        loadingState.textContent = 'Loading memories...';
+        memoriesList.appendChild(loadingState);
+    } else if (state.memoryGarden.categoryMemoriesError) {
+        var errorState = document.createElement('div');
+        errorState.className = 'memories-error';
+        errorState.textContent = 'Error: ' + state.memoryGarden.categoryMemoriesError;
+        memoriesList.appendChild(errorState);
+    } else if (state.memoryGarden.categoryMemories.length === 0) {
         var emptyState = document.createElement('div');
         emptyState.className = 'empty-memories';
-        emptyState.innerHTML = '<p>No memories yet in this category.</p><p>Click "Add Memory" to get started.</p>';
+        emptyState.innerHTML = '<p>No memories yet in this category.</p><p>Click "Add Memory" or start a conversation to build your garden.</p>';
         memoriesList.appendChild(emptyState);
     } else {
-        // Show placeholder memories (real implementation would fetch from API)
-        var placeholderNote = document.createElement('div');
-        placeholderNote.className = 'memory-item';
-        placeholderNote.innerHTML = '<div class="memory-item-content">Memory items will appear here once loaded from the API.</div><div class="memory-item-meta">DEV mode placeholder</div>';
-        memoriesList.appendChild(placeholderNote);
+        // VTID-01225: Render REAL memory items from API
+        state.memoryGarden.categoryMemories.forEach(function (mem) {
+            var memItem = document.createElement('div');
+            memItem.className = 'memory-item';
+
+            var memContent = document.createElement('div');
+            memContent.className = 'memory-item-content';
+            memContent.textContent = mem.content || '(no content)';
+            memItem.appendChild(memContent);
+
+            var memMeta = document.createElement('div');
+            memMeta.className = 'memory-item-meta';
+
+            var parts = [];
+            if (mem.source) parts.push(mem.source);
+            if (mem.importance) parts.push('importance: ' + mem.importance);
+            if (mem.confidence_score !== undefined && mem.confidence_score !== null) {
+                parts.push('confidence: ' + mem.confidence_score + '%');
+            }
+            if (mem.occurred_at) {
+                try {
+                    parts.push(new Date(mem.occurred_at).toLocaleDateString());
+                } catch (e) { /* skip */ }
+            }
+            memMeta.textContent = parts.join(' · ');
+            memItem.appendChild(memMeta);
+
+            // Show content_json details if available
+            if (mem.content_json && typeof mem.content_json === 'object') {
+                var jsonKeys = Object.keys(mem.content_json).filter(function (k) {
+                    return k !== 'entity_type' && k !== 'cognee_origin' && k !== 'session_id';
+                });
+                if (jsonKeys.length > 0) {
+                    var details = document.createElement('div');
+                    details.className = 'memory-item-details';
+                    jsonKeys.slice(0, 5).forEach(function (k) {
+                        var val = mem.content_json[k];
+                        if (val !== null && val !== undefined && val !== '') {
+                            var tag = document.createElement('span');
+                            tag.className = 'memory-detail-tag';
+                            tag.textContent = k + ': ' + (typeof val === 'object' ? JSON.stringify(val) : String(val));
+                            details.appendChild(tag);
+                        }
+                    });
+                    memItem.appendChild(details);
+                }
+            }
+
+            memoriesList.appendChild(memItem);
+        });
     }
 
     body.appendChild(memoriesList);
@@ -16358,6 +16619,228 @@ function getCategorySubcategories(categoryKey) {
 }
 
 // ============================================================================
+// VTID-01225: UNIFIED INTELLIGENCE PANEL
+// Shows structured facts, relationship connections, and behavioral signals
+// ============================================================================
+
+/**
+ * VTID-01225: Render the unified intelligence summary panel
+ * Displays facts, relationship connections, and signals at a glance
+ */
+function renderUnifiedIntelligencePanel() {
+    var panel = document.createElement('div');
+    panel.className = 'unified-intelligence-panel';
+
+    var panelHeader = document.createElement('div');
+    panelHeader.className = 'intelligence-panel-header';
+
+    var panelTitle = document.createElement('h3');
+    panelTitle.textContent = 'Intelligence Overview';
+    panelHeader.appendChild(panelTitle);
+
+    var panelSubtitle = document.createElement('span');
+    panelSubtitle.className = 'intelligence-panel-subtitle';
+    panelSubtitle.textContent = 'Facts, relationships & signals extracted from your conversations';
+    panelHeader.appendChild(panelSubtitle);
+
+    panel.appendChild(panelHeader);
+
+    // Three-column layout: Facts | Relationships | Signals
+    var columns = document.createElement('div');
+    columns.className = 'intelligence-columns';
+
+    // Column 1: Key Facts
+    var factsCol = document.createElement('div');
+    factsCol.className = 'intelligence-column facts-column';
+
+    var factsTitle = document.createElement('div');
+    factsTitle.className = 'column-title';
+    factsTitle.textContent = 'Key Facts';
+    factsCol.appendChild(factsTitle);
+
+    if (state.memoryGarden.factsLoading) {
+        var loading = document.createElement('div');
+        loading.className = 'column-loading';
+        loading.textContent = 'Loading...';
+        factsCol.appendChild(loading);
+    } else {
+        var factsData = state.memoryGarden.facts;
+        var factItems = [];
+
+        if (factsData) {
+            // Extract facts from garden summary
+            if (factsData.habits && factsData.habits.length > 0) {
+                factsData.habits.forEach(function (h) {
+                    factItems.push({ label: 'Habit', value: h.title || h.name || JSON.stringify(h), type: 'habit' });
+                });
+            }
+            if (factsData.health_signals && factsData.health_signals.length > 0) {
+                factsData.health_signals.forEach(function (s) {
+                    factItems.push({ label: 'Health', value: s.title || s.name || JSON.stringify(s), type: 'health' });
+                });
+            }
+            if (factsData.values && factsData.values.length > 0) {
+                factsData.values.forEach(function (v) {
+                    factItems.push({ label: 'Value', value: v.title || v.name || JSON.stringify(v), type: 'value' });
+                });
+            }
+            if (factsData.goals && factsData.goals.length > 0) {
+                factsData.goals.forEach(function (g) {
+                    factItems.push({ label: 'Goal', value: g.title || g.name || JSON.stringify(g), type: 'goal' });
+                });
+            }
+            if (factsData.patterns && factsData.patterns.length > 0) {
+                factsData.patterns.forEach(function (p) {
+                    factItems.push({ label: 'Pattern', value: p.title || p.name || JSON.stringify(p), type: 'pattern' });
+                });
+            }
+        }
+
+        if (factItems.length === 0) {
+            var emptyFacts = document.createElement('div');
+            emptyFacts.className = 'column-empty';
+            emptyFacts.textContent = 'No facts extracted yet. Start a conversation to build your knowledge base.';
+            factsCol.appendChild(emptyFacts);
+        } else {
+            factItems.slice(0, 8).forEach(function (fact) {
+                var item = document.createElement('div');
+                item.className = 'fact-item fact-type-' + fact.type;
+                item.innerHTML = '<span class="fact-label">' + fact.label + '</span>' +
+                    '<span class="fact-value">' + escapeHtmlSafe(String(fact.value)) + '</span>';
+                factsCol.appendChild(item);
+            });
+            if (factItems.length > 8) {
+                var more = document.createElement('div');
+                more.className = 'column-more';
+                more.textContent = '+ ' + (factItems.length - 8) + ' more facts';
+                factsCol.appendChild(more);
+            }
+        }
+    }
+
+    columns.appendChild(factsCol);
+
+    // Column 2: Relationship Connections
+    var relCol = document.createElement('div');
+    relCol.className = 'intelligence-column relationships-column';
+
+    var relTitle = document.createElement('div');
+    relTitle.className = 'column-title';
+    relTitle.textContent = 'Connections';
+    relCol.appendChild(relTitle);
+
+    if (state.memoryGarden.relationshipsLoading) {
+        var relLoading = document.createElement('div');
+        relLoading.className = 'column-loading';
+        relLoading.textContent = 'Loading...';
+        relCol.appendChild(relLoading);
+    } else {
+        var relData = state.memoryGarden.relationships;
+        var nodes = (relData && relData.nodes) ? relData.nodes : [];
+        var edges = (relData && relData.edges) ? relData.edges : [];
+
+        if (nodes.length === 0) {
+            var emptyRel = document.createElement('div');
+            emptyRel.className = 'column-empty';
+            emptyRel.textContent = 'No relationships mapped yet. Mention people, places, or groups in conversations.';
+            relCol.appendChild(emptyRel);
+        } else {
+            // Stats bar
+            var relStats = document.createElement('div');
+            relStats.className = 'rel-stats';
+            relStats.innerHTML = '<span class="rel-stat">' + nodes.length + ' entities</span>' +
+                '<span class="rel-stat">' + edges.length + ' connections</span>';
+            relCol.appendChild(relStats);
+
+            // Show nodes grouped by type
+            var nodesByType = {};
+            nodes.forEach(function (n) {
+                var type = n.node_type || 'other';
+                if (!nodesByType[type]) nodesByType[type] = [];
+                nodesByType[type].push(n);
+            });
+
+            var typeIcons = { person: 'person', group: 'group', event: 'event', location: 'location', service: 'service', product: 'product', live_room: 'live' };
+
+            Object.keys(nodesByType).slice(0, 5).forEach(function (type) {
+                var typeNodes = nodesByType[type];
+                var typeRow = document.createElement('div');
+                typeRow.className = 'rel-type-row';
+                typeRow.innerHTML = '<span class="rel-type-label">' + type + ' (' + typeNodes.length + ')</span>' +
+                    '<span class="rel-type-items">' +
+                    typeNodes.slice(0, 4).map(function (n) {
+                        return '<span class="rel-node-tag">' + escapeHtmlSafe(n.title || n.name || 'Unknown') + '</span>';
+                    }).join('') +
+                    (typeNodes.length > 4 ? '<span class="rel-node-more">+' + (typeNodes.length - 4) + '</span>' : '') +
+                    '</span>';
+                relCol.appendChild(typeRow);
+            });
+        }
+    }
+
+    columns.appendChild(relCol);
+
+    // Column 3: Behavioral Signals
+    var sigCol = document.createElement('div');
+    sigCol.className = 'intelligence-column signals-column';
+
+    var sigTitle = document.createElement('div');
+    sigTitle.className = 'column-title';
+    sigTitle.textContent = 'Signals';
+    sigCol.appendChild(sigTitle);
+
+    if (state.memoryGarden.signalsLoading) {
+        var sigLoading = document.createElement('div');
+        sigLoading.className = 'column-loading';
+        sigLoading.textContent = 'Loading...';
+        sigCol.appendChild(sigLoading);
+    } else {
+        var signals = state.memoryGarden.signals || [];
+
+        if (signals.length === 0) {
+            var emptySig = document.createElement('div');
+            emptySig.className = 'column-empty';
+            emptySig.textContent = 'No behavioral signals detected yet. Signals emerge from conversation patterns.';
+            sigCol.appendChild(emptySig);
+        } else {
+            signals.slice(0, 8).forEach(function (sig) {
+                var sigItem = document.createElement('div');
+                sigItem.className = 'signal-item';
+
+                var confidenceClass = sig.confidence >= 70 ? 'high' : sig.confidence >= 40 ? 'medium' : 'low';
+                sigItem.innerHTML = '<span class="signal-key">' + escapeHtmlSafe(sig.signal_key) + '</span>' +
+                    '<span class="signal-confidence confidence-' + confidenceClass + '">' + sig.confidence + '%</span>';
+                sigCol.appendChild(sigItem);
+            });
+            if (signals.length > 8) {
+                var moreSig = document.createElement('div');
+                moreSig.className = 'column-more';
+                moreSig.textContent = '+ ' + (signals.length - 8) + ' more signals';
+                sigCol.appendChild(moreSig);
+            }
+        }
+    }
+
+    columns.appendChild(sigCol);
+
+    panel.appendChild(columns);
+    return panel;
+}
+
+/**
+ * VTID-01225: Safe HTML escaping (standalone, doesn't depend on DOM)
+ */
+function escapeHtmlSafe(text) {
+    if (!text) return '';
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+// ============================================================================
 // INTELLIGENCE & MEMORY DEV SCREENS
 // Vitana AI Assistant Intelligence Hub - Knowledge Graph, Embeddings, Recall, Inspector
 // ============================================================================
@@ -16409,7 +16892,7 @@ function renderKnowledgeGraphView() {
         { label: 'Memories', value: stats.memories || 0, icon: 'memory' }
     ];
 
-    statItems.forEach(function(stat) {
+    statItems.forEach(function (stat) {
         var statCard = document.createElement('div');
         statCard.className = 'stat-card';
         statCard.innerHTML = '<div class="stat-icon stat-icon-' + stat.icon + '">' + getKnowledgeGraphIcon(stat.icon) + '</div>' +
@@ -16429,7 +16912,7 @@ function renderKnowledgeGraphView() {
     searchInput.className = 'search-field';
     searchInput.placeholder = 'Search nodes...';
     searchInput.value = state.intelligence.knowledgeGraph.searchQuery;
-    searchInput.oninput = function(e) {
+    searchInput.oninput = function (e) {
         state.intelligence.knowledgeGraph.searchQuery = e.target.value;
         renderApp();
     };
@@ -16443,14 +16926,14 @@ function renderKnowledgeGraphView() {
         { value: 'concept', label: 'Concepts' },
         { value: 'memory', label: 'Memories' }
     ];
-    filterOptions.forEach(function(opt) {
+    filterOptions.forEach(function (opt) {
         var option = document.createElement('option');
         option.value = opt.value;
         option.textContent = opt.label;
         option.selected = state.intelligence.knowledgeGraph.filterType === opt.value;
         filterSelect.appendChild(option);
     });
-    filterSelect.onchange = function(e) {
+    filterSelect.onchange = function (e) {
         state.intelligence.knowledgeGraph.filterType = e.target.value;
         renderApp();
     };
@@ -16518,12 +17001,12 @@ function renderKnowledgeGraphView() {
         { id: 'con_089', type: 'concept', label: 'Sleep Quality' }
     ];
 
-    mockRecentNodes.forEach(function(node) {
+    mockRecentNodes.forEach(function (node) {
         var nodeItem = document.createElement('div');
         nodeItem.className = 'recent-node-item node-type-' + node.type;
         nodeItem.innerHTML = '<span class="node-type-badge">' + node.type.charAt(0).toUpperCase() + '</span>' +
             '<span class="node-label">' + node.label + '</span>';
-        nodeItem.onclick = function() {
+        nodeItem.onclick = function () {
             state.intelligence.knowledgeGraph.selectedNode = node;
             renderApp();
         };
@@ -16541,11 +17024,11 @@ function renderKnowledgeGraphView() {
         loadMoreBtn.className = 'load-more-btn' + (state.intelligence.knowledgeGraph.loadingMore ? ' loading' : '');
         loadMoreBtn.disabled = state.intelligence.knowledgeGraph.loadingMore;
         loadMoreBtn.textContent = state.intelligence.knowledgeGraph.loadingMore ? 'Loading...' : 'Load More Nodes';
-        loadMoreBtn.onclick = function() {
+        loadMoreBtn.onclick = function () {
             state.intelligence.knowledgeGraph.loadingMore = true;
             renderApp();
             // Mock loading more nodes
-            setTimeout(function() {
+            setTimeout(function () {
                 state.intelligence.knowledgeGraph.offset += state.intelligence.knowledgeGraph.limit;
                 state.intelligence.knowledgeGraph.loadingMore = false;
                 // In real implementation: fetch more nodes and append
@@ -16597,7 +17080,7 @@ function renderEmbeddingsView() {
     var syncBtn = document.createElement('button');
     syncBtn.className = 'btn btn-secondary';
     syncBtn.textContent = 'Sync Collections';
-    syncBtn.onclick = function() {
+    syncBtn.onclick = function () {
         showToast('Syncing collections...', 'info');
     };
     actions.appendChild(syncBtn);
@@ -16623,7 +17106,7 @@ function renderEmbeddingsView() {
         { label: 'Avg Query (ms)', value: embeddingStats.avgQueryTime || 45 }
     ];
 
-    statItems.forEach(function(stat) {
+    statItems.forEach(function (stat) {
         var statCard = document.createElement('div');
         statCard.className = 'stat-card';
         statCard.innerHTML = '<div class="stat-value">' + stat.value.toLocaleString() + '</div>' +
@@ -16655,7 +17138,7 @@ function renderEmbeddingsView() {
         { id: 'conversations', name: 'Conversations', vectors: 1068, status: 'indexing', model: 'text-embedding-3-small' }
     ];
 
-    mockCollections.forEach(function(col) {
+    mockCollections.forEach(function (col) {
         var colCard = document.createElement('div');
         colCard.className = 'collection-card' + (state.intelligence.embeddings.selectedCollection === col.id ? ' selected' : '');
         colCard.innerHTML = '<div class="collection-header">' +
@@ -16666,7 +17149,7 @@ function renderEmbeddingsView() {
             '<div class="collection-stat"><span class="stat-num">' + col.vectors.toLocaleString() + '</span> vectors</div>' +
             '<div class="collection-model">' + col.model + '</div>' +
             '</div>';
-        colCard.onclick = function() {
+        colCard.onclick = function () {
             state.intelligence.embeddings.selectedCollection = col.id;
             renderApp();
         };
@@ -16692,7 +17175,7 @@ function renderEmbeddingsView() {
     searchInput.placeholder = 'Enter text to find similar vectors...';
     searchInput.rows = 3;
     searchInput.value = state.intelligence.embeddings.searchQuery;
-    searchInput.oninput = function(e) {
+    searchInput.oninput = function (e) {
         state.intelligence.embeddings.searchQuery = e.target.value;
     };
     searchForm.appendChild(searchInput);
@@ -16701,7 +17184,7 @@ function renderEmbeddingsView() {
     searchBtn.className = 'btn btn-primary';
     searchBtn.textContent = state.intelligence.embeddings.searchLoading ? 'Searching...' : 'Search Vectors';
     searchBtn.disabled = state.intelligence.embeddings.searchLoading;
-    searchBtn.onclick = function() {
+    searchBtn.onclick = function () {
         if (!state.intelligence.embeddings.searchQuery.trim()) {
             showToast('Enter a search query', 'warning');
             return;
@@ -16709,7 +17192,7 @@ function renderEmbeddingsView() {
         // Mock search results
         state.intelligence.embeddings.searchLoading = true;
         renderApp();
-        setTimeout(function() {
+        setTimeout(function () {
             state.intelligence.embeddings.searchResults = [
                 { id: 'vec_001', score: 0.94, text: 'User prefers morning workouts around 6am', collection: 'memories' },
                 { id: 'vec_002', score: 0.89, text: 'Sleep quality improves with consistent schedule', collection: 'knowledge' },
@@ -16733,7 +17216,7 @@ function renderEmbeddingsView() {
         resultsTitle.textContent = 'Results (' + results.length + ')';
         resultsContainer.appendChild(resultsTitle);
 
-        results.forEach(function(result) {
+        results.forEach(function (result) {
             var resultCard = document.createElement('div');
             resultCard.className = 'search-result-card';
             resultCard.innerHTML = '<div class="result-header">' +
@@ -16753,11 +17236,11 @@ function renderEmbeddingsView() {
             loadMoreBtn.className = 'load-more-btn' + (state.intelligence.embeddings.searchLoading ? ' loading' : '');
             loadMoreBtn.disabled = state.intelligence.embeddings.searchLoading;
             loadMoreBtn.textContent = state.intelligence.embeddings.searchLoading ? 'Loading...' : 'Load More Results';
-            loadMoreBtn.onclick = function() {
+            loadMoreBtn.onclick = function () {
                 state.intelligence.embeddings.searchLoading = true;
                 renderApp();
                 // Mock loading more results
-                setTimeout(function() {
+                setTimeout(function () {
                     state.intelligence.embeddings.searchOffset += state.intelligence.embeddings.searchLimit;
                     state.intelligence.embeddings.searchLoading = false;
                     state.intelligence.embeddings.searchHasMore = false; // Mock: no more
@@ -16826,7 +17309,7 @@ function renderRecallView() {
     queryInput.placeholder = 'Enter a natural language query to test recall...\n\nExample: "What are my exercise habits?"';
     queryInput.rows = 4;
     queryInput.value = state.intelligence.recall.testQuery;
-    queryInput.oninput = function(e) {
+    queryInput.oninput = function (e) {
         state.intelligence.recall.testQuery = e.target.value;
     };
     queryPanel.appendChild(queryInput);
@@ -16843,14 +17326,14 @@ function renderRecallView() {
         { value: 'knowledge', label: 'Knowledge Base' },
         { value: 'conversations', label: 'Conversations' }
     ];
-    sourceOptions.forEach(function(opt) {
+    sourceOptions.forEach(function (opt) {
         var option = document.createElement('option');
         option.value = opt.value;
         option.textContent = opt.label;
         option.selected = state.intelligence.recall.filters.source === opt.value;
         sourceFilter.appendChild(option);
     });
-    sourceFilter.onchange = function(e) {
+    sourceFilter.onchange = function (e) {
         state.intelligence.recall.filters.source = e.target.value;
         renderApp();
     };
@@ -16868,7 +17351,7 @@ function renderRecallView() {
     var minScoreValue = document.createElement('span');
     minScoreValue.className = 'min-score-value';
     minScoreValue.textContent = state.intelligence.recall.filters.minScore + '%';
-    minScoreInput.oninput = function(e) {
+    minScoreInput.oninput = function (e) {
         state.intelligence.recall.filters.minScore = parseInt(e.target.value);
         minScoreValue.textContent = e.target.value + '%';
     };
@@ -16883,7 +17366,7 @@ function renderRecallView() {
     runBtn.className = 'btn btn-primary btn-lg';
     runBtn.textContent = state.intelligence.recall.loading ? 'Running Recall...' : 'Run Recall Query';
     runBtn.disabled = state.intelligence.recall.loading;
-    runBtn.onclick = function() {
+    runBtn.onclick = function () {
         if (!state.intelligence.recall.testQuery.trim()) {
             showToast('Enter a query to test', 'warning');
             return;
@@ -16891,7 +17374,7 @@ function renderRecallView() {
         state.intelligence.recall.loading = true;
         renderApp();
         // Mock recall results
-        setTimeout(function() {
+        setTimeout(function () {
             state.intelligence.recall.results = [
                 { id: 'rec_001', source: 'memories', score: 0.92, text: 'Morning jogs at 6:30am, 3 times per week', metadata: { category: 'health_wellness', timestamp: '2024-01-15' } },
                 { id: 'rec_002', source: 'memories', score: 0.88, text: 'Prefers outdoor activities over gym workouts', metadata: { category: 'lifestyle_routines', timestamp: '2024-01-10' } },
@@ -16933,7 +17416,7 @@ function renderRecallView() {
         var resultsList = document.createElement('div');
         resultsList.className = 'recall-results-list';
 
-        results.forEach(function(result, idx) {
+        results.forEach(function (result, idx) {
             var resultCard = document.createElement('div');
             resultCard.className = 'recall-result-card' + (state.intelligence.recall.selectedResult === result.id ? ' selected' : '');
 
@@ -16954,7 +17437,7 @@ function renderRecallView() {
             var resultMeta = document.createElement('div');
             resultMeta.className = 'result-metadata';
             if (result.metadata) {
-                Object.keys(result.metadata).forEach(function(key) {
+                Object.keys(result.metadata).forEach(function (key) {
                     resultMeta.innerHTML += '<span class="meta-item"><span class="meta-key">' + key + ':</span> ' + result.metadata[key] + '</span>';
                 });
             }
@@ -16964,7 +17447,7 @@ function renderRecallView() {
             resultCard.appendChild(resultText);
             resultCard.appendChild(resultMeta);
 
-            resultCard.onclick = function() {
+            resultCard.onclick = function () {
                 state.intelligence.recall.selectedResult = result.id;
                 renderApp();
             };
@@ -16983,11 +17466,11 @@ function renderRecallView() {
             loadMoreBtn.className = 'load-more-btn' + (state.intelligence.recall.loadingMore ? ' loading' : '');
             loadMoreBtn.disabled = state.intelligence.recall.loadingMore;
             loadMoreBtn.textContent = state.intelligence.recall.loadingMore ? 'Loading...' : 'Load More Results';
-            loadMoreBtn.onclick = function() {
+            loadMoreBtn.onclick = function () {
                 state.intelligence.recall.loadingMore = true;
                 renderApp();
                 // Mock loading more results
-                setTimeout(function() {
+                setTimeout(function () {
                     state.intelligence.recall.offset += state.intelligence.recall.limit;
                     state.intelligence.recall.loadingMore = false;
                     // In real implementation: fetch more results and append
@@ -17022,12 +17505,12 @@ function renderRecallView() {
         var historyList = document.createElement('div');
         historyList.className = 'history-list';
 
-        history.forEach(function(item) {
+        history.forEach(function (item) {
             var historyItem = document.createElement('div');
             historyItem.className = 'history-item';
             historyItem.innerHTML = '<div class="history-query">' + item.query.substring(0, 50) + (item.query.length > 50 ? '...' : '') + '</div>' +
                 '<div class="history-meta">' + item.resultCount + ' results</div>';
-            historyItem.onclick = function() {
+            historyItem.onclick = function () {
                 state.intelligence.recall.testQuery = item.query;
                 renderApp();
             };
@@ -17089,14 +17572,14 @@ function renderInspectorView() {
         { value: 'orb', label: 'ORB' },
         { value: 'api', label: 'Direct API' }
     ];
-    surfaceOptions.forEach(function(opt) {
+    surfaceOptions.forEach(function (opt) {
         var option = document.createElement('option');
         option.value = opt.value;
         option.textContent = opt.label;
         option.selected = state.intelligence.inspector.filters.surface === opt.value;
         surfaceFilter.appendChild(option);
     });
-    surfaceFilter.onchange = function(e) {
+    surfaceFilter.onchange = function (e) {
         state.intelligence.inspector.filters.surface = e.target.value;
         renderApp();
     };
@@ -17111,14 +17594,14 @@ function renderInspectorView() {
         { value: 'error', label: 'Error' },
         { value: 'pending', label: 'Pending' }
     ];
-    statusOptions.forEach(function(opt) {
+    statusOptions.forEach(function (opt) {
         var option = document.createElement('option');
         option.value = opt.value;
         option.textContent = opt.label;
         option.selected = state.intelligence.inspector.filters.status === opt.value;
         statusFilter.appendChild(option);
     });
-    statusFilter.onchange = function(e) {
+    statusFilter.onchange = function (e) {
         state.intelligence.inspector.filters.status = e.target.value;
         renderApp();
     };
@@ -17133,14 +17616,14 @@ function renderInspectorView() {
         { value: '7d', label: 'Last 7 Days' },
         { value: '30d', label: 'Last 30 Days' }
     ];
-    timeOptions.forEach(function(opt) {
+    timeOptions.forEach(function (opt) {
         var option = document.createElement('option');
         option.value = opt.value;
         option.textContent = opt.label;
         option.selected = state.intelligence.inspector.filters.dateRange === opt.value;
         timeFilter.appendChild(option);
     });
-    timeFilter.onchange = function(e) {
+    timeFilter.onchange = function (e) {
         state.intelligence.inspector.filters.dateRange = e.target.value;
         renderApp();
     };
@@ -17171,7 +17654,7 @@ function renderInspectorView() {
     var sessionsList = document.createElement('div');
     sessionsList.className = 'sessions-list';
 
-    mockSessions.forEach(function(session) {
+    mockSessions.forEach(function (session) {
         var sessionCard = document.createElement('div');
         sessionCard.className = 'session-card' + (state.intelligence.inspector.selectedSession === session.id ? ' selected' : '');
 
@@ -17201,7 +17684,7 @@ function renderInspectorView() {
         sessionCard.appendChild(sessionQuery);
         sessionCard.appendChild(sessionMeta);
 
-        sessionCard.onclick = function() {
+        sessionCard.onclick = function () {
             state.intelligence.inspector.selectedSession = session.id;
             renderApp();
         };
@@ -17220,11 +17703,11 @@ function renderInspectorView() {
         loadMoreBtn.className = 'load-more-btn' + (state.intelligence.inspector.loadingMore ? ' loading' : '');
         loadMoreBtn.disabled = state.intelligence.inspector.loadingMore;
         loadMoreBtn.textContent = state.intelligence.inspector.loadingMore ? 'Loading...' : 'Load More Sessions';
-        loadMoreBtn.onclick = function() {
+        loadMoreBtn.onclick = function () {
             state.intelligence.inspector.loadingMore = true;
             renderApp();
             // Mock loading more sessions
-            setTimeout(function() {
+            setTimeout(function () {
                 state.intelligence.inspector.offset += state.intelligence.inspector.limit;
                 state.intelligence.inspector.loadingMore = false;
                 // In real implementation: fetch more sessions and append
@@ -17243,7 +17726,7 @@ function renderInspectorView() {
     detailPanel.className = 'inspector-detail-panel';
 
     var selectedId = state.intelligence.inspector.selectedSession;
-    var selectedSession = mockSessions.find(function(s) { return s.id === selectedId; });
+    var selectedSession = mockSessions.find(function (s) { return s.id === selectedId; });
 
     if (selectedSession) {
         var detailTitle = document.createElement('h3');
@@ -17283,7 +17766,7 @@ function renderInspectorView() {
         var toolsList = document.createElement('div');
         toolsList.className = 'tools-list';
 
-        mockToolCalls.forEach(function(tool, idx) {
+        mockToolCalls.forEach(function (tool, idx) {
             var toolCard = document.createElement('div');
             toolCard.className = 'tool-card';
 
@@ -17297,7 +17780,7 @@ function renderInspectorView() {
             var toggleBtn = document.createElement('button');
             toggleBtn.className = 'tool-toggle-btn';
             toggleBtn.textContent = expanded ? 'Collapse' : 'Expand';
-            toggleBtn.onclick = function(e) {
+            toggleBtn.onclick = function (e) {
                 e.stopPropagation();
                 var key = selectedSession.id + '_' + idx;
                 state.intelligence.inspector.expandedTools[key] = !state.intelligence.inspector.expandedTools[key];
@@ -17418,7 +17901,7 @@ function renderApprovalsView() {
         var thead = document.createElement('thead');
         var headerRow = document.createElement('tr');
         // SPEC-02: Only these columns
-        ['PR', 'Branch', 'CI', 'Mergeable', 'VTID', 'Action'].forEach(function(h) {
+        ['PR', 'Branch', 'CI', 'Mergeable', 'VTID', 'Action'].forEach(function (h) {
             var th = document.createElement('th');
             th.textContent = h;
             headerRow.appendChild(th);
@@ -17428,7 +17911,7 @@ function renderApprovalsView() {
 
         var tbody = document.createElement('tbody');
 
-        feedItems.forEach(function(item) {
+        feedItems.forEach(function (item) {
             var row = document.createElement('tr');
 
             // PR number with link
@@ -17503,7 +17986,7 @@ function renderApprovalsView() {
                 approveBtn.className = 'btn btn-success btn-sm';
                 approveBtn.textContent = 'Approve';
                 approveBtn.disabled = state.approvals.feedLoading;
-                approveBtn.onclick = function() {
+                approveBtn.onclick = function () {
                     if (confirm('Approve PR #' + item.pr_number + '?\n\nThis will trigger a safe merge + auto-deploy.')) {
                         approveFeedItem(item.pr_number, item.branch, item.vtid);
                     }
@@ -18076,7 +18559,7 @@ async function sendChatMessage() {
     if (state.pendingTitleVtid) {
         var titleInput = messageText.toLowerCase();
         var skipKeywords = ['skip', 'cancel', 'no', 'none', 'never mind', 'nevermind'];
-        var isSkip = skipKeywords.some(function(kw) { return titleInput === kw; });
+        var isSkip = skipKeywords.some(function (kw) { return titleInput === kw; });
 
         // Add user message to UI
         state.chatMessages.push({
@@ -18167,7 +18650,7 @@ async function sendChatMessage() {
     renderApp();
 
     // VTID-0526-D: Scroll to bottom after user message (safe - typing flag is reset)
-    requestAnimationFrame(function() {
+    requestAnimationFrame(function () {
         var messagesContainer = document.querySelector('.chat-messages');
         if (messagesContainer) {
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
@@ -18183,7 +18666,7 @@ async function sendChatMessage() {
 
         const response = await fetch('/api/v1/operator/chat', {
             method: 'POST',
-            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 message: messageText,
                 conversation_id: state.operatorConversationId,
@@ -18269,7 +18752,7 @@ async function sendChatMessage() {
         renderApp();
 
         // VTID-0526-D: Single rAF for scroll + conditional focus after message complete
-        requestAnimationFrame(function() {
+        requestAnimationFrame(function () {
             // Scroll to bottom to show the reply
             var messagesContainer = document.querySelector('.chat-messages');
             if (messagesContainer) {
@@ -18369,7 +18852,7 @@ function renderOperatorTicker() {
         activeHeader.innerHTML = '<span class="active-header-badge">' + state.activeExecutions.length + ' ACTIVE</span> Pipeline Executions';
         activeSection.appendChild(activeHeader);
 
-        state.activeExecutions.forEach(function(execData) {
+        state.activeExecutions.forEach(function (execData) {
             var execCard = renderTaskExecutionStatus(execData, { variant: 'ticker-card', showRecent: false });
             activeSection.appendChild(execCard);
         });
@@ -18386,7 +18869,7 @@ function renderOperatorTicker() {
     var collapseCheckbox = document.createElement('input');
     collapseCheckbox.type = 'checkbox';
     collapseCheckbox.checked = state.tickerCollapseHeartbeat;
-    collapseCheckbox.onchange = function() {
+    collapseCheckbox.onchange = function () {
         state.tickerCollapseHeartbeat = collapseCheckbox.checked;
         renderApp();
     };
@@ -18401,7 +18884,7 @@ function renderOperatorTicker() {
         '<option value="critical">Critical Only</option>' +
         '<option value="important">Important+</option>';
     severityFilter.value = state.tickerSeverityFilter;
-    severityFilter.onchange = function() {
+    severityFilter.onchange = function () {
         state.tickerSeverityFilter = severityFilter.value;
         renderApp();
     };
@@ -18420,7 +18903,7 @@ function renderOperatorTicker() {
         eventsList.appendChild(empty);
     } else {
         // VTID-0600: Classify and sort events by severity
-        var classifiedEvents = state.tickerEvents.map(function(event) {
+        var classifiedEvents = state.tickerEvents.map(function (event) {
             var eventCopy = Object.assign({}, event);
             // Determine severity from event type/content
             var type = (event.type || '').toLowerCase();
@@ -18440,14 +18923,14 @@ function renderOperatorTicker() {
 
         // Filter by severity if filter is active
         if (state.tickerSeverityFilter === 'critical') {
-            classifiedEvents = classifiedEvents.filter(function(e) { return e.severity === 'critical'; });
+            classifiedEvents = classifiedEvents.filter(function (e) { return e.severity === 'critical'; });
         } else if (state.tickerSeverityFilter === 'important') {
-            classifiedEvents = classifiedEvents.filter(function(e) { return e.severity === 'critical' || e.severity === 'important'; });
+            classifiedEvents = classifiedEvents.filter(function (e) { return e.severity === 'critical' || e.severity === 'important'; });
         }
 
         // Sort: critical first, then important, then info, then low
         var severityOrder = { critical: 0, important: 1, info: 2, low: 3 };
-        classifiedEvents.sort(function(a, b) {
+        classifiedEvents.sort(function (a, b) {
             return severityOrder[a.severity] - severityOrder[b.severity];
         });
 
@@ -18456,7 +18939,7 @@ function renderOperatorTicker() {
         var otherEvents = [];
 
         if (state.tickerCollapseHeartbeat) {
-            classifiedEvents.forEach(function(event) {
+            classifiedEvents.forEach(function (event) {
                 if (event.severity === 'low') {
                     heartbeatEvents.push(event);
                 } else {
@@ -18468,7 +18951,7 @@ function renderOperatorTicker() {
         }
 
         // Render other events first
-        otherEvents.forEach(function(event) {
+        otherEvents.forEach(function (event) {
             var item = document.createElement('div');
             item.className = 'ticker-item ticker-item-' + event.severity;
 
@@ -18547,7 +19030,7 @@ function renderOperatorTicker() {
                 <span class="heartbeat-last">(last: ${lastHeartbeat})</span>
                 <button class="ticker-expand-btn">Expand ▼</button>
             `;
-            heartbeatHeader.onclick = function() {
+            heartbeatHeader.onclick = function () {
                 heartbeatSection.classList.toggle('expanded');
                 var btn = heartbeatHeader.querySelector('.ticker-expand-btn');
                 btn.textContent = heartbeatSection.classList.contains('expanded') ? 'Collapse ▲' : 'Expand ▼';
@@ -18557,7 +19040,7 @@ function renderOperatorTicker() {
             var heartbeatList = document.createElement('div');
             heartbeatList.className = 'ticker-heartbeat-list';
 
-            heartbeatEvents.slice(0, 10).forEach(function(event) {
+            heartbeatEvents.slice(0, 10).forEach(function (event) {
                 var item = document.createElement('div');
                 item.className = 'ticker-item ticker-item-low ticker-item-mini';
                 item.innerHTML = '<span class="ticker-timestamp">' + event.timestamp + '</span> ' + event.content;
@@ -18638,7 +19121,7 @@ function renderOperatorHistory() {
         const theadTr = document.createElement('tr');
 
         // VTID-0600: Added 'Summary', 'Triggered By', and 'Meaning' columns
-        ['VTID', 'Service', 'SWV', 'Timestamp', 'Status', 'Summary', 'Triggered By'].forEach(function(headerText) {
+        ['VTID', 'Service', 'SWV', 'Timestamp', 'Status', 'Summary', 'Triggered By'].forEach(function (headerText) {
             const th = document.createElement('th');
             th.textContent = headerText;
             theadTr.appendChild(th);
@@ -18647,7 +19130,7 @@ function renderOperatorHistory() {
         table.appendChild(thead);
 
         const tbody = document.createElement('tbody');
-        state.versionHistory.forEach(function(deploy) {
+        state.versionHistory.forEach(function (deploy) {
             const tr = document.createElement('tr');
 
             // VTID column
@@ -19052,7 +19535,7 @@ function renderPublishModal() {
 
             const response = await fetch('/api/v1/operator/deploy', {
                 method: 'POST',
-                headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+                headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify(payload)
             });
 
@@ -19152,7 +19635,7 @@ function renderPublishModal() {
 function renderAutopilotRecommendationsModal() {
     var overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
-    overlay.onclick = function(e) {
+    overlay.onclick = function (e) {
         if (e.target === overlay) {
             state.showAutopilotRecommendationsModal = false;
             renderApp();
@@ -19187,7 +19670,7 @@ function renderAutopilotRecommendationsModal() {
     closeBtn.className = 'modal-close-btn';
     closeBtn.innerHTML = '&times;';
     closeBtn.style.cssText = 'background: none; border: none; font-size: 24px; cursor: pointer; color: var(--text-secondary, #888); padding: 4px 8px;';
-    closeBtn.onclick = function() {
+    closeBtn.onclick = function () {
         state.showAutopilotRecommendationsModal = false;
         renderApp();
     };
@@ -19219,7 +19702,7 @@ function renderAutopilotRecommendationsModal() {
         body.appendChild(emptyDiv);
     } else {
         // Render recommendations list
-        state.autopilotRecommendations.forEach(function(rec) {
+        state.autopilotRecommendations.forEach(function (rec) {
             var card = createRecommendationCard(rec);
             body.appendChild(card);
         });
@@ -19241,7 +19724,7 @@ function renderAutopilotRecommendationsModal() {
     closeFooterBtn.className = 'btn btn-secondary';
     closeFooterBtn.textContent = 'Close';
     closeFooterBtn.style.cssText = 'padding: 8px 16px;';
-    closeFooterBtn.onclick = function() {
+    closeFooterBtn.onclick = function () {
         state.showAutopilotRecommendationsModal = false;
         renderApp();
     };
@@ -19316,19 +19799,19 @@ function createRecommendationCard(rec) {
     activateBtn.className = 'btn btn-primary';
     activateBtn.textContent = 'Activate';
     activateBtn.style.cssText = 'padding: 6px 14px; font-size: 13px; background: #22c55e; border: none; color: white; border-radius: 4px; cursor: pointer;';
-    activateBtn.onclick = async function() {
+    activateBtn.onclick = async function () {
         activateBtn.disabled = true;
         activateBtn.textContent = 'Activating...';
         try {
             var response = await fetch('/api/v1/autopilot/recommendations/' + rec.id + '/activate', {
                 method: 'POST',
-                headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' })
+                headers: buildContextHeaders({ 'Content-Type': 'application/json' })
             });
             var data = await response.json();
             if (data.ok) {
                 showToast('Activated! VTID: ' + data.vtid, 'success');
                 // Remove from list
-                state.autopilotRecommendations = state.autopilotRecommendations.filter(function(r) { return r.id !== rec.id; });
+                state.autopilotRecommendations = state.autopilotRecommendations.filter(function (r) { return r.id !== rec.id; });
                 state.autopilotRecommendationsCount = Math.max(0, state.autopilotRecommendationsCount - 1);
                 renderApp();
             } else {
@@ -19349,18 +19832,18 @@ function createRecommendationCard(rec) {
     snoozeBtn.className = 'btn btn-secondary';
     snoozeBtn.textContent = 'Snooze';
     snoozeBtn.style.cssText = 'padding: 6px 14px; font-size: 13px; background: transparent; border: 1px solid var(--border-color, rgba(255,255,255,0.2)); color: var(--text-color, #fff); border-radius: 4px; cursor: pointer;';
-    snoozeBtn.onclick = async function() {
+    snoozeBtn.onclick = async function () {
         snoozeBtn.disabled = true;
         try {
             var response = await fetch('/api/v1/autopilot/recommendations/' + rec.id + '/snooze', {
                 method: 'POST',
-                headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+                headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({ hours: 24 })
             });
             var data = await response.json();
             if (data.ok) {
                 showToast('Snoozed for 24 hours', 'info');
-                state.autopilotRecommendations = state.autopilotRecommendations.filter(function(r) { return r.id !== rec.id; });
+                state.autopilotRecommendations = state.autopilotRecommendations.filter(function (r) { return r.id !== rec.id; });
                 state.autopilotRecommendationsCount = Math.max(0, state.autopilotRecommendationsCount - 1);
                 renderApp();
             } else {
@@ -19379,17 +19862,17 @@ function createRecommendationCard(rec) {
     rejectBtn.className = 'btn btn-secondary';
     rejectBtn.textContent = 'Dismiss';
     rejectBtn.style.cssText = 'padding: 6px 14px; font-size: 13px; background: transparent; border: 1px solid var(--border-color, rgba(255,255,255,0.2)); color: var(--text-secondary, #888); border-radius: 4px; cursor: pointer;';
-    rejectBtn.onclick = async function() {
+    rejectBtn.onclick = async function () {
         rejectBtn.disabled = true;
         try {
             var response = await fetch('/api/v1/autopilot/recommendations/' + rec.id + '/reject', {
                 method: 'POST',
-                headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' })
+                headers: buildContextHeaders({ 'Content-Type': 'application/json' })
             });
             var data = await response.json();
             if (data.ok) {
                 showToast('Recommendation dismissed', 'info');
-                state.autopilotRecommendations = state.autopilotRecommendations.filter(function(r) { return r.id !== rec.id; });
+                state.autopilotRecommendations = state.autopilotRecommendations.filter(function (r) { return r.id !== rec.id; });
                 state.autopilotRecommendationsCount = Math.max(0, state.autopilotRecommendationsCount - 1);
                 renderApp();
             } else {
@@ -19414,7 +19897,7 @@ function createRecommendationCard(rec) {
 async function fetchAutopilotRecommendationsCount() {
     try {
         var response = await fetch('/api/v1/autopilot/recommendations/count', {
-            headers: withVitanaContextHeaders({})
+            headers: buildContextHeaders({})
         });
         if (response.ok) {
             var data = await response.json();
@@ -19440,7 +19923,7 @@ function renderGovernanceBlockedModal() {
 
     var overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
-    overlay.onclick = function(e) {
+    overlay.onclick = function (e) {
         if (e.target === overlay) {
             state.showGovernanceBlockedModal = false;
             state.governanceBlockedData = null;
@@ -19475,7 +19958,7 @@ function renderGovernanceBlockedModal() {
     var closeBtn = document.createElement('button');
     closeBtn.innerHTML = '&times;';
     closeBtn.style.cssText = 'background: none; border: none; color: #888; font-size: 28px; cursor: pointer; padding: 0; line-height: 1;';
-    closeBtn.onclick = function() {
+    closeBtn.onclick = function () {
         state.showGovernanceBlockedModal = false;
         state.governanceBlockedData = null;
         renderApp();
@@ -19518,13 +20001,13 @@ function renderGovernanceBlockedModal() {
     violationsList.style.cssText = 'display: flex; flex-direction: column; gap: 10px; max-height: 240px; overflow-y: auto;';
 
     if (data.violations && data.violations.length > 0) {
-        data.violations.forEach(function(violation) {
+        data.violations.forEach(function (violation) {
             var violationCard = document.createElement('div');
             violationCard.className = 'governance-violation-card';
             violationCard.style.cssText = 'padding: 12px 14px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; cursor: pointer; transition: all 0.2s;';
 
             // Make card clickable to open rule drawer
-            violationCard.onclick = function() {
+            violationCard.onclick = function () {
                 // Set selected rule and navigate to governance rules
                 state.selectedGovernanceRule = {
                     id: violation.rule_id,
@@ -19539,11 +20022,11 @@ function renderGovernanceBlockedModal() {
                 renderApp();
             };
 
-            violationCard.onmouseenter = function() {
+            violationCard.onmouseenter = function () {
                 violationCard.style.background = 'rgba(255,255,255,0.06)';
                 violationCard.style.borderColor = 'rgba(239,68,68,0.3)';
             };
-            violationCard.onmouseleave = function() {
+            violationCard.onmouseleave = function () {
                 violationCard.style.background = 'rgba(255,255,255,0.03)';
                 violationCard.style.borderColor = 'rgba(255,255,255,0.1)';
             };
@@ -19605,7 +20088,7 @@ function renderGovernanceBlockedModal() {
     dismissBtn.className = 'btn';
     dismissBtn.textContent = 'Dismiss';
     dismissBtn.style.cssText = 'padding: 10px 20px; background: rgba(255,255,255,0.1); border: none; border-radius: 6px; color: #fff; cursor: pointer;';
-    dismissBtn.onclick = function() {
+    dismissBtn.onclick = function () {
         state.showGovernanceBlockedModal = false;
         state.governanceBlockedData = null;
         renderApp();
@@ -19638,7 +20121,7 @@ function renderExecutionApprovalModal() {
 
     var overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
-    overlay.onclick = function(e) {
+    overlay.onclick = function (e) {
         if (e.target === overlay && !state.executionApprovalLoading) {
             state.showExecutionApprovalModal = false;
             state.executionApprovalVtid = null;
@@ -19675,7 +20158,7 @@ function renderExecutionApprovalModal() {
     closeBtn.innerHTML = '&times;';
     closeBtn.style.cssText = 'background: none; border: none; color: #888; font-size: 28px; cursor: pointer; padding: 0; line-height: 1;';
     closeBtn.disabled = state.executionApprovalLoading;
-    closeBtn.onclick = function() {
+    closeBtn.onclick = function () {
         if (!state.executionApprovalLoading) {
             state.showExecutionApprovalModal = false;
             state.executionApprovalVtid = null;
@@ -19735,7 +20218,7 @@ function renderExecutionApprovalModal() {
         'Worker dispatched to begin autonomous work',
         'Progress tracked in Command Hub'
     ];
-    steps.forEach(function(step) {
+    steps.forEach(function (step) {
         var li = document.createElement('li');
         li.textContent = step;
         stepsList.appendChild(li);
@@ -19759,7 +20242,7 @@ function renderExecutionApprovalModal() {
     reasonInput.style.cssText = 'width: 100%; padding: 10px 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; color: #f8fafc; font-size: 14px; box-sizing: border-box;';
     reasonInput.value = state.executionApprovalReason || '';
     reasonInput.disabled = state.executionApprovalLoading;
-    reasonInput.oninput = function(e) {
+    reasonInput.oninput = function (e) {
         state.executionApprovalReason = e.target.value;
     };
     reasonSection.appendChild(reasonInput);
@@ -19777,7 +20260,7 @@ function renderExecutionApprovalModal() {
     cancelBtn.textContent = 'Cancel';
     cancelBtn.style.cssText = 'padding: 10px 20px; background: rgba(255,255,255,0.1); border: none; border-radius: 6px; color: #fff; cursor: pointer;';
     cancelBtn.disabled = state.executionApprovalLoading;
-    cancelBtn.onclick = function() {
+    cancelBtn.onclick = function () {
         if (!state.executionApprovalLoading) {
             state.showExecutionApprovalModal = false;
             state.executionApprovalVtid = null;
@@ -19792,7 +20275,7 @@ function renderExecutionApprovalModal() {
     confirmBtn.textContent = state.executionApprovalLoading ? 'Approving...' : 'Approve & Start Execution';
     confirmBtn.style.cssText = 'padding: 10px 20px; background: #22c55e; border: none; border-radius: 6px; color: #fff; cursor: pointer; font-weight: 600;';
     confirmBtn.disabled = state.executionApprovalLoading;
-    confirmBtn.onclick = async function() {
+    confirmBtn.onclick = async function () {
         state.executionApprovalLoading = true;
         renderApp();
 
@@ -19800,7 +20283,7 @@ function renderExecutionApprovalModal() {
             // VTID-01194: Call lifecycle/start with approval_reason
             var response = await fetch('/api/v1/vtid/lifecycle/start', {
                 method: 'POST',
-                headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+                headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({
                     vtid: vtid,
                     source: 'command-hub',
@@ -19811,7 +20294,7 @@ function renderExecutionApprovalModal() {
             var result = await response.json();
 
             if (result.ok) {
-                // Clear modal state
+                // Clear modal state IMMEDIATELY for responsiveness
                 state.showExecutionApprovalModal = false;
                 state.executionApprovalVtid = null;
                 state.executionApprovalReason = '';
@@ -19828,8 +20311,9 @@ function renderExecutionApprovalModal() {
                 // Show success toast
                 showToast('Execution approved: ' + vtid + ' \u2192 Autonomous execution started', 'success');
 
-                // Refresh tasks
-                await fetchTasks();
+                // Trigger refresh but don't block UI close on it
+                fetchTasks();
+                renderApp();
             } else {
                 state.executionApprovalLoading = false;
                 showToast('Approval failed: ' + (result.error || 'Unknown error'), 'error');
@@ -19909,7 +20393,7 @@ async function toggleHeartbeatSession() {
     try {
         const response = await fetch('/api/v1/operator/heartbeat/session', {
             method: 'POST',
-            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ status: newStatus })
         });
 
@@ -20328,7 +20812,7 @@ async function fetchTelemetrySnapshot(silentRefresh) {
 
         // VTID-0527: Store raw events for task stage timeline computation
         if (result.events && result.events.length > 0) {
-            state.telemetryEvents = result.events.map(function(event) {
+            state.telemetryEvents = result.events.map(function (event) {
                 return {
                     id: event.id,
                     created_at: event.created_at,
@@ -20345,7 +20829,7 @@ async function fetchTelemetrySnapshot(silentRefresh) {
 
         // Optionally merge events into ticker if not already populated via SSE
         if (result.events && result.events.length > 0 && state.tickerEvents.length === 0) {
-            state.tickerEvents = result.events.slice(0, 20).map(function(event) {
+            state.tickerEvents = result.events.slice(0, 20).map(function (event) {
                 return {
                     id: event.id || Date.now() + Math.random(),
                     timestamp: new Date(event.created_at).toLocaleTimeString(),
@@ -20386,7 +20870,7 @@ function startTelemetryAutoRefresh() {
 
     console.log('[VTID-0526-D] Starting telemetry auto-refresh (3s interval, scroll-safe)');
 
-    telemetryAutoRefreshInterval = setInterval(function() {
+    telemetryAutoRefreshInterval = setInterval(function () {
         if (state.telemetryAutoRefreshEnabled && state.isOperatorOpen) {
             // VTID-01002: Use silentRefresh=true to preserve scroll positions
             fetchTelemetrySnapshot(true);
@@ -20424,7 +20908,7 @@ async function startOperatorLiveTicker() {
         // Start heartbeat session
         const response = await fetch('/api/v1/operator/heartbeat/session', {
             method: 'POST',
-            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ status: 'live' })
         });
 
@@ -20499,7 +20983,7 @@ async function uploadOperatorFile(file, kind) {
     try {
         const response = await fetch('/api/v1/operator/upload', {
             method: 'POST',
-            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 name: file.name,
                 kind: kind,
@@ -20711,7 +21195,7 @@ function updateInputHeightBucket(textarea, wrapper) {
     var lines = value.split('\n');
     var wrappedLineCount = 0;
 
-    lines.forEach(function(line) {
+    lines.forEach(function (line) {
         wrappedLineCount += Math.max(1, Math.ceil(line.length / charsPerLine));
     });
 
@@ -20830,7 +21314,7 @@ function renderOrbOverlay() {
         chatStream.appendChild(emptyState);
     } else {
         // Render messages from liveTranscript
-        state.orb.liveTranscript.forEach(function(msg) {
+        state.orb.liveTranscript.forEach(function (msg) {
             var msgEl = document.createElement('div');
             var msgClasses = ['orb-stream-msg', 'orb-stream-msg-' + msg.role];
             if (msg.isThinking) {
@@ -20885,12 +21369,12 @@ function renderOrbOverlay() {
     attachBtn.className = 'orb-input-control-btn';
     attachBtn.setAttribute('aria-label', 'Attach file');
     attachBtn.innerHTML = ORB_ICONS.plus;
-    attachBtn.addEventListener('click', function() {
+    attachBtn.addEventListener('click', function () {
         // Create hidden file input and trigger click
         var fileInput = document.createElement('input');
         fileInput.type = 'file';
         fileInput.accept = 'image/*,.pdf,.doc,.docx,.txt';
-        fileInput.addEventListener('change', function(e) {
+        fileInput.addEventListener('change', function (e) {
             if (e.target.files && e.target.files.length > 0) {
                 console.log('[ORB] File selected:', e.target.files[0].name);
                 // TODO: Handle file upload
@@ -20906,7 +21390,7 @@ function renderOrbOverlay() {
     micBtn.className = 'orb-input-control-btn' + (!isMuted ? ' orb-input-control-active' : '');
     micBtn.setAttribute('aria-label', isMuted ? 'Unmute microphone' : 'Mute microphone');
     micBtn.innerHTML = isMuted ? ORB_ICONS.micOff : ORB_ICONS.mic;
-    micBtn.addEventListener('click', function() {
+    micBtn.addEventListener('click', function () {
         orbVoiceToggleMute();
     });
     inputControls.appendChild(micBtn);
@@ -20917,7 +21401,7 @@ function renderOrbOverlay() {
     screenBtn.setAttribute('aria-label', state.orb.screenShareActive ? 'Stop screen share' : 'Start screen share');
     // VTID-01069-F: Use crossed icon when inactive
     screenBtn.innerHTML = state.orb.screenShareActive ? ORB_ICONS.screen : ORB_ICONS.screenOff;
-    screenBtn.addEventListener('click', function() {
+    screenBtn.addEventListener('click', function () {
         orbToggleScreenShare();
     });
     inputControls.appendChild(screenBtn);
@@ -20927,7 +21411,7 @@ function renderOrbOverlay() {
     cameraBtn.className = 'orb-input-control-btn' + (state.orb.cameraActive ? ' orb-input-control-active' : '');
     cameraBtn.setAttribute('aria-label', state.orb.cameraActive ? 'Turn off camera' : 'Turn on camera');
     cameraBtn.innerHTML = state.orb.cameraActive ? ORB_ICONS.camera : ORB_ICONS.cameraOff;
-    cameraBtn.addEventListener('click', function() {
+    cameraBtn.addEventListener('click', function () {
         orbToggleCamera();
     });
     inputControls.appendChild(cameraBtn);
@@ -20945,12 +21429,12 @@ function renderOrbOverlay() {
     textarea.value = state.orb.chatInputValue;
     textarea.setAttribute('rows', '1');
 
-    textarea.addEventListener('input', function(e) {
+    textarea.addEventListener('input', function (e) {
         state.orb.chatInputValue = e.target.value;
         updateInputHeightBucket(e.target, textareaWrap);
     });
 
-    textarea.addEventListener('keydown', function(e) {
+    textarea.addEventListener('keydown', function (e) {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             orbOverlaySendMessage();
@@ -20977,7 +21461,7 @@ function renderOrbOverlay() {
         { code: 'ru-RU', label: 'RU' }
     ];
 
-    availableLanguages.forEach(function(lang) {
+    availableLanguages.forEach(function (lang) {
         var option = document.createElement('option');
         option.value = lang.code;
         option.textContent = lang.label;
@@ -20987,7 +21471,7 @@ function renderOrbOverlay() {
         langDropdown.appendChild(option);
     });
 
-    langDropdown.addEventListener('change', function(e) {
+    langDropdown.addEventListener('change', function (e) {
         orbSetLanguage(e.target.value);
     });
     inputBar.appendChild(langDropdown);
@@ -21000,7 +21484,7 @@ function renderOrbOverlay() {
     sendBtn.innerHTML = ORB_ICONS.send;
     sendBtn.setAttribute('aria-label', 'Send message');
     sendBtn.disabled = !hasText;
-    sendBtn.addEventListener('click', function() {
+    sendBtn.addEventListener('click', function () {
         orbOverlaySendMessage();
     });
     inputBar.appendChild(sendBtn);
@@ -21070,7 +21554,7 @@ function renderOrbOverlay() {
     closeBtn.className = 'orb-close-btn';
     closeBtn.innerHTML = ORB_ICONS.close;
     closeBtn.setAttribute('aria-label', 'Close');
-    closeBtn.addEventListener('click', function(e) {
+    closeBtn.addEventListener('click', function (e) {
         e.stopPropagation();
         orbVoiceStop();
         // VTID-01219: Also stop Gemini Live session when closing orb
@@ -21084,7 +21568,7 @@ function renderOrbOverlay() {
     overlay.appendChild(closeBtn);
 
     // VTID-01069-F: Auto-scroll to newest messages after render
-    setTimeout(function() {
+    setTimeout(function () {
         var stream = document.querySelector('.orb-chat-stream');
         if (stream) {
             stream.scrollTop = stream.scrollHeight;
@@ -21134,7 +21618,7 @@ function renderOrbChatDrawer() {
     closeBtn.className = 'orb-chat-close';
     closeBtn.innerHTML = '&times;';
     closeBtn.setAttribute('aria-label', 'Close chat');
-    closeBtn.addEventListener('click', function() {
+    closeBtn.addEventListener('click', function () {
         console.log('[ORB] Closing chat drawer...');
         state.orb.chatDrawerOpen = false;
         renderApp();
@@ -21147,11 +21631,11 @@ function renderOrbChatDrawer() {
     var chipsArea = document.createElement('div');
     chipsArea.className = 'orb-suggestion-chips';
     var suggestions = ['Show my tasks', 'System status', 'Help me deploy', 'Run tests'];
-    suggestions.forEach(function(suggestion) {
+    suggestions.forEach(function (suggestion) {
         var chip = document.createElement('button');
         chip.className = 'orb-suggestion-chip';
         chip.textContent = suggestion;
-        chip.addEventListener('click', function() {
+        chip.addEventListener('click', function () {
             // Add as user message and echo response
             orbSendMessage(suggestion);
         });
@@ -21185,7 +21669,7 @@ function renderOrbChatDrawer() {
         messagesArea.appendChild(emptyState);
     } else {
         // Render messages
-        state.orb.chatMessages.forEach(function(msg) {
+        state.orb.chatMessages.forEach(function (msg) {
             var msgEl = document.createElement('div');
             msgEl.className = 'orb-chat-message orb-chat-message-' + msg.role;
 
@@ -21214,13 +21698,13 @@ function renderOrbChatDrawer() {
     input.placeholder = 'Type a message...';
     input.value = state.orb.chatInputValue;
     input.setAttribute('rows', '1');
-    input.addEventListener('input', function(e) {
+    input.addEventListener('input', function (e) {
         state.orb.chatInputValue = e.target.value;
         // Auto-resize
         e.target.style.height = 'auto';
         e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
     });
-    input.addEventListener('keydown', function(e) {
+    input.addEventListener('keydown', function (e) {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             orbSendMessage(state.orb.chatInputValue);
@@ -21233,7 +21717,7 @@ function renderOrbChatDrawer() {
     sendBtn.innerHTML = ORB_ICONS.send;
     sendBtn.setAttribute('aria-label', 'Send message');
     sendBtn.disabled = !state.orb.chatInputValue.trim();
-    sendBtn.addEventListener('click', function() {
+    sendBtn.addEventListener('click', function () {
         orbSendMessage(state.orb.chatInputValue);
     });
     inputContainer.appendChild(sendBtn);
@@ -21284,13 +21768,13 @@ async function orbLiveStart() {
         var sseUrl = '/api/v1/orb/live?sessionId=' + encodeURIComponent(startData.sessionId);
         var eventSource = new EventSource(sseUrl);
 
-        eventSource.onopen = function() {
+        eventSource.onopen = function () {
             console.log('[ORB-LIVE] SSE connected');
             state.orb.liveConnected = true;
             renderApp();
         };
 
-        eventSource.onmessage = function(event) {
+        eventSource.onmessage = function (event) {
             try {
                 var msg = JSON.parse(event.data);
                 console.log('[ORB-LIVE] SSE message:', msg.type);
@@ -21324,7 +21808,7 @@ async function orbLiveStart() {
             }
         };
 
-        eventSource.onerror = function(e) {
+        eventSource.onerror = function (e) {
             console.error('[ORB-LIVE] SSE error:', e);
             state.orb.liveConnected = false;
             state.orb.liveError = 'Connection lost';
@@ -21360,7 +21844,7 @@ async function orbLiveStart() {
         var isSpeaking = false;
         var audioBuffer = [];
 
-        processor.onaudioprocess = function(e) {
+        processor.onaudioprocess = function (e) {
             if (state.orb.liveMuted || !state.orb.liveSessionId) return;
 
             var inputData = e.inputBuffer.getChannelData(0);
@@ -21397,7 +21881,7 @@ async function orbLiveStart() {
 
                 // Send when we have enough data (320 samples = 20ms chunks)
                 if (audioBuffer.length >= 8) { // ~160ms of audio
-                    var totalLength = audioBuffer.reduce(function(sum, arr) { return sum + arr.length; }, 0);
+                    var totalLength = audioBuffer.reduce(function (sum, arr) { return sum + arr.length; }, 0);
                     var combined = new Int16Array(totalLength);
                     var offset = 0;
                     for (var k = 0; k < audioBuffer.length; k++) {
@@ -21426,7 +21910,7 @@ async function orbLiveStart() {
 
                     // Send any remaining audio
                     if (audioBuffer.length > 0) {
-                        var remainingLength = audioBuffer.reduce(function(sum, arr) { return sum + arr.length; }, 0);
+                        var remainingLength = audioBuffer.reduce(function (sum, arr) { return sum + arr.length; }, 0);
                         var remainingCombined = new Int16Array(remainingLength);
                         var remainingOffset = 0;
                         for (var m = 0; m < audioBuffer.length; m++) {
@@ -21480,13 +21964,13 @@ function orbLiveSendAudio(base64Data) {
             mime: 'audio/pcm;rate=16000',
             data_b64: base64Data
         })
-    }).then(function(res) {
+    }).then(function (res) {
         return res.json();
-    }).then(function(data) {
+    }).then(function (data) {
         if (!data.ok) {
             console.warn('[ORB-LIVE] Audio processing warning:', data.error);
         }
-    }).catch(function(error) {
+    }).catch(function (error) {
         console.error('[ORB-LIVE] Failed to send audio:', error);
     });
 }
@@ -21510,7 +21994,7 @@ function orbLiveToggleMute() {
                 sessionId: state.orb.liveSessionId,
                 muted: state.orb.liveMuted
             })
-        }).catch(function(e) {
+        }).catch(function (e) {
             console.error('[ORB-LIVE] Failed to sync mute state:', e);
         });
     }
@@ -21533,7 +22017,7 @@ function orbLiveStop() {
                 type: 'stop',
                 sessionId: state.orb.liveSessionId
             })
-        }).catch(function(e) {
+        }).catch(function (e) {
             console.error('[ORB-LIVE] Failed to notify stop:', e);
         });
     }
@@ -21553,7 +22037,7 @@ function orbLiveCleanup() {
 
     // Stop audio stream
     if (state.orb.liveAudioStream) {
-        state.orb.liveAudioStream.getTracks().forEach(function(track) {
+        state.orb.liveAudioStream.getTracks().forEach(function (track) {
             track.stop();
         });
         state.orb.liveAudioStream = null;
@@ -21561,7 +22045,7 @@ function orbLiveCleanup() {
 
     // Close audio context
     if (state.orb.liveAudioContext) {
-        state.orb.liveAudioContext.close().catch(function() {});
+        state.orb.liveAudioContext.close().catch(function () { });
         state.orb.liveAudioContext = null;
     }
 
@@ -21628,7 +22112,7 @@ function setupTranscriptScrollListener() {
 
     var THRESHOLD_PX = 80;
 
-    container.addEventListener('scroll', function() {
+    container.addEventListener('scroll', function () {
         // VTID-01064: Check if user scrolled away from bottom
         var distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
 
@@ -21705,7 +22189,7 @@ function orbVoiceStart() {
     // When recognition restarts, old results may persist in event.results
     var lastProcessedResultIndex = -1;
 
-    recognition.onstart = function() {
+    recognition.onstart = function () {
         console.log('[VTID-0135] Speech recognition started');
         state.orb.voiceState = 'LISTENING';
         state.orb.micActive = true;
@@ -21720,22 +22204,22 @@ function orbVoiceStart() {
     };
 
     // VTID-01067: Mic-reactive shimmer on audio/speech events
-    recognition.onaudiostart = function() {
+    recognition.onaudiostart = function () {
         console.log('[VTID-01067] Audio capture started');
         triggerMicShimmer();
     };
 
-    recognition.onspeechstart = function() {
+    recognition.onspeechstart = function () {
         console.log('[VTID-01067] Speech detected');
         triggerMicShimmer();
     };
 
-    recognition.onspeechend = function() {
+    recognition.onspeechend = function () {
         console.log('[VTID-01067] Speech ended');
         // Return intensity to normal (handled by animation end)
     };
 
-    recognition.onresult = function(event) {
+    recognition.onresult = function (event) {
         var interimTranscript = '';
         var finalTranscript = '';
 
@@ -21816,7 +22300,7 @@ function orbVoiceStart() {
         }
     };
 
-    recognition.onerror = function(event) {
+    recognition.onerror = function (event) {
         console.error('[VTID-0135] Speech recognition error:', event.error);
 
         if (event.error === 'not-allowed') {
@@ -21847,7 +22331,7 @@ function orbVoiceStart() {
         renderApp();
     };
 
-    recognition.onend = function() {
+    recognition.onend = function () {
         console.log('[VTID-0135] Speech recognition ended');
 
         // VTID-01044: If aborted for TTS, don't auto-restart here
@@ -22027,12 +22511,12 @@ async function orbCaptureFrame(stream, source) {
             };
         } else {
             // Fallback: create video element to capture frame
-            return new Promise(function(resolve) {
+            return new Promise(function (resolve) {
                 var video = document.createElement('video');
                 video.srcObject = stream;
-                video.onloadedmetadata = function() {
+                video.onloadedmetadata = function () {
                     video.play();
-                    setTimeout(function() {
+                    setTimeout(function () {
                         var canvas = document.createElement('canvas');
                         canvas.width = 768;
                         canvas.height = 768;
@@ -22059,7 +22543,7 @@ async function orbCaptureFrame(stream, source) {
                         });
                     }, 100);
                 };
-                video.onerror = function() {
+                video.onerror = function () {
                     resolve(null);
                 };
             });
@@ -22078,7 +22562,7 @@ function orbToggleCamera() {
     if (state.orb.cameraActive && state.orb.cameraStream) {
         // Stop camera
         console.log('[VTID-01069-D] Stopping camera...');
-        state.orb.cameraStream.getTracks().forEach(function(track) {
+        state.orb.cameraStream.getTracks().forEach(function (track) {
             track.stop();
         });
         state.orb.cameraStream = null;
@@ -22099,13 +22583,13 @@ function orbToggleCamera() {
             return;
         }
         navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-            .then(function(stream) {
+            .then(function (stream) {
                 console.log('[VTID-01069-D] Camera stream acquired');
                 state.orb.cameraStream = stream;
                 state.orb.cameraActive = true;
                 renderApp();
             })
-            .catch(function(err) {
+            .catch(function (err) {
                 console.error('[VTID-01069-D] Camera error:', err);
                 // Add system message about permission denial
                 state.orb.liveTranscript.push({
@@ -22128,7 +22612,7 @@ function orbToggleScreenShare() {
     if (state.orb.screenShareActive && state.orb.screenStream) {
         // Stop screen share
         console.log('[VTID-01069-D] Stopping screen share...');
-        state.orb.screenStream.getTracks().forEach(function(track) {
+        state.orb.screenStream.getTracks().forEach(function (track) {
             track.stop();
         });
         state.orb.screenStream = null;
@@ -22149,12 +22633,12 @@ function orbToggleScreenShare() {
             return;
         }
         navigator.mediaDevices.getDisplayMedia({ video: true, audio: false })
-            .then(function(stream) {
+            .then(function (stream) {
                 console.log('[VTID-01069-D] Screen share stream acquired');
                 state.orb.screenStream = stream;
                 state.orb.screenShareActive = true;
                 // Listen for user stopping share via browser UI
-                stream.getVideoTracks()[0].addEventListener('ended', function() {
+                stream.getVideoTracks()[0].addEventListener('ended', function () {
                     console.log('[VTID-01069-D] Screen share ended by user');
                     state.orb.screenStream = null;
                     state.orb.screenShareActive = false;
@@ -22162,7 +22646,7 @@ function orbToggleScreenShare() {
                 });
                 renderApp();
             })
-            .catch(function(err) {
+            .catch(function (err) {
                 console.error('[VTID-01069-D] Screen share error:', err);
                 // Add system message about permission denial
                 state.orb.liveTranscript.push({
@@ -22196,9 +22680,14 @@ async function geminiLiveStart() {
     try {
         // 1. Start Live session via API
         var lang = state.orb.orbLang || 'en-US';
+        // VTID-ORBC: Include auth token for dual JWT auth support
+        var startHeaders = { 'Content-Type': 'application/json' };
+        if (state.authToken) {
+            startHeaders['Authorization'] = 'Bearer ' + state.authToken;
+        }
         var response = await fetch('/api/v1/orb/live/session/start', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: startHeaders,
             body: JSON.stringify({
                 lang: lang,
                 voice_style: 'friendly, calm, empathetic',
@@ -22217,13 +22706,18 @@ async function geminiLiveStart() {
         console.log('[VTID-01155] Live session started:', data.session_id);
 
         // 2. Connect to SSE stream
-        var eventSource = new EventSource('/api/v1/orb/live/stream?session_id=' + data.session_id);
+        // VTID-ORBC: Pass auth token via query param (EventSource doesn't support headers)
+        var sseUrl = '/api/v1/orb/live/stream?session_id=' + data.session_id;
+        if (state.authToken) {
+            sseUrl += '&token=' + encodeURIComponent(state.authToken);
+        }
+        var eventSource = new EventSource(sseUrl);
 
-        eventSource.onopen = function() {
+        eventSource.onopen = function () {
             console.log('[VTID-01155] Live stream connected');
         };
 
-        eventSource.onmessage = function(event) {
+        eventSource.onmessage = function (event) {
             try {
                 var msg = JSON.parse(event.data);
                 geminiLiveHandleMessage(msg);
@@ -22232,7 +22726,7 @@ async function geminiLiveStart() {
             }
         };
 
-        eventSource.onerror = function(err) {
+        eventSource.onerror = function (err) {
             console.error('[VTID-01155] Live stream error:', err);
             if (eventSource.readyState === EventSource.CLOSED) {
                 geminiLiveStop();
@@ -22246,6 +22740,9 @@ async function geminiLiveStart() {
 
         // 4. Start frame capture if screen/camera active
         geminiLiveStartFrameCapture();
+
+        // 5. VTID-01225: Start parallel transcriber for UI display
+        geminiLiveStartTranscriber();
 
         renderApp();
 
@@ -22275,9 +22772,12 @@ async function geminiLiveStop() {
         state.orb.geminiLiveFrameInterval = null;
     }
 
+    // VTID-01225: Stop parallel transcriber
+    geminiLiveStopTranscriber();
+
     // Stop audio capture
     if (state.orb.geminiLiveAudioStream) {
-        state.orb.geminiLiveAudioStream.getTracks().forEach(function(track) {
+        state.orb.geminiLiveAudioStream.getTracks().forEach(function (track) {
             track.stop();
         });
         state.orb.geminiLiveAudioStream = null;
@@ -22289,7 +22789,7 @@ async function geminiLiveStop() {
     }
 
     if (state.orb.geminiLiveAudioContext) {
-        state.orb.geminiLiveAudioContext.close().catch(function() {});
+        state.orb.geminiLiveAudioContext.close().catch(function () { });
         state.orb.geminiLiveAudioContext = null;
     }
 
@@ -22305,9 +22805,14 @@ async function geminiLiveStop() {
     // Stop session on backend
     if (state.orb.geminiLiveSessionId) {
         try {
+            // VTID-ORBC: Include auth token for dual JWT auth support
+            var stopHeaders = { 'Content-Type': 'application/json' };
+            if (state.authToken) {
+                stopHeaders['Authorization'] = 'Bearer ' + state.authToken;
+            }
             await fetch('/api/v1/orb/live/session/stop', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: stopHeaders,
                 body: JSON.stringify({ session_id: state.orb.geminiLiveSessionId })
             });
         } catch (e) {
@@ -22451,7 +22956,7 @@ async function geminiLiveStartAudioCapture() {
     // 1024 samples = 64ms at 16kHz (must be power of 2)
     var processor = audioContext.createScriptProcessor(1024, 1, 1);
 
-    processor.onaudioprocess = function(e) {
+    processor.onaudioprocess = function (e) {
         if (!state.orb.geminiLiveActive || state.orb.voiceState === 'MUTED') return;
 
         var inputData = e.inputBuffer.getChannelData(0);
@@ -22484,15 +22989,20 @@ async function geminiLiveStartAudioCapture() {
 function geminiLiveSendAudio(base64Data) {
     if (!state.orb.geminiLiveSessionId || !state.orb.geminiLiveActive) return;
 
+    // VTID-ORBC: Include auth token for dual JWT auth support
+    var sendHeaders = { 'Content-Type': 'application/json' };
+    if (state.authToken) {
+        sendHeaders['Authorization'] = 'Bearer ' + state.authToken;
+    }
     fetch('/api/v1/orb/live/stream/send?session_id=' + state.orb.geminiLiveSessionId, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: sendHeaders,
         body: JSON.stringify({
             type: 'audio',
             data_b64: base64Data,
             mime: 'audio/pcm;rate=16000'
         })
-    }).catch(function(error) {
+    }).catch(function (error) {
         console.warn('[VTID-01155] Failed to send audio:', error);
     });
 }
@@ -22507,7 +23017,7 @@ function geminiLiveStartFrameCapture() {
     }
 
     // Capture frames every 1 second
-    state.orb.geminiLiveFrameInterval = setInterval(function() {
+    state.orb.geminiLiveFrameInterval = setInterval(function () {
         if (!state.orb.geminiLiveActive) return;
 
         // Capture screen frame if active
@@ -22525,6 +23035,122 @@ function geminiLiveStartFrameCapture() {
 }
 
 /**
+ * VTID-01225: Start parallel Web Speech API for transcript display
+ * Runs alongside Gemini Live to show user's spoken words in UI
+ * Does NOT send text to backend - Gemini already has the audio
+ */
+function geminiLiveStartTranscriber() {
+    // Check browser support
+    var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        console.warn('[VTID-01225] Web Speech API not supported - transcripts will not be displayed');
+        return;
+    }
+
+    // Stop any existing transcriber
+    if (state.orb.geminiLiveTranscriber) {
+        try {
+            state.orb.geminiLiveTranscriber.stop();
+        } catch (e) {}
+        state.orb.geminiLiveTranscriber = null;
+    }
+
+    var recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = state.orb.orbLang || 'en-US';
+
+    var lastProcessedIndex = -1;
+
+    recognition.onstart = function() {
+        console.log('[VTID-01225] Parallel transcriber started');
+    };
+
+    recognition.onresult = function(event) {
+        var finalTranscript = '';
+        var interimTranscript = '';
+
+        // Process results starting from where we left off
+        var startIndex = Math.max(event.resultIndex, lastProcessedIndex + 1);
+        for (var i = startIndex; i < event.results.length; i++) {
+            var transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+                finalTranscript += transcript;
+                lastProcessedIndex = i;
+            } else {
+                interimTranscript += transcript;
+            }
+        }
+
+        // Update interim display
+        state.orb.interimTranscript = interimTranscript;
+
+        // Add final transcript to chat UI
+        if (finalTranscript) {
+            console.log('[VTID-01225] User said:', finalTranscript);
+            state.orb.interimTranscript = '';
+
+            // Add to transcript display (user's spoken words)
+            state.orb.liveTranscript.push({
+                id: Date.now(),
+                role: 'user',
+                text: finalTranscript.trim(),
+                mode: 'voice',
+                timestamp: new Date().toISOString()
+            });
+
+            // Persist conversation state
+            orbSaveConversationState();
+            scrollOrbLiveTranscript();
+        }
+
+        renderApp();
+    };
+
+    recognition.onerror = function(event) {
+        // Ignore no-speech errors - common when audio is sent to Gemini
+        if (event.error === 'no-speech' || event.error === 'aborted') {
+            return;
+        }
+        console.warn('[VTID-01225] Transcriber error:', event.error);
+    };
+
+    recognition.onend = function() {
+        // Auto-restart if session still active
+        if (state.orb.geminiLiveActive && state.orb.geminiLiveTranscriber) {
+            console.log('[VTID-01225] Restarting transcriber...');
+            lastProcessedIndex = -1;
+            try {
+                recognition.start();
+            } catch (e) {
+                console.warn('[VTID-01225] Failed to restart transcriber:', e);
+            }
+        }
+    };
+
+    try {
+        recognition.start();
+        state.orb.geminiLiveTranscriber = recognition;
+        console.log('[VTID-01225] Parallel transcription enabled for UI display');
+    } catch (e) {
+        console.error('[VTID-01225] Failed to start transcriber:', e);
+    }
+}
+
+/**
+ * VTID-01225: Stop parallel transcriber
+ */
+function geminiLiveStopTranscriber() {
+    if (state.orb.geminiLiveTranscriber) {
+        try {
+            state.orb.geminiLiveTranscriber.stop();
+        } catch (e) {}
+        state.orb.geminiLiveTranscriber = null;
+        console.log('[VTID-01225] Parallel transcriber stopped');
+    }
+}
+
+/**
  * VTID-01155: Capture frame from stream and send to Gateway
  * Resizes to 768x768 and encodes as JPEG
  */
@@ -22535,7 +23161,7 @@ function geminiLiveCaptureAndSendFrame(stream, source) {
     // Create ImageCapture if available
     if (typeof ImageCapture !== 'undefined') {
         var imageCapture = new ImageCapture(videoTrack);
-        imageCapture.grabFrame().then(function(bitmap) {
+        imageCapture.grabFrame().then(function (bitmap) {
             // Resize to 768x768 using canvas
             var canvas = document.createElement('canvas');
             canvas.width = 768;
@@ -22562,14 +23188,14 @@ function geminiLiveCaptureAndSendFrame(stream, source) {
 
             // Send to Gateway
             geminiLiveSendFrame(base64, source);
-        }).catch(function(err) {
+        }).catch(function (err) {
             console.warn('[VTID-01155] Failed to grab frame:', err);
         });
     } else {
         // Fallback: use video element
         var video = document.createElement('video');
         video.srcObject = stream;
-        video.onloadedmetadata = function() {
+        video.onloadedmetadata = function () {
             video.play();
             var canvas = document.createElement('canvas');
             canvas.width = 768;
@@ -22601,9 +23227,14 @@ function geminiLiveCaptureAndSendFrame(stream, source) {
 function geminiLiveSendFrame(base64Data, source) {
     if (!state.orb.geminiLiveSessionId || !state.orb.geminiLiveActive) return;
 
+    // VTID-ORBC: Include auth token for dual JWT auth support
+    var frameHeaders = { 'Content-Type': 'application/json' };
+    if (state.authToken) {
+        frameHeaders['Authorization'] = 'Bearer ' + state.authToken;
+    }
     fetch('/api/v1/orb/live/stream/send?session_id=' + state.orb.geminiLiveSessionId, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: frameHeaders,
         body: JSON.stringify({
             type: 'video',
             source: source,
@@ -22611,7 +23242,7 @@ function geminiLiveSendFrame(base64Data, source) {
             width: 768,
             height: 768
         })
-    }).catch(function(error) {
+    }).catch(function (error) {
         console.warn('[VTID-01155] Failed to send frame:', error);
     });
 }
@@ -22621,97 +23252,78 @@ function geminiLiveSendFrame(base64Data, source) {
  * Queue audio chunks and play sequentially to avoid overlapping
  */
 function geminiLivePlayAudio(base64Data, mimeType) {
-    console.log('[VTID-01219] Queueing audio, mime:', mimeType, 'size:', base64Data.length);
-
     // Add to queue
     state.orb.geminiLiveAudioQueue.push({ data: base64Data, mime: mimeType });
 
-    // Start playback if not already playing
-    if (!state.orb.geminiLiveAudioPlaying) {
-        geminiLivePlayNextAudio();
-    }
+    // Process immediately
+    geminiLiveProcessQueue();
 }
 
 /**
- * VTID-01219: Play next audio chunk from queue
+ * VTID-01219: Process audio queue and schedule all chunks immediately
+ * Uses Web Audio API for gapless PCM playback
  */
-function geminiLivePlayNextAudio() {
-    if (state.orb.geminiLiveAudioQueue.length === 0) {
-        state.orb.geminiLiveAudioPlaying = false;
-        console.log('[VTID-01219] Audio queue empty');
-        return;
+function geminiLiveProcessQueue() {
+    // If we receive WAV (fallback), we must play sequentially to avoid overlap clutter
+    // but the backend should now be sending PCM.
+
+    // Ensure AudioContext exists
+    if (!state.orb.geminiLiveAudioContext || state.orb.geminiLiveAudioContext.state === 'closed') {
+        state.orb.geminiLiveAudioContext = new (window.AudioContext || window.webkitAudioContext)();
     }
+    var audioContext = state.orb.geminiLiveAudioContext;
 
-    state.orb.geminiLiveAudioPlaying = true;
-    var chunk = state.orb.geminiLiveAudioQueue.shift();
-    var base64Data = chunk.data;
-    var mimeType = chunk.mime;
+    while (state.orb.geminiLiveAudioQueue.length > 0) {
+        var chunk = state.orb.geminiLiveAudioQueue.shift();
+        var base64Data = chunk.data;
+        var mimeType = chunk.mime;
 
-    // For WAV audio, use Audio element
-    if (mimeType && mimeType.includes('wav')) {
-        var audio = new Audio('data:audio/wav;base64,' + base64Data);
-        audio.onended = function() {
-            console.log('[VTID-01219] Audio chunk complete, queue:', state.orb.geminiLiveAudioQueue.length);
-            geminiLivePlayNextAudio(); // Play next chunk
-        };
-        audio.onerror = function(e) {
-            console.error('[VTID-01219] Audio error:', e);
-            geminiLivePlayNextAudio(); // Continue with next chunk
-        };
-        audio.play().catch(function(e) {
-            console.error('[VTID-01219] Audio play failed:', e);
-            geminiLivePlayNextAudio();
-        });
-        return;
-    }
-
-    // For raw PCM, use Web Audio API
-    try {
-        var binaryString = atob(base64Data);
-        var bytes = new Uint8Array(binaryString.length);
-        for (var i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
+        // Legacy WAV handling (fallback)
+        if (mimeType && mimeType.includes('wav')) {
+            console.warn('[VTID-01219] Received WAV in PCM mode. Playing via Audio element (may define gaps).');
+            var audio = new Audio('data:audio/wav;base64,' + base64Data);
+            audio.play().catch(e => console.error(e));
+            continue;
         }
 
-        // Create AudioContext if not exists (use device sample rate for better compatibility)
-        if (!state.orb.geminiLiveAudioContext || state.orb.geminiLiveAudioContext.state === 'closed') {
-            state.orb.geminiLiveAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+        // PCM Scheduling
+        try {
+            var binaryString = atob(base64Data);
+            var bytes = new Uint8Array(binaryString.length);
+            for (var i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+
+            var inputSampleRate = 24000; // Gemini outputs 24kHz
+            var int16Array = new Int16Array(bytes.buffer);
+            var floatArray = new Float32Array(int16Array.length);
+            for (var j = 0; j < int16Array.length; j++) {
+                floatArray[j] = int16Array[j] / 32768.0;
+            }
+
+            var audioBuffer = audioContext.createBuffer(1, floatArray.length, inputSampleRate);
+            audioBuffer.copyToChannel(floatArray, 0);
+
+            var source = audioContext.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(audioContext.destination);
+
+            // Schedule playback seamlessly
+            var now = audioContext.currentTime;
+            // First chunk or drift correction: if scheduled time is in past, reset to now
+            if (state.orb.geminiLiveLastScheduledEnd < now) {
+                state.orb.geminiLiveLastScheduledEnd = now;
+            }
+
+            var nextStartTime = state.orb.geminiLiveLastScheduledEnd;
+            source.start(nextStartTime);
+
+            state.orb.geminiLiveLastScheduledEnd += audioBuffer.duration;
+            state.orb.geminiLiveAudioPlaying = true;
+
+        } catch (e) {
+            console.error('[VTID-01219] Audio scheduling error:', e);
         }
-
-        var audioContext = state.orb.geminiLiveAudioContext;
-        var inputSampleRate = 24000; // Gemini outputs 24kHz
-
-        // Convert Int16 PCM to Float32
-        var int16Array = new Int16Array(bytes.buffer);
-        var floatArray = new Float32Array(int16Array.length);
-        for (var j = 0; j < int16Array.length; j++) {
-            floatArray[j] = int16Array[j] / 32768.0;
-        }
-
-        // Create audio buffer at input sample rate
-        var audioBuffer = audioContext.createBuffer(1, floatArray.length, inputSampleRate);
-        audioBuffer.copyToChannel(floatArray, 0);
-
-        var source = audioContext.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(audioContext.destination);
-        source.onended = function() {
-            geminiLivePlayNextAudio(); // Play next chunk
-        };
-
-        // FIX: Schedule playback to start immediately after previous chunk ends
-        var now = audioContext.currentTime;
-        var nextStartTime = Math.max(now, state.orb.geminiLiveLastScheduledEnd);
-        source.start(nextStartTime);
-
-        // Track when this segment will end for next scheduling
-        var duration = audioBuffer.duration;
-        state.orb.geminiLiveLastScheduledEnd = nextStartTime + duration;
-
-        console.log('[AUDIO FIX] Scheduled playback at ' + nextStartTime.toFixed(3) + 's (now: ' + now.toFixed(3) + 's), duration: ' + duration.toFixed(3) + 's');
-    } catch (e) {
-        console.error('[VTID-01219] PCM playback error:', e);
-        geminiLivePlayNextAudio();
     }
 }
 
@@ -22744,7 +23356,7 @@ async function geminiTtsFallback(text, lang) {
         // Play audio from base64
         if (data.audio_b64) {
             var audio = new Audio('data:' + (data.mime || 'audio/mp3') + ';base64,' + data.audio_b64);
-            audio.play().catch(function(e) {
+            audio.play().catch(function (e) {
                 console.warn('[VTID-01155] TTS playback failed:', e);
             });
         }
@@ -22843,7 +23455,7 @@ async function orbVoiceSendText(text) {
 
             // VTID-01066: Replace thinking placeholder with actual response
             var responseId = Date.now();
-            var placeholderIdx = state.orb.liveTranscript.findIndex(function(m) {
+            var placeholderIdx = state.orb.liveTranscript.findIndex(function (m) {
                 return m.id === state.orb.thinkingPlaceholderId;
             });
             if (placeholderIdx !== -1) {
@@ -22882,7 +23494,7 @@ async function orbVoiceSendText(text) {
             updateTranscriptNearBottom();
 
             // VTID-01066: Replace thinking placeholder with error
-            var placeholderIdx = state.orb.liveTranscript.findIndex(function(m) {
+            var placeholderIdx = state.orb.liveTranscript.findIndex(function (m) {
                 return m.id === state.orb.thinkingPlaceholderId;
             });
             if (placeholderIdx !== -1) {
@@ -22913,7 +23525,7 @@ async function orbVoiceSendText(text) {
         updateTranscriptNearBottom();
 
         // VTID-01066: Replace thinking placeholder with error
-        var placeholderIdx = state.orb.liveTranscript.findIndex(function(m) {
+        var placeholderIdx = state.orb.liveTranscript.findIndex(function (m) {
             return m.id === state.orb.thinkingPlaceholderId;
         });
         if (placeholderIdx !== -1) {
@@ -23082,9 +23694,9 @@ function orbSelectBestVoiceForLanguage(targetLang) {
     var langPrefix = targetLang.split('-')[0];
 
     // Score all voices for this language
-    var scoredVoices = voices.map(function(voice) {
+    var scoredVoices = voices.map(function (voice) {
         return { voice: voice, score: orbScoreVoice(voice, targetLang) };
-    }).sort(function(a, b) { return b.score - a.score; });
+    }).sort(function (a, b) { return b.score - a.score; });
 
     if (scoredVoices.length === 0) {
         return { voice: null, isMatch: false };
@@ -23093,8 +23705,8 @@ function orbSelectBestVoiceForLanguage(targetLang) {
     var bestVoice = scoredVoices[0].voice;
     // Check if best voice actually matches the target language
     var isMatch = bestVoice.lang === targetLang ||
-                  bestVoice.lang.startsWith(langPrefix + '-') ||
-                  bestVoice.lang === langPrefix;
+        bestVoice.lang.startsWith(langPrefix + '-') ||
+        bestVoice.lang === langPrefix;
 
     return { voice: bestVoice, isMatch: isMatch };
 }
@@ -23111,7 +23723,7 @@ function orbLoadTtsVoices() {
     // VTID-01042: Migrate legacy keys and load saved language
     orbMigrateLegacyLanguageSettings();
 
-    var loadVoices = function() {
+    var loadVoices = function () {
         var voices = window.speechSynthesis.getVoices();
         if (voices.length === 0) return;
 
@@ -23167,15 +23779,15 @@ function orbApplyLanguageVoiceSelection() {
     // Check for previously saved voice URI for this language
     var savedVoiceUri = localStorage.getItem(ORB_TTS_VOICE_URI_KEY);
     if (savedVoiceUri) {
-        var savedVoice = state.orb.ttsVoices.find(function(v) {
+        var savedVoice = state.orb.ttsVoices.find(function (v) {
             return v.voiceURI === savedVoiceUri;
         });
         // Only use saved voice if it matches current language
         if (savedVoice) {
             var langPrefix = currentLang.split('-')[0];
             var voiceMatchesLang = savedVoice.lang === currentLang ||
-                                   savedVoice.lang.startsWith(langPrefix + '-') ||
-                                   savedVoice.lang === langPrefix;
+                savedVoice.lang.startsWith(langPrefix + '-') ||
+                savedVoice.lang === langPrefix;
             if (voiceMatchesLang) {
                 state.orb.ttsSelectedVoiceUri = savedVoiceUri;
                 state.orb.orbLangWarning = null;
@@ -23281,7 +23893,7 @@ function orbGetSelectedVoice() {
     if (!state.orb.ttsSelectedVoiceUri || state.orb.ttsVoices.length === 0) {
         return null;
     }
-    return state.orb.ttsVoices.find(function(v) {
+    return state.orb.ttsVoices.find(function (v) {
         return v.voiceURI === state.orb.ttsSelectedVoiceUri;
     }) || null;
 }
@@ -23292,7 +23904,7 @@ function orbGetSelectedVoice() {
 function orbSetTtsVoice(voiceUri) {
     state.orb.ttsSelectedVoiceUri = voiceUri;
     localStorage.setItem(ORB_TTS_VOICE_KEY, voiceUri);
-    var voice = state.orb.ttsVoices.find(function(v) { return v.voiceURI === voiceUri; });
+    var voice = state.orb.ttsVoices.find(function (v) { return v.voiceURI === voiceUri; });
     console.log('[VTID-01038] Voice changed to:', voice ? voice.name : voiceUri);
 }
 
@@ -23370,7 +23982,7 @@ function restartRecognitionAfterTTS() {
     scrollOrbLiveTranscript();
 
     // Restart recognition with a small delay to avoid catching TTS tail
-    setTimeout(function() {
+    setTimeout(function () {
         if (state.orb.overlayVisible && state.orb.speechRecognition &&
             state.orb.voiceState !== 'MUTED' && !state.orb.voiceError) {
             try {
@@ -23441,7 +24053,7 @@ function orbStopTTS(reason) {
     renderApp();
 
     // Restart recognition after a short delay
-    setTimeout(function() {
+    setTimeout(function () {
         if (state.orb.overlayVisible && state.orb.speechRecognition &&
             state.orb.voiceState !== 'MUTED' && !state.orb.voiceError) {
             try {
@@ -23560,7 +24172,7 @@ async function orbVoiceSpeakWithGeminiTts(text) {
             state.orb.geminiTtsAudio = audio;
 
             // VTID-01155: Safety timeout - if audio doesn't complete in 60 seconds, force end
-            var geminiTtsSafetyTimeout = setTimeout(function() {
+            var geminiTtsSafetyTimeout = setTimeout(function () {
                 console.warn('[VTID-01155] Gemini-TTS safety timeout - forcing end');
                 if (state.orb.geminiTtsAudio === audio && state.orb.voiceState === 'SPEAKING') {
                     audio.pause();
@@ -23569,21 +24181,21 @@ async function orbVoiceSpeakWithGeminiTts(text) {
                 }
             }, 60000);
 
-            audio.onended = function() {
+            audio.onended = function () {
                 clearTimeout(geminiTtsSafetyTimeout);
                 console.log('[VTID-01155] Gemini-TTS playback ended');
                 state.orb.geminiTtsAudio = null;
                 orbVoiceSpeakEnded();
             };
 
-            audio.onerror = function(e) {
+            audio.onerror = function (e) {
                 clearTimeout(geminiTtsSafetyTimeout);
                 console.error('[VTID-01155] Gemini-TTS audio error:', e);
                 state.orb.geminiTtsAudio = null;
                 orbVoiceSpeakEnded();
             };
 
-            audio.play().catch(function(e) {
+            audio.play().catch(function (e) {
                 clearTimeout(geminiTtsSafetyTimeout);
                 console.warn('[VTID-01155] Gemini-TTS playback failed, falling back to browser:', e);
                 state.orb.geminiTtsAudio = null;
@@ -23628,13 +24240,13 @@ function orbVoiceSpeakWithBrowserTts(text) {
         console.log('[VTID-01038] Using voice:', selectedVoice.name);
     }
 
-    utterance.onstart = function() {
+    utterance.onstart = function () {
         console.log('[VTID-0135] Browser TTS started');
     };
 
     // VTID-01155: Safety timeout - if TTS doesn't complete in 30 seconds, force end
     // This prevents the conversation from getting stuck if TTS fails silently
-    var ttsSafetyTimeout = setTimeout(function() {
+    var ttsSafetyTimeout = setTimeout(function () {
         console.warn('[VTID-01155] Browser TTS safety timeout - forcing end');
         if (state.orb.voiceState === 'SPEAKING') {
             window.speechSynthesis.cancel();
@@ -23642,7 +24254,7 @@ function orbVoiceSpeakWithBrowserTts(text) {
         }
     }, 30000);
 
-    utterance.onerror = function(event) {
+    utterance.onerror = function (event) {
         clearTimeout(ttsSafetyTimeout);
         console.error('[VTID-0135] Browser TTS error:', event.error);
         // VTID-01155: Always call orbVoiceSpeakEnded on error to prevent blocking
@@ -23652,7 +24264,7 @@ function orbVoiceSpeakWithBrowserTts(text) {
         }
     };
 
-    utterance.onend = function() {
+    utterance.onend = function () {
         clearTimeout(ttsSafetyTimeout);
         console.log('[VTID-0135] Browser TTS ended');
         orbVoiceSpeakEnded();
@@ -23728,7 +24340,7 @@ function setOrbState(newState) {
     }
 
     // Remove any existing orb-- class
-    validStates.forEach(function(s) {
+    validStates.forEach(function (s) {
         shell.classList.remove('orb--' + s);
     });
 
@@ -23848,7 +24460,7 @@ function setOrbMicroStatus(text, ttlMs) {
 
         // Set auto-clear timer
         if (ttlMs > 0) {
-            state.orb.microStatusTimer = setTimeout(function() {
+            state.orb.microStatusTimer = setTimeout(function () {
                 state.orb.microStatusText = '';
                 statusEl.classList.remove('orb-micro-status--visible');
                 state.orb.microStatusTimer = null;
@@ -23870,7 +24482,7 @@ function startSpeakingBeat() {
     var shell = document.querySelector('.orb-shell');
     if (!shell) return;
 
-    state.orb.speakingBeatTimer = setInterval(function() {
+    state.orb.speakingBeatTimer = setInterval(function () {
         shell.classList.toggle('orb-speak-beat');
     }, 420);
 
@@ -23907,7 +24519,7 @@ function triggerMicShimmer() {
     state.orb.micShimmerActive = true;
 
     // Remove after animation completes
-    setTimeout(function() {
+    setTimeout(function () {
         shell.classList.remove('orb-mic-active');
         state.orb.micShimmerActive = false;
     }, 300);
@@ -23980,7 +24592,7 @@ function orbSendMessage(message) {
 
     // Call Assistant Core API
     sendOrbMessage(message.trim(), context)
-        .then(function(data) {
+        .then(function (data) {
             console.log('[ORB] Response received:', data.ok ? 'success' : 'error');
 
             // Add assistant response
@@ -23995,7 +24607,7 @@ function orbSendMessage(message) {
             renderApp();
             scrollOrbChatToBottom();
         })
-        .catch(function(error) {
+        .catch(function (error) {
             console.error('[ORB] API error:', error);
 
             // Add error message
@@ -24013,7 +24625,7 @@ function orbSendMessage(message) {
 
 // --- Init ---
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     console.log('App v4 starting...');
     try {
         // Init Router
@@ -24030,47 +24642,40 @@ document.addEventListener('DOMContentLoaded', () => {
 
         renderApp();
 
-        // VTID-01049: Load Me Context (authoritative role) on boot
-        fetchMeContext().then(function(me) {
-            // fetchMeContext() returns me OR null (e.g. not signed in / 401 / network error)
-            if (!me) { renderApp(); return; }
-            renderApp();
-        }).catch(function(err) {
-            console.error('[VTID-01049] fetchMeContext failed:', err);
-            renderApp();
-        });
+        // VTID-01046: Unified Auth Boot Sequence
+        // Synchronize identity and context before loading other data
+        console.log('[VTID-01046] Booting Auth...');
+        if (state.authToken) {
+            await Promise.all([
+                fetchMeContext(),
+                fetchAuthMe()
+            ]);
+            console.log('[VTID-01046] Auth boot complete');
+        } else {
+            // VTID-01229: MeState kept for backwards compatibility during transition
+            console.log('[VTID-01046] Guest session - marking MeState loaded');
+            MeState.loaded = true;
+            MeState.me = null;
+        }
 
-        // VTID-01171: Fetch auth identity for profile display
-        fetchAuthMe().then(function(data) {
-            if (data) {
-                console.log('[VTID-01171] Auth identity loaded:', data.identity?.email);
-            }
-            // Re-render to update profile capsule with real data
-            renderApp();
-        }).catch(function(err) {
-            console.error('[VTID-01171] fetchAuthMe failed:', err);
-        });
+        // Final UI refresh after auth data is in
+        renderApp();
 
-        fetchTasks();
-
-        // VTID-01049: Initialize me context (authoritative role + identity)
-        initMeContext();
+        // Load data in parallel after auth is established
+        Promise.all([
+            fetchTasks(),
+            fetchTelemetrySnapshot(),
+            fetchApprovals(true),
+            fetchAutopilotRecommendationsCount()
+        ]).catch(err => console.error('Data Fetch Error:', err));
 
         // VTID-01038: Load TTS voices for ORB
         orbLoadTtsVoices();
 
-        // VTID-0527: Fetch telemetry snapshot for task stage timelines
-        fetchTelemetrySnapshot();
-
-        // VTID-0520: Start CI/CD health polling
+        // VTID-0520: Start Background Polling
         startCicdHealthPolling();
-
-        // VTID-01151: Fetch initial approvals (silent) and start polling (20s)
-        fetchApprovals(true);
         startApprovalsBadgePolling();
 
-        // VTID-01180: Fetch autopilot recommendations count for badge
-        fetchAutopilotRecommendationsCount();
     } catch (e) {
         console.error('Critical Render Error:', e);
         document.body.innerHTML = `<div class="critical-error"><h1>Critical Error</h1><pre>${e.stack}</pre></div>`;
