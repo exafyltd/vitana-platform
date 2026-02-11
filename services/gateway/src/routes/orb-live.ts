@@ -1150,9 +1150,17 @@ async function connectToLiveAPI(
           // VTID-01225: Enable transcription at setup level (not in generation_config)
           output_audio_transcription: {},
           input_audio_transcription: {},
-          // NOTE: realtime_input_config with automatic_activity_detection may only be
-          // available in v1beta1 Vertex API. Removed to avoid setup rejection.
-          // TODO: Re-add when upgrading to v1beta1 endpoint for voice interruption tuning.
+          // VTID-01219: Configure VAD to prevent premature interruptions
+          // Enum values: START_SENSITIVITY_LOW/HIGH, END_SENSITIVITY_LOW/HIGH
+          realtime_input_config: {
+            automatic_activity_detection: {
+              disabled: false,
+              start_of_speech_sensitivity: 'START_SENSITIVITY_HIGH',
+              end_of_speech_sensitivity: 'END_SENSITIVITY_LOW',
+              silence_duration_ms: 1200,
+              prefix_padding_ms: 200,
+            }
+          },
           system_instruction: {
             parts: [{
               // VTID-01224: Pass bootstrap context to system instruction
