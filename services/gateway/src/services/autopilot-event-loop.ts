@@ -448,8 +448,13 @@ async function triggerActionForState(
  * Trigger dispatch to worker orchestrator
  * VTID-01204: Routes through worker orchestrator, worker-runner claims from pending queue
  * VTID-01206: Fetches spec from oasis_specs (where 3-step spec flow stores it)
+ * VTID-01229: Added retry with exponential backoff and failure event emission
  */
 async function triggerDispatch(vtid: string, event: OasisEvent): Promise<ActionResult> {
+  // VTID-01229: Retry configuration
+  const MAX_RETRIES = 3;
+  const BASE_DELAY_MS = 2000; // 2s, 4s, 8s exponential backoff
+
   // Get spec from event metadata or fetch from ledger
   const meta = event.metadata || event.meta || {};
   let title = (meta.title || event.title || vtid) as string;
@@ -478,37 +483,84 @@ async function triggerDispatch(vtid: string, event: OasisEvent): Promise<ActionR
   await startAutopilotRun(vtid, title, specContent);
 
   // VTID-01204: Route through worker orchestrator
+  // VTID-01229: With retry and failure event emission
   const gatewayUrl = process.env.GATEWAY_URL || 'http://localhost:8080';
-  try {
-    console.log(`${LOG_PREFIX} Dispatching ${vtid} to worker orchestrator`);
+  let lastError: string = '';
+  let attempt = 0;
 
-    const routeResponse = await fetch(`${gatewayUrl}/api/v1/worker/orchestrator/route`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        vtid,
-        title,
-        task_family: ledgerData?.layer || 'DEV',
-        spec_content: specContent,
-        run_id: `run-${vtid}-${Date.now()}`,
-      }),
-    });
+  while (attempt < MAX_RETRIES) {
+    attempt++;
+    try {
+      console.log(`${LOG_PREFIX} Dispatching ${vtid} to worker orchestrator (attempt ${attempt}/${MAX_RETRIES})`);
 
-    const routeResult = await routeResponse.json() as { ok?: boolean; error?: string; domain?: string };
+      const routeResponse = await fetch(`${gatewayUrl}/api/v1/worker/orchestrator/route`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          vtid,
+          title,
+          task_family: ledgerData?.layer || 'DEV',
+          spec_content: specContent,
+          run_id: `run-${vtid}-${Date.now()}`,
+        }),
+      });
 
-    if (!routeResponse.ok || !routeResult.ok) {
-      console.error(`${LOG_PREFIX} Worker orchestrator route failed for ${vtid}: ${routeResult.error}`);
-      // Don't fail the dispatch - worker can still claim from pending queue
-      return { ok: true, data: { vtid, dispatched: true, route_failed: true, error: routeResult.error } };
+      const routeResult = await routeResponse.json() as { ok?: boolean; error?: string; domain?: string };
+
+      if (!routeResponse.ok || !routeResult.ok) {
+        lastError = routeResult.error || `HTTP ${routeResponse.status}`;
+        console.error(`${LOG_PREFIX} Worker orchestrator route failed for ${vtid} (attempt ${attempt}): ${lastError}`);
+
+        if (attempt < MAX_RETRIES) {
+          const delay = BASE_DELAY_MS * Math.pow(2, attempt - 1);
+          console.log(`${LOG_PREFIX} Retrying dispatch for ${vtid} in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+      } else {
+        console.log(`${LOG_PREFIX} Successfully routed ${vtid} to domain: ${routeResult.domain}`);
+        return { ok: true, data: { vtid, dispatched: true, domain: routeResult.domain } };
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      console.error(`${LOG_PREFIX} Failed to call worker orchestrator for ${vtid} (attempt ${attempt}): ${lastError}`);
+
+      if (attempt < MAX_RETRIES) {
+        const delay = BASE_DELAY_MS * Math.pow(2, attempt - 1);
+        console.log(`${LOG_PREFIX} Retrying dispatch for ${vtid} in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
     }
-
-    console.log(`${LOG_PREFIX} Successfully routed ${vtid} to domain: ${routeResult.domain}`);
-    return { ok: true, data: { vtid, dispatched: true, domain: routeResult.domain } };
-  } catch (error) {
-    console.error(`${LOG_PREFIX} Failed to call worker orchestrator for ${vtid}: ${error}`);
-    // Task is still in pending queue for worker-runner to claim via polling
-    return { ok: true, data: { vtid, dispatched: true, route_error: String(error) } };
   }
+
+  // VTID-01229: All retries failed - emit dispatch failure event
+  console.error(`${LOG_PREFIX} Dispatch failed for ${vtid} after ${MAX_RETRIES} attempts: ${lastError}`);
+
+  await emitOasisEvent({
+    vtid,
+    topic: 'vtid.dispatch.failed',
+    kind: 'dispatch_failure',
+    status: 'failure',
+    title: `Dispatch failed for ${vtid} after ${MAX_RETRIES} retries`,
+    message: lastError,
+    role: 'AUTOPILOT',
+    layer: 'orchestration',
+    module: 'autopilot-event-loop',
+    source: 'autopilot',
+    metadata: {
+      attempts: MAX_RETRIES,
+      last_error: lastError,
+      vtid_ref: 'VTID-01229',
+    },
+  });
+
+  // Return failure - task will need manual intervention
+  return {
+    ok: false,
+    error: `Dispatch failed after ${MAX_RETRIES} attempts: ${lastError}`,
+    data: { vtid, attempts: MAX_RETRIES, last_error: lastError }
+  };
 }
 
 /**

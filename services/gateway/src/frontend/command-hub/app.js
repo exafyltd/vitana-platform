@@ -91,78 +91,8 @@ function navigateToRoleDefaultScreen(role) {
 }
 
 // VTID-01049: Redundant fetchMeContext removed. Using consolidated version at line 610.
-
-/**
- * VTID-01049: Set Active Role via Gateway API
- * Called when user changes role in Profile dropdown.
- * @param {string} role - Role to set (lowercase: community, patient, professional, staff, admin, developer)
- * @returns {Promise<{ok: boolean, error?: string}>}
- */
-async function setActiveRole(role) {
-    var lowerRole = role.toLowerCase();
-
-    // Validate role client-side
-    if (VALID_VIEW_ROLES.indexOf(lowerRole) === -1) {
-        return { ok: false, error: 'Invalid role: ' + role };
-    }
-
-    try {
-        var response = await fetch('/api/v1/me/active-role', {
-            method: 'POST',
-            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ role: lowerRole })
-        });
-
-        if (response.status === 401) {
-            return { ok: false, error: 'Not signed in.', code: 'UNAUTHENTICATED' };
-        }
-        if (response.status === 403) {
-            return { ok: false, error: "You don't have access to that role.", code: 'FORBIDDEN' };
-        }
-        if (response.status === 400) {
-            var errData = await response.json().catch(function () { return {}; });
-            return { ok: false, error: errData.message || 'Invalid role', code: 'INVALID_ROLE' };
-        }
-        if (!response.ok) {
-            return { ok: false, error: 'Failed to set role' };
-        }
-
-        var data = await response.json();
-        if (data.ok) {
-            // Update MeState with new active_role
-            if (MeState.me) {
-                MeState.me.active_role = lowerRole;
-            }
-            return { ok: true };
-        }
-        return { ok: false, error: data.message || 'Failed to set role' };
-    } catch (err) {
-        console.error('[VTID-01049] setActiveRole error:', err);
-        return { ok: false, error: 'Network error setting role' };
-    }
-}
-
-/**
- * VTID-01049: Add Vitana context headers to fetch requests
- * Adds X-Vitana-Active-Role, X-Vitana-Tenant, X-Vitana-User if MeState.me exists.
- * @param {Object} headers - Existing headers object
- * @returns {Object} Headers with Vitana context added
- */
-function withVitanaContextHeaders(headers) {
-    var h = Object.assign({}, headers || {});
-    if (MeState.me) {
-        if (MeState.me.active_role) {
-            h['X-Vitana-Active-Role'] = MeState.me.active_role;
-        }
-        if (MeState.me.tenant_id) {
-            h['X-Vitana-Tenant'] = MeState.me.tenant_id;
-        }
-        if (MeState.me.user_id) {
-            h['X-Vitana-User'] = MeState.me.user_id;
-        }
-    }
-    return h;
-}
+// VTID-01229: Dead setActiveRole (used MeState.me) removed. Using consolidated version at line 640.
+// VTID-01229: Dead withVitanaContextHeaders (used MeState.me) removed. Use buildContextHeaders instead.
 
 // ===========================================================================
 // VTID-01016: OASIS Event Authority - Deterministic Stage/Status Derivation
@@ -609,6 +539,7 @@ async function fetchMeContext(silentRefresh) {
 
         console.log('[VTID-01049] fetchMeContext success:', data.me);
         state.meContext = data.me;
+        // VTID-01229: MeState kept for backwards compatibility during transition
         MeState.me = data.me;
         MeState.loaded = true;
         state.meContextLoading = false;
@@ -993,6 +924,7 @@ function doLogout() {
     state.authIdentity = null;
     state.meContext = null;
     state.loginUserEmail = null; // VTID-01196: Clear login email fallback
+    // VTID-01229: MeState kept for backwards compatibility during transition
     MeState.loaded = false;
     MeState.me = null;
     localStorage.removeItem('vitana.authToken');
@@ -3653,7 +3585,7 @@ async function fetchApprovals(silent) {
 
     try {
         var response = await fetch('/api/v1/cicd/approvals', {
-            headers: withVitanaContextHeaders({})
+            headers: buildContextHeaders({})
         });
         var data = await response.json();
 
@@ -3700,7 +3632,7 @@ async function approveApprovalItem(approvalId) {
     try {
         var response = await fetch('/api/v1/cicd/approvals/' + approvalId + '/approve', {
             method: 'POST',
-            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' })
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' })
         });
         var data = await response.json();
 
@@ -3761,7 +3693,7 @@ async function denyApprovalItem(approvalId, reason) {
     try {
         var response = await fetch('/api/v1/cicd/approvals/' + approvalId + '/deny', {
             method: 'POST',
-            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ reason: reason || 'Denied by user' })
         });
         var data = await response.json();
@@ -3795,7 +3727,7 @@ async function fetchGitHubFeed() {
 
     try {
         var response = await fetch('/api/v1/approvals/feed?limit=50', {
-            headers: withVitanaContextHeaders({})
+            headers: buildContextHeaders({})
         });
         var data = await response.json();
 
@@ -3848,7 +3780,7 @@ async function approveFeedItem(prNumber, branch, vtid) {
         // VTID-01168: Call new autonomous-pr-merge endpoint
         var response = await fetch('/api/v1/cicd/autonomous-pr-merge', {
             method: 'POST',
-            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 vtid: vtid,
                 pr_number: prNumber,
@@ -4451,7 +4383,7 @@ function renderHeader() {
         // VTID-01180: Fetch recommendations from API
         try {
             const response = await fetch('/api/v1/autopilot/recommendations?status=new&limit=20', {
-                headers: withVitanaContextHeaders({})
+                headers: buildContextHeaders({})
             });
             if (!response.ok) {
                 throw new Error('Failed to fetch recommendations');
@@ -5864,7 +5796,7 @@ function renderTaskDrawer() {
                     var seedNotes = state.drawerSpecText || state.selectedTask.summary || state.selectedTask.title || '';
                     var response = await fetch('/api/v1/specs/' + vtid + '/generate', {
                         method: 'POST',
-                        headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+                        headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
                         body: JSON.stringify({ seed_notes: seedNotes, source: 'commandhub' })
                     });
                     var result = await response.json();
@@ -5900,7 +5832,7 @@ function renderTaskDrawer() {
                 try {
                     var response = await fetch('/api/v1/specs/' + vtid + '/validate', {
                         method: 'POST',
-                        headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' })
+                        headers: buildContextHeaders({ 'Content-Type': 'application/json' })
                     });
                     var result = await response.json();
                     if (result.ok) {
@@ -5936,11 +5868,12 @@ function renderTaskDrawer() {
                 approveBtn.disabled = true;
                 approveBtn.textContent = 'Approving...';
                 try {
-                    var userId = MeState.me?.user_id || MeState.me?.email || 'unknown';
-                    var userRole = MeState.me?.active_role || 'operator';
+                    // VTID-01229: Use state.meContext instead of deprecated MeState.me
+                    var userId = state.meContext?.user_id || state.meContext?.email || 'unknown';
+                    var userRole = state.meContext?.active_role || 'operator';
                     var response = await fetch('/api/v1/specs/' + vtid + '/approve', {
                         method: 'POST',
-                        headers: withVitanaContextHeaders({
+                        headers: buildContextHeaders({
                             'Content-Type': 'application/json',
                             'x-user-id': userId,
                             'x-user-role': userRole
@@ -5977,7 +5910,7 @@ function renderTaskDrawer() {
                 viewBtn.textContent = 'Loading...';
                 try {
                     var response = await fetch('/api/v1/specs/' + vtid, {
-                        headers: withVitanaContextHeaders({})
+                        headers: buildContextHeaders({})
                     });
                     var result = await response.json();
                     if (result.ok && result.spec) {
@@ -6170,7 +6103,7 @@ function renderTaskDrawer() {
                 try {
                     var response = await fetch('/api/v1/oasis/tasks/' + vtid, {
                         method: 'DELETE',
-                        headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' })
+                        headers: buildContextHeaders({ 'Content-Type': 'application/json' })
                     });
                     var result = await response.json();
                     if (result.ok) {
@@ -7225,8 +7158,9 @@ function renderProfileModal() {
         } else {
             // Failure - revert to previous role
             state.viewRole = previousRole;
-            if (MeState.me) {
-                MeState.me.active_role = previousRole.toLowerCase();
+            // VTID-01229: Use state.meContext instead of deprecated MeState.me
+            if (state.meContext) {
+                state.meContext.active_role = previousRole.toLowerCase();
             }
             renderApp();
             showToast(result.error || 'Failed to change role', 'error');
@@ -7531,7 +7465,7 @@ function renderTaskModal() {
             // VTID-0542: Step 1 - Call the global allocator to get a VTID
             const allocResponse = await fetch('/api/v1/vtid/allocate', {
                 method: 'POST',
-                headers: withVitanaContextHeaders({
+                headers: buildContextHeaders({
                     'Content-Type': 'application/json'
                 }),
                 body: JSON.stringify({
@@ -7584,7 +7518,7 @@ function renderTaskModal() {
 
             const updateResponse = await fetch('/api/v1/oasis/tasks/' + encodeURIComponent(vtid), {
                 method: 'PATCH',
-                headers: withVitanaContextHeaders({
+                headers: buildContextHeaders({
                     'Content-Type': 'application/json'
                 }),
                 body: JSON.stringify(updatePayload)
@@ -9203,7 +9137,7 @@ async function fetchAgentsRegistry() {
         var startTime = Date.now();
         try {
             var response = await fetch(ep.url, {
-                headers: withVitanaContextHeaders({})
+                headers: buildContextHeaders({})
             });
             var elapsed = Date.now() - startTime;
             var data = null;
@@ -9876,7 +9810,7 @@ async function fetchPipelinesData(append) {
     var ledgerStart = Date.now();
     try {
         var response = await fetch('/api/v1/oasis/vtid-ledger?limit=' + pagination.limit + '&offset=' + offset, {
-            headers: withVitanaContextHeaders({})
+            headers: buildContextHeaders({})
         });
         var ledgerElapsed = Date.now() - ledgerStart;
         state.agentsPipelines.timing.ledger = ledgerElapsed;
@@ -9942,7 +9876,7 @@ async function fetchVtidTraceEvents(vtid) {
 
     try {
         var response = await fetch('/api/v1/events?vtid=' + encodeURIComponent(vtid) + '&limit=200', {
-            headers: withVitanaContextHeaders({})
+            headers: buildContextHeaders({})
         });
         if (response.ok) {
             var data = await response.json();
@@ -10593,7 +10527,7 @@ async function fetchLLMRoutingPolicy() {
 
     try {
         var response = await fetch('/api/v1/llm/routing-policy', {
-            headers: withVitanaContextHeaders({})
+            headers: buildContextHeaders({})
         });
 
         if (!response.ok) {
@@ -10657,7 +10591,7 @@ async function fetchLLMTelemetryEvents(append) {
         params.append('since', since);
 
         var response = await fetch('/api/v1/llm/telemetry?' + params.toString(), {
-            headers: withVitanaContextHeaders({})
+            headers: buildContextHeaders({})
         });
 
         if (!response.ok) {
@@ -18732,7 +18666,7 @@ async function sendChatMessage() {
 
         const response = await fetch('/api/v1/operator/chat', {
             method: 'POST',
-            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 message: messageText,
                 conversation_id: state.operatorConversationId,
@@ -19601,7 +19535,7 @@ function renderPublishModal() {
 
             const response = await fetch('/api/v1/operator/deploy', {
                 method: 'POST',
-                headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+                headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify(payload)
             });
 
@@ -19871,7 +19805,7 @@ function createRecommendationCard(rec) {
         try {
             var response = await fetch('/api/v1/autopilot/recommendations/' + rec.id + '/activate', {
                 method: 'POST',
-                headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' })
+                headers: buildContextHeaders({ 'Content-Type': 'application/json' })
             });
             var data = await response.json();
             if (data.ok) {
@@ -19903,7 +19837,7 @@ function createRecommendationCard(rec) {
         try {
             var response = await fetch('/api/v1/autopilot/recommendations/' + rec.id + '/snooze', {
                 method: 'POST',
-                headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+                headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({ hours: 24 })
             });
             var data = await response.json();
@@ -19933,7 +19867,7 @@ function createRecommendationCard(rec) {
         try {
             var response = await fetch('/api/v1/autopilot/recommendations/' + rec.id + '/reject', {
                 method: 'POST',
-                headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' })
+                headers: buildContextHeaders({ 'Content-Type': 'application/json' })
             });
             var data = await response.json();
             if (data.ok) {
@@ -19963,7 +19897,7 @@ function createRecommendationCard(rec) {
 async function fetchAutopilotRecommendationsCount() {
     try {
         var response = await fetch('/api/v1/autopilot/recommendations/count', {
-            headers: withVitanaContextHeaders({})
+            headers: buildContextHeaders({})
         });
         if (response.ok) {
             var data = await response.json();
@@ -20349,7 +20283,7 @@ function renderExecutionApprovalModal() {
             // VTID-01194: Call lifecycle/start with approval_reason
             var response = await fetch('/api/v1/vtid/lifecycle/start', {
                 method: 'POST',
-                headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+                headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({
                     vtid: vtid,
                     source: 'command-hub',
@@ -20459,7 +20393,7 @@ async function toggleHeartbeatSession() {
     try {
         const response = await fetch('/api/v1/operator/heartbeat/session', {
             method: 'POST',
-            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ status: newStatus })
         });
 
@@ -20974,7 +20908,7 @@ async function startOperatorLiveTicker() {
         // Start heartbeat session
         const response = await fetch('/api/v1/operator/heartbeat/session', {
             method: 'POST',
-            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ status: 'live' })
         });
 
@@ -21049,7 +20983,7 @@ async function uploadOperatorFile(file, kind) {
     try {
         const response = await fetch('/api/v1/operator/upload', {
             method: 'POST',
-            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 name: file.name,
                 kind: kind,
@@ -24718,6 +24652,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             ]);
             console.log('[VTID-01046] Auth boot complete');
         } else {
+            // VTID-01229: MeState kept for backwards compatibility during transition
             console.log('[VTID-01046] Guest session - marking MeState loaded');
             MeState.loaded = true;
             MeState.me = null;
