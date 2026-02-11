@@ -1191,18 +1191,45 @@ router.get('/rooms/me', async (req: Request, res: Response) => {
     return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   }
 
-  // Fetch user's live_room_id from app_users, then get state
-  const userResult = await callRpc(token, 'get_current_user_profile', {});
-  if (!userResult.ok || !userResult.data?.live_room_id) {
-    return res.status(404).json({ ok: false, error: 'NO_ROOM', message: 'User does not have a permanent room' });
+  // Query app_users directly via Supabase REST API (RLS filters by auth.uid())
+  const creds = getSupabaseCredentials();
+  if (!creds) {
+    return res.status(500).json({ ok: false, error: 'Gateway misconfigured' });
   }
 
-  const stateResult = await sessionManager.getState(userResult.data.live_room_id, token);
-  if (!stateResult.ok) {
-    return res.status(502).json({ ok: false, error: stateResult.error });
-  }
+  try {
+    const userResponse = await fetch(
+      `${creds.url}/rest/v1/app_users?select=live_room_id&limit=1`,
+      {
+        headers: {
+          'apikey': creds.key,
+          'Authorization': `Bearer ${token}`,
+        },
+      }
+    );
 
-  return res.json(stateResult.data);
+    if (!userResponse.ok) {
+      console.error(`[VTID-01228] Failed to fetch app_users: ${userResponse.status}`);
+      return res.status(502).json({ ok: false, error: 'Failed to fetch user profile' });
+    }
+
+    const users = await userResponse.json() as Array<{ live_room_id: string | null }>;
+    const liveRoomId = users?.[0]?.live_room_id;
+
+    if (!liveRoomId) {
+      return res.status(404).json({ ok: false, error: 'NO_ROOM', message: 'User does not have a permanent room' });
+    }
+
+    const stateResult = await sessionManager.getState(liveRoomId, token);
+    if (!stateResult.ok) {
+      return res.status(502).json({ ok: false, error: stateResult.error });
+    }
+
+    return res.json(stateResult.data);
+  } catch (err: any) {
+    console.error(`[VTID-01228] /rooms/me error:`, err.message);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 /**

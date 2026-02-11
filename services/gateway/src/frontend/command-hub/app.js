@@ -1733,6 +1733,11 @@ function filterOasisEvents(items) {
     if (!items) return [];
     var filters = state.oasisEvents.filters || {};
     return items.filter(function (event) {
+        // VTID-01250: Hide noise events if enabled
+        if (state.oasisEvents.hideNoise && isOasisNoiseEvent(event)) {
+            return false;
+        }
+
         if (filters.topic && !(event.topic || '').toLowerCase().includes(filters.topic.toLowerCase())) {
             return false;
         }
@@ -1744,6 +1749,42 @@ function filterOasisEvents(items) {
         }
         return true;
     });
+}
+
+/**
+ * VTID-01250: Groups consecutive identical events.
+ */
+function groupConsecutiveEvents(items) {
+    if (!items || items.length === 0) return [];
+
+    var grouped = [];
+    var current = null;
+
+    items.forEach(function (event) {
+        if (!current) {
+            current = Object.assign({}, event);
+            current.repeatCount = 1;
+        } else if (
+            current.topic === event.topic &&
+            current.service === event.service &&
+            current.status === event.status &&
+            current.message === event.message &&
+            current.vtid === event.vtid
+        ) {
+            current.repeatCount++;
+            // Keep the latest timestamp
+            if (new Date(event.created_at) > new Date(current.created_at)) {
+                current.created_at = event.created_at;
+            }
+        } else {
+            grouped.push(current);
+            current = Object.assign({}, event);
+            current.repeatCount = 1;
+        }
+    });
+
+    if (current) grouped.push(current);
+    return grouped;
 }
 
 /**
@@ -1776,7 +1817,7 @@ function filterCommandHubEvents(items) {
  */
 function createOasisEventRow(event) {
     var row = document.createElement('tr');
-    row.className = 'oasis-event-row';
+    row.className = 'oasis-event-row clickable-row';
     var severity = getEventSeverity(event);
     row.dataset.severity = severity;
     row.onclick = function () {
@@ -1826,7 +1867,13 @@ function createOasisEventRow(event) {
     // Message
     var msgCell = document.createElement('td');
     msgCell.className = 'event-message';
-    msgCell.textContent = (event.message || '').substring(0, 60) + ((event.message || '').length > 60 ? '...' : '');
+    var msgText = (event.message || '').substring(0, 60) + ((event.message || '').length > 60 ? '...' : '');
+
+    if (event.repeatCount > 1) {
+        msgCell.innerHTML = msgText + ' <span class="event-repeat-badge">x' + event.repeatCount + '</span>';
+    } else {
+        msgCell.textContent = msgText;
+    }
     row.appendChild(msgCell);
 
     return row;
@@ -2530,6 +2577,30 @@ const state = {
         fetched: false
     },
 
+    // VTID-0600: Operational Visibility Foundation State
+    oasisEvents: {
+        items: [],
+        fetched: false,
+        loading: false,
+        error: null,
+        selectedEvent: null,
+        filters: {
+            topic: '',
+            status: '',
+            service: ''
+        },
+        pagination: {
+            offset: 0,
+            limit: 50,
+            hasMore: true
+        },
+        autoRefreshEnabled: false,
+        autoRefreshInterval: null,
+        // VTID-01250: Supervision Controls
+        hideNoise: true,
+        groupConsecutive: true
+    },
+
     // VTID-0409: Governance Categories (Read-Only V1)
     governanceCategories: {
         items: [],
@@ -3094,12 +3165,32 @@ function getEventSeverity(event) {
     }
 
     // Low: heartbeat, ping, routine checks
-    if (topic.includes('heartbeat') || topic.includes('ping') || topic.includes('health')) {
+    if (topic.includes('heartbeat') || topic.includes('ping') || topic.includes('health') || topic.includes('.pending_served')) {
         return EVENT_SEVERITY.LOW;
     }
 
     // Default: info level
     return EVENT_SEVERITY.INFO;
+}
+
+/**
+ * VTID-01250: Checks if an event is considered operational noise (heartbeats, idle polls).
+ */
+function isOasisNoiseEvent(event) {
+    const topic = (event.topic || '').toLowerCase();
+    const message = (event.message || '').toLowerCase();
+
+    // Specific high-frequency noise mentioned by user
+    if (topic.includes('pending_served') && message.includes('served 0 eligible tasks')) {
+        return true;
+    }
+
+    // General telemetry patterns
+    if (topic.includes('heartbeat') || topic.includes('ping') || (topic.includes('health') && !topic.includes('fail'))) {
+        return true;
+    }
+
+    return false;
 }
 
 /**
@@ -14103,6 +14194,40 @@ function renderOasisEventsView() {
 
     toolbar.appendChild(filtersCluster);
 
+    // VTID-01250: Supervision controls
+    var supervisionCluster = document.createElement('div');
+    supervisionCluster.className = 'list-toolbar__supervision';
+
+    // Toggle Hide Noise
+    var noiseLabel = document.createElement('label');
+    noiseLabel.className = 'toolbar-toggle';
+    var noiseCheck = document.createElement('input');
+    noiseCheck.type = 'checkbox';
+    noiseCheck.checked = state.oasisEvents.hideNoise;
+    noiseCheck.onchange = function (e) {
+        state.oasisEvents.hideNoise = e.target.checked;
+        renderApp();
+    };
+    noiseLabel.appendChild(noiseCheck);
+    noiseLabel.appendChild(document.createTextNode(' Hide Heartbeats'));
+    supervisionCluster.appendChild(noiseLabel);
+
+    // Toggle Grouping
+    var groupLabel = document.createElement('label');
+    groupLabel.className = 'toolbar-toggle';
+    var groupCheck = document.createElement('input');
+    groupCheck.type = 'checkbox';
+    groupCheck.checked = state.oasisEvents.groupConsecutive;
+    groupCheck.onchange = function (e) {
+        state.oasisEvents.groupConsecutive = e.target.checked;
+        renderApp();
+    };
+    groupLabel.appendChild(groupCheck);
+    groupLabel.appendChild(document.createTextNode(' Collapse Repeats'));
+    supervisionCluster.appendChild(groupLabel);
+
+    toolbar.appendChild(supervisionCluster);
+
     // Right: Item count
     var metadataCluster = document.createElement('div');
     metadataCluster.className = 'list-toolbar__metadata';
@@ -14140,61 +14265,14 @@ function renderOasisEventsView() {
 
         // Body
         var tbody = document.createElement('tbody');
-        state.oasisEvents.items.forEach(function (event) {
-            var row = document.createElement('tr');
-            row.className = 'oasis-event-row clickable-row';
-            var severity = getEventSeverity(event);
-            row.dataset.severity = severity;
-            row.onclick = function () {
-                state.oasisEvents.selectedEvent = event;
-                renderApp();
-            };
+        var itemsToRender = filterOasisEvents(state.oasisEvents.items);
 
-            // Severity indicator
-            var severityCell = document.createElement('td');
-            var severityDot = document.createElement('span');
-            severityDot.className = 'severity-dot severity-' + severity;
-            severityCell.appendChild(severityDot);
-            row.appendChild(severityCell);
+        if (state.oasisEvents.groupConsecutive) {
+            itemsToRender = groupConsecutiveEvents(itemsToRender);
+        }
 
-            // Timestamp
-            var tsCell = document.createElement('td');
-            tsCell.className = 'event-timestamp';
-            tsCell.textContent = formatEventTimestamp(event.created_at);
-            row.appendChild(tsCell);
-
-            // Topic
-            var topicCell = document.createElement('td');
-            topicCell.className = 'event-topic';
-            topicCell.textContent = event.topic || '-';
-            row.appendChild(topicCell);
-
-            // VTID
-            var vtidCell = document.createElement('td');
-            vtidCell.className = 'event-vtid';
-            vtidCell.textContent = event.vtid || '-';
-            row.appendChild(vtidCell);
-
-            // Service
-            var serviceCell = document.createElement('td');
-            serviceCell.className = 'event-service';
-            serviceCell.textContent = event.service || '-';
-            row.appendChild(serviceCell);
-
-            // Status
-            var statusCell = document.createElement('td');
-            var statusBadge = document.createElement('span');
-            statusBadge.className = 'status-badge status-' + (event.status || 'info');
-            statusBadge.textContent = event.status || '-';
-            statusCell.appendChild(statusBadge);
-            row.appendChild(statusCell);
-
-            // Message
-            var msgCell = document.createElement('td');
-            msgCell.className = 'event-message';
-            msgCell.textContent = (event.message || '').substring(0, 60) + ((event.message || '').length > 60 ? '...' : '');
-            row.appendChild(msgCell);
-
+        itemsToRender.forEach(function (event) {
+            var row = createOasisEventRow(event);
             tbody.appendChild(row);
         });
         table.appendChild(tbody);
@@ -23051,7 +23129,7 @@ function geminiLiveStartTranscriber() {
     if (state.orb.geminiLiveTranscriber) {
         try {
             state.orb.geminiLiveTranscriber.stop();
-        } catch (e) {}
+        } catch (e) { }
         state.orb.geminiLiveTranscriber = null;
     }
 
@@ -23062,11 +23140,11 @@ function geminiLiveStartTranscriber() {
 
     var lastProcessedIndex = -1;
 
-    recognition.onstart = function() {
+    recognition.onstart = function () {
         console.log('[VTID-01225] Parallel transcriber started');
     };
 
-    recognition.onresult = function(event) {
+    recognition.onresult = function (event) {
         var finalTranscript = '';
         var interimTranscript = '';
 
@@ -23107,7 +23185,7 @@ function geminiLiveStartTranscriber() {
         renderApp();
     };
 
-    recognition.onerror = function(event) {
+    recognition.onerror = function (event) {
         // Ignore no-speech errors - common when audio is sent to Gemini
         if (event.error === 'no-speech' || event.error === 'aborted') {
             return;
@@ -23115,7 +23193,7 @@ function geminiLiveStartTranscriber() {
         console.warn('[VTID-01225] Transcriber error:', event.error);
     };
 
-    recognition.onend = function() {
+    recognition.onend = function () {
         // Auto-restart if session still active
         if (state.orb.geminiLiveActive && state.orb.geminiLiveTranscriber) {
             console.log('[VTID-01225] Restarting transcriber...');
@@ -23144,7 +23222,7 @@ function geminiLiveStopTranscriber() {
     if (state.orb.geminiLiveTranscriber) {
         try {
             state.orb.geminiLiveTranscriber.stop();
-        } catch (e) {}
+        } catch (e) { }
         state.orb.geminiLiveTranscriber = null;
         console.log('[VTID-01225] Parallel transcriber stopped');
     }
