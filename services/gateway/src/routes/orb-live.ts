@@ -1056,9 +1056,17 @@ TOOLS:
 IMPORTANT:
 - This is a real-time voice conversation
 - Listen actively and respond naturally
-- If interrupted, gracefully handle the interruption
+- If interrupted, stop immediately and listen to the user
 - Confirm important information when needed
-- Use tools to provide accurate, personalized responses`;
+- Use tools to provide accurate, personalized responses
+
+CONVERSATION CONTINUITY:
+- You have persistent memory across sessions
+- When context below shows timestamps like "[5m ago]" or "[just now]", that means you JUST had a conversation with this user moments ago
+- Acknowledge the continuity naturally, e.g. "Welcome back!" or reference what you just discussed
+- If the last conversation was within 30 minutes, treat it as a continuation, not a new conversation
+- NEVER say "It's been a while" or "How are you?" as if starting fresh when the user just spoke to you minutes ago
+- Current time: ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
 
   // VTID-01224: Append bootstrap context if available
   if (bootstrapContext) {
@@ -1200,6 +1208,20 @@ async function connectToLiveAPI(
           // VTID-01225: Log full server_content structure to debug transcription
           const contentKeys = Object.keys(content);
           console.log(`[VTID-01225] server_content keys: ${contentKeys.join(', ')}`);
+
+          // Check if model was interrupted by user speech (Vertex sends this on barge-in)
+          const interrupted = content.interrupted;
+          if (interrupted) {
+            console.log(`[VTID-01219] Model interrupted by user for session ${session.sessionId}`);
+            // Discard partial assistant transcript on interruption
+            session.outputTranscriptBuffer = '';
+            // Notify client to immediately flush audio playback
+            if (session.sseResponse) {
+              session.sseResponse.write(`data: ${JSON.stringify({ type: 'interrupted' })}\n\n`);
+            } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+              sendWsMessage(session.clientWs, { type: 'interrupted' });
+            }
+          }
 
           // Check if turn is complete (handle both formats)
           const turnComplete = content.turn_complete || content.turnComplete;
@@ -4531,6 +4553,14 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
   incrementConnection(clientIP);
   session.sseResponse = res;
   session.lastActivity = new Date();
+
+  // VTID-01219: Close existing upstream WebSocket before creating a new one
+  // Prevents duplicate audio when SSE reconnects (browser tab refocus, network hiccup)
+  if (session.upstreamWs) {
+    console.log(`[VTID-01219] Closing existing upstream WebSocket for session ${sessionId} before SSE reconnect`);
+    try { session.upstreamWs.close(); } catch (e) { /* ignore */ }
+    session.upstreamWs = null;
+  }
 
   // VTID-01219: Connect to Vertex AI Live API WebSocket
   let liveApiConnected = false;

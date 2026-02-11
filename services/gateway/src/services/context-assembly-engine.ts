@@ -1094,6 +1094,17 @@ export function formatContextForPrompt(bundle: ContextBundle): string {
   // Priority order for domains
   const domainOrder: Domain[] = ['lifestyle', 'social', 'health', 'business', 'values', 'learning', 'commerce'];
 
+  // Recent conversation events with explicit timing (shown first for temporal awareness)
+  if (bundle.recent_events && bundle.recent_events.length > 0) {
+    lines.push('### Recent Conversation');
+    for (const event of bundle.recent_events) {
+      const timeAgo = formatRelativeTimeForContext(event.occurred_at);
+      const prefix = event.direction === 'user' ? 'User' : 'Assistant';
+      lines.push(`- [${timeAgo}] ${prefix}: "${event.content}"`);
+    }
+    lines.push('');
+  }
+
   for (const domain of domainOrder) {
     const domainMemories = memoriesByDomain[domain];
     if (!domainMemories || domainMemories.length === 0) continue;
@@ -1104,10 +1115,11 @@ export function formatContextForPrompt(bundle: ContextBundle): string {
       const direction = memory.content_json?.direction;
       const prefix = direction === 'user' ? 'User' : direction === 'assistant' ? 'Assistant' : '';
       const content = memory.content;
+      const timeAgo = formatRelativeTimeForContext(memory.occurred_at);
       if (prefix) {
-        lines.push(`- ${prefix}: "${content}"`);
+        lines.push(`- [${timeAgo}] ${prefix}: "${content}"`);
       } else {
-        lines.push(`- ${content}`);
+        lines.push(`- [${timeAgo}] ${content}`);
       }
     }
     lines.push('');
@@ -1140,6 +1152,26 @@ export function formatContextForPrompt(bundle: ContextBundle): string {
 
 // =============================================================================
 // VTID-01112: Verification Functions
+/**
+ * Format a timestamp as a human-readable relative time string for context display.
+ * E.g. "just now", "5m ago", "2h ago", "yesterday"
+ */
+function formatRelativeTimeForContext(isoTimestamp: string): string {
+  const date = new Date(isoTimestamp);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffMins < 5) return 'just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays === 1) return 'yesterday';
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString();
+}
+
 // =============================================================================
 
 /**

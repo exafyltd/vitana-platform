@@ -22373,8 +22373,19 @@ function geminiLiveHandleMessage(msg) {
 
         case 'audio':
         case 'audio_out':
-            // Queue audio for playback (WAV from backend)
+            // Queue audio for playback
             if (msg.data_b64) {
+                // Deduplicate by chunk_number to prevent repeated audio on SSE reconnect
+                if (msg.chunk_number != null) {
+                    if (!state.orb.geminiLiveProcessedChunks) {
+                        state.orb.geminiLiveProcessedChunks = new Set();
+                    }
+                    if (state.orb.geminiLiveProcessedChunks.has(msg.chunk_number)) {
+                        console.log('[VTID-01219] Skipping duplicate audio chunk:', msg.chunk_number);
+                        break;
+                    }
+                    state.orb.geminiLiveProcessedChunks.add(msg.chunk_number);
+                }
                 console.log('[VTID-01219] Received audio chunk, size:', msg.data_b64.length);
                 geminiLivePlayAudio(msg.data_b64, msg.mime || 'audio/wav');
             }
@@ -22445,9 +22456,19 @@ function geminiLiveHandleMessage(msg) {
             break;
 
         case 'interrupted':
-            // Model was interrupted, flush audio queue
+            // Model was interrupted by user speech - immediately stop all audio
+            console.log('[VTID-01155] Audio interrupted, flushing queue and stopping playback');
             state.orb.geminiLiveAudioQueue = [];
-            console.log('[VTID-01155] Audio interrupted, queue flushed');
+            // Stop all scheduled Web Audio API sources
+            if (state.orb.geminiLiveScheduledSources) {
+                state.orb.geminiLiveScheduledSources.forEach(function (s) {
+                    try { s.stop(0); } catch (e) { /* already stopped */ }
+                });
+                state.orb.geminiLiveScheduledSources = [];
+            }
+            // Reset scheduling time so next audio starts immediately
+            state.orb.geminiLiveLastScheduledEnd = 0;
+            state.orb.geminiLiveAudioPlaying = false;
             break;
 
         case 'audio_ack':
@@ -22863,6 +22884,17 @@ function geminiLiveProcessQueue() {
 
             var nextStartTime = state.orb.geminiLiveLastScheduledEnd;
             source.start(nextStartTime);
+
+            // Track source references for cancellation on interruption
+            if (!state.orb.geminiLiveScheduledSources) {
+                state.orb.geminiLiveScheduledSources = [];
+            }
+            state.orb.geminiLiveScheduledSources.push(source);
+            // Clean up finished sources to avoid memory leak
+            source.onended = function () {
+                var idx = state.orb.geminiLiveScheduledSources.indexOf(source);
+                if (idx !== -1) state.orb.geminiLiveScheduledSources.splice(idx, 1);
+            };
 
             state.orb.geminiLiveLastScheduledEnd += audioBuffer.duration;
             state.orb.geminiLiveAudioPlaying = true;
