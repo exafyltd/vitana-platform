@@ -494,7 +494,6 @@ async function triggerExtractionHooks(
         session_id: `diary-${entryId}`,
         active_role: 'community',
       });
-      result.garden_nodes_triggered = true;
       console.log(`[VTID-01225] Cognee extraction queued for diary entry: ${entryId}`);
     }
 
@@ -512,6 +511,7 @@ async function triggerExtractionHooks(
         cognee_enabled: cogneeExtractorClient.isEnabled(),
       }
     );
+    result.garden_nodes_triggered = true;
 
     // 2. If relationships template, detect names for relationship signals (deterministic)
     if (entry.template_type === 'relationships_social') {

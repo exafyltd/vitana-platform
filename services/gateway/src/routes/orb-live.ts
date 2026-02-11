@@ -4389,31 +4389,51 @@ router.post('/live/session/stop', optionalAuth, async (req: AuthenticatedRequest
     duration_ms: Date.now() - session.createdAt.getTime()
   });
 
-  // VTID-01225: Fire-and-forget Cognee entity extraction from memory_items
-  // Query conversation from memory_items instead of relying on transcriptTurns (Gemini doesn't return transcription)
+  // VTID-01225: Fire-and-forget Cognee entity extraction
+  // Use in-memory transcriptTurns (UNFILTERED full conversation) instead of memory_items
+  // (which has already been filtered by shouldStoreInMemory and may be missing user statements).
+  // Falls back to memory_items query only if transcriptTurns is empty (e.g., Gemini didn't provide transcription).
   if (cogneeExtractorClient.isEnabled() && session.identity && session.identity.tenant_id) {
     const tenantId = session.identity.tenant_id;
     const userId = session.identity.user_id;
 
-    // Fetch conversation from memory_items asynchronously
-    fetchRecentConversationForCognee(tenantId, userId, session.createdAt, new Date())
-      .then(transcript => {
-        if (transcript && transcript.length > 50) {  // Only extract if meaningful content
-          cogneeExtractorClient.extractAsync({
-            transcript,
-            tenant_id: tenantId,
-            user_id: userId,
-            session_id: session_id,
-            active_role: 'community'
-          });
-          console.log(`[VTID-01225] Cognee extraction queued for live session: ${session_id}`);
-        } else {
-          console.log(`[VTID-01225] No meaningful transcript for Cognee extraction: ${session_id}`);
-        }
-      })
-      .catch(err => {
-        console.error(`[VTID-01225] Failed to fetch conversation for Cognee: ${err.message}`);
-      });
+    if (session.transcriptTurns.length > 0) {
+      // Primary path: use unfiltered in-memory transcript (no data loss)
+      const fullTranscript = session.transcriptTurns
+        .map(turn => `${turn.role === 'user' ? 'User' : 'Assistant'}: ${turn.text}`)
+        .join('\n');
+
+      if (fullTranscript.length > 50) {
+        cogneeExtractorClient.extractAsync({
+          transcript: fullTranscript,
+          tenant_id: tenantId,
+          user_id: userId,
+          session_id: session_id,
+          active_role: 'community'
+        });
+        console.log(`[VTID-01225] Cognee extraction queued from transcriptTurns (${session.transcriptTurns.length} turns): ${session_id}`);
+      }
+    } else {
+      // Fallback: query memory_items if no in-memory transcript available
+      fetchRecentConversationForCognee(tenantId, userId, session.createdAt, new Date())
+        .then(transcript => {
+          if (transcript && transcript.length > 50) {
+            cogneeExtractorClient.extractAsync({
+              transcript,
+              tenant_id: tenantId,
+              user_id: userId,
+              session_id: session_id,
+              active_role: 'community'
+            });
+            console.log(`[VTID-01225] Cognee extraction queued from memory_items fallback: ${session_id}`);
+          } else {
+            console.log(`[VTID-01225] No meaningful transcript for Cognee extraction: ${session_id}`);
+          }
+        })
+        .catch(err => {
+          console.error(`[VTID-01225] Failed to fetch conversation for Cognee: ${err.message}`);
+        });
+    }
   }
   // VTID-01226: Removed fallback for unauthenticated sessions - auth is now required
 
