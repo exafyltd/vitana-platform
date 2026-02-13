@@ -14,8 +14,18 @@ import rateLimit from 'express-rate-limit';
 
 const router = Router();
 
-// Initialize Stripe
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
+// Initialize Stripe lazily to prevent crash when STRIPE_SECRET_KEY is absent (e.g. test env)
+let _stripe: Stripe | null = null;
+function getStripe(): Stripe {
+  if (!_stripe) {
+    const key = process.env.STRIPE_SECRET_KEY;
+    if (!key) {
+      throw new Error('STRIPE_SECRET_KEY is not configured');
+    }
+    _stripe = new Stripe(key);
+  }
+  return _stripe;
+}
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://vitana-lovable-vers1.lovable.app';
 
@@ -138,7 +148,7 @@ router.post('/onboard', onboardRateLimit, async (req: Request, res: Response) =>
         console.log('[Creator Onboard] User already has account:', existingAccount);
 
         // Generate new onboarding link for existing account
-        const accountLink = await stripe.accountLinks.create({
+        const accountLink = await getStripe().accountLinks.create({
           account: existingAccount,
           refresh_url: refresh_url || `${FRONTEND_URL}/creator/onboard`,
           return_url: return_url || `${FRONTEND_URL}/creator/onboarded`,
@@ -159,7 +169,7 @@ router.post('/onboard', onboardRateLimit, async (req: Request, res: Response) =>
     }
 
     // Create new Stripe Express Connected Account
-    const account = await stripe.accounts.create({
+    const account = await getStripe().accounts.create({
       type: 'express',
       capabilities: {
         card_payments: { requested: true },
@@ -171,7 +181,7 @@ router.post('/onboard', onboardRateLimit, async (req: Request, res: Response) =>
     console.log('[Creator Onboard] Created account:', account.id);
 
     // Create onboarding link
-    const accountLink = await stripe.accountLinks.create({
+    const accountLink = await getStripe().accountLinks.create({
       account: account.id,
       refresh_url: refresh_url || `${FRONTEND_URL}/creator/onboard`,
       return_url: return_url || `${FRONTEND_URL}/creator/onboarded`,
@@ -280,7 +290,7 @@ router.get('/dashboard', async (req: Request, res: Response) => {
     }
 
     // Generate Express dashboard login link
-    const loginLink = await stripe.accounts.createLoginLink(stripeAccountId);
+    const loginLink = await getStripe().accounts.createLoginLink(stripeAccountId);
 
     // VTID-01230: Validate Stripe URL before returning
     if (!loginLink.url.startsWith('https://connect.stripe.com/')) {
