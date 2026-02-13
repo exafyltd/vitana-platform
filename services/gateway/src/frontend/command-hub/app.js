@@ -22373,19 +22373,8 @@ function geminiLiveHandleMessage(msg) {
 
         case 'audio':
         case 'audio_out':
-            // Queue audio for playback
+            // Queue audio for playback (WAV from backend)
             if (msg.data_b64) {
-                // Deduplicate by chunk_number to prevent repeated audio on SSE reconnect
-                if (msg.chunk_number != null) {
-                    if (!state.orb.geminiLiveProcessedChunks) {
-                        state.orb.geminiLiveProcessedChunks = new Set();
-                    }
-                    if (state.orb.geminiLiveProcessedChunks.has(msg.chunk_number)) {
-                        console.log('[VTID-01219] Skipping duplicate audio chunk:', msg.chunk_number);
-                        break;
-                    }
-                    state.orb.geminiLiveProcessedChunks.add(msg.chunk_number);
-                }
                 console.log('[VTID-01219] Received audio chunk, size:', msg.data_b64.length);
                 geminiLivePlayAudio(msg.data_b64, msg.mime || 'audio/wav');
             }
@@ -22422,53 +22411,20 @@ function geminiLiveHandleMessage(msg) {
             break;
 
         case 'output_transcript':
-            // Model's response transcription - display in chat view
+            // Model's response transcription
             if (msg.text) {
                 console.log('[VTID-01219] Model said:', msg.text);
-                // Accumulate output transcript chunks into the current assistant message
-                // Vertex LIVE API sends output_transcript in small incremental chunks
-                var lastMsg = state.orb.liveTranscript[state.orb.liveTranscript.length - 1];
-                if (lastMsg && lastMsg.role === 'assistant' && lastMsg._streaming) {
-                    // Append to existing streaming assistant message
-                    lastMsg.text += msg.text;
-                } else {
-                    // Start a new assistant message
-                    state.orb.liveTranscript.push({
-                        id: Date.now(),
-                        role: 'assistant',
-                        text: msg.text,
-                        _streaming: true,
-                        timestamp: new Date().toISOString()
-                    });
-                }
-                scrollOrbLiveTranscript();
-                renderApp();
             }
             break;
 
         case 'turn_complete':
             console.log('[VTID-01219] Turn complete');
-            // Finalize streaming assistant message
-            var lastStreamMsg = state.orb.liveTranscript[state.orb.liveTranscript.length - 1];
-            if (lastStreamMsg && lastStreamMsg._streaming) {
-                delete lastStreamMsg._streaming;
-            }
             break;
 
         case 'interrupted':
-            // Model was interrupted by user speech - immediately stop all audio
-            console.log('[VTID-01155] Audio interrupted, flushing queue and stopping playback');
+            // Model was interrupted, flush audio queue
             state.orb.geminiLiveAudioQueue = [];
-            // Stop all scheduled Web Audio API sources
-            if (state.orb.geminiLiveScheduledSources) {
-                state.orb.geminiLiveScheduledSources.forEach(function (s) {
-                    try { s.stop(0); } catch (e) { /* already stopped */ }
-                });
-                state.orb.geminiLiveScheduledSources = [];
-            }
-            // Reset scheduling time so next audio starts immediately
-            state.orb.geminiLiveLastScheduledEnd = 0;
-            state.orb.geminiLiveAudioPlaying = false;
+            console.log('[VTID-01155] Audio interrupted, queue flushed');
             break;
 
         case 'audio_ack':
@@ -22884,17 +22840,6 @@ function geminiLiveProcessQueue() {
 
             var nextStartTime = state.orb.geminiLiveLastScheduledEnd;
             source.start(nextStartTime);
-
-            // Track source references for cancellation on interruption
-            if (!state.orb.geminiLiveScheduledSources) {
-                state.orb.geminiLiveScheduledSources = [];
-            }
-            state.orb.geminiLiveScheduledSources.push(source);
-            // Clean up finished sources to avoid memory leak
-            source.onended = function () {
-                var idx = state.orb.geminiLiveScheduledSources.indexOf(source);
-                if (idx !== -1) state.orb.geminiLiveScheduledSources.splice(idx, 1);
-            };
 
             state.orb.geminiLiveLastScheduledEnd += audioBuffer.duration;
             state.orb.geminiLiveAudioPlaying = true;

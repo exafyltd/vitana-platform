@@ -496,8 +496,6 @@ interface GeminiLiveSession {
   transcriptTurns: Array<{ role: 'user' | 'assistant'; text: string; timestamp: string }>;
   // VTID-01225: Buffer for accumulating output transcription chunks until turn completes
   outputTranscriptBuffer: string;
-  // Client WebSocket reference for forwarding transcriptions (WebSocket path only)
-  clientWs?: WebSocket;
 }
 
 /**
@@ -1056,17 +1054,9 @@ TOOLS:
 IMPORTANT:
 - This is a real-time voice conversation
 - Listen actively and respond naturally
-- If interrupted, stop immediately and listen to the user
+- If interrupted, gracefully handle the interruption
 - Confirm important information when needed
-- Use tools to provide accurate, personalized responses
-
-CONVERSATION CONTINUITY:
-- You have persistent memory across sessions
-- When context below shows timestamps like "[5m ago]" or "[just now]", that means you JUST had a conversation with this user moments ago
-- Acknowledge the continuity naturally, e.g. "Welcome back!" or reference what you just discussed
-- If the last conversation was within 30 minutes, treat it as a continuation, not a new conversation
-- NEVER say "It's been a while" or "How are you?" as if starting fresh when the user just spoke to you minutes ago
-- Current time: ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
+- Use tools to provide accurate, personalized responses`;
 
   // VTID-01224: Append bootstrap context if available
   if (bootstrapContext) {
@@ -1150,17 +1140,6 @@ async function connectToLiveAPI(
           // VTID-01225: Enable transcription at setup level (not in generation_config)
           output_audio_transcription: {},
           input_audio_transcription: {},
-          // VTID-01219: Configure VAD to prevent premature interruptions
-          // Enum values: START_SENSITIVITY_LOW/HIGH, END_SENSITIVITY_LOW/HIGH
-          realtime_input_config: {
-            automatic_activity_detection: {
-              disabled: false,
-              start_of_speech_sensitivity: 'START_SENSITIVITY_HIGH',
-              end_of_speech_sensitivity: 'END_SENSITIVITY_LOW',
-              silence_duration_ms: 1200,
-              prefix_padding_ms: 200,
-            }
-          },
           system_instruction: {
             parts: [{
               // VTID-01224: Pass bootstrap context to system instruction
@@ -1208,20 +1187,6 @@ async function connectToLiveAPI(
           // VTID-01225: Log full server_content structure to debug transcription
           const contentKeys = Object.keys(content);
           console.log(`[VTID-01225] server_content keys: ${contentKeys.join(', ')}`);
-
-          // Check if model was interrupted by user speech (Vertex sends this on barge-in)
-          const interrupted = content.interrupted;
-          if (interrupted) {
-            console.log(`[VTID-01219] Model interrupted by user for session ${session.sessionId}`);
-            // Discard partial assistant transcript on interruption
-            session.outputTranscriptBuffer = '';
-            // Notify client to immediately flush audio playback
-            if (session.sseResponse) {
-              session.sseResponse.write(`data: ${JSON.stringify({ type: 'interrupted' })}\n\n`);
-            } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
-              sendWsMessage(session.clientWs, { type: 'interrupted' });
-            }
-          }
 
           // Check if turn is complete (handle both formats)
           const turnComplete = content.turn_complete || content.turnComplete;
@@ -1280,8 +1245,6 @@ async function connectToLiveAPI(
             // Notify client that response is complete
             if (session.sseResponse) {
               session.sseResponse.write(`data: ${JSON.stringify({ type: 'turn_complete' })}\n\n`);
-            } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
-              sendWsMessage(session.clientWs, { type: 'turn_complete' });
             }
             return;
           }
@@ -1331,8 +1294,6 @@ async function connectToLiveAPI(
             console.log(`[VTID-01219] Input transcription: ${inputTranscription}`);
             if (session.sseResponse) {
               session.sseResponse.write(`data: ${JSON.stringify({ type: 'input_transcript', text: inputTranscription })}\n\n`);
-            } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
-              sendWsMessage(session.clientWs, { type: 'input_transcript', text: inputTranscription });
             }
             // VTID-01225: Accumulate user transcript for Cognee extraction
             session.transcriptTurns.push({
@@ -1372,8 +1333,6 @@ async function connectToLiveAPI(
             console.log(`[VTID-01219] Output transcription: ${outputTranscription}`);
             if (session.sseResponse) {
               session.sseResponse.write(`data: ${JSON.stringify({ type: 'output_transcript', text: outputTranscription })}\n\n`);
-            } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
-              sendWsMessage(session.clientWs, { type: 'output_transcript', text: outputTranscription });
             }
             // VTID-01225: Accumulate output transcription chunks in buffer (will be written on turnComplete)
             session.outputTranscriptBuffer += outputTranscription;
@@ -4554,14 +4513,6 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
   session.sseResponse = res;
   session.lastActivity = new Date();
 
-  // VTID-01219: Close existing upstream WebSocket before creating a new one
-  // Prevents duplicate audio when SSE reconnects (browser tab refocus, network hiccup)
-  if (session.upstreamWs) {
-    console.log(`[VTID-01219] Closing existing upstream WebSocket for session ${sessionId} before SSE reconnect`);
-    try { session.upstreamWs.close(); } catch (e) { /* ignore */ }
-    session.upstreamWs = null;
-  }
-
   // VTID-01219: Connect to Vertex AI Live API WebSocket
   let liveApiConnected = false;
   console.log(`[VTID-ORBC] Live API check: googleAuth=${!!googleAuth}, VERTEX_PROJECT_ID=${VERTEX_PROJECT_ID || 'EMPTY'}, sessionId=${sessionId}`);
@@ -5450,7 +5401,6 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     responseModalities,
     upstreamWs: null,
     sseResponse: null,  // Not used for WebSocket clients
-    clientWs: clientSession.clientWs,  // Forward transcription events via WebSocket
     active: true,
     createdAt: new Date(),
     lastActivity: new Date(),
