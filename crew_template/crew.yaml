@@ -64,7 +64,7 @@ provider_policy:
     - research -> perplexity_mcp -> gemini
 
   reporting:
-    required_fields: [rid, task_type, assignee_ai, status, notes, git_sha?]
+    required_fields: [rid, task_type, assignee_ai, status, notes, "git_sha?"]
 
 # KB Skills Integration (VTID: DEV-AICOR-0025)
 skills:
