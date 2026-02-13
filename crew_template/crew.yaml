@@ -1,5 +1,33 @@
 provider_policy:
+  # ═══════════════════════════════════════════════════════════════════════
+  # SINGLE SOURCE OF TRUTH for all model assignments.
+  # All services (worker-runner, conductor/llm-router) MUST read from here.
+  # Do NOT hardcode model IDs in service code.
+  # VTID-01230: Unified model config
+  # ═══════════════════════════════════════════════════════════════════════
+
+  version: "2.0"
   memory_gateway: supabase_oasis
+
+  # Concrete model IDs — the only place these are defined
+  models:
+    claude:
+      provider: anthropic
+      model_id: claude-sonnet-4-5-20250929
+      fallback_model_id: claude-3-5-sonnet-20241022
+    gemini:
+      provider: vertex_ai
+      model_id: gemini-2.5-pro
+      fallback_model_id: gemini-1.5-pro
+    gemini_flash:
+      provider: vertex_ai
+      model_id: gemini-2.5-flash
+      fallback_model_id: gemini-1.5-flash
+    chatgpt:
+      provider: openai
+      model_id: gpt-4.1
+      fallback_model_id: gpt-4o
+
   defaults:
     autonomy: true
     report_events: gateway
@@ -11,33 +39,30 @@ provider_policy:
       base_ms: 200
       max_ms: 3000
       jitter: full
+
+  # Role→model assignments (use keys from 'models' above)
   roles:
     planner:
-      primary: gemini
-      secondary: chatgpt
-      contrarian: grok
-    worker:
       primary: claude
-      heavy_compute: gemini
-      review: chatgpt
+      fallback: gemini
+    worker:
+      primary: gemini
+      fallback: claude
     validator:
-      primary: chatgpt
-      load_test: gemini
-      red_team: grok
+      primary: claude
+      fallback: gemini
     research:
       web_primary: perplexity_mcp
-      realtime_alt: grok
-      synth: gemini
-      summarize: chatgpt
+      fallback: gemini
     autopilot:
-      brain: gemini
-      ux_tone: chatgpt
-      trend_contra: grok
-      exec_bridge: claude
+      primary: gemini
+      fallback: claude
+
   fallbacks:
-    - gemini -> chatgpt -> claude
+    - gemini -> claude
     - claude -> gemini
     - research -> perplexity_mcp -> gemini
+
   reporting:
     required_fields: [rid, task_type, assignee_ai, status, notes, git_sha?]
 
