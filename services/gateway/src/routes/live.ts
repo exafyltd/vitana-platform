@@ -349,11 +349,34 @@ router.post('/rooms', async (req: Request, res: Response) => {
 
   console.log(`[VTID-01090] Live room created: ${result.data?.live_room_id}`);
 
+  // Determine status: 'idle' for permanent rooms (no starts_at), 'scheduled' for scheduled rooms
+  const roomStatus = starts_at ? 'scheduled' : 'idle';
+
+  // Construct room object matching LiveRoom interface
+  const room = {
+    id: result.data?.live_room_id,
+    tenant_id: result.data?.tenant_id || '',
+    title,
+    topic_keys: topic_keys || [],
+    host_user_id: result.data?.host_user_id || '',
+    starts_at: starts_at || null,
+    ends_at: null,
+    status: roomStatus,
+    access_level: access_level || 'public',
+    room_name: null,
+    room_slug: null,
+    current_session_id: null,
+    cover_image_url: metadata?.cover_image_url || null,
+    description: metadata?.description || null,
+    host_present: false,
+    metadata: metadata || {},
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
+
   return res.status(201).json({
     ok: true,
-    live_room_id: result.data?.live_room_id,
-    title,
-    status: 'scheduled'
+    room
   });
 });
 
