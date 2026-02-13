@@ -246,6 +246,16 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
     });
   });
 
+  // VTID-0600: Debug route to verify FIX deployment
+  app.get('/debug/vtid-0600-check', (_req, res) => {
+    res.json({
+      ok: true,
+      vtid: 'VTID-0600',
+      status: 'FIX_DEPLOYED',
+      timestamp: new Date().toISOString()
+    });
+  });
+
   // VTID-0538-D: Diagnostic endpoint to verify Knowledge Hub routes are deployed
   app.get('/debug/vtid-0538-routes', (_req, res) => {
     const assistantRoutes: string[] = [];

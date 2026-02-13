@@ -41,6 +41,9 @@ Claude must **always** do the following:
 18. **Always deploy via the canonical deploy scripts.**
 19. **Always log provider, model, and latency for AI calls.**
 20. **Always treat CI/CD as governed, not ad-hoc.**
+21. **Always verify source code BEFORE deployment** — grep for critical routes/features in the deploy source to confirm they exist.
+22. **Always verify deployment AFTER deploy** — curl critical endpoints to confirm the new code is live (check for JSON responses, not HTML 404s).
+23. **Always verify Cloud Shell is on latest `origin/main`** before deploying — run `git log --oneline -3` and compare with local repo.
 
 ### Database & Memory
 
@@ -155,6 +158,14 @@ Claude must apply the following **conditional logic**:
 13. **IF** `/healthz` is used → **THEN replace with `/alive`.**
 14. **IF** Artifact Registry is not used → **THEN fix before deploy.**
 15. **IF** CI/CD token is missing → **THEN abort merge.**
+
+### Deployment Verification
+
+16. **IF** deploying to Cloud Run → **THEN grep source for critical routes/features BEFORE `gcloud builds submit`.**
+17. **IF** deploy completes → **THEN curl critical endpoints and confirm JSON response (not HTML 404).**
+18. **IF** curl returns `text/html` content-type → **THEN the route does NOT exist on deployed code — deploy failed or wrong code.**
+19. **IF** deploying from Cloud Shell → **THEN run `git fetch origin && git log --oneline origin/main -3` and compare with local repo to confirm Cloud Shell has latest code.**
+20. **IF** Cloud Shell is behind `origin/main` → **THEN run `git reset --hard origin/main` before deploying.**
 
 ### Memory
 
@@ -716,10 +727,75 @@ write_fact(
 
 ---
 
+## 15. DEPLOYMENT VERIFICATION PROTOCOL (VTID-01228)
+
+**This is mandatory for EVERY deployment. No exceptions.**
+
+Deployments have repeatedly failed because Cloud Shell had stale code, or the wrong branch was deployed. This protocol prevents that.
+
+### Pre-Deploy Verification (BEFORE `gcloud builds submit`)
+
+1. **Verify source code has the expected changes:**
+   ```bash
+   # Example: Verify sessions route exists before deploying Gateway
+   grep -r "sessions" services/gateway/src/routes/live.ts | head -5
+   ```
+2. **If deploying from Cloud Shell, verify it's on latest main:**
+   ```bash
+   git fetch origin
+   git log --oneline origin/main -3   # Compare with local repo
+   git log --oneline HEAD -3          # Should match
+   # If behind:
+   git reset --hard origin/main
+   ```
+3. **Verify the build succeeds locally (TypeScript compiles):**
+   ```bash
+   cd services/<service> && npm run build
+   ```
+
+### Post-Deploy Verification (AFTER `gcloud run deploy` succeeds)
+
+1. **Curl a critical endpoint that only exists in the new code:**
+   ```bash
+   # Check content-type: must be application/json, NOT text/html
+   curl -s -o /dev/null -w "%{http_code} %{content_type}" \
+     -X POST "https://gateway-86804897789.us-central1.run.app/api/v1/live/rooms/test/sessions" \
+     -H "Content-Type: application/json" -d '{}'
+   # Expected: "401 application/json..." (auth required, but JSON = route exists)
+   # FAILURE: "404 text/html..." (Express default = route does NOT exist)
+   ```
+2. **Check the /alive endpoint:**
+   ```bash
+   curl -s "https://gateway-86804897789.us-central1.run.app/alive"
+   ```
+3. **Check the latest revision is serving:**
+   ```bash
+   gcloud run revisions list --service=<service> \
+     --region=us-central1 --project=lovable-vitana-vers1 --limit=3
+   ```
+
+### Key Diagnostic: HTML 404 vs JSON 404
+
+| Response | Content-Type | Meaning |
+|----------|-------------|---------|
+| `Cannot POST /api/v1/...` | `text/html` | **Route does NOT exist** — wrong code deployed |
+| `{"error":"ROOM_NOT_FOUND"}` | `application/json` | Route exists, business logic error — correct code |
+
+### Failure Protocol
+
+If post-deploy verification fails:
+1. **Do NOT tell the user "deployment succeeded"** — it didn't
+2. Check which revision is serving: `gcloud run revisions list`
+3. Check the build logs in Cloud Console (CLI `gcloud builds log` has known bugs)
+4. Verify the source that was submitted had the correct code
+
+---
+
 ## CHANGE LOG
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-02-13 | Added Deployment Verification Protocol section + rules | VTID-01228 |
 | 2026-02-03 | Added Memory & Intelligence Architecture section | VTID-01225 |
 | 2026-01-21 | Added ALWAYS/NEVER/IF-THEN core rules | VTID-01200 |
 | 2026-01-21 | Initial creation with technical reference | VTID-01200 |

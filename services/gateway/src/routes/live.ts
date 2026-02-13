@@ -437,7 +437,7 @@ router.post('/rooms/:id/start', async (req: Request, res: Response) => {
  */
 router.post('/rooms/:id/end', async (req: Request, res: Response) => {
   const roomId = req.params.id;
-  console.log(`[VTID-01090] POST /live/rooms/${roomId}/end`);
+  console.log(`[VTID-01228] POST /live/rooms/${roomId}/end`);
 
   const token = getBearerToken(req);
   if (!token) {
@@ -448,14 +448,36 @@ router.post('/rooms/:id/end', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
   }
 
-  const result = await callRpc(token, 'live_room_end', {
-    p_live_room_id: roomId
+  // VTID-01228: Use live_room_end_session (ends session + resets room to idle)
+  // instead of old live_room_end which had resolve_tenant_for_user issues
+  const result = await callRpc(token, 'live_room_end_session', {
+    p_room_id: roomId
   });
 
   if (!result.ok) {
     const statusCode = result.error?.includes('NOT_HOST') ? 403 :
-      result.error?.includes('ROOM_NOT_FOUND') ? 404 : 502;
+      result.error?.includes('ROOM_NOT_FOUND') ? 404 :
+      result.error?.includes('INVALID_STATE') ? 409 : 502;
     return res.status(statusCode).json({ ok: false, error: result.error });
+  }
+
+  // Sync to community_live_streams (so LiveRooms listing reflects ended state)
+  try {
+    const creds = getSupabaseCredentials();
+    if (creds) {
+      await fetch(`${creds.url}/rest/v1/community_live_streams?id=eq.${roomId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': creds.key,
+          'Authorization': `Bearer ${creds.key}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({ status: 'ended', ended_at: new Date().toISOString() })
+      });
+    }
+  } catch (err: any) {
+    console.warn(`[VTID-01228] community_live_streams sync (end) failed: ${err.message}`);
   }
 
   // Emit OASIS event
@@ -463,21 +485,16 @@ router.post('/rooms/:id/end', async (req: Request, res: Response) => {
     'live.room.ended',
     'success',
     `Live room ended: ${roomId}`,
-    {
-      live_room_id: roomId,
-      ended_at: result.data?.ended_at,
-      edges_strengthened: result.data?.edges_strengthened
-    }
+    { live_room_id: roomId, ended_session_id: result.data?.ended_session_id }
   );
 
-  console.log(`[VTID-01090] Live room ended: ${roomId} (${result.data?.edges_strengthened} edges strengthened)`);
+  console.log(`[VTID-01228] Live room ended: ${roomId} (session: ${result.data?.ended_session_id})`);
 
   return res.status(200).json({
     ok: true,
     live_room_id: roomId,
-    status: 'ended',
-    ended_at: result.data?.ended_at,
-    edges_strengthened: result.data?.edges_strengthened
+    status: 'idle',
+    ended_session_id: result.data?.ended_session_id
   });
 });
 
@@ -1214,15 +1231,23 @@ router.get('/rooms/me', async (req: Request, res: Response) => {
     return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   }
 
-  // Query app_users directly via Supabase REST API (RLS filters by auth.uid())
+  // Query app_users via Supabase REST API — filter by user JWT to scope correctly
   const creds = getSupabaseCredentials();
   if (!creds) {
     return res.status(500).json({ ok: false, error: 'Gateway misconfigured' });
   }
 
   try {
+    // Decode user_id from JWT to filter correctly (service_role bypasses RLS)
+    let userId: string | null = null;
+    try {
+      const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+      userId = payload.sub;
+    } catch { /* fallback below */ }
+
+    const filterParam = userId ? `&user_id=eq.${userId}` : '';
     const userResponse = await fetch(
-      `${creds.url}/rest/v1/app_users?select=live_room_id&limit=1`,
+      `${creds.url}/rest/v1/app_users?select=live_room_id&limit=1${filterParam}`,
       {
         headers: {
           'apikey': creds.key,
@@ -1342,6 +1367,48 @@ router.post('/rooms/:id/sessions', sessionCreateLimiter, async (req: Request, re
   }
 
   console.log(`[VTID-01228] Session created: ${result.sessionId} (${result.status})`);
+
+  // VTID-01228: Sync to community_live_streams so other users see this room in the listing.
+  // The LiveRooms page queries community_live_streams, not live_rooms.
+  if (result.status === 'live' || result.status === 'lobby') {
+    try {
+      const creds = getSupabaseCredentials();
+      if (creds) {
+        // Decode user_id from JWT for created_by
+        let userId = '';
+        try {
+          userId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub;
+        } catch { /* fallback empty */ }
+
+        // Upsert: use room ID as the stream ID for 1:1 mapping
+        await fetch(`${creds.url}/rest/v1/community_live_streams`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': creds.key,
+            'Authorization': `Bearer ${creds.key}`,
+            'Prefer': 'return=minimal,resolution=merge-duplicates'
+          },
+          body: JSON.stringify({
+            id: roomId,
+            title: validation.data.session_title || 'Live Session',
+            created_by: userId,
+            status: 'live',
+            stream_type: 'audio',
+            started_at: new Date().toISOString(),
+            scheduled_for: validation.data.starts_at,
+            access_level: validation.data.access_level || 'public',
+            tags: validation.data.topic_keys || [],
+            enable_chat: true,
+            viewer_count: 0,
+          })
+        });
+        console.log(`[VTID-01228] Synced session to community_live_streams: ${roomId}`);
+      }
+    } catch (err: any) {
+      console.warn(`[VTID-01228] community_live_streams sync (create) failed: ${err.message}`);
+    }
+  }
 
   return res.status(201).json({
     ok: true,
