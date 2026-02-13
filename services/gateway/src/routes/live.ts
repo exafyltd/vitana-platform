@@ -1370,44 +1370,52 @@ router.post('/rooms/:id/sessions', sessionCreateLimiter, async (req: Request, re
 
   // VTID-01228: Sync to community_live_streams so other users see this room in the listing.
   // The LiveRooms page queries community_live_streams, not live_rooms.
-  if (result.status === 'live' || result.status === 'lobby') {
-    try {
-      const creds = getSupabaseCredentials();
-      if (creds) {
-        // Decode user_id from JWT for created_by
-        let userId = '';
-        try {
-          userId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub;
-        } catch { /* fallback empty */ }
+  // Always sync regardless of initial status (scheduled/lobby/live) — the status may
+  // auto-transition immediately, and the listing page needs the entry.
+  try {
+    const creds = getSupabaseCredentials();
+    if (creds) {
+      // Decode user_id from JWT for created_by
+      let userId = '';
+      try {
+        userId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub;
+      } catch { /* fallback empty */ }
 
-        // Upsert: use room ID as the stream ID for 1:1 mapping
-        await fetch(`${creds.url}/rest/v1/community_live_streams`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': creds.key,
-            'Authorization': `Bearer ${creds.key}`,
-            'Prefer': 'return=minimal,resolution=merge-duplicates'
-          },
-          body: JSON.stringify({
-            id: roomId,
-            title: validation.data.session_title || 'Live Session',
-            created_by: userId,
-            status: 'live',
-            stream_type: 'audio',
-            started_at: new Date().toISOString(),
-            scheduled_for: validation.data.starts_at,
-            access_level: validation.data.access_level || 'public',
-            tags: validation.data.topic_keys || [],
-            enable_chat: true,
-            viewer_count: 0,
-          })
-        });
-        console.log(`[VTID-01228] Synced session to community_live_streams: ${roomId}`);
+      // Map session status to community_live_streams status
+      const streamStatus = (result.status === 'scheduled') ? 'pending' : 'live';
+
+      // Upsert: use room ID as the stream ID for 1:1 mapping
+      const syncResp = await fetch(`${creds.url}/rest/v1/community_live_streams`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': creds.key,
+          'Authorization': `Bearer ${creds.key}`,
+          'Prefer': 'return=minimal,resolution=merge-duplicates'
+        },
+        body: JSON.stringify({
+          id: roomId,
+          title: validation.data.session_title || 'Live Session',
+          created_by: userId,
+          status: streamStatus,
+          stream_type: 'audio',
+          started_at: streamStatus === 'live' ? new Date().toISOString() : null,
+          scheduled_for: validation.data.starts_at,
+          access_level: validation.data.access_level || 'public',
+          tags: validation.data.topic_keys || [],
+          enable_chat: true,
+          viewer_count: 0,
+        })
+      });
+      if (!syncResp.ok) {
+        const errText = await syncResp.text();
+        console.error(`[VTID-01228] community_live_streams sync failed: ${syncResp.status} - ${errText}`);
+      } else {
+        console.log(`[VTID-01228] Synced session to community_live_streams: ${roomId} (${streamStatus})`);
       }
-    } catch (err: any) {
-      console.warn(`[VTID-01228] community_live_streams sync (create) failed: ${err.message}`);
     }
+  } catch (err: any) {
+    console.warn(`[VTID-01228] community_live_streams sync (create) exception: ${err.message}`);
   }
 
   return res.status(201).json({
