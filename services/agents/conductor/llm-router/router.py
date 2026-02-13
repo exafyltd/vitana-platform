@@ -3,12 +3,16 @@ Centralized LLM Router for Vitana Platform
 Routes LLM requests based on agent role with fallback support and cost optimization.
 
 VTID-01208: Added LLM telemetry emission for all calls.
+VTID-01230: Reads model assignments from crew.yaml (single source of truth).
+            The Conductor/LLM-Router is a support service for the worker-runner,
+            which is the canonical execution plane (VTID-01200).
 """
 
 import os
 import sys
 import time
 import uuid
+import yaml
 from typing import Optional, Dict, Any
 from enum import Enum
 import requests
@@ -31,24 +35,85 @@ class AgentRole(Enum):
     WORKER = "worker"
     VALIDATOR = "validator"
 
+# ─── VTID-01230: Load model config from crew.yaml ───────────────────────────
+
+def _load_crew_config() -> Dict[str, Any]:
+    """Load model and role config from crew_template/crew.yaml (single source of truth)."""
+    # Walk up from llm-router/ -> conductor/ -> agents/ -> services/ -> repo root
+    config_paths = [
+        os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'crew_template', 'crew.yaml'),
+        os.path.join(os.path.dirname(__file__), '..', '..', '..', 'crew_template', 'crew.yaml'),
+        '/app/crew_template/crew.yaml',  # Docker mount path
+    ]
+    # Also allow override via env var
+    env_path = os.getenv('CREW_CONFIG_PATH')
+    if env_path:
+        config_paths.insert(0, env_path)
+
+    for path in config_paths:
+        abs_path = os.path.abspath(path)
+        if os.path.isfile(abs_path):
+            with open(abs_path, 'r') as f:
+                config = yaml.safe_load(f)
+            print(f"[LLM Router] Loaded crew config from {abs_path}")
+            return config.get('provider_policy', {})
+
+    print("[LLM Router] WARNING: crew.yaml not found, using built-in defaults")
+    return {}
+
+
+def _build_routing_policy(crew_config: Dict[str, Any]) -> Dict[AgentRole, Dict]:
+    """Build routing policy from crew.yaml config."""
+    models = crew_config.get('models', {})
+    roles = crew_config.get('roles', {})
+
+    policy = {}
+    for role in AgentRole:
+        role_config = roles.get(role.value, {})
+        primary_key = role_config.get('primary', 'gemini')
+        fallback_key = role_config.get('fallback', 'claude' if primary_key != 'claude' else 'gemini')
+
+        primary_model = models.get(primary_key, {})
+        fallback_model = models.get(fallback_key, {})
+
+        policy[role] = {
+            "primary": {
+                "provider": primary_model.get('provider', 'vertex_ai'),
+                "model": primary_model.get('model_id', 'gemini-2.5-pro'),
+            },
+            "fallback": {
+                "provider": fallback_model.get('provider', 'vertex_ai'),
+                "model": fallback_model.get('fallback_model_id', fallback_model.get('model_id', 'gemini-1.5-pro')),
+            },
+        }
+
+    return policy
+
+
+# Load once at module init
+_crew_config = _load_crew_config()
+
+
 class LLMRouter:
     """Centralized router for all LLM calls"""
-    
-    ROUTING_POLICY = {
+
+    # VTID-01230: Build routing policy from crew.yaml
+    ROUTING_POLICY = _build_routing_policy(_crew_config) if _crew_config else {
+        # Fallback defaults if crew.yaml not found
         AgentRole.PLANNER: {
-            "primary": {"provider": "anthropic", "model": "claude-3-5-sonnet-20241022"},
+            "primary": {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
             "fallback": {"provider": "vertex_ai", "model": "gemini-1.5-pro"}
         },
         AgentRole.WORKER: {
-            "primary": {"provider": "vertex_ai", "model": "gemini-1.5-flash"},
-            "fallback": {"provider": "vertex_ai", "model": "gemini-1.5-pro"}
+            "primary": {"provider": "vertex_ai", "model": "gemini-2.5-pro"},
+            "fallback": {"provider": "anthropic", "model": "claude-3-5-sonnet-20241022"}
         },
         AgentRole.VALIDATOR: {
-            "primary": {"provider": "anthropic", "model": "claude-3-5-sonnet-20241022"},
+            "primary": {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
             "fallback": {"provider": "vertex_ai", "model": "gemini-1.5-pro"}
         }
     }
-    
+
     # VTID-01208: Role to telemetry stage mapping
     ROLE_TO_STAGE = {
         AgentRole.PLANNER: TelemetryStage.PLANNER if HAS_TELEMETRY else None,
@@ -67,6 +132,10 @@ class LLMRouter:
             self.telemetry = LLMTelemetry(service=service_name)
         else:
             self.telemetry = None
+
+        # VTID-01230: Log resolved routing policy
+        for role, policy in self.ROUTING_POLICY.items():
+            print(f"[LLM Router] {role.value}: primary={policy['primary']['model']}, fallback={policy['fallback']['model']}")
 
     def complete(self, role: AgentRole, prompt: str, max_tokens: int = 4000,
                  temperature: float = 0.7, metadata: Optional[Dict[str, Any]] = None,
@@ -156,8 +225,8 @@ class LLMRouter:
         result["oasis_event_id"] = oasis_event_id
 
         return result
-    
-    def _call_llm(self, provider: str, model: str, prompt: str, 
+
+    def _call_llm(self, provider: str, model: str, prompt: str,
                   max_tokens: int, temperature: float) -> Dict[str, Any]:
         """Call specific LLM provider"""
         if provider == "anthropic":
@@ -166,14 +235,14 @@ class LLMRouter:
             return self._call_vertex(model, prompt, max_tokens, temperature)
         else:
             raise ValueError(f"Unknown provider: {provider}")
-    
+
     def _call_anthropic(self, model: str, prompt: str, max_tokens: int, temperature: float) -> Dict[str, Any]:
         """Call Anthropic Claude API"""
         try:
             from anthropic import Anthropic
         except ImportError:
             raise Exception("anthropic package not installed")
-        
+
         client = Anthropic(api_key=self.anthropic_key)
         response = client.messages.create(
             model=model,
@@ -181,11 +250,11 @@ class LLMRouter:
             temperature=temperature,
             messages=[{"role": "user", "content": prompt}]
         )
-        
+
         input_tokens = response.usage.input_tokens
         output_tokens = response.usage.output_tokens
         cost = (input_tokens * 3 / 1_000_000) + (output_tokens * 15 / 1_000_000)
-        
+
         return {
             "text": response.content[0].text,
             "model": model,
@@ -193,7 +262,7 @@ class LLMRouter:
             "tokens": {"input": input_tokens, "output": output_tokens, "total": input_tokens + output_tokens},
             "cost_usd": round(cost, 6)
         }
-    
+
     def _call_vertex(self, model: str, prompt: str, max_tokens: int, temperature: float) -> Dict[str, Any]:
         """Call Google Vertex AI"""
         try:
@@ -201,20 +270,20 @@ class LLMRouter:
             import vertexai
         except ImportError:
             raise Exception("vertexai package not installed")
-        
+
         vertexai.init(project=self.project_id, location="us-central1")
         model_obj = GenerativeModel(model)
         response = model_obj.generate_content(prompt)
-        
+
         # Approximate token counts and costs
         input_tokens = len(prompt.split()) * 1.3
         output_tokens = len(response.text.split()) * 1.3
-        
+
         if "flash" in model.lower():
             cost = (input_tokens * 0.075 / 1_000_000) + (output_tokens * 0.30 / 1_000_000)
         else:
             cost = (input_tokens * 1.25 / 1_000_000) + (output_tokens * 5 / 1_000_000)
-        
+
         return {
             "text": response.text,
             "model": model,
@@ -222,7 +291,7 @@ class LLMRouter:
             "tokens": {"input": int(input_tokens), "output": int(output_tokens), "total": int(input_tokens + output_tokens)},
             "cost_usd": round(cost, 6)
         }
-    
+
     def _log_to_oasis(self, event_type: str, data: Dict[str, Any]) -> str:
         """Log event to OASIS gateway"""
         event_id = str(uuid.uuid4())

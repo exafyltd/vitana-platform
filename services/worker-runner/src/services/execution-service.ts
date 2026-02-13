@@ -1,6 +1,8 @@
 /**
  * VTID-01200: Worker Runner - Execution Service
  * VTID-01229: Added execution timeout to prevent hanging tasks
+ * VTID-01230: Reads model config from crew.yaml (no more hardcoded model strings)
+ * VTID-01231: Contract validation on LLM outputs before action execution
  *
  * Executes actual work via LLM (Gemini/Claude).
  * Uses Vertex AI for Gemini execution on Cloud Run.
@@ -9,11 +11,16 @@
 import { VertexAI, GenerativeModel, Content, Part } from '@google-cloud/vertexai';
 import { randomUUID } from 'crypto';
 import { RunnerConfig, TaskDomain, ExecutionResult, PendingTask, RoutingResult } from '../types';
+import { resolveModelForRole } from './crew-config';
+import { validateLLMResponse, formatViolationsForReprompt } from './contract-validator';
 
 const VTID = 'VTID-01200';
 
 // VTID-01229: Execution timeout configuration (30 minutes default)
 const EXECUTION_TIMEOUT_MS = parseInt(process.env.WORKER_EXECUTION_TIMEOUT_MS || '1800000', 10);
+
+// VTID-01231: Max contract validation retries
+const MAX_CONTRACT_RETRIES = parseInt(process.env.WORKER_CONTRACT_RETRIES || '2', 10);
 
 /**
  * VTID-01229: Promise timeout wrapper
@@ -36,18 +43,23 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operationName: s
 // Vertex AI client (initialized lazily)
 let vertexAI: VertexAI | null = null;
 let generativeModel: GenerativeModel | null = null;
+let resolvedModelId: string | null = null;
 
 /**
- * Initialize Vertex AI client
+ * VTID-01230: Initialize Vertex AI client using crew.yaml config
  */
 function initVertexAI(config: RunnerConfig): boolean {
-  if (vertexAI && generativeModel) {
-    return true;
-  }
+  const workerModel = resolveModelForRole('worker');
 
+  // Env overrides still work, but default comes from crew.yaml
   const project = config.vertexProject || process.env.GOOGLE_CLOUD_PROJECT || 'lovable-vitana-vers1';
   const location = config.vertexLocation || process.env.VERTEX_LOCATION || 'us-central1';
-  const model = config.vertexModel || process.env.VERTEX_MODEL || 'gemini-2.5-pro';
+  const model = config.vertexModel || process.env.VERTEX_MODEL || workerModel.modelId;
+
+  // Skip re-init if already initialized with same model
+  if (vertexAI && generativeModel && resolvedModelId === model) {
+    return true;
+  }
 
   try {
     vertexAI = new VertexAI({
@@ -65,7 +77,8 @@ function initVertexAI(config: RunnerConfig): boolean {
       },
     });
 
-    console.log(`[${VTID}] Vertex AI initialized: project=${project}, location=${location}, model=${model}`);
+    resolvedModelId = model;
+    console.log(`[${VTID}] Vertex AI initialized: project=${project}, location=${location}, model=${model} (crew.yaml worker.primary=${workerModel.modelId})`);
     return true;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -223,51 +236,118 @@ IMPORTANT: Only describe changes within your domain boundaries. If changes are n
 }
 
 /**
+ * VTID-01231: Call LLM and validate response against contract.
+ * Retries with violation feedback if contract check fails.
+ */
+async function callAndValidate(
+  model: GenerativeModel,
+  systemPrompt: string,
+  taskPrompt: string,
+  vtid: string,
+  maxRetries: number = MAX_CONTRACT_RETRIES
+): Promise<{ responseText: string; attempt: number }> {
+  let currentPrompt = taskPrompt;
+
+  for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+    const contents: Content[] = [
+      {
+        role: 'user',
+        parts: [{ text: currentPrompt }] as Part[],
+      },
+    ];
+
+    console.log(`[${VTID}] LLM call for ${vtid} (attempt ${attempt}/${maxRetries + 1}, timeout: ${EXECUTION_TIMEOUT_MS}ms)`);
+
+    const response = await withTimeout(
+      model.generateContent({
+        contents,
+        systemInstruction: {
+          role: 'system',
+          parts: [{ text: systemPrompt }] as Part[],
+        },
+      }),
+      EXECUTION_TIMEOUT_MS,
+      `LLM generation for ${vtid}`
+    );
+
+    const candidate = response.response?.candidates?.[0];
+    const content = candidate?.content;
+
+    if (!content || !content.parts) {
+      if (attempt <= maxRetries) {
+        currentPrompt = taskPrompt + '\n\n## RETRY\nPrevious attempt returned no content. Please try again.';
+        continue;
+      }
+      return { responseText: '', attempt };
+    }
+
+    const textPart = content.parts.find((part: Part) => 'text' in part);
+    const responseText = textPart ? (textPart as { text: string }).text : '';
+
+    // VTID-01231: Validate against contract
+    const validation = validateLLMResponse(responseText);
+
+    if (validation.valid) {
+      if (attempt > 1) {
+        console.log(`[${VTID}] Contract validation passed on retry attempt ${attempt} for ${vtid}`);
+      }
+      return { responseText, attempt };
+    }
+
+    // If we have retries left, re-prompt with violation feedback
+    if (attempt <= maxRetries) {
+      const repromptContext = formatViolationsForReprompt(validation.violations);
+      console.warn(
+        `[${VTID}] Contract validation failed for ${vtid} (attempt ${attempt}): ${validation.violations.length} violations. Retrying...`
+      );
+      currentPrompt = taskPrompt + repromptContext;
+    } else {
+      console.error(
+        `[${VTID}] Contract validation failed for ${vtid} after ${attempt} attempts: ${JSON.stringify(validation.violations)}`
+      );
+      return { responseText, attempt };
+    }
+  }
+
+  return { responseText: '', attempt: maxRetries + 1 };
+}
+
+/**
  * Parse the LLM response into an ExecutionResult
+ * VTID-01231: Now uses contract validator for structured parsing
  */
 function parseExecutionResult(
   response: string,
   durationMs: number,
-  model: string,
-  provider: string
+  modelName: string,
+  provider: string,
+  attempt: number
 ): ExecutionResult {
-  try {
-    // Try to extract JSON from the response
-    const jsonMatch = response.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      return {
-        ok: false,
-        error: 'No JSON found in LLM response',
-        summary: response.substring(0, 500),
-        duration_ms: durationMs,
-        model,
-        provider,
-      };
-    }
+  const validation = validateLLMResponse(response);
 
-    const parsed = JSON.parse(jsonMatch[0]);
-
+  if (validation.valid && validation.sanitized) {
     return {
-      ok: parsed.ok === true,
-      files_changed: Array.isArray(parsed.files_changed) ? parsed.files_changed : [],
-      files_created: Array.isArray(parsed.files_created) ? parsed.files_created : [],
-      summary: parsed.summary || 'No summary provided',
-      error: parsed.error,
-      violations: Array.isArray(parsed.violations) ? parsed.violations : [],
+      ...validation.sanitized,
       duration_ms: durationMs,
-      model,
-      provider,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      error: `Failed to parse LLM response: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      summary: response.substring(0, 500),
-      duration_ms: durationMs,
-      model,
+      model: modelName,
       provider,
     };
   }
+
+  // Contract validation failed even after retries — return as failure
+  const violationSummary = validation.violations
+    .map((v) => `${v.field}: ${v.message}`)
+    .join('; ');
+
+  return {
+    ok: false,
+    error: `Contract validation failed after ${attempt} attempt(s): ${violationSummary}`,
+    summary: response.substring(0, 500),
+    duration_ms: durationMs,
+    model: modelName,
+    provider,
+    violations: validation.violations.map((v) => `${v.field}: ${v.rule}`),
+  };
 }
 
 /**
@@ -281,10 +361,12 @@ export async function executeTask(
 ): Promise<ExecutionResult> {
   const runId = routing.run_id || `run_${randomUUID().slice(0, 8)}`;
   const startTime = Date.now();
-  const model = config.vertexModel || process.env.VERTEX_MODEL || 'gemini-2.5-pro';
+  // VTID-01230: Model comes from crew.yaml via resolveModelForRole
+  const workerModel = resolveModelForRole('worker');
+  const modelName = config.vertexModel || process.env.VERTEX_MODEL || workerModel.modelId;
   const provider = 'vertex-ai';
 
-  console.log(`[${VTID}] Executing task ${task.vtid} (domain=${domain}, run_id=${runId})`);
+  console.log(`[${VTID}] Executing task ${task.vtid} (domain=${domain}, run_id=${runId}, model=${modelName})`);
 
   // Initialize Vertex AI if not already done
   if (!initVertexAI(config)) {
@@ -292,7 +374,7 @@ export async function executeTask(
       ok: false,
       error: 'Failed to initialize Vertex AI',
       duration_ms: Date.now() - startTime,
-      model,
+      model: modelName,
       provider,
     };
   }
@@ -302,7 +384,7 @@ export async function executeTask(
       ok: false,
       error: 'Generative model not initialized',
       duration_ms: Date.now() - startTime,
-      model,
+      model: modelName,
       provider,
     };
   }
@@ -311,49 +393,18 @@ export async function executeTask(
     const systemPrompt = buildSystemPrompt(domain);
     const taskPrompt = buildTaskPrompt(task, routing, domain);
 
-    // Build the request
-    const contents: Content[] = [
-      {
-        role: 'user',
-        parts: [{ text: taskPrompt }] as Part[],
-      },
-    ];
-
-    // VTID-01229: Generate content with timeout to prevent hanging
-    console.log(`[${VTID}] Calling Vertex AI for ${task.vtid} (timeout: ${EXECUTION_TIMEOUT_MS}ms)...`);
-    const response = await withTimeout(
-      generativeModel.generateContent({
-        contents,
-        systemInstruction: {
-          role: 'system',
-          parts: [{ text: systemPrompt }] as Part[],
-        },
-      }),
-      EXECUTION_TIMEOUT_MS,
-      `LLM generation for ${task.vtid}`
+    // VTID-01231: Call with contract validation and retry
+    const { responseText, attempt } = await callAndValidate(
+      generativeModel,
+      systemPrompt,
+      taskPrompt,
+      task.vtid
     );
 
-    const candidate = response.response?.candidates?.[0];
-    const content = candidate?.content;
+    console.log(`[${VTID}] Received response for ${task.vtid} (${responseText.length} chars, attempt ${attempt})`);
 
-    if (!content || !content.parts) {
-      return {
-        ok: false,
-        error: 'No content in LLM response',
-        duration_ms: Date.now() - startTime,
-        model,
-        provider,
-      };
-    }
-
-    // Extract text response
-    const textPart = content.parts.find((part: Part) => 'text' in part);
-    const responseText = textPart ? (textPart as { text: string }).text : '';
-
-    console.log(`[${VTID}] Received response for ${task.vtid} (${responseText.length} chars)`);
-
-    // Parse and return result
-    return parseExecutionResult(responseText, Date.now() - startTime, model, provider);
+    // Parse and return result (uses contract validator internally)
+    return parseExecutionResult(responseText, Date.now() - startTime, modelName, provider, attempt);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error(`[${VTID}] Execution error for ${task.vtid}: ${errorMessage}`);
@@ -362,7 +413,7 @@ export async function executeTask(
       ok: false,
       error: `Execution error: ${errorMessage}`,
       duration_ms: Date.now() - startTime,
-      model,
+      model: modelName,
       provider,
     };
   }
@@ -370,10 +421,12 @@ export async function executeTask(
 
 /**
  * Get model info for metrics
+ * VTID-01230: Now reads from crew.yaml
  */
 export function getModelInfo(config: RunnerConfig): { model: string; provider: string } {
+  const workerModel = resolveModelForRole('worker');
   return {
-    model: config.vertexModel || process.env.VERTEX_MODEL || 'gemini-2.5-pro',
+    model: config.vertexModel || process.env.VERTEX_MODEL || workerModel.modelId,
     provider: 'vertex-ai',
   };
 }

@@ -532,11 +532,11 @@ describe('VTID-01225: Intelligence & Memory Stack E2E', () => {
 
       const pack = await buildContextPack(input);
 
-      // Token budget should be tracked
+      // Token budget should be tracked (TOKEN_BUDGET=6000 in context-pack-builder.ts)
       expect(pack.token_budget).toBeDefined();
-      expect(pack.token_budget.total_budget).toBe(4000);
+      expect(pack.token_budget.total_budget).toBe(6000);
       expect(pack.token_budget.used).toBeGreaterThan(0);
-      expect(pack.token_budget.remaining).toBeLessThan(4000);
+      expect(pack.token_budget.remaining).toBeLessThan(6000);
     });
   });
 });
