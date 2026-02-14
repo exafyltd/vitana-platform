@@ -59,6 +59,8 @@ import { classifyCategory } from './memory';
 import { writeMemoryItemWithIdentity } from '../services/orb-memory-bridge';
 // VTID-01225: Cognee entity extraction from conversation turns
 import { cogneeExtractorClient } from '../services/cognee-extractor-client';
+// VTID-01225: Inline fact extraction fallback when Cognee is unavailable
+import { extractAndPersistFacts, isInlineExtractionAvailable } from '../services/inline-fact-extractor';
 
 const router = Router();
 
@@ -332,23 +334,39 @@ Instructions:
       console.warn(`[VTID-01216] Memory write failed:`, memoryError.message);
     }
 
-    // Step 6: VTID-01225 - Fire-and-forget Cognee extraction from conversation
-    // Extracts entities, relationships, and signals for the memory garden
-    try {
-      const conversationText = `User: ${message.text}\nAssistant: ${reply}`;
-      if (conversationText.length > 50) {
-        cogneeExtractorClient.extractAsync({
-          transcript: conversationText,
+    // Step 6: VTID-01225 - Fire-and-forget fact extraction from conversation
+    // Primary: Cognee extractor service (full entity/relationship/signal extraction)
+    // Fallback: Inline Gemini extraction (structured facts only, no graph)
+    const conversationText = `User: ${message.text}\nAssistant: ${reply}`;
+    if (conversationText.length > 50) {
+      if (cogneeExtractorClient.isEnabled()) {
+        try {
+          cogneeExtractorClient.extractAsync({
+            transcript: conversationText,
+            tenant_id,
+            user_id,
+            session_id: thread.thread_id,
+            active_role: role,
+          });
+          console.log(`[VTID-01225] Cognee extraction queued for conversation turn: ${thread.thread_id}`);
+        } catch (cogneeError: any) {
+          console.warn(`[VTID-01225] Cognee extraction trigger failed:`, cogneeError.message);
+        }
+      }
+
+      // VTID-01225: Inline fallback - always run when Cognee is disabled,
+      // also runs alongside Cognee (write_fact RPC auto-supersedes duplicates)
+      if (!cogneeExtractorClient.isEnabled() && isInlineExtractionAvailable()) {
+        extractAndPersistFacts({
+          conversationText,
           tenant_id,
           user_id,
           session_id: thread.thread_id,
-          active_role: role,
+        }).catch(err => {
+          console.warn(`[VTID-01225-inline] Inline extraction failed (non-blocking):`, err.message);
         });
-        console.log(`[VTID-01225] Cognee extraction queued for conversation turn: ${thread.thread_id}`);
+        console.log(`[VTID-01225-inline] Inline fact extraction queued for: ${thread.thread_id}`);
       }
-    } catch (cogneeError: any) {
-      // Non-blocking - don't fail the conversation turn
-      console.warn(`[VTID-01225] Cognee extraction trigger failed:`, cogneeError.message);
     }
 
     // Build response
@@ -517,16 +535,28 @@ Instructions:
         sequence: sequence
       })}\n\n`);
 
-      // VTID-01225: Fire-and-forget Cognee extraction from streamed conversation
+      // VTID-01225: Fire-and-forget fact extraction from streamed conversation
       const streamedText = `User: ${input.message.text}\nAssistant: ${geminiResult.reply}`;
       if (streamedText.length > 50) {
-        cogneeExtractorClient.extractAsync({
-          transcript: streamedText,
-          tenant_id: input.tenant_id,
-          user_id: input.user_id,
-          session_id: thread.thread_id,
-          active_role: input.role,
-        });
+        if (cogneeExtractorClient.isEnabled()) {
+          cogneeExtractorClient.extractAsync({
+            transcript: streamedText,
+            tenant_id: input.tenant_id,
+            user_id: input.user_id,
+            session_id: thread.thread_id,
+            active_role: input.role,
+          });
+        }
+        if (!cogneeExtractorClient.isEnabled() && isInlineExtractionAvailable()) {
+          extractAndPersistFacts({
+            conversationText: streamedText,
+            tenant_id: input.tenant_id,
+            user_id: input.user_id,
+            session_id: thread.thread_id,
+          }).catch(err => {
+            console.warn(`[VTID-01225-inline] Stream extraction failed (non-blocking):`, err.message);
+          });
+        }
       }
 
     } catch (llmError: any) {
