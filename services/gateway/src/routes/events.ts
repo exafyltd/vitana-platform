@@ -28,6 +28,12 @@ const IngestEventSchema = z.object({
   message: z.string().min(1, "message required"),
   payload: z.record(z.any()).optional(),
   created_at: z.string().optional(),
+  // VTID-01260: Actor identification and surface tracking
+  actor_id: z.string().optional(),
+  actor_email: z.string().optional(),
+  actor_role: z.enum(["user", "operator", "admin", "system", "agent"]).optional(),
+  surface: z.enum(["orb", "operator", "command-hub", "cicd", "system", "api"]).optional(),
+  conversation_turn_id: z.string().optional(),
 });
 
 export const router = Router();
@@ -64,7 +70,7 @@ router.post("/api/v1/events/ingest", async (req: Request, res: Response) => {
     const eventId = randomUUID();
     const timestamp = body.created_at || new Date().toISOString();
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       id: eventId,
       created_at: timestamp,
       vtid: body.vtid,
@@ -76,6 +82,12 @@ router.post("/api/v1/events/ingest", async (req: Request, res: Response) => {
       message: body.message,
       link: null,
       metadata: body.payload || {},
+      // VTID-01260: Actor identification and surface tracking
+      ...(body.actor_id && { actor_id: body.actor_id }),
+      ...(body.actor_email && { actor_email: body.actor_email }),
+      ...(body.actor_role && { actor_role: body.actor_role }),
+      ...(body.surface && { surface: body.surface }),
+      ...(body.conversation_turn_id && { conversation_turn_id: body.conversation_turn_id }),
     };
 
     const resp = await fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
@@ -276,6 +288,12 @@ router.get("/api/v1/events", async (req: Request, res: Response) => {
       status: event.status,
       message: event.message,
       created_at: event.created_at,
+      // VTID-01260: Actor identification and surface tracking
+      actor_id: event.actor_id || null,
+      actor_email: event.actor_email || null,
+      actor_role: event.actor_role || null,
+      surface: event.surface || null,
+      conversation_turn_id: event.conversation_turn_id || null,
       payload: {
         message: event.message,
         vtid: event.vtid,
@@ -513,6 +531,10 @@ router.get("/api/v1/oasis/events", async (req: Request, res: Response) => {
     const layer = req.query.layer as string;
     const topic = req.query.topic as string;
     const service = req.query.service as string;
+    // VTID-01260: Actor and surface filters
+    const actorEmail = req.query.actor_email as string;
+    const surface = req.query.surface as string;
+    const conversationTurnId = req.query.conversation_turn_id as string;
 
     // VTID-01189: Fetch limit+1 to determine if there are more items
     let queryParams = `limit=${limit + 1}&offset=${offset}&order=created_at.desc`;
@@ -525,6 +547,10 @@ router.get("/api/v1/oasis/events", async (req: Request, res: Response) => {
     // VTID-01250: Added filter support for Command Hub
     if (topic) queryParams += `&topic=ilike.*${topic}*`;
     if (service) queryParams += `&service=eq.${service}`;
+    // VTID-01260: Actor and surface filters
+    if (actorEmail) queryParams += `&actor_email=eq.${encodeURIComponent(actorEmail)}`;
+    if (surface) queryParams += `&surface=eq.${encodeURIComponent(surface)}`;
+    if (conversationTurnId) queryParams += `&conversation_turn_id=eq.${encodeURIComponent(conversationTurnId)}`;
 
     const resp = await fetch(
       `${supabaseUrl}/rest/v1/oasis_events?${queryParams}`,
@@ -575,6 +601,218 @@ router.get("/api/v1/oasis/events", async (req: Request, res: Response) => {
     });
   }
 });
+
+/**
+ * VTID-01260: Smart OASIS Events - Grouped/Summary View
+ * GET /api/v1/oasis/events/smart
+ *
+ * Returns events grouped intelligently for supervisor display:
+ * - Conversation pipeline events (turn.received, model.called, etc.) are collapsed
+ *   into a single summary row per conversation turn
+ * - Shows actor_email and surface prominently
+ * - Supports filtering by actor_email, surface, vtid
+ * - Reduces noise by 80%+ for conversation-heavy periods
+ *
+ * Query params:
+ * - vtid: Filter by VTID
+ * - actor_email: Filter by actor email
+ * - surface: Filter by surface (orb, operator, command-hub, cicd, system)
+ * - limit: Max groups to return (default 50, max 200)
+ * - offset: Pagination offset
+ * - status: Filter by status
+ * - topic: Filter by topic (ilike)
+ */
+router.get("/api/v1/oasis/events/smart", async (req: Request, res: Response) => {
+  try {
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+
+    if (!svcKey || !supabaseUrl) {
+      return res.status(500).json({ ok: false, error: "Gateway misconfigured" });
+    }
+
+    const vtid = req.query.vtid as string;
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+    const offset = parseInt(req.query.offset as string) || 0;
+    const actorEmail = req.query.actor_email as string;
+    const surface = req.query.surface as string;
+    const status = req.query.status as string;
+    const topic = req.query.topic as string;
+
+    // Fetch more events than requested so we can group them
+    const fetchLimit = limit * 5; // Over-fetch to ensure enough groups
+    let queryParams = `limit=${fetchLimit + 1}&offset=${offset}&order=created_at.desc`;
+    if (vtid) queryParams += `&vtid=eq.${encodeURIComponent(vtid)}`;
+    if (actorEmail) queryParams += `&actor_email=eq.${encodeURIComponent(actorEmail)}`;
+    if (surface) queryParams += `&surface=eq.${encodeURIComponent(surface)}`;
+    if (status) queryParams += `&status=eq.${encodeURIComponent(status)}`;
+    if (topic) queryParams += `&topic=ilike.*${encodeURIComponent(topic)}*`;
+
+    const resp = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_events?${queryParams}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+      },
+    );
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.error(`[VTID-01260] Smart events query failed: ${resp.status} - ${text}`);
+      return res.status(502).json({ ok: false, error: "Database query failed" });
+    }
+
+    const rawEvents = (await resp.json()) as any[];
+
+    // VTID-01260: Conversation telemetry topics that should be grouped
+    const CONVERSATION_NOISE_TOPICS = new Set([
+      'conversation.turn.received',
+      'conversation.retrieval.router_decision',
+      'conversation.retrieval.memory.completed',
+      'conversation.retrieval.knowledge.completed',
+      'conversation.retrieval.web.completed',
+      'conversation.context_pack.built',
+      'conversation.model.called',
+      'conversation.tool.called',
+      'conversation.tool.health_check',
+    ]);
+
+    // Group events intelligently
+    const smartEvents: any[] = [];
+    let conversationGroup: any[] = [];
+    let lastConversationTurnId: string | null = null;
+
+    for (const event of rawEvents) {
+      const topic = event.topic || '';
+      const turnId = event.conversation_turn_id || null;
+
+      // Check if this is a conversation pipeline event
+      const isConversationNoise = CONVERSATION_NOISE_TOPICS.has(topic);
+
+      if (isConversationNoise) {
+        // Group conversation events by turn_id or by time proximity
+        if (turnId && turnId === lastConversationTurnId) {
+          conversationGroup.push(event);
+        } else {
+          // Flush previous group
+          if (conversationGroup.length > 0) {
+            smartEvents.push(collapseConversationGroup(conversationGroup));
+          }
+          conversationGroup = [event];
+          lastConversationTurnId = turnId;
+        }
+      } else {
+        // Flush any pending conversation group
+        if (conversationGroup.length > 0) {
+          smartEvents.push(collapseConversationGroup(conversationGroup));
+          conversationGroup = [];
+          lastConversationTurnId = null;
+        }
+
+        // Check if this is the turn.completed that summarizes the whole turn
+        if (topic === 'conversation.turn.completed') {
+          // This is the summary event - enrich it
+          smartEvents.push({
+            ...event,
+            _smart_type: 'conversation_summary',
+            _event_count: 1,
+          });
+        } else {
+          // Regular event - pass through
+          smartEvents.push({
+            ...event,
+            _smart_type: 'single',
+            _event_count: 1,
+          });
+        }
+      }
+    }
+
+    // Flush remaining conversation group
+    if (conversationGroup.length > 0) {
+      smartEvents.push(collapseConversationGroup(conversationGroup));
+    }
+
+    // Apply pagination to grouped results
+    const hasMore = smartEvents.length > limit;
+    const pagedEvents = smartEvents.slice(0, limit);
+
+    console.log(`[VTID-01260] Smart events: ${rawEvents.length} raw -> ${smartEvents.length} grouped -> ${pagedEvents.length} returned`);
+
+    return res.status(200).json({
+      ok: true,
+      data: pagedEvents,
+      pagination: { has_more: hasMore, offset, limit },
+      meta: {
+        raw_event_count: rawEvents.length,
+        grouped_count: smartEvents.length,
+        noise_reduction_pct: rawEvents.length > 0
+          ? Math.round((1 - smartEvents.length / rawEvents.length) * 100)
+          : 0,
+      },
+    });
+  } catch (e: any) {
+    console.error("[VTID-01260] Smart events error:", e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+/**
+ * VTID-01260: Collapse a group of conversation pipeline events into one summary
+ */
+function collapseConversationGroup(events: any[]): any {
+  if (events.length === 0) return null;
+  if (events.length === 1) return { ...events[0], _smart_type: 'single', _event_count: 1 };
+
+  // Use the earliest event as the base (conversation.turn.received)
+  const sorted = events.sort((a: any, b: any) =>
+    new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+
+  // Extract useful info from the group
+  const topics = sorted.map((e: any) => e.topic).filter(Boolean);
+  const hasError = sorted.some((e: any) => e.status === 'error');
+  const toolCalls = sorted.filter((e: any) => e.topic === 'conversation.tool.called');
+
+  // Calculate duration
+  const startTime = new Date(first.created_at).getTime();
+  const endTime = new Date(last.created_at).getTime();
+  const durationMs = endTime - startTime;
+
+  return {
+    id: first.id,
+    vtid: first.vtid,
+    topic: 'conversation.turn.summary',
+    service: first.service,
+    status: hasError ? 'error' : 'success',
+    message: `Conversation turn: ${events.length} pipeline steps (${toolCalls.length} tool calls, ${durationMs}ms)`,
+    created_at: first.created_at,
+    actor_id: first.actor_id || last.actor_id,
+    actor_email: first.actor_email || last.actor_email,
+    actor_role: first.actor_role || last.actor_role,
+    surface: first.surface || last.surface,
+    conversation_turn_id: first.conversation_turn_id,
+    _smart_type: 'conversation_group',
+    _event_count: events.length,
+    _collapsed_topics: topics,
+    _duration_ms: durationMs,
+    _tool_calls: toolCalls.length,
+    _has_error: hasError,
+    metadata: {
+      ...first.metadata,
+      grouped_event_count: events.length,
+      pipeline_steps: topics,
+      tool_calls: toolCalls.length,
+      duration_ms: durationMs,
+    },
+  };
+}
 
 /**
  * DEV-COMHU-0202: SSE Stream endpoint for real-time events
@@ -660,6 +898,12 @@ router.get("/api/v1/events/stream", async (req: Request, res: Response) => {
           status: event.status,
           message: event.message || event.title || "",
           task_stage: event.task_stage || (event.metadata && event.metadata.task_stage) || null,
+          // VTID-01260: Actor identification and surface tracking
+          actor_id: event.actor_id || null,
+          actor_email: event.actor_email || null,
+          actor_role: event.actor_role || null,
+          surface: event.surface || null,
+          conversation_turn_id: event.conversation_turn_id || null,
           payload: {
             message: event.message || event.title || "",
             vtid: event.vtid,

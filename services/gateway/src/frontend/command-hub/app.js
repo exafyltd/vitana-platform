@@ -1820,6 +1820,12 @@ function createOasisEventRow(event) {
     row.className = 'oasis-event-row clickable-row';
     var severity = getEventSeverity(event);
     row.dataset.severity = severity;
+
+    // VTID-01260: Visual indicator for grouped conversation events
+    if (event._smart_type === 'conversation_group') {
+        row.className += ' event-row-grouped';
+    }
+
     row.onclick = function () {
         state.oasisEvents.selectedEvent = event;
         renderApp();
@@ -1838,23 +1844,64 @@ function createOasisEventRow(event) {
     tsCell.textContent = formatEventTimestamp(event.created_at);
     row.appendChild(tsCell);
 
+    // VTID-01260: Actor (who triggered this event)
+    var actorCell = document.createElement('td');
+    actorCell.className = 'event-actor';
+    if (event.actor_email) {
+        // Show just the username part of the email for compactness
+        var emailParts = event.actor_email.split('@');
+        actorCell.textContent = emailParts[0];
+        actorCell.title = event.actor_email; // Full email on hover
+    } else if (event.actor_id) {
+        actorCell.textContent = event.actor_id;
+    } else {
+        actorCell.textContent = '-';
+        actorCell.className += ' event-actor-system';
+    }
+    row.appendChild(actorCell);
+
+    // VTID-01260: Surface/Origin (where it came from)
+    var surfaceCell = document.createElement('td');
+    surfaceCell.className = 'event-surface';
+    var surfaceVal = event.surface || inferSurface(event);
+    if (surfaceVal) {
+        var surfaceBadge = document.createElement('span');
+        surfaceBadge.className = 'surface-badge surface-' + surfaceVal;
+        surfaceBadge.textContent = formatSurfaceLabel(surfaceVal);
+        surfaceCell.appendChild(surfaceBadge);
+    } else {
+        surfaceCell.textContent = '-';
+    }
+    row.appendChild(surfaceCell);
+
     // Topic
     var topicCell = document.createElement('td');
     topicCell.className = 'event-topic';
-    topicCell.textContent = event.topic || '-';
+    // VTID-01260: Show grouped event count for collapsed conversation turns
+    if (event._event_count > 1) {
+        topicCell.innerHTML = (event.topic || '-') + ' <span class="event-repeat-badge">' + event._event_count + ' events</span>';
+    } else {
+        topicCell.textContent = event.topic || '-';
+    }
     row.appendChild(topicCell);
 
     // VTID
     var vtidCell = document.createElement('td');
     vtidCell.className = 'event-vtid';
-    vtidCell.textContent = event.vtid || '-';
+    if (event.vtid) {
+        var vtidLink = document.createElement('span');
+        vtidLink.className = 'vtid-link';
+        vtidLink.textContent = event.vtid;
+        vtidLink.onclick = function (e) {
+            e.stopPropagation();
+            state.oasisEvents.filters.vtid = event.vtid;
+            handleOasisFilterChange();
+        };
+        vtidCell.appendChild(vtidLink);
+    } else {
+        vtidCell.textContent = '-';
+    }
     row.appendChild(vtidCell);
-
-    // Service
-    var serviceCell = document.createElement('td');
-    serviceCell.className = 'event-service';
-    serviceCell.textContent = event.service || '-';
-    row.appendChild(serviceCell);
 
     // Status
     var statusCell = document.createElement('td');
@@ -1867,7 +1914,7 @@ function createOasisEventRow(event) {
     // Message
     var msgCell = document.createElement('td');
     msgCell.className = 'event-message';
-    var msgText = (event.message || '').substring(0, 60) + ((event.message || '').length > 60 ? '...' : '');
+    var msgText = (event.message || '').substring(0, 80) + ((event.message || '').length > 80 ? '...' : '');
 
     if (event.repeatCount > 1) {
         msgCell.innerHTML = msgText + ' <span class="event-repeat-badge">x' + event.repeatCount + '</span>';
@@ -1877,6 +1924,45 @@ function createOasisEventRow(event) {
     row.appendChild(msgCell);
 
     return row;
+}
+
+/**
+ * VTID-01260: Infer surface from event data when surface column is not populated
+ */
+function inferSurface(event) {
+    var topic = (event.topic || '').toLowerCase();
+    var service = (event.service || '').toLowerCase();
+
+    if (topic.startsWith('orb.') || service.includes('orb') || service === 'conversation-orb') return 'orb';
+    if (topic.startsWith('operator.') || service.includes('operator') || service === 'conversation-operator' || service === 'operator-console') return 'operator';
+    if (topic.startsWith('commandhub.') || service.includes('command-hub') || service === 'command-hub-cicd') return 'command-hub';
+    if (topic.startsWith('cicd.') || topic.startsWith('deploy.') || service.includes('cicd') || service.includes('deploy')) return 'cicd';
+    if (topic.startsWith('governance.') || service.includes('governance')) return 'system';
+    if (topic.startsWith('conversation.')) {
+        // Conversation events - check metadata for channel
+        if (event.metadata && event.metadata.channel === 'orb') return 'orb';
+        if (event.metadata && event.metadata.channel === 'operator') return 'operator';
+        return 'orb'; // Default conversation surface
+    }
+    if (topic.startsWith('safety.') || topic.startsWith('d50.') || topic.startsWith('response.framing')) return 'system';
+    if (topic.startsWith('memory.') || topic.startsWith('autopilot.')) return 'system';
+
+    return null;
+}
+
+/**
+ * VTID-01260: Format surface value for display
+ */
+function formatSurfaceLabel(surface) {
+    var labels = {
+        'orb': 'ORB',
+        'operator': 'Operator',
+        'command-hub': 'Cmd Hub',
+        'cicd': 'CI/CD',
+        'system': 'System',
+        'api': 'API'
+    };
+    return labels[surface] || surface;
 }
 
 /**
@@ -3179,7 +3265,15 @@ function getEventSeverity(event) {
 }
 
 /**
- * VTID-01250: Checks if an event is considered operational noise (heartbeats, idle polls).
+ * VTID-01250 + VTID-01260: Checks if an event is considered operational noise.
+ * Expanded to cover conversation pipeline telemetry that pollutes supervisor view.
+ *
+ * Noise events include:
+ * - Heartbeats, pings, health checks
+ * - Live audio/stream chunks
+ * - Conversation pipeline internals (retrieval, context_pack, model calls, tool calls)
+ * - Memory indexer operations
+ * - Idle task serving (0 eligible)
  */
 function isOasisNoiseEvent(event) {
     const topic = (event.topic || '').toLowerCase();
@@ -3196,6 +3290,40 @@ function isOasisNoiseEvent(event) {
         topic.includes('live.audio.') ||
         topic.includes('live.stream.') ||
         (topic.includes('health') && !topic.includes('fail'))) {
+        return true;
+    }
+
+    // VTID-01260: Conversation pipeline internals (the "30+ events per minute" problem)
+    // These are sub-step telemetry events that pollute the supervisor view.
+    // conversation.turn.received and conversation.turn.completed are kept (they're the bookends)
+    if (topic === 'conversation.retrieval.router_decision' ||
+        topic === 'conversation.retrieval.memory.completed' ||
+        topic === 'conversation.retrieval.knowledge.completed' ||
+        topic === 'conversation.retrieval.web.completed' ||
+        topic === 'conversation.context_pack.built' ||
+        topic === 'conversation.model.called' ||
+        topic === 'conversation.tool.called' ||
+        topic === 'conversation.tool.health_check') {
+        return true;
+    }
+
+    // Memory indexer operations
+    if (topic.startsWith('memory.indexer.') ||
+        topic === 'orb.memory.context_fetched' ||
+        topic === 'orb.memory.context_injected' ||
+        topic === 'orb.memory.scored_context_fetched') {
+        return true;
+    }
+
+    // D50 reinforcement internal checks
+    if (topic === 'd50.eligibility.checked' ||
+        topic === 'd50.momentum.computed') {
+        return true;
+    }
+
+    // Response framing internals
+    if (topic === 'response.framing.computed' ||
+        topic === 'response.framing.applied') {
         return true;
     }
 
@@ -3242,6 +3370,10 @@ async function fetchOasisEvents(filters, append, recursionDepth) {
             if (filters.topic) queryParams += '&topic=' + encodeURIComponent(filters.topic);
             if (filters.service) queryParams += '&service=' + encodeURIComponent(filters.service);
             if (filters.status) queryParams += '&status=' + encodeURIComponent(filters.status);
+            // VTID-01260: Actor, surface, and VTID filters
+            if (filters.vtid) queryParams += '&vtid=' + encodeURIComponent(filters.vtid);
+            if (filters.actor_email) queryParams += '&actor_email=' + encodeURIComponent(filters.actor_email);
+            if (filters.surface) queryParams += '&surface=' + encodeURIComponent(filters.surface);
         }
 
         const response = await fetch('/api/v1/oasis/events?' + queryParams);
@@ -3305,7 +3437,12 @@ function loadMoreOasisEvents() {
 function handleOasisFilterChange() {
     state.oasisEvents.pagination.offset = 0;
     state.oasisEvents.pagination.hasMore = true;
-    fetchOasisEvents(state.oasisEvents.filters, false);
+    // VTID-01260: Use smart view fetch when enabled
+    if (state.oasisEvents.smartView) {
+        fetchSmartOasisEvents(state.oasisEvents.filters, false);
+    } else {
+        fetchOasisEvents(state.oasisEvents.filters, false);
+    }
 }
 
 /**
@@ -3336,6 +3473,69 @@ function stopOasisEventsAutoRefresh() {
     }
     state.oasisEvents.autoRefreshEnabled = false;
     console.log('[VTID-0600] OASIS events auto-refresh stopped');
+}
+
+/**
+ * VTID-01260: Fetch Smart OASIS events (grouped/collapsed view)
+ * Uses the /api/v1/oasis/events/smart endpoint for intelligent grouping
+ */
+async function fetchSmartOasisEvents(filters, append) {
+    console.log('[VTID-01260] Fetching Smart OASIS events...', append ? '(append)' : '(fresh)');
+
+    if (state.oasisEvents.loading) return;
+    if (append && !state.oasisEvents.pagination.hasMore) return;
+
+    state.oasisEvents.loading = true;
+    renderApp();
+
+    try {
+        var pagination = state.oasisEvents.pagination;
+        var offset = append ? pagination.offset : 0;
+
+        var queryParams = 'limit=' + pagination.limit + '&offset=' + offset;
+        if (filters) {
+            if (filters.topic) queryParams += '&topic=' + encodeURIComponent(filters.topic);
+            if (filters.status) queryParams += '&status=' + encodeURIComponent(filters.status);
+            if (filters.vtid) queryParams += '&vtid=' + encodeURIComponent(filters.vtid);
+            if (filters.actor_email) queryParams += '&actor_email=' + encodeURIComponent(filters.actor_email);
+            if (filters.surface) queryParams += '&surface=' + encodeURIComponent(filters.surface);
+        }
+
+        const response = await fetch('/api/v1/oasis/events/smart?' + queryParams);
+        if (!response.ok) {
+            throw new Error('Smart OASIS events fetch failed: ' + response.status);
+        }
+
+        const data = await response.json();
+        var items = data.data || [];
+        console.log('[VTID-01260] Smart OASIS events loaded:', items.length, 'meta:', data.meta);
+
+        if (append) {
+            state.oasisEvents.items = state.oasisEvents.items.concat(items);
+        } else {
+            state.oasisEvents.items = items;
+        }
+
+        state.oasisEvents.pagination = {
+            limit: pagination.limit,
+            offset: offset + items.length,
+            hasMore: data.pagination ? data.pagination.has_more : false
+        };
+
+        // Store smart view metadata
+        state.oasisEvents.smartMeta = data.meta || null;
+        state.oasisEvents.error = null;
+        state.oasisEvents.fetched = true;
+    } catch (error) {
+        console.error('[VTID-01260] Failed to fetch Smart OASIS events:', error);
+        state.oasisEvents.error = error.message;
+        if (!append) {
+            state.oasisEvents.items = [];
+        }
+    } finally {
+        state.oasisEvents.loading = false;
+        renderApp();
+    }
 }
 
 /**
@@ -14168,18 +14368,94 @@ function renderOasisEventsView() {
     var container = document.createElement('div');
     container.className = 'oasis-events-container';
 
+    // VTID-01260: Determine fetch mode (smart vs raw)
+    var useSmartView = state.oasisEvents.smartView || false;
+
     // VTID-01189: Auto-fetch events if not yet fetched (no auto-refresh)
     if (!state.oasisEvents.fetched && !state.oasisEvents.loading) {
-        fetchOasisEvents(state.oasisEvents.filters, false);
+        if (useSmartView) {
+            fetchSmartOasisEvents(state.oasisEvents.filters, false);
+        } else {
+            fetchOasisEvents(state.oasisEvents.filters, false);
+        }
     }
 
-    // VTID-01189: Row 3 - Toolbar (filters left, count right)
+    // === Row 1: VTID Search Bar (VTID-01260) ===
+    var searchBar = document.createElement('div');
+    searchBar.className = 'list-toolbar oasis-search-bar';
+
+    // VTID search input
+    var vtidSearchGroup = document.createElement('div');
+    vtidSearchGroup.className = 'search-input-group';
+    var vtidSearchIcon = document.createElement('span');
+    vtidSearchIcon.className = 'search-icon';
+    vtidSearchIcon.textContent = 'VTID';
+    vtidSearchGroup.appendChild(vtidSearchIcon);
+    var vtidSearchInput = document.createElement('input');
+    vtidSearchInput.type = 'text';
+    vtidSearchInput.className = 'filter-search-input';
+    vtidSearchInput.placeholder = 'Search by VTID (e.g. VTID-01260)';
+    vtidSearchInput.value = state.oasisEvents.filters.vtid || '';
+    var vtidSearchTimer = null;
+    vtidSearchInput.oninput = function (e) {
+        clearTimeout(vtidSearchTimer);
+        vtidSearchTimer = setTimeout(function () {
+            state.oasisEvents.filters.vtid = e.target.value.trim();
+            handleOasisFilterChange();
+        }, 400);
+    };
+    vtidSearchGroup.appendChild(vtidSearchInput);
+    searchBar.appendChild(vtidSearchGroup);
+
+    // Actor email search input
+    var actorSearchGroup = document.createElement('div');
+    actorSearchGroup.className = 'search-input-group';
+    var actorSearchIcon = document.createElement('span');
+    actorSearchIcon.className = 'search-icon';
+    actorSearchIcon.textContent = 'User';
+    actorSearchGroup.appendChild(actorSearchIcon);
+    var actorSearchInput = document.createElement('input');
+    actorSearchInput.type = 'text';
+    actorSearchInput.className = 'filter-search-input';
+    actorSearchInput.placeholder = 'Search by user email';
+    actorSearchInput.value = state.oasisEvents.filters.actor_email || '';
+    var actorSearchTimer = null;
+    actorSearchInput.oninput = function (e) {
+        clearTimeout(actorSearchTimer);
+        actorSearchTimer = setTimeout(function () {
+            state.oasisEvents.filters.actor_email = e.target.value.trim();
+            handleOasisFilterChange();
+        }, 400);
+    };
+    actorSearchGroup.appendChild(actorSearchInput);
+    searchBar.appendChild(actorSearchGroup);
+
+    container.appendChild(searchBar);
+
+    // === Row 2: Toolbar (filters left, controls right) ===
     var toolbar = document.createElement('div');
     toolbar.className = 'list-toolbar';
 
     // Left: Filters
     var filtersCluster = document.createElement('div');
     filtersCluster.className = 'list-toolbar__filters';
+
+    // Surface filter (VTID-01260)
+    var surfaceFilter = document.createElement('select');
+    surfaceFilter.className = 'filter-dropdown';
+    surfaceFilter.innerHTML =
+        '<option value="">All Sources</option>' +
+        '<option value="orb">ORB</option>' +
+        '<option value="operator">Operator</option>' +
+        '<option value="command-hub">Command Hub</option>' +
+        '<option value="cicd">CI/CD</option>' +
+        '<option value="system">System</option>';
+    surfaceFilter.value = state.oasisEvents.filters.surface || '';
+    surfaceFilter.onchange = function (e) {
+        state.oasisEvents.filters.surface = e.target.value;
+        handleOasisFilterChange();
+    };
+    filtersCluster.appendChild(surfaceFilter);
 
     // Topic filter
     var topicFilter = document.createElement('select');
@@ -14190,7 +14466,9 @@ function renderOasisEventsView() {
         '<option value="governance">Governance</option>' +
         '<option value="cicd">CI/CD</option>' +
         '<option value="autopilot">Autopilot</option>' +
-        '<option value="operator">Operator</option>';
+        '<option value="operator">Operator</option>' +
+        '<option value="conversation">Conversation</option>' +
+        '<option value="safety">Safety</option>';
     topicFilter.value = state.oasisEvents.filters.topic || '';
     topicFilter.onchange = function (e) {
         state.oasisEvents.filters.topic = e.target.value;
@@ -14216,11 +14494,28 @@ function renderOasisEventsView() {
 
     toolbar.appendChild(filtersCluster);
 
-    // VTID-01250: Supervision controls
+    // VTID-01260: Supervision controls (expanded)
     var supervisionCluster = document.createElement('div');
     supervisionCluster.className = 'list-toolbar__supervision';
 
-    // Toggle Hide Noise
+    // Toggle Smart View (VTID-01260)
+    var smartLabel = document.createElement('label');
+    smartLabel.className = 'toolbar-toggle toolbar-toggle-primary';
+    var smartCheck = document.createElement('input');
+    smartCheck.type = 'checkbox';
+    smartCheck.checked = state.oasisEvents.smartView || false;
+    smartCheck.onchange = function (e) {
+        state.oasisEvents.smartView = e.target.checked;
+        state.oasisEvents.fetched = false;
+        state.oasisEvents.items = [];
+        state.oasisEvents.pagination = { limit: 50, offset: 0, hasMore: true };
+        renderApp();
+    };
+    smartLabel.appendChild(smartCheck);
+    smartLabel.appendChild(document.createTextNode(' Smart View'));
+    supervisionCluster.appendChild(smartLabel);
+
+    // Toggle Hide Noise (VTID-01250 expanded)
     var noiseLabel = document.createElement('label');
     noiseLabel.className = 'toolbar-toggle';
     var noiseCheck = document.createElement('input');
@@ -14231,7 +14526,7 @@ function renderOasisEventsView() {
         renderApp();
     };
     noiseLabel.appendChild(noiseCheck);
-    noiseLabel.appendChild(document.createTextNode(' Hide Heartbeats'));
+    noiseLabel.appendChild(document.createTextNode(' Hide Noise'));
     supervisionCluster.appendChild(noiseLabel);
 
     // Toggle Grouping
@@ -14250,10 +14545,16 @@ function renderOasisEventsView() {
 
     toolbar.appendChild(supervisionCluster);
 
-    // Right: Item count
+    // Right: Item count + noise reduction info
     var metadataCluster = document.createElement('div');
     metadataCluster.className = 'list-toolbar__metadata';
-    metadataCluster.textContent = state.oasisEvents.items.length + ' events';
+    var visibleCount = filterOasisEvents(state.oasisEvents.items).length;
+    var totalCount = state.oasisEvents.items.length;
+    if (state.oasisEvents.smartMeta && state.oasisEvents.smartMeta.noise_reduction_pct > 0) {
+        metadataCluster.textContent = visibleCount + ' events (' + state.oasisEvents.smartMeta.noise_reduction_pct + '% noise reduced)';
+    } else {
+        metadataCluster.textContent = visibleCount + (visibleCount !== totalCount ? '/' + totalCount : '') + ' events';
+    }
     toolbar.appendChild(metadataCluster);
 
     container.appendChild(toolbar);
@@ -14274,10 +14575,10 @@ function renderOasisEventsView() {
         var table = document.createElement('table');
         table.className = 'list-table oasis-events-table';
 
-        // Sticky header
+        // Sticky header - VTID-01260: Added Actor and Source columns
         var thead = document.createElement('thead');
         var headerRow = document.createElement('tr');
-        ['Severity', 'Timestamp', 'Topic', 'VTID', 'Service', 'Status', 'Message'].forEach(function (header) {
+        ['Severity', 'Timestamp', 'Actor', 'Source', 'Topic', 'VTID', 'Status', 'Message'].forEach(function (header) {
             var th = document.createElement('th');
             th.textContent = header;
             headerRow.appendChild(th);
@@ -14310,7 +14611,11 @@ function renderOasisEventsView() {
             loadMoreBtn.disabled = state.oasisEvents.loading;
             loadMoreBtn.textContent = state.oasisEvents.loading ? 'Loading...' : 'Load More';
             loadMoreBtn.onclick = function () {
-                loadMoreOasisEvents();
+                if (useSmartView) {
+                    fetchSmartOasisEvents(state.oasisEvents.filters, true);
+                } else {
+                    loadMoreOasisEvents();
+                }
             };
             loadMoreContainer.appendChild(loadMoreBtn);
             content.appendChild(loadMoreContainer);
