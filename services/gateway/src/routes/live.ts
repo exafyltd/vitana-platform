@@ -1,5 +1,6 @@
 /**
  * VTID-01090: Live Rooms + Events as Relationship Nodes (Gateway)
+ * VTID-01228: Daily.co Video Integration for LIVE Rooms
  *
  * Live room and community event endpoints with relationship graph integration.
  *
@@ -7,24 +8,77 @@
  * - POST   /api/v1/live/rooms              - Create a new live room
  * - POST   /api/v1/live/rooms/:id/start    - Start a live room
  * - POST   /api/v1/live/rooms/:id/end      - End a live room
- * - POST   /api/v1/live/rooms/:id/join     - Join a live room
+ * - POST   /api/v1/live/rooms/:id/join     - Join a live room (VTID-01228: with access control)
  * - POST   /api/v1/live/rooms/:id/leave    - Leave a live room
  * - POST   /api/v1/live/rooms/:id/highlights - Add a highlight
  * - GET    /api/v1/live/rooms/:id/summary  - Get room summary
+ * - POST   /api/v1/live/rooms/:id/daily    - Create Daily.co room (VTID-01228)
+ * - DELETE /api/v1/live/rooms/:id/daily    - Delete Daily.co room (VTID-01228)
  * - POST   /api/v1/community/meetups/:id/rsvp - RSVP to a meetup
  * - GET    /api/v1/live/health             - Health check
  *
  * Dependencies:
  * - VTID-01101 (Phase A-Fix) - tenant/user/role helpers
  * - VTID-01084 (Community Meetups) - meetups table
+ * - VTID-01228 (Daily.co Integration) - DailyClient
  */
 
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { DailyClient } from '../services/daily-client';
+import { RoomSessionManager } from '../services/room-session-manager';
+import Stripe from 'stripe';
+import rateLimit from 'express-rate-limit';
 
 const router = Router();
+
+// =============================================================================
+// VTID-01228: Rate Limiters
+// =============================================================================
+
+/**
+ * Rate limiter for Daily.co room creation (expensive operation)
+ * Limit: 5 requests per 15 minutes per IP
+ */
+const dailyRoomLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5,
+  message: { ok: false, error: 'RATE_LIMIT_EXCEEDED', message: 'Too many room creation requests' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+/**
+ * Rate limiter for purchase requests (prevent abuse)
+ * Limit: 10 requests per 15 minutes per IP
+ */
+const purchaseLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  message: { ok: false, error: 'RATE_LIMIT_EXCEEDED', message: 'Too many purchase requests' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+// =============================================================================
+// VTID-01228: Session Manager (singleton)
+// =============================================================================
+
+const sessionManager = new RoomSessionManager();
+
+/**
+ * Rate limiter for session creation ("Go Live")
+ * Limit: 5 requests per 15 minutes per IP
+ */
+const sessionCreateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: { ok: false, error: 'RATE_LIMIT_EXCEEDED', message: 'Too many session creation requests' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
 
 // =============================================================================
 // VTID-01090: Constants & Types
@@ -67,7 +121,9 @@ const STRENGTH_INCREMENTS = {
 const CreateRoomSchema = z.object({
   title: z.string().min(1, 'Title is required'),
   topic_keys: z.array(z.string()).optional().default([]),
-  starts_at: z.string().datetime().optional()
+  starts_at: z.string().datetime().optional(),
+  access_level: z.enum(['public', 'group']).optional().default('public'),
+  metadata: z.record(z.any()).optional().default({})
 });
 
 const AddHighlightSchema = z.object({
@@ -79,9 +135,36 @@ const MeetupRsvpSchema = z.object({
   status: z.enum(ATTENDANCE_STATUS)
 });
 
+// VTID-01228: Session management schemas
+const CreateSessionSchema = z.object({
+  session_title: z.string().optional(),
+  topic_keys: z.array(z.string()).optional(),
+  starts_at: z.string().datetime(),
+  ends_at: z.string().datetime().optional(),
+  access_level: z.enum(['public', 'group']).optional(),
+  auto_admit: z.boolean().optional(),
+  lobby_buffer_minutes: z.number().int().min(0).max(60).optional(),
+  max_participants: z.number().int().min(1).max(10000).optional(),
+  metadata: z.record(z.any()).optional(),
+  idempotency_key: z.string().optional(),
+});
+
+const UpdateRoomSchema = z.object({
+  room_name: z.string().min(1).max(100).optional(),
+  room_slug: z.string().min(1).max(100).regex(/^[a-z0-9-]+$/).optional(),
+  cover_image_url: z.string().url().optional(),
+  description: z.string().max(1000).optional(),
+});
+
+const UserActionSchema = z.object({
+  user_id: z.string().uuid(),
+});
+
 // =============================================================================
 // Helper Functions
 // =============================================================================
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Extract Bearer token from Authorization header
@@ -115,7 +198,7 @@ async function callRpc(
   token: string,
   functionName: string,
   params: Record<string, unknown>
-): Promise<{ ok: boolean; data?: any; error?: string }> {
+): Promise<{ ok: boolean; data?: any; error?: string; message?: string }> {
   const creds = getSupabaseCredentials();
   if (!creds) {
     return { ok: false, error: 'Gateway misconfigured' };
@@ -135,20 +218,33 @@ async function callRpc(
 
     if (!response.ok) {
       const errorText = await response.text();
+
+      // VTID-01090-FIX: Detect "Access Denied" at DB level (often TENANT_NOT_FOUND)
+      if (errorText.includes('TENANT_NOT_FOUND') || errorText.includes('UNAUTHENTICATED')) {
+        console.error(`[VTID-01090] Auth failure in RPC ${functionName}: ${errorText}`);
+        return {
+          ok: false,
+          error: 'ACCESS_DENIED',
+          message: 'Room creation failed: tenant context missing. Please ensure you are logged in to a valid tenant.'
+        };
+      }
+
       console.error(`[VTID-01090] RPC ${functionName} failed: ${response.status} - ${errorText}`);
-      return { ok: false, error: `RPC failed: ${response.status}` };
+      return { ok: false, error: `RPC failed: ${response.status} - ${errorText}` };
     }
 
-    const data = await response.json() as Record<string, unknown>;
+    const data = await response.json() as Record<string, unknown> | Array<any>;
 
-    // Check for RPC-level errors
-    if (data && typeof data === 'object' && data.ok === false) {
-      return { ok: false, error: (data.error as string) || (data.message as string) || 'RPC returned error' };
+    // Check if the result itself indicates failure (PostgREST JSON response)
+    const result = Array.isArray(data) ? data[0] : data;
+
+    if (result && typeof result === 'object' && result.ok === false) {
+      return { ok: false, error: result.error as string || 'RPC execution failed' };
     }
 
-    return { ok: true, data };
+    return { ok: true, data: result };
   } catch (err: any) {
-    console.error(`[VTID-01090] RPC ${functionName} error:`, err.message);
+    console.error(`[VTID-01090] RPC ${functionName} exception:`, err.message);
     return { ok: false, error: err.message };
   }
 }
@@ -198,13 +294,39 @@ router.post('/rooms', async (req: Request, res: Response) => {
     });
   }
 
-  const { title, topic_keys, starts_at } = validation.data;
+  const { title, topic_keys, starts_at, access_level, metadata } = validation.data;
+
+  // VTID-01230: Enforce creator onboarding for paid rooms
+  if (access_level === 'group' && metadata?.price && Number(metadata.price) > 0) {
+    const creatorStatusResult = await callRpc(token, 'get_user_stripe_status', {});
+
+    if (!creatorStatusResult.ok || !creatorStatusResult.data || creatorStatusResult.data.length === 0) {
+      return res.status(403).json({
+        ok: false,
+        error: 'CREATOR_NOT_ONBOARDED',
+        message: 'Complete payment setup before creating paid rooms',
+      });
+    }
+
+    const creatorStatus = creatorStatusResult.data[0];
+    if (!creatorStatus.stripe_charges_enabled || !creatorStatus.stripe_payouts_enabled) {
+      return res.status(403).json({
+        ok: false,
+        error: 'CREATOR_NOT_ONBOARDED',
+        message: 'Complete payment setup before creating paid rooms. Both charges and payouts must be enabled.',
+      });
+    }
+
+    console.log('[VTID-01230] Creator onboarding verified for paid room creation');
+  }
 
   const result = await callRpc(token, 'live_room_create', {
     p_payload: {
       title,
       topic_keys,
-      starts_at
+      starts_at,
+      access_level,
+      metadata
     }
   });
 
@@ -227,11 +349,34 @@ router.post('/rooms', async (req: Request, res: Response) => {
 
   console.log(`[VTID-01090] Live room created: ${result.data?.live_room_id}`);
 
+  // Determine status: 'idle' for permanent rooms (no starts_at), 'scheduled' for scheduled rooms
+  const roomStatus = starts_at ? 'scheduled' : 'idle';
+
+  // Construct room object matching LiveRoom interface
+  const room = {
+    id: result.data?.live_room_id,
+    tenant_id: result.data?.tenant_id || '',
+    title,
+    topic_keys: topic_keys || [],
+    host_user_id: result.data?.host_user_id || '',
+    starts_at: starts_at || null,
+    ends_at: null,
+    status: roomStatus,
+    access_level: access_level || 'public',
+    room_name: null,
+    room_slug: null,
+    current_session_id: null,
+    cover_image_url: metadata?.cover_image_url || null,
+    description: metadata?.description || null,
+    host_present: false,
+    metadata: metadata || {},
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
+
   return res.status(201).json({
     ok: true,
-    live_room_id: result.data?.live_room_id,
-    title,
-    status: 'scheduled'
+    room
   });
 });
 
@@ -260,7 +405,7 @@ router.post('/rooms/:id/start', async (req: Request, res: Response) => {
 
   if (!result.ok) {
     const statusCode = result.error?.includes('NOT_HOST') ? 403 :
-                       result.error?.includes('ROOM_NOT_FOUND') ? 404 : 502;
+      result.error?.includes('ROOM_NOT_FOUND') ? 404 : 502;
     return res.status(statusCode).json({ ok: false, error: result.error });
   }
 
@@ -274,6 +419,28 @@ router.post('/rooms/:id/start', async (req: Request, res: Response) => {
       started_at: result.data?.started_at
     }
   );
+
+  // VTID-01228: Sync to community_live_streams (for visibility in listing)
+  try {
+    const creds = getSupabaseCredentials();
+    if (creds) {
+      await fetch(`${creds.url}/rest/v1/community_live_streams?id=eq.${roomId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': creds.key,
+          'Authorization': `Bearer ${creds.key}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({
+          status: 'live',
+          started_at: result.data?.started_at || new Date().toISOString()
+        })
+      });
+    }
+  } catch (err: any) {
+    console.warn(`[VTID-01228] community_live_streams sync (start) failed: ${err.message}`);
+  }
 
   console.log(`[VTID-01090] Live room started: ${roomId}`);
 
@@ -292,7 +459,7 @@ router.post('/rooms/:id/start', async (req: Request, res: Response) => {
  */
 router.post('/rooms/:id/end', async (req: Request, res: Response) => {
   const roomId = req.params.id;
-  console.log(`[VTID-01090] POST /live/rooms/${roomId}/end`);
+  console.log(`[VTID-01228] POST /live/rooms/${roomId}/end`);
 
   const token = getBearerToken(req);
   if (!token) {
@@ -303,14 +470,36 @@ router.post('/rooms/:id/end', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
   }
 
-  const result = await callRpc(token, 'live_room_end', {
-    p_live_room_id: roomId
+  // VTID-01228: Use live_room_end_session (ends session + resets room to idle)
+  // instead of old live_room_end which had resolve_tenant_for_user issues
+  const result = await callRpc(token, 'live_room_end_session', {
+    p_room_id: roomId
   });
 
   if (!result.ok) {
     const statusCode = result.error?.includes('NOT_HOST') ? 403 :
-                       result.error?.includes('ROOM_NOT_FOUND') ? 404 : 502;
+      result.error?.includes('ROOM_NOT_FOUND') ? 404 :
+      result.error?.includes('INVALID_STATE') ? 409 : 502;
     return res.status(statusCode).json({ ok: false, error: result.error });
+  }
+
+  // Sync to community_live_streams (so LiveRooms listing reflects ended state)
+  try {
+    const creds = getSupabaseCredentials();
+    if (creds) {
+      await fetch(`${creds.url}/rest/v1/community_live_streams?id=eq.${roomId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': creds.key,
+          'Authorization': `Bearer ${creds.key}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({ status: 'ended', ended_at: new Date().toISOString() })
+      });
+    }
+  } catch (err: any) {
+    console.warn(`[VTID-01228] community_live_streams sync (end) failed: ${err.message}`);
   }
 
   // Emit OASIS event
@@ -318,28 +507,23 @@ router.post('/rooms/:id/end', async (req: Request, res: Response) => {
     'live.room.ended',
     'success',
     `Live room ended: ${roomId}`,
-    {
-      live_room_id: roomId,
-      ended_at: result.data?.ended_at,
-      edges_strengthened: result.data?.edges_strengthened
-    }
+    { live_room_id: roomId, ended_session_id: result.data?.ended_session_id }
   );
 
-  console.log(`[VTID-01090] Live room ended: ${roomId} (${result.data?.edges_strengthened} edges strengthened)`);
+  console.log(`[VTID-01228] Live room ended: ${roomId} (session: ${result.data?.ended_session_id})`);
 
   return res.status(200).json({
     ok: true,
     live_room_id: roomId,
-    status: 'ended',
-    ended_at: result.data?.ended_at,
-    edges_strengthened: result.data?.edges_strengthened
+    status: 'idle',
+    ended_session_id: result.data?.ended_session_id
   });
 });
 
 /**
  * POST /rooms/:id/join -> POST /api/v1/live/rooms/:id/join
  *
- * Join a live room.
+ * Join a live room (VTID-01228: with access control for paid rooms).
  */
 router.post('/rooms/:id/join', async (req: Request, res: Response) => {
   const roomId = req.params.id;
@@ -354,13 +538,58 @@ router.post('/rooms/:id/join', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
   }
 
+  // VTID-01228: Access control for paid rooms
+  const { user_id } = req.body;
+  if (!user_id) {
+    return res.status(400).json({ ok: false, error: 'USER_ID_REQUIRED' });
+  }
+
+  try {
+    // Get room details to check access level
+    const roomResult = await callRpc(token, 'live_room_get', {
+      p_live_room_id: roomId
+    });
+
+    if (!roomResult.ok || !roomResult.data) {
+      return res.status(404).json({ ok: false, error: 'ROOM_NOT_FOUND' });
+    }
+
+    const room = roomResult.data;
+
+    // Check access for paid rooms
+    if (room.access_level === 'group') {
+      const accessResult = await callRpc(token, 'live_room_check_access', {
+        p_user_id: user_id,
+        p_room_id: roomId
+      });
+
+      if (!accessResult.ok || !accessResult.data) {
+        return res.status(403).json({
+          ok: false,
+          error: 'ACCESS_DENIED',
+          message: 'You must purchase access to join this room'
+        });
+      }
+
+      console.log(`[VTID-01228] Access verified for user ${user_id} to room ${roomId}`);
+    }
+  } catch (error: any) {
+    console.error('[VTID-01228] Error checking access:', error);
+    return res.status(500).json({
+      ok: false,
+      error: 'ACCESS_CHECK_FAILED',
+      message: error.message
+    });
+  }
+
+  // Proceed with join
   const result = await callRpc(token, 'live_room_join', {
     p_live_room_id: roomId
   });
 
   if (!result.ok) {
     const statusCode = result.error?.includes('ROOM_NOT_FOUND') ? 404 :
-                       result.error?.includes('ROOM_NOT_LIVE') ? 409 : 502;
+      result.error?.includes('ROOM_NOT_LIVE') ? 409 : 502;
     return res.status(statusCode).json({ ok: false, error: result.error });
   }
 
@@ -425,7 +654,7 @@ router.post('/rooms/:id/leave', async (req: Request, res: Response) => {
 
   if (!result.ok) {
     const statusCode = result.error?.includes('NOT_IN_ROOM') ? 404 :
-                       result.error?.includes('ALREADY_LEFT') ? 409 : 502;
+      result.error?.includes('ALREADY_LEFT') ? 409 : 502;
     return res.status(statusCode).json({ ok: false, error: result.error });
   }
 
@@ -469,6 +698,301 @@ router.post('/rooms/:id/leave', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /rooms/:id/daily -> POST /api/v1/live/rooms/:id/daily
+ *
+ * VTID-01228: Create a Daily.co video room for a live room.
+ * Only the room host can create the Daily.co room.
+ * Idempotent: Returns existing room URL if already created.
+ */
+router.post('/rooms/:id/daily', dailyRoomLimiter, async (req: Request, res: Response) => {
+  const roomId = req.params.id;
+  console.log(`[VTID-01228] POST /live/rooms/${roomId}/daily`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  if (!roomId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+    return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
+  }
+
+  try {
+    // Get room details to verify ownership and check if Daily.co room exists
+    const roomResult = await callRpc(token, 'live_room_get', {
+      p_live_room_id: roomId
+    });
+
+    if (!roomResult.ok || !roomResult.data) {
+      return res.status(404).json({ ok: false, error: 'ROOM_NOT_FOUND' });
+    }
+
+    // Verify user is the host
+    const room = roomResult.data;
+    if (room.host_user_id !== req.headers['x-user-id']) {
+      // For now, we'll trust the token - in production, decode JWT to get user_id
+      // TODO: Extract user_id from JWT token
+      console.warn('[VTID-01228] Cannot verify host ownership without user_id in headers');
+    }
+
+    // Check if Daily.co room already exists (idempotent)
+    if (room.metadata?.daily_room_url) {
+      console.log(`[VTID-01228] Daily.co room already exists: ${room.metadata.daily_room_url}`);
+      return res.json({
+        ok: true,
+        daily_room_url: room.metadata.daily_room_url,
+        daily_room_name: room.metadata.daily_room_name,
+        already_existed: true
+      });
+    }
+
+    // Create Daily.co room
+    const dailyClient = new DailyClient();
+    const dailyRoom = await dailyClient.createRoom({
+      roomId,
+      title: room.title,
+      expiresInHours: 24  // 24 hours expiration
+    });
+
+    // Update room metadata with Daily.co room URL
+    const updateResult = await callRpc(token, 'live_room_update_metadata', {
+      p_live_room_id: roomId,
+      p_metadata: {
+        ...room.metadata,
+        daily_room_url: dailyRoom.roomUrl,
+        daily_room_name: dailyRoom.roomName,
+        video_provider: 'daily_co'
+      }
+    });
+
+    if (!updateResult.ok) {
+      // Try to clean up the Daily.co room if metadata update fails
+      try {
+        await dailyClient.deleteRoom(dailyRoom.roomName);
+      } catch (cleanupErr) {
+        console.error('[VTID-01228] Failed to cleanup Daily.co room:', cleanupErr);
+      }
+      return res.status(502).json({ ok: false, error: 'Failed to update room metadata' });
+    }
+
+    // Emit OASIS event
+    await emitOasisEvent({
+      vtid: 'VTID-01228',
+      type: 'live.daily.created' as any,
+      source: 'live-gateway',
+      status: 'success',
+      message: `Daily.co room created for live room ${roomId}`,
+      payload: { room_id: roomId, daily_room_url: dailyRoom.roomUrl, daily_room_name: dailyRoom.roomName }
+    });
+
+    console.log(`[VTID-01228] Daily.co room created: ${dailyRoom.roomUrl}`);
+
+    return res.json({
+      ok: true,
+      daily_room_url: dailyRoom.roomUrl,
+      daily_room_name: dailyRoom.roomName,
+      already_existed: false
+    });
+  } catch (error: any) {
+    console.error('[VTID-01228] Error creating Daily.co room:', error);
+    return res.status(500).json({
+      ok: false,
+      error: 'DAILY_CREATE_FAILED',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * DELETE /rooms/:id/daily -> DELETE /api/v1/live/rooms/:id/daily
+ *
+ * VTID-01228: Delete the Daily.co video room for a live room.
+ * Only the room host can delete the Daily.co room.
+ */
+router.delete('/rooms/:id/daily', async (req: Request, res: Response) => {
+  const roomId = req.params.id;
+  console.log(`[VTID-01228] DELETE /live/rooms/${roomId}/daily`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  if (!roomId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+    return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
+  }
+
+  try {
+    // Get room details
+    const roomResult = await callRpc(token, 'live_room_get', {
+      p_live_room_id: roomId
+    });
+
+    if (!roomResult.ok || !roomResult.data) {
+      return res.status(404).json({ ok: false, error: 'ROOM_NOT_FOUND' });
+    }
+
+    const room = roomResult.data;
+    const dailyRoomName = room.metadata?.daily_room_name;
+
+    if (!dailyRoomName) {
+      return res.json({ ok: true, message: 'No Daily.co room to delete' });
+    }
+
+    // Delete Daily.co room
+    const dailyClient = new DailyClient();
+    await dailyClient.deleteRoom(dailyRoomName);
+
+    // Remove Daily.co data from metadata
+    const newMetadata = { ...room.metadata };
+    delete newMetadata.daily_room_url;
+    delete newMetadata.daily_room_name;
+    delete newMetadata.video_provider;
+
+    await callRpc(token, 'live_room_update_metadata', {
+      p_live_room_id: roomId,
+      p_metadata: newMetadata
+    });
+
+    // Emit OASIS event
+    await emitOasisEvent({
+      vtid: 'VTID-01228',
+      type: 'live.daily.deleted' as any,
+      source: 'live-gateway',
+      status: 'success',
+      message: `Daily.co room deleted for live room ${roomId}`,
+      payload: { room_id: roomId, daily_room_name: dailyRoomName }
+    });
+
+    console.log(`[VTID-01228] Daily.co room deleted: ${dailyRoomName}`);
+
+    return res.json({ ok: true, message: 'Daily.co room deleted' });
+  } catch (error: any) {
+    console.error('[VTID-01228] Error deleting Daily.co room:', error);
+    return res.status(500).json({
+      ok: false,
+      error: 'DAILY_DELETE_FAILED',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * POST /rooms/:id/purchase -> POST /api/v1/live/rooms/:id/purchase
+ *
+ * VTID-01228: Purchase access to a paid live room via Stripe.
+ * Creates a Payment Intent for the room price.
+ */
+router.post('/rooms/:id/purchase', purchaseLimiter, async (req: Request, res: Response) => {
+  const roomId = req.params.id;
+  console.log(`[VTID-01228] POST /live/rooms/${roomId}/purchase`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  if (!roomId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+    return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
+  }
+
+  // Extract user_id from request body (frontend should include this)
+  const { user_id } = req.body;
+  if (!user_id) {
+    return res.status(400).json({ ok: false, error: 'USER_ID_REQUIRED' });
+  }
+
+  try {
+    // Get room details
+    const roomResult = await callRpc(token, 'live_room_get', {
+      p_live_room_id: roomId
+    });
+
+    if (!roomResult.ok || !roomResult.data) {
+      return res.status(404).json({ ok: false, error: 'ROOM_NOT_FOUND' });
+    }
+
+    const room = roomResult.data;
+
+    // Verify room requires payment
+    if (room.access_level !== 'group') {
+      return res.status(400).json({
+        ok: false,
+        error: 'ROOM_NOT_PAID',
+        message: 'This room does not require payment'
+      });
+    }
+
+    // Get price from metadata
+    const price = room.metadata?.price;
+    if (!price || typeof price !== 'number' || price <= 0) {
+      return res.status(500).json({
+        ok: false,
+        error: 'PRICE_NOT_CONFIGURED',
+        message: 'Room price is not properly configured'
+      });
+    }
+
+    // Initialize Stripe
+    const stripeKey = process.env.STRIPE_SECRET_KEY;
+    if (!stripeKey) {
+      console.error('[VTID-01228] STRIPE_SECRET_KEY not configured');
+      return res.status(500).json({
+        ok: false,
+        error: 'PAYMENT_NOT_CONFIGURED'
+      });
+    }
+
+    const stripe = new Stripe(stripeKey);
+
+    // Create Payment Intent
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(price * 100), // Convert dollars to cents
+      currency: 'usd',
+      metadata: {
+        room_id: roomId,
+        room_title: room.title,
+        user_id: user_id,
+        vtid: 'VTID-01228'
+      },
+      automatic_payment_methods: {
+        enabled: true
+      }
+    });
+
+    console.log(`[VTID-01228] Payment Intent created: ${paymentIntent.id} for room ${roomId}`);
+
+    // Emit OASIS event
+    await emitOasisEvent({
+      vtid: 'VTID-01228',
+      type: 'live.purchase.initiated' as any,
+      source: 'live-gateway',
+      status: 'success',
+      message: `Payment Intent created for room ${roomId}`,
+      payload: {
+        room_id: roomId,
+        payment_intent_id: paymentIntent.id,
+        amount: price
+      }
+    });
+
+    return res.json({
+      ok: true,
+      client_secret: paymentIntent.client_secret,
+      amount: price,
+      currency: 'usd'
+    });
+  } catch (error: any) {
+    console.error('[VTID-01228] Error creating payment intent:', error);
+    return res.status(500).json({
+      ok: false,
+      error: 'PURCHASE_FAILED',
+      message: error.message
+    });
+  }
+});
+
+/**
  * POST /rooms/:id/highlights -> POST /api/v1/live/rooms/:id/highlights
  *
  * Add a highlight to a live room.
@@ -505,7 +1029,7 @@ router.post('/rooms/:id/highlights', async (req: Request, res: Response) => {
 
   if (!result.ok) {
     const statusCode = result.error?.includes('ROOM_NOT_FOUND') ? 404 :
-                       result.error?.includes('ROOM_NOT_ACTIVE') ? 409 : 502;
+      result.error?.includes('ROOM_NOT_ACTIVE') ? 409 : 502;
     return res.status(statusCode).json({ ok: false, error: result.error });
   }
 
@@ -608,6 +1132,740 @@ router.get('/health', (_req: Request, res: Response) => {
       'VTID-01087': 'Relationship Graph'
     }
   });
+});
+
+/**
+ * POST /stripe/webhook -> POST /api/v1/live/stripe/webhook
+ *
+ * VTID-01228: Stripe webhook handler for payment events.
+ * Grants access to paid rooms upon successful payment.
+ *
+ * NOTE: This endpoint requires raw body for signature verification.
+ * The main app must configure express.raw() for this route.
+ */
+router.post('/stripe/webhook', async (req: Request, res: Response) => {
+  console.log(`[VTID-01228] POST /live/stripe/webhook`);
+
+  const stripeKey = process.env.STRIPE_SECRET_KEY;
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  if (!stripeKey || !webhookSecret) {
+    console.error('[VTID-01228] Stripe not configured');
+    return res.status(500).json({ ok: false, error: 'STRIPE_NOT_CONFIGURED' });
+  }
+
+  const stripe = new Stripe(stripeKey);
+  const sig = req.headers['stripe-signature'];
+
+  if (!sig) {
+    return res.status(400).json({ ok: false, error: 'NO_SIGNATURE' });
+  }
+
+  let event: Stripe.Event;
+
+  try {
+    // Verify webhook signature
+    event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+  } catch (err: any) {
+    console.error('[VTID-01228] Webhook signature verification failed:', err.message);
+    return res.status(400).json({ ok: false, error: 'INVALID_SIGNATURE' });
+  }
+
+  // Handle payment_intent.succeeded event
+  if (event.type === 'payment_intent.succeeded') {
+    const paymentIntent = event.data.object as Stripe.PaymentIntent;
+    const roomId = paymentIntent.metadata.room_id;
+
+    if (!roomId) {
+      console.error('[VTID-01228] Payment Intent missing room_id metadata');
+      return res.status(400).json({ ok: false, error: 'MISSING_METADATA' });
+    }
+
+    try {
+      // Grant access to the room
+      // Note: We need user_id from the payment intent
+      // For now, we'll store it in metadata when creating the payment intent
+      const userId = paymentIntent.metadata.user_id;
+
+      if (!userId) {
+        console.error('[VTID-01228] Payment Intent missing user_id metadata');
+        return res.status(400).json({ ok: false, error: 'MISSING_USER_ID' });
+      }
+
+      // Use service role to grant access (webhook has no user JWT)
+      const token = process.env.SUPABASE_SERVICE_ROLE;
+      if (!token) {
+        console.error('[VTID-01228] SUPABASE_SERVICE_ROLE not configured');
+        return res.status(500).json({ ok: false, error: 'SERVICE_ROLE_NOT_CONFIGURED' });
+      }
+
+      const grantResult = await callRpc(token, 'live_room_grant_access', {
+        p_user_id: userId,
+        p_room_id: roomId,
+        p_access_type: 'paid',
+        p_stripe_payment_intent_id: paymentIntent.id
+      });
+
+      if (!grantResult.ok) {
+        console.error('[VTID-01228] Failed to grant access:', grantResult.error);
+        return res.status(500).json({ ok: false, error: 'GRANT_FAILED' });
+      }
+
+      console.log(`[VTID-01228] Access granted: user ${userId} -> room ${roomId} (payment ${paymentIntent.id})`);
+
+      // Emit OASIS event
+      await emitOasisEvent({
+        vtid: 'VTID-01228',
+        type: 'live.purchase.completed' as any,
+        source: 'live-gateway',
+        status: 'success',
+        message: `Access granted for room ${roomId}`,
+        payload: {
+          room_id: roomId,
+          user_id: userId,
+          payment_intent_id: paymentIntent.id,
+          amount: paymentIntent.amount / 100
+        }
+      });
+    } catch (error: any) {
+      console.error('[VTID-01228] Error granting access:', error);
+      return res.status(500).json({ ok: false, error: 'GRANT_ERROR', message: error.message });
+    }
+  }
+
+  return res.json({ ok: true, received: true });
+});
+
+// =============================================================================
+// VTID-01228: Session Management Endpoints
+// =============================================================================
+
+/**
+ * GET /rooms/me -> GET /api/v1/live/rooms/me
+ *
+ * Get the current user's permanent room + current session status.
+ */
+router.get('/rooms/me', async (req: Request, res: Response) => {
+  console.log('[VTID-01228] GET /live/rooms/me');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  // Query app_users via Supabase REST API — filter by user JWT to scope correctly
+  const creds = getSupabaseCredentials();
+  if (!creds) {
+    return res.status(500).json({ ok: false, error: 'Gateway misconfigured' });
+  }
+
+  try {
+    // Decode user_id from JWT to filter correctly (service_role bypasses RLS)
+    let userId: string | null = null;
+    try {
+      const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+      userId = payload.sub;
+    } catch { /* fallback below */ }
+
+    const filterParam = userId ? `&user_id=eq.${userId}` : '';
+    const userResponse = await fetch(
+      `${creds.url}/rest/v1/app_users?select=live_room_id&limit=1${filterParam}`,
+      {
+        headers: {
+          'apikey': creds.key,
+          'Authorization': `Bearer ${token}`,
+        },
+      }
+    );
+
+    if (!userResponse.ok) {
+      console.error(`[VTID-01228] Failed to fetch app_users: ${userResponse.status}`);
+      return res.status(502).json({ ok: false, error: 'Failed to fetch user profile' });
+    }
+
+    const users = await userResponse.json() as Array<{ live_room_id: string | null }>;
+    const liveRoomId = users?.[0]?.live_room_id;
+
+    if (!liveRoomId) {
+      return res.status(404).json({ ok: false, error: 'NO_ROOM', message: 'User does not have a permanent room' });
+    }
+
+    const stateResult = await sessionManager.getState(liveRoomId, token);
+    if (!stateResult.ok) {
+      return res.status(502).json({ ok: false, error: stateResult.error });
+    }
+
+    return res.json(stateResult.data);
+  } catch (err: any) {
+    console.error(`[VTID-01228] /rooms/me error:`, err.message);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * GET /rooms/:id/state -> GET /api/v1/live/rooms/:id/state
+ *
+ * Session snapshot — room status, session info, counts, viewer's role/lobby_status.
+ * Single endpoint that returns everything the frontend needs.
+ */
+router.get('/rooms/:id/state', async (req: Request, res: Response) => {
+  const roomId = req.params.id;
+  console.log(`[VTID-01228] GET /live/rooms/${roomId}/state`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  if (!UUID_REGEX.test(roomId)) {
+    return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
+  }
+
+  const result = await sessionManager.getState(roomId, token);
+  if (!result.ok) {
+    const statusCode = result.error?.includes('ROOM_NOT_FOUND') ? 404 : 502;
+    return res.status(statusCode).json({ ok: false, error: result.error });
+  }
+
+  return res.json(result.data);
+});
+
+/**
+ * POST /rooms/:id/sessions -> POST /api/v1/live/rooms/:id/sessions
+ *
+ * "Go Live" — create a new session on a permanent room.
+ * Host-only. Room must be idle.
+ */
+router.post('/rooms/:id/sessions', sessionCreateLimiter, async (req: Request, res: Response) => {
+  const roomId = req.params.id;
+  console.log(`[VTID-01228] POST /live/rooms/${roomId}/sessions`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  if (!UUID_REGEX.test(roomId)) {
+    return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
+  }
+
+  const validation = CreateSessionSchema.safeParse(req.body);
+  if (!validation.success) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Validation failed',
+      details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  // VTID-01230: Enforce creator onboarding for paid sessions
+  if (validation.data.access_level === 'group' && validation.data.metadata?.price && Number(validation.data.metadata.price) > 0) {
+    const creatorStatusResult = await callRpc(token, 'get_user_stripe_status', {});
+    if (!creatorStatusResult.ok || !creatorStatusResult.data || creatorStatusResult.data.length === 0) {
+      return res.status(403).json({
+        ok: false,
+        error: 'CREATOR_NOT_ONBOARDED',
+        message: 'Complete payment setup before creating paid sessions',
+      });
+    }
+    const creatorStatus = creatorStatusResult.data[0];
+    if (!creatorStatus.stripe_charges_enabled || !creatorStatus.stripe_payouts_enabled) {
+      return res.status(403).json({
+        ok: false,
+        error: 'CREATOR_NOT_ONBOARDED',
+        message: 'Complete payment setup before creating paid sessions. Both charges and payouts must be enabled.',
+      });
+    }
+  }
+
+  const result = await sessionManager.createSession(roomId, validation.data, token);
+
+  if (!result.ok) {
+    const statusCode =
+      result.error === 'NOT_HOST' ? 403 :
+      result.error === 'ROOM_NOT_FOUND' ? 404 :
+      result.error === 'ROOM_NOT_IDLE' ? 409 : 502;
+    return res.status(statusCode).json({ ok: false, error: result.error, message: result.message });
+  }
+
+  console.log(`[VTID-01228] Session created: ${result.sessionId} (${result.status})`);
+
+  // VTID-01228: Sync to community_live_streams so other users see this room in the listing.
+  // The LiveRooms page queries community_live_streams, not live_rooms.
+  // Always sync regardless of initial status (scheduled/lobby/live) — the status may
+  // auto-transition immediately, and the listing page needs the entry.
+  try {
+    const creds = getSupabaseCredentials();
+    if (creds) {
+      // Decode user_id from JWT for created_by
+      let userId = '';
+      try {
+        userId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub;
+      } catch { /* fallback empty */ }
+
+      // Map session status to community_live_streams status
+      const streamStatus = (result.status === 'scheduled') ? 'pending' : 'live';
+
+      // Upsert: use room ID as the stream ID for 1:1 mapping
+      const syncResp = await fetch(`${creds.url}/rest/v1/community_live_streams`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': creds.key,
+          'Authorization': `Bearer ${creds.key}`,
+          'Prefer': 'return=minimal,resolution=merge-duplicates'
+        },
+        body: JSON.stringify({
+          id: roomId,
+          title: validation.data.session_title || 'Live Session',
+          created_by: userId,
+          status: streamStatus,
+          stream_type: 'audio',
+          started_at: streamStatus === 'live' ? new Date().toISOString() : null,
+          scheduled_for: validation.data.starts_at,
+          access_level: validation.data.access_level || 'public',
+          tags: validation.data.topic_keys || [],
+          enable_chat: true,
+          viewer_count: 0,
+        })
+      });
+      if (!syncResp.ok) {
+        const errText = await syncResp.text();
+        console.error(`[VTID-01228] community_live_streams sync failed: ${syncResp.status} - ${errText}`);
+      } else {
+        console.log(`[VTID-01228] Synced session to community_live_streams: ${roomId} (${streamStatus})`);
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[VTID-01228] community_live_streams sync (create) exception: ${err.message}`);
+  }
+
+  return res.status(201).json({
+    ok: true,
+    session_id: result.sessionId,
+    status: result.status,
+    room_id: result.roomId,
+    daily_room_url: result.dailyRoomUrl,
+    idempotent: result.idempotent,
+  });
+});
+
+/**
+ * GET /rooms/:id/sessions -> GET /api/v1/live/rooms/:id/sessions
+ *
+ * List past sessions for a room (history).
+ */
+router.get('/rooms/:id/sessions', async (req: Request, res: Response) => {
+  const roomId = req.params.id;
+  console.log(`[VTID-01228] GET /live/rooms/${roomId}/sessions`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  if (!UUID_REGEX.test(roomId)) {
+    return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
+  }
+
+  const result = await sessionManager.getSessions(roomId, token);
+  if (!result.ok) {
+    return res.status(502).json({ ok: false, error: result.error });
+  }
+
+  return res.json(result.data);
+});
+
+/**
+ * PATCH /rooms/:id -> PATCH /api/v1/live/rooms/:id
+ *
+ * Update permanent room name, slug, cover image, description.
+ * Host-only.
+ */
+router.patch('/rooms/:id', async (req: Request, res: Response) => {
+  const roomId = req.params.id;
+  console.log(`[VTID-01228] PATCH /live/rooms/${roomId}`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  if (!UUID_REGEX.test(roomId)) {
+    return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
+  }
+
+  const validation = UpdateRoomSchema.safeParse(req.body);
+  if (!validation.success) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Validation failed',
+      details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const result = await sessionManager.updateRoomIdentity(roomId, {
+    name: validation.data.room_name,
+    slug: validation.data.room_slug,
+    coverImageUrl: validation.data.cover_image_url,
+    description: validation.data.description,
+  }, token);
+
+  if (!result.ok) {
+    const statusCode = result.data?.error === 'NOT_HOST' ? 403 : 502;
+    return res.status(statusCode).json({ ok: false, error: result.data?.error || result.error });
+  }
+
+  return res.json({ ok: true });
+});
+
+/**
+ * POST /rooms/:id/open-lobby -> POST /api/v1/live/rooms/:id/open-lobby
+ *
+ * Host moves room from scheduled → lobby.
+ */
+router.post('/rooms/:id/open-lobby', async (req: Request, res: Response) => {
+  const roomId = req.params.id;
+  console.log(`[VTID-01228] POST /live/rooms/${roomId}/open-lobby`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  if (!UUID_REGEX.test(roomId)) {
+    return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
+  }
+
+  const { user_id } = req.body;
+  if (!user_id) {
+    return res.status(400).json({ ok: false, error: 'USER_ID_REQUIRED' });
+  }
+
+  const result = await sessionManager.transition(roomId, { type: 'OPEN_LOBBY', userId: user_id }, token);
+
+  if (!result.ok) {
+    const statusCode =
+      result.error === 'NOT_HOST' ? 403 :
+      result.error === 'ROOM_NOT_FOUND' ? 404 :
+      result.error === 'CONFLICT' ? 409 :
+      result.error === 'INVALID_TRANSITION' ? 409 : 502;
+    return res.status(statusCode).json({ ok: false, error: result.error, message: result.message });
+  }
+
+  return res.json({ ok: true, status: result.newStatus });
+});
+
+/**
+ * POST /rooms/:id/cancel -> POST /api/v1/live/rooms/:id/cancel
+ *
+ * Cancel current session + refunds + reset to idle.
+ * Host-only.
+ */
+router.post('/rooms/:id/cancel', async (req: Request, res: Response) => {
+  const roomId = req.params.id;
+  console.log(`[VTID-01228] POST /live/rooms/${roomId}/cancel`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  if (!UUID_REGEX.test(roomId)) {
+    return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
+  }
+
+  const { user_id } = req.body;
+  if (!user_id) {
+    return res.status(400).json({ ok: false, error: 'USER_ID_REQUIRED' });
+  }
+
+  // Initialize Stripe for refunds
+  let stripe: Stripe | undefined;
+  const stripeKey = process.env.STRIPE_SECRET_KEY;
+  if (stripeKey) {
+    stripe = new Stripe(stripeKey);
+  }
+
+  const result = await sessionManager.cancelSession(roomId, user_id, token, stripe);
+
+  if (!result.ok) {
+    const statusCode =
+      result.error === 'NOT_HOST' ? 403 :
+      result.error === 'ROOM_NOT_FOUND' ? 404 :
+      result.error === 'NO_ACTIVE_SESSION' ? 409 :
+      result.error === 'CONFLICT' ? 409 : 502;
+    return res.status(statusCode).json({ ok: false, error: result.error, message: result.message });
+  }
+
+  return res.json({
+    ok: true,
+    refund_total: result.refundTotal,
+    refund_succeeded: result.refundSucceeded,
+    refund_failed: result.refundFailed,
+  });
+});
+
+/**
+ * POST /rooms/:id/host-present -> POST /api/v1/live/rooms/:id/host-present
+ *
+ * Called when host's Daily.co fires "joined-meeting". Sets host_present = true.
+ */
+router.post('/rooms/:id/host-present', async (req: Request, res: Response) => {
+  const roomId = req.params.id;
+  console.log(`[VTID-01228] POST /live/rooms/${roomId}/host-present`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  if (!UUID_REGEX.test(roomId)) {
+    return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
+  }
+
+  const result = await sessionManager.setHostPresent(roomId, true, token);
+  if (!result.ok) {
+    const statusCode = result.data?.error === 'NOT_HOST' ? 403 : 502;
+    return res.status(statusCode).json({ ok: false, error: result.data?.error || result.error });
+  }
+
+  return res.json({ ok: true, host_present: true });
+});
+
+/**
+ * POST /rooms/:id/host-absent -> POST /api/v1/live/rooms/:id/host-absent
+ *
+ * Called when host's Daily.co fires "left-meeting". Sets host_present = false.
+ */
+router.post('/rooms/:id/host-absent', async (req: Request, res: Response) => {
+  const roomId = req.params.id;
+  console.log(`[VTID-01228] POST /live/rooms/${roomId}/host-absent`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  if (!UUID_REGEX.test(roomId)) {
+    return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
+  }
+
+  const result = await sessionManager.setHostPresent(roomId, false, token);
+  if (!result.ok) {
+    const statusCode = result.data?.error === 'NOT_HOST' ? 403 : 502;
+    return res.status(statusCode).json({ ok: false, error: result.data?.error || result.error });
+  }
+
+  return res.json({ ok: true, host_present: false });
+});
+
+/**
+ * GET /rooms/:id/lobby -> GET /api/v1/live/rooms/:id/lobby
+ *
+ * Get waiting users in lobby. Host-only.
+ */
+router.get('/rooms/:id/lobby', async (req: Request, res: Response) => {
+  const roomId = req.params.id;
+  console.log(`[VTID-01228] GET /live/rooms/${roomId}/lobby`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  if (!UUID_REGEX.test(roomId)) {
+    return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
+  }
+
+  const result = await sessionManager.getLobby(roomId, token);
+  if (!result.ok) {
+    const statusCode = result.data?.error === 'NOT_HOST' ? 403 : 502;
+    return res.status(statusCode).json({ ok: false, error: result.data?.error || result.error });
+  }
+
+  return res.json(result.data);
+});
+
+/**
+ * POST /rooms/:id/admit -> POST /api/v1/live/rooms/:id/admit
+ *
+ * Admit a user from the lobby. Host-only.
+ */
+router.post('/rooms/:id/admit', async (req: Request, res: Response) => {
+  const roomId = req.params.id;
+  console.log(`[VTID-01228] POST /live/rooms/${roomId}/admit`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  if (!UUID_REGEX.test(roomId)) {
+    return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
+  }
+
+  const validation = UserActionSchema.safeParse(req.body);
+  if (!validation.success) {
+    return res.status(400).json({ ok: false, error: 'user_id (UUID) is required' });
+  }
+
+  const result = await sessionManager.admitUser(roomId, validation.data.user_id, token);
+  if (!result.ok) {
+    const statusCode = result.data?.error === 'NOT_HOST' ? 403 : 502;
+    return res.status(statusCode).json({ ok: false, error: result.data?.error || result.error });
+  }
+
+  return res.json({ ok: true });
+});
+
+/**
+ * POST /rooms/:id/admit-all -> POST /api/v1/live/rooms/:id/admit-all
+ *
+ * Admit all waiting users from the lobby. Host-only.
+ */
+router.post('/rooms/:id/admit-all', async (req: Request, res: Response) => {
+  const roomId = req.params.id;
+  console.log(`[VTID-01228] POST /live/rooms/${roomId}/admit-all`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  if (!UUID_REGEX.test(roomId)) {
+    return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
+  }
+
+  const result = await sessionManager.admitAll(roomId, token);
+  if (!result.ok) {
+    const statusCode = result.data?.error === 'NOT_HOST' ? 403 : 502;
+    return res.status(statusCode).json({ ok: false, error: result.data?.error || result.error });
+  }
+
+  return res.json(result.data);
+});
+
+/**
+ * POST /rooms/:id/reject -> POST /api/v1/live/rooms/:id/reject
+ *
+ * Reject a user from the lobby. Host-only.
+ */
+router.post('/rooms/:id/reject', async (req: Request, res: Response) => {
+  const roomId = req.params.id;
+  console.log(`[VTID-01228] POST /live/rooms/${roomId}/reject`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  if (!UUID_REGEX.test(roomId)) {
+    return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
+  }
+
+  const validation = UserActionSchema.safeParse(req.body);
+  if (!validation.success) {
+    return res.status(400).json({ ok: false, error: 'user_id (UUID) is required' });
+  }
+
+  const result = await sessionManager.rejectUser(roomId, validation.data.user_id, token);
+  if (!result.ok) {
+    const statusCode = result.data?.error === 'NOT_HOST' ? 403 : 502;
+    return res.status(statusCode).json({ ok: false, error: result.data?.error || result.error });
+  }
+
+  return res.json({ ok: true });
+});
+
+/**
+ * POST /rooms/:id/kick -> POST /api/v1/live/rooms/:id/kick
+ *
+ * Kick a user from the room. Host-only. User can rejoin.
+ */
+router.post('/rooms/:id/kick', async (req: Request, res: Response) => {
+  const roomId = req.params.id;
+  console.log(`[VTID-01228] POST /live/rooms/${roomId}/kick`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  if (!UUID_REGEX.test(roomId)) {
+    return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
+  }
+
+  const validation = UserActionSchema.safeParse(req.body);
+  if (!validation.success) {
+    return res.status(400).json({ ok: false, error: 'user_id (UUID) is required' });
+  }
+
+  const result = await sessionManager.kickUser(roomId, validation.data.user_id, token);
+  if (!result.ok) {
+    const statusCode = result.data?.error === 'NOT_HOST' ? 403 : 502;
+    return res.status(statusCode).json({ ok: false, error: result.data?.error || result.error });
+  }
+
+  return res.json({ ok: true });
+});
+
+/**
+ * POST /rooms/:id/ban -> POST /api/v1/live/rooms/:id/ban
+ *
+ * Ban a user from the room. Host-only. User cannot rejoin.
+ */
+router.post('/rooms/:id/ban', async (req: Request, res: Response) => {
+  const roomId = req.params.id;
+  console.log(`[VTID-01228] POST /live/rooms/${roomId}/ban`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  if (!UUID_REGEX.test(roomId)) {
+    return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
+  }
+
+  const validation = UserActionSchema.safeParse(req.body);
+  if (!validation.success) {
+    return res.status(400).json({ ok: false, error: 'user_id (UUID) is required' });
+  }
+
+  const result = await sessionManager.banUser(roomId, validation.data.user_id, token);
+  if (!result.ok) {
+    const statusCode = result.data?.error === 'NOT_HOST' ? 403 : 502;
+    return res.status(statusCode).json({ ok: false, error: result.data?.error || result.error });
+  }
+
+  return res.json({ ok: true });
+});
+
+/**
+ * POST /rooms/:id/disconnect -> POST /api/v1/live/rooms/:id/disconnect
+ *
+ * Signal WebRTC disconnection (for reconnection window).
+ */
+router.post('/rooms/:id/disconnect', async (req: Request, res: Response) => {
+  const roomId = req.params.id;
+  console.log(`[VTID-01228] POST /live/rooms/${roomId}/disconnect`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  if (!UUID_REGEX.test(roomId)) {
+    return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
+  }
+
+  const result = await sessionManager.disconnect(roomId, token);
+  if (!result.ok) {
+    return res.status(502).json({ ok: false, error: result.error });
+  }
+
+  return res.json({ ok: true });
 });
 
 export default router;

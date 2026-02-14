@@ -817,10 +817,20 @@ async function executeWorker(ctx: ExecutionContext): Promise<{
 
     // Step 1.5: NOW update status to "in_progress" - work has actually started
     // Task moves from "scheduled" → "in_progress" only after work order is dispatched
-    await updateTaskStatus(ctx.vtid, "in_progress", ctx.run_id, {
+    // VTID-01229: Check return value to ensure status was updated
+    const statusUpdated = await updateTaskStatus(ctx.vtid, "in_progress", ctx.run_id, {
       work_started_at: new Date().toISOString(),
       work_order_dispatched: true,
     });
+
+    if (!statusUpdated) {
+      console.error(`[VTID-01229] ${ctx.vtid}: Failed to update task status to in_progress`);
+      await emitStageEvent(ctx, "started", "error", `Status update failed for ${ctx.vtid}`, {
+        error_code: "STATUS_UPDATE_FAILED",
+        error_summary: "Failed to update vtid_ledger status to in_progress",
+      });
+      return { success: false, error: "Failed to update task status" };
+    }
 
     // Step 2: Wait for evidence
     console.log(`[VTID-01150] ${ctx.vtid}: Waiting for evidence...`);
@@ -1293,9 +1303,14 @@ router.post("/vtid", async (req: Request, res: Response) => {
 
     // Step 5: Update task status to "scheduled" (queued for execution)
     // Status moves to "in_progress" only when work actually starts in executeWorker
-    await updateTaskStatus(vtid, "scheduled", run_id, {
+    // VTID-01229: Check return value to ensure status was updated
+    const scheduledStatusOk = await updateTaskStatus(vtid, "scheduled", run_id, {
       queued_at: new Date().toISOString(),
     });
+
+    if (!scheduledStatusOk) {
+      console.warn(`[VTID-01229] ${vtid}: Failed to update task status to scheduled (non-fatal, continuing)`);
+    }
 
     // Step 6: Emit execution started event
     // VTID-01150: spec_present is always true here (we hard-failed above if missing)

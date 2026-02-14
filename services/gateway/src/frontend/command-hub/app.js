@@ -91,78 +91,8 @@ function navigateToRoleDefaultScreen(role) {
 }
 
 // VTID-01049: Redundant fetchMeContext removed. Using consolidated version at line 610.
-
-/**
- * VTID-01049: Set Active Role via Gateway API
- * Called when user changes role in Profile dropdown.
- * @param {string} role - Role to set (lowercase: community, patient, professional, staff, admin, developer)
- * @returns {Promise<{ok: boolean, error?: string}>}
- */
-async function setActiveRole(role) {
-    var lowerRole = role.toLowerCase();
-
-    // Validate role client-side
-    if (VALID_VIEW_ROLES.indexOf(lowerRole) === -1) {
-        return { ok: false, error: 'Invalid role: ' + role };
-    }
-
-    try {
-        var response = await fetch('/api/v1/me/active-role', {
-            method: 'POST',
-            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ role: lowerRole })
-        });
-
-        if (response.status === 401) {
-            return { ok: false, error: 'Not signed in.', code: 'UNAUTHENTICATED' };
-        }
-        if (response.status === 403) {
-            return { ok: false, error: "You don't have access to that role.", code: 'FORBIDDEN' };
-        }
-        if (response.status === 400) {
-            var errData = await response.json().catch(function () { return {}; });
-            return { ok: false, error: errData.message || 'Invalid role', code: 'INVALID_ROLE' };
-        }
-        if (!response.ok) {
-            return { ok: false, error: 'Failed to set role' };
-        }
-
-        var data = await response.json();
-        if (data.ok) {
-            // Update MeState with new active_role
-            if (MeState.me) {
-                MeState.me.active_role = lowerRole;
-            }
-            return { ok: true };
-        }
-        return { ok: false, error: data.message || 'Failed to set role' };
-    } catch (err) {
-        console.error('[VTID-01049] setActiveRole error:', err);
-        return { ok: false, error: 'Network error setting role' };
-    }
-}
-
-/**
- * VTID-01049: Add Vitana context headers to fetch requests
- * Adds X-Vitana-Active-Role, X-Vitana-Tenant, X-Vitana-User if MeState.me exists.
- * @param {Object} headers - Existing headers object
- * @returns {Object} Headers with Vitana context added
- */
-function withVitanaContextHeaders(headers) {
-    var h = Object.assign({}, headers || {});
-    if (MeState.me) {
-        if (MeState.me.active_role) {
-            h['X-Vitana-Active-Role'] = MeState.me.active_role;
-        }
-        if (MeState.me.tenant_id) {
-            h['X-Vitana-Tenant'] = MeState.me.tenant_id;
-        }
-        if (MeState.me.user_id) {
-            h['X-Vitana-User'] = MeState.me.user_id;
-        }
-    }
-    return h;
-}
+// VTID-01229: Dead setActiveRole (used MeState.me) removed. Using consolidated version at line 640.
+// VTID-01229: Dead withVitanaContextHeaders (used MeState.me) removed. Use buildContextHeaders instead.
 
 // ===========================================================================
 // VTID-01016: OASIS Event Authority - Deterministic Stage/Status Derivation
@@ -609,6 +539,7 @@ async function fetchMeContext(silentRefresh) {
 
         console.log('[VTID-01049] fetchMeContext success:', data.me);
         state.meContext = data.me;
+        // VTID-01229: MeState kept for backwards compatibility during transition
         MeState.me = data.me;
         MeState.loaded = true;
         state.meContextLoading = false;
@@ -993,6 +924,7 @@ function doLogout() {
     state.authIdentity = null;
     state.meContext = null;
     state.loginUserEmail = null; // VTID-01196: Clear login email fallback
+    // VTID-01229: MeState kept for backwards compatibility during transition
     MeState.loaded = false;
     MeState.me = null;
     localStorage.removeItem('vitana.authToken');
@@ -1801,6 +1733,11 @@ function filterOasisEvents(items) {
     if (!items) return [];
     var filters = state.oasisEvents.filters || {};
     return items.filter(function (event) {
+        // VTID-01250: Hide noise events if enabled
+        if (state.oasisEvents.hideNoise && isOasisNoiseEvent(event)) {
+            return false;
+        }
+
         if (filters.topic && !(event.topic || '').toLowerCase().includes(filters.topic.toLowerCase())) {
             return false;
         }
@@ -1812,6 +1749,42 @@ function filterOasisEvents(items) {
         }
         return true;
     });
+}
+
+/**
+ * VTID-01250: Groups consecutive identical events.
+ */
+function groupConsecutiveEvents(items) {
+    if (!items || items.length === 0) return [];
+
+    var grouped = [];
+    var current = null;
+
+    items.forEach(function (event) {
+        if (!current) {
+            current = Object.assign({}, event);
+            current.repeatCount = 1;
+        } else if (
+            current.topic === event.topic &&
+            current.service === event.service &&
+            current.status === event.status &&
+            current.message === event.message &&
+            current.vtid === event.vtid
+        ) {
+            current.repeatCount++;
+            // Keep the latest timestamp
+            if (new Date(event.created_at) > new Date(current.created_at)) {
+                current.created_at = event.created_at;
+            }
+        } else {
+            grouped.push(current);
+            current = Object.assign({}, event);
+            current.repeatCount = 1;
+        }
+    });
+
+    if (current) grouped.push(current);
+    return grouped;
 }
 
 /**
@@ -1844,7 +1817,7 @@ function filterCommandHubEvents(items) {
  */
 function createOasisEventRow(event) {
     var row = document.createElement('tr');
-    row.className = 'oasis-event-row';
+    row.className = 'oasis-event-row clickable-row';
     var severity = getEventSeverity(event);
     row.dataset.severity = severity;
     row.onclick = function () {
@@ -1894,7 +1867,13 @@ function createOasisEventRow(event) {
     // Message
     var msgCell = document.createElement('td');
     msgCell.className = 'event-message';
-    msgCell.textContent = (event.message || '').substring(0, 60) + ((event.message || '').length > 60 ? '...' : '');
+    var msgText = (event.message || '').substring(0, 60) + ((event.message || '').length > 60 ? '...' : '');
+
+    if (event.repeatCount > 1) {
+        msgCell.innerHTML = msgText + ' <span class="event-repeat-badge">x' + event.repeatCount + '</span>';
+    } else {
+        msgCell.textContent = msgText;
+    }
     row.appendChild(msgCell);
 
     return row;
@@ -2598,6 +2577,30 @@ const state = {
         fetched: false
     },
 
+    // VTID-0600: Operational Visibility Foundation State
+    oasisEvents: {
+        items: [],
+        fetched: false,
+        loading: false,
+        error: null,
+        selectedEvent: null,
+        filters: {
+            topic: '',
+            status: '',
+            service: ''
+        },
+        pagination: {
+            offset: 0,
+            limit: 50,
+            hasMore: true
+        },
+        autoRefreshEnabled: false,
+        autoRefreshInterval: null,
+        // VTID-01250: Supervision Controls
+        hideNoise: true,
+        groupConsecutive: true
+    },
+
     // VTID-0409: Governance Categories (Read-Only V1)
     governanceCategories: {
         items: [],
@@ -3161,13 +3164,42 @@ function getEventSeverity(event) {
         return EVENT_SEVERITY.IMPORTANT;
     }
 
-    // Low: heartbeat, ping, routine checks
-    if (topic.includes('heartbeat') || topic.includes('ping') || topic.includes('health')) {
+    // Low: heartbeat, ping, routine checks, and live stream chunks
+    if (topic.includes('heartbeat') ||
+        topic.includes('ping') ||
+        topic.includes('health') ||
+        topic.includes('.pending_served') ||
+        topic.includes('live.audio.') ||
+        topic.includes('live.stream.')) {
         return EVENT_SEVERITY.LOW;
     }
 
     // Default: info level
     return EVENT_SEVERITY.INFO;
+}
+
+/**
+ * VTID-01250: Checks if an event is considered operational noise (heartbeats, idle polls).
+ */
+function isOasisNoiseEvent(event) {
+    const topic = (event.topic || '').toLowerCase();
+    const message = (event.message || '').toLowerCase();
+
+    // Specific high-frequency noise mentioned by user
+    if (topic.includes('pending_served') && message.includes('served 0 eligible tasks')) {
+        return true;
+    }
+
+    // General telemetry and stream patterns (audio/video chunks)
+    if (topic.includes('heartbeat') ||
+        topic.includes('ping') ||
+        topic.includes('live.audio.') ||
+        topic.includes('live.stream.') ||
+        (topic.includes('health') && !topic.includes('fail'))) {
+        return true;
+    }
+
+    return false;
 }
 
 /**
@@ -3191,7 +3223,7 @@ function formatEventTimestamp(isoString) {
  * @param {Object} filters - Optional filters (topic, service, status)
  * @param {boolean} append - If true, append to existing items (Load More)
  */
-async function fetchOasisEvents(filters, append) {
+async function fetchOasisEvents(filters, append, recursionDepth) {
     console.log('[VTID-0600] Fetching OASIS events...', append ? '(append)' : '(fresh)');
 
     if (state.oasisEvents.loading) return;
@@ -3206,9 +3238,10 @@ async function fetchOasisEvents(filters, append) {
 
         var queryParams = 'limit=' + pagination.limit + '&offset=' + offset;
         if (filters) {
-            if (filters.topic) queryParams += '&topic=like.*' + encodeURIComponent(filters.topic) + '*';
-            if (filters.service) queryParams += '&service=eq.' + encodeURIComponent(filters.service);
-            if (filters.status) queryParams += '&status=eq.' + encodeURIComponent(filters.status);
+            // VTID-01250: Send raw values, backend handles operators (ilike/eq)
+            if (filters.topic) queryParams += '&topic=' + encodeURIComponent(filters.topic);
+            if (filters.service) queryParams += '&service=' + encodeURIComponent(filters.service);
+            if (filters.status) queryParams += '&status=' + encodeURIComponent(filters.status);
         }
 
         const response = await fetch('/api/v1/oasis/events?' + queryParams);
@@ -3235,6 +3268,18 @@ async function fetchOasisEvents(filters, append) {
 
         state.oasisEvents.error = null;
         state.oasisEvents.fetched = true;
+
+        // VTID-01250: Recursive fetch if visible items are low due to noise filtering
+        // This prevents empty pages when "Hide Heartbeats" is enabled
+        recursionDepth = recursionDepth || 0;
+        var visibleItems = filterOasisEvents(state.oasisEvents.items);
+        if (state.oasisEvents.pagination.hasMore && visibleItems.length < 15 && recursionDepth < 5) {
+            console.log('[VTID-01250] Low visible count (' + visibleItems.length + '), recursing depth ' + (recursionDepth + 1));
+            // Tiny delay to prevent UI freeze
+            setTimeout(function () {
+                fetchOasisEvents(filters, true, recursionDepth + 1);
+            }, 50);
+        }
     } catch (error) {
         console.error('[VTID-0600] Failed to fetch OASIS events:', error);
         state.oasisEvents.error = error.message;
@@ -3653,7 +3698,7 @@ async function fetchApprovals(silent) {
 
     try {
         var response = await fetch('/api/v1/cicd/approvals', {
-            headers: withVitanaContextHeaders({})
+            headers: buildContextHeaders({})
         });
         var data = await response.json();
 
@@ -3700,7 +3745,7 @@ async function approveApprovalItem(approvalId) {
     try {
         var response = await fetch('/api/v1/cicd/approvals/' + approvalId + '/approve', {
             method: 'POST',
-            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' })
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' })
         });
         var data = await response.json();
 
@@ -3761,7 +3806,7 @@ async function denyApprovalItem(approvalId, reason) {
     try {
         var response = await fetch('/api/v1/cicd/approvals/' + approvalId + '/deny', {
             method: 'POST',
-            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ reason: reason || 'Denied by user' })
         });
         var data = await response.json();
@@ -3795,7 +3840,7 @@ async function fetchGitHubFeed() {
 
     try {
         var response = await fetch('/api/v1/approvals/feed?limit=50', {
-            headers: withVitanaContextHeaders({})
+            headers: buildContextHeaders({})
         });
         var data = await response.json();
 
@@ -3848,7 +3893,7 @@ async function approveFeedItem(prNumber, branch, vtid) {
         // VTID-01168: Call new autonomous-pr-merge endpoint
         var response = await fetch('/api/v1/cicd/autonomous-pr-merge', {
             method: 'POST',
-            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 vtid: vtid,
                 pr_number: prNumber,
@@ -4451,7 +4496,7 @@ function renderHeader() {
         // VTID-01180: Fetch recommendations from API
         try {
             const response = await fetch('/api/v1/autopilot/recommendations?status=new&limit=20', {
-                headers: withVitanaContextHeaders({})
+                headers: buildContextHeaders({})
             });
             if (!response.ok) {
                 throw new Error('Failed to fetch recommendations');
@@ -5864,7 +5909,7 @@ function renderTaskDrawer() {
                     var seedNotes = state.drawerSpecText || state.selectedTask.summary || state.selectedTask.title || '';
                     var response = await fetch('/api/v1/specs/' + vtid + '/generate', {
                         method: 'POST',
-                        headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+                        headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
                         body: JSON.stringify({ seed_notes: seedNotes, source: 'commandhub' })
                     });
                     var result = await response.json();
@@ -5900,7 +5945,7 @@ function renderTaskDrawer() {
                 try {
                     var response = await fetch('/api/v1/specs/' + vtid + '/validate', {
                         method: 'POST',
-                        headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' })
+                        headers: buildContextHeaders({ 'Content-Type': 'application/json' })
                     });
                     var result = await response.json();
                     if (result.ok) {
@@ -5936,11 +5981,12 @@ function renderTaskDrawer() {
                 approveBtn.disabled = true;
                 approveBtn.textContent = 'Approving...';
                 try {
-                    var userId = MeState.me?.user_id || MeState.me?.email || 'unknown';
-                    var userRole = MeState.me?.active_role || 'operator';
+                    // VTID-01229: Use state.meContext instead of deprecated MeState.me
+                    var userId = state.meContext?.user_id || state.meContext?.email || 'unknown';
+                    var userRole = state.meContext?.active_role || 'operator';
                     var response = await fetch('/api/v1/specs/' + vtid + '/approve', {
                         method: 'POST',
-                        headers: withVitanaContextHeaders({
+                        headers: buildContextHeaders({
                             'Content-Type': 'application/json',
                             'x-user-id': userId,
                             'x-user-role': userRole
@@ -5977,7 +6023,7 @@ function renderTaskDrawer() {
                 viewBtn.textContent = 'Loading...';
                 try {
                     var response = await fetch('/api/v1/specs/' + vtid, {
-                        headers: withVitanaContextHeaders({})
+                        headers: buildContextHeaders({})
                     });
                     var result = await response.json();
                     if (result.ok && result.spec) {
@@ -6170,7 +6216,7 @@ function renderTaskDrawer() {
                 try {
                     var response = await fetch('/api/v1/oasis/tasks/' + vtid, {
                         method: 'DELETE',
-                        headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' })
+                        headers: buildContextHeaders({ 'Content-Type': 'application/json' })
                     });
                     var result = await response.json();
                     if (result.ok) {
@@ -7225,8 +7271,9 @@ function renderProfileModal() {
         } else {
             // Failure - revert to previous role
             state.viewRole = previousRole;
-            if (MeState.me) {
-                MeState.me.active_role = previousRole.toLowerCase();
+            // VTID-01229: Use state.meContext instead of deprecated MeState.me
+            if (state.meContext) {
+                state.meContext.active_role = previousRole.toLowerCase();
             }
             renderApp();
             showToast(result.error || 'Failed to change role', 'error');
@@ -7531,7 +7578,7 @@ function renderTaskModal() {
             // VTID-0542: Step 1 - Call the global allocator to get a VTID
             const allocResponse = await fetch('/api/v1/vtid/allocate', {
                 method: 'POST',
-                headers: withVitanaContextHeaders({
+                headers: buildContextHeaders({
                     'Content-Type': 'application/json'
                 }),
                 body: JSON.stringify({
@@ -7584,7 +7631,7 @@ function renderTaskModal() {
 
             const updateResponse = await fetch('/api/v1/oasis/tasks/' + encodeURIComponent(vtid), {
                 method: 'PATCH',
-                headers: withVitanaContextHeaders({
+                headers: buildContextHeaders({
                     'Content-Type': 'application/json'
                 }),
                 body: JSON.stringify(updatePayload)
@@ -9203,7 +9250,7 @@ async function fetchAgentsRegistry() {
         var startTime = Date.now();
         try {
             var response = await fetch(ep.url, {
-                headers: withVitanaContextHeaders({})
+                headers: buildContextHeaders({})
             });
             var elapsed = Date.now() - startTime;
             var data = null;
@@ -9876,7 +9923,7 @@ async function fetchPipelinesData(append) {
     var ledgerStart = Date.now();
     try {
         var response = await fetch('/api/v1/oasis/vtid-ledger?limit=' + pagination.limit + '&offset=' + offset, {
-            headers: withVitanaContextHeaders({})
+            headers: buildContextHeaders({})
         });
         var ledgerElapsed = Date.now() - ledgerStart;
         state.agentsPipelines.timing.ledger = ledgerElapsed;
@@ -9942,7 +9989,7 @@ async function fetchVtidTraceEvents(vtid) {
 
     try {
         var response = await fetch('/api/v1/events?vtid=' + encodeURIComponent(vtid) + '&limit=200', {
-            headers: withVitanaContextHeaders({})
+            headers: buildContextHeaders({})
         });
         if (response.ok) {
             var data = await response.json();
@@ -10593,7 +10640,7 @@ async function fetchLLMRoutingPolicy() {
 
     try {
         var response = await fetch('/api/v1/llm/routing-policy', {
-            headers: withVitanaContextHeaders({})
+            headers: buildContextHeaders({})
         });
 
         if (!response.ok) {
@@ -10657,7 +10704,7 @@ async function fetchLLMTelemetryEvents(append) {
         params.append('since', since);
 
         var response = await fetch('/api/v1/llm/telemetry?' + params.toString(), {
-            headers: withVitanaContextHeaders({})
+            headers: buildContextHeaders({})
         });
 
         if (!response.ok) {
@@ -14169,6 +14216,40 @@ function renderOasisEventsView() {
 
     toolbar.appendChild(filtersCluster);
 
+    // VTID-01250: Supervision controls
+    var supervisionCluster = document.createElement('div');
+    supervisionCluster.className = 'list-toolbar__supervision';
+
+    // Toggle Hide Noise
+    var noiseLabel = document.createElement('label');
+    noiseLabel.className = 'toolbar-toggle';
+    var noiseCheck = document.createElement('input');
+    noiseCheck.type = 'checkbox';
+    noiseCheck.checked = state.oasisEvents.hideNoise;
+    noiseCheck.onchange = function (e) {
+        state.oasisEvents.hideNoise = e.target.checked;
+        renderApp();
+    };
+    noiseLabel.appendChild(noiseCheck);
+    noiseLabel.appendChild(document.createTextNode(' Hide Heartbeats'));
+    supervisionCluster.appendChild(noiseLabel);
+
+    // Toggle Grouping
+    var groupLabel = document.createElement('label');
+    groupLabel.className = 'toolbar-toggle';
+    var groupCheck = document.createElement('input');
+    groupCheck.type = 'checkbox';
+    groupCheck.checked = state.oasisEvents.groupConsecutive;
+    groupCheck.onchange = function (e) {
+        state.oasisEvents.groupConsecutive = e.target.checked;
+        renderApp();
+    };
+    groupLabel.appendChild(groupCheck);
+    groupLabel.appendChild(document.createTextNode(' Collapse Repeats'));
+    supervisionCluster.appendChild(groupLabel);
+
+    toolbar.appendChild(supervisionCluster);
+
     // Right: Item count
     var metadataCluster = document.createElement('div');
     metadataCluster.className = 'list-toolbar__metadata';
@@ -14206,61 +14287,14 @@ function renderOasisEventsView() {
 
         // Body
         var tbody = document.createElement('tbody');
-        state.oasisEvents.items.forEach(function (event) {
-            var row = document.createElement('tr');
-            row.className = 'oasis-event-row clickable-row';
-            var severity = getEventSeverity(event);
-            row.dataset.severity = severity;
-            row.onclick = function () {
-                state.oasisEvents.selectedEvent = event;
-                renderApp();
-            };
+        var itemsToRender = filterOasisEvents(state.oasisEvents.items);
 
-            // Severity indicator
-            var severityCell = document.createElement('td');
-            var severityDot = document.createElement('span');
-            severityDot.className = 'severity-dot severity-' + severity;
-            severityCell.appendChild(severityDot);
-            row.appendChild(severityCell);
+        if (state.oasisEvents.groupConsecutive) {
+            itemsToRender = groupConsecutiveEvents(itemsToRender);
+        }
 
-            // Timestamp
-            var tsCell = document.createElement('td');
-            tsCell.className = 'event-timestamp';
-            tsCell.textContent = formatEventTimestamp(event.created_at);
-            row.appendChild(tsCell);
-
-            // Topic
-            var topicCell = document.createElement('td');
-            topicCell.className = 'event-topic';
-            topicCell.textContent = event.topic || '-';
-            row.appendChild(topicCell);
-
-            // VTID
-            var vtidCell = document.createElement('td');
-            vtidCell.className = 'event-vtid';
-            vtidCell.textContent = event.vtid || '-';
-            row.appendChild(vtidCell);
-
-            // Service
-            var serviceCell = document.createElement('td');
-            serviceCell.className = 'event-service';
-            serviceCell.textContent = event.service || '-';
-            row.appendChild(serviceCell);
-
-            // Status
-            var statusCell = document.createElement('td');
-            var statusBadge = document.createElement('span');
-            statusBadge.className = 'status-badge status-' + (event.status || 'info');
-            statusBadge.textContent = event.status || '-';
-            statusCell.appendChild(statusBadge);
-            row.appendChild(statusCell);
-
-            // Message
-            var msgCell = document.createElement('td');
-            msgCell.className = 'event-message';
-            msgCell.textContent = (event.message || '').substring(0, 60) + ((event.message || '').length > 60 ? '...' : '');
-            row.appendChild(msgCell);
-
+        itemsToRender.forEach(function (event) {
+            var row = createOasisEventRow(event);
             tbody.appendChild(row);
         });
         table.appendChild(tbody);
@@ -18732,7 +18766,7 @@ async function sendChatMessage() {
 
         const response = await fetch('/api/v1/operator/chat', {
             method: 'POST',
-            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 message: messageText,
                 conversation_id: state.operatorConversationId,
@@ -19601,7 +19635,7 @@ function renderPublishModal() {
 
             const response = await fetch('/api/v1/operator/deploy', {
                 method: 'POST',
-                headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+                headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify(payload)
             });
 
@@ -19871,7 +19905,7 @@ function createRecommendationCard(rec) {
         try {
             var response = await fetch('/api/v1/autopilot/recommendations/' + rec.id + '/activate', {
                 method: 'POST',
-                headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' })
+                headers: buildContextHeaders({ 'Content-Type': 'application/json' })
             });
             var data = await response.json();
             if (data.ok) {
@@ -19903,7 +19937,7 @@ function createRecommendationCard(rec) {
         try {
             var response = await fetch('/api/v1/autopilot/recommendations/' + rec.id + '/snooze', {
                 method: 'POST',
-                headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+                headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({ hours: 24 })
             });
             var data = await response.json();
@@ -19933,7 +19967,7 @@ function createRecommendationCard(rec) {
         try {
             var response = await fetch('/api/v1/autopilot/recommendations/' + rec.id + '/reject', {
                 method: 'POST',
-                headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' })
+                headers: buildContextHeaders({ 'Content-Type': 'application/json' })
             });
             var data = await response.json();
             if (data.ok) {
@@ -19963,7 +19997,7 @@ function createRecommendationCard(rec) {
 async function fetchAutopilotRecommendationsCount() {
     try {
         var response = await fetch('/api/v1/autopilot/recommendations/count', {
-            headers: withVitanaContextHeaders({})
+            headers: buildContextHeaders({})
         });
         if (response.ok) {
             var data = await response.json();
@@ -20349,7 +20383,7 @@ function renderExecutionApprovalModal() {
             // VTID-01194: Call lifecycle/start with approval_reason
             var response = await fetch('/api/v1/vtid/lifecycle/start', {
                 method: 'POST',
-                headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+                headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({
                     vtid: vtid,
                     source: 'command-hub',
@@ -20459,7 +20493,7 @@ async function toggleHeartbeatSession() {
     try {
         const response = await fetch('/api/v1/operator/heartbeat/session', {
             method: 'POST',
-            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ status: newStatus })
         });
 
@@ -20974,7 +21008,7 @@ async function startOperatorLiveTicker() {
         // Start heartbeat session
         const response = await fetch('/api/v1/operator/heartbeat/session', {
             method: 'POST',
-            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ status: 'live' })
         });
 
@@ -21049,7 +21083,7 @@ async function uploadOperatorFile(file, kind) {
     try {
         const response = await fetch('/api/v1/operator/upload', {
             method: 'POST',
-            headers: withVitanaContextHeaders({ 'Content-Type': 'application/json' }),
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 name: file.name,
                 kind: kind,
@@ -23117,7 +23151,7 @@ function geminiLiveStartTranscriber() {
     if (state.orb.geminiLiveTranscriber) {
         try {
             state.orb.geminiLiveTranscriber.stop();
-        } catch (e) {}
+        } catch (e) { }
         state.orb.geminiLiveTranscriber = null;
     }
 
@@ -23128,11 +23162,11 @@ function geminiLiveStartTranscriber() {
 
     var lastProcessedIndex = -1;
 
-    recognition.onstart = function() {
+    recognition.onstart = function () {
         console.log('[VTID-01225] Parallel transcriber started');
     };
 
-    recognition.onresult = function(event) {
+    recognition.onresult = function (event) {
         var finalTranscript = '';
         var interimTranscript = '';
 
@@ -23173,7 +23207,7 @@ function geminiLiveStartTranscriber() {
         renderApp();
     };
 
-    recognition.onerror = function(event) {
+    recognition.onerror = function (event) {
         // Ignore no-speech errors - common when audio is sent to Gemini
         if (event.error === 'no-speech' || event.error === 'aborted') {
             return;
@@ -23181,7 +23215,7 @@ function geminiLiveStartTranscriber() {
         console.warn('[VTID-01225] Transcriber error:', event.error);
     };
 
-    recognition.onend = function() {
+    recognition.onend = function () {
         // Auto-restart if session still active
         if (state.orb.geminiLiveActive && state.orb.geminiLiveTranscriber) {
             console.log('[VTID-01225] Restarting transcriber...');
@@ -23210,7 +23244,7 @@ function geminiLiveStopTranscriber() {
     if (state.orb.geminiLiveTranscriber) {
         try {
             state.orb.geminiLiveTranscriber.stop();
-        } catch (e) {}
+        } catch (e) { }
         state.orb.geminiLiveTranscriber = null;
         console.log('[VTID-01225] Parallel transcriber stopped');
     }
@@ -24718,6 +24752,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             ]);
             console.log('[VTID-01046] Auth boot complete');
         } else {
+            // VTID-01229: MeState kept for backwards compatibility during transition
             console.log('[VTID-01046] Guest session - marking MeState loaded');
             MeState.loaded = true;
             MeState.me = null;

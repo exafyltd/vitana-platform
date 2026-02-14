@@ -12,6 +12,7 @@ import dotenv from 'dotenv';
 import { logger } from './logger';
 import { Projector } from './projector';
 import { LedgerWriter } from './ledger-writer';
+import { FailureAnalyzer } from './failure-analyzer';
 import { Database } from './database';
 
 // VTID-0522: Type for OasisEvent status endpoint response mapping
@@ -89,6 +90,9 @@ app.get('/metrics', async (req, res) => {
 
 // VTID-0521: Internal sync endpoint for manual ledger sync
 let ledgerWriter: LedgerWriter | null = null;
+
+// VTID-01234: Failure analyzer for self-improvement
+let failureAnalyzer: FailureAnalyzer | null = null;
 
 // VTID-0522: Manual sync endpoint (updated response format)
 app.post('/internal/oasis/ledger/sync', async (req, res) => {
@@ -192,6 +196,42 @@ app.get('/internal/oasis/ledger/status', async (req, res) => {
   }
 });
 
+// VTID-01234: On-demand failure analysis endpoint
+app.post('/internal/oasis/analysis/failures', async (req, res) => {
+  try {
+    if (!failureAnalyzer) {
+      failureAnalyzer = new FailureAnalyzer();
+    }
+
+    logger.info('Manual failure analysis triggered');
+    const result = await failureAnalyzer.analyzeNow();
+
+    res.json({
+      ok: true,
+      vtid: 'VTID-01234',
+      period: {
+        from: result.period.from.toISOString(),
+        to: result.period.to.toISOString(),
+      },
+      total_events: result.totalEvents,
+      total_failures: result.totalFailures,
+      failure_rate: result.failureRate,
+      top_patterns: result.topFailurePatterns.slice(0, 5),
+      domain_stats: result.domainStats,
+      recommendations: result.recommendations,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    logger.error('Manual failure analysis failed', error);
+    res.status(500).json({
+      ok: false,
+      vtid: 'VTID-01234',
+      error: 'Failure analysis failed',
+      detail: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
 async function startServer() {
   try {
     // Initialize database
@@ -207,6 +247,11 @@ async function startServer() {
     ledgerWriter = new LedgerWriter();
     ledgerWriter.start();
     logger.info('VTID Ledger Writer started (VTID-0521)');
+
+    // Start the failure analyzer (VTID-01234)
+    failureAnalyzer = new FailureAnalyzer();
+    failureAnalyzer.start();
+    logger.info('Failure Analyzer started (VTID-01234)');
 
     // Start HTTP server
     app.listen(port, () => {
@@ -224,6 +269,9 @@ async function startServer() {
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM received, shutting down gracefully');
+  if (failureAnalyzer) {
+    await failureAnalyzer.stop();
+  }
   if (ledgerWriter) {
     await ledgerWriter.stop();
   }
@@ -234,6 +282,9 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
   logger.info('SIGINT received, shutting down gracefully');
+  if (failureAnalyzer) {
+    await failureAnalyzer.stop();
+  }
   if (ledgerWriter) {
     await ledgerWriter.stop();
   }

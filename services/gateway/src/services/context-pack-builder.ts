@@ -47,12 +47,12 @@ import { ContextLens } from '../types/context-lens';
 // =============================================================================
 
 export const CONTEXT_PACK_CONFIG = {
-  /** Maximum total size in bytes (~15KB) */
-  MAX_SIZE_BYTES: 15 * 1024,
+  /** Maximum total size in bytes (~20KB) */
+  MAX_SIZE_BYTES: 20 * 1024,
 
-  /** Maximum memory hits */
-  MAX_MEMORY_HITS: 12,
-  MIN_MEMORY_HITS: 5,
+  /** VTID-01225: Increased max memory hits from 12→25 to include more context */
+  MAX_MEMORY_HITS: 25,
+  MIN_MEMORY_HITS: 8,
 
   /** Maximum knowledge hits */
   MAX_KNOWLEDGE_HITS: 8,
@@ -60,14 +60,14 @@ export const CONTEXT_PACK_CONFIG = {
   /** Maximum web hits */
   MAX_WEB_HITS: 6,
 
-  /** Maximum content length per hit */
-  MAX_CONTENT_LENGTH: 500,
+  /** VTID-01225: Increased content length from 500→800 to avoid truncating facts */
+  MAX_CONTENT_LENGTH: 800,
 
   /** Token budget approximation (4 chars per token) */
   CHARS_PER_TOKEN: 4,
 
-  /** Total token budget */
-  TOKEN_BUDGET: 4000,
+  /** VTID-01225: Increased token budget from 4000→6000 to fit more memories */
+  TOKEN_BUDGET: 6000,
 };
 
 // =============================================================================
@@ -102,11 +102,11 @@ async function fetchMemoryHits(
     // Query memory_items directly with user/tenant scoping
     // The RPC memory_get_context relies on JWT context (auth.uid()) which doesn't
     // work with SERVICE_ROLE key, so we query the table directly instead.
-    const maxAgeHours = lens.max_age_hours || 168; // 7 days default
-    const sinceDate = new Date();
-    sinceDate.setHours(sinceDate.getHours() - maxAgeHours);
+    // VTID-01225: Fetch more items and use compound sorting (importance + recency)
+    // so recent ORB conversations aren't buried under old high-importance items
+    const fetchLimit = limit * 3; // Over-fetch to allow re-ranking by relevance
 
-    let url = `${SUPABASE_URL}/rest/v1/memory_items?select=id,category_key,content,importance,occurred_at,source&tenant_id=eq.${lens.tenant_id}&user_id=eq.${lens.user_id}&order=importance.desc&limit=${limit}`;
+    let url = `${SUPABASE_URL}/rest/v1/memory_items?select=id,category_key,content,importance,occurred_at,source&tenant_id=eq.${lens.tenant_id}&user_id=eq.${lens.user_id}&order=importance.desc,occurred_at.desc&limit=${fetchLimit}`;
 
     if (lens.allowed_categories && lens.allowed_categories.length > 0) {
       url += `&category_key=in.(${lens.allowed_categories.join(',')})`;

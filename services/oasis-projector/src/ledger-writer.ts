@@ -121,6 +121,10 @@ export class LedgerWriter {
   private isRunning = false;
   private pollInterval = 5000; // 5 seconds
 
+  // VTID-01233: Worker-runner push notification for autonomous loop closure
+  private readonly workerRunnerUrl = process.env.WORKER_RUNNER_URL || '';
+  private readonly pushEnabled = process.env.WORKER_PUSH_ENABLED === 'true';
+
   /**
    * Start the ledger writer loop
    */
@@ -333,6 +337,11 @@ export class LedgerWriter {
         service,
       });
 
+      // VTID-01233: Notify worker-runner if task became execution-ready
+      if (newStatus === 'active') {
+        await this.notifyWorkerRunner(vtid, event.topic || event.event || '');
+      }
+
       return 'updated';
     } else {
       // Derive layer from event metadata or taskFamily
@@ -375,6 +384,11 @@ export class LedgerWriter {
         layer,
         module,
       });
+
+      // VTID-01233: Notify worker-runner if new task is immediately active
+      if (newStatus === 'active') {
+        await this.notifyWorkerRunner(vtid, event.topic || event.event || '');
+      }
 
       return 'created';
     }
@@ -613,6 +627,57 @@ export class LedgerWriter {
     }
 
     return totalResult;
+  }
+
+  /**
+   * VTID-01233: Notify worker-runner when a VTID becomes execution-ready.
+   * This closes the autonomous loop: event → ledger → worker → execution → event.
+   *
+   * Trigger conditions:
+   * - VTID transitioned to 'active' status
+   * - Event indicates task readiness (task_started, spec_approved, etc.)
+   * - Push is enabled via WORKER_PUSH_ENABLED=true
+   *
+   * Fire-and-forget: failure to notify does not block projection.
+   */
+  private async notifyWorkerRunner(vtid: string, eventType: string): Promise<void> {
+    if (!this.pushEnabled || !this.workerRunnerUrl) {
+      return;
+    }
+
+    // Only trigger on task-ready event types
+    const triggerEvents = [
+      'task_started', 'task.started',
+      'spec_approved', 'spec.approved',
+      'task_ready', 'task.ready',
+      'worker_runner.claimed', // re-trigger on claim (idempotent)
+    ];
+
+    const isTriggerEvent = triggerEvents.some(
+      (t) => eventType.toLowerCase().includes(t.toLowerCase())
+    );
+    if (!isTriggerEvent) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${this.workerRunnerUrl}/api/v1/trigger`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vtid }),
+        signal: AbortSignal.timeout(5000),
+      });
+
+      if (response.ok) {
+        logger.info(`[VTID-01233] Notified worker-runner for ${vtid} (event: ${eventType})`);
+      } else {
+        const text = await response.text().catch(() => '');
+        logger.warn(`[VTID-01233] Worker-runner notification failed for ${vtid}: ${response.status} ${text}`);
+      }
+    } catch (error) {
+      // Fire-and-forget: log but don't throw
+      logger.warn(`[VTID-01233] Worker-runner notification error for ${vtid}: ${error instanceof Error ? error.message : 'unknown'}`);
+    }
   }
 
   private sleep(ms: number): Promise<void> {
