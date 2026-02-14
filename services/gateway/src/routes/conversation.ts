@@ -354,9 +354,10 @@ Instructions:
         }
       }
 
-      // VTID-01225: Inline fallback - always run when Cognee is disabled,
-      // also runs alongside Cognee (write_fact RPC auto-supersedes duplicates)
-      if (!cogneeExtractorClient.isEnabled() && isInlineExtractionAvailable()) {
+      // VTID-01225: Inline fact extraction - always runs alongside Cognee.
+      // write_fact() RPC auto-supersedes duplicates, so no conflict.
+      // This ensures facts are persisted even when Cognee is down (404).
+      if (isInlineExtractionAvailable()) {
         extractAndPersistFacts({
           conversationText,
           tenant_id,
@@ -547,7 +548,7 @@ Instructions:
             active_role: input.role,
           });
         }
-        if (!cogneeExtractorClient.isEnabled() && isInlineExtractionAvailable()) {
+        if (isInlineExtractionAvailable()) {
           extractAndPersistFacts({
             conversationText: streamedText,
             tenant_id: input.tenant_id,
