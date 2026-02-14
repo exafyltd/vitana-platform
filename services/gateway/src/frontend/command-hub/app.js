@@ -3164,8 +3164,13 @@ function getEventSeverity(event) {
         return EVENT_SEVERITY.IMPORTANT;
     }
 
-    // Low: heartbeat, ping, routine checks
-    if (topic.includes('heartbeat') || topic.includes('ping') || topic.includes('health') || topic.includes('.pending_served')) {
+    // Low: heartbeat, ping, routine checks, and live stream chunks
+    if (topic.includes('heartbeat') ||
+        topic.includes('ping') ||
+        topic.includes('health') ||
+        topic.includes('.pending_served') ||
+        topic.includes('live.audio.') ||
+        topic.includes('live.stream.')) {
         return EVENT_SEVERITY.LOW;
     }
 
@@ -3185,8 +3190,12 @@ function isOasisNoiseEvent(event) {
         return true;
     }
 
-    // General telemetry patterns
-    if (topic.includes('heartbeat') || topic.includes('ping') || (topic.includes('health') && !topic.includes('fail'))) {
+    // General telemetry and stream patterns (audio/video chunks)
+    if (topic.includes('heartbeat') ||
+        topic.includes('ping') ||
+        topic.includes('live.audio.') ||
+        topic.includes('live.stream.') ||
+        (topic.includes('health') && !topic.includes('fail'))) {
         return true;
     }
 
@@ -3214,7 +3223,7 @@ function formatEventTimestamp(isoString) {
  * @param {Object} filters - Optional filters (topic, service, status)
  * @param {boolean} append - If true, append to existing items (Load More)
  */
-async function fetchOasisEvents(filters, append) {
+async function fetchOasisEvents(filters, append, recursionDepth) {
     console.log('[VTID-0600] Fetching OASIS events...', append ? '(append)' : '(fresh)');
 
     if (state.oasisEvents.loading) return;
@@ -3229,9 +3238,10 @@ async function fetchOasisEvents(filters, append) {
 
         var queryParams = 'limit=' + pagination.limit + '&offset=' + offset;
         if (filters) {
-            if (filters.topic) queryParams += '&topic=like.*' + encodeURIComponent(filters.topic) + '*';
-            if (filters.service) queryParams += '&service=eq.' + encodeURIComponent(filters.service);
-            if (filters.status) queryParams += '&status=eq.' + encodeURIComponent(filters.status);
+            // VTID-01250: Send raw values, backend handles operators (ilike/eq)
+            if (filters.topic) queryParams += '&topic=' + encodeURIComponent(filters.topic);
+            if (filters.service) queryParams += '&service=' + encodeURIComponent(filters.service);
+            if (filters.status) queryParams += '&status=' + encodeURIComponent(filters.status);
         }
 
         const response = await fetch('/api/v1/oasis/events?' + queryParams);
@@ -3258,6 +3268,18 @@ async function fetchOasisEvents(filters, append) {
 
         state.oasisEvents.error = null;
         state.oasisEvents.fetched = true;
+
+        // VTID-01250: Recursive fetch if visible items are low due to noise filtering
+        // This prevents empty pages when "Hide Heartbeats" is enabled
+        recursionDepth = recursionDepth || 0;
+        var visibleItems = filterOasisEvents(state.oasisEvents.items);
+        if (state.oasisEvents.pagination.hasMore && visibleItems.length < 15 && recursionDepth < 5) {
+            console.log('[VTID-01250] Low visible count (' + visibleItems.length + '), recursing depth ' + (recursionDepth + 1));
+            // Tiny delay to prevent UI freeze
+            setTimeout(function () {
+                fetchOasisEvents(filters, true, recursionDepth + 1);
+            }, 50);
+        }
     } catch (error) {
         console.error('[VTID-0600] Failed to fetch OASIS events:', error);
         state.oasisEvents.error = error.message;

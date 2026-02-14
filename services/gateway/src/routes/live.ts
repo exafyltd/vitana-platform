@@ -420,6 +420,28 @@ router.post('/rooms/:id/start', async (req: Request, res: Response) => {
     }
   );
 
+  // VTID-01228: Sync to community_live_streams (for visibility in listing)
+  try {
+    const creds = getSupabaseCredentials();
+    if (creds) {
+      await fetch(`${creds.url}/rest/v1/community_live_streams?id=eq.${roomId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': creds.key,
+          'Authorization': `Bearer ${creds.key}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({
+          status: 'live',
+          started_at: result.data?.started_at || new Date().toISOString()
+        })
+      });
+    }
+  } catch (err: any) {
+    console.warn(`[VTID-01228] community_live_streams sync (start) failed: ${err.message}`);
+  }
+
   console.log(`[VTID-01090] Live room started: ${roomId}`);
 
   return res.status(200).json({

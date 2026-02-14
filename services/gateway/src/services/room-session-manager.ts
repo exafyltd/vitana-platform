@@ -516,6 +516,30 @@ export class RoomSessionManager {
             p_expected_old_status: 'scheduled',
           });
           console.log(`[VTID-01228] Auto-transition: room ${roomId} scheduled → lobby`);
+
+          // VTID-01228: Sync to community_live_streams so stream becomes visible
+          try {
+            const supabaseUrl = process.env.SUPABASE_URL;
+            const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+            if (supabaseUrl && supabaseKey) {
+              await fetch(`${supabaseUrl}/rest/v1/community_live_streams?id=eq.${roomId}`, {
+                method: 'PATCH',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'apikey': supabaseKey,
+                  'Authorization': `Bearer ${supabaseKey}`,
+                  'Prefer': 'return=minimal'
+                },
+                body: JSON.stringify({
+                  status: 'live',
+                  started_at: new Date().toISOString()
+                })
+              });
+              console.log(`[VTID-01228] Auto-transition sync: community_live_streams updated to 'live' for room ${roomId}`);
+            }
+          } catch (err: any) {
+            console.warn(`[VTID-01228] Auto-transition sync failed: ${err.message}`);
+          }
         }
       }
 

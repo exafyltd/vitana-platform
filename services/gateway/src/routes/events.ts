@@ -511,6 +511,8 @@ router.get("/api/v1/oasis/events", async (req: Request, res: Response) => {
     const kind = req.query.kind as string;
     const status = req.query.status as string;
     const layer = req.query.layer as string;
+    const topic = req.query.topic as string;
+    const service = req.query.service as string;
 
     // VTID-01189: Fetch limit+1 to determine if there are more items
     let queryParams = `limit=${limit + 1}&offset=${offset}&order=created_at.desc`;
@@ -519,6 +521,10 @@ router.get("/api/v1/oasis/events", async (req: Request, res: Response) => {
     if (kind) queryParams += `&kind=eq.${kind}`;
     if (status) queryParams += `&status=eq.${status}`;
     if (layer) queryParams += `&layer=eq.${layer}`;
+
+    // VTID-01250: Added filter support for Command Hub
+    if (topic) queryParams += `&topic=ilike.*${topic}*`;
+    if (service) queryParams += `&service=eq.${service}`;
 
     const resp = await fetch(
       `${supabaseUrl}/rest/v1/oasis_events?${queryParams}`,
@@ -755,7 +761,7 @@ async function backfillStageSuccessEvents(
         status.hasSuccess = true;
       }
       if (event.status === 'error' || event.status === 'failure' ||
-          (event.topic && (event.topic.endsWith('.failed') || event.topic.endsWith('.error')))) {
+        (event.topic && (event.topic.endsWith('.failed') || event.topic.endsWith('.error')))) {
         status.hasFailure = true;
       }
     }
