@@ -500,6 +500,12 @@ export interface CicdOasisEvent {
   status: 'info' | 'success' | 'warning' | 'error';
   message: string;
   payload?: Record<string, unknown>;
+  // VTID-01260: Actor identification and surface tracking
+  actor_id?: string;
+  actor_email?: string;
+  actor_role?: 'user' | 'operator' | 'admin' | 'system' | 'agent';
+  surface?: 'orb' | 'operator' | 'command-hub' | 'cicd' | 'system' | 'api';
+  conversation_turn_id?: string;
 }
 
 // ==================== Allowed Services for Deploy ====================

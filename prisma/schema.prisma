@@ -34,6 +34,13 @@ model OasisEvent {
   // Projection tracking (DEV-OASIS-0010)
   projected Boolean @default(false)
 
+  // VTID-01260: Actor identification and surface tracking
+  actorId           String? @map("actor_id")     // User/system identifier
+  actorEmail        String? @map("actor_email")  // Human-readable email
+  actorRole         String? @map("actor_role")   // user, operator, admin, system, agent
+  surface           String?                       // orb, operator, command-hub, cicd, system, api
+  conversationTurnId String? @map("conversation_turn_id") // Groups conversation events
+
   @@index([projected, createdAt], map: "idx_oasis_events_projected_created")
   @@index([createdAt], map: "idx_oasis_events_created_at")
   @@index([service, createdAt], map: "idx_oasis_events_service_created")
