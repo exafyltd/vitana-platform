@@ -200,6 +200,37 @@ fi
 echo -e "${GREEN}Deployment triggered successfully for ${CLOUD_RUN_SERVICE}.${NC}"
 
 # =============================================================================
+# STEP 1.5 — VTID-01260: Post-deploy secret validation
+# =============================================================================
+# Verify that the new revision actually has secrets bound.
+# This catches the #1 cause of gateway outages: deploying without --set-secrets.
+if [ "$CLOUD_RUN_SERVICE" = "gateway" ]; then
+  echo -e "${YELLOW}VTID-01260: Validating secrets are bound to new revision...${NC}"
+  BOUND_SECRETS=$(gcloud run services describe "$CLOUD_RUN_SERVICE" \
+    --project "$PROJECT" \
+    --region "$REGION" \
+    --format='value(spec.template.spec.containers[0].env)' 2>/dev/null || echo "")
+
+  MISSING_CRITICAL=""
+  for SECRET_NAME in SUPABASE_URL SUPABASE_SERVICE_ROLE; do
+    if ! echo "$BOUND_SECRETS" | grep -q "$SECRET_NAME"; then
+      MISSING_CRITICAL="${MISSING_CRITICAL} ${SECRET_NAME}"
+    fi
+  done
+
+  if [ -n "$MISSING_CRITICAL" ]; then
+    echo -e "${RED}============================================================${NC}"
+    echo -e "${RED}  FATAL: Critical secrets NOT bound to new revision!${NC}"
+    echo -e "${RED}  Missing:${MISSING_CRITICAL}${NC}"
+    echo -e "${RED}  The gateway will fail on ALL database operations.${NC}"
+    echo -e "${RED}  Rolling back is recommended: gcloud run services update-traffic${NC}"
+    echo -e "${RED}============================================================${NC}"
+    exit 1
+  fi
+  echo -e "${GREEN}VTID-01260: All critical secrets verified.${NC}"
+fi
+
+# =============================================================================
 # STEP 2 — Get service URL and verify deployment
 # =============================================================================
 echo -e "${YELLOW}Fetching service URL...${NC}"

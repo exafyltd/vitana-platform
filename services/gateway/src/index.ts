@@ -214,7 +214,23 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   });
 
   // Alive endpoint for deployment validation
+  // VTID-01260: Enhanced to detect missing secrets so deploys without --set-secrets are caught
   app.get('/alive', (req, res) => {
+    const requiredSecrets = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE'];
+    const missing = requiredSecrets.filter(s => !process.env[s]);
+
+    if (missing.length > 0) {
+      console.error(`❌ Gateway misconfigured at /alive check: missing ${missing.join(', ')}`);
+      res.status(503).json({
+        status: 'misconfigured',
+        service: 'gateway',
+        error: `Missing required secrets: ${missing.join(', ')}`,
+        hint: 'Deploy used --set-secrets? See scripts/deploy/deploy-service.sh',
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+
     res.json({ status: 'ok', service: 'gateway', timestamp: new Date().toISOString() });
   });
 
