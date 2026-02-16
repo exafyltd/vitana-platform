@@ -51,6 +51,7 @@ export class DailyClient {
    */
   async createRoom(details: DailyRoomDetails): Promise<DailyRoomResult> {
     const { roomId, title, expiresInHours = 24 } = details;
+    const roomName = `vitana-${roomId}`;
 
     // Calculate expiration timestamp (Unix seconds)
     const exp = Math.floor(Date.now() / 1000) + (expiresInHours * 3600);
@@ -62,30 +63,35 @@ export class DailyClient {
         'Authorization': `Bearer ${this.apiKey}`
       },
       body: JSON.stringify({
-        name: `vitana-${roomId}`,  // Room name (idempotency key)
+        name: roomName,
         properties: {
-          exp,  // Expiration timestamp
+          exp,
           enable_chat: true,
           enable_screenshare: true,
-          enable_recording: 'cloud',  // Optional: enable recording
+          enable_recording: 'cloud',
           start_video_off: false,
           start_audio_off: false,
-          max_participants: 100  // Adjust as needed
+          max_participants: 100
         }
       })
     });
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: response.statusText })) as { error?: string };
-      throw new Error(`Daily.co API error: ${error.error || response.statusText}`);
+    if (response.ok) {
+      const data = await response.json() as { url: string; name: string };
+      return { roomUrl: data.url, roomName: data.name };
     }
 
-    const data = await response.json() as { url: string; name: string };
+    // Room already exists — fetch existing room info instead of failing
+    if (response.status === 400) {
+      console.log(`[VTID-01228] Daily.co room may already exist, fetching: ${roomName}`);
+      const existing = await this.getRoomInfo(roomName);
+      if (existing) {
+        return { roomUrl: existing.url, roomName: existing.name };
+      }
+    }
 
-    return {
-      roomUrl: data.url,      // Full room URL (e.g., https://vitana.daily.co/vitana-XXXXX)
-      roomName: data.name     // Room name (e.g., vitana-XXXXX)
-    };
+    const error = await response.json().catch(() => ({ error: response.statusText })) as { error?: string };
+    throw new Error(`Daily.co API error: ${error.error || response.statusText}`);
   }
 
   /**
