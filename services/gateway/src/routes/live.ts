@@ -218,10 +218,15 @@ async function callRpc(
 
     if (!response.ok) {
       const errorText = await response.text();
+      let parsedError: Record<string, unknown> | null = null;
+      try { parsedError = JSON.parse(errorText); } catch { /* raw text */ }
+
+      const errorCode = parsedError?.code || parsedError?.error_code || '';
+      const errorHint = parsedError?.hint || parsedError?.details || '';
 
       // VTID-01090-FIX: Detect "Access Denied" at DB level (often TENANT_NOT_FOUND)
       if (errorText.includes('TENANT_NOT_FOUND') || errorText.includes('UNAUTHENTICATED')) {
-        console.error(`[VTID-01090] Auth failure in RPC ${functionName}: ${errorText}`);
+        console.error(`[VTID-01090] Auth failure in RPC ${functionName}: HTTP ${response.status} | code=${errorCode} | ${errorText}`);
         return {
           ok: false,
           error: 'ACCESS_DENIED',
@@ -229,7 +234,9 @@ async function callRpc(
         };
       }
 
-      console.error(`[VTID-01090] RPC ${functionName} failed: ${response.status} - ${errorText}`);
+      console.error(
+        `[VTID-01090] RPC ${functionName} failed: HTTP ${response.status} | code=${errorCode} | hint=${errorHint} | body=${errorText}`
+      );
       return { ok: false, error: `RPC failed: ${response.status} - ${errorText}` };
     }
 
@@ -244,7 +251,11 @@ async function callRpc(
 
     return { ok: true, data: result };
   } catch (err: any) {
-    console.error(`[VTID-01090] RPC ${functionName} exception:`, err.message);
+    console.error(`[VTID-01090] RPC ${functionName} exception: ${err.message}`, {
+      function: functionName,
+      stack: err.stack?.split('\n').slice(0, 3).join(' | '),
+      cause: err.cause?.message,
+    });
     return { ok: false, error: err.message };
   }
 }
@@ -1385,6 +1396,10 @@ router.post('/rooms/:id/sessions', sessionCreateLimiter, async (req: Request, re
       result.error === 'NOT_HOST' ? 403 :
       result.error === 'ROOM_NOT_FOUND' ? 404 :
       result.error === 'ROOM_NOT_IDLE' ? 409 : 502;
+    console.error(
+      `[VTID-01228] Session creation failed: roomId=${roomId} | HTTP ${statusCode} | error=${result.error} | message=${result.message || 'none'}`,
+      { body: validation.data, error: result.error, message: result.message }
+    );
     return res.status(statusCode).json({ ok: false, error: result.error, message: result.message });
   }
 

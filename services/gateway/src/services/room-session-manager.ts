@@ -101,7 +101,16 @@ async function callRpc(
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[VTID-01228] RPC ${functionName} failed: ${response.status} - ${errorText}`);
+      let parsedError: Record<string, unknown> | null = null;
+      try { parsedError = JSON.parse(errorText); } catch { /* raw text */ }
+
+      const errorCode = parsedError?.code || parsedError?.error_code || '';
+      const errorHint = parsedError?.hint || parsedError?.details || '';
+      const errorMessage = parsedError?.message || '';
+
+      console.error(
+        `[VTID-01228] RPC ${functionName} failed: HTTP ${response.status} | code=${errorCode} | message=${errorMessage} | hint=${errorHint} | body=${errorText}`
+      );
       return { ok: false, error: `RPC failed: ${response.status}`, message: errorText };
     }
 
@@ -114,7 +123,11 @@ async function callRpc(
 
     return { ok: true, data: result };
   } catch (err: any) {
-    console.error(`[VTID-01228] RPC ${functionName} exception:`, err.message);
+    console.error(`[VTID-01228] RPC ${functionName} exception: ${err.message}`, {
+      function: functionName,
+      stack: err.stack?.split('\n').slice(0, 3).join(' | '),
+      cause: err.cause?.message,
+    });
     return { ok: false, error: err.message };
   }
 }
@@ -173,7 +186,13 @@ export class RoomSessionManager {
     });
 
     if (!result.ok) {
-      return { ok: false, error: result.data?.error || result.error, message: result.data?.message || result.message };
+      const finalError = result.data?.error || result.error;
+      const finalMessage = result.data?.message || result.message;
+      console.error(
+        `[VTID-01228] createSession RPC failed: roomId=${roomId} | error=${finalError} | message=${finalMessage}`,
+        { roomId, payload: { session_title: payload.session_title, starts_at: payload.starts_at, access_level: payload.access_level }, rpcResult: result }
+      );
+      return { ok: false, error: finalError, message: finalMessage };
     }
 
     const sessionData = result.data;
