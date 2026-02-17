@@ -502,6 +502,8 @@ interface GeminiLiveSession {
   transcriptTurns: Array<{ role: 'user' | 'assistant'; text: string; timestamp: string }>;
   // VTID-01225: Buffer for accumulating output transcription chunks until turn completes
   outputTranscriptBuffer: string;
+  // Conversation summary from previous session for greeting context
+  conversationSummary?: string;
 }
 
 /**
@@ -511,6 +513,7 @@ interface LiveSessionStartRequest {
   lang: string;
   voice_style?: string;
   response_modalities?: string[];
+  conversation_summary?: string;
 }
 
 /**
@@ -1026,7 +1029,8 @@ function sendFunctionResponseToLiveAPI(
 function buildLiveSystemInstruction(
   lang: string,
   voiceStyle: string,
-  bootstrapContext?: string
+  bootstrapContext?: string,
+  conversationSummary?: string
 ): string {
   const languageNames: Record<string, string> = {
     'en': 'English',
@@ -1052,6 +1056,26 @@ ROLE:
 - Keep responses concise for voice interaction (2-3 sentences max)
 - Use natural conversational tone
 
+GREETING RULES (CRITICAL):
+- When the conversation starts, you MUST speak first with a warm, brief greeting
+- Do NOT recite or list remembered information in the greeting
+- Do NOT repeat information from memory context unprompted
+- If you have memory context about the user, you may reference ONE brief detail naturally (e.g. "Hello [name], nice to talk again!")
+- Keep the greeting to 1-2 short sentences maximum
+- If this is a returning user, briefly mention you're happy to continue but do NOT summarize previous conversations unless asked
+- NEVER repeat the same greeting or response more than once
+
+INTERRUPTION HANDLING (CRITICAL):
+- If the user starts speaking while you are talking, STOP immediately
+- Do NOT finish your current sentence - stop mid-word if needed
+- Acknowledge the interruption naturally and listen to the user
+- When you detect audio input while generating output, yield immediately
+
+REPETITION PREVENTION (CRITICAL):
+- NEVER repeat the same response verbatim
+- If you notice you're saying something you already said, stop and say something new
+- Each response must be unique and advance the conversation
+
 TOOLS:
 - Use search_memory to recall information the user has shared before
 - Use search_knowledge for Vitana platform and health information
@@ -1060,9 +1084,13 @@ TOOLS:
 IMPORTANT:
 - This is a real-time voice conversation
 - Listen actively and respond naturally
-- If interrupted, gracefully handle the interruption
 - Confirm important information when needed
 - Use tools to provide accurate, personalized responses`;
+
+  // Append conversation summary for returning users
+  if (conversationSummary) {
+    instruction += `\n\nPREVIOUS CONVERSATION CONTEXT:\n${conversationSummary}\nYou may briefly reference this context naturally, but do NOT recite it back to the user.`;
+  }
 
   // VTID-01224: Append bootstrap context if available
   if (bootstrapContext) {
@@ -1152,7 +1180,8 @@ async function connectToLiveAPI(
               text: buildLiveSystemInstruction(
                 session.lang,
                 session.voiceStyle || 'friendly, calm, empathetic',
-                session.contextInstruction
+                session.contextInstruction,
+                session.conversationSummary
               )
             }]
           },
@@ -1461,6 +1490,48 @@ function sendEndOfTurn(ws: WebSocket): boolean {
   };
 
   ws.send(JSON.stringify(message));
+  return true;
+}
+
+/**
+ * Send a text prompt to the Live API to trigger the model to speak first.
+ * Used for greeting on session start.
+ */
+function sendGreetingPromptToLiveAPI(ws: WebSocket, lang: string, conversationSummary?: string): boolean {
+  if (ws.readyState !== WebSocket.OPEN) {
+    console.warn('[VTID-VOICE-INIT] Cannot send greeting prompt - WebSocket not open');
+    return false;
+  }
+
+  const greetingPrompts: Record<string, string> = {
+    'en': 'Please greet the user warmly. Keep it to 1-2 short sentences.',
+    'de': 'Bitte begrüße den Benutzer herzlich. Halte es auf 1-2 kurze Sätze.',
+    'fr': 'Veuillez saluer l\'utilisateur chaleureusement. Limitez-vous à 1-2 courtes phrases.',
+    'es': 'Por favor, saluda al usuario con calidez. Mantenlo en 1-2 frases cortas.',
+    'ar': 'يرجى تحية المستخدم بحرارة. اجعلها جملة أو جملتين قصيرتين.',
+    'zh': '请热情地问候用户。保持1-2句简短的话。',
+    'ru': 'Пожалуйста, тепло поприветствуйте пользователя. Ограничьтесь 1-2 короткими предложениями.',
+    'sr': 'Молимо вас топло поздравите корисника. Ограничите се на 1-2 кратке реченице.',
+  };
+
+  let prompt = greetingPrompts[lang] || greetingPrompts['en'];
+
+  if (conversationSummary) {
+    prompt += ` You may briefly mention you're glad to continue the conversation, but do NOT recite the summary.`;
+  }
+
+  const message = {
+    client_content: {
+      turns: [{
+        role: 'user',
+        parts: [{ text: prompt }]
+      }],
+      turn_complete: true
+    }
+  };
+
+  ws.send(JSON.stringify(message));
+  console.log(`[VTID-VOICE-INIT] Greeting prompt sent for lang=${lang}`);
   return true;
 }
 
@@ -4234,6 +4305,7 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
   const lang = normalizeLang(body.lang || 'en');
   const voiceStyle = body.voice_style || 'friendly, calm, empathetic';
   const responseModalities = body.response_modalities || ['audio', 'text'];
+  const conversationSummary = body.conversation_summary || undefined;
 
   // Generate session ID
   const sessionId = `live-${randomUUID()}`;
@@ -4308,6 +4380,8 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     outputTranscriptBuffer: '',
     // VTID-ORBC: JWT identity for per-user memory; DEV_IDENTITY only as fallback
     identity: bootstrapIdentity || orbIdentity || undefined,
+    // Conversation summary from previous session for greeting context
+    conversationSummary,
   };
 
   // Store session
@@ -4636,6 +4710,9 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
       session.upstreamWs = ws;
       liveApiConnected = true;
       console.log(`[VTID-01219] Live API WebSocket connected for session ${sessionId}`);
+
+      // Send greeting prompt so Vitana speaks first
+      sendGreetingPromptToLiveAPI(ws, session.lang, session.conversationSummary);
     } catch (err: any) {
       console.error(`[VTID-01219] Failed to connect Live API for session ${sessionId}:`, err.message);
       // Continue without Live API - will fall back to simulated responses
@@ -5130,6 +5207,8 @@ interface WsClientMessage {
   source?: 'screen' | 'camera';
   width?: number;
   height?: number;
+  // Conversation continuity
+  conversation_summary?: string;
 }
 
 /**
@@ -5471,6 +5550,8 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     // VTID-01225: Transcript accumulation for Cognee extraction
     transcriptTurns: [],
     outputTranscriptBuffer: '',
+    // Conversation summary for greeting context (from client message)
+    conversationSummary: message.conversation_summary,
   };
 
   clientSession.liveSession = liveSession;
@@ -5596,6 +5677,9 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
         authenticated: !!identity,
       }
     });
+
+    // Send greeting prompt so Vitana speaks first (WebSocket path)
+    sendGreetingPromptToLiveAPI(upstreamWs, lang, liveSession.conversationSummary);
 
   } catch (err: any) {
     console.error(`[VTID-01222] Failed to connect Live API for ${sessionId}:`, err.message);
