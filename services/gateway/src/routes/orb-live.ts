@@ -48,6 +48,8 @@ import { processWithGemini } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
 // VTID-01225: Cognee Entity Extraction Integration
 import { cogneeExtractorClient, type CogneeExtractionRequest } from '../services/cognee-extractor-client';
+// VTID-01225: Inline fact extraction fallback when Cognee is unavailable
+import { extractAndPersistFacts, isInlineExtractionAvailable } from '../services/inline-fact-extractor';
 // VTID-01149: Unified Task-Creation Intake
 import {
   detectTaskCreationIntent,
@@ -3357,8 +3359,8 @@ router.post('/end-session', async (req: Request, res: Response) => {
 
     console.log(`[VTID-01039] Session finalized: ${orb_session_id} (${transcript.summary.turns_count} turns, ${durationSec}s)`);
 
-    // VTID-01225: Fire-and-forget Cognee entity extraction from transcript
-    if (cogneeExtractorClient.isEnabled() && transcript.turns.length > 0) {
+    // VTID-01225: Fire-and-forget entity extraction from transcript
+    if (transcript.turns.length > 0) {
       const fullTranscript = transcript.turns
         .map(turn => `${turn.role}: ${turn.text}`)
         .join('\n');
@@ -3367,14 +3369,26 @@ router.post('/end-session', async (req: Request, res: Response) => {
       const tenantId = transcript.tenant_id || process.env.DEV_SANDBOX_TENANT_ID || '00000000-0000-0000-0000-000000000001';
       const userId = transcript.user_id || process.env.DEV_SANDBOX_USER_ID || '00000000-0000-0000-0000-000000000099';
 
-      cogneeExtractorClient.extractAsync({
-        transcript: fullTranscript,
-        tenant_id: tenantId,
-        user_id: userId,
-        session_id: orb_session_id,
-        active_role: 'community'
-      });
-      console.log(`[VTID-01225] Cognee extraction queued for session: ${orb_session_id} (tenant=${tenantId.substring(0, 8)}..., user=${userId.substring(0, 8)}...)`);
+      if (cogneeExtractorClient.isEnabled()) {
+        cogneeExtractorClient.extractAsync({
+          transcript: fullTranscript,
+          tenant_id: tenantId,
+          user_id: userId,
+          session_id: orb_session_id,
+          active_role: 'community'
+        });
+        console.log(`[VTID-01225] Cognee extraction queued for session: ${orb_session_id} (tenant=${tenantId.substring(0, 8)}..., user=${userId.substring(0, 8)}...)`);
+      }
+
+      // VTID-01225: Inline fact extraction - always runs (write_fact auto-supersedes)
+      if (isInlineExtractionAvailable() && fullTranscript.length > 50) {
+        extractAndPersistFacts({
+          conversationText: fullTranscript,
+          tenant_id: tenantId,
+          user_id: userId,
+          session_id: orb_session_id,
+        }).catch(err => console.warn(`[VTID-01225-inline] ORB session extraction failed:`, err.message));
+      }
     }
   }
 
@@ -3622,29 +3636,36 @@ router.post('/session/finalize', async (req: Request, res: Response) => {
 
   console.log(`[VTID-01039] Session finalized: ${orb_session_id} (${transcript.summary.turns_count} turns, ${transcript.summary.duration_sec}s)`);
 
-  // VTID-01225: Fire-and-forget Cognee entity extraction from transcript
-  // Only extract if there are turns and cognee is enabled
-  if (cogneeExtractorClient.isEnabled() && transcript.turns.length > 0) {
-    // Combine all turns into a single transcript text
+  // VTID-01225: Fire-and-forget entity extraction from transcript
+  if (transcript.turns.length > 0) {
     const fullTranscript = transcript.turns
       .map(turn => `${turn.role}: ${turn.text}`)
       .join('\n');
 
-    // VTID-01225: Use identity from transcript if available, fall back to env vars
     const tenantId = transcript.tenant_id || process.env.DEV_SANDBOX_TENANT_ID || '00000000-0000-0000-0000-000000000001';
     const userId = transcript.user_id || process.env.DEV_SANDBOX_USER_ID || '00000000-0000-0000-0000-000000000099';
 
-    const extractionRequest: CogneeExtractionRequest = {
-      transcript: fullTranscript,
-      tenant_id: tenantId,
-      user_id: userId,
-      session_id: orb_session_id,
-      active_role: 'community'  // Default role for voice sessions
-    };
+    if (cogneeExtractorClient.isEnabled()) {
+      const extractionRequest: CogneeExtractionRequest = {
+        transcript: fullTranscript,
+        tenant_id: tenantId,
+        user_id: userId,
+        session_id: orb_session_id,
+        active_role: 'community'
+      };
+      cogneeExtractorClient.extractAsync(extractionRequest);
+      console.log(`[VTID-01225] Cognee extraction queued for session: ${orb_session_id} (tenant=${tenantId.substring(0, 8)}..., user=${userId.substring(0, 8)}...)`);
+    }
 
-    // Fire-and-forget - don't await, don't block response
-    cogneeExtractorClient.extractAsync(extractionRequest);
-    console.log(`[VTID-01225] Cognee extraction queued for session: ${orb_session_id} (tenant=${tenantId.substring(0, 8)}..., user=${userId.substring(0, 8)}...)`);
+    // VTID-01225: Inline fact extraction - always runs
+    if (isInlineExtractionAvailable() && fullTranscript.length > 50) {
+      extractAndPersistFacts({
+        conversationText: fullTranscript,
+        tenant_id: tenantId,
+        user_id: userId,
+        session_id: orb_session_id,
+      }).catch(err => console.warn(`[VTID-01225-inline] ORB session extraction failed:`, err.message));
+    }
   }
 
   return res.status(200).json({
@@ -4389,49 +4410,71 @@ router.post('/live/session/stop', optionalAuth, async (req: AuthenticatedRequest
     duration_ms: Date.now() - session.createdAt.getTime()
   });
 
-  // VTID-01225: Fire-and-forget Cognee entity extraction
+  // VTID-01225: Fire-and-forget entity extraction from live session
   // Use in-memory transcriptTurns (UNFILTERED full conversation) instead of memory_items
-  // (which has already been filtered by shouldStoreInMemory and may be missing user statements).
-  // Falls back to memory_items query only if transcriptTurns is empty (e.g., Gemini didn't provide transcription).
-  if (cogneeExtractorClient.isEnabled() && session.identity && session.identity.tenant_id) {
+  // Falls back to memory_items query only if transcriptTurns is empty.
+  if (session.identity && session.identity.tenant_id) {
     const tenantId = session.identity.tenant_id;
     const userId = session.identity.user_id;
 
     if (session.transcriptTurns.length > 0) {
-      // Primary path: use unfiltered in-memory transcript (no data loss)
       const fullTranscript = session.transcriptTurns
         .map(turn => `${turn.role === 'user' ? 'User' : 'Assistant'}: ${turn.text}`)
         .join('\n');
 
       if (fullTranscript.length > 50) {
-        cogneeExtractorClient.extractAsync({
-          transcript: fullTranscript,
-          tenant_id: tenantId,
-          user_id: userId,
-          session_id: session_id,
-          active_role: 'community'
-        });
-        console.log(`[VTID-01225] Cognee extraction queued from transcriptTurns (${session.transcriptTurns.length} turns): ${session_id}`);
+        if (cogneeExtractorClient.isEnabled()) {
+          cogneeExtractorClient.extractAsync({
+            transcript: fullTranscript,
+            tenant_id: tenantId,
+            user_id: userId,
+            session_id: session_id,
+            active_role: 'community'
+          });
+          console.log(`[VTID-01225] Cognee extraction queued from transcriptTurns (${session.transcriptTurns.length} turns): ${session_id}`);
+        }
+
+        // VTID-01225: Inline fact extraction - always runs
+        if (isInlineExtractionAvailable()) {
+          extractAndPersistFacts({
+            conversationText: fullTranscript,
+            tenant_id: tenantId,
+            user_id: userId,
+            session_id: session_id,
+          }).catch(err => console.warn(`[VTID-01225-inline] Live session extraction failed:`, err.message));
+        }
       }
     } else {
       // Fallback: query memory_items if no in-memory transcript available
       fetchRecentConversationForCognee(tenantId, userId, session.createdAt, new Date())
         .then(transcript => {
           if (transcript && transcript.length > 50) {
-            cogneeExtractorClient.extractAsync({
-              transcript,
-              tenant_id: tenantId,
-              user_id: userId,
-              session_id: session_id,
-              active_role: 'community'
-            });
-            console.log(`[VTID-01225] Cognee extraction queued from memory_items fallback: ${session_id}`);
+            if (cogneeExtractorClient.isEnabled()) {
+              cogneeExtractorClient.extractAsync({
+                transcript,
+                tenant_id: tenantId,
+                user_id: userId,
+                session_id: session_id,
+                active_role: 'community'
+              });
+              console.log(`[VTID-01225] Cognee extraction queued from memory_items fallback: ${session_id}`);
+            }
+
+            // VTID-01225: Inline fact extraction from memory_items fallback
+            if (isInlineExtractionAvailable()) {
+              extractAndPersistFacts({
+                conversationText: transcript,
+                tenant_id: tenantId,
+                user_id: userId,
+                session_id: session_id,
+              }).catch(err => console.warn(`[VTID-01225-inline] Memory fallback extraction failed:`, err.message));
+            }
           } else {
-            console.log(`[VTID-01225] No meaningful transcript for Cognee extraction: ${session_id}`);
+            console.log(`[VTID-01225] No meaningful transcript for extraction: ${session_id}`);
           }
         })
         .catch(err => {
-          console.error(`[VTID-01225] Failed to fetch conversation for Cognee: ${err.message}`);
+          console.error(`[VTID-01225] Failed to fetch conversation for extraction: ${err.message}`);
         });
     }
   }
