@@ -91,6 +91,8 @@ interface ExtractedFact {
 // =============================================================================
 
 async function callGeminiForExtraction(conversationText: string): Promise<ExtractedFact[]> {
+  console.log(`[VTID-01225-inline] Extracting from ${conversationText.length} chars, vertexAI=${!!vertexAI}, apiKey=${!!GOOGLE_GEMINI_API_KEY}`);
+
   // Try Vertex AI first (primary on Cloud Run)
   if (vertexAI) {
     try {
@@ -112,15 +114,27 @@ async function callGeminiForExtraction(conversationText: string): Promise<Extrac
       });
 
       const candidate = response.response?.candidates?.[0];
+      const finishReason = candidate?.finishReason;
       const textPart = candidate?.content?.parts?.find((p: any) => 'text' in p);
-      const rawText = textPart ? (textPart as any).text : '[]';
-      return parseFactsResponse(rawText);
+      const rawText = textPart ? (textPart as any).text : '';
+
+      console.log(`[VTID-01225-inline] Vertex response: finishReason=${finishReason}, hasCandidate=${!!candidate}, rawText=${rawText.substring(0, 200)}`);
+
+      if (rawText.length > 0) {
+        const facts = parseFactsResponse(rawText);
+        if (facts.length > 0) return facts;
+        // Vertex returned text but no parseable facts - fall through to API
+        console.warn(`[VTID-01225-inline] Vertex returned text but 0 parseable facts, trying Gemini API`);
+      } else {
+        // Vertex returned empty - likely blocked or model issue
+        console.warn(`[VTID-01225-inline] Vertex returned empty response (finishReason=${finishReason}), falling through to Gemini API`);
+      }
     } catch (err: any) {
       console.warn(`[VTID-01225-inline] Vertex extraction failed: ${err.message}`);
     }
   }
 
-  // Fallback to Gemini API key
+  // Fallback to Gemini API key (also used when Vertex returns empty)
   if (GOOGLE_GEMINI_API_KEY) {
     try {
       const response = await fetch(
@@ -140,17 +154,20 @@ async function callGeminiForExtraction(conversationText: string): Promise<Extrac
       );
 
       if (!response.ok) {
-        throw new Error(`Gemini API returned ${response.status}`);
+        const errBody = await response.text();
+        throw new Error(`Gemini API returned ${response.status}: ${errBody.substring(0, 200)}`);
       }
 
       const data = await response.json() as any;
       const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+      console.log(`[VTID-01225-inline] Gemini API response: ${rawText.substring(0, 200)}`);
       return parseFactsResponse(rawText);
     } catch (err: any) {
       console.warn(`[VTID-01225-inline] Gemini API extraction failed: ${err.message}`);
     }
   }
 
+  console.warn(`[VTID-01225-inline] All extraction paths exhausted - no LLM available`);
   return [];
 }
 
