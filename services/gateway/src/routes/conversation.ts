@@ -140,6 +140,9 @@ router.post('/turn', async (req: Request, res: Response) => {
     const input = validation.data;
     const { channel, tenant_id, user_id, role, message, ui_context, vtid, options } = input;
 
+    // VTID-01260: Generate conversation turn ID for event grouping
+    const conversationTurnId = `turn-${requestId}`;
+
     // Log turn received
     await emitOasisEvent({
       vtid: vtid || 'VTID-01216',
@@ -156,6 +159,12 @@ router.post('/turn', async (req: Request, res: Response) => {
         message_type: message.type,
         message_length: message.text.length,
       },
+      // VTID-01260: Actor identification and surface tracking
+      actor_id: user_id,
+      actor_email: user_id, // user_id is typically the email
+      actor_role: role === 'operator' ? 'operator' : 'user',
+      surface: channel as 'orb' | 'operator',
+      conversation_turn_id: conversationTurnId,
     }).catch(() => {});
 
     // Get or create conversation thread
@@ -295,6 +304,11 @@ Instructions:
           latency_ms: Date.now() - llmStartTime,
           tool_calls_count: toolCalls.length,
         },
+        // VTID-01260: Actor identification and surface tracking
+        actor_id: user_id,
+        actor_email: user_id,
+        surface: channel as 'orb' | 'operator',
+        conversation_turn_id: conversationTurnId,
       }).catch(() => {});
 
     } catch (llmError: any) {
@@ -313,6 +327,11 @@ Instructions:
           channel,
           error: llmError.message,
         },
+        // VTID-01260: Actor identification and surface tracking
+        actor_id: user_id,
+        actor_email: user_id,
+        surface: channel as 'orb' | 'operator',
+        conversation_turn_id: conversationTurnId,
       }).catch(() => {});
 
       reply = `I apologize, but I encountered an error processing your request. Please try again.`;
@@ -408,6 +427,12 @@ Instructions:
         web_hits: contextPack.web_hits.length,
         tool_calls: toolCalls.length,
       },
+      // VTID-01260: Actor identification and surface tracking
+      actor_id: user_id,
+      actor_email: user_id,
+      actor_role: role === 'operator' ? 'operator' : 'user',
+      surface: channel as 'orb' | 'operator',
+      conversation_turn_id: conversationTurnId,
     }).catch(() => {});
 
     console.log(`[VTID-01216] Turn ${requestId} completed in ${Date.now() - startTime}ms`);
@@ -427,6 +452,8 @@ Instructions:
         error: error.message,
         latency_ms: Date.now() - startTime,
       },
+      // VTID-01260: Conversation turn ID for grouping
+      conversation_turn_id: `turn-${requestId}`,
     }).catch(() => {});
 
     return res.status(500).json({

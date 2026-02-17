@@ -21,7 +21,7 @@ export async function emitOasisEvent(event: CicdOasisEvent): Promise<{ ok: boole
   const eventId = randomUUID();
   const timestamp = new Date().toISOString();
 
-  const payload = {
+  const payload: Record<string, unknown> = {
     id: eventId,
     created_at: timestamp,
     vtid: event.vtid,
@@ -33,6 +33,12 @@ export async function emitOasisEvent(event: CicdOasisEvent): Promise<{ ok: boole
     message: event.message,
     link: null,
     metadata: event.payload || {},
+    // VTID-01260: Actor identification and surface tracking
+    ...(event.actor_id && { actor_id: event.actor_id }),
+    ...(event.actor_email && { actor_email: event.actor_email }),
+    ...(event.actor_role && { actor_role: event.actor_role }),
+    ...(event.surface && { surface: event.surface }),
+    ...(event.conversation_turn_id && { conversation_turn_id: event.conversation_turn_id }),
   };
 
   try {
@@ -75,6 +81,8 @@ export const cicdEvents = {
       status: 'info',
       message: `PR creation requested: ${head} -> ${base}`,
       payload: { head, base },
+      // VTID-01260: Surface tracking
+      surface: 'cicd',
     }),
 
   createPrSucceeded: (vtid: string, prNumber: number, prUrl: string) =>
@@ -408,6 +416,8 @@ export const cicdEvents = {
       status: 'info',
       message: `Merge requested for PR #${prNumber} via Command Hub`,
       payload: { pr_number: prNumber, repo, source: 'command-hub' },
+      // VTID-01260: Surface tracking
+      surface: 'command-hub',
     }),
 
   /**
@@ -568,6 +578,11 @@ export const cicdEvents = {
         source: 'operator',
         ...payload,
       },
+      // VTID-01260: Actor identification and surface tracking
+      actor_id: operatorId,
+      actor_email: operatorId,
+      actor_role: operatorRole,
+      surface: 'operator',
     }),
 
   /**
@@ -599,6 +614,11 @@ export const cicdEvents = {
         source: 'operator',
         ...payload,
       },
+      // VTID-01260: Actor identification and surface tracking
+      actor_id: operatorId,
+      actor_email: operatorId,
+      actor_role: operatorRole,
+      surface: 'operator',
     }),
 
   /**
@@ -632,6 +652,11 @@ export const cicdEvents = {
         error_reason: errorReason,
         ...payload,
       },
+      // VTID-01260: Actor identification and surface tracking
+      actor_id: operatorId,
+      actor_email: operatorId,
+      actor_role: operatorRole,
+      surface: 'operator',
     }),
 
   // ==================== VTID-01005: Terminal Lifecycle Events ====================
@@ -1709,6 +1734,8 @@ export const taskIntakeEvents = {
         tenant,
         detected_at: new Date().toISOString(),
       },
+      // VTID-01260: Surface tracking from task intake
+      surface: surface,
     }),
 
   /**

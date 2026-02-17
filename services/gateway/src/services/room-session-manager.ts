@@ -187,6 +187,20 @@ export class RoomSessionManager {
           title: payload.session_title || 'Vitana Live Room',
         });
         dailyRoomUrl = roomResult.roomUrl;
+
+        // Persist Daily.co room info to database metadata
+        const updateResult = await callRpc(token, 'live_room_update_metadata', {
+          p_live_room_id: roomId,
+          p_metadata: {
+            daily_room_url: roomResult.roomUrl,
+            daily_room_name: roomResult.roomName,
+            video_provider: 'daily_co'
+          }
+        });
+
+        if (!updateResult.ok) {
+          console.error('[VTID-01228] Failed to update room metadata with Daily.co info:', updateResult.error);
+        }
       } catch (err: any) {
         console.error('[VTID-01228] Daily.co room creation failed:', err.message);
         // Don't fail session creation — Daily.co is optional
