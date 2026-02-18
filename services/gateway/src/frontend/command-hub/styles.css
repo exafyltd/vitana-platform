@@ -9520,23 +9520,6 @@ body {
   background: rgba(59, 130, 246, 0.1);
 }
 
-/* VTID-VOICE-INIT: Stop button - visible only when model is speaking */
-.orb-input-control-btn.orb-input-control-stop-active {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.15);
-  animation: orb-stop-pulse 1.5s ease-in-out infinite;
-}
-
-.orb-input-control-btn.orb-input-control-stop-active:hover {
-  background: rgba(239, 68, 68, 0.25);
-  color: #dc2626;
-}
-
-@keyframes orb-stop-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
-}
-
 /* VTID-01069-F: Smaller icons */
 .orb-input-control-btn svg {
   width: 16px;
