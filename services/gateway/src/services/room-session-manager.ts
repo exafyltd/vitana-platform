@@ -108,8 +108,20 @@ async function callRpc(
       const errorHint = parsedError?.hint || parsedError?.details || '';
       const errorMessage = parsedError?.message || '';
 
+      // Actionable diagnostics for common PostgreSQL errors
+      let diagnostic = '';
+      if (errorCode === '42501' || String(errorMessage).includes('permission denied')) {
+        diagnostic = ' | DIAGNOSTIC: GRANT EXECUTE missing — apply migration 20260218000001_fix_missing_session_rpc_grants.sql to Supabase';
+      } else if (errorCode === '42883') {
+        diagnostic = ` | DIAGNOSTIC: Function ${functionName} does not exist — migration may not have been applied`;
+      } else if (errorCode === 'PGRST202') {
+        diagnostic = ` | DIAGNOSTIC: PostgREST cannot find function ${functionName} — check function signature and search_path`;
+      } else if (response.status === 401) {
+        diagnostic = ' | DIAGNOSTIC: JWT rejected by Supabase — token may be expired or from wrong project';
+      }
+
       console.error(
-        `[VTID-01228] RPC ${functionName} failed: HTTP ${response.status} | code=${errorCode} | message=${errorMessage} | hint=${errorHint} | body=${errorText}`
+        `[VTID-01228] RPC ${functionName} FAILED: HTTP ${response.status} | code=${errorCode} | message=${errorMessage} | hint=${errorHint}${diagnostic} | params=${JSON.stringify(params).substring(0, 200)} | body=${errorText.substring(0, 500)}`
       );
       return { ok: false, error: `RPC failed: ${response.status}`, message: errorText };
     }

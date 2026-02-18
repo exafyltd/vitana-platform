@@ -1273,14 +1273,18 @@ router.get('/rooms/me', async (req: Request, res: Response) => {
   try {
     // Decode user_id from JWT to filter correctly (service_role bypasses RLS)
     let userId: string | null = null;
+    let jwtEmail: string | null = null;
     try {
       const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
       userId = payload.sub;
+      jwtEmail = payload.email || null;
     } catch { /* fallback below */ }
+
+    console.log(`[VTID-01228] /rooms/me lookup: userId=${userId} email=${jwtEmail}`);
 
     const filterParam = userId ? `&user_id=eq.${userId}` : '';
     const userResponse = await fetch(
-      `${creds.url}/rest/v1/app_users?select=live_room_id&limit=1${filterParam}`,
+      `${creds.url}/rest/v1/app_users?select=live_room_id,user_id,email,display_name&limit=1${filterParam}`,
       {
         headers: {
           'apikey': creds.key,
@@ -1290,25 +1294,35 @@ router.get('/rooms/me', async (req: Request, res: Response) => {
     );
 
     if (!userResponse.ok) {
-      console.error(`[VTID-01228] Failed to fetch app_users: ${userResponse.status}`);
+      const errText = await userResponse.text();
+      console.error(`[VTID-01228] /rooms/me app_users fetch failed: HTTP ${userResponse.status} | userId=${userId} | email=${jwtEmail} | body=${errText}`);
       return res.status(502).json({ ok: false, error: 'Failed to fetch user profile' });
     }
 
-    const users = await userResponse.json() as Array<{ live_room_id: string | null }>;
+    const users = await userResponse.json() as Array<{ live_room_id: string | null; user_id: string; email: string; display_name: string }>;
     const liveRoomId = users?.[0]?.live_room_id;
 
-    if (!liveRoomId) {
-      return res.status(404).json({ ok: false, error: 'NO_ROOM', message: 'User does not have a permanent room' });
+    if (!users || users.length === 0) {
+      console.error(`[VTID-01228] /rooms/me: NO app_users record found | userId=${userId} | email=${jwtEmail} | Likely: user was never onboarded (no row in app_users table)`);
+      return res.status(404).json({ ok: false, error: 'NO_USER_PROFILE', message: 'No app_users record found. User may not be onboarded.' });
     }
+
+    if (!liveRoomId) {
+      console.error(`[VTID-01228] /rooms/me: app_users record exists but live_room_id is NULL | userId=${userId} | email=${jwtEmail} | displayName=${users[0]?.display_name} | Likely: create_user_live_room trigger did not fire for this user`);
+      return res.status(404).json({ ok: false, error: 'NO_ROOM', message: 'User does not have a permanent room. The auto-create trigger may not have fired.' });
+    }
+
+    console.log(`[VTID-01228] /rooms/me: found room ${liveRoomId} for userId=${userId} email=${jwtEmail}`);
 
     const stateResult = await sessionManager.getState(liveRoomId, token);
     if (!stateResult.ok) {
+      console.error(`[VTID-01228] /rooms/me: getState failed for roomId=${liveRoomId} | userId=${userId} | error=${stateResult.error} | message=${stateResult.message}`);
       return res.status(502).json({ ok: false, error: stateResult.error });
     }
 
     return res.json(stateResult.data);
   } catch (err: any) {
-    console.error(`[VTID-01228] /rooms/me error:`, err.message);
+    console.error(`[VTID-01228] /rooms/me error:`, err.message, { stack: err.stack?.split('\n').slice(0, 3).join(' | ') });
     return res.status(500).json({ ok: false, error: err.message });
   }
 });
@@ -1349,19 +1363,32 @@ router.get('/rooms/:id/state', async (req: Request, res: Response) => {
  */
 router.post('/rooms/:id/sessions', sessionCreateLimiter, async (req: Request, res: Response) => {
   const roomId = req.params.id;
-  console.log(`[VTID-01228] POST /live/rooms/${roomId}/sessions`);
 
+  // Extract user info from JWT for logging
   const token = getBearerToken(req);
+  let jwtUserId = 'unknown';
+  let jwtEmail = 'unknown';
+  try {
+    const payload = JSON.parse(Buffer.from((token || '').split('.')[1], 'base64').toString());
+    jwtUserId = payload.sub || 'missing-sub';
+    jwtEmail = payload.email || 'no-email-in-jwt';
+  } catch { /* token parse failed */ }
+
+  console.log(`[VTID-01228] POST /live/rooms/${roomId}/sessions | userId=${jwtUserId} | email=${jwtEmail} | userAgent=${req.headers['user-agent']?.substring(0, 80)} | origin=${req.headers.origin || req.headers.referer || 'none'}`);
+
   if (!token) {
+    console.error(`[VTID-01228] Session create REJECTED: no Bearer token | roomId=${roomId} | userAgent=${req.headers['user-agent']?.substring(0, 80)}`);
     return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   }
 
   if (!UUID_REGEX.test(roomId)) {
+    console.error(`[VTID-01228] Session create REJECTED: invalid room ID format | roomId=${roomId} | userId=${jwtUserId}`);
     return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
   }
 
   const validation = CreateSessionSchema.safeParse(req.body);
   if (!validation.success) {
+    console.error(`[VTID-01228] Session create REJECTED: validation failed | roomId=${roomId} | userId=${jwtUserId} | errors=${validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')} | body=${JSON.stringify(req.body).substring(0, 200)}`);
     return res.status(400).json({
       ok: false,
       error: 'Validation failed',
@@ -1396,14 +1423,31 @@ router.post('/rooms/:id/sessions', sessionCreateLimiter, async (req: Request, re
       result.error === 'NOT_HOST' ? 403 :
       result.error === 'ROOM_NOT_FOUND' ? 404 :
       result.error === 'ROOM_NOT_IDLE' ? 409 : 502;
+
+    // Enhanced error logging with actionable diagnostics
+    const isPermissionDenied = result.message?.includes('42501') || result.message?.includes('permission denied');
+    const isRpcFailed = result.error?.startsWith('RPC failed');
+    let diagnosticHint = '';
+    if (isPermissionDenied) {
+      diagnosticHint = ' | DIAGNOSTIC: PostgreSQL 42501 — GRANT EXECUTE missing on RPC. Apply migration 20260218000001_fix_missing_session_rpc_grants.sql';
+    } else if (result.error === 'NOT_HOST') {
+      diagnosticHint = ` | DIAGNOSTIC: JWT userId=${jwtUserId} does not match room host_user_id. Check live_rooms.host_user_id for roomId=${roomId}`;
+    } else if (result.error === 'ROOM_NOT_FOUND') {
+      diagnosticHint = ` | DIAGNOSTIC: No live_rooms row for roomId=${roomId}. Check if user has app_users.live_room_id set`;
+    } else if (result.error === 'ROOM_NOT_IDLE') {
+      diagnosticHint = ' | DIAGNOSTIC: Room stuck in non-idle state. Previous session may not have ended cleanly';
+    } else if (isRpcFailed) {
+      diagnosticHint = ` | DIAGNOSTIC: Supabase RPC call failed — check DB connectivity and function existence`;
+    }
+
     console.error(
-      `[VTID-01228] Session creation failed: roomId=${roomId} | HTTP ${statusCode} | error=${result.error} | message=${result.message || 'none'}`,
-      { body: validation.data, error: result.error, message: result.message }
+      `[VTID-01228] SESSION CREATION FAILED: roomId=${roomId} | userId=${jwtUserId} | email=${jwtEmail} | HTTP ${statusCode} | error=${result.error} | message=${result.message || 'none'}${diagnosticHint}`,
+      { body: validation.data, error: result.error, message: result.message, userId: jwtUserId, email: jwtEmail, userAgent: req.headers['user-agent']?.substring(0, 80) }
     );
     return res.status(statusCode).json({ ok: false, error: result.error, message: result.message });
   }
 
-  console.log(`[VTID-01228] Session created: ${result.sessionId} (${result.status})`);
+  console.log(`[VTID-01228] Session created: ${result.sessionId} (${result.status}) | userId=${jwtUserId} | email=${jwtEmail} | roomId=${roomId}`);
 
   // VTID-01228: Sync to community_live_streams so other users see this room in the listing.
   // The LiveRooms page queries community_live_streams, not live_rooms.
