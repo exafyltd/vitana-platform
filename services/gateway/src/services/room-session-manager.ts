@@ -465,10 +465,36 @@ export class RoomSessionManager {
       // The transition RPC already set it, but let's also close attendance
       const serviceToken = process.env.SUPABASE_SERVICE_ROLE;
       if (serviceToken) {
-        // Close all attendance for this session
-        await callRpc(serviceToken, 'live_room_end_session', {
+        // Close all attendance for this session and reset room to idle
+        const endResult = await callRpc(serviceToken, 'live_room_end_session', {
           p_room_id: roomId,
         });
+
+        if (!endResult.ok) {
+          console.error(
+            `[VTID-01228] live_room_end_session failed after cancel: roomId=${roomId} | error=${endResult.error} | message=${endResult.message}. Attempting direct reset.`
+          );
+
+          // Fallback: directly reset the room to idle via transition RPC
+          const resetResult = await callRpc(serviceToken, 'live_room_transition_status', {
+            p_room_id: roomId,
+            p_new_status: 'idle',
+            p_expected_old_status: 'cancelled',
+          });
+
+          if (!resetResult.ok) {
+            console.error(
+              `[VTID-01228] Fallback reset to idle also failed: roomId=${roomId} | error=${resetResult.error}. Room may be stuck in 'cancelled' state.`
+            );
+          } else {
+            // Also clear current_session_id since transition RPC doesn't do that
+            await callRpc(serviceToken, 'live_room_update_metadata', {
+              p_live_room_id: roomId,
+              p_metadata: {},
+            }).catch(() => {});
+            console.log(`[VTID-01228] Fallback reset to idle succeeded: roomId=${roomId}`);
+          }
+        }
       }
     }
 
@@ -585,6 +611,18 @@ export class RoomSessionManager {
             p_room_id: roomId,
           });
           console.log(`[VTID-01228] Auto-transition: room ${roomId} live → ended (timeout)`);
+        }
+      }
+
+      // cancelled/ended → idle: auto-heal stuck rooms
+      if (room.status === 'cancelled' || room.status === 'ended') {
+        const endResult = await callRpc(token, 'live_room_end_session', {
+          p_room_id: roomId,
+        });
+        if (endResult.ok) {
+          console.log(`[VTID-01228] Auto-heal: room ${roomId} ${room.status} → idle`);
+        } else {
+          console.warn(`[VTID-01228] Auto-heal failed for room ${roomId} (${room.status}): ${endResult.error}`);
         }
       }
     } catch (err: any) {
