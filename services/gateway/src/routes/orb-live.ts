@@ -507,6 +507,10 @@ interface GeminiLiveSession {
   // Voice init: greeting lifecycle tracking
   greetingSent?: boolean;
   greetingTurnIndex?: number; // turn_count when greeting was sent, to filter from memory
+  // VTID-VOICE-INIT: Echo prevention — true while model is outputting audio
+  // When true, inbound mic audio is dropped to prevent the speaker output
+  // being picked up by the mic and causing overlapping response streams.
+  isModelSpeaking: boolean;
 }
 
 /**
@@ -1187,6 +1191,19 @@ async function connectToLiveAPI(
               }
             }
           },
+          // VTID-VOICE-INIT: Configure VAD to reduce echo-triggered interruptions
+          // On mobile devices without hardware AEC, the speaker output is picked up by
+          // the mic, causing Gemini to think the user is speaking and interrupt itself.
+          // LOW sensitivity + longer silence duration reduces false triggers.
+          realtime_input_config: {
+            automatic_activity_detection: {
+              disabled: false,
+              start_of_speech_sensitivity: 'START_SENSITIVITY_LOW',
+              end_of_speech_sensitivity: 'END_SENSITIVITY_LOW',
+              prefix_padding_ms: 20,
+              silence_duration_ms: 500,
+            },
+          },
           // VTID-01225: Enable transcription at setup level (not in generation_config)
           output_audio_transcription: {},
           input_audio_transcription: {},
@@ -1247,6 +1264,8 @@ async function connectToLiveAPI(
           const interrupted = content.interrupted || content.grounding_metadata?.interrupted;
           if (interrupted) {
             console.log(`[VTID-VOICE-INIT] Interrupted for session ${session.sessionId}`);
+            // VTID-VOICE-INIT: Model stopped speaking — ungate mic audio
+            session.isModelSpeaking = false;
             // Clear output transcript buffer on interruption (incomplete response)
             session.outputTranscriptBuffer = '';
             // Notify SSE client
@@ -1261,6 +1280,10 @@ async function connectToLiveAPI(
           // Check if turn is complete (handle both formats)
           const turnComplete = content.turn_complete || content.turnComplete;
           if (turnComplete) {
+            // VTID-VOICE-INIT: Model finished speaking — ungate mic audio
+            session.isModelSpeaking = false;
+            console.log(`[VTID-VOICE-INIT] Model stopped speaking for session ${session.sessionId} — mic audio ungated`);
+
             session.turn_count++;
             const isGreetingTurn = session.greetingSent && session.turn_count === (session.greetingTurnIndex ?? 0) + 1;
             console.log(`[VTID-01219] Turn complete for session ${session.sessionId} (turn ${session.turn_count}, isGreeting=${isGreetingTurn})`);
@@ -1361,6 +1384,12 @@ async function connectToLiveAPI(
               const inlineData = part.inline_data || part.inlineData;
               const mimeType = inlineData?.mime_type || inlineData?.mimeType;
               if (inlineData && mimeType?.startsWith('audio/')) {
+                // VTID-VOICE-INIT: Mark model as speaking on first audio chunk
+                // This gates inbound mic audio to prevent echo-triggered interruptions
+                if (!session.isModelSpeaking) {
+                  session.isModelSpeaking = true;
+                  console.log(`[VTID-VOICE-INIT] Model started speaking for session ${session.sessionId} — mic audio gated`);
+                }
                 session.audioOutChunks++;
                 const audioB64 = inlineData.data;
                 console.log(`[VTID-01219] Received audio chunk ${session.audioOutChunks}, size: ${audioB64.length}`);
@@ -4465,6 +4494,8 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     // VTID-01225: Transcript accumulation for Cognee extraction
     transcriptTurns: [],
     outputTranscriptBuffer: '',
+    // VTID-VOICE-INIT: Echo prevention — not speaking at session start
+    isModelSpeaking: false,
     // VTID-ORBC: JWT identity for per-user memory; DEV_IDENTITY only as fallback
     identity: bootstrapIdentity || orbIdentity || undefined,
     // Conversation summary from previous session for greeting context
@@ -4935,6 +4966,15 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
 
   try {
     if (body.type === 'audio') {
+      // VTID-VOICE-INIT: Echo prevention gate (SSE path) — same as WebSocket path
+      if (session.isModelSpeaking) {
+        session.audioInChunks++;
+        if (session.audioInChunks % 50 === 0) {
+          console.log(`[VTID-VOICE-INIT] SSE path: dropping mic audio — model is speaking: session=${effectiveSessionId}`);
+        }
+        return res.json({ ok: true, dropped: true, reason: 'model_speaking' });
+      }
+
       // Handle audio chunk
       session.audioInChunks++;
 
@@ -5704,6 +5744,8 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     // VTID-01225: Transcript accumulation for Cognee extraction
     transcriptTurns: [],
     outputTranscriptBuffer: '',
+    // VTID-VOICE-INIT: Echo prevention — not speaking at session start
+    isModelSpeaking: false,
     // Conversation summary for greeting context (from client message)
     conversationSummary: message.conversation_summary,
   };
@@ -5883,6 +5925,21 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
 
   if (!message.data_b64) {
     sendWsMessage(clientWs, { type: 'error', message: 'Missing data_b64 in audio message' });
+    return;
+  }
+
+  // VTID-VOICE-INIT: Echo prevention gate — drop mic audio while model is speaking.
+  // On mobile devices without hardware AEC, the phone speaker output is picked up by
+  // the mic and forwarded to Gemini, which interprets it as new user speech. This causes
+  // Gemini to interrupt itself and generate 2-3 overlapping response streams.
+  // The gate is released when turn_complete or interrupted is received from Gemini.
+  if (liveSession.isModelSpeaking) {
+    // Log sparingly to avoid flooding (every 50th dropped chunk)
+    if (liveSession.audioInChunks % 50 === 0) {
+      console.log(`[VTID-VOICE-INIT] Dropping mic audio — model is speaking: session=${sessionId}, dropped_at_chunk=${liveSession.audioInChunks}`);
+    }
+    liveSession.audioInChunks++;
+    liveSession.lastActivity = new Date();
     return;
   }
 
