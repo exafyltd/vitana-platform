@@ -1033,7 +1033,8 @@ function buildLiveSystemInstruction(
   lang: string,
   voiceStyle: string,
   bootstrapContext?: string,
-  conversationSummary?: string
+  conversationSummary?: string,
+  conversationHistory?: string
 ): string {
   const languageNames: Record<string, string> = {
     'en': 'English',
@@ -1098,6 +1099,16 @@ IMPORTANT:
   // VTID-01224: Append bootstrap context if available
   if (bootstrapContext) {
     instruction += `\n\n${bootstrapContext}`;
+  }
+
+  // VTID-01225: Append conversation history for reconnect continuity
+  // When the client disconnects and reconnects, the new Gemini session has no
+  // memory of the prior conversation. Injecting the transcript ensures continuity.
+  if (conversationHistory) {
+    instruction += `\n\n<conversation_history>
+The following is the conversation from this session before a brief connection interruption. Continue naturally from where you left off. Remember everything the user told you:
+${conversationHistory}
+</conversation_history>`;
   }
 
   return instruction;
@@ -1182,11 +1193,15 @@ async function connectToLiveAPI(
           system_instruction: {
             parts: [{
               // VTID-01224: Pass bootstrap context to system instruction
+              // VTID-01225: Include conversation history for reconnect continuity
               text: buildLiveSystemInstruction(
                 session.lang,
                 session.voiceStyle || 'friendly, calm, empathetic',
                 session.contextInstruction,
-                session.conversationSummary
+                session.conversationSummary,
+                session.transcriptTurns.length > 0
+                  ? session.transcriptTurns.map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`).join('\n')
+                  : undefined
               )
             }]
           },
@@ -1303,6 +1318,27 @@ async function connectToLiveAPI(
 
               // Clear buffer for next turn
               session.outputTranscriptBuffer = '';
+            }
+
+            // VTID-01225: Incremental fact extraction on each completed turn
+            // Extract facts in real-time so they're persisted to memory_facts immediately,
+            // not just at session stop. This ensures facts survive disconnects and crashes.
+            if (session.identity && session.identity.tenant_id && isInlineExtractionAvailable()) {
+              const recentTurns = session.transcriptTurns.slice(-4); // Last 2 user+assistant exchanges
+              if (recentTurns.length > 0) {
+                const recentText = recentTurns
+                  .map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`)
+                  .join('\n');
+                if (recentText.length > 30) {
+                  extractAndPersistFacts({
+                    conversationText: recentText,
+                    tenant_id: session.identity.tenant_id,
+                    user_id: session.identity.user_id,
+                    session_id: session.sessionId,
+                  }).catch(err => console.warn(`[VTID-01225-inline] Incremental extraction failed:`, err.message));
+                  console.log(`[VTID-01225-inline] Incremental extraction triggered for ${session.sessionId} (${recentTurns.length} recent turns)`);
+                }
+              }
             }
 
             // Notify client that response is complete
@@ -4703,6 +4739,22 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
   session.sseResponse = res;
   session.lastActivity = new Date();
 
+  // VTID-01225: On reconnect, rebuild context pack to include newly extracted facts
+  // The incremental extractor persists facts to memory_facts during the session,
+  // so a reconnect should pick up the latest facts in the bootstrap context.
+  if (session.transcriptTurns.length > 0 && session.identity && session.identity.tenant_id) {
+    console.log(`[VTID-01225] Reconnect detected for ${sessionId} (${session.transcriptTurns.length} turns). Rebuilding context pack...`);
+    try {
+      const bootstrapResult = await buildBootstrapContextPack(session.identity, sessionId);
+      if (bootstrapResult.contextInstruction) {
+        session.contextInstruction = bootstrapResult.contextInstruction;
+        console.log(`[VTID-01225] Context pack rebuilt on reconnect: ${bootstrapResult.latencyMs}ms, chars=${session.contextInstruction.length}`);
+      }
+    } catch (err: any) {
+      console.warn(`[VTID-01225] Context pack rebuild on reconnect failed: ${err.message}`);
+    }
+  }
+
   // VTID-01219: Connect to Vertex AI Live API WebSocket
   let liveApiConnected = false;
   console.log(`[VTID-ORBC] Live API check: googleAuth=${!!googleAuth}, VERTEX_PROJECT_ID=${VERTEX_PROJECT_ID || 'EMPTY'}, sessionId=${sessionId}`);
@@ -4803,6 +4855,25 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
     if (session.sseResponse === res) {
       session.sseResponse = null;
     }
+
+    // VTID-01225: Extract facts from accumulated transcript on disconnect
+    // This ensures facts learned during the live session are persisted before
+    // a potential reconnect, so they survive even if the session is never stopped.
+    if (session.identity && session.identity.tenant_id && session.transcriptTurns.length > 0 && isInlineExtractionAvailable()) {
+      const fullTranscript = session.transcriptTurns
+        .map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`)
+        .join('\n');
+      if (fullTranscript.length > 50) {
+        extractAndPersistFacts({
+          conversationText: fullTranscript,
+          tenant_id: session.identity.tenant_id,
+          user_id: session.identity.user_id,
+          session_id: sessionId,
+        }).catch(err => console.warn(`[VTID-01225-inline] Disconnect extraction failed:`, err.message));
+        console.log(`[VTID-01225] Triggered fact extraction on disconnect for ${sessionId} (${session.transcriptTurns.length} turns)`);
+      }
+    }
+
     // VTID-01219: Close upstream WebSocket on client disconnect
     if (session.upstreamWs) {
       try {
@@ -5994,6 +6065,23 @@ function cleanupWsSession(sessionId: string): void {
 
   // Close Live API session if active
   if (clientSession.liveSession) {
+    // VTID-01225: Extract facts from accumulated transcript on WebSocket disconnect
+    const ls = clientSession.liveSession;
+    if (ls.identity && ls.identity.tenant_id && ls.transcriptTurns.length > 0 && isInlineExtractionAvailable()) {
+      const fullTranscript = ls.transcriptTurns
+        .map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`)
+        .join('\n');
+      if (fullTranscript.length > 50) {
+        extractAndPersistFacts({
+          conversationText: fullTranscript,
+          tenant_id: ls.identity.tenant_id,
+          user_id: ls.identity.user_id,
+          session_id: sessionId,
+        }).catch(err => console.warn(`[VTID-01225-inline] WS disconnect extraction failed:`, err.message));
+        console.log(`[VTID-01225] Triggered fact extraction on WS disconnect for ${sessionId} (${ls.transcriptTurns.length} turns)`);
+      }
+    }
+
     clientSession.liveSession.active = false;
 
     if (clientSession.liveSession.upstreamWs) {
