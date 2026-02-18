@@ -5060,6 +5060,31 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
       } else {
         console.warn(`[VTID-VOICE-INIT] Cannot forward text - Live API not connected`);
       }
+    } else if ((body as any).type === 'interrupt') {
+      // VTID-VOICE-INIT: Client-side VAD detected real user speech during model playback
+      if (!session.isModelSpeaking) {
+        return res.json({ ok: true, was_speaking: false });
+      }
+
+      console.log(`[VTID-VOICE-INIT] SSE path: client interrupt — ungating mic and stopping Gemini: session=${effectiveSessionId}`);
+
+      // Ungate mic audio
+      session.isModelSpeaking = false;
+
+      // Tell Gemini to stop generating
+      if (session.upstreamWs && session.upstreamWs.readyState === WebSocket.OPEN) {
+        sendEndOfTurn(session.upstreamWs);
+      }
+
+      // Clear incomplete output transcript
+      session.outputTranscriptBuffer = '';
+
+      // Send interrupted event to client via SSE
+      if (session.sseResponse) {
+        session.sseResponse.write(`data: ${JSON.stringify({ type: 'interrupted' })}\n\n`);
+      }
+
+      return res.json({ ok: true, was_speaking: true });
     }
 
     return res.status(200).json({ ok: true });
@@ -5376,7 +5401,7 @@ router.get('/health', (_req: Request, res: Response) => {
  * VTID-01224: Added auth_token for server-verified identity
  */
 interface WsClientMessage {
-  type: 'start' | 'audio' | 'video' | 'text' | 'end_turn' | 'stop' | 'ping';
+  type: 'start' | 'audio' | 'video' | 'text' | 'end_turn' | 'stop' | 'ping' | 'interrupt';
   // Text message fields
   text?: string;
   // Start message fields
@@ -5590,6 +5615,16 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
         return;
       }
       handleWsTextMessage(clientSession, message);
+      break;
+
+    case 'interrupt':
+      // VTID-VOICE-INIT: Client detected real user speech during model playback
+      // Ungate mic audio and tell Gemini to stop generating
+      if (!liveSession || !liveSession.active) {
+        sendWsMessage(clientWs, { type: 'error', message: 'No active session.' });
+        return;
+      }
+      handleWsInterruptMessage(clientSession);
       break;
 
     case 'end_turn':
@@ -6049,6 +6084,43 @@ function handleWsTextMessage(clientSession: WsClientSession, message: WsClientMe
   } else {
     sendWsMessage(clientWs, { type: 'error', message: 'Live API not connected' });
   }
+}
+
+/**
+ * VTID-VOICE-INIT: Handle explicit interrupt from client.
+ * Client-side VAD detected real user speech while model is speaking.
+ * We ungate mic audio and tell Gemini to stop generating immediately.
+ */
+function handleWsInterruptMessage(clientSession: WsClientSession): void {
+  const { sessionId, clientWs, liveSession } = clientSession;
+
+  if (!liveSession) return;
+
+  // Only meaningful if model is actually speaking
+  if (!liveSession.isModelSpeaking) {
+    console.log(`[VTID-VOICE-INIT] Interrupt received but model not speaking: session=${sessionId}`);
+    sendWsMessage(clientWs, { type: 'interrupt_ack', was_speaking: false });
+    return;
+  }
+
+  console.log(`[VTID-VOICE-INIT] Client interrupt — ungating mic and stopping Gemini: session=${sessionId}`);
+
+  // 1. Ungate mic audio so subsequent frames reach Gemini
+  liveSession.isModelSpeaking = false;
+
+  // 2. Tell Gemini to stop generating by sending client_content.turn_complete
+  if (liveSession.upstreamWs && liveSession.upstreamWs.readyState === WebSocket.OPEN) {
+    sendEndOfTurn(liveSession.upstreamWs);
+  }
+
+  // 3. Clear the output transcript buffer (response was interrupted, incomplete)
+  liveSession.outputTranscriptBuffer = '';
+
+  // 4. Ack to client so it can stop audio playback
+  sendWsMessage(clientWs, { type: 'interrupt_ack', was_speaking: true });
+
+  // 5. Also send interrupted event to client (same as Gemini would send)
+  sendWsMessage(clientWs, { type: 'interrupted' });
 }
 
 /**
