@@ -504,6 +504,9 @@ interface GeminiLiveSession {
   outputTranscriptBuffer: string;
   // Conversation summary from previous session for greeting context
   conversationSummary?: string;
+  // Voice init: greeting lifecycle tracking
+  greetingSent?: boolean;
+  greetingTurnIndex?: number; // turn_count when greeting was sent, to filter from memory
 }
 
 /**
@@ -1109,7 +1112,9 @@ async function connectToLiveAPI(
   session: GeminiLiveSession,
   onAudioResponse: (audioB64: string) => void,
   onTextResponse: (text: string) => void,
-  onError: (error: Error) => void
+  onError: (error: Error) => void,
+  onTurnComplete?: () => void,
+  onInterrupted?: () => void
 ): Promise<WebSocket> {
   console.log(`[VTID-01219] connectToLiveAPI called for session ${session.sessionId}`);
 
@@ -1223,54 +1228,77 @@ async function connectToLiveAPI(
           const contentKeys = Object.keys(content);
           console.log(`[VTID-01225] server_content keys: ${contentKeys.join(', ')}`);
 
+          // Handle interruption (handle both formats)
+          const interrupted = content.interrupted || content.grounding_metadata?.interrupted;
+          if (interrupted) {
+            console.log(`[VTID-VOICE-INIT] Interrupted for session ${session.sessionId}`);
+            // Clear output transcript buffer on interruption (incomplete response)
+            session.outputTranscriptBuffer = '';
+            // Notify SSE client
+            if (session.sseResponse) {
+              session.sseResponse.write(`data: ${JSON.stringify({ type: 'interrupted' })}\n\n`);
+            }
+            // Notify WS client via callback
+            onInterrupted?.();
+            return;
+          }
+
           // Check if turn is complete (handle both formats)
           const turnComplete = content.turn_complete || content.turnComplete;
           if (turnComplete) {
-            console.log(`[VTID-01219] Turn complete for session ${session.sessionId}`);
+            session.turn_count++;
+            const isGreetingTurn = session.greetingSent && session.turn_count === (session.greetingTurnIndex ?? 0) + 1;
+            console.log(`[VTID-01219] Turn complete for session ${session.sessionId} (turn ${session.turn_count}, isGreeting=${isGreetingTurn})`);
 
             // VTID-01225: Write accumulated assistant transcript to memory_items and transcriptTurns
+            // Skip memory write for the greeting turn (server-injected prompt, not real user interaction)
             if (session.outputTranscriptBuffer.length > 0) {
               const fullTranscript = session.outputTranscriptBuffer.trim();
-              console.log(`[VTID-01225] Writing assistant turn to memory: "${fullTranscript.substring(0, 100)}..."`);
 
-              // Add to transcriptTurns for in-memory accumulation
-              session.transcriptTurns.push({
-                role: 'assistant',
-                text: fullTranscript,
-                timestamp: new Date().toISOString()
-              });
-
-              // Write to memory_items for persistence
-              // Use session identity if available, otherwise fall back to DEV_IDENTITY in dev-sandbox
-              let memoryIdentity: MemoryIdentity | null = null;
-              if (session.identity && session.identity.tenant_id) {
-                memoryIdentity = {
-                  user_id: session.identity.user_id,
-                  tenant_id: session.identity.tenant_id
-                };
-              } else if (isDevSandbox()) {
-                console.log(`[VTID-01225] No session identity, using DEV_IDENTITY fallback`);
-                memoryIdentity = {
-                  user_id: DEV_IDENTITY.USER_ID,
-                  tenant_id: DEV_IDENTITY.TENANT_ID
-                };
+              if (isGreetingTurn) {
+                console.log(`[VTID-VOICE-INIT] Skipping memory write for greeting turn: "${fullTranscript.substring(0, 80)}..."`);
               } else {
-                console.warn(`[VTID-01225] Cannot write to memory: no identity and not dev-sandbox`);
-              }
+                console.log(`[VTID-01225] Writing assistant turn to memory: "${fullTranscript.substring(0, 100)}..."`);
 
-              if (memoryIdentity) {
-                console.log(`[VTID-01225] Writing transcript to memory_items for user ${memoryIdentity.user_id.substring(0, 8)}...`);
-                writeMemoryItemWithIdentity(memoryIdentity, {
-                  source: 'orb_voice',
-                  content: fullTranscript,
-                  content_json: {
-                    direction: 'assistant',
-                    channel: 'orb',
-                    mode: 'live_voice',
-                    orb_session_id: session.sessionId,
-                    conversation_id: session.conversation_id
-                  },
-                }).catch(err => console.warn(`[VTID-01225] Failed to write assistant transcript to memory: ${err.message}`));
+                // Add to transcriptTurns for in-memory accumulation
+                session.transcriptTurns.push({
+                  role: 'assistant',
+                  text: fullTranscript,
+                  timestamp: new Date().toISOString()
+                });
+
+                // Write to memory_items for persistence
+                // Use session identity if available, otherwise fall back to DEV_IDENTITY in dev-sandbox
+                let memoryIdentity: MemoryIdentity | null = null;
+                if (session.identity && session.identity.tenant_id) {
+                  memoryIdentity = {
+                    user_id: session.identity.user_id,
+                    tenant_id: session.identity.tenant_id
+                  };
+                } else if (isDevSandbox()) {
+                  console.log(`[VTID-01225] No session identity, using DEV_IDENTITY fallback`);
+                  memoryIdentity = {
+                    user_id: DEV_IDENTITY.USER_ID,
+                    tenant_id: DEV_IDENTITY.TENANT_ID
+                  };
+                } else {
+                  console.warn(`[VTID-01225] Cannot write to memory: no identity and not dev-sandbox`);
+                }
+
+                if (memoryIdentity) {
+                  console.log(`[VTID-01225] Writing transcript to memory_items for user ${memoryIdentity.user_id.substring(0, 8)}...`);
+                  writeMemoryItemWithIdentity(memoryIdentity, {
+                    source: 'orb_voice',
+                    content: fullTranscript,
+                    content_json: {
+                      direction: 'assistant',
+                      channel: 'orb',
+                      mode: 'live_voice',
+                      orb_session_id: session.sessionId,
+                      conversation_id: session.conversation_id
+                    },
+                  }).catch(err => console.warn(`[VTID-01225] Failed to write assistant transcript to memory: ${err.message}`));
+                }
               }
 
               // Clear buffer for next turn
@@ -1279,8 +1307,13 @@ async function connectToLiveAPI(
 
             // Notify client that response is complete
             if (session.sseResponse) {
-              session.sseResponse.write(`data: ${JSON.stringify({ type: 'turn_complete' })}\n\n`);
+              session.sseResponse.write(`data: ${JSON.stringify({
+                type: 'turn_complete',
+                is_greeting: isGreetingTurn
+              })}\n\n`);
             }
+            // Notify WS client via callback
+            onTurnComplete?.();
             return;
           }
 
@@ -1326,42 +1359,48 @@ async function connectToLiveAPI(
           const inputTranscription = typeof inputTransObj === 'string' ? inputTransObj : inputTransObj?.text;
           const outputTranscription = typeof outputTransObj === 'string' ? outputTransObj : outputTransObj?.text;
           if (inputTranscription) {
-            console.log(`[VTID-01219] Input transcription: ${inputTranscription}`);
-            if (session.sseResponse) {
-              session.sseResponse.write(`data: ${JSON.stringify({ type: 'input_transcript', text: inputTranscription })}\n\n`);
-            }
-            // VTID-01225: Accumulate user transcript for Cognee extraction
-            session.transcriptTurns.push({
-              role: 'user',
-              text: inputTranscription,
-              timestamp: new Date().toISOString()
-            });
-            // VTID-01225: Write user transcription to memory_items immediately (rare - Gemini native audio usually doesn't provide this)
-            // Use session identity if available, otherwise fall back to DEV_IDENTITY in dev-sandbox
-            let userMemoryIdentity: MemoryIdentity | null = null;
-            if (session.identity && session.identity.tenant_id) {
-              userMemoryIdentity = {
-                user_id: session.identity.user_id,
-                tenant_id: session.identity.tenant_id
-              };
-            } else if (isDevSandbox()) {
-              userMemoryIdentity = {
-                user_id: DEV_IDENTITY.USER_ID,
-                tenant_id: DEV_IDENTITY.TENANT_ID
-              };
-            }
-            if (userMemoryIdentity) {
-              writeMemoryItemWithIdentity(userMemoryIdentity, {
-                source: 'orb_voice',
-                content: inputTranscription,
-                content_json: {
-                  direction: 'user',
-                  channel: 'orb',
-                  mode: 'live_voice',
-                  orb_session_id: session.sessionId,
-                  conversation_id: session.conversation_id
-                },
-              }).catch(err => console.warn(`[VTID-01225] Failed to write user transcript to memory: ${err.message}`));
+            // Filter out the server-injected greeting prompt from transcription/memory
+            const isGreetingPrompt = session.greetingSent && session.turn_count === 0 &&
+              (inputTranscription.includes('greet the user') || inputTranscription.includes('begrüße den Benutzer'));
+            if (isGreetingPrompt) {
+              console.log(`[VTID-VOICE-INIT] Filtering greeting prompt from input transcription: "${inputTranscription.substring(0, 60)}..."`);
+            } else {
+              console.log(`[VTID-01219] Input transcription: ${inputTranscription}`);
+              if (session.sseResponse) {
+                session.sseResponse.write(`data: ${JSON.stringify({ type: 'input_transcript', text: inputTranscription })}\n\n`);
+              }
+              // VTID-01225: Accumulate user transcript for Cognee extraction
+              session.transcriptTurns.push({
+                role: 'user',
+                text: inputTranscription,
+                timestamp: new Date().toISOString()
+              });
+              // VTID-01225: Write user transcription to memory_items immediately
+              let userMemoryIdentity: MemoryIdentity | null = null;
+              if (session.identity && session.identity.tenant_id) {
+                userMemoryIdentity = {
+                  user_id: session.identity.user_id,
+                  tenant_id: session.identity.tenant_id
+                };
+              } else if (isDevSandbox()) {
+                userMemoryIdentity = {
+                  user_id: DEV_IDENTITY.USER_ID,
+                  tenant_id: DEV_IDENTITY.TENANT_ID
+                };
+              }
+              if (userMemoryIdentity) {
+                writeMemoryItemWithIdentity(userMemoryIdentity, {
+                  source: 'orb_voice',
+                  content: inputTranscription,
+                  content_json: {
+                    direction: 'user',
+                    channel: 'orb',
+                    mode: 'live_voice',
+                    orb_session_id: session.sessionId,
+                    conversation_id: session.conversation_id
+                  },
+                }).catch(err => console.warn(`[VTID-01225] Failed to write user transcript to memory: ${err.message}`));
+              }
             }
           }
           if (outputTranscription) {
@@ -1495,14 +1534,22 @@ function sendEndOfTurn(ws: WebSocket): boolean {
 
 /**
  * Send a text prompt to the Live API to trigger the model to speak first.
- * Used for greeting on session start.
+ * Used for greeting on session start. Tracks greeting state on session to
+ * prevent duplicate greetings and filter the prompt from transcription/memory.
  */
-function sendGreetingPromptToLiveAPI(ws: WebSocket, lang: string, conversationSummary?: string): boolean {
+function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession): boolean {
   if (ws.readyState !== WebSocket.OPEN) {
     console.warn('[VTID-VOICE-INIT] Cannot send greeting prompt - WebSocket not open');
     return false;
   }
 
+  // Prevent duplicate greeting (client-side requestWelcome + server-side greeting)
+  if (session.greetingSent) {
+    console.log('[VTID-VOICE-INIT] Greeting already sent for session, skipping');
+    return false;
+  }
+
+  const lang = session.lang;
   const greetingPrompts: Record<string, string> = {
     'en': 'Please greet the user warmly. Keep it to 1-2 short sentences.',
     'de': 'Bitte begrüße den Benutzer herzlich. Halte es auf 1-2 kurze Sätze.',
@@ -1516,7 +1563,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, lang: string, conversationSu
 
   let prompt = greetingPrompts[lang] || greetingPrompts['en'];
 
-  if (conversationSummary) {
+  if (session.conversationSummary) {
     prompt += ` You may briefly mention you're glad to continue the conversation, but do NOT recite the summary.`;
   }
 
@@ -1531,7 +1578,11 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, lang: string, conversationSu
   };
 
   ws.send(JSON.stringify(message));
-  console.log(`[VTID-VOICE-INIT] Greeting prompt sent for lang=${lang}`);
+
+  // Mark greeting as sent and record turn index for filtering
+  session.greetingSent = true;
+  session.greetingTurnIndex = session.turn_count;
+  console.log(`[VTID-VOICE-INIT] Greeting prompt sent for lang=${lang}, turnIndex=${session.turn_count}`);
   return true;
 }
 
@@ -4712,7 +4763,7 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
       console.log(`[VTID-01219] Live API WebSocket connected for session ${sessionId}`);
 
       // Send greeting prompt so Vitana speaks first
-      sendGreetingPromptToLiveAPI(ws, session.lang, session.conversationSummary);
+      sendGreetingPromptToLiveAPI(ws, session);
     } catch (err: any) {
       console.error(`[VTID-01219] Failed to connect Live API for session ${sessionId}:`, err.message);
       // Continue without Live API - will fall back to simulated responses
@@ -4875,6 +4926,28 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
           source: videoBody.source,
           frame_number: session.videoInFrames
         })}\n\n`);
+      }
+    } else if ((body as any).type === 'text' && (body as any).text) {
+      // Handle text message - forward to Live API as client_content
+      const textContent = (body as any).text as string;
+
+      // If this is a client-side greeting request and server already sent one, skip it
+      if (session.greetingSent && textContent.toLowerCase().includes('greet')) {
+        console.log(`[VTID-VOICE-INIT] Skipping client greeting request - server greeting already sent`);
+        return res.status(200).json({ ok: true, note: 'Server greeting already in progress' });
+      }
+
+      if (session.upstreamWs && session.upstreamWs.readyState === WebSocket.OPEN) {
+        const textMessage = {
+          client_content: {
+            turns: [{ role: 'user', parts: [{ text: textContent }] }],
+            turn_complete: true
+          }
+        };
+        session.upstreamWs.send(JSON.stringify(textMessage));
+        console.log(`[VTID-VOICE-INIT] Text message forwarded to Live API: "${textContent.substring(0, 80)}..."`);
+      } else {
+        console.warn(`[VTID-VOICE-INIT] Cannot forward text - Live API not connected`);
       }
     }
 
@@ -5192,7 +5265,9 @@ router.get('/health', (_req: Request, res: Response) => {
  * VTID-01224: Added auth_token for server-verified identity
  */
 interface WsClientMessage {
-  type: 'start' | 'audio' | 'video' | 'end_turn' | 'stop' | 'ping';
+  type: 'start' | 'audio' | 'video' | 'text' | 'end_turn' | 'stop' | 'ping';
+  // Text message fields
+  text?: string;
   // Start message fields
   lang?: string;
   voice_style?: string;
@@ -5396,6 +5471,14 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
         return;
       }
       handleWsVideoMessage(clientSession, message);
+      break;
+
+    case 'text':
+      if (!liveSession || !liveSession.active) {
+        sendWsMessage(clientWs, { type: 'error', message: 'No active session. Send "start" first.' });
+        return;
+      }
+      handleWsTextMessage(clientSession, message);
       break;
 
     case 'end_turn':
@@ -5615,6 +5698,24 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
             details: error.message
           });
         }
+      },
+      // Turn complete handler - forward to WS client so it knows when response ends
+      () => {
+        if (clientWs.readyState === WebSocket.OPEN) {
+          const isGreetingTurn = liveSession.greetingSent && liveSession.turn_count === (liveSession.greetingTurnIndex ?? 0) + 1;
+          sendWsMessage(clientWs, {
+            type: 'turn_complete',
+            is_greeting: isGreetingTurn
+          });
+          console.log(`[VTID-VOICE-INIT] Forwarded turn_complete to WS client ${sessionId} (isGreeting=${isGreetingTurn})`);
+        }
+      },
+      // Interrupted handler - forward to WS client so it can clear audio queue
+      () => {
+        if (clientWs.readyState === WebSocket.OPEN) {
+          sendWsMessage(clientWs, { type: 'interrupted' });
+          console.log(`[VTID-VOICE-INIT] Forwarded interrupted to WS client ${sessionId}`);
+        }
       }
     );
 
@@ -5655,10 +5756,13 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       },
     }).catch(() => { });
 
+    // Send session_started + setupComplete (v1 client compatibility)
+    // v1 VertexLiveService expects { setupComplete: true } before considering ready
     sendWsMessage(clientWs, {
       type: 'session_started',
       session_id: sessionId,
       live_api_connected: true,
+      setupComplete: true, // v1 compatibility: signals Gemini is ready
       // VTID-01224: Include context bootstrap status
       context_bootstrap: {
         included: !!contextInstruction,
@@ -5679,7 +5783,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     });
 
     // Send greeting prompt so Vitana speaks first (WebSocket path)
-    sendGreetingPromptToLiveAPI(upstreamWs, lang, liveSession.conversationSummary);
+    sendGreetingPromptToLiveAPI(upstreamWs, liveSession);
 
   } catch (err: any) {
     console.error(`[VTID-01222] Failed to connect Live API for ${sessionId}:`, err.message);
@@ -5781,6 +5885,42 @@ function handleWsVideoMessage(clientSession: WsClientSession, message: WsClientM
     source: message.source,
     frame_number: liveSession.videoInFrames
   });
+}
+
+/**
+ * Handle text message from WS client - forward to Live API as client_content
+ * Includes greeting deduplication: if server already sent greeting, skip client's greeting request.
+ */
+function handleWsTextMessage(clientSession: WsClientSession, message: WsClientMessage): void {
+  const { sessionId, clientWs, liveSession } = clientSession;
+  if (!liveSession) return;
+
+  const text = message.text;
+  if (!text) {
+    sendWsMessage(clientWs, { type: 'error', message: 'Missing text in text message' });
+    return;
+  }
+
+  // Deduplicate client-side greeting if server already sent one
+  if (liveSession.greetingSent && text.toLowerCase().includes('greet')) {
+    console.log(`[VTID-VOICE-INIT] Skipping client greeting request via WS - server greeting already sent`);
+    sendWsMessage(clientWs, { type: 'text_ack', note: 'Server greeting already in progress' });
+    return;
+  }
+
+  if (liveSession.upstreamWs && liveSession.upstreamWs.readyState === WebSocket.OPEN) {
+    const textMessage = {
+      client_content: {
+        turns: [{ role: 'user', parts: [{ text }] }],
+        turn_complete: true
+      }
+    };
+    liveSession.upstreamWs.send(JSON.stringify(textMessage));
+    console.log(`[VTID-VOICE-INIT] WS text message forwarded to Live API: "${text.substring(0, 80)}..."`);
+    sendWsMessage(clientWs, { type: 'text_ack' });
+  } else {
+    sendWsMessage(clientWs, { type: 'error', message: 'Live API not connected' });
+  }
 }
 
 /**
