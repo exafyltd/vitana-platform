@@ -2792,15 +2792,7 @@ const state = {
         geminiLiveAudioProcessor: null, // ScriptProcessorNode for audio
         geminiTtsAudio: null,         // Current Gemini-TTS Audio element for barge-in
         geminiLiveTranscriber: null,  // VTID-01225: Parallel Web Speech for transcript display
-        useLiveApi: true,             // VTID-01219: Use Gemini Live API for voice-to-voice
-        // VTID-VOICE-INIT: Track active audio sources for interrupt support
-        geminiLiveActiveSources: [],  // Array of AudioBufferSourceNode refs for stopping
-        geminiLiveModelSpeaking: false, // True while model audio is playing (used to mute mic)
-        geminiLiveModelSpeakingTimer: null, // Timer to detect end of model speech
-        geminiLiveLastResponseText: '', // Track last response to prevent repetition
-        // Conversation continuity state
-        lastConversationTimestamp: null, // When the last conversation ended
-        conversationTopicSummary: null  // Brief summary of last conversation topic
+        useLiveApi: true              // VTID-01219: Use Gemini Live API for voice-to-voice
     },
 
     // VTID-0600: Operational Visibility Foundation State
@@ -21808,19 +21800,6 @@ function renderOrbOverlay() {
     });
     inputControls.appendChild(micBtn);
 
-    // VTID-VOICE-INIT: Stop/interrupt button - stops model speech
-    var isModelSpeaking = state.orb.geminiLiveModelSpeaking || state.orb.speaking || state.orb.voiceState === 'SPEAKING';
-    var stopBtn = document.createElement('button');
-    stopBtn.className = 'orb-input-control-btn' + (isModelSpeaking ? ' orb-input-control-stop-active' : '');
-    stopBtn.setAttribute('aria-label', 'Stop speaking');
-    stopBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
-    stopBtn.style.display = isModelSpeaking ? '' : 'none';
-    stopBtn.addEventListener('click', function () {
-        console.log('[VTID-VOICE-INIT] User pressed stop button');
-        orbStopTTS('user');
-    });
-    inputControls.appendChild(stopBtn);
-
     // VTID-01069-D: Screen share toggle - opens OS screen picker
     var screenBtn = document.createElement('button');
     screenBtn.className = 'orb-input-control-btn' + (state.orb.screenShareActive ? ' orb-input-control-active' : '');
@@ -21982,8 +21961,6 @@ function renderOrbOverlay() {
     closeBtn.setAttribute('aria-label', 'Close');
     closeBtn.addEventListener('click', function (e) {
         e.stopPropagation();
-        // Save conversation topic before stopping
-        orbSaveConversationTopic();
         orbVoiceStop();
         // VTID-01219: Also stop Gemini Live session when closing orb
         if (state.orb.geminiLiveActive) {
@@ -22617,9 +22594,6 @@ function orbVoiceStart() {
     // When recognition restarts, old results may persist in event.results
     var lastProcessedResultIndex = -1;
 
-    // Track if greeting has been sent for this session
-    var greetingSent = false;
-
     recognition.onstart = function () {
         console.log('[VTID-0135] Speech recognition started');
         state.orb.voiceState = 'LISTENING';
@@ -22632,22 +22606,6 @@ function orbVoiceStart() {
         setOrbMicroStatus('Listening...', 0); // No auto-clear while listening
         renderOrbBadges();
         renderApp();
-
-        // VTID-VOICE-INIT: Send initial greeting on first start
-        if (!greetingSent) {
-            greetingSent = true;
-            var greetingText = orbGetGreetingText();
-            // Add greeting to transcript and speak it
-            state.orb.liveTranscript.push({
-                id: Date.now(),
-                role: 'assistant',
-                text: greetingText,
-                timestamp: new Date().toISOString()
-            });
-            renderApp();
-            scrollOrbLiveTranscript();
-            orbVoiceSpeak(greetingText);
-        }
     };
 
     // VTID-01067: Mic-reactive shimmer on audio/speech events
@@ -23125,33 +23083,21 @@ async function geminiLiveStart() {
     console.log('[VTID-01155] Starting Gemini Live session...');
 
     try {
-        // 1. Detect conversation continuity
-        var conversationSummary = orbBuildConversationSummary();
-
-        // 2. Start Live session via API
+        // 1. Start Live session via API
         var lang = state.orb.orbLang || 'en-US';
         // VTID-ORBC: Include auth token for dual JWT auth support
         var startHeaders = { 'Content-Type': 'application/json' };
         if (state.authToken) {
             startHeaders['Authorization'] = 'Bearer ' + state.authToken;
         }
-
-        var requestBody = {
-            lang: lang,
-            voice_style: 'friendly, calm, empathetic',
-            response_modalities: ['audio', 'text']
-        };
-
-        // Include conversation summary for returning users
-        if (conversationSummary) {
-            requestBody.conversation_summary = conversationSummary;
-            console.log('[VTID-VOICE-INIT] Sending conversation summary for continuity');
-        }
-
         var response = await fetch('/api/v1/orb/live/session/start', {
             method: 'POST',
             headers: startHeaders,
-            body: JSON.stringify(requestBody)
+            body: JSON.stringify({
+                lang: lang,
+                voice_style: 'friendly, calm, empathetic',
+                response_modalities: ['audio', 'text']
+            })
         });
 
         var data = await response.json();
@@ -23279,20 +23225,10 @@ async function geminiLiveStop() {
         }
     }
 
-    // Stop all playing audio and clean up
-    geminiLiveStopAllAudio();
-
     state.orb.geminiLiveSessionId = null;
     state.orb.geminiLiveActive = false;
     state.orb.geminiLiveAudioQueue = [];
     state.orb.geminiLiveAudioPlaying = false;
-    state.orb.geminiLiveActiveSources = [];
-    state.orb.geminiLiveModelSpeaking = false;
-    state.orb.geminiLiveLastResponseText = '';
-
-    // Save conversation timestamp for continuity detection
-    state.orb.lastConversationTimestamp = new Date().toISOString();
-    orbSaveConversationState();
 
     console.log('[VTID-01155] Live session stopped');
     renderApp();
@@ -23307,16 +23243,13 @@ function geminiLiveHandleMessage(msg) {
     switch (msg.type) {
         case 'ready':
             console.log('[VTID-01155] Live stream ready:', msg.meta);
-            // Show connection status - Vitana will speak first via greeting prompt
-            if (!msg.live_api_connected) {
-                state.orb.liveTranscript.push({
-                    id: Date.now(),
-                    role: 'assistant',
-                    text: 'Connected (text mode)',
-                    timestamp: new Date().toISOString()
-                });
-            }
-            // For Live API, the greeting will come as audio/transcript from the model
+            // Show connection status
+            state.orb.liveTranscript.push({
+                id: Date.now(),
+                role: 'assistant',
+                text: msg.live_api_connected ? 'Voice-to-voice connected. Start speaking!' : 'Connected (text mode)',
+                timestamp: new Date().toISOString()
+            });
             renderApp();
             break;
 
@@ -23360,34 +23293,20 @@ function geminiLiveHandleMessage(msg) {
             break;
 
         case 'output_transcript':
-            // Model's response transcription - track for deduplication
+            // Model's response transcription
             if (msg.text) {
                 console.log('[VTID-01219] Model said:', msg.text);
-                // Track last response to detect repetition
-                state.orb.geminiLiveLastResponseText = msg.text;
             }
             break;
 
         case 'turn_complete':
             console.log('[VTID-01219] Turn complete');
-            // Schedule mic unmute after audio finishes (with safety delay)
-            if (state.orb.geminiLiveModelSpeakingTimer) {
-                clearTimeout(state.orb.geminiLiveModelSpeakingTimer);
-            }
-            state.orb.geminiLiveModelSpeakingTimer = setTimeout(function() {
-                // Only unmute if no new audio has been scheduled
-                if (state.orb.geminiLiveActiveSources.length === 0) {
-                    state.orb.geminiLiveModelSpeaking = false;
-                    geminiLiveMuteMicDuringPlayback(false);
-                    console.log('[VTID-VOICE-INIT] Turn complete, mic unmuted');
-                }
-            }, 500);
             break;
 
         case 'interrupted':
-            // Model was interrupted - stop all playing audio and flush queue
-            geminiLiveStopAllAudio();
-            console.log('[VTID-VOICE-INIT] Audio interrupted, all sources stopped and queue flushed');
+            // Model was interrupted, flush audio queue
+            state.orb.geminiLiveAudioQueue = [];
+            console.log('[VTID-01155] Audio interrupted, queue flushed');
             break;
 
         case 'audio_ack':
@@ -23741,73 +23660,13 @@ function geminiLivePlayAudio(base64Data, mimeType) {
     // Add to queue
     state.orb.geminiLiveAudioQueue.push({ data: base64Data, mime: mimeType });
 
-    // Mark model as speaking and mute mic input to prevent echo/repetition
-    if (!state.orb.geminiLiveModelSpeaking) {
-        state.orb.geminiLiveModelSpeaking = true;
-        geminiLiveMuteMicDuringPlayback(true);
-        console.log('[VTID-VOICE-INIT] Model started speaking - mic muted to prevent echo');
-    }
-
-    // Reset the end-of-speech timer on each new chunk
-    if (state.orb.geminiLiveModelSpeakingTimer) {
-        clearTimeout(state.orb.geminiLiveModelSpeakingTimer);
-    }
-
     // Process immediately
     geminiLiveProcessQueue();
 }
 
 /**
- * Mute or unmute the audio capture stream to prevent mic feedback during model speech.
- * This prevents the model from hearing its own output and repeating itself.
- */
-function geminiLiveMuteMicDuringPlayback(mute) {
-    if (state.orb.geminiLiveAudioStream) {
-        state.orb.geminiLiveAudioStream.getAudioTracks().forEach(function(track) {
-            track.enabled = !mute;
-        });
-        console.log('[VTID-VOICE-INIT] Mic tracks ' + (mute ? 'muted' : 'unmuted'));
-    }
-}
-
-/**
- * Stop all currently playing and scheduled Live API audio sources.
- * Used for interrupt/barge-in support.
- */
-function geminiLiveStopAllAudio() {
-    // Stop all tracked audio buffer sources
-    var sources = state.orb.geminiLiveActiveSources || [];
-    for (var i = 0; i < sources.length; i++) {
-        try {
-            sources[i].stop();
-        } catch (e) {
-            // Already stopped or not started
-        }
-    }
-    state.orb.geminiLiveActiveSources = [];
-
-    // Flush the queue
-    state.orb.geminiLiveAudioQueue = [];
-
-    // Reset scheduling
-    state.orb.geminiLiveLastScheduledEnd = 0;
-    state.orb.geminiLiveAudioPlaying = false;
-
-    // Unmute mic
-    state.orb.geminiLiveModelSpeaking = false;
-    if (state.orb.geminiLiveModelSpeakingTimer) {
-        clearTimeout(state.orb.geminiLiveModelSpeakingTimer);
-        state.orb.geminiLiveModelSpeakingTimer = null;
-    }
-    geminiLiveMuteMicDuringPlayback(false);
-
-    console.log('[VTID-VOICE-INIT] All Live API audio stopped, mic unmuted');
-}
-
-/**
  * VTID-01219: Process audio queue and schedule all chunks immediately
  * Uses Web Audio API for gapless PCM playback
- * Now tracks source nodes for interrupt support and mutes mic during playback
  */
 function geminiLiveProcessQueue() {
     // If we receive WAV (fallback), we must play sequentially to avoid overlap clutter
@@ -23853,31 +23712,6 @@ function geminiLiveProcessQueue() {
             var source = audioContext.createBufferSource();
             source.buffer = audioBuffer;
             source.connect(audioContext.destination);
-
-            // Track source for interrupt support
-            state.orb.geminiLiveActiveSources.push(source);
-
-            // Clean up source reference when it finishes playing
-            source.onended = function() {
-                var idx = state.orb.geminiLiveActiveSources.indexOf(source);
-                if (idx !== -1) {
-                    state.orb.geminiLiveActiveSources.splice(idx, 1);
-                }
-                // When all sources have finished, unmute the mic
-                if (state.orb.geminiLiveActiveSources.length === 0 && state.orb.geminiLiveModelSpeaking) {
-                    // Use a small delay to avoid picking up residual audio
-                    if (state.orb.geminiLiveModelSpeakingTimer) {
-                        clearTimeout(state.orb.geminiLiveModelSpeakingTimer);
-                    }
-                    state.orb.geminiLiveModelSpeakingTimer = setTimeout(function() {
-                        if (state.orb.geminiLiveActiveSources.length === 0) {
-                            state.orb.geminiLiveModelSpeaking = false;
-                            geminiLiveMuteMicDuringPlayback(false);
-                            console.log('[VTID-VOICE-INIT] Model finished speaking - mic unmuted');
-                        }
-                    }, 300);
-                }
-            };
 
             // Schedule playback seamlessly
             var now = audioContext.currentTime;
@@ -24137,196 +23971,6 @@ const ORB_TTS_VOICE_URI_KEY = 'orb_tts_voice_uri'; // Selected voice URI
 const ORB_CONVERSATION_ID_KEY = 'orb_conversation_id';
 const ORB_TRANSCRIPT_KEY = 'orb_transcript';
 const ORB_SESSION_ID_KEY = 'orb_session_id';
-// VTID-VOICE-INIT: Conversation continuity keys
-const ORB_LAST_CONVERSATION_TS_KEY = 'orb_last_conversation_ts';
-const ORB_CONVERSATION_TOPIC_KEY = 'orb_conversation_topic';
-
-// Threshold for considering a conversation as "continuing" vs "new" (30 minutes)
-const ORB_CONVERSATION_CONTINUITY_THRESHOLD_MS = 30 * 60 * 1000;
-// Threshold for considering conversation as "recent" (24 hours) - greeting references topic
-const ORB_CONVERSATION_RECENT_THRESHOLD_MS = 24 * 60 * 60 * 1000;
-
-/**
- * Build a conversation summary from the saved transcript for the greeting prompt.
- * Detects whether this is a new or continuing conversation and returns appropriate context.
- * @returns {string|null} Summary string or null if no relevant previous conversation
- */
-function orbBuildConversationSummary() {
-    try {
-        var lastTs = localStorage.getItem(ORB_LAST_CONVERSATION_TS_KEY);
-        var savedTopic = localStorage.getItem(ORB_CONVERSATION_TOPIC_KEY);
-        var savedTranscript = localStorage.getItem(ORB_TRANSCRIPT_KEY);
-
-        if (!lastTs) return null;
-
-        var elapsed = Date.now() - new Date(lastTs).getTime();
-
-        // Too old - treat as entirely new conversation
-        if (elapsed > ORB_CONVERSATION_RECENT_THRESHOLD_MS) {
-            console.log('[VTID-VOICE-INIT] Previous conversation too old (' + Math.round(elapsed / 3600000) + 'h), treating as new');
-            return null;
-        }
-
-        var summary = '';
-
-        // If within continuity threshold, this is a "continuation"
-        if (elapsed < ORB_CONVERSATION_CONTINUITY_THRESHOLD_MS) {
-            summary = 'This is a CONTINUATION of an ongoing conversation. The user just reopened the voice interface. Do NOT re-greet them with a full greeting. Instead, say something brief like "I\'m still here" or "Welcome back" in 1 sentence.';
-        } else {
-            // Between 30min and 24h - it's a returning user, mention the topic briefly
-            summary = 'The user spoke with you recently (about ' + Math.round(elapsed / 60000) + ' minutes ago). This is a new session but they are a returning user.';
-        }
-
-        // Add topic summary if available
-        if (savedTopic) {
-            summary += '\nLast conversation topic: ' + savedTopic;
-        }
-
-        // Extract a brief topic from the last few transcript messages if no saved topic
-        if (!savedTopic && savedTranscript) {
-            try {
-                var transcript = JSON.parse(savedTranscript);
-                // Get last 3 user messages for topic context
-                var userMessages = transcript
-                    .filter(function(m) { return m.role === 'user'; })
-                    .slice(-3)
-                    .map(function(m) { return m.text; });
-
-                if (userMessages.length > 0) {
-                    summary += '\nRecent user messages for context: ' + userMessages.join(' | ').substring(0, 200);
-                }
-            } catch (e) {
-                // Ignore parse errors
-            }
-        }
-
-        console.log('[VTID-VOICE-INIT] Conversation summary built, elapsed=' + Math.round(elapsed / 60000) + 'min');
-        return summary;
-    } catch (e) {
-        console.warn('[VTID-VOICE-INIT] Failed to build conversation summary:', e);
-        return null;
-    }
-}
-
-/**
- * Extract and save a brief topic summary from the current conversation.
- * Called when the conversation ends or overlay closes.
- */
-function orbSaveConversationTopic() {
-    try {
-        if (!state.orb.liveTranscript || state.orb.liveTranscript.length === 0) return;
-
-        // Get last 5 messages to determine topic
-        var recentMessages = state.orb.liveTranscript
-            .filter(function(m) { return m.role === 'user' || m.role === 'assistant'; })
-            .slice(-5);
-
-        if (recentMessages.length === 0) return;
-
-        // Build a simple topic from user messages
-        var userTexts = recentMessages
-            .filter(function(m) { return m.role === 'user'; })
-            .map(function(m) { return m.text; });
-
-        if (userTexts.length > 0) {
-            // Take the last user message as the topic (simple heuristic)
-            var topic = userTexts[userTexts.length - 1];
-            if (topic.length > 150) {
-                topic = topic.substring(0, 150) + '...';
-            }
-            localStorage.setItem(ORB_CONVERSATION_TOPIC_KEY, topic);
-            state.orb.conversationTopicSummary = topic;
-            console.log('[VTID-VOICE-INIT] Conversation topic saved:', topic.substring(0, 50));
-        }
-
-        // Save timestamp
-        localStorage.setItem(ORB_LAST_CONVERSATION_TS_KEY, new Date().toISOString());
-        state.orb.lastConversationTimestamp = new Date().toISOString();
-    } catch (e) {
-        console.warn('[VTID-VOICE-INIT] Failed to save conversation topic:', e);
-    }
-}
-
-/**
- * Get an appropriate greeting text based on conversation continuity.
- * Returns a short greeting for the non-Live API (Web Speech) path.
- * @returns {string} Greeting text in the current language
- */
-function orbGetGreetingText() {
-    var lang = (state.orb.orbLang || 'en-US').substring(0, 2);
-    var lastTs = null;
-    var savedTopic = null;
-
-    try {
-        lastTs = localStorage.getItem(ORB_LAST_CONVERSATION_TS_KEY);
-        savedTopic = localStorage.getItem(ORB_CONVERSATION_TOPIC_KEY);
-    } catch (e) {
-        // Ignore
-    }
-
-    var isReturning = false;
-    var isContinuing = false;
-
-    if (lastTs) {
-        var elapsed = Date.now() - new Date(lastTs).getTime();
-        isContinuing = elapsed < ORB_CONVERSATION_CONTINUITY_THRESHOLD_MS;
-        isReturning = elapsed < ORB_CONVERSATION_RECENT_THRESHOLD_MS;
-    }
-
-    // Greetings by language
-    var greetings = {
-        'en': {
-            fresh: 'Hello! I\'m Vitana, your health companion. How can I help you today?',
-            returning: 'Welcome back! How can I help you today?',
-            continuing: 'I\'m still here. What would you like to talk about?'
-        },
-        'de': {
-            fresh: 'Hallo! Ich bin Vitana, Ihre Gesundheitsbegleiterin. Wie kann ich Ihnen heute helfen?',
-            returning: 'Willkommen zurück! Wie kann ich Ihnen heute helfen?',
-            continuing: 'Ich bin noch da. Worüber möchten Sie sprechen?'
-        },
-        'fr': {
-            fresh: 'Bonjour! Je suis Vitana, votre compagnon santé. Comment puis-je vous aider?',
-            returning: 'Bon retour! Comment puis-je vous aider?',
-            continuing: 'Je suis toujours là. De quoi souhaitez-vous parler?'
-        },
-        'es': {
-            fresh: 'Hola! Soy Vitana, tu compañera de salud. ¿Cómo puedo ayudarte hoy?',
-            returning: '¡Bienvenido de nuevo! ¿Cómo puedo ayudarte?',
-            continuing: 'Sigo aquí. ¿De qué te gustaría hablar?'
-        },
-        'ar': {
-            fresh: 'مرحباً! أنا فيتانا، رفيقتك الصحية. كيف يمكنني مساعدتك اليوم؟',
-            returning: 'مرحباً بعودتك! كيف يمكنني مساعدتك؟',
-            continuing: 'أنا لا أزال هنا. عن ماذا تريد أن نتحدث؟'
-        },
-        'zh': {
-            fresh: '你好！我是Vitana，你的健康伙伴。今天有什么我可以帮助你的？',
-            returning: '欢迎回来！有什么我可以帮助你的？',
-            continuing: '我还在这里。你想聊些什么？'
-        },
-        'ru': {
-            fresh: 'Здравствуйте! Я Витана, ваш спутник здоровья. Чем могу помочь?',
-            returning: 'С возвращением! Чем могу помочь?',
-            continuing: 'Я всё ещё здесь. О чём бы вы хотели поговорить?'
-        },
-        'sr': {
-            fresh: 'Здраво! Ја сам Витана, ваш здравствени сапутник. Како могу да вам помогнем?',
-            returning: 'Добродошли назад! Како могу да вам помогнем?',
-            continuing: 'Још сам овде. О чему бисте желели да разговарамо?'
-        }
-    };
-
-    var langGreetings = greetings[lang] || greetings['en'];
-
-    if (isContinuing) {
-        return langGreetings.continuing;
-    } else if (isReturning) {
-        return langGreetings.returning;
-    } else {
-        return langGreetings.fresh;
-    }
-}
 
 /**
  * VTID-01109: Save ORB conversation state to localStorage
@@ -24345,8 +23989,6 @@ function orbSaveConversationState() {
             var transcriptToSave = state.orb.liveTranscript.slice(-50);
             localStorage.setItem(ORB_TRANSCRIPT_KEY, JSON.stringify(transcriptToSave));
         }
-        // Always update the conversation timestamp
-        localStorage.setItem(ORB_LAST_CONVERSATION_TS_KEY, new Date().toISOString());
         console.log('[VTID-01109] Conversation state saved to localStorage');
     } catch (e) {
         console.warn('[VTID-01109] Failed to save conversation state:', e);
@@ -24394,13 +24036,9 @@ function orbClearConversationState() {
         localStorage.removeItem(ORB_CONVERSATION_ID_KEY);
         localStorage.removeItem(ORB_SESSION_ID_KEY);
         localStorage.removeItem(ORB_TRANSCRIPT_KEY);
-        localStorage.removeItem(ORB_LAST_CONVERSATION_TS_KEY);
-        localStorage.removeItem(ORB_CONVERSATION_TOPIC_KEY);
         state.orb.conversationId = null;
         state.orb.orbSessionId = null;
         state.orb.liveTranscript = [];
-        state.orb.lastConversationTimestamp = null;
-        state.orb.conversationTopicSummary = null;
         console.log('[VTID-01109] Conversation state cleared');
     } catch (e) {
         console.warn('[VTID-01109] Failed to clear conversation state:', e);
@@ -24772,12 +24410,6 @@ function restartRecognitionAfterTTS() {
 function orbStopTTS(reason) {
     console.log('[VTID-01066] Stopping TTS, reason:', reason);
 
-    // VTID-VOICE-INIT: Stop Live API audio playback if active
-    if (state.orb.geminiLiveActive) {
-        geminiLiveStopAllAudio();
-        console.log('[VTID-VOICE-INIT] Live API audio stopped via orbStopTTS');
-    }
-
     // VTID-01155: Cancel Gemini-TTS audio if playing
     if (state.orb.geminiTtsAudio) {
         try {
@@ -24825,20 +24457,18 @@ function orbStopTTS(reason) {
     // Re-render to update UI
     renderApp();
 
-    // Restart recognition after a short delay (only for non-Live API path)
-    if (!state.orb.geminiLiveActive) {
-        setTimeout(function () {
-            if (state.orb.overlayVisible && state.orb.speechRecognition &&
-                state.orb.voiceState !== 'MUTED' && !state.orb.voiceError) {
-                try {
-                    state.orb.speechRecognition.start();
-                    console.log('[VTID-01066] Recognition restarted after TTS stop');
-                } catch (e) {
-                    console.warn('[VTID-01066] Recognition already running:', e);
-                }
+    // Restart recognition after a short delay
+    setTimeout(function () {
+        if (state.orb.overlayVisible && state.orb.speechRecognition &&
+            state.orb.voiceState !== 'MUTED' && !state.orb.voiceError) {
+            try {
+                state.orb.speechRecognition.start();
+                console.log('[VTID-01066] Recognition restarted after TTS stop');
+            } catch (e) {
+                console.warn('[VTID-01066] Recognition already running:', e);
             }
-        }, 250);
-    }
+        }
+    }, 250);
 }
 
 /**
