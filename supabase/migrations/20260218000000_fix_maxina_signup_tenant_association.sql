@@ -113,7 +113,7 @@ COMMENT ON FUNCTION public.current_tenant_id IS
 -- =============================================================================
 
 ALTER TABLE public.app_users
-  ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES public.tenants(id) ON DELETE SET NULL;
+  ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES public.tenants(tenant_id) ON DELETE SET NULL;
 
 COMMENT ON COLUMN public.app_users.tenant_id IS 'Primary tenant for this user (denormalized from user_tenants for convenience)';
 
@@ -151,17 +151,17 @@ BEGIN
 
     -- Resolve tenant
     IF v_tenant_slug IS NOT NULL THEN
-        SELECT id INTO v_tenant_id
-        FROM public.tenants
-        WHERE slug = v_tenant_slug
+        SELECT t.tenant_id INTO v_tenant_id
+        FROM public.tenants t
+        WHERE t.slug = v_tenant_slug
         LIMIT 1;
     END IF;
 
     -- Fallback: oldest tenant
     IF v_tenant_id IS NULL THEN
-        SELECT id INTO v_tenant_id
-        FROM public.tenants
-        ORDER BY created_at ASC
+        SELECT t.tenant_id INTO v_tenant_id
+        FROM public.tenants t
+        ORDER BY t.created_at ASC
         LIMIT 1;
     END IF;
 
