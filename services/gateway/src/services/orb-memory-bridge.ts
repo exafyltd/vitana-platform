@@ -684,6 +684,28 @@ export async function fetchMemoryContextWithIdentity(
     const sinceTimestamp = sinceDate.toISOString();
     const categoryFilter = categories || MEMORY_CONFIG.CONTEXT_CATEGORIES;
 
+    // VTID-01225: Fetch structured facts from memory_facts (written by inline extractor)
+    // This was previously missing — facts were extracted and stored but never read back
+    let factsContext = '';
+    try {
+      const { data: facts, error: factsError } = await supabase
+        .from('memory_facts')
+        .select('entity, fact_key, fact_value')
+        .eq('tenant_id', effectiveIdentity.tenant_id)
+        .eq('user_id', effectiveIdentity.user_id)
+        .is('superseded_by', null)
+        .order('extracted_at', { ascending: false })
+        .limit(30);
+
+      if (!factsError && facts && facts.length > 0) {
+        const factLines = facts.map((f: any) => `- ${f.fact_key}: ${f.fact_value}`);
+        factsContext = `<structured_facts>\n${factLines.join('\n')}\n</structured_facts>`;
+        console.log(`[VTID-01225] Loaded ${facts.length} structured facts for user=${effectiveIdentity.user_id.substring(0, 8)}...`);
+      }
+    } catch (factsErr: any) {
+      console.warn(`[VTID-01225] Failed to fetch memory_facts: ${factsErr.message}`);
+    }
+
     // Split categories into persistent and time-sensitive
     const persistentCategories = categoryFilter.filter(
       (cat: string) => MEMORY_CONFIG.PERSISTENT_CATEGORIES.includes(cat)
@@ -758,9 +780,13 @@ export async function fetchMemoryContextWithIdentity(
     }));
 
     const summary = generateMemorySummary(items);
-    const formattedContext = formatMemoryForPrompt(items);
+    const memoryItemsContext = formatMemoryForPrompt(items);
+    // VTID-01225: Prepend structured facts before memory_items context
+    const formattedContext = factsContext
+      ? `${factsContext}\n\n${memoryItemsContext}`
+      : memoryItemsContext;
 
-    console.log(`[VTID-01186] Memory context fetched for user=${effectiveIdentity.user_id.substring(0,8)}...: ${items.length} items`);
+    console.log(`[VTID-01186] Memory context fetched for user=${effectiveIdentity.user_id.substring(0,8)}...: ${items.length} items, ${factsContext ? 'with' : 'without'} structured facts`);
 
     return {
       ok: true,
