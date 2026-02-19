@@ -48,7 +48,7 @@ import { processWithGemini } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
 // VTID-01225: Cognee Entity Extraction Integration
 import { cogneeExtractorClient, type CogneeExtractionRequest } from '../services/cognee-extractor-client';
-// VTID-01225: Inline fact extraction fallback when Cognee is unavailable
+// VTID-01225-READ-FIX: Inline fact extraction for voice sessions
 import { extractAndPersistFacts, isInlineExtractionAvailable } from '../services/inline-fact-extractor';
 // VTID-01149: Unified Task-Creation Intake
 import {
@@ -332,6 +332,51 @@ function resolveOrbIdentity(req: AuthenticatedRequest): SupabaseIdentity | null 
   return null;
 }
 
+/**
+ * VTID-01225-ROLE: Fetch the user's application-level active_role from user_tenants.
+ * The JWT only contains the Supabase DB role ("authenticated"), NOT the app role
+ * (community/admin/developer). This function queries the DB to get the real role.
+ *
+ * Graceful: returns null on any error — the system works without a role.
+ */
+async function fetchUserActiveRole(
+  userId: string,
+  tenantId: string
+): Promise<string | null> {
+  try {
+    const SUPABASE_URL = process.env.SUPABASE_URL;
+    const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+    if (!SUPABASE_URL || !SUPABASE_KEY) return null;
+
+    const url = `${SUPABASE_URL}/rest/v1/user_tenants?select=active_role&user_id=eq.${userId}&tenant_id=eq.${tenantId}&limit=1`;
+    const resp = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${SUPABASE_KEY}`,
+      },
+    });
+
+    if (!resp.ok) {
+      console.warn(`[VTID-01225-ROLE] user_tenants query failed: ${resp.status}`);
+      return null;
+    }
+
+    const rows = await resp.json() as Array<{ active_role: string | null }>;
+    const role = rows?.[0]?.active_role || null;
+    if (role) {
+      console.log(`[VTID-01225-ROLE] Loaded active_role="${role}" for user=${userId.substring(0, 8)}...`);
+    } else {
+      console.log(`[VTID-01225-ROLE] No active_role found for user=${userId.substring(0, 8)}... (will use graceful fallback)`);
+    }
+    return role;
+  } catch (err: any) {
+    console.warn(`[VTID-01225-ROLE] Failed to fetch active_role (non-fatal): ${err.message}`);
+    return null;
+  }
+}
+
 // =============================================================================
 // VTID-0135: Voice Conversation Types & Stores
 // =============================================================================
@@ -489,6 +534,9 @@ interface GeminiLiveSession {
   audioOutChunks: number;
   // VTID-01224: Identity for context retrieval (server-verified from JWT)
   identity?: SupabaseIdentity;
+  // VTID-01225-ROLE: User's application-level active_role (community/admin/developer/etc.)
+  // Loaded from user_tenants at session start. NOT the JWT's "authenticated" DB role.
+  active_role?: string | null;
   // VTID-01224: Thread continuity
   thread_id?: string;
   conversation_id?: string;
@@ -1037,6 +1085,7 @@ function buildLiveSystemInstruction(
   lang: string,
   voiceStyle: string,
   bootstrapContext?: string,
+  activeRole?: string | null,
   conversationSummary?: string,
   conversationHistory?: string
 ): string {
@@ -1051,15 +1100,52 @@ function buildLiveSystemInstruction(
     'sr': 'Serbian'
   };
 
+  // VTID-01225-ROLE: Build role-aware context section
+  let roleSection: string;
+  if (activeRole) {
+    const roleDescriptions: Record<string, string> = {
+      developer: `The user's current role is: DEVELOPER.
+- They are a platform developer working on Vitana
+- When they ask about progress, tasks, or VTIDs, provide development-related answers
+- Help with technical questions, code, architecture, and deployment topics
+- Use search_knowledge to look up VTID status, deployment info, and technical documentation`,
+      admin: `The user's current role is: ADMIN.
+- They are a platform administrator
+- Help with system configuration, user management, and platform operations
+- When they ask about status, provide operational and administrative insights
+- Use search_knowledge for platform configuration and admin documentation`,
+      community: `The user's current role is: COMMUNITY.
+- They are a community member
+- Help them connect with other community members, check events, and explore community features
+- Focus on social connections, events, meetups, and community activities
+- Use search_knowledge for community events and member information`,
+      patient: `The user's current role is: PATIENT.
+- They are a health-focused user
+- Focus on medication reminders, health tips, wellness support, and personal health tracking
+- Be warm, patient, and empathetic about health concerns
+- Use search_memory to recall their health history and preferences`,
+      professional: `The user's current role is: PROFESSIONAL.
+- They are a health professional
+- Provide clinical-grade information and professional-level health insights
+- Help with patient management and professional workflows`,
+      staff: `The user's current role is: STAFF.
+- They are a Vitana staff member
+- Help with operational tasks, content management, and platform support`,
+    };
+    roleSection = roleDescriptions[activeRole] || `The user's current role is: ${activeRole.toUpperCase()}.`;
+  } else {
+    roleSection = `USER ROLE: Not available for this session. If the user asks about their role, tell them honestly that you do not see their user role in this session — do NOT guess or pretend to know it. You can still assist them with general questions.`;
+  }
+
   let instruction = `You are Vitana, an AI health companion assistant powered by Gemini Live.
 
 LANGUAGE: Respond ONLY in ${languageNames[lang] || 'English'}.
 
 VOICE STYLE: ${voiceStyle}
 
-ROLE:
-- You are a caring health companion for elderly users
-- Focus on medication reminders, health tips, and wellness support
+${roleSection}
+
+GENERAL BEHAVIOR:
 - Be warm, patient, and empathetic
 - Keep responses concise for voice interaction (2-3 sentences max)
 - Use natural conversational tone
@@ -1191,18 +1277,18 @@ async function connectToLiveAPI(
               }
             }
           },
-          // VTID-VOICE-INIT: Configure VAD to reduce echo-triggered interruptions
-          // On mobile devices without hardware AEC, the speaker output is picked up by
-          // the mic, causing Gemini to think the user is speaking and interrupt itself.
-          // LOW sensitivity + longer silence duration reduces false triggers.
+          // VTID-VOICE-INIT + VTID-01225-VAD: Voice Activity Detection configuration
+          // Reduces echo-triggered interruptions on mobile (no hardware AEC) and prevents
+          // cutting users off mid-sentence. silence_duration_ms=700 gives 0.7s breathing room.
+          // START_SENSITIVITY_HIGH detects speech quickly; END_SENSITIVITY_LOW avoids premature cutoff.
           realtime_input_config: {
             automatic_activity_detection: {
               disabled: false,
-              start_of_speech_sensitivity: 'START_SENSITIVITY_LOW',
+              start_of_speech_sensitivity: 'START_SENSITIVITY_HIGH',
               end_of_speech_sensitivity: 'END_SENSITIVITY_LOW',
               prefix_padding_ms: 20,
-              silence_duration_ms: 500,
-            },
+              silence_duration_ms: 700,
+            }
           },
           // VTID-01225: Enable transcription at setup level (not in generation_config)
           output_audio_transcription: {},
@@ -1210,11 +1296,12 @@ async function connectToLiveAPI(
           system_instruction: {
             parts: [{
               // VTID-01224: Pass bootstrap context to system instruction
-              // VTID-01225: Include conversation history for reconnect continuity
+              // VTID-01225-ROLE: Pass active_role + conversation history for continuity
               text: buildLiveSystemInstruction(
                 session.lang,
                 session.voiceStyle || 'friendly, calm, empathetic',
                 session.contextInstruction,
+                session.active_role,
                 session.conversationSummary,
                 session.transcriptTurns.length > 0
                   ? session.transcriptTurns.map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`).join('\n')
@@ -4451,10 +4538,21 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
           }
         : null;
 
+  // VTID-01225-ROLE: Fetch real application role alongside context bootstrap
+  let sseActiveRole: string | null = null;
+
   if (bootstrapIdentity) {
     const usingDevFallback = bootstrapIdentity.user_id === DEV_IDENTITY.USER_ID;
     console.log(`[VTID-01224] Building bootstrap context for SSE session ${sessionId} user=${bootstrapIdentity.user_id.substring(0, 8)}...${usingDevFallback ? ' (DEV_IDENTITY fallback)' : ''}`);
-    const bootstrapResult = await buildBootstrapContextPack(bootstrapIdentity, sessionId);
+
+    // Fetch role and context in parallel for minimal latency
+    const [bootstrapResult, fetchedSseRole] = await Promise.all([
+      buildBootstrapContextPack(bootstrapIdentity, sessionId),
+      usingDevFallback
+        ? Promise.resolve(DEV_IDENTITY.ACTIVE_ROLE)
+        : fetchUserActiveRole(bootstrapIdentity.user_id, bootstrapIdentity.tenant_id || ''),
+    ]);
+    sseActiveRole = fetchedSseRole;
 
     contextInstruction = bootstrapResult.contextInstruction;
     contextPack = bootstrapResult.contextPack;
@@ -4500,6 +4598,8 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     identity: bootstrapIdentity || orbIdentity || undefined,
     // Conversation summary from previous session for greeting context
     conversationSummary,
+    // VTID-01225-ROLE: Application-level role (community/admin/developer)
+    active_role: sseActiveRole,
   };
 
   // Store session
@@ -4671,6 +4771,30 @@ router.post('/live/session/stop', optionalAuth, async (req: AuthenticatedRequest
     }
   }
   // VTID-01226: Removed fallback for unauthenticated sessions - auth is now required
+
+  // VTID-01225-READ-FIX: Fire inline fact extraction alongside Cognee.
+  // Previously, inline extraction only ran from conversation.ts (text path).
+  // Voice sessions (the primary interaction mode) produced ZERO per-session facts
+  // unless Cognee was enabled. Now both paths extract facts.
+  if (isInlineExtractionAvailable() && session.identity && session.identity.tenant_id) {
+    const transcript = session.transcriptTurns.length > 0
+      ? session.transcriptTurns
+          .map(turn => `${turn.role === 'user' ? 'User' : 'Assistant'}: ${turn.text}`)
+          .join('\n')
+      : null;
+
+    if (transcript && transcript.length > 50) {
+      extractAndPersistFacts({
+        conversationText: transcript,
+        tenant_id: session.identity.tenant_id,
+        user_id: session.identity.user_id,
+        session_id: session_id,
+      }).catch(err => {
+        console.warn(`[VTID-01225-READ-FIX] Inline fact extraction failed (non-blocking): ${err.message}`);
+      });
+      console.log(`[VTID-01225-READ-FIX] Inline fact extraction queued for voice session: ${session_id}`);
+    }
+  }
 
   // Remove from store
   liveSessions.delete(session_id);
@@ -5689,10 +5813,21 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
         ? devSandboxIdentity
         : null;
 
+  // VTID-01225-ROLE: Fetch real application role in parallel with context bootstrap
+  let activeRole: string | null = null;
+
   if (effectiveBootstrapIdentity) {
     const usingDevFallbackWs = effectiveBootstrapIdentity.user_id === DEV_IDENTITY.USER_ID;
     console.log(`[VTID-01224] Building bootstrap context for session ${sessionId} user=${effectiveBootstrapIdentity.user_id.substring(0, 8)}...${usingDevFallbackWs ? ' (DEV_IDENTITY fallback)' : ''}`);
-    const bootstrapResult = await buildBootstrapContextPack(effectiveBootstrapIdentity, sessionId);
+
+    // Fetch role and context in parallel for minimal latency
+    const [bootstrapResult, fetchedRole] = await Promise.all([
+      buildBootstrapContextPack(effectiveBootstrapIdentity, sessionId),
+      usingDevFallbackWs
+        ? Promise.resolve(DEV_IDENTITY.ACTIVE_ROLE)
+        : fetchUserActiveRole(effectiveBootstrapIdentity.user_id, effectiveBootstrapIdentity.tenant_id || ''),
+    ]);
+    activeRole = fetchedRole;
 
     contextInstruction = bootstrapResult.contextInstruction;
     contextPack = bootstrapResult.contextPack;
@@ -5770,6 +5905,8 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     audioOutChunks: 0,
     // VTID-01224: Identity and context (use effective identity for dev-sandbox fallback)
     identity: effectiveBootstrapIdentity || identity,
+    // VTID-01225-ROLE: Application-level role (community/admin/developer)
+    active_role: activeRole,
     thread_id: sessionId,
     turn_count: 0,
     contextInstruction,

@@ -727,8 +727,53 @@ export async function fetchMemoryContextWithIdentity(
       }
     }
 
-    // Merge and deduplicate
-    const allItems = [...persistentItems, ...timeSensitiveItems];
+    // VTID-01225-READ-FIX: Fetch structured facts from memory_facts table
+    // This is the critical fix — memory_facts contains extracted knowledge (user_name,
+    // user_birthday, etc.) but was previously invisible to ORB chat and Live API bootstrap.
+    // The context-pack-builder already reads this table; now the ORB path does too.
+    let structuredFacts: MemoryItem[] = [];
+    try {
+      const SUPABASE_URL_ENV = process.env.SUPABASE_URL;
+      const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+      if (SUPABASE_URL_ENV && SUPABASE_KEY) {
+        const factsUrl = `${SUPABASE_URL_ENV}/rest/v1/memory_facts?select=id,fact_key,fact_value,entity,provenance_confidence&tenant_id=eq.${effectiveIdentity.tenant_id}&user_id=eq.${effectiveIdentity.user_id}&superseded_by=is.null&order=provenance_confidence.desc&limit=20`;
+        const factsResp = await fetch(factsUrl, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${SUPABASE_KEY}`,
+          },
+        });
+        if (factsResp.ok) {
+          const factsData = await factsResp.json() as Array<{
+            id: string;
+            fact_key: string;
+            fact_value: string;
+            entity: string;
+            provenance_confidence: number;
+          }>;
+          structuredFacts = factsData.map((f) => ({
+            id: f.id,
+            category_key: 'personal',
+            source: 'memory_facts',
+            content: `${f.fact_key}: ${f.fact_value}`,
+            content_json: { fact_key: f.fact_key, fact_value: f.fact_value, entity: f.entity } as Record<string, unknown>,
+            importance: Math.round((f.provenance_confidence || 0.85) * 100),
+            occurred_at: new Date().toISOString(),
+            created_at: new Date().toISOString(),
+          }));
+          if (structuredFacts.length > 0) {
+            console.log(`[VTID-01225-READ-FIX] Fetched ${structuredFacts.length} structured facts from memory_facts`);
+          }
+        }
+      }
+    } catch (factsErr: any) {
+      console.warn(`[VTID-01225-READ-FIX] memory_facts fetch failed (non-fatal): ${factsErr.message}`);
+    }
+
+    // Merge: structured facts FIRST (highest priority), then persistent items, then time-sensitive
+    const allItems = [...structuredFacts, ...persistentItems, ...timeSensitiveItems];
     const seenIds = new Set<string>();
     const memoryItems = allItems.filter(item => {
       if (seenIds.has(item.id)) return false;
@@ -1609,55 +1654,72 @@ function formatMemoryForPrompt(items: MemoryItem[]): string {
   }
 
   const lines: string[] = [];
-  lines.push('## User Context (from Memory)');
-  lines.push('');
 
-  // Group by category for better organization
-  const byCategory: Record<string, MemoryItem[]> = {};
-  for (const item of items) {
-    if (!byCategory[item.category_key]) {
-      byCategory[item.category_key] = [];
-    }
-    byCategory[item.category_key].push(item);
-  }
+  // VTID-01225-READ-FIX: Separate structured facts (from memory_facts) from raw memory items.
+  // Structured facts are high-confidence extracted knowledge — render them first and prominently.
+  const structuredFacts = items.filter(i => i.source === 'memory_facts');
+  const regularItems = items.filter(i => i.source !== 'memory_facts');
 
-  // VTID-01109: Process categories in priority order (personal first!)
-  const categoryOrder = ['personal', 'relationships', 'preferences', 'health', 'goals', 'conversation'];
-  const sortedCategories = Object.keys(byCategory).sort((a, b) => {
-    const aIdx = categoryOrder.indexOf(a);
-    const bIdx = categoryOrder.indexOf(b);
-    return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx);
-  });
-
-  // Format each category
-  for (const category of sortedCategories) {
-    const catItems = byCategory[category];
-    lines.push(`### ${formatCategoryName(category)}`);
-
-    // VTID-DEBUG-01: NO LIMIT for personal/relationships - include ALL items
-    // Other categories use ITEMS_PER_CATEGORY to prevent flooding
-    const isIdentityCategory = category === 'personal' || category === 'relationships';
-    const itemLimit = isIdentityCategory ? catItems.length : (MEMORY_CONFIG.ITEMS_PER_CATEGORY || 10);
-
-    for (const item of catItems.slice(0, itemLimit)) {
-      const timestamp = formatRelativeTime(item.occurred_at);
-      // VTID-01109: Use config for content truncation limit
-      const content = truncateContent(item.content, MEMORY_CONFIG.MAX_ITEM_CHARS || 300);
-      const direction = item.content_json?.direction as string | undefined;
-
-      if (direction === 'user') {
-        lines.push(`- [${timestamp}] User: "${content}"`);
-      } else if (direction === 'assistant') {
-        lines.push(`- [${timestamp}] Assistant: "${content}"`);
-      } else {
-        lines.push(`- [${timestamp}] ${content}`);
-      }
-    }
-
-    if (catItems.length > itemLimit) {
-      lines.push(`  (+ ${catItems.length - itemLimit} more ${category} items)`);
+  if (structuredFacts.length > 0) {
+    lines.push('## Verified Facts About This User');
+    lines.push('The following are extracted, structured facts (high confidence):');
+    for (const fact of structuredFacts) {
+      lines.push(`- ${fact.content}`);
     }
     lines.push('');
+  }
+
+  if (regularItems.length > 0) {
+    lines.push('## User Context (from Memory)');
+    lines.push('');
+
+    // Group by category for better organization
+    const byCategory: Record<string, MemoryItem[]> = {};
+    for (const item of regularItems) {
+      if (!byCategory[item.category_key]) {
+        byCategory[item.category_key] = [];
+      }
+      byCategory[item.category_key].push(item);
+    }
+
+    // VTID-01109: Process categories in priority order (personal first!)
+    const categoryOrder = ['personal', 'relationships', 'preferences', 'health', 'goals', 'conversation'];
+    const sortedCategories = Object.keys(byCategory).sort((a, b) => {
+      const aIdx = categoryOrder.indexOf(a);
+      const bIdx = categoryOrder.indexOf(b);
+      return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx);
+    });
+
+    // Format each category
+    for (const category of sortedCategories) {
+      const catItems = byCategory[category];
+      lines.push(`### ${formatCategoryName(category)}`);
+
+      // VTID-DEBUG-01: NO LIMIT for personal/relationships - include ALL items
+      // Other categories use ITEMS_PER_CATEGORY to prevent flooding
+      const isIdentityCategory = category === 'personal' || category === 'relationships';
+      const itemLimit = isIdentityCategory ? catItems.length : (MEMORY_CONFIG.ITEMS_PER_CATEGORY || 10);
+
+      for (const item of catItems.slice(0, itemLimit)) {
+        const timestamp = formatRelativeTime(item.occurred_at);
+        // VTID-01109: Use config for content truncation limit
+        const content = truncateContent(item.content, MEMORY_CONFIG.MAX_ITEM_CHARS || 300);
+        const direction = item.content_json?.direction as string | undefined;
+
+        if (direction === 'user') {
+          lines.push(`- [${timestamp}] User: "${content}"`);
+        } else if (direction === 'assistant') {
+          lines.push(`- [${timestamp}] Assistant: "${content}"`);
+        } else {
+          lines.push(`- [${timestamp}] ${content}`);
+        }
+      }
+
+      if (catItems.length > itemLimit) {
+        lines.push(`  (+ ${catItems.length - itemLimit} more ${category} items)`);
+      }
+      lines.push('');
+    }
   }
 
   // Truncate if too long
