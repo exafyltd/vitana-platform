@@ -2090,7 +2090,43 @@ async function generateMemoryEnhancedSystemInstruction(
   const effectiveIdentity: MemoryIdentity = identity && identity.user_id && identity.tenant_id
     ? identity
     : { user_id: DEV_IDENTITY.USER_ID, tenant_id: DEV_IDENTITY.TENANT_ID, active_role: DEV_IDENTITY.ACTIVE_ROLE };
+
+  // VTID-01225-READ-FIX: Always fetch memory_facts directly via REST API.
+  // This bypasses ALL pipeline complexity (Mem0, Context Assembly, Memory Bridge)
+  // and guarantees structured facts are ALWAYS available in the system instruction.
+  let memoryFactsSection = '';
+  try {
+    const SUPABASE_URL_ENV = process.env.SUPABASE_URL;
+    const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+    if (SUPABASE_URL_ENV && SUPABASE_KEY && effectiveIdentity.user_id && effectiveIdentity.tenant_id) {
+      const factsUrl = `${SUPABASE_URL_ENV}/rest/v1/memory_facts?select=fact_key,fact_value,entity&tenant_id=eq.${effectiveIdentity.tenant_id}&user_id=eq.${effectiveIdentity.user_id}&superseded_by=is.null&order=provenance_confidence.desc&limit=25`;
+      const factsResp = await fetch(factsUrl, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+        },
+      });
+      if (factsResp.ok) {
+        const facts = await factsResp.json() as Array<{ fact_key: string; fact_value: string; entity: string }>;
+        if (facts.length > 0) {
+          const factLines = facts.map(f =>
+            f.entity === 'disclosed'
+              ? `- ${f.fact_key}: ${f.fact_value} (about someone the user knows)`
+              : `- ${f.fact_key}: ${f.fact_value}`
+          );
+          memoryFactsSection = `\n\n## Verified Facts About This User (from memory_facts)\nThese are CONFIRMED facts. Use them when the user asks about themselves:\n${factLines.join('\n')}`;
+          console.log(`[VTID-01225-READ-FIX] Injected ${facts.length} memory_facts into system instruction`);
+        }
+      }
+    }
+  } catch (factsErr: any) {
+    console.warn(`[VTID-01225-READ-FIX] memory_facts direct fetch failed (non-fatal): ${factsErr.message}`);
+  }
+
   // Base instruction WITHOUT memory claims (used when memory is unavailable)
+  // VTID-01225-READ-FIX: Always append memory_facts if available
   const baseInstructionNoMemory = `You are VITANA ORB, a voice-first multimodal assistant.
 
 Context:
@@ -2103,7 +2139,7 @@ Operating mode:
 - Voice conversation is primary.
 - Always listening while ORB overlay is open.
 - Read-only: do not mutate system state.
-- Be concise, contextual, and helpful.`;
+- Be concise, contextual, and helpful.${memoryFactsSection ? `\n- You have PERSISTENT MEMORY - you remember users across sessions.${memoryFactsSection}` : ''}`;
 
   // Base instruction WITH memory claims (used when memory IS available)
   const baseInstructionWithMemory = `You are VITANA ORB, a voice-first multimodal assistant with persistent memory.
@@ -2120,7 +2156,7 @@ Operating mode:
 - Read-only: do not mutate system state.
 - Be concise, contextual, and helpful.
 - You have PERSISTENT MEMORY - you remember users across sessions.
-- NEVER claim you cannot remember or that your memory resets.`;
+- NEVER claim you cannot remember or that your memory resets.${memoryFactsSection}`;
 
   // VTID-01153: Try memory-indexer first (Mem0 OSS)
   // VTID-01186: Use effective identity for memory lookups
