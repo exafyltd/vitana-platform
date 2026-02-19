@@ -507,6 +507,10 @@ interface GeminiLiveSession {
   // Voice init: greeting lifecycle tracking
   greetingSent?: boolean;
   greetingTurnIndex?: number; // turn_count when greeting was sent, to filter from memory
+  // VTID-VOICE-INIT: Echo prevention — true while model is outputting audio
+  // When true, inbound mic audio is dropped to prevent the speaker output
+  // being picked up by the mic and causing overlapping response streams.
+  isModelSpeaking: boolean;
 }
 
 /**
@@ -1187,6 +1191,19 @@ async function connectToLiveAPI(
               }
             }
           },
+          // VTID-VOICE-INIT: Configure VAD to reduce echo-triggered interruptions
+          // On mobile devices without hardware AEC, the speaker output is picked up by
+          // the mic, causing Gemini to think the user is speaking and interrupt itself.
+          // LOW sensitivity + longer silence duration reduces false triggers.
+          realtime_input_config: {
+            automatic_activity_detection: {
+              disabled: false,
+              start_of_speech_sensitivity: 'START_SENSITIVITY_LOW',
+              end_of_speech_sensitivity: 'END_SENSITIVITY_LOW',
+              prefix_padding_ms: 20,
+              silence_duration_ms: 500,
+            },
+          },
           // VTID-01225: Enable transcription at setup level (not in generation_config)
           output_audio_transcription: {},
           input_audio_transcription: {},
@@ -1247,6 +1264,8 @@ async function connectToLiveAPI(
           const interrupted = content.interrupted || content.grounding_metadata?.interrupted;
           if (interrupted) {
             console.log(`[VTID-VOICE-INIT] Interrupted for session ${session.sessionId}`);
+            // VTID-VOICE-INIT: Model stopped speaking — ungate mic audio
+            session.isModelSpeaking = false;
             // Clear output transcript buffer on interruption (incomplete response)
             session.outputTranscriptBuffer = '';
             // Notify SSE client
@@ -1261,6 +1280,10 @@ async function connectToLiveAPI(
           // Check if turn is complete (handle both formats)
           const turnComplete = content.turn_complete || content.turnComplete;
           if (turnComplete) {
+            // VTID-VOICE-INIT: Model finished speaking — ungate mic audio
+            session.isModelSpeaking = false;
+            console.log(`[VTID-VOICE-INIT] Model stopped speaking for session ${session.sessionId} — mic audio ungated`);
+
             session.turn_count++;
             const isGreetingTurn = session.greetingSent && session.turn_count === (session.greetingTurnIndex ?? 0) + 1;
             console.log(`[VTID-01219] Turn complete for session ${session.sessionId} (turn ${session.turn_count}, isGreeting=${isGreetingTurn})`);
@@ -1361,6 +1384,12 @@ async function connectToLiveAPI(
               const inlineData = part.inline_data || part.inlineData;
               const mimeType = inlineData?.mime_type || inlineData?.mimeType;
               if (inlineData && mimeType?.startsWith('audio/')) {
+                // VTID-VOICE-INIT: Mark model as speaking on first audio chunk
+                // This gates inbound mic audio to prevent echo-triggered interruptions
+                if (!session.isModelSpeaking) {
+                  session.isModelSpeaking = true;
+                  console.log(`[VTID-VOICE-INIT] Model started speaking for session ${session.sessionId} — mic audio gated`);
+                }
                 session.audioOutChunks++;
                 const audioB64 = inlineData.data;
                 console.log(`[VTID-01219] Received audio chunk ${session.audioOutChunks}, size: ${audioB64.length}`);
@@ -4465,6 +4494,8 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     // VTID-01225: Transcript accumulation for Cognee extraction
     transcriptTurns: [],
     outputTranscriptBuffer: '',
+    // VTID-VOICE-INIT: Echo prevention — not speaking at session start
+    isModelSpeaking: false,
     // VTID-ORBC: JWT identity for per-user memory; DEV_IDENTITY only as fallback
     identity: bootstrapIdentity || orbIdentity || undefined,
     // Conversation summary from previous session for greeting context
@@ -4935,6 +4966,15 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
 
   try {
     if (body.type === 'audio') {
+      // VTID-VOICE-INIT: Echo prevention gate (SSE path) — same as WebSocket path
+      if (session.isModelSpeaking) {
+        session.audioInChunks++;
+        if (session.audioInChunks % 50 === 0) {
+          console.log(`[VTID-VOICE-INIT] SSE path: dropping mic audio — model is speaking: session=${effectiveSessionId}`);
+        }
+        return res.json({ ok: true, dropped: true, reason: 'model_speaking' });
+      }
+
       // Handle audio chunk
       session.audioInChunks++;
 
@@ -5020,6 +5060,31 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
       } else {
         console.warn(`[VTID-VOICE-INIT] Cannot forward text - Live API not connected`);
       }
+    } else if ((body as any).type === 'interrupt') {
+      // VTID-VOICE-INIT: Client-side VAD detected real user speech during model playback
+      if (!session.isModelSpeaking) {
+        return res.json({ ok: true, was_speaking: false });
+      }
+
+      console.log(`[VTID-VOICE-INIT] SSE path: client interrupt — ungating mic and stopping Gemini: session=${effectiveSessionId}`);
+
+      // Ungate mic audio
+      session.isModelSpeaking = false;
+
+      // Tell Gemini to stop generating
+      if (session.upstreamWs && session.upstreamWs.readyState === WebSocket.OPEN) {
+        sendEndOfTurn(session.upstreamWs);
+      }
+
+      // Clear incomplete output transcript
+      session.outputTranscriptBuffer = '';
+
+      // Send interrupted event to client via SSE
+      if (session.sseResponse) {
+        session.sseResponse.write(`data: ${JSON.stringify({ type: 'interrupted' })}\n\n`);
+      }
+
+      return res.json({ ok: true, was_speaking: true });
     }
 
     return res.status(200).json({ ok: true });
@@ -5336,7 +5401,7 @@ router.get('/health', (_req: Request, res: Response) => {
  * VTID-01224: Added auth_token for server-verified identity
  */
 interface WsClientMessage {
-  type: 'start' | 'audio' | 'video' | 'text' | 'end_turn' | 'stop' | 'ping';
+  type: 'start' | 'audio' | 'video' | 'text' | 'end_turn' | 'stop' | 'ping' | 'interrupt';
   // Text message fields
   text?: string;
   // Start message fields
@@ -5552,6 +5617,16 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
       handleWsTextMessage(clientSession, message);
       break;
 
+    case 'interrupt':
+      // VTID-VOICE-INIT: Client detected real user speech during model playback
+      // Ungate mic audio and tell Gemini to stop generating
+      if (!liveSession || !liveSession.active) {
+        sendWsMessage(clientWs, { type: 'error', message: 'No active session.' });
+        return;
+      }
+      handleWsInterruptMessage(clientSession);
+      break;
+
     case 'end_turn':
       if (!liveSession || !liveSession.active) {
         sendWsMessage(clientWs, { type: 'error', message: 'No active session.' });
@@ -5704,6 +5779,8 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     // VTID-01225: Transcript accumulation for Cognee extraction
     transcriptTurns: [],
     outputTranscriptBuffer: '',
+    // VTID-VOICE-INIT: Echo prevention — not speaking at session start
+    isModelSpeaking: false,
     // Conversation summary for greeting context (from client message)
     conversationSummary: message.conversation_summary,
   };
@@ -5886,6 +5963,21 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
     return;
   }
 
+  // VTID-VOICE-INIT: Echo prevention gate — drop mic audio while model is speaking.
+  // On mobile devices without hardware AEC, the phone speaker output is picked up by
+  // the mic and forwarded to Gemini, which interprets it as new user speech. This causes
+  // Gemini to interrupt itself and generate 2-3 overlapping response streams.
+  // The gate is released when turn_complete or interrupted is received from Gemini.
+  if (liveSession.isModelSpeaking) {
+    // Log sparingly to avoid flooding (every 50th dropped chunk)
+    if (liveSession.audioInChunks % 50 === 0) {
+      console.log(`[VTID-VOICE-INIT] Dropping mic audio — model is speaking: session=${sessionId}, dropped_at_chunk=${liveSession.audioInChunks}`);
+    }
+    liveSession.audioInChunks++;
+    liveSession.lastActivity = new Date();
+    return;
+  }
+
   liveSession.audioInChunks++;
   liveSession.lastActivity = new Date();
 
@@ -5992,6 +6084,43 @@ function handleWsTextMessage(clientSession: WsClientSession, message: WsClientMe
   } else {
     sendWsMessage(clientWs, { type: 'error', message: 'Live API not connected' });
   }
+}
+
+/**
+ * VTID-VOICE-INIT: Handle explicit interrupt from client.
+ * Client-side VAD detected real user speech while model is speaking.
+ * We ungate mic audio and tell Gemini to stop generating immediately.
+ */
+function handleWsInterruptMessage(clientSession: WsClientSession): void {
+  const { sessionId, clientWs, liveSession } = clientSession;
+
+  if (!liveSession) return;
+
+  // Only meaningful if model is actually speaking
+  if (!liveSession.isModelSpeaking) {
+    console.log(`[VTID-VOICE-INIT] Interrupt received but model not speaking: session=${sessionId}`);
+    sendWsMessage(clientWs, { type: 'interrupt_ack', was_speaking: false });
+    return;
+  }
+
+  console.log(`[VTID-VOICE-INIT] Client interrupt — ungating mic and stopping Gemini: session=${sessionId}`);
+
+  // 1. Ungate mic audio so subsequent frames reach Gemini
+  liveSession.isModelSpeaking = false;
+
+  // 2. Tell Gemini to stop generating by sending client_content.turn_complete
+  if (liveSession.upstreamWs && liveSession.upstreamWs.readyState === WebSocket.OPEN) {
+    sendEndOfTurn(liveSession.upstreamWs);
+  }
+
+  // 3. Clear the output transcript buffer (response was interrupted, incomplete)
+  liveSession.outputTranscriptBuffer = '';
+
+  // 4. Ack to client so it can stop audio playback
+  sendWsMessage(clientWs, { type: 'interrupt_ack', was_speaking: true });
+
+  // 5. Also send interrupted event to client (same as Gemini would send)
+  sendWsMessage(clientWs, { type: 'interrupted' });
 }
 
 /**

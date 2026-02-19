@@ -2787,6 +2787,7 @@ const state = {
         geminiLiveAudioQueue: [],     // Queue of audio chunks to play
         geminiLiveAudioPlaying: false, // Whether audio is currently playing
         geminiLiveLastScheduledEnd: 0, // FIX: Track when last audio ends for seamless playback
+        geminiLiveScheduledSources: [], // VTID-VOICE-INIT: Track scheduled AudioBufferSourceNodes for barge-in cancellation
         geminiLiveFrameInterval: null, // Interval for capturing video frames
         geminiLiveAudioStream: null,  // MediaStream for audio capture
         geminiLiveAudioProcessor: null, // ScriptProcessorNode for audio
@@ -23229,6 +23230,14 @@ async function geminiLiveStop() {
     state.orb.geminiLiveActive = false;
     state.orb.geminiLiveAudioQueue = [];
     state.orb.geminiLiveAudioPlaying = false;
+    // VTID-VOICE-INIT: Stop any scheduled audio and clear tracking
+    if (state.orb.geminiLiveScheduledSources) {
+        for (var si = 0; si < state.orb.geminiLiveScheduledSources.length; si++) {
+            try { state.orb.geminiLiveScheduledSources[si].stop(); } catch (e) { /* ok */ }
+        }
+        state.orb.geminiLiveScheduledSources = [];
+    }
+    state.orb.geminiLiveLastScheduledEnd = 0;
 
     console.log('[VTID-01155] Live session stopped');
     renderApp();
@@ -23300,13 +23309,29 @@ function geminiLiveHandleMessage(msg) {
             break;
 
         case 'turn_complete':
-            console.log('[VTID-01219] Turn complete');
+            // VTID-VOICE-INIT: Model finished speaking — reset audio scheduling state
+            // Don't stop nodes (they'll finish naturally), but reset scheduler
+            // so next response doesn't have a gap
+            state.orb.geminiLiveLastScheduledEnd = 0;
+            console.log('[VTID-VOICE-INIT] Turn complete — scheduler reset');
             break;
 
         case 'interrupted':
-            // Model was interrupted, flush audio queue
+            // VTID-VOICE-INIT: Model was interrupted — stop ALL audio immediately
+            // 1. Flush queued chunks not yet scheduled
             state.orb.geminiLiveAudioQueue = [];
-            console.log('[VTID-01155] Audio interrupted, queue flushed');
+            // 2. Stop all already-scheduled AudioBufferSourceNodes
+            if (state.orb.geminiLiveScheduledSources && state.orb.geminiLiveScheduledSources.length > 0) {
+                console.log('[VTID-VOICE-INIT] Stopping ' + state.orb.geminiLiveScheduledSources.length + ' scheduled audio nodes');
+                for (var si = 0; si < state.orb.geminiLiveScheduledSources.length; si++) {
+                    try { state.orb.geminiLiveScheduledSources[si].stop(); } catch (e) { /* already stopped */ }
+                }
+                state.orb.geminiLiveScheduledSources = [];
+            }
+            // 3. Reset scheduler timeline so next response plays immediately
+            state.orb.geminiLiveLastScheduledEnd = 0;
+            state.orb.geminiLiveAudioPlaying = false;
+            console.log('[VTID-VOICE-INIT] Audio interrupted — all playback stopped, scheduler reset');
             break;
 
         case 'audio_ack':
@@ -23361,10 +23386,50 @@ async function geminiLiveStartAudioCapture() {
     // 1024 samples = 64ms at 16kHz (must be power of 2)
     var processor = audioContext.createScriptProcessor(1024, 1, 1);
 
+    // VTID-VOICE-INIT: Client-side VAD for barge-in detection
+    // Tracks consecutive frames above energy threshold to confirm real speech
+    var vadEnergyThreshold = 0.008; // RMS energy threshold (tuned above typical echo level)
+    var vadSpeechFrames = 0;        // Consecutive frames with speech energy
+    var vadSpeechConfirmFrames = 3; // Need 3 consecutive frames (~192ms) to confirm real speech
+    var vadInterruptSent = false;   // Only send one interrupt per model speaking turn
+
     processor.onaudioprocess = function (e) {
         if (!state.orb.geminiLiveActive || state.orb.voiceState === 'MUTED') return;
 
         var inputData = e.inputBuffer.getChannelData(0);
+
+        // VTID-VOICE-INIT: Compute RMS energy for client-side VAD
+        var sumSquares = 0;
+        for (var k = 0; k < inputData.length; k++) {
+            sumSquares += inputData[k] * inputData[k];
+        }
+        var rmsEnergy = Math.sqrt(sumSquares / inputData.length);
+
+        // Check if model is currently playing audio
+        var modelIsPlaying = state.orb.geminiLiveAudioPlaying &&
+            state.orb.geminiLiveScheduledSources &&
+            state.orb.geminiLiveScheduledSources.length > 0;
+
+        if (modelIsPlaying) {
+            // Model is speaking — check if user is trying to barge in
+            if (rmsEnergy > vadEnergyThreshold) {
+                vadSpeechFrames++;
+                if (vadSpeechFrames >= vadSpeechConfirmFrames && !vadInterruptSent) {
+                    // Confirmed real user speech during model playback — send interrupt
+                    console.log('[VTID-VOICE-INIT] Barge-in detected (energy=' + rmsEnergy.toFixed(4) + ', frames=' + vadSpeechFrames + ') — sending interrupt');
+                    vadInterruptSent = true;
+                    geminiLiveSendInterrupt();
+                }
+            } else {
+                vadSpeechFrames = 0; // Reset on silence
+            }
+            // Don't send audio while model is playing (server gates it anyway)
+            return;
+        } else {
+            // Model not speaking — reset VAD state
+            vadSpeechFrames = 0;
+            vadInterruptSent = false;
+        }
 
         // Convert Float32 to Int16 PCM
         var pcmData = new Int16Array(inputData.length);
@@ -23409,6 +23474,29 @@ function geminiLiveSendAudio(base64Data) {
         })
     }).catch(function (error) {
         console.warn('[VTID-01155] Failed to send audio:', error);
+    });
+}
+
+/**
+ * VTID-VOICE-INIT: Send explicit interrupt to Gateway.
+ * Called when client-side VAD detects real user speech during model audio playback.
+ * Gateway will tell Gemini to stop generating and ungate mic audio.
+ */
+function geminiLiveSendInterrupt() {
+    if (!state.orb.geminiLiveSessionId || !state.orb.geminiLiveActive) return;
+
+    console.log('[VTID-VOICE-INIT] Sending interrupt to gateway');
+
+    var sendHeaders = { 'Content-Type': 'application/json' };
+    if (state.authToken) {
+        sendHeaders['Authorization'] = 'Bearer ' + state.authToken;
+    }
+    fetch('/api/v1/orb/live/stream/send?session_id=' + state.orb.geminiLiveSessionId, {
+        method: 'POST',
+        headers: sendHeaders,
+        body: JSON.stringify({ type: 'interrupt' })
+    }).catch(function (error) {
+        console.warn('[VTID-VOICE-INIT] Failed to send interrupt:', error);
     });
 }
 
@@ -23722,6 +23810,17 @@ function geminiLiveProcessQueue() {
 
             var nextStartTime = state.orb.geminiLiveLastScheduledEnd;
             source.start(nextStartTime);
+
+            // VTID-VOICE-INIT: Track source node for barge-in cancellation
+            state.orb.geminiLiveScheduledSources.push(source);
+            source.onended = function () {
+                var idx = state.orb.geminiLiveScheduledSources.indexOf(source);
+                if (idx !== -1) state.orb.geminiLiveScheduledSources.splice(idx, 1);
+                // When all scheduled sources have finished, model audio is done
+                if (state.orb.geminiLiveScheduledSources.length === 0) {
+                    state.orb.geminiLiveAudioPlaying = false;
+                }
+            };
 
             state.orb.geminiLiveLastScheduledEnd += audioBuffer.duration;
             state.orb.geminiLiveAudioPlaying = true;
