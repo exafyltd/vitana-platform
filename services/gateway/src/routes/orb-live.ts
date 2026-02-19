@@ -2178,7 +2178,16 @@ Operating mode:
     const bundle = contextResult.bundle;
 
     if (bundle.top_memories.length === 0 && bundle.long_term_patterns.length === 0) {
-      console.log('[VTID-01112] No context items found for user');
+      console.log('[VTID-01112] No context items from assembly engine, trying memory_facts fallback');
+      // VTID-01225-READ-FIX: Context assembly reads only memory_items.
+      // When those are empty, try fetchMemoryContextWithIdentity() which also reads memory_facts.
+      const factsMemoryContext = await fetchMemoryContextWithIdentity(effectiveIdentity);
+      if (factsMemoryContext.ok && factsMemoryContext.items.length > 0) {
+        console.log(`[VTID-01225-READ-FIX] memory_facts fallback found ${factsMemoryContext.items.length} items`);
+        const enhancedInstruction = buildMemoryEnhancedInstruction(baseInstructionWithMemory, factsMemoryContext);
+        return { instruction: enhancedInstruction, memoryContext: factsMemoryContext, contextBundle: bundle };
+      }
+      console.log('[VTID-01112] No context items found for user (including memory_facts)');
       return { instruction: baseInstructionNoMemory, memoryContext: null, contextBundle: bundle };
     }
 
