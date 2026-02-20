@@ -559,6 +559,15 @@ interface GeminiLiveSession {
   // When true, inbound mic audio is dropped to prevent the speaker output
   // being picked up by the mic and causing overlapping response streams.
   isModelSpeaking: boolean;
+  // VTID-01225-THROTTLE: Timestamp of last successful fact extraction.
+  // Used to throttle per-turn extraction to max once per 60s to avoid
+  // concurrent Vertex API calls that destabilize the Live API WebSocket.
+  lastExtractionTime?: number;
+  // VTID-01225-THROTTLE: Buffer for accumulating user input transcription.
+  // Written to memory_items once per turn_complete instead of per-fragment.
+  inputTranscriptBuffer: string;
+  // VTID-STREAM-KEEPALIVE: Interval handle for upstream Vertex WS ping
+  upstreamPingInterval?: ReturnType<typeof setInterval>;
 }
 
 /**
@@ -1191,13 +1200,17 @@ IMPORTANT:
     instruction += `\n\n${bootstrapContext}`;
   }
 
-  // VTID-01225: Append conversation history for reconnect continuity
-  // When the client disconnects and reconnects, the new Gemini session has no
-  // memory of the prior conversation. Injecting the transcript ensures continuity.
+  // VTID-01225 + VTID-STREAM-KEEPALIVE: Append conversation history for reconnect continuity.
+  // Capped to last 5 turns and 2000 chars to prevent oversized setup messages that
+  // Vertex AI rejects (causing connection timeout). Previous version was unbounded.
   if (conversationHistory) {
+    const MAX_HISTORY_CHARS = 2000;
+    const trimmedHistory = conversationHistory.length > MAX_HISTORY_CHARS
+      ? '...' + conversationHistory.slice(-MAX_HISTORY_CHARS)
+      : conversationHistory;
     instruction += `\n\n<conversation_history>
-The following is the conversation from this session before a brief connection interruption. Continue naturally from where you left off. Remember everything the user told you:
-${conversationHistory}
+The following is the recent conversation from this session before a brief connection interruption. Continue naturally from where you left off. Remember everything the user told you:
+${trimmedHistory}
 </conversation_history>`;
   }
 
@@ -1277,17 +1290,18 @@ async function connectToLiveAPI(
               }
             }
           },
-          // VTID-VOICE-INIT + VTID-01225-VAD: Voice Activity Detection configuration
-          // Reduces echo-triggered interruptions on mobile (no hardware AEC) and prevents
-          // cutting users off mid-sentence. silence_duration_ms=700 gives 0.7s breathing room.
-          // START_SENSITIVITY_HIGH detects speech quickly; END_SENSITIVITY_LOW avoids premature cutoff.
+          // VTID-VOICE-INIT + VTID-STREAM-KEEPALIVE: Voice Activity Detection configuration.
+          // START_SENSITIVITY_LOW reduces false triggers from echo/ambient noise on mobile.
+          // END_SENSITIVITY_LOW avoids cutting users off mid-sentence.
+          // silence_duration_ms=500 balances responsiveness with natural speech pauses.
+          // (Previously HIGH start sensitivity caused rapid turn cycling and stream instability.)
           realtime_input_config: {
             automatic_activity_detection: {
               disabled: false,
-              start_of_speech_sensitivity: 'START_SENSITIVITY_HIGH',
+              start_of_speech_sensitivity: 'START_SENSITIVITY_LOW',
               end_of_speech_sensitivity: 'END_SENSITIVITY_LOW',
               prefix_padding_ms: 20,
-              silence_duration_ms: 700,
+              silence_duration_ms: 500,
             }
           },
           // VTID-01225: Enable transcription at setup level (not in generation_config)
@@ -1303,8 +1317,9 @@ async function connectToLiveAPI(
                 session.contextInstruction,
                 session.active_role,
                 session.conversationSummary,
+                // VTID-STREAM-KEEPALIVE: Limit to last 5 turns to prevent oversized setup messages
                 session.transcriptTurns.length > 0
-                  ? session.transcriptTurns.map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`).join('\n')
+                  ? session.transcriptTurns.slice(-5).map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`).join('\n')
                   : undefined
               )
             }]
@@ -1334,6 +1349,20 @@ async function connectToLiveAPI(
           console.log(`[VTID-01219] Live API setup complete for session ${session.sessionId}`);
           setupComplete = true;
           clearTimeout(connectionTimeout);
+
+          // VTID-STREAM-KEEPALIVE: Start ping interval to prevent idle timeout.
+          // Without this, Cloud Run ALB or Vertex AI can terminate idle connections.
+          // Ping every 25s keeps the connection alive during natural pauses in conversation.
+          session.upstreamPingInterval = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+              try {
+                ws.ping();
+              } catch (e) {
+                // ping can throw if socket is closing — ignore
+              }
+            }
+          }, 25_000);
+
           resolve(ws); // NOW we resolve the promise - connection is ready!
           return;
         }
@@ -1374,6 +1403,44 @@ async function connectToLiveAPI(
             session.turn_count++;
             const isGreetingTurn = session.greetingSent && session.turn_count === (session.greetingTurnIndex ?? 0) + 1;
             console.log(`[VTID-01219] Turn complete for session ${session.sessionId} (turn ${session.turn_count}, isGreeting=${isGreetingTurn})`);
+
+            // VTID-01225-THROTTLE: Flush buffered user input transcription to transcriptTurns + memory_items.
+            // Writes once per turn instead of per-fragment, reducing Supabase write amplification.
+            if (session.inputTranscriptBuffer.length > 0 && !isGreetingTurn) {
+              const userText = session.inputTranscriptBuffer.trim();
+              session.transcriptTurns.push({
+                role: 'user',
+                text: userText,
+                timestamp: new Date().toISOString()
+              });
+              // Write to memory_items (single write per turn, not per-fragment)
+              let userMemoryIdentity: MemoryIdentity | null = null;
+              if (session.identity && session.identity.tenant_id) {
+                userMemoryIdentity = {
+                  user_id: session.identity.user_id,
+                  tenant_id: session.identity.tenant_id
+                };
+              } else if (isDevSandbox()) {
+                userMemoryIdentity = {
+                  user_id: DEV_IDENTITY.USER_ID,
+                  tenant_id: DEV_IDENTITY.TENANT_ID
+                };
+              }
+              if (userMemoryIdentity && userText.length > 20) {
+                writeMemoryItemWithIdentity(userMemoryIdentity, {
+                  source: 'orb_voice',
+                  content: userText,
+                  content_json: {
+                    direction: 'user',
+                    channel: 'orb',
+                    mode: 'live_voice',
+                    orb_session_id: session.sessionId,
+                    conversation_id: session.conversation_id
+                  },
+                }).catch(err => console.warn(`[VTID-01225-THROTTLE] Failed to write user transcript to memory: ${err.message}`));
+              }
+            }
+            session.inputTranscriptBuffer = '';
 
             // VTID-01225: Write accumulated assistant transcript to memory_items and transcriptTurns
             // Skip memory write for the greeting turn (server-injected prompt, not real user interaction)
@@ -1423,25 +1490,33 @@ async function connectToLiveAPI(
               session.outputTranscriptBuffer = '';
             }
 
-            // VTID-01225: Incremental fact extraction on each completed turn
-            // Extract facts in real-time so they're persisted to memory_facts immediately,
-            // not just at session stop. This ensures facts survive disconnects and crashes.
-            if (session.identity && session.identity.tenant_id && isInlineExtractionAvailable()) {
+            // VTID-01225-THROTTLE: Incremental fact extraction — throttled to max once per 60s.
+            // Fires a separate Vertex AI generateContent call, so running it on every turn
+            // creates concurrent API calls that can hit rate limits and destabilize the
+            // Live API WebSocket. The 60s throttle preserves durability (facts survive
+            // disconnects) without hammering the API during active conversation.
+            const EXTRACTION_THROTTLE_MS = 60_000;
+            const now = Date.now();
+            const timeSinceLastExtraction = now - (session.lastExtractionTime || 0);
+            if (session.identity && session.identity.tenant_id && isInlineExtractionAvailable() && timeSinceLastExtraction >= EXTRACTION_THROTTLE_MS) {
               const recentTurns = session.transcriptTurns.slice(-4); // Last 2 user+assistant exchanges
               if (recentTurns.length > 0) {
                 const recentText = recentTurns
                   .map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`)
                   .join('\n');
                 if (recentText.length > 30) {
+                  session.lastExtractionTime = now;
                   extractAndPersistFacts({
                     conversationText: recentText,
                     tenant_id: session.identity.tenant_id,
                     user_id: session.identity.user_id,
                     session_id: session.sessionId,
                   }).catch(err => console.warn(`[VTID-01225-inline] Incremental extraction failed:`, err.message));
-                  console.log(`[VTID-01225-inline] Incremental extraction triggered for ${session.sessionId} (${recentTurns.length} recent turns)`);
+                  console.log(`[VTID-01225-THROTTLE] Extraction triggered for ${session.sessionId} (${recentTurns.length} recent turns, ${Math.round(timeSinceLastExtraction / 1000)}s since last)`);
                 }
               }
+            } else if (session.identity && session.identity.tenant_id && isInlineExtractionAvailable()) {
+              console.log(`[VTID-01225-THROTTLE] Extraction skipped for ${session.sessionId} (${Math.round(timeSinceLastExtraction / 1000)}s since last, need ${EXTRACTION_THROTTLE_MS / 1000}s)`);
             }
 
             // Notify client that response is complete
@@ -1514,38 +1589,11 @@ async function connectToLiveAPI(
               if (session.sseResponse) {
                 session.sseResponse.write(`data: ${JSON.stringify({ type: 'input_transcript', text: inputTranscription })}\n\n`);
               }
-              // VTID-01225: Accumulate user transcript for Cognee extraction
-              session.transcriptTurns.push({
-                role: 'user',
-                text: inputTranscription,
-                timestamp: new Date().toISOString()
-              });
-              // VTID-01225: Write user transcription to memory_items immediately
-              let userMemoryIdentity: MemoryIdentity | null = null;
-              if (session.identity && session.identity.tenant_id) {
-                userMemoryIdentity = {
-                  user_id: session.identity.user_id,
-                  tenant_id: session.identity.tenant_id
-                };
-              } else if (isDevSandbox()) {
-                userMemoryIdentity = {
-                  user_id: DEV_IDENTITY.USER_ID,
-                  tenant_id: DEV_IDENTITY.TENANT_ID
-                };
-              }
-              if (userMemoryIdentity) {
-                writeMemoryItemWithIdentity(userMemoryIdentity, {
-                  source: 'orb_voice',
-                  content: inputTranscription,
-                  content_json: {
-                    direction: 'user',
-                    channel: 'orb',
-                    mode: 'live_voice',
-                    orb_session_id: session.sessionId,
-                    conversation_id: session.conversation_id
-                  },
-                }).catch(err => console.warn(`[VTID-01225] Failed to write user transcript to memory: ${err.message}`));
-              }
+              // VTID-01225-THROTTLE: Buffer user input transcription instead of writing per-fragment.
+              // Vertex Live API sends transcription incrementally (multiple fragments per utterance).
+              // Writing per-fragment caused N parallel Supabase requests per sentence. Now we
+              // accumulate in inputTranscriptBuffer and write once at turn_complete.
+              session.inputTranscriptBuffer += (session.inputTranscriptBuffer ? ' ' : '') + inputTranscription;
             }
           }
           if (outputTranscription) {
@@ -1615,6 +1663,11 @@ async function connectToLiveAPI(
     ws.on('error', (error) => {
       console.error(`[VTID-01219] Live API WebSocket error for session ${session.sessionId}:`, error);
       clearTimeout(connectionTimeout);
+      // VTID-STREAM-KEEPALIVE: Clear ping interval on error too
+      if (session.upstreamPingInterval) {
+        clearInterval(session.upstreamPingInterval);
+        session.upstreamPingInterval = undefined;
+      }
       if (!setupComplete) {
         reject(error);
       }
@@ -1625,9 +1678,50 @@ async function connectToLiveAPI(
     ws.on('close', (code, reason) => {
       console.log(`[VTID-01219] Live API WebSocket closed for session ${session.sessionId}: code=${code}, reason=${reason}`);
       clearTimeout(connectionTimeout);
+
+      // VTID-STREAM-KEEPALIVE: Clear upstream ping interval
+      if (session.upstreamPingInterval) {
+        clearInterval(session.upstreamPingInterval);
+        session.upstreamPingInterval = undefined;
+      }
+
       session.upstreamWs = null;
+
       if (!setupComplete) {
         reject(new Error(`WebSocket closed before setup: code=${code}, reason=${reason}`));
+      } else {
+        // VTID-STREAM-KEEPALIVE: Notify SSE client that upstream dropped (SSE path has no
+        // second close handler, so without this the client is left hanging with no notification).
+        if (session.sseResponse) {
+          try {
+            session.sseResponse.write(`data: ${JSON.stringify({
+              type: 'live_api_disconnected',
+              code,
+              reason: reason?.toString() || 'upstream closed'
+            })}\n\n`);
+          } catch (e) {
+            // SSE response may already be closed — ignore
+          }
+          console.log(`[VTID-STREAM-KEEPALIVE] Notified SSE client of upstream disconnect: session=${session.sessionId}, code=${code}`);
+        }
+
+        // VTID-01225-THROTTLE: Fire final extraction on disconnect for durability.
+        // This ensures facts from the last 60s window (since the throttled extraction)
+        // are not lost when the upstream drops unexpectedly.
+        if (session.identity && session.identity.tenant_id && isInlineExtractionAvailable() && session.transcriptTurns.length > 0) {
+          const allText = session.transcriptTurns
+            .map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`)
+            .join('\n');
+          if (allText.length > 50) {
+            extractAndPersistFacts({
+              conversationText: allText,
+              tenant_id: session.identity.tenant_id,
+              user_id: session.identity.user_id,
+              session_id: session.sessionId,
+            }).catch(err => console.warn(`[VTID-01225-THROTTLE] Disconnect extraction failed: ${err.message}`));
+            console.log(`[VTID-01225-THROTTLE] Disconnect extraction queued for session ${session.sessionId} (${session.transcriptTurns.length} turns)`);
+          }
+        }
       }
     });
   });
@@ -4594,6 +4688,8 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     // VTID-01225: Transcript accumulation for Cognee extraction
     transcriptTurns: [],
     outputTranscriptBuffer: '',
+    // VTID-01225-THROTTLE: Buffer for user input transcription (written once per turn)
+    inputTranscriptBuffer: '',
     // VTID-VOICE-INIT: Echo prevention — not speaking at session start
     isModelSpeaking: false,
     // VTID-ORBC: JWT identity for per-user memory; DEV_IDENTITY only as fallback
@@ -4694,6 +4790,12 @@ router.post('/live/session/stop', optionalAuth, async (req: AuthenticatedRequest
   }
 
   session.active = false;
+
+  // VTID-STREAM-KEEPALIVE: Clear upstream ping interval on session stop
+  if (session.upstreamPingInterval) {
+    clearInterval(session.upstreamPingInterval);
+    session.upstreamPingInterval = undefined;
+  }
 
   // Emit OASIS event
   await emitLiveSessionEvent('vtid.live.session.stop', {
@@ -5689,9 +5791,25 @@ async function handleWebSocketConnection(ws: WebSocket, req: IncomingMessage): P
     }
   });
 
+  // VTID-STREAM-KEEPALIVE: Server-side ping to prevent Cloud Run ALB idle timeout.
+  // The SSE path has a 30s heartbeat, but the WS path had nothing — idle connections
+  // were silently terminated by the load balancer after ~60s of no data.
+  const clientPingInterval = setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) {
+      try {
+        ws.ping();
+      } catch (e) {
+        // socket may be closing — ignore
+      }
+    } else {
+      clearInterval(clientPingInterval);
+    }
+  }, 30_000);
+
   // Handle client disconnect
   ws.on('close', (code, reason) => {
     console.log(`[VTID-01222] WebSocket disconnected: ${sessionId}, code=${code}, reason=${reason}`);
+    clearInterval(clientPingInterval);
     cleanupWsSession(sessionId);
     decrementConnection(clientIP);
   });
@@ -5918,6 +6036,8 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     // VTID-01225: Transcript accumulation for Cognee extraction
     transcriptTurns: [],
     outputTranscriptBuffer: '',
+    // VTID-01225-THROTTLE: Buffer for user input transcription (written once per turn)
+    inputTranscriptBuffer: '',
     // VTID-VOICE-INIT: Echo prevention — not speaking at session start
     isModelSpeaking: false,
     // Conversation summary for greeting context (from client message)
@@ -6351,6 +6471,12 @@ function cleanupWsSession(sessionId: string): void {
     }
 
     clientSession.liveSession.active = false;
+
+    // VTID-STREAM-KEEPALIVE: Clear upstream ping interval on cleanup
+    if (clientSession.liveSession.upstreamPingInterval) {
+      clearInterval(clientSession.liveSession.upstreamPingInterval);
+      clientSession.liveSession.upstreamPingInterval = undefined;
+    }
 
     if (clientSession.liveSession.upstreamWs) {
       try {
