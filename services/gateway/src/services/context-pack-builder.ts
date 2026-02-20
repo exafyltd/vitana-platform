@@ -40,7 +40,21 @@ import {
   ConversationChannel,
 } from '../types/conversation';
 import { searchKnowledge, KnowledgeSearchRequest } from './knowledge-hub';
+import { getCurrentFacts } from './memory-facts-service';
+import { generateEmbedding } from './embedding-service';
 import { ContextLens } from '../types/context-lens';
+
+// =============================================================================
+// Identity Core — fact keys that are ALWAYS loaded regardless of limits
+// =============================================================================
+
+const IDENTITY_CORE_KEYS = [
+  'user_name', 'user_birthday', 'user_residence', 'user_hometown',
+  'user_company', 'user_occupation', 'user_email', 'user_phone',
+  'spouse_name', 'fiancee_name', 'mother_name', 'father_name',
+  'fiancee_birthday',
+  'user_health_condition', 'user_medication', 'user_allergy',
+];
 
 // =============================================================================
 // Configuration
@@ -160,65 +174,156 @@ async function fetchMemoryHits(
 }
 
 /**
- * Fetch structured facts from memory_facts table (written by cognee extraction pipeline)
- * These are high-confidence extracted facts about the user that provide structured context.
+ * Fetch structured facts from memory_facts table using two-tier approach:
+ *
+ * Tier 1 (Identity Core): Always fetched via getCurrentFacts() RPC with IDENTITY_CORE_KEYS.
+ *   These are pinned facts (user_name, user_birthday, etc.) that must always be in context.
+ *
+ * Tier 2 (General facts): Fetched via REST with confidence+recency sort and limit.
+ *   Fills remaining context budget with other extracted facts.
+ *
+ * Results are merged and deduplicated by fact ID.
  */
 async function fetchMemoryFacts(
   lens: ContextLens,
   query: string,
-  limit: number = 20
+  limit: number = 50
 ): Promise<{ facts: MemoryHit[]; latency_ms: number }> {
   const startTime = Date.now();
 
   try {
-    const SUPABASE_URL = process.env.SUPABASE_URL;
-    const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
-
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
-      return { facts: [], latency_ms: Date.now() - startTime };
-    }
-
     if (!lens.tenant_id || !lens.user_id) {
       return { facts: [], latency_ms: Date.now() - startTime };
     }
 
-    const url = `${SUPABASE_URL}/rest/v1/memory_facts?select=id,fact_key,fact_value,entity,provenance_confidence,provenance_source&tenant_id=eq.${lens.tenant_id}&user_id=eq.${lens.user_id}&superseded_by=is.null&order=provenance_confidence.desc&limit=${limit}`;
-
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: SUPABASE_SERVICE_ROLE,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      },
-    });
-
-    if (!response.ok) {
-      console.warn(`[VTID-01216] memory_facts retrieval failed: ${response.status}`);
-      return { facts: [], latency_ms: Date.now() - startTime };
+    // --- Tier 1: Identity Core via getCurrentFacts() RPC ---
+    // These facts are ALWAYS loaded regardless of limit or ordering.
+    let identityCoreFacts: MemoryHit[] = [];
+    try {
+      const coreResult = await getCurrentFacts({
+        tenant_id: lens.tenant_id,
+        user_id: lens.user_id,
+        fact_keys: IDENTITY_CORE_KEYS,
+      });
+      if (coreResult.ok && coreResult.facts.length > 0) {
+        identityCoreFacts = coreResult.facts.map((f) => ({
+          id: f.id,
+          category_key: `fact:${f.entity || 'general'}`,
+          content: `${f.fact_key}: ${f.fact_value}`,
+          importance: Math.round(f.provenance_confidence * 100),
+          occurred_at: f.extracted_at || new Date().toISOString(),
+          source: f.provenance_source || 'cognee_extraction',
+          relevance_score: 1.0, // Identity core facts are always max relevance
+        }));
+        console.log(`[VTID-01216] Identity Core: ${identityCoreFacts.length} pinned facts loaded`);
+      }
+    } catch (coreErr: any) {
+      console.warn(`[VTID-01216] Identity Core fetch failed (falling back to REST): ${coreErr.message}`);
     }
 
-    const results = await response.json() as Array<{
-      id: string;
-      fact_key: string;
-      fact_value: string;
-      entity: string;
-      provenance_confidence: number;
-      provenance_source: string;
-    }>;
+    // --- Tier 2: Semantic search via memory_facts_semantic_search() RPC ---
+    // Only when a meaningful query is provided (skip for empty/bootstrap queries)
+    let semanticFacts: MemoryHit[] = [];
+    const SUPABASE_URL = process.env.SUPABASE_URL;
+    const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 
-    // Transform facts into MemoryHit objects with high relevance scores
-    const facts: MemoryHit[] = results.map((r) => ({
-      id: r.id,
-      category_key: `fact:${r.entity || 'general'}`,
-      content: `${r.fact_key}: ${r.fact_value}`,
-      importance: Math.round(r.provenance_confidence * 100),
-      occurred_at: new Date().toISOString(),
-      source: r.provenance_source || 'cognee_extraction',
-      relevance_score: Math.min(1, 0.85 + r.provenance_confidence * 0.15),
-    }));
+    if (SUPABASE_URL && SUPABASE_SERVICE_ROLE && query && query.trim().length > 3) {
+      try {
+        const embResult = await generateEmbedding(query);
+        if (embResult.ok && embResult.embedding) {
+          const semResp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/memory_facts_semantic_search`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              apikey: SUPABASE_SERVICE_ROLE,
+              Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+            },
+            body: JSON.stringify({
+              p_query_embedding: JSON.stringify(embResult.embedding),
+              p_top_k: 20,
+              p_tenant_id: lens.tenant_id,
+              p_user_id: lens.user_id,
+              p_min_confidence: 0.5,
+            }),
+          });
 
-    console.log(`[VTID-01216] memory_facts returned ${facts.length} structured facts`);
+          if (semResp.ok) {
+            const semResults = await semResp.json() as Array<{
+              id: string;
+              fact_key: string;
+              fact_value: string;
+              entity: string;
+              provenance_confidence: number;
+              provenance_source: string;
+              similarity_score: number;
+            }>;
+
+            semanticFacts = semResults.map((r) => ({
+              id: r.id,
+              category_key: `fact:${r.entity || 'general'}`,
+              content: `${r.fact_key}: ${r.fact_value}`,
+              importance: Math.round(r.provenance_confidence * 100),
+              occurred_at: new Date().toISOString(),
+              source: r.provenance_source || 'cognee_extraction',
+              relevance_score: Math.min(1, 0.7 + r.similarity_score * 0.3),
+            }));
+            console.log(`[VTID-01216] Semantic search: ${semanticFacts.length} facts matched query`);
+          } else {
+            console.warn(`[VTID-01216] Semantic search RPC failed: ${semResp.status}`);
+          }
+        }
+      } catch (semErr: any) {
+        console.warn(`[VTID-01216] Semantic search failed (non-fatal): ${semErr.message}`);
+      }
+    }
+
+    // --- Tier 3: General facts via REST (confidence + recency sorted) ---
+    let generalFacts: MemoryHit[] = [];
+
+    if (SUPABASE_URL && SUPABASE_SERVICE_ROLE) {
+      const url = `${SUPABASE_URL}/rest/v1/memory_facts?select=id,fact_key,fact_value,entity,provenance_confidence,provenance_source&tenant_id=eq.${lens.tenant_id}&user_id=eq.${lens.user_id}&superseded_by=is.null&order=provenance_confidence.desc,extracted_at.desc&limit=${limit}`;
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_SERVICE_ROLE,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+        },
+      });
+
+      if (response.ok) {
+        const results = await response.json() as Array<{
+          id: string;
+          fact_key: string;
+          fact_value: string;
+          entity: string;
+          provenance_confidence: number;
+          provenance_source: string;
+        }>;
+
+        generalFacts = results.map((r) => ({
+          id: r.id,
+          category_key: `fact:${r.entity || 'general'}`,
+          content: `${r.fact_key}: ${r.fact_value}`,
+          importance: Math.round(r.provenance_confidence * 100),
+          occurred_at: new Date().toISOString(),
+          source: r.provenance_source || 'cognee_extraction',
+          relevance_score: Math.min(1, 0.85 + r.provenance_confidence * 0.15),
+        }));
+      } else {
+        console.warn(`[VTID-01216] memory_facts REST retrieval failed: ${response.status}`);
+      }
+    }
+
+    // --- Merge: Identity Core → Semantic → General (deduplicated by ID) ---
+    const seenIds = new Set(identityCoreFacts.map(f => f.id));
+    const dedupedSemantic = semanticFacts.filter(f => !seenIds.has(f.id));
+    dedupedSemantic.forEach(f => seenIds.add(f.id));
+    const dedupedGeneral = generalFacts.filter(f => !seenIds.has(f.id));
+    const facts = [...identityCoreFacts, ...dedupedSemantic, ...dedupedGeneral];
+
+    console.log(`[VTID-01216] memory_facts: ${identityCoreFacts.length} identity core + ${dedupedSemantic.length} semantic + ${dedupedGeneral.length} general = ${facts.length} total`);
 
     return {
       facts,

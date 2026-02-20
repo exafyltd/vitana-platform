@@ -379,6 +379,63 @@ export function estimateFactsTokens(facts: MemoryFact[]): number {
 }
 
 // =============================================================================
+// Async Embedding Generation (VTID-01225)
+// =============================================================================
+
+/**
+ * Generate and store an embedding for a memory fact (async, non-blocking).
+ *
+ * Call this AFTER writeFact() returns — it runs fire-and-forget so it doesn't
+ * add latency to the write path. If embedding generation fails, the fact is
+ * still stored; embedding can be backfilled later via batch pipeline.
+ *
+ * @param factId The UUID of the fact to embed
+ * @param factKey The fact_key (e.g., 'user_name')
+ * @param factValue The fact_value (e.g., 'Dragan Alexander')
+ */
+export function generateFactEmbeddingAsync(
+  factId: string,
+  factKey: string,
+  factValue: string
+): void {
+  // Fire-and-forget — don't await
+  (async () => {
+    try {
+      const { generateEmbedding } = await import('./embedding-service');
+
+      // Embed the combined key+value for semantic searchability
+      const textToEmbed = `${factKey}: ${factValue}`;
+      const result = await generateEmbedding(textToEmbed);
+
+      if (!result.ok || !result.embedding) {
+        console.warn(`[${VTID}] Embedding generation failed for fact ${factId}: ${result.error}`);
+        return;
+      }
+
+      const supabase = createServiceClient();
+      if (!supabase) return;
+
+      const { error } = await supabase
+        .from('memory_facts')
+        .update({
+          embedding: JSON.stringify(result.embedding),
+          embedding_model: result.model || 'text-embedding-3-small',
+          embedding_updated_at: new Date().toISOString(),
+        })
+        .eq('id', factId);
+
+      if (error) {
+        console.warn(`[${VTID}] Embedding storage failed for fact ${factId}: ${error.message}`);
+      } else {
+        console.log(`[${VTID}] Embedding stored for fact ${factId} (${result.latency_ms}ms)`);
+      }
+    } catch (err: any) {
+      console.warn(`[${VTID}] Async embedding failed for fact ${factId}: ${err.message}`);
+    }
+  })();
+}
+
+// =============================================================================
 // Exports
 // =============================================================================
 
@@ -387,5 +444,6 @@ export default {
   getCurrentFacts,
   checkFactsForDerivedAnswer,
   formatFactsForContext,
-  estimateFactsTokens
+  estimateFactsTokens,
+  generateFactEmbeddingAsync
 };

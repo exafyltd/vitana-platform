@@ -8,6 +8,7 @@
  */
 
 import { emitOasisEvent } from './oasis-event-service';
+import { generateFactEmbeddingAsync } from './memory-facts-service';
 
 // =============================================================================
 // VTID-01225: Configuration
@@ -598,6 +599,10 @@ class CogneeExtractorClient {
           factsPersisted++;
           const factId = await response.json();
           console.log(`[VTID-01225] Persisted fact via write_fact(): ${factKey}="${factValue}" (id=${factId})`);
+          // VTID-01225: Generate embedding async (non-blocking) for semantic search
+          if (factId && typeof factId === 'string') {
+            generateFactEmbeddingAsync(factId, factKey, factValue);
+          }
         } else {
           factsFailed++;
           const errorText = await response.text();
@@ -987,8 +992,11 @@ class CogneeExtractorClient {
         factKey = 'father_name';
         entityScope = 'disclosed';
       } else {
-        factKey = 'user_name';
-        entityScope = 'self';
+        // VTID-01225-FIX: Unrecognized PERSON entities get their own supersession lane.
+        // Previously this fell through to 'user_name' which caused every mentioned person
+        // (colleagues, friends, public figures) to overwrite the user's actual name.
+        factKey = `contact_name_${this.sanitizeKey(entity.name || name)}`;
+        entityScope = 'disclosed';
       }
     }
     // Birthday/age facts

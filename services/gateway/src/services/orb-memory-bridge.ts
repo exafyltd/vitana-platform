@@ -709,7 +709,7 @@ export async function fetchMemoryContextWithIdentity(
       const SUPABASE_URL_ENV = process.env.SUPABASE_URL;
       const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
       if (SUPABASE_URL_ENV && SUPABASE_KEY) {
-        const factsUrl = `${SUPABASE_URL_ENV}/rest/v1/memory_facts?select=id,fact_key,fact_value,entity,provenance_confidence&tenant_id=eq.${effectiveIdentity.tenant_id}&user_id=eq.${effectiveIdentity.user_id}&superseded_by=is.null&order=provenance_confidence.desc&limit=20`;
+        const factsUrl = `${SUPABASE_URL_ENV}/rest/v1/memory_facts?select=id,fact_key,fact_value,entity,provenance_confidence&tenant_id=eq.${effectiveIdentity.tenant_id}&user_id=eq.${effectiveIdentity.user_id}&superseded_by=is.null&order=provenance_confidence.desc,extracted_at.desc&limit=50`;
         const factsResp = await fetch(factsUrl, {
           method: 'GET',
           headers: {

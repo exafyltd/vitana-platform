@@ -742,14 +742,14 @@ const SILENCE_AUDIO_B64 = Buffer.alloc(SILENCE_PCM_BYTES, 0).toString('base64');
 const LIVE_CONTEXT_CONFIG = {
   /** Maximum time (ms) to wait for context bootstrap before connecting without it */
   BOOTSTRAP_TIMEOUT_MS: 2000,
-  /** Maximum memory items to include in bootstrap */
-  MAX_MEMORY_ITEMS: 8,
+  /** VTID-01225: Increased from 8→20 to load more facts at session start */
+  MAX_MEMORY_ITEMS: 20,
   /** Maximum knowledge items to include in bootstrap */
   MAX_KNOWLEDGE_ITEMS: 4,
   /** Skip web search at bootstrap (no query yet) */
   SKIP_WEB_SEARCH: true,
-  /** Maximum total context characters for system instruction */
-  MAX_CONTEXT_CHARS: 4000,
+  /** VTID-01225: Increased from 4KB→8KB to fit Identity Core + general facts */
+  MAX_CONTEXT_CHARS: 8000,
 };
 
 /**
@@ -2380,7 +2380,7 @@ async function generateMemoryEnhancedSystemInstruction(
     const SUPABASE_URL_ENV = process.env.SUPABASE_URL;
     const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
     if (SUPABASE_URL_ENV && SUPABASE_KEY && effectiveIdentity.user_id && effectiveIdentity.tenant_id) {
-      const factsUrl = `${SUPABASE_URL_ENV}/rest/v1/memory_facts?select=fact_key,fact_value,entity&tenant_id=eq.${effectiveIdentity.tenant_id}&user_id=eq.${effectiveIdentity.user_id}&superseded_by=is.null&order=provenance_confidence.desc&limit=25`;
+      const factsUrl = `${SUPABASE_URL_ENV}/rest/v1/memory_facts?select=fact_key,fact_value,entity&tenant_id=eq.${effectiveIdentity.tenant_id}&user_id=eq.${effectiveIdentity.user_id}&superseded_by=is.null&order=provenance_confidence.desc,extracted_at.desc&limit=50`;
       const factsResp = await fetch(factsUrl, {
         method: 'GET',
         headers: {
