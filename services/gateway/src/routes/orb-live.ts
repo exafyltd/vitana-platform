@@ -568,6 +568,10 @@ interface GeminiLiveSession {
   inputTranscriptBuffer: string;
   // VTID-STREAM-KEEPALIVE: Interval handle for upstream Vertex WS ping
   upstreamPingInterval?: ReturnType<typeof setInterval>;
+  // VTID-STREAM-RECONNECT: Reference to client WebSocket (WS transport only).
+  // Used by transparent reconnection to send notifications to WS clients.
+  // SSE clients use sseResponse instead.
+  clientWs?: WebSocket;
 }
 
 /**
@@ -1735,25 +1739,61 @@ async function connectToLiveAPI(
 
       if (!setupComplete) {
         reject(new Error(`WebSocket closed before setup: code=${code}, reason=${reason}`));
-      } else {
-        // VTID-STREAM-KEEPALIVE: Notify SSE client that upstream dropped (SSE path has no
-        // second close handler, so without this the client is left hanging with no notification).
-        if (session.sseResponse) {
-          try {
-            session.sseResponse.write(`data: ${JSON.stringify({
-              type: 'live_api_disconnected',
-              code,
-              reason: reason?.toString() || 'upstream closed'
-            })}\n\n`);
-          } catch (e) {
-            // SSE response may already be closed — ignore
+      } else if (code === 1000 && session.active) {
+        // VTID-STREAM-RECONNECT: Code 1000 = Vertex ended the session normally (5-min limit).
+        // Attempt transparent reconnection — the client (SSE/WS) keeps its connection open
+        // and we create a new upstream Vertex session with conversation history injected.
+        console.log(`[VTID-STREAM-RECONNECT] Code 1000 on active session ${session.sessionId} — attempting transparent reconnect`);
+
+        // Fire extraction for accumulated facts before reconnecting
+        if (session.identity && session.identity.tenant_id && isInlineExtractionAvailable() && session.transcriptTurns.length > 0) {
+          const allText = session.transcriptTurns
+            .map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`)
+            .join('\n');
+          if (allText.length > 50) {
+            extractAndPersistFacts({
+              conversationText: allText,
+              tenant_id: session.identity.tenant_id,
+              user_id: session.identity.user_id,
+              session_id: session.sessionId,
+            }).catch(err => console.warn(`[VTID-STREAM-RECONNECT] Pre-reconnect extraction failed: ${err.message}`));
           }
-          console.log(`[VTID-STREAM-KEEPALIVE] Notified SSE client of upstream disconnect: session=${session.sessionId}, code=${code}`);
         }
 
-        // VTID-01225-THROTTLE: Fire final extraction on disconnect for durability.
-        // This ensures facts from the last 60s window (since the throttled extraction)
-        // are not lost when the upstream drops unexpectedly.
+        // Attempt reconnection (async, fire-and-forget from close handler perspective)
+        attemptTransparentReconnect(
+          session,
+          onAudioResponse,
+          onTextResponse,
+          onError,
+          onTurnComplete,
+          onInterrupted
+        ).then(reconnected => {
+          if (!reconnected) {
+            // Reconnection failed — notify client as final disconnect (SSE or WS)
+            console.warn(`[VTID-STREAM-RECONNECT] Reconnection failed for ${session.sessionId} — notifying client`);
+            const failMsg = { type: 'live_api_disconnected', code, reason: 'session_expired_reconnect_failed' };
+            if (session.sseResponse) {
+              try { session.sseResponse.write(`data: ${JSON.stringify(failMsg)}\n\n`); } catch (e) { /* ignore */ }
+            } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+              try { sendWsMessage(session.clientWs, failMsg); } catch (e) { /* ignore */ }
+            }
+          }
+        }).catch(err => {
+          console.error(`[VTID-STREAM-RECONNECT] Reconnection error for ${session.sessionId}: ${err.message}`);
+        });
+      } else {
+        // Non-1000 close or session already inactive — genuine disconnect
+        console.log(`[VTID-STREAM-KEEPALIVE] Genuine disconnect for ${session.sessionId}: code=${code}, active=${session.active}`);
+
+        const disconnectMsg = { type: 'live_api_disconnected', code, reason: reason?.toString() || 'upstream closed' };
+        if (session.sseResponse) {
+          try { session.sseResponse.write(`data: ${JSON.stringify(disconnectMsg)}\n\n`); } catch (e) { /* SSE may be closed */ }
+        } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+          try { sendWsMessage(session.clientWs, disconnectMsg); } catch (e) { /* WS may be closed */ }
+        }
+
+        // Fire final extraction on genuine disconnect
         if (session.identity && session.identity.tenant_id && isInlineExtractionAvailable() && session.transcriptTurns.length > 0) {
           const allText = session.transcriptTurns
             .map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`)
@@ -1765,12 +1805,81 @@ async function connectToLiveAPI(
               user_id: session.identity.user_id,
               session_id: session.sessionId,
             }).catch(err => console.warn(`[VTID-01225-THROTTLE] Disconnect extraction failed: ${err.message}`));
-            console.log(`[VTID-01225-THROTTLE] Disconnect extraction queued for session ${session.sessionId} (${session.transcriptTurns.length} turns)`);
           }
         }
       }
     });
   });
+}
+
+/**
+ * VTID-STREAM-RECONNECT: Transparently reconnect to Vertex AI Live API when session expires.
+ * The Gemini Live API has a hard ~5-minute session limit (closes with code 1000).
+ * This function creates a new upstream WebSocket, injects conversation history into
+ * the system instruction, and resumes streaming — the client (SSE/WS) never notices.
+ *
+ * MAX_RECONNECTS prevents infinite reconnection loops.
+ */
+const MAX_RECONNECTS = 10; // Max reconnections per session (~50 min total)
+
+async function attemptTransparentReconnect(
+  session: GeminiLiveSession,
+  onAudioResponse: (audioB64: string) => void,
+  onTextResponse: (text: string) => void,
+  onError: (error: Error) => void,
+  onTurnComplete?: () => void,
+  onInterrupted?: () => void
+): Promise<boolean> {
+  // Track reconnect count on the session object
+  const reconnectCount = (session as any)._reconnectCount || 0;
+  if (reconnectCount >= MAX_RECONNECTS) {
+    console.warn(`[VTID-STREAM-RECONNECT] Max reconnects (${MAX_RECONNECTS}) reached for ${session.sessionId} — stopping`);
+    return false;
+  }
+  (session as any)._reconnectCount = reconnectCount + 1;
+
+  if (!session.active) {
+    console.log(`[VTID-STREAM-RECONNECT] Session ${session.sessionId} is no longer active — skipping reconnect`);
+    return false;
+  }
+
+  console.log(`[VTID-STREAM-RECONNECT] Attempting transparent reconnect #${reconnectCount + 1} for session ${session.sessionId} (${session.transcriptTurns.length} turns accumulated)`);
+
+  // Notify client that we're reconnecting (informational, not an error)
+  // Works for both SSE and WS transports
+  const reconnectMsg = { type: 'reconnecting', reconnect_count: reconnectCount + 1, message: 'Extending session...' };
+  if (session.sseResponse) {
+    try { session.sseResponse.write(`data: ${JSON.stringify(reconnectMsg)}\n\n`); } catch (e) { /* SSE may be closed */ }
+  } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+    try { sendWsMessage(session.clientWs, reconnectMsg); } catch (e) { /* WS may be closed */ }
+  }
+
+  try {
+    const newWs = await connectToLiveAPI(
+      session,
+      onAudioResponse,
+      onTextResponse,
+      onError,
+      onTurnComplete,
+      onInterrupted
+    );
+
+    session.upstreamWs = newWs;
+    console.log(`[VTID-STREAM-RECONNECT] Reconnected successfully for session ${session.sessionId} (reconnect #${reconnectCount + 1})`);
+
+    // Notify client that reconnection succeeded (both SSE and WS)
+    const reconnectedMsg = { type: 'reconnected', reconnect_count: reconnectCount + 1 };
+    if (session.sseResponse) {
+      try { session.sseResponse.write(`data: ${JSON.stringify(reconnectedMsg)}\n\n`); } catch (e) { /* SSE may be closed */ }
+    } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+      try { sendWsMessage(session.clientWs, reconnectedMsg); } catch (e) { /* WS may be closed */ }
+    }
+
+    return true;
+  } catch (err: any) {
+    console.error(`[VTID-STREAM-RECONNECT] Reconnection failed for ${session.sessionId}: ${err.message}`);
+    return false;
+  }
 }
 
 /**
@@ -6089,6 +6198,8 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     isModelSpeaking: false,
     // Conversation summary for greeting context (from client message)
     conversationSummary: message.conversation_summary,
+    // VTID-STREAM-RECONNECT: Store client WS reference for transparent reconnection notifications
+    clientWs,
   };
 
   clientSession.liveSession = liveSession;
@@ -6175,17 +6286,10 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
 
     liveSession.upstreamWs = upstreamWs;
 
-    // Listen for upstream WebSocket close
-    upstreamWs.on('close', (code, reason) => {
-      console.log(`[VTID-01222] Upstream WebSocket closed for ${sessionId}: code=${code}`);
-      if (clientWs.readyState === WebSocket.OPEN) {
-        sendWsMessage(clientWs, {
-          type: 'live_api_disconnected',
-          code,
-          reason: reason?.toString()
-        });
-      }
-    });
+    // NOTE: No external close handler needed here — connectToLiveAPI's internal close handler
+    // handles transparent reconnection (code 1000) and genuine disconnects for both SSE and WS
+    // clients via session.clientWs / session.sseResponse. Adding a second handler would
+    // cause the client to receive disconnect notifications even during successful reconnections.
 
     console.log(`[VTID-01222] Live API connected for session ${sessionId}`);
 
