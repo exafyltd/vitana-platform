@@ -876,6 +876,40 @@ async function executeLiveApiTool(
   args: Record<string, unknown>
 ): Promise<{ success: boolean; result: string; error?: string }> {
   const startTime = Date.now();
+  // VTID-STREAM-KEEPALIVE: Wrap tool execution in a 5-second timeout.
+  // buildContextPack makes multiple external HTTP calls (Supabase, web APIs).
+  // If a tool takes too long, Gemini may terminate the session while waiting
+  // for the function_response. Better to return a partial/error result quickly
+  // than to let the session die.
+  const TOOL_TIMEOUT_MS = 5000;
+
+  const executeWithTimeout = async (): Promise<{ success: boolean; result: string; error?: string }> => {
+    return Promise.race([
+      executeLiveApiToolInner(session, toolName, args, startTime),
+      new Promise<{ success: boolean; result: string; error?: string }>((resolve) =>
+        setTimeout(() => resolve({
+          success: false,
+          result: '',
+          error: `Tool ${toolName} timed out after ${TOOL_TIMEOUT_MS}ms`,
+        }), TOOL_TIMEOUT_MS)
+      ),
+    ]);
+  };
+
+  const result = await executeWithTimeout();
+  const elapsed = Date.now() - startTime;
+  if (elapsed > TOOL_TIMEOUT_MS) {
+    console.warn(`[VTID-STREAM-KEEPALIVE] Tool ${toolName} timed out (${elapsed}ms > ${TOOL_TIMEOUT_MS}ms)`);
+  }
+  return result;
+}
+
+async function executeLiveApiToolInner(
+  session: GeminiLiveSession,
+  toolName: string,
+  args: Record<string, unknown>,
+  startTime: number
+): Promise<{ success: boolean; result: string; error?: string }> {
 
   // Validate identity for tool execution
   if (!session.identity || !session.identity.tenant_id || !session.identity.user_id) {
@@ -1340,9 +1374,17 @@ async function connectToLiveAPI(
     ws.on('message', (data: WebSocket.Data) => {
       try {
         const rawData = data.toString();
-        console.log(`[VTID-01219] Received message from Gemini (length: ${rawData.length}): ${rawData.substring(0, 300)}`);
         const message = JSON.parse(rawData);
-        console.log(`[VTID-01219] Parsed message keys: ${Object.keys(message).join(', ')}`);
+        const messageKeys = Object.keys(message);
+
+        // VTID-STREAM-KEEPALIVE: Reduce logging volume — skip verbose logs for audio-heavy
+        // server_content messages. Previously every audio chunk (dozens per second) was logged
+        // with 300 chars of raw base64, causing CPU pressure and event loop delays.
+        const isServerContent = !!(message.server_content || message.serverContent);
+        if (!isServerContent) {
+          // Non-audio messages (setup_complete, tool_call, etc.) — log fully
+          console.log(`[VTID-01219] Received from Gemini: keys=${messageKeys.join(',')}, len=${rawData.length}`);
+        }
 
         // Check for setup completion (handle both snake_case and camelCase)
         if (message.setup_complete || message.setupComplete) {
@@ -1372,9 +1414,13 @@ async function connectToLiveAPI(
         if (serverContent) {
           const content = serverContent;
 
-          // VTID-01225: Log full server_content structure to debug transcription
+          // VTID-STREAM-KEEPALIVE: Only log server_content keys for non-audio events
+          // (turn_complete, interrupted, transcription). Audio chunks are too frequent to log.
           const contentKeys = Object.keys(content);
-          console.log(`[VTID-01225] server_content keys: ${contentKeys.join(', ')}`);
+          const hasModelTurn = !!(content.model_turn || content.modelTurn);
+          if (!hasModelTurn) {
+            console.log(`[VTID-01225] server_content keys: ${contentKeys.join(', ')}`);
+          }
 
           // Handle interruption (handle both formats)
           const interrupted = content.interrupted || content.grounding_metadata?.interrupted;
@@ -1547,16 +1593,16 @@ async function connectToLiveAPI(
                 }
                 session.audioOutChunks++;
                 const audioB64 = inlineData.data;
-                console.log(`[VTID-01219] Received audio chunk ${session.audioOutChunks}, size: ${audioB64.length}`);
+                // VTID-STREAM-KEEPALIVE: Only log every 50th audio chunk to reduce log volume
+                if (session.audioOutChunks % 50 === 1) {
+                  console.log(`[VTID-01219] Audio chunk ${session.audioOutChunks}, size: ${audioB64.length}`);
+                }
                 onAudioResponse(audioB64);
 
-                // Emit OASIS event for audio output
-                emitLiveSessionEvent('vtid.live.audio.out.chunk', {
-                  session_id: session.sessionId,
-                  chunk_number: session.audioOutChunks,
-                  bytes: audioB64.length,
-                  rate: 24000
-                }).catch(() => { });
+                // VTID-STREAM-KEEPALIVE: Removed per-chunk OASIS event emission.
+                // emitLiveSessionEvent fires an HTTP call to Supabase on every audio chunk
+                // (dozens per second). This creates massive I/O pressure and slows the event loop.
+                // Audio stats are logged at session stop instead.
               }
 
               // Handle text response
@@ -5206,8 +5252,9 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
       // Handle audio chunk
       session.audioInChunks++;
 
-      // Emit OASIS event (sample every 10th chunk to avoid flooding)
-      if (session.audioInChunks % 10 === 0) {
+      // VTID-STREAM-KEEPALIVE: Sample every 100th chunk (was 10th — too frequent,
+      // each emit is an HTTP call to Supabase that adds I/O pressure during streaming)
+      if (session.audioInChunks % 100 === 0) {
         emitLiveSessionEvent('vtid.live.audio.in.chunk', {
           session_id: effectiveSessionId,
           chunk_number: session.audioInChunks,
@@ -6240,8 +6287,8 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
   liveSession.audioInChunks++;
   liveSession.lastActivity = new Date();
 
-  // Emit OASIS event (sample every 10th chunk)
-  if (liveSession.audioInChunks % 10 === 0) {
+  // VTID-STREAM-KEEPALIVE: Sample every 100th chunk (was 10th — too frequent)
+  if (liveSession.audioInChunks % 100 === 0) {
     emitLiveSessionEvent('vtid.live.audio.in.chunk', {
       session_id: sessionId,
       chunk_number: liveSession.audioInChunks,
