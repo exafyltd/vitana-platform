@@ -20,7 +20,7 @@ const VTID = 'VTID-01184';
 const SERVICE_NAME = 'embedding-service';
 
 // Embedding dimensions
-export const EMBEDDING_DIMENSIONS = 1536;
+export const EMBEDDING_DIMENSIONS = 768;
 
 // Provider configurations
 const OPENAI_EMBEDDING_MODEL = 'text-embedding-3-small';

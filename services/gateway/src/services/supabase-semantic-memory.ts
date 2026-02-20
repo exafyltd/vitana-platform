@@ -38,7 +38,7 @@ const VTID = 'VTID-01184';
 const SERVICE_NAME = 'supabase-semantic-memory';
 
 // Embedding dimensions (must match migration)
-const EMBEDDING_DIMENSIONS = 1536;
+const EMBEDDING_DIMENSIONS = 768;
 
 // Default embedding model
 const DEFAULT_EMBEDDING_MODEL = 'text-embedding-3-small';
