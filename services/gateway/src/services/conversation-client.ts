@@ -328,16 +328,21 @@ export async function processConversationTurn(
       reply = 'I apologize, but I encountered an error processing your request. Please try again.';
     }
 
-    // Step 7: Auto-write conversation to memory
+    // Step 7: Auto-write USER message only to memory (not assistant reply)
+    // VTID-01225-CLEANUP: Previously stored combined user+assistant — caused pollution.
     try {
       const category = classifyCategory(input.message);
       await writeMemoryItemWithIdentity(
         { user_id: input.user_id, tenant_id: input.tenant_id },
         {
-          content: `User (${input.channel}): ${input.message}\nAssistant: ${reply}`,
+          content: input.message,
           source: input.channel === 'orb' ? 'orb_text' : 'orb_text',
           category_key: category || 'conversation',
           importance: 10,
+          content_json: {
+            direction: 'user',
+            channel: input.channel,
+          },
         }
       );
     } catch (memoryError: any) {

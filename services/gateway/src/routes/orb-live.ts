@@ -1410,19 +1410,12 @@ async function connectToLiveAPI(
                   console.warn(`[VTID-01225] Cannot write to memory: no identity and not dev-sandbox`);
                 }
 
+                // VTID-01225-CLEANUP: Do NOT write assistant responses to memory_items.
+                // Assistant output is derivative (generated from user input + system prompt).
+                // Storing it causes pollution — "nice to meet you", "let me help you with that", etc.
+                // User facts are extracted to memory_facts via inline-fact-extractor instead.
                 if (memoryIdentity) {
-                  console.log(`[VTID-01225] Writing transcript to memory_items for user ${memoryIdentity.user_id.substring(0, 8)}...`);
-                  writeMemoryItemWithIdentity(memoryIdentity, {
-                    source: 'orb_voice',
-                    content: fullTranscript,
-                    content_json: {
-                      direction: 'assistant',
-                      channel: 'orb',
-                      mode: 'live_voice',
-                      orb_session_id: session.sessionId,
-                      conversation_id: session.conversation_id
-                    },
-                  }).catch(err => console.warn(`[VTID-01225] Failed to write assistant transcript to memory: ${err.message}`));
+                  console.log(`[VTID-01225-CLEANUP] Skipping assistant transcript write to memory_items (pollution prevention)`);
                 }
               }
 
@@ -3454,46 +3447,10 @@ router.post('/chat', optionalAuth, async (req: AuthenticatedRequest, res: Respon
       });
     }
 
-    // VTID-01105: Auto-write assistant message to memory (fire-and-forget)
-    // VTID-01186: Use identity-aware memory write with req.identity or DEV_IDENTITY fallback
-    if (hasValidIdentity(req)) {
-      writeMemoryItemWithIdentity(identity, {
-        source: memorySource,
-        content: replyText,
-        content_json: {
-          direction: 'assistant',
-          channel: 'orb',
-          model,
-          provider,
-          latency_ms: latencyMs,
-          request_id: requestId,
-          orb_session_id: orbSessionId,
-          conversation_id: conversationId
-        },
-        workspace_scope: 'dev'
-      }).then(result => {
-        if (result.ok && !result.skipped) {
-          console.log(`[VTID-01186] Assistant message written to memory: ${result.id} (user=${identity.user_id.substring(0, 8)}...)`);
-          emitMemoryWriteEvent('memory.write.assistant_message', {
-            memory_id: result.id,
-            category_key: result.category_key,
-            orb_session_id: orbSessionId,
-            conversation_id: conversationId,
-            source: memorySource,
-            model,
-            latency_ms: latencyMs,
-            user_id: identity.user_id,
-            tenant_id: identity.tenant_id
-          });
-        } else if (result.skipped) {
-          console.log(`[VTID-01186] Assistant message skipped (trivial)`);
-        } else {
-          console.warn('[VTID-01186] Assistant message memory write failed:', result.error);
-        }
-      }).catch(err => {
-        console.warn('[VTID-01186] Assistant message memory write error:', err.message);
-      });
-    }
+    // VTID-01225-CLEANUP: Do NOT write assistant responses to memory_items.
+    // Assistant output is derivative and pollutes memory with generic responses.
+    // User facts are extracted to memory_facts via inline-fact-extractor instead.
+    console.log(`[VTID-01225-CLEANUP] Skipping assistant chat reply write to memory_items (pollution prevention)`);
 
     // VTID-DEBUG-MEM: Write assistant response to memory-indexer (Mem0 OSS) - fire-and-forget
     // VTID-01186: Use identity from request

@@ -318,10 +318,28 @@ export function shouldStoreInMemory(content: string, direction: 'user' | 'assist
   const lower = content.toLowerCase().trim();
   const wordCount = lower.split(/\s+/).filter(w => w.length > 0).length;
 
-  // Skip very short messages (less than 3 words) unless they contain key info
-  if (wordCount < 3) {
-    // Check if it contains important keywords despite being short
-    // VTID-01225: Expanded list - short messages like "I'm 35", "Vienna", "Exafy" carry key facts
+  // VTID-01225-CLEANUP: Never store assistant responses in memory_items.
+  // Assistant output is derivative (generated from user input + system prompt).
+  // Storing it causes pollution — "nice to meet you", "let me help you with that", etc.
+  // User facts are extracted to memory_facts via inline-fact-extractor instead.
+  if (direction === 'assistant') {
+    console.log(`[VTID-01225-CLEANUP] Blocking assistant message from memory_items (pollution prevention)`);
+    return false;
+  }
+
+  // VTID-01225-CLEANUP: Minimum character length — filters out voice fragments like "yeah I think"
+  if (lower.length < 20) {
+    const hasImportantInfo = /\b(name|heiß|heiss|bin|from|aus|jahre|old|live|wohne|email|phone|born|geboren|work|arbeit|job|beruf|city|stadt|allergy|allergie|married|verheiratet|single|divorced|hobby)\b/i.test(lower);
+    if (!hasImportantInfo) {
+      console.log(`[VTID-01225-CLEANUP] Skipping short message (${lower.length} chars): "${lower.substring(0, 30)}"`);
+      return false;
+    }
+  }
+
+  // Skip very short messages (less than 5 words) unless they contain key info
+  // VTID-01225-CLEANUP: Raised from 3 to 5 words — voice transcription fragments like
+  // "yeah I think so" or "okay let me" are useless noise in memory
+  if (wordCount < 5) {
     const hasImportantInfo = /\b(name|heiß|heiss|bin|from|aus|jahre|old|live|wohne|email|phone|born|geboren|work|arbeit|job|beruf|city|stadt|allergy|allergie|married|verheiratet|single|divorced|hobby)\b/i.test(lower);
     if (!hasImportantInfo) {
       console.log(`[VTID-01109] Skipping trivial message (${wordCount} words): "${lower.substring(0, 30)}..."`);
@@ -344,55 +362,8 @@ export function shouldStoreInMemory(content: string, direction: 'user' | 'assist
     }
   }
 
-  // For assistant messages, skip generic acknowledgments AND "I don't know" responses
-  // VTID-DEBUG-04: Critical fix - "I don't know" responses were being stored as facts
-  // and retrieved later, creating a self-poisoning loop where the LLM would repeat
-  // "I don't know X" even when X was stored in earlier entries
-  if (direction === 'assistant') {
-    const assistantTrivial = [
-      /^(verstanden|understood|got it|alright|i see|ich verstehe)/i,
-      /^(wie kann ich.*helfen|how can i help)/i,
-      /^(gerne|gern geschehen|you're welcome|no problem)/i,
-    ];
-    for (const pattern of assistantTrivial) {
-      if (pattern.test(lower)) {
-        console.log(`[VTID-01109] Skipping trivial assistant response: "${lower.substring(0, 50)}..."`);
-        return false;
-      }
-    }
-
-    // VTID-DEBUG-04: Skip "I don't know" / "I don't have" responses
-    // These should NEVER be stored as they would override correct earlier information
-    const dontKnowPatterns = [
-      // German "I don't know/have" patterns - expanded to catch "gerade", "leider", etc.
-      /habe ich (noch |gerade |leider )?(nicht|keine)/i,  // "habe ich gerade nicht parat"
-      /weiß ich (noch |gerade |leider )?nicht/i,          // "weiß ich nicht"
-      /weiss ich (noch |gerade |leider )?nicht/i,         // "weiss ich nicht" (ss variant)
-      /kenne ich (noch |gerade |leider )?nicht/i,         // "kenne ich nicht"
-      /ist mir (noch |gerade )?nicht bekannt/i,           // "ist mir nicht bekannt"
-      /fehlt mir/i,                                        // "diese Information fehlt mir"
-      /nicht (in meinem|in meiner) (gedächtnis|erinnerung)/i, // "nicht in meinem Gedächtnis"
-      /nicht gespeichert/i,                               // "noch nicht gespeichert"
-      /nicht parat/i,                                     // "habe ich nicht parat" - explicit catch
-      // English "I don't know/have" patterns
-      /i (do not|don't|dont) (know|have|remember)/i,
-      /i haven't (got|stored|saved)/i,
-      /i (do not|don't) have (this|that|your|the) (information|info|data)/i,
-      /not (in my|stored in) memory/i,
-      /i('m| am) (not sure|uncertain|unsure)/i,
-      // Generic negation patterns for missing info
-      /(noch |gerade )?nicht (parat|gespeichert|bekannt|vorhanden)/i,
-      // "Can you tell me again" patterns (indicates LLM doesn't know)
-      /kannst du .*(noch ?mal|noch ?einmal|erneut|wieder) sagen/i,
-      /can you .*(again|once more)/i,
-    ];
-    for (const pattern of dontKnowPatterns) {
-      if (pattern.test(lower)) {
-        console.log(`[VTID-DEBUG-04] Skipping "I don't know" assistant response - prevents memory poisoning: "${lower.substring(0, 80)}..."`);
-        return false;
-      }
-    }
-  }
+  // NOTE: Assistant messages are now blocked at the top of this function (VTID-01225-CLEANUP).
+  // The per-pattern assistant filtering below is no longer needed and has been removed.
 
   // Check if message contains meaningful personal/contextual information
   // VTID-01225: Expanded keyword patterns - the old list missed many valid facts
@@ -416,8 +387,10 @@ export function shouldStoreInMemory(content: string, direction: 'user' | 'assist
     /\b(eat|essen|cook|kochen|vegetarian|vegan|coffee|kaffee|tea|tee|alcohol|alkohol|smoke|rauchen|morning|morgen|evening|abend|routine|gewohnheit|habit)\b/i.test(lower) ||
     // Remember requests
     /\b(remember|merk|vergiss nicht|don't forget|wichtig|important)\b/i.test(lower) ||
-    // Substantive content (lowered from 8 to 5 words for better capture)
-    wordCount >= 5;
+    // VTID-01225-CLEANUP: Raised from 5 to 10 words — short generic messages like
+    // "can you help me with something" or "tell me about that thing" are noise.
+    // Real personal facts are almost always 10+ words or contain the keyword patterns above.
+    wordCount >= 10;
 
   if (!hasMeaningfulContent) {
     console.log(`[VTID-01109] Skipping low-value ${direction} message (no meaningful keywords)`);

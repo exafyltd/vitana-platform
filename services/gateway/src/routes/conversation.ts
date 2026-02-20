@@ -337,16 +337,23 @@ Instructions:
       reply = `I apologize, but I encountered an error processing your request. Please try again.`;
     }
 
-    // Step 5: Auto-write conversation to memory
+    // Step 5: Auto-write USER message only to memory (not assistant reply)
+    // VTID-01225-CLEANUP: Previously stored "User: X\nAssistant: Y" combined — this caused
+    // massive pollution with assistant responses stored as user memory.
+    // Now only stores the user's message with proper direction for shouldStoreInMemory filtering.
     try {
       const category = classifyCategory(message.text);
       await writeMemoryItemWithIdentity(
         { user_id, tenant_id },
         {
-          content: `User (${channel}): ${message.text}\nAssistant: ${reply}`,
+          content: message.text,
           source: channel === 'orb' ? 'orb_text' : 'orb_text',
           category_key: category || 'conversation',
           importance: 10,
+          content_json: {
+            direction: 'user',
+            channel,
+          },
         }
       );
     } catch (memoryError: any) {
