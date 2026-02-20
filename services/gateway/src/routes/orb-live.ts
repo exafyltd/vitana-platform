@@ -568,6 +568,12 @@ interface GeminiLiveSession {
   inputTranscriptBuffer: string;
   // VTID-STREAM-KEEPALIVE: Interval handle for upstream Vertex WS ping
   upstreamPingInterval?: ReturnType<typeof setInterval>;
+  // VTID-STREAM-SILENCE: Interval handle for sending silence audio to Vertex
+  // when no client audio is flowing, preventing Vertex idle timeout (~30s).
+  silenceKeepaliveInterval?: ReturnType<typeof setInterval>;
+  // VTID-STREAM-SILENCE: Timestamp of last audio chunk sent to Vertex.
+  // Used to detect idle periods and trigger silence keepalive.
+  lastAudioForwardedTime: number;
   // VTID-STREAM-RECONNECT: Reference to client WebSocket (WS transport only).
   // Used by transparent reconnection to send notifications to WS clients.
   // SSE clients use sseResponse instead.
@@ -713,6 +719,18 @@ const LIVE_API_VOICES: Record<string, string> = {
   'ru': 'Aoede',    // Russian - fallback
   'sr': 'Aoede'     // Serbian - fallback
 };
+
+// =============================================================================
+// VTID-STREAM-SILENCE: Silence audio keepalive for Vertex Live API
+// =============================================================================
+// Vertex AI Live API has an idle timeout (~25-30s). When no audio is sent,
+// Vertex closes the WebSocket with code 1000. This silence buffer is sent
+// periodically to keep the audio stream alive during user pauses.
+// Format: 250ms of 16-bit PCM silence at 16kHz mono = 8000 bytes of zeros.
+const SILENCE_KEEPALIVE_INTERVAL_MS = 3_000; // Check every 3 seconds
+const SILENCE_IDLE_THRESHOLD_MS = 3_000; // Send silence after 3s of no audio
+const SILENCE_PCM_BYTES = 8000; // 250ms at 16kHz, 16-bit mono
+const SILENCE_AUDIO_B64 = Buffer.alloc(SILENCE_PCM_BYTES, 0).toString('base64');
 
 // =============================================================================
 // VTID-01224: Live API Context Bootstrap Configuration
@@ -1409,6 +1427,23 @@ async function connectToLiveAPI(
             }
           }, 25_000);
 
+          // VTID-STREAM-SILENCE: Start silence keepalive to prevent Vertex idle timeout.
+          // Vertex closes the audio stream with code 1000 after ~25-30s of no audio input.
+          // This sends silent PCM frames when no client audio has been forwarded recently.
+          session.lastAudioForwardedTime = Date.now();
+          session.silenceKeepaliveInterval = setInterval(() => {
+            if (ws.readyState !== WebSocket.OPEN || !session.active) return;
+            const idleMs = Date.now() - session.lastAudioForwardedTime;
+            if (idleMs >= SILENCE_IDLE_THRESHOLD_MS) {
+              try {
+                sendAudioToLiveAPI(ws, SILENCE_AUDIO_B64, 'audio/pcm;rate=16000');
+                // Don't update lastAudioForwardedTime — silence doesn't count as real audio
+              } catch (e) {
+                // WS may be closing — ignore
+              }
+            }
+          }, SILENCE_KEEPALIVE_INTERVAL_MS);
+
           resolve(ws); // NOW we resolve the promise - connection is ready!
           return;
         }
@@ -1718,6 +1753,10 @@ async function connectToLiveAPI(
         clearInterval(session.upstreamPingInterval);
         session.upstreamPingInterval = undefined;
       }
+      if (session.silenceKeepaliveInterval) {
+        clearInterval(session.silenceKeepaliveInterval);
+        session.silenceKeepaliveInterval = undefined;
+      }
       if (!setupComplete) {
         reject(error);
       }
@@ -1733,6 +1772,10 @@ async function connectToLiveAPI(
       if (session.upstreamPingInterval) {
         clearInterval(session.upstreamPingInterval);
         session.upstreamPingInterval = undefined;
+      }
+      if (session.silenceKeepaliveInterval) {
+        clearInterval(session.silenceKeepaliveInterval);
+        session.silenceKeepaliveInterval = undefined;
       }
 
       session.upstreamWs = null;
@@ -4853,6 +4896,8 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     conversationSummary,
     // VTID-01225-ROLE: Application-level role (community/admin/developer)
     active_role: sseActiveRole,
+    // VTID-STREAM-SILENCE: Track last audio forwarded for idle detection
+    lastAudioForwardedTime: Date.now(),
   };
 
   // Store session
@@ -4950,6 +4995,10 @@ router.post('/live/session/stop', optionalAuth, async (req: AuthenticatedRequest
   if (session.upstreamPingInterval) {
     clearInterval(session.upstreamPingInterval);
     session.upstreamPingInterval = undefined;
+  }
+  if (session.silenceKeepaliveInterval) {
+    clearInterval(session.silenceKeepaliveInterval);
+    session.silenceKeepaliveInterval = undefined;
   }
 
   // Emit OASIS event
@@ -5377,6 +5426,7 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
         // Forward audio to Live API for real-time processing
         const sent = sendAudioToLiveAPI(session.upstreamWs, body.data_b64, body.mime || 'audio/pcm;rate=16000');
         if (sent) {
+          session.lastAudioForwardedTime = Date.now(); // VTID-STREAM-SILENCE: reset idle timer
           console.log(`[VTID-01219] Audio chunk forwarded to Live API: session=${effectiveSessionId}, chunk=${session.audioInChunks}`);
         } else {
           console.warn(`[VTID-01219] Failed to forward audio chunk: session=${effectiveSessionId}`);
@@ -6198,6 +6248,8 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     isModelSpeaking: false,
     // Conversation summary for greeting context (from client message)
     conversationSummary: message.conversation_summary,
+    // VTID-STREAM-SILENCE: Track last audio forwarded for idle detection
+    lastAudioForwardedTime: Date.now(),
     // VTID-STREAM-RECONNECT: Store client WS reference for transparent reconnection notifications
     clientWs,
   };
@@ -6410,7 +6462,9 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
       message.mime || 'audio/pcm;rate=16000'
     );
 
-    if (!sent) {
+    if (sent) {
+      liveSession.lastAudioForwardedTime = Date.now(); // VTID-STREAM-SILENCE: reset idle timer
+    } else {
       console.warn(`[VTID-01222] Failed to forward audio chunk for ${sessionId}`);
     }
   } else {
@@ -6627,6 +6681,10 @@ function cleanupWsSession(sessionId: string): void {
     if (clientSession.liveSession.upstreamPingInterval) {
       clearInterval(clientSession.liveSession.upstreamPingInterval);
       clientSession.liveSession.upstreamPingInterval = undefined;
+    }
+    if (clientSession.liveSession.silenceKeepaliveInterval) {
+      clearInterval(clientSession.liveSession.silenceKeepaliveInterval);
+      clientSession.liveSession.silenceKeepaliveInterval = undefined;
     }
 
     if (clientSession.liveSession.upstreamWs) {
