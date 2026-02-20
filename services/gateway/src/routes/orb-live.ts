@@ -1425,6 +1425,10 @@ async function connectToLiveAPI(
           session.lastAudioForwardedTime = Date.now();
           session.silenceKeepaliveInterval = setInterval(() => {
             if (ws.readyState !== WebSocket.OPEN || !session.active) return;
+            // Skip silence keepalive while model is speaking — Vertex won't idle-timeout
+            // during active generation, and sending audio input during output causes
+            // Vertex VAD to briefly process the input, creating audible glitches.
+            if (session.isModelSpeaking) return;
             const idleMs = Date.now() - session.lastAudioForwardedTime;
             if (idleMs >= SILENCE_IDLE_THRESHOLD_MS) {
               try {
@@ -2799,14 +2803,14 @@ router.get('/live', (req: Request, res: Response) => {
   // Send ready event
   res.write(`data: ${JSON.stringify({ type: 'ready', meta: { model: GEMINI_MODEL } })}\n\n`);
 
-  // Heartbeat every 30 seconds
+  // Heartbeat every 15 seconds (must be < Cloud Run's ~22-25s idle timeout for SSE)
   const heartbeatInterval = setInterval(() => {
     try {
       res.write(`:heartbeat\n\n`);
     } catch (e) {
       clearInterval(heartbeatInterval);
     }
-  }, 30000);
+  }, 15000);
 
   // Handle client disconnect
   req.on('close', () => {
@@ -5293,14 +5297,14 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
     }
   })}\n\n`);
 
-  // Heartbeat every 30 seconds
+  // Heartbeat every 15 seconds (must be < Cloud Run's ~22-25s idle timeout for SSE)
   const heartbeatInterval = setInterval(() => {
     try {
       res.write(`:heartbeat\n\n`);
     } catch (e) {
       clearInterval(heartbeatInterval);
     }
-  }, 30000);
+  }, 15000);
 
   // Handle client disconnect
   req.on('close', () => {
