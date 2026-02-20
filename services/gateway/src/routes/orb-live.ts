@@ -1346,20 +1346,12 @@ async function connectToLiveAPI(
               }
             }
           },
-          // VTID-VOICE-INIT + VTID-STREAM-KEEPALIVE: Voice Activity Detection configuration.
-          // START_SENSITIVITY_LOW reduces false triggers from echo/ambient noise on mobile.
-          // END_SENSITIVITY_LOW avoids cutting users off mid-sentence.
-          // silence_duration_ms=500 balances responsiveness with natural speech pauses.
-          // (Previously HIGH start sensitivity caused rapid turn cycling and stream instability.)
-          realtime_input_config: {
-            automatic_activity_detection: {
-              disabled: false,
-              start_of_speech_sensitivity: 'START_SENSITIVITY_LOW',
-              end_of_speech_sensitivity: 'END_SENSITIVITY_LOW',
-              prefix_padding_ms: 20,
-              silence_duration_ms: 500,
-            }
-          },
+          // VTID-STREAM-SILENCE: Do NOT set realtime_input_config / automatic_activity_detection.
+          // The original working version (pre-c6f9627) used Vertex's DEFAULT VAD and sessions
+          // were stable. Explicitly setting VAD params (start_of_speech_sensitivity,
+          // end_of_speech_sensitivity, silence_duration_ms) caused Vertex to close sessions
+          // with code 1000 after just 10-30 seconds. Removing this block restores Vertex
+          // defaults which handle speech detection and idle timeouts correctly.
           // VTID-01225: Enable transcription at setup level (not in generation_config)
           output_audio_transcription: {},
           input_audio_transcription: {},
