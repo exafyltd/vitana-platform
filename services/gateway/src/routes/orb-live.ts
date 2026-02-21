@@ -578,6 +578,9 @@ interface GeminiLiveSession {
   // Used by transparent reconnection to send notifications to WS clients.
   // SSE clients use sseResponse instead.
   clientWs?: WebSocket;
+  // Timestamp of last telemetry event emit. Used to batch telemetry to
+  // 10-second windows instead of per-N-chunks, reducing Supabase HTTP calls.
+  lastTelemetryEmitTime: number;
 }
 
 /**
@@ -4894,6 +4897,8 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     active_role: sseActiveRole,
     // VTID-STREAM-SILENCE: Track last audio forwarded for idle detection
     lastAudioForwardedTime: Date.now(),
+    // Telemetry batching: emit at most once per 10s window
+    lastTelemetryEmitTime: 0,
   };
 
   // Store session
@@ -5406,9 +5411,11 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
       // Handle audio chunk
       session.audioInChunks++;
 
-      // VTID-STREAM-KEEPALIVE: Sample every 100th chunk (was 10th — too frequent,
-      // each emit is an HTTP call to Supabase that adds I/O pressure during streaming)
-      if (session.audioInChunks % 100 === 0) {
+      // Telemetry: emit at most once per 10s window (was per-100-chunks ~1-2s)
+      // Each emit is an HTTP call to Supabase — batching reduces I/O pressure
+      const now = Date.now();
+      if (now - session.lastTelemetryEmitTime >= 10_000) {
+        session.lastTelemetryEmitTime = now;
         emitLiveSessionEvent('vtid.live.audio.in.chunk', {
           session_id: effectiveSessionId,
           chunk_number: session.audioInChunks,
@@ -5449,14 +5456,18 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
       session.videoInFrames++;
       const videoBody = body as LiveStreamVideoFrame;
 
-      // Emit OASIS event
-      emitLiveSessionEvent('vtid.live.video.in.frame', {
-        session_id: effectiveSessionId,
-        source: videoBody.source,
-        frame_number: session.videoInFrames,
-        bytes: videoBody.data_b64.length,
-        fps: 1
-      }).catch(() => { });
+      // Telemetry: reuse the same 10s window as audio
+      const vidNow = Date.now();
+      if (vidNow - session.lastTelemetryEmitTime >= 10_000) {
+        session.lastTelemetryEmitTime = vidNow;
+        emitLiveSessionEvent('vtid.live.video.in.frame', {
+          session_id: effectiveSessionId,
+          source: videoBody.source,
+          frame_number: session.videoInFrames,
+          bytes: videoBody.data_b64.length,
+          fps: 1
+        }).catch(() => { });
+      }
 
       console.log(`[VTID-01155] Video frame received: session=${effectiveSessionId}, source=${videoBody.source}, frame=${session.videoInFrames}`);
 
@@ -6246,6 +6257,8 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     conversationSummary: message.conversation_summary,
     // VTID-STREAM-SILENCE: Track last audio forwarded for idle detection
     lastAudioForwardedTime: Date.now(),
+    // Telemetry batching: emit at most once per 10s window
+    lastTelemetryEmitTime: 0,
     // VTID-STREAM-RECONNECT: Store client WS reference for transparent reconnection notifications
     clientWs,
   };
@@ -6439,8 +6452,10 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
   liveSession.audioInChunks++;
   liveSession.lastActivity = new Date();
 
-  // VTID-STREAM-KEEPALIVE: Sample every 100th chunk (was 10th — too frequent)
-  if (liveSession.audioInChunks % 100 === 0) {
+  // Telemetry: emit at most once per 10s window (was per-100-chunks ~1-2s)
+  const now = Date.now();
+  if (now - liveSession.lastTelemetryEmitTime >= 10_000) {
+    liveSession.lastTelemetryEmitTime = now;
     emitLiveSessionEvent('vtid.live.audio.in.chunk', {
       session_id: sessionId,
       chunk_number: liveSession.audioInChunks,
@@ -6491,14 +6506,18 @@ function handleWsVideoMessage(clientSession: WsClientSession, message: WsClientM
   liveSession.videoInFrames++;
   liveSession.lastActivity = new Date();
 
-  // Emit OASIS event
-  emitLiveSessionEvent('vtid.live.video.in.frame', {
-    session_id: sessionId,
-    source: message.source || 'unknown',
-    frame_number: liveSession.videoInFrames,
-    bytes: message.data_b64.length,
-    transport: 'websocket'
-  }).catch(() => { });
+  // Telemetry: reuse the same 10s window as audio
+  const vidNow = Date.now();
+  if (vidNow - liveSession.lastTelemetryEmitTime >= 10_000) {
+    liveSession.lastTelemetryEmitTime = vidNow;
+    emitLiveSessionEvent('vtid.live.video.in.frame', {
+      session_id: sessionId,
+      source: message.source || 'unknown',
+      frame_number: liveSession.videoInFrames,
+      bytes: message.data_b64.length,
+      transport: 'websocket'
+    }).catch(() => { });
+  }
 
   console.log(`[VTID-01222] Video frame received: ${sessionId}, source=${message.source}, frame=${liveSession.videoInFrames}`);
 
