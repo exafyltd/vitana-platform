@@ -238,6 +238,13 @@ router.post('/login', async (req: Request, res: Response) => {
             body: 'Your journey to a healthier, more connected life starts now.',
             data: { url: '/dashboard' },
           }, supabase);
+
+          // Also prompt to complete profile
+          notifyUserAsync(uid, tid, 'complete_your_profile', {
+            title: 'Complete Your Profile',
+            body: 'Add your name, photo, and interests to get personalized matches.',
+            data: { url: '/profile/edit' },
+          }, supabase);
         }
       }
     }

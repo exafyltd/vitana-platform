@@ -109,6 +109,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const personalizationSnapshotRouter = require('./routes/personalization').default;
   // VTID-01095: Daily Scheduler Routes - daily recompute pipeline
   const schedulerRouter = require('./routes/scheduler').default;
+  // Scheduled notification webhook endpoints (Cloud Scheduler triggers)
+  const scheduledNotificationsRouter = require('./routes/scheduled-notifications').default;
   // VTID-01093: Unified Interest Topics Layer - topic registry + user profile
   const topicsRouter = require('./routes/topics').default;
   // VTID-01092: Services + Products as Relationship Memory
@@ -444,6 +446,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01095: Daily Scheduler - daily recompute pipeline
   mountRouterSync(app, '/api/v1/scheduler', schedulerRouter, { owner: 'scheduler' });
+  // Scheduled notification webhooks (Cloud Scheduler triggers)
+  mountRouterSync(app, '/api/v1/scheduled-notifications', scheduledNotificationsRouter, { owner: 'scheduled-notifications' });
 
   // VTID-01093: Unified Interest Topics Layer - topic registry + user profile
   mountRouterSync(app, '/api/v1/topics', topicsRouter, { owner: 'topics' });

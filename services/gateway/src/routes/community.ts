@@ -25,6 +25,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { notifyUserAsync, notifyUsersAsync } from '../services/notification-service';
 
 const router = Router();
 
@@ -270,6 +271,58 @@ router.post('/groups/:id/join', async (req: Request, res: Response) => {
     );
 
     console.log(`[${VTID}] User joined group: ${groupId}`);
+
+    // Notify group owner + members about the new join
+    try {
+      let joinerId = '';
+      try { joinerId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
+
+      const supabaseUrl = process.env.SUPABASE_URL;
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE;
+      if (supabaseUrl && serviceKey && joinerId) {
+        const { createClient } = await import('@supabase/supabase-js');
+        const supa = createClient(supabaseUrl, serviceKey);
+
+        // Get group details
+        const { data: group } = await supa
+          .from('community_groups')
+          .select('name, tenant_id, created_by')
+          .eq('id', groupId)
+          .single();
+
+        if (group?.tenant_id) {
+          // Notify group owner/creator
+          if (group.created_by && group.created_by !== joinerId) {
+            notifyUserAsync(group.created_by, group.tenant_id, 'someone_joined_your_group', {
+              title: 'New Group Member',
+              body: `Someone joined "${group.name || 'your group'}".`,
+              data: { url: `/community/groups/${groupId}`, group_id: groupId, entity_id: groupId },
+            }, supa);
+          }
+
+          // Notify other group members
+          const { data: members } = await supa
+            .from('community_group_members')
+            .select('user_id')
+            .eq('group_id', groupId)
+            .neq('user_id', joinerId);
+
+          const memberIds = (members || [])
+            .map((m: any) => m.user_id)
+            .filter((id: string) => id !== group.created_by); // owner already notified above
+
+          if (memberIds.length > 0) {
+            notifyUsersAsync(memberIds, group.tenant_id, 'new_member_in_group', {
+              title: 'New Member',
+              body: `Someone new joined "${group.name || 'your group'}".`,
+              data: { url: `/community/groups/${groupId}`, group_id: groupId, entity_id: groupId },
+            }, supa);
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[Notifications] group join dispatch error: ${err.message}`);
+    }
 
     return res.status(200).json(data);
   } catch (err: any) {

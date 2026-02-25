@@ -555,6 +555,43 @@ router.post('/:id/state', async (req: Request, res: Response) => {
 
     console.log(`[${VTID}] POST /match/:id/state - Success: ${matchId} -> ${newState}`);
 
+    // Notify users when a match is accepted
+    if (newState === 'accepted') {
+      try {
+        let acceptorId = '';
+        try { acceptorId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
+
+        // Query match to get both users and tenant
+        const { data: match } = await supabase
+          .from('user_matches')
+          .select('user_id, matched_user_id, tenant_id')
+          .eq('id', matchId)
+          .single();
+
+        if (match?.tenant_id && acceptorId) {
+          const otherUserId = acceptorId === match.user_id ? match.matched_user_id : match.user_id;
+
+          // Notify the OTHER user that their match was accepted
+          if (otherUserId) {
+            notifyUserAsync(otherUserId, match.tenant_id, 'match_accepted_by_other', {
+              title: 'Match Accepted!',
+              body: 'Someone accepted your match. Start a conversation!',
+              data: { url: '/discover', match_id: matchId, entity_id: matchId },
+            }, supabase);
+          }
+
+          // Confirm to the acceptor
+          notifyUserAsync(acceptorId, match.tenant_id, 'your_match_accepted', {
+            title: 'Match Confirmed',
+            body: 'Your match is confirmed! You can now connect.',
+            data: { url: '/discover', match_id: matchId, entity_id: matchId },
+          }, supabase);
+        }
+      } catch (err: any) {
+        console.warn(`[Notifications] match_accepted dispatch error: ${err.message}`);
+      }
+    }
+
     return res.status(200).json({
       ok: true,
       match_id: matchId,

@@ -513,6 +513,40 @@ router.post('/rooms/:id/end', async (req: Request, res: Response) => {
 
   console.log(`[VTID-01228] Live room ended: ${roomId} (session: ${result.data?.ended_session_id})`);
 
+  // Notify all attendees that the room ended (summary available)
+  try {
+    const creds2 = getSupabaseCredentials();
+    if (creds2) {
+      const { createClient } = await import('@supabase/supabase-js');
+      const supa = createClient(creds2.url, creds2.key);
+
+      const { data: room } = await supa
+        .from('live_rooms')
+        .select('title, tenant_id, user_id')
+        .eq('id', roomId)
+        .single();
+
+      if (room?.tenant_id) {
+        const { data: attendees } = await supa
+          .from('live_room_attendees')
+          .select('user_id')
+          .eq('room_id', roomId)
+          .neq('user_id', room.user_id || '');
+
+        const attendeeIds = (attendees || []).map((a: any) => a.user_id);
+        if (attendeeIds.length > 0) {
+          notifyUsersAsync(attendeeIds, room.tenant_id, 'live_room_ended_summary', {
+            title: 'Room Summary Available',
+            body: `"${room.title || 'A live room'}" has ended. Check out the summary!`,
+            data: { url: `/live/${roomId}`, room_id: roomId, entity_id: roomId },
+          }, supa);
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[Notifications] live_room_ended_summary dispatch error: ${err.message}`);
+  }
+
   return res.status(200).json({
     ok: true,
     live_room_id: roomId,
@@ -621,6 +655,31 @@ router.post('/rooms/:id/join', async (req: Request, res: Response) => {
   );
 
   console.log(`[VTID-01090] User joined room: ${roomId} (${result.data?.coattendance_edges_created} co-attendance edges)`);
+
+  // Notify room host that someone joined
+  try {
+    const creds = getSupabaseCredentials();
+    if (creds) {
+      const { createClient } = await import('@supabase/supabase-js');
+      const supa = createClient(creds.url, creds.key);
+
+      const { data: room } = await supa
+        .from('live_rooms')
+        .select('title, tenant_id, user_id')
+        .eq('id', roomId)
+        .single();
+
+      if (room?.tenant_id && room.user_id && room.user_id !== user_id) {
+        notifyUserAsync(room.user_id, room.tenant_id, 'someone_joined_live_room', {
+          title: 'Someone Joined Your Room',
+          body: `A new participant joined "${room.title || 'your live room'}".`,
+          data: { url: `/live/${roomId}`, room_id: roomId, entity_id: roomId },
+        }, supa);
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[Notifications] someone_joined_live_room dispatch error: ${err.message}`);
+  }
 
   return res.status(200).json({
     ok: true,
@@ -1062,6 +1121,34 @@ router.post('/rooms/:id/highlights', async (req: Request, res: Response) => {
   );
 
   console.log(`[VTID-01090] Highlight created: ${result.data?.highlight_id} (${type})`);
+
+  // Notify room host about highlight (if creator isn't the host)
+  try {
+    const creds = getSupabaseCredentials();
+    if (creds) {
+      const { createClient } = await import('@supabase/supabase-js');
+      const supa = createClient(creds.url, creds.key);
+
+      let creatorId = '';
+      try { creatorId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
+
+      const { data: room } = await supa
+        .from('live_rooms')
+        .select('title, tenant_id, user_id')
+        .eq('id', roomId)
+        .single();
+
+      if (room?.tenant_id && room.user_id && room.user_id !== creatorId) {
+        notifyUserAsync(room.user_id, room.tenant_id, 'live_room_highlight_added', {
+          title: 'Highlight Added',
+          body: `A highlight was added in "${room.title || 'your live room'}".`,
+          data: { url: `/live/${roomId}`, room_id: roomId, entity_id: roomId },
+        }, supa);
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[Notifications] live_room_highlight_added dispatch error: ${err.message}`);
+  }
 
   return res.status(201).json({
     ok: true,
@@ -1998,23 +2085,33 @@ communityMeetupRouter.post('/meetups/:id/rsvp', async (req: Request, res: Respon
         let rsvpUserId = '';
         try { rsvpUserId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
 
-        // Get meetup title and tenant
+        // Get meetup title, tenant, and host
         const { data: meetup } = await supa
           .from('community_meetups')
-          .select('title, tenant_id')
+          .select('title, tenant_id, created_by')
           .eq('id', meetupId)
           .single();
 
         if (meetup?.tenant_id && rsvpUserId) {
+          // Notify the RSVP user (confirmation)
           notifyUserAsync(rsvpUserId, meetup.tenant_id, 'meetup_rsvp_confirmed', {
             title: 'RSVP Confirmed',
             body: `You're attending "${meetup.title || 'a meetup'}". We'll remind you before it starts.`,
             data: { url: `/community/meetups/${meetupId}`, entity_id: meetupId, meetup_id: meetupId },
           }, supa);
+
+          // Notify the meetup HOST that someone RSVP'd
+          if (meetup.created_by && meetup.created_by !== rsvpUserId) {
+            notifyUserAsync(meetup.created_by, meetup.tenant_id, 'someone_rsvpd_your_meetup', {
+              title: 'New RSVP',
+              body: `Someone RSVP'd to "${meetup.title || 'your meetup'}".`,
+              data: { url: `/community/meetups/${meetupId}`, entity_id: meetupId, meetup_id: meetupId },
+            }, supa);
+          }
         }
       }
     } catch (err: any) {
-      console.warn(`[Notifications] meetup_rsvp_confirmed dispatch error: ${err.message}`);
+      console.warn(`[Notifications] meetup rsvp dispatch error: ${err.message}`);
     }
   }
 

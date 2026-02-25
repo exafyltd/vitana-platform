@@ -17,6 +17,7 @@
 
 import { Router, Request, Response } from 'express';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { notifyUserAsync } from '../services/notification-service';
 
 const router = Router();
 
@@ -291,6 +292,34 @@ router.post('/:id/accept', async (req: Request, res: Response) => {
         action_taken,
       },
     });
+
+    // Notify user that recommendation was activated
+    try {
+      const supabaseUrl = process.env.SUPABASE_URL;
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE;
+      if (supabaseUrl && serviceKey) {
+        const { createClient } = await import('@supabase/supabase-js');
+        const supa = createClient(supabaseUrl, serviceKey);
+
+        // Get user's tenant
+        const { data: tenant } = await supa
+          .from('user_tenants')
+          .select('tenant_id')
+          .eq('user_id', userId)
+          .limit(1)
+          .single();
+
+        if (tenant?.tenant_id) {
+          notifyUserAsync(userId, tenant.tenant_id, 'recommendation_activated', {
+            title: 'Recommendation Activated',
+            body: 'Great choice! Your recommendation has been activated.',
+            data: { url: '/autopilot', entity_id: id, recommendation_id: id },
+          }, supa);
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[Notifications] recommendation_activated dispatch error: ${err.message}`);
+    }
 
     return res.status(200).json({
       ...response,

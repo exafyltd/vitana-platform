@@ -21,6 +21,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { notifyUserAsync } from '../services/notification-service';
 
 const router = Router();
 
@@ -374,6 +375,36 @@ router.post('/edge', async (req: Request, res: Response) => {
     );
 
     console.log(`[VTID-01087] Edge ${data.created ? 'created' : 'strengthened'}: ${data.edge_id} (strength: ${data.strength})`);
+
+    // Notify target user when a new connection is formed
+    if (data.created && (relationship_type === 'friend' || relationship_type === 'following')) {
+      try {
+        const supabaseUrl = process.env.SUPABASE_URL;
+        const serviceKey = process.env.SUPABASE_SERVICE_ROLE;
+        if (supabaseUrl && serviceKey && data.to_node?.user_id) {
+          const { createClient } = await import('@supabase/supabase-js');
+          const supa = createClient(supabaseUrl, serviceKey);
+
+          // Get the target user's tenant
+          const { data: tenant } = await supa
+            .from('user_tenants')
+            .select('tenant_id')
+            .eq('user_id', data.to_node.user_id)
+            .limit(1)
+            .single();
+
+          if (tenant?.tenant_id) {
+            notifyUserAsync(data.to_node.user_id, tenant.tenant_id, 'new_connection_formed', {
+              title: 'New Connection',
+              body: `${data.from_node?.title || 'Someone'} connected with you.`,
+              data: { url: '/discover', entity_id: data.edge_id },
+            }, supa);
+          }
+        }
+      } catch (err: any) {
+        console.warn(`[Notifications] new_connection_formed dispatch error: ${err.message}`);
+      }
+    }
 
     return res.status(200).json({
       ok: true,

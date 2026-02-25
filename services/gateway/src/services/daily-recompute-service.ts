@@ -430,6 +430,25 @@ async function executePipelineForUser(
   });
 
   console.log(`[${VTID}] Pipeline completed for run ${run.id}`);
+
+  // Notify user that daily recompute is complete (silent notification)
+  try {
+    const { notifyUserAsync } = await import('./notification-service');
+    const { createClient } = await import('@supabase/supabase-js');
+    const supaUrl = process.env.SUPABASE_URL;
+    const supaKey = process.env.SUPABASE_SERVICE_ROLE;
+    if (supaUrl && supaKey) {
+      const supa = createClient(supaUrl, supaKey);
+      notifyUserAsync(userId, tenantId, 'daily_recompute_complete', {
+        title: 'Daily Update',
+        body: 'Your daily insights have been refreshed.',
+        data: { url: '/dashboard', run_id: run.id },
+      }, supa);
+    }
+  } catch (err: any) {
+    console.warn(`[Notifications] daily_recompute_complete dispatch error: ${err.message}`);
+  }
+
   return { ok: true, run_id: run.id };
 }
 
