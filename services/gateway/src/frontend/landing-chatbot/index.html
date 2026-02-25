@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vitana ORB — Landing Chatbot</title>
+  <link rel="stylesheet" href="/landing-chatbot/landing-chatbot.css" />
+  <style>
+    /* Demo page styles — these would be replaced by the actual vitanalent.com landing page */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0a0a0f;
+      color: #e8e8f0;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    .landing-demo {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 40px 20px;
+      text-align: center;
+    }
+
+    .landing-demo h1 {
+      font-size: 48px;
+      font-weight: 700;
+      margin-bottom: 16px;
+      background: linear-gradient(135deg, #7c5cfc, #b794f6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .landing-demo p {
+      font-size: 18px;
+      color: #9494aa;
+      max-width: 500px;
+      line-height: 1.6;
+      margin-bottom: 32px;
+    }
+
+    .landing-demo .cta-hint {
+      font-size: 14px;
+      color: #6b6b80;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .landing-demo .cta-hint .arrow {
+      display: inline-block;
+      animation: point-right 1.5s ease-in-out infinite;
+    }
+
+    @keyframes point-right {
+      0%, 100% { transform: translateX(0); }
+      50% { transform: translateX(6px); }
+    }
+  </style>
+</head>
+<body>
+  <div class="landing-demo">
+    <h1>Welcome to Vitana</h1>
+    <p>
+      Join the Maxilla longevity community. Connect with like-minded people,
+      get personalized health insights, and live your best life — powered by AI.
+    </p>
+    <div class="cta-hint">
+      Click the ORB to start a conversation <span class="arrow">&rarr;</span>
+    </div>
+  </div>
+
+  <!-- VTID-LANDING: ORB Chatbot Widget -->
+  <script src="/landing-chatbot/landing-chatbot.js"></script>
+</body>
+</html>

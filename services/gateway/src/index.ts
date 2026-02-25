@@ -199,6 +199,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const stripeConnectWebhookRouter = require('./routes/stripe-connect-webhook').default;
   // Notification System — FCM push + in-app notification history
   const notificationsRouter = require('./routes/notifications').default;
+  // VTID-LANDING: Landing Page Chatbot — ORB for first-time visitors (no auth required)
+  const landingChatbotRouter = require('./routes/landing-chatbot').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -494,6 +496,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // Notification System — FCM push notifications + in-app history
   mountRouterSync(app, '/api/v1/notifications', notificationsRouter, { owner: 'notifications' });
 
+  // VTID-LANDING: Landing Page Chatbot — ORB for first-time visitors (no auth, rate-limited)
+  mountRouterSync(app, '/api/v1/landing', landingChatbotRouter, { owner: 'landing-chatbot' });
+
   // VTID-01097: Diary Templates - guided diary templates for memory quality
   mountRouterSync(app, '/api/v1/diary', diaryRouter, { owner: 'diary' });
 
@@ -587,6 +592,16 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01218A: Voice LAB static files
   const voiceLabStaticPath = path.join(__dirname, 'frontend/voice-lab');
   app.use('/voice-lab', express.static(voiceLabStaticPath, {
+    etag: false,
+    lastModified: false,
+    setHeaders: (res) => {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    }
+  }));
+
+  // VTID-LANDING: Landing Chatbot static files (ORB widget for first-time visitors)
+  const landingChatbotStaticPath = path.join(__dirname, 'frontend/landing-chatbot');
+  app.use('/landing-chatbot', express.static(landingChatbotStaticPath, {
     etag: false,
     lastModified: false,
     setHeaders: (res) => {

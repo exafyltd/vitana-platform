@@ -1,0 +1,468 @@
+/**
+ * VTID-LANDING: Landing Page Chatbot Styles
+ *
+ * Provides the ORB floating button animation, chat drawer,
+ * and message styling for the landing page chatbot widget.
+ *
+ * Design: Dark, modern aesthetic consistent with Vitana branding.
+ * The ORB is a glowing, pulsing sphere that visitors click to chat.
+ */
+
+/* =========================================================================
+   CSS Custom Properties (Vitana Brand)
+   ========================================================================= */
+
+:root {
+  --vt-bg-primary: #0a0a0f;
+  --vt-bg-surface: #14141f;
+  --vt-bg-surface-light: #1e1e2e;
+  --vt-bg-chat: #0d0d18;
+  --vt-text-primary: #e8e8f0;
+  --vt-text-secondary: #9494aa;
+  --vt-text-muted: #6b6b80;
+  --vt-accent: #7c5cfc;
+  --vt-accent-glow: rgba(124, 92, 252, 0.4);
+  --vt-accent-soft: rgba(124, 92, 252, 0.15);
+  --vt-orb-core: #9b7dff;
+  --vt-orb-ring: rgba(155, 125, 255, 0.3);
+  --vt-orb-pulse: rgba(124, 92, 252, 0.15);
+  --vt-success: #4ade80;
+  --vt-error: #f87171;
+  --vt-border: rgba(255, 255, 255, 0.06);
+  --vt-radius: 12px;
+  --vt-radius-lg: 20px;
+  --vt-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --vt-transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* =========================================================================
+   ORB Floating Button
+   ========================================================================= */
+
+#orb-trigger {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  z-index: 9999;
+  background: radial-gradient(circle at 40% 40%, var(--vt-orb-core), var(--vt-accent));
+  box-shadow:
+    0 0 20px var(--vt-accent-glow),
+    0 0 60px var(--vt-orb-pulse),
+    0 4px 16px rgba(0, 0, 0, 0.3);
+  transition: transform var(--vt-transition), box-shadow var(--vt-transition);
+  animation: orb-breathe 3s ease-in-out infinite;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#orb-trigger:hover {
+  transform: scale(1.1);
+  box-shadow:
+    0 0 30px var(--vt-accent-glow),
+    0 0 80px var(--vt-orb-pulse),
+    0 6px 24px rgba(0, 0, 0, 0.4);
+}
+
+#orb-trigger:active {
+  transform: scale(0.95);
+}
+
+#orb-trigger.chat-open {
+  animation: none;
+  transform: scale(0.9);
+  opacity: 0.7;
+}
+
+/* Orb inner icon (chat bubble SVG) */
+#orb-trigger svg {
+  width: 28px;
+  height: 28px;
+  fill: white;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+}
+
+/* Pulse ring around orb */
+#orb-trigger::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 2px solid var(--vt-orb-ring);
+  animation: orb-ring-pulse 3s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Notification badge for first-time visitors */
+#orb-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--vt-success);
+  border: 2px solid var(--vt-bg-primary);
+  animation: badge-bounce 2s ease-in-out infinite 1s;
+}
+
+@keyframes orb-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+@keyframes orb-ring-pulse {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 0.2; transform: scale(1.15); }
+}
+
+@keyframes badge-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+/* =========================================================================
+   Chat Drawer
+   ========================================================================= */
+
+#chat-drawer {
+  position: fixed;
+  bottom: 104px;
+  right: 28px;
+  width: 380px;
+  max-height: 560px;
+  background: var(--vt-bg-surface);
+  border-radius: var(--vt-radius-lg);
+  border: 1px solid var(--vt-border);
+  box-shadow: var(--vt-shadow);
+  z-index: 9998;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(16px) scale(0.96);
+  pointer-events: none;
+  transition:
+    opacity var(--vt-transition),
+    transform var(--vt-transition);
+}
+
+#chat-drawer.open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: all;
+}
+
+/* =========================================================================
+   Chat Header
+   ========================================================================= */
+
+#chat-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, var(--vt-bg-surface-light), var(--vt-bg-surface));
+  border-bottom: 1px solid var(--vt-border);
+  flex-shrink: 0;
+}
+
+#chat-header-orb {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 40%, var(--vt-orb-core), var(--vt-accent));
+  box-shadow: 0 0 12px var(--vt-accent-glow);
+  flex-shrink: 0;
+}
+
+#chat-header-orb.thinking {
+  animation: orb-thinking 1s ease-in-out infinite;
+}
+
+@keyframes orb-thinking {
+  0%, 100% { box-shadow: 0 0 12px var(--vt-accent-glow); }
+  50% { box-shadow: 0 0 24px var(--vt-accent-glow), 0 0 48px var(--vt-orb-pulse); }
+}
+
+#chat-header-text {
+  flex: 1;
+}
+
+#chat-header-text h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--vt-text-primary);
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+#chat-header-text p {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--vt-text-secondary);
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+#chat-close-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--vt-text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--vt-transition), color var(--vt-transition);
+  flex-shrink: 0;
+  font-size: 16px;
+  line-height: 1;
+}
+
+#chat-close-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--vt-text-primary);
+}
+
+/* =========================================================================
+   Chat Messages Area
+   ========================================================================= */
+
+#chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 16px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--vt-bg-chat);
+  min-height: 280px;
+  max-height: 380px;
+}
+
+/* Scrollbar styling */
+#chat-messages::-webkit-scrollbar {
+  width: 4px;
+}
+
+#chat-messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#chat-messages::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+}
+
+/* =========================================================================
+   Message Bubbles
+   ========================================================================= */
+
+.chat-msg {
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: var(--vt-radius);
+  font-size: 14px;
+  line-height: 1.5;
+  font-family: system-ui, -apple-system, sans-serif;
+  word-wrap: break-word;
+  animation: msg-appear 0.3s ease-out;
+}
+
+@keyframes msg-appear {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.chat-msg.assistant {
+  align-self: flex-start;
+  background: var(--vt-bg-surface-light);
+  color: var(--vt-text-primary);
+  border-bottom-left-radius: 4px;
+}
+
+.chat-msg.user {
+  align-self: flex-end;
+  background: var(--vt-accent);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+
+.chat-msg.error {
+  align-self: center;
+  background: rgba(248, 113, 113, 0.1);
+  color: var(--vt-error);
+  font-size: 13px;
+  text-align: center;
+  border: 1px solid rgba(248, 113, 113, 0.2);
+}
+
+/* Typing indicator */
+.chat-msg.typing {
+  align-self: flex-start;
+  background: var(--vt-bg-surface-light);
+  padding: 12px 18px;
+  border-bottom-left-radius: 4px;
+}
+
+.typing-dots {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.typing-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--vt-text-secondary);
+  animation: typing-bounce 1.4s ease-in-out infinite;
+}
+
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typing-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+
+/* Quick-action chips shown in welcome message */
+.quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.quick-action-chip {
+  padding: 6px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--vt-accent);
+  background: var(--vt-accent-soft);
+  color: var(--vt-orb-core);
+  font-size: 12px;
+  font-family: system-ui, -apple-system, sans-serif;
+  cursor: pointer;
+  transition: background var(--vt-transition), color var(--vt-transition);
+  white-space: nowrap;
+}
+
+.quick-action-chip:hover {
+  background: var(--vt-accent);
+  color: #fff;
+}
+
+/* =========================================================================
+   Chat Input Area
+   ========================================================================= */
+
+#chat-input-area {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--vt-border);
+  background: var(--vt-bg-surface);
+  flex-shrink: 0;
+}
+
+#chat-input {
+  flex: 1;
+  border: 1px solid var(--vt-border);
+  border-radius: 20px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: var(--vt-text-primary);
+  background: var(--vt-bg-chat);
+  outline: none;
+  transition: border-color var(--vt-transition);
+  resize: none;
+  min-height: 20px;
+  max-height: 80px;
+  line-height: 1.4;
+}
+
+#chat-input::placeholder {
+  color: var(--vt-text-muted);
+}
+
+#chat-input:focus {
+  border-color: var(--vt-accent);
+}
+
+#chat-send-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: var(--vt-accent);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--vt-transition), transform var(--vt-transition);
+  flex-shrink: 0;
+}
+
+#chat-send-btn:hover {
+  background: #6b4ae0;
+  transform: scale(1.05);
+}
+
+#chat-send-btn:active {
+  transform: scale(0.95);
+}
+
+#chat-send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+#chat-send-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+/* =========================================================================
+   Responsive
+   ========================================================================= */
+
+@media (max-width: 480px) {
+  #chat-drawer {
+    right: 12px;
+    left: 12px;
+    bottom: 96px;
+    width: auto;
+    max-height: 70vh;
+  }
+
+  #orb-trigger {
+    bottom: 20px;
+    right: 20px;
+    width: 56px;
+    height: 56px;
+  }
+
+  #orb-trigger svg {
+    width: 24px;
+    height: 24px;
+  }
+}

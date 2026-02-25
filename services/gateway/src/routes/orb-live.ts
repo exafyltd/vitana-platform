@@ -229,6 +229,8 @@ const ALLOWED_ORIGINS = [
   'https://id-preview--vitana-v1.lovable.app',
   'https://vitanaland.com',                            // Production custom domain (mobile app)
   'https://www.vitanaland.com',                        // Production custom domain (www)
+  'https://vitanalent.com',                            // VTID-LANDING: Landing page domain
+  'https://www.vitanalent.com',                        // VTID-LANDING: Landing page domain (www)
   'http://localhost:8080',
   'http://localhost:8081',  // VTID-01225: Mobile dev server
   'http://localhost:3000',
