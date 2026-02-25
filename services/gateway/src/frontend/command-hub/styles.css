@@ -15980,3 +15980,272 @@ border-bottom: 1px solid var(--color-border, #333);
   color: #22c55e;
   font-weight: 500;
 }
+
+/* =============================================================================
+   SIGNUP TRACKER — Abandoned Registration Recovery Dashboard
+   ============================================================================= */
+
+.signup-tracker-container {
+  padding: 1.5rem;
+}
+
+/* Stats bar */
+.signup-tracker-stats-bar {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.signup-stat-card {
+  flex: 1;
+  min-width: 140px;
+  background: var(--color-sidebar-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.signup-stat-number {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.signup-stat-label {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.signup-stat-warning .signup-stat-number {
+  color: #f59e0b;
+}
+
+.signup-stat-danger .signup-stat-number {
+  color: #ef4444;
+}
+
+.signup-stat-success .signup-stat-number {
+  color: #10b981;
+}
+
+/* Sub-navigation */
+.signup-tracker-subnav {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 0.5rem;
+}
+
+.signup-tracker-subnav-btn {
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  padding: 0.5rem 1rem;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: all 0.15s;
+}
+
+.signup-tracker-subnav-btn:hover {
+  color: var(--color-text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.signup-tracker-subnav-btn.active {
+  color: var(--color-accent);
+  border-bottom: 2px solid var(--color-accent);
+  font-weight: 600;
+}
+
+/* Toolbar */
+.signup-tracker-toolbar {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  align-items: center;
+}
+
+.signup-tracker-filter {
+  background: var(--color-sidebar-bg);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  min-width: 180px;
+}
+
+.signup-tracker-search {
+  flex: 1;
+  max-width: 300px;
+}
+
+.signup-tracker-refresh {
+  white-space: nowrap;
+}
+
+/* Content area */
+.signup-tracker-content {
+  margin-top: 0.5rem;
+}
+
+.signup-tracker-loading,
+.signup-tracker-empty,
+.signup-tracker-error {
+  padding: 2rem;
+  text-align: center;
+  color: var(--color-text-secondary);
+  background: var(--color-sidebar-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.signup-tracker-error {
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+/* Table */
+.signup-tracker-table {
+  width: 100%;
+  font-size: 0.8125rem;
+}
+
+.signup-tracker-table th {
+  position: sticky;
+  top: 0;
+  background: var(--color-sidebar-bg);
+  z-index: 1;
+}
+
+/* Stage badges */
+.signup-stage-badge {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.signup-stage-onboarded {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.signup-stage-email-pending {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.signup-stage-provisioning-failed {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.signup-stage-no-tenant {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.signup-stage-no-live-room {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.signup-stage-never-logged-in {
+  background: rgba(168, 85, 247, 0.15);
+  color: #a855f7;
+}
+
+.signup-stage-no-welcome-sent {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+}
+
+.signup-stage-succeeded {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.signup-stage-failed {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.signup-stage-attempted {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.signup-stage-sent {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+}
+
+.signup-stage-pending {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.signup-stage-accepted {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.signup-stage-expired {
+  background: rgba(100, 116, 139, 0.15);
+  color: #64748b;
+}
+
+/* Action buttons */
+.signup-actions-cell {
+  white-space: nowrap;
+}
+
+.signup-action-btn {
+  font-size: 0.6875rem !important;
+  padding: 0.2rem 0.5rem !important;
+  margin: 0 0.125rem;
+}
+
+.btn-xs {
+  font-size: 0.6875rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+}
+
+.btn-warning {
+  background: rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  cursor: pointer;
+}
+
+.btn-warning:hover {
+  background: rgba(245, 158, 11, 0.3);
+}
+
+.signup-message-cell {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signup-tracker-count {
+  margin-top: 0.75rem;
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  text-align: right;
+}
