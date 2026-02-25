@@ -55,11 +55,12 @@ const TYPE_META: Record<string, TypeMeta> = {
   match_accepted_by_other:   { channel: 'push_and_inapp', priority: 'p1', category: 'match' },
   your_match_accepted:       { channel: 'push_and_inapp', priority: 'p1', category: 'match' },
   // Community
-  someone_joined_your_group: { channel: 'inapp',          priority: 'p2', category: 'community' },
-  group_recommended:         { channel: 'push_and_inapp', priority: 'p2', category: 'community' },
-  group_activity_update:     { channel: 'inapp',          priority: 'p2', category: 'community' },
-  new_member_in_group:       { channel: 'inapp',          priority: 'p3', category: 'community' },
-  group_milestone_reached:   { channel: 'inapp',          priority: 'p2', category: 'community' },
+  someone_joined_your_group:  { channel: 'inapp',          priority: 'p2', category: 'community' },
+  group_recommended:          { channel: 'push_and_inapp', priority: 'p2', category: 'community' },
+  group_activity_update:      { channel: 'inapp',          priority: 'p2', category: 'community' },
+  new_member_in_group:        { channel: 'inapp',          priority: 'p3', category: 'community' },
+  group_milestone_reached:    { channel: 'inapp',          priority: 'p2', category: 'community' },
+  group_invitation_received:  { channel: 'push_and_inapp', priority: 'p1', category: 'community' },
   // Meetups
   meetup_recommended:        { channel: 'push_and_inapp', priority: 'p2', category: 'meetup' },
   meetup_starting_soon:      { channel: 'push_and_inapp', priority: 'p0', category: 'meetup' },
@@ -76,6 +77,7 @@ const TYPE_META: Record<string, TypeMeta> = {
   live_room_invite:          { channel: 'push_and_inapp', priority: 'p1', category: 'live_room' },
   live_room_recording_ready: { channel: 'inapp',          priority: 'p3', category: 'live_room' },
   // Chat
+  new_chat_message:                { channel: 'push_and_inapp', priority: 'p1', category: 'chat' },
   orb_proactive_message:           { channel: 'push_and_inapp', priority: 'p1', category: 'chat' },
   conversation_followup_reminder:  { channel: 'inapp',          priority: 'p2', category: 'chat' },
   orb_suggestion:                  { channel: 'push_and_inapp', priority: 'p1', category: 'chat' },

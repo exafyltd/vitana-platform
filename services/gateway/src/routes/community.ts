@@ -682,6 +682,236 @@ router.get('/recommendations/:id/explain', async (req: Request, res: Response) =
   }
 });
 
+// =============================================================================
+// Group Invitations
+// =============================================================================
+
+/**
+ * POST /groups/:id/invite -> POST /api/v1/community/groups/:id/invite
+ *
+ * Invite a user to join a community group.
+ */
+router.post('/groups/:id/invite', async (req: Request, res: Response) => {
+  const groupId = req.params.id;
+  console.log(`[${VTID}] POST /community/groups/${groupId}/invite`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  const { user_id: invitedUserId, message: inviteMessage } = req.body || {};
+  if (!invitedUserId) {
+    return res.status(400).json({ ok: false, error: 'user_id is required' });
+  }
+
+  try {
+    // Decode inviter from JWT
+    let inviterId = '';
+    try { inviterId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
+    if (!inviterId) {
+      return res.status(401).json({ ok: false, error: 'INVALID_TOKEN' });
+    }
+
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE;
+    if (!url || !key) {
+      return res.status(503).json({ ok: false, error: 'Gateway misconfigured' });
+    }
+    const { createClient } = await import('@supabase/supabase-js');
+    const supa = createClient(url, key);
+
+    // Get group details and verify it exists
+    const { data: group } = await supa
+      .from('community_groups')
+      .select('id, name, tenant_id')
+      .eq('id', groupId)
+      .single();
+
+    if (!group) {
+      return res.status(404).json({ ok: false, error: 'GROUP_NOT_FOUND' });
+    }
+
+    // Insert invitation (will fail on unique constraint if duplicate pending exists)
+    const { data: invitation, error: insertErr } = await supa
+      .from('community_group_invitations')
+      .insert({
+        tenant_id: group.tenant_id,
+        group_id: groupId,
+        invited_by: inviterId,
+        invited_user_id: invitedUserId,
+        message: inviteMessage || null,
+      })
+      .select('id')
+      .single();
+
+    if (insertErr) {
+      if (insertErr.message?.includes('unique') || insertErr.code === '23505') {
+        return res.status(409).json({ ok: false, error: 'INVITATION_ALREADY_PENDING' });
+      }
+      console.error(`[${VTID}] invite insert error:`, insertErr.message);
+      return res.status(502).json({ ok: false, error: insertErr.message });
+    }
+
+    // OASIS event
+    await emitCommunityEvent(
+      'community.group.invitation.sent',
+      'success',
+      `Group invitation sent: ${groupId} → ${invitedUserId}`,
+      { group_id: groupId, invited_user_id: invitedUserId, invitation_id: invitation?.id }
+    );
+
+    console.log(`[${VTID}] Invitation sent: ${invitation?.id}`);
+    return res.status(201).json({ ok: true, invitation_id: invitation?.id });
+  } catch (err: any) {
+    console.error(`[${VTID}] group invite error:`, err.message);
+    return res.status(502).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * POST /invitations/:id/accept -> POST /api/v1/community/invitations/:id/accept
+ *
+ * Accept a group invitation and join the group.
+ */
+router.post('/invitations/:id/accept', async (req: Request, res: Response) => {
+  const invitationId = req.params.id;
+  console.log(`[${VTID}] POST /community/invitations/${invitationId}/accept`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  try {
+    let userId = '';
+    try { userId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
+    if (!userId) {
+      return res.status(401).json({ ok: false, error: 'INVALID_TOKEN' });
+    }
+
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE;
+    if (!url || !key) {
+      return res.status(503).json({ ok: false, error: 'Gateway misconfigured' });
+    }
+    const { createClient } = await import('@supabase/supabase-js');
+    const supa = createClient(url, key);
+
+    // Fetch the invitation
+    const { data: inv } = await supa
+      .from('community_group_invitations')
+      .select('id, group_id, tenant_id, invited_user_id, status')
+      .eq('id', invitationId)
+      .single();
+
+    if (!inv) {
+      return res.status(404).json({ ok: false, error: 'INVITATION_NOT_FOUND' });
+    }
+    if (inv.invited_user_id !== userId) {
+      return res.status(403).json({ ok: false, error: 'NOT_YOUR_INVITATION' });
+    }
+    if (inv.status !== 'pending') {
+      return res.status(409).json({ ok: false, error: 'INVITATION_ALREADY_RESPONDED' });
+    }
+
+    // Update invitation status
+    await supa
+      .from('community_group_invitations')
+      .update({ status: 'accepted', responded_at: new Date().toISOString() })
+      .eq('id', invitationId);
+
+    // Join the group via RPC (uses user token for proper RLS context)
+    const userSupa = createUserSupabaseClient(token);
+    const { data: joinResult, error: joinErr } = await userSupa.rpc('community_join_group', {
+      p_group_id: inv.group_id,
+    });
+
+    if (joinErr && !joinErr.message?.includes('ALREADY_MEMBER')) {
+      console.error(`[${VTID}] join after accept error:`, joinErr.message);
+      return res.status(502).json({ ok: false, error: joinErr.message });
+    }
+
+    await emitCommunityEvent(
+      'community.group.invitation.accepted',
+      'success',
+      `Invitation accepted: ${invitationId}`,
+      { invitation_id: invitationId, group_id: inv.group_id }
+    );
+
+    console.log(`[${VTID}] Invitation accepted: ${invitationId}`);
+    return res.status(200).json({ ok: true });
+  } catch (err: any) {
+    console.error(`[${VTID}] invitation accept error:`, err.message);
+    return res.status(502).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * POST /invitations/:id/decline -> POST /api/v1/community/invitations/:id/decline
+ *
+ * Decline a group invitation.
+ */
+router.post('/invitations/:id/decline', async (req: Request, res: Response) => {
+  const invitationId = req.params.id;
+  console.log(`[${VTID}] POST /community/invitations/${invitationId}/decline`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  try {
+    let userId = '';
+    try { userId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
+    if (!userId) {
+      return res.status(401).json({ ok: false, error: 'INVALID_TOKEN' });
+    }
+
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE;
+    if (!url || !key) {
+      return res.status(503).json({ ok: false, error: 'Gateway misconfigured' });
+    }
+    const { createClient } = await import('@supabase/supabase-js');
+    const supa = createClient(url, key);
+
+    const { data: inv } = await supa
+      .from('community_group_invitations')
+      .select('id, invited_user_id, status')
+      .eq('id', invitationId)
+      .single();
+
+    if (!inv) {
+      return res.status(404).json({ ok: false, error: 'INVITATION_NOT_FOUND' });
+    }
+    if (inv.invited_user_id !== userId) {
+      return res.status(403).json({ ok: false, error: 'NOT_YOUR_INVITATION' });
+    }
+    if (inv.status !== 'pending') {
+      return res.status(409).json({ ok: false, error: 'INVITATION_ALREADY_RESPONDED' });
+    }
+
+    await supa
+      .from('community_group_invitations')
+      .update({ status: 'declined', responded_at: new Date().toISOString() })
+      .eq('id', invitationId);
+
+    await emitCommunityEvent(
+      'community.group.invitation.declined',
+      'success',
+      `Invitation declined: ${invitationId}`,
+      { invitation_id: invitationId }
+    );
+
+    console.log(`[${VTID}] Invitation declined: ${invitationId}`);
+    return res.status(200).json({ ok: true });
+  } catch (err: any) {
+    console.error(`[${VTID}] invitation decline error:`, err.message);
+    return res.status(502).json({ ok: false, error: err.message });
+  }
+});
+
 /**
  * GET /health -> GET /api/v1/community/health
  *
