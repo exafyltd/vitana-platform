@@ -17,6 +17,7 @@ import {
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
+import { notifyUserAsync } from '../services/notification-service';
 
 const router = Router();
 
@@ -211,6 +212,34 @@ router.post('/login', async (req: Request, res: Response) => {
     if (!profile.avatar_url && userMetaAvatar) {
       profile.avatar_url = userMetaAvatar;
       console.log(`[VTID-01196] Avatar from user_metadata: ${userMetaAvatar}`);
+    }
+
+    // Fire welcome notification once (first login)
+    if (supabase && authData.user?.id) {
+      const uid = authData.user.id;
+      // Resolve tenant_id from memberships
+      const { data: tenantRow } = await supabase
+        .from('user_tenants')
+        .select('tenant_id')
+        .eq('user_id', uid)
+        .eq('is_primary', true)
+        .single();
+      const tid = tenantRow?.tenant_id;
+      if (tid) {
+        // Only send welcome if user has never received it
+        const { count } = await supabase
+          .from('user_notifications')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', uid)
+          .eq('type', 'welcome_to_vitana');
+        if (count === 0) {
+          notifyUserAsync(uid, tid, 'welcome_to_vitana', {
+            title: 'Welcome to Vitana!',
+            body: 'Your journey to a healthier, more connected life starts now.',
+            data: { url: '/dashboard' },
+          }, supabase);
+        }
+      }
     }
 
     return res.status(200).json({

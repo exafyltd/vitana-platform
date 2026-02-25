@@ -31,6 +31,7 @@ import { DailyClient } from '../services/daily-client';
 import { RoomSessionManager } from '../services/room-session-manager';
 import Stripe from 'stripe';
 import rateLimit from 'express-rate-limit';
+import { notifyUserAsync, notifyUsersAsync } from '../services/notification-service';
 
 const router = Router();
 
@@ -1390,6 +1391,44 @@ router.post('/rooms/:id/sessions', sessionCreateLimiter, async (req: Request, re
 
   console.log(`[VTID-01228] Session created: ${result.sessionId} (${result.status})`);
 
+  // Notify room followers that the room is going live
+  try {
+    const creds2 = getSupabaseCredentials();
+    if (creds2) {
+      const { createClient } = await import('@supabase/supabase-js');
+      const supa = createClient(creds2.url, creds2.key);
+      let hostId = '';
+      try { hostId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
+
+      // Look up room title and find followers (anyone who joined/RSVP'd)
+      const { data: room } = await supa
+        .from('live_rooms')
+        .select('title, tenant_id')
+        .eq('id', roomId)
+        .single();
+
+      if (room?.tenant_id) {
+        // Get attendees who previously joined this room (potential followers)
+        const { data: followers } = await supa
+          .from('live_room_attendees')
+          .select('user_id')
+          .eq('room_id', roomId)
+          .neq('user_id', hostId);
+
+        const followerIds = (followers || []).map((f: any) => f.user_id);
+        if (followerIds.length > 0) {
+          notifyUsersAsync(followerIds, room.tenant_id, 'live_room_starting', {
+            title: `${room.title || 'A Live Room'} is starting!`,
+            body: 'Join now before it fills up.',
+            data: { url: `/live/${roomId}`, room_id: roomId, entity_id: roomId },
+          }, supa);
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[Notifications] live_room_starting dispatch error: ${err.message}`);
+  }
+
   // VTID-01228: Sync to community_live_streams so other users see this room in the listing.
   // The LiveRooms page queries community_live_streams, not live_rooms.
   // Always sync regardless of initial status (scheduled/lobby/live) — the status may
@@ -1948,6 +1987,36 @@ communityMeetupRouter.post('/meetups/:id/rsvp', async (req: Request, res: Respon
   }
 
   console.log(`[VTID-01090] Meetup RSVP: ${meetupId} -> ${status} (+${result.data?.strength_delta})`);
+
+  // Notify user that RSVP is confirmed
+  if (status === 'rsvp') {
+    try {
+      const creds3 = getSupabaseCredentials();
+      if (creds3) {
+        const { createClient } = await import('@supabase/supabase-js');
+        const supa = createClient(creds3.url, creds3.key);
+        let rsvpUserId = '';
+        try { rsvpUserId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
+
+        // Get meetup title and tenant
+        const { data: meetup } = await supa
+          .from('community_meetups')
+          .select('title, tenant_id')
+          .eq('id', meetupId)
+          .single();
+
+        if (meetup?.tenant_id && rsvpUserId) {
+          notifyUserAsync(rsvpUserId, meetup.tenant_id, 'meetup_rsvp_confirmed', {
+            title: 'RSVP Confirmed',
+            body: `You're attending "${meetup.title || 'a meetup'}". We'll remind you before it starts.`,
+            data: { url: `/community/meetups/${meetupId}`, entity_id: meetupId, meetup_id: meetupId },
+          }, supa);
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[Notifications] meetup_rsvp_confirmed dispatch error: ${err.message}`);
+    }
+  }
 
   return res.status(200).json({
     ok: true,

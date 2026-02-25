@@ -22,6 +22,7 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { notifyUserAsync } from '../services/notification-service';
 
 const router = Router();
 
@@ -267,6 +268,17 @@ router.post('/recompute/daily', async (req: Request, res: Response) => {
     );
 
     console.log(`[${VTID}] POST /match/recompute/daily - Success: ${totalMatches} matches in ${elapsed}ms`);
+
+    // Notify user about new matches
+    if (totalMatches > 0 && data.user_id && data.tenant_id) {
+      const { createClient } = await import('@supabase/supabase-js');
+      const supa = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
+      notifyUserAsync(data.user_id, data.tenant_id, 'new_daily_matches', {
+        title: `${totalMatches} new matches today!`,
+        body: 'Check out who you matched with today.',
+        data: { url: '/discover', match_count: String(totalMatches) },
+      }, supa);
+    }
 
     return res.status(200).json({
       ok: true,

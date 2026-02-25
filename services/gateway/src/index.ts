@@ -197,6 +197,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01231: Stripe Connect Express Backend
   const creatorsRouter = require('./routes/creators').default;
   const stripeConnectWebhookRouter = require('./routes/stripe-connect-webhook').default;
+  // Notification System — FCM push + in-app notification history
+  const notificationsRouter = require('./routes/notifications').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -488,6 +490,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01231: Stripe Connect Express Backend
   mountRouterSync(app, '/api/v1/creators', creatorsRouter, { owner: 'creators' });
   mountRouterSync(app, '/api/v1/stripe', stripeConnectWebhookRouter, { owner: 'stripe-connect-webhook' });
+
+  // Notification System — FCM push notifications + in-app history
+  mountRouterSync(app, '/api/v1/notifications', notificationsRouter, { owner: 'notifications' });
 
   // VTID-01097: Diary Templates - guided diary templates for memory quality
   mountRouterSync(app, '/api/v1/diary', diaryRouter, { owner: 'diary' });

@@ -23,6 +23,7 @@
 import { Router, Request, Response } from 'express';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { generateRecommendations, SourceType } from '../services/recommendation-engine';
+import { notifyUserAsync } from '../services/notification-service';
 
 const router = Router();
 
@@ -448,6 +449,29 @@ router.post('/generate', async (req: Request, res: Response) => {
         errors: result.errors,
       },
     });
+
+    // Notify user about new recommendations
+    if (result.ok && result.generated > 0 && userId) {
+      try {
+        const { createClient } = await import('@supabase/supabase-js');
+        const supa = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
+        const { data: tenantRow } = await supa
+          .from('user_tenants')
+          .select('tenant_id')
+          .eq('user_id', userId)
+          .eq('is_primary', true)
+          .single();
+        if (tenantRow?.tenant_id) {
+          notifyUserAsync(userId, tenantRow.tenant_id, 'new_recommendation', {
+            title: `${result.generated} new recommendation${result.generated > 1 ? 's' : ''}`,
+            body: 'Autopilot found new actions to improve your wellbeing.',
+            data: { url: '/autopilot', count: String(result.generated) },
+          }, supa);
+        }
+      } catch (notifErr: any) {
+        console.warn(`[Notifications] new_recommendation dispatch error: ${notifErr.message}`);
+      }
+    }
 
     return res.status(result.ok ? 200 : 500).json({
       ...result,

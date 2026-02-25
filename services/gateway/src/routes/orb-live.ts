@@ -46,6 +46,7 @@ import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { notifyUserAsync } from '../services/notification-service';
 // VTID-01225: Cognee Entity Extraction Integration
 import { cogneeExtractorClient, type CogneeExtractionRequest } from '../services/cognee-extractor-client';
 // VTID-01225-READ-FIX: Inline fact extraction for voice sessions
@@ -3925,6 +3926,25 @@ router.post('/end-session', async (req: Request, res: Response) => {
     }).catch(err => console.warn('[VTID-01039] Failed to emit orb.session.summary:', err.message));
 
     console.log(`[VTID-01039] Session finalized: ${orb_session_id} (${transcript.summary.turns_count} turns, ${durationSec}s)`);
+
+    // Send follow-up reminder notification if conversation had substance
+    if (transcript.turns.length >= 4) {
+      const tenantId = transcript.tenant_id || process.env.DEV_SANDBOX_TENANT_ID;
+      const userId = transcript.user_id || process.env.DEV_SANDBOX_USER_ID;
+      if (tenantId && userId) {
+        try {
+          const { createClient } = await import('@supabase/supabase-js');
+          const supa = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
+          notifyUserAsync(userId, tenantId, 'conversation_followup_reminder', {
+            title: 'Continue your conversation with ORB',
+            body: summaryContent.title || 'Pick up where you left off.',
+            data: { url: '/orb', session_id: orb_session_id },
+          }, supa);
+        } catch (notifErr: any) {
+          console.warn(`[Notifications] conversation_followup_reminder error: ${notifErr.message}`);
+        }
+      }
+    }
 
     // VTID-01225: Fire-and-forget entity extraction from transcript
     if (transcript.turns.length > 0) {
