@@ -46,7 +46,10 @@ export function setupCors(app: Express) {
 }
 
 export function sseHeaders(req: Request, res: Response, next: NextFunction) {
-  if (req.path.includes("/stream") || req.path.includes("/events")) {
+  // Only apply SSE headers to actual GET /stream endpoints, NOT POST /stream/send or /stream/end-turn.
+  // The old check (path.includes("/stream")) incorrectly matched /live/stream/send POST requests,
+  // setting text/event-stream content-type on JSON POST responses.
+  if (req.method === 'GET' && (req.path.includes("/stream") || req.path.includes("/events"))) {
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");

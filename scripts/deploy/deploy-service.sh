@@ -143,12 +143,15 @@ if [ "$CLOUD_RUN_SERVICE" = "gateway" ]; then
   echo -e "${YELLOW}VTID-01228: Including DAILY_API_KEY for Daily.co video integration...${NC}"
   echo -e "${YELLOW}VTID-01228: Including Stripe secrets for payment integration...${NC}"
   echo -e "${YELLOW}VTID-01231: Including STRIPE_CONNECT_WEBHOOK_SECRET for Stripe Connect backend...${NC}"
+  # VTID-01228: Session affinity required — ORB Live API stores sessions in-memory.
+  # Without affinity, Cloud Run multi-instance routing causes 403/404 on /send requests.
   gcloud run deploy "$CLOUD_RUN_SERVICE" \
     --project "$PROJECT" \
     --region "$REGION" \
     --source "$SOURCE_PATH" \
     --platform managed \
     --allow-unauthenticated \
+    --session-affinity \
     --set-env-vars "ENVIRONMENT=${ENVIRONMENT},AUTOPILOT_LOOP_ENABLED=true,GOOGLE_CLOUD_PROJECT=lovable-vitana-vers1,COGNEE_EXTRACTOR_URL=${COGNEE_URL},FRONTEND_URL=https://vitana-lovable-vers1.lovable.app" \
     --set-secrets "GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest,SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest,SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest,SUPABASE_JWT_SECRET=SUPABASE_JWT_SECRET:latest,LOVABLE_JWT_SECRET=LOVABLE_JWT_SECRET:latest,GITHUB_TOKEN=GITHUB_TOKEN:latest,GH_TOKEN=GITHUB_TOKEN:latest,GITHUB_SAFE_MERGE_TOKEN=GITHUB_TOKEN:latest,DEV_AUTH_SECRET=DEV_AUTH_SECRET:latest,DEV_TEST_USER_EMAIL=DEV_TEST_USER_EMAIL:latest,DEV_TEST_USER_PASSWORD=DEV_TEST_USER_PASSWORD:latest,DEV_JWT_SECRET=DEV_JWT_SECRET:latest,PERPLEXITY_API_KEY=PERPLEXITY_API_KEY:latest,DAILY_API_KEY=daily-api-key:latest,STRIPE_SECRET_KEY=STRIPE_SECRET_KEY:latest,STRIPE_WEBHOOK_SECRET=STRIPE_WEBHOOK_SECRET:latest,STRIPE_CONNECT_WEBHOOK_SECRET=STRIPE_CONNECT_WEBHOOK_SECRET:latest" \
     --quiet
