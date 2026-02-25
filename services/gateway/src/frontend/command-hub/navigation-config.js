@@ -26,7 +26,6 @@ export const NAVIGATION_CONFIG = [
     label: 'Admin',
     tabs: [
       { key: 'users', label: 'Users' },
-      { key: 'signup-tracker', label: 'Signup Tracker' },
       { key: 'permissions', label: 'Permissions' },
       { key: 'tenants', label: 'Tenants' },
       { key: 'content-moderation', label: 'Content Moderation' },
