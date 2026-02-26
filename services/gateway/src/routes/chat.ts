@@ -15,17 +15,10 @@ import {
   requireTenant,
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
-import { createClient } from '@supabase/supabase-js';
+import { getSupabase } from '../lib/supabase';
 import { notifyUserAsync } from '../services/notification-service';
 
 const router = Router();
-
-function getSupabase() {
-  return createClient(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE!
-  );
-}
 
 // ── POST /send — Send a direct message ───────────────────────
 
@@ -46,6 +39,8 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
   }
 
   const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'database unavailable' });
+
   const { data, error } = await supabase
     .from('chat_messages')
     .insert({
@@ -94,6 +89,7 @@ router.get('/conversation/:peerId', requireAuth, requireTenant, async (req: Requ
   const before = req.query.before as string | undefined; // ISO cursor
 
   const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'database unavailable' });
 
   let query = supabase
     .from('chat_messages')
@@ -126,6 +122,7 @@ router.get('/conversations', requireAuth, requireTenant, async (req: Request, re
   if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
 
   const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'database unavailable' });
 
   // Fetch recent messages involving this user, then deduplicate to latest per peer
   const { data, error } = await supabase
@@ -170,6 +167,8 @@ router.post('/read', requireAuth, requireTenant, async (req: Request, res: Respo
   }
 
   const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'database unavailable' });
+
   const { error } = await supabase
     .from('chat_messages')
     .update({ read_at: new Date().toISOString() })
@@ -193,6 +192,8 @@ router.get('/unread-count', requireAuth, requireTenant, async (req: Request, res
   if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
 
   const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'database unavailable' });
+
   const { count, error } = await supabase
     .from('chat_messages')
     .select('*', { count: 'exact', head: true })
