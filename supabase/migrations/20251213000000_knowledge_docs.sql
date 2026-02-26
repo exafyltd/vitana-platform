@@ -103,7 +103,8 @@ BEGIN
     p_content,
     p_source_type,
     p_tags,
-    array_length(regexp_split_to_array(p_content, '\s+'), 1)
+    array_length(regexp_split_to_array(p_content, '\s+'), 1),
+    now()
   )
   ON CONFLICT (path) DO UPDATE SET
     title = EXCLUDED.title,
