@@ -81,7 +81,6 @@ const TYPE_META: Record<string, TypeMeta> = {
   orb_proactive_message:           { channel: 'push_and_inapp', priority: 'p1', category: 'chat' },
   conversation_followup_reminder:  { channel: 'inapp',          priority: 'p2', category: 'chat' },
   orb_suggestion:                  { channel: 'push_and_inapp', priority: 'p1', category: 'chat' },
-  new_chat_message:                { channel: 'push_and_inapp', priority: 'p1', category: 'chat' },
   // Calendar
   daily_recompute_complete:  { channel: 'silent',          priority: 'p3', category: 'calendar' },
   morning_briefing_ready:    { channel: 'push_and_inapp', priority: 'p1', category: 'calendar' },
