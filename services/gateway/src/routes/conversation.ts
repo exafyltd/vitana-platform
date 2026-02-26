@@ -61,8 +61,55 @@ import { writeMemoryItemWithIdentity } from '../services/orb-memory-bridge';
 import { cogneeExtractorClient } from '../services/cognee-extractor-client';
 // VTID-01225: Inline fact extraction fallback when Cognee is unavailable
 import { extractAndPersistFacts, isInlineExtractionAvailable } from '../services/inline-fact-extractor';
+// Supabase client for persistent message storage
+import { getSupabase } from '../lib/supabase';
 
 const router = Router();
+
+// =============================================================================
+// Persistent Message Storage (conversation_messages table)
+// =============================================================================
+
+/**
+ * Persist a message to the conversation_messages table in Supabase.
+ * Fire-and-forget by default — callers should .catch() errors.
+ */
+async function persistMessage(params: {
+  thread_id: string;
+  tenant_id: string;
+  user_id: string;
+  role: 'user' | 'assistant';
+  channel: ConversationChannel;
+  content: string;
+  metadata?: Record<string, unknown>;
+}): Promise<{ id: string } | null> {
+  const supabase = getSupabase();
+  if (!supabase) {
+    console.warn('[conversation] Supabase not configured — message not persisted');
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from('conversation_messages')
+    .insert({
+      thread_id: params.thread_id,
+      tenant_id: params.tenant_id,
+      user_id: params.user_id,
+      role: params.role,
+      channel: params.channel,
+      content: params.content,
+      metadata: params.metadata || {},
+    })
+    .select('id')
+    .single();
+
+  if (error) {
+    console.warn('[conversation] Failed to persist message:', error.message);
+    return null;
+  }
+
+  return data;
+}
 
 // =============================================================================
 // Conversation State (Thread Management)
@@ -257,6 +304,31 @@ Instructions:
       // Track conversation history for context continuity
       thread.history.push({ role: 'user', content: message.text });
       thread.history.push({ role: 'assistant', content: reply });
+
+      // Persist both messages to Supabase (fire-and-forget, non-blocking)
+      persistMessage({
+        thread_id: thread.thread_id,
+        tenant_id,
+        user_id,
+        role: 'user',
+        channel,
+        content: message.text,
+      }).catch(err => console.warn('[conversation] User message persist failed:', err.message));
+
+      persistMessage({
+        thread_id: thread.thread_id,
+        tenant_id,
+        user_id,
+        role: 'assistant',
+        channel,
+        content: reply,
+        metadata: {
+          model: modelUsed,
+          latency_ms: Date.now() - llmStartTime,
+          tool_calls: toolCalls.length > 0 ? toolCalls.map(t => t.name) : undefined,
+          turn_number: thread.turn_count,
+        },
+      }).catch(err => console.warn('[conversation] Assistant message persist failed:', err.message));
 
       // Prevent memory bloat by trimming to last 20 entries
       if (thread.history.length > 20) {
@@ -570,6 +642,26 @@ Instructions:
         sequence: sequence
       })}\n\n`);
 
+      // Persist both messages to Supabase (fire-and-forget, non-blocking)
+      persistMessage({
+        thread_id: thread.thread_id,
+        tenant_id: input.tenant_id,
+        user_id: input.user_id,
+        role: 'user',
+        channel: input.channel,
+        content: input.message.text,
+      }).catch(err => console.warn('[conversation] Stream user message persist failed:', err.message));
+
+      persistMessage({
+        thread_id: thread.thread_id,
+        tenant_id: input.tenant_id,
+        user_id: input.user_id,
+        role: 'assistant',
+        channel: input.channel,
+        content: geminiResult.reply,
+        metadata: { model: 'gemini-2.5-pro', turn_number: thread.turn_count },
+      }).catch(err => console.warn('[conversation] Stream assistant message persist failed:', err.message));
+
       // VTID-01225: Fire-and-forget fact extraction from streamed conversation
       const streamedText = `User: ${input.message.text}\nAssistant: ${geminiResult.reply}`;
       if (streamedText.length > 50) {
@@ -612,6 +704,103 @@ Instructions:
 
     res.write(`data: ${JSON.stringify({ type: 'error', data: error.message, timestamp: new Date().toISOString(), sequence: 999 })}\n\n`);
     res.end();
+  }
+});
+
+// =============================================================================
+// GET /history/:threadId - Fetch persisted message history for a thread
+// =============================================================================
+
+router.get('/history/:threadId', async (req: Request, res: Response) => {
+  const { threadId } = req.params;
+  const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+  const before = req.query.before as string | undefined; // cursor-based pagination
+
+  if (!threadId) {
+    return res.status(400).json({ ok: false, error: 'threadId is required' });
+  }
+
+  const supabase = getSupabase();
+  if (!supabase) {
+    return res.status(503).json({ ok: false, error: 'Database not configured' });
+  }
+
+  try {
+    let query = supabase
+      .from('conversation_messages')
+      .select('id, thread_id, role, channel, content, metadata, created_at')
+      .eq('thread_id', threadId)
+      .order('created_at', { ascending: true })
+      .limit(limit);
+
+    if (before) {
+      query = query.lt('created_at', before);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('[conversation] History fetch failed:', error.message);
+      return res.status(500).json({ ok: false, error: 'Failed to fetch history' });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      thread_id: threadId,
+      messages: data || [],
+      count: (data || []).length,
+      has_more: (data || []).length === limit,
+    });
+  } catch (err: any) {
+    console.error('[conversation] History fetch error:', err.message);
+    return res.status(500).json({ ok: false, error: 'Internal server error' });
+  }
+});
+
+// =============================================================================
+// GET /threads/active - Get user's most recent active thread
+// =============================================================================
+
+router.get('/threads/active', async (req: Request, res: Response) => {
+  const tenant_id = req.query.tenant_id as string;
+  const user_id = req.query.user_id as string;
+
+  if (!tenant_id || !user_id) {
+    return res.status(400).json({ ok: false, error: 'tenant_id and user_id are required' });
+  }
+
+  const supabase = getSupabase();
+  if (!supabase) {
+    return res.status(503).json({ ok: false, error: 'Database not configured' });
+  }
+
+  try {
+    // Find the most recent thread by looking at the latest message per thread
+    const { data, error } = await supabase
+      .from('conversation_messages')
+      .select('thread_id, created_at')
+      .eq('tenant_id', tenant_id)
+      .eq('user_id', user_id)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (error) {
+      console.error('[conversation] Active thread fetch failed:', error.message);
+      return res.status(500).json({ ok: false, error: 'Failed to fetch active thread' });
+    }
+
+    if (!data || data.length === 0) {
+      return res.status(200).json({ ok: true, thread_id: null });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      thread_id: data[0].thread_id,
+      last_activity: data[0].created_at,
+    });
+  } catch (err: any) {
+    console.error('[conversation] Active thread error:', err.message);
+    return res.status(500).json({ ok: false, error: 'Internal server error' });
   }
 });
 
