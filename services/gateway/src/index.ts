@@ -205,6 +205,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const chatRouter = require('./routes/chat').default;
   // Admin: Signup Funnel Tracking & Outreach
   const adminSignupsRouter = require('./routes/admin-signups').default;
+  // Admin: Notification Compose & Tracking
+  const adminNotificationsRouter = require('./routes/admin-notifications').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -507,6 +509,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // Admin: Signup Funnel Tracking & Outreach
   mountRouterSync(app, '/api/v1/admin/signups', adminSignupsRouter, { owner: 'admin-signups' });
+
+  // Admin: Notification Compose & Tracking
+  mountRouterSync(app, '/api/v1/admin/notifications', adminNotificationsRouter, { owner: 'admin-notifications' });
 
   // VTID-01097: Diary Templates - guided diary templates for memory quality
   mountRouterSync(app, '/api/v1/diary', diaryRouter, { owner: 'diary' });
