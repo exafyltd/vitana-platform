@@ -16,7 +16,7 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { notifyUserAsync } from '../services/notification-service';
+import { notifyUserAsync, sendPushToUser } from '../services/notification-service';
 
 const router = Router();
 
@@ -317,6 +317,113 @@ router.post('/signal-cleanup', async (req: Request, res: Response) => {
 
   console.log(`[Scheduled] signal_cleanup → ${cleaned} signals expired`);
   return res.status(200).json({ ok: true, cleaned });
+});
+
+// =============================================================================
+// POST /push-dispatch — Every 30 seconds (Cloud Scheduler)
+// Picks up trigger-created notifications that haven't had FCM push sent yet.
+// DB triggers (chat messages, group invites, predictive signals, etc.) write
+// to user_notifications but can't send FCM. This cron bridges the gap.
+// =============================================================================
+router.post('/push-dispatch', async (req: Request, res: Response) => {
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  // Find notifications created by DB triggers that haven't been pushed yet.
+  // push_sent_at IS NULL  → not yet pushed
+  // channel includes push → should be pushed
+  // created in last 5 min → don't bother with very old ones
+  const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+
+  const { data: pending, error } = await supa
+    .from('user_notifications')
+    .select('id, user_id, tenant_id, type, title, body, data, channel, priority')
+    .is('push_sent_at', null)
+    .in('channel', ['push', 'push_and_inapp'])
+    .gte('created_at', fiveMinAgo)
+    .order('created_at', { ascending: true })
+    .limit(100);
+
+  if (error) {
+    console.error('[PushDispatch] Query error:', error.message);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+
+  if (!pending?.length) {
+    return res.status(200).json({ ok: true, dispatched: 0, message: 'no pending pushes' });
+  }
+
+  let dispatched = 0;
+  let skipped = 0;
+
+  for (const notif of pending) {
+    try {
+      // Check user preferences (DND, category toggles, push_enabled)
+      const { data: prefs } = await supa
+        .from('user_notification_preferences')
+        .select('*')
+        .eq('user_id', notif.user_id)
+        .eq('tenant_id', notif.tenant_id)
+        .maybeSingle();
+
+      // If push disabled globally, skip push but still mark as handled
+      if (prefs?.push_enabled === false) {
+        await supa.from('user_notifications')
+          .update({ push_sent_at: new Date().toISOString() })
+          .eq('id', notif.id);
+        skipped++;
+        continue;
+      }
+
+      // DND check — p0 bypasses DND
+      if (prefs?.dnd_enabled && prefs.dnd_start_time && prefs.dnd_end_time && notif.priority !== 'p0') {
+        const now = new Date();
+        const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        const start = prefs.dnd_start_time;
+        const end = prefs.dnd_end_time;
+        const inDnd = start > end ? (hhmm >= start || hhmm < end) : (hhmm >= start && hhmm < end);
+        if (inDnd) {
+          await supa.from('user_notifications')
+            .update({ push_sent_at: new Date().toISOString() })
+            .eq('id', notif.id);
+          skipped++;
+          continue;
+        }
+      }
+
+      // Send FCM push
+      const sent = await sendPushToUser(
+        notif.user_id,
+        notif.tenant_id,
+        {
+          title: notif.title || 'Vitana',
+          body: notif.body || '',
+          data: typeof notif.data === 'object' && notif.data !== null
+            ? Object.fromEntries(Object.entries(notif.data).map(([k, v]) => [k, String(v)]))
+            : undefined,
+        },
+        supa
+      );
+
+      // Mark as dispatched
+      await supa.from('user_notifications')
+        .update({ push_sent_at: new Date().toISOString() })
+        .eq('id', notif.id);
+
+      if (sent > 0) dispatched++;
+      else skipped++; // No device tokens found
+    } catch (err: any) {
+      console.error(`[PushDispatch] Failed for notification ${notif.id}:`, err.message || err);
+      // Still mark as sent to avoid infinite retries
+      await supa.from('user_notifications')
+        .update({ push_sent_at: new Date().toISOString() })
+        .eq('id', notif.id);
+      skipped++;
+    }
+  }
+
+  console.log(`[PushDispatch] dispatched=${dispatched} skipped=${skipped} total=${pending.length}`);
+  return res.status(200).json({ ok: true, dispatched, skipped, total: pending.length });
 });
 
 // =============================================================================

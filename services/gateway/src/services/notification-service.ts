@@ -196,7 +196,7 @@ export async function sendPushNotification(
 /**
  * Fan-out push to all devices of a user. Cleans stale tokens.
  */
-async function sendPushToUser(
+export async function sendPushToUser(
   userId: string,
   tenantId: string,
   payload: NotificationPayload,
@@ -317,8 +317,9 @@ export async function notifyUser(
 
   // ── 4. Write in-app notification record ──────────────────
   let inappWritten = false;
+  let notificationId: string | null = null;
   if (shouldWriteInapp) {
-    const { error } = await supabase.from('user_notifications').insert({
+    const { data: inserted, error } = await supabase.from('user_notifications').insert({
       user_id: userId,
       tenant_id: tenantId,
       type,
@@ -327,11 +328,12 @@ export async function notifyUser(
       title: payload.title,
       body: payload.body,
       data: payload.data || {},
-    });
+    }).select('id').single();
     if (error) {
       console.error(`[Notifications] inapp write failed for ${type}:`, error.message);
     } else {
       inappWritten = true;
+      notificationId = inserted?.id || null;
     }
   }
 
@@ -339,6 +341,12 @@ export async function notifyUser(
   let pushed = 0;
   if (shouldSendPush) {
     pushed = await sendPushToUser(userId, tenantId, payload, supabase);
+    // Mark as push-sent so the dispatch cron skips this row
+    if (pushed > 0 && notificationId) {
+      await supabase.from('user_notifications')
+        .update({ push_sent_at: new Date().toISOString() })
+        .eq('id', notificationId);
+    }
   }
 
   console.log(
