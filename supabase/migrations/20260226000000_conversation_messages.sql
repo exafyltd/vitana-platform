@@ -72,14 +72,7 @@ CREATE POLICY conversation_messages_service_role ON conversation_messages
 -- Users can read their own messages (anon key + JWT)
 CREATE POLICY conversation_messages_user_select ON conversation_messages
   FOR SELECT
-  USING (
-    user_id = auth.uid()
-    OR
-    -- Community/tenant channels visible to all tenant members
-    (channel IN ('community', 'tenant') AND tenant_id IN (
-      SELECT tenant_id FROM tenant_users WHERE user_id = auth.uid()
-    ))
-  );
+  USING (user_id = auth.uid());
 
 -- Users can insert their own messages
 CREATE POLICY conversation_messages_user_insert ON conversation_messages
