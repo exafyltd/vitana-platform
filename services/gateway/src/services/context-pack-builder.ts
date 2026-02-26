@@ -823,7 +823,18 @@ export async function buildContextPack(
     );
   }
 
-  // Execute all retrievals in parallel
+  // Run tool health + active VTIDs in parallel with the main retrievals
+  let toolHealth: ToolHealthStatus[] = [];
+  let activeVtids: ActiveVTID[] = [];
+
+  retrievalPromises.push(
+    checkToolHealth().then(result => { toolHealth = result; })
+  );
+  retrievalPromises.push(
+    fetchActiveVTIDs(input.lens.tenant_id).then(result => { activeVtids = result; })
+  );
+
+  // Execute ALL retrievals in parallel (memory, knowledge, web, facts, relationships, tool health, VTIDs)
   await Promise.all(retrievalPromises);
 
   // Merge structured facts into memory hits (prepend - higher priority)
@@ -834,12 +845,6 @@ export async function buildContextPack(
     memoryHits = memoryHits.slice(0, CONTEXT_PACK_CONFIG.MAX_MEMORY_HITS);
     hitCounts.memory_garden = memoryHits.length;
   }
-
-  // Fetch tool health
-  const toolHealth = await checkToolHealth();
-
-  // Fetch active VTIDs
-  const activeVtids = await fetchActiveVTIDs(input.lens.tenant_id);
 
   // Estimate token usage
   const estimateTokens = (obj: unknown): number => {

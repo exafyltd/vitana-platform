@@ -201,6 +201,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const stripeConnectWebhookRouter = require('./routes/stripe-connect-webhook').default;
   // Notification System — FCM push + in-app notification history
   const notificationsRouter = require('./routes/notifications').default;
+  // Chat — User-to-user direct messaging
+  const chatRouter = require('./routes/chat').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -497,6 +499,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // Notification System — FCM push notifications + in-app history
   mountRouterSync(app, '/api/v1/notifications', notificationsRouter, { owner: 'notifications' });
+
+  // Chat — User-to-user direct messaging
+  mountRouterSync(app, '/api/v1/chat', chatRouter, { owner: 'chat' });
 
   // VTID-01097: Diary Templates - guided diary templates for memory quality
   mountRouterSync(app, '/api/v1/diary', diaryRouter, { owner: 'diary' });
