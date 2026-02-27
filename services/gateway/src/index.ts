@@ -207,6 +207,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminSignupsRouter = require('./routes/admin-signups').default;
   // Admin: Notification Compose & Tracking
   const adminNotificationsRouter = require('./routes/admin-notifications').default;
+  // Voice Feedback — Test user bug reports & UX improvement suggestions
+  const voiceFeedbackRouter = require('./routes/voice-feedback').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -478,6 +480,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01121: User Feedback, Correction & Trust Repair Engine
   mountRouterSync(app, '/api/v1/feedback', feedbackCorrectionRouter, { owner: 'feedback-correction' });
+
+  // Voice Feedback — Test user bug reports & UX improvement suggestions
+  mountRouterSync(app, '/api/v1/voice-feedback', voiceFeedbackRouter, { owner: 'voice-feedback' });
 
   // VTID-01083: Longevity Signal Layer - diary/memory to health signals bridge
   mountRouterSync(app, '/api/v1/longevity', longevityRouter, { owner: 'longevity' });
