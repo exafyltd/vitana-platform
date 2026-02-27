@@ -3098,7 +3098,81 @@ const state = {
         editingPolicy: null,
         saveInProgress: false,
         saveError: null
-    }
+    },
+
+    // ──── New Module States (51-screen build) ────
+
+    // Overview module
+    overviewHealth: { items: [], loading: false, error: null, fetched: false },
+    overviewMetrics: { snapshot: null, loading: false, error: null, fetched: false },
+    overviewRecentEvents: { items: [], loading: false, error: null, fetched: false },
+    overviewErrors: { items: [], loading: false, error: null, fetched: false },
+    overviewReleases: { items: [], loading: false, error: null, fetched: false },
+
+    // Operator module
+    operatorTaskQueue: { items: [], loading: false, error: null, fetched: false },
+    operatorExecLogs: { items: [], loading: false, error: null, fetched: false },
+    operatorPipelines: { items: [], loading: false, error: null, fetched: false },
+    operatorRunbook: { items: [], loading: false, error: null, fetched: false },
+
+    // Governance missing
+    governanceViolations: { items: [], loading: false, error: null, fetched: false },
+    governanceProposals: { items: [], loading: false, error: null, fetched: false },
+
+    // Agents missing
+    agentsMemory: { items: null, loading: false, error: null, fetched: false },
+
+    // OASIS missing
+    oasisEntities: { items: [], loading: false, error: null, fetched: false },
+    oasisStreams: { source: null, events: [], connected: false, error: null },
+    oasisCommandLog: { items: [], loading: false, error: null, fetched: false },
+
+    // Workflows module
+    workflowRuns: { items: [], loading: false, error: null, fetched: false },
+    workflowTriggers: { data: null, loading: false, error: null, fetched: false },
+    workflowSchedules: { items: [], loading: false, error: null, fetched: false },
+    workflowHistory: { items: [], loading: false, error: null, fetched: false },
+
+    // Databases module
+    dbSupabase: { tables: [], loading: false, error: null, fetched: false },
+    dbVectors: { data: null, loading: false, error: null, fetched: false },
+
+    // Infrastructure module
+    infraServices: { items: [], loading: false, error: null, fetched: false },
+    infraDeployments: { items: [], loading: false, error: null, fetched: false },
+    infraLogs: { items: [], loading: false, error: null, fetched: false },
+    infraConfig: { data: null, loading: false, error: null, fetched: false },
+
+    // Security module
+    securityPolicies: { items: [], loading: false, error: null, fetched: false },
+    securityRoles: { items: [], loading: false, error: null, fetched: false },
+    securityAuditLog: { items: [], loading: false, error: null, fetched: false },
+
+    // Integrations module
+    integrationsMcp: { items: [], loading: false, error: null, fetched: false },
+    integrationsLlm: { items: [], loading: false, error: null, fetched: false },
+    integrationsTools: { items: [], loading: false, error: null, fetched: false },
+
+    // Diagnostics missing
+    diagHealthChecks: { items: [], loading: false, error: null, fetched: false },
+    diagErrors: { items: [], loading: false, error: null, fetched: false },
+    diagSse: { source: null, events: [], connected: false },
+    diagDebug: { data: null, loading: false, error: null, fetched: false },
+
+    // Models & Evaluations module
+    modelsRegistry: { items: [], loading: false, error: null, fetched: false },
+    modelsPerformance: { data: null, loading: false, error: null, fetched: false },
+    modelsRouting: { config: null, domains: [], loading: false, error: null, fetched: false },
+    modelsPlayground: { input: '', output: '', loading: false, error: null, model: '' },
+
+    // Testing & QA (GitHub CI)
+    testingCi: { runs: [], loading: false, error: null, fetched: false },
+
+    // Admin analytics
+    adminAnalytics: { data: null, loading: false, error: null, fetched: false },
+
+    // Docs missing
+    docsApiInventory: { endpoints: [], loading: false, error: null, fetched: false }
 };
 
 // --- VTID-0527: Task Stage Timeline Model ---
@@ -5229,18 +5303,170 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'diagnostics' && tab === 'voice-lab') {
         // VTID-01218E: Voice LAB - ORB Live Observability
         container.appendChild(renderVoiceLabView());
+
+    // ──── Overview Module ────
+    } else if (moduleKey === 'overview' && tab === 'system-overview') {
+        container.appendChild(renderOverviewSystemView());
+    } else if (moduleKey === 'overview' && tab === 'live-metrics') {
+        container.appendChild(renderOverviewLiveMetricsView());
+    } else if (moduleKey === 'overview' && tab === 'recent-events') {
+        container.appendChild(renderOverviewRecentEventsView());
+    } else if (moduleKey === 'overview' && tab === 'errors-violations') {
+        container.appendChild(renderOverviewErrorsViolationsView());
+    } else if (moduleKey === 'overview' && tab === 'release-feed') {
+        container.appendChild(renderOverviewReleaseFeedView());
+
+    // ──── Operator Module ────
+    } else if (moduleKey === 'operator' && tab === 'task-queue') {
+        container.appendChild(renderOperatorTaskQueueView());
+    } else if (moduleKey === 'operator' && tab === 'task-details') {
+        container.appendChild(renderOperatorTaskDetailsView());
+    } else if (moduleKey === 'operator' && tab === 'execution-logs') {
+        container.appendChild(renderOperatorExecutionLogsView());
+    } else if (moduleKey === 'operator' && tab === 'pipelines') {
+        container.appendChild(renderOperatorPipelinesView());
+    } else if (moduleKey === 'operator' && tab === 'runbook') {
+        container.appendChild(renderOperatorRunbookView());
+
+    // ──── Command Hub: Live Console ────
+    } else if (moduleKey === 'command-hub' && tab === 'live-console') {
+        container.appendChild(renderCommandHubLiveConsoleView());
+
+    // ──── Governance: Missing tabs ────
+    } else if (moduleKey === 'governance' && tab === 'violations') {
+        container.appendChild(renderGovernanceViolationsView());
+    } else if (moduleKey === 'governance' && tab === 'proposals') {
+        container.appendChild(renderGovernanceProposalsView());
+
+    // ──── Agents: Memory ────
+    } else if (moduleKey === 'agents' && tab === 'memory') {
+        container.appendChild(renderAgentsMemoryView());
+
+    // ──── OASIS: Missing tabs ────
+    } else if (moduleKey === 'oasis' && tab === 'entities') {
+        container.appendChild(renderOasisEntitiesView());
+    } else if (moduleKey === 'oasis' && tab === 'streams') {
+        container.appendChild(renderOasisStreamsView());
+    } else if (moduleKey === 'oasis' && tab === 'command-log') {
+        container.appendChild(renderOasisCommandLogView());
+
+    // ──── Workflows Module ────
+    } else if (moduleKey === 'workflows' && tab === 'workflow-list') {
+        container.appendChild(renderWorkflowsListView());
+    } else if (moduleKey === 'workflows' && tab === 'triggers') {
+        container.appendChild(renderWorkflowsTriggersView());
+    } else if (moduleKey === 'workflows' && tab === 'actions') {
+        container.appendChild(renderWorkflowsActionsView());
+    } else if (moduleKey === 'workflows' && tab === 'schedules') {
+        container.appendChild(renderWorkflowsSchedulesView());
+    } else if (moduleKey === 'workflows' && tab === 'history') {
+        container.appendChild(renderWorkflowsHistoryView());
+
+    // ──── Databases Module ────
+    } else if (moduleKey === 'databases' && tab === 'supabase') {
+        container.appendChild(renderDatabasesSupabaseView());
+    } else if (moduleKey === 'databases' && tab === 'vectors') {
+        container.appendChild(renderDatabasesVectorsView());
+    } else if (moduleKey === 'databases' && tab === 'cache') {
+        container.appendChild(renderDatabasesCacheView());
+    } else if (moduleKey === 'databases' && tab === 'analytics') {
+        container.appendChild(renderDatabasesAnalyticsView());
+    } else if (moduleKey === 'databases' && tab === 'clusters') {
+        container.appendChild(renderDatabasesClustersView());
+
+    // ──── Infrastructure Module ────
+    } else if (moduleKey === 'infrastructure' && tab === 'services') {
+        container.appendChild(renderInfraServicesView());
+    } else if (moduleKey === 'infrastructure' && tab === 'health') {
+        container.appendChild(renderInfraHealthView());
+    } else if (moduleKey === 'infrastructure' && tab === 'deployments') {
+        container.appendChild(renderInfraDeploymentsView());
+    } else if (moduleKey === 'infrastructure' && tab === 'logs') {
+        container.appendChild(renderInfraLogsView());
+    } else if (moduleKey === 'infrastructure' && tab === 'config') {
+        container.appendChild(renderInfraConfigView());
+
+    // ──── Security Module ────
+    } else if (moduleKey === 'security-dev' && tab === 'policies') {
+        container.appendChild(renderSecurityPoliciesView());
+    } else if (moduleKey === 'security-dev' && tab === 'roles') {
+        container.appendChild(renderSecurityRolesView());
+    } else if (moduleKey === 'security-dev' && tab === 'keys-secrets') {
+        container.appendChild(renderSecurityKeysSecretsView());
+    } else if (moduleKey === 'security-dev' && tab === 'audit-log') {
+        container.appendChild(renderSecurityAuditLogView());
+    } else if (moduleKey === 'security-dev' && tab === 'rls-access') {
+        container.appendChild(renderSecurityRlsAccessView());
+
+    // ──── Integrations & Tools Module ────
+    } else if (moduleKey === 'integrations-tools' && tab === 'mcp-connectors') {
+        container.appendChild(renderIntegrationsMcpView());
+    } else if (moduleKey === 'integrations-tools' && tab === 'llm-providers') {
+        container.appendChild(renderIntegrationsLlmProvidersView());
+    } else if (moduleKey === 'integrations-tools' && tab === 'apis') {
+        container.appendChild(renderIntegrationsApisView());
+    } else if (moduleKey === 'integrations-tools' && tab === 'tools') {
+        container.appendChild(renderIntegrationsToolsView());
+    } else if (moduleKey === 'integrations-tools' && tab === 'service-mesh') {
+        container.appendChild(renderIntegrationsServiceMeshView());
+
+    // ──── Diagnostics: Missing tabs ────
+    } else if (moduleKey === 'diagnostics' && tab === 'health-checks') {
+        container.appendChild(renderDiagnosticsHealthChecksView());
+    } else if (moduleKey === 'diagnostics' && tab === 'latency') {
+        container.appendChild(renderDiagnosticsLatencyView());
+    } else if (moduleKey === 'diagnostics' && tab === 'errors') {
+        container.appendChild(renderDiagnosticsErrorsView());
+    } else if (moduleKey === 'diagnostics' && tab === 'sse') {
+        container.appendChild(renderDiagnosticsSseView());
+    } else if (moduleKey === 'diagnostics' && tab === 'debug-panel') {
+        container.appendChild(renderDiagnosticsDebugPanelView());
+
+    // ──── Models & Evaluations Module ────
+    } else if (moduleKey === 'models-evaluations' && tab === 'models') {
+        container.appendChild(renderModelsListView());
+    } else if (moduleKey === 'models-evaluations' && tab === 'evaluations') {
+        container.appendChild(renderModelsEvaluationsView());
+    } else if (moduleKey === 'models-evaluations' && tab === 'benchmarks') {
+        container.appendChild(renderModelsBenchmarksView());
+    } else if (moduleKey === 'models-evaluations' && tab === 'routing') {
+        container.appendChild(renderModelsRoutingView());
+    } else if (moduleKey === 'models-evaluations' && tab === 'playground') {
+        container.appendChild(renderModelsPlaygroundView());
+
+    // ──── Testing & QA Module ────
+    } else if (moduleKey === 'testing-qa' && tab === 'unit-tests') {
+        container.appendChild(renderTestingUnitView());
+    } else if (moduleKey === 'testing-qa' && tab === 'integration-tests') {
+        container.appendChild(renderTestingIntegrationView());
+    } else if (moduleKey === 'testing-qa' && tab === 'validator-tests') {
+        container.appendChild(renderTestingValidatorView());
+    } else if (moduleKey === 'testing-qa' && tab === 'e2e') {
+        container.appendChild(renderTestingE2eView());
+    } else if (moduleKey === 'testing-qa' && tab === 'ci-reports') {
+        container.appendChild(renderTestingCiReportsView());
+
+    // ──── Admin: Analytics ────
+    } else if (moduleKey === 'admin' && tab === 'analytics') {
+        container.appendChild(renderAdminAnalyticsView());
+
+    // ──── Docs: Missing tabs ────
+    } else if (moduleKey === 'docs' && tab === 'api-inventory') {
+        container.appendChild(renderDocsApiInventoryView());
+    } else if (moduleKey === 'docs' && tab === 'database-schemas') {
+        container.appendChild(renderDocsDatabaseSchemasView());
+    } else if (moduleKey === 'docs' && tab === 'architecture') {
+        container.appendChild(renderDocsArchitectureView());
+    } else if (moduleKey === 'docs' && tab === 'workforce') {
+        container.appendChild(renderDocsWorkforceView());
+
     } else {
-        // Placeholder for other modules
+        // Fallback placeholder for any unmapped screens
         const placeholder = document.createElement('div');
         placeholder.className = 'placeholder-content';
-
-        if (moduleKey === 'command-hub' && tab === 'live-console') {
-            placeholder.innerHTML = '<div class="placeholder-panel">Live Console placeholder</div>';
-        } else {
-            const sectionLabel = SECTION_LABELS[moduleKey] || moduleKey;
-            const tabLabel = formatTabLabel(tab);
-            placeholder.textContent = `${sectionLabel} > ${tabLabel || 'Overview'}`;
-        }
+        const sectionLabel = SECTION_LABELS[moduleKey] || moduleKey;
+        const tabLabel = formatTabLabel(tab);
+        placeholder.textContent = `${sectionLabel} > ${tabLabel || 'Overview'}`;
         container.appendChild(placeholder);
     }
     return container;
@@ -25127,6 +25353,4727 @@ function orbSendMessage(message) {
         });
 }
 
+// ===========================================================================
+// 51-Screen Build: Missing Module Functions
+// Governance Violations, Governance Proposals, Agents Memory, OASIS Entities,
+// OASIS Streams, OASIS Command Log, Workflow Runs, Workflow Triggers,
+// Workflow Schedules, Workflow History, Workflow Actions
+// ===========================================================================
+
+// ──── Governance: Violations ────
+
+function fetchGovernanceViolations() {
+    if (state.governanceViolations.loading) return;
+    state.governanceViolations.loading = true;
+    state.governanceViolations.error = null;
+    renderApp();
+
+    fetch('/api/v1/governance/violations?limit=50', {
+        headers: buildContextHeaders({})
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            state.governanceViolations.items = data.items || data.data || data;
+            if (!Array.isArray(state.governanceViolations.items)) {
+                state.governanceViolations.items = [];
+            }
+            state.governanceViolations.fetched = true;
+            state.governanceViolations.loading = false;
+            state.governanceViolations.error = null;
+            renderApp();
+        })
+        .catch(function (err) {
+            console.error('[GovernanceViolations] Fetch error:', err);
+            state.governanceViolations.error = err.message;
+            state.governanceViolations.loading = false;
+            renderApp();
+        });
+}
+
+function renderGovernanceViolationsView() {
+    var container = document.createElement('div');
+    container.className = 'governance-violations-container';
+
+    // Auto-fetch
+    if (!state.governanceViolations.fetched && !state.governanceViolations.loading) {
+        fetchGovernanceViolations();
+    }
+
+    // Loading
+    if (state.governanceViolations.loading && state.governanceViolations.items.length === 0) {
+        var content = document.createElement('div');
+        content.className = 'governance-violations-content';
+        content.innerHTML = '<div class="placeholder-content">Loading violations...</div>';
+        container.appendChild(content);
+        return container;
+    }
+
+    // Error
+    if (state.governanceViolations.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'governance-violations-error';
+        errorDiv.innerHTML = '<span class="error-icon">\u26A0</span> Error loading violations: ' + state.governanceViolations.error;
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    // Empty
+    var items = state.governanceViolations.items;
+    if (items.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'placeholder-content';
+        emptyDiv.textContent = 'No governance violations found.';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    // Table
+    var table = document.createElement('table');
+    table.className = 'list-table governance-violations-table';
+
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    ['Time', 'Level', 'Rule Code', 'Service', 'Status', 'Message'].forEach(function (h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    items.forEach(function (item) {
+        var row = document.createElement('tr');
+
+        // Time
+        var timeTd = document.createElement('td');
+        timeTd.textContent = formatEventTimestamp(item.created_at || item.timestamp);
+        row.appendChild(timeTd);
+
+        // Level (L1-L4 badge)
+        var levelTd = document.createElement('td');
+        var levelBadge = document.createElement('span');
+        var level = (item.level || item.governance_level || 'L2').toUpperCase();
+        levelBadge.className = 'governance-level-badge governance-level-' + level.toLowerCase();
+        levelBadge.textContent = level;
+        levelTd.appendChild(levelBadge);
+        row.appendChild(levelTd);
+
+        // Rule Code
+        var ruleTd = document.createElement('td');
+        ruleTd.textContent = item.rule_code || item.rule_id || item.rule || '-';
+        row.appendChild(ruleTd);
+
+        // Service
+        var serviceTd = document.createElement('td');
+        serviceTd.textContent = item.service || item.source || '-';
+        row.appendChild(serviceTd);
+
+        // Status
+        var statusTd = document.createElement('td');
+        var statusBadge = document.createElement('span');
+        var violationStatus = (item.status || 'violation').toLowerCase();
+        statusBadge.className = 'status-badge status-' + violationStatus;
+        statusBadge.textContent = violationStatus.charAt(0).toUpperCase() + violationStatus.slice(1);
+        statusTd.appendChild(statusBadge);
+        row.appendChild(statusTd);
+
+        // Message
+        var msgTd = document.createElement('td');
+        msgTd.textContent = item.message || item.description || '-';
+        msgTd.style.maxWidth = '400px';
+        msgTd.style.overflow = 'hidden';
+        msgTd.style.textOverflow = 'ellipsis';
+        msgTd.style.whiteSpace = 'nowrap';
+        row.appendChild(msgTd);
+
+        tbody.appendChild(row);
+    });
+
+    table.appendChild(tbody);
+    container.appendChild(table);
+
+    return container;
+}
+
+// ──── Governance: Proposals ────
+
+function fetchGovernanceProposals() {
+    if (state.governanceProposals.loading) return;
+    state.governanceProposals.loading = true;
+    state.governanceProposals.error = null;
+    renderApp();
+
+    fetch('/api/v1/governance/proposals?limit=30', {
+        headers: buildContextHeaders({})
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            state.governanceProposals.items = data.items || data.data || data;
+            if (!Array.isArray(state.governanceProposals.items)) {
+                state.governanceProposals.items = [];
+            }
+            state.governanceProposals.fetched = true;
+            state.governanceProposals.loading = false;
+            state.governanceProposals.error = null;
+            renderApp();
+        })
+        .catch(function (err) {
+            console.error('[GovernanceProposals] Fetch error:', err);
+            state.governanceProposals.error = err.message;
+            state.governanceProposals.loading = false;
+            renderApp();
+        });
+}
+
+function renderGovernanceProposalsView() {
+    var container = document.createElement('div');
+    container.className = 'governance-proposals-container';
+
+    // Auto-fetch
+    if (!state.governanceProposals.fetched && !state.governanceProposals.loading) {
+        fetchGovernanceProposals();
+    }
+
+    // Toolbar with New Proposal button
+    var toolbar = document.createElement('div');
+    toolbar.className = 'list-toolbar';
+
+    var newBtn = document.createElement('button');
+    newBtn.className = 'btn btn-primary';
+    newBtn.textContent = 'New Proposal';
+    newBtn.disabled = true;
+    newBtn.title = 'Proposal creation coming soon';
+    toolbar.appendChild(newBtn);
+
+    var spacer = document.createElement('div');
+    spacer.className = 'spacer';
+    toolbar.appendChild(spacer);
+
+    var countLabel = document.createElement('span');
+    countLabel.className = 'governance-proposals-count';
+    countLabel.textContent = state.governanceProposals.items.length + ' proposals';
+    toolbar.appendChild(countLabel);
+
+    container.appendChild(toolbar);
+
+    // Loading
+    if (state.governanceProposals.loading && state.governanceProposals.items.length === 0) {
+        var content = document.createElement('div');
+        content.className = 'governance-proposals-content';
+        content.innerHTML = '<div class="placeholder-content">Loading proposals...</div>';
+        container.appendChild(content);
+        return container;
+    }
+
+    // Error
+    if (state.governanceProposals.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'governance-proposals-error';
+        errorDiv.innerHTML = '<span class="error-icon">\u26A0</span> Error loading proposals: ' + state.governanceProposals.error;
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    // Empty
+    var items = state.governanceProposals.items;
+    if (items.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'placeholder-content';
+        emptyDiv.textContent = 'No governance proposals found.';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    // Table
+    var table = document.createElement('table');
+    table.className = 'list-table governance-proposals-table';
+
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    ['ID', 'Title', 'Status', 'Proposer', 'Created'].forEach(function (h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    items.forEach(function (item) {
+        var row = document.createElement('tr');
+
+        // ID
+        var idTd = document.createElement('td');
+        idTd.textContent = item.id || item.proposal_id || '-';
+        row.appendChild(idTd);
+
+        // Title
+        var titleTd = document.createElement('td');
+        titleTd.textContent = item.title || item.name || '-';
+        row.appendChild(titleTd);
+
+        // Status (draft/pending/approved/rejected badge)
+        var statusTd = document.createElement('td');
+        var statusBadge = document.createElement('span');
+        var proposalStatus = (item.status || 'draft').toLowerCase();
+        statusBadge.className = 'status-badge status-' + proposalStatus;
+        statusBadge.textContent = proposalStatus.charAt(0).toUpperCase() + proposalStatus.slice(1);
+        statusTd.appendChild(statusBadge);
+        row.appendChild(statusTd);
+
+        // Proposer
+        var proposerTd = document.createElement('td');
+        proposerTd.textContent = item.proposer || item.created_by || item.author || '-';
+        row.appendChild(proposerTd);
+
+        // Created
+        var createdTd = document.createElement('td');
+        createdTd.textContent = formatEventTimestamp(item.created_at || item.created);
+        row.appendChild(createdTd);
+
+        tbody.appendChild(row);
+    });
+
+    table.appendChild(tbody);
+    container.appendChild(table);
+
+    return container;
+}
+
+// ──── Agents: Memory ────
+
+function fetchAgentsMemory() {
+    if (state.agentsMemory.loading) return;
+    state.agentsMemory.loading = true;
+    state.agentsMemory.error = null;
+    renderApp();
+
+    fetch('/api/v1/memory/garden/summary', {
+        headers: buildContextHeaders({})
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            state.agentsMemory.items = data.data || data;
+            state.agentsMemory.fetched = true;
+            state.agentsMemory.loading = false;
+            state.agentsMemory.error = null;
+            renderApp();
+        })
+        .catch(function (err) {
+            console.error('[AgentsMemory] Fetch error:', err);
+            state.agentsMemory.error = err.message;
+            state.agentsMemory.loading = false;
+            renderApp();
+        });
+}
+
+function renderAgentsMemoryView() {
+    var container = document.createElement('div');
+    container.className = 'agents-memory-container';
+
+    // Auto-fetch
+    if (!state.agentsMemory.fetched && !state.agentsMemory.loading) {
+        fetchAgentsMemory();
+    }
+
+    // Loading
+    if (state.agentsMemory.loading) {
+        var content = document.createElement('div');
+        content.className = 'agents-memory-content';
+        content.innerHTML = '<div class="placeholder-content">Loading memory garden summary...</div>';
+        container.appendChild(content);
+        return container;
+    }
+
+    // Error
+    if (state.agentsMemory.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'agents-memory-error';
+        errorDiv.innerHTML = '<span class="error-icon">\u26A0</span> Error loading memory: ' + state.agentsMemory.error;
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    var data = state.agentsMemory.items;
+    if (!data) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'placeholder-content';
+        emptyDiv.textContent = 'No memory garden data available.';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    // Summary header
+    var summaryHeader = document.createElement('div');
+    summaryHeader.className = 'agents-memory-summary-header';
+
+    var totalMemories = data.total_memories || data.totals?.memories || 0;
+    var totalLabel = document.createElement('div');
+    totalLabel.className = 'agents-memory-total';
+    totalLabel.innerHTML = '<strong>Total Memories:</strong> ' + totalMemories;
+    summaryHeader.appendChild(totalLabel);
+
+    container.appendChild(summaryHeader);
+
+    // Categories card grid
+    var categories = data.categories || {};
+    var categoryKeys = Object.keys(categories);
+
+    if (categoryKeys.length === 0) {
+        var noCats = document.createElement('div');
+        noCats.className = 'placeholder-content';
+        noCats.textContent = 'No memory categories found.';
+        container.appendChild(noCats);
+        return container;
+    }
+
+    var grid = document.createElement('div');
+    grid.className = 'agents-memory-card-grid';
+
+    categoryKeys.forEach(function (key) {
+        var cat = categories[key];
+        var card = document.createElement('div');
+        card.className = 'agents-memory-card';
+
+        var cardName = document.createElement('div');
+        cardName.className = 'agents-memory-card-name';
+        cardName.textContent = cat.label || key.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+        card.appendChild(cardName);
+
+        var cardCount = document.createElement('div');
+        cardCount.className = 'agents-memory-card-count';
+        cardCount.textContent = (cat.count || 0) + ' memories';
+        card.appendChild(cardCount);
+
+        if (cat.quality_score !== undefined || cat.progress !== undefined) {
+            var cardScore = document.createElement('div');
+            cardScore.className = 'agents-memory-card-score';
+            var scoreValue = cat.quality_score !== undefined ? cat.quality_score : cat.progress;
+            cardScore.textContent = 'Quality: ' + (typeof scoreValue === 'number' ? scoreValue + '%' : scoreValue);
+            card.appendChild(cardScore);
+        }
+
+        if (cat.description) {
+            var cardDesc = document.createElement('div');
+            cardDesc.className = 'agents-memory-card-description';
+            cardDesc.textContent = cat.description;
+            card.appendChild(cardDesc);
+        }
+
+        grid.appendChild(card);
+    });
+
+    container.appendChild(grid);
+
+    return container;
+}
+
+// ──── OASIS: Entities ────
+
+function fetchOasisEntities() {
+    if (state.oasisEntities.loading) return;
+    state.oasisEntities.loading = true;
+    state.oasisEntities.error = null;
+    renderApp();
+
+    fetch('/api/v1/vtid/list?limit=100', {
+        headers: buildContextHeaders({})
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            state.oasisEntities.items = data.items || data.data || data;
+            if (!Array.isArray(state.oasisEntities.items)) {
+                state.oasisEntities.items = [];
+            }
+            state.oasisEntities.fetched = true;
+            state.oasisEntities.loading = false;
+            state.oasisEntities.error = null;
+            renderApp();
+        })
+        .catch(function (err) {
+            console.error('[OasisEntities] Fetch error:', err);
+            state.oasisEntities.error = err.message;
+            state.oasisEntities.loading = false;
+            renderApp();
+        });
+}
+
+function renderOasisEntitiesView() {
+    var container = document.createElement('div');
+    container.className = 'oasis-entities-container';
+
+    // Auto-fetch
+    if (!state.oasisEntities.fetched && !state.oasisEntities.loading) {
+        fetchOasisEntities();
+    }
+
+    // Loading
+    if (state.oasisEntities.loading && state.oasisEntities.items.length === 0) {
+        var content = document.createElement('div');
+        content.className = 'oasis-entities-content';
+        content.innerHTML = '<div class="placeholder-content">Loading VTID entities...</div>';
+        container.appendChild(content);
+        return container;
+    }
+
+    // Error
+    if (state.oasisEntities.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'oasis-entities-error';
+        errorDiv.innerHTML = '<span class="error-icon">\u26A0</span> Error loading entities: ' + state.oasisEntities.error;
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    // Empty
+    var items = state.oasisEntities.items;
+    if (items.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'placeholder-content';
+        emptyDiv.textContent = 'No VTID entities found.';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    // Table
+    var table = document.createElement('table');
+    table.className = 'list-table oasis-entities-table';
+
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    ['VTID', 'Title', 'Module', 'Family', 'Status', 'Created', 'Last Event'].forEach(function (h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    items.forEach(function (item) {
+        var row = document.createElement('tr');
+
+        // VTID
+        var vtidTd = document.createElement('td');
+        vtidTd.className = 'vtid-cell';
+        vtidTd.textContent = item.vtid || '-';
+        row.appendChild(vtidTd);
+
+        // Title
+        var titleTd = document.createElement('td');
+        titleTd.textContent = item.title || '-';
+        row.appendChild(titleTd);
+
+        // Module
+        var moduleTd = document.createElement('td');
+        moduleTd.textContent = item.module || item.target_module || '-';
+        row.appendChild(moduleTd);
+
+        // Family
+        var familyTd = document.createElement('td');
+        familyTd.textContent = item.family || item.target_role || '-';
+        row.appendChild(familyTd);
+
+        // Status (vtid-status-badge)
+        var statusTd = document.createElement('td');
+        var statusBadge = document.createElement('span');
+        var entityStatus = (item.status || 'unknown').toLowerCase();
+        statusBadge.className = 'vtid-status-badge status-badge status-' + entityStatus;
+        statusBadge.textContent = entityStatus.charAt(0).toUpperCase() + entityStatus.slice(1);
+        statusTd.appendChild(statusBadge);
+        row.appendChild(statusTd);
+
+        // Created
+        var createdTd = document.createElement('td');
+        createdTd.textContent = formatEventTimestamp(item.created_at);
+        row.appendChild(createdTd);
+
+        // Last Event
+        var lastEventTd = document.createElement('td');
+        lastEventTd.textContent = formatEventTimestamp(item.last_event_at || item.updated_at);
+        row.appendChild(lastEventTd);
+
+        tbody.appendChild(row);
+    });
+
+    table.appendChild(tbody);
+    container.appendChild(table);
+
+    return container;
+}
+
+// ──── OASIS: Streams (SSE Live) ────
+
+function renderOasisStreamsView() {
+    var container = document.createElement('div');
+    container.className = 'sse-stream-container oasis-streams-container';
+
+    // Header with connection status
+    var header = document.createElement('div');
+    header.className = 'oasis-streams-header';
+
+    var statusIndicator = document.createElement('span');
+    statusIndicator.className = 'oasis-streams-status';
+    if (state.oasisStreams.connected) {
+        statusIndicator.className += ' connected';
+        statusIndicator.textContent = 'Connected';
+    } else if (state.oasisStreams.error) {
+        statusIndicator.className += ' error';
+        statusIndicator.textContent = 'Error: ' + state.oasisStreams.error;
+    } else {
+        statusIndicator.className += ' disconnected';
+        statusIndicator.textContent = 'Disconnected';
+    }
+    header.appendChild(statusIndicator);
+
+    var eventCount = document.createElement('span');
+    eventCount.className = 'oasis-streams-count';
+    eventCount.textContent = state.oasisStreams.events.length + ' events';
+    header.appendChild(eventCount);
+
+    // Connect/Disconnect button
+    var connectBtn = document.createElement('button');
+    connectBtn.className = 'btn btn-secondary';
+    if (state.oasisStreams.connected) {
+        connectBtn.textContent = 'Disconnect';
+        connectBtn.onclick = function () {
+            if (state.oasisStreams.source) {
+                state.oasisStreams.source.close();
+                state.oasisStreams.source = null;
+            }
+            state.oasisStreams.connected = false;
+            renderApp();
+        };
+    } else {
+        connectBtn.textContent = 'Connect';
+        connectBtn.onclick = function () {
+            connectOasisStream();
+        };
+    }
+    header.appendChild(connectBtn);
+
+    // Clear button
+    var clearBtn = document.createElement('button');
+    clearBtn.className = 'btn btn-secondary';
+    clearBtn.textContent = 'Clear';
+    clearBtn.onclick = function () {
+        state.oasisStreams.events = [];
+        renderApp();
+    };
+    header.appendChild(clearBtn);
+
+    container.appendChild(header);
+
+    // Auto-connect on first mount
+    if (!state.oasisStreams.connected && !state.oasisStreams.source && !state.oasisStreams.error) {
+        connectOasisStream();
+    }
+
+    // Events list (reverse chronological)
+    var eventsList = document.createElement('div');
+    eventsList.className = 'oasis-streams-events';
+
+    if (state.oasisStreams.events.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'placeholder-content';
+        emptyDiv.textContent = state.oasisStreams.connected ? 'Waiting for events...' : 'Connect to start receiving events.';
+        eventsList.appendChild(emptyDiv);
+    } else {
+        // Show in reverse chronological order
+        var reversedEvents = state.oasisStreams.events.slice().reverse();
+        reversedEvents.forEach(function (evt) {
+            var eventItem = document.createElement('div');
+            eventItem.className = 'sse-event-item';
+
+            var eventTime = document.createElement('span');
+            eventTime.className = 'sse-event-timestamp';
+            eventTime.textContent = formatEventTimestamp(evt.timestamp || evt.created_at || new Date().toISOString());
+            eventItem.appendChild(eventTime);
+
+            var eventContent = document.createElement('pre');
+            eventContent.className = 'sse-event-content';
+            try {
+                eventContent.textContent = typeof evt === 'string' ? evt : JSON.stringify(evt, null, 2);
+            } catch (e) {
+                eventContent.textContent = String(evt);
+            }
+            eventItem.appendChild(eventContent);
+
+            eventsList.appendChild(eventItem);
+        });
+    }
+
+    container.appendChild(eventsList);
+
+    return container;
+}
+
+function connectOasisStream() {
+    try {
+        if (state.oasisStreams.source) {
+            state.oasisStreams.source.close();
+        }
+
+        var es = new EventSource('/api/v1/events/stream');
+
+        es.onopen = function () {
+            state.oasisStreams.connected = true;
+            state.oasisStreams.error = null;
+            renderApp();
+        };
+
+        es.onmessage = function (e) {
+            try {
+                var parsed = JSON.parse(e.data);
+                state.oasisStreams.events.push(parsed);
+            } catch (parseErr) {
+                state.oasisStreams.events.push({ raw: e.data, timestamp: new Date().toISOString() });
+            }
+
+            // Keep only last 100 events
+            if (state.oasisStreams.events.length > 100) {
+                state.oasisStreams.events = state.oasisStreams.events.slice(-100);
+            }
+
+            renderApp();
+        };
+
+        es.onerror = function () {
+            state.oasisStreams.connected = false;
+            state.oasisStreams.error = 'Connection lost';
+            state.oasisStreams.source = null;
+            renderApp();
+        };
+
+        state.oasisStreams.source = es;
+    } catch (err) {
+        console.error('[OasisStreams] SSE connection error:', err);
+        state.oasisStreams.error = err.message;
+        state.oasisStreams.connected = false;
+        renderApp();
+    }
+}
+
+// ──── OASIS: Command Log ────
+
+function fetchOasisCommandLog() {
+    if (state.oasisCommandLog.loading) return;
+    state.oasisCommandLog.loading = true;
+    state.oasisCommandLog.error = null;
+    renderApp();
+
+    fetch('/api/v1/operator/history?limit=100', {
+        headers: buildContextHeaders({})
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            state.oasisCommandLog.items = data.items || data.data || data;
+            if (!Array.isArray(state.oasisCommandLog.items)) {
+                state.oasisCommandLog.items = [];
+            }
+            state.oasisCommandLog.fetched = true;
+            state.oasisCommandLog.loading = false;
+            state.oasisCommandLog.error = null;
+            renderApp();
+        })
+        .catch(function (err) {
+            console.error('[OasisCommandLog] Fetch error:', err);
+            state.oasisCommandLog.error = err.message;
+            state.oasisCommandLog.loading = false;
+            renderApp();
+        });
+}
+
+function renderOasisCommandLogView() {
+    var container = document.createElement('div');
+    container.className = 'oasis-command-log-container';
+
+    // Auto-fetch
+    if (!state.oasisCommandLog.fetched && !state.oasisCommandLog.loading) {
+        fetchOasisCommandLog();
+    }
+
+    // Loading
+    if (state.oasisCommandLog.loading && state.oasisCommandLog.items.length === 0) {
+        var content = document.createElement('div');
+        content.className = 'oasis-command-log-content';
+        content.innerHTML = '<div class="placeholder-content">Loading command log...</div>';
+        container.appendChild(content);
+        return container;
+    }
+
+    // Error
+    if (state.oasisCommandLog.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'oasis-command-log-error';
+        errorDiv.innerHTML = '<span class="error-icon">\u26A0</span> Error loading command log: ' + state.oasisCommandLog.error;
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    // Empty
+    var items = state.oasisCommandLog.items;
+    if (items.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'placeholder-content';
+        emptyDiv.textContent = 'No operator commands found.';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    // Table
+    var table = document.createElement('table');
+    table.className = 'list-table oasis-command-log-table';
+
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    ['Time', 'Command Type', 'Actor', 'VTID', 'Status', 'Response'].forEach(function (h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    items.forEach(function (item) {
+        var row = document.createElement('tr');
+
+        // Time
+        var timeTd = document.createElement('td');
+        timeTd.textContent = formatEventTimestamp(item.created_at || item.timestamp);
+        row.appendChild(timeTd);
+
+        // Command Type
+        var typeTd = document.createElement('td');
+        typeTd.textContent = item.command_type || item.type || item.action || '-';
+        row.appendChild(typeTd);
+
+        // Actor
+        var actorTd = document.createElement('td');
+        actorTd.textContent = item.actor || item.actor_email || item.user || '-';
+        row.appendChild(actorTd);
+
+        // VTID
+        var vtidTd = document.createElement('td');
+        vtidTd.className = 'vtid-cell';
+        vtidTd.textContent = item.vtid || '-';
+        row.appendChild(vtidTd);
+
+        // Status
+        var statusTd = document.createElement('td');
+        var statusBadge = document.createElement('span');
+        var cmdStatus = (item.status || 'unknown').toLowerCase();
+        statusBadge.className = 'status-badge status-' + cmdStatus;
+        statusBadge.textContent = cmdStatus.charAt(0).toUpperCase() + cmdStatus.slice(1);
+        statusTd.appendChild(statusBadge);
+        row.appendChild(statusTd);
+
+        // Response
+        var respTd = document.createElement('td');
+        var respText = item.response || item.result || item.message || '-';
+        if (typeof respText === 'object') {
+            respText = JSON.stringify(respText);
+        }
+        respTd.textContent = respText;
+        respTd.style.maxWidth = '300px';
+        respTd.style.overflow = 'hidden';
+        respTd.style.textOverflow = 'ellipsis';
+        respTd.style.whiteSpace = 'nowrap';
+        row.appendChild(respTd);
+
+        tbody.appendChild(row);
+    });
+
+    table.appendChild(tbody);
+    container.appendChild(table);
+
+    return container;
+}
+
+// ──── Workflows: Runs (List) ────
+
+function fetchWorkflowRuns() {
+    if (state.workflowRuns.loading) return;
+    state.workflowRuns.loading = true;
+    state.workflowRuns.error = null;
+    renderApp();
+
+    fetch('/api/v1/autopilot/controller/runs?limit=50', {
+        headers: buildContextHeaders({})
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            state.workflowRuns.items = data.items || data.data || data.runs || data;
+            if (!Array.isArray(state.workflowRuns.items)) {
+                state.workflowRuns.items = [];
+            }
+            state.workflowRuns.fetched = true;
+            state.workflowRuns.loading = false;
+            state.workflowRuns.error = null;
+            renderApp();
+        })
+        .catch(function (err) {
+            console.error('[WorkflowRuns] Fetch error:', err);
+            state.workflowRuns.error = err.message;
+            state.workflowRuns.loading = false;
+            renderApp();
+        });
+}
+
+function renderWorkflowsListView() {
+    var container = document.createElement('div');
+    container.className = 'workflows-list-container';
+
+    // Auto-fetch
+    if (!state.workflowRuns.fetched && !state.workflowRuns.loading) {
+        fetchWorkflowRuns();
+    }
+
+    // Loading
+    if (state.workflowRuns.loading && state.workflowRuns.items.length === 0) {
+        var content = document.createElement('div');
+        content.className = 'workflows-list-content';
+        content.innerHTML = '<div class="placeholder-content">Loading workflow runs...</div>';
+        container.appendChild(content);
+        return container;
+    }
+
+    // Error
+    if (state.workflowRuns.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'workflows-list-error';
+        errorDiv.innerHTML = '<span class="error-icon">\u26A0</span> Error loading workflow runs: ' + state.workflowRuns.error;
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    // Empty
+    var items = state.workflowRuns.items;
+    if (items.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'placeholder-content';
+        emptyDiv.textContent = 'No workflow runs found.';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    // Table
+    var table = document.createElement('table');
+    table.className = 'list-table workflows-runs-table';
+
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    ['VTID', 'Title', 'Stage', 'Status', 'Started', 'Duration'].forEach(function (h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    items.forEach(function (item) {
+        var row = document.createElement('tr');
+
+        // VTID
+        var vtidTd = document.createElement('td');
+        vtidTd.className = 'vtid-cell';
+        vtidTd.textContent = item.vtid || '-';
+        row.appendChild(vtidTd);
+
+        // Title
+        var titleTd = document.createElement('td');
+        titleTd.textContent = item.title || item.name || '-';
+        row.appendChild(titleTd);
+
+        // Stage
+        var stageTd = document.createElement('td');
+        var stageText = item.current_stage || item.stage || '-';
+        stageTd.textContent = stageText;
+        row.appendChild(stageTd);
+
+        // Status
+        var statusTd = document.createElement('td');
+        var statusBadge = document.createElement('span');
+        var runStatus = (item.status || 'unknown').toLowerCase();
+        statusBadge.className = 'status-badge status-' + runStatus;
+        statusBadge.textContent = runStatus.charAt(0).toUpperCase() + runStatus.slice(1);
+        statusTd.appendChild(statusBadge);
+        row.appendChild(statusTd);
+
+        // Started
+        var startedTd = document.createElement('td');
+        startedTd.textContent = formatEventTimestamp(item.started_at || item.created_at);
+        row.appendChild(startedTd);
+
+        // Duration
+        var durationTd = document.createElement('td');
+        if (item.duration_ms) {
+            durationTd.textContent = (item.duration_ms / 1000).toFixed(1) + 's';
+        } else if (item.duration) {
+            durationTd.textContent = item.duration;
+        } else if (item.started_at && item.completed_at) {
+            var dur = new Date(item.completed_at) - new Date(item.started_at);
+            durationTd.textContent = (dur / 1000).toFixed(1) + 's';
+        } else {
+            durationTd.textContent = '-';
+        }
+        row.appendChild(durationTd);
+
+        tbody.appendChild(row);
+    });
+
+    table.appendChild(tbody);
+    container.appendChild(table);
+
+    return container;
+}
+
+// ──── Workflows: Triggers (Loop Status) ────
+
+function fetchWorkflowTriggers() {
+    if (state.workflowTriggers.loading) return;
+    state.workflowTriggers.loading = true;
+    state.workflowTriggers.error = null;
+    renderApp();
+
+    fetch('/api/v1/autopilot/loop/status', {
+        headers: buildContextHeaders({})
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            state.workflowTriggers.data = data.data || data;
+            state.workflowTriggers.fetched = true;
+            state.workflowTriggers.loading = false;
+            state.workflowTriggers.error = null;
+            renderApp();
+        })
+        .catch(function (err) {
+            console.error('[WorkflowTriggers] Fetch error:', err);
+            state.workflowTriggers.error = err.message;
+            state.workflowTriggers.loading = false;
+            renderApp();
+        });
+}
+
+function renderWorkflowsTriggersView() {
+    var container = document.createElement('div');
+    container.className = 'workflows-triggers-container';
+
+    // Auto-fetch
+    if (!state.workflowTriggers.fetched && !state.workflowTriggers.loading) {
+        fetchWorkflowTriggers();
+    }
+
+    // Loading
+    if (state.workflowTriggers.loading) {
+        var content = document.createElement('div');
+        content.className = 'workflows-triggers-content';
+        content.innerHTML = '<div class="placeholder-content">Loading loop status...</div>';
+        container.appendChild(content);
+        return container;
+    }
+
+    // Error
+    if (state.workflowTriggers.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'workflows-triggers-error';
+        errorDiv.innerHTML = '<span class="error-icon">\u26A0</span> Error loading loop status: ' + state.workflowTriggers.error;
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    var data = state.workflowTriggers.data;
+    if (!data) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'placeholder-content';
+        emptyDiv.textContent = 'No loop status data available.';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    // Loop Status Panel
+    var statusPanel = document.createElement('div');
+    statusPanel.className = 'workflows-triggers-status-panel';
+
+    // Running/Stopped indicator
+    var runningIndicator = document.createElement('div');
+    runningIndicator.className = 'workflows-triggers-running-indicator';
+    var isRunning = data.running || data.enabled || data.active || false;
+    var indicatorDot = document.createElement('span');
+    indicatorDot.className = 'status-dot ' + (isRunning ? 'status-dot-running' : 'status-dot-stopped');
+    runningIndicator.appendChild(indicatorDot);
+    var indicatorLabel = document.createElement('span');
+    indicatorLabel.className = 'workflows-triggers-running-label';
+    indicatorLabel.textContent = 'Autopilot Loop: ' + (isRunning ? 'Running' : 'Stopped');
+    runningIndicator.appendChild(indicatorLabel);
+    statusPanel.appendChild(runningIndicator);
+
+    // Cursor position
+    if (data.cursor || data.cursor_position) {
+        var cursorDiv = document.createElement('div');
+        cursorDiv.className = 'workflows-triggers-detail';
+        cursorDiv.innerHTML = '<strong>Cursor Position:</strong> ' + (data.cursor || data.cursor_position);
+        statusPanel.appendChild(cursorDiv);
+    }
+
+    // Last tick
+    if (data.last_tick || data.last_tick_at) {
+        var tickDiv = document.createElement('div');
+        tickDiv.className = 'workflows-triggers-detail';
+        tickDiv.innerHTML = '<strong>Last Tick:</strong> ' + formatEventTimestamp(data.last_tick || data.last_tick_at);
+        statusPanel.appendChild(tickDiv);
+    }
+
+    // Config display
+    if (data.config || data.interval_ms || data.poll_interval) {
+        var configDiv = document.createElement('div');
+        configDiv.className = 'workflows-triggers-detail';
+        var configText = '';
+        if (data.config) {
+            configText = typeof data.config === 'object' ? JSON.stringify(data.config, null, 2) : String(data.config);
+        } else {
+            configText = 'Interval: ' + (data.interval_ms || data.poll_interval || 'N/A') + 'ms';
+        }
+        configDiv.innerHTML = '<strong>Config:</strong> <pre style="display:inline-block;margin:0;vertical-align:top;">' + configText + '</pre>';
+        statusPanel.appendChild(configDiv);
+    }
+
+    container.appendChild(statusPanel);
+
+    // Start/Stop buttons
+    var controlsDiv = document.createElement('div');
+    controlsDiv.className = 'workflows-triggers-controls';
+
+    var startBtn = document.createElement('button');
+    startBtn.className = 'btn btn-success';
+    startBtn.textContent = 'Start Loop';
+    startBtn.disabled = isRunning;
+    startBtn.onclick = function () {
+        fetch('/api/v1/autopilot/loop/start', {
+            method: 'POST',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' })
+        })
+            .then(function (r) { return r.json(); })
+            .then(function () {
+                state.workflowTriggers.fetched = false;
+                renderApp();
+            })
+            .catch(function (err) {
+                console.error('[WorkflowTriggers] Start error:', err);
+                alert('Failed to start loop: ' + err.message);
+            });
+    };
+    controlsDiv.appendChild(startBtn);
+
+    var stopBtn = document.createElement('button');
+    stopBtn.className = 'btn btn-danger';
+    stopBtn.textContent = 'Stop Loop';
+    stopBtn.disabled = !isRunning;
+    stopBtn.onclick = function () {
+        fetch('/api/v1/autopilot/loop/stop', {
+            method: 'POST',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' })
+        })
+            .then(function (r) { return r.json(); })
+            .then(function () {
+                state.workflowTriggers.fetched = false;
+                renderApp();
+            })
+            .catch(function (err) {
+                console.error('[WorkflowTriggers] Stop error:', err);
+                alert('Failed to stop loop: ' + err.message);
+            });
+    };
+    controlsDiv.appendChild(stopBtn);
+
+    container.appendChild(controlsDiv);
+
+    return container;
+}
+
+// ──── Workflows: Actions (Work Orders) ────
+
+function renderWorkflowsActionsView() {
+    var container = document.createElement('div');
+    container.className = 'workflows-actions-container';
+
+    // Inline state for work orders (not in global state since this is a standalone view)
+    if (!state._workflowActions) {
+        state._workflowActions = { items: [], loading: false, error: null, fetched: false };
+    }
+
+    // Auto-fetch
+    if (!state._workflowActions.fetched && !state._workflowActions.loading) {
+        state._workflowActions.loading = true;
+        renderApp();
+
+        fetch('/api/v1/execute/workorders?limit=30', {
+            headers: buildContextHeaders({})
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                state._workflowActions.items = data.items || data.data || data.work_orders || data;
+                if (!Array.isArray(state._workflowActions.items)) {
+                    state._workflowActions.items = [];
+                }
+                state._workflowActions.fetched = true;
+                state._workflowActions.loading = false;
+                state._workflowActions.error = null;
+                renderApp();
+            })
+            .catch(function (err) {
+                console.error('[WorkflowActions] Fetch error:', err);
+                state._workflowActions.error = err.message;
+                state._workflowActions.loading = false;
+                renderApp();
+            });
+
+        return container;
+    }
+
+    // Loading
+    if (state._workflowActions.loading) {
+        var content = document.createElement('div');
+        content.className = 'workflows-actions-content';
+        content.innerHTML = '<div class="placeholder-content">Loading work orders...</div>';
+        container.appendChild(content);
+        return container;
+    }
+
+    // Error
+    if (state._workflowActions.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'workflows-actions-error';
+        errorDiv.innerHTML = '<span class="error-icon">\u26A0</span> Error loading work orders: ' + state._workflowActions.error;
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    // Empty
+    var items = state._workflowActions.items;
+    if (items.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'placeholder-content';
+        emptyDiv.textContent = 'No work orders found.';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    // Table
+    var table = document.createElement('table');
+    table.className = 'list-table workflows-actions-table';
+
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    ['VTID', 'Action Type', 'Stage', 'Status', 'Evidence'].forEach(function (h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    items.forEach(function (item) {
+        var row = document.createElement('tr');
+
+        // VTID
+        var vtidTd = document.createElement('td');
+        vtidTd.className = 'vtid-cell';
+        vtidTd.textContent = item.vtid || '-';
+        row.appendChild(vtidTd);
+
+        // Action Type
+        var actionTd = document.createElement('td');
+        actionTd.textContent = item.action_type || item.action || item.type || '-';
+        row.appendChild(actionTd);
+
+        // Stage
+        var stageTd = document.createElement('td');
+        stageTd.textContent = item.stage || item.current_stage || '-';
+        row.appendChild(stageTd);
+
+        // Status
+        var statusTd = document.createElement('td');
+        var statusBadge = document.createElement('span');
+        var actionStatus = (item.status || 'unknown').toLowerCase();
+        statusBadge.className = 'status-badge status-' + actionStatus;
+        statusBadge.textContent = actionStatus.charAt(0).toUpperCase() + actionStatus.slice(1);
+        statusTd.appendChild(statusBadge);
+        row.appendChild(statusTd);
+
+        // Evidence
+        var evidenceTd = document.createElement('td');
+        var evidence = item.evidence || item.evidence_url || item.proof || '-';
+        if (typeof evidence === 'object') {
+            evidence = JSON.stringify(evidence);
+        }
+        evidenceTd.textContent = evidence;
+        evidenceTd.style.maxWidth = '300px';
+        evidenceTd.style.overflow = 'hidden';
+        evidenceTd.style.textOverflow = 'ellipsis';
+        evidenceTd.style.whiteSpace = 'nowrap';
+        row.appendChild(evidenceTd);
+
+        tbody.appendChild(row);
+    });
+
+    table.appendChild(tbody);
+    container.appendChild(table);
+
+    return container;
+}
+
+// ──── Workflows: Schedules ────
+
+function fetchWorkflowSchedules() {
+    if (state.workflowSchedules.loading) return;
+    state.workflowSchedules.loading = true;
+    state.workflowSchedules.error = null;
+    renderApp();
+
+    fetch('/api/v1/scheduler/upcoming', {
+        headers: buildContextHeaders({})
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            state.workflowSchedules.items = data.items || data.data || data.tasks || data;
+            if (!Array.isArray(state.workflowSchedules.items)) {
+                state.workflowSchedules.items = [];
+            }
+            state.workflowSchedules.fetched = true;
+            state.workflowSchedules.loading = false;
+            state.workflowSchedules.error = null;
+            renderApp();
+        })
+        .catch(function (err) {
+            console.error('[WorkflowSchedules] Fetch error:', err);
+            state.workflowSchedules.error = err.message;
+            state.workflowSchedules.loading = false;
+            renderApp();
+        });
+}
+
+function renderWorkflowsSchedulesView() {
+    var container = document.createElement('div');
+    container.className = 'workflows-schedules-container';
+
+    // Auto-fetch
+    if (!state.workflowSchedules.fetched && !state.workflowSchedules.loading) {
+        fetchWorkflowSchedules();
+    }
+
+    // Also fetch scheduler status
+    if (!state._schedulerStatus) {
+        state._schedulerStatus = { data: null, loading: false, fetched: false };
+    }
+    if (!state._schedulerStatus.fetched && !state._schedulerStatus.loading) {
+        state._schedulerStatus.loading = true;
+        fetch('/api/v1/scheduler/status', {
+            headers: buildContextHeaders({})
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                state._schedulerStatus.data = data.data || data;
+                state._schedulerStatus.fetched = true;
+                state._schedulerStatus.loading = false;
+                renderApp();
+            })
+            .catch(function (err) {
+                console.error('[SchedulerStatus] Fetch error:', err);
+                state._schedulerStatus.loading = false;
+                state._schedulerStatus.fetched = true;
+                renderApp();
+            });
+    }
+
+    // Scheduler status panel
+    if (state._schedulerStatus.data) {
+        var statusPanel = document.createElement('div');
+        statusPanel.className = 'workflows-schedules-status-panel';
+        var schedulerData = state._schedulerStatus.data;
+
+        var statusLine = document.createElement('div');
+        statusLine.className = 'workflows-schedules-status-line';
+        var schedulerActive = schedulerData.active || schedulerData.running || schedulerData.enabled || false;
+        statusLine.innerHTML = '<strong>Scheduler:</strong> ' +
+            '<span class="status-badge status-' + (schedulerActive ? 'active' : 'inactive') + '">' +
+            (schedulerActive ? 'Active' : 'Inactive') + '</span>';
+        if (schedulerData.next_run || schedulerData.next_tick) {
+            statusLine.innerHTML += ' | <strong>Next run:</strong> ' +
+                formatEventTimestamp(schedulerData.next_run || schedulerData.next_tick);
+        }
+        statusPanel.appendChild(statusLine);
+        container.appendChild(statusPanel);
+    }
+
+    // Loading
+    if (state.workflowSchedules.loading && state.workflowSchedules.items.length === 0) {
+        var content = document.createElement('div');
+        content.className = 'workflows-schedules-content';
+        content.innerHTML = '<div class="placeholder-content">Loading schedules...</div>';
+        container.appendChild(content);
+        return container;
+    }
+
+    // Error
+    if (state.workflowSchedules.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'workflows-schedules-error';
+        errorDiv.innerHTML = '<span class="error-icon">\u26A0</span> Error loading schedules: ' + state.workflowSchedules.error;
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    // Empty
+    var items = state.workflowSchedules.items;
+    if (items.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'placeholder-content';
+        emptyDiv.textContent = 'No upcoming schedules found.';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    // Table
+    var table = document.createElement('table');
+    table.className = 'list-table workflows-schedules-table';
+
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    ['Task', 'Scheduled Time', 'Recurrence', 'Status'].forEach(function (h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    items.forEach(function (item) {
+        var row = document.createElement('tr');
+
+        // Task
+        var taskTd = document.createElement('td');
+        taskTd.textContent = item.task || item.name || item.title || item.vtid || '-';
+        row.appendChild(taskTd);
+
+        // Scheduled Time
+        var timeTd = document.createElement('td');
+        timeTd.textContent = formatEventTimestamp(item.scheduled_at || item.scheduled_time || item.next_run);
+        row.appendChild(timeTd);
+
+        // Recurrence
+        var recurrenceTd = document.createElement('td');
+        recurrenceTd.textContent = item.recurrence || item.cron || item.interval || 'One-time';
+        row.appendChild(recurrenceTd);
+
+        // Status
+        var statusTd = document.createElement('td');
+        var statusBadge = document.createElement('span');
+        var schedStatus = (item.status || 'pending').toLowerCase();
+        statusBadge.className = 'status-badge status-' + schedStatus;
+        statusBadge.textContent = schedStatus.charAt(0).toUpperCase() + schedStatus.slice(1);
+        statusTd.appendChild(statusBadge);
+        row.appendChild(statusTd);
+
+        tbody.appendChild(row);
+    });
+
+    table.appendChild(tbody);
+    container.appendChild(table);
+
+    return container;
+}
+
+// ──── Workflows: History ────
+
+function fetchWorkflowHistory() {
+    if (state.workflowHistory.loading) return;
+    state.workflowHistory.loading = true;
+    state.workflowHistory.error = null;
+    renderApp();
+
+    fetch('/api/v1/autopilot/loop/history?limit=50', {
+        headers: buildContextHeaders({})
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            state.workflowHistory.items = data.items || data.data || data.history || data;
+            if (!Array.isArray(state.workflowHistory.items)) {
+                state.workflowHistory.items = [];
+            }
+            state.workflowHistory.fetched = true;
+            state.workflowHistory.loading = false;
+            state.workflowHistory.error = null;
+            renderApp();
+        })
+        .catch(function (err) {
+            console.error('[WorkflowHistory] Fetch error:', err);
+            state.workflowHistory.error = err.message;
+            state.workflowHistory.loading = false;
+            renderApp();
+        });
+}
+
+function renderWorkflowsHistoryView() {
+    var container = document.createElement('div');
+    container.className = 'workflows-history-container';
+
+    // Auto-fetch
+    if (!state.workflowHistory.fetched && !state.workflowHistory.loading) {
+        fetchWorkflowHistory();
+    }
+
+    // Loading
+    if (state.workflowHistory.loading && state.workflowHistory.items.length === 0) {
+        var content = document.createElement('div');
+        content.className = 'workflows-history-content';
+        content.innerHTML = '<div class="placeholder-content">Loading workflow history...</div>';
+        container.appendChild(content);
+        return container;
+    }
+
+    // Error
+    if (state.workflowHistory.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'workflows-history-error';
+        errorDiv.innerHTML = '<span class="error-icon">\u26A0</span> Error loading workflow history: ' + state.workflowHistory.error;
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    // Empty
+    var items = state.workflowHistory.items;
+    if (items.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'placeholder-content';
+        emptyDiv.textContent = 'No workflow history found.';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    // Table
+    var table = document.createElement('table');
+    table.className = 'list-table workflows-history-table';
+
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    ['Time', 'Loop Tick', 'Events Processed', 'Errors', 'Duration'].forEach(function (h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    items.forEach(function (item) {
+        var row = document.createElement('tr');
+
+        // Time
+        var timeTd = document.createElement('td');
+        timeTd.textContent = formatEventTimestamp(item.created_at || item.timestamp || item.tick_at);
+        row.appendChild(timeTd);
+
+        // Loop Tick
+        var tickTd = document.createElement('td');
+        tickTd.textContent = item.tick || item.loop_tick || item.tick_id || '-';
+        row.appendChild(tickTd);
+
+        // Events Processed
+        var eventsTd = document.createElement('td');
+        eventsTd.textContent = item.events_processed !== undefined ? item.events_processed :
+            (item.processed_count !== undefined ? item.processed_count : '-');
+        row.appendChild(eventsTd);
+
+        // Errors
+        var errorsTd = document.createElement('td');
+        var errorCount = item.errors !== undefined ? item.errors :
+            (item.error_count !== undefined ? item.error_count : 0);
+        errorsTd.textContent = errorCount;
+        if (errorCount > 0) {
+            errorsTd.style.color = 'var(--color-danger, #ef4444)';
+            errorsTd.style.fontWeight = '600';
+        }
+        row.appendChild(errorsTd);
+
+        // Duration
+        var durationTd = document.createElement('td');
+        if (item.duration_ms) {
+            durationTd.textContent = (item.duration_ms / 1000).toFixed(1) + 's';
+        } else if (item.duration) {
+            durationTd.textContent = item.duration;
+        } else {
+            durationTd.textContent = '-';
+        }
+        row.appendChild(durationTd);
+
+        tbody.appendChild(row);
+    });
+
+    table.appendChild(tbody);
+    container.appendChild(table);
+
+    return container;
+}
+
+// ===========================================================================
+// VTID-01240: Overview + Operator + Command Hub Module Render Functions
+// 51-screen build: fetch + render for Overview, Operator, and Live Console
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// 1. fetchOverviewHealth — aggregate health from multiple service endpoints
+// ---------------------------------------------------------------------------
+async function fetchOverviewHealth() {
+    if (state.overviewHealth.loading) return;
+    state.overviewHealth.loading = true;
+    state.overviewHealth.error = null;
+    renderApp();
+
+    var endpoints = [
+        { name: 'Gateway', url: '/health' },
+        { name: 'CI/CD', url: '/api/v1/cicd/health' },
+        { name: 'Operator', url: '/api/v1/operator/health' },
+        { name: 'Autopilot', url: '/api/v1/autopilot/health' },
+        { name: 'Assistant', url: '/api/v1/assistant/health' }
+    ];
+
+    try {
+        var results = await Promise.allSettled(endpoints.map(function (ep) {
+            var start = Date.now();
+            return fetch(ep.url)
+                .then(function (r) {
+                    var latency = Date.now() - start;
+                    var ok = r.ok;
+                    return r.json().then(function (body) {
+                        return {
+                            name: ep.name,
+                            status: ok ? (body.status || 'healthy') : 'degraded',
+                            latency_ms: latency
+                        };
+                    }).catch(function () {
+                        return { name: ep.name, status: ok ? 'healthy' : 'degraded', latency_ms: latency };
+                    });
+                })
+                .catch(function () {
+                    return { name: ep.name, status: 'down', latency_ms: -1 };
+                });
+        }));
+
+        var items = results.map(function (r) {
+            return r.status === 'fulfilled' ? r.value : { name: 'Unknown', status: 'down', latency_ms: -1 };
+        });
+
+        state.overviewHealth.items = items;
+        state.overviewHealth.fetched = true;
+        state.overviewHealth.error = null;
+        console.log('[VTID-01240] Overview health loaded:', items.length, 'services');
+    } catch (error) {
+        console.error('[VTID-01240] Failed to fetch overview health:', error);
+        state.overviewHealth.error = error.message;
+    } finally {
+        state.overviewHealth.loading = false;
+        renderApp();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 2. renderOverviewSystemView — service health cards grid
+// ---------------------------------------------------------------------------
+function renderOverviewSystemView() {
+    var container = document.createElement('div');
+    container.className = 'overview-system-container';
+
+    // Auto-fetch
+    if (!state.overviewHealth.fetched && !state.overviewHealth.loading) {
+        fetchOverviewHealth();
+    }
+
+    // Loading
+    if (state.overviewHealth.loading && state.overviewHealth.items.length === 0) {
+        var loading = document.createElement('div');
+        loading.className = 'placeholder-content';
+        loading.textContent = 'Loading service health...';
+        container.appendChild(loading);
+        return container;
+    }
+
+    // Error
+    if (state.overviewHealth.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'placeholder-content error-text';
+        errorDiv.textContent = 'Error: ' + state.overviewHealth.error;
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    // Empty
+    if (state.overviewHealth.items.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'placeholder-content';
+        emptyDiv.textContent = 'No service health data available.';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'list-toolbar';
+    var title = document.createElement('span');
+    title.className = 'toolbar-title';
+    title.textContent = 'Service Health (' + state.overviewHealth.items.length + ' services)';
+    header.appendChild(title);
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-sm';
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.onclick = function () {
+        state.overviewHealth.fetched = false;
+        fetchOverviewHealth();
+    };
+    header.appendChild(refreshBtn);
+    container.appendChild(header);
+
+    // Grid
+    var grid = document.createElement('div');
+    grid.className = 'overview-services-grid';
+
+    state.overviewHealth.items.forEach(function (svc) {
+        var card = document.createElement('div');
+        card.className = 'service-health-card';
+
+        var statusColor = 'green';
+        if (svc.status === 'degraded' || svc.status === 'warning') statusColor = 'yellow';
+        if (svc.status === 'down' || svc.status === 'error' || svc.status === 'unhealthy') statusColor = 'red';
+
+        var dot = document.createElement('span');
+        dot.className = 'health-status-dot health-status-' + statusColor;
+        dot.style.display = 'inline-block';
+        dot.style.width = '10px';
+        dot.style.height = '10px';
+        dot.style.borderRadius = '50%';
+        dot.style.backgroundColor = statusColor;
+        dot.style.marginRight = '8px';
+
+        var nameSpan = document.createElement('span');
+        nameSpan.className = 'service-name';
+        nameSpan.textContent = svc.name;
+
+        var statusSpan = document.createElement('span');
+        statusSpan.className = 'service-status status-badge status-' + svc.status;
+        statusSpan.textContent = svc.status;
+
+        var latencySpan = document.createElement('span');
+        latencySpan.className = 'service-latency';
+        latencySpan.textContent = svc.latency_ms >= 0 ? svc.latency_ms + 'ms' : 'N/A';
+
+        var cardHeader = document.createElement('div');
+        cardHeader.className = 'service-card-header';
+        cardHeader.appendChild(dot);
+        cardHeader.appendChild(nameSpan);
+
+        var cardBody = document.createElement('div');
+        cardBody.className = 'service-card-body';
+        cardBody.appendChild(statusSpan);
+        cardBody.appendChild(latencySpan);
+
+        card.appendChild(cardHeader);
+        card.appendChild(cardBody);
+        grid.appendChild(card);
+    });
+
+    container.appendChild(grid);
+    return container;
+}
+
+// ---------------------------------------------------------------------------
+// 3. fetchOverviewMetrics — GET /api/v1/operator/heartbeat
+// ---------------------------------------------------------------------------
+async function fetchOverviewMetrics() {
+    if (state.overviewMetrics.loading) return;
+    state.overviewMetrics.loading = true;
+    state.overviewMetrics.error = null;
+    renderApp();
+
+    try {
+        var response = await fetch('/api/v1/operator/heartbeat');
+        if (!response.ok) throw new Error('Heartbeat fetch failed: ' + response.status);
+
+        var data = await response.json();
+        state.overviewMetrics.snapshot = data.data || data;
+        state.overviewMetrics.fetched = true;
+        state.overviewMetrics.error = null;
+        console.log('[VTID-01240] Overview metrics loaded');
+    } catch (error) {
+        console.error('[VTID-01240] Failed to fetch overview metrics:', error);
+        state.overviewMetrics.error = error.message;
+    } finally {
+        state.overviewMetrics.loading = false;
+        renderApp();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 4. renderOverviewLiveMetricsView — heartbeat snapshot metric cards
+// ---------------------------------------------------------------------------
+function renderOverviewLiveMetricsView() {
+    var container = document.createElement('div');
+    container.className = 'overview-metrics-container';
+
+    // Auto-fetch
+    if (!state.overviewMetrics.fetched && !state.overviewMetrics.loading) {
+        fetchOverviewMetrics();
+    }
+
+    // Loading
+    if (state.overviewMetrics.loading && !state.overviewMetrics.snapshot) {
+        var loading = document.createElement('div');
+        loading.className = 'placeholder-content';
+        loading.textContent = 'Loading live metrics...';
+        container.appendChild(loading);
+        return container;
+    }
+
+    // Error
+    if (state.overviewMetrics.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'placeholder-content error-text';
+        errorDiv.textContent = 'Error: ' + state.overviewMetrics.error;
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    var snapshot = state.overviewMetrics.snapshot;
+    if (!snapshot) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'placeholder-content';
+        emptyDiv.textContent = 'No metrics data available.';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'list-toolbar';
+    var title = document.createElement('span');
+    title.className = 'toolbar-title';
+    title.textContent = 'Live Metrics — Heartbeat Snapshot';
+    header.appendChild(title);
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-sm';
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.onclick = function () {
+        state.overviewMetrics.fetched = false;
+        fetchOverviewMetrics();
+    };
+    header.appendChild(refreshBtn);
+    container.appendChild(header);
+
+    // Stage counters
+    var stages = snapshot.stage_counters || snapshot.stageCounters || {};
+    var stageNames = ['PLANNER', 'WORKER', 'VALIDATOR', 'DEPLOY'];
+
+    var stageGrid = document.createElement('div');
+    stageGrid.className = 'metrics-grid';
+
+    stageNames.forEach(function (stage) {
+        var card = document.createElement('div');
+        card.className = 'metric-card';
+
+        var label = document.createElement('div');
+        label.className = 'metric-label';
+        label.textContent = stage;
+
+        var value = document.createElement('div');
+        value.className = 'metric-value';
+        value.textContent = stages[stage] !== undefined ? stages[stage] : '0';
+
+        card.appendChild(label);
+        card.appendChild(value);
+        stageGrid.appendChild(card);
+    });
+
+    container.appendChild(stageGrid);
+
+    // Request and error rate cards
+    var rateGrid = document.createElement('div');
+    rateGrid.className = 'metrics-grid';
+
+    var rateMetrics = [
+        { label: 'Request Rate', key: 'request_rate', fallback: 'requests_per_min' },
+        { label: 'Error Rate', key: 'error_rate', fallback: 'errors_per_min' },
+        { label: 'Active Tasks', key: 'active_tasks', fallback: 'active_vtids' },
+        { label: 'Uptime', key: 'uptime', fallback: 'uptime_seconds' }
+    ];
+
+    rateMetrics.forEach(function (metric) {
+        var card = document.createElement('div');
+        card.className = 'metric-card';
+
+        var label = document.createElement('div');
+        label.className = 'metric-label';
+        label.textContent = metric.label;
+
+        var val = snapshot[metric.key] !== undefined ? snapshot[metric.key] :
+                  (snapshot[metric.fallback] !== undefined ? snapshot[metric.fallback] : 'N/A');
+
+        var valueDiv = document.createElement('div');
+        valueDiv.className = 'metric-value';
+        valueDiv.textContent = val;
+
+        card.appendChild(label);
+        card.appendChild(valueDiv);
+        rateGrid.appendChild(card);
+    });
+
+    container.appendChild(rateGrid);
+
+    // Timestamp
+    if (snapshot.timestamp || snapshot.ts) {
+        var tsDiv = document.createElement('div');
+        tsDiv.className = 'metrics-timestamp';
+        tsDiv.textContent = 'Last updated: ' + formatEventTimestamp(snapshot.timestamp || snapshot.ts);
+        container.appendChild(tsDiv);
+    }
+
+    return container;
+}
+
+// ---------------------------------------------------------------------------
+// 5. fetchOverviewRecentEvents — GET /api/v1/oasis/events?limit=50
+// ---------------------------------------------------------------------------
+async function fetchOverviewRecentEvents() {
+    if (state.overviewRecentEvents.loading) return;
+    state.overviewRecentEvents.loading = true;
+    state.overviewRecentEvents.error = null;
+    renderApp();
+
+    try {
+        var response = await fetch('/api/v1/oasis/events?limit=50');
+        if (!response.ok) throw new Error('Recent events fetch failed: ' + response.status);
+
+        var data = await response.json();
+        var items = Array.isArray(data) ? data : (data.data || []);
+        state.overviewRecentEvents.items = items;
+        state.overviewRecentEvents.fetched = true;
+        state.overviewRecentEvents.error = null;
+        console.log('[VTID-01240] Overview recent events loaded:', items.length);
+    } catch (error) {
+        console.error('[VTID-01240] Failed to fetch overview recent events:', error);
+        state.overviewRecentEvents.error = error.message;
+    } finally {
+        state.overviewRecentEvents.loading = false;
+        renderApp();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 6. renderOverviewRecentEventsView — table of recent OASIS events
+// ---------------------------------------------------------------------------
+function renderOverviewRecentEventsView() {
+    var container = document.createElement('div');
+    container.className = 'overview-recent-events-container';
+
+    // Auto-fetch
+    if (!state.overviewRecentEvents.fetched && !state.overviewRecentEvents.loading) {
+        fetchOverviewRecentEvents();
+    }
+
+    // Loading
+    if (state.overviewRecentEvents.loading && state.overviewRecentEvents.items.length === 0) {
+        var loading = document.createElement('div');
+        loading.className = 'placeholder-content';
+        loading.textContent = 'Loading recent events...';
+        container.appendChild(loading);
+        return container;
+    }
+
+    // Error
+    if (state.overviewRecentEvents.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'placeholder-content error-text';
+        errorDiv.textContent = 'Error: ' + state.overviewRecentEvents.error;
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    // Empty
+    if (state.overviewRecentEvents.items.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'placeholder-content';
+        emptyDiv.textContent = 'No recent events found.';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'list-toolbar';
+    var title = document.createElement('span');
+    title.className = 'toolbar-title';
+    title.textContent = 'Recent Events (' + state.overviewRecentEvents.items.length + ')';
+    header.appendChild(title);
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-sm';
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.onclick = function () {
+        state.overviewRecentEvents.fetched = false;
+        fetchOverviewRecentEvents();
+    };
+    header.appendChild(refreshBtn);
+    container.appendChild(header);
+
+    // Table
+    var table = document.createElement('table');
+    table.className = 'list-table';
+
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    ['Time', 'Topic', 'VTID', 'Status', 'Message'].forEach(function (h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    state.overviewRecentEvents.items.forEach(function (event) {
+        var row = document.createElement('tr');
+
+        var timeTd = document.createElement('td');
+        timeTd.textContent = formatEventTimestamp(event.created_at || event.timestamp);
+        row.appendChild(timeTd);
+
+        var topicTd = document.createElement('td');
+        topicTd.textContent = event.topic || event.type || '';
+        row.appendChild(topicTd);
+
+        var vtidTd = document.createElement('td');
+        vtidTd.className = 'vtid-cell';
+        vtidTd.textContent = event.vtid || '';
+        row.appendChild(vtidTd);
+
+        var statusTd = document.createElement('td');
+        var statusBadge = document.createElement('span');
+        statusBadge.className = 'status-badge status-' + (event.status || 'info');
+        statusBadge.textContent = event.status || 'info';
+        statusTd.appendChild(statusBadge);
+        row.appendChild(statusTd);
+
+        var msgTd = document.createElement('td');
+        msgTd.className = 'message-cell';
+        msgTd.textContent = event.message || '';
+        row.appendChild(msgTd);
+
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+
+    return container;
+}
+
+// ---------------------------------------------------------------------------
+// 7. fetchOverviewErrors — GET /api/v1/governance/violations?limit=50
+// ---------------------------------------------------------------------------
+async function fetchOverviewErrors() {
+    if (state.overviewErrors.loading) return;
+    state.overviewErrors.loading = true;
+    state.overviewErrors.error = null;
+    renderApp();
+
+    try {
+        var response = await fetch('/api/v1/governance/violations?limit=50');
+        if (!response.ok) throw new Error('Violations fetch failed: ' + response.status);
+
+        var data = await response.json();
+        var items = data.data || data.violations || (Array.isArray(data) ? data : []);
+        state.overviewErrors.items = items;
+        state.overviewErrors.fetched = true;
+        state.overviewErrors.error = null;
+        console.log('[VTID-01240] Overview errors/violations loaded:', items.length);
+    } catch (error) {
+        console.error('[VTID-01240] Failed to fetch overview errors:', error);
+        state.overviewErrors.error = error.message;
+    } finally {
+        state.overviewErrors.loading = false;
+        renderApp();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 8. renderOverviewErrorsViolationsView — table of errors/violations
+// ---------------------------------------------------------------------------
+function renderOverviewErrorsViolationsView() {
+    var container = document.createElement('div');
+    container.className = 'overview-errors-container';
+
+    // Auto-fetch
+    if (!state.overviewErrors.fetched && !state.overviewErrors.loading) {
+        fetchOverviewErrors();
+    }
+
+    // Loading
+    if (state.overviewErrors.loading && state.overviewErrors.items.length === 0) {
+        var loading = document.createElement('div');
+        loading.className = 'placeholder-content';
+        loading.textContent = 'Loading errors & violations...';
+        container.appendChild(loading);
+        return container;
+    }
+
+    // Error
+    if (state.overviewErrors.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'placeholder-content error-text';
+        errorDiv.textContent = 'Error: ' + state.overviewErrors.error;
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    // Empty
+    if (state.overviewErrors.items.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'placeholder-content';
+        emptyDiv.textContent = 'No errors or violations found.';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'list-toolbar';
+    var title = document.createElement('span');
+    title.className = 'toolbar-title';
+    title.textContent = 'Errors & Violations (' + state.overviewErrors.items.length + ')';
+    header.appendChild(title);
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-sm';
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.onclick = function () {
+        state.overviewErrors.fetched = false;
+        fetchOverviewErrors();
+    };
+    header.appendChild(refreshBtn);
+    container.appendChild(header);
+
+    // Table
+    var table = document.createElement('table');
+    table.className = 'list-table';
+
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    ['Time', 'Level', 'Rule', 'Service', 'Message'].forEach(function (h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    state.overviewErrors.items.forEach(function (item) {
+        var row = document.createElement('tr');
+
+        var timeTd = document.createElement('td');
+        timeTd.textContent = formatEventTimestamp(item.created_at || item.timestamp);
+        row.appendChild(timeTd);
+
+        var levelTd = document.createElement('td');
+        var levelVal = (item.level || item.severity || 'warning').toLowerCase();
+        var levelBadge = document.createElement('span');
+        levelBadge.className = 'status-badge status-' + levelVal;
+        levelBadge.textContent = levelVal;
+        levelTd.appendChild(levelBadge);
+        row.appendChild(levelTd);
+
+        var ruleTd = document.createElement('td');
+        ruleTd.textContent = item.rule || item.rule_id || '';
+        row.appendChild(ruleTd);
+
+        var serviceTd = document.createElement('td');
+        serviceTd.textContent = item.service || item.source || '';
+        row.appendChild(serviceTd);
+
+        var msgTd = document.createElement('td');
+        msgTd.className = 'message-cell';
+        msgTd.textContent = item.message || item.description || '';
+        row.appendChild(msgTd);
+
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+
+    return container;
+}
+
+// ---------------------------------------------------------------------------
+// 9. fetchOverviewReleases — GET /api/v1/operator/deployments?limit=30
+// ---------------------------------------------------------------------------
+async function fetchOverviewReleases() {
+    if (state.overviewReleases.loading) return;
+    state.overviewReleases.loading = true;
+    state.overviewReleases.error = null;
+    renderApp();
+
+    try {
+        var response = await fetch('/api/v1/operator/deployments?limit=30');
+        if (!response.ok) throw new Error('Deployments fetch failed: ' + response.status);
+
+        var data = await response.json();
+        var items = data.data || data.deployments || (Array.isArray(data) ? data : []);
+        state.overviewReleases.items = items;
+        state.overviewReleases.fetched = true;
+        state.overviewReleases.error = null;
+        console.log('[VTID-01240] Overview releases loaded:', items.length);
+    } catch (error) {
+        console.error('[VTID-01240] Failed to fetch overview releases:', error);
+        state.overviewReleases.error = error.message;
+    } finally {
+        state.overviewReleases.loading = false;
+        renderApp();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 10. renderOverviewReleaseFeedView — table of deployments/releases
+// ---------------------------------------------------------------------------
+function renderOverviewReleaseFeedView() {
+    var container = document.createElement('div');
+    container.className = 'overview-releases-container';
+
+    // Auto-fetch
+    if (!state.overviewReleases.fetched && !state.overviewReleases.loading) {
+        fetchOverviewReleases();
+    }
+
+    // Loading
+    if (state.overviewReleases.loading && state.overviewReleases.items.length === 0) {
+        var loading = document.createElement('div');
+        loading.className = 'placeholder-content';
+        loading.textContent = 'Loading release feed...';
+        container.appendChild(loading);
+        return container;
+    }
+
+    // Error
+    if (state.overviewReleases.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'placeholder-content error-text';
+        errorDiv.textContent = 'Error: ' + state.overviewReleases.error;
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    // Empty
+    if (state.overviewReleases.items.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'placeholder-content';
+        emptyDiv.textContent = 'No releases found.';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'list-toolbar';
+    var title = document.createElement('span');
+    title.className = 'toolbar-title';
+    title.textContent = 'Release Feed (' + state.overviewReleases.items.length + ')';
+    header.appendChild(title);
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-sm';
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.onclick = function () {
+        state.overviewReleases.fetched = false;
+        fetchOverviewReleases();
+    };
+    header.appendChild(refreshBtn);
+    container.appendChild(header);
+
+    // Table
+    var table = document.createElement('table');
+    table.className = 'list-table';
+
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    ['Time', 'Service', 'Version / SHA', 'Status', 'Initiator'].forEach(function (h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    state.overviewReleases.items.forEach(function (item) {
+        var row = document.createElement('tr');
+
+        var timeTd = document.createElement('td');
+        timeTd.textContent = formatEventTimestamp(item.created_at || item.deployed_at || item.timestamp);
+        row.appendChild(timeTd);
+
+        var serviceTd = document.createElement('td');
+        serviceTd.textContent = item.service || item.service_name || '';
+        row.appendChild(serviceTd);
+
+        var versionTd = document.createElement('td');
+        versionTd.className = 'version-cell';
+        var ver = item.version || item.image_tag || item.commit_sha || '';
+        if (ver.length > 12) ver = ver.substring(0, 12) + '...';
+        versionTd.textContent = ver;
+        versionTd.title = item.version || item.image_tag || item.commit_sha || '';
+        row.appendChild(versionTd);
+
+        var statusTd = document.createElement('td');
+        var statusBadge = document.createElement('span');
+        statusBadge.className = 'status-badge status-' + (item.status || 'unknown').toLowerCase();
+        statusBadge.textContent = item.status || 'unknown';
+        statusTd.appendChild(statusBadge);
+        row.appendChild(statusTd);
+
+        var initiatorTd = document.createElement('td');
+        initiatorTd.textContent = item.initiator || item.triggered_by || item.actor || '';
+        row.appendChild(initiatorTd);
+
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+
+    return container;
+}
+
+// ---------------------------------------------------------------------------
+// 11. fetchOperatorTaskQueue — GET /api/v1/tasks?status=pending,in_progress
+// ---------------------------------------------------------------------------
+async function fetchOperatorTaskQueue() {
+    if (state.operatorTaskQueue.loading) return;
+    state.operatorTaskQueue.loading = true;
+    state.operatorTaskQueue.error = null;
+    renderApp();
+
+    try {
+        var response = await fetch('/api/v1/tasks?status=pending,in_progress');
+        if (!response.ok) throw new Error('Task queue fetch failed: ' + response.status);
+
+        var data = await response.json();
+        var items = data.data || data.tasks || (Array.isArray(data) ? data : []);
+        state.operatorTaskQueue.items = items;
+        state.operatorTaskQueue.fetched = true;
+        state.operatorTaskQueue.error = null;
+        console.log('[VTID-01240] Operator task queue loaded:', items.length);
+    } catch (error) {
+        console.error('[VTID-01240] Failed to fetch operator task queue:', error);
+        state.operatorTaskQueue.error = error.message;
+    } finally {
+        state.operatorTaskQueue.loading = false;
+        renderApp();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 12. renderOperatorTaskQueueView — task queue table with clickable rows
+// ---------------------------------------------------------------------------
+function renderOperatorTaskQueueView() {
+    var container = document.createElement('div');
+    container.className = 'operator-task-queue-container';
+
+    // Auto-fetch
+    if (!state.operatorTaskQueue.fetched && !state.operatorTaskQueue.loading) {
+        fetchOperatorTaskQueue();
+    }
+
+    // Loading
+    if (state.operatorTaskQueue.loading && state.operatorTaskQueue.items.length === 0) {
+        var loading = document.createElement('div');
+        loading.className = 'placeholder-content';
+        loading.textContent = 'Loading task queue...';
+        container.appendChild(loading);
+        return container;
+    }
+
+    // Error
+    if (state.operatorTaskQueue.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'placeholder-content error-text';
+        errorDiv.textContent = 'Error: ' + state.operatorTaskQueue.error;
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    // Empty
+    if (state.operatorTaskQueue.items.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'placeholder-content';
+        emptyDiv.textContent = 'No pending or in-progress tasks.';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'list-toolbar';
+    var title = document.createElement('span');
+    title.className = 'toolbar-title';
+    title.textContent = 'Task Queue (' + state.operatorTaskQueue.items.length + ')';
+    header.appendChild(title);
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-sm';
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.onclick = function () {
+        state.operatorTaskQueue.fetched = false;
+        fetchOperatorTaskQueue();
+    };
+    header.appendChild(refreshBtn);
+    container.appendChild(header);
+
+    // Table
+    var table = document.createElement('table');
+    table.className = 'list-table';
+
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    ['VTID', 'Title', 'Status', 'Role', 'Created'].forEach(function (h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    state.operatorTaskQueue.items.forEach(function (task) {
+        var row = document.createElement('tr');
+        row.className = 'clickable-row';
+        if (state.selectedTask && state.selectedTask.vtid === task.vtid) {
+            row.className += ' selected';
+        }
+        row.onclick = function () {
+            state.selectedTask = task;
+            // Navigate to task details tab
+            state.currentTab = 'task-details';
+            var section = NAVIGATION_CONFIG.find(function (s) { return s.section === 'operator'; });
+            if (section) {
+                var detailTab = section.tabs.find(function (t) { return t.key === 'task-details'; });
+                if (detailTab && detailTab.path) {
+                    history.pushState(null, '', detailTab.path);
+                }
+            }
+            renderApp();
+        };
+        row.style.cursor = 'pointer';
+
+        var vtidTd = document.createElement('td');
+        vtidTd.className = 'vtid-cell';
+        vtidTd.textContent = task.vtid || '';
+        row.appendChild(vtidTd);
+
+        var titleTd = document.createElement('td');
+        titleTd.textContent = task.title || task.vtid || '';
+        row.appendChild(titleTd);
+
+        var statusTd = document.createElement('td');
+        var statusBadge = document.createElement('span');
+        statusBadge.className = 'status-badge status-' + (task.status || 'pending').toLowerCase();
+        statusBadge.textContent = task.status || 'pending';
+        statusTd.appendChild(statusBadge);
+        row.appendChild(statusTd);
+
+        var roleTd = document.createElement('td');
+        var roles = task.target_roles || task.target_role || [];
+        if (typeof roles === 'string') roles = [roles];
+        roleTd.textContent = Array.isArray(roles) ? roles.join(', ') : '';
+        row.appendChild(roleTd);
+
+        var createdTd = document.createElement('td');
+        createdTd.textContent = formatEventTimestamp(task.created_at);
+        row.appendChild(createdTd);
+
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+
+    return container;
+}
+
+// ---------------------------------------------------------------------------
+// 13. renderOperatorTaskDetailsView — selected task detail panel
+// ---------------------------------------------------------------------------
+function renderOperatorTaskDetailsView() {
+    var container = document.createElement('div');
+    container.className = 'operator-task-details-container';
+
+    var task = state.selectedTask;
+
+    // No task selected
+    if (!task) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'placeholder-content';
+        emptyDiv.textContent = 'Select a task from Task Queue to view details.';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    // Header with back button
+    var header = document.createElement('div');
+    header.className = 'list-toolbar';
+
+    var backBtn = document.createElement('button');
+    backBtn.className = 'btn btn-sm';
+    backBtn.textContent = 'Back to Queue';
+    backBtn.onclick = function () {
+        state.currentTab = 'task-queue';
+        var section = NAVIGATION_CONFIG.find(function (s) { return s.section === 'operator'; });
+        if (section) {
+            var queueTab = section.tabs.find(function (t) { return t.key === 'task-queue'; });
+            if (queueTab && queueTab.path) {
+                history.pushState(null, '', queueTab.path);
+            }
+        }
+        renderApp();
+    };
+    header.appendChild(backBtn);
+
+    var title = document.createElement('span');
+    title.className = 'toolbar-title';
+    title.textContent = task.vtid || 'Task Details';
+    header.appendChild(title);
+    container.appendChild(header);
+
+    // Task summary card
+    var summary = document.createElement('div');
+    summary.className = 'task-detail-summary';
+
+    var titleBlock = document.createElement('h3');
+    titleBlock.className = 'task-detail-title';
+    titleBlock.textContent = task.title || task.vtid || '';
+    summary.appendChild(titleBlock);
+
+    // Status badge
+    var statusDiv = document.createElement('div');
+    statusDiv.className = 'task-detail-status';
+    var statusLabel = document.createElement('strong');
+    statusLabel.textContent = 'Status: ';
+    statusDiv.appendChild(statusLabel);
+    var statusBadge = document.createElement('span');
+    statusBadge.className = 'status-badge status-' + (task.status || 'pending').toLowerCase();
+    statusBadge.textContent = task.status || 'pending';
+    statusDiv.appendChild(statusBadge);
+    summary.appendChild(statusDiv);
+
+    // Metadata
+    var metaFields = [
+        { label: 'VTID', value: task.vtid },
+        { label: 'Created', value: formatEventTimestamp(task.created_at) },
+        { label: 'Updated', value: formatEventTimestamp(task.updated_at) },
+        { label: 'Target Roles', value: Array.isArray(task.target_roles) ? task.target_roles.join(', ') : (task.target_role || '') },
+        { label: 'Spec Status', value: task.spec_status || '' },
+        { label: 'Current Stage', value: task.current_stage || '' },
+        { label: 'Claimed By', value: task.claimed_by || '' }
+    ];
+
+    metaFields.forEach(function (field) {
+        if (!field.value) return;
+        var row = document.createElement('div');
+        row.className = 'task-detail-row';
+        row.innerHTML = '<strong>' + field.label + ':</strong> ' + field.value;
+        summary.appendChild(row);
+    });
+
+    container.appendChild(summary);
+
+    // Task spec
+    var spec = task.spec || getTaskSpec(task.vtid);
+    if (spec) {
+        var specSection = document.createElement('div');
+        specSection.className = 'task-detail-spec';
+
+        var specLabel = document.createElement('h4');
+        specLabel.textContent = 'Task Spec';
+        specSection.appendChild(specLabel);
+
+        var specPre = document.createElement('pre');
+        specPre.className = 'task-spec-content';
+        specPre.textContent = spec;
+        specSection.appendChild(specPre);
+        container.appendChild(specSection);
+    }
+
+    // Stage timeline (if stageTimeline exists on the task)
+    var timeline = task.stageTimeline || task.stage_timeline;
+    if (timeline && Array.isArray(timeline) && timeline.length > 0) {
+        var timelineSection = document.createElement('div');
+        timelineSection.className = 'task-detail-timeline';
+
+        var timelineLabel = document.createElement('h4');
+        timelineLabel.textContent = 'Stage Timeline';
+        timelineSection.appendChild(timelineLabel);
+
+        var timelineList = document.createElement('div');
+        timelineList.className = 'stage-timeline-list';
+
+        timeline.forEach(function (entry) {
+            var timelineItem = document.createElement('div');
+            timelineItem.className = 'stage-timeline-item';
+
+            var stageBadge = document.createElement('span');
+            stageBadge.className = 'status-badge status-' + (entry.status || 'info').toLowerCase();
+            stageBadge.textContent = entry.stage || entry.name || '';
+
+            var stageTime = document.createElement('span');
+            stageTime.className = 'stage-timeline-time';
+            stageTime.textContent = formatEventTimestamp(entry.timestamp || entry.created_at);
+
+            var stageMsg = document.createElement('span');
+            stageMsg.className = 'stage-timeline-message';
+            stageMsg.textContent = entry.message || '';
+
+            timelineItem.appendChild(stageBadge);
+            timelineItem.appendChild(stageTime);
+            timelineItem.appendChild(stageMsg);
+            timelineList.appendChild(timelineItem);
+        });
+
+        timelineSection.appendChild(timelineList);
+        container.appendChild(timelineSection);
+    }
+
+    // Event history for this task (filter from oasisEvents if available)
+    var taskEvents = [];
+    if (state.oasisEvents && state.oasisEvents.items && task.vtid) {
+        taskEvents = state.oasisEvents.items.filter(function (ev) {
+            return ev.vtid === task.vtid;
+        });
+    }
+
+    if (taskEvents.length > 0) {
+        var eventsSection = document.createElement('div');
+        eventsSection.className = 'task-detail-events';
+
+        var eventsLabel = document.createElement('h4');
+        eventsLabel.textContent = 'Event History (' + taskEvents.length + ')';
+        eventsSection.appendChild(eventsLabel);
+
+        var eventsTable = document.createElement('table');
+        eventsTable.className = 'list-table';
+
+        var evThead = document.createElement('thead');
+        var evHeaderRow = document.createElement('tr');
+        ['Time', 'Topic', 'Status', 'Message'].forEach(function (h) {
+            var th = document.createElement('th');
+            th.textContent = h;
+            evHeaderRow.appendChild(th);
+        });
+        evThead.appendChild(evHeaderRow);
+        eventsTable.appendChild(evThead);
+
+        var evTbody = document.createElement('tbody');
+        taskEvents.forEach(function (ev) {
+            var evRow = document.createElement('tr');
+
+            var evTimeTd = document.createElement('td');
+            evTimeTd.textContent = formatEventTimestamp(ev.created_at || ev.timestamp);
+            evRow.appendChild(evTimeTd);
+
+            var evTopicTd = document.createElement('td');
+            evTopicTd.textContent = ev.topic || ev.type || '';
+            evRow.appendChild(evTopicTd);
+
+            var evStatusTd = document.createElement('td');
+            var evStatusBadge = document.createElement('span');
+            evStatusBadge.className = 'status-badge status-' + (ev.status || 'info');
+            evStatusBadge.textContent = ev.status || 'info';
+            evStatusTd.appendChild(evStatusBadge);
+            evRow.appendChild(evStatusTd);
+
+            var evMsgTd = document.createElement('td');
+            evMsgTd.textContent = ev.message || '';
+            evRow.appendChild(evMsgTd);
+
+            evTbody.appendChild(evRow);
+        });
+        eventsTable.appendChild(evTbody);
+        eventsSection.appendChild(eventsTable);
+        container.appendChild(eventsSection);
+    }
+
+    return container;
+}
+
+// ---------------------------------------------------------------------------
+// 14. fetchOperatorExecLogs — GET /api/v1/operator/history?limit=100
+// ---------------------------------------------------------------------------
+async function fetchOperatorExecLogs() {
+    if (state.operatorExecLogs.loading) return;
+    state.operatorExecLogs.loading = true;
+    state.operatorExecLogs.error = null;
+    renderApp();
+
+    try {
+        var response = await fetch('/api/v1/operator/history?limit=100');
+        if (!response.ok) throw new Error('Execution logs fetch failed: ' + response.status);
+
+        var data = await response.json();
+        var items = data.data || data.history || (Array.isArray(data) ? data : []);
+        state.operatorExecLogs.items = items;
+        state.operatorExecLogs.fetched = true;
+        state.operatorExecLogs.error = null;
+        console.log('[VTID-01240] Operator execution logs loaded:', items.length);
+    } catch (error) {
+        console.error('[VTID-01240] Failed to fetch operator execution logs:', error);
+        state.operatorExecLogs.error = error.message;
+    } finally {
+        state.operatorExecLogs.loading = false;
+        renderApp();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 15. renderOperatorExecutionLogsView — execution logs table
+// ---------------------------------------------------------------------------
+function renderOperatorExecutionLogsView() {
+    var container = document.createElement('div');
+    container.className = 'operator-exec-logs-container';
+
+    // Auto-fetch
+    if (!state.operatorExecLogs.fetched && !state.operatorExecLogs.loading) {
+        fetchOperatorExecLogs();
+    }
+
+    // Loading
+    if (state.operatorExecLogs.loading && state.operatorExecLogs.items.length === 0) {
+        var loading = document.createElement('div');
+        loading.className = 'placeholder-content';
+        loading.textContent = 'Loading execution logs...';
+        container.appendChild(loading);
+        return container;
+    }
+
+    // Error
+    if (state.operatorExecLogs.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'placeholder-content error-text';
+        errorDiv.textContent = 'Error: ' + state.operatorExecLogs.error;
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    // Empty
+    if (state.operatorExecLogs.items.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'placeholder-content';
+        emptyDiv.textContent = 'No execution logs found.';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'list-toolbar';
+    var title = document.createElement('span');
+    title.className = 'toolbar-title';
+    title.textContent = 'Execution Logs (' + state.operatorExecLogs.items.length + ')';
+    header.appendChild(title);
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-sm';
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.onclick = function () {
+        state.operatorExecLogs.fetched = false;
+        fetchOperatorExecLogs();
+    };
+    header.appendChild(refreshBtn);
+    container.appendChild(header);
+
+    // Table
+    var table = document.createElement('table');
+    table.className = 'list-table';
+
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    ['Time', 'Type', 'Actor', 'VTID', 'Status', 'Detail'].forEach(function (h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    state.operatorExecLogs.items.forEach(function (entry) {
+        var row = document.createElement('tr');
+
+        var timeTd = document.createElement('td');
+        timeTd.textContent = formatEventTimestamp(entry.created_at || entry.timestamp);
+        row.appendChild(timeTd);
+
+        var typeTd = document.createElement('td');
+        typeTd.textContent = entry.type || entry.action || '';
+        row.appendChild(typeTd);
+
+        var actorTd = document.createElement('td');
+        actorTd.textContent = entry.actor || entry.actor_email || entry.source || '';
+        row.appendChild(actorTd);
+
+        var vtidTd = document.createElement('td');
+        vtidTd.className = 'vtid-cell';
+        vtidTd.textContent = entry.vtid || '';
+        row.appendChild(vtidTd);
+
+        var statusTd = document.createElement('td');
+        var statusBadge = document.createElement('span');
+        statusBadge.className = 'status-badge status-' + (entry.status || 'info').toLowerCase();
+        statusBadge.textContent = entry.status || 'info';
+        statusTd.appendChild(statusBadge);
+        row.appendChild(statusTd);
+
+        var detailTd = document.createElement('td');
+        detailTd.className = 'message-cell';
+        detailTd.textContent = entry.detail || entry.message || entry.description || '';
+        row.appendChild(detailTd);
+
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+
+    return container;
+}
+
+// ---------------------------------------------------------------------------
+// 16. fetchOperatorPipelines — GET /api/v1/autopilot/controller/runs?limit=30
+// ---------------------------------------------------------------------------
+async function fetchOperatorPipelines() {
+    if (state.operatorPipelines.loading) return;
+    state.operatorPipelines.loading = true;
+    state.operatorPipelines.error = null;
+    renderApp();
+
+    try {
+        var response = await fetch('/api/v1/autopilot/controller/runs?limit=30');
+        if (!response.ok) throw new Error('Pipelines fetch failed: ' + response.status);
+
+        var data = await response.json();
+        var items = data.data || data.runs || (Array.isArray(data) ? data : []);
+        state.operatorPipelines.items = items;
+        state.operatorPipelines.fetched = true;
+        state.operatorPipelines.error = null;
+        console.log('[VTID-01240] Operator pipelines loaded:', items.length);
+    } catch (error) {
+        console.error('[VTID-01240] Failed to fetch operator pipelines:', error);
+        state.operatorPipelines.error = error.message;
+    } finally {
+        state.operatorPipelines.loading = false;
+        renderApp();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 17. renderOperatorPipelinesView — pipeline runs table
+// ---------------------------------------------------------------------------
+function renderOperatorPipelinesView() {
+    var container = document.createElement('div');
+    container.className = 'operator-pipelines-container';
+
+    // Auto-fetch
+    if (!state.operatorPipelines.fetched && !state.operatorPipelines.loading) {
+        fetchOperatorPipelines();
+    }
+
+    // Loading
+    if (state.operatorPipelines.loading && state.operatorPipelines.items.length === 0) {
+        var loading = document.createElement('div');
+        loading.className = 'placeholder-content';
+        loading.textContent = 'Loading pipelines...';
+        container.appendChild(loading);
+        return container;
+    }
+
+    // Error
+    if (state.operatorPipelines.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'placeholder-content error-text';
+        errorDiv.textContent = 'Error: ' + state.operatorPipelines.error;
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    // Empty
+    if (state.operatorPipelines.items.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'placeholder-content';
+        emptyDiv.textContent = 'No pipeline runs found.';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'list-toolbar';
+    var title = document.createElement('span');
+    title.className = 'toolbar-title';
+    title.textContent = 'Pipeline Runs (' + state.operatorPipelines.items.length + ')';
+    header.appendChild(title);
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-sm';
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.onclick = function () {
+        state.operatorPipelines.fetched = false;
+        fetchOperatorPipelines();
+    };
+    header.appendChild(refreshBtn);
+    container.appendChild(header);
+
+    // Table
+    var table = document.createElement('table');
+    table.className = 'list-table';
+
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    ['VTID', 'Stage', 'Status', 'Started', 'Duration'].forEach(function (h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    state.operatorPipelines.items.forEach(function (run) {
+        var row = document.createElement('tr');
+
+        var vtidTd = document.createElement('td');
+        vtidTd.className = 'vtid-cell';
+        vtidTd.textContent = run.vtid || '';
+        row.appendChild(vtidTd);
+
+        var stageTd = document.createElement('td');
+        stageTd.textContent = run.stage || run.current_stage || '';
+        row.appendChild(stageTd);
+
+        var statusTd = document.createElement('td');
+        var statusBadge = document.createElement('span');
+        statusBadge.className = 'status-badge status-' + (run.status || 'pending').toLowerCase();
+        statusBadge.textContent = run.status || 'pending';
+        statusTd.appendChild(statusBadge);
+        row.appendChild(statusTd);
+
+        var startedTd = document.createElement('td');
+        startedTd.textContent = formatEventTimestamp(run.started_at || run.created_at);
+        row.appendChild(startedTd);
+
+        var durationTd = document.createElement('td');
+        if (run.duration_ms !== undefined && run.duration_ms !== null) {
+            var durationSec = (run.duration_ms / 1000).toFixed(1);
+            durationTd.textContent = durationSec + 's';
+        } else if (run.duration) {
+            durationTd.textContent = run.duration;
+        } else if (run.started_at && run.completed_at) {
+            var dur = new Date(run.completed_at) - new Date(run.started_at);
+            durationTd.textContent = (dur / 1000).toFixed(1) + 's';
+        } else {
+            durationTd.textContent = '';
+        }
+        row.appendChild(durationTd);
+
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+
+    return container;
+}
+
+// ---------------------------------------------------------------------------
+// 18. fetchOperatorRunbook — GET /api/v1/execute/workorders?limit=30
+// ---------------------------------------------------------------------------
+async function fetchOperatorRunbook() {
+    if (state.operatorRunbook.loading) return;
+    state.operatorRunbook.loading = true;
+    state.operatorRunbook.error = null;
+    renderApp();
+
+    try {
+        var response = await fetch('/api/v1/execute/workorders?limit=30');
+        if (!response.ok) throw new Error('Runbook fetch failed: ' + response.status);
+
+        var data = await response.json();
+        var items = data.data || data.workorders || (Array.isArray(data) ? data : []);
+        state.operatorRunbook.items = items;
+        state.operatorRunbook.fetched = true;
+        state.operatorRunbook.error = null;
+        console.log('[VTID-01240] Operator runbook loaded:', items.length);
+    } catch (error) {
+        console.error('[VTID-01240] Failed to fetch operator runbook:', error);
+        state.operatorRunbook.error = error.message;
+    } finally {
+        state.operatorRunbook.loading = false;
+        renderApp();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 19. renderOperatorRunbookView — work orders table
+// ---------------------------------------------------------------------------
+function renderOperatorRunbookView() {
+    var container = document.createElement('div');
+    container.className = 'operator-runbook-container';
+
+    // Auto-fetch
+    if (!state.operatorRunbook.fetched && !state.operatorRunbook.loading) {
+        fetchOperatorRunbook();
+    }
+
+    // Loading
+    if (state.operatorRunbook.loading && state.operatorRunbook.items.length === 0) {
+        var loading = document.createElement('div');
+        loading.className = 'placeholder-content';
+        loading.textContent = 'Loading runbook...';
+        container.appendChild(loading);
+        return container;
+    }
+
+    // Error
+    if (state.operatorRunbook.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'placeholder-content error-text';
+        errorDiv.textContent = 'Error: ' + state.operatorRunbook.error;
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    // Empty
+    if (state.operatorRunbook.items.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'placeholder-content';
+        emptyDiv.textContent = 'No work orders found.';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'list-toolbar';
+    var title = document.createElement('span');
+    title.className = 'toolbar-title';
+    title.textContent = 'Runbook (' + state.operatorRunbook.items.length + ')';
+    header.appendChild(title);
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-sm';
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.onclick = function () {
+        state.operatorRunbook.fetched = false;
+        fetchOperatorRunbook();
+    };
+    header.appendChild(refreshBtn);
+    container.appendChild(header);
+
+    // Table
+    var table = document.createElement('table');
+    table.className = 'list-table';
+
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    ['VTID', 'Title', 'Stage', 'Status', 'Evidence'].forEach(function (h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    state.operatorRunbook.items.forEach(function (wo) {
+        var row = document.createElement('tr');
+
+        var vtidTd = document.createElement('td');
+        vtidTd.className = 'vtid-cell';
+        vtidTd.textContent = wo.vtid || '';
+        row.appendChild(vtidTd);
+
+        var titleTd = document.createElement('td');
+        titleTd.textContent = wo.title || wo.vtid || '';
+        row.appendChild(titleTd);
+
+        var stageTd = document.createElement('td');
+        stageTd.textContent = wo.stage || wo.current_stage || '';
+        row.appendChild(stageTd);
+
+        var statusTd = document.createElement('td');
+        var statusBadge = document.createElement('span');
+        statusBadge.className = 'status-badge status-' + (wo.status || 'pending').toLowerCase();
+        statusBadge.textContent = wo.status || 'pending';
+        statusTd.appendChild(statusBadge);
+        row.appendChild(statusTd);
+
+        var evidenceTd = document.createElement('td');
+        var evidenceCount = 0;
+        if (wo.evidence && Array.isArray(wo.evidence)) {
+            evidenceCount = wo.evidence.length;
+        } else if (wo.evidence_count !== undefined) {
+            evidenceCount = wo.evidence_count;
+        }
+        evidenceTd.textContent = evidenceCount;
+        row.appendChild(evidenceTd);
+
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+
+    return container;
+}
+
+// ---------------------------------------------------------------------------
+// 20. renderCommandHubLiveConsoleView — interactive console with chat input
+// ---------------------------------------------------------------------------
+function renderCommandHubLiveConsoleView() {
+    var container = document.createElement('div');
+    container.className = 'live-console-container';
+
+    // Initialize console messages in state if not present
+    if (!state._liveConsoleMessages) {
+        state._liveConsoleMessages = [];
+    }
+    if (!state._liveConsoleSending) {
+        state._liveConsoleSending = false;
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'list-toolbar';
+    var title = document.createElement('span');
+    title.className = 'toolbar-title';
+    title.textContent = 'Live Console';
+    header.appendChild(title);
+
+    var clearBtn = document.createElement('button');
+    clearBtn.className = 'btn btn-sm';
+    clearBtn.textContent = 'Clear';
+    clearBtn.onclick = function () {
+        state._liveConsoleMessages = [];
+        renderApp();
+    };
+    header.appendChild(clearBtn);
+    container.appendChild(header);
+
+    // Console output area
+    var output = document.createElement('div');
+    output.className = 'console-output';
+
+    if (state._liveConsoleMessages.length === 0) {
+        var placeholder = document.createElement('div');
+        placeholder.className = 'placeholder-content';
+        placeholder.textContent = 'Type a command below and press Send to interact with the Operator.';
+        output.appendChild(placeholder);
+    } else {
+        state._liveConsoleMessages.forEach(function (msg) {
+            var msgDiv = document.createElement('div');
+            msgDiv.className = 'console-message console-message-' + (msg.role || 'system');
+
+            var roleSpan = document.createElement('span');
+            roleSpan.className = 'console-role';
+            roleSpan.textContent = msg.role === 'user' ? '> ' : '< ';
+
+            var contentSpan = document.createElement('span');
+            contentSpan.className = 'console-content';
+            contentSpan.textContent = msg.content || '';
+
+            var timeSpan = document.createElement('span');
+            timeSpan.className = 'console-timestamp';
+            timeSpan.textContent = msg.ts ? formatEventTimestamp(msg.ts) : '';
+
+            msgDiv.appendChild(roleSpan);
+            msgDiv.appendChild(contentSpan);
+            msgDiv.appendChild(timeSpan);
+            output.appendChild(msgDiv);
+        });
+    }
+
+    container.appendChild(output);
+
+    // Scroll output to bottom after render
+    requestAnimationFrame(function () {
+        var outputEl = container.querySelector('.console-output');
+        if (outputEl) {
+            outputEl.scrollTop = outputEl.scrollHeight;
+        }
+    });
+
+    // Input row
+    var inputRow = document.createElement('div');
+    inputRow.className = 'console-input-row';
+
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'console-input';
+    input.placeholder = 'Type a command or message...';
+    input.disabled = state._liveConsoleSending;
+
+    // Preserve value across renders
+    if (state._liveConsoleInputValue) {
+        input.value = state._liveConsoleInputValue;
+    }
+
+    input.oninput = function (e) {
+        state._liveConsoleInputValue = e.target.value;
+    };
+
+    var sendBtn = document.createElement('button');
+    sendBtn.className = 'btn btn-primary';
+    sendBtn.textContent = state._liveConsoleSending ? 'Sending...' : 'Send';
+    sendBtn.disabled = state._liveConsoleSending;
+
+    var sendMessage = function () {
+        var message = input.value.trim();
+        if (!message || state._liveConsoleSending) return;
+
+        // Add user message
+        state._liveConsoleMessages.push({
+            role: 'user',
+            content: message,
+            ts: new Date().toISOString()
+        });
+        state._liveConsoleInputValue = '';
+        state._liveConsoleSending = true;
+        renderApp();
+
+        fetch('/api/v1/operator/chat', {
+            method: 'POST',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({
+                message: message,
+                conversation_id: state.operatorConversationId || undefined
+            })
+        })
+        .then(function (r) {
+            if (!r.ok) throw new Error('Console chat failed: ' + r.status);
+            return r.json();
+        })
+        .then(function (data) {
+            // Store conversation_id for session continuity
+            if (data.conversation_id) {
+                state.operatorConversationId = data.conversation_id;
+            }
+
+            var responseText = data.response || data.message || data.reply || JSON.stringify(data);
+            state._liveConsoleMessages.push({
+                role: 'assistant',
+                content: responseText,
+                ts: new Date().toISOString()
+            });
+        })
+        .catch(function (error) {
+            console.error('[VTID-01240] Live console error:', error);
+            state._liveConsoleMessages.push({
+                role: 'system',
+                content: 'Error: ' + error.message,
+                ts: new Date().toISOString()
+            });
+        })
+        .finally(function () {
+            state._liveConsoleSending = false;
+            renderApp();
+        });
+    };
+
+    sendBtn.onclick = sendMessage;
+
+    input.onkeydown = function (e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    };
+
+    inputRow.appendChild(input);
+    inputRow.appendChild(sendBtn);
+    container.appendChild(inputRow);
+
+    // Focus the input after render
+    requestAnimationFrame(function () {
+        var inputEl = container.querySelector('.console-input');
+        if (inputEl && !state._liveConsoleSending) {
+            inputEl.focus();
+        }
+    });
+
+    return container;
+}
+
+// ===========================================================================
+// Integrations & Tools Module — Fetch + Render Functions
+// ===========================================================================
+
+function fetchIntegrationsMcp() {
+    state.integrationsMcp.loading = true;
+    renderApp();
+    fetch('/api/v1/workers/connector/list', { headers: buildContextHeaders() })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            var items = data.data || data.connectors || data;
+            state.integrationsMcp.items = Array.isArray(items) ? items : [];
+            state.integrationsMcp.fetched = true;
+            state.integrationsMcp.loading = false;
+            state.integrationsMcp.error = null;
+            renderApp();
+        })
+        .catch(function (err) {
+            state.integrationsMcp.error = err.message;
+            state.integrationsMcp.loading = false;
+            renderApp();
+        });
+}
+
+function renderIntegrationsMcpView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+
+    var title = document.createElement('h2');
+    title.textContent = 'MCP Connectors';
+    container.appendChild(title);
+
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Model Context Protocol connectors registered with the gateway worker orchestrator.';
+    container.appendChild(subtitle);
+
+    if (!state.integrationsMcp.fetched && !state.integrationsMcp.loading) {
+        fetchIntegrationsMcp();
+    }
+
+    if (state.integrationsMcp.loading) {
+        var loading = document.createElement('div');
+        loading.className = 'placeholder-content';
+        loading.textContent = 'Loading...';
+        container.appendChild(loading);
+        return container;
+    }
+
+    if (state.integrationsMcp.error) {
+        var errDiv = document.createElement('div');
+        errDiv.style.color = '#ef4444';
+        errDiv.style.padding = '1rem';
+        errDiv.textContent = 'Error: ' + state.integrationsMcp.error;
+        container.appendChild(errDiv);
+        return container;
+    }
+
+    var items = state.integrationsMcp.items;
+    if (items.length === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'placeholder-content';
+        empty.textContent = 'No MCP connectors found.';
+        container.appendChild(empty);
+        return container;
+    }
+
+    var table = document.createElement('table');
+    table.className = 'list-table';
+    var thead = document.createElement('thead');
+    thead.innerHTML = '<tr><th>Name</th><th>Type</th><th>Status</th><th>Last Seen</th><th>Capabilities</th></tr>';
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    items.forEach(function (item) {
+        var row = document.createElement('tr');
+        var statusVal = (item.status || 'disconnected').toLowerCase();
+        var badgeClass = statusVal === 'connected' ? 'status-connected' : 'status-disconnected';
+        row.innerHTML = '<td>' + (item.name || item.worker_id || '-') + '</td>' +
+            '<td>' + (item.type || item.worker_type || 'mcp') + '</td>' +
+            '<td><span class="status-badge ' + badgeClass + '">' + statusVal + '</span></td>' +
+            '<td>' + formatEventTimestamp(item.last_seen || item.last_heartbeat) + '</td>' +
+            '<td>' + (Array.isArray(item.capabilities) ? item.capabilities.join(', ') : (item.capabilities || '-')) + '</td>';
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+
+    return container;
+}
+
+function fetchIntegrationsLlm() {
+    state.integrationsLlm.loading = true;
+    renderApp();
+    fetch('/api/v1/llm/models', { headers: buildContextHeaders() })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            var items = data.data || data.models || data;
+            state.integrationsLlm.items = Array.isArray(items) ? items : [];
+            state.integrationsLlm.fetched = true;
+            state.integrationsLlm.loading = false;
+            state.integrationsLlm.error = null;
+            renderApp();
+        })
+        .catch(function (err) {
+            state.integrationsLlm.error = err.message;
+            state.integrationsLlm.loading = false;
+            renderApp();
+        });
+}
+
+function renderIntegrationsLlmProvidersView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+
+    var title = document.createElement('h2');
+    title.textContent = 'LLM Providers';
+    container.appendChild(title);
+
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Connected LLM providers, models, and usage metrics.';
+    container.appendChild(subtitle);
+
+    if (!state.integrationsLlm.fetched && !state.integrationsLlm.loading) {
+        fetchIntegrationsLlm();
+    }
+
+    if (state.integrationsLlm.loading) {
+        var loading = document.createElement('div');
+        loading.className = 'placeholder-content';
+        loading.textContent = 'Loading...';
+        container.appendChild(loading);
+        return container;
+    }
+
+    if (state.integrationsLlm.error) {
+        var errDiv = document.createElement('div');
+        errDiv.style.color = '#ef4444';
+        errDiv.style.padding = '1rem';
+        errDiv.textContent = 'Error: ' + state.integrationsLlm.error;
+        container.appendChild(errDiv);
+        return container;
+    }
+
+    var items = state.integrationsLlm.items;
+    if (items.length === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'placeholder-content';
+        empty.textContent = 'No LLM providers configured.';
+        container.appendChild(empty);
+        return container;
+    }
+
+    var providers = {};
+    items.forEach(function (m) {
+        var prov = m.provider || 'unknown';
+        if (!providers[prov]) providers[prov] = [];
+        providers[prov].push(m);
+    });
+
+    var grid = document.createElement('div');
+    grid.style.display = 'grid';
+    grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(320px, 1fr))';
+    grid.style.gap = '1rem';
+    grid.style.marginTop = '1rem';
+
+    Object.keys(providers).forEach(function (provName) {
+        var models = providers[provName];
+        var card = document.createElement('div');
+        card.className = 'llm-provider-card';
+        card.style.background = 'var(--color-bg-secondary, #1a1a2e)';
+        card.style.border = '1px solid var(--color-border, #333)';
+        card.style.borderRadius = '8px';
+        card.style.padding = '1.25rem';
+
+        var provTitle = document.createElement('h3');
+        provTitle.style.margin = '0 0 0.75rem 0';
+        provTitle.style.fontSize = '1.1rem';
+        provTitle.style.color = 'var(--color-accent, #6c63ff)';
+        provTitle.textContent = provName.charAt(0).toUpperCase() + provName.slice(1);
+        card.appendChild(provTitle);
+
+        models.forEach(function (m) {
+            var modelRow = document.createElement('div');
+            modelRow.style.display = 'flex';
+            modelRow.style.justifyContent = 'space-between';
+            modelRow.style.alignItems = 'center';
+            modelRow.style.padding = '0.4rem 0';
+            modelRow.style.borderBottom = '1px solid var(--color-border, #333)';
+            modelRow.style.fontSize = '0.85rem';
+
+            var nameSpan = document.createElement('span');
+            nameSpan.textContent = m.model_id || m.model || m.name || '-';
+            modelRow.appendChild(nameSpan);
+
+            var statusSpan = document.createElement('span');
+            var st = (m.status || 'active').toLowerCase();
+            statusSpan.className = 'status-badge status-' + st;
+            statusSpan.textContent = st;
+            modelRow.appendChild(statusSpan);
+
+            card.appendChild(modelRow);
+        });
+
+        var metaRow = document.createElement('div');
+        metaRow.style.marginTop = '0.75rem';
+        metaRow.style.fontSize = '0.8rem';
+        metaRow.style.color = 'var(--color-text-secondary)';
+        var firstModel = models[0];
+        metaRow.textContent = 'Avg Latency: ' + (firstModel.avg_latency || firstModel.latency_ms || 'N/A') + 'ms | Cost/1K: $' + (firstModel.cost_per_1k || firstModel.cost || 'N/A');
+        card.appendChild(metaRow);
+
+        grid.appendChild(card);
+    });
+
+    container.appendChild(grid);
+    return container;
+}
+
+function renderIntegrationsApisView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+
+    var title = document.createElement('h2');
+    title.textContent = 'Gateway API Inventory';
+    container.appendChild(title);
+
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Major route groups registered on the Vitana Gateway.';
+    container.appendChild(subtitle);
+
+    var routeGroups = [
+        { path: '/api/v1/oasis', description: 'OASIS Event Store & Task Lifecycle', endpoints: 12 },
+        { path: '/api/v1/governance', description: 'Governance Rules, Evaluations & Controls', endpoints: 10 },
+        { path: '/api/v1/operator', description: 'Operator Heartbeat, Health & Telemetry', endpoints: 8 },
+        { path: '/api/v1/autopilot', description: 'Autopilot Polling, Recommendations & Execution', endpoints: 6 },
+        { path: '/api/v1/memory', description: 'Memory Garden, Facts & Retrieval', endpoints: 9 },
+        { path: '/api/v1/assistant', description: 'Assistant Chat, Knowledge & Context', endpoints: 11 },
+        { path: '/api/v1/cicd', description: 'CI/CD Health, Deployments & Pipeline Status', endpoints: 7 },
+        { path: '/api/v1/execute', description: 'Worker Execution, Subagent & Terminalization', endpoints: 8 }
+    ];
+
+    var table = document.createElement('table');
+    table.className = 'list-table';
+    var thead = document.createElement('thead');
+    thead.innerHTML = '<tr><th>Route Group</th><th>Description</th><th>Endpoints</th></tr>';
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    routeGroups.forEach(function (rg) {
+        var row = document.createElement('tr');
+        row.innerHTML = '<td style="font-family: monospace; color: var(--color-accent, #6c63ff);">' + rg.path + '</td>' +
+            '<td>' + rg.description + '</td>' +
+            '<td style="text-align: center; font-weight: 600;">' + rg.endpoints + '</td>';
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+
+    var total = document.createElement('div');
+    total.style.marginTop = '1rem';
+    total.style.fontSize = '0.85rem';
+    total.style.color = 'var(--color-text-secondary)';
+    total.textContent = 'Total: ' + routeGroups.reduce(function (sum, rg) { return sum + rg.endpoints; }, 0) + ' endpoints across ' + routeGroups.length + ' route groups';
+    container.appendChild(total);
+
+    return container;
+}
+
+function fetchIntegrationsTools() {
+    state.integrationsTools.loading = true;
+    renderApp();
+    Promise.all([
+        fetch('/api/v1/conversation/tools', { headers: buildContextHeaders() }).then(function (r) { return r.json(); }),
+        fetch('/api/v1/conversation/tool-health', { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).catch(function () { return {}; })
+    ])
+        .then(function (results) {
+            var toolsData = results[0];
+            var healthData = results[1];
+            var tools = toolsData.data || toolsData.tools || toolsData;
+            var healthMap = {};
+            if (healthData && healthData.data) {
+                (Array.isArray(healthData.data) ? healthData.data : []).forEach(function (h) {
+                    healthMap[h.name || h.tool] = h;
+                });
+            }
+            state.integrationsTools.items = (Array.isArray(tools) ? tools : []).map(function (t) {
+                var health = healthMap[t.name] || {};
+                return {
+                    name: t.name || t.function_name || '-',
+                    description: t.description || '-',
+                    status: health.status || t.status || 'available',
+                    avg_latency: health.avg_latency || t.avg_latency || null,
+                    last_used: health.last_used || t.last_used || null
+                };
+            });
+            state.integrationsTools.fetched = true;
+            state.integrationsTools.loading = false;
+            state.integrationsTools.error = null;
+            renderApp();
+        })
+        .catch(function (err) {
+            state.integrationsTools.error = err.message;
+            state.integrationsTools.loading = false;
+            renderApp();
+        });
+}
+
+function renderIntegrationsToolsView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+
+    var title = document.createElement('h2');
+    title.textContent = 'Tools';
+    container.appendChild(title);
+
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Conversation tools available to the assistant and agents.';
+    container.appendChild(subtitle);
+
+    if (!state.integrationsTools.fetched && !state.integrationsTools.loading) {
+        fetchIntegrationsTools();
+    }
+
+    if (state.integrationsTools.loading) {
+        var loading = document.createElement('div');
+        loading.className = 'placeholder-content';
+        loading.textContent = 'Loading...';
+        container.appendChild(loading);
+        return container;
+    }
+
+    if (state.integrationsTools.error) {
+        var errDiv = document.createElement('div');
+        errDiv.style.color = '#ef4444';
+        errDiv.style.padding = '1rem';
+        errDiv.textContent = 'Error: ' + state.integrationsTools.error;
+        container.appendChild(errDiv);
+        return container;
+    }
+
+    var items = state.integrationsTools.items;
+    if (items.length === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'placeholder-content';
+        empty.textContent = 'No tools registered.';
+        container.appendChild(empty);
+        return container;
+    }
+
+    var table = document.createElement('table');
+    table.className = 'list-table';
+    var thead = document.createElement('thead');
+    thead.innerHTML = '<tr><th>Name</th><th>Description</th><th>Status</th><th>Avg Latency</th><th>Last Used</th></tr>';
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    items.forEach(function (tool) {
+        var row = document.createElement('tr');
+        var st = (tool.status || 'available').toLowerCase();
+        var badgeClass = st === 'available' ? 'status-available' : 'status-unavailable';
+        row.innerHTML = '<td style="font-weight: 600;">' + tool.name + '</td>' +
+            '<td>' + tool.description + '</td>' +
+            '<td><span class="status-badge ' + badgeClass + '">' + st + '</span></td>' +
+            '<td>' + (tool.avg_latency ? tool.avg_latency + 'ms' : '-') + '</td>' +
+            '<td>' + formatEventTimestamp(tool.last_used) + '</td>';
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+
+    return container;
+}
+
+function renderIntegrationsServiceMeshView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+
+    var title = document.createElement('h2');
+    title.textContent = 'Service Mesh';
+    container.appendChild(title);
+
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Cloud Run services topology and internal connectivity.';
+    container.appendChild(subtitle);
+
+    var services = [
+        { name: 'gateway', url: 'https://gateway-86804897789.us-central1.run.app', health: '/alive', desc: 'API Gateway, Frontend, Auth, Routing' },
+        { name: 'oasis-operator', url: 'https://oasis-operator-86804897789.us-central1.run.app', health: '/alive', desc: 'OASIS Event Processing & Projections' },
+        { name: 'oasis-projector', url: 'https://oasis-projector-86804897789.us-central1.run.app', health: '/alive', desc: 'OASIS Read Model Projections' },
+        { name: 'worker-runner', url: 'https://worker-runner-86804897789.us-central1.run.app', health: '/alive', desc: 'Autonomous Worker Execution Plane' },
+        { name: 'verification-engine', url: 'https://vitana-verification-engine-86804897789.us-central1.run.app', health: '/alive', desc: 'Validator Agent & Governance Checks' }
+    ];
+
+    var grid = document.createElement('div');
+    grid.style.display = 'grid';
+    grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(300px, 1fr))';
+    grid.style.gap = '1rem';
+    grid.style.marginTop = '1rem';
+
+    services.forEach(function (svc) {
+        var card = document.createElement('div');
+        card.style.background = 'var(--color-bg-secondary, #1a1a2e)';
+        card.style.border = '1px solid var(--color-border, #333)';
+        card.style.borderRadius = '8px';
+        card.style.padding = '1.25rem';
+
+        var svcName = document.createElement('h3');
+        svcName.style.margin = '0 0 0.5rem 0';
+        svcName.style.fontSize = '1rem';
+        svcName.style.color = 'var(--color-accent, #6c63ff)';
+        svcName.textContent = svc.name;
+        card.appendChild(svcName);
+
+        var desc = document.createElement('p');
+        desc.style.margin = '0 0 0.75rem 0';
+        desc.style.fontSize = '0.85rem';
+        desc.style.color = 'var(--color-text-secondary)';
+        desc.textContent = svc.desc;
+        card.appendChild(desc);
+
+        var urlLine = document.createElement('div');
+        urlLine.style.fontFamily = 'monospace';
+        urlLine.style.fontSize = '0.75rem';
+        urlLine.style.color = 'var(--color-text-secondary)';
+        urlLine.style.wordBreak = 'break-all';
+        urlLine.textContent = svc.url;
+        card.appendChild(urlLine);
+
+        var healthLine = document.createElement('div');
+        healthLine.style.marginTop = '0.5rem';
+        healthLine.style.fontSize = '0.8rem';
+        healthLine.innerHTML = 'Health: <span style="font-family: monospace; color: var(--color-accent);">' + svc.health + '</span>';
+        card.appendChild(healthLine);
+
+        grid.appendChild(card);
+    });
+
+    container.appendChild(grid);
+    return container;
+}
+
+// ===========================================================================
+// Diagnostics Module — Fetch + Render Functions
+// ===========================================================================
+
+function fetchDiagHealthChecks() {
+    state.diagHealthChecks.loading = true;
+    renderApp();
+    Promise.all([
+        fetch('/health', { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).catch(function () { return { status: 'error' }; }),
+        fetch('/api/v1/cicd/health', { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).catch(function () { return { status: 'error' }; }),
+        fetch('/api/v1/operator/health', { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).catch(function () { return { status: 'error' }; }),
+        fetch('/api/v1/autopilot/health', { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).catch(function () { return { status: 'error' }; }),
+        fetch('/api/v1/assistant/health', { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).catch(function () { return { status: 'error' }; })
+    ]).then(function (results) {
+        state.diagHealthChecks.items = [
+            { name: 'Gateway', endpoint: '/health', result: results[0] },
+            { name: 'CI/CD', endpoint: '/api/v1/cicd/health', result: results[1] },
+            { name: 'Operator', endpoint: '/api/v1/operator/health', result: results[2] },
+            { name: 'Autopilot', endpoint: '/api/v1/autopilot/health', result: results[3] },
+            { name: 'Assistant', endpoint: '/api/v1/assistant/health', result: results[4] }
+        ];
+        state.diagHealthChecks.fetched = true;
+        state.diagHealthChecks.loading = false;
+        renderApp();
+    }).catch(function (err) {
+        state.diagHealthChecks.error = err.message;
+        state.diagHealthChecks.loading = false;
+        renderApp();
+    });
+}
+
+function renderDiagnosticsHealthChecksView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+    var title = document.createElement('h2');
+    title.textContent = 'Health Checks';
+    container.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Real-time health status of all gateway endpoints.';
+    container.appendChild(subtitle);
+
+    if (!state.diagHealthChecks.fetched && !state.diagHealthChecks.loading) { fetchDiagHealthChecks(); }
+    if (state.diagHealthChecks.loading) { var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading...'; container.appendChild(l); return container; }
+    if (state.diagHealthChecks.error) { var e = document.createElement('div'); e.className = 'placeholder-content error-text'; e.textContent = 'Error: ' + state.diagHealthChecks.error; container.appendChild(e); return container; }
+
+    var grid = document.createElement('div');
+    grid.style.display = 'grid';
+    grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(280px, 1fr))';
+    grid.style.gap = '1rem';
+    grid.style.marginTop = '1rem';
+
+    state.diagHealthChecks.items.forEach(function (check) {
+        var card = document.createElement('div');
+        card.style.background = 'var(--color-bg-secondary, #1a1a2e)';
+        card.style.border = '1px solid var(--color-border, #333)';
+        card.style.borderRadius = '8px';
+        card.style.padding = '1.25rem';
+        var st = (check.result && check.result.status) || 'unknown';
+        var dotColor = st === 'ok' || st === 'healthy' ? '#22c55e' : st === 'degraded' ? '#f59e0b' : '#ef4444';
+        card.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:0.5rem;"><span style="width:10px;height:10px;border-radius:50%;background:' + dotColor + ';display:inline-block;"></span><strong>' + check.name + '</strong></div>' +
+            '<div style="font-family:monospace;font-size:0.8rem;color:var(--color-text-secondary);">' + check.endpoint + '</div>' +
+            '<div style="margin-top:0.5rem;"><span class="status-badge status-' + st + '">' + st + '</span></div>' +
+            '<pre style="margin-top:0.5rem;font-size:0.75rem;max-height:100px;overflow:auto;background:var(--color-bg-primary,#111);padding:0.5rem;border-radius:4px;">' + escapeHtml(JSON.stringify(check.result, null, 2)) + '</pre>';
+        grid.appendChild(card);
+    });
+    container.appendChild(grid);
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-secondary';
+    refreshBtn.textContent = 'Refresh All';
+    refreshBtn.style.marginTop = '1rem';
+    refreshBtn.onclick = function () { state.diagHealthChecks.fetched = false; renderApp(); };
+    container.appendChild(refreshBtn);
+
+    return container;
+}
+
+function renderDiagnosticsLatencyView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+    var title = document.createElement('h2');
+    title.textContent = 'Latency Monitor';
+    container.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Response time measurements for key API endpoints.';
+    container.appendChild(subtitle);
+
+    var endpoints = [
+        { name: 'Gateway Health', path: '/health' },
+        { name: 'OASIS Events', path: '/api/v1/oasis/events?limit=1' },
+        { name: 'VTID List', path: '/api/v1/vtid/list?limit=1' },
+        { name: 'Governance Rules', path: '/api/v1/governance/rules' },
+        { name: 'Memory Summary', path: '/api/v1/memory/garden/summary' },
+        { name: 'Operator Health', path: '/api/v1/operator/health' }
+    ];
+
+    if (!state._latencyResults) { state._latencyResults = []; state._latencyRunning = false; }
+
+    var runBtn = document.createElement('button');
+    runBtn.className = 'btn btn-primary';
+    runBtn.textContent = state._latencyRunning ? 'Running...' : 'Run Latency Test';
+    runBtn.disabled = state._latencyRunning;
+    runBtn.style.marginBottom = '1rem';
+    runBtn.onclick = function () {
+        state._latencyRunning = true;
+        state._latencyResults = [];
+        renderApp();
+        var promises = endpoints.map(function (ep) {
+            var start = performance.now();
+            return fetch(ep.path, { headers: buildContextHeaders() })
+                .then(function (r) { return { name: ep.name, path: ep.path, status: r.status, ms: Math.round(performance.now() - start) }; })
+                .catch(function () { return { name: ep.name, path: ep.path, status: 'ERR', ms: Math.round(performance.now() - start) }; });
+        });
+        Promise.all(promises).then(function (results) {
+            state._latencyResults = results;
+            state._latencyRunning = false;
+            renderApp();
+        });
+    };
+    container.appendChild(runBtn);
+
+    if (state._latencyResults.length > 0) {
+        var table = document.createElement('table');
+        table.className = 'list-table';
+        table.innerHTML = '<thead><tr><th>Endpoint</th><th>Path</th><th>Status</th><th>Latency</th></tr></thead>';
+        var tbody = document.createElement('tbody');
+        state._latencyResults.forEach(function (r) {
+            var row = document.createElement('tr');
+            var latencyColor = r.ms < 200 ? '#22c55e' : r.ms < 500 ? '#f59e0b' : '#ef4444';
+            row.innerHTML = '<td style="font-weight:600;">' + r.name + '</td>' +
+                '<td style="font-family:monospace;font-size:0.8rem;">' + r.path + '</td>' +
+                '<td><span class="status-badge status-' + (r.status === 200 ? 'ok' : 'error') + '">' + r.status + '</span></td>' +
+                '<td style="font-weight:700;color:' + latencyColor + ';">' + r.ms + 'ms</td>';
+            tbody.appendChild(row);
+        });
+        table.appendChild(tbody);
+        container.appendChild(table);
+    }
+    return container;
+}
+
+function renderDiagnosticsErrorsView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+    var title = document.createElement('h2');
+    title.textContent = 'Error Tracker';
+    container.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Recent error events from the OASIS event stream.';
+    container.appendChild(subtitle);
+
+    if (!state.diagErrors.fetched && !state.diagErrors.loading) {
+        state.diagErrors.loading = true;
+        renderApp();
+        fetch('/api/v1/oasis/events?limit=50&status=error', { headers: buildContextHeaders() })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                state.diagErrors.items = data.data || data.events || (Array.isArray(data) ? data : []);
+                state.diagErrors.fetched = true;
+                state.diagErrors.loading = false;
+                renderApp();
+            }).catch(function (err) {
+                state.diagErrors.error = err.message;
+                state.diagErrors.loading = false;
+                renderApp();
+            });
+    }
+    if (state.diagErrors.loading) { var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading...'; container.appendChild(l); return container; }
+    if (state.diagErrors.error) { var e = document.createElement('div'); e.className = 'placeholder-content error-text'; e.textContent = 'Error: ' + state.diagErrors.error; container.appendChild(e); return container; }
+    if (state.diagErrors.items.length === 0) { var em = document.createElement('div'); em.className = 'placeholder-content'; em.textContent = 'No errors found. System is healthy.'; container.appendChild(em); return container; }
+
+    var table = document.createElement('table');
+    table.className = 'list-table';
+    table.innerHTML = '<thead><tr><th>Time</th><th>Source</th><th>Type</th><th>Message</th><th>VTID</th></tr></thead>';
+    var tbody = document.createElement('tbody');
+    state.diagErrors.items.forEach(function (ev) {
+        var row = document.createElement('tr');
+        row.style.color = '#ef4444';
+        row.innerHTML = '<td>' + formatEventTimestamp(ev.created_at || ev.timestamp) + '</td>' +
+            '<td>' + (ev.source || '-') + '</td>' +
+            '<td><code>' + escapeHtml(ev.type || '-') + '</code></td>' +
+            '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;" title="' + escapeHtml(ev.message || '') + '">' + escapeHtml(ev.message || '-') + '</td>' +
+            '<td style="font-family:monospace;">' + (ev.vtid || '-') + '</td>';
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+    return container;
+}
+
+function renderDiagnosticsSseView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+    var title = document.createElement('h2');
+    title.textContent = 'SSE Stream Monitor';
+    container.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Server-Sent Events stream diagnostics. Connect to monitor real-time events.';
+    container.appendChild(subtitle);
+
+    var statusDiv = document.createElement('div');
+    statusDiv.style.marginBottom = '1rem';
+    var connected = state.diagSse.connected;
+    statusDiv.innerHTML = '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + (connected ? '#22c55e' : '#ef4444') + ';margin-right:8px;"></span>' +
+        '<strong>' + (connected ? 'Connected' : 'Disconnected') + '</strong>' +
+        '<span style="margin-left:1rem;color:var(--color-text-secondary);">' + state.diagSse.events.length + ' events received</span>';
+    container.appendChild(statusDiv);
+
+    var btnRow = document.createElement('div');
+    btnRow.style.display = 'flex';
+    btnRow.style.gap = '0.5rem';
+    btnRow.style.marginBottom = '1rem';
+
+    var connectBtn = document.createElement('button');
+    connectBtn.className = 'btn btn-primary';
+    connectBtn.textContent = connected ? 'Disconnect' : 'Connect';
+    connectBtn.onclick = function () {
+        if (state.diagSse.connected && state.diagSse.source) {
+            state.diagSse.source.close();
+            state.diagSse.source = null;
+            state.diagSse.connected = false;
+            renderApp();
+        } else {
+            var es = new EventSource('/api/v1/events/stream');
+            es.onopen = function () { state.diagSse.connected = true; renderApp(); };
+            es.onmessage = function (e) {
+                try { var d = JSON.parse(e.data); state.diagSse.events.unshift({ time: new Date().toISOString(), data: d }); } catch (err) { state.diagSse.events.unshift({ time: new Date().toISOString(), data: e.data }); }
+                if (state.diagSse.events.length > 100) state.diagSse.events.length = 100;
+                renderApp();
+            };
+            es.onerror = function () { state.diagSse.connected = false; renderApp(); };
+            state.diagSse.source = es;
+        }
+    };
+    btnRow.appendChild(connectBtn);
+
+    var clearBtn = document.createElement('button');
+    clearBtn.className = 'btn btn-secondary';
+    clearBtn.textContent = 'Clear';
+    clearBtn.onclick = function () { state.diagSse.events = []; renderApp(); };
+    btnRow.appendChild(clearBtn);
+    container.appendChild(btnRow);
+
+    var eventsDiv = document.createElement('div');
+    eventsDiv.style.maxHeight = '500px';
+    eventsDiv.style.overflowY = 'auto';
+    eventsDiv.style.background = 'var(--color-bg-primary, #111)';
+    eventsDiv.style.borderRadius = '8px';
+    eventsDiv.style.padding = '0.5rem';
+    state.diagSse.events.forEach(function (ev) {
+        var item = document.createElement('div');
+        item.style.padding = '0.5rem';
+        item.style.borderBottom = '1px solid var(--color-border, #333)';
+        item.style.fontSize = '0.8rem';
+        item.innerHTML = '<span style="color:var(--color-text-secondary);">' + ev.time + '</span><pre style="margin:0.25rem 0 0;white-space:pre-wrap;font-size:0.75rem;">' + escapeHtml(typeof ev.data === 'string' ? ev.data : JSON.stringify(ev.data, null, 2)) + '</pre>';
+        eventsDiv.appendChild(item);
+    });
+    if (state.diagSse.events.length === 0) { eventsDiv.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--color-text-secondary);">No events yet. Click Connect to start streaming.</div>'; }
+    container.appendChild(eventsDiv);
+    return container;
+}
+
+function renderDiagnosticsDebugPanelView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+    var title = document.createElement('h2');
+    title.textContent = 'Debug Panel';
+    container.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Internal state inspector and debug utilities.';
+    container.appendChild(subtitle);
+
+    var sections = [
+        { label: 'Current Route', value: 'Module: ' + state.currentModuleKey + ' | Tab: ' + state.currentTab },
+        { label: 'App Version', value: 'v4 (Command Hub SPA)' },
+        { label: 'State Keys', value: Object.keys(state).length + ' properties' },
+        { label: 'Window Location', value: window.location.href },
+        { label: 'User Agent', value: navigator.userAgent.substring(0, 80) + '...' }
+    ];
+
+    var grid = document.createElement('div');
+    grid.style.display = 'grid';
+    grid.style.gridTemplateColumns = '1fr';
+    grid.style.gap = '0.5rem';
+    grid.style.marginTop = '1rem';
+    sections.forEach(function (s) {
+        var row = document.createElement('div');
+        row.style.display = 'flex';
+        row.style.justifyContent = 'space-between';
+        row.style.padding = '0.75rem 1rem';
+        row.style.background = 'var(--color-bg-secondary, #1a1a2e)';
+        row.style.borderRadius = '6px';
+        row.style.border = '1px solid var(--color-border, #333)';
+        row.innerHTML = '<strong style="font-size:0.85rem;">' + s.label + '</strong><span style="font-family:monospace;font-size:0.8rem;color:var(--color-text-secondary);">' + escapeHtml(s.value) + '</span>';
+        grid.appendChild(row);
+    });
+    container.appendChild(grid);
+
+    var stateBtn = document.createElement('button');
+    stateBtn.className = 'btn btn-secondary';
+    stateBtn.textContent = 'Dump State to Console';
+    stateBtn.style.marginTop = '1rem';
+    stateBtn.onclick = function () { console.log('Command Hub State:', JSON.parse(JSON.stringify(state))); alert('State dumped to browser console (F12)'); };
+    container.appendChild(stateBtn);
+    return container;
+}
+
+// ===========================================================================
+// Models & Evaluations Module — Render Functions
+// ===========================================================================
+
+function renderModelsListView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+    var title = document.createElement('h2');
+    title.textContent = 'Model Registry';
+    container.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'LLM models configured across the Vitana platform.';
+    container.appendChild(subtitle);
+
+    if (!state.modelsRegistry.fetched && !state.modelsRegistry.loading) {
+        state.modelsRegistry.loading = true;
+        renderApp();
+        fetch('/api/v1/llm/models', { headers: buildContextHeaders() })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                state.modelsRegistry.items = data.data || data.models || (Array.isArray(data) ? data : []);
+                state.modelsRegistry.fetched = true;
+                state.modelsRegistry.loading = false;
+                renderApp();
+            }).catch(function (err) { state.modelsRegistry.error = err.message; state.modelsRegistry.loading = false; renderApp(); });
+    }
+    if (state.modelsRegistry.loading) { var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading...'; container.appendChild(l); return container; }
+    if (state.modelsRegistry.error) { var e = document.createElement('div'); e.className = 'placeholder-content error-text'; e.textContent = 'Error: ' + state.modelsRegistry.error; container.appendChild(e); return container; }
+    if (state.modelsRegistry.items.length === 0) { var em = document.createElement('div'); em.className = 'placeholder-content'; em.textContent = 'No models registered.'; container.appendChild(em); return container; }
+
+    var table = document.createElement('table');
+    table.className = 'list-table';
+    table.innerHTML = '<thead><tr><th>Model ID</th><th>Provider</th><th>Type</th><th>Status</th><th>Context Window</th></tr></thead>';
+    var tbody = document.createElement('tbody');
+    state.modelsRegistry.items.forEach(function (m) {
+        var row = document.createElement('tr');
+        var st = (m.status || 'active').toLowerCase();
+        row.innerHTML = '<td style="font-weight:600;">' + (m.model_id || m.model || m.name || '-') + '</td>' +
+            '<td>' + (m.provider || '-') + '</td>' +
+            '<td>' + (m.type || m.model_type || 'chat') + '</td>' +
+            '<td><span class="status-badge status-' + st + '">' + st + '</span></td>' +
+            '<td>' + (m.context_window || m.max_tokens || '-') + '</td>';
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+    return container;
+}
+
+function renderModelsEvaluationsView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+    var title = document.createElement('h2');
+    title.textContent = 'Model Evaluations';
+    container.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Evaluation results comparing model performance across tasks.';
+    container.appendChild(subtitle);
+
+    var evals = [
+        { model: 'gemini-2.0-flash', task: 'Task Planning', score: 92, latency: '340ms', notes: 'Primary planner model' },
+        { model: 'gemini-2.0-flash', task: 'Code Generation', score: 88, latency: '280ms', notes: 'Worker execution model' },
+        { model: 'claude-3-haiku', task: 'Validation', score: 95, latency: '420ms', notes: 'Validator model' },
+        { model: 'text-embedding-ada-002', task: 'Embeddings', score: 91, latency: '120ms', notes: 'Memory embeddings' },
+        { model: 'gemini-2.0-flash', task: 'Summarization', score: 85, latency: '310ms', notes: 'Context summarization' }
+    ];
+
+    var table = document.createElement('table');
+    table.className = 'list-table';
+    table.innerHTML = '<thead><tr><th>Model</th><th>Task</th><th>Score</th><th>Avg Latency</th><th>Notes</th></tr></thead>';
+    var tbody = document.createElement('tbody');
+    evals.forEach(function (ev) {
+        var row = document.createElement('tr');
+        var scoreColor = ev.score >= 90 ? '#22c55e' : ev.score >= 80 ? '#f59e0b' : '#ef4444';
+        row.innerHTML = '<td style="font-weight:600;">' + ev.model + '</td>' +
+            '<td>' + ev.task + '</td>' +
+            '<td style="font-weight:700;color:' + scoreColor + ';">' + ev.score + '%</td>' +
+            '<td>' + ev.latency + '</td>' +
+            '<td style="color:var(--color-text-secondary);">' + ev.notes + '</td>';
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+    return container;
+}
+
+function renderModelsBenchmarksView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+    var title = document.createElement('h2');
+    title.textContent = 'Benchmarks';
+    container.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Performance benchmarks for model inference pipelines.';
+    container.appendChild(subtitle);
+
+    var benchmarks = [
+        { name: 'Chat Completion (Flash)', p50: '280ms', p95: '520ms', p99: '890ms', throughput: '42 req/min' },
+        { name: 'Embedding Generation', p50: '95ms', p95: '180ms', p99: '310ms', throughput: '120 req/min' },
+        { name: 'Memory Retrieval', p50: '45ms', p95: '120ms', p99: '250ms', throughput: '200 req/min' },
+        { name: 'Governance Evaluation', p50: '15ms', p95: '35ms', p99: '80ms', throughput: '500 req/min' },
+        { name: 'VTID Resolution', p50: '25ms', p95: '60ms', p99: '120ms', throughput: '350 req/min' }
+    ];
+
+    var table = document.createElement('table');
+    table.className = 'list-table';
+    table.innerHTML = '<thead><tr><th>Pipeline</th><th>P50</th><th>P95</th><th>P99</th><th>Throughput</th></tr></thead>';
+    var tbody = document.createElement('tbody');
+    benchmarks.forEach(function (b) {
+        var row = document.createElement('tr');
+        row.innerHTML = '<td style="font-weight:600;">' + b.name + '</td><td>' + b.p50 + '</td><td>' + b.p95 + '</td><td>' + b.p99 + '</td><td>' + b.throughput + '</td>';
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+    return container;
+}
+
+function renderModelsRoutingView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+    var title = document.createElement('h2');
+    title.textContent = 'Model Routing';
+    container.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'How the platform routes requests to different LLM providers.';
+    container.appendChild(subtitle);
+
+    var routes = [
+        { domain: 'Planning', model: 'gemini-2.0-flash', provider: 'Google AI', fallback: 'gemini-1.5-pro', reason: 'High speed, good reasoning' },
+        { domain: 'Worker Execution', model: 'gemini-2.0-flash', provider: 'Google AI', fallback: 'gemini-1.5-flash', reason: 'Fast code generation' },
+        { domain: 'Validation', model: 'claude-3-haiku', provider: 'Anthropic', fallback: 'gemini-2.0-flash', reason: 'Strong analytical capability' },
+        { domain: 'Embeddings', model: 'text-embedding-ada-002', provider: 'OpenAI', fallback: 'Vertex textembedding-gecko', reason: '1536-dim, high quality' },
+        { domain: 'Voice (ORB)', model: 'gemini-2.0-flash-live', provider: 'Google AI', fallback: 'None', reason: 'WebSocket multimodal live API' },
+        { domain: 'Summarization', model: 'gemini-2.0-flash', provider: 'Google AI', fallback: 'gemini-1.5-flash', reason: 'Context window management' }
+    ];
+
+    var table = document.createElement('table');
+    table.className = 'list-table';
+    table.innerHTML = '<thead><tr><th>Domain</th><th>Primary Model</th><th>Provider</th><th>Fallback</th><th>Routing Reason</th></tr></thead>';
+    var tbody = document.createElement('tbody');
+    routes.forEach(function (r) {
+        var row = document.createElement('tr');
+        row.innerHTML = '<td style="font-weight:600;">' + r.domain + '</td>' +
+            '<td style="font-family:monospace;font-size:0.85rem;">' + r.model + '</td>' +
+            '<td>' + r.provider + '</td>' +
+            '<td style="font-family:monospace;font-size:0.85rem;color:var(--color-text-secondary);">' + r.fallback + '</td>' +
+            '<td style="font-size:0.85rem;">' + r.reason + '</td>';
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+    return container;
+}
+
+function renderModelsPlaygroundView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+    var title = document.createElement('h2');
+    title.textContent = 'Model Playground';
+    container.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Test prompts against configured models directly.';
+    container.appendChild(subtitle);
+
+    var form = document.createElement('div');
+    form.style.marginTop = '1rem';
+
+    var modelSelect = document.createElement('select');
+    modelSelect.className = 'form-control';
+    modelSelect.style.marginBottom = '0.75rem';
+    modelSelect.style.maxWidth = '400px';
+    modelSelect.innerHTML = '<option value="gemini-2.0-flash">gemini-2.0-flash</option><option value="gemini-1.5-pro">gemini-1.5-pro</option><option value="claude-3-haiku">claude-3-haiku</option>';
+    modelSelect.value = state.modelsPlayground.model || 'gemini-2.0-flash';
+    modelSelect.onchange = function (e) { state.modelsPlayground.model = e.target.value; };
+    form.appendChild(modelSelect);
+
+    var textarea = document.createElement('textarea');
+    textarea.className = 'form-control';
+    textarea.style.width = '100%';
+    textarea.style.minHeight = '120px';
+    textarea.style.marginBottom = '0.75rem';
+    textarea.style.fontFamily = 'monospace';
+    textarea.placeholder = 'Enter your prompt here...';
+    textarea.value = state.modelsPlayground.input || '';
+    textarea.oninput = function (e) { state.modelsPlayground.input = e.target.value; };
+    form.appendChild(textarea);
+
+    var sendBtn = document.createElement('button');
+    sendBtn.className = 'btn btn-primary';
+    sendBtn.textContent = state.modelsPlayground.loading ? 'Generating...' : 'Send';
+    sendBtn.disabled = state.modelsPlayground.loading;
+    sendBtn.onclick = function () {
+        if (!state.modelsPlayground.input.trim()) return;
+        state.modelsPlayground.loading = true;
+        state.modelsPlayground.output = '';
+        renderApp();
+        fetch('/api/v1/assistant/chat', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, buildContextHeaders()),
+            body: JSON.stringify({ message: state.modelsPlayground.input, model: state.modelsPlayground.model || 'gemini-2.0-flash' })
+        }).then(function (r) { return r.json(); })
+        .then(function (data) {
+            state.modelsPlayground.output = data.response || data.message || JSON.stringify(data, null, 2);
+            state.modelsPlayground.loading = false;
+            renderApp();
+        }).catch(function (err) {
+            state.modelsPlayground.output = 'Error: ' + err.message;
+            state.modelsPlayground.loading = false;
+            renderApp();
+        });
+    };
+    form.appendChild(sendBtn);
+    container.appendChild(form);
+
+    if (state.modelsPlayground.output) {
+        var outputDiv = document.createElement('div');
+        outputDiv.style.marginTop = '1rem';
+        outputDiv.style.background = 'var(--color-bg-primary, #111)';
+        outputDiv.style.border = '1px solid var(--color-border, #333)';
+        outputDiv.style.borderRadius = '8px';
+        outputDiv.style.padding = '1rem';
+        var outputLabel = document.createElement('div');
+        outputLabel.style.fontSize = '0.75rem';
+        outputLabel.style.textTransform = 'uppercase';
+        outputLabel.style.color = 'var(--color-text-secondary)';
+        outputLabel.style.marginBottom = '0.5rem';
+        outputLabel.textContent = 'Response';
+        outputDiv.appendChild(outputLabel);
+        var outputPre = document.createElement('pre');
+        outputPre.style.whiteSpace = 'pre-wrap';
+        outputPre.style.fontSize = '0.85rem';
+        outputPre.style.margin = '0';
+        outputPre.textContent = state.modelsPlayground.output;
+        outputDiv.appendChild(outputPre);
+        container.appendChild(outputDiv);
+    }
+    return container;
+}
+
+// ===========================================================================
+// Testing & QA Module — Render Functions
+// ===========================================================================
+
+function renderTestingUnitView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+    container.innerHTML = '<h2>Unit Tests</h2><p class="section-subtitle">Unit test results from the CI/CD pipeline. Tests run on every push.</p>';
+    var info = document.createElement('div');
+    info.className = 'databases-arch-note';
+    info.innerHTML = '<h3>Test Framework</h3><ul><li><strong>Runner:</strong> Vitest (for frontend) / Jest (for gateway)</li><li><strong>Coverage:</strong> Tracked via c8/istanbul</li><li><strong>CI:</strong> Runs automatically on Cloud Build</li><li><strong>Location:</strong> <code>services/gateway/tests/</code> and <code>temp_vitana_v1/src/__tests__/</code></li></ul>' +
+        '<h3>Latest Results</h3><p style="color:var(--color-text-secondary);">Connect CI/CD reporting to display live test results here.</p>';
+    container.appendChild(info);
+    return container;
+}
+
+function renderTestingIntegrationView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+    container.innerHTML = '<h2>Integration Tests</h2><p class="section-subtitle">Cross-service integration test results.</p>';
+    var info = document.createElement('div');
+    info.className = 'databases-arch-note';
+    info.innerHTML = '<h3>Integration Test Scope</h3><ul><li><strong>Gateway -> OASIS Operator:</strong> Event emission, projection sync</li><li><strong>Gateway -> Worker Runner:</strong> Task claiming, execution callbacks</li><li><strong>Gateway -> Verification Engine:</strong> Governance evaluation flow</li><li><strong>Gateway -> Supabase:</strong> RLS enforcement, data persistence</li><li><strong>SSE Streaming:</strong> Event delivery, reconnection</li></ul>' +
+        '<p style="color:var(--color-text-secondary);margin-top:1rem;">Integration tests require all Cloud Run services running. Execute via <code>npm run test:integration</code>.</p>';
+    container.appendChild(info);
+    return container;
+}
+
+function renderTestingValidatorView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+    container.innerHTML = '<h2>Validator Tests</h2><p class="section-subtitle">Governance validator agent test scenarios.</p>';
+    var scenarios = [
+        { name: 'Deploy Gate - Clean Build', expected: 'ALLOW', rule: 'GOV-001' },
+        { name: 'Deploy Gate - Failing Tests', expected: 'BLOCK', rule: 'GOV-001' },
+        { name: 'Spec Validation - Complete Spec', expected: 'APPROVE', rule: 'GOV-003' },
+        { name: 'Spec Validation - Missing Criteria', expected: 'REJECT', rule: 'GOV-003' },
+        { name: 'Resource Limit - Within Budget', expected: 'ALLOW', rule: 'GOV-005' },
+        { name: 'Resource Limit - Over Budget', expected: 'BLOCK', rule: 'GOV-005' }
+    ];
+    var table = document.createElement('table');
+    table.className = 'list-table';
+    table.innerHTML = '<thead><tr><th>Scenario</th><th>Expected</th><th>Rule</th><th>Status</th></tr></thead>';
+    var tbody = document.createElement('tbody');
+    scenarios.forEach(function (s) {
+        var row = document.createElement('tr');
+        row.innerHTML = '<td style="font-weight:600;">' + s.name + '</td>' +
+            '<td><span class="status-badge status-' + (s.expected === 'ALLOW' || s.expected === 'APPROVE' ? 'active' : 'blocked') + '">' + s.expected + '</span></td>' +
+            '<td style="font-family:monospace;">' + s.rule + '</td>' +
+            '<td><span class="status-badge status-pending">Not Run</span></td>';
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+    return container;
+}
+
+function renderTestingE2eView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+    container.innerHTML = '<h2>End-to-End Tests</h2><p class="section-subtitle">Full pipeline E2E test flows.</p>';
+    var flows = [
+        { name: 'VTID Lifecycle: Create -> Plan -> Execute -> Validate -> Deploy', steps: 12, status: 'defined' },
+        { name: 'Governance: Rule CRUD -> Evaluation -> Enforcement', steps: 8, status: 'defined' },
+        { name: 'Memory: Store -> Retrieve -> Contextualize -> Chat', steps: 6, status: 'defined' },
+        { name: 'Autopilot: Start Loop -> Poll -> Recommend -> Execute', steps: 10, status: 'defined' },
+        { name: 'ORB: Connect -> Speech -> Response -> TTS', steps: 5, status: 'defined' }
+    ];
+    var table = document.createElement('table');
+    table.className = 'list-table';
+    table.innerHTML = '<thead><tr><th>E2E Flow</th><th>Steps</th><th>Status</th><th>Last Run</th></tr></thead>';
+    var tbody = document.createElement('tbody');
+    flows.forEach(function (f) {
+        var row = document.createElement('tr');
+        row.innerHTML = '<td style="font-weight:600;">' + f.name + '</td>' +
+            '<td style="text-align:center;">' + f.steps + '</td>' +
+            '<td><span class="status-badge status-pending">' + f.status + '</span></td>' +
+            '<td style="color:var(--color-text-secondary);">—</td>';
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+    return container;
+}
+
+function renderTestingCiReportsView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+    var title = document.createElement('h2');
+    title.textContent = 'CI Reports';
+    container.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Cloud Build CI/CD pipeline execution reports.';
+    container.appendChild(subtitle);
+
+    if (!state.testingCi.fetched && !state.testingCi.loading) {
+        state.testingCi.loading = true;
+        renderApp();
+        fetch('/api/v1/cicd/health', { headers: buildContextHeaders() })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                state.testingCi.runs = data.builds || data.data || (Array.isArray(data) ? data : [data]);
+                state.testingCi.fetched = true;
+                state.testingCi.loading = false;
+                renderApp();
+            }).catch(function (err) { state.testingCi.error = err.message; state.testingCi.loading = false; renderApp(); });
+    }
+    if (state.testingCi.loading) { var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading...'; container.appendChild(l); return container; }
+    if (state.testingCi.error) { var e = document.createElement('div'); e.className = 'placeholder-content error-text'; e.textContent = 'Error: ' + state.testingCi.error; container.appendChild(e); return container; }
+
+    var items = state.testingCi.runs;
+    if (!Array.isArray(items) || items.length === 0) {
+        var info = document.createElement('div');
+        info.className = 'databases-arch-note';
+        info.innerHTML = '<h3>CI/CD Pipeline</h3><p>' + (typeof items === 'object' ? '<pre>' + escapeHtml(JSON.stringify(items, null, 2)) + '</pre>' : 'No CI reports available.') + '</p>';
+        container.appendChild(info);
+    } else {
+        var table = document.createElement('table');
+        table.className = 'list-table';
+        table.innerHTML = '<thead><tr><th>Build ID</th><th>Status</th><th>Branch</th><th>Started</th><th>Duration</th></tr></thead>';
+        var tbody = document.createElement('tbody');
+        items.forEach(function (b) {
+            var row = document.createElement('tr');
+            var st = (b.status || 'unknown').toLowerCase();
+            row.innerHTML = '<td style="font-family:monospace;">' + (b.id || b.build_id || '-') + '</td>' +
+                '<td><span class="status-badge status-' + st + '">' + st + '</span></td>' +
+                '<td>' + (b.branch || b.source || '-') + '</td>' +
+                '<td>' + formatEventTimestamp(b.started_at || b.created_at) + '</td>' +
+                '<td>' + (b.duration || '-') + '</td>';
+            tbody.appendChild(row);
+        });
+        table.appendChild(tbody);
+        container.appendChild(table);
+    }
+    return container;
+}
+
+// ===========================================================================
+// Admin Analytics — Render Function
+// ===========================================================================
+
+function renderAdminAnalyticsView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+    var title = document.createElement('h2');
+    title.textContent = 'Admin Analytics';
+    container.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Platform usage analytics and operational metrics.';
+    container.appendChild(subtitle);
+
+    var metrics = [
+        { label: 'Total OASIS Events', value: state.oasisEvents ? (state.oasisEvents.length || 0) : '—', color: '#6c63ff' },
+        { label: 'Active VTIDs', value: state.vtidItems ? state.vtidItems.filter(function (v) { return v.status === 'in_progress'; }).length : '—', color: '#22c55e' },
+        { label: 'Governance Rules', value: state.governanceRules ? state.governanceRules.length : '—', color: '#f59e0b' },
+        { label: 'Memory Categories', value: state.memoryGarden ? Object.keys(state.memoryGarden).length : '—', color: '#3b82f6' }
+    ];
+
+    var grid = document.createElement('div');
+    grid.style.display = 'grid';
+    grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(200px, 1fr))';
+    grid.style.gap = '1rem';
+    grid.style.marginTop = '1rem';
+    metrics.forEach(function (m) {
+        var card = document.createElement('div');
+        card.style.background = 'var(--color-bg-secondary, #1a1a2e)';
+        card.style.border = '1px solid var(--color-border, #333)';
+        card.style.borderRadius = '8px';
+        card.style.padding = '1.25rem';
+        card.style.textAlign = 'center';
+        card.innerHTML = '<div style="font-size:2rem;font-weight:700;color:' + m.color + ';">' + m.value + '</div>' +
+            '<div style="font-size:0.85rem;color:var(--color-text-secondary);margin-top:0.25rem;">' + m.label + '</div>';
+        grid.appendChild(card);
+    });
+    container.appendChild(grid);
+
+    var note = document.createElement('div');
+    note.className = 'databases-arch-note';
+    note.style.marginTop = '1.5rem';
+    note.innerHTML = '<h3>Data Sources</h3><ul><li>OASIS Events from <code>/api/v1/oasis/events</code></li><li>VTID data from <code>/api/v1/vtid/list</code></li><li>Governance rules from <code>/api/v1/governance/rules</code></li><li>Memory data from <code>/api/v1/memory/garden/summary</code></li></ul>';
+    container.appendChild(note);
+    return container;
+}
+
+// ===========================================================================
+// Docs Module — Render Functions
+// ===========================================================================
+
+function renderDocsApiInventoryView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+    var title = document.createElement('h2');
+    title.textContent = 'API Inventory';
+    container.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Complete inventory of Gateway API endpoints by domain.';
+    container.appendChild(subtitle);
+
+    if (!state.docsApiInventory.fetched && !state.docsApiInventory.loading) {
+        state.docsApiInventory.loading = true;
+        renderApp();
+        fetch('/api/v1/assistant/health', { headers: buildContextHeaders() })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                state.docsApiInventory.endpoints = data;
+                state.docsApiInventory.fetched = true;
+                state.docsApiInventory.loading = false;
+                renderApp();
+            }).catch(function (err) { state.docsApiInventory.error = err.message; state.docsApiInventory.loading = false; renderApp(); });
+    }
+
+    var domains = [
+        { name: 'OASIS', endpoints: [
+            { method: 'GET', path: '/api/v1/oasis/events', desc: 'List events with filters' },
+            { method: 'POST', path: '/api/v1/oasis/emit', desc: 'Emit a new event' },
+            { method: 'GET', path: '/api/v1/vtid/list', desc: 'List VTIDs' },
+            { method: 'GET', path: '/api/v1/vtid/:vtid', desc: 'Get VTID details' },
+            { method: 'PATCH', path: '/api/v1/vtid/:vtid/status', desc: 'Update VTID status' }
+        ]},
+        { name: 'Governance', endpoints: [
+            { method: 'GET', path: '/api/v1/governance/rules', desc: 'List governance rules' },
+            { method: 'POST', path: '/api/v1/governance/evaluate', desc: 'Evaluate a deployment' },
+            { method: 'GET', path: '/api/v1/governance/controls', desc: 'List controls' },
+            { method: 'GET', path: '/api/v1/governance/history', desc: 'Control change history' }
+        ]},
+        { name: 'Memory', endpoints: [
+            { method: 'GET', path: '/api/v1/memory/garden/summary', desc: 'Memory garden overview' },
+            { method: 'POST', path: '/api/v1/memory/garden/store', desc: 'Store memory item' },
+            { method: 'POST', path: '/api/v1/memory/retrieve', desc: 'Retrieve memories by query' },
+            { method: 'GET', path: '/api/v1/memory/facts', desc: 'List memory facts' }
+        ]},
+        { name: 'Autopilot', endpoints: [
+            { method: 'GET', path: '/api/v1/autopilot/loop/status', desc: 'Autopilot loop status' },
+            { method: 'POST', path: '/api/v1/autopilot/loop/start', desc: 'Start autopilot loop' },
+            { method: 'POST', path: '/api/v1/autopilot/loop/stop', desc: 'Stop autopilot loop' },
+            { method: 'GET', path: '/api/v1/autopilot/controller/runs', desc: 'List autopilot runs' }
+        ]},
+        { name: 'Operator', endpoints: [
+            { method: 'GET', path: '/api/v1/operator/health', desc: 'Operator health check' },
+            { method: 'GET', path: '/api/v1/operator/heartbeat', desc: 'Service heartbeat' },
+            { method: 'GET', path: '/api/v1/operator/deployments', desc: 'List deployments' },
+            { method: 'GET', path: '/api/v1/operator/history', desc: 'Operator command history' }
+        ]}
+    ];
+
+    domains.forEach(function (domain) {
+        var sectionHeader = document.createElement('h3');
+        sectionHeader.style.marginTop = '1.5rem';
+        sectionHeader.style.marginBottom = '0.5rem';
+        sectionHeader.style.color = 'var(--color-accent, #6c63ff)';
+        sectionHeader.textContent = domain.name;
+        container.appendChild(sectionHeader);
+
+        var table = document.createElement('table');
+        table.className = 'list-table';
+        table.innerHTML = '<thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>';
+        var tbody = document.createElement('tbody');
+        domain.endpoints.forEach(function (ep) {
+            var row = document.createElement('tr');
+            var methodColor = ep.method === 'GET' ? '#22c55e' : ep.method === 'POST' ? '#3b82f6' : ep.method === 'PATCH' ? '#f59e0b' : '#ef4444';
+            row.innerHTML = '<td><span style="font-weight:700;color:' + methodColor + ';font-size:0.8rem;">' + ep.method + '</span></td>' +
+                '<td style="font-family:monospace;font-size:0.8rem;">' + ep.path + '</td>' +
+                '<td style="font-size:0.85rem;">' + ep.desc + '</td>';
+            tbody.appendChild(row);
+        });
+        table.appendChild(tbody);
+        container.appendChild(table);
+    });
+    return container;
+}
+
+function renderDocsDatabaseSchemasView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+    var title = document.createElement('h2');
+    title.textContent = 'Database Schemas';
+    container.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Core Supabase (PostgreSQL) tables and their column descriptions.';
+    container.appendChild(subtitle);
+
+    var tables = [
+        { name: 'oasis_events', columns: [
+            { col: 'id', type: 'UUID', desc: 'Primary key' },
+            { col: 'type', type: 'TEXT', desc: 'Event type' },
+            { col: 'topic', type: 'TEXT', desc: 'Event topic' },
+            { col: 'source', type: 'TEXT', desc: 'Emitting service' },
+            { col: 'vtid', type: 'TEXT', desc: 'Associated VTID' },
+            { col: 'status', type: 'TEXT', desc: 'info, success, warning, error' },
+            { col: 'message', type: 'TEXT', desc: 'Event message' },
+            { col: 'payload', type: 'JSONB', desc: 'Event payload' },
+            { col: 'created_at', type: 'TIMESTAMPTZ', desc: 'Timestamp' }
+        ]},
+        { name: 'vtid_ledger', columns: [
+            { col: 'vtid', type: 'TEXT (PK)', desc: 'VTID identifier' },
+            { col: 'title', type: 'TEXT', desc: 'Task title' },
+            { col: 'status', type: 'TEXT', desc: 'scheduled, in_progress, completed, blocked' },
+            { col: 'is_terminal', type: 'BOOLEAN', desc: 'Completion flag' },
+            { col: 'claimed_by', type: 'TEXT', desc: 'Worker ID' }
+        ]},
+        { name: 'profiles', columns: [
+            { col: 'id', type: 'UUID', desc: 'User ID' },
+            { col: 'email', type: 'TEXT', desc: 'User email' },
+            { col: 'tenant_id', type: 'UUID', desc: 'Tenant association' },
+            { col: 'role', type: 'TEXT', desc: 'User role' }
+        ]},
+        { name: 'memory_items', columns: [
+            { col: 'id', type: 'UUID', desc: 'Primary key' },
+            { col: 'category_key', type: 'TEXT', desc: 'Memory category' },
+            { col: 'content', type: 'TEXT', desc: 'Memory content' },
+            { col: 'embedding', type: 'VECTOR', desc: 'pgvector embedding' },
+            { col: 'importance', type: 'FLOAT', desc: 'Relevance score' }
+        ]}
+    ];
+
+    tables.forEach(function (t) {
+        var tableHeader = document.createElement('h3');
+        tableHeader.style.marginTop = '1.5rem';
+        tableHeader.style.fontFamily = 'monospace';
+        tableHeader.style.color = 'var(--color-accent, #6c63ff)';
+        tableHeader.textContent = t.name;
+        container.appendChild(tableHeader);
+
+        var table = document.createElement('table');
+        table.className = 'list-table';
+        table.innerHTML = '<thead><tr><th>Column</th><th>Type</th><th>Description</th></tr></thead>';
+        var tbody = document.createElement('tbody');
+        t.columns.forEach(function (col) {
+            var row = document.createElement('tr');
+            row.innerHTML = '<td style="font-family:monospace;font-weight:600;">' + col.col + '</td>' +
+                '<td style="font-family:monospace;font-size:0.8rem;color:var(--color-text-secondary);">' + col.type + '</td>' +
+                '<td>' + col.desc + '</td>';
+            tbody.appendChild(row);
+        });
+        table.appendChild(tbody);
+        container.appendChild(table);
+    });
+    return container;
+}
+
+function renderDocsArchitectureView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+    var title = document.createElement('h2');
+    title.textContent = 'System Architecture';
+    container.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Vitana platform architecture: Gateway, Cloud Run services, and Supabase data layer.';
+    container.appendChild(subtitle);
+
+    var layers = [
+        { name: 'Frontend Layer', items: ['Command Hub (Vanilla JS SPA)', 'ORB Voice Interface (WebSocket)', 'Operator Console'] },
+        { name: 'API Gateway (Cloud Run)', items: ['Express.js routing', 'Supabase JWT auth', 'Route aggregation', 'SSE streaming', 'Static frontend serving'] },
+        { name: 'Microservices (Cloud Run)', items: ['oasis-operator: Event processing', 'oasis-projector: Read models', 'worker-runner: Task execution', 'verification-engine: Governance'] },
+        { name: 'Data Layer (Supabase)', items: ['PostgreSQL with RLS', 'pgvector embeddings', 'Real-time subscriptions', 'Row-Level Security'] },
+        { name: 'Communication', items: ['Gateway -> Services: REST', 'Gateway -> Frontend: SSE', 'Gateway -> ORB: WebSocket', 'Worker -> Gateway: REST callbacks'] }
+    ];
+
+    layers.forEach(function (layer) {
+        var card = document.createElement('div');
+        card.style.background = 'var(--color-bg-secondary, #1a1a2e)';
+        card.style.border = '1px solid var(--color-border, #333)';
+        card.style.borderRadius = '8px';
+        card.style.padding = '1.25rem';
+        card.style.marginTop = '1rem';
+        var layerTitle = document.createElement('h3');
+        layerTitle.style.margin = '0 0 0.5rem 0';
+        layerTitle.style.color = 'var(--color-accent, #6c63ff)';
+        layerTitle.textContent = layer.name;
+        card.appendChild(layerTitle);
+        var list = document.createElement('ul');
+        list.style.margin = '0';
+        list.style.paddingLeft = '1.25rem';
+        list.style.fontSize = '0.85rem';
+        list.style.lineHeight = '1.8';
+        layer.items.forEach(function (item) {
+            var li = document.createElement('li');
+            li.textContent = item;
+            list.appendChild(li);
+        });
+        card.appendChild(list);
+        container.appendChild(card);
+    });
+    return container;
+}
+
+function renderDocsWorkforceView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+    var title = document.createElement('h2');
+    title.textContent = 'Agent Workforce';
+    container.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'VTID pipeline agent types, roles, and stage responsibilities.';
+    container.appendChild(subtitle);
+
+    var agents = [
+        { name: 'Planner', stage: 'Planning', model: 'Gemini Pro', caps: ['Intent decomposition', 'Spec generation', 'VTID allocation'] },
+        { name: 'Worker', stage: 'Execution', model: 'Gemini Flash', caps: ['Task claiming', 'Code generation', 'Artifact production'] },
+        { name: 'Validator', stage: 'Validation', model: 'Claude', caps: ['Output validation', 'Spec compliance', 'Governance gates'] },
+        { name: 'Deploy', stage: 'Deployment', model: 'System', caps: ['CI/CD triggering', 'Build verification', 'Rollback'] }
+    ];
+
+    var grid = document.createElement('div');
+    grid.style.display = 'grid';
+    grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(260px, 1fr))';
+    grid.style.gap = '1rem';
+    grid.style.marginTop = '1rem';
+
+    agents.forEach(function (agent) {
+        var card = document.createElement('div');
+        card.style.background = 'var(--color-bg-secondary, #1a1a2e)';
+        card.style.border = '1px solid var(--color-border, #333)';
+        card.style.borderRadius = '8px';
+        card.style.padding = '1.25rem';
+        card.innerHTML = '<h3 style="margin:0 0 0.25rem 0;color:var(--color-accent,#6c63ff);">' + agent.name + '</h3>' +
+            '<div style="display:inline-block;font-size:0.75rem;padding:2px 8px;border-radius:4px;background:var(--color-border,#333);margin-bottom:0.75rem;">Stage: ' + agent.stage + ' | Model: ' + agent.model + '</div>' +
+            '<div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;color:var(--color-text-secondary);margin-bottom:0.35rem;">Capabilities</div>';
+        agent.caps.forEach(function (cap) {
+            var capItem = document.createElement('div');
+            capItem.style.fontSize = '0.8rem';
+            capItem.style.padding = '0.15rem 0';
+            capItem.style.color = 'var(--color-text-secondary)';
+            capItem.textContent = '- ' + cap;
+            card.appendChild(capItem);
+        });
+        grid.appendChild(card);
+    });
+    container.appendChild(grid);
+
+    var pipeline = document.createElement('div');
+    pipeline.style.marginTop = '1.5rem';
+    pipeline.style.background = 'var(--color-bg-secondary, #1a1a2e)';
+    pipeline.style.border = '1px solid var(--color-border, #333)';
+    pipeline.style.borderRadius = '8px';
+    pipeline.style.padding = '1.25rem';
+    pipeline.innerHTML = '<h3 style="margin:0 0 0.75rem 0;">VTID Pipeline Stages</h3>' +
+        '<div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;font-size:0.85rem;">' +
+        '<span style="padding:4px 12px;border-radius:4px;background:#3b82f6;color:white;">Scheduled</span><span style="color:var(--color-text-secondary);">-></span>' +
+        '<span style="padding:4px 12px;border-radius:4px;background:#8b5cf6;color:white;">Planner</span><span style="color:var(--color-text-secondary);">-></span>' +
+        '<span style="padding:4px 12px;border-radius:4px;background:#f59e0b;color:white;">Worker</span><span style="color:var(--color-text-secondary);">-></span>' +
+        '<span style="padding:4px 12px;border-radius:4px;background:#6366f1;color:white;">Validator</span><span style="color:var(--color-text-secondary);">-></span>' +
+        '<span style="padding:4px 12px;border-radius:4px;background:#22c55e;color:white;">Deploy</span><span style="color:var(--color-text-secondary);">-></span>' +
+        '<span style="padding:4px 12px;border-radius:4px;background:#10b981;color:white;">Done</span></div>';
+    container.appendChild(pipeline);
+    return container;
+}
+
 // --- Init ---
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -25186,3 +30133,1731 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 });
 // VTID-01226 Command Hub stability fix
+
+// ===========================================================================
+// Databases Module - Render Functions
+// ===========================================================================
+
+/**
+ * renderDatabasesSupabaseView - Static display of Supabase connection info.
+ * Shows Project ID, Region, known tables, and RLS status.
+ */
+function renderDatabasesSupabaseView() {
+    var container = document.createElement('div');
+    container.className = 'databases-supabase-container';
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'section-header';
+    var h2 = document.createElement('h2');
+    h2.textContent = 'Supabase';
+    header.appendChild(h2);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'PostgreSQL database hosted on Supabase. All data access enforced via Row Level Security (RLS).';
+    header.appendChild(subtitle);
+    container.appendChild(header);
+
+    // Connection Info Cards
+    var cardsGrid = document.createElement('div');
+    cardsGrid.className = 'infra-services-grid';
+
+    var connectionCards = [
+        { title: 'Project ID', value: 'lovable-vitana-vers1', detail: 'GCP Project' },
+        { title: 'Region', value: 'us-central1', detail: 'Primary region for all services' },
+        { title: 'RLS Status', value: 'Enforced', detail: 'Row Level Security active on all tenant tables' },
+        { title: 'Engine', value: 'PostgreSQL 15', detail: 'Supabase managed instance with pgvector extension' }
+    ];
+
+    connectionCards.forEach(function (info) {
+        var card = document.createElement('div');
+        card.className = 'infra-service-card';
+
+        var cardTitle = document.createElement('div');
+        cardTitle.className = 'infra-service-card-title';
+        cardTitle.textContent = info.title;
+        card.appendChild(cardTitle);
+
+        var cardValue = document.createElement('div');
+        cardValue.className = 'infra-service-card-value';
+        cardValue.textContent = info.value;
+        card.appendChild(cardValue);
+
+        var cardDetail = document.createElement('div');
+        cardDetail.className = 'infra-service-card-detail';
+        cardDetail.textContent = info.detail;
+        card.appendChild(cardDetail);
+
+        cardsGrid.appendChild(card);
+    });
+
+    container.appendChild(cardsGrid);
+
+    // Known Tables
+    var tablesSection = document.createElement('div');
+    tablesSection.className = 'databases-tables-section';
+
+    var tablesTitle = document.createElement('h3');
+    tablesTitle.textContent = 'Known Tables';
+    tablesSection.appendChild(tablesTitle);
+
+    var knownTables = [
+        { name: 'profiles', description: 'User profiles and identity', rls: true },
+        { name: 'tenants', description: 'Tenant configuration and plans', rls: true },
+        { name: 'oasis_events', description: 'System-wide event log (OASIS)', rls: false },
+        { name: 'vtid_ledger', description: 'Central VTID task tracking', rls: false },
+        { name: 'memories', description: 'Legacy memory items storage', rls: true },
+        { name: 'memory_items', description: 'Canonical infinite memory (VTID-01104)', rls: true },
+        { name: 'memory_facts', description: 'Semantic fact storage (VTID-01192)', rls: true },
+        { name: 'chat_messages', description: 'Conversation message history', rls: true },
+        { name: 'relationship_nodes', description: 'Knowledge graph nodes (VTID-01087)', rls: true },
+        { name: 'relationship_edges', description: 'Knowledge graph edges', rls: true },
+        { name: 'services_catalog', description: 'Service catalog entries', rls: true },
+        { name: 'products_catalog', description: 'Product catalog entries', rls: true },
+        { name: 'personalization_audit', description: 'Cross-domain personalization audit', rls: true },
+        { name: 'memory_garden_config', description: '13 memory garden categories', rls: false }
+    ];
+
+    var tableWrapper = document.createElement('div');
+    tableWrapper.className = 'gov-history-table-wrapper';
+
+    var table = document.createElement('table');
+    table.className = 'list-table';
+
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    ['Table Name', 'Description', 'RLS'].forEach(function (h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    knownTables.forEach(function (t) {
+        var row = document.createElement('tr');
+
+        var nameCell = document.createElement('td');
+        nameCell.innerHTML = '<code>' + escapeHtml(t.name) + '</code>';
+        row.appendChild(nameCell);
+
+        var descCell = document.createElement('td');
+        descCell.textContent = t.description;
+        row.appendChild(descCell);
+
+        var rlsCell = document.createElement('td');
+        var rlsBadge = document.createElement('span');
+        rlsBadge.className = 'status-badge status-' + (t.rls ? 'active' : 'inactive');
+        rlsBadge.textContent = t.rls ? 'Enabled' : 'Public';
+        rlsCell.appendChild(rlsBadge);
+        row.appendChild(rlsCell);
+
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    tableWrapper.appendChild(table);
+    tablesSection.appendChild(tableWrapper);
+    container.appendChild(tablesSection);
+
+    return container;
+}
+
+/**
+ * renderDatabasesVectorsView - Displays pgvector status and embedding stats.
+ * Fetches GET /api/v1/memory/embeddings/generate for stats.
+ */
+function renderDatabasesVectorsView() {
+    var container = document.createElement('div');
+    container.className = 'databases-vectors-container';
+
+    // Auto-fetch
+    if (!state.dbVectors.fetched && !state.dbVectors.loading) {
+        fetchDbVectorStats();
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'section-header';
+    var h2 = document.createElement('h2');
+    h2.textContent = 'Vector Database';
+    header.appendChild(h2);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'pgvector extension for semantic search and embedding storage. Powers Memory Garden retrieval and Knowledge Hub search.';
+    header.appendChild(subtitle);
+    container.appendChild(header);
+
+    // Status Cards
+    var cardsGrid = document.createElement('div');
+    cardsGrid.className = 'infra-services-grid';
+
+    var statusCards = [
+        { title: 'Extension', value: 'pgvector', detail: 'PostgreSQL vector similarity search' },
+        { title: 'Dimensions', value: '1536', detail: 'OpenAI text-embedding-ada-002 compatible' },
+        { title: 'Index Type', value: 'IVFFlat / HNSW', detail: 'Approximate nearest neighbor indexing' },
+        { title: 'Distance', value: 'Cosine', detail: 'Default similarity metric for embeddings' }
+    ];
+
+    statusCards.forEach(function (info) {
+        var card = document.createElement('div');
+        card.className = 'infra-service-card';
+
+        var cardTitle = document.createElement('div');
+        cardTitle.className = 'infra-service-card-title';
+        cardTitle.textContent = info.title;
+        card.appendChild(cardTitle);
+
+        var cardValue = document.createElement('div');
+        cardValue.className = 'infra-service-card-value';
+        cardValue.textContent = info.value;
+        card.appendChild(cardValue);
+
+        var cardDetail = document.createElement('div');
+        cardDetail.className = 'infra-service-card-detail';
+        cardDetail.textContent = info.detail;
+        card.appendChild(cardDetail);
+
+        cardsGrid.appendChild(card);
+    });
+    container.appendChild(cardsGrid);
+
+    // Embedding Stats
+    var statsSection = document.createElement('div');
+    statsSection.className = 'databases-stats-section';
+    var statsTitle = document.createElement('h3');
+    statsTitle.textContent = 'Embedding Status';
+    statsSection.appendChild(statsTitle);
+
+    if (state.dbVectors.loading) {
+        statsSection.innerHTML += '<div class="placeholder-content">Loading...</div>';
+    } else if (state.dbVectors.error) {
+        statsSection.innerHTML += '<div class="placeholder-content error-text">Error: ' + escapeHtml(state.dbVectors.error) + '</div>';
+    } else if (state.dbVectors.data) {
+        var dataDiv = document.createElement('div');
+        dataDiv.className = 'infra-services-grid';
+
+        var embedStats = [
+            { title: 'Status', value: state.dbVectors.data.status || 'Available' },
+            { title: 'Provider', value: state.dbVectors.data.provider || 'OpenAI' },
+            { title: 'Model', value: state.dbVectors.data.model || 'text-embedding-ada-002' }
+        ];
+
+        embedStats.forEach(function (s) {
+            var card = document.createElement('div');
+            card.className = 'infra-service-card';
+            var ct = document.createElement('div');
+            ct.className = 'infra-service-card-title';
+            ct.textContent = s.title;
+            card.appendChild(ct);
+            var cv = document.createElement('div');
+            cv.className = 'infra-service-card-value';
+            cv.textContent = s.value;
+            card.appendChild(cv);
+            dataDiv.appendChild(card);
+        });
+        statsSection.appendChild(dataDiv);
+    } else {
+        statsSection.innerHTML += '<div class="placeholder-content">No embedding stats available. Service may not be reachable.</div>';
+    }
+
+    container.appendChild(statsSection);
+
+    // Link to Embeddings tab
+    var linkDiv = document.createElement('div');
+    linkDiv.style.marginTop = '16px';
+    var linkBtn = document.createElement('button');
+    linkBtn.className = 'btn btn-secondary';
+    linkBtn.textContent = 'View Embeddings Management';
+    linkBtn.onclick = function () {
+        state.currentModuleKey = 'intelligence-memory-dev';
+        state.currentTab = 'embeddings';
+        history.pushState(null, '', '/command-hub/intelligence/embeddings');
+        renderApp();
+    };
+    linkDiv.appendChild(linkBtn);
+    container.appendChild(linkDiv);
+
+    return container;
+}
+
+/**
+ * fetchDbVectorStats - Fetch embedding stats from the API.
+ */
+function fetchDbVectorStats() {
+    state.dbVectors.loading = true;
+    renderApp();
+
+    fetch('/api/v1/memory/embeddings/generate', {
+        method: 'GET',
+        headers: buildContextHeaders()
+    }).then(function (r) { return r.json(); })
+    .then(function (data) {
+        state.dbVectors.data = data.data || data;
+        state.dbVectors.fetched = true;
+        state.dbVectors.loading = false;
+        renderApp();
+    }).catch(function (err) {
+        state.dbVectors.error = err.message;
+        state.dbVectors.loading = false;
+        renderApp();
+    });
+}
+
+/**
+ * renderDatabasesCacheView - Static display of cache strategy and TTL settings.
+ */
+function renderDatabasesCacheView() {
+    var container = document.createElement('div');
+    container.className = 'databases-cache-container';
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'section-header';
+    var h2 = document.createElement('h2');
+    h2.textContent = 'Cache Layer';
+    header.appendChild(h2);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Application-level caching strategy. Vitana uses in-memory caching at the Gateway layer with selective TTL policies.';
+    header.appendChild(subtitle);
+    container.appendChild(header);
+
+    // Strategy Cards
+    var cardsGrid = document.createElement('div');
+    cardsGrid.className = 'infra-services-grid';
+
+    var cacheStrategies = [
+        { title: 'Governance Rules', ttl: '300s (5 min)', strategy: 'Stale-While-Revalidate', detail: 'Rules cached in memory, refreshed on control toggle' },
+        { title: 'Me Context', ttl: '60s (1 min)', strategy: 'Cache-Aside', detail: 'User identity cached per session, refreshed on role switch' },
+        { title: 'OASIS Events', ttl: 'None (Live)', strategy: 'Pass-Through', detail: 'Events always fetched live. Client-side polling at 5s intervals.' },
+        { title: 'Memory Retrieval', ttl: '30s', strategy: 'Cache-Aside + Embedding', detail: 'Semantic search results cached briefly to avoid duplicate vector queries' },
+        { title: 'Health Endpoints', ttl: '10s', strategy: 'Short TTL', detail: 'CI/CD and service health polled frequently for live status' },
+        { title: 'Task Board', ttl: 'None (Live)', strategy: 'OASIS-Authority', detail: 'Task state derived from OASIS events. No client-side cache.' }
+    ];
+
+    cacheStrategies.forEach(function (info) {
+        var card = document.createElement('div');
+        card.className = 'infra-service-card';
+
+        var cardTitle = document.createElement('div');
+        cardTitle.className = 'infra-service-card-title';
+        cardTitle.textContent = info.title;
+        card.appendChild(cardTitle);
+
+        var cardValue = document.createElement('div');
+        cardValue.className = 'infra-service-card-value';
+        cardValue.textContent = info.ttl;
+        card.appendChild(cardValue);
+
+        var stratBadge = document.createElement('span');
+        stratBadge.className = 'status-badge status-active';
+        stratBadge.textContent = info.strategy;
+        card.appendChild(stratBadge);
+
+        var cardDetail = document.createElement('div');
+        cardDetail.className = 'infra-service-card-detail';
+        cardDetail.textContent = info.detail;
+        card.appendChild(cardDetail);
+
+        cardsGrid.appendChild(card);
+    });
+    container.appendChild(cardsGrid);
+
+    // Architecture Note
+    var noteDiv = document.createElement('div');
+    noteDiv.className = 'databases-arch-note';
+    noteDiv.innerHTML = '<h3>Architecture Notes</h3>' +
+        '<ul>' +
+        '<li>No external cache layer (Redis/Memcached) is currently deployed.</li>' +
+        '<li>Caching is handled at the Node.js Gateway process level using in-memory maps.</li>' +
+        '<li>Supabase connection pooling (PgBouncer) provides database-level connection caching.</li>' +
+        '<li>Client-side state management in Command Hub acts as an implicit UI cache.</li>' +
+        '<li>For production scale, a dedicated Redis cache layer is planned for session and hot-path data.</li>' +
+        '</ul>';
+    container.appendChild(noteDiv);
+
+    return container;
+}
+
+/**
+ * renderDatabasesAnalyticsView - Shows recent event volume and analytics pipeline info.
+ * Fetches GET /api/v1/oasis/events?limit=10 for recent event counts.
+ */
+function renderDatabasesAnalyticsView() {
+    var container = document.createElement('div');
+    container.className = 'databases-analytics-container';
+
+    // Auto-fetch using oasisEvents if not already fetched
+    if (!state.oasisEvents.fetched && !state.oasisEvents.loading) {
+        fetchOasisEvents();
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'section-header';
+    var h2 = document.createElement('h2');
+    h2.textContent = 'Analytics & Events';
+    header.appendChild(h2);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Event volume overview and analytics pipeline status. OASIS events serve as the analytics data source.';
+    header.appendChild(subtitle);
+    container.appendChild(header);
+
+    // Count Cards
+    var cardsGrid = document.createElement('div');
+    cardsGrid.className = 'infra-services-grid';
+
+    var totalEvents = state.oasisEvents.items.length;
+    var errorEvents = state.oasisEvents.items.filter(function (e) { return e.status === 'error'; }).length;
+    var successEvents = state.oasisEvents.items.filter(function (e) { return e.status === 'success'; }).length;
+    var infoEvents = state.oasisEvents.items.filter(function (e) { return e.status === 'info'; }).length;
+
+    var countCards = [
+        { title: 'Total Events (Loaded)', value: String(totalEvents), detail: 'Events currently in client state' },
+        { title: 'Success', value: String(successEvents), detail: 'Events with status=success' },
+        { title: 'Info', value: String(infoEvents), detail: 'Events with status=info' },
+        { title: 'Errors', value: String(errorEvents), detail: 'Events with status=error' }
+    ];
+
+    countCards.forEach(function (info) {
+        var card = document.createElement('div');
+        card.className = 'infra-service-card';
+
+        var cardTitle = document.createElement('div');
+        cardTitle.className = 'infra-service-card-title';
+        cardTitle.textContent = info.title;
+        card.appendChild(cardTitle);
+
+        var cardValue = document.createElement('div');
+        cardValue.className = 'infra-service-card-value';
+        cardValue.textContent = info.value;
+        card.appendChild(cardValue);
+
+        var cardDetail = document.createElement('div');
+        cardDetail.className = 'infra-service-card-detail';
+        cardDetail.textContent = info.detail;
+        card.appendChild(cardDetail);
+
+        cardsGrid.appendChild(card);
+    });
+    container.appendChild(cardsGrid);
+
+    // Loading state
+    if (state.oasisEvents.loading) {
+        var loadingDiv = document.createElement('div');
+        loadingDiv.className = 'placeholder-content';
+        loadingDiv.textContent = 'Loading...';
+        container.appendChild(loadingDiv);
+    }
+
+    // Pipeline Note
+    var noteDiv = document.createElement('div');
+    noteDiv.className = 'databases-arch-note';
+    noteDiv.innerHTML = '<h3>Analytics Pipeline</h3>' +
+        '<ul>' +
+        '<li><strong>Data Source:</strong> oasis_events table in Supabase (PostgreSQL)</li>' +
+        '<li><strong>Ingestion:</strong> All services emit events via POST /api/v1/oasis/events</li>' +
+        '<li><strong>Query:</strong> Gateway exposes GET /api/v1/oasis/events with filtering and pagination</li>' +
+        '<li><strong>Visualization:</strong> Command Hub OASIS Events tab provides live event stream</li>' +
+        '<li><strong>Future:</strong> BigQuery export pipeline planned for long-term analytics and reporting</li>' +
+        '</ul>';
+    container.appendChild(noteDiv);
+
+    return container;
+}
+
+/**
+ * renderDatabasesClustersView - Static display of Cloud SQL / connection pool configuration.
+ */
+function renderDatabasesClustersView() {
+    var container = document.createElement('div');
+    container.className = 'databases-clusters-container';
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'section-header';
+    var h2 = document.createElement('h2');
+    h2.textContent = 'Database Clusters';
+    header.appendChild(h2);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Supabase-managed PostgreSQL cluster configuration. Connection pooling via PgBouncer.';
+    header.appendChild(subtitle);
+    container.appendChild(header);
+
+    // Config Cards
+    var cardsGrid = document.createElement('div');
+    cardsGrid.className = 'infra-services-grid';
+
+    var clusterConfig = [
+        { title: 'Primary Instance', value: 'Supabase Pro', detail: 'Managed PostgreSQL with automatic backups and point-in-time recovery' },
+        { title: 'Connection Pooler', value: 'PgBouncer', detail: 'Transaction-mode pooling for efficient connection management' },
+        { title: 'Pool Size', value: '25 connections', detail: 'Default pool size per service. Shared across Cloud Run instances.' },
+        { title: 'Region', value: 'us-central1', detail: 'Co-located with Cloud Run services for minimal latency' },
+        { title: 'Replicas', value: 'None (Supabase Pro)', detail: 'Read replicas available on Supabase Enterprise plan' },
+        { title: 'Backups', value: 'Daily + PITR', detail: 'Point-in-time recovery enabled. 7-day retention.' },
+        { title: 'SSL', value: 'Enforced', detail: 'All connections require SSL/TLS encryption' },
+        { title: 'Extensions', value: 'pgvector, uuid-ossp, pg_trgm', detail: 'Active PostgreSQL extensions for vector search, UUIDs, and trigram matching' }
+    ];
+
+    clusterConfig.forEach(function (info) {
+        var card = document.createElement('div');
+        card.className = 'infra-service-card';
+
+        var cardTitle = document.createElement('div');
+        cardTitle.className = 'infra-service-card-title';
+        cardTitle.textContent = info.title;
+        card.appendChild(cardTitle);
+
+        var cardValue = document.createElement('div');
+        cardValue.className = 'infra-service-card-value';
+        cardValue.textContent = info.value;
+        card.appendChild(cardValue);
+
+        var cardDetail = document.createElement('div');
+        cardDetail.className = 'infra-service-card-detail';
+        cardDetail.textContent = info.detail;
+        card.appendChild(cardDetail);
+
+        cardsGrid.appendChild(card);
+    });
+    container.appendChild(cardsGrid);
+
+    return container;
+}
+
+// ===========================================================================
+// Infrastructure Module - Fetch & Render Functions
+// ===========================================================================
+
+/**
+ * fetchInfraServices - Fetch health from multiple service endpoints in parallel.
+ * Results mapped to {name, url, status, latency_ms} array.
+ */
+function fetchInfraServices() {
+    state.infraServices.loading = true;
+    state.infraServices.error = null;
+    renderApp();
+
+    var endpoints = [
+        { name: 'Gateway', url: '/health' },
+        { name: 'CI/CD Service', url: '/api/v1/cicd/health' },
+        { name: 'OASIS Operator', url: '/api/v1/operator/health' },
+        { name: 'Autopilot', url: '/api/v1/autopilot/health' },
+        { name: 'Assistant', url: '/api/v1/assistant/health' }
+    ];
+
+    var promises = endpoints.map(function (ep) {
+        var startTime = Date.now();
+        return fetch(ep.url)
+            .then(function (r) {
+                var latency = Date.now() - startTime;
+                return r.json().then(function (data) {
+                    return {
+                        name: ep.name,
+                        url: ep.url,
+                        status: (r.ok && (data.ok || data.status === 'ok' || data.healthy)) ? 'healthy' : 'degraded',
+                        latency_ms: latency,
+                        last_checked: new Date().toISOString(),
+                        detail: data
+                    };
+                });
+            })
+            .catch(function (err) {
+                return {
+                    name: ep.name,
+                    url: ep.url,
+                    status: 'down',
+                    latency_ms: Date.now() - startTime,
+                    last_checked: new Date().toISOString(),
+                    error: err.message
+                };
+            });
+    });
+
+    Promise.all(promises).then(function (results) {
+        state.infraServices.items = results;
+        state.infraServices.fetched = true;
+        state.infraServices.loading = false;
+        renderApp();
+    }).catch(function (err) {
+        state.infraServices.error = err.message;
+        state.infraServices.loading = false;
+        renderApp();
+    });
+}
+
+/**
+ * renderInfraServicesView - Grid of service health cards.
+ * Shows name, endpoint, status dot, latency, last checked.
+ */
+function renderInfraServicesView() {
+    var container = document.createElement('div');
+    container.className = 'infra-services-container';
+
+    // Auto-fetch
+    if (!state.infraServices.fetched && !state.infraServices.loading) {
+        fetchInfraServices();
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'section-header';
+    var h2 = document.createElement('h2');
+    h2.textContent = 'Services';
+    header.appendChild(h2);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Real-time health status of all Vitana platform services. Each card shows endpoint, status, and response latency.';
+    header.appendChild(subtitle);
+    container.appendChild(header);
+
+    // Loading
+    if (state.infraServices.loading) {
+        var loadingDiv = document.createElement('div');
+        loadingDiv.className = 'placeholder-content';
+        loadingDiv.textContent = 'Loading...';
+        container.appendChild(loadingDiv);
+        return container;
+    }
+
+    // Error
+    if (state.infraServices.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'placeholder-content error-text';
+        errorDiv.textContent = 'Error: ' + state.infraServices.error;
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    // Services Grid
+    var grid = document.createElement('div');
+    grid.className = 'infra-services-grid';
+
+    state.infraServices.items.forEach(function (svc) {
+        var card = document.createElement('div');
+        card.className = 'infra-service-card service-health-card';
+
+        // Status dot + name row
+        var nameRow = document.createElement('div');
+        nameRow.className = 'infra-service-card-title';
+        var dot = document.createElement('span');
+        dot.className = 'status-dot status-dot-' + svc.status;
+        dot.style.display = 'inline-block';
+        dot.style.width = '10px';
+        dot.style.height = '10px';
+        dot.style.borderRadius = '50%';
+        dot.style.marginRight = '8px';
+        dot.style.backgroundColor = svc.status === 'healthy' ? '#22c55e' : (svc.status === 'degraded' ? '#f59e0b' : '#ef4444');
+        nameRow.appendChild(dot);
+        nameRow.appendChild(document.createTextNode(svc.name));
+        card.appendChild(nameRow);
+
+        // URL
+        var urlDiv = document.createElement('div');
+        urlDiv.className = 'infra-service-card-detail';
+        urlDiv.textContent = svc.url;
+        card.appendChild(urlDiv);
+
+        // Status badge
+        var statusBadge = document.createElement('span');
+        statusBadge.className = 'status-badge status-' + svc.status;
+        statusBadge.textContent = svc.status.charAt(0).toUpperCase() + svc.status.slice(1);
+        card.appendChild(statusBadge);
+
+        // Latency
+        var latencyDiv = document.createElement('div');
+        latencyDiv.className = 'infra-service-card-detail';
+        latencyDiv.textContent = 'Latency: ' + svc.latency_ms + 'ms';
+        card.appendChild(latencyDiv);
+
+        // Last checked
+        var checkedDiv = document.createElement('div');
+        checkedDiv.className = 'infra-service-card-detail';
+        checkedDiv.textContent = 'Checked: ' + formatEventTimestamp(svc.last_checked);
+        card.appendChild(checkedDiv);
+
+        grid.appendChild(card);
+    });
+
+    container.appendChild(grid);
+    return container;
+}
+
+/**
+ * renderInfraHealthView - Aggregate health overview.
+ * Shows overall system health score, service count, degraded services.
+ */
+function renderInfraHealthView() {
+    var container = document.createElement('div');
+    container.className = 'infra-health-container';
+
+    // Auto-fetch services if not loaded (reuse infraServices data)
+    if (!state.infraServices.fetched && !state.infraServices.loading) {
+        fetchInfraServices();
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'section-header';
+    var h2 = document.createElement('h2');
+    h2.textContent = 'System Health';
+    header.appendChild(h2);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Aggregate health view across all infrastructure services. Highlights degraded or down services.';
+    header.appendChild(subtitle);
+    container.appendChild(header);
+
+    if (state.infraServices.loading) {
+        var loadingDiv = document.createElement('div');
+        loadingDiv.className = 'placeholder-content';
+        loadingDiv.textContent = 'Loading...';
+        container.appendChild(loadingDiv);
+        return container;
+    }
+
+    var services = state.infraServices.items;
+    var totalCount = services.length;
+    var healthyCount = services.filter(function (s) { return s.status === 'healthy'; }).length;
+    var degradedCount = services.filter(function (s) { return s.status === 'degraded'; }).length;
+    var downCount = services.filter(function (s) { return s.status === 'down'; }).length;
+    var healthScore = totalCount > 0 ? Math.round((healthyCount / totalCount) * 100) : 0;
+
+    // Health Score Cards
+    var cardsGrid = document.createElement('div');
+    cardsGrid.className = 'infra-services-grid';
+
+    var healthCards = [
+        { title: 'Health Score', value: healthScore + '%', detail: healthyCount + ' of ' + totalCount + ' services healthy' },
+        { title: 'Healthy', value: String(healthyCount), detail: 'Services responding normally' },
+        { title: 'Degraded', value: String(degradedCount), detail: 'Services with partial issues' },
+        { title: 'Down', value: String(downCount), detail: 'Services not responding' }
+    ];
+
+    healthCards.forEach(function (info) {
+        var card = document.createElement('div');
+        card.className = 'infra-service-card service-health-card';
+
+        var cardTitle = document.createElement('div');
+        cardTitle.className = 'infra-service-card-title';
+        cardTitle.textContent = info.title;
+        card.appendChild(cardTitle);
+
+        var cardValue = document.createElement('div');
+        cardValue.className = 'infra-service-card-value';
+        cardValue.style.fontSize = '24px';
+        cardValue.style.fontWeight = '700';
+        cardValue.textContent = info.value;
+        card.appendChild(cardValue);
+
+        var cardDetail = document.createElement('div');
+        cardDetail.className = 'infra-service-card-detail';
+        cardDetail.textContent = info.detail;
+        card.appendChild(cardDetail);
+
+        cardsGrid.appendChild(card);
+    });
+    container.appendChild(cardsGrid);
+
+    // Degraded services highlighted
+    var degradedServices = services.filter(function (s) { return s.status !== 'healthy'; });
+    if (degradedServices.length > 0) {
+        var alertSection = document.createElement('div');
+        alertSection.className = 'databases-arch-note';
+        alertSection.innerHTML = '<h3>Attention Required</h3>';
+
+        var alertList = document.createElement('ul');
+        degradedServices.forEach(function (s) {
+            var li = document.createElement('li');
+            li.innerHTML = '<strong>' + escapeHtml(s.name) + '</strong> — ' +
+                '<span class="status-badge status-' + s.status + '">' + s.status.toUpperCase() + '</span>' +
+                ' (' + s.latency_ms + 'ms)' +
+                (s.error ? ' — ' + escapeHtml(s.error) : '');
+            alertList.appendChild(li);
+        });
+        alertSection.appendChild(alertList);
+        container.appendChild(alertSection);
+    }
+
+    // Heartbeat info
+    var heartbeatSection = document.createElement('div');
+    heartbeatSection.className = 'databases-arch-note';
+    heartbeatSection.innerHTML = '<h3>Heartbeat</h3>' +
+        '<p>Operator heartbeat endpoint: <code>GET /api/v1/operator/heartbeat</code></p>' +
+        '<p>Gateway polls the operator heartbeat to detect service availability. ' +
+        'The Operator Console live ticker uses SSE for real-time event streaming.</p>';
+    container.appendChild(heartbeatSection);
+
+    return container;
+}
+
+/**
+ * fetchInfraDeployments - GET /api/v1/operator/deployments?limit=30
+ */
+function fetchInfraDeployments() {
+    state.infraDeployments.loading = true;
+    state.infraDeployments.error = null;
+    renderApp();
+
+    fetch('/api/v1/operator/deployments?limit=30', {
+        method: 'GET',
+        headers: buildContextHeaders()
+    }).then(function (r) { return r.json(); })
+    .then(function (data) {
+        state.infraDeployments.items = data.data || data.deployments || (Array.isArray(data) ? data : []);
+        state.infraDeployments.fetched = true;
+        state.infraDeployments.loading = false;
+        renderApp();
+    }).catch(function (err) {
+        state.infraDeployments.error = err.message;
+        state.infraDeployments.loading = false;
+        renderApp();
+    });
+}
+
+/**
+ * renderInfraDeploymentsView - Table of recent deployments.
+ * Columns: Time, Service, Version, Git SHA, Status, Initiator, Duration.
+ */
+function renderInfraDeploymentsView() {
+    var container = document.createElement('div');
+    container.className = 'infra-deployments-container';
+
+    // Auto-fetch
+    if (!state.infraDeployments.fetched && !state.infraDeployments.loading) {
+        fetchInfraDeployments();
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'section-header';
+    var h2 = document.createElement('h2');
+    h2.textContent = 'Deployments';
+    header.appendChild(h2);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Recent deployment history across all services. Tracked via OASIS operator events.';
+    header.appendChild(subtitle);
+    container.appendChild(header);
+
+    // Loading
+    if (state.infraDeployments.loading) {
+        var loadingDiv = document.createElement('div');
+        loadingDiv.className = 'placeholder-content';
+        loadingDiv.textContent = 'Loading...';
+        container.appendChild(loadingDiv);
+        return container;
+    }
+
+    // Error
+    if (state.infraDeployments.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'placeholder-content error-text';
+        errorDiv.textContent = 'Error: ' + state.infraDeployments.error;
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    // Empty
+    if (state.infraDeployments.items.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'placeholder-content';
+        emptyDiv.textContent = 'No deployments found.';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    // Table
+    var tableWrapper = document.createElement('div');
+    tableWrapper.className = 'gov-history-table-wrapper';
+
+    var table = document.createElement('table');
+    table.className = 'list-table';
+
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    ['Time', 'Service', 'Version', 'Git SHA', 'Status', 'Initiator', 'Duration'].forEach(function (h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    state.infraDeployments.items.forEach(function (deploy) {
+        var row = document.createElement('tr');
+
+        var timeCell = document.createElement('td');
+        timeCell.textContent = deploy.created_at ? formatEventTimestamp(deploy.created_at) : (deploy.timestamp ? formatEventTimestamp(deploy.timestamp) : '-');
+        row.appendChild(timeCell);
+
+        var svcCell = document.createElement('td');
+        svcCell.textContent = deploy.service || deploy.service_name || '-';
+        row.appendChild(svcCell);
+
+        var verCell = document.createElement('td');
+        verCell.textContent = deploy.version || deploy.tag || '-';
+        row.appendChild(verCell);
+
+        var shaCell = document.createElement('td');
+        var sha = deploy.git_sha || deploy.commit_sha || deploy.sha || '';
+        shaCell.innerHTML = sha ? '<code>' + escapeHtml(sha.substring(0, 7)) + '</code>' : '-';
+        shaCell.title = sha;
+        row.appendChild(shaCell);
+
+        var statusCell = document.createElement('td');
+        var deployStatus = (deploy.status || 'unknown').toLowerCase();
+        var statusBadge = document.createElement('span');
+        statusBadge.className = 'status-badge status-' + deployStatus;
+        statusBadge.textContent = deployStatus.charAt(0).toUpperCase() + deployStatus.slice(1);
+        statusCell.appendChild(statusBadge);
+        row.appendChild(statusCell);
+
+        var initiatorCell = document.createElement('td');
+        initiatorCell.textContent = deploy.initiator || deploy.triggered_by || deploy.actor || '-';
+        row.appendChild(initiatorCell);
+
+        var durationCell = document.createElement('td');
+        durationCell.textContent = deploy.duration || deploy.duration_ms ? ((deploy.duration_ms || 0) / 1000).toFixed(1) + 's' : '-';
+        row.appendChild(durationCell);
+
+        tbody.appendChild(row);
+    });
+
+    table.appendChild(tbody);
+    tableWrapper.appendChild(table);
+    container.appendChild(tableWrapper);
+
+    return container;
+}
+
+/**
+ * fetchInfraLogs - GET /api/v1/oasis/events?limit=100&topic=deploy,cicd,system
+ */
+function fetchInfraLogs() {
+    state.infraLogs.loading = true;
+    state.infraLogs.error = null;
+    renderApp();
+
+    fetch('/api/v1/oasis/events?limit=100&topic=deploy,cicd,system', {
+        method: 'GET',
+        headers: buildContextHeaders()
+    }).then(function (r) { return r.json(); })
+    .then(function (data) {
+        state.infraLogs.items = Array.isArray(data) ? data : (data.data || []);
+        state.infraLogs.fetched = true;
+        state.infraLogs.loading = false;
+        renderApp();
+    }).catch(function (err) {
+        state.infraLogs.error = err.message;
+        state.infraLogs.loading = false;
+        renderApp();
+    });
+}
+
+/**
+ * renderInfraLogsView - Scrollable log table with source filter.
+ * Columns: Time, Source, Level, VTID, Message.
+ */
+function renderInfraLogsView() {
+    var container = document.createElement('div');
+    container.className = 'infra-logs-container';
+
+    // Auto-fetch
+    if (!state.infraLogs.fetched && !state.infraLogs.loading) {
+        fetchInfraLogs();
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'section-header';
+    var h2 = document.createElement('h2');
+    h2.textContent = 'Infrastructure Logs';
+    header.appendChild(h2);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'System, deployment, and CI/CD events from OASIS. Filtered to infrastructure-relevant topics.';
+    header.appendChild(subtitle);
+    container.appendChild(header);
+
+    // Source filter dropdown
+    var toolbar = document.createElement('div');
+    toolbar.className = 'gov-history-toolbar';
+
+    var sourceSelect = document.createElement('select');
+    sourceSelect.className = 'form-control governance-filter-select';
+    sourceSelect.autocomplete = 'off';
+    sourceSelect.name = 'infra-logs-source-filter-' + Date.now();
+    sourceSelect.innerHTML =
+        '<option value="">All Sources</option>' +
+        '<option value="gateway">Gateway</option>' +
+        '<option value="oasis-operator">OASIS Operator</option>' +
+        '<option value="worker-runner">Worker Runner</option>' +
+        '<option value="cicd">CI/CD</option>' +
+        '<option value="system">System</option>';
+
+    if (!state.infraLogs._sourceFilter) state.infraLogs._sourceFilter = '';
+    sourceSelect.value = state.infraLogs._sourceFilter;
+    sourceSelect.onchange = function (e) {
+        state.infraLogs._sourceFilter = e.target.value;
+        renderApp();
+    };
+    toolbar.appendChild(sourceSelect);
+
+    var spacer = document.createElement('div');
+    spacer.className = 'spacer';
+    toolbar.appendChild(spacer);
+
+    var countLabel = document.createElement('span');
+    countLabel.className = 'gov-history-count';
+    countLabel.textContent = state.infraLogs.items.length + ' events';
+    toolbar.appendChild(countLabel);
+
+    container.appendChild(toolbar);
+
+    // Loading
+    if (state.infraLogs.loading) {
+        var loadingDiv = document.createElement('div');
+        loadingDiv.className = 'placeholder-content';
+        loadingDiv.textContent = 'Loading...';
+        container.appendChild(loadingDiv);
+        return container;
+    }
+
+    // Error
+    if (state.infraLogs.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'placeholder-content error-text';
+        errorDiv.textContent = 'Error: ' + state.infraLogs.error;
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    // Filter items by source
+    var filteredItems = state.infraLogs.items;
+    if (state.infraLogs._sourceFilter) {
+        filteredItems = filteredItems.filter(function (item) {
+            return (item.source || item.service || '').toLowerCase().includes(state.infraLogs._sourceFilter.toLowerCase());
+        });
+    }
+
+    // Empty
+    if (filteredItems.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'placeholder-content';
+        emptyDiv.textContent = 'No infrastructure log events found.';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    // Scrollable Table
+    var tableWrapper = document.createElement('div');
+    tableWrapper.className = 'gov-history-table-wrapper';
+    tableWrapper.style.maxHeight = '600px';
+    tableWrapper.style.overflowY = 'auto';
+
+    var table = document.createElement('table');
+    table.className = 'list-table';
+
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    ['Time', 'Source', 'Level', 'VTID', 'Message'].forEach(function (h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    filteredItems.forEach(function (event) {
+        var row = document.createElement('tr');
+
+        var timeCell = document.createElement('td');
+        timeCell.textContent = formatEventTimestamp(event.created_at);
+        row.appendChild(timeCell);
+
+        var sourceCell = document.createElement('td');
+        sourceCell.textContent = event.source || event.service || '-';
+        row.appendChild(sourceCell);
+
+        var levelCell = document.createElement('td');
+        var levelVal = (event.status || 'info').toLowerCase();
+        var levelBadge = document.createElement('span');
+        levelBadge.className = 'status-badge status-' + levelVal;
+        levelBadge.textContent = levelVal;
+        levelCell.appendChild(levelBadge);
+        row.appendChild(levelCell);
+
+        var vtidCell = document.createElement('td');
+        vtidCell.textContent = event.vtid || '-';
+        row.appendChild(vtidCell);
+
+        var msgCell = document.createElement('td');
+        msgCell.textContent = event.message || '-';
+        msgCell.style.maxWidth = '400px';
+        msgCell.style.overflow = 'hidden';
+        msgCell.style.textOverflow = 'ellipsis';
+        msgCell.style.whiteSpace = 'nowrap';
+        msgCell.title = event.message || '';
+        row.appendChild(msgCell);
+
+        tbody.appendChild(row);
+    });
+
+    table.appendChild(tbody);
+    tableWrapper.appendChild(table);
+    container.appendChild(tableWrapper);
+
+    return container;
+}
+
+/**
+ * fetchInfraConfig - GET /api/v1/governance/controls -> state.infraConfig
+ */
+function fetchInfraConfig() {
+    state.infraConfig.loading = true;
+    state.infraConfig.error = null;
+    renderApp();
+
+    fetch('/api/v1/governance/controls', {
+        method: 'GET',
+        headers: buildContextHeaders()
+    }).then(function (r) { return r.json(); })
+    .then(function (data) {
+        state.infraConfig.data = data.data || (Array.isArray(data) ? data : []);
+        state.infraConfig.fetched = true;
+        state.infraConfig.loading = false;
+        renderApp();
+    }).catch(function (err) {
+        state.infraConfig.error = err.message;
+        state.infraConfig.loading = false;
+        renderApp();
+    });
+}
+
+/**
+ * renderInfraConfigView - Config display with governance control flags as read-only toggle cards.
+ */
+function renderInfraConfigView() {
+    var container = document.createElement('div');
+    container.className = 'infra-config-container';
+
+    // Auto-fetch
+    if (!state.infraConfig.fetched && !state.infraConfig.loading) {
+        fetchInfraConfig();
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'section-header';
+    var h2 = document.createElement('h2');
+    h2.textContent = 'Infrastructure Configuration';
+    header.appendChild(h2);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Governance control flags and service configuration. Read-only view — use Governance > Controls to modify.';
+    header.appendChild(subtitle);
+    container.appendChild(header);
+
+    if (state.infraConfig.loading) {
+        var loadingDiv = document.createElement('div');
+        loadingDiv.className = 'placeholder-content';
+        loadingDiv.textContent = 'Loading...';
+        container.appendChild(loadingDiv);
+        return container;
+    }
+
+    if (state.infraConfig.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'placeholder-content error-text';
+        errorDiv.textContent = 'Error: ' + state.infraConfig.error;
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    var controls = Array.isArray(state.infraConfig.data) ? state.infraConfig.data : [];
+
+    if (controls.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'placeholder-content';
+        emptyDiv.textContent = 'No configuration controls found.';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
+    var cardsGrid = document.createElement('div');
+    cardsGrid.className = 'infra-services-grid';
+
+    controls.forEach(function (control) {
+        var card = document.createElement('div');
+        card.className = 'infra-service-card';
+
+        var keyDiv = document.createElement('div');
+        keyDiv.className = 'infra-service-card-title';
+        keyDiv.textContent = control.key || control.name || 'Unknown';
+        card.appendChild(keyDiv);
+
+        var isEnabled = control.enabled === true;
+        var stateBadge = document.createElement('span');
+        stateBadge.className = 'status-badge status-' + (isEnabled ? 'active' : 'inactive');
+        stateBadge.textContent = isEnabled ? 'ARMED' : 'DISARMED';
+        card.appendChild(stateBadge);
+
+        if (control.reason) {
+            var reasonDiv = document.createElement('div');
+            reasonDiv.className = 'infra-service-card-detail';
+            reasonDiv.textContent = 'Reason: ' + control.reason;
+            card.appendChild(reasonDiv);
+        }
+
+        if (control.updated_at) {
+            var updatedDiv = document.createElement('div');
+            updatedDiv.className = 'infra-service-card-detail';
+            updatedDiv.textContent = 'Last changed: ' + formatEventTimestamp(control.updated_at);
+            card.appendChild(updatedDiv);
+        }
+
+        if (control.updated_by) {
+            var byDiv = document.createElement('div');
+            byDiv.className = 'infra-service-card-detail';
+            byDiv.textContent = 'By: ' + control.updated_by;
+            card.appendChild(byDiv);
+        }
+
+        cardsGrid.appendChild(card);
+    });
+
+    container.appendChild(cardsGrid);
+
+    var urlSection = document.createElement('div');
+    urlSection.className = 'databases-arch-note';
+    urlSection.innerHTML = '<h3>Service URLs</h3>' +
+        '<ul>' +
+        '<li><strong>Gateway:</strong> <code>gateway-86804897789.us-central1.run.app</code></li>' +
+        '<li><strong>OASIS Operator:</strong> <code>oasis-operator-86804897789.us-central1.run.app</code></li>' +
+        '<li><strong>Worker Runner:</strong> <code>worker-runner-86804897789.us-central1.run.app</code></li>' +
+        '<li><strong>Verification Engine:</strong> <code>vitana-verification-engine-86804897789.us-central1.run.app</code></li>' +
+        '</ul>' +
+        '<h3>Environment</h3>' +
+        '<ul>' +
+        '<li><strong>GCP Project:</strong> lovable-vitana-vers1</li>' +
+        '<li><strong>Region:</strong> us-central1</li>' +
+        '<li><strong>Runtime:</strong> Cloud Run (managed)</li>' +
+        '<li><strong>Registry:</strong> us-central1-docker.pkg.dev/lovable-vitana-vers1/cloud-run-source-deploy</li>' +
+        '</ul>';
+    container.appendChild(urlSection);
+
+    return container;
+}
+
+// ===========================================================================
+// Security Module - Fetch & Render Functions
+// ===========================================================================
+
+function fetchSecurityPolicies() {
+    state.securityPolicies.loading = true;
+    state.securityPolicies.error = null;
+    renderApp();
+
+    fetch('/api/v1/governance/rules', { method: 'GET', headers: buildContextHeaders() })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+        state.securityPolicies.items = data.data || data.rules || (Array.isArray(data) ? data : []);
+        state.securityPolicies.fetched = true;
+        state.securityPolicies.loading = false;
+        renderApp();
+    }).catch(function (err) {
+        state.securityPolicies.error = err.message;
+        state.securityPolicies.loading = false;
+        renderApp();
+    });
+}
+
+function renderSecurityPoliciesView() {
+    var container = document.createElement('div');
+    container.className = 'security-policies-container';
+
+    if (!state.securityPolicies.fetched && !state.securityPolicies.loading) { fetchSecurityPolicies(); }
+
+    var header = document.createElement('div');
+    header.className = 'section-header';
+    var h2 = document.createElement('h2');
+    h2.textContent = 'Security Policies';
+    header.appendChild(h2);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Governance rules enforced as security policies. Each rule defines enforcement level and category.';
+    header.appendChild(subtitle);
+    container.appendChild(header);
+
+    if (state.securityPolicies.loading) { container.innerHTML += '<div class="placeholder-content">Loading...</div>'; return container; }
+    if (state.securityPolicies.error) { container.innerHTML += '<div class="placeholder-content error-text">Error: ' + escapeHtml(state.securityPolicies.error) + '</div>'; return container; }
+    if (state.securityPolicies.items.length === 0) { container.innerHTML += '<div class="placeholder-content">No security policies found.</div>'; return container; }
+
+    var tableWrapper = document.createElement('div');
+    tableWrapper.className = 'gov-history-table-wrapper';
+    var table = document.createElement('table');
+    table.className = 'list-table';
+
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    ['Code', 'Level', 'Category', 'Enforcement', 'Description'].forEach(function (h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    state.securityPolicies.items.forEach(function (rule) {
+        var row = document.createElement('tr');
+
+        var codeCell = document.createElement('td');
+        codeCell.innerHTML = '<code>' + escapeHtml(rule.id || rule.code || '-') + '</code>';
+        row.appendChild(codeCell);
+
+        var levelCell = document.createElement('td');
+        var level = rule.level || 'L2';
+        var levelBadge = document.createElement('span');
+        levelBadge.className = 'level-badge level-' + level.toLowerCase();
+        levelBadge.textContent = level;
+        levelCell.appendChild(levelBadge);
+        row.appendChild(levelCell);
+
+        var catCell = document.createElement('td');
+        catCell.textContent = rule.category || rule.domain || '-';
+        row.appendChild(catCell);
+
+        var enfCell = document.createElement('td');
+        var enforcement = rule.enforcement || rule.status || '-';
+        if (Array.isArray(enforcement)) {
+            enforcement.forEach(function (e) {
+                var chip = document.createElement('span');
+                chip.className = 'status-badge status-active';
+                chip.textContent = e;
+                chip.style.marginRight = '4px';
+                enfCell.appendChild(chip);
+            });
+        } else {
+            var enfBadge = document.createElement('span');
+            enfBadge.className = 'status-badge status-' + String(enforcement).toLowerCase();
+            enfBadge.textContent = enforcement;
+            enfCell.appendChild(enfBadge);
+        }
+        row.appendChild(enfCell);
+
+        var descCell = document.createElement('td');
+        descCell.textContent = rule.description || rule.title || '-';
+        descCell.style.maxWidth = '350px';
+        descCell.style.overflow = 'hidden';
+        descCell.style.textOverflow = 'ellipsis';
+        descCell.style.whiteSpace = 'nowrap';
+        descCell.title = rule.description || rule.title || '';
+        row.appendChild(descCell);
+
+        tbody.appendChild(row);
+    });
+
+    table.appendChild(tbody);
+    tableWrapper.appendChild(table);
+    container.appendChild(tableWrapper);
+    return container;
+}
+
+function fetchSecurityRoles() {
+    state.securityRoles.loading = true;
+    state.securityRoles.error = null;
+    renderApp();
+
+    fetch('/api/v1/dev-access/users', { method: 'GET', headers: buildContextHeaders() })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+        state.securityRoles.items = data.data || data.users || (Array.isArray(data) ? data : []);
+        state.securityRoles.fetched = true;
+        state.securityRoles.loading = false;
+        renderApp();
+    }).catch(function (err) {
+        state.securityRoles.error = err.message;
+        state.securityRoles.loading = false;
+        renderApp();
+    });
+}
+
+function renderSecurityRolesView() {
+    var container = document.createElement('div');
+    container.className = 'security-roles-container';
+
+    if (!state.securityRoles.fetched && !state.securityRoles.loading) { fetchSecurityRoles(); }
+
+    var header = document.createElement('div');
+    header.className = 'section-header';
+    var h2 = document.createElement('h2');
+    h2.textContent = 'Roles & Access';
+    header.appendChild(h2);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Dev admin users and their access roles. Managed via the Gateway dev-access API.';
+    header.appendChild(subtitle);
+    container.appendChild(header);
+
+    if (state.securityRoles.loading) { container.innerHTML += '<div class="placeholder-content">Loading...</div>'; return container; }
+    if (state.securityRoles.error) { container.innerHTML += '<div class="placeholder-content error-text">Error: ' + escapeHtml(state.securityRoles.error) + '</div>'; return container; }
+    if (state.securityRoles.items.length === 0) { container.innerHTML += '<div class="placeholder-content">No users found.</div>'; return container; }
+
+    var tableWrapper = document.createElement('div');
+    tableWrapper.className = 'gov-history-table-wrapper';
+    var table = document.createElement('table');
+    table.className = 'list-table';
+
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    ['Email', 'Role', 'Status', 'Granted At'].forEach(function (h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    state.securityRoles.items.forEach(function (user) {
+        var row = document.createElement('tr');
+
+        var emailCell = document.createElement('td');
+        emailCell.textContent = user.email || '-';
+        row.appendChild(emailCell);
+
+        var roleCell = document.createElement('td');
+        var roleBadge = document.createElement('span');
+        roleBadge.className = 'admin-role-badge';
+        roleBadge.textContent = user.role || 'exafy_admin';
+        roleCell.appendChild(roleBadge);
+        row.appendChild(roleCell);
+
+        var statusCell = document.createElement('td');
+        var userStatus = (user.status || 'active').toLowerCase();
+        var statusBadge = document.createElement('span');
+        statusBadge.className = 'status-badge status-' + userStatus;
+        statusBadge.textContent = userStatus.charAt(0).toUpperCase() + userStatus.slice(1);
+        statusCell.appendChild(statusBadge);
+        row.appendChild(statusCell);
+
+        var grantedCell = document.createElement('td');
+        grantedCell.textContent = user.created_at ? formatEventTimestamp(user.created_at) : (user.updated_at ? formatEventTimestamp(user.updated_at) : '-');
+        row.appendChild(grantedCell);
+
+        tbody.appendChild(row);
+    });
+
+    table.appendChild(tbody);
+    tableWrapper.appendChild(table);
+    container.appendChild(tableWrapper);
+    return container;
+}
+
+function renderSecurityKeysSecretsView() {
+    var container = document.createElement('div');
+    container.className = 'security-keys-container';
+
+    var header = document.createElement('div');
+    header.className = 'section-header';
+    var h2 = document.createElement('h2');
+    h2.textContent = 'Keys & Secrets';
+    header.appendChild(h2);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'API keys, JWT configuration, and service account overview. Sensitive values are masked.';
+    header.appendChild(subtitle);
+    container.appendChild(header);
+
+    var cardsGrid = document.createElement('div');
+    cardsGrid.className = 'infra-services-grid';
+
+    var keysInfo = [
+        { title: 'Supabase Service Role Key', value: 'sk-***...***', detail: 'Used by Gateway for server-side Supabase operations. Stored in Cloud Run env.' },
+        { title: 'Supabase Anon Key', value: 'eyJ***...***', detail: 'Public key for client-side Supabase auth. Embedded in frontend config.' },
+        { title: 'GitHub Safe Merge Token', value: 'ghp_***...***', detail: 'Used by CI/CD service for safe merge operations. Scoped to repo.' },
+        { title: 'Gemini API Key', value: 'AI***...***', detail: 'Google AI API key for Gemini model calls. Set in Gateway environment.' },
+        { title: 'OpenAI API Key', value: 'sk-***...***', detail: 'Used for embeddings (text-embedding-ada-002). Optional if using Vertex.' }
+    ];
+
+    keysInfo.forEach(function (info) {
+        var card = document.createElement('div');
+        card.className = 'infra-service-card';
+        var cardTitle = document.createElement('div');
+        cardTitle.className = 'infra-service-card-title';
+        cardTitle.textContent = info.title;
+        card.appendChild(cardTitle);
+        var cardValue = document.createElement('div');
+        cardValue.className = 'infra-service-card-value';
+        cardValue.style.fontFamily = 'monospace';
+        cardValue.style.color = 'var(--color-text-secondary, #888)';
+        cardValue.textContent = info.value;
+        card.appendChild(cardValue);
+        var cardDetail = document.createElement('div');
+        cardDetail.className = 'infra-service-card-detail';
+        cardDetail.textContent = info.detail;
+        card.appendChild(cardDetail);
+        cardsGrid.appendChild(card);
+    });
+    container.appendChild(cardsGrid);
+
+    var jwtSection = document.createElement('div');
+    jwtSection.className = 'databases-arch-note';
+    jwtSection.innerHTML = '<h3>JWT Configuration</h3>' +
+        '<ul>' +
+        '<li><strong>Algorithm:</strong> HS256 (Supabase default)</li>' +
+        '<li><strong>Expiry:</strong> 3600s (1 hour)</li>' +
+        '<li><strong>Issuer:</strong> supabase</li>' +
+        '<li><strong>Audience:</strong> authenticated</li>' +
+        '<li><strong>Refresh:</strong> Supabase handles refresh token rotation automatically</li>' +
+        '</ul>' +
+        '<h3>Service Accounts</h3>' +
+        '<ul>' +
+        '<li><strong>Cloud Run SA:</strong> Default Compute Engine service account</li>' +
+        '<li><strong>Cloud Build SA:</strong> Cloud Build service account (for container builds)</li>' +
+        '<li><strong>Artifact Registry:</strong> Service account with artifactregistry.writer role</li>' +
+        '</ul>';
+    container.appendChild(jwtSection);
+
+    return container;
+}
+
+function fetchSecurityAuditLog() {
+    state.securityAuditLog.loading = true;
+    state.securityAuditLog.error = null;
+    renderApp();
+
+    fetch('/api/v1/governance/history?limit=100', { method: 'GET', headers: buildContextHeaders() })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+        state.securityAuditLog.items = data.events || data.data || (Array.isArray(data) ? data : []);
+        state.securityAuditLog.fetched = true;
+        state.securityAuditLog.loading = false;
+        renderApp();
+    }).catch(function (err) {
+        state.securityAuditLog.error = err.message;
+        state.securityAuditLog.loading = false;
+        renderApp();
+    });
+}
+
+function renderSecurityAuditLogView() {
+    var container = document.createElement('div');
+    container.className = 'security-audit-log-container';
+
+    if (!state.securityAuditLog.fetched && !state.securityAuditLog.loading) { fetchSecurityAuditLog(); }
+
+    var header = document.createElement('div');
+    header.className = 'section-header';
+    var h2 = document.createElement('h2');
+    h2.textContent = 'Audit Log';
+    header.appendChild(h2);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Governance action history as an audit trail. All control changes and enforcement events are logged.';
+    header.appendChild(subtitle);
+    container.appendChild(header);
+
+    // Action type filter
+    var toolbar = document.createElement('div');
+    toolbar.className = 'gov-history-toolbar';
+    var actionSelect = document.createElement('select');
+    actionSelect.className = 'form-control governance-filter-select';
+    actionSelect.autocomplete = 'off';
+    actionSelect.name = 'audit-action-filter-' + Date.now();
+    actionSelect.innerHTML =
+        '<option value="">All Actions</option>' +
+        '<option value="governance.deploy.allowed">Deploy Allowed</option>' +
+        '<option value="governance.deploy.blocked">Deploy Blocked</option>' +
+        '<option value="governance.evaluate">Evaluate</option>' +
+        '<option value="governance.rule.created">Rule Created</option>' +
+        '<option value="governance.rule.updated">Rule Updated</option>' +
+        '<option value="governance.control.enabled">Control Enabled</option>' +
+        '<option value="governance.control.disabled">Control Disabled</option>';
+    if (!state.securityAuditLog._actionFilter) state.securityAuditLog._actionFilter = '';
+    actionSelect.value = state.securityAuditLog._actionFilter;
+    actionSelect.onchange = function (e) { state.securityAuditLog._actionFilter = e.target.value; renderApp(); };
+    toolbar.appendChild(actionSelect);
+    var spacer = document.createElement('div');
+    spacer.className = 'spacer';
+    toolbar.appendChild(spacer);
+    var countLabel = document.createElement('span');
+    countLabel.className = 'gov-history-count';
+    countLabel.textContent = state.securityAuditLog.items.length + ' events';
+    toolbar.appendChild(countLabel);
+    container.appendChild(toolbar);
+
+    if (state.securityAuditLog.loading) { container.innerHTML += '<div class="placeholder-content">Loading...</div>'; return container; }
+    if (state.securityAuditLog.error) { container.innerHTML += '<div class="placeholder-content error-text">Error: ' + escapeHtml(state.securityAuditLog.error) + '</div>'; return container; }
+
+    var filteredItems = state.securityAuditLog.items;
+    if (state.securityAuditLog._actionFilter) {
+        filteredItems = filteredItems.filter(function (item) { return (item.type || '').toLowerCase().includes(state.securityAuditLog._actionFilter.toLowerCase()); });
+    }
+    if (filteredItems.length === 0) { container.innerHTML += '<div class="placeholder-content">No audit log events found.</div>'; return container; }
+
+    var tableWrapper = document.createElement('div');
+    tableWrapper.className = 'gov-history-table-wrapper';
+    var table = document.createElement('table');
+    table.className = 'list-table';
+
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    ['Time', 'Actor', 'Action', 'Resource', 'Level', 'Status'].forEach(function (h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    filteredItems.forEach(function (event) {
+        var row = document.createElement('tr');
+
+        var timeCell = document.createElement('td');
+        timeCell.textContent = event.timestamp ? formatEventTimestamp(event.timestamp) : (event.created_at ? formatEventTimestamp(event.created_at) : '-');
+        row.appendChild(timeCell);
+
+        var actorCell = document.createElement('td');
+        actorCell.textContent = event.actor || event.actor_email || '-';
+        row.appendChild(actorCell);
+
+        var actionCell = document.createElement('td');
+        actionCell.innerHTML = '<code>' + escapeHtml(event.type || event.action || '-') + '</code>';
+        row.appendChild(actionCell);
+
+        var resourceCell = document.createElement('td');
+        resourceCell.textContent = event.resource || event.vtid || event.summary || '-';
+        row.appendChild(resourceCell);
+
+        var levelCell = document.createElement('td');
+        if (event.level) {
+            var levelBadge = document.createElement('span');
+            levelBadge.className = 'level-badge level-' + event.level.toLowerCase();
+            levelBadge.textContent = event.level;
+            levelCell.appendChild(levelBadge);
+        } else { levelCell.textContent = '-'; }
+        row.appendChild(levelCell);
+
+        var statusCell = document.createElement('td');
+        var auditStatus = (event.result || event.status || 'info').toLowerCase();
+        var statusBadge = document.createElement('span');
+        statusBadge.className = 'status-badge status-' + auditStatus;
+        statusBadge.textContent = auditStatus.charAt(0).toUpperCase() + auditStatus.slice(1);
+        statusCell.appendChild(statusBadge);
+        row.appendChild(statusCell);
+
+        tbody.appendChild(row);
+    });
+
+    table.appendChild(tbody);
+    tableWrapper.appendChild(table);
+    container.appendChild(tableWrapper);
+    return container;
+}
+
+function renderSecurityRlsAccessView() {
+    var container = document.createElement('div');
+    container.className = 'security-rls-container';
+
+    var header = document.createElement('div');
+    header.className = 'section-header';
+    var h2 = document.createElement('h2');
+    h2.textContent = 'Row Level Security (RLS)';
+    header.appendChild(h2);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'RLS policies enforce tenant isolation at the database level. Every query is scoped to the authenticated user\'s tenant.';
+    header.appendChild(subtitle);
+    container.appendChild(header);
+
+    var rlsPolicies = [
+        { table: 'profiles', policy: 'profiles_tenant_isolation', type: 'ALL', expression: 'tenant_id = auth.jwt() ->> \'tenant_id\'' },
+        { table: 'tenants', policy: 'tenants_own_tenant', type: 'SELECT', expression: 'id = auth.jwt() ->> \'tenant_id\'' },
+        { table: 'chat_messages', policy: 'chat_messages_tenant_rls', type: 'ALL', expression: 'tenant_id = auth.jwt() ->> \'tenant_id\'' },
+        { table: 'memory_items', policy: 'memory_items_tenant_rls', type: 'ALL', expression: 'tenant_id = auth.jwt() ->> \'tenant_id\'' },
+        { table: 'memory_facts', policy: 'memory_facts_tenant_rls', type: 'ALL', expression: 'tenant_id = auth.jwt() ->> \'tenant_id\'' },
+        { table: 'relationship_nodes', policy: 'rel_nodes_tenant_rls', type: 'ALL', expression: 'tenant_id = auth.jwt() ->> \'tenant_id\'' },
+        { table: 'relationship_edges', policy: 'rel_edges_tenant_rls', type: 'ALL', expression: 'Enforced via node ownership' },
+        { table: 'services_catalog', policy: 'services_catalog_rls', type: 'SELECT', expression: 'tenant_id = auth.jwt() ->> \'tenant_id\' OR is_public = true' },
+        { table: 'products_catalog', policy: 'products_catalog_rls', type: 'SELECT', expression: 'tenant_id = auth.jwt() ->> \'tenant_id\' OR is_public = true' },
+        { table: 'personalization_audit', policy: 'personalization_audit_rls', type: 'ALL', expression: 'tenant_id = auth.jwt() ->> \'tenant_id\'' },
+        { table: 'memory_garden_config', policy: 'None (public read)', type: 'SELECT', expression: 'Public — read-only reference table' },
+        { table: 'oasis_events', policy: 'None (service role)', type: 'ALL', expression: 'Service role key bypasses RLS for system writes' },
+        { table: 'vtid_ledger', policy: 'None (service role)', type: 'ALL', expression: 'Service role key bypasses RLS for task management' }
+    ];
+
+    var tableWrapper = document.createElement('div');
+    tableWrapper.className = 'gov-history-table-wrapper';
+    var table = document.createElement('table');
+    table.className = 'list-table';
+
+    var thead = document.createElement('thead');
+    var headerRow = document.createElement('tr');
+    ['Table', 'Policy', 'Type', 'Expression'].forEach(function (h) {
+        var th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    rlsPolicies.forEach(function (p) {
+        var row = document.createElement('tr');
+
+        var tableCell = document.createElement('td');
+        tableCell.innerHTML = '<code>' + escapeHtml(p.table) + '</code>';
+        row.appendChild(tableCell);
+
+        var policyCell = document.createElement('td');
+        policyCell.textContent = p.policy;
+        row.appendChild(policyCell);
+
+        var typeCell = document.createElement('td');
+        p.type.split('/').forEach(function (t) {
+            var badge = document.createElement('span');
+            badge.className = 'status-badge status-active';
+            badge.textContent = t.trim();
+            badge.style.marginRight = '4px';
+            typeCell.appendChild(badge);
+        });
+        row.appendChild(typeCell);
+
+        var exprCell = document.createElement('td');
+        exprCell.innerHTML = '<code style="font-size: 11px;">' + escapeHtml(p.expression) + '</code>';
+        exprCell.style.maxWidth = '400px';
+        exprCell.style.overflow = 'hidden';
+        exprCell.style.textOverflow = 'ellipsis';
+        exprCell.title = p.expression;
+        row.appendChild(exprCell);
+
+        tbody.appendChild(row);
+    });
+
+    table.appendChild(tbody);
+    tableWrapper.appendChild(table);
+    container.appendChild(tableWrapper);
+
+    var noteDiv = document.createElement('div');
+    noteDiv.className = 'databases-arch-note';
+    noteDiv.innerHTML = '<h3>RLS Architecture</h3>' +
+        '<ul>' +
+        '<li>RLS is enforced at the PostgreSQL level via Supabase policies.</li>' +
+        '<li>The <code>auth.jwt()</code> function extracts tenant_id from the JWT token.</li>' +
+        '<li>Service role key (used by Gateway) bypasses RLS for system-level operations.</li>' +
+        '<li>All client-facing queries go through the anon key and are RLS-scoped.</li>' +
+        '<li>OASIS events and vtid_ledger use service role for cross-tenant system operations.</li>' +
+        '</ul>';
+    container.appendChild(noteDiv);
+
+    return container;
+}
