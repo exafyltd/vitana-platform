@@ -70,6 +70,9 @@ export const ConversationTurnRequestSchema = z.object({
   /** User's active role */
   role: z.string().default('user'),
 
+  /** Preferred language (2-letter ISO code, e.g. 'en', 'de', 'sr') */
+  lang: z.string().min(2).max(5).optional(),
+
   /** Thread ID for conversation continuity */
   thread_id: z.string().uuid().optional(),
 
