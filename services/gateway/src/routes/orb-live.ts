@@ -725,6 +725,15 @@ const LIVE_API_VOICES: Record<string, string> = {
 };
 
 // =============================================================================
+// VTID-RESPONSE-DELAY: VAD silence threshold for end-of-speech detection
+// =============================================================================
+// How long Vertex waits after user stops speaking before triggering a response.
+// Default Vertex VAD is ~100ms which is too aggressive — the model starts responding
+// while users are still mid-thought or pausing between sentences.
+// 2000ms (2s) provides natural pause tolerance for conversational speech.
+const VAD_SILENCE_DURATION_MS = 2_000;
+
+// =============================================================================
 // VTID-STREAM-SILENCE: Silence audio keepalive for Vertex Live API
 // =============================================================================
 // Vertex AI Live API has an idle timeout (~25-30s). When no audio is sent,
@@ -1350,12 +1359,17 @@ async function connectToLiveAPI(
               }
             }
           },
-          // VTID-STREAM-SILENCE: Do NOT set realtime_input_config / automatic_activity_detection.
-          // The original working version (pre-c6f9627) used Vertex's DEFAULT VAD and sessions
-          // were stable. Explicitly setting VAD params (start_of_speech_sensitivity,
-          // end_of_speech_sensitivity, silence_duration_ms) caused Vertex to close sessions
-          // with code 1000 after just 10-30 seconds. Removing this block restores Vertex
-          // defaults which handle speech detection and idle timeouts correctly.
+          // VTID-RESPONSE-DELAY: Configure VAD to wait longer before treating silence as end-of-speech.
+          // Vertex's default VAD (~100ms silence threshold) responds too quickly, causing the model
+          // to start answering while the user is still mid-thought or pausing between sentences.
+          // Setting silence_duration_ms to 2000ms gives users ~2 seconds of pause tolerance.
+          // Note: Previous attempt (pre-c6f9627) set all VAD params including start/end sensitivity
+          // which destabilized sessions. This minimal config only sets silence_duration_ms to avoid that.
+          realtime_input_config: {
+            automatic_activity_detection: {
+              silence_duration_ms: VAD_SILENCE_DURATION_MS
+            }
+          },
           // VTID-01225: Enable transcription at setup level (not in generation_config)
           output_audio_transcription: {},
           input_audio_transcription: {},
@@ -1384,6 +1398,7 @@ async function connectToLiveAPI(
       const setupPreview = JSON.stringify(setupMessage).substring(0, 800);
       console.log(`[VTID-01219] Sending setup message:`, setupPreview);
       console.log(`[VTID-01224] Setup includes: tools=${session.identity ? 3 : 0}, contextChars=${session.contextInstruction?.length || 0}`);
+      console.log(`[VTID-RESPONSE-DELAY] VAD silence_duration_ms=${VAD_SILENCE_DURATION_MS}`);
       ws.send(JSON.stringify(setupMessage));
       console.log(`[VTID-01219] Setup message sent for session ${session.sessionId}`);
     });
