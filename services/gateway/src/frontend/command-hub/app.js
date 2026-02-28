@@ -4144,11 +4144,11 @@ async function fetchGitHubFeed() {
         state.approvals.feedItems = [];
         state.approvals.feedError = err.message || 'Network error';
         console.error('[VTID-01154] GitHub feed exception:', err);
+    } finally {
+        state.approvals.feedLoading = false;
+        state.approvals.feedFetched = true;
+        renderApp();
     }
-
-    state.approvals.feedLoading = false;
-    state.approvals.feedFetched = true;
-    renderApp();
 }
 
 /**
@@ -9682,58 +9682,62 @@ async function fetchAgentsRegistry() {
     state.agentsRegistry.errors = { orchestratorHealth: null, subagents: null, skills: null };
     renderApp();
 
-    var endpoints = [
-        { key: 'orchestratorHealth', url: '/api/v1/worker/orchestrator/health' },
-        { key: 'subagents', url: '/api/v1/worker/subagents' },
-        { key: 'skills', url: '/api/v1/worker/skills' }
-    ];
+    try {
+        var endpoints = [
+            { key: 'orchestratorHealth', url: '/api/v1/worker/orchestrator/health' },
+            { key: 'subagents', url: '/api/v1/worker/subagents' },
+            { key: 'skills', url: '/api/v1/worker/skills' }
+        ];
 
-    var results = await Promise.all(endpoints.map(async function (ep) {
-        var startTime = Date.now();
-        try {
-            var response = await fetch(ep.url, {
-                headers: buildContextHeaders({})
-            });
-            var elapsed = Date.now() - startTime;
-            var data = null;
-            var errorText = null;
+        var results = await Promise.all(endpoints.map(async function (ep) {
+            var startTime = Date.now();
+            try {
+                var response = await fetch(ep.url, {
+                    headers: buildContextHeaders({})
+                });
+                var elapsed = Date.now() - startTime;
+                var data = null;
+                var errorText = null;
 
-            if (response.ok) {
-                data = await response.json();
-            } else {
-                errorText = await response.text().catch(function () { return 'Unknown error'; });
+                if (response.ok) {
+                    data = await response.json();
+                } else {
+                    errorText = await response.text().catch(function () { return 'Unknown error'; });
+                }
+
+                return {
+                    key: ep.key,
+                    status: response.status,
+                    timing: elapsed,
+                    data: data,
+                    error: response.ok ? null : { status: response.status, text: errorText.substring(0, 500) }
+                };
+            } catch (e) {
+                var elapsed = Date.now() - startTime;
+                return {
+                    key: ep.key,
+                    status: 0,
+                    timing: elapsed,
+                    data: null,
+                    error: { status: 0, text: e.message }
+                };
             }
+        }));
 
-            return {
-                key: ep.key,
-                status: response.status,
-                timing: elapsed,
-                data: data,
-                error: response.ok ? null : { status: response.status, text: errorText.substring(0, 500) }
-            };
-        } catch (e) {
-            var elapsed = Date.now() - startTime;
-            return {
-                key: ep.key,
-                status: 0,
-                timing: elapsed,
-                data: null,
-                error: { status: 0, text: e.message }
-            };
-        }
-    }));
-
-    // Process results
-    results.forEach(function (r) {
-        state.agentsRegistry[r.key] = r.data;
-        state.agentsRegistry.timing[r.key] = r.timing;
-        state.agentsRegistry.status[r.key] = r.status;
-        state.agentsRegistry.errors[r.key] = r.error;
-    });
-
-    state.agentsRegistry.loading = false;
-    state.agentsRegistry.fetched = true;
-    renderApp();
+        // Process results
+        results.forEach(function (r) {
+            state.agentsRegistry[r.key] = r.data;
+            state.agentsRegistry.timing[r.key] = r.timing;
+            state.agentsRegistry.status[r.key] = r.status;
+            state.agentsRegistry.errors[r.key] = r.error;
+        });
+    } catch (error) {
+        console.error('[VTID-01173] Failed to fetch agents registry:', error);
+    } finally {
+        state.agentsRegistry.loading = false;
+        state.agentsRegistry.fetched = true;
+        renderApp();
+    }
 }
 
 /**
@@ -10403,11 +10407,11 @@ async function fetchPipelinesData(append) {
         state.agentsPipelines.status.ledger = 0;
         state.agentsPipelines.errors.ledger = { status: 0, message: err.message };
         if (!append) state.agentsPipelines.items = [];
+    } finally {
+        state.agentsPipelines.loading = false;
+        state.agentsPipelines.fetched = true;
+        renderApp();
     }
-
-    state.agentsPipelines.loading = false;
-    state.agentsPipelines.fetched = true;
-    renderApp();
 }
 
 /**
@@ -11104,11 +11108,11 @@ async function fetchLLMRoutingPolicy() {
     } catch (err) {
         console.error('[VTID-01208] Policy fetch error:', err);
         state.agentsTelemetry.policyError = 'Network error: ' + err.message;
+    } finally {
+        state.agentsTelemetry.policyLoading = false;
+        state.agentsTelemetry.policyFetched = true;
+        renderApp();
     }
-
-    state.agentsTelemetry.policyLoading = false;
-    state.agentsTelemetry.policyFetched = true;
-    renderApp();
 }
 
 /**
@@ -11179,11 +11183,11 @@ async function fetchLLMTelemetryEvents(append) {
         console.error('[VTID-01208] Telemetry fetch error:', err);
         state.agentsTelemetry.eventsError = 'Network error: ' + err.message;
         if (!append) state.agentsTelemetry.events = [];
+    } finally {
+        state.agentsTelemetry.eventsLoading = false;
+        state.agentsTelemetry.eventsFetched = true;
+        renderApp();
     }
-
-    state.agentsTelemetry.eventsLoading = false;
-    state.agentsTelemetry.eventsFetched = true;
-    renderApp();
 }
 
 /**
@@ -12944,9 +12948,10 @@ async function fetchGovernanceEvaluations() {
         console.error('[VTID-0406] Failed to fetch governance evaluations:', error);
         state.governanceEvaluationsError = error.message;
         state.governanceEvaluations = [];
+    } finally {
+        state.governanceEvaluationsLoading = false;
+        renderApp();
     }
-    state.governanceEvaluationsLoading = false;
-    renderApp();
 }
 
 /**
@@ -13226,9 +13231,10 @@ async function fetchGovernanceHistory() {
         console.warn('[VTID-0408] Governance history fetch error:', error);
         state.governanceHistory.error = error.message;
         state.governanceHistory.items = [];
+    } finally {
+        state.governanceHistory.loading = false;
+        renderApp();
     }
-    state.governanceHistory.loading = false;
-    renderApp();
 }
 
 /**
@@ -13641,10 +13647,10 @@ async function fetchGovernanceCategories() {
         console.warn('[VTID-0409] Governance categories fetch error:', error);
         state.governanceCategories.error = error.message;
         state.governanceCategories.items = [];
+    } finally {
+        state.governanceCategories.loading = false;
+        renderApp();
     }
-
-    state.governanceCategories.loading = false;
-    renderApp();
 }
 
 /**
@@ -23555,6 +23561,22 @@ function geminiLiveHandleMessage(msg) {
             // so next response doesn't have a gap
             state.orb.geminiLiveLastScheduledEnd = 0;
             console.log('[VTID-VOICE-INIT] Turn complete — scheduler reset');
+
+            // FIX: Signal ready to listen after greeting/response completes
+            setTimeout(function() {
+                if (!state.orb.geminiLiveAudioPlaying) {
+                    // Update orb state to listening
+                    setOrbState('listening');
+                    state.orb.voiceState = 'LISTENING';
+
+                    // Play subtle beep to signal readiness
+                    playListenReadyBeep();
+
+                    // Update UI
+                    renderApp();
+                    console.log('[ORB-FIX] Ready to listen - feedback sent');
+                }
+            }, 250);
             break;
 
         case 'interrupted':
@@ -23716,6 +23738,39 @@ function geminiLiveSendAudio(base64Data) {
     }).catch(function (error) {
         console.warn('[VTID-01155] Failed to send audio:', error);
     });
+}
+
+/**
+ * ORB-FIX: Play subtle beep to signal orb is ready to listen
+ * Called after greeting or response completes to give audio feedback
+ */
+function playListenReadyBeep() {
+    try {
+        var audioContext = state.orb.geminiLiveAudioContext;
+        if (!audioContext || audioContext.state === 'closed') {
+            console.log('[ORB-FIX] AudioContext not available for ready beep');
+            return;
+        }
+
+        // Create 200ms gentle beep at 800Hz
+        var oscillator = audioContext.createOscillator();
+        var gainNode = audioContext.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        oscillator.frequency.value = 800; // 800Hz tone
+        gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+        gainNode.gain.linearRampToValueAtTime(0.1, audioContext.currentTime + 0.05); // Fade in
+        gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.2); // Fade out
+
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.2);
+
+        console.log('[ORB-FIX] Ready beep played');
+    } catch (e) {
+        console.warn('[ORB-FIX] Could not play ready beep:', e);
+    }
 }
 
 /**
@@ -23996,6 +24051,7 @@ function geminiLivePlayAudio(base64Data, mimeType) {
 /**
  * VTID-01219: Process audio queue and schedule all chunks immediately
  * Uses Web Audio API for gapless PCM playback
+ * MOBILE-FIX: Added AudioContext resume and stabilization for mobile browsers
  */
 function geminiLiveProcessQueue() {
     // If we receive WAV (fallback), we must play sequentially to avoid overlap clutter
@@ -24006,6 +24062,28 @@ function geminiLiveProcessQueue() {
         state.orb.geminiLiveAudioContext = new (window.AudioContext || window.webkitAudioContext)();
     }
     var audioContext = state.orb.geminiLiveAudioContext;
+
+    // MOBILE-FIX: Ensure AudioContext is running (critical for mobile browsers)
+    if (audioContext.state === 'suspended') {
+        console.log('[MOBILE-FIX] AudioContext suspended, resuming...');
+        audioContext.resume().then(function() {
+            console.log('[MOBILE-FIX] AudioContext resumed, state:', audioContext.state);
+            // Process queue again after resume
+            setTimeout(geminiLiveProcessQueue, 50);
+        }).catch(function(e) {
+            console.error('[MOBILE-FIX] Failed to resume AudioContext:', e);
+        });
+        return; // Exit and retry after resume
+    }
+
+    // MOBILE-FIX: For first chunk, wait for more audio to buffer (prevents mid-sentence start)
+    var isFirstChunk = state.orb.geminiLiveScheduledSources.length === 0;
+    if (isFirstChunk && state.orb.geminiLiveAudioQueue.length === 1) {
+        // Only one chunk available - wait for more to ensure smooth playback on mobile
+        console.log('[MOBILE-FIX] First chunk - waiting for more audio to buffer...');
+        setTimeout(geminiLiveProcessQueue, 100);
+        return;
+    }
 
     while (state.orb.geminiLiveAudioQueue.length > 0) {
         var chunk = state.orb.geminiLiveAudioQueue.shift();
