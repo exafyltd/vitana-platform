@@ -1,11 +1,20 @@
-node_modules/
-dist/
-*.log
-.env
-.DS_Store
+# Backup files
+*.backup
+*.backup2
+app.js.backup*
+
+# Temporary files
+temp_*
+*.tmp
+*.temp
+
+# Editor files
 .vscode/
+.idea/
 *.swp
 *.swo
 *~
-__pycache__/
-services/agents/vitana-orchestrator/src/vitana_verification_engine.egg-info/
+
+# OS files
+.DS_Store
+Thumbs.db
