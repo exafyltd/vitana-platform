@@ -28671,6 +28671,7 @@ function renderCommandHubLiveConsoleView() {
 
 function fetchIntegrationsMcp() {
     state.integrationsMcp.loading = true;
+    state.integrationsMcp.error = null;
     renderApp();
     fetch('/api/v1/workers/connector/list', { headers: buildContextHeaders() })
         .then(function (r) { return r.json(); })
@@ -28760,6 +28761,7 @@ function renderIntegrationsMcpView() {
 
 function fetchIntegrationsLlm() {
     state.integrationsLlm.loading = true;
+    state.integrationsLlm.error = null;
     renderApp();
     fetch('/api/v1/llm/models', { headers: buildContextHeaders() })
         .then(function (r) { return r.json(); })
@@ -28941,6 +28943,7 @@ function renderIntegrationsApisView() {
 
 function fetchIntegrationsTools() {
     state.integrationsTools.loading = true;
+    state.integrationsTools.error = null;
     renderApp();
     Promise.all([
         fetch('/api/v1/conversation/tools', { headers: buildContextHeaders() }).then(function (r) { return r.json(); }),
