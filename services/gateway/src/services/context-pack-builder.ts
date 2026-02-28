@@ -54,6 +54,7 @@ const IDENTITY_CORE_KEYS = [
   'spouse_name', 'fiancee_name', 'mother_name', 'father_name',
   'fiancee_birthday',
   'user_health_condition', 'user_medication', 'user_allergy',
+  'preferred_language',
 ];
 
 // =============================================================================
@@ -944,6 +945,13 @@ export function formatContextPackForLLM(pack: ContextPack): string {
   context += `User: ${pack.identity.display_name || pack.identity.user_id}\n`;
   context += `Role: ${pack.identity.role}\n`;
   context += `Session: Turn ${pack.session_state.turn_number} via ${pack.session_state.channel}\n`;
+
+  // Extract and embed preferred language in identity context
+  const preferredLang = extractLanguageFromContextPack(pack);
+  if (preferredLang) {
+    context += `Preferred Language: ${preferredLang}\n`;
+  }
+
   context += `</user_context>\n\n`;
 
   // Structured facts section (from cognee extraction pipeline)
@@ -1011,4 +1019,31 @@ export function formatContextPackForLLM(pack: ContextPack): string {
   }
 
   return context;
+}
+
+/**
+ * Extract the user's preferred language from a context pack's structured facts.
+ * Returns the language name (e.g. "German", "Serbian") or null if not set.
+ */
+export function extractLanguageFromContextPack(pack: ContextPack): string | null {
+  const langHit = pack.memory_hits.find(
+    h => h.category_key.startsWith('fact:') && h.content.toLowerCase().includes('preferred_language')
+  );
+  if (langHit) {
+    // Content format: "preferred_language: German"
+    const parts = langHit.content.split(':');
+    if (parts.length >= 2) {
+      return parts.slice(1).join(':').trim();
+    }
+  }
+  return null;
+}
+
+/**
+ * Build a language directive string for system instructions.
+ * Returns an empty string if no language preference is found.
+ */
+export function buildLanguageDirective(languageName: string | null): string {
+  if (!languageName) return '';
+  return `\nLANGUAGE: Respond ONLY in ${languageName}. Do NOT mix languages or switch to English unless the user explicitly asks.\n`;
 }

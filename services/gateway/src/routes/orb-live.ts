@@ -159,6 +159,8 @@ import {
   getMemoryContext,
   buildMemoryIndexerEnhancedInstruction
 } from '../services/memory-indexer-client';
+// Language preference persistence via memory_facts
+import { writeFact, getCurrentFacts } from '../services/memory-facts-service';
 // VTID-01219: Gemini Live API WebSocket for real-time voice-to-voice
 // VTID-01222: WebSocket server for client connections
 import WebSocket, { WebSocketServer } from 'ws';
@@ -2380,6 +2382,7 @@ async function generateMemoryEnhancedSystemInstruction(
   // This bypasses ALL pipeline complexity (Mem0, Context Assembly, Memory Bridge)
   // and guarantees structured facts are ALWAYS available in the system instruction.
   let memoryFactsSection = '';
+  let resolvedLanguageDirective = '';
   try {
     const SUPABASE_URL_ENV = process.env.SUPABASE_URL;
     const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
@@ -2396,6 +2399,12 @@ async function generateMemoryEnhancedSystemInstruction(
       if (factsResp.ok) {
         const facts = await factsResp.json() as Array<{ fact_key: string; fact_value: string; entity: string }>;
         if (facts.length > 0) {
+          // Extract preferred_language from facts for explicit language directive
+          const langFact = facts.find(f => f.fact_key === 'preferred_language');
+          if (langFact) {
+            resolvedLanguageDirective = `\nLANGUAGE: Respond ONLY in ${langFact.fact_value}. Do NOT mix languages or switch to English unless the user explicitly asks.`;
+            console.log(`[LANG-PREF] Resolved language from memory_facts: ${langFact.fact_value}`);
+          }
           const factLines = facts.map(f =>
             f.entity === 'disclosed'
               ? `- ${f.fact_key}: ${f.fact_value} (about someone the user knows)`
@@ -2413,7 +2422,7 @@ async function generateMemoryEnhancedSystemInstruction(
   // Base instruction WITHOUT memory claims (used when memory is unavailable)
   // VTID-01225-READ-FIX: Always append memory_facts if available
   const baseInstructionNoMemory = `You are VITANA ORB, a voice-first multimodal assistant.
-
+${resolvedLanguageDirective}
 Context:
 - tenant: ${session.tenant}
 - role: ${session.role}
@@ -2428,7 +2437,7 @@ Operating mode:
 
   // Base instruction WITH memory claims (used when memory IS available)
   const baseInstructionWithMemory = `You are VITANA ORB, a voice-first multimodal assistant with persistent memory.
-
+${resolvedLanguageDirective}
 Context:
 - tenant: ${session.tenant}
 - role: ${session.role}
@@ -4783,6 +4792,66 @@ function getVoiceForLang(lang: string): string {
 }
 
 /**
+ * Persist user's language preference to memory_facts.
+ * Fire-and-forget — does not block session start.
+ */
+function persistLanguagePreference(
+  tenantId: string,
+  userId: string,
+  lang: string
+): void {
+  const langNames: Record<string, string> = {
+    en: 'English', de: 'German', fr: 'French', es: 'Spanish',
+    ar: 'Arabic', zh: 'Chinese', ru: 'Russian', sr: 'Serbian',
+  };
+  writeFact({
+    tenant_id: tenantId,
+    user_id: userId,
+    fact_key: 'preferred_language',
+    fact_value: langNames[lang] || lang,
+    entity: 'self',
+    fact_value_type: 'text',
+    provenance_source: 'system_observed',
+    provenance_confidence: 0.95,
+  }).then(result => {
+    if (result.ok) {
+      console.log(`[LANG-PREF] Persisted preferred_language=${lang} for user=${userId.substring(0, 8)}...`);
+    }
+  }).catch(err => {
+    console.warn(`[LANG-PREF] Failed to persist language preference: ${err.message}`);
+  });
+}
+
+/**
+ * Retrieve user's stored language preference from memory_facts.
+ * Returns the 2-letter ISO code or null if not found.
+ */
+async function getStoredLanguagePreference(
+  tenantId: string,
+  userId: string
+): Promise<string | null> {
+  try {
+    const result = await getCurrentFacts({
+      tenant_id: tenantId,
+      user_id: userId,
+      fact_keys: ['preferred_language'],
+    });
+    if (result.ok && result.facts.length > 0) {
+      const storedLang = result.facts[0].fact_value.toLowerCase();
+      // Map full language name back to 2-letter code
+      const nameToCode: Record<string, string> = {
+        english: 'en', german: 'de', french: 'fr', spanish: 'es',
+        arabic: 'ar', chinese: 'zh', russian: 'ru', serbian: 'sr',
+      };
+      return nameToCode[storedLang] || (SUPPORTED_LIVE_LANGUAGES.includes(storedLang) ? storedLang : null);
+    }
+  } catch (err: any) {
+    console.warn(`[LANG-PREF] Failed to retrieve language preference: ${err.message}`);
+  }
+  return null;
+}
+
+/**
  * VTID-01155: POST /live/session/start - Start Gemini Live API session
  * VTID-01226: Added requireAuthWithTenant middleware for multi-tenant auth
  *
@@ -4818,7 +4887,7 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
   const orbIdentity = resolveOrbIdentity(req);
 
   const body = req.body as LiveSessionStartRequest;
-  const lang = normalizeLang(body.lang || 'en');
+  const clientRequestedLang = body.lang; // may be undefined if client didn't specify
   const voiceStyle = body.voice_style || 'friendly, calm, empathetic';
   const responseModalities = body.response_modalities || ['audio', 'text'];
   const conversationSummary = body.conversation_summary || undefined;
@@ -4850,6 +4919,21 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
             iat: null,
           }
         : null;
+
+  // Resolve language: use client-requested language, fall back to stored preference, then 'en'
+  let lang = normalizeLang(clientRequestedLang || 'en');
+  if (!clientRequestedLang && bootstrapIdentity?.user_id && bootstrapIdentity?.tenant_id) {
+    const storedLang = await getStoredLanguagePreference(bootstrapIdentity.tenant_id, bootstrapIdentity.user_id);
+    if (storedLang) {
+      lang = storedLang;
+      console.log(`[LANG-PREF] Using stored language preference: ${lang} for user=${bootstrapIdentity.user_id.substring(0, 8)}...`);
+    }
+  }
+
+  // Persist language preference (fire-and-forget)
+  if (bootstrapIdentity?.user_id && bootstrapIdentity?.tenant_id) {
+    persistLanguagePreference(bootstrapIdentity.tenant_id, bootstrapIdentity.user_id, lang);
+  }
 
   // VTID-01225-ROLE: Fetch real application role alongside context bootstrap
   let sseActiveRole: string | null = null;
@@ -6135,10 +6219,8 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     return;
   }
 
-  const lang = normalizeLang(message.lang || 'en');
+  const clientRequestedLangWs = message.lang; // may be undefined
   const responseModalities = message.response_modalities || ['audio', 'text'];
-
-  console.log(`[VTID-01222] Starting Live API session: ${sessionId}, lang=${lang}`);
 
   // VTID-01224: Build bootstrap context if authenticated
   // VTID-01225: Added DEV_IDENTITY fallback for memory recall in dev-sandbox mode
@@ -6167,6 +6249,23 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       : isDevSandbox()
         ? devSandboxIdentity
         : null;
+
+  // Resolve language: use client-requested language, fall back to stored preference, then 'en'
+  let lang = normalizeLang(clientRequestedLangWs || 'en');
+  if (!clientRequestedLangWs && effectiveBootstrapIdentity?.user_id && effectiveBootstrapIdentity?.tenant_id) {
+    const storedLangWs = await getStoredLanguagePreference(effectiveBootstrapIdentity.tenant_id, effectiveBootstrapIdentity.user_id);
+    if (storedLangWs) {
+      lang = storedLangWs;
+      console.log(`[LANG-PREF] WS: Using stored language preference: ${lang} for user=${effectiveBootstrapIdentity.user_id.substring(0, 8)}...`);
+    }
+  }
+
+  // Persist language preference (fire-and-forget)
+  if (effectiveBootstrapIdentity?.user_id && effectiveBootstrapIdentity?.tenant_id) {
+    persistLanguagePreference(effectiveBootstrapIdentity.tenant_id, effectiveBootstrapIdentity.user_id, lang);
+  }
+
+  console.log(`[VTID-01222] Starting Live API session: ${sessionId}, lang=${lang}`);
 
   // VTID-01225-ROLE: Fetch real application role in parallel with context bootstrap
   let activeRole: string | null = null;
