@@ -28,6 +28,7 @@ import { buildContextPack, formatContextPackForLLM, BuildContextPackInput, extra
 import { processWithGemini } from './gemini-operator';
 import { getGeminiToolDefinitions, logToolExecution } from './tool-registry';
 import { classifyCategory } from '../routes/memory';
+import { getPersonalityConfigSync } from './ai-personality-service';
 import { writeMemoryItemWithIdentity } from './orb-memory-bridge';
 import { isUnifiedConversationEnabled } from './system-controls-service';
 
@@ -430,9 +431,12 @@ function buildSystemInstruction(
   contextForLLM: string,
   contextPack?: ContextPack
 ): string {
+  // Load unified_conversation personality config
+  const ucConfig = getPersonalityConfigSync('unified_conversation') as Record<string, any>;
+
   const baseInstruction = channel === 'orb'
-    ? `You are Vitana, an intelligent voice assistant. Keep responses concise and conversational for voice interaction.`
-    : `You are Vitana, an intelligent assistant for the Operator Console. You can be more detailed and use formatting when helpful.`;
+    ? (ucConfig.orb_instruction || `You are Vitana, an intelligent voice assistant. Keep responses concise and conversational for voice interaction.`)
+    : (ucConfig.operator_instruction || `You are Vitana, an intelligent assistant for the Operator Console. You can be more detailed and use formatting when helpful.`);
 
   // Extract language preference from context pack if available
   const preferredLanguage = contextPack ? extractLanguageFromContextPack(contextPack) : null;
@@ -446,10 +450,8 @@ Current conversation channel: ${channel}
 User's role: ${role}
 
 Instructions:
-- Use the memory context to personalize responses
-- Use knowledge context for Vitana-specific questions
-- Be helpful and accurate
-- ${channel === 'orb' ? 'Keep responses brief and natural for voice' : 'You can use markdown formatting and be more detailed'}`;
+${ucConfig.common_instructions || '- Use the memory context to personalize responses\n- Use knowledge context for Vitana-specific questions\n- Be helpful and accurate'}
+- ${channel === 'orb' ? (ucConfig.instructions_orb || 'Keep responses brief and natural for voice') : (ucConfig.instructions_operator || 'You can use markdown formatting and be more detailed')}`;
 }
 
 // Re-export isUnifiedConversationEnabled from system-controls-service

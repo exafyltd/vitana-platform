@@ -17,6 +17,7 @@ import { GoogleGenerativeAI, GenerateContentResult } from '@google/generative-ai
 import { randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
 import { AssistantContext, AssistantChatResponse } from '../types/assistant';
+import { getPersonalityConfigSync } from './ai-personality-service';
 // VTID-01208: LLM Telemetry
 import {
   startLLMCall,
@@ -61,7 +62,9 @@ const activeSessions = new Set<string>();
  * VTID-0150-B: System prompt for the global Vitana Assistant (Dev context)
  */
 function buildSystemPrompt(context: AssistantContext): string {
-  return `You are the Vitana Global Assistant, a helpful AI assistant for the Vitana development platform.
+  const devConfig = getPersonalityConfigSync('dev_orb') as Record<string, any>;
+
+  return `${devConfig.base_identity || 'You are the Vitana Global Assistant, a helpful AI assistant for the Vitana development platform.'}
 
 ## Context
 - **Role**: ${context.role} (Developer context)
@@ -71,24 +74,13 @@ function buildSystemPrompt(context: AssistantContext): string {
 - **Session ID**: ${context.sessionId}
 
 ## Your Purpose
-You help developers understand and navigate the Vitana system. This includes:
-- Explaining system architecture and components
-- Answering questions about the codebase, features, and workflows
-- Providing guidance on how to use the platform
-- Clarifying concepts related to VTIDs, tasks, governance, and deployments
+${devConfig.purpose || 'You help developers understand and navigate the Vitana system.'}
 
 ## Guidelines
-1. Be concise and helpful - developers appreciate direct answers
-2. Focus on explanations and guidance - do NOT execute actions or create tasks
-3. You are read-only in this context - no side effects
-4. When discussing code or technical concepts, be precise
-5. If you don't know something, say so honestly
-6. Reference specific VTIDs, modules, or features when relevant
+${devConfig.guidelines || '1. Be concise and helpful - developers appreciate direct answers\n2. Focus on explanations and guidance - do NOT execute actions or create tasks\n3. You are read-only in this context - no side effects'}
 
 ## Important
-- This is the Dev ORB assistant, NOT the Operator Chat
-- You cannot create tasks, trigger deployments, or modify system state
-- Your role is purely informational and educational
+${devConfig.important_section || '- This is the Dev ORB assistant, NOT the Operator Chat\n- You cannot create tasks, trigger deployments, or modify system state\n- Your role is purely informational and educational'}
 
 Answer the developer's question with clarity and precision.`;
 }

@@ -89,6 +89,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const { initializeOrbWebSocket } = require('./routes/orb-live');
   // VTID-01218A: Voice LAB - ORB Live Observability API
   const voiceLabRouter = require('./routes/voice-lab').default;
+  // AI Personality Configuration API
+  const aiPersonalityRouter = require('./routes/ai-personality').default;
   // VTID-01216: Unified Conversation Intelligence Layer (ORB + Operator shared brain)
   const conversationRouter = require('./routes/conversation').default;
   // VTID-01046: Me Context Routes - role context and role switching
@@ -427,6 +429,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01218A: Voice LAB - ORB Live Observability API
   mountRouterSync(app, '/api/v1/voice-lab', voiceLabRouter, { owner: 'voice-lab' });
 
+  // AI Personality Configuration API
+  mountRouterSync(app, '/api/v1/ai-personality', aiPersonalityRouter, { owner: 'ai-personality' });
+
   // VTID-01216: Unified Conversation Intelligence Layer (ORB + Operator shared brain)
   mountRouterSync(app, '/api/v1/conversation', conversationRouter, { owner: 'conversation-intelligence' });
 
@@ -669,6 +674,15 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         }
       } catch (error) {
         console.warn('⚠️ Autopilot event loop initialization failed (non-fatal):', error);
+      }
+
+      // AI Personality: Pre-warm config cache from Supabase
+      try {
+        const { warmPersonalityCache } = require('./services/ai-personality-service');
+        await warmPersonalityCache();
+        console.log('🧠 AI Personality config cache pre-warmed');
+      } catch (error) {
+        console.warn('⚠️ AI Personality cache warm failed (non-fatal, using defaults):', error);
       }
     });
   }

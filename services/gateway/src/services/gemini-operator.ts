@@ -47,6 +47,7 @@ import {
   LLMCallContext,
   hashPrompt
 } from './llm-telemetry-service';
+import { getPersonalityConfigSync } from './ai-personality-service';
 
 // Environment config
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -1943,7 +1944,9 @@ export async function executeTool(
  * VTID-01023: System prompt for Operator Chat Gemini/Vertex integration
  * VTID-01025: Open chat mode - general knowledge + task operations
  */
-const OPERATOR_SYSTEM_PROMPT = `You are a helpful AI assistant with access to the Vitana Autopilot system. You can answer any question and also help manage Vitana tasks.
+function getOperatorSystemPrompt(): string {
+  const opConfig = getPersonalityConfigSync('operator_chat') as Record<string, any>;
+  let prompt = opConfig.system_prompt || `You are a helpful AI assistant with access to the Vitana Autopilot system. You can answer any question and also help manage Vitana tasks.
 
 **Available tools (use when appropriate):**
 - autopilot_create_task: Create a new Autopilot task
@@ -1957,16 +1960,16 @@ const OPERATOR_SYSTEM_PROMPT = `You are a helpful AI assistant with access to th
 - Status checks (e.g., "Status of VTID-0540") → use autopilot_get_status
 - Task listing (e.g., "Show recent tasks") → use autopilot_list_recent_tasks
 - Vitana-specific questions → use knowledge_search
-- Calculations, date math, age calculations, unit conversions → use run_code
+- Calculations, date math, age calculations, unit conversions → use run_code`;
 
-**IMPORTANT: Always use run_code for ANY calculation:**
-- "How old am I?" → run_code
-- "Days between two dates" → run_code
-- "What percentage is X of Y?" → run_code
-- "Convert miles to kilometers" → run_code
-- "Age difference between people" → run_code
+  if (opConfig.calculation_directive) {
+    prompt += `\n\n${opConfig.calculation_directive}`;
+  }
 
-Be helpful, accurate, and concise. If a task is blocked by governance, explain the reason clearly.`;
+  prompt += `\n\nBe helpful, accurate, and concise. If a task is blocked by governance, explain the reason clearly.`;
+  return prompt;
+}
+
 
 /**
  * VTID-01023: Convert tool definitions to Vertex AI format
@@ -2029,7 +2032,7 @@ async function callVertexWithTools(
 
   const systemPrompt = customSystemInstruction
     ? `${customSystemInstruction}\n\n${toolInstructions}`
-    : `${OPERATOR_SYSTEM_PROMPT}\n\nCurrent thread: ${threadId}`;
+    : `${getOperatorSystemPrompt()}\n\nCurrent thread: ${threadId}`;
 
   const generativeModel = vertexAI.getGenerativeModel({
     model: VERTEX_MODEL,
@@ -2426,7 +2429,7 @@ async function callGeminiWithTools(
 
   const systemPrompt = customSystemInstruction
     ? `${customSystemInstruction}\n\n${geminiToolInstructions}`
-    : `${OPERATOR_SYSTEM_PROMPT}\n\nCurrent thread: ${threadId}`;
+    : `${getOperatorSystemPrompt()}\n\nCurrent thread: ${threadId}`;
 
   const requestBody = {
     contents,

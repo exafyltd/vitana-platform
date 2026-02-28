@@ -135,6 +135,7 @@ import {
   emitRoutingEvent
 } from '../services/domain-routing-service';
 import { RoutingInput, RoutingBundle } from '../types/domain-routing';
+import { getPersonalityConfigSync } from '../services/ai-personality-service';
 // VTID-01118: Cross-Turn State & Continuity Engine
 import {
   getStateEngine,
@@ -1180,44 +1181,19 @@ function buildLiveSystemInstruction(
     'sr': 'Serbian'
   };
 
+  // Load personality config from service (uses cached values or hardcoded defaults)
+  const voiceLiveConfig = getPersonalityConfigSync('voice_live') as Record<string, any>;
+
   // VTID-01225-ROLE: Build role-aware context section
   let roleSection: string;
   if (activeRole) {
-    const roleDescriptions: Record<string, string> = {
-      developer: `The user's current role is: DEVELOPER.
-- They are a platform developer working on Vitana
-- When they ask about progress, tasks, or VTIDs, provide development-related answers
-- Help with technical questions, code, architecture, and deployment topics
-- Use search_knowledge to look up VTID status, deployment info, and technical documentation`,
-      admin: `The user's current role is: ADMIN.
-- They are a platform administrator
-- Help with system configuration, user management, and platform operations
-- When they ask about status, provide operational and administrative insights
-- Use search_knowledge for platform configuration and admin documentation`,
-      community: `The user's current role is: COMMUNITY.
-- They are a community member
-- Help them connect with other community members, check events, and explore community features
-- Focus on social connections, events, meetups, and community activities
-- Use search_knowledge for community events and member information`,
-      patient: `The user's current role is: PATIENT.
-- They are a health-focused user
-- Focus on medication reminders, health tips, wellness support, and personal health tracking
-- Be warm, patient, and empathetic about health concerns
-- Use search_memory to recall their health history and preferences`,
-      professional: `The user's current role is: PROFESSIONAL.
-- They are a health professional
-- Provide clinical-grade information and professional-level health insights
-- Help with patient management and professional workflows`,
-      staff: `The user's current role is: STAFF.
-- They are a Vitana staff member
-- Help with operational tasks, content management, and platform support`,
-    };
+    const roleDescriptions = (voiceLiveConfig.role_descriptions || {}) as Record<string, string>;
     roleSection = roleDescriptions[activeRole] || `The user's current role is: ${activeRole.toUpperCase()}.`;
   } else {
     roleSection = `USER ROLE: Not available for this session. If the user asks about their role, tell them honestly that you do not see their user role in this session — do NOT guess or pretend to know it. You can still assist them with general questions.`;
   }
 
-  let instruction = `You are Vitana, an AI health companion assistant powered by Gemini Live.
+  let instruction = `${voiceLiveConfig.base_identity || 'You are Vitana, an AI health companion assistant powered by Gemini Live.'}
 
 LANGUAGE: Respond ONLY in ${languageNames[lang] || 'English'}.
 
@@ -1226,40 +1202,22 @@ VOICE STYLE: ${voiceStyle}
 ${roleSection}
 
 GENERAL BEHAVIOR:
-- Be warm, patient, and empathetic
-- Keep responses concise for voice interaction (2-3 sentences max)
-- Use natural conversational tone
+${voiceLiveConfig.general_behavior || '- Be warm, patient, and empathetic\n- Keep responses concise for voice interaction (2-3 sentences max)\n- Use natural conversational tone'}
 
 GREETING RULES (CRITICAL):
-- When the conversation starts, you MUST speak first with a warm, brief greeting
-- Do NOT recite or list remembered information in the greeting
-- Do NOT repeat information from memory context unprompted
-- If you have memory context about the user, you may reference ONE brief detail naturally (e.g. "Hello [name], nice to talk again!")
-- Keep the greeting to 1-2 short sentences maximum
-- If this is a returning user, briefly mention you're happy to continue but do NOT summarize previous conversations unless asked
-- NEVER repeat the same greeting or response more than once
+${voiceLiveConfig.greeting_rules || '- When the conversation starts, you MUST speak first with a warm, brief greeting'}
 
 INTERRUPTION HANDLING (CRITICAL):
-- If the user starts speaking while you are talking, STOP immediately
-- Do NOT finish your current sentence - stop mid-word if needed
-- Acknowledge the interruption naturally and listen to the user
-- When you detect audio input while generating output, yield immediately
+${voiceLiveConfig.interruption_handling || '- If the user starts speaking while you are talking, STOP immediately'}
 
 REPETITION PREVENTION (CRITICAL):
-- NEVER repeat the same response verbatim
-- If you notice you're saying something you already said, stop and say something new
-- Each response must be unique and advance the conversation
+${voiceLiveConfig.repetition_prevention || '- NEVER repeat the same response verbatim'}
 
 TOOLS:
-- Use search_memory to recall information the user has shared before
-- Use search_knowledge for Vitana platform and health information
-- Use search_web for current events, news, and external information
+${voiceLiveConfig.tools_section || '- Use search_memory to recall information the user has shared before\n- Use search_knowledge for Vitana platform and health information\n- Use search_web for current events, news, and external information'}
 
 IMPORTANT:
-- This is a real-time voice conversation
-- Listen actively and respond naturally
-- Confirm important information when needed
-- Use tools to provide accurate, personalized responses`;
+${voiceLiveConfig.important_section || '- This is a real-time voice conversation\n- Listen actively and respond naturally'}`;
 
   // Append conversation summary for returning users
   if (conversationSummary) {
@@ -2434,9 +2392,12 @@ async function generateMemoryEnhancedSystemInstruction(
     console.warn(`[VTID-01225-READ-FIX] memory_facts direct fetch failed (non-fatal): ${factsErr.message}`);
   }
 
+  // Load text_chat personality config
+  const textChatConfig = getPersonalityConfigSync('text_chat') as Record<string, any>;
+
   // Base instruction WITHOUT memory claims (used when memory is unavailable)
   // VTID-01225-READ-FIX: Always append memory_facts if available
-  const baseInstructionNoMemory = `You are VITANA ORB, a voice-first multimodal assistant.
+  const baseInstructionNoMemory = `${textChatConfig.base_identity_no_memory || 'You are VITANA ORB, a voice-first multimodal assistant.'}
 ${resolvedLanguageDirective}
 Context:
 - tenant: ${session.tenant}
@@ -2445,13 +2406,10 @@ Context:
 - selectedId: ${session.selectedId || 'none'}
 
 Operating mode:
-- Voice conversation is primary.
-- Always listening while ORB overlay is open.
-- Read-only: do not mutate system state.
-- Be concise, contextual, and helpful.${memoryFactsSection ? `\n- You have PERSISTENT MEMORY - you remember users across sessions.${memoryFactsSection}` : ''}`;
+${textChatConfig.operating_mode || '- Voice conversation is primary.\n- Always listening while ORB overlay is open.\n- Read-only: do not mutate system state.\n- Be concise, contextual, and helpful.'}${memoryFactsSection ? `\n- You have PERSISTENT MEMORY - you remember users across sessions.${memoryFactsSection}` : ''}`;
 
   // Base instruction WITH memory claims (used when memory IS available)
-  const baseInstructionWithMemory = `You are VITANA ORB, a voice-first multimodal assistant with persistent memory.
+  const baseInstructionWithMemory = `${textChatConfig.base_identity_with_memory || 'You are VITANA ORB, a voice-first multimodal assistant with persistent memory.'}
 ${resolvedLanguageDirective}
 Context:
 - tenant: ${session.tenant}
@@ -2460,10 +2418,7 @@ Context:
 - selectedId: ${session.selectedId || 'none'}
 
 Operating mode:
-- Voice conversation is primary.
-- Always listening while ORB overlay is open.
-- Read-only: do not mutate system state.
-- Be concise, contextual, and helpful.
+${textChatConfig.operating_mode || '- Voice conversation is primary.\n- Always listening while ORB overlay is open.\n- Read-only: do not mutate system state.\n- Be concise, contextual, and helpful.'}
 - You have PERSISTENT MEMORY - you remember users across sessions.
 - NEVER claim you cannot remember or that your memory resets.${memoryFactsSection}`;
 

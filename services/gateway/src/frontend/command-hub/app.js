@@ -1725,6 +1725,139 @@ function updateTickerEventsList(list, events) {
 }
 
 /**
+ * Incremental refresh for Governance Violations content.
+ */
+function refreshGovernanceViolationsContent() {
+    var tbody = document.querySelector('.governance-violations-table tbody');
+    if (!tbody) {
+        renderApp();
+        return;
+    }
+
+    // Clear and rebuild tbody only
+    tbody.innerHTML = '';
+    var items = state.governanceViolations.items;
+    items.forEach(function(item) {
+        var row = document.createElement('tr');
+
+        // Time
+        var timeTd = document.createElement('td');
+        timeTd.textContent = formatEventTimestamp(item.created_at || item.timestamp);
+        row.appendChild(timeTd);
+
+        // Level (L1-L4 badge)
+        var levelTd = document.createElement('td');
+        var levelBadge = document.createElement('span');
+        var level = (item.level || item.governance_level || 'L2').toUpperCase();
+        levelBadge.className = 'governance-level-badge governance-level-' + level.toLowerCase();
+        levelBadge.textContent = level;
+        levelTd.appendChild(levelBadge);
+        row.appendChild(levelTd);
+
+        // Rule Code
+        var ruleTd = document.createElement('td');
+        ruleTd.textContent = item.rule_code || item.rule_id || item.rule || '-';
+        row.appendChild(ruleTd);
+
+        // Service
+        var serviceTd = document.createElement('td');
+        serviceTd.textContent = item.service || item.source || '-';
+        row.appendChild(serviceTd);
+
+        // Status
+        var statusTd = document.createElement('td');
+        var statusBadge = document.createElement('span');
+        var violationStatus = (item.status || 'violation').toLowerCase();
+        statusBadge.className = 'status-badge status-' + violationStatus;
+        statusBadge.textContent = violationStatus.charAt(0).toUpperCase() + violationStatus.slice(1);
+        statusTd.appendChild(statusBadge);
+        row.appendChild(statusTd);
+
+        // Message
+        var msgTd = document.createElement('td');
+        msgTd.textContent = item.message || item.description || '-';
+        msgTd.style.maxWidth = '400px';
+        msgTd.style.overflow = 'hidden';
+        msgTd.style.textOverflow = 'ellipsis';
+        msgTd.style.whiteSpace = 'nowrap';
+        row.appendChild(msgTd);
+
+        tbody.appendChild(row);
+    });
+
+    // Update Load More button
+    var loadMoreBtn = document.querySelector('.btn-load-more[data-module="governanceViolations"]');
+    if (loadMoreBtn) {
+        loadMoreBtn.disabled = state.governanceViolations.loading || !state.governanceViolations.pagination.hasMore;
+        loadMoreBtn.textContent = state.governanceViolations.loading ? 'Loading...' :
+                                  state.governanceViolations.pagination.hasMore ? 'Load More' : 'All items loaded';
+    }
+}
+
+/**
+ * Incremental refresh for Governance Proposals content.
+ */
+function refreshGovernanceProposalsContent() {
+    var tbody = document.querySelector('.governance-proposals-table tbody');
+    if (!tbody) {
+        renderApp();
+        return;
+    }
+
+    // Clear and rebuild tbody only
+    tbody.innerHTML = '';
+    var items = state.governanceProposals.items;
+    items.forEach(function(item) {
+        var row = document.createElement('tr');
+
+        // ID
+        var idTd = document.createElement('td');
+        idTd.textContent = item.id || item.proposal_id || '-';
+        row.appendChild(idTd);
+
+        // Title
+        var titleTd = document.createElement('td');
+        titleTd.textContent = item.title || item.name || '-';
+        row.appendChild(titleTd);
+
+        // Status (draft/pending/approved/rejected badge)
+        var statusTd = document.createElement('td');
+        var statusBadge = document.createElement('span');
+        var proposalStatus = (item.status || 'draft').toLowerCase();
+        statusBadge.className = 'status-badge status-' + proposalStatus;
+        statusBadge.textContent = proposalStatus.charAt(0).toUpperCase() + proposalStatus.slice(1);
+        statusTd.appendChild(statusBadge);
+        row.appendChild(statusTd);
+
+        // Proposer
+        var proposerTd = document.createElement('td');
+        proposerTd.textContent = item.proposer || item.created_by || item.author || '-';
+        row.appendChild(proposerTd);
+
+        // Created
+        var createdTd = document.createElement('td');
+        createdTd.textContent = formatEventTimestamp(item.created_at || item.created);
+        row.appendChild(createdTd);
+
+        tbody.appendChild(row);
+    });
+
+    // Update count label
+    var countLabel = document.querySelector('.governance-proposals-count');
+    if (countLabel) {
+        countLabel.textContent = items.length + ' proposals';
+    }
+
+    // Update Load More button
+    var loadMoreBtn = document.querySelector('.btn-load-more[data-module="governanceProposals"]');
+    if (loadMoreBtn) {
+        loadMoreBtn.disabled = state.governanceProposals.loading || !state.governanceProposals.pagination.hasMore;
+        loadMoreBtn.textContent = state.governanceProposals.loading ? 'Loading...' :
+                                  state.governanceProposals.pagination.hasMore ? 'Load More' : 'All items loaded';
+    }
+}
+
+/**
  * VTID-01002: Filters OASIS events based on current filter state.
  * @param {Array} items - Raw event items
  * @returns {Array} Filtered items
@@ -2523,7 +2656,18 @@ const state = {
             debounce_ms: 50,
             model: 'gemini-2.0-flash-exp'
         },
-        runtimeControlsSaving: false
+        runtimeControlsSaving: false,
+        // AI Personality config
+        personality: {
+            loading: false,
+            saving: false,
+            savingSurface: null,
+            loaded: false,
+            error: null,
+            expandedSurface: 'voice_live',
+            surfaces: {},
+            dirty: {}  // tracks unsaved edits per surface
+        }
     },
 
     // User (fallback values - will be replaced by authIdentity when available)
@@ -11605,6 +11749,7 @@ function formatModelName(model) {
 var VOICE_LAB_TABS = [
     { key: 'orb-live', label: 'ORB Live', path: '/command-hub/diagnostics/voice-lab/' },
     { key: 'experiments', label: 'Experiments', path: '/command-hub/diagnostics/voice-lab/experiments/' },
+    { key: 'personality', label: 'AI Personality', path: '/command-hub/diagnostics/voice-lab/personality/' },
     { key: 'providers', label: 'Providers', path: '/command-hub/diagnostics/voice-lab/providers/' },
     { key: 'sessions', label: 'Sessions', path: '/command-hub/diagnostics/voice-lab/sessions/' },
     { key: 'metrics', label: 'Metrics', path: '/command-hub/diagnostics/voice-lab/metrics/' },
@@ -11678,6 +11823,9 @@ function renderVoiceLabView() {
             break;
         case 'metrics':
             content.appendChild(renderVoiceLabPlaceholderPanel('Metrics', 'VTID-01218D'));
+            break;
+        case 'personality':
+            content.appendChild(renderVoiceLabPersonalityPanel());
             break;
         case 'governance':
             content.appendChild(renderVoiceLabPlaceholderPanel('Governance', 'VTID-01218D'));
@@ -11960,6 +12108,439 @@ function loadVoiceLabRuntimeControls() {
     } catch (e) {
         console.warn('[VTID-01218B] Failed to load controls:', e);
     }
+}
+
+// ===========================================================================
+// AI Personality Configuration Panel
+// ===========================================================================
+
+var PERSONALITY_SURFACE_DEFS = {
+    voice_live: {
+        label: 'Voice (Gemini Live)',
+        icon: '\uD83C\uDFA4',
+        description: 'Primary voice assistant personality for real-time Gemini Live sessions.',
+        sourceFile: 'orb-live.ts',
+        fields: {
+            base_identity:       { label: 'Base Identity',          type: 'textarea', rows: 2, hint: 'Core identity statement. First line of the system prompt.' },
+            general_behavior:    { label: 'General Behavior',       type: 'textarea', rows: 4, hint: 'Communication style directives (warmth, conciseness, tone).' },
+            greeting_rules:      { label: 'Greeting Rules',         type: 'textarea', rows: 8, hint: 'How the assistant should greet users at session start.' },
+            interruption_handling: { label: 'Interruption Handling', type: 'textarea', rows: 5, hint: 'How to handle when user speaks while assistant is talking.' },
+            repetition_prevention: { label: 'Repetition Prevention', type: 'textarea', rows: 4, hint: 'Rules to prevent repeating the same responses.' },
+            tools_section:       { label: 'Tools Section',          type: 'textarea', rows: 4, hint: 'Instructions for when and how to use available tools.' },
+            important_section:   { label: 'Important Section',      type: 'textarea', rows: 5, hint: 'Critical behavioral rules appended at end of system prompt.' },
+            role_descriptions:   { label: 'Role Descriptions',      type: 'group', hint: 'Per-role identity instructions. Applied based on active user role.', subfields: {
+                developer:    { label: 'Developer Role',    type: 'textarea', rows: 4 },
+                admin:        { label: 'Admin Role',        type: 'textarea', rows: 4 },
+                community:    { label: 'Community Role',    type: 'textarea', rows: 4 },
+                patient:      { label: 'Patient Role',      type: 'textarea', rows: 4 },
+                professional: { label: 'Professional Role', type: 'textarea', rows: 4 },
+                staff:        { label: 'Staff Role',        type: 'textarea', rows: 4 }
+            }}
+        }
+    },
+    text_chat: {
+        label: 'Text Chat (ORB)',
+        icon: '\uD83D\uDCAC',
+        description: 'Text-based ORB overlay chat personality.',
+        sourceFile: 'orb-live.ts',
+        fields: {
+            base_identity_no_memory:   { label: 'Base Identity (no memory)',   type: 'textarea', rows: 2, hint: 'Identity when no memory context is available.' },
+            base_identity_with_memory: { label: 'Base Identity (with memory)', type: 'textarea', rows: 2, hint: 'Identity when memory context is loaded.' },
+            operating_mode:            { label: 'Operating Mode',              type: 'textarea', rows: 5, hint: 'Core operating mode instructions.' }
+        }
+    },
+    unified_conversation: {
+        label: 'Unified Conversation',
+        icon: '\uD83E\uDDE0',
+        description: 'Unified ORB + Operator brain via conversation-client.',
+        sourceFile: 'conversation-client.ts',
+        fields: {
+            orb_instruction:       { label: 'ORB Instruction',       type: 'textarea', rows: 3, hint: 'System instruction when surface is ORB.' },
+            operator_instruction:  { label: 'Operator Instruction',  type: 'textarea', rows: 3, hint: 'System instruction when surface is Operator.' },
+            common_instructions:   { label: 'Common Instructions',   type: 'textarea', rows: 4, hint: 'Instructions shared across both surfaces.' },
+            instructions_orb:      { label: 'Additional ORB Notes',  type: 'textarea', rows: 2, hint: 'Extra directives for voice interaction.' },
+            instructions_operator: { label: 'Additional Operator Notes', type: 'textarea', rows: 2, hint: 'Extra directives for text interaction.' }
+        }
+    },
+    operator_chat: {
+        label: 'Operator Chat',
+        icon: '\uD83D\uDCBB',
+        description: 'Operator Console assistant with Autopilot and tool access.',
+        sourceFile: 'gemini-operator.ts',
+        fields: {
+            system_prompt:          { label: 'System Prompt',          type: 'textarea', rows: 12, hint: 'Full system prompt including tool descriptions and usage guidelines.' },
+            calculation_directive:  { label: 'Calculation Directive',  type: 'textarea', rows: 5, hint: 'Forces code execution for any numerical calculation.' }
+        }
+    },
+    dev_orb: {
+        label: 'Dev ORB',
+        icon: '\uD83D\uDD27',
+        description: 'Development assistant (read-only, informational).',
+        sourceFile: 'assistant-service.ts',
+        fields: {
+            base_identity:     { label: 'Base Identity',     type: 'textarea', rows: 2, hint: 'Core identity statement.' },
+            purpose:           { label: 'Purpose',           type: 'textarea', rows: 5, hint: 'What this assistant helps with.' },
+            guidelines:        { label: 'Guidelines',        type: 'textarea', rows: 6, hint: 'Behavioral guidelines and constraints.' },
+            important_section: { label: 'Important Section', type: 'textarea', rows: 4, hint: 'Critical rules and restrictions.' }
+        }
+    }
+};
+
+var PERSONALITY_SURFACE_ORDER = ['voice_live', 'text_chat', 'unified_conversation', 'operator_chat', 'dev_orb'];
+
+function fetchPersonalityConfigs() {
+    state.voiceLab.personality.loading = true;
+    state.voiceLab.personality.error = null;
+    renderApp();
+
+    fetch('/api/v1/ai-personality')
+        .then(function (res) {
+            if (!res.ok) throw new Error('Failed to fetch personality configs: ' + res.status);
+            return res.json();
+        })
+        .then(function (data) {
+            var surfaces = {};
+            (data.surfaces || []).forEach(function (s) {
+                surfaces[s.surface_key] = s;
+            });
+            state.voiceLab.personality.surfaces = surfaces;
+            state.voiceLab.personality.loaded = true;
+            state.voiceLab.personality.loading = false;
+            state.voiceLab.personality.error = null;
+            state.voiceLab.personality.dirty = {};
+            renderApp();
+        })
+        .catch(function (err) {
+            console.error('[AI Personality] Fetch error:', err);
+            state.voiceLab.personality.loading = false;
+            state.voiceLab.personality.error = err.message;
+            renderApp();
+        });
+}
+
+function savePersonalityConfig(surfaceKey) {
+    var surfaceDef = PERSONALITY_SURFACE_DEFS[surfaceKey];
+    if (!surfaceDef) return;
+
+    var config = {};
+    Object.keys(surfaceDef.fields).forEach(function (fieldKey) {
+        var fieldDef = surfaceDef.fields[fieldKey];
+        if (fieldDef.type === 'group' && fieldDef.subfields) {
+            var group = {};
+            Object.keys(fieldDef.subfields).forEach(function (subKey) {
+                var el = document.getElementById('personality-' + surfaceKey + '-' + fieldKey + '-' + subKey);
+                if (el) group[subKey] = el.value;
+            });
+            config[fieldKey] = group;
+        } else {
+            var el = document.getElementById('personality-' + surfaceKey + '-' + fieldKey);
+            if (el) config[fieldKey] = el.value;
+        }
+    });
+
+    state.voiceLab.personality.saving = true;
+    state.voiceLab.personality.savingSurface = surfaceKey;
+    renderApp();
+
+    fetch('/api/v1/ai-personality/' + surfaceKey, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config: config, reason: 'Updated via Command Hub AI Personality panel' })
+    })
+        .then(function (res) {
+            if (!res.ok) throw new Error('Failed to save: ' + res.status);
+            return res.json();
+        })
+        .then(function (data) {
+            state.voiceLab.personality.saving = false;
+            state.voiceLab.personality.savingSurface = null;
+            state.voiceLab.personality.surfaces[surfaceKey] = data.surface;
+            delete state.voiceLab.personality.dirty[surfaceKey];
+            renderApp();
+            showPersonalityToast('Personality saved for ' + surfaceDef.label, 'success');
+        })
+        .catch(function (err) {
+            console.error('[AI Personality] Save error:', err);
+            state.voiceLab.personality.saving = false;
+            state.voiceLab.personality.savingSurface = null;
+            renderApp();
+            showPersonalityToast('Failed to save: ' + err.message, 'error');
+        });
+}
+
+function resetPersonalityConfig(surfaceKey) {
+    var surfaceDef = PERSONALITY_SURFACE_DEFS[surfaceKey];
+    if (!surfaceDef) return;
+    if (!confirm('Reset "' + surfaceDef.label + '" to defaults? This will discard all customizations.')) return;
+
+    state.voiceLab.personality.saving = true;
+    state.voiceLab.personality.savingSurface = surfaceKey;
+    renderApp();
+
+    fetch('/api/v1/ai-personality/' + surfaceKey + '/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+        .then(function (res) {
+            if (!res.ok) throw new Error('Failed to reset: ' + res.status);
+            return res.json();
+        })
+        .then(function (data) {
+            state.voiceLab.personality.saving = false;
+            state.voiceLab.personality.savingSurface = null;
+            state.voiceLab.personality.surfaces[surfaceKey] = data.surface;
+            delete state.voiceLab.personality.dirty[surfaceKey];
+            renderApp();
+            showPersonalityToast('Reset "' + surfaceDef.label + '" to defaults', 'success');
+        })
+        .catch(function (err) {
+            console.error('[AI Personality] Reset error:', err);
+            state.voiceLab.personality.saving = false;
+            state.voiceLab.personality.savingSurface = null;
+            renderApp();
+            showPersonalityToast('Failed to reset: ' + err.message, 'error');
+        });
+}
+
+function renderVoiceLabPersonalityPanel() {
+    var panel = document.createElement('div');
+    panel.className = 'voice-lab-personality-panel';
+
+    var header = document.createElement('div');
+    header.className = 'personality-header';
+    var title = document.createElement('h3');
+    title.textContent = 'AI Personality Configuration';
+    header.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'personality-subtitle';
+    subtitle.textContent = 'View and modify all AI assistant personality parameters. Changes apply to new sessions.';
+    header.appendChild(subtitle);
+    panel.appendChild(header);
+
+    if (!state.voiceLab.personality.loaded && !state.voiceLab.personality.loading) {
+        fetchPersonalityConfigs();
+    }
+
+    if (state.voiceLab.personality.loading) {
+        var loadingDiv = document.createElement('div');
+        loadingDiv.className = 'personality-loading';
+        loadingDiv.innerHTML = '<div class="personality-spinner"></div><span>Loading personality configs...</span>';
+        panel.appendChild(loadingDiv);
+        return panel;
+    }
+
+    if (state.voiceLab.personality.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'personality-error';
+        errorDiv.innerHTML = '<strong>Error:</strong> ' + state.voiceLab.personality.error;
+        var retryBtn = document.createElement('button');
+        retryBtn.className = 'personality-retry-btn';
+        retryBtn.textContent = 'Retry';
+        retryBtn.addEventListener('click', function () {
+            state.voiceLab.personality.loaded = false;
+            fetchPersonalityConfigs();
+        });
+        errorDiv.appendChild(retryBtn);
+        panel.appendChild(errorDiv);
+        return panel;
+    }
+
+    PERSONALITY_SURFACE_ORDER.forEach(function (surfaceKey) {
+        var surfaceDef = PERSONALITY_SURFACE_DEFS[surfaceKey];
+        var surfaceData = state.voiceLab.personality.surfaces[surfaceKey] || {};
+        panel.appendChild(renderPersonalitySurfaceSection(surfaceKey, surfaceDef, surfaceData));
+    });
+
+    return panel;
+}
+
+function renderPersonalitySurfaceSection(surfaceKey, surfaceDef, surfaceData) {
+    var section = document.createElement('div');
+    section.className = 'personality-surface-section';
+
+    var isExpanded = state.voiceLab.personality.expandedSurface === surfaceKey;
+    var isCustomized = surfaceData.is_customized || false;
+    var isDirty = state.voiceLab.personality.dirty[surfaceKey] || false;
+    var isSaving = state.voiceLab.personality.saving && state.voiceLab.personality.savingSurface === surfaceKey;
+
+    var headerEl = document.createElement('div');
+    headerEl.className = 'personality-surface-header' + (isExpanded ? ' expanded' : '');
+    headerEl.addEventListener('click', function () {
+        state.voiceLab.personality.expandedSurface = isExpanded ? null : surfaceKey;
+        renderApp();
+    });
+
+    var headerLeft = document.createElement('div');
+    headerLeft.className = 'personality-surface-header-left';
+
+    var iconEl = document.createElement('span');
+    iconEl.className = 'personality-surface-icon';
+    iconEl.textContent = surfaceDef.icon;
+    headerLeft.appendChild(iconEl);
+
+    var labelEl = document.createElement('span');
+    labelEl.className = 'personality-surface-label';
+    labelEl.textContent = surfaceDef.label;
+    headerLeft.appendChild(labelEl);
+
+    if (isCustomized) {
+        var badge = document.createElement('span');
+        badge.className = 'personality-customized-badge';
+        badge.textContent = 'Customized';
+        headerLeft.appendChild(badge);
+    }
+
+    if (isDirty) {
+        var dirtyDot = document.createElement('span');
+        dirtyDot.className = 'personality-dirty-indicator';
+        dirtyDot.title = 'Unsaved changes';
+        headerLeft.appendChild(dirtyDot);
+    }
+
+    headerEl.appendChild(headerLeft);
+
+    var chevron = document.createElement('span');
+    chevron.className = 'personality-chevron';
+    chevron.textContent = isExpanded ? '\u25BC' : '\u25B6';
+    headerEl.appendChild(chevron);
+
+    section.appendChild(headerEl);
+
+    if (isExpanded) {
+        var body = document.createElement('div');
+        body.className = 'personality-surface-body';
+
+        var descP = document.createElement('p');
+        descP.className = 'personality-surface-desc';
+        descP.textContent = surfaceDef.description + ' (source: ' + surfaceDef.sourceFile + ')';
+        body.appendChild(descP);
+
+        var currentConfig = surfaceData.config || surfaceData.defaults || {};
+
+        Object.keys(surfaceDef.fields).forEach(function (fieldKey) {
+            var fieldDef = surfaceDef.fields[fieldKey];
+            body.appendChild(renderPersonalityField(surfaceKey, fieldKey, fieldDef, currentConfig));
+        });
+
+        var actions = document.createElement('div');
+        actions.className = 'personality-surface-actions';
+
+        var saveBtn = document.createElement('button');
+        saveBtn.className = 'personality-save-btn';
+        saveBtn.textContent = isSaving ? 'Saving...' : 'Save Changes';
+        saveBtn.disabled = isSaving;
+        saveBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            savePersonalityConfig(surfaceKey);
+        });
+        actions.appendChild(saveBtn);
+
+        var resetBtn = document.createElement('button');
+        resetBtn.className = 'personality-reset-btn';
+        resetBtn.textContent = 'Reset to Defaults';
+        resetBtn.disabled = isSaving;
+        resetBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            resetPersonalityConfig(surfaceKey);
+        });
+        actions.appendChild(resetBtn);
+
+        body.appendChild(actions);
+        section.appendChild(body);
+    }
+
+    return section;
+}
+
+function renderPersonalityField(surfaceKey, fieldKey, fieldDef, currentConfig) {
+    var wrapper = document.createElement('div');
+    wrapper.className = 'personality-field';
+
+    if (fieldDef.type === 'group' && fieldDef.subfields) {
+        var groupLabel = document.createElement('div');
+        groupLabel.className = 'personality-field-group-label';
+        groupLabel.textContent = fieldDef.label;
+        wrapper.appendChild(groupLabel);
+
+        if (fieldDef.hint) {
+            var groupHint = document.createElement('p');
+            groupHint.className = 'personality-field-hint';
+            groupHint.textContent = fieldDef.hint;
+            wrapper.appendChild(groupHint);
+        }
+
+        var groupContainer = document.createElement('div');
+        groupContainer.className = 'personality-field-group';
+
+        var groupValue = currentConfig[fieldKey] || {};
+        Object.keys(fieldDef.subfields).forEach(function (subKey) {
+            var subDef = fieldDef.subfields[subKey];
+            var subWrapper = document.createElement('div');
+            subWrapper.className = 'personality-field personality-subfield';
+
+            var subLabel = document.createElement('label');
+            subLabel.className = 'personality-field-label';
+            subLabel.setAttribute('for', 'personality-' + surfaceKey + '-' + fieldKey + '-' + subKey);
+            subLabel.textContent = subDef.label;
+            subWrapper.appendChild(subLabel);
+
+            var subTextarea = document.createElement('textarea');
+            subTextarea.id = 'personality-' + surfaceKey + '-' + fieldKey + '-' + subKey;
+            subTextarea.className = 'personality-textarea';
+            subTextarea.rows = subDef.rows || 3;
+            subTextarea.value = typeof groupValue[subKey] === 'string' ? groupValue[subKey] : JSON.stringify(groupValue[subKey] || '', null, 2);
+            subTextarea.addEventListener('input', function () {
+                state.voiceLab.personality.dirty[surfaceKey] = true;
+            });
+            subWrapper.appendChild(subTextarea);
+            groupContainer.appendChild(subWrapper);
+        });
+
+        wrapper.appendChild(groupContainer);
+    } else {
+        var label = document.createElement('label');
+        label.className = 'personality-field-label';
+        label.setAttribute('for', 'personality-' + surfaceKey + '-' + fieldKey);
+        label.textContent = fieldDef.label;
+        wrapper.appendChild(label);
+
+        if (fieldDef.hint) {
+            var hint = document.createElement('p');
+            hint.className = 'personality-field-hint';
+            hint.textContent = fieldDef.hint;
+            wrapper.appendChild(hint);
+        }
+
+        var rawValue = currentConfig[fieldKey];
+        var displayValue = typeof rawValue === 'string' ? rawValue : JSON.stringify(rawValue || '', null, 2);
+
+        var textarea = document.createElement('textarea');
+        textarea.id = 'personality-' + surfaceKey + '-' + fieldKey;
+        textarea.className = 'personality-textarea';
+        textarea.rows = fieldDef.rows || 3;
+        textarea.value = displayValue;
+        textarea.addEventListener('input', function () {
+            state.voiceLab.personality.dirty[surfaceKey] = true;
+        });
+        wrapper.appendChild(textarea);
+    }
+
+    return wrapper;
+}
+
+function showPersonalityToast(message, type) {
+    var existing = document.querySelector('.personality-toast');
+    if (existing) existing.remove();
+
+    var toast = document.createElement('div');
+    toast.className = 'personality-toast personality-toast-' + (type || 'info');
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    requestAnimationFrame(function () { toast.classList.add('visible'); });
+    setTimeout(function () {
+        toast.classList.remove('visible');
+        setTimeout(function () { toast.remove(); }, 300);
+    }, 3000);
 }
 
 /**
@@ -25455,31 +26036,52 @@ function orbSendMessage(message) {
 
 // ──── Governance: Violations ────
 
-function fetchGovernanceViolations() {
+function fetchGovernanceViolations(append) {
     if (state.governanceViolations.loading) return;
+    if (append && !state.governanceViolations.pagination.hasMore) return;
+
     state.governanceViolations.loading = true;
     state.governanceViolations.error = null;
 
-    var limit = state.governanceViolations._limit || 50;
-    fetch('/api/v1/governance/violations?limit=' + limit, {
+    var offset = append ? state.governanceViolations.pagination.offset : 0;
+    var limit = state.governanceViolations.pagination.limit;
+
+    fetch('/api/v1/governance/violations?offset=' + offset + '&limit=' + limit, {
         headers: buildContextHeaders({})
     })
         .then(function (r) { return r.json(); })
         .then(function (data) {
-            state.governanceViolations.items = data.items || data.data || data;
-            if (!Array.isArray(state.governanceViolations.items)) {
-                state.governanceViolations.items = [];
+            var items = data.items || data.data || data;
+            if (!Array.isArray(items)) items = [];
+
+            // Append or replace
+            if (append) {
+                state.governanceViolations.items = state.governanceViolations.items.concat(items);
+            } else {
+                state.governanceViolations.items = items;
             }
+
+            // Update pagination
+            state.governanceViolations.pagination.offset = state.governanceViolations.items.length;
+            state.governanceViolations.pagination.hasMore = items.length >= limit;
             state.governanceViolations.fetched = true;
-            state.governanceViolations.loading = false;
             state.governanceViolations.error = null;
-            renderApp();
         })
         .catch(function (err) {
             console.error('[GovernanceViolations] Fetch error:', err);
             state.governanceViolations.error = err.message;
+            if (!append) {
+                state.governanceViolations.items = [];
+            }
+        })
+        .finally(function() {
             state.governanceViolations.loading = false;
-            renderApp();
+            // Option A fix: incremental refresh when appending
+            if (append) {
+                refreshGovernanceViolationsContent();
+            } else {
+                renderApp();
+            }
         });
 }
 
@@ -25587,47 +26189,68 @@ function renderGovernanceViolationsView() {
     container.appendChild(table);
 
     // Load More button
-    if (!state.governanceViolations._limit) state.governanceViolations._limit = 50;
-    var hasMore = items.length >= state.governanceViolations._limit;
-    var loadMoreBtn = createLoadMoreButton('governanceViolations', function() {
-        state.governanceViolations._limit += 50;
-        state.governanceViolations.fetched = false;
-        renderApp();
-    }, items.length, hasMore);
-    if (loadMoreBtn) container.appendChild(loadMoreBtn);
-
-    autoAddLoadMore(container, 'governanceViolations');
+    if (state.governanceViolations.pagination.hasMore) {
+        var loadMoreBtn = document.createElement('button');
+        loadMoreBtn.className = 'btn-load-more';
+        loadMoreBtn.textContent = state.governanceViolations.loading ? 'Loading...' : 'Load More';
+        loadMoreBtn.disabled = state.governanceViolations.loading;
+        loadMoreBtn.setAttribute('data-module', 'governanceViolations');
+        loadMoreBtn.onclick = function() {
+            fetchGovernanceViolations(true);  // append=true
+        };
+        container.appendChild(loadMoreBtn);
+    }
 
     return container;
 }
 
 // ──── Governance: Proposals ────
 
-function fetchGovernanceProposals() {
+function fetchGovernanceProposals(append) {
     if (state.governanceProposals.loading) return;
+    if (append && !state.governanceProposals.pagination.hasMore) return;
+
     state.governanceProposals.loading = true;
     state.governanceProposals.error = null;
-    renderApp();
 
-    fetch('/api/v1/governance/proposals?limit=30', {
+    var offset = append ? state.governanceProposals.pagination.offset : 0;
+    var limit = state.governanceProposals.pagination.limit;
+
+    fetch('/api/v1/governance/proposals?offset=' + offset + '&limit=' + limit, {
         headers: buildContextHeaders({})
     })
         .then(function (r) { return r.json(); })
         .then(function (data) {
-            state.governanceProposals.items = data.items || data.data || data;
-            if (!Array.isArray(state.governanceProposals.items)) {
-                state.governanceProposals.items = [];
+            var items = data.items || data.data || data;
+            if (!Array.isArray(items)) items = [];
+
+            // Append or replace
+            if (append) {
+                state.governanceProposals.items = state.governanceProposals.items.concat(items);
+            } else {
+                state.governanceProposals.items = items;
             }
+
+            // Update pagination
+            state.governanceProposals.pagination.offset = state.governanceProposals.items.length;
+            state.governanceProposals.pagination.hasMore = items.length >= limit;
             state.governanceProposals.fetched = true;
-            state.governanceProposals.loading = false;
             state.governanceProposals.error = null;
-            renderApp();
         })
         .catch(function (err) {
             console.error('[GovernanceProposals] Fetch error:', err);
             state.governanceProposals.error = err.message;
+            if (!append) {
+                state.governanceProposals.items = [];
+            }
+        })
+        .finally(function() {
             state.governanceProposals.loading = false;
-            renderApp();
+            if (append) {
+                refreshGovernanceProposalsContent();
+            } else {
+                renderApp();
+            }
         });
 }
 
@@ -25743,7 +26366,18 @@ function renderGovernanceProposalsView() {
     table.appendChild(tbody);
     container.appendChild(table);
 
-    autoAddLoadMore(container, 'governanceProposals');
+    // Load More button
+    if (state.governanceProposals.pagination.hasMore) {
+        var loadMoreBtn = document.createElement('button');
+        loadMoreBtn.className = 'btn-load-more';
+        loadMoreBtn.textContent = state.governanceProposals.loading ? 'Loading...' : 'Load More';
+        loadMoreBtn.disabled = state.governanceProposals.loading;
+        loadMoreBtn.setAttribute('data-module', 'governanceProposals');
+        loadMoreBtn.onclick = function() {
+            fetchGovernanceProposals(true);  // append=true
+        };
+        container.appendChild(loadMoreBtn);
+    }
 
     return container;
 }
@@ -26309,31 +26943,51 @@ function renderOasisCommandLogView() {
 
 // ──── Workflows: Runs (List) ────
 
-function fetchWorkflowRuns() {
+function fetchWorkflowRuns(append) {
     if (state.workflowRuns.loading) return;
+    if (append && !state.workflowRuns.pagination.hasMore) return;
+
     state.workflowRuns.loading = true;
     state.workflowRuns.error = null;
-    renderApp();
 
-    fetch('/api/v1/autopilot/controller/runs?limit=50', {
+    var offset = append ? state.workflowRuns.pagination.offset : 0;
+    var limit = state.workflowRuns.pagination.limit;
+
+    fetch('/api/v1/autopilot/controller/runs?offset=' + offset + '&limit=' + limit, {
         headers: buildContextHeaders({})
     })
         .then(function (r) { return r.json(); })
         .then(function (data) {
-            state.workflowRuns.items = data.items || data.data || data.runs || data;
-            if (!Array.isArray(state.workflowRuns.items)) {
-                state.workflowRuns.items = [];
+            var items = data.items || data.data || data.runs || data;
+            if (!Array.isArray(items)) items = [];
+
+            // Append or replace
+            if (append) {
+                state.workflowRuns.items = state.workflowRuns.items.concat(items);
+            } else {
+                state.workflowRuns.items = items;
             }
+
+            // Update pagination
+            state.workflowRuns.pagination.offset = state.workflowRuns.items.length;
+            state.workflowRuns.pagination.hasMore = items.length >= limit;
             state.workflowRuns.fetched = true;
-            state.workflowRuns.loading = false;
             state.workflowRuns.error = null;
-            renderApp();
         })
         .catch(function (err) {
             console.error('[WorkflowRuns] Fetch error:', err);
             state.workflowRuns.error = err.message;
+            if (!append) {
+                state.workflowRuns.items = [];
+            }
+        })
+        .finally(function() {
             state.workflowRuns.loading = false;
-            renderApp();
+            if (append) {
+                refreshWorkflowRunsContent();
+            } else {
+                renderApp();
+            }
         });
 }
 
@@ -26748,31 +27402,51 @@ function renderWorkflowsActionsView() {
 
 // ──── Workflows: Schedules ────
 
-function fetchWorkflowSchedules() {
+function fetchWorkflowSchedules(append) {
     if (state.workflowSchedules.loading) return;
+    if (append && !state.workflowSchedules.pagination.hasMore) return;
+
     state.workflowSchedules.loading = true;
     state.workflowSchedules.error = null;
-    renderApp();
 
-    fetch('/api/v1/scheduler/upcoming', {
+    var offset = append ? state.workflowSchedules.pagination.offset : 0;
+    var limit = state.workflowSchedules.pagination.limit;
+
+    fetch('/api/v1/scheduler/upcoming?offset=' + offset + '&limit=' + limit, {
         headers: buildContextHeaders({})
     })
         .then(function (r) { return r.json(); })
         .then(function (data) {
-            state.workflowSchedules.items = data.items || data.data || data.tasks || data;
-            if (!Array.isArray(state.workflowSchedules.items)) {
-                state.workflowSchedules.items = [];
+            var items = data.items || data.data || data.tasks || data;
+            if (!Array.isArray(items)) items = [];
+
+            // Append or replace
+            if (append) {
+                state.workflowSchedules.items = state.workflowSchedules.items.concat(items);
+            } else {
+                state.workflowSchedules.items = items;
             }
+
+            // Update pagination
+            state.workflowSchedules.pagination.offset = state.workflowSchedules.items.length;
+            state.workflowSchedules.pagination.hasMore = items.length >= limit;
             state.workflowSchedules.fetched = true;
-            state.workflowSchedules.loading = false;
             state.workflowSchedules.error = null;
-            renderApp();
         })
         .catch(function (err) {
             console.error('[WorkflowSchedules] Fetch error:', err);
             state.workflowSchedules.error = err.message;
+            if (!append) {
+                state.workflowSchedules.items = [];
+            }
+        })
+        .finally(function() {
             state.workflowSchedules.loading = false;
-            renderApp();
+            if (append) {
+                refreshWorkflowSchedulesContent();
+            } else {
+                renderApp();
+            }
         });
 }
 
@@ -26912,31 +27586,51 @@ function renderWorkflowsSchedulesView() {
 
 // ──── Workflows: History ────
 
-function fetchWorkflowHistory() {
+function fetchWorkflowHistory(append) {
     if (state.workflowHistory.loading) return;
+    if (append && !state.workflowHistory.pagination.hasMore) return;
+
     state.workflowHistory.loading = true;
     state.workflowHistory.error = null;
-    renderApp();
 
-    fetch('/api/v1/autopilot/loop/history?limit=50', {
+    var offset = append ? state.workflowHistory.pagination.offset : 0;
+    var limit = state.workflowHistory.pagination.limit;
+
+    fetch('/api/v1/autopilot/loop/history?offset=' + offset + '&limit=' + limit, {
         headers: buildContextHeaders({})
     })
         .then(function (r) { return r.json(); })
         .then(function (data) {
-            state.workflowHistory.items = data.items || data.data || data.history || data;
-            if (!Array.isArray(state.workflowHistory.items)) {
-                state.workflowHistory.items = [];
+            var items = data.items || data.data || data.history || data;
+            if (!Array.isArray(items)) items = [];
+
+            // Append or replace
+            if (append) {
+                state.workflowHistory.items = state.workflowHistory.items.concat(items);
+            } else {
+                state.workflowHistory.items = items;
             }
+
+            // Update pagination
+            state.workflowHistory.pagination.offset = state.workflowHistory.items.length;
+            state.workflowHistory.pagination.hasMore = items.length >= limit;
             state.workflowHistory.fetched = true;
-            state.workflowHistory.loading = false;
             state.workflowHistory.error = null;
-            renderApp();
         })
         .catch(function (err) {
             console.error('[WorkflowHistory] Fetch error:', err);
             state.workflowHistory.error = err.message;
+            if (!append) {
+                state.workflowHistory.items = [];
+            }
+        })
+        .finally(function() {
             state.workflowHistory.loading = false;
-            renderApp();
+            if (append) {
+                refreshWorkflowHistoryContent();
+            } else {
+                renderApp();
+            }
         });
 }
 
