@@ -25513,6 +25513,8 @@ function renderGovernanceViolationsView() {
     }, items.length, hasMore);
     if (loadMoreBtn) container.appendChild(loadMoreBtn);
 
+    autoAddLoadMore(container, 'governanceViolations');
+
     return container;
 }
 
@@ -25658,6 +25660,8 @@ function renderGovernanceProposalsView() {
     table.appendChild(tbody);
     container.appendChild(table);
 
+    autoAddLoadMore(container, 'governanceProposals');
+
     return container;
 }
 
@@ -25785,6 +25789,8 @@ function renderAgentsMemoryView() {
     });
 
     container.appendChild(grid);
+
+    autoAddLoadMore(container, 'agentsMemory');
 
     return container;
 }
@@ -25920,6 +25926,8 @@ function renderOasisEntitiesView() {
     table.appendChild(tbody);
     container.appendChild(table);
 
+    autoAddLoadMore(container, 'oasisEntities');
+
     return container;
 }
 
@@ -26025,6 +26033,8 @@ function renderOasisStreamsView() {
     }
 
     container.appendChild(eventsList);
+
+    autoAddLoadMore(container, 'oasisStreams');
 
     return container;
 }
@@ -26209,6 +26219,8 @@ function renderOasisCommandLogView() {
     table.appendChild(tbody);
     container.appendChild(table);
 
+    autoAddLoadMore(container, 'oasisCommandLog');
+
     return container;
 }
 
@@ -26347,6 +26359,8 @@ function renderWorkflowsListView() {
 
     table.appendChild(tbody);
     container.appendChild(table);
+
+    autoAddLoadMore(container, 'workflowRuns');
 
     return container;
 }
@@ -26644,6 +26658,8 @@ function renderWorkflowsActionsView() {
     table.appendChild(tbody);
     container.appendChild(table);
 
+    autoAddLoadMore(container, '_workflowActions');
+
     return container;
 }
 
@@ -26806,6 +26822,8 @@ function renderWorkflowsSchedulesView() {
     table.appendChild(tbody);
     container.appendChild(table);
 
+    autoAddLoadMore(container, 'workflowSchedules');
+
     return container;
 }
 
@@ -26937,6 +26955,8 @@ function renderWorkflowsHistoryView() {
 
     table.appendChild(tbody);
     container.appendChild(table);
+
+    autoAddLoadMore(container, 'workflowHistory');
 
     return container;
 }
@@ -27108,6 +27128,7 @@ function renderOverviewSystemView() {
     });
 
     container.appendChild(grid);
+    autoAddLoadMore(container, 'overviewHealth');
     return container;
 }
 
@@ -27398,6 +27419,8 @@ function renderOverviewRecentEventsView() {
     table.appendChild(tbody);
     container.appendChild(table);
 
+    autoAddLoadMore(container, 'overviewRecentEvents');
+
     return container;
 }
 
@@ -27533,6 +27556,8 @@ function renderOverviewErrorsViolationsView() {
     });
     table.appendChild(tbody);
     container.appendChild(table);
+
+    autoAddLoadMore(container, 'overviewErrors');
 
     return container;
 }
@@ -27671,6 +27696,8 @@ function renderOverviewReleaseFeedView() {
     });
     table.appendChild(tbody);
     container.appendChild(table);
+
+    autoAddLoadMore(container, 'overviewReleases');
 
     return container;
 }
@@ -27826,6 +27853,8 @@ function renderOperatorTaskQueueView() {
     });
     table.appendChild(tbody);
     container.appendChild(table);
+
+    autoAddLoadMore(container, 'operatorTaskQueue');
 
     return container;
 }
@@ -28171,6 +28200,8 @@ function renderOperatorExecutionLogsView() {
     table.appendChild(tbody);
     container.appendChild(table);
 
+    autoAddLoadMore(container, 'operatorExecLogs');
+
     return container;
 }
 
@@ -28316,6 +28347,8 @@ function renderOperatorPipelinesView() {
     table.appendChild(tbody);
     container.appendChild(table);
 
+    autoAddLoadMore(container, 'operatorPipelines');
+
     return container;
 }
 
@@ -28456,6 +28489,8 @@ function renderOperatorRunbookView() {
     });
     table.appendChild(tbody);
     container.appendChild(table);
+
+    autoAddLoadMore(container, 'operatorRunbook');
 
     return container;
 }
@@ -28725,6 +28760,8 @@ function renderIntegrationsMcpView() {
     table.appendChild(tbody);
     container.appendChild(table);
 
+    autoAddLoadMore(container, 'integrationsMcp');
+
     return container;
 }
 
@@ -28854,6 +28891,7 @@ function renderIntegrationsLlmProvidersView() {
     });
 
     container.appendChild(grid);
+    autoAddLoadMore(container, 'integrationsLlm');
     return container;
 }
 
@@ -29010,6 +29048,8 @@ function renderIntegrationsToolsView() {
     });
     table.appendChild(tbody);
     container.appendChild(table);
+
+    autoAddLoadMore(container, 'integrationsTools');
 
     return container;
 }
@@ -29273,6 +29313,7 @@ function renderDiagnosticsErrorsView() {
     });
     table.appendChild(tbody);
     container.appendChild(table);
+    autoAddLoadMore(container, 'diagErrors');
     return container;
 }
 
@@ -29442,6 +29483,7 @@ function renderModelsListView() {
     });
     table.appendChild(tbody);
     container.appendChild(table);
+    autoAddLoadMore(container, 'modelsRegistry');
     return container;
 }
 
@@ -29775,6 +29817,7 @@ function renderTestingCiReportsView() {
         table.appendChild(tbody);
         container.appendChild(table);
     }
+    autoAddLoadMore(container, 'testingCi');
     return container;
 }
 
@@ -30095,34 +30138,48 @@ function renderDocsWorkforceView() {
 }
 
 // ===========================================================================
-// Helper: Create Load More Button
+// Helper: Auto-add Load More to any container with tables/lists
 // ===========================================================================
 
-function createLoadMoreButton(stateKey, fetchFunction, currentCount, hasMore) {
-    if (!hasMore && currentCount > 0) return null;
+function autoAddLoadMore(container, stateKey) {
+    // Find if container has a table or list
+    var hasTable = container.querySelector('table.list-table');
+    var hasList = container.querySelector('.sse-event-list, .error-list, .log-list');
 
+    if (!hasTable && !hasList) return; // No paginated content
+
+    // Initialize pagination state if not exists
+    if (!state[stateKey]) return;
+    if (!state[stateKey]._limit) state[stateKey]._limit = 50;
+
+    var currentCount = state[stateKey].items ? state[stateKey].items.length : 0;
+    var limit = state[stateKey]._limit || 50;
+    var hasMore = currentCount >= limit;
+
+    if (currentCount === 0) return; // No items to paginate
+
+    // Create Load More button
     var btnContainer = document.createElement('div');
     btnContainer.style.display = 'flex';
     btnContainer.style.justifyContent = 'center';
-    btnContainer.style.padding = '1.5rem';
+    btnContainer.style.padding = '1.5rem 0';
     btnContainer.style.marginTop = '1rem';
 
     var btn = document.createElement('button');
-    btn.className = 'btn btn-secondary';
+    btn.className = 'btn btn-secondary btn-load-more';
     btn.textContent = hasMore ? 'Load More (' + currentCount + ' shown)' : 'Showing all ' + currentCount + ' items';
-    btn.disabled = !hasMore || (state[stateKey] && state[stateKey].loading);
-    btn.style.minWidth = '200px';
+    btn.disabled = !hasMore || state[stateKey].loading;
 
     if (hasMore) {
         btn.onclick = function() {
-            if (typeof fetchFunction === 'function') {
-                fetchFunction(true); // true = append mode
-            }
+            state[stateKey]._limit += 50;
+            state[stateKey].fetched = false;
+            renderApp();
         };
     }
 
     btnContainer.appendChild(btn);
-    return btnContainer;
+    container.appendChild(btnContainer);
 }
 
 // --- Init ---
@@ -30834,6 +30891,7 @@ function renderInfraServicesView() {
     });
 
     container.appendChild(grid);
+    autoAddLoadMore(container, 'infraServices');
     return container;
 }
 
@@ -31083,6 +31141,8 @@ function renderInfraDeploymentsView() {
     tableWrapper.appendChild(table);
     container.appendChild(tableWrapper);
 
+    autoAddLoadMore(container, 'infraDeployments');
+
     return container;
 }
 
@@ -31263,6 +31323,8 @@ function renderInfraLogsView() {
     table.appendChild(tbody);
     tableWrapper.appendChild(table);
     container.appendChild(tableWrapper);
+
+    autoAddLoadMore(container, 'infraLogs');
 
     return container;
 }
@@ -31518,6 +31580,7 @@ function renderSecurityPoliciesView() {
     table.appendChild(tbody);
     tableWrapper.appendChild(table);
     container.appendChild(tableWrapper);
+    autoAddLoadMore(container, 'securityPolicies');
     return container;
 }
 
@@ -31609,6 +31672,7 @@ function renderSecurityRolesView() {
     table.appendChild(tbody);
     tableWrapper.appendChild(table);
     container.appendChild(tableWrapper);
+    autoAddLoadMore(container, 'securityRoles');
     return container;
 }
 
@@ -31812,6 +31876,7 @@ function renderSecurityAuditLogView() {
     table.appendChild(tbody);
     tableWrapper.appendChild(table);
     container.appendChild(tableWrapper);
+    autoAddLoadMore(container, 'securityAuditLog');
     return container;
 }
 
