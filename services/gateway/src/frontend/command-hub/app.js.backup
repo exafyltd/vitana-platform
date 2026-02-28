@@ -3495,11 +3495,7 @@ async function fetchOasisEvents(filters, append, recursionDepth) {
         }
     } finally {
         state.oasisEvents.loading = false;
-        if (append) {
-            refreshOasisEventsContent();
-        } else {
-            renderApp();
-        }
+        renderApp();
     }
 }
 
@@ -3613,11 +3609,7 @@ async function fetchSmartOasisEvents(filters, append) {
         }
     } finally {
         state.oasisEvents.loading = false;
-        if (append) {
-            refreshOasisEventsContent();
-        } else {
-            renderApp();
-        }
+        renderApp();
     }
 }
 
@@ -3912,11 +3904,7 @@ async function fetchVtidProjection(append) {
         console.warn('[VTID-01030] Keeping', state.vtidProjection.items.length, 'cached VTIDs visible after fetch error');
     } finally {
         state.vtidProjection.loading = false;
-        if (append) {
-            refreshVtidsContent();
-        } else {
-            renderApp();
-        }
+        renderApp();
     }
 }
 
@@ -28683,7 +28671,6 @@ function renderCommandHubLiveConsoleView() {
 
 function fetchIntegrationsMcp() {
     state.integrationsMcp.loading = true;
-    state.integrationsMcp.error = null;
     renderApp();
     fetch('/api/v1/workers/connector/list', { headers: buildContextHeaders() })
         .then(function (r) { return r.json(); })
@@ -28773,7 +28760,6 @@ function renderIntegrationsMcpView() {
 
 function fetchIntegrationsLlm() {
     state.integrationsLlm.loading = true;
-    state.integrationsLlm.error = null;
     renderApp();
     fetch('/api/v1/llm/models', { headers: buildContextHeaders() })
         .then(function (r) { return r.json(); })
@@ -28955,7 +28941,6 @@ function renderIntegrationsApisView() {
 
 function fetchIntegrationsTools() {
     state.integrationsTools.loading = true;
-    state.integrationsTools.error = null;
     renderApp();
     Promise.all([
         fetch('/api/v1/conversation/tools', { headers: buildContextHeaders() }).then(function (r) { return r.json(); }),
