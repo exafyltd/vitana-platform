@@ -4396,6 +4396,10 @@ function showToast(message, type = 'info', duration = 4000) {
 // --- DOM Elements & Rendering ---
 
 function renderApp() {
+    // Prevent infinite render loops during fetch operations
+    if (window._renderInProgress) return;
+    window._renderInProgress = true;
+
     const root = document.getElementById('root');
 
     // VTID-0526-E: Save chat textarea focus state before destroying DOM
@@ -4571,6 +4575,9 @@ function renderApp() {
     // VTID-01002: Restore scroll positions after DOM rebuild and attach listeners
     restoreAllScrollPositions(savedScrollPositions);
     attachScrollListeners();
+
+    // Reset render guard
+    window._renderInProgress = false;
 }
 
 function renderSidebar() {
@@ -5171,6 +5178,9 @@ function renderMainContent() {
     // Module Content
     const moduleContent = document.createElement('div');
     moduleContent.className = 'module-content-wrapper';
+    moduleContent.style.overflowY = 'auto';
+    moduleContent.style.overflowX = 'hidden';
+    moduleContent.style.height = '100%';
 
     moduleContent.appendChild(renderModuleContent(state.currentModuleKey, state.currentTab));
 
@@ -25366,9 +25376,9 @@ function fetchGovernanceViolations() {
     if (state.governanceViolations.loading) return;
     state.governanceViolations.loading = true;
     state.governanceViolations.error = null;
-    renderApp();
 
-    fetch('/api/v1/governance/violations?limit=50', {
+    var limit = state.governanceViolations._limit || 50;
+    fetch('/api/v1/governance/violations?limit=' + limit, {
         headers: buildContextHeaders({})
     })
         .then(function (r) { return r.json(); })
@@ -25492,6 +25502,16 @@ function renderGovernanceViolationsView() {
 
     table.appendChild(tbody);
     container.appendChild(table);
+
+    // Load More button
+    if (!state.governanceViolations._limit) state.governanceViolations._limit = 50;
+    var hasMore = items.length >= state.governanceViolations._limit;
+    var loadMoreBtn = createLoadMoreButton('governanceViolations', function() {
+        state.governanceViolations._limit += 50;
+        state.governanceViolations.fetched = false;
+        renderApp();
+    }, items.length, hasMore);
+    if (loadMoreBtn) container.appendChild(loadMoreBtn);
 
     return container;
 }
@@ -30072,6 +30092,37 @@ function renderDocsWorkforceView() {
         '<span style="padding:4px 12px;border-radius:4px;background:#10b981;color:white;">Done</span></div>';
     container.appendChild(pipeline);
     return container;
+}
+
+// ===========================================================================
+// Helper: Create Load More Button
+// ===========================================================================
+
+function createLoadMoreButton(stateKey, fetchFunction, currentCount, hasMore) {
+    if (!hasMore && currentCount > 0) return null;
+
+    var btnContainer = document.createElement('div');
+    btnContainer.style.display = 'flex';
+    btnContainer.style.justifyContent = 'center';
+    btnContainer.style.padding = '1.5rem';
+    btnContainer.style.marginTop = '1rem';
+
+    var btn = document.createElement('button');
+    btn.className = 'btn btn-secondary';
+    btn.textContent = hasMore ? 'Load More (' + currentCount + ' shown)' : 'Showing all ' + currentCount + ' items';
+    btn.disabled = !hasMore || (state[stateKey] && state[stateKey].loading);
+    btn.style.minWidth = '200px';
+
+    if (hasMore) {
+        btn.onclick = function() {
+            if (typeof fetchFunction === 'function') {
+                fetchFunction(true); // true = append mode
+            }
+        };
+    }
+
+    btnContainer.appendChild(btn);
+    return btnContainer;
 }
 
 // --- Init ---
