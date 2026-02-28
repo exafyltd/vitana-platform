@@ -3495,7 +3495,11 @@ async function fetchOasisEvents(filters, append, recursionDepth) {
         }
     } finally {
         state.oasisEvents.loading = false;
-        renderApp();
+        if (append) {
+            refreshOasisEventsContent();
+        } else {
+            renderApp();
+        }
     }
 }
 
@@ -3609,7 +3613,11 @@ async function fetchSmartOasisEvents(filters, append) {
         }
     } finally {
         state.oasisEvents.loading = false;
-        renderApp();
+        if (append) {
+            refreshOasisEventsContent();
+        } else {
+            renderApp();
+        }
     }
 }
 
@@ -3904,7 +3912,11 @@ async function fetchVtidProjection(append) {
         console.warn('[VTID-01030] Keeping', state.vtidProjection.items.length, 'cached VTIDs visible after fetch error');
     } finally {
         state.vtidProjection.loading = false;
-        renderApp();
+        if (append) {
+            refreshVtidsContent();
+        } else {
+            renderApp();
+        }
     }
 }
 
