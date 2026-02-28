@@ -30151,10 +30151,17 @@ function autoAddLoadMore(container, stateKey) {
     // Initialize pagination state if not exists
     if (!state[stateKey]) return;
     if (!state[stateKey]._limit) state[stateKey]._limit = 50;
+    if (!state[stateKey]._hasMore) state[stateKey]._hasMore = true; // Assume more data initially
 
     var currentCount = state[stateKey].items ? state[stateKey].items.length : 0;
     var limit = state[stateKey]._limit || 50;
-    var hasMore = currentCount >= limit;
+
+    // If we got fewer items than requested, no more data
+    if (currentCount < limit && state[stateKey].fetched) {
+        state[stateKey]._hasMore = false;
+    }
+
+    var hasMore = state[stateKey]._hasMore;
 
     if (currentCount === 0) return; // No items to paginate
 
