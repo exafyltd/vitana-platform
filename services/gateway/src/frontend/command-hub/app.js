@@ -28732,7 +28732,6 @@ function renderInfraServicesView() {
     });
 
     container.appendChild(grid);
-    autoAddLoadMore(container, 'infraServices');
     return container;
 }
 
@@ -28982,7 +28981,6 @@ function renderInfraDeploymentsView() {
     tableWrapper.appendChild(table);
     container.appendChild(tableWrapper);
 
-    autoAddLoadMore(container, 'infraDeployments');
 
     return container;
 }
@@ -29165,7 +29163,6 @@ function renderInfraLogsView() {
     tableWrapper.appendChild(table);
     container.appendChild(tableWrapper);
 
-    autoAddLoadMore(container, 'infraLogs');
 
     return container;
 }
@@ -29421,7 +29418,6 @@ function renderSecurityPoliciesView() {
     table.appendChild(tbody);
     tableWrapper.appendChild(table);
     container.appendChild(tableWrapper);
-    autoAddLoadMore(container, 'securityPolicies');
     return container;
 }
 
@@ -29513,7 +29509,6 @@ function renderSecurityRolesView() {
     table.appendChild(tbody);
     tableWrapper.appendChild(table);
     container.appendChild(tableWrapper);
-    autoAddLoadMore(container, 'securityRoles');
     return container;
 }
 
@@ -29717,7 +29712,6 @@ function renderSecurityAuditLogView() {
     table.appendChild(tbody);
     tableWrapper.appendChild(table);
     container.appendChild(tableWrapper);
-    autoAddLoadMore(container, 'securityAuditLog');
     return container;
 }
 
