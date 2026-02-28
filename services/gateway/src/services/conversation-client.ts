@@ -24,7 +24,7 @@ import {
 } from '../types/conversation';
 import { ContextLens, createContextLens } from '../types/context-lens';
 import { computeRetrievalRouterDecision, logRetrievalRouterDecision } from './retrieval-router';
-import { buildContextPack, formatContextPackForLLM, BuildContextPackInput } from './context-pack-builder';
+import { buildContextPack, formatContextPackForLLM, BuildContextPackInput, extractLanguageFromContextPack, buildLanguageDirective } from './context-pack-builder';
 import { processWithGemini } from './gemini-operator';
 import { getGeminiToolDefinitions, logToolExecution } from './tool-registry';
 import { classifyCategory } from '../routes/memory';
@@ -239,8 +239,8 @@ export async function processConversationTurn(
     // Step 3: Format context for LLM
     const contextForLLM = formatContextPackForLLM(contextPack);
 
-    // Step 4: Build system instruction
-    const systemInstruction = buildSystemInstruction(input.channel, input.role, contextForLLM);
+    // Step 4: Build system instruction (with language preference from context pack)
+    const systemInstruction = buildSystemInstruction(input.channel, input.role, contextForLLM, contextPack);
 
     // Step 5: Get tool definitions
     const toolDefs = getGeminiToolDefinitions(input.role);
@@ -427,14 +427,19 @@ export async function processConversationTurn(
 function buildSystemInstruction(
   channel: ConversationChannel,
   role: string,
-  contextForLLM: string
+  contextForLLM: string,
+  contextPack?: ContextPack
 ): string {
   const baseInstruction = channel === 'orb'
     ? `You are Vitana, an intelligent voice assistant. Keep responses concise and conversational for voice interaction.`
     : `You are Vitana, an intelligent assistant for the Operator Console. You can be more detailed and use formatting when helpful.`;
 
-  return `${baseInstruction}
+  // Extract language preference from context pack if available
+  const preferredLanguage = contextPack ? extractLanguageFromContextPack(contextPack) : null;
+  const languageDirective = buildLanguageDirective(preferredLanguage);
 
+  return `${baseInstruction}
+${languageDirective}
 ${contextForLLM}
 
 Current conversation channel: ${channel}

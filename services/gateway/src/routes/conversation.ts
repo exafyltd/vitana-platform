@@ -45,7 +45,7 @@ import {
 } from '../types/conversation';
 import { ContextLens, createContextLens } from '../types/context-lens';
 import { computeRetrievalRouterDecision, logRetrievalRouterDecision } from '../services/retrieval-router';
-import { buildContextPack, formatContextPackForLLM, BuildContextPackInput } from '../services/context-pack-builder';
+import { buildContextPack, formatContextPackForLLM, BuildContextPackInput, extractLanguageFromContextPack, buildLanguageDirective } from '../services/context-pack-builder';
 import {
   buildToolRegistryResponse,
   buildToolHealthResponse,
@@ -272,9 +272,13 @@ router.post('/turn', async (req: Request, res: Response) => {
     let modelUsed = 'unknown';
 
     try {
+      // Extract user's preferred language from context pack facts
+      const preferredLanguage = extractLanguageFromContextPack(contextPack);
+      const languageDirective = buildLanguageDirective(preferredLanguage);
+
       // Build system instruction with context pack
       const systemInstruction = `You are Vitana, an intelligent assistant. Respond helpfully and accurately based on the context provided.
-
+${languageDirective}
 ${contextForLLM}
 
 Current conversation channel: ${channel}
@@ -603,9 +607,13 @@ router.post('/stream', async (req: Request, res: Response) => {
     const contextPack = await buildContextPack(contextPackInput);
     const contextForLLM = formatContextPackForLLM(contextPack);
 
+    // Extract user's preferred language from context pack facts
+    const streamPreferredLanguage = extractLanguageFromContextPack(contextPack);
+    const streamLanguageDirective = buildLanguageDirective(streamPreferredLanguage);
+
     // Build system instruction
     const systemInstruction = `You are Vitana, an intelligent voice assistant. Keep responses concise and conversational.
-
+${streamLanguageDirective}
 ${contextForLLM}
 
 Instructions:
