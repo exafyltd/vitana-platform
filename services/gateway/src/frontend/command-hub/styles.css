@@ -15985,42 +15985,9 @@ border-bottom: 1px solid var(--color-border, #333);
    51-Screen Build — Shared Styles
    ════════════════════════════════════════════════════════════ */
 
-/* ── Make all content scrollable ── */
-.module-content-wrapper {
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-  height: 100%;
-  padding-bottom: 2rem;
-}
-
-/* ── Load More Button ── */
-.btn-load-more {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.75rem 2rem;
-  background: var(--color-bg-secondary, #1a1a2e);
-  border: 1px solid var(--color-border, #444);
-  border-radius: 6px;
-  color: var(--color-text, #e0e0e0);
-  font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  min-width: 200px;
-}
-
-.btn-load-more:hover:not(:disabled) {
-  background: var(--color-bg-hover, #252540);
-  border-color: var(--color-accent, #6c63ff);
-  transform: translateY(-1px);
-}
-
-.btn-load-more:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+/* Note: Removed duplicate .module-content-wrapper and .btn-load-more
+   These are already defined earlier in the file and the duplicates
+   were causing conflicts with scrolling behavior */
 
 /* ── Generic Module Container ── */
 .module-container { padding: 0; }
