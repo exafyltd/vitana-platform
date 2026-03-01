@@ -7257,6 +7257,18 @@ function formatElapsedTime(ms) {
  * @param {string} timestamp - ISO timestamp
  * @returns {string}
  */
+function formatDuration(ms) {
+    if (!ms || ms < 0) return '-';
+    var seconds = Math.floor(ms / 1000);
+    if (seconds < 60) return seconds + 's';
+    var minutes = Math.floor(seconds / 60);
+    var remainSec = seconds % 60;
+    if (minutes < 60) return minutes + 'm ' + remainSec + 's';
+    var hours = Math.floor(minutes / 60);
+    var remainMin = minutes % 60;
+    return hours + 'h ' + remainMin + 'm';
+}
+
 function formatRelativeTime(timestamp) {
     if (!timestamp) return '';
     var diff = Date.now() - new Date(timestamp).getTime();
@@ -12631,6 +12643,7 @@ function renderVoiceLabOrbLivePanel() {
             '<th>User</th>' +
             '<th>Platform</th>' +
             '<th>Started</th>' +
+            '<th>Duration</th>' +
             '<th>Status</th>' +
             '<th>Turns</th>' +
             '<th>Alerts</th>' +
@@ -12679,10 +12692,18 @@ function renderVoiceLabOrbLivePanel() {
                 turnsClass = 'turns-zero';
             }
 
+            // Duration
+            var durationMs = session.durationMs;
+            if (!durationMs && session.startedAt && session.endedAt) {
+                durationMs = new Date(session.endedAt).getTime() - new Date(session.startedAt).getTime();
+            }
+            var durationStr = durationMs ? formatDuration(durationMs) : (session.connected ? 'Live' : '-');
+
             row.innerHTML = '<td class="session-id">' + (session.sessionId || '-').substring(0, 8) + '...</td>' +
                 '<td class="session-user" title="' + userTitle + '">' + userDisplay + '</td>' +
                 '<td><span class="' + platformClass + '">' + platformDisplay + '</span></td>' +
                 '<td>' + startedAt + '</td>' +
+                '<td>' + durationStr + '</td>' +
                 '<td class="session-status">' + (session.connected ? '<span class="status-active">Active</span>' : '<span class="status-ended">Ended</span>') + '</td>' +
                 '<td class="' + turnsClass + '">' + (session.turnCount || 0) + '</td>' +
                 '<td>' + alertsHtml + '</td>' +
@@ -12794,7 +12815,11 @@ function renderVoiceLabSessionDrawer() {
 
     if (details) {
         // Section 1: Session Overview
-        var durationDisplay = details.duration_ms ? (details.duration_ms / 1000).toFixed(1) + 's' : '-';
+        var durationMs = details.duration_ms;
+        if (!durationMs && details.started_at && details.ended_at) {
+            durationMs = new Date(details.ended_at).getTime() - new Date(details.started_at).getTime();
+        }
+        var durationDisplay = durationMs ? formatDuration(durationMs) : '-';
         var startedDisplay = details.started_at ? new Date(details.started_at).toLocaleString() : '-';
         var endedDisplay = details.ended_at ? new Date(details.ended_at).toLocaleString() : '-';
         var statusHtml = details.status === 'active'

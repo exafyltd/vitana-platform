@@ -138,8 +138,8 @@ async function queryVoiceLabEvents(
       params.push(`created_at=gte.${filters.since}`);
     }
 
-    // VTID filter for voice.live events
-    params.push(`vtid=eq.VTID-01218A`);
+    // VTID filter: VTID-01218A (legacy voice-lab) + VTID-01155 (orb-live emitter)
+    params.push(`vtid=in.("VTID-01218A","VTID-01155")`);
 
     // Ordering and pagination
     params.push('order=created_at.desc');
@@ -221,21 +221,21 @@ router.get('/live/sessions', async (req: Request, res: Response) => {
 
     const { status, limit, offset } = query.data;
 
-    // Query session started events
-    console.log('[VTID-01218A] Querying session.started events...');
+    // Query session started events (both legacy voice.live.* and current vtid.live.* topics)
+    console.log('[VTID-01218A] Querying session start events...');
     const sessionStartEvents = await queryVoiceLabEvents({
-      eventTypes: ['voice.live.session.started'],
+      eventTypes: ['voice.live.session.started', 'vtid.live.session.start'],
       limit: limit + 50, // Get more to account for filtering
       offset,
     });
-    console.log(`[VTID-01218A] Found ${sessionStartEvents.length} session.started events`);
+    console.log(`[VTID-01218A] Found ${sessionStartEvents.length} session start events`);
 
     // Query session ended events
     const sessionEndEvents = await queryVoiceLabEvents({
-      eventTypes: ['voice.live.session.ended'],
+      eventTypes: ['voice.live.session.ended', 'vtid.live.session.stop'],
       limit: 200, // Get recent ended sessions
     });
-    console.log(`[VTID-01218A] Found ${sessionEndEvents.length} session.ended events`);
+    console.log(`[VTID-01218A] Found ${sessionEndEvents.length} session end events`);
 
     // Build session map
     const sessionEndMap = new Map<string, any>();
@@ -259,12 +259,18 @@ router.get('/live/sessions', async (req: Request, res: Response) => {
       if (status === 'active' && !isActive) continue;
       if (status === 'ended' && isActive) continue;
 
+      // Calculate duration from metadata or from timestamps
+      const summaryDurationMs = endEvent?.metadata?.duration_ms
+        || (endEvent?.created_at && startEvent.created_at
+          ? new Date(endEvent.created_at).getTime() - new Date(startEvent.created_at).getTime()
+          : undefined);
+
       const summary: LiveSessionSummary = {
         session_id: sessionId,
         status: isActive ? 'active' : 'ended',
         started_at: startEvent.created_at,
         ended_at: endEvent?.created_at,
-        duration_ms: endEvent?.metadata?.duration_ms,
+        duration_ms: summaryDurationMs,
         turn_count: endEvent?.metadata?.turn_count || endEvent?.metadata?.turn_number || 0,
         audio_in_chunks: endEvent?.metadata?.audio_in_chunks || 0,
         audio_out_chunks: endEvent?.metadata?.audio_out_chunks || 0,
@@ -335,10 +341,10 @@ router.get('/live/sessions/:sessionId', async (req: Request, res: Response) => {
       });
     }
 
-    // Find start and end events
-    const startEvent = events.find(e => e.topic === 'voice.live.session.started');
-    const endEvent = events.find(e => e.topic === 'voice.live.session.ended');
-    const errorEvents = events.filter(e => e.topic === 'voice.live.error');
+    // Find start and end events (match both legacy voice.live.* and current vtid.live.* topics)
+    const startEvent = events.find(e => e.topic === 'voice.live.session.started' || e.topic === 'vtid.live.session.start');
+    const endEvent = events.find(e => e.topic === 'voice.live.session.ended' || e.topic === 'vtid.live.session.stop');
+    const errorEvents = events.filter(e => e.topic === 'voice.live.error' || e.topic?.includes('error'));
     const toolEvents = events.filter(e => e.topic?.includes('tool'));
 
     if (!startEvent) {
@@ -349,12 +355,18 @@ router.get('/live/sessions/:sessionId', async (req: Request, res: Response) => {
       });
     }
 
+    // Calculate duration from metadata or from timestamps
+    const durationMs = endEvent?.metadata?.duration_ms
+      || (endEvent?.created_at && startEvent.created_at
+        ? new Date(endEvent.created_at).getTime() - new Date(startEvent.created_at).getTime()
+        : undefined);
+
     const session: LiveSessionDetail = {
       session_id: sessionId,
       status: endEvent ? 'ended' : 'active',
       started_at: startEvent.created_at,
       ended_at: endEvent?.created_at,
-      duration_ms: endEvent?.metadata?.duration_ms,
+      duration_ms: durationMs,
       turn_count: endEvent?.metadata?.turn_count || endEvent?.metadata?.turn_number || 0,
       audio_in_chunks: endEvent?.metadata?.audio_in_chunks || 0,
       audio_out_chunks: endEvent?.metadata?.audio_out_chunks || 0,
@@ -423,7 +435,8 @@ router.get('/live/sessions/:sessionId/turns', async (req: Request, res: Response
     // Query turn events for this session
     const events = await queryVoiceLabEvents({
       sessionId,
-      eventTypes: ['voice.live.turn.started', 'voice.live.turn.completed', 'voice.live.turn.interrupted'],
+      eventTypes: ['voice.live.turn.started', 'voice.live.turn.completed', 'voice.live.turn.interrupted',
+                   'vtid.live.turn.started', 'vtid.live.turn.completed', 'vtid.live.turn.interrupted'],
       limit: 500,
     });
 
@@ -435,9 +448,9 @@ router.get('/live/sessions/:sessionId/turns', async (req: Request, res: Response
       const turnNumber = event.metadata?.turn_number;
       if (!turnNumber) continue;
 
-      if (event.topic === 'voice.live.turn.started' && !turnStartMap.has(turnNumber)) {
+      if ((event.topic === 'voice.live.turn.started' || event.topic === 'vtid.live.turn.started') && !turnStartMap.has(turnNumber)) {
         turnStartMap.set(turnNumber, event);
-      } else if (event.topic === 'voice.live.turn.completed' && !turnCompleteMap.has(turnNumber)) {
+      } else if ((event.topic === 'voice.live.turn.completed' || event.topic === 'vtid.live.turn.completed') && !turnCompleteMap.has(turnNumber)) {
         turnCompleteMap.set(turnNumber, event);
       }
     }
