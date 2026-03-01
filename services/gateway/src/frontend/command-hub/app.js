@@ -24548,6 +24548,15 @@ async function geminiLiveStartAudioCapture() {
     var audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
     state.orb.geminiLiveAudioContext = audioContext;
 
+    // CRITICAL: Resume AudioContext if suspended — the user gesture context expires after the
+    // async session start API call, so AudioContext may be created in suspended state.
+    // When suspended, onaudioprocess never fires and zero audio is captured.
+    if (audioContext.state === 'suspended') {
+        console.log('[VTID-01155] AudioContext suspended, resuming...');
+        await audioContext.resume();
+        console.log('[VTID-01155] AudioContext resumed, state:', audioContext.state);
+    }
+
     var source = audioContext.createMediaStreamSource(stream);
     // 1024 samples = 64ms at 16kHz (must be power of 2)
     var processor = audioContext.createScriptProcessor(1024, 1, 1);
@@ -24638,8 +24647,16 @@ function geminiLiveSendAudio(base64Data) {
             data_b64: base64Data,
             mime: 'audio/pcm;rate=16000'
         })
+    }).then(function (resp) {
+        if (!resp.ok && !state.orb._audioSendErrorLogged) {
+            state.orb._audioSendErrorLogged = true;
+            console.error('[VTID-01155] Audio send failed: HTTP ' + resp.status + ' — session may be expired or invalid');
+        }
     }).catch(function (error) {
-        console.warn('[VTID-01155] Failed to send audio:', error);
+        if (!state.orb._audioSendErrorLogged) {
+            state.orb._audioSendErrorLogged = true;
+            console.error('[VTID-01155] Audio send network error:', error.message || error);
+        }
     });
 }
 

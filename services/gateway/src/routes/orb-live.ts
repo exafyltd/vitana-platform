@@ -4987,6 +4987,7 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     active_role: sseActiveRole || null,
     user_agent: req.headers['user-agent'] || null,
     origin: req.headers['origin'] || req.headers['referer'] || null,
+    transport: 'sse',
     lang,
     modalities: responseModalities,
     voice: getVoiceForLang(lang)
