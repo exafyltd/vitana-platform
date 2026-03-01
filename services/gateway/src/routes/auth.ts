@@ -352,6 +352,92 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
         }));
       }
 
+      // ---------------------------------------------------------------
+      // AUTO-PROVISION SAFETY NET
+      // If the user exists in auth.users but has no app_users row or no
+      // user_tenants membership (trigger failed, race condition, etc.),
+      // provision them on the spot so they're never permanently broken.
+      // ---------------------------------------------------------------
+      const missingProfile = !!profileError || !profileData;
+      const missingMembership = !membershipData || membershipData.length === 0;
+
+      if (missingProfile || missingMembership) {
+        console.warn(
+          `[AUTO-PROVISION] User ${identity.user_id} (${identity.email}) missing records: ` +
+          `app_users=${missingProfile ? 'MISSING' : 'ok'}, user_tenants=${missingMembership ? 'MISSING' : 'ok'}`
+        );
+
+        // Resolve default tenant (oldest)
+        const { data: tenantRow } = await supabase
+          .from('tenants')
+          .select('id')
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .single();
+
+        const defaultTenantId = tenantRow?.id as string | undefined;
+
+        if (missingProfile) {
+          const displayName = identity.email
+            ? identity.email.split('@')[0]
+            : 'User';
+
+          const { data: newProfile, error: provErr } = await supabase
+            .from('app_users')
+            .upsert(
+              {
+                user_id: identity.user_id,
+                email: identity.email,
+                display_name: displayName,
+                tenant_id: defaultTenantId || null,
+              },
+              { onConflict: 'user_id' }
+            )
+            .select('display_name, avatar_url, bio')
+            .single();
+
+          if (!provErr && newProfile) {
+            profile = {
+              display_name: newProfile.display_name || undefined,
+              avatar_url: newProfile.avatar_url || undefined,
+              bio: newProfile.bio || undefined,
+            };
+            console.log(`[AUTO-PROVISION] Created app_users row for ${identity.user_id}`);
+          } else if (provErr) {
+            console.error(`[AUTO-PROVISION] Failed to create app_users: ${provErr.message}`);
+          }
+        }
+
+        if (missingMembership && defaultTenantId) {
+          const { data: newMembership, error: memErr } = await supabase
+            .from('user_tenants')
+            .upsert(
+              {
+                tenant_id: defaultTenantId,
+                user_id: identity.user_id,
+                active_role: 'community',
+                is_primary: true,
+              },
+              { onConflict: 'tenant_id,user_id' }
+            )
+            .select('tenant_id, active_role, is_primary')
+            .single();
+
+          if (!memErr && newMembership) {
+            memberships = [
+              {
+                tenant_id: newMembership.tenant_id,
+                role: newMembership.active_role || 'community',
+                is_primary: newMembership.is_primary || false,
+              },
+            ];
+            console.log(`[AUTO-PROVISION] Created user_tenants row for ${identity.user_id} in tenant ${defaultTenantId}`);
+          } else if (memErr) {
+            console.error(`[AUTO-PROVISION] Failed to create user_tenants: ${memErr.message}`);
+          }
+        }
+      }
+
       console.log(`[VTID-01186] Profile loaded: display_name=${profile.display_name}, memberships=${memberships.length}`);
     } catch (err: any) {
       console.warn(`[VTID-01186] Failed to load profile/memberships: ${err.message}`);

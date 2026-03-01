@@ -25009,14 +25009,8 @@ function geminiLiveProcessQueue() {
         return; // Exit and retry after resume
     }
 
-    // MOBILE-FIX: For first chunk, wait for more audio to buffer (prevents mid-sentence start)
+    // Track if this is the first chunk (used for Android scheduling fix)
     var isFirstChunk = state.orb.geminiLiveScheduledSources.length === 0;
-    if (isFirstChunk && state.orb.geminiLiveAudioQueue.length === 1) {
-        // Only one chunk available - wait for more to ensure smooth playback on mobile
-        console.log('[MOBILE-FIX] First chunk - waiting for more audio to buffer...');
-        setTimeout(geminiLiveProcessQueue, 100);
-        return;
-    }
 
     while (state.orb.geminiLiveAudioQueue.length > 0) {
         var chunk = state.orb.geminiLiveAudioQueue.shift();
@@ -29818,19 +29812,19 @@ function renderCommandHubLiveConsoleView() {
 function fetchIntegrationsMcp() {
     state.integrationsMcp.loading = true;
     state.integrationsMcp.error = null;
-    renderApp();
+
     fetch('/api/v1/workers/connector/list', { headers: buildContextHeaders() })
         .then(function (r) { return r.json(); })
         .then(function (data) {
             var items = data.data || data.connectors || data;
             state.integrationsMcp.items = Array.isArray(items) ? items : [];
             state.integrationsMcp.fetched = true;
-            state.integrationsMcp.loading = false;
             state.integrationsMcp.error = null;
-            renderApp();
         })
         .catch(function (err) {
             state.integrationsMcp.error = err.message;
+        })
+        .finally(function() {
             state.integrationsMcp.loading = false;
             renderApp();
         });
@@ -29908,19 +29902,19 @@ function renderIntegrationsMcpView() {
 function fetchIntegrationsLlm() {
     state.integrationsLlm.loading = true;
     state.integrationsLlm.error = null;
-    renderApp();
+
     fetch('/api/v1/llm/models', { headers: buildContextHeaders() })
         .then(function (r) { return r.json(); })
         .then(function (data) {
             var items = data.data || data.models || data;
             state.integrationsLlm.items = Array.isArray(items) ? items : [];
             state.integrationsLlm.fetched = true;
-            state.integrationsLlm.loading = false;
             state.integrationsLlm.error = null;
-            renderApp();
         })
         .catch(function (err) {
             state.integrationsLlm.error = err.message;
+        })
+        .finally(function() {
             state.integrationsLlm.loading = false;
             renderApp();
         });
@@ -30090,7 +30084,7 @@ function renderIntegrationsApisView() {
 function fetchIntegrationsTools() {
     state.integrationsTools.loading = true;
     state.integrationsTools.error = null;
-    renderApp();
+
     Promise.all([
         fetch('/api/v1/conversation/tools', { headers: buildContextHeaders() }).then(function (r) { return r.json(); }),
         fetch('/api/v1/conversation/tool-health', { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).catch(function () { return {}; })
@@ -30116,12 +30110,12 @@ function fetchIntegrationsTools() {
                 };
             });
             state.integrationsTools.fetched = true;
-            state.integrationsTools.loading = false;
             state.integrationsTools.error = null;
-            renderApp();
         })
         .catch(function (err) {
             state.integrationsTools.error = err.message;
+        })
+        .finally(function() {
             state.integrationsTools.loading = false;
             renderApp();
         });
