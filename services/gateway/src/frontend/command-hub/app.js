@@ -25086,8 +25086,8 @@ function geminiLiveProcessQueue() {
                 var isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
                 if (isFirstChunk && isMobile) {
                     // Schedule slightly in future (50ms) to ensure audio plays from start
-                    state.orb.geminiLiveLastScheduledEnd = now + 0.05;
-                    console.log('[ANDROID-FIX] First chunk scheduled with 50ms buffer to prevent start skip');
+                    state.orb.geminiLiveLastScheduledEnd = now + 0.3;
+                    console.log('[ANDROID-FIX] First chunk scheduled with 300ms buffer to prevent start skip');
                 } else {
                     state.orb.geminiLiveLastScheduledEnd = now;
                 }
@@ -26773,7 +26773,6 @@ function fetchAgentsMemory() {
     if (state.agentsMemory.loading) return;
     state.agentsMemory.loading = true;
     state.agentsMemory.error = null;
-    renderApp();
 
     fetch('/api/v1/memory/garden/summary', {
         headers: buildContextHeaders({})
@@ -26782,13 +26781,13 @@ function fetchAgentsMemory() {
         .then(function (data) {
             state.agentsMemory.items = data.data || data;
             state.agentsMemory.fetched = true;
-            state.agentsMemory.loading = false;
             state.agentsMemory.error = null;
-            renderApp();
         })
         .catch(function (err) {
             console.error('[AgentsMemory] Fetch error:', err);
             state.agentsMemory.error = err.message;
+        })
+        .finally(function() {
             state.agentsMemory.loading = false;
             renderApp();
         });
@@ -26903,7 +26902,6 @@ function fetchOasisEntities() {
     if (state.oasisEntities.loading) return;
     state.oasisEntities.loading = true;
     state.oasisEntities.error = null;
-    renderApp();
 
     fetch('/api/v1/vtid/list?limit=100', {
         headers: buildContextHeaders({})
@@ -26915,13 +26913,13 @@ function fetchOasisEntities() {
                 state.oasisEntities.items = [];
             }
             state.oasisEntities.fetched = true;
-            state.oasisEntities.loading = false;
             state.oasisEntities.error = null;
-            renderApp();
         })
         .catch(function (err) {
             console.error('[OasisEntities] Fetch error:', err);
             state.oasisEntities.error = err.message;
+        })
+        .finally(function() {
             state.oasisEntities.loading = false;
             renderApp();
         });
@@ -27193,7 +27191,6 @@ function fetchOasisCommandLog() {
     if (state.oasisCommandLog.loading) return;
     state.oasisCommandLog.loading = true;
     state.oasisCommandLog.error = null;
-    renderApp();
 
     fetch('/api/v1/operator/history?limit=100', {
         headers: buildContextHeaders({})
@@ -27205,13 +27202,13 @@ function fetchOasisCommandLog() {
                 state.oasisCommandLog.items = [];
             }
             state.oasisCommandLog.fetched = true;
-            state.oasisCommandLog.loading = false;
             state.oasisCommandLog.error = null;
-            renderApp();
         })
         .catch(function (err) {
             console.error('[OasisCommandLog] Fetch error:', err);
             state.oasisCommandLog.error = err.message;
+        })
+        .finally(function() {
             state.oasisCommandLog.loading = false;
             renderApp();
         });
@@ -27493,7 +27490,6 @@ function fetchWorkflowTriggers() {
     if (state.workflowTriggers.loading) return;
     state.workflowTriggers.loading = true;
     state.workflowTriggers.error = null;
-    renderApp();
 
     fetch('/api/v1/autopilot/loop/status', {
         headers: buildContextHeaders({})
@@ -27502,13 +27498,13 @@ function fetchWorkflowTriggers() {
         .then(function (data) {
             state.workflowTriggers.data = data.data || data;
             state.workflowTriggers.fetched = true;
-            state.workflowTriggers.loading = false;
             state.workflowTriggers.error = null;
-            renderApp();
         })
         .catch(function (err) {
             console.error('[WorkflowTriggers] Fetch error:', err);
             state.workflowTriggers.error = err.message;
+        })
+        .finally(function() {
             state.workflowTriggers.loading = false;
             renderApp();
         });
@@ -32181,7 +32177,6 @@ function renderInfraHealthView() {
 function fetchInfraDeployments() {
     state.infraDeployments.loading = true;
     state.infraDeployments.error = null;
-    renderApp();
 
     fetch('/api/v1/operator/deployments?limit=30', {
         method: 'GET',
@@ -32190,10 +32185,9 @@ function fetchInfraDeployments() {
     .then(function (data) {
         state.infraDeployments.items = data.data || data.deployments || (Array.isArray(data) ? data : []);
         state.infraDeployments.fetched = true;
-        state.infraDeployments.loading = false;
-        renderApp();
     }).catch(function (err) {
         state.infraDeployments.error = err.message;
+    }).finally(function() {
         state.infraDeployments.loading = false;
         renderApp();
     });
@@ -32647,17 +32641,15 @@ function renderInfraConfigView() {
 function fetchSecurityPolicies() {
     state.securityPolicies.loading = true;
     state.securityPolicies.error = null;
-    renderApp();
 
     fetch('/api/v1/governance/rules', { method: 'GET', headers: buildContextHeaders() })
     .then(function (r) { return r.json(); })
     .then(function (data) {
         state.securityPolicies.items = data.data || data.rules || (Array.isArray(data) ? data : []);
         state.securityPolicies.fetched = true;
-        state.securityPolicies.loading = false;
-        renderApp();
     }).catch(function (err) {
         state.securityPolicies.error = err.message;
+    }).finally(function() {
         state.securityPolicies.loading = false;
         renderApp();
     });
@@ -32759,17 +32751,15 @@ function renderSecurityPoliciesView() {
 function fetchSecurityRoles() {
     state.securityRoles.loading = true;
     state.securityRoles.error = null;
-    renderApp();
 
     fetch('/api/v1/dev-access/users', { method: 'GET', headers: buildContextHeaders() })
     .then(function (r) { return r.json(); })
     .then(function (data) {
         state.securityRoles.items = data.data || data.users || (Array.isArray(data) ? data : []);
         state.securityRoles.fetched = true;
-        state.securityRoles.loading = false;
-        renderApp();
     }).catch(function (err) {
         state.securityRoles.error = err.message;
+    }).finally(function() {
         state.securityRoles.loading = false;
         renderApp();
     });
@@ -32919,17 +32909,15 @@ function renderSecurityKeysSecretsView() {
 function fetchSecurityAuditLog() {
     state.securityAuditLog.loading = true;
     state.securityAuditLog.error = null;
-    renderApp();
 
     fetch('/api/v1/governance/history?limit=100', { method: 'GET', headers: buildContextHeaders() })
     .then(function (r) { return r.json(); })
     .then(function (data) {
         state.securityAuditLog.items = data.events || data.data || (Array.isArray(data) ? data : []);
         state.securityAuditLog.fetched = true;
-        state.securityAuditLog.loading = false;
-        renderApp();
     }).catch(function (err) {
         state.securityAuditLog.error = err.message;
+    }).finally(function() {
         state.securityAuditLog.loading = false;
         renderApp();
     });
