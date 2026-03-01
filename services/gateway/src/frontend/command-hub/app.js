@@ -12744,9 +12744,16 @@ function renderVoiceLabOrbLivePanel() {
 
     panel.appendChild(sessionsSection);
 
-    // Session Details Drawer (if selected)
+    // Session Details Side Drawer (fixed overlay, appended to body)
     if (state.voiceLab.selectedSession) {
-        panel.appendChild(renderVoiceLabSessionDrawer());
+        // Remove any existing drawer first
+        var existingOverlay = document.querySelector('.voice-lab-drawer-overlay');
+        if (existingOverlay) existingOverlay.remove();
+        document.body.appendChild(renderVoiceLabSessionDrawer());
+    } else {
+        // Clean up overlay if session deselected
+        var staleOverlay = document.querySelector('.voice-lab-drawer-overlay');
+        if (staleOverlay) staleOverlay.remove();
     }
 
     return panel;
@@ -12757,8 +12764,25 @@ function renderVoiceLabOrbLivePanel() {
  * VTID-01218B: Enhanced with actual session details and turn timeline
  */
 function renderVoiceLabSessionDrawer() {
+    function closeDrawer() {
+        state.voiceLab.selectedSession = null;
+        state.voiceLab.selectedSessionDetails = null;
+        state.voiceLab.selectedSessionTurns = [];
+        var overlay = document.querySelector('.voice-lab-drawer-overlay');
+        if (overlay) overlay.remove();
+        renderApp();
+    }
+
+    // Fixed overlay (click backdrop to close)
+    var overlay = document.createElement('div');
+    overlay.className = 'voice-lab-drawer-overlay';
+    overlay.addEventListener('click', function (e) {
+        if (e.target === overlay) closeDrawer();
+    });
+
+    // Side panel
     var drawer = document.createElement('div');
-    drawer.className = 'voice-lab-drawer';
+    drawer.className = 'voice-lab-side-drawer';
 
     var drawerHeader = document.createElement('div');
     drawerHeader.className = 'voice-lab-drawer-header';
@@ -12768,14 +12792,9 @@ function renderVoiceLabSessionDrawer() {
     drawerHeader.appendChild(drawerTitle);
 
     var closeBtn = document.createElement('button');
-    closeBtn.className = 'voice-lab-drawer-close';
-    closeBtn.textContent = '\u00D7';
-    closeBtn.addEventListener('click', function () {
-        state.voiceLab.selectedSession = null;
-        state.voiceLab.selectedSessionDetails = null;
-        state.voiceLab.selectedSessionTurns = [];
-        renderApp();
-    });
+    closeBtn.className = 'drawer-close-btn';
+    closeBtn.innerHTML = '&#x2715;';
+    closeBtn.addEventListener('click', closeDrawer);
     drawerHeader.appendChild(closeBtn);
 
     drawer.appendChild(drawerHeader);
@@ -12790,7 +12809,8 @@ function renderVoiceLabSessionDrawer() {
         loadingDiv.textContent = 'Loading session details...';
         drawerContent.appendChild(loadingDiv);
         drawer.appendChild(drawerContent);
-        return drawer;
+        overlay.appendChild(drawer);
+        return overlay;
     }
 
     var details = state.voiceLab.selectedSessionDetails;
@@ -12990,7 +13010,8 @@ function renderVoiceLabSessionDrawer() {
     }
 
     drawer.appendChild(drawerContent);
-    return drawer;
+    overlay.appendChild(drawer);
+    return overlay;
 }
 
 /**
