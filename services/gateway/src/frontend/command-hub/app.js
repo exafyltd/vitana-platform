@@ -24543,23 +24543,26 @@ async function geminiLiveStartAudioCapture() {
     });
 
     state.orb.geminiLiveAudioStream = stream;
+    console.log('[AUDIO-DEBUG] getUserMedia OK, tracks:', stream.getAudioTracks().map(function(t) { return t.label + ' enabled=' + t.enabled + ' muted=' + t.muted + ' state=' + t.readyState; }));
 
     // Create AudioContext at 16kHz
     var audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
     state.orb.geminiLiveAudioContext = audioContext;
+    console.log('[AUDIO-DEBUG] AudioContext created: state=' + audioContext.state + ' sampleRate=' + audioContext.sampleRate);
 
     // CRITICAL: Resume AudioContext if suspended — the user gesture context expires after the
     // async session start API call, so AudioContext may be created in suspended state.
     // When suspended, onaudioprocess never fires and zero audio is captured.
     if (audioContext.state === 'suspended') {
-        console.log('[VTID-01155] AudioContext suspended, resuming...');
+        console.log('[AUDIO-DEBUG] AudioContext suspended, resuming...');
         await audioContext.resume();
-        console.log('[VTID-01155] AudioContext resumed, state:', audioContext.state);
+        console.log('[AUDIO-DEBUG] AudioContext after resume: state=' + audioContext.state);
     }
 
     var source = audioContext.createMediaStreamSource(stream);
     // 1024 samples = 64ms at 16kHz (must be power of 2)
     var processor = audioContext.createScriptProcessor(1024, 1, 1);
+    console.log('[AUDIO-DEBUG] ScriptProcessor created, connecting pipeline');
 
     // VTID-VOICE-INIT: Client-side VAD for barge-in detection
     // Tracks consecutive frames above energy threshold to confirm real speech
@@ -24568,8 +24571,31 @@ async function geminiLiveStartAudioCapture() {
     var vadSpeechConfirmFrames = 3; // Need 3 consecutive frames (~192ms) to confirm real speech
     var vadInterruptSent = false;   // Only send one interrupt per model speaking turn
 
+    // Audio pipeline diagnostics
+    var _audioFrames = 0;
+    var _audioSent = 0;
+    var _audioDropModel = 0;
+    var _audioDropMuted = 0;
+    var _audioDropInactive = 0;
+    var _audioLastLog = Date.now();
+
     processor.onaudioprocess = function (e) {
-        if (!state.orb.geminiLiveActive || state.orb.voiceState === 'MUTED') return;
+        _audioFrames++;
+
+        // Log pipeline state every 5s
+        if (Date.now() - _audioLastLog > 5000) {
+            _audioLastLog = Date.now();
+            console.log('[AUDIO-DEBUG] frames=' + _audioFrames + ' sent=' + _audioSent +
+                ' drop(model)=' + _audioDropModel + ' drop(muted)=' + _audioDropMuted +
+                ' drop(inactive)=' + _audioDropInactive +
+                ' | active=' + state.orb.geminiLiveActive + ' voice=' + state.orb.voiceState +
+                ' playing=' + state.orb.geminiLiveAudioPlaying +
+                ' sources=' + (state.orb.geminiLiveScheduledSources ? state.orb.geminiLiveScheduledSources.length : 0) +
+                ' ctx=' + audioContext.state);
+        }
+
+        if (!state.orb.geminiLiveActive) { _audioDropInactive++; return; }
+        if (state.orb.voiceState === 'MUTED') { _audioDropMuted++; return; }
 
         var inputData = e.inputBuffer.getChannelData(0);
 
@@ -24612,12 +24638,15 @@ async function geminiLiveStartAudioCapture() {
                 vadSpeechFrames = 0; // Reset on silence
             }
             // Don't send audio while model is playing (server gates it anyway)
+            _audioDropModel++;
             return;
         } else {
             // Model not speaking — reset VAD state
             vadSpeechFrames = 0;
             vadInterruptSent = false;
         }
+
+        _audioSent++;
 
         // Convert Float32 to Int16 PCM
         var pcmData = new Int16Array(inputData.length);
