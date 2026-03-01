@@ -24591,8 +24591,21 @@ async function geminiLiveStartAudioCapture() {
                 vadSpeechFrames++;
                 if (vadSpeechFrames >= vadSpeechConfirmFrames && !vadInterruptSent) {
                     // Confirmed real user speech during model playback — send interrupt
-                    console.log('[VTID-VOICE-INIT] Barge-in detected (energy=' + rmsEnergy.toFixed(4) + ', frames=' + vadSpeechFrames + ') — sending interrupt');
+                    console.log('[VTID-VOICE-INIT] Barge-in detected (energy=' + rmsEnergy.toFixed(4) + ', frames=' + vadSpeechFrames + ') — clearing audio & sending interrupt');
                     vadInterruptSent = true;
+
+                    // BARGE-IN FIX: Clear audio IMMEDIATELY — don't wait for server roundtrip.
+                    // This gives instant silence so the user doesn't hear stale audio.
+                    state.orb.geminiLiveAudioQueue = [];
+                    if (state.orb.geminiLiveScheduledSources && state.orb.geminiLiveScheduledSources.length > 0) {
+                        for (var bsi = 0; bsi < state.orb.geminiLiveScheduledSources.length; bsi++) {
+                            try { state.orb.geminiLiveScheduledSources[bsi].stop(); } catch (e) { /* already stopped */ }
+                        }
+                        state.orb.geminiLiveScheduledSources = [];
+                    }
+                    state.orb.geminiLiveLastScheduledEnd = 0;
+                    state.orb.geminiLiveAudioPlaying = false;
+
                     geminiLiveSendInterrupt();
                 }
             } else {
@@ -25044,7 +25057,17 @@ function geminiLiveProcessQueue() {
             var now = audioContext.currentTime;
             // First chunk or drift correction: if scheduled time is in past, reset to now
             if (state.orb.geminiLiveLastScheduledEnd < now) {
-                state.orb.geminiLiveLastScheduledEnd = now;
+                // ANDROID-FIX: Add small buffer for first chunk to prevent skipping beginning
+                // On Android, AudioContext.currentTime advances during buffering wait,
+                // causing first chunk to be scheduled "late" and skip initial audio
+                var isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+                if (isFirstChunk && isMobile) {
+                    // Schedule slightly in future (50ms) to ensure audio plays from start
+                    state.orb.geminiLiveLastScheduledEnd = now + 0.05;
+                    console.log('[ANDROID-FIX] First chunk scheduled with 50ms buffer to prevent start skip');
+                } else {
+                    state.orb.geminiLiveLastScheduledEnd = now;
+                }
             }
 
             var nextStartTime = state.orb.geminiLiveLastScheduledEnd;
