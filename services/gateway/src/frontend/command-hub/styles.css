@@ -15759,6 +15759,122 @@ border-bottom: 1px solid var(--color-border, #333);
   font-size: 0.875rem;
 }
 
+/* Load More Button */
+.voice-lab-load-more {
+  display: flex;
+  justify-content: center;
+  padding: 0.75rem 0;
+}
+.voice-lab-load-more-btn {
+  background: var(--color-bg-secondary, #2a2a3e);
+  color: var(--color-text-primary, #e0e0e0);
+  border: 1px solid var(--color-border, #3a3a5c);
+  padding: 0.5rem 1.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background 0.15s;
+}
+.voice-lab-load-more-btn:hover:not(:disabled) {
+  background: var(--color-bg-hover, #3a3a5c);
+}
+.voice-lab-load-more-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Platform Badges */
+.platform-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.platform-web { background: #1a3a5c; color: #7eb8ff; }
+.platform-ios { background: #2a1a3c; color: #c4a0ff; }
+.platform-android { background: #1a3c2a; color: #80d4a0; }
+.platform-mobile { background: #3c2a1a; color: #ffb87e; }
+.platform-unknown { background: #2a2a2a; color: #888; }
+
+/* Session User column */
+.session-user {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Session Detail Sections */
+.session-detail-section {
+  margin-bottom: 1rem;
+  border: 1px solid var(--color-border, #3a3a5c);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.session-detail-section-title {
+  padding: 0.5rem 0.75rem;
+  background: var(--color-bg-secondary, #1e1e2e);
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--color-text-primary, #e0e0e0);
+  border-bottom: 1px solid var(--color-border, #3a3a5c);
+}
+.session-detail-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.35rem 0.75rem;
+  border-bottom: 1px solid var(--color-border-subtle, #2a2a3e);
+  font-size: 0.825rem;
+}
+.session-detail-row:last-child {
+  border-bottom: none;
+}
+.detail-label {
+  color: var(--color-text-secondary, #999);
+  min-width: 120px;
+}
+.detail-value {
+  color: var(--color-text-primary, #e0e0e0);
+  text-align: right;
+  word-break: break-all;
+}
+
+/* Errors section */
+.session-errors-section {
+  border-color: #5c2a2a;
+}
+.session-error-item {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid #3a2020;
+  font-size: 0.8rem;
+  color: #ff8888;
+}
+.session-error-item:last-child { border-bottom: none; }
+.error-time { color: #999; min-width: 70px; }
+.error-code { color: #ff6666; font-weight: 600; min-width: 80px; }
+.error-msg { color: #ffaaaa; flex: 1; }
+
+/* Tool executions */
+.session-tool-item {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.35rem 0.75rem;
+  border-bottom: 1px solid var(--color-border-subtle, #2a2a3e);
+  font-size: 0.8rem;
+}
+.session-tool-item:last-child { border-bottom: none; }
+.tool-time { color: #999; min-width: 70px; }
+.tool-name { flex: 1; }
+.tool-status { font-weight: 600; min-width: 50px; text-align: right; }
+.tool-success .tool-status { color: #80d4a0; }
+.tool-failed .tool-status { color: #ff6666; }
+.tool-failed { background: rgba(255, 80, 80, 0.05); }
+
 /* Experiments panel */
 .voice-lab-experiments-panel {
   padding: 1rem;

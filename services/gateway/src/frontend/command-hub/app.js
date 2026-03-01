@@ -2647,6 +2647,10 @@ const state = {
         selectedSessionDetails: null,
         selectedSessionTurns: [],
         sessionDetailsLoading: false,
+        // Pagination
+        sessionsHasMore: false,
+        sessionsLoadingMore: false,
+        _lastSessionsFingerprint: '',
         // VTID-01218B: Runtime controls (Experiments tab)
         runtimeControls: {
             orb_live_enabled: true,       // Kill switch - false falls back to non-live
@@ -11801,6 +11805,8 @@ function renderVoiceLabView() {
     // Content area
     var content = document.createElement('div');
     content.className = 'voice-lab-content';
+    content.setAttribute('data-scroll-retain', 'true');
+    content.setAttribute('data-scroll-key', 'voiceLab-content');
 
     // VTID-01218B: Stop auto-refresh when leaving ORB Live tab
     if (state.voiceLab.activeSubTab !== 'orb-live') {
@@ -12622,11 +12628,12 @@ function renderVoiceLabOrbLivePanel() {
         var thead = document.createElement('thead');
         thead.innerHTML = '<tr>' +
             '<th>Session ID</th>' +
+            '<th>User</th>' +
+            '<th>Platform</th>' +
             '<th>Started</th>' +
             '<th>Status</th>' +
             '<th>Turns</th>' +
             '<th>Alerts</th>' +
-            '<th>Last Activity</th>' +
             '<th>Actions</th>' +
             '</tr>';
         table.appendChild(thead);
@@ -12637,7 +12644,14 @@ function renderVoiceLabOrbLivePanel() {
             row.className = session.connected ? 'session-active' : 'session-ended';
 
             var startedAt = session.startedAt ? new Date(session.startedAt).toLocaleTimeString() : '-';
-            var lastActivity = session.lastActivity ? new Date(session.lastActivity).toLocaleTimeString() : '-';
+
+            // User display
+            var userDisplay = session.userDisplayName || session.userEmail || (session.userId ? session.userId.substring(0, 8) : 'Anonymous');
+            var userTitle = session.userEmail || session.userId || 'Anonymous';
+
+            // Platform badge
+            var platformDisplay = session.platform || 'unknown';
+            var platformClass = 'platform-badge platform-' + platformDisplay.toLowerCase();
 
             // VTID-01218B: Visual alerts
             var alerts = [];
@@ -12666,11 +12680,12 @@ function renderVoiceLabOrbLivePanel() {
             }
 
             row.innerHTML = '<td class="session-id">' + (session.sessionId || '-').substring(0, 8) + '...</td>' +
+                '<td class="session-user" title="' + userTitle + '">' + userDisplay + '</td>' +
+                '<td><span class="' + platformClass + '">' + platformDisplay + '</span></td>' +
                 '<td>' + startedAt + '</td>' +
                 '<td class="session-status">' + (session.connected ? '<span class="status-active">Active</span>' : '<span class="status-ended">Ended</span>') + '</td>' +
                 '<td class="' + turnsClass + '">' + (session.turnCount || 0) + '</td>' +
                 '<td>' + alertsHtml + '</td>' +
-                '<td>' + lastActivity + '</td>' +
                 '<td></td>';
 
             // Add view details button in the Actions cell
@@ -12689,6 +12704,21 @@ function renderVoiceLabOrbLivePanel() {
         });
         table.appendChild(tbody);
         sessionsSection.appendChild(table);
+
+        // Load More button
+        if (state.voiceLab.sessionsHasMore) {
+            var loadMoreDiv = document.createElement('div');
+            loadMoreDiv.className = 'voice-lab-load-more';
+            var loadMoreBtn = document.createElement('button');
+            loadMoreBtn.className = 'voice-lab-load-more-btn';
+            loadMoreBtn.textContent = state.voiceLab.sessionsLoadingMore ? 'Loading...' : 'Load More Sessions';
+            loadMoreBtn.disabled = state.voiceLab.sessionsLoadingMore;
+            loadMoreBtn.addEventListener('click', function () {
+                fetchVoiceLabSessions(true);
+            });
+            loadMoreDiv.appendChild(loadMoreBtn);
+            sessionsSection.appendChild(loadMoreDiv);
+        }
     }
 
     panel.appendChild(sessionsSection);
@@ -12744,34 +12774,123 @@ function renderVoiceLabSessionDrawer() {
 
     var details = state.voiceLab.selectedSessionDetails;
 
-    // Session Summary
-    var sessionInfo = document.createElement('div');
-    sessionInfo.className = 'voice-lab-session-info';
-
-    var summaryHtml = '<p><strong>Session:</strong> ' + state.voiceLab.selectedSession + '</p>';
-
-    if (details) {
-        summaryHtml += '<div class="voice-lab-metrics-grid">';
-        summaryHtml += '<div class="metric"><span class="label">Status</span><span class="value ' + (details.status === 'active' ? 'status-active' : 'status-ended') + '">' + (details.status || '-') + '</span></div>';
-        summaryHtml += '<div class="metric"><span class="label">Language</span><span class="value">' + (details.lang || '-') + '</span></div>';
-        summaryHtml += '<div class="metric"><span class="label">Voice</span><span class="value">' + (details.voice || '-') + '</span></div>';
-        summaryHtml += '<div class="metric"><span class="label">Total Turns</span><span class="value">' + (details.turn_count || 0) + '</span></div>';
-        summaryHtml += '<div class="metric"><span class="label">Audio In</span><span class="value">' + (details.audio_in_chunks || 0) + ' chunks</span></div>';
-        summaryHtml += '<div class="metric"><span class="label">Audio Out</span><span class="value">' + (details.audio_out_chunks || 0) + ' chunks</span></div>';
-        if (details.duration_ms) {
-            summaryHtml += '<div class="metric"><span class="label">Duration</span><span class="value">' + (details.duration_ms / 1000).toFixed(1) + 's</span></div>';
-        }
-        if (details.interrupted_count > 0) {
-            summaryHtml += '<div class="metric alert-metric"><span class="label">Interrupts</span><span class="value alert-orange">' + details.interrupted_count + '</span></div>';
-        }
-        if (details.error_count > 0) {
-            summaryHtml += '<div class="metric alert-metric"><span class="label">Errors</span><span class="value alert-red">' + details.error_count + '</span></div>';
-        }
-        summaryHtml += '</div>';
+    // Helper: create a grouped section with key-value pairs
+    function createDetailSection(title, pairs) {
+        var section = document.createElement('div');
+        section.className = 'session-detail-section';
+        var heading = document.createElement('div');
+        heading.className = 'session-detail-section-title';
+        heading.textContent = title;
+        section.appendChild(heading);
+        pairs.forEach(function (pair) {
+            if (pair.value === undefined || pair.value === null || pair.value === '') return;
+            var row = document.createElement('div');
+            row.className = 'session-detail-row' + (pair.className ? ' ' + pair.className : '');
+            row.innerHTML = '<span class="detail-label">' + pair.label + '</span><span class="detail-value">' + pair.value + '</span>';
+            section.appendChild(row);
+        });
+        return section;
     }
 
-    sessionInfo.innerHTML = summaryHtml;
-    drawerContent.appendChild(sessionInfo);
+    if (details) {
+        // Section 1: Session Overview
+        var durationDisplay = details.duration_ms ? (details.duration_ms / 1000).toFixed(1) + 's' : '-';
+        var startedDisplay = details.started_at ? new Date(details.started_at).toLocaleString() : '-';
+        var endedDisplay = details.ended_at ? new Date(details.ended_at).toLocaleString() : '-';
+        var statusHtml = details.status === 'active'
+            ? '<span class="status-active">Active</span>'
+            : '<span class="status-ended">Ended</span>';
+
+        drawerContent.appendChild(createDetailSection('Session Overview', [
+            { label: 'Session ID', value: state.voiceLab.selectedSession },
+            { label: 'Status', value: statusHtml },
+            { label: 'Started', value: startedDisplay },
+            { label: 'Ended', value: endedDisplay },
+            { label: 'Duration', value: durationDisplay }
+        ]));
+
+        // Section 2: User & Context
+        drawerContent.appendChild(createDetailSection('User & Context', [
+            { label: 'User', value: details.user_display_name || details.user_email || details.user_id || 'Anonymous' },
+            { label: 'Email', value: details.user_email || '-' },
+            { label: 'Role', value: details.user_role || '-' },
+            { label: 'Language', value: details.lang || '-' },
+            { label: 'Voice', value: details.voice_style || details.voice || '-' }
+        ]));
+
+        // Section 3: Platform
+        var modalitiesDisplay = details.modalities ? details.modalities.join(', ') : '-';
+        drawerContent.appendChild(createDetailSection('Platform', [
+            { label: 'Platform', value: details.platform || 'unknown' },
+            { label: 'Origin', value: details.origin || '-' },
+            { label: 'Transport', value: details.transport || '-' },
+            { label: 'Modalities', value: modalitiesDisplay },
+            { label: 'Input Rate', value: details.input_rate ? details.input_rate + ' Hz' : '-' },
+            { label: 'Output Rate', value: details.output_rate ? details.output_rate + ' Hz' : '-' }
+        ]));
+
+        // Section 4: Conversation
+        drawerContent.appendChild(createDetailSection('Conversation', [
+            { label: 'Total Turns', value: details.turn_count || 0 },
+            { label: 'User Turns (Questions)', value: details.user_turns || 0 },
+            { label: 'Model Turns (Answers)', value: details.model_turns || 0 },
+            { label: 'Audio In', value: (details.audio_in_chunks || 0) + ' chunks' },
+            { label: 'Audio Out', value: (details.audio_out_chunks || 0) + ' chunks' },
+            { label: 'Interruptions', value: details.interrupted_count || 0, className: details.interrupted_count > 0 ? 'alert-orange' : '' },
+            { label: 'Video Frames', value: details.video_frames || '-' }
+        ]));
+
+        // Section 5: Errors
+        if (details.error_count > 0 || (details.errors && details.errors.length > 0)) {
+            var errorsSection = document.createElement('div');
+            errorsSection.className = 'session-detail-section session-errors-section';
+            var errorsHeading = document.createElement('div');
+            errorsHeading.className = 'session-detail-section-title alert-red';
+            errorsHeading.textContent = 'Errors (' + (details.errors ? details.errors.length : details.error_count) + ')';
+            errorsSection.appendChild(errorsHeading);
+
+            (details.errors || []).forEach(function (err) {
+                var errRow = document.createElement('div');
+                errRow.className = 'session-error-item';
+                var errTime = err.timestamp ? new Date(err.timestamp).toLocaleTimeString() : '-';
+                errRow.innerHTML = '<span class="error-time">' + errTime + '</span>' +
+                    '<span class="error-code">' + (err.error_code || 'unknown') + '</span>' +
+                    '<span class="error-msg">' + (err.error_message || 'Unknown error') + '</span>';
+                errorsSection.appendChild(errRow);
+            });
+            drawerContent.appendChild(errorsSection);
+        } else {
+            drawerContent.appendChild(createDetailSection('Errors', [
+                { label: 'Status', value: '<span class="voice-lab-ok">No errors</span>' }
+            ]));
+        }
+
+        // Section 6: Tool Executions
+        if (details.tool_executions && details.tool_executions.length > 0) {
+            var toolsSection = document.createElement('div');
+            toolsSection.className = 'session-detail-section';
+            var toolsHeading = document.createElement('div');
+            toolsHeading.className = 'session-detail-section-title';
+            toolsHeading.textContent = 'Tool Executions (' + details.tool_executions.length + ')';
+            toolsSection.appendChild(toolsHeading);
+
+            details.tool_executions.forEach(function (tool) {
+                var toolRow = document.createElement('div');
+                toolRow.className = 'session-tool-item ' + (tool.success ? 'tool-success' : 'tool-failed');
+                var toolTime = tool.timestamp ? new Date(tool.timestamp).toLocaleTimeString() : '-';
+                toolRow.innerHTML = '<span class="tool-time">' + toolTime + '</span>' +
+                    '<span class="tool-name">' + tool.tool_name + '</span>' +
+                    '<span class="tool-status">' + (tool.success ? 'OK' : 'FAILED') + '</span>';
+                toolsSection.appendChild(toolRow);
+            });
+            drawerContent.appendChild(toolsSection);
+        }
+    } else {
+        var noDetails = document.createElement('p');
+        noDetails.className = 'voice-lab-no-turns';
+        noDetails.textContent = 'No session details available.';
+        drawerContent.appendChild(noDetails);
+    }
 
     // Turn Timeline
     var turns = state.voiceLab.selectedSessionTurns;
@@ -12808,10 +12927,10 @@ function renderVoiceLabSessionDrawer() {
 
             // VTID-01218B: Visual alerts for latency
             var firstAudioClass = '';
-            if (turn.first_audio_ms && turn.first_audio_ms > 800) {
-                firstAudioClass = 'alert-orange';
-            } else if (turn.first_audio_ms && turn.first_audio_ms > 1200) {
+            if (turn.first_audio_ms && turn.first_audio_ms > 1200) {
                 firstAudioClass = 'alert-red';
+            } else if (turn.first_audio_ms && turn.first_audio_ms > 800) {
+                firstAudioClass = 'alert-orange';
             }
 
             // Status indicators
@@ -12852,11 +12971,17 @@ function renderVoiceLabSessionDrawer() {
 /**
  * VTID-01218E: Fetch Voice LAB sessions from API
  */
-function fetchVoiceLabSessions() {
-    state.voiceLab.sessionsLoading = true;
-    renderApp();
+function fetchVoiceLabSessions(append) {
+    if (!append) {
+        state.voiceLab.sessionsLoading = true;
+        renderApp();
+    } else {
+        state.voiceLab.sessionsLoadingMore = true;
+        renderApp();
+    }
 
-    fetch('/api/v1/voice-lab/live/sessions')
+    var offset = append ? state.voiceLab.sessions.length : 0;
+    fetch('/api/v1/voice-lab/live/sessions?offset=' + offset)
         .then(function (resp) {
             if (!resp.ok) throw new Error('Failed to fetch sessions');
             return resp.json();
@@ -12874,18 +12999,30 @@ function fetchVoiceLabSessions() {
                     durationMs: s.duration_ms,
                     lang: s.lang,
                     errorCount: s.error_count,
-                    interruptedCount: s.interrupted_count
+                    interruptedCount: s.interrupted_count,
+                    userId: s.user_id,
+                    userEmail: s.user_email,
+                    userDisplayName: s.user_display_name,
+                    userRole: s.user_role,
+                    platform: s.platform
                 };
             });
-            state.voiceLab.sessions = sessions;
+            if (append) {
+                state.voiceLab.sessions = state.voiceLab.sessions.concat(sessions);
+            } else {
+                state.voiceLab.sessions = sessions;
+            }
+            state.voiceLab.sessionsHasMore = data.has_more || false;
             state.voiceLab.sessionsLoading = false;
+            state.voiceLab.sessionsLoadingMore = false;
             state.voiceLab.sessionsFetched = true;
             renderApp();
         })
         .catch(function (err) {
             console.error('[VTID-01218E] Error fetching sessions:', err);
-            state.voiceLab.sessions = [];
+            if (!append) state.voiceLab.sessions = [];
             state.voiceLab.sessionsLoading = false;
+            state.voiceLab.sessionsLoadingMore = false;
             state.voiceLab.sessionsFetched = true;
             renderApp();
         });
@@ -12962,7 +13099,7 @@ function fetchVoiceLabSessionsSilent() {
             return resp.json();
         })
         .then(function (data) {
-            var sessions = (data.sessions || []).map(function (s) {
+            var freshSessions = (data.sessions || []).map(function (s) {
                 return {
                     sessionId: s.session_id,
                     connected: s.status === 'active',
@@ -12974,10 +13111,20 @@ function fetchVoiceLabSessionsSilent() {
                     lang: s.lang,
                     errorCount: s.error_count,
                     interruptedCount: s.interrupted_count,
-                    firstAudioMs: s.first_audio_ms
+                    userId: s.user_id,
+                    userEmail: s.user_email,
+                    userDisplayName: s.user_display_name,
+                    userRole: s.user_role,
+                    platform: s.platform
                 };
             });
-            state.voiceLab.sessions = sessions;
+            // If user has loaded more pages, keep those and only replace the first page
+            if (state.voiceLab.sessions.length > freshSessions.length) {
+                var extra = state.voiceLab.sessions.slice(freshSessions.length);
+                state.voiceLab.sessions = freshSessions.concat(extra);
+            } else {
+                state.voiceLab.sessions = freshSessions;
+            }
             // Update DOM without full re-render to preserve scroll/focus
             updateVoiceLabSessionsTable();
         })
@@ -13009,8 +13156,14 @@ function updateVoiceLabSessionsTable() {
         return;
     }
 
-    // For simplicity in this increment, just re-render
-    // Future: DOM diffing for smoother updates
+    // Only re-render if data actually changed (prevents scroll jump)
+    var newFingerprint = state.voiceLab.sessions.map(function (s) {
+        return s.sessionId + ':' + s.connected + ':' + s.turnCount + ':' + s.errorCount;
+    }).join('|');
+    if (newFingerprint === state.voiceLab._lastSessionsFingerprint) {
+        return; // No change, skip re-render
+    }
+    state.voiceLab._lastSessionsFingerprint = newFingerprint;
     renderApp();
 }
 

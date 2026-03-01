@@ -34,6 +34,11 @@ interface LiveSessionSummary {
   transport: 'websocket' | 'sse';
   error_count: number;
   interrupted_count: number;
+  user_id?: string;
+  user_email?: string;
+  user_display_name?: string;
+  user_role?: string;
+  platform?: string;
 }
 
 /**
@@ -58,6 +63,13 @@ interface LiveSessionDetail extends LiveSessionSummary {
   input_rate?: number;
   output_rate?: number;
   video_frames?: number;
+  origin?: string;
+  user_agent?: string;
+  modalities?: string[];
+  voice_style?: string;
+  user_turns?: number;
+  model_turns?: number;
+  tool_executions?: Array<{ tool_name: string; success: boolean; timestamp: string }>;
   errors: Array<{
     timestamp: string;
     error_code: string;
@@ -161,6 +173,18 @@ async function queryVoiceLabEvents(
 }
 
 // =============================================================================
+// Helpers
+// =============================================================================
+
+function parsePlatform(ua: string | null | undefined): string {
+  if (!ua) return 'unknown';
+  if (/iPhone|iPad|iPod/i.test(ua)) return 'iOS';
+  if (/Android/i.test(ua)) return 'Android';
+  if (/Mobile/i.test(ua)) return 'Mobile';
+  return 'Web';
+}
+
+// =============================================================================
 // API Endpoints
 // =============================================================================
 
@@ -241,23 +265,33 @@ router.get('/live/sessions', async (req: Request, res: Response) => {
         started_at: startEvent.created_at,
         ended_at: endEvent?.created_at,
         duration_ms: endEvent?.metadata?.duration_ms,
-        turn_count: endEvent?.metadata?.turn_number || 0,
+        turn_count: endEvent?.metadata?.turn_count || endEvent?.metadata?.turn_number || 0,
         audio_in_chunks: endEvent?.metadata?.audio_in_chunks || 0,
         audio_out_chunks: endEvent?.metadata?.audio_out_chunks || 0,
         lang: startEvent.metadata?.lang,
         transport: startEvent.metadata?.transport || 'websocket',
-        error_count: 0, // Will be enhanced later
+        error_count: 0,
         interrupted_count: endEvent?.metadata?.interrupted_count || 0,
+        user_id: startEvent.metadata?.user_id,
+        user_email: startEvent.metadata?.email,
+        user_display_name: startEvent.metadata?.email?.split('@')[0] || undefined,
+        user_role: startEvent.metadata?.active_role,
+        platform: parsePlatform(startEvent.metadata?.user_agent),
       };
 
       sessions.push(summary);
 
-      if (sessions.length >= limit) break;
+      // Collect limit+1 to detect has_more
+      if (sessions.length > limit) break;
     }
+
+    const has_more = sessions.length > limit;
+    if (has_more) sessions.pop();
 
     return res.json({
       ok: true,
       sessions,
+      has_more,
       total: sessions.length,
       query: { status, limit, offset },
     });
@@ -305,6 +339,7 @@ router.get('/live/sessions/:sessionId', async (req: Request, res: Response) => {
     const startEvent = events.find(e => e.topic === 'voice.live.session.started');
     const endEvent = events.find(e => e.topic === 'voice.live.session.ended');
     const errorEvents = events.filter(e => e.topic === 'voice.live.error');
+    const toolEvents = events.filter(e => e.topic?.includes('tool'));
 
     if (!startEvent) {
       return res.status(404).json({
@@ -320,7 +355,7 @@ router.get('/live/sessions/:sessionId', async (req: Request, res: Response) => {
       started_at: startEvent.created_at,
       ended_at: endEvent?.created_at,
       duration_ms: endEvent?.metadata?.duration_ms,
-      turn_count: endEvent?.metadata?.turn_number || 0,
+      turn_count: endEvent?.metadata?.turn_count || endEvent?.metadata?.turn_number || 0,
       audio_in_chunks: endEvent?.metadata?.audio_in_chunks || 0,
       audio_out_chunks: endEvent?.metadata?.audio_out_chunks || 0,
       lang: startEvent.metadata?.lang,
@@ -329,6 +364,22 @@ router.get('/live/sessions/:sessionId', async (req: Request, res: Response) => {
       input_rate: startEvent.metadata?.input_rate,
       output_rate: startEvent.metadata?.output_rate,
       video_frames: endEvent?.metadata?.video_frames,
+      user_id: startEvent.metadata?.user_id,
+      user_email: startEvent.metadata?.email,
+      user_display_name: startEvent.metadata?.email?.split('@')[0] || undefined,
+      user_role: startEvent.metadata?.active_role,
+      platform: parsePlatform(startEvent.metadata?.user_agent),
+      origin: startEvent.metadata?.origin,
+      user_agent: startEvent.metadata?.user_agent,
+      modalities: startEvent.metadata?.modalities,
+      voice_style: startEvent.metadata?.voice,
+      user_turns: endEvent?.metadata?.user_turns || 0,
+      model_turns: endEvent?.metadata?.model_turns || 0,
+      tool_executions: toolEvents.map(e => ({
+        tool_name: e.metadata?.tool_name || e.metadata?.function_name || 'unknown',
+        success: e.metadata?.success !== false,
+        timestamp: e.created_at,
+      })),
       error_count: errorEvents.length,
       interrupted_count: endEvent?.metadata?.interrupted_count || 0,
       errors: errorEvents.map(e => ({

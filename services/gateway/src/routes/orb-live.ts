@@ -4983,6 +4983,10 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     session_id: sessionId,
     user_id: orbIdentity?.user_id || 'anonymous',
     tenant_id: orbIdentity?.tenant_id || null,
+    email: orbIdentity?.email || null,
+    active_role: sseActiveRole || null,
+    user_agent: req.headers['user-agent'] || null,
+    origin: req.headers['origin'] || req.headers['referer'] || null,
     lang,
     modalities: responseModalities,
     voice: getVoiceForLang(lang)
@@ -5081,7 +5085,10 @@ router.post('/live/session/stop', optionalAuth, async (req: AuthenticatedRequest
     audio_in_chunks: session.audioInChunks,
     video_in_frames: session.videoInFrames,
     audio_out_chunks: session.audioOutChunks,
-    duration_ms: Date.now() - session.createdAt.getTime()
+    duration_ms: Date.now() - session.createdAt.getTime(),
+    turn_count: session.turn_count,
+    user_turns: session.transcriptTurns.filter(t => t.role === 'user').length,
+    model_turns: session.transcriptTurns.filter(t => t.role === 'assistant').length,
   });
 
   // VTID-01225: Fire-and-forget entity extraction from live session
@@ -6456,6 +6463,9 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       authenticated: !!identity,
       tenant_id: identity?.tenant_id || null,
       user_id: identity?.user_id || null,
+      email: identity?.email || null,
+      user_agent: req.headers['user-agent'] || null,
+      origin: req.headers['origin'] || req.headers['referer'] || null,
       context_bootstrap: {
         included: !!contextInstruction,
         latency_ms: contextBootstrapLatencyMs || 0,
@@ -6741,7 +6751,10 @@ function handleWsStopSession(clientSession: WsClientSession): void {
       audio_in_chunks: liveSession.audioInChunks,
       audio_out_chunks: liveSession.audioOutChunks,
       video_frames: liveSession.videoInFrames,
-      transport: 'websocket'
+      transport: 'websocket',
+      turn_count: liveSession.turn_count,
+      user_turns: liveSession.transcriptTurns.filter(t => t.role === 'user').length,
+      model_turns: liveSession.transcriptTurns.filter(t => t.role === 'assistant').length,
     }).catch(() => { });
 
     liveSessions.delete(sessionId);
