@@ -5959,6 +5959,9 @@ interface WsClientSession {
   clientIP: string;
   // VTID-01224: Server-verified identity from JWT
   identity?: SupabaseIdentity;
+  // Request metadata for OASIS event telemetry
+  userAgent: string | null;
+  originUrl: string | null;
 }
 
 // Track WebSocket client sessions
@@ -6055,7 +6058,9 @@ async function handleWebSocketConnection(ws: WebSocket, req: IncomingMessage): P
     connected: true,
     lastActivity: new Date(),
     clientIP,
-    identity  // VTID-01224: Server-verified identity
+    identity,  // VTID-01224: Server-verified identity
+    userAgent: req.headers['user-agent'] || null,
+    originUrl: (req.headers['origin'] || req.headers['referer'] || null) as string | null,
   };
 
   wsClientSessions.set(sessionId, clientSession);
@@ -6464,8 +6469,8 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       tenant_id: identity?.tenant_id || null,
       user_id: identity?.user_id || null,
       email: identity?.email || null,
-      user_agent: req.headers['user-agent'] || null,
-      origin: req.headers['origin'] || req.headers['referer'] || null,
+      user_agent: clientSession.userAgent,
+      origin: clientSession.originUrl,
       context_bootstrap: {
         included: !!contextInstruction,
         latency_ms: contextBootstrapLatencyMs || 0,
