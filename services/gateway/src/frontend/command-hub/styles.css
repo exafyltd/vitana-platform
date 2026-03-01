@@ -15584,6 +15584,79 @@ border-bottom: 1px solid var(--color-border, #333);
   flex: 1;
 }
 
+/* Session Diagnostic Analysis */
+.session-diagnostics {
+  margin-bottom: 16px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.05);
+  overflow: hidden;
+}
+
+.session-diagnostics-healthy {
+  border-color: rgba(34, 197, 94, 0.3);
+  background: rgba(34, 197, 94, 0.05);
+}
+
+.session-diagnostics-header {
+  padding: 10px 14px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.15);
+}
+
+.session-diagnostics-healthy .session-diagnostics-header {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.08);
+  border-bottom: 1px solid rgba(34, 197, 94, 0.15);
+}
+
+.session-diagnostics-healthy .diagnostic-detail {
+  padding: 8px 14px 10px;
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+}
+
+.session-diagnostic-item {
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.session-diagnostic-item:last-child {
+  border-bottom: none;
+}
+
+.diagnostic-critical {
+  border-left: 3px solid #ef4444;
+}
+
+.diagnostic-warning {
+  border-left: 3px solid #f59e0b;
+}
+
+.diagnostic-title {
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: var(--color-text-primary);
+  margin-bottom: 4px;
+}
+
+.diagnostic-critical .diagnostic-title {
+  color: #ef4444;
+}
+
+.diagnostic-warning .diagnostic-title {
+  color: #f59e0b;
+}
+
+.diagnostic-detail {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
 .voice-lab-session-info p {
   margin: 0 0 0.5rem 0;
   font-size: 0.875rem;

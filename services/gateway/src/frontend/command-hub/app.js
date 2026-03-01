@@ -12834,6 +12834,129 @@ function renderVoiceLabSessionDrawer() {
     }
 
     if (details) {
+        // === Diagnostic Analysis (shown at top when issues detected) ===
+        var diagnostics = [];
+        var sessionDurationSec = 0;
+        if (details.started_at && details.ended_at) {
+            sessionDurationSec = (new Date(details.ended_at).getTime() - new Date(details.started_at).getTime()) / 1000;
+        }
+
+        // No audio input received
+        if (details.status === 'ended' && (details.audio_in_chunks || 0) === 0 && sessionDurationSec > 10) {
+            diagnostics.push({
+                severity: 'critical',
+                title: 'No microphone audio received',
+                detail: 'The server received 0 audio chunks from the client during a ' + Math.round(sessionDurationSec) + 's session. ' +
+                    'Possible causes: microphone permission denied, browser blocked mic access, audio stream failed to initialize, or client-side WebSocket audio pipe broken.'
+            });
+        }
+
+        // Audio out but no audio in (one-way audio)
+        if (details.status === 'ended' && (details.audio_out_chunks || 0) > 0 && (details.audio_in_chunks || 0) === 0 && sessionDurationSec > 10) {
+            diagnostics.push({
+                severity: 'critical',
+                title: 'One-way audio detected',
+                detail: 'Server sent ' + details.audio_out_chunks + ' audio chunks (likely greeting) but never received audio back. ' +
+                    'The user heard the ORB speak but could not be heard. This typically indicates a client-side mic/audio capture failure.'
+            });
+        }
+
+        // Session lasted but no user turns
+        if (details.status === 'ended' && (details.user_turns || 0) === 0 && sessionDurationSec > 30) {
+            diagnostics.push({
+                severity: 'warning',
+                title: 'No user speech detected in ' + Math.round(sessionDurationSec) + 's session',
+                detail: 'The user was connected for over 30 seconds but no speech was transcribed. ' +
+                    'If the user was speaking, their audio may not have reached the server or VAD (voice activity detection) never triggered.'
+            });
+        }
+
+        // Zero turns but session ended normally
+        if (details.status === 'ended' && (details.turn_count || 0) === 0 && sessionDurationSec > 15) {
+            diagnostics.push({
+                severity: 'warning',
+                title: 'Session ended with zero conversation turns',
+                detail: 'No back-and-forth conversation occurred. The user may have been stuck without knowing what went wrong. ' +
+                    'Consider adding client-side timeout feedback when no response is received.'
+            });
+        }
+
+        // High interruption rate
+        var totalTurns = details.turn_count || 0;
+        if (totalTurns > 2 && (details.interrupted_count || 0) > totalTurns * 0.5) {
+            diagnostics.push({
+                severity: 'warning',
+                title: 'High interruption rate (' + details.interrupted_count + '/' + totalTurns + ' turns)',
+                detail: 'More than half of conversation turns were interrupted. This may indicate VAD sensitivity issues, ' +
+                    'background noise triggering false speech detection, or the model response latency causing user to repeat.'
+            });
+        }
+
+        // Errors present
+        if ((details.error_count || 0) > 0) {
+            diagnostics.push({
+                severity: 'critical',
+                title: details.error_count + ' error(s) during session',
+                detail: 'Errors occurred during this session. Check the Errors section below for details.'
+            });
+        }
+
+        // Very short session (< 5s) that ended
+        if (details.status === 'ended' && sessionDurationSec > 0 && sessionDurationSec < 5) {
+            diagnostics.push({
+                severity: 'warning',
+                title: 'Session lasted only ' + sessionDurationSec.toFixed(1) + 's',
+                detail: 'This session was extremely short. Possible connection failure, auth issue, or user immediately disconnected.'
+            });
+        }
+
+        // Low audio out relative to turns (model may have been silent)
+        if (totalTurns > 2 && (details.audio_out_chunks || 0) < totalTurns * 5) {
+            diagnostics.push({
+                severity: 'warning',
+                title: 'Low audio output for ' + totalTurns + ' turns',
+                detail: 'Very few audio chunks were sent to the client relative to the number of turns. ' +
+                    'The model may have responded with very short or empty audio, or TTS may have failed silently.'
+            });
+        }
+
+        // Render diagnostics section
+        if (diagnostics.length > 0) {
+            var diagSection = document.createElement('div');
+            diagSection.className = 'session-diagnostics';
+
+            var diagHeader = document.createElement('div');
+            diagHeader.className = 'session-diagnostics-header';
+            var hasCritical = diagnostics.some(function (d) { return d.severity === 'critical'; });
+            diagHeader.innerHTML = (hasCritical ? '\u26A0 ' : '\u2139 ') + 'Diagnostic Analysis (' + diagnostics.length + ' issue' + (diagnostics.length > 1 ? 's' : '') + ')';
+            diagSection.appendChild(diagHeader);
+
+            diagnostics.forEach(function (diag) {
+                var item = document.createElement('div');
+                item.className = 'session-diagnostic-item diagnostic-' + diag.severity;
+
+                var titleEl = document.createElement('div');
+                titleEl.className = 'diagnostic-title';
+                titleEl.textContent = (diag.severity === 'critical' ? '\u2716 ' : '\u25B3 ') + diag.title;
+                item.appendChild(titleEl);
+
+                var detailEl = document.createElement('div');
+                detailEl.className = 'diagnostic-detail';
+                detailEl.textContent = diag.detail;
+                item.appendChild(detailEl);
+
+                diagSection.appendChild(item);
+            });
+
+            drawerContent.appendChild(diagSection);
+        } else if (details.status === 'ended') {
+            var healthySection = document.createElement('div');
+            healthySection.className = 'session-diagnostics session-diagnostics-healthy';
+            healthySection.innerHTML = '<div class="session-diagnostics-header">\u2714 Session Healthy</div>' +
+                '<div class="diagnostic-detail">No anomalies detected. Audio flow, turn counts, and session timing all look normal.</div>';
+            drawerContent.appendChild(healthySection);
+        }
+
         // Section 1: Session Overview
         var durationMs = details.duration_ms;
         if (!durationMs && details.started_at && details.ended_at) {
