@@ -16716,3 +16716,16 @@ border-bottom: 1px solid var(--color-border, #333);
   .playground-container { grid-template-columns: 1fr; }
   .personality-field-group { grid-template-columns: 1fr; }
 }
+/* Option C: Scrollability for list tables */
+.module-content-wrapper {
+    max-height: calc(100vh - 200px);
+    overflow-y: auto;
+}
+
+.list-table-wrapper,
+.gov-history-table-wrapper,
+.scrollable-container {
+    max-height: 600px;
+    overflow-y: auto;
+    margin-top: 1rem;
+}
