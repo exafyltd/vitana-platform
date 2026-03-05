@@ -563,6 +563,10 @@ interface GeminiLiveSession {
   // When true, inbound mic audio is dropped to prevent the speaker output
   // being picked up by the mic and causing overlapping response streams.
   isModelSpeaking: boolean;
+  // VTID-ECHO-COOLDOWN: Timestamp when turn_complete was received.
+  // Mic audio is gated for POST_TURN_COOLDOWN_MS after this to let client-side
+  // audio playback finish draining — prevents speaker echo being picked up as input.
+  turnCompleteAt: number;
   // VTID-01225-THROTTLE: Timestamp of last successful fact extraction.
   // Used to throttle per-turn extraction to max once per 60s to avoid
   // concurrent Vertex API calls that destabilize the Live API WebSocket.
@@ -585,6 +589,12 @@ interface GeminiLiveSession {
   // Timestamp of last telemetry event emit. Used to batch telemetry to
   // 10-second windows instead of per-N-chunks, reducing Supabase HTTP calls.
   lastTelemetryEmitTime: number;
+  // VTID-RESPONSE-DELAY: Per-session VAD silence threshold (ms).
+  // Defaults to VAD_SILENCE_DURATION_MS_DEFAULT; can be overridden by client.
+  vadSilenceMs: number;
+  // VTID-AUDIO-READY: Whether greeting is deferred until client sends audio_ready.
+  // Used by WebSocket (mobile) path to avoid greeting truncation from race condition.
+  greetingDeferred: boolean;
 }
 
 /**
@@ -595,6 +605,9 @@ interface LiveSessionStartRequest {
   voice_style?: string;
   response_modalities?: string[];
   conversation_summary?: string;
+  // VTID-RESPONSE-DELAY: Per-session VAD silence threshold override (ms).
+  // Allows clients to tune response latency vs. pause tolerance.
+  vad_silence_ms?: number;
 }
 
 /**
@@ -734,7 +747,17 @@ const LIVE_API_VOICES: Record<string, string> = {
 // Default Vertex VAD is ~100ms which is too aggressive — the model starts responding
 // while users are still mid-thought or pausing between sentences.
 // 2000ms (2s) provides natural pause tolerance for conversational speech.
-const VAD_SILENCE_DURATION_MS = 2_000;
+const VAD_SILENCE_DURATION_MS_DEFAULT = 1_200;
+
+// =============================================================================
+// VTID-ECHO-COOLDOWN: Post-turn mic audio cooldown
+// =============================================================================
+// After Vertex sends turn_complete, the server unsets isModelSpeaking immediately.
+// But the client is still draining its audio playback queue (Web Audio API scheduled
+// sources). During this window, speaker output gets picked up by the mic and
+// forwarded to Vertex as new user speech, causing phantom responses.
+// This cooldown gates mic audio for N ms after turn_complete to let playback finish.
+const POST_TURN_COOLDOWN_MS = 500;
 
 // =============================================================================
 // VTID-STREAM-SILENCE: Silence audio keepalive for Vertex Live API
@@ -1327,7 +1350,7 @@ async function connectToLiveAPI(
           // which destabilized sessions. This minimal config only sets silence_duration_ms to avoid that.
           realtime_input_config: {
             automatic_activity_detection: {
-              silence_duration_ms: VAD_SILENCE_DURATION_MS
+              silence_duration_ms: session.vadSilenceMs
             }
           },
           // VTID-01225: Enable transcription at setup level (not in generation_config)
@@ -1358,7 +1381,7 @@ async function connectToLiveAPI(
       const setupPreview = JSON.stringify(setupMessage).substring(0, 800);
       console.log(`[VTID-01219] Sending setup message:`, setupPreview);
       console.log(`[VTID-01224] Setup includes: tools=${session.identity ? 3 : 0}, contextChars=${session.contextInstruction?.length || 0}`);
-      console.log(`[VTID-RESPONSE-DELAY] VAD silence_duration_ms=${VAD_SILENCE_DURATION_MS}`);
+      console.log(`[VTID-RESPONSE-DELAY] VAD silence_duration_ms=${session.vadSilenceMs}`);
       ws.send(JSON.stringify(setupMessage));
       console.log(`[VTID-01219] Setup message sent for session ${session.sessionId}`);
     });
@@ -1458,7 +1481,11 @@ async function connectToLiveAPI(
           if (turnComplete) {
             // VTID-VOICE-INIT: Model finished speaking — ungate mic audio
             session.isModelSpeaking = false;
-            console.log(`[VTID-VOICE-INIT] Model stopped speaking for session ${session.sessionId} — mic audio ungated`);
+            // VTID-ECHO-COOLDOWN: Record turn completion time for post-turn mic cooldown.
+            // Client playback queue may still be draining — gate mic for POST_TURN_COOLDOWN_MS
+            // to prevent speaker echo from being picked up and triggering phantom responses.
+            session.turnCompleteAt = Date.now();
+            console.log(`[VTID-VOICE-INIT] Model stopped speaking for session ${session.sessionId} — mic audio ungated (cooldown ${POST_TURN_COOLDOWN_MS}ms)`);
 
             session.turn_count++;
             const isGreetingTurn = session.greetingSent && session.turn_count === (session.greetingTurnIndex ?? 0) + 1;
@@ -4963,6 +4990,8 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     inputTranscriptBuffer: '',
     // VTID-VOICE-INIT: Echo prevention — not speaking at session start
     isModelSpeaking: false,
+    // VTID-ECHO-COOLDOWN: No cooldown at session start
+    turnCompleteAt: 0,
     // VTID-ORBC: JWT identity for per-user memory; DEV_IDENTITY only as fallback
     identity: bootstrapIdentity || orbIdentity || undefined,
     // Conversation summary from previous session for greeting context
@@ -4973,6 +5002,11 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     lastAudioForwardedTime: Date.now(),
     // Telemetry batching: emit at most once per 10s window
     lastTelemetryEmitTime: 0,
+    // VTID-RESPONSE-DELAY: Per-session VAD from client or default
+    vadSilenceMs: (body as any).vad_silence_ms && (body as any).vad_silence_ms >= 500 && (body as any).vad_silence_ms <= 3000
+      ? (body as any).vad_silence_ms : VAD_SILENCE_DURATION_MS_DEFAULT,
+    // VTID-AUDIO-READY: SSE path sends greeting immediately (no handshake)
+    greetingDeferred: false,
   };
 
   // Store session
@@ -5492,6 +5526,14 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
         return res.json({ ok: true, dropped: true, reason: 'model_speaking' });
       }
 
+      // VTID-ECHO-COOLDOWN: Post-turn cooldown — gate mic audio for N ms after
+      // turn_complete to let client-side audio playback finish draining.
+      // Without this, speaker echo gets picked up and causes phantom responses.
+      if (session.turnCompleteAt > 0 && (Date.now() - session.turnCompleteAt) < POST_TURN_COOLDOWN_MS) {
+        session.audioInChunks++;
+        return res.json({ ok: true, dropped: true, reason: 'post_turn_cooldown' });
+      }
+
       // Handle audio chunk
       session.audioInChunks++;
 
@@ -5926,7 +5968,7 @@ router.get('/health', (_req: Request, res: Response) => {
  * VTID-01224: Added auth_token for server-verified identity
  */
 interface WsClientMessage {
-  type: 'start' | 'audio' | 'video' | 'text' | 'end_turn' | 'stop' | 'ping' | 'interrupt';
+  type: 'start' | 'audio' | 'video' | 'text' | 'end_turn' | 'stop' | 'ping' | 'interrupt' | 'audio_ready';
   // Text message fields
   text?: string;
   // Start message fields
@@ -5945,6 +5987,8 @@ interface WsClientMessage {
   height?: number;
   // Conversation continuity
   conversation_summary?: string;
+  // VTID-RESPONSE-DELAY: Per-session VAD silence threshold override (ms)
+  vad_silence_ms?: number;
 }
 
 /**
@@ -6181,6 +6225,22 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
       handleWsEndTurn(clientSession);
       break;
 
+    case 'audio_ready':
+      // VTID-AUDIO-READY: Client signals its audio player is initialized and ready
+      // to receive audio. Send deferred greeting now to avoid truncating first words.
+      if (!liveSession || !liveSession.active) {
+        sendWsMessage(clientWs, { type: 'error', message: 'No active session.' });
+        return;
+      }
+      if (liveSession.greetingDeferred && !liveSession.greetingSent && liveSession.upstreamWs) {
+        console.log(`[VTID-AUDIO-READY] Client audio_ready received — sending deferred greeting for session ${liveSession.sessionId}`);
+        sendGreetingPromptToLiveAPI(liveSession.upstreamWs, liveSession);
+        liveSession.greetingDeferred = false;
+      } else {
+        console.log(`[VTID-AUDIO-READY] audio_ready received but greeting already sent or not deferred: session=${liveSession.sessionId}`);
+      }
+      break;
+
     case 'stop':
       handleWsStopSession(clientSession);
       break;
@@ -6357,12 +6417,19 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     inputTranscriptBuffer: '',
     // VTID-VOICE-INIT: Echo prevention — not speaking at session start
     isModelSpeaking: false,
+    // VTID-ECHO-COOLDOWN: No cooldown at session start
+    turnCompleteAt: 0,
     // Conversation summary for greeting context (from client message)
     conversationSummary: message.conversation_summary,
     // VTID-STREAM-SILENCE: Track last audio forwarded for idle detection
     lastAudioForwardedTime: Date.now(),
     // Telemetry batching: emit at most once per 10s window
     lastTelemetryEmitTime: 0,
+    // VTID-RESPONSE-DELAY: Per-session VAD from client or default
+    vadSilenceMs: message.vad_silence_ms && message.vad_silence_ms >= 500 && message.vad_silence_ms <= 3000
+      ? message.vad_silence_ms : VAD_SILENCE_DURATION_MS_DEFAULT,
+    // VTID-AUDIO-READY: WebSocket path defers greeting until client sends audio_ready
+    greetingDeferred: true,
     // VTID-STREAM-RECONNECT: Store client WS reference for transparent reconnection notifications
     clientWs,
   };
@@ -6508,8 +6575,22 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       }
     });
 
-    // Send greeting prompt so Vitana speaks first (WebSocket path)
-    sendGreetingPromptToLiveAPI(upstreamWs, liveSession);
+    // VTID-AUDIO-READY: Defer greeting until client sends audio_ready to avoid
+    // truncating first words on mobile (race condition: greeting streams before
+    // client audio player is initialized). Fallback: send after 2s if no audio_ready.
+    if (liveSession.greetingDeferred) {
+      console.log(`[VTID-AUDIO-READY] Greeting deferred — waiting for client audio_ready: session=${sessionId}`);
+      setTimeout(() => {
+        if (!liveSession.greetingSent && liveSession.active && liveSession.upstreamWs) {
+          console.log(`[VTID-AUDIO-READY] Fallback: sending greeting after 2s timeout: session=${sessionId}`);
+          sendGreetingPromptToLiveAPI(liveSession.upstreamWs, liveSession);
+          liveSession.greetingDeferred = false;
+        }
+      }, 2000);
+    } else {
+      // SSE path or non-deferred: send greeting immediately
+      sendGreetingPromptToLiveAPI(upstreamWs, liveSession);
+    }
 
   } catch (err: any) {
     console.error(`[VTID-01222] Failed to connect Live API for ${sessionId}:`, err.message);
@@ -6551,6 +6632,14 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
     if (liveSession.audioInChunks % 50 === 0) {
       console.log(`[VTID-VOICE-INIT] Dropping mic audio — model is speaking: session=${sessionId}, dropped_at_chunk=${liveSession.audioInChunks}`);
     }
+    liveSession.audioInChunks++;
+    liveSession.lastActivity = new Date();
+    return;
+  }
+
+  // VTID-ECHO-COOLDOWN: Post-turn cooldown — gate mic audio for N ms after
+  // turn_complete to let client-side audio playback finish draining.
+  if (liveSession.turnCompleteAt > 0 && (Date.now() - liveSession.turnCompleteAt) < POST_TURN_COOLDOWN_MS) {
     liveSession.audioInChunks++;
     liveSession.lastActivity = new Date();
     return;

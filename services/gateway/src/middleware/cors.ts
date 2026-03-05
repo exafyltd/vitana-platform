@@ -35,7 +35,7 @@ export const corsOptions = {
     }
   },
   methods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: ["Authorization", "Content-Type", "apikey"],
+  allowedHeaders: ["Authorization", "Content-Type", "apikey", "X-Vitana-Active-Role", "X-Vitana-Tenant", "X-Vitana-User"],
   credentials: false,
   maxAge: 86400,
 };

@@ -2937,6 +2937,7 @@ const state = {
         geminiLiveLastScheduledEnd: 0, // FIX: Track when last audio ends for seamless playback
         geminiLiveScheduledSources: [], // VTID-VOICE-INIT: Track scheduled AudioBufferSourceNodes for barge-in cancellation
         geminiLiveInterruptPending: false, // BARGE-IN FIX: Drop incoming audio until server confirms interrupt
+        geminiLiveTurnCompleteAt: 0,     // VTID-ECHO-COOLDOWN: Timestamp of last turn_complete for post-turn mic cooldown
         geminiLiveFrameInterval: null, // Interval for capturing video frames
         geminiLiveAudioStream: null,  // MediaStream for audio capture
         geminiLiveAudioProcessor: null, // ScriptProcessorNode for audio
@@ -24248,7 +24249,8 @@ async function geminiLiveStart() {
             body: JSON.stringify({
                 lang: lang,
                 voice_style: 'friendly, calm, empathetic',
-                response_modalities: ['audio', 'text']
+                response_modalities: ['audio', 'text'],
+                vad_silence_ms: 1200
             })
         });
 
@@ -24469,7 +24471,10 @@ function geminiLiveHandleMessage(msg) {
             state.orb.geminiLiveLastScheduledEnd = 0;
             // BARGE-IN FIX: Turn finished — safe to accept audio again
             state.orb.geminiLiveInterruptPending = false;
-            console.log('[VTID-VOICE-INIT] Turn complete — scheduler reset');
+            // VTID-ECHO-COOLDOWN: Record turn completion time — audio processor
+            // will skip sending for 500ms to let playback drain and avoid echo pickup
+            state.orb.geminiLiveTurnCompleteAt = Date.now();
+            console.log('[VTID-VOICE-INIT] Turn complete — scheduler reset, 500ms post-turn cooldown started');
 
             // FIX: Signal ready to listen after greeting/response completes
             setTimeout(function() {
@@ -24574,7 +24579,7 @@ async function geminiLiveStartAudioCapture() {
 
     // VTID-VOICE-INIT: Client-side VAD for barge-in detection
     // Tracks consecutive frames above energy threshold to confirm real speech
-    var vadEnergyThreshold = 0.008; // RMS energy threshold (tuned above typical echo level)
+    var vadEnergyThreshold = 0.015; // RMS energy threshold (tuned above typical echo + ambient noise level)
     var vadSpeechFrames = 0;        // Consecutive frames with speech energy
     var vadSpeechConfirmFrames = 3; // Need 3 consecutive frames (~192ms) to confirm real speech
     var vadInterruptSent = false;   // Only send one interrupt per model speaking turn
@@ -24657,6 +24662,14 @@ async function geminiLiveStartAudioCapture() {
             // Model not speaking — reset VAD state
             vadSpeechFrames = 0;
             vadInterruptSent = false;
+        }
+
+        // VTID-ECHO-COOLDOWN: Post-turn cooldown — skip sending audio for 500ms
+        // after turn_complete to let speaker playback drain and avoid echo pickup.
+        // Server has the same gate, but this saves the HTTP POST round-trip.
+        if (state.orb.geminiLiveTurnCompleteAt > 0 && (Date.now() - state.orb.geminiLiveTurnCompleteAt) < 500) {
+            _audioDropModel++;
+            return;
         }
 
         _audioSent++;
