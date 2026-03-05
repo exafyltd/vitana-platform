@@ -556,6 +556,8 @@ interface GeminiLiveSession {
   outputTranscriptBuffer: string;
   // Conversation summary from previous session for greeting context
   conversationSummary?: string;
+  // VTID-TEMPORAL: Time-awareness context for returning users
+  temporalContext?: string;
   // Voice init: greeting lifecycle tracking
   greetingSent?: boolean;
   greetingTurnIndex?: number; // turn_count when greeting was sent, to filter from memory
@@ -631,6 +633,62 @@ type LiveStreamMessage = LiveStreamAudioChunk | LiveStreamVideoFrame;
 
 // VTID-01155: In-memory Live session store
 const liveSessions = new Map<string, GeminiLiveSession>();
+
+/**
+ * VTID-ORPHAN-FIX: Force-close a live session, emit stop event, and remove from store.
+ * Used by auto-close (when same user starts a new session) and periodic stale cleanup.
+ * Does NOT run Cognee/fact extraction — orphaned sessions with 0 turns have no transcript.
+ */
+async function forceCloseLiveSession(sessionId: string, reason: string): Promise<void> {
+  const session = liveSessions.get(sessionId);
+  if (!session) return;
+
+  console.log(`[VTID-ORPHAN-FIX] Force-closing session ${sessionId}: ${reason}`);
+
+  // Close upstream WebSocket
+  if (session.upstreamWs) {
+    try { session.upstreamWs.close(); } catch (_) { /* ignore */ }
+    session.upstreamWs = null;
+  }
+
+  // Close SSE response
+  if (session.sseResponse) {
+    try {
+      session.sseResponse.write(`data: ${JSON.stringify({ type: 'session_ended', reason })}\n\n`);
+      session.sseResponse.end();
+    } catch (_) { /* ignore */ }
+    session.sseResponse = null;
+  }
+
+  session.active = false;
+
+  // Clear intervals
+  if (session.upstreamPingInterval) {
+    clearInterval(session.upstreamPingInterval);
+    session.upstreamPingInterval = undefined;
+  }
+  if (session.silenceKeepaliveInterval) {
+    clearInterval(session.silenceKeepaliveInterval);
+    session.silenceKeepaliveInterval = undefined;
+  }
+
+  // Emit stop event so Voice Lab sees it as Ended
+  await emitLiveSessionEvent('vtid.live.session.stop', {
+    session_id: sessionId,
+    audio_in_chunks: session.audioInChunks,
+    video_in_frames: session.videoInFrames,
+    audio_out_chunks: session.audioOutChunks,
+    duration_ms: Date.now() - session.createdAt.getTime(),
+    turn_count: session.turn_count,
+    user_turns: session.transcriptTurns.filter(t => t.role === 'user').length,
+    model_turns: session.transcriptTurns.filter(t => t.role === 'assistant').length,
+    force_closed: true,
+    force_close_reason: reason,
+  }).catch(err => console.warn(`[VTID-ORPHAN-FIX] Failed to emit stop event for ${sessionId}:`, err.message));
+
+  liveSessions.delete(sessionId);
+  console.log(`[VTID-ORPHAN-FIX] Session ${sessionId} force-closed and removed`);
+}
 
 // VTID-01155: Vertex AI Live API configuration
 const VERTEX_PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID || '';
@@ -1172,7 +1230,8 @@ function buildLiveSystemInstruction(
   bootstrapContext?: string,
   activeRole?: string | null,
   conversationSummary?: string,
-  conversationHistory?: string
+  conversationHistory?: string,
+  temporalContext?: string  // VTID-TEMPORAL: Time-awareness context
 ): string {
   const languageNames: Record<string, string> = {
     'en': 'English',
@@ -1226,6 +1285,11 @@ ${voiceLiveConfig.important_section || '- This is a real-time voice conversation
   // Append conversation summary for returning users
   if (conversationSummary) {
     instruction += `\n\nPREVIOUS CONVERSATION CONTEXT:\n${conversationSummary}\nYou may briefly reference this context naturally, but do NOT recite it back to the user.`;
+  }
+
+  // VTID-TEMPORAL: Append temporal context for time-aware greetings
+  if (temporalContext) {
+    instruction += `\n\n${temporalContext}`;
   }
 
   // VTID-01224: Append bootstrap context if available
@@ -1350,7 +1414,8 @@ async function connectToLiveAPI(
                 // VTID-STREAM-KEEPALIVE: Limit to last 5 turns to prevent oversized setup messages
                 session.transcriptTurns.length > 0
                   ? session.transcriptTurns.slice(-5).map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`).join('\n')
-                  : undefined
+                  : undefined,
+                session.temporalContext  // VTID-TEMPORAL
               )
             }]
           },
@@ -2594,6 +2659,20 @@ function cleanupExpiredSessions(): void {
 
 // Cleanup expired sessions every 5 minutes
 setInterval(cleanupExpiredSessions, 5 * 60 * 1000);
+
+// VTID-ORPHAN-FIX: Cleanup stale liveSessions (Gemini Live API sessions).
+// Sessions that have been inactive for > SESSION_TIMEOUT_MS are force-closed.
+// This catches orphaned sessions where the client never called /session/stop.
+setInterval(() => {
+  const now = Date.now();
+  for (const [sessionId, session] of liveSessions.entries()) {
+    if (now - session.lastActivity.getTime() > SESSION_TIMEOUT_MS) {
+      forceCloseLiveSession(sessionId, 'stale_timeout').catch(err =>
+        console.warn(`[VTID-ORPHAN-FIX] Stale cleanup error for ${sessionId}:`, err.message)
+      );
+    }
+  }
+}, 5 * 60 * 1000);
 
 /**
  * Call Gemini API with audio transcription request
@@ -4879,11 +4958,42 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
   // memory scoping but is not required to start a live session.
   const orbIdentity = resolveOrbIdentity(req);
 
+  // VTID-ORPHAN-FIX: Auto-close any existing active sessions for this user.
+  // Prevents orphaned sessions when client starts a new session without stopping the old one
+  // (e.g., app backgrounded, network drop, crash).
+  if (orbIdentity?.user_id) {
+    for (const [existingId, existingSession] of liveSessions.entries()) {
+      if (existingSession.identity?.user_id === orbIdentity.user_id && existingSession.active) {
+        await forceCloseLiveSession(existingId, 'superseded_by_new_session');
+      }
+    }
+  }
+
   const body = req.body as LiveSessionStartRequest;
   const clientRequestedLang = body.lang; // may be undefined if client didn't specify
   const voiceStyle = body.voice_style || 'friendly, calm, empathetic';
   const responseModalities = body.response_modalities || ['audio', 'text'];
   const conversationSummary = body.conversation_summary || undefined;
+
+  // VTID-TEMPORAL: Fetch temporal context for voice live session
+  let voiceLiveTemporalContext: string | undefined;
+  if (orbIdentity?.tenant_id && orbIdentity?.user_id) {
+    try {
+      const recentSessions = await fetchRecentSessions({
+        tenant_id: orbIdentity.tenant_id,
+        user_id: orbIdentity.user_id,
+        max_age_hours: 24,
+        limit: 3,
+      });
+      const tempCtx = buildTemporalContext(recentSessions);
+      if (tempCtx.has_recent_sessions) {
+        voiceLiveTemporalContext = tempCtx.formatted_context;
+        console.log(`[TEMPORAL] Voice live: temporal context ready (${tempCtx.time_category}, ${tempCtx.minutes_since_last}min ago)`);
+      }
+    } catch (err: any) {
+      console.warn('[TEMPORAL] Voice live: failed to fetch recent sessions:', err.message);
+    }
+  }
 
   // Generate session ID
   const sessionId = `live-${randomUUID()}`;
