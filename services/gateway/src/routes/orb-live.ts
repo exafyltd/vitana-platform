@@ -556,8 +556,6 @@ interface GeminiLiveSession {
   outputTranscriptBuffer: string;
   // Conversation summary from previous session for greeting context
   conversationSummary?: string;
-  // VTID-TEMPORAL: Time-awareness context for returning users
-  temporalContext?: string;
   // Voice init: greeting lifecycle tracking
   greetingSent?: boolean;
   greetingTurnIndex?: number; // turn_count when greeting was sent, to filter from memory
@@ -565,10 +563,6 @@ interface GeminiLiveSession {
   // When true, inbound mic audio is dropped to prevent the speaker output
   // being picked up by the mic and causing overlapping response streams.
   isModelSpeaking: boolean;
-  // BARGE-IN FIX: When true, audio chunks from Gemini are dropped (not forwarded
-  // to client). Set on interrupt, cleared on Gemini's next turn_complete.
-  // Prevents stale/in-flight chunks from reaching the client after user interrupts.
-  suppressAudioForward: boolean;
   // VTID-01225-THROTTLE: Timestamp of last successful fact extraction.
   // Used to throttle per-turn extraction to max once per 60s to avoid
   // concurrent Vertex API calls that destabilize the Live API WebSocket.
@@ -633,62 +627,6 @@ type LiveStreamMessage = LiveStreamAudioChunk | LiveStreamVideoFrame;
 
 // VTID-01155: In-memory Live session store
 const liveSessions = new Map<string, GeminiLiveSession>();
-
-/**
- * VTID-ORPHAN-FIX: Force-close a live session, emit stop event, and remove from store.
- * Used by auto-close (when same user starts a new session) and periodic stale cleanup.
- * Does NOT run Cognee/fact extraction — orphaned sessions with 0 turns have no transcript.
- */
-async function forceCloseLiveSession(sessionId: string, reason: string): Promise<void> {
-  const session = liveSessions.get(sessionId);
-  if (!session) return;
-
-  console.log(`[VTID-ORPHAN-FIX] Force-closing session ${sessionId}: ${reason}`);
-
-  // Close upstream WebSocket
-  if (session.upstreamWs) {
-    try { session.upstreamWs.close(); } catch (_) { /* ignore */ }
-    session.upstreamWs = null;
-  }
-
-  // Close SSE response
-  if (session.sseResponse) {
-    try {
-      session.sseResponse.write(`data: ${JSON.stringify({ type: 'session_ended', reason })}\n\n`);
-      session.sseResponse.end();
-    } catch (_) { /* ignore */ }
-    session.sseResponse = null;
-  }
-
-  session.active = false;
-
-  // Clear intervals
-  if (session.upstreamPingInterval) {
-    clearInterval(session.upstreamPingInterval);
-    session.upstreamPingInterval = undefined;
-  }
-  if (session.silenceKeepaliveInterval) {
-    clearInterval(session.silenceKeepaliveInterval);
-    session.silenceKeepaliveInterval = undefined;
-  }
-
-  // Emit stop event so Voice Lab sees it as Ended
-  await emitLiveSessionEvent('vtid.live.session.stop', {
-    session_id: sessionId,
-    audio_in_chunks: session.audioInChunks,
-    video_in_frames: session.videoInFrames,
-    audio_out_chunks: session.audioOutChunks,
-    duration_ms: Date.now() - session.createdAt.getTime(),
-    turn_count: session.turn_count,
-    user_turns: session.transcriptTurns.filter(t => t.role === 'user').length,
-    model_turns: session.transcriptTurns.filter(t => t.role === 'assistant').length,
-    force_closed: true,
-    force_close_reason: reason,
-  }).catch(err => console.warn(`[VTID-ORPHAN-FIX] Failed to emit stop event for ${sessionId}:`, err.message));
-
-  liveSessions.delete(sessionId);
-  console.log(`[VTID-ORPHAN-FIX] Session ${sessionId} force-closed and removed`);
-}
 
 // VTID-01155: Vertex AI Live API configuration
 const VERTEX_PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID || '';
@@ -1230,8 +1168,7 @@ function buildLiveSystemInstruction(
   bootstrapContext?: string,
   activeRole?: string | null,
   conversationSummary?: string,
-  conversationHistory?: string,
-  temporalContext?: string  // VTID-TEMPORAL: Time-awareness context
+  conversationHistory?: string
 ): string {
   const languageNames: Record<string, string> = {
     'en': 'English',
@@ -1285,11 +1222,6 @@ ${voiceLiveConfig.important_section || '- This is a real-time voice conversation
   // Append conversation summary for returning users
   if (conversationSummary) {
     instruction += `\n\nPREVIOUS CONVERSATION CONTEXT:\n${conversationSummary}\nYou may briefly reference this context naturally, but do NOT recite it back to the user.`;
-  }
-
-  // VTID-TEMPORAL: Append temporal context for time-aware greetings
-  if (temporalContext) {
-    instruction += `\n\n${temporalContext}`;
   }
 
   // VTID-01224: Append bootstrap context if available
@@ -1414,8 +1346,7 @@ async function connectToLiveAPI(
                 // VTID-STREAM-KEEPALIVE: Limit to last 5 turns to prevent oversized setup messages
                 session.transcriptTurns.length > 0
                   ? session.transcriptTurns.slice(-5).map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`).join('\n')
-                  : undefined,
-                session.temporalContext  // VTID-TEMPORAL
+                  : undefined
               )
             }]
           },
@@ -1511,8 +1442,6 @@ async function connectToLiveAPI(
             console.log(`[VTID-VOICE-INIT] Interrupted for session ${session.sessionId}`);
             // VTID-VOICE-INIT: Model stopped speaking — ungate mic audio
             session.isModelSpeaking = false;
-            // BARGE-IN FIX: Gemini confirmed interruption — safe to forward audio for next response
-            session.suppressAudioForward = false;
             // Clear output transcript buffer on interruption (incomplete response)
             session.outputTranscriptBuffer = '';
             // Notify SSE client
@@ -1529,12 +1458,6 @@ async function connectToLiveAPI(
           if (turnComplete) {
             // VTID-VOICE-INIT: Model finished speaking — ungate mic audio
             session.isModelSpeaking = false;
-            // BARGE-IN FIX: Gemini finished the (possibly interrupted) response.
-            // Safe to forward audio again for the next response.
-            if (session.suppressAudioForward) {
-              console.log(`[BARGE-IN FIX] turn_complete received — clearing audio suppression for session ${session.sessionId}`);
-              session.suppressAudioForward = false;
-            }
             console.log(`[VTID-VOICE-INIT] Model stopped speaking for session ${session.sessionId} — mic audio ungated`);
 
             session.turn_count++;
@@ -1676,17 +1599,6 @@ async function connectToLiveAPI(
               const inlineData = part.inline_data || part.inlineData;
               const mimeType = inlineData?.mime_type || inlineData?.mimeType;
               if (inlineData && mimeType?.startsWith('audio/')) {
-                // BARGE-IN FIX: If user interrupted, drop all audio chunks until
-                // Gemini sends turn_complete for the interrupted response.
-                // This prevents stale in-flight chunks from reaching the client.
-                if (session.suppressAudioForward) {
-                  session.audioOutChunks++;
-                  if (session.audioOutChunks % 50 === 1) {
-                    console.log(`[BARGE-IN FIX] Dropping audio chunk ${session.audioOutChunks} (suppressed after interrupt) for session ${session.sessionId}`);
-                  }
-                  continue;
-                }
-
                 // VTID-VOICE-INIT: Mark model as speaking on first audio chunk
                 // This gates inbound mic audio to prevent echo-triggered interruptions
                 if (!session.isModelSpeaking) {
@@ -2659,20 +2571,6 @@ function cleanupExpiredSessions(): void {
 
 // Cleanup expired sessions every 5 minutes
 setInterval(cleanupExpiredSessions, 5 * 60 * 1000);
-
-// VTID-ORPHAN-FIX: Cleanup stale liveSessions (Gemini Live API sessions).
-// Sessions that have been inactive for > SESSION_TIMEOUT_MS are force-closed.
-// This catches orphaned sessions where the client never called /session/stop.
-setInterval(() => {
-  const now = Date.now();
-  for (const [sessionId, session] of liveSessions.entries()) {
-    if (now - session.lastActivity.getTime() > SESSION_TIMEOUT_MS) {
-      forceCloseLiveSession(sessionId, 'stale_timeout').catch(err =>
-        console.warn(`[VTID-ORPHAN-FIX] Stale cleanup error for ${sessionId}:`, err.message)
-      );
-    }
-  }
-}, 5 * 60 * 1000);
 
 /**
  * Call Gemini API with audio transcription request
@@ -4958,42 +4856,11 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
   // memory scoping but is not required to start a live session.
   const orbIdentity = resolveOrbIdentity(req);
 
-  // VTID-ORPHAN-FIX: Auto-close any existing active sessions for this user.
-  // Prevents orphaned sessions when client starts a new session without stopping the old one
-  // (e.g., app backgrounded, network drop, crash).
-  if (orbIdentity?.user_id) {
-    for (const [existingId, existingSession] of liveSessions.entries()) {
-      if (existingSession.identity?.user_id === orbIdentity.user_id && existingSession.active) {
-        await forceCloseLiveSession(existingId, 'superseded_by_new_session');
-      }
-    }
-  }
-
   const body = req.body as LiveSessionStartRequest;
   const clientRequestedLang = body.lang; // may be undefined if client didn't specify
   const voiceStyle = body.voice_style || 'friendly, calm, empathetic';
   const responseModalities = body.response_modalities || ['audio', 'text'];
   const conversationSummary = body.conversation_summary || undefined;
-
-  // VTID-TEMPORAL: Fetch temporal context for voice live session
-  let voiceLiveTemporalContext: string | undefined;
-  if (orbIdentity?.tenant_id && orbIdentity?.user_id) {
-    try {
-      const recentSessions = await fetchRecentSessions({
-        tenant_id: orbIdentity.tenant_id,
-        user_id: orbIdentity.user_id,
-        max_age_hours: 24,
-        limit: 3,
-      });
-      const tempCtx = buildTemporalContext(recentSessions);
-      if (tempCtx.has_recent_sessions) {
-        voiceLiveTemporalContext = tempCtx.formatted_context;
-        console.log(`[TEMPORAL] Voice live: temporal context ready (${tempCtx.time_category}, ${tempCtx.minutes_since_last}min ago)`);
-      }
-    } catch (err: any) {
-      console.warn('[TEMPORAL] Voice live: failed to fetch recent sessions:', err.message);
-    }
-  }
 
   // Generate session ID
   const sessionId = `live-${randomUUID()}`;
@@ -5096,8 +4963,6 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     inputTranscriptBuffer: '',
     // VTID-VOICE-INIT: Echo prevention — not speaking at session start
     isModelSpeaking: false,
-    // BARGE-IN FIX: Not suppressing audio at session start
-    suppressAudioForward: false,
     // VTID-ORBC: JWT identity for per-user memory; DEV_IDENTITY only as fallback
     identity: bootstrapIdentity || orbIdentity || undefined,
     // Conversation summary from previous session for greeting context
@@ -5726,21 +5591,20 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
         return res.json({ ok: true, was_speaking: false });
       }
 
-      console.log(`[BARGE-IN FIX] SSE path: client interrupt — suppressing audio and ungating mic: session=${effectiveSessionId}`);
+      console.log(`[VTID-VOICE-INIT] SSE path: client interrupt — ungating mic and stopping Gemini: session=${effectiveSessionId}`);
 
-      // 1. Ungate mic audio
+      // Ungate mic audio
       session.isModelSpeaking = false;
 
-      // 2. BARGE-IN FIX: Suppress all audio forwarding until Gemini's turn_complete.
-      // Do NOT send turn_complete to Gemini — that tells it "user is done, respond now"
-      // which triggers a new response to partial input. Instead, just suppress and let
-      // Gemini finish its current generation (chunks get dropped server-side).
-      session.suppressAudioForward = true;
+      // Tell Gemini to stop generating
+      if (session.upstreamWs && session.upstreamWs.readyState === WebSocket.OPEN) {
+        sendEndOfTurn(session.upstreamWs);
+      }
 
-      // 3. Clear incomplete output transcript
+      // Clear incomplete output transcript
       session.outputTranscriptBuffer = '';
 
-      // 4. Send interrupted event to client via SSE
+      // Send interrupted event to client via SSE
       if (session.sseResponse) {
         session.sseResponse.write(`data: ${JSON.stringify({ type: 'interrupted' })}\n\n`);
       }
@@ -6493,8 +6357,6 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     inputTranscriptBuffer: '',
     // VTID-VOICE-INIT: Echo prevention — not speaking at session start
     isModelSpeaking: false,
-    // BARGE-IN FIX: Not suppressing audio at session start
-    suppressAudioForward: false,
     // Conversation summary for greeting context (from client message)
     conversationSummary: message.conversation_summary,
     // VTID-STREAM-SILENCE: Track last audio forwarded for idle detection
@@ -6811,11 +6673,9 @@ function handleWsTextMessage(clientSession: WsClientSession, message: WsClientMe
 }
 
 /**
- * VTID-VOICE-INIT / BARGE-IN FIX: Handle explicit interrupt from client.
+ * VTID-VOICE-INIT: Handle explicit interrupt from client.
  * Client-side VAD detected real user speech while model is speaking.
- * We suppress audio forwarding and ungate mic audio. We do NOT send
- * turn_complete to Gemini — that would trigger a new response to partial input.
- * Instead, stale audio chunks are dropped server-side until Gemini finishes.
+ * We ungate mic audio and tell Gemini to stop generating immediately.
  */
 function handleWsInterruptMessage(clientSession: WsClientSession): void {
   const { sessionId, clientWs, liveSession } = clientSession;
@@ -6829,16 +6689,15 @@ function handleWsInterruptMessage(clientSession: WsClientSession): void {
     return;
   }
 
-  console.log(`[BARGE-IN FIX] Client interrupt — suppressing audio and ungating mic: session=${sessionId}`);
+  console.log(`[VTID-VOICE-INIT] Client interrupt — ungating mic and stopping Gemini: session=${sessionId}`);
 
   // 1. Ungate mic audio so subsequent frames reach Gemini
   liveSession.isModelSpeaking = false;
 
-  // 2. BARGE-IN FIX: Suppress all audio forwarding until Gemini's turn_complete.
-  // Do NOT send turn_complete to Gemini — that tells it "user is done, respond now"
-  // which triggers a new response to partial input. Instead, just suppress and let
-  // Gemini finish its current generation (chunks get dropped server-side).
-  liveSession.suppressAudioForward = true;
+  // 2. Tell Gemini to stop generating by sending client_content.turn_complete
+  if (liveSession.upstreamWs && liveSession.upstreamWs.readyState === WebSocket.OPEN) {
+    sendEndOfTurn(liveSession.upstreamWs);
+  }
 
   // 3. Clear the output transcript buffer (response was interrupted, incomplete)
   liveSession.outputTranscriptBuffer = '';
