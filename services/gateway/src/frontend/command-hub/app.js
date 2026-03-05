@@ -2936,6 +2936,7 @@ const state = {
         geminiLiveAudioPlaying: false, // Whether audio is currently playing
         geminiLiveLastScheduledEnd: 0, // FIX: Track when last audio ends for seamless playback
         geminiLiveScheduledSources: [], // VTID-VOICE-INIT: Track scheduled AudioBufferSourceNodes for barge-in cancellation
+        geminiLiveInterruptPending: false, // BARGE-IN FIX: Drop incoming audio until server confirms interrupt
         geminiLiveFrameInterval: null, // Interval for capturing video frames
         geminiLiveAudioStream: null,  // MediaStream for audio capture
         geminiLiveAudioProcessor: null, // ScriptProcessorNode for audio
@@ -24414,9 +24415,12 @@ function geminiLiveHandleMessage(msg) {
 
         case 'audio':
         case 'audio_out':
-            // Queue audio for playback (WAV from backend)
+            // BARGE-IN FIX: Drop audio chunks while interrupt is pending.
+            // In-flight SSE chunks arrive before server starts suppressing.
+            if (state.orb.geminiLiveInterruptPending) {
+                break;
+            }
             if (msg.data_b64) {
-                console.log('[VTID-01219] Received audio chunk, size:', msg.data_b64.length);
                 geminiLivePlayAudio(msg.data_b64, msg.mime || 'audio/wav');
             }
             break;
@@ -24463,6 +24467,8 @@ function geminiLiveHandleMessage(msg) {
             // Don't stop nodes (they'll finish naturally), but reset scheduler
             // so next response doesn't have a gap
             state.orb.geminiLiveLastScheduledEnd = 0;
+            // BARGE-IN FIX: Turn finished — safe to accept audio again
+            state.orb.geminiLiveInterruptPending = false;
             console.log('[VTID-VOICE-INIT] Turn complete — scheduler reset');
 
             // FIX: Signal ready to listen after greeting/response completes
@@ -24497,6 +24503,8 @@ function geminiLiveHandleMessage(msg) {
             // 3. Reset scheduler timeline so next response plays immediately
             state.orb.geminiLiveLastScheduledEnd = 0;
             state.orb.geminiLiveAudioPlaying = false;
+            // BARGE-IN FIX: Server confirmed interrupt — safe to accept audio again
+            state.orb.geminiLiveInterruptPending = false;
             console.log('[VTID-VOICE-INIT] Audio interrupted — all playback stopped, scheduler reset');
             break;
 
@@ -24631,6 +24639,11 @@ async function geminiLiveStartAudioCapture() {
                     }
                     state.orb.geminiLiveLastScheduledEnd = 0;
                     state.orb.geminiLiveAudioPlaying = false;
+
+                    // BARGE-IN FIX: Block all incoming audio chunks until server confirms.
+                    // Without this, in-flight SSE chunks arrive and re-fill the queue
+                    // before the server has started suppressing.
+                    state.orb.geminiLiveInterruptPending = true;
 
                     geminiLiveSendInterrupt();
                 }
