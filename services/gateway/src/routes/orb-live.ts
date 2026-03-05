@@ -563,10 +563,6 @@ interface GeminiLiveSession {
   // When true, inbound mic audio is dropped to prevent the speaker output
   // being picked up by the mic and causing overlapping response streams.
   isModelSpeaking: boolean;
-  // BARGE-IN FIX: When true, audio chunks from Gemini are dropped (not forwarded
-  // to client). Set on interrupt, cleared on Gemini's next turn_complete.
-  // Prevents stale/in-flight chunks from reaching the client after user interrupts.
-  suppressAudioForward: boolean;
   // VTID-01225-THROTTLE: Timestamp of last successful fact extraction.
   // Used to throttle per-turn extraction to max once per 60s to avoid
   // concurrent Vertex API calls that destabilize the Live API WebSocket.
@@ -1446,8 +1442,6 @@ async function connectToLiveAPI(
             console.log(`[VTID-VOICE-INIT] Interrupted for session ${session.sessionId}`);
             // VTID-VOICE-INIT: Model stopped speaking — ungate mic audio
             session.isModelSpeaking = false;
-            // BARGE-IN FIX: Gemini confirmed interruption — safe to forward audio for next response
-            session.suppressAudioForward = false;
             // Clear output transcript buffer on interruption (incomplete response)
             session.outputTranscriptBuffer = '';
             // Notify SSE client
@@ -1464,12 +1458,6 @@ async function connectToLiveAPI(
           if (turnComplete) {
             // VTID-VOICE-INIT: Model finished speaking — ungate mic audio
             session.isModelSpeaking = false;
-            // BARGE-IN FIX: Gemini finished the (possibly interrupted) response.
-            // Safe to forward audio again for the next response.
-            if (session.suppressAudioForward) {
-              console.log(`[BARGE-IN FIX] turn_complete received — clearing audio suppression for session ${session.sessionId}`);
-              session.suppressAudioForward = false;
-            }
             console.log(`[VTID-VOICE-INIT] Model stopped speaking for session ${session.sessionId} — mic audio ungated`);
 
             session.turn_count++;
@@ -1611,17 +1599,6 @@ async function connectToLiveAPI(
               const inlineData = part.inline_data || part.inlineData;
               const mimeType = inlineData?.mime_type || inlineData?.mimeType;
               if (inlineData && mimeType?.startsWith('audio/')) {
-                // BARGE-IN FIX: If user interrupted, drop all audio chunks until
-                // Gemini sends turn_complete for the interrupted response.
-                // This prevents stale in-flight chunks from reaching the client.
-                if (session.suppressAudioForward) {
-                  session.audioOutChunks++;
-                  if (session.audioOutChunks % 50 === 1) {
-                    console.log(`[BARGE-IN FIX] Dropping audio chunk ${session.audioOutChunks} (suppressed after interrupt) for session ${session.sessionId}`);
-                  }
-                  continue;
-                }
-
                 // VTID-VOICE-INIT: Mark model as speaking on first audio chunk
                 // This gates inbound mic audio to prevent echo-triggered interruptions
                 if (!session.isModelSpeaking) {
@@ -4986,8 +4963,6 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     inputTranscriptBuffer: '',
     // VTID-VOICE-INIT: Echo prevention — not speaking at session start
     isModelSpeaking: false,
-    // BARGE-IN FIX: Not suppressing audio at session start
-    suppressAudioForward: false,
     // VTID-ORBC: JWT identity for per-user memory; DEV_IDENTITY only as fallback
     identity: bootstrapIdentity || orbIdentity || undefined,
     // Conversation summary from previous session for greeting context
@@ -5616,21 +5591,20 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
         return res.json({ ok: true, was_speaking: false });
       }
 
-      console.log(`[BARGE-IN FIX] SSE path: client interrupt — suppressing audio and ungating mic: session=${effectiveSessionId}`);
+      console.log(`[VTID-VOICE-INIT] SSE path: client interrupt — ungating mic and stopping Gemini: session=${effectiveSessionId}`);
 
-      // 1. Ungate mic audio
+      // Ungate mic audio
       session.isModelSpeaking = false;
 
-      // 2. BARGE-IN FIX: Suppress all audio forwarding until Gemini's turn_complete.
-      // Do NOT send turn_complete to Gemini — that tells it "user is done, respond now"
-      // which triggers a new response to partial input. Instead, just suppress and let
-      // Gemini finish its current generation (chunks get dropped server-side).
-      session.suppressAudioForward = true;
+      // Tell Gemini to stop generating
+      if (session.upstreamWs && session.upstreamWs.readyState === WebSocket.OPEN) {
+        sendEndOfTurn(session.upstreamWs);
+      }
 
-      // 3. Clear incomplete output transcript
+      // Clear incomplete output transcript
       session.outputTranscriptBuffer = '';
 
-      // 4. Send interrupted event to client via SSE
+      // Send interrupted event to client via SSE
       if (session.sseResponse) {
         session.sseResponse.write(`data: ${JSON.stringify({ type: 'interrupted' })}\n\n`);
       }
@@ -6383,8 +6357,6 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     inputTranscriptBuffer: '',
     // VTID-VOICE-INIT: Echo prevention — not speaking at session start
     isModelSpeaking: false,
-    // BARGE-IN FIX: Not suppressing audio at session start
-    suppressAudioForward: false,
     // Conversation summary for greeting context (from client message)
     conversationSummary: message.conversation_summary,
     // VTID-STREAM-SILENCE: Track last audio forwarded for idle detection
@@ -6701,11 +6673,9 @@ function handleWsTextMessage(clientSession: WsClientSession, message: WsClientMe
 }
 
 /**
- * VTID-VOICE-INIT / BARGE-IN FIX: Handle explicit interrupt from client.
+ * VTID-VOICE-INIT: Handle explicit interrupt from client.
  * Client-side VAD detected real user speech while model is speaking.
- * We suppress audio forwarding and ungate mic audio. We do NOT send
- * turn_complete to Gemini — that would trigger a new response to partial input.
- * Instead, stale audio chunks are dropped server-side until Gemini finishes.
+ * We ungate mic audio and tell Gemini to stop generating immediately.
  */
 function handleWsInterruptMessage(clientSession: WsClientSession): void {
   const { sessionId, clientWs, liveSession } = clientSession;
@@ -6719,16 +6689,15 @@ function handleWsInterruptMessage(clientSession: WsClientSession): void {
     return;
   }
 
-  console.log(`[BARGE-IN FIX] Client interrupt — suppressing audio and ungating mic: session=${sessionId}`);
+  console.log(`[VTID-VOICE-INIT] Client interrupt — ungating mic and stopping Gemini: session=${sessionId}`);
 
   // 1. Ungate mic audio so subsequent frames reach Gemini
   liveSession.isModelSpeaking = false;
 
-  // 2. BARGE-IN FIX: Suppress all audio forwarding until Gemini's turn_complete.
-  // Do NOT send turn_complete to Gemini — that tells it "user is done, respond now"
-  // which triggers a new response to partial input. Instead, just suppress and let
-  // Gemini finish its current generation (chunks get dropped server-side).
-  liveSession.suppressAudioForward = true;
+  // 2. Tell Gemini to stop generating by sending client_content.turn_complete
+  if (liveSession.upstreamWs && liveSession.upstreamWs.readyState === WebSocket.OPEN) {
+    sendEndOfTurn(liveSession.upstreamWs);
+  }
 
   // 3. Clear the output transcript buffer (response was interrupted, incomplete)
   liveSession.outputTranscriptBuffer = '';
