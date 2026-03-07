@@ -78,9 +78,13 @@ const MEMORY_CONFIG = {
   // Per-category limit for formatting (applies to non-identity categories)
   // VTID-DEBUG-01: Personal/relationships have NO limit - see formatMemoryForPrompt
   ITEMS_PER_CATEGORY: 10,
-  // Categories relevant for ORB context (added 'personal' and 'company' for identity info)
-  // VTID-DEBUG-MEMORY-FIX: Added 'company' category for business identity
-  CONTEXT_CATEGORIES: ['personal', 'company', 'conversation', 'preferences', 'goals', 'health', 'relationships'],
+  // Categories relevant for ORB context — must include ALL Memory Garden category_keys
+  // so manually entered diary items are visible during voice sessions.
+  // VTID-DEBUG-MEMORY-FIX: Added all 13 Memory Garden mapped categories
+  CONTEXT_CATEGORIES: [
+    'personal', 'company', 'conversation', 'preferences', 'goals', 'health', 'relationships',
+    'community', 'tasks', 'products_services', 'events_meetups', 'notes'
+  ],
   // Max age of memory items to include (7 days instead of 24 hours)
   MAX_AGE_HOURS: 168,
   // Max characters for memory context in system prompt
