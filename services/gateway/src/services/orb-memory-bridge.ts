@@ -749,8 +749,48 @@ export async function fetchMemoryContextWithIdentity(
       console.warn(`[VTID-01225-READ-FIX] memory_facts fetch failed (non-fatal): ${factsErr.message}`);
     }
 
-    // Merge: structured facts FIRST (highest priority), then persistent items, then time-sensitive
-    const allItems = [...structuredFacts, ...persistentItems, ...timeSensitiveItems];
+    // VTID-01082-BRIDGE: Fetch diary entries from memory_diary_entries table.
+    // The Lovable frontend writes user diary entries to this separate table (not memory_items).
+    // Without this query, manually entered Memory Garden data is invisible to ORB voice sessions.
+    let diaryItems: MemoryItem[] = [];
+    try {
+      const { data: diaryData, error: diaryError } = await supabase
+        .from('memory_diary_entries')
+        .select('id, raw_text, tags, entry_date, created_at, entry_type')
+        .eq('tenant_id', effectiveIdentity.tenant_id)
+        .eq('user_id', effectiveIdentity.user_id)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (!diaryError && diaryData && diaryData.length > 0) {
+        diaryItems = (diaryData as Array<{
+          id: string;
+          raw_text: string;
+          tags: string[];
+          entry_date: string;
+          created_at: string;
+          entry_type: string;
+        }>).map((d) => ({
+          id: d.id,
+          // Map diary tags to a category_key (use first tag or 'notes')
+          category_key: d.tags && d.tags.length > 0
+            ? d.tags[0].replace(/-/g, '_')  // 'business-projects' → 'business_projects'
+            : 'notes',
+          source: 'diary',
+          content: d.raw_text,
+          content_json: { tags: d.tags, entry_type: d.entry_type } as Record<string, unknown>,
+          importance: 60, // Diary entries are manually entered — moderate-high importance
+          occurred_at: d.entry_date ? new Date(d.entry_date).toISOString() : d.created_at,
+          created_at: d.created_at,
+        }));
+        console.log(`[VTID-01082-BRIDGE] Fetched ${diaryItems.length} diary entries from memory_diary_entries`);
+      }
+    } catch (diaryErr: any) {
+      console.warn(`[VTID-01082-BRIDGE] memory_diary_entries fetch failed (non-fatal): ${diaryErr.message}`);
+    }
+
+    // Merge: structured facts FIRST, then diary entries, then persistent items, then time-sensitive
+    const allItems = [...structuredFacts, ...diaryItems, ...persistentItems, ...timeSensitiveItems];
     const seenIds = new Set<string>();
     const memoryItems = allItems.filter(item => {
       if (seenIds.has(item.id)) return false;
