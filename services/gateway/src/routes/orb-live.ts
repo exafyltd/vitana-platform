@@ -95,6 +95,8 @@ import {
   SupabaseIdentity,
   AuthSource
 } from '../middleware/auth-supabase-jwt';
+// VTID-MEMORY-BRIDGE: Service-role Supabase client for tenant_id fallback lookups
+import { getSupabase } from '../lib/supabase';
 // VTID-01224: Context Pack Builder for Live API intelligence
 import {
   buildContextPack,
@@ -304,17 +306,67 @@ function hasValidIdentity(req: AuthenticatedRequest): boolean {
 }
 
 /**
+ * VTID-MEMORY-BRIDGE: Look up a user's primary tenant from user_tenants table.
+ * Used as fallback when JWT doesn't contain active_tenant_id in app_metadata.
+ * The provision_platform_user() trigger creates user_tenants rows but does NOT
+ * set active_tenant_id in auth.users.raw_app_meta_data, so many JWTs are missing it.
+ */
+async function lookupPrimaryTenant(userId: string): Promise<string | null> {
+  try {
+    const supabase = getSupabase();
+    if (!supabase) return null;
+    const { data } = await supabase
+      .from('user_tenants')
+      .select('tenant_id')
+      .eq('user_id', userId)
+      .eq('is_primary', true)
+      .limit(1)
+      .single();
+    if (data?.tenant_id) {
+      console.log(`[VTID-MEMORY-BRIDGE] Resolved tenant_id from user_tenants for user=${userId.substring(0, 8)}...: ${data.tenant_id.substring(0, 8)}...`);
+      return data.tenant_id;
+    }
+    // Fallback: any tenant for this user
+    const { data: anyTenant } = await supabase
+      .from('user_tenants')
+      .select('tenant_id')
+      .eq('user_id', userId)
+      .limit(1)
+      .single();
+    if (anyTenant?.tenant_id) {
+      console.log(`[VTID-MEMORY-BRIDGE] Resolved tenant_id (non-primary) from user_tenants for user=${userId.substring(0, 8)}...: ${anyTenant.tenant_id.substring(0, 8)}...`);
+      return anyTenant.tenant_id;
+    }
+    return null;
+  } catch (err: any) {
+    console.warn(`[VTID-MEMORY-BRIDGE] lookupPrimaryTenant failed: ${err.message}`);
+    return null;
+  }
+}
+
+/**
  * VTID-ORBC: Resolve ORB identity from request.
  * Unified identity resolution for all ORB endpoints:
  *   1. If optionalAuth attached a verified identity → use it
- *   2. If dev-sandbox → fall back to DEV_IDENTITY
- *   3. In production without valid JWT → return null (endpoint decides how to handle)
+ *   2. If tenant_id is missing from JWT, look it up from user_tenants table
+ *   3. If dev-sandbox → fall back to DEV_IDENTITY
+ *   4. In production without valid JWT → return null (endpoint decides how to handle)
  *
  * @returns SupabaseIdentity or null if no identity available
  */
-function resolveOrbIdentity(req: AuthenticatedRequest): SupabaseIdentity | null {
+async function resolveOrbIdentity(req: AuthenticatedRequest): Promise<SupabaseIdentity | null> {
   // JWT-verified identity from optionalAuth middleware (Platform or Lovable)
   if (req.identity && req.identity.user_id) {
+    // VTID-MEMORY-BRIDGE: If tenant_id missing from JWT, resolve from user_tenants.
+    // provision_platform_user() creates user_tenants but does NOT set active_tenant_id
+    // in JWT app_metadata, so many authenticated users have null tenant_id.
+    if (!req.identity.tenant_id) {
+      const resolvedTenant = await lookupPrimaryTenant(req.identity.user_id);
+      if (resolvedTenant) {
+        return { ...req.identity, tenant_id: resolvedTenant };
+      }
+      console.warn(`[VTID-MEMORY-BRIDGE] User ${req.identity.user_id.substring(0, 8)}... has no tenant_id in JWT and no user_tenants row`);
+    }
     return req.identity;
   }
 
@@ -4881,7 +4933,7 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
   // VTID-ORBC: Resolve identity (JWT or dev-sandbox fallback)
   // Allow anonymous sessions for lovable/external frontends — identity is used for
   // memory scoping but is not required to start a live session.
-  const orbIdentity = resolveOrbIdentity(req);
+  const orbIdentity = await resolveOrbIdentity(req);
 
   const body = req.body as LiveSessionStartRequest;
   const clientRequestedLang = body.lang; // may be undefined if client didn't specify
@@ -5065,7 +5117,7 @@ router.post('/live/session/stop', optionalAuth, async (req: AuthenticatedRequest
   console.log('[VTID-ORBC] POST /orb/live/session/stop');
 
   const { session_id } = req.body;
-  const orbIdentity = resolveOrbIdentity(req);
+  const orbIdentity = await resolveOrbIdentity(req);
 
   if (!session_id) {
     return res.status(400).json({ ok: false, error: 'session_id required' });
@@ -5260,8 +5312,20 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
   if (token) {
     // Token provided - verify it
     const authResult = await verifyAndExtractIdentity(token);
-    if (authResult && authResult.identity.tenant_id) {
-      identity = authResult.identity;
+    if (authResult) {
+      // VTID-MEMORY-BRIDGE: If JWT has user_id but no tenant_id, look it up from user_tenants.
+      // provision_platform_user() creates user_tenants rows but does NOT set active_tenant_id
+      // in JWT app_metadata, so many authenticated users have null tenant_id.
+      if (authResult.identity.tenant_id) {
+        identity = authResult.identity;
+      } else if (authResult.identity.user_id) {
+        const resolvedTenant = await lookupPrimaryTenant(authResult.identity.user_id);
+        if (resolvedTenant) {
+          identity = { ...authResult.identity, tenant_id: resolvedTenant };
+        } else {
+          identity = authResult.identity; // Still use identity even without tenant
+        }
+      }
     }
   }
 
@@ -5490,7 +5554,7 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
 
   // VTID-ORBC: Resolve identity - JWT if present, DEV_IDENTITY in dev-sandbox, or anonymous.
   // Allow anonymous requests for lovable/external frontends.
-  const identity = resolveOrbIdentity(req);
+  const identity = await resolveOrbIdentity(req);
 
   if (!effectiveSessionId) {
     return res.status(400).json({ ok: false, error: 'session_id required' });
@@ -5688,7 +5752,7 @@ router.post('/live/stream/end-turn', optionalAuth, async (req: AuthenticatedRequ
 
   // VTID-ORBC: Resolve identity - JWT if present, DEV_IDENTITY in dev-sandbox, or anonymous.
   // Allow anonymous requests for lovable/external frontends.
-  const identity = resolveOrbIdentity(req);
+  const identity = await resolveOrbIdentity(req);
 
   if (!effectiveSessionId) {
     return res.status(400).json({ ok: false, error: 'session_id required' });

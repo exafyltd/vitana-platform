@@ -17864,17 +17864,42 @@ function renderDiaryEntryModal() {
         saveBtn.textContent = 'Saving...';
 
         try {
+            // VTID-MEMORY-BRIDGE: Map garden category to API category_key
+            var gardenToApiCategory = {
+                personal_identity: 'personal',
+                health_wellness: 'health',
+                lifestyle_routines: 'preferences',
+                network_relationships: 'relationships',
+                learning_knowledge: 'notes',
+                business_projects: 'tasks',
+                finance_assets: 'products_services',
+                location_environment: 'notes',
+                digital_footprint: 'notes',
+                values_aspirations: 'goals',
+                autopilot_context: 'conversation',
+                future_plans: 'goals',
+                uncategorized: 'notes'
+            };
+            var apiCategoryKey = state.memoryGarden.selectedCategory
+                ? gardenToApiCategory[state.memoryGarden.selectedCategory] || undefined
+                : undefined;
+
+            var writeBody = {
+                source: 'diary',
+                content: content,
+                importance: 50
+            };
+            if (apiCategoryKey) {
+                writeBody.category_key = apiCategoryKey;
+            }
+
             var response = await fetch('/api/v1/memory/write', {
                 method: 'POST',
                 headers: {
                     'Authorization': 'Bearer ' + state.authToken,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    source: 'diary',
-                    content: content,
-                    importance: 50
-                })
+                body: JSON.stringify(writeBody)
             });
 
             if (!response.ok) {

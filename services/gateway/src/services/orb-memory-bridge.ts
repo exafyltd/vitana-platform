@@ -98,7 +98,7 @@ const MEMORY_CONFIG = {
    * must be available regardless of when it was stored.
    * These are fundamental facts about the user that don't expire.
    */
-  PERSISTENT_CATEGORIES: ['personal', 'relationships', 'company']
+  PERSISTENT_CATEGORIES: ['personal', 'relationships', 'company', 'health', 'goals', 'tasks', 'notes']
 };
 
 // =============================================================================
@@ -331,20 +331,22 @@ export function shouldStoreInMemory(content: string, direction: 'user' | 'assist
     return false;
   }
 
-  // VTID-01225-CLEANUP: Minimum character length — filters out voice fragments like "yeah I think"
-  if (lower.length < 20) {
-    const hasImportantInfo = /\b(name|heiß|heiss|bin|from|aus|jahre|old|live|wohne|email|phone|born|geboren|work|arbeit|job|beruf|city|stadt|allergy|allergie|married|verheiratet|single|divorced|hobby)\b/i.test(lower);
+  // VTID-MEMORY-BRIDGE: Minimum character length — filters out voice fragments like "yeah" or "uh huh"
+  // Lowered from 20 to 10 chars to capture short but important voice utterances
+  // like "I'm David" (9 chars) or "from Berlin" (11 chars)
+  if (lower.length < 10) {
+    const hasImportantInfo = /\b(name|heiß|heiss|bin|from|aus|jahre|old|live|wohne|email|phone|born|geboren|work|arbeit|job|beruf|city|stadt|allergy|allergie|married|verheiratet|single|divorced|hobby|company|business|project|learn|study|age|country|language|sprache|speak)\b/i.test(lower);
     if (!hasImportantInfo) {
       console.log(`[VTID-01225-CLEANUP] Skipping short message (${lower.length} chars): "${lower.substring(0, 30)}"`);
       return false;
     }
   }
 
-  // Skip very short messages (less than 5 words) unless they contain key info
-  // VTID-01225-CLEANUP: Raised from 3 to 5 words — voice transcription fragments like
-  // "yeah I think so" or "okay let me" are useless noise in memory
-  if (wordCount < 5) {
-    const hasImportantInfo = /\b(name|heiß|heiss|bin|from|aus|jahre|old|live|wohne|email|phone|born|geboren|work|arbeit|job|beruf|city|stadt|allergy|allergie|married|verheiratet|single|divorced|hobby)\b/i.test(lower);
+  // Skip very short messages (less than 3 words) unless they contain key info
+  // VTID-MEMORY-BRIDGE: Lowered from 5 to 3 words — voice conversations naturally have
+  // short meaningful sentences like "I speak German" or "my name is David"
+  if (wordCount < 3) {
+    const hasImportantInfo = /\b(name|heiß|heiss|bin|from|aus|jahre|old|live|wohne|email|phone|born|geboren|work|arbeit|job|beruf|city|stadt|allergy|allergie|married|verheiratet|single|divorced|hobby|company|business|project|learn|study|age|country|language|sprache|speak)\b/i.test(lower);
     if (!hasImportantInfo) {
       console.log(`[VTID-01109] Skipping trivial message (${wordCount} words): "${lower.substring(0, 30)}..."`);
       return false;
@@ -789,8 +791,81 @@ export async function fetchMemoryContextWithIdentity(
       console.warn(`[VTID-01082-BRIDGE] memory_diary_entries fetch failed (non-fatal): ${diaryErr.message}`);
     }
 
-    // Merge: structured facts FIRST, then diary entries, then persistent items, then time-sensitive
-    const allItems = [...structuredFacts, ...diaryItems, ...persistentItems, ...timeSensitiveItems];
+    // VTID-MEMORY-BRIDGE: Also read from Lovable's diary_entries table.
+    // The Lovable frontend writes to `diary_entries` (NOT `memory_diary_entries`).
+    // Without this bridge, manually entered Memory Garden data from vitanaland.com is invisible.
+    let lovableDiaryItems: MemoryItem[] = [];
+    try {
+      const { data: lovDiaryData, error: lovDiaryErr } = await supabase
+        .from('diary_entries')
+        .select('id, text, source, tags, created_at')
+        .eq('user_id', effectiveIdentity.user_id)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (!lovDiaryErr && lovDiaryData && lovDiaryData.length > 0) {
+        lovableDiaryItems = (lovDiaryData as Array<{
+          id: string;
+          text: string;
+          source: string;
+          tags: string[];
+          created_at: string;
+        }>).map((d) => ({
+          id: d.id,
+          category_key: d.tags && d.tags.length > 0
+            ? d.tags[0].replace(/-/g, '_')
+            : 'notes',
+          source: d.source || 'diary',
+          content: d.text,
+          content_json: { tags: d.tags, source: d.source } as Record<string, unknown>,
+          importance: 60,
+          occurred_at: d.created_at,
+          created_at: d.created_at,
+        }));
+        console.log(`[VTID-MEMORY-BRIDGE] Fetched ${lovableDiaryItems.length} entries from diary_entries (Lovable)`);
+      }
+    } catch (lovDiaryErr: any) {
+      // Table may not exist in all environments — non-fatal
+      console.warn(`[VTID-MEMORY-BRIDGE] diary_entries fetch failed (non-fatal): ${lovDiaryErr.message}`);
+    }
+
+    // VTID-MEMORY-BRIDGE: Also read from Lovable's ai_memory table.
+    // The Lovable frontend stores extracted knowledge (facts, preferences, goals) in ai_memory.
+    let lovableMemoryItems: MemoryItem[] = [];
+    try {
+      const { data: lovMemData, error: lovMemErr } = await supabase
+        .from('ai_memory')
+        .select('id, content, memory_type, category, created_at')
+        .eq('user_id', effectiveIdentity.user_id)
+        .order('created_at', { ascending: false })
+        .limit(30);
+
+      if (!lovMemErr && lovMemData && lovMemData.length > 0) {
+        lovableMemoryItems = (lovMemData as Array<{
+          id: string;
+          content: string;
+          memory_type: string;
+          category: string;
+          created_at: string;
+        }>).map((m) => ({
+          id: m.id,
+          category_key: m.category ? m.category.replace(/-/g, '_') : 'notes',
+          source: 'ai_memory',
+          content: m.content,
+          content_json: { memory_type: m.memory_type } as Record<string, unknown>,
+          importance: 55,
+          occurred_at: m.created_at,
+          created_at: m.created_at,
+        }));
+        console.log(`[VTID-MEMORY-BRIDGE] Fetched ${lovableMemoryItems.length} entries from ai_memory (Lovable)`);
+      }
+    } catch (lovMemErr: any) {
+      console.warn(`[VTID-MEMORY-BRIDGE] ai_memory fetch failed (non-fatal): ${lovMemErr.message}`);
+    }
+
+    // Merge: structured facts FIRST, then diary entries (both tables), then Lovable memory,
+    // then persistent items, then time-sensitive
+    const allItems = [...structuredFacts, ...diaryItems, ...lovableDiaryItems, ...lovableMemoryItems, ...persistentItems, ...timeSensitiveItems];
     const seenIds = new Set<string>();
     const memoryItems = allItems.filter(item => {
       if (seenIds.has(item.id)) return false;
