@@ -269,6 +269,8 @@ jobs:
             # VTID-01184: CRITICAL - ENVIRONMENT enables memory bridge and dev sandbox features
             EXTRA_ENV_ARGS+=(--update-env-vars=VTID_ALLOCATOR_ENABLED=true)
             EXTRA_ENV_ARGS+=(--update-env-vars=ENVIRONMENT=dev-sandbox)
+            # VTID-01219: Cloud Run does NOT auto-set GOOGLE_CLOUD_PROJECT; required for Vertex AI Live API
+            EXTRA_ENV_ARGS+=(--update-env-vars=GCP_PROJECT_ID=lovable-vitana-vers1)
             # VTID-01155: Bind Gemini API key for TTS and chat
             SECRETS_ARGS+=(--update-secrets=GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest)
             # Bind other required secrets

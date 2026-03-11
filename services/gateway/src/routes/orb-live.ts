@@ -694,7 +694,9 @@ type LiveStreamMessage = LiveStreamAudioChunk | LiveStreamVideoFrame;
 const liveSessions = new Map<string, GeminiLiveSession>();
 
 // VTID-01155: Vertex AI Live API configuration
-const VERTEX_PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID || '';
+// Cloud Run does NOT auto-set GOOGLE_CLOUD_PROJECT env var.
+// Fallback to hardcoded project ID for Cloud Run deployments.
+const VERTEX_PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID || 'lovable-vitana-vers1';
 const VERTEX_LOCATION = process.env.VERTEX_AI_LOCATION || 'us-central1';
 const VERTEX_LIVE_MODEL = 'gemini-live-2.5-flash-native-audio';  // Live API model for BidiGenerateContent
 console.log(`[VTID-ORBC] Vertex config at startup: PROJECT_ID=${VERTEX_PROJECT_ID || 'EMPTY'}, LOCATION=${VERTEX_LOCATION}`);
@@ -5992,11 +5994,13 @@ router.get('/health', (_req: Request, res: Response) => {
     },
     // VTID-01155: Gemini Live Multimodal + TTS status
     gemini_live: {
-      enabled: true,
+      enabled: !!(googleAuth && VERTEX_PROJECT_ID),
       vtid: 'VTID-01155',
       active_live_sessions: liveSessions.size,
       live_model: VERTEX_LIVE_MODEL,
       tts_model: VERTEX_TTS_MODEL,
+      vertex_project_id: VERTEX_PROJECT_ID || 'EMPTY',
+      google_auth_ready: !!googleAuth,
       supported_languages: SUPPORTED_LIVE_LANGUAGES,
       audio_in_rate: '16kHz PCM',
       audio_out_rate: '24kHz PCM',
