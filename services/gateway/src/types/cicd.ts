@@ -479,6 +479,10 @@ export type CicdEventType =
   | 'orb.live.context.bootstrap'
   | 'orb.live.context.bootstrap.skipped'
   | 'orb.live.tool.executed'
+  // VTID-01219: ORB Voice Protection — config/connection failure alerts
+  | 'orb.live.startup.config_missing'
+  | 'orb.live.config_missing'
+  | 'orb.live.connection_failed'
   // VTID-01225: Cognee Entity Extraction Events
   | 'cognee.extraction.started'
   | 'cognee.extraction.completed'

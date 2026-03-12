@@ -763,6 +763,30 @@ try {
   console.warn('[VTID-01219] Failed to initialize Google Auth:', err.message);
 }
 
+// VTID-01219: Startup validation — emit OASIS alert if critical voice config is missing.
+// Does NOT throw (gateway serves many routes), but makes the failure visible.
+(async () => {
+  const issues: string[] = [];
+  if (!VERTEX_PROJECT_ID) issues.push('VERTEX_PROJECT_ID empty');
+  if (!VERTEX_LOCATION) issues.push('VERTEX_LOCATION empty');
+  if (!googleAuth) issues.push('Google Auth failed to initialize');
+  if (issues.length > 0) {
+    console.error(`[VTID-01219] ORB VOICE CONFIG MISSING: ${issues.join(', ')} — Live API will NOT connect`);
+    try {
+      await emitOasisEvent({
+        vtid: 'VTID-01155',
+        type: 'orb.live.startup.config_missing',
+        source: 'gateway',
+        status: 'error',
+        message: `ORB Live API startup validation failed: ${issues.join(', ')}`,
+        payload: { issues, vertex_project_id: VERTEX_PROJECT_ID || 'EMPTY', google_auth_ready: !!googleAuth }
+      });
+    } catch { /* best-effort */ }
+  } else {
+    console.log('[VTID-01219] ORB Voice startup validation passed — Live API ready');
+  }
+})();
+
 /**
  * VTID-01219: Get access token for Vertex AI Live API
  * Uses Application Default Credentials (ADC) - automatic on Cloud Run
@@ -4776,15 +4800,16 @@ router.get('/debug/context-bootstrap', async (req: Request, res: Response) => {
  * VTID-01155: Helper to emit Live session events to OASIS
  */
 async function emitLiveSessionEvent(
-  eventType: 'vtid.live.session.start' | 'vtid.live.session.stop' | 'vtid.live.audio.in.chunk' | 'vtid.live.video.in.frame' | 'vtid.live.audio.out.chunk',
-  payload: Record<string, unknown>
+  eventType: 'vtid.live.session.start' | 'vtid.live.session.stop' | 'vtid.live.audio.in.chunk' | 'vtid.live.video.in.frame' | 'vtid.live.audio.out.chunk' | 'orb.live.config_missing' | 'orb.live.connection_failed',
+  payload: Record<string, unknown>,
+  status: 'info' | 'error' = 'info'
 ): Promise<void> {
   try {
     await emitOasisEvent({
       vtid: 'VTID-01155',
       type: eventType,
       source: 'gateway',
-      status: 'info',
+      status,
       message: `Live session event: ${eventType}`,
       payload: {
         ...payload,
@@ -5464,10 +5489,19 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
       sendGreetingPromptToLiveAPI(ws, session);
     } catch (err: any) {
       console.error(`[VTID-01219] Failed to connect Live API for session ${sessionId}:`, err.message);
-      // Continue without Live API - will fall back to simulated responses
+      emitLiveSessionEvent('orb.live.connection_failed', {
+        session_id: sessionId,
+        error: err.message,
+        vertex_project_id: VERTEX_PROJECT_ID || 'EMPTY',
+      }, 'error').catch(() => {});
     }
   } else {
     console.warn('[VTID-01219] Live API not available - missing auth or project ID');
+    emitLiveSessionEvent('orb.live.config_missing', {
+      session_id: sessionId,
+      google_auth_ready: !!googleAuth,
+      vertex_project_id: VERTEX_PROJECT_ID || 'EMPTY',
+    }, 'error').catch(() => {});
   }
 
   // Send ready event with session config

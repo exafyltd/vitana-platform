@@ -343,6 +343,21 @@ jobs:
           fi
           echo "✓ Governance history check passed"
 
+          # 4) ORB Live API Readiness - verify Vertex AI config is present
+          echo "Smoke Test 4/4: ORB Live API Readiness"
+          ORB_HEALTH=$(curl -fsS "$GATEWAY_URL/api/v1/orb/health" 2>&1 || echo '{"error":"failed"}')
+          echo "$ORB_HEALTH" | jq '.gemini_live' || echo "$ORB_HEALTH"
+
+          LIVE_ENABLED=$(echo "$ORB_HEALTH" | jq -r '.gemini_live.enabled // false')
+          LIVE_PROJECT=$(echo "$ORB_HEALTH" | jq -r '.gemini_live.vertex_project_id // "EMPTY"')
+          LIVE_AUTH=$(echo "$ORB_HEALTH" | jq -r '.gemini_live.google_auth_ready // false')
+
+          if [ "$LIVE_ENABLED" != "true" ]; then
+            echo "::error::VTID-0416: ORB Live API not enabled (project=$LIVE_PROJECT, auth=$LIVE_AUTH)"
+            exit 1
+          fi
+          echo "✓ ORB Live API check passed (project=$LIVE_PROJECT, auth=$LIVE_AUTH)"
+
           echo ""
           echo "==========================================="
           echo "VTID-0416: All smoke tests PASSED"
