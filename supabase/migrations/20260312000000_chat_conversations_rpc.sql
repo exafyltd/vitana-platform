@@ -21,7 +21,9 @@ LANGUAGE sql
 STABLE
 SECURITY DEFINER
 AS $$
-  SELECT DISTINCT ON (peer)
+  SELECT DISTINCT ON (
+    CASE WHEN m.sender_id = p_user_id THEN m.receiver_id ELSE m.sender_id END
+  )
     m.id,
     m.tenant_id,
     m.sender_id,
@@ -29,18 +31,12 @@ AS $$
     m.content,
     m.read_at,
     m.created_at,
-    CASE
-      WHEN m.sender_id = p_user_id THEN m.receiver_id
-      ELSE m.sender_id
-    END AS peer_id
+    CASE WHEN m.sender_id = p_user_id THEN m.receiver_id ELSE m.sender_id END AS peer_id
   FROM chat_messages m
   WHERE m.tenant_id = p_tenant_id
     AND (m.sender_id = p_user_id OR m.receiver_id = p_user_id)
   ORDER BY
-    CASE
-      WHEN m.sender_id = p_user_id THEN m.receiver_id
-      ELSE m.sender_id
-    END,
+    CASE WHEN m.sender_id = p_user_id THEN m.receiver_id ELSE m.sender_id END,
     m.created_at DESC
   LIMIT p_limit;
 $$;
