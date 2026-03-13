@@ -1015,12 +1015,11 @@ async function executeLiveApiTool(
   args: Record<string, unknown>
 ): Promise<{ success: boolean; result: string; error?: string }> {
   const startTime = Date.now();
-  // VTID-STREAM-KEEPALIVE: Wrap tool execution in a 5-second timeout.
-  // buildContextPack makes multiple external HTTP calls (Supabase, web APIs).
-  // If a tool takes too long, Gemini may terminate the session while waiting
-  // for the function_response. Better to return a partial/error result quickly
-  // than to let the session die.
-  const TOOL_TIMEOUT_MS = 5000;
+  // VTID-01224-FIX: Reduced from 5s→3s. Gemini Live API has its own internal
+  // timeout for function_response (~3-4s). If we take longer, the model enters
+  // a stalled state where it stops generating audio. 3s gives enough time for
+  // fast queries while preventing session death on slow ones.
+  const TOOL_TIMEOUT_MS = 3000;
 
   const executeWithTimeout = async (): Promise<{ success: boolean; result: string; error?: string }> => {
     return Promise.race([
@@ -1074,12 +1073,13 @@ async function executeLiveApiToolInner(
         const query = (args.query as string) || '';
         const categories = args.categories as string[] | undefined;
 
-        // Build context pack with memory focus
+        // VTID-01224-FIX: Reduced limits to prevent oversized function_response
+        // that can stall Gemini Live API. Max 8 hits (was 10), capped at 4000 chars.
         const routerDecision = computeRetrievalRouterDecision(query, {
           channel: 'orb',
           force_sources: ['memory_garden'],
           limit_overrides: {
-            memory_garden: 10,
+            memory_garden: 8,
             knowledge_hub: 0,
             web_search: 0,
           },
@@ -1105,14 +1105,22 @@ async function executeLiveApiToolInner(
           };
         }
 
-        const formatted = memoryHits
-          .map((hit: any) => `[${hit.category_key || 'memory'}] ${hit.content}`)
+        // VTID-01224-FIX: Cap response to top 8 hits and 4000 chars max.
+        // Oversized function_response payloads cause Gemini Live API to stall.
+        const MAX_TOOL_RESPONSE_CHARS = 4000;
+        const topHits = memoryHits.slice(0, 8);
+        let formatted = topHits
+          .map((hit: any) => `[${hit.category_key || 'memory'}] ${(hit.content || '').substring(0, 300)}`)
           .join('\n');
 
-        console.log(`[VTID-01224] search_memory executed: ${memoryHits.length} hits, ${Date.now() - startTime}ms`);
+        if (formatted.length > MAX_TOOL_RESPONSE_CHARS) {
+          formatted = formatted.substring(0, MAX_TOOL_RESPONSE_CHARS) + '\n... (truncated)';
+        }
+
+        console.log(`[VTID-01224] search_memory executed: ${topHits.length}/${memoryHits.length} hits, ${formatted.length} chars, ${Date.now() - startTime}ms`);
         return {
           success: true,
-          result: `Found ${memoryHits.length} relevant memories:\n${formatted}`,
+          result: `Found ${topHits.length} relevant memories:\n${formatted}`,
         };
       }
 
@@ -1125,7 +1133,7 @@ async function executeLiveApiToolInner(
           force_sources: ['knowledge_hub'],
           limit_overrides: {
             memory_garden: 0,
-            knowledge_hub: 6,
+            knowledge_hub: 4,
             web_search: 0,
           },
         });
@@ -1150,14 +1158,21 @@ async function executeLiveApiToolInner(
           };
         }
 
-        const formatted = knowledgeHits
-          .map((hit: any) => `**${hit.title || 'Knowledge'}**\n${hit.snippet || hit.content}`)
+        // VTID-01224-FIX: Cap response size for Live API
+        const MAX_TOOL_RESPONSE_CHARS = 4000;
+        const topKnowledge = knowledgeHits.slice(0, 4);
+        let formatted = topKnowledge
+          .map((hit: any) => `**${hit.title || 'Knowledge'}**\n${(hit.snippet || hit.content || '').substring(0, 500)}`)
           .join('\n\n');
 
-        console.log(`[VTID-01224] search_knowledge executed: ${knowledgeHits.length} hits, ${Date.now() - startTime}ms`);
+        if (formatted.length > MAX_TOOL_RESPONSE_CHARS) {
+          formatted = formatted.substring(0, MAX_TOOL_RESPONSE_CHARS) + '\n... (truncated)';
+        }
+
+        console.log(`[VTID-01224] search_knowledge executed: ${topKnowledge.length} hits, ${formatted.length} chars, ${Date.now() - startTime}ms`);
         return {
           success: true,
-          result: `Found ${knowledgeHits.length} relevant knowledge items:\n${formatted}`,
+          result: `Found ${topKnowledge.length} relevant knowledge items:\n${formatted}`,
         };
       }
 
@@ -1234,29 +1249,38 @@ function sendFunctionResponseToLiveAPI(
   result: { success: boolean; result: string; error?: string }
 ): boolean {
   if (ws.readyState !== WebSocket.OPEN) {
-    console.warn('[VTID-01224] Cannot send function response - WebSocket not open');
+    console.warn(`[VTID-01224] Cannot send function response for ${toolName} - WebSocket not open (readyState=${ws.readyState})`);
     return false;
   }
 
   // Build tool response message (Vertex AI Live API format)
   // Note: Vertex AI rejects unknown fields like 'id' in function_responses
   // with WebSocket close code 1007. Only 'name' and 'response' are accepted.
+  const outputText = result.success ? result.result : `Error: ${result.error}`;
   const responseMessage = {
     tool_response: {
       function_responses: [
         {
           name: toolName,
           response: {
-            output: result.success ? result.result : `Error: ${result.error}`,
+            output: outputText,
           },
         },
       ],
     },
   };
 
-  console.log(`[VTID-01224] Sending function response for ${toolName}: ${result.result.substring(0, 100)}...`);
-  ws.send(JSON.stringify(responseMessage));
-  return true;
+  // VTID-01224-FIX: Wrap ws.send() in try-catch to prevent silent failures
+  // when WebSocket transitions state during tool execution.
+  try {
+    const payload = JSON.stringify(responseMessage);
+    console.log(`[VTID-01224] Sending function response for ${toolName}: ${outputText.substring(0, 200)}... (${payload.length} bytes)`);
+    ws.send(payload);
+    return true;
+  } catch (err: any) {
+    console.error(`[VTID-01224] Failed to send function response for ${toolName}: ${err.message}`);
+    return false;
+  }
 }
 
 /**
@@ -1786,10 +1810,17 @@ async function connectToLiveAPI(
             console.log(`[VTID-01224] Executing tool: ${toolName} with args: ${JSON.stringify(toolArgs)}`);
 
             // Execute the tool asynchronously
+            const toolStartTime = Date.now();
             executeLiveApiTool(session, toolName, toolArgs)
               .then((result) => {
+                const toolElapsed = Date.now() - toolStartTime;
+                console.log(`[VTID-01224] Tool ${toolName} completed in ${toolElapsed}ms, success=${result.success}, resultLen=${result.result.length}`);
+
                 // Send response back to Live API
-                sendFunctionResponseToLiveAPI(ws, callId, toolName, result);
+                const sent = sendFunctionResponseToLiveAPI(ws, callId, toolName, result);
+                if (!sent) {
+                  console.error(`[VTID-01224] function_response NOT sent for ${toolName} — WebSocket no longer open. Session ${session.sessionId} may be stalled.`);
+                }
 
                 // Emit OASIS event for tool execution
                 emitOasisEvent({
@@ -1797,19 +1828,23 @@ async function connectToLiveAPI(
                   type: 'orb.live.tool.executed',
                   source: 'orb-live-ws',
                   status: result.success ? 'info' : 'warning',
-                  message: `Tool ${toolName} executed: ${result.success ? 'success' : 'failed'}`,
+                  message: `Tool ${toolName} executed in ${toolElapsed}ms: ${result.success ? 'success' : 'failed'}`,
                   payload: {
                     session_id: session.sessionId,
                     tool_name: toolName,
                     tool_args: toolArgs,
                     success: result.success,
+                    result_length: result.result.length,
+                    elapsed_ms: toolElapsed,
+                    response_sent: sent,
                     result_preview: result.result.substring(0, 200),
                     error: result.error || null,
                   },
                 }).catch(() => { });
               })
               .catch((err) => {
-                console.error(`[VTID-01224] Tool execution error:`, err);
+                const toolElapsed = Date.now() - toolStartTime;
+                console.error(`[VTID-01224] Tool ${toolName} threw after ${toolElapsed}ms:`, err);
                 sendFunctionResponseToLiveAPI(ws, callId, toolName, {
                   success: false,
                   result: '',

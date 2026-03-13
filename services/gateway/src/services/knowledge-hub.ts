@@ -66,8 +66,10 @@ export async function searchKnowledgeDocs(
     return [];
   }
 
+  // VTID-01224-FIX: Add 2.5s timeout to prevent stalling ORB Live sessions
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 2500);
   try {
-    // Use the search_knowledge_docs RPC function
     const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/search_knowledge_docs`, {
       method: 'POST',
       headers: {
@@ -78,7 +80,8 @@ export async function searchKnowledgeDocs(
       body: JSON.stringify({
         search_query: query,
         max_results: maxResults
-      })
+      }),
+      signal: controller.signal as any,
     });
 
     if (!response.ok) {
@@ -99,6 +102,8 @@ export async function searchKnowledgeDocs(
   } catch (error: any) {
     console.error(`[VTID-0538] Knowledge search error:`, error.message);
     return [];
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 

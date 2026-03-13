@@ -83,7 +83,28 @@ export const CONTEXT_PACK_CONFIG = {
 
   /** VTID-01225: Increased token budget from 4000→6000 to fit more memories */
   TOKEN_BUDGET: 6000,
+
+  /** VTID-01224-FIX: Timeout for individual fetch calls within buildContextPack.
+   *  Must be shorter than the Live API tool timeout (3s) to allow response time. */
+  FETCH_TIMEOUT_MS: 2500,
 };
+
+// =============================================================================
+// Fetch Timeout Helper
+// =============================================================================
+
+/**
+ * VTID-01224-FIX: Create an AbortController with a timeout.
+ * Returns { signal, clear } — call clear() in finally blocks to avoid timer leaks.
+ */
+function fetchWithTimeout(timeoutMs: number = CONTEXT_PACK_CONFIG.FETCH_TIMEOUT_MS): { signal: AbortSignal; clear: () => void } {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  return {
+    signal: controller.signal,
+    clear: () => clearTimeout(timeoutId),
+  };
+}
 
 // =============================================================================
 // Memory Retrieval
@@ -127,47 +148,54 @@ async function fetchMemoryHits(
       url += `&category_key=in.(${lens.allowed_categories.join(',')})`;
     }
 
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: SUPABASE_SERVICE_ROLE,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      },
-    });
+    // VTID-01224-FIX: Add AbortController timeout to prevent hanging fetch
+    const timeout = fetchWithTimeout();
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_SERVICE_ROLE,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+        },
+        signal: timeout.signal,
+      });
 
-    if (!response.ok) {
-      console.warn(`[VTID-01216] Memory retrieval failed: ${response.status}`);
-      return { hits: [], latency_ms: Date.now() - startTime };
+      if (!response.ok) {
+        console.warn(`[VTID-01216] Memory retrieval failed: ${response.status}`);
+        return { hits: [], latency_ms: Date.now() - startTime };
+      }
+
+      const results = await response.json() as Array<{
+        id: string;
+        category_key: string;
+        content: string;
+        importance: number;
+        occurred_at: string;
+        source: string;
+      }>;
+
+      // Score and transform results
+      const hits: MemoryHit[] = results.map((r, index) => ({
+        id: r.id,
+        category_key: r.category_key,
+        content: r.content.substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
+        importance: r.importance,
+        occurred_at: r.occurred_at,
+        source: r.source,
+        relevance_score: computeRelevanceScore(r, query, index),
+      }));
+
+      // Sort by relevance score
+      hits.sort((a, b) => b.relevance_score - a.relevance_score);
+
+      return {
+        hits: hits.slice(0, Math.min(limit, CONTEXT_PACK_CONFIG.MAX_MEMORY_HITS)),
+        latency_ms: Date.now() - startTime,
+      };
+    } finally {
+      timeout.clear();
     }
-
-    const results = await response.json() as Array<{
-      id: string;
-      category_key: string;
-      content: string;
-      importance: number;
-      occurred_at: string;
-      source: string;
-    }>;
-
-    // Score and transform results
-    const hits: MemoryHit[] = results.map((r, index) => ({
-      id: r.id,
-      category_key: r.category_key,
-      content: r.content.substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
-      importance: r.importance,
-      occurred_at: r.occurred_at,
-      source: r.source,
-      relevance_score: computeRelevanceScore(r, query, index),
-    }));
-
-    // Sort by relevance score
-    hits.sort((a, b) => b.relevance_score - a.relevance_score);
-
-    return {
-      hits: hits.slice(0, Math.min(limit, CONTEXT_PACK_CONFIG.MAX_MEMORY_HITS)),
-      latency_ms: Date.now() - startTime,
-    };
   } catch (error: any) {
     console.error(`[VTID-01216] Memory retrieval error: ${error.message}`);
     return { hits: [], latency_ms: Date.now() - startTime };
@@ -229,6 +257,8 @@ async function fetchMemoryFacts(
     const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 
     if (SUPABASE_URL && SUPABASE_SERVICE_ROLE && query && query.trim().length > 3) {
+      // VTID-01224-FIX: Add timeout to semantic search (embedding + RPC)
+      const semTimeout = fetchWithTimeout();
       try {
         const embResult = await generateEmbedding(query);
         if (embResult.ok && embResult.embedding) {
@@ -246,6 +276,7 @@ async function fetchMemoryFacts(
               p_user_id: lens.user_id,
               p_min_confidence: 0.5,
             }),
+            signal: semTimeout.signal,
           });
 
           if (semResp.ok) {
@@ -275,6 +306,8 @@ async function fetchMemoryFacts(
         }
       } catch (semErr: any) {
         console.warn(`[VTID-01216] Semantic search failed (non-fatal): ${semErr.message}`);
+      } finally {
+        semTimeout.clear();
       }
     }
 
@@ -284,36 +317,43 @@ async function fetchMemoryFacts(
     if (SUPABASE_URL && SUPABASE_SERVICE_ROLE) {
       const url = `${SUPABASE_URL}/rest/v1/memory_facts?select=id,fact_key,fact_value,entity,provenance_confidence,provenance_source&tenant_id=eq.${lens.tenant_id}&user_id=eq.${lens.user_id}&superseded_by=is.null&order=provenance_confidence.desc,extracted_at.desc&limit=${limit}`;
 
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: SUPABASE_SERVICE_ROLE,
-          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-        },
-      });
+      // VTID-01224-FIX: Add timeout to general facts fetch
+      const factsTimeout = fetchWithTimeout();
+      try {
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: SUPABASE_SERVICE_ROLE,
+            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+          },
+          signal: factsTimeout.signal,
+        });
 
-      if (response.ok) {
-        const results = await response.json() as Array<{
-          id: string;
-          fact_key: string;
-          fact_value: string;
-          entity: string;
-          provenance_confidence: number;
-          provenance_source: string;
-        }>;
+        if (response.ok) {
+          const results = await response.json() as Array<{
+            id: string;
+            fact_key: string;
+            fact_value: string;
+            entity: string;
+            provenance_confidence: number;
+            provenance_source: string;
+          }>;
 
-        generalFacts = results.map((r) => ({
-          id: r.id,
-          category_key: `fact:${r.entity || 'general'}`,
-          content: `${r.fact_key}: ${r.fact_value}`,
-          importance: Math.round(r.provenance_confidence * 100),
-          occurred_at: new Date().toISOString(),
-          source: r.provenance_source || 'cognee_extraction',
-          relevance_score: Math.min(1, 0.85 + r.provenance_confidence * 0.15),
-        }));
-      } else {
-        console.warn(`[VTID-01216] memory_facts REST retrieval failed: ${response.status}`);
+          generalFacts = results.map((r) => ({
+            id: r.id,
+            category_key: `fact:${r.entity || 'general'}`,
+            content: `${r.fact_key}: ${r.fact_value}`,
+            importance: Math.round(r.provenance_confidence * 100),
+            occurred_at: new Date().toISOString(),
+            source: r.provenance_source || 'cognee_extraction',
+            relevance_score: Math.min(1, 0.85 + r.provenance_confidence * 0.15),
+          }));
+        } else {
+          console.warn(`[VTID-01216] memory_facts REST retrieval failed: ${response.status}`);
+        }
+      } finally {
+        factsTimeout.clear();
       }
     }
 
@@ -368,9 +408,11 @@ async function fetchRelationshipContext(
     const nodesUrl = `${SUPABASE_URL}/rest/v1/relationship_nodes?select=id,title,node_type,domain,metadata&tenant_id=eq.${lens.tenant_id}&order=created_at.desc&limit=${limit}`;
     const edgesUrl = `${SUPABASE_URL}/rest/v1/relationship_edges?select=from_node_id,to_node_id,relationship_type,strength&tenant_id=eq.${lens.tenant_id}&user_id=eq.${lens.user_id}&order=strength.desc&limit=20`;
 
+    // VTID-01224-FIX: Add timeout to relationship graph fetch
+    const relTimeout = fetchWithTimeout();
     const [nodesResponse, edgesResponse] = await Promise.all([
-      fetch(nodesUrl, { method: 'GET', headers }),
-      fetch(edgesUrl, { method: 'GET', headers }),
+      fetch(nodesUrl, { method: 'GET', headers, signal: relTimeout.signal }),
+      fetch(edgesUrl, { method: 'GET', headers, signal: relTimeout.signal }),
     ]);
 
     if (!nodesResponse.ok || !edgesResponse.ok) {
@@ -412,6 +454,7 @@ async function fetchRelationshipContext(
 
     console.log(`[VTID-01216] relationship graph returned ${context.length} connections from ${nodes.length} nodes`);
 
+    relTimeout.clear();
     return {
       context,
       latency_ms: Date.now() - startTime,
@@ -519,6 +562,8 @@ async function fetchWebHits(
     return { hits: [], latency_ms: Date.now() - startTime };
   }
 
+  // VTID-01224-FIX: Add timeout to Perplexity API fetch
+  const webTimeout = fetchWithTimeout();
   try {
     const response = await fetch('https://api.perplexity.ai/chat/completions', {
       method: 'POST',
@@ -541,6 +586,7 @@ async function fetchWebHits(
         max_tokens: 1024,
         return_citations: true,
       }),
+      signal: webTimeout.signal,
     });
 
     if (!response.ok) {
@@ -584,6 +630,8 @@ async function fetchWebHits(
   } catch (error: any) {
     console.error(`[VTID-01216] Perplexity API error: ${error.message}`);
     return { hits: [], latency_ms: Date.now() - startTime };
+  } finally {
+    webTimeout.clear();
   }
 }
 
@@ -666,33 +714,40 @@ async function fetchActiveVTIDs(
     }
 
     // Fetch recent active tasks from vtid_ledger
-    const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/vtid_ledger?status=in.(in-progress,scheduled,planned)&order=created_at.desc&limit=${limit}`,
-      {
-        headers: {
-          apikey: SUPABASE_SERVICE_ROLE,
-          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-        },
+    // VTID-01224-FIX: Add timeout
+    const vtidTimeout = fetchWithTimeout();
+    try {
+      const response = await fetch(
+        `${SUPABASE_URL}/rest/v1/vtid_ledger?status=in.(in-progress,scheduled,planned)&order=created_at.desc&limit=${limit}`,
+        {
+          headers: {
+            apikey: SUPABASE_SERVICE_ROLE,
+            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+          },
+          signal: vtidTimeout.signal,
+        }
+      );
+
+      if (!response.ok) {
+        return [];
       }
-    );
 
-    if (!response.ok) {
-      return [];
+      const results = await response.json() as Array<{
+        vtid: string;
+        title: string;
+        status: string;
+        priority?: string;
+      }>;
+
+      return results.map(r => ({
+        vtid: r.vtid,
+        title: r.title || r.vtid,
+        status: r.status,
+        priority: r.priority,
+      }));
+    } finally {
+      vtidTimeout.clear();
     }
-
-    const results = await response.json() as Array<{
-      vtid: string;
-      title: string;
-      status: string;
-      priority?: string;
-    }>;
-
-    return results.map(r => ({
-      vtid: r.vtid,
-      title: r.title || r.vtid,
-      status: r.status,
-      priority: r.priority,
-    }));
   } catch (error: any) {
     console.warn(`[VTID-01216] Failed to fetch active VTIDs: ${error.message}`);
     return [];
