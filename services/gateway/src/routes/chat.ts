@@ -127,32 +127,58 @@ router.get('/conversations', requireAuth, requireTenant, async (req: Request, re
 
   const supabase = getSupabase();
 
-  // Fetch recent messages involving this user, then deduplicate to latest per peer
-  const { data, error } = await supabase
-    .from('chat_messages')
-    .select('*')
-    .eq('tenant_id', identity.tenant_id)
-    .or(`sender_id.eq.${identity.user_id},receiver_id.eq.${identity.user_id}`)
-    .order('created_at', { ascending: false })
-    .limit(200);
+  // Server-side dedup: use DISTINCT ON to get latest message per peer in one query
+  const { data, error } = await supabase.rpc('get_recent_conversations', {
+    p_user_id: identity.user_id,
+    p_tenant_id: identity.tenant_id,
+    p_limit: 50,
+  });
 
   if (error) {
-    console.error('[Chat] Conversations list error:', error);
-    return res.status(500).json({ ok: false, error: error.message });
-  }
+    // Fallback to client-side dedup if RPC not available yet
+    console.warn('[Chat] RPC get_recent_conversations failed, falling back:', error.message);
 
-  // Deduplicate: keep the latest message per peer
-  const seen = new Map<string, typeof data[0]>();
-  for (const msg of data || []) {
-    const peerId = msg.sender_id === identity.user_id ? msg.receiver_id : msg.sender_id;
-    if (!seen.has(peerId)) {
-      seen.set(peerId, msg);
+    const { data: fallbackData, error: fallbackErr } = await supabase
+      .from('chat_messages')
+      .select('*')
+      .eq('tenant_id', identity.tenant_id)
+      .or(`sender_id.eq.${identity.user_id},receiver_id.eq.${identity.user_id}`)
+      .order('created_at', { ascending: false })
+      .limit(200);
+
+    if (fallbackErr) {
+      console.error('[Chat] Conversations list error:', fallbackErr);
+      return res.status(500).json({ ok: false, error: fallbackErr.message });
     }
+
+    const seen = new Map<string, typeof fallbackData[0]>();
+    for (const msg of fallbackData || []) {
+      const peerId = msg.sender_id === identity.user_id ? msg.receiver_id : msg.sender_id;
+      if (!seen.has(peerId)) {
+        seen.set(peerId, msg);
+      }
+    }
+
+    const conversations = Array.from(seen.entries()).map(([peerId, lastMessage]) => ({
+      peer_id: peerId,
+      last_message: lastMessage,
+    }));
+
+    return res.json({ ok: true, data: conversations });
   }
 
-  const conversations = Array.from(seen.entries()).map(([peerId, lastMessage]) => ({
-    peer_id: peerId,
-    last_message: lastMessage,
+  // RPC returns rows with peer_id already computed
+  const conversations = (data || []).map((row: any) => ({
+    peer_id: row.peer_id,
+    last_message: {
+      id: row.id,
+      tenant_id: row.tenant_id,
+      sender_id: row.sender_id,
+      receiver_id: row.receiver_id,
+      content: row.content,
+      read_at: row.read_at,
+      created_at: row.created_at,
+    },
   }));
 
   return res.json({ ok: true, data: conversations });
