@@ -377,6 +377,125 @@ async function fetchMemoryFacts(
 }
 
 /**
+ * VTID-01224-FIX: Fetch diary entries from memory_diary_entries and diary_entries tables.
+ * Diary data lives in separate tables (not memory_items), so without this function
+ * the search_memory tool cannot find diary content during live ORB sessions.
+ * Results are returned as MemoryHit[] to merge with other memory hits.
+ */
+async function fetchDiaryHits(
+  lens: ContextLens,
+  query: string,
+  limit: number = 10
+): Promise<{ hits: MemoryHit[]; latency_ms: number }> {
+  const startTime = Date.now();
+
+  try {
+    const SUPABASE_URL = process.env.SUPABASE_URL;
+    const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+      return { hits: [], latency_ms: Date.now() - startTime };
+    }
+
+    if (!lens.tenant_id || !lens.user_id) {
+      return { hits: [], latency_ms: Date.now() - startTime };
+    }
+
+    const headers = {
+      'Content-Type': 'application/json',
+      apikey: SUPABASE_SERVICE_ROLE,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+    };
+
+    // Fetch from both diary tables in parallel with timeout
+    const timeout = fetchWithTimeout();
+    try {
+      const diaryUrl = `${SUPABASE_URL}/rest/v1/memory_diary_entries?select=id,raw_text,tags,entry_date,created_at,entry_type&tenant_id=eq.${lens.tenant_id}&user_id=eq.${lens.user_id}&order=created_at.desc&limit=${limit}`;
+      const lovableUrl = `${SUPABASE_URL}/rest/v1/diary_entries?select=id,text,source,tags,created_at&user_id=eq.${lens.user_id}&order=created_at.desc&limit=${limit}`;
+
+      const [diaryResp, lovableResp] = await Promise.all([
+        fetch(diaryUrl, { method: 'GET', headers, signal: timeout.signal }),
+        fetch(lovableUrl, { method: 'GET', headers, signal: timeout.signal }).catch(() => null),
+      ]);
+
+      const hits: MemoryHit[] = [];
+
+      // Process memory_diary_entries
+      if (diaryResp.ok) {
+        const diaryData = await diaryResp.json() as Array<{
+          id: string;
+          raw_text: string;
+          tags: string[];
+          entry_date: string;
+          created_at: string;
+          entry_type: string;
+        }>;
+
+        for (const d of diaryData) {
+          const content = d.raw_text || '';
+          hits.push({
+            id: d.id,
+            category_key: d.tags?.[0]?.replace(/-/g, '_') || 'diary',
+            content: content.substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
+            importance: 60,
+            occurred_at: d.entry_date ? new Date(d.entry_date).toISOString() : d.created_at,
+            source: 'diary',
+            relevance_score: computeRelevanceScore(
+              { importance: 60, occurred_at: d.entry_date || d.created_at, content },
+              query, hits.length
+            ),
+          });
+        }
+      }
+
+      // Process diary_entries (Lovable) — table may not exist
+      if (lovableResp && lovableResp.ok) {
+        const lovableData = await lovableResp.json() as Array<{
+          id: string;
+          text: string;
+          source: string;
+          tags: string[];
+          created_at: string;
+        }>;
+
+        // Deduplicate by ID (in case same entry exists in both tables)
+        const seenIds = new Set(hits.map(h => h.id));
+        for (const d of lovableData) {
+          if (seenIds.has(d.id)) continue;
+          const content = d.text || '';
+          hits.push({
+            id: d.id,
+            category_key: d.tags?.[0]?.replace(/-/g, '_') || 'diary',
+            content: content.substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
+            importance: 60,
+            occurred_at: d.created_at,
+            source: d.source || 'diary',
+            relevance_score: computeRelevanceScore(
+              { importance: 60, occurred_at: d.created_at, content },
+              query, hits.length
+            ),
+          });
+        }
+      }
+
+      // Sort by relevance and cap
+      hits.sort((a, b) => b.relevance_score - a.relevance_score);
+      console.log(`[VTID-01224-FIX] fetchDiaryHits: ${hits.length} diary entries found`);
+
+      return {
+        hits: hits.slice(0, limit),
+        latency_ms: Date.now() - startTime,
+      };
+    } finally {
+      timeout.clear();
+    }
+  } catch (error: any) {
+    console.error(`[VTID-01224-FIX] diary retrieval error: ${error.message}`);
+    return { hits: [], latency_ms: Date.now() - startTime };
+  }
+}
+
+/**
  * Fetch relationship graph context from relationship_nodes and relationship_edges tables
  * (written by cognee extraction pipeline). Returns human-readable relationship strings.
  */
@@ -879,6 +998,17 @@ export async function buildContextPack(
     );
   }
 
+  // VTID-01224-FIX: Diary entries retrieval (stored in separate tables, not memory_items)
+  let diaryHits: MemoryHit[] = [];
+  if (input.router_decision.sources_to_query.includes('memory_garden')) {
+    retrievalPromises.push(
+      fetchDiaryHits(input.lens, input.query, input.router_decision.limits.memory_garden)
+        .then(result => {
+          diaryHits = result.hits;
+        })
+    );
+  }
+
   // Run tool health + active VTIDs in parallel with the main retrievals
   let toolHealth: ToolHealthStatus[] = [];
   let activeVtids: ActiveVTID[] = [];
@@ -893,9 +1023,11 @@ export async function buildContextPack(
   // Execute ALL retrievals in parallel (memory, knowledge, web, facts, relationships, tool health, VTIDs)
   await Promise.all(retrievalPromises);
 
-  // Merge structured facts into memory hits (prepend - higher priority)
-  if (structuredFacts.length > 0) {
-    memoryHits = [...structuredFacts, ...memoryHits];
+  // Merge structured facts + diary hits into memory hits (prepend - higher priority)
+  // VTID-01224-FIX: Include diary entries so search_memory tool can find diary data
+  const mergeItems = [...structuredFacts, ...diaryHits];
+  if (mergeItems.length > 0) {
+    memoryHits = [...mergeItems, ...memoryHits];
     // Re-sort by relevance and enforce limit
     memoryHits.sort((a, b) => b.relevance_score - a.relevance_score);
     memoryHits = memoryHits.slice(0, CONTEXT_PACK_CONFIG.MAX_MEMORY_HITS);
