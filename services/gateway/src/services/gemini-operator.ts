@@ -52,6 +52,17 @@ import { getPersonalityConfigSync } from './ai-personality-service';
 // Environment config
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+
+// VTID-01270A: Thread-to-identity map for community/events tools
+// Populated by ORB chat handlers before calling processWithGemini
+const threadIdentityMap = new Map<string, { tenant_id: string; user_id: string }>();
+
+/** VTID-01270A: Set identity context for a thread (call before processWithGemini) */
+export function setThreadIdentity(threadId: string, identity: { tenant_id: string; user_id: string }): void {
+  threadIdentityMap.set(threadId, identity);
+  // Auto-cleanup after 30 minutes
+  setTimeout(() => threadIdentityMap.delete(threadId), 30 * 60 * 1000);
+}
 const GOOGLE_GEMINI_API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
 
 // VTID-01023: Vertex AI configuration - uses ADC (Application Default Credentials)
@@ -373,6 +384,55 @@ Returns checklist items with pass/fail status based on OASIS evidence.`,
           }
         },
         required: ['vtid']
+      }
+    },
+    // VTID-01270A: Community & Events tools for ORB text chat
+    {
+      name: 'search_events',
+      description: 'Search upcoming community events, meetups, and live rooms. Use when the user asks about events, gatherings, what\'s happening, or things to attend.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'Search query for events (e.g., "yoga", "nutrition workshop", "this weekend")'
+          },
+          type_filter: {
+            type: 'string',
+            enum: ['meetup', 'live_room', 'all'],
+            description: 'Filter by event type. Defaults to all.'
+          }
+        },
+        required: ['query']
+      }
+    },
+    {
+      name: 'search_community',
+      description: 'Search community groups and their activities. Use when the user asks about groups, communities, who to connect with, or community activities.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'Search query for community groups (e.g., "meditation", "runners", "nutrition")'
+          }
+        },
+        required: ['query']
+      }
+    },
+    {
+      name: 'get_recommendations',
+      description: 'Get personalized recommendations for the user including suggested groups, events to attend, and daily matches. Use when the user asks "what should I do?", "any suggestions?", "who should I meet?", or "what events are for me?"',
+      parameters: {
+        type: 'object',
+        properties: {
+          type: {
+            type: 'string',
+            enum: ['community', 'match', 'all'],
+            description: 'Type of recommendations. Defaults to all.'
+          }
+        },
+        required: []
       }
     }
   ]
@@ -1816,6 +1876,225 @@ function buildDeployChecklist(
   return checklist;
 }
 
+// ==================== VTID-01270A: Community & Events Tool Handlers ====================
+
+/**
+ * VTID-01270A: Search upcoming events and meetups
+ */
+async function executeCommunitySearchEvents(
+  args: { query: string; type_filter?: string },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  const identity = threadIdentityMap.get(threadId);
+
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    return { ok: true, data: { result: 'Event search is temporarily unavailable.' } };
+  }
+
+  const headers = {
+    'Content-Type': 'application/json',
+    apikey: SUPABASE_SERVICE_ROLE,
+    Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+  };
+
+  const query = args.query || '';
+  const typeFilter = args.type_filter || 'all';
+  const now = new Date().toISOString();
+  const tenantFilter = identity ? `&tenant_id=eq.${identity.tenant_id}` : '';
+  const results: string[] = [];
+
+  // Fetch upcoming meetups
+  if (typeFilter === 'meetup' || typeFilter === 'all') {
+    let meetupsUrl = `${SUPABASE_URL}/rest/v1/community_meetups?select=id,title,starts_at,ends_at,location_text,mode${tenantFilter}&starts_at=gte.${now}&order=starts_at.asc&limit=8`;
+    if (query) {
+      meetupsUrl += `&title=ilike.*${encodeURIComponent(query)}*`;
+    }
+    try {
+      const resp = await fetch(meetupsUrl, { method: 'GET', headers });
+      if (resp.ok) {
+        const meetups = await resp.json() as Array<{
+          id: string; title: string; starts_at: string; ends_at: string;
+          location_text: string; mode: string;
+        }>;
+        for (const m of meetups) {
+          const date = new Date(m.starts_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+          results.push(`[Meetup] ${m.title} | ${date} | ${m.mode} | ${m.location_text || 'TBD'}`);
+        }
+      }
+    } catch (e: any) {
+      console.warn(`[VTID-01270A] meetups query failed: ${e.message}`);
+    }
+  }
+
+  // Fetch scheduled/live rooms
+  if (typeFilter === 'live_room' || typeFilter === 'all') {
+    let roomsUrl = `${SUPABASE_URL}/rest/v1/live_rooms?select=id,title,starts_at,status${tenantFilter}&status=in.(scheduled,live)&order=starts_at.asc&limit=6`;
+    if (query) {
+      roomsUrl += `&title=ilike.*${encodeURIComponent(query)}*`;
+    }
+    try {
+      const resp = await fetch(roomsUrl, { method: 'GET', headers });
+      if (resp.ok) {
+        const rooms = await resp.json() as Array<{
+          id: string; title: string; starts_at: string; status: string;
+        }>;
+        for (const r of rooms) {
+          const date = r.starts_at
+            ? new Date(r.starts_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+            : 'TBD';
+          const statusLabel = r.status === 'live' ? 'LIVE NOW' : date;
+          results.push(`[Live Room] ${r.title} | ${statusLabel}`);
+        }
+      }
+    } catch (e: any) {
+      console.warn(`[VTID-01270A] live_rooms query failed: ${e.message}`);
+    }
+  }
+
+  if (results.length === 0) {
+    console.log(`[VTID-01270A] search_events (text): 0 hits for "${query}"`);
+    return { ok: true, data: { result: 'No upcoming events or meetups found matching your query.' } };
+  }
+
+  const formatted = results.join('\n');
+  console.log(`[VTID-01270A] search_events (text): ${results.length} hits for "${query}"`);
+  return { ok: true, data: { result: `Found ${results.length} upcoming events:\n${formatted}` } };
+}
+
+/**
+ * VTID-01270A: Search community groups
+ */
+async function executeCommunitySearchGroups(
+  args: { query: string },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  const identity = threadIdentityMap.get(threadId);
+
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    return { ok: true, data: { result: 'Community search is temporarily unavailable.' } };
+  }
+
+  const headers = {
+    'Content-Type': 'application/json',
+    apikey: SUPABASE_SERVICE_ROLE,
+    Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+  };
+
+  const query = args.query || '';
+  const tenantFilter = identity ? `&tenant_id=eq.${identity.tenant_id}` : '';
+  let groupsUrl = `${SUPABASE_URL}/rest/v1/community_groups?select=id,name,topic_key,description,is_public${tenantFilter}&is_public=eq.true&order=created_at.desc&limit=10`;
+  if (query) {
+    groupsUrl += `&or=(name.ilike.*${encodeURIComponent(query)}*,description.ilike.*${encodeURIComponent(query)}*,topic_key.ilike.*${encodeURIComponent(query)}*)`;
+  }
+
+  try {
+    const resp = await fetch(groupsUrl, { method: 'GET', headers });
+    if (!resp.ok) {
+      console.warn(`[VTID-01270A] community_groups query failed: ${resp.status}`);
+      return { ok: true, data: { result: 'Could not search community groups at this time.' } };
+    }
+
+    const groups = await resp.json() as Array<{
+      id: string; name: string; topic_key: string; description: string; is_public: boolean;
+    }>;
+
+    if (groups.length === 0) {
+      console.log(`[VTID-01270A] search_community (text): 0 hits for "${query}"`);
+      return { ok: true, data: { result: 'No community groups found matching your query.' } };
+    }
+
+    const formatted = groups
+      .map(g => `**${g.name}** — ${(g.description || '').substring(0, 200)} | Topic: ${g.topic_key}`)
+      .join('\n');
+
+    console.log(`[VTID-01270A] search_community (text): ${groups.length} hits for "${query}"`);
+    return { ok: true, data: { result: `Found ${groups.length} community groups:\n${formatted}` } };
+  } catch (e: any) {
+    console.warn(`[VTID-01270A] search_community error: ${e.message}`);
+    return { ok: true, data: { result: 'Community search encountered an error. Please try again.' } };
+  }
+}
+
+/**
+ * VTID-01270A: Get personalized recommendations
+ */
+async function executeCommunityGetRecommendations(
+  args: { type?: string },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  const identity = threadIdentityMap.get(threadId);
+
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    return { ok: true, data: { result: 'Recommendations are temporarily unavailable.' } };
+  }
+
+  if (!identity) {
+    return { ok: true, data: { result: 'Personalized recommendations require an authenticated session. Please try using voice or signing in.' } };
+  }
+
+  const headers = {
+    'Content-Type': 'application/json',
+    apikey: SUPABASE_SERVICE_ROLE,
+    Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+  };
+
+  const recType = args.type || 'all';
+  const today = new Date().toISOString().split('T')[0];
+  const results: string[] = [];
+
+  // Community recommendations
+  if (recType === 'community' || recType === 'all') {
+    const recsUrl = `${SUPABASE_URL}/rest/v1/community_recommendations?select=id,rec_type,target_id,score,reasons&tenant_id=eq.${identity.tenant_id}&user_id=eq.${identity.user_id}&rec_date=eq.${today}&order=score.desc&limit=5`;
+    try {
+      const resp = await fetch(recsUrl, { method: 'GET', headers });
+      if (resp.ok) {
+        const recs = await resp.json() as Array<{
+          id: string; rec_type: string; target_id: string;
+          score: number; reasons: Record<string, unknown>;
+        }>;
+        for (const r of recs) {
+          const reasonText = r.reasons && typeof r.reasons === 'object'
+            ? Object.values(r.reasons).filter(v => typeof v === 'string').join(', ')
+            : '';
+          results.push(`[${r.rec_type}] Score: ${r.score}/100${reasonText ? ` — ${reasonText}` : ''}`);
+        }
+      }
+    } catch (e: any) {
+      console.warn(`[VTID-01270A] community_recommendations query failed: ${e.message}`);
+    }
+  }
+
+  // Daily matches
+  if (recType === 'match' || recType === 'all') {
+    const matchesUrl = `${SUPABASE_URL}/rest/v1/matches_daily?select=id,score,state,reasons&tenant_id=eq.${identity.tenant_id}&user_id=eq.${identity.user_id}&match_date=eq.${today}&state=eq.suggested&order=score.desc&limit=5`;
+    try {
+      const resp = await fetch(matchesUrl, { method: 'GET', headers });
+      if (resp.ok) {
+        const matches = await resp.json() as Array<{
+          id: string; score: number; state: string; reasons: Record<string, unknown>;
+        }>;
+        for (const m of matches) {
+          const reasonText = m.reasons && typeof m.reasons === 'object'
+            ? Object.values(m.reasons).filter(v => typeof v === 'string').join(', ')
+            : '';
+          results.push(`[Daily Match] Score: ${m.score}/100${reasonText ? ` — ${reasonText}` : ''}`);
+        }
+      }
+    } catch (e: any) {
+      console.warn(`[VTID-01270A] matches_daily query failed: ${e.message}`);
+    }
+  }
+
+  if (results.length === 0) {
+    console.log(`[VTID-01270A] get_recommendations (text): 0 results (type=${recType})`);
+    return { ok: true, data: { result: 'No personalized recommendations available right now. Try checking back later, or ask me about events or community groups directly.' } };
+  }
+
+  const formatted = results.join('\n');
+  console.log(`[VTID-01270A] get_recommendations (text): ${results.length} results (type=${recType})`);
+  return { ok: true, data: { result: `Here are your personalized recommendations:\n${formatted}` } };
+}
+
 // ==================== Main Tool Router ====================
 
 /**
@@ -1905,6 +2184,28 @@ export async function executeTool(
       case 'dev_verify_deploy_checklist':
         result = await executeVerifyDeployChecklist(
           args as { vtid: string; service?: string },
+          threadId
+        );
+        break;
+
+      // VTID-01270A: Community & Events tools
+      case 'search_events':
+        result = await executeCommunitySearchEvents(
+          args as { query: string; type_filter?: string },
+          threadId
+        );
+        break;
+
+      case 'search_community':
+        result = await executeCommunitySearchGroups(
+          args as { query: string },
+          threadId
+        );
+        break;
+
+      case 'get_recommendations':
+        result = await executeCommunityGetRecommendations(
+          args as { type?: string },
           threadId
         );
         break;

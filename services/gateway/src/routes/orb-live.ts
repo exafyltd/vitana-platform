@@ -44,7 +44,7 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
-import { processWithGemini } from '../services/gemini-operator';
+import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { notifyUserAsync } from '../services/notification-service';
 // VTID-01225: Cognee Entity Extraction Integration
@@ -995,6 +995,55 @@ function buildLiveApiTools(): object[] {
             required: ['query'],
           },
         },
+        // VTID-01270A: Community & Events voice tools
+        {
+          name: 'search_events',
+          description: 'Search upcoming community events, meetups, and live rooms. Use when the user asks about events, gatherings, what\'s happening, or things to attend.',
+          parameters: {
+            type: 'object',
+            properties: {
+              query: {
+                type: 'string',
+                description: 'Search query for events (e.g., "yoga", "nutrition workshop", "this weekend")',
+              },
+              type_filter: {
+                type: 'string',
+                enum: ['meetup', 'live_room', 'all'],
+                description: 'Filter by event type. Defaults to all.',
+              },
+            },
+            required: ['query'],
+          },
+        },
+        {
+          name: 'search_community',
+          description: 'Search community groups and their activities. Use when the user asks about groups, communities, who to connect with, or community activities.',
+          parameters: {
+            type: 'object',
+            properties: {
+              query: {
+                type: 'string',
+                description: 'Search query for community groups (e.g., "meditation", "runners", "nutrition")',
+              },
+            },
+            required: ['query'],
+          },
+        },
+        {
+          name: 'get_recommendations',
+          description: 'Get personalized recommendations for the user including suggested groups, events to attend, and daily matches. Use when the user asks "what should I do?", "any suggestions?", "who should I meet?", or "what events are for me?"',
+          parameters: {
+            type: 'object',
+            properties: {
+              type: {
+                type: 'string',
+                enum: ['community', 'match', 'all'],
+                description: 'Type of recommendations. Defaults to all.',
+              },
+            },
+            required: [],
+          },
+        },
       ],
     },
   ];
@@ -1219,6 +1268,226 @@ async function executeLiveApiToolInner(
           success: true,
           result: `Found ${webHits.length} relevant web results:\n${formatted}`,
         };
+      }
+
+      // =====================================================================
+      // VTID-01270A: Community & Events voice tools
+      // =====================================================================
+
+      case 'search_events': {
+        const query = (args.query as string) || '';
+        const typeFilter = (args.type_filter as string) || 'all';
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE;
+
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+          return { success: true, result: 'Event search is temporarily unavailable.' };
+        }
+
+        const headers = {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        };
+
+        const now = new Date().toISOString();
+        const tenantId = lens.tenant_id;
+        const results: string[] = [];
+
+        // Fetch upcoming meetups
+        if (typeFilter === 'meetup' || typeFilter === 'all') {
+          let meetupsUrl = `${SUPABASE_URL}/rest/v1/community_meetups?select=id,title,starts_at,ends_at,location_text,mode&tenant_id=eq.${tenantId}&starts_at=gte.${now}&order=starts_at.asc&limit=6`;
+          if (query) {
+            meetupsUrl += `&title=ilike.*${encodeURIComponent(query)}*`;
+          }
+          try {
+            const resp = await fetch(meetupsUrl, { method: 'GET', headers });
+            if (resp.ok) {
+              const meetups = await resp.json() as Array<{
+                id: string; title: string; starts_at: string; ends_at: string;
+                location_text: string; mode: string;
+              }>;
+              for (const m of meetups) {
+                const date = new Date(m.starts_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                results.push(`[Meetup] ${m.title} | ${date} | ${m.mode} | ${m.location_text || 'TBD'}`);
+              }
+            }
+          } catch (e: any) {
+            console.warn(`[VTID-01270A] meetups query failed: ${e.message}`);
+          }
+        }
+
+        // Fetch scheduled/live rooms
+        if (typeFilter === 'live_room' || typeFilter === 'all') {
+          let roomsUrl = `${SUPABASE_URL}/rest/v1/live_rooms?select=id,title,starts_at,status&tenant_id=eq.${tenantId}&status=in.(scheduled,live)&order=starts_at.asc&limit=4`;
+          if (query) {
+            roomsUrl += `&title=ilike.*${encodeURIComponent(query)}*`;
+          }
+          try {
+            const resp = await fetch(roomsUrl, { method: 'GET', headers });
+            if (resp.ok) {
+              const rooms = await resp.json() as Array<{
+                id: string; title: string; starts_at: string; status: string;
+              }>;
+              for (const r of rooms) {
+                const date = r.starts_at
+                  ? new Date(r.starts_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+                  : 'TBD';
+                const statusLabel = r.status === 'live' ? 'LIVE NOW' : date;
+                results.push(`[Live Room] ${r.title} | ${statusLabel}`);
+              }
+            }
+          } catch (e: any) {
+            console.warn(`[VTID-01270A] live_rooms query failed: ${e.message}`);
+          }
+        }
+
+        if (results.length === 0) {
+          console.log(`[VTID-01270A] search_events: 0 hits for "${query}", ${Date.now() - startTime}ms`);
+          return { success: true, result: 'No upcoming events or meetups found matching your query.' };
+        }
+
+        const MAX_TOOL_RESPONSE_CHARS = 3000;
+        let formatted = results.join('\n');
+        if (formatted.length > MAX_TOOL_RESPONSE_CHARS) {
+          formatted = formatted.substring(0, MAX_TOOL_RESPONSE_CHARS) + '\n... (truncated)';
+        }
+
+        console.log(`[VTID-01270A] search_events: ${results.length} hits for "${query}", ${formatted.length} chars, ${Date.now() - startTime}ms`);
+        return { success: true, result: `Found ${results.length} upcoming events:\n${formatted}` };
+      }
+
+      case 'search_community': {
+        const query = (args.query as string) || '';
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE;
+
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+          return { success: true, result: 'Community search is temporarily unavailable.' };
+        }
+
+        const headers = {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        };
+
+        const tenantId = lens.tenant_id;
+        let groupsUrl = `${SUPABASE_URL}/rest/v1/community_groups?select=id,name,topic_key,description,is_public&tenant_id=eq.${tenantId}&is_public=eq.true&order=created_at.desc&limit=8`;
+        if (query) {
+          groupsUrl += `&or=(name.ilike.*${encodeURIComponent(query)}*,description.ilike.*${encodeURIComponent(query)}*,topic_key.ilike.*${encodeURIComponent(query)}*)`;
+        }
+
+        try {
+          const resp = await fetch(groupsUrl, { method: 'GET', headers });
+          if (!resp.ok) {
+            console.warn(`[VTID-01270A] community_groups query failed: ${resp.status}`);
+            return { success: true, result: 'Could not search community groups at this time.' };
+          }
+
+          const groups = await resp.json() as Array<{
+            id: string; name: string; topic_key: string;
+            description: string; is_public: boolean;
+          }>;
+
+          if (groups.length === 0) {
+            console.log(`[VTID-01270A] search_community: 0 hits for "${query}", ${Date.now() - startTime}ms`);
+            return { success: true, result: 'No community groups found matching your query.' };
+          }
+
+          const MAX_TOOL_RESPONSE_CHARS = 2000;
+          let formatted = groups
+            .map(g => `${g.name} — ${(g.description || '').substring(0, 120)} | Topic: ${g.topic_key}`)
+            .join('\n');
+          if (formatted.length > MAX_TOOL_RESPONSE_CHARS) {
+            formatted = formatted.substring(0, MAX_TOOL_RESPONSE_CHARS) + '\n... (truncated)';
+          }
+
+          console.log(`[VTID-01270A] search_community: ${groups.length} hits for "${query}", ${formatted.length} chars, ${Date.now() - startTime}ms`);
+          return { success: true, result: `Found ${groups.length} community groups:\n${formatted}` };
+        } catch (e: any) {
+          console.warn(`[VTID-01270A] search_community error: ${e.message}`);
+          return { success: true, result: 'Community search encountered an error. Please try again.' };
+        }
+      }
+
+      case 'get_recommendations': {
+        const recType = (args.type as string) || 'all';
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE;
+
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+          return { success: true, result: 'Recommendations are temporarily unavailable.' };
+        }
+
+        const headers = {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        };
+
+        const tenantId = lens.tenant_id;
+        const userId = lens.user_id;
+        const today = new Date().toISOString().split('T')[0];
+        const results: string[] = [];
+
+        // Fetch community recommendations (groups + meetups)
+        if (recType === 'community' || recType === 'all') {
+          const recsUrl = `${SUPABASE_URL}/rest/v1/community_recommendations?select=id,rec_type,target_id,score,reasons&tenant_id=eq.${tenantId}&user_id=eq.${userId}&rec_date=eq.${today}&order=score.desc&limit=5`;
+          try {
+            const resp = await fetch(recsUrl, { method: 'GET', headers });
+            if (resp.ok) {
+              const recs = await resp.json() as Array<{
+                id: string; rec_type: string; target_id: string;
+                score: number; reasons: Record<string, unknown>;
+              }>;
+              for (const r of recs) {
+                const reasonText = r.reasons && typeof r.reasons === 'object'
+                  ? Object.values(r.reasons).filter(v => typeof v === 'string').join(', ')
+                  : '';
+                results.push(`[${r.rec_type}] Score: ${r.score}/100${reasonText ? ` — ${reasonText}` : ''}`);
+              }
+            }
+          } catch (e: any) {
+            console.warn(`[VTID-01270A] community_recommendations query failed: ${e.message}`);
+          }
+        }
+
+        // Fetch daily matches
+        if (recType === 'match' || recType === 'all') {
+          const matchesUrl = `${SUPABASE_URL}/rest/v1/matches_daily?select=id,score,state,reasons&tenant_id=eq.${tenantId}&user_id=eq.${userId}&match_date=eq.${today}&state=eq.suggested&order=score.desc&limit=3`;
+          try {
+            const resp = await fetch(matchesUrl, { method: 'GET', headers });
+            if (resp.ok) {
+              const matches = await resp.json() as Array<{
+                id: string; score: number; state: string;
+                reasons: Record<string, unknown>;
+              }>;
+              for (const m of matches) {
+                const reasonText = m.reasons && typeof m.reasons === 'object'
+                  ? Object.values(m.reasons).filter(v => typeof v === 'string').join(', ')
+                  : '';
+                results.push(`[Daily Match] Score: ${m.score}/100${reasonText ? ` — ${reasonText}` : ''}`);
+              }
+            }
+          } catch (e: any) {
+            console.warn(`[VTID-01270A] matches_daily query failed: ${e.message}`);
+          }
+        }
+
+        if (results.length === 0) {
+          console.log(`[VTID-01270A] get_recommendations: 0 results (type=${recType}), ${Date.now() - startTime}ms`);
+          return { success: true, result: 'No personalized recommendations available right now. Try checking back later, or ask me about events or community groups directly.' };
+        }
+
+        const MAX_TOOL_RESPONSE_CHARS = 3000;
+        let formatted = results.join('\n');
+        if (formatted.length > MAX_TOOL_RESPONSE_CHARS) {
+          formatted = formatted.substring(0, MAX_TOOL_RESPONSE_CHARS) + '\n... (truncated)';
+        }
+
+        console.log(`[VTID-01270A] get_recommendations: ${results.length} results (type=${recType}), ${formatted.length} chars, ${Date.now() - startTime}ms`);
+        return { success: true, result: `Here are your personalized recommendations:\n${formatted}` };
       }
 
       default:
@@ -3383,6 +3652,11 @@ router.post('/chat', optionalAuth, async (req: AuthenticatedRequest, res: Respon
   try {
     // Build thread ID for Gemini processing
     const threadId = `orb-${orbSessionId}`;
+
+    // VTID-01270A: Set thread identity for community/events tools in text chat path
+    if (identity.tenant_id && identity.user_id) {
+      setThreadIdentity(threadId, { tenant_id: identity.tenant_id, user_id: identity.user_id });
+    }
 
     // VTID-01118: Get state engine and increment turn count
     conversation.turn_count = (conversation.turn_count || 0) + 1;
