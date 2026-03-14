@@ -2025,6 +2025,7 @@ async function connectToLiveAPI(
             // to prevent speaker echo from being picked up and triggering phantom responses.
             session.turnCompleteAt = Date.now();
             console.log(`[VTID-VOICE-INIT] Model stopped speaking for session ${session.sessionId} — mic audio ungated (cooldown ${POST_TURN_COOLDOWN_MS}ms)`);
+            emitDiag(session, 'turn_complete');
 
             session.turn_count++;
             // VTID-LOOPGUARD: Track consecutive model turns without user speech
@@ -2233,6 +2234,7 @@ async function connectToLiveAPI(
                 if (!session.isModelSpeaking) {
                   session.isModelSpeaking = true;
                   console.log(`[VTID-VOICE-INIT] Model started speaking for session ${session.sessionId} — mic audio gated`);
+                  emitDiag(session, 'model_start_speaking');
                 }
                 // VTID-WATCHDOG: Model is sending audio — restart watchdog.
                 // If audio stops mid-stream (no turn_complete), watchdog fires.
@@ -2281,6 +2283,7 @@ async function connectToLiveAPI(
               console.log(`[VTID-VOICE-INIT] Filtering greeting prompt from input transcription: "${inputTranscription.substring(0, 60)}..."`);
             } else {
               console.log(`[VTID-01219] Input transcription: ${inputTranscription}`);
+              emitDiag(session, 'input_transcription', { text_preview: inputTranscription.substring(0, 80) });
               if (session.sseResponse) {
                 session.sseResponse.write(`data: ${JSON.stringify({ type: 'input_transcript', text: inputTranscription })}\n\n`);
               }
@@ -2326,6 +2329,7 @@ async function connectToLiveAPI(
         const toolCall = message.tool_call || message.toolCall;
         if (toolCall) {
           console.log(`[VTID-01224] Tool call received for session ${session.sessionId}:`, JSON.stringify(toolCall).substring(0, 500));
+          emitDiag(session, 'tool_call', { tools: (toolCall.function_calls || toolCall.functionCalls || []).map((fc: any) => fc.name) });
 
           // Extract function calls (handle both formats)
           const functionCalls = toolCall.function_calls || toolCall.functionCalls || [];
@@ -2389,6 +2393,7 @@ async function connectToLiveAPI(
     // Handle WebSocket errors
     ws.on('error', (error) => {
       console.error(`[VTID-01219] Live API WebSocket error for session ${session.sessionId}:`, error);
+      emitDiag(session, 'upstream_ws_error', { error: (error as any)?.message || String(error) });
       clearTimeout(connectionTimeout);
       // VTID-STREAM-KEEPALIVE: Clear ping interval on error too
       if (session.upstreamPingInterval) {
@@ -2427,6 +2432,7 @@ async function connectToLiveAPI(
     // Handle WebSocket close
     ws.on('close', (code, reason) => {
       console.log(`[VTID-01219] Live API WebSocket closed for session ${session.sessionId}: code=${code}, reason=${reason}`);
+      emitDiag(session, 'upstream_ws_close', { code, reason: reason?.toString() || '' });
       clearTimeout(connectionTimeout);
 
       // VTID-STREAM-KEEPALIVE: Clear upstream ping interval
@@ -2677,6 +2683,7 @@ function startResponseWatchdog(
     const message = connectionIssueMessages[lang] || connectionIssueMessages['en'];
 
     console.warn(`[VTID-WATCHDOG] Response watchdog fired for session ${session.sessionId}: ${reason} (${timeoutMs}ms)`);
+    emitDiag(session, 'watchdog_fired', { reason, timeout_ms: timeoutMs });
 
     const issueEvent = {
       type: 'connection_issue',
@@ -2805,6 +2812,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   session.greetingSent = true;
   session.greetingTurnIndex = session.turn_count;
   console.log(`[VTID-VOICE-INIT] Greeting prompt sent for lang=${lang}, turnIndex=${session.turn_count}`);
+  emitDiag(session, 'greeting_sent', { lang, prompt_len: message.client_content?.turns?.[0]?.parts?.[0]?.text?.length || 0 });
 
   // VTID-WATCHDOG: Start watchdog — if greeting response doesn't arrive, notify user
   startResponseWatchdog(session, GREETING_RESPONSE_TIMEOUT_MS, 'greeting_timeout');
@@ -5559,7 +5567,7 @@ async function fetchLastSessionInfo(userId: string): Promise<{ time: string; was
  * VTID-01155: Helper to emit Live session events to OASIS
  */
 async function emitLiveSessionEvent(
-  eventType: 'vtid.live.session.start' | 'vtid.live.session.stop' | 'vtid.live.audio.in.chunk' | 'vtid.live.video.in.frame' | 'vtid.live.audio.out.chunk' | 'orb.live.config_missing' | 'orb.live.connection_failed' | 'orb.live.stall_detected',
+  eventType: 'vtid.live.session.start' | 'vtid.live.session.stop' | 'vtid.live.audio.in.chunk' | 'vtid.live.video.in.frame' | 'vtid.live.audio.out.chunk' | 'orb.live.config_missing' | 'orb.live.connection_failed' | 'orb.live.stall_detected' | 'orb.live.diag',
   payload: Record<string, unknown>,
   status: 'info' | 'error' = 'info'
 ): Promise<void> {
@@ -5580,6 +5588,31 @@ async function emitLiveSessionEvent(
   } catch (err: any) {
     console.warn(`[VTID-01155] Failed to emit ${eventType}:`, err.message);
   }
+}
+
+/**
+ * VTID-DIAG: Lightweight pipeline diagnostic — fire-and-forget to OASIS.
+ * Captures session state snapshot at critical pipeline points so we can
+ * trace exactly where/why sessions stall without Cloud Run log access.
+ */
+function emitDiag(session: GeminiLiveSession, stage: string, extra?: Record<string, unknown>): void {
+  emitLiveSessionEvent('orb.live.diag', {
+    session_id: session.sessionId,
+    stage,
+    ts: Date.now(),
+    active: session.active,
+    turn_count: session.turn_count,
+    audio_in: session.audioInChunks,
+    audio_out: session.audioOutChunks,
+    is_model_speaking: session.isModelSpeaking,
+    greeting_sent: session.greetingSent || false,
+    consecutive_model_turns: session.consecutiveModelTurns,
+    has_upstream_ws: !!session.upstreamWs,
+    upstream_ws_state: session.upstreamWs?.readyState ?? -1,
+    has_sse: !!session.sseResponse,
+    has_watchdog: !!session.responseWatchdogTimer,
+    ...(extra || {}),
+  }).catch(() => { });
 }
 
 /**
@@ -6425,15 +6458,21 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
         const sent = sendAudioToLiveAPI(session.upstreamWs, body.data_b64, body.mime || 'audio/pcm;rate=16000');
         if (sent) {
           session.lastAudioForwardedTime = Date.now(); // VTID-STREAM-SILENCE: reset idle timer
-          console.log(`[VTID-01219] Audio chunk forwarded to Live API: session=${effectiveSessionId}, chunk=${session.audioInChunks}`);
+          // VTID-DIAG: Periodic audio forward diagnostic (every 100 chunks)
+          if (session.audioInChunks % 100 === 0) {
+            emitDiag(session, 'audio_forwarding', { chunk: session.audioInChunks });
+          }
         } else {
           console.warn(`[VTID-01219] Failed to forward audio chunk: session=${effectiveSessionId}`);
+          if (session.audioInChunks % 50 === 0) {
+            emitDiag(session, 'audio_forward_failed', { chunk: session.audioInChunks, ws_state: session.upstreamWs?.readyState ?? -1 });
+          }
         }
       } else {
         // Fallback: Log when Live API not connected
-        // Log every 50th chunk to avoid flooding, but include diagnostic info
         if (session.audioInChunks % 50 === 0) {
           console.log(`[VTID-ORBC] Audio NO-LIVE-API: session=${effectiveSessionId}, chunk=${session.audioInChunks}, wsState=${session.upstreamWs?.readyState ?? 'NULL'}, projectId=${VERTEX_PROJECT_ID || 'EMPTY'}, hasAuth=${!!googleAuth}`);
+          emitDiag(session, 'audio_no_ws', { chunk: session.audioInChunks });
         }
 
         // Send acknowledgment via SSE (fallback behavior)

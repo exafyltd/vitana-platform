@@ -485,6 +485,8 @@ export type CicdEventType =
   | 'orb.live.connection_failed'
   // VTID-WATCHDOG: ORB stall detection events
   | 'orb.live.stall_detected'
+  // VTID-DIAG: Pipeline diagnostics
+  | 'orb.live.diag'
   // VTID-01225: Cognee Entity Extraction Events
   | 'cognee.extraction.started'
   | 'cognee.extraction.completed'
