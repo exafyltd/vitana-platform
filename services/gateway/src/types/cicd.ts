@@ -483,6 +483,8 @@ export type CicdEventType =
   | 'orb.live.startup.config_missing'
   | 'orb.live.config_missing'
   | 'orb.live.connection_failed'
+  // VTID-WATCHDOG: ORB stall detection events
+  | 'orb.live.stall_detected'
   // VTID-01225: Cognee Entity Extraction Events
   | 'cognee.extraction.started'
   | 'cognee.extraction.completed'

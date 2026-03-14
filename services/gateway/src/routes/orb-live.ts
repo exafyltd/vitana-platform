@@ -647,8 +647,10 @@ interface GeminiLiveSession {
   // VTID-AUDIO-READY: Whether greeting is deferred until client sends audio_ready.
   // Used by WebSocket (mobile) path to avoid greeting truncation from race condition.
   greetingDeferred: boolean;
-  // VTID-01224-FIX: Last session timestamp for context-aware greeting
-  lastSessionTime?: string | null;
+  // VTID-01224-FIX: Last session info for context-aware greeting
+  lastSessionInfo?: { time: string; wasFailure: boolean } | null;
+  // VTID-WATCHDOG: Response watchdog timer — fires when model doesn't respond in time
+  responseWatchdogTimer?: ReturnType<typeof setTimeout>;
 }
 
 /**
@@ -850,6 +852,27 @@ const SILENCE_KEEPALIVE_INTERVAL_MS = 3_000; // Check every 3 seconds
 const SILENCE_IDLE_THRESHOLD_MS = 3_000; // Send silence after 3s of no audio
 const SILENCE_PCM_BYTES = 8000; // 250ms at 16kHz, 16-bit mono
 const SILENCE_AUDIO_B64 = Buffer.alloc(SILENCE_PCM_BYTES, 0).toString('base64');
+
+// =============================================================================
+// VTID-WATCHDOG: Response watchdog — detects stalls across all failure modes
+// =============================================================================
+// Monitors whether Gemini produces ANY output (audio/text) within N seconds
+// after the user finishes speaking or after the greeting is sent.
+// Catches: Vertex API stalls, tool call cascading failures, internet drops,
+// Gemini hanging after receiving function_response errors, etc.
+const GREETING_RESPONSE_TIMEOUT_MS = 8_000; // 8s for greeting to arrive
+const TURN_RESPONSE_TIMEOUT_MS = 10_000;    // 10s for response after user speech
+
+const connectionIssueMessages: Record<string, string> = {
+  'en': "I'm sorry, I seem to be having connection issues right now. Please try starting a new conversation.",
+  'de': 'Es tut mir leid, ich habe gerade Verbindungsprobleme. Bitte versuchen Sie, ein neues Gespräch zu starten.',
+  'fr': "Je suis désolé, j'ai des problèmes de connexion. Veuillez réessayer une nouvelle conversation.",
+  'es': 'Lo siento, parece que tengo problemas de conexión. Por favor, intenta iniciar una nueva conversación.',
+  'ar': 'عذراً، يبدو أنني أواجه مشاكل في الاتصال. يرجى محاولة بدء محادثة جديدة.',
+  'zh': '抱歉，我目前似乎遇到了连接问题。请尝试重新开始对话。',
+  'ru': 'Извините, у меня проблемы с подключением. Пожалуйста, попробуйте начать новый разговор.',
+  'sr': 'Извините, изгледа да имам проблеме са везом. Молимо покушајте поново.',
+};
 
 // =============================================================================
 // VTID-01224: Live API Context Bootstrap Configuration
@@ -2003,6 +2026,8 @@ async function connectToLiveAPI(
                 // This gates inbound mic audio to prevent echo-triggered interruptions
                 if (!session.isModelSpeaking) {
                   session.isModelSpeaking = true;
+                  // VTID-WATCHDOG: Model is responding — clear the stall watchdog
+                  clearResponseWatchdog(session);
                   console.log(`[VTID-VOICE-INIT] Model started speaking for session ${session.sessionId} — mic audio gated`);
                 }
                 session.audioOutChunks++;
@@ -2021,6 +2046,8 @@ async function connectToLiveAPI(
 
               // Handle text response
               if (part.text) {
+                // VTID-WATCHDOG: Model is responding with text — clear the stall watchdog
+                clearResponseWatchdog(session);
                 console.log(`[VTID-01219] Received text: ${part.text.substring(0, 100)}`);
                 onTextResponse(part.text);
               }
@@ -2054,6 +2081,11 @@ async function connectToLiveAPI(
               // Writing per-fragment caused N parallel Supabase requests per sentence. Now we
               // accumulate in inputTranscriptBuffer and write once at turn_complete.
               session.inputTranscriptBuffer += (session.inputTranscriptBuffer ? ' ' : '') + inputTranscription;
+
+              // VTID-WATCHDOG: User spoke — start watchdog waiting for model response.
+              // Restart on each transcript fragment to give the model time from the
+              // LAST user speech, not the first (user may still be speaking).
+              startResponseWatchdog(session, TURN_RESPONSE_TIMEOUT_MS, 'response_timeout');
             }
           }
           if (outputTranscription) {
@@ -2143,6 +2175,24 @@ async function connectToLiveAPI(
         clearInterval(session.silenceKeepaliveInterval);
         session.silenceKeepaliveInterval = undefined;
       }
+      // VTID-WATCHDOG: Clear watchdog and send connection_issue to client
+      clearResponseWatchdog(session);
+      if (session.active) {
+        const lang = session.lang || 'en';
+        const issueEvent = {
+          type: 'connection_issue',
+          reason: 'upstream_error',
+          message: connectionIssueMessages[lang] || connectionIssueMessages['en'],
+          should_close: true,
+        };
+        if (session.sseResponse) {
+          try { session.sseResponse.write(`data: ${JSON.stringify(issueEvent)}\n\n`); } catch (_e) { /* ignore */ }
+        }
+        if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+          try { session.clientWs.send(JSON.stringify(issueEvent)); } catch (_e) { /* ignore */ }
+        }
+      }
+
       if (!setupComplete) {
         reject(error);
       }
@@ -2202,10 +2252,20 @@ async function connectToLiveAPI(
             // Reconnection failed — notify client as final disconnect (SSE or WS)
             console.warn(`[VTID-STREAM-RECONNECT] Reconnection failed for ${session.sessionId} — notifying client`);
             const failMsg = { type: 'live_api_disconnected', code, reason: 'session_expired_reconnect_failed' };
+            // VTID-WATCHDOG: Also send connection_issue with user-facing message
+            const lang = session.lang || 'en';
+            const issueEvent = {
+              type: 'connection_issue',
+              reason: 'upstream_disconnected',
+              message: connectionIssueMessages[lang] || connectionIssueMessages['en'],
+              should_close: true,
+            };
             if (session.sseResponse) {
               try { session.sseResponse.write(`data: ${JSON.stringify(failMsg)}\n\n`); } catch (e) { /* ignore */ }
+              try { session.sseResponse.write(`data: ${JSON.stringify(issueEvent)}\n\n`); } catch (e) { /* ignore */ }
             } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
               try { sendWsMessage(session.clientWs, failMsg); } catch (e) { /* ignore */ }
+              try { session.clientWs.send(JSON.stringify(issueEvent)); } catch (e) { /* ignore */ }
             }
           }
         }).catch(err => {
@@ -2214,12 +2274,23 @@ async function connectToLiveAPI(
       } else {
         // Non-1000 close or session already inactive — genuine disconnect
         console.log(`[VTID-STREAM-KEEPALIVE] Genuine disconnect for ${session.sessionId}: code=${code}, active=${session.active}`);
+        clearResponseWatchdog(session);
 
         const disconnectMsg = { type: 'live_api_disconnected', code, reason: reason?.toString() || 'upstream closed' };
+        // VTID-WATCHDOG: Send connection_issue with user-facing message on genuine disconnect
+        const lang = session.lang || 'en';
+        const issueEvent = {
+          type: 'connection_issue',
+          reason: 'upstream_disconnected',
+          message: connectionIssueMessages[lang] || connectionIssueMessages['en'],
+          should_close: true,
+        };
         if (session.sseResponse) {
           try { session.sseResponse.write(`data: ${JSON.stringify(disconnectMsg)}\n\n`); } catch (e) { /* SSE may be closed */ }
+          try { session.sseResponse.write(`data: ${JSON.stringify(issueEvent)}\n\n`); } catch (e) { /* SSE may be closed */ }
         } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
           try { sendWsMessage(session.clientWs, disconnectMsg); } catch (e) { /* WS may be closed */ }
+          try { session.clientWs.send(JSON.stringify(issueEvent)); } catch (e) { /* WS may be closed */ }
         }
 
         // Fire final extraction on genuine disconnect
@@ -2355,6 +2426,78 @@ function sendEndOfTurn(ws: WebSocket): boolean {
   return true;
 }
 
+// =============================================================================
+// VTID-WATCHDOG: Response watchdog helpers
+// =============================================================================
+
+/**
+ * Start the response watchdog timer. If the model doesn't produce any output
+ * (audio/text) within timeoutMs, fire a `connection_issue` event to the client
+ * and auto-close the session.
+ */
+function startResponseWatchdog(
+  session: GeminiLiveSession,
+  timeoutMs: number,
+  reason: string,
+): void {
+  // Clear any existing watchdog first
+  clearResponseWatchdog(session);
+
+  session.responseWatchdogTimer = setTimeout(() => {
+    if (!session.active) return;
+
+    const lang = session.lang || 'en';
+    const message = connectionIssueMessages[lang] || connectionIssueMessages['en'];
+
+    console.warn(`[VTID-WATCHDOG] Response watchdog fired for session ${session.sessionId}: ${reason} (${timeoutMs}ms)`);
+
+    const issueEvent = {
+      type: 'connection_issue',
+      reason,
+      message,
+      should_close: true,
+    };
+
+    // Send to client via whichever transport is active
+    if (session.sseResponse) {
+      try {
+        session.sseResponse.write(`data: ${JSON.stringify(issueEvent)}\n\n`);
+      } catch (_e) { /* SSE already closed */ }
+    }
+    if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+      try {
+        session.clientWs.send(JSON.stringify(issueEvent));
+      } catch (_e) { /* WS already closed */ }
+    }
+
+    // Emit OASIS telemetry
+    emitLiveSessionEvent('orb.live.stall_detected', {
+      session_id: session.sessionId,
+      reason,
+      timeout_ms: timeoutMs,
+      turn_count: session.turn_count,
+      audio_out_chunks: session.audioOutChunks,
+      greeting_sent: session.greetingSent || false,
+    }, 'error').catch(() => { });
+
+    // Close upstream WebSocket to stop the stalled Gemini session
+    if (session.upstreamWs) {
+      try { session.upstreamWs.close(); } catch (_e) { /* ignore */ }
+    }
+  }, timeoutMs);
+}
+
+/**
+ * Clear the response watchdog timer. Called when model output arrives
+ * (audio chunk, text, or turn_complete).
+ */
+function clearResponseWatchdog(session: GeminiLiveSession): void {
+  if (session.responseWatchdogTimer) {
+    clearTimeout(session.responseWatchdogTimer);
+    session.responseWatchdogTimer = undefined;
+  }
+}
+
 /**
  * Send a text prompt to the Live API to trigger the model to speak first.
  * Used for greeting on session start. Tracks greeting state on session to
@@ -2387,8 +2530,8 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   let prompt = greetingPrompts[lang] || greetingPrompts['en'];
 
   // VTID-01224-FIX: Add temporal awareness to greeting
-  if (session.lastSessionTime) {
-    const lastTime = new Date(session.lastSessionTime);
+  if (session.lastSessionInfo) {
+    const lastTime = new Date(session.lastSessionInfo.time);
     const now = new Date();
     const diffMs = now.getTime() - lastTime.getTime();
     const diffMins = Math.floor(diffMs / 60000);
@@ -2406,7 +2549,10 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       timeAgo = diffDays === 1 ? 'yesterday' : `${diffDays} days ago`;
     }
 
-    if (diffMins < 5) {
+    // VTID-WATCHDOG: If last session was a failure, acknowledge it
+    if (session.lastSessionInfo.wasFailure && diffMins < 10) {
+      prompt = `The user tried to talk to you ${timeAgo} but the conversation had technical issues and didn't work properly. Briefly acknowledge this — something like "Sorry about the trouble earlier, I'm here now!" or "It seems we had some connection issues before." Then ask what you can help with. Keep it to 1-2 short sentences. Be warm and reassuring.`;
+    } else if (diffMins < 5) {
       prompt = `The user was here ${timeAgo}. Give a very brief, casual welcome back — something like "Hey, welcome back!" or "Back so soon!" Keep it to one short sentence. Do NOT greet them as if you haven't spoken in a long time.`;
     } else if (diffMins < 60) {
       prompt = `The user was last here ${timeAgo}. Greet them warmly as a returning user. Keep it to 1 short sentence. Acknowledge that you spoke recently.`;
@@ -2436,6 +2582,10 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   session.greetingSent = true;
   session.greetingTurnIndex = session.turn_count;
   console.log(`[VTID-VOICE-INIT] Greeting prompt sent for lang=${lang}, turnIndex=${session.turn_count}`);
+
+  // VTID-WATCHDOG: Start watchdog — if greeting response doesn't arrive, notify user
+  startResponseWatchdog(session, GREETING_RESPONSE_TIMEOUT_MS, 'greeting_timeout');
+
   return true;
 }
 
@@ -5138,10 +5288,12 @@ router.get('/debug/context-bootstrap', async (req: Request, res: Response) => {
 // =============================================================================
 
 /**
- * VTID-01224-FIX: Fetch the user's last session timestamp from oasis_events.
- * Used to make the greeting context-aware (e.g., "Welcome back! We talked just a few minutes ago").
+ * VTID-01224-FIX: Fetch the user's last session info from oasis_events.
+ * Queries the last session.stop event to get both timestamp and outcome
+ * (turn_count, audio_out_chunks). If the last session had 0 turns or 0 audio
+ * out, it was likely a failed/stuck session and the greeting should acknowledge it.
  */
-async function fetchLastSessionTime(userId: string): Promise<string | null> {
+async function fetchLastSessionInfo(userId: string): Promise<{ time: string; wasFailure: boolean } | null> {
   try {
     const SUPABASE_URL = process.env.SUPABASE_URL;
     const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
@@ -5150,7 +5302,8 @@ async function fetchLastSessionTime(userId: string): Promise<string | null> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 1500);
     try {
-      const url = `${SUPABASE_URL}/rest/v1/oasis_events?select=created_at&topic=eq.vtid.live.session.start&metadata->>user_id=eq.${userId}&order=created_at.desc&limit=1`;
+      // Query the last session stop event to get outcome metrics
+      const url = `${SUPABASE_URL}/rest/v1/oasis_events?select=created_at,metadata&topic=eq.vtid.live.session.stop&metadata->>user_id=eq.${userId}&order=created_at.desc&limit=1`;
       const resp = await fetch(url, {
         method: 'GET',
         headers: {
@@ -5161,14 +5314,39 @@ async function fetchLastSessionTime(userId: string): Promise<string | null> {
         signal: controller.signal,
       });
       if (resp.ok) {
-        const data = await resp.json() as Array<{ created_at: string }>;
-        if (data.length > 0) return data[0].created_at;
+        const data = await resp.json() as Array<{ created_at: string; metadata: Record<string, unknown> }>;
+        if (data.length > 0) {
+          const meta = data[0].metadata || {};
+          const turnCount = Number(meta.turn_count) || 0;
+          const audioOut = Number(meta.audio_out_chunks) || 0;
+          // A session with 0 completed turns or 0 audio output was likely stuck/failed
+          const wasFailure = turnCount === 0 || audioOut === 0;
+          return { time: data[0].created_at, wasFailure };
+        }
+      }
+      // Fallback: try session.start if no stop event exists yet
+      const startUrl = `${SUPABASE_URL}/rest/v1/oasis_events?select=created_at&topic=eq.vtid.live.session.start&metadata->>user_id=eq.${userId}&order=created_at.desc&limit=1`;
+      const startResp = await fetch(startUrl, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+        },
+        signal: controller.signal,
+      });
+      if (startResp.ok) {
+        const startData = await startResp.json() as Array<{ created_at: string }>;
+        if (startData.length > 0) {
+          // No stop event = session may still be running or crashed without cleanup
+          return { time: startData[0].created_at, wasFailure: false };
+        }
       }
     } finally {
       clearTimeout(timeoutId);
     }
   } catch (e: any) {
-    console.warn(`[VTID-01224-FIX] fetchLastSessionTime failed (non-fatal): ${e.message}`);
+    console.warn(`[VTID-01224-FIX] fetchLastSessionInfo failed (non-fatal): ${e.message}`);
   }
   return null;
 }
@@ -5177,7 +5355,7 @@ async function fetchLastSessionTime(userId: string): Promise<string | null> {
  * VTID-01155: Helper to emit Live session events to OASIS
  */
 async function emitLiveSessionEvent(
-  eventType: 'vtid.live.session.start' | 'vtid.live.session.stop' | 'vtid.live.audio.in.chunk' | 'vtid.live.video.in.frame' | 'vtid.live.audio.out.chunk' | 'orb.live.config_missing' | 'orb.live.connection_failed',
+  eventType: 'vtid.live.session.start' | 'vtid.live.session.stop' | 'vtid.live.audio.in.chunk' | 'vtid.live.video.in.frame' | 'vtid.live.audio.out.chunk' | 'orb.live.config_missing' | 'orb.live.connection_failed' | 'orb.live.stall_detected',
   payload: Record<string, unknown>,
   status: 'info' | 'error' = 'info'
 ): Promise<void> {
@@ -5390,23 +5568,23 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
 
   // VTID-01225-ROLE: Fetch real application role alongside context bootstrap
   let sseActiveRole: string | null = null;
-  // VTID-01224-FIX: Last session time for context-aware greeting
-  let lastSessionTime: string | null = null;
+  // VTID-01224-FIX: Last session info for context-aware greeting
+  let lastSessionInfo: { time: string; wasFailure: boolean } | null = null;
 
   if (bootstrapIdentity) {
     const usingDevFallback = bootstrapIdentity.user_id === DEV_IDENTITY.USER_ID;
     console.log(`[VTID-01224] Building bootstrap context for SSE session ${sessionId} user=${bootstrapIdentity.user_id.substring(0, 8)}...${usingDevFallback ? ' (DEV_IDENTITY fallback)' : ''}`);
 
-    // Fetch role, context, and last session time in parallel for minimal latency
-    const [bootstrapResult, fetchedSseRole, lastSessionTs] = await Promise.all([
+    // Fetch role, context, and last session info in parallel for minimal latency
+    const [bootstrapResult, fetchedSseRole, fetchedSessionInfo] = await Promise.all([
       buildBootstrapContextPack(bootstrapIdentity, sessionId),
       usingDevFallback
         ? Promise.resolve(DEV_IDENTITY.ACTIVE_ROLE)
         : fetchUserActiveRole(bootstrapIdentity.user_id, bootstrapIdentity.tenant_id || ''),
-      fetchLastSessionTime(bootstrapIdentity.user_id),
+      fetchLastSessionInfo(bootstrapIdentity.user_id),
     ]);
     sseActiveRole = fetchedSseRole;
-    lastSessionTime = lastSessionTs;
+    lastSessionInfo = fetchedSessionInfo;
 
     contextInstruction = bootstrapResult.contextInstruction;
     contextPack = bootstrapResult.contextPack;
@@ -5467,8 +5645,8 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
       ? (body as any).vad_silence_ms : VAD_SILENCE_DURATION_MS_DEFAULT,
     // VTID-AUDIO-READY: SSE path sends greeting immediately (no handshake)
     greetingDeferred: false,
-    // VTID-01224-FIX: Last session time for context-aware greeting
-    lastSessionTime,
+    // VTID-01224-FIX: Last session info for context-aware greeting
+    lastSessionInfo,
   };
 
   // Store session
@@ -5575,6 +5753,8 @@ router.post('/live/session/stop', optionalAuth, async (req: AuthenticatedRequest
     clearInterval(session.silenceKeepaliveInterval);
     session.silenceKeepaliveInterval = undefined;
   }
+  // VTID-WATCHDOG: Clear response watchdog on session stop
+  clearResponseWatchdog(session);
 
   // Emit OASIS event
   await emitLiveSessionEvent('vtid.live.session.stop', {
@@ -6797,23 +6977,23 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
 
   // VTID-01225-ROLE: Fetch real application role in parallel with context bootstrap
   let activeRole: string | null = null;
-  // VTID-01224-FIX: Last session time for context-aware greeting
-  let wsLastSessionTime: string | null = null;
+  // VTID-01224-FIX: Last session info for context-aware greeting
+  let wsLastSessionInfo: { time: string; wasFailure: boolean } | null = null;
 
   if (effectiveBootstrapIdentity) {
     const usingDevFallbackWs = effectiveBootstrapIdentity.user_id === DEV_IDENTITY.USER_ID;
     console.log(`[VTID-01224] Building bootstrap context for session ${sessionId} user=${effectiveBootstrapIdentity.user_id.substring(0, 8)}...${usingDevFallbackWs ? ' (DEV_IDENTITY fallback)' : ''}`);
 
-    // Fetch role, context, and last session time in parallel for minimal latency
-    const [bootstrapResult, fetchedRole, wsLastSessionTs] = await Promise.all([
+    // Fetch role, context, and last session info in parallel for minimal latency
+    const [bootstrapResult, fetchedRole, fetchedWsSessionInfo] = await Promise.all([
       buildBootstrapContextPack(effectiveBootstrapIdentity, sessionId),
       usingDevFallbackWs
         ? Promise.resolve(DEV_IDENTITY.ACTIVE_ROLE)
         : fetchUserActiveRole(effectiveBootstrapIdentity.user_id, effectiveBootstrapIdentity.tenant_id || ''),
-      fetchLastSessionTime(effectiveBootstrapIdentity.user_id),
+      fetchLastSessionInfo(effectiveBootstrapIdentity.user_id),
     ]);
     activeRole = fetchedRole;
-    wsLastSessionTime = wsLastSessionTs;
+    wsLastSessionInfo = fetchedWsSessionInfo;
 
     contextInstruction = bootstrapResult.contextInstruction;
     contextPack = bootstrapResult.contextPack;
@@ -6921,8 +7101,8 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     greetingDeferred: true,
     // VTID-STREAM-RECONNECT: Store client WS reference for transparent reconnection notifications
     clientWs,
-    // VTID-01224-FIX: Last session time for context-aware greeting
-    lastSessionTime: wsLastSessionTime,
+    // VTID-01224-FIX: Last session info for context-aware greeting
+    lastSessionInfo: wsLastSessionInfo,
   };
 
   clientSession.liveSession = liveSession;
@@ -7391,6 +7571,8 @@ function cleanupWsSession(sessionId: string): void {
       clearInterval(clientSession.liveSession.silenceKeepaliveInterval);
       clientSession.liveSession.silenceKeepaliveInterval = undefined;
     }
+    // VTID-WATCHDOG: Clear response watchdog on cleanup
+    clearResponseWatchdog(clientSession.liveSession);
 
     if (clientSession.liveSession.upstreamWs) {
       try {
