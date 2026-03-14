@@ -97,6 +97,8 @@ import {
 } from '../middleware/auth-supabase-jwt';
 // VTID-MEMORY-BRIDGE: Service-role Supabase client for tenant_id fallback lookups
 import { getSupabase } from '../lib/supabase';
+// VTID-CHAT-BRIDGE: Vitana bot user ID for writing voice transcripts to chat_messages
+import { VITANA_BOT_USER_ID } from '../lib/vitana-bot';
 // VTID-01224: Context Pack Builder for Live API intelligence
 import {
   buildContextPack,
@@ -2004,10 +2006,15 @@ async function connectToLiveAPI(
               }
             }
 
+            // VTID-CHAT-BRIDGE: Capture transcript text at turn scope for chat_messages bridge (below)
+            let chatBridgeUserText = '';
+            let chatBridgeAssistantText = '';
+
             // VTID-01225-THROTTLE: Flush buffered user input transcription to transcriptTurns + memory_items.
             // Writes once per turn instead of per-fragment, reducing Supabase write amplification.
             if (session.inputTranscriptBuffer.length > 0 && !isGreetingTurn) {
               const userText = session.inputTranscriptBuffer.trim();
+              chatBridgeUserText = userText;
               session.transcriptTurns.push({
                 role: 'user',
                 text: userText,
@@ -2046,6 +2053,7 @@ async function connectToLiveAPI(
             // Skip memory write for the greeting turn (server-injected prompt, not real user interaction)
             if (session.outputTranscriptBuffer.length > 0) {
               const fullTranscript = session.outputTranscriptBuffer.trim();
+              chatBridgeAssistantText = fullTranscript;
 
               if (isGreetingTurn) {
                 console.log(`[VTID-VOICE-INIT] Skipping memory write for greeting turn: "${fullTranscript.substring(0, 80)}..."`);
@@ -2088,6 +2096,51 @@ async function connectToLiveAPI(
 
               // Clear buffer for next turn
               session.outputTranscriptBuffer = '';
+            }
+
+            // VTID-CHAT-BRIDGE: Write voice transcripts to chat_messages so they appear
+            // as a Vitana DM conversation. Fire-and-forget to avoid blocking the voice pipeline.
+            if (session.identity?.user_id && session.identity?.tenant_id) {
+              const bridgeSupabase = getSupabase();
+              if (bridgeSupabase) {
+                const bridgeUserId = session.identity.user_id;
+                const bridgeTenantId = session.identity.tenant_id;
+                const bridgeMeta = {
+                  orb_session_id: session.sessionId,
+                  turn_index: session.turn_count,
+                  voice_language: session.lang,
+                };
+
+                // User speech → chat_messages (sender=user, receiver=Vitana)
+                if (chatBridgeUserText.length > 0) {
+                  bridgeSupabase.from('chat_messages').insert({
+                    tenant_id: bridgeTenantId,
+                    sender_id: bridgeUserId,
+                    receiver_id: VITANA_BOT_USER_ID,
+                    content: chatBridgeUserText,
+                    message_type: 'voice_transcript',
+                    metadata: { ...bridgeMeta, direction: 'user_to_vitana' },
+                  }).then(({ error }) => {
+                    if (error) console.warn(`[VTID-CHAT-BRIDGE] User transcript write failed: ${error.message}`);
+                  });
+                }
+
+                // Vitana speech → chat_messages (sender=Vitana, receiver=user)
+                // Pre-set read_at since user already heard this during the voice session
+                if (chatBridgeAssistantText.length > 0) {
+                  bridgeSupabase.from('chat_messages').insert({
+                    tenant_id: bridgeTenantId,
+                    sender_id: VITANA_BOT_USER_ID,
+                    receiver_id: bridgeUserId,
+                    content: chatBridgeAssistantText,
+                    message_type: 'voice_transcript',
+                    metadata: { ...bridgeMeta, direction: 'vitana_to_user', is_greeting: isGreetingTurn },
+                    read_at: new Date().toISOString(),
+                  }).then(({ error }) => {
+                    if (error) console.warn(`[VTID-CHAT-BRIDGE] Vitana transcript write failed: ${error.message}`);
+                  });
+                }
+              }
             }
 
             // VTID-01225-THROTTLE: Incremental fact extraction — throttled to max once per 60s.

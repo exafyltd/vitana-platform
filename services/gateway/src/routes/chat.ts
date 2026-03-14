@@ -17,6 +17,8 @@ import {
 } from '../middleware/auth-supabase-jwt';
 import { createClient } from '@supabase/supabase-js';
 import { notifyUserAsync } from '../services/notification-service';
+import { VITANA_BOT_USER_ID, isVitanaBot } from '../lib/vitana-bot';
+import { processConversationTurn } from '../services/conversation-client';
 
 const router = Router();
 
@@ -62,23 +64,34 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
     return res.status(500).json({ ok: false, error: error.message });
   }
 
-  // Fire-and-forget push notification to the receiver
-  notifyUserAsync(
-    receiver_id,
-    identity.tenant_id!,
-    'new_chat_message',
-    {
-      title: 'New message',
-      body: content.trim().length > 100 ? content.trim().slice(0, 97) + '...' : content.trim(),
-      data: {
-        type: 'new_chat_message',
-        sender_id: identity.user_id,
-        message_id: data.id,
-        url: `/messages/${identity.user_id}`,
+  // VTID-CHAT-BRIDGE: If receiver is Vitana, generate a reply via the unified
+  // conversation intelligence layer and write it back to chat_messages.
+  if (isVitanaBot(receiver_id)) {
+    handleVitanaTextReply(
+      identity.user_id,
+      identity.tenant_id!,
+      content.trim(),
+      supabase,
+    ).catch(err => console.warn('[Chat] Vitana text reply failed:', err.message));
+  } else {
+    // Fire-and-forget push notification to the receiver (not for Vitana bot)
+    notifyUserAsync(
+      receiver_id,
+      identity.tenant_id!,
+      'new_chat_message',
+      {
+        title: 'New message',
+        body: content.trim().length > 100 ? content.trim().slice(0, 97) + '...' : content.trim(),
+        data: {
+          type: 'new_chat_message',
+          sender_id: identity.user_id,
+          message_id: data.id,
+          url: `/messages/${identity.user_id}`,
+        },
       },
-    },
-    supabase,
-  );
+      supabase,
+    );
+  }
 
   return res.status(201).json({ ok: true, data });
 });
@@ -178,6 +191,8 @@ router.get('/conversations', requireAuth, requireTenant, async (req: Request, re
       content: row.content,
       read_at: row.read_at,
       created_at: row.created_at,
+      message_type: row.message_type || 'text',
+      metadata: row.metadata || {},
     },
   }));
 
@@ -233,5 +248,62 @@ router.get('/unread-count', requireAuth, requireTenant, async (req: Request, res
 
   return res.json({ ok: true, count: count || 0 });
 });
+
+// ── Vitana text reply handler ─────────────────────────────────
+// When a user sends a text message to Vitana through the DM interface,
+// route it through the unified conversation intelligence layer and
+// write Vitana's reply back to chat_messages.
+
+async function handleVitanaTextReply(
+  userId: string,
+  tenantId: string,
+  userContent: string,
+  supabase: ReturnType<typeof getSupabase>,
+): Promise<void> {
+  const startTime = Date.now();
+
+  try {
+    const result = await processConversationTurn({
+      channel: 'orb',
+      tenant_id: tenantId,
+      user_id: userId,
+      role: 'user',
+      message: userContent,
+      message_type: 'text',
+      vtid: 'VTID-CHAT-BRIDGE',
+    });
+
+    if (!result.ok || !result.reply) {
+      console.warn(`[Chat] Vitana reply failed: ${result.error || 'empty reply'}`);
+      return;
+    }
+
+    // Write Vitana's reply to chat_messages
+    const { error } = await supabase
+      .from('chat_messages')
+      .insert({
+        tenant_id: tenantId,
+        sender_id: VITANA_BOT_USER_ID,
+        receiver_id: userId,
+        content: result.reply,
+        message_type: 'text',
+        metadata: {
+          source: 'text_dm',
+          model_used: result.meta.model_used,
+          latency_ms: result.meta.latency_ms,
+          thread_id: result.thread_id,
+          turn_number: result.turn_number,
+        },
+      });
+
+    if (error) {
+      console.warn(`[Chat] Vitana reply write failed: ${error.message}`);
+    } else {
+      console.log(`[Chat] Vitana text reply written (${Date.now() - startTime}ms)`);
+    }
+  } catch (err: any) {
+    console.error(`[Chat] Vitana text reply error: ${err.message}`);
+  }
+}
 
 export default router;
