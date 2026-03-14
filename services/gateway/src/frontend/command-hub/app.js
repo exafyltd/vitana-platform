@@ -24906,7 +24906,7 @@ function playConnectionErrorTone() {
  * Detects when NO data arrives from the server (SSE broken, backend crash, network loss).
  * Checks every 5s — if last activity was >15s ago, show error and stop session.
  */
-var CLIENT_WATCHDOG_TIMEOUT_MS = 15000; // 15s with no data = stuck
+var CLIENT_WATCHDOG_TIMEOUT_MS = 12000; // 12s with no data = stuck
 
 function startClientWatchdog() {
     stopClientWatchdog();

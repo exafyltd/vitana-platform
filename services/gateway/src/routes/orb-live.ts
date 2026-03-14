@@ -2399,8 +2399,9 @@ async function connectToLiveAPI(
         clearInterval(session.silenceKeepaliveInterval);
         session.silenceKeepaliveInterval = undefined;
       }
-      // VTID-WATCHDOG: Clear watchdog and send connection_issue to client
-      clearResponseWatchdog(session);
+      // VTID-WATCHDOG: Send connection_issue immediately (best-effort).
+      // Do NOT clear the watchdog — if this SSE/WS send fails (pipe broken),
+      // the watchdog will fire later as a backup.
       if (session.active) {
         const lang = session.lang || 'en';
         const issueEvent = {
@@ -2498,7 +2499,8 @@ async function connectToLiveAPI(
       } else {
         // Non-1000 close or session already inactive — genuine disconnect
         console.log(`[VTID-STREAM-KEEPALIVE] Genuine disconnect for ${session.sessionId}: code=${code}, active=${session.active}`);
-        clearResponseWatchdog(session);
+        // VTID-WATCHDOG: Do NOT clear watchdog here — if SSE/WS send below fails,
+        // the watchdog serves as backup to notify the client.
 
         const disconnectMsg = { type: 'live_api_disconnected', code, reason: reason?.toString() || 'upstream closed' };
         // VTID-WATCHDOG: Send connection_issue with user-facing message on genuine disconnect
