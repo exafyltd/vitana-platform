@@ -67,8 +67,9 @@ BEGIN
   --    can't handle both constraints. UPDATE is safe regardless.
   UPDATE profiles SET full_name = 'Vitana', avatar_url = '/vitana-avatar.png'
   WHERE user_id = v_id;
-  -- If trigger didn't fire (e.g. fresh DB), insert with both unique columns
+  -- If trigger didn't fire (e.g. fresh DB), insert as fallback.
+  -- Use ON CONFLICT (user_id) since trigger-created rows have a different PK.
   INSERT INTO profiles (id, user_id, full_name, avatar_url)
   VALUES (v_id, v_id, 'Vitana', '/vitana-avatar.png')
-  ON CONFLICT (id) DO NOTHING;
+  ON CONFLICT (user_id) DO NOTHING;
 END $$;

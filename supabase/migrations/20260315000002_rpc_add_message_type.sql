@@ -7,7 +7,10 @@
 -- frontend for proper voice_transcript rendering.
 -- =============================================================================
 
-CREATE OR REPLACE FUNCTION get_recent_conversations(
+-- Must DROP first: CREATE OR REPLACE cannot change RETURNS TABLE signature
+DROP FUNCTION IF EXISTS get_recent_conversations(UUID, UUID, INT);
+
+CREATE FUNCTION get_recent_conversations(
   p_user_id UUID,
   p_tenant_id UUID,
   p_limit INT DEFAULT 50

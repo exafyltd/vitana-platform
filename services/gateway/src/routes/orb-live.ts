@@ -2156,7 +2156,7 @@ async function connectToLiveAPI(
                     metadata: { ...bridgeMeta, direction: 'user_to_vitana' },
                   }).then(({ error }) => {
                     if (error) console.warn(`[VTID-CHAT-BRIDGE] User transcript write failed: ${error.message}`);
-                  });
+                  }).catch(err => console.error(`[VTID-CHAT-BRIDGE] User transcript promise rejected: ${err.message}`));
                 }
 
                 // Vitana speech → chat_messages (sender=Vitana, receiver=user)
@@ -2172,7 +2172,7 @@ async function connectToLiveAPI(
                     read_at: new Date().toISOString(),
                   }).then(({ error }) => {
                     if (error) console.warn(`[VTID-CHAT-BRIDGE] Vitana transcript write failed: ${error.message}`);
-                  });
+                  }).catch(err => console.error(`[VTID-CHAT-BRIDGE] Vitana transcript promise rejected: ${err.message}`));
                 }
               }
             }
