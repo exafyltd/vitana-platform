@@ -1352,6 +1352,23 @@ async function executeLiveApiToolInner(
         const now = new Date().toISOString();
         const results: string[] = [];
 
+        // Country/region → city/keyword mapping for geo-aware location search.
+        // The location column stores venue + city names, NOT countries.
+        // When user searches by country, we expand to known cities in that country.
+        const COUNTRY_CITY_MAP: Record<string, string[]> = {
+          'france': ['paris', 'lyon', 'nice', 'marseille', 'montmartre', 'bordeaux', 'toulouse', 'strasbourg', 'rivoli'],
+          'germany': ['berlin', 'munich', 'münchen', 'hamburg', 'frankfurt', 'cologne', 'köln', 'bremen', 'düsseldorf', 'garmisch', 'neukölln', 'prenzlauer'],
+          'spain': ['mallorca', 'palma', 'barcelona', 'madrid', 'portixol', 'cala major', 'santa catalina', 'puerto portals'],
+          'usa': ['new york', 'los angeles', 'chicago', 'san francisco', 'miami', 'brooklyn', 'manhattan'],
+          'united states': ['new york', 'los angeles', 'chicago', 'san francisco', 'miami', 'brooklyn', 'manhattan'],
+          'uae': ['dubai', 'abu dhabi'],
+          'united arab emirates': ['dubai', 'abu dhabi'],
+          'austria': ['vienna', 'wien', 'salzburg', 'graz', 'innsbruck'],
+          'serbia': ['belgrade', 'beograd', 'novi sad', 'petrovaradin'],
+          'luxembourg': ['luxembourg'],
+          'mallorca': ['palma', 'portixol', 'cala major', 'santa catalina', 'puerto portals', 'mallorca', 'box palma'],
+        };
+
         // Primary: Fetch events from Lovable Supabase (global_community_events)
         if (LOVABLE_SUPABASE_KEY && (typeFilter === 'meetup' || typeFilter === 'all')) {
           const lovableHeaders = {
@@ -1360,19 +1377,18 @@ async function executeLiveApiToolInner(
             Authorization: `Bearer ${LOVABLE_SUPABASE_KEY}`,
           };
 
-          // Build URL with PostgREST filters — fetch 20 to allow post-fetch filtering
+          // Build URL with PostgREST filters — fetch more to allow post-fetch filtering
           const startTimeGte = dateFrom ? `${dateFrom}T00:00:00Z` : now;
-          let eventsUrl = `${LOVABLE_SUPABASE_URL}/rest/v1/global_community_events?select=id,title,description,start_time,end_time,location,virtual_link,metadata&start_time=gte.${startTimeGte}&order=start_time.asc&limit=20`;
+          let eventsUrl = `${LOVABLE_SUPABASE_URL}/rest/v1/global_community_events?select=id,title,description,start_time,end_time,location,virtual_link,metadata&start_time=gte.${startTimeGte}&order=start_time.asc&limit=50`;
 
           // Date range upper bound
           if (dateTo) {
             eventsUrl += `&start_time=lte.${dateTo}T23:59:59Z`;
           }
 
-          // Location filter (PostgREST column filter)
-          if (locationFilter) {
-            eventsUrl += `&location=ilike.*${encodeURIComponent(locationFilter)}*`;
-          }
+          // NOTE: location filter is done post-fetch (not via PostgREST)
+          // because the location column stores venue/city names, NOT countries.
+          // A search for "France" needs to match "Lyon", "Paris", "Nice", etc.
 
           try {
             const filterSummary = [query && `query="${query}"`, locationFilter && `loc="${locationFilter}"`, organizerFilter && `org="${organizerFilter}"`, dateFrom && `from=${dateFrom}`, dateTo && `to=${dateTo}`, maxPrice !== undefined && `maxPrice=${maxPrice}`].filter(Boolean).join(', ') || 'no filters';
@@ -1388,6 +1404,24 @@ async function executeLiveApiToolInner(
               console.log(`[VTID-01270A] search_events: ${events.length} raw results from Lovable Supabase`);
 
               // Post-fetch filters
+
+              // Location: check direct match on location column first,
+              // then expand via country→city mapping if the input is a country/region name
+              if (locationFilter) {
+                const locLower = locationFilter.toLowerCase();
+                const expandedTerms = COUNTRY_CITY_MAP[locLower] || [];
+                events = events.filter(e => {
+                  const loc = (e.location || '').toLowerCase();
+                  const title = (e.title || '').toLowerCase();
+                  // Direct match on location or title
+                  if (loc.includes(locLower) || title.includes(locLower)) return true;
+                  // Expanded country→city match
+                  if (expandedTerms.length > 0) {
+                    return expandedTerms.some(city => loc.includes(city) || title.includes(city));
+                  }
+                  return false;
+                });
+              }
 
               // Activity/keyword: match title, description, OR metadata.category
               if (query) {

@@ -1920,6 +1920,22 @@ async function executeCommunitySearchEvents(
   const now = new Date().toISOString();
   const results: string[] = [];
 
+  // Country/region → city/keyword mapping for geo-aware location search.
+  // The location column stores venue/city names, NOT countries.
+  const COUNTRY_CITY_MAP: Record<string, string[]> = {
+    'france': ['paris', 'lyon', 'nice', 'marseille', 'montmartre', 'bordeaux', 'toulouse', 'strasbourg', 'rivoli'],
+    'germany': ['berlin', 'munich', 'münchen', 'hamburg', 'frankfurt', 'cologne', 'köln', 'bremen', 'düsseldorf', 'garmisch', 'neukölln', 'prenzlauer'],
+    'spain': ['mallorca', 'palma', 'barcelona', 'madrid', 'portixol', 'cala major', 'santa catalina', 'puerto portals'],
+    'usa': ['new york', 'los angeles', 'chicago', 'san francisco', 'miami', 'brooklyn', 'manhattan'],
+    'united states': ['new york', 'los angeles', 'chicago', 'san francisco', 'miami', 'brooklyn', 'manhattan'],
+    'uae': ['dubai', 'abu dhabi'],
+    'united arab emirates': ['dubai', 'abu dhabi'],
+    'austria': ['vienna', 'wien', 'salzburg', 'graz', 'innsbruck'],
+    'serbia': ['belgrade', 'beograd', 'novi sad', 'petrovaradin'],
+    'luxembourg': ['luxembourg'],
+    'mallorca': ['palma', 'portixol', 'cala major', 'santa catalina', 'puerto portals', 'mallorca', 'box palma'],
+  };
+
   // Primary: Fetch events from Lovable Supabase (global_community_events)
   if (LOVABLE_SUPABASE_KEY && (typeFilter === 'meetup' || typeFilter === 'all')) {
     const lovableHeaders = {
@@ -1928,16 +1944,16 @@ async function executeCommunitySearchEvents(
       Authorization: `Bearer ${LOVABLE_SUPABASE_KEY}`,
     };
 
-    // Build URL with PostgREST filters — fetch 20 to allow post-fetch filtering
+    // Build URL — fetch more to allow post-fetch filtering (location is post-fetch)
     const startTimeGte = dateFrom ? `${dateFrom}T00:00:00Z` : now;
-    let eventsUrl = `${LOVABLE_SUPABASE_URL}/rest/v1/global_community_events?select=id,title,description,start_time,end_time,location,virtual_link,metadata&start_time=gte.${startTimeGte}&order=start_time.asc&limit=20`;
+    let eventsUrl = `${LOVABLE_SUPABASE_URL}/rest/v1/global_community_events?select=id,title,description,start_time,end_time,location,virtual_link,metadata&start_time=gte.${startTimeGte}&order=start_time.asc&limit=50`;
 
     if (dateTo) {
       eventsUrl += `&start_time=lte.${dateTo}T23:59:59Z`;
     }
-    if (locationFilter) {
-      eventsUrl += `&location=ilike.*${encodeURIComponent(locationFilter)}*`;
-    }
+
+    // NOTE: location filter is done post-fetch (not via PostgREST)
+    // because the location column stores venue/city names, NOT countries.
 
     try {
       const filterSummary = [query && `query="${query}"`, locationFilter && `loc="${locationFilter}"`, organizerFilter && `org="${organizerFilter}"`, dateFrom && `from=${dateFrom}`, dateTo && `to=${dateTo}`, maxPrice !== undefined && `maxPrice=${maxPrice}`].filter(Boolean).join(', ') || 'no filters';
@@ -1953,6 +1969,21 @@ async function executeCommunitySearchEvents(
         console.log(`[VTID-01270A] search_events (text): ${events.length} raw results`);
 
         // Post-fetch filters
+
+        // Location: direct match + country→city expansion
+        if (locationFilter) {
+          const locLower = locationFilter.toLowerCase();
+          const expandedTerms = COUNTRY_CITY_MAP[locLower] || [];
+          events = events.filter(e => {
+            const loc = (e.location || '').toLowerCase();
+            const title = (e.title || '').toLowerCase();
+            if (loc.includes(locLower) || title.includes(locLower)) return true;
+            if (expandedTerms.length > 0) {
+              return expandedTerms.some(city => loc.includes(city) || title.includes(city));
+            }
+            return false;
+          });
+        }
 
         // Activity/keyword: match title, description, OR metadata.category
         if (query) {
