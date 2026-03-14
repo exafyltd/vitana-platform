@@ -71,8 +71,8 @@ BEGIN
   -- 3. Profiles table (fallback enrichment path)
   --    Table is Lovable-managed; PK is "id" not "user_id"
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'profiles' AND table_schema = 'public') THEN
-    INSERT INTO profiles (id, full_name, avatar_url)
-    VALUES (v_vitana_id, 'Vitana', '/vitana-avatar.png')
+    INSERT INTO profiles (id, user_id, full_name, avatar_url)
+    VALUES (v_vitana_id, v_vitana_id, 'Vitana', '/vitana-avatar.png')
     ON CONFLICT (id) DO UPDATE SET
       full_name = EXCLUDED.full_name,
       avatar_url = EXCLUDED.avatar_url;
