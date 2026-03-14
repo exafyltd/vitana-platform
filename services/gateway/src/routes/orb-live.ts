@@ -1036,7 +1036,7 @@ function buildLiveApiTools(): object[] {
         // VTID-01270A: Community & Events voice tools
         {
           name: 'search_events',
-          description: 'Search upcoming community events, meetups, and live rooms. Use when the user asks about events, gatherings, what\'s happening, or things to attend. Call with NO query to list all upcoming events.',
+          description: 'Search upcoming community events, meetups, and live rooms. Use when the user asks about events, gatherings, what\'s happening, or things to attend. Call with NO query to list all upcoming events. IMPORTANT: Results include full details (location, organizer, description, price). For follow-up questions about events you already listed, answer from your conversation context — do NOT call this tool again.',
           parameters: {
             type: 'object',
             properties: {
@@ -1334,7 +1334,7 @@ async function executeLiveApiToolInner(
             Authorization: `Bearer ${LOVABLE_SUPABASE_KEY}`,
           };
 
-          let eventsUrl = `${LOVABLE_SUPABASE_URL}/rest/v1/global_community_events?select=id,title,description,start_time,end_time,location,metadata&start_time=gte.${now}&order=start_time.asc&limit=8`;
+          let eventsUrl = `${LOVABLE_SUPABASE_URL}/rest/v1/global_community_events?select=id,title,description,start_time,end_time,location,virtual_link,metadata&start_time=gte.${now}&order=start_time.asc&limit=6`;
           if (query) {
             eventsUrl += `&or=(title.ilike.*${encodeURIComponent(query)}*,description.ilike.*${encodeURIComponent(query)}*)`;
           }
@@ -1346,15 +1346,20 @@ async function executeLiveApiToolInner(
               const events = await resp.json() as Array<{
                 id: string; title: string; description: string;
                 start_time: string; end_time: string; location: string;
-                metadata: { category?: string; host?: string; price?: number; is_paid?: boolean } | null;
+                virtual_link: string | null;
+                metadata: { category?: string; host?: string; guest?: string; price?: number; is_paid?: boolean; venue_type?: string } | null;
               }>;
               console.log(`[VTID-01270A] search_events: got ${events.length} events from Lovable Supabase`);
               for (const e of events) {
                 const date = new Date(e.start_time).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-                const category = e.metadata?.category ? ` | ${e.metadata.category}` : '';
-                const host = e.metadata?.host ? ` | Host: ${e.metadata.host}` : '';
+                const category = e.metadata?.category ? ` | Category: ${e.metadata.category}` : '';
+                const host = e.metadata?.host ? ` | Organizer: ${e.metadata.host}` : '';
+                const guest = e.metadata?.guest ? ` | Guest: ${e.metadata.guest}` : '';
                 const price = e.metadata?.is_paid ? ` | €${e.metadata.price || '?'}` : ' | Free';
-                results.push(`${e.title} | ${date} | ${e.location || 'TBD'}${category}${host}${price}`);
+                const venue = e.metadata?.venue_type ? ` | ${e.metadata.venue_type}` : '';
+                const link = e.virtual_link ? ` | Link: ${e.virtual_link}` : '';
+                const desc = e.description ? ` | About: ${e.description.substring(0, 120)}` : '';
+                results.push(`${e.title} | ${date} | ${e.location || 'TBD'}${category}${host}${guest}${price}${venue}${link}${desc}`);
               }
             } else {
               const body = await resp.text();

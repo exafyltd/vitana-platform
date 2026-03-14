@@ -389,7 +389,7 @@ Returns checklist items with pass/fail status based on OASIS evidence.`,
     // VTID-01270A: Community & Events tools for ORB text chat
     {
       name: 'search_events',
-      description: 'Search upcoming community events, meetups, and live rooms. Use when the user asks about events, gatherings, what\'s happening, or things to attend. Call with NO query to list all upcoming events.',
+      description: 'Search upcoming community events, meetups, and live rooms. Use when the user asks about events, gatherings, what\'s happening, or things to attend. Call with NO query to list all upcoming events. IMPORTANT: Results include full details (location, organizer, description, price). For follow-up questions about events you already listed, answer from your conversation context — do NOT call this tool again.',
       parameters: {
         type: 'object',
         properties: {
