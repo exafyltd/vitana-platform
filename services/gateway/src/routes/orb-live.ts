@@ -874,7 +874,7 @@ const TURN_RESPONSE_TIMEOUT_MS = 10_000;    // 10s for response after user speec
 // may be interpreted as "user is still listening, keep talking."
 // After MAX_CONSECUTIVE_MODEL_TURNS without user speech, we pause the silence
 // keepalive to let Vertex's idle timeout naturally stop the model.
-const MAX_CONSECUTIVE_MODEL_TURNS = 2;
+const MAX_CONSECUTIVE_MODEL_TURNS = 3;
 
 const connectionIssueMessages: Record<string, string> = {
   'en': "I'm sorry, I seem to be having connection issues right now. Please try starting a new conversation.",
@@ -2489,8 +2489,9 @@ function sendEndOfTurn(ws: WebSocket): boolean {
 
 /**
  * Start the response watchdog timer. If the model doesn't produce any output
- * (audio/text) within timeoutMs, fire a `connection_issue` event to the client
- * and auto-close the session.
+ * (audio/text) within timeoutMs, fire a `connection_issue` event to the client.
+ * Does NOT close the upstream WS — the session stays alive so the user can
+ * still speak or retry. The notification is informational only.
  */
 function startResponseWatchdog(
   session: GeminiLiveSession,
@@ -2512,7 +2513,7 @@ function startResponseWatchdog(
       type: 'connection_issue',
       reason,
       message,
-      should_close: true,
+      should_close: false, // Informational — don't kill the session
     };
 
     // Send to client via whichever transport is active
@@ -2527,7 +2528,7 @@ function startResponseWatchdog(
       } catch (_e) { /* WS already closed */ }
     }
 
-    // Emit OASIS telemetry
+    // Emit OASIS telemetry (fire-and-forget)
     emitLiveSessionEvent('orb.live.stall_detected', {
       session_id: session.sessionId,
       reason,
@@ -2537,10 +2538,8 @@ function startResponseWatchdog(
       greeting_sent: session.greetingSent || false,
     }, 'error').catch(() => { });
 
-    // Close upstream WebSocket to stop the stalled Gemini session
-    if (session.upstreamWs) {
-      try { session.upstreamWs.close(); } catch (_e) { /* ignore */ }
-    }
+    // Do NOT close upstream WS — session stays alive for user to retry.
+    // The upstream connection/error/close handlers will clean up if needed.
   }, timeoutMs);
 }
 
@@ -2608,19 +2607,15 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
 
     // VTID-WATCHDOG: If last session was a failure, acknowledge it
     if (session.lastSessionInfo.wasFailure && diffMins < 10) {
-      prompt = `The user tried to talk to you ${timeAgo} but the conversation had technical issues and didn't work properly. Briefly acknowledge this — something like "Sorry about the trouble earlier, I'm here now!" or "It seems we had some connection issues before." Then ask what you can help with. Keep it to 1-2 short sentences. Be warm and reassuring.`;
+      prompt = `Say: "Sorry about earlier, I'm here now! What can I help with?" Keep it to exactly ONE short sentence.`;
     } else if (diffMins < 5) {
-      prompt = `The user was here ${timeAgo}. Give a very brief, casual welcome back — something like "Hey, welcome back!" or "Back so soon!" Keep it to one short sentence. Do NOT greet them as if you haven't spoken in a long time.`;
+      prompt = `Say something like "Hey, welcome back!" — ONE short sentence only.`;
     } else if (diffMins < 60) {
-      prompt = `The user was last here ${timeAgo}. Greet them warmly as a returning user. Keep it to 1 short sentence. Acknowledge that you spoke recently.`;
+      prompt = `The user was here ${timeAgo}. Greet briefly — ONE short sentence only.`;
     } else if (diffHours < 24) {
-      prompt = `The user was last here ${timeAgo}. Greet them warmly. Keep it to 1-2 short sentences.`;
+      prompt = `Greet warmly. ONE sentence only.`;
     }
     // For 24h+, use the default generic greeting
-  }
-
-  if (session.conversationSummary) {
-    prompt += ` You may briefly mention you're glad to continue the conversation, but do NOT recite the summary.`;
   }
 
   const message = {
@@ -5357,9 +5352,9 @@ async function fetchLastSessionInfo(userId: string): Promise<{ time: string; was
     if (!SUPABASE_URL || !SUPABASE_KEY) return null;
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 1500);
+    const timeoutId = setTimeout(() => controller.abort(), 1200);
     try {
-      // Query the last session stop event to get outcome metrics
+      // Single query: last session stop event with outcome metrics
       const url = `${SUPABASE_URL}/rest/v1/oasis_events?select=created_at,metadata&topic=eq.vtid.live.session.stop&metadata->>user_id=eq.${userId}&order=created_at.desc&limit=1`;
       const resp = await fetch(url, {
         method: 'GET',
@@ -5376,27 +5371,8 @@ async function fetchLastSessionInfo(userId: string): Promise<{ time: string; was
           const meta = data[0].metadata || {};
           const turnCount = Number(meta.turn_count) || 0;
           const audioOut = Number(meta.audio_out_chunks) || 0;
-          // A session with 0 completed turns or 0 audio output was likely stuck/failed
           const wasFailure = turnCount === 0 || audioOut === 0;
           return { time: data[0].created_at, wasFailure };
-        }
-      }
-      // Fallback: try session.start if no stop event exists yet
-      const startUrl = `${SUPABASE_URL}/rest/v1/oasis_events?select=created_at&topic=eq.vtid.live.session.start&metadata->>user_id=eq.${userId}&order=created_at.desc&limit=1`;
-      const startResp = await fetch(startUrl, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: SUPABASE_KEY,
-          Authorization: `Bearer ${SUPABASE_KEY}`,
-        },
-        signal: controller.signal,
-      });
-      if (startResp.ok) {
-        const startData = await startResp.json() as Array<{ created_at: string }>;
-        if (startData.length > 0) {
-          // No stop event = session may still be running or crashed without cleanup
-          return { time: startData[0].created_at, wasFailure: false };
         }
       }
     } finally {
