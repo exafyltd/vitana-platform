@@ -651,6 +651,9 @@ interface GeminiLiveSession {
   lastSessionInfo?: { time: string; wasFailure: boolean } | null;
   // VTID-WATCHDOG: Response watchdog timer — fires when model doesn't respond in time
   responseWatchdogTimer?: ReturnType<typeof setTimeout>;
+  // VTID-LOOPGUARD: Consecutive model turns without user speech.
+  // Detects response loops where model keeps elaborating without being asked.
+  consecutiveModelTurns: number;
 }
 
 /**
@@ -862,6 +865,16 @@ const SILENCE_AUDIO_B64 = Buffer.alloc(SILENCE_PCM_BYTES, 0).toString('base64');
 // Gemini hanging after receiving function_response errors, etc.
 const GREETING_RESPONSE_TIMEOUT_MS = 8_000; // 8s for greeting to arrive
 const TURN_RESPONSE_TIMEOUT_MS = 10_000;    // 10s for response after user speech
+
+// =============================================================================
+// VTID-LOOPGUARD: Response loop prevention
+// =============================================================================
+// Gemini Live API can enter a generative loop where the model keeps responding
+// to its own turn_complete without user input. The silence keepalive audio
+// may be interpreted as "user is still listening, keep talking."
+// After MAX_CONSECUTIVE_MODEL_TURNS without user speech, we pause the silence
+// keepalive to let Vertex's idle timeout naturally stop the model.
+const MAX_CONSECUTIVE_MODEL_TURNS = 2;
 
 const connectionIssueMessages: Record<string, string> = {
   'en': "I'm sorry, I seem to be having connection issues right now. Please try starting a new conversation.",
@@ -1895,8 +1908,20 @@ async function connectToLiveAPI(
             console.log(`[VTID-VOICE-INIT] Model stopped speaking for session ${session.sessionId} — mic audio ungated (cooldown ${POST_TURN_COOLDOWN_MS}ms)`);
 
             session.turn_count++;
+            // VTID-LOOPGUARD: Track consecutive model turns without user speech
+            session.consecutiveModelTurns++;
             const isGreetingTurn = session.greetingSent && session.turn_count === (session.greetingTurnIndex ?? 0) + 1;
-            console.log(`[VTID-01219] Turn complete for session ${session.sessionId} (turn ${session.turn_count}, isGreeting=${isGreetingTurn})`);
+            console.log(`[VTID-01219] Turn complete for session ${session.sessionId} (turn ${session.turn_count}, isGreeting=${isGreetingTurn}, consecutiveModelTurns=${session.consecutiveModelTurns})`);
+
+            // VTID-LOOPGUARD: If the model has responded too many times without user input,
+            // pause the silence keepalive so Vertex's idle timeout stops the loop naturally.
+            if (session.consecutiveModelTurns > MAX_CONSECUTIVE_MODEL_TURNS && !isGreetingTurn) {
+              console.warn(`[VTID-LOOPGUARD] Response loop detected for session ${session.sessionId}: ${session.consecutiveModelTurns} consecutive model turns without user speech — pausing silence keepalive`);
+              if (session.silenceKeepaliveInterval) {
+                clearInterval(session.silenceKeepaliveInterval);
+                session.silenceKeepaliveInterval = undefined;
+              }
+            }
 
             // VTID-01225-THROTTLE: Flush buffered user input transcription to transcriptTurns + memory_items.
             // Writes once per turn instead of per-fragment, reducing Supabase write amplification.
@@ -2092,6 +2117,22 @@ async function connectToLiveAPI(
               // Writing per-fragment caused N parallel Supabase requests per sentence. Now we
               // accumulate in inputTranscriptBuffer and write once at turn_complete.
               session.inputTranscriptBuffer += (session.inputTranscriptBuffer ? ' ' : '') + inputTranscription;
+
+              // VTID-LOOPGUARD: User spoke — reset consecutive model turn counter
+              session.consecutiveModelTurns = 0;
+              // VTID-LOOPGUARD: Re-enable silence keepalive if it was paused
+              if (!session.silenceKeepaliveInterval && session.upstreamWs) {
+                session.silenceKeepaliveInterval = setInterval(() => {
+                  if (!session.upstreamWs || session.upstreamWs.readyState !== WebSocket.OPEN || !session.active) return;
+                  if (session.isModelSpeaking) return;
+                  const idleMs = Date.now() - session.lastAudioForwardedTime;
+                  if (idleMs >= SILENCE_IDLE_THRESHOLD_MS) {
+                    try {
+                      sendAudioToLiveAPI(session.upstreamWs, SILENCE_AUDIO_B64, 'audio/pcm;rate=16000');
+                    } catch (_e) { /* WS closing */ }
+                  }
+                }, SILENCE_KEEPALIVE_INTERVAL_MS);
+              }
 
               // VTID-WATCHDOG: User spoke — start watchdog waiting for model response.
               // Restart on each transcript fragment to give the model time from the
@@ -5658,6 +5699,8 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     greetingDeferred: false,
     // VTID-01224-FIX: Last session info for context-aware greeting
     lastSessionInfo,
+    // VTID-LOOPGUARD: Track consecutive model turns for loop prevention
+    consecutiveModelTurns: 0,
   };
 
   // Store session
@@ -7114,6 +7157,8 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     clientWs,
     // VTID-01224-FIX: Last session info for context-aware greeting
     lastSessionInfo: wsLastSessionInfo,
+    // VTID-LOOPGUARD: Track consecutive model turns for loop prevention
+    consecutiveModelTurns: 0,
   };
 
   clientSession.liveSession = liveSession;
