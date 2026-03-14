@@ -2016,6 +2016,8 @@ async function connectToLiveAPI(
           // Check if turn is complete (handle both formats)
           const turnComplete = content.turn_complete || content.turnComplete;
           if (turnComplete) {
+            // VTID-WATCHDOG: Model finished turn normally — clear watchdog (waiting for user now)
+            clearResponseWatchdog(session);
             // VTID-VOICE-INIT: Model finished speaking — ungate mic audio
             session.isModelSpeaking = false;
             // VTID-ECHO-COOLDOWN: Record turn completion time for post-turn mic cooldown.
@@ -2156,7 +2158,7 @@ async function connectToLiveAPI(
                     metadata: { ...bridgeMeta, direction: 'user_to_vitana' },
                   }).then(({ error }) => {
                     if (error) console.warn(`[VTID-CHAT-BRIDGE] User transcript write failed: ${error.message}`);
-                  }).catch(err => console.error(`[VTID-CHAT-BRIDGE] User transcript promise rejected: ${err.message}`));
+                  });
                 }
 
                 // Vitana speech → chat_messages (sender=Vitana, receiver=user)
@@ -2172,7 +2174,7 @@ async function connectToLiveAPI(
                     read_at: new Date().toISOString(),
                   }).then(({ error }) => {
                     if (error) console.warn(`[VTID-CHAT-BRIDGE] Vitana transcript write failed: ${error.message}`);
-                  }).catch(err => console.error(`[VTID-CHAT-BRIDGE] Vitana transcript promise rejected: ${err.message}`));
+                  });
                 }
               }
             }
@@ -2230,10 +2232,11 @@ async function connectToLiveAPI(
                 // This gates inbound mic audio to prevent echo-triggered interruptions
                 if (!session.isModelSpeaking) {
                   session.isModelSpeaking = true;
-                  // VTID-WATCHDOG: Model is responding — clear the stall watchdog
-                  clearResponseWatchdog(session);
                   console.log(`[VTID-VOICE-INIT] Model started speaking for session ${session.sessionId} — mic audio gated`);
                 }
+                // VTID-WATCHDOG: Model is sending audio — restart watchdog.
+                // If audio stops mid-stream (no turn_complete), watchdog fires.
+                startResponseWatchdog(session, TURN_RESPONSE_TIMEOUT_MS, 'audio_stall');
                 session.audioOutChunks++;
                 const audioB64 = inlineData.data;
                 // VTID-STREAM-KEEPALIVE: Only log every 50th audio chunk to reduce log volume
@@ -2250,8 +2253,9 @@ async function connectToLiveAPI(
 
               // Handle text response
               if (part.text) {
-                // VTID-WATCHDOG: Model is responding with text — clear the stall watchdog
-                clearResponseWatchdog(session);
+                // VTID-WATCHDOG: Model is responding with text — restart watchdog.
+                // If text stops mid-stream (no turn_complete), watchdog fires.
+                startResponseWatchdog(session, TURN_RESPONSE_TIMEOUT_MS, 'text_stall');
                 console.log(`[VTID-01219] Received text: ${part.text.substring(0, 100)}`);
                 onTextResponse(part.text);
               }
@@ -2707,8 +2711,10 @@ function startResponseWatchdog(
 }
 
 /**
- * Clear the response watchdog timer. Called when model output arrives
- * (audio chunk, text, or turn_complete).
+ * Clear the response watchdog timer. Called ONLY on turn_complete
+ * (model finished normally) or session cleanup. Audio/text chunks
+ * RESTART the watchdog instead of clearing it, so mid-stream stalls
+ * are detected.
  */
 function clearResponseWatchdog(session: GeminiLiveSession): void {
   if (session.responseWatchdogTimer) {
