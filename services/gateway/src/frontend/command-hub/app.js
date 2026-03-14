@@ -2943,7 +2943,10 @@ const state = {
         geminiLiveAudioProcessor: null, // ScriptProcessorNode for audio
         geminiTtsAudio: null,         // Current Gemini-TTS Audio element for barge-in
         geminiLiveTranscriber: null,  // VTID-01225: Parallel Web Speech for transcript display
-        useLiveApi: true              // VTID-01219: Use Gemini Live API for voice-to-voice
+        useLiveApi: true,             // VTID-01219: Use Gemini Live API for voice-to-voice
+        // VTID-WATCHDOG: Client-side activity watchdog
+        clientWatchdogInterval: null, // Interval for checking activity
+        clientLastActivityAt: 0       // Timestamp of last meaningful SSE event
     },
 
     // VTID-0600: Operational Visibility Foundation State
@@ -24311,11 +24314,15 @@ async function geminiLiveStart() {
 
         eventSource.onopen = function () {
             console.log('[VTID-01155] Live stream connected');
+            // VTID-WATCHDOG: Start client-side activity watchdog
+            startClientWatchdog();
         };
 
         eventSource.onmessage = function (event) {
             try {
                 var msg = JSON.parse(event.data);
+                // VTID-WATCHDOG: Any message from server = connection alive
+                resetClientWatchdog();
                 geminiLiveHandleMessage(msg);
             } catch (e) {
                 console.warn('[VTID-01155] Failed to parse SSE message:', e);
@@ -24325,7 +24332,20 @@ async function geminiLiveStart() {
         eventSource.onerror = function (err) {
             console.error('[VTID-01155] Live stream error:', err);
             if (eventSource.readyState === EventSource.CLOSED) {
-                geminiLiveStop();
+                // VTID-WATCHDOG: SSE closed — show error feedback instead of silent stop
+                stopClientWatchdog();
+                state.orb.liveError = 'Connection lost. Please try again.';
+                setOrbState('error');
+                state.orb.liveTranscript.push({
+                    id: Date.now(),
+                    role: 'system',
+                    text: 'Connection to server was lost. Please close and try again.',
+                    timestamp: new Date().toISOString(),
+                    isError: true
+                });
+                playConnectionErrorTone();
+                renderApp();
+                setTimeout(function() { geminiLiveStop(); }, 3000);
             }
         };
 
@@ -24361,6 +24381,9 @@ async function geminiLiveStart() {
  */
 async function geminiLiveStop() {
     console.log('[VTID-01155] Stopping Gemini Live session...');
+
+    // VTID-WATCHDOG: Stop client-side watchdog
+    stopClientWatchdog();
 
     // Stop frame capture
     if (state.orb.geminiLiveFrameInterval) {
@@ -24876,6 +24899,56 @@ function playConnectionErrorTone() {
     } catch (e) {
         console.warn('[VTID-WATCHDOG] Could not play error tone:', e);
     }
+}
+
+/**
+ * VTID-WATCHDOG: Client-side activity watchdog.
+ * Detects when NO data arrives from the server (SSE broken, backend crash, network loss).
+ * Checks every 5s — if last activity was >15s ago, show error and stop session.
+ */
+var CLIENT_WATCHDOG_TIMEOUT_MS = 15000; // 15s with no data = stuck
+
+function startClientWatchdog() {
+    stopClientWatchdog();
+    state.orb.clientLastActivityAt = Date.now();
+    state.orb.clientWatchdogInterval = setInterval(function() {
+        if (!state.orb.geminiLiveActive) {
+            stopClientWatchdog();
+            return;
+        }
+        var elapsed = Date.now() - state.orb.clientLastActivityAt;
+        if (elapsed > CLIENT_WATCHDOG_TIMEOUT_MS) {
+            console.error('[VTID-WATCHDOG] Client watchdog fired — no server activity for ' + elapsed + 'ms');
+            stopClientWatchdog();
+            // Show error to user
+            state.orb.liveError = 'Connection lost. Please try again.';
+            setOrbState('error');
+            state.orb.liveTranscript.push({
+                id: Date.now(),
+                role: 'system',
+                text: 'No response from server. Please close and try again.',
+                timestamp: new Date().toISOString(),
+                isError: true
+            });
+            playConnectionErrorTone();
+            scrollOrbLiveTranscript();
+            renderApp();
+            // Stop session after delay so user sees the message
+            setTimeout(function() { geminiLiveStop(); }, 3000);
+        }
+    }, 5000);
+    console.log('[VTID-WATCHDOG] Client watchdog started');
+}
+
+function stopClientWatchdog() {
+    if (state.orb.clientWatchdogInterval) {
+        clearInterval(state.orb.clientWatchdogInterval);
+        state.orb.clientWatchdogInterval = null;
+    }
+}
+
+function resetClientWatchdog() {
+    state.orb.clientLastActivityAt = Date.now();
 }
 
 /**
