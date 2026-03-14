@@ -46,35 +46,25 @@ ON CONFLICT (id) DO NOTHING;
 -- 1-3. App user + profile records
 DO $$
 DECLARE
-  v_vitana_id UUID := '00000000-0000-0000-0000-000000000001';
-  v_default_tenant UUID;
+  v_id UUID := '00000000-0000-0000-0000-000000000001';
+  v_tenant UUID;
 BEGIN
-  -- Get the default tenant (app_users.tenant_id is NOT NULL)
-  SELECT tenant_id INTO v_default_tenant
-  FROM tenants ORDER BY created_at ASC LIMIT 1;
+  SELECT tenant_id INTO v_tenant FROM tenants ORDER BY created_at ASC LIMIT 1;
 
-  -- 1. Core user record in app_users
+  -- 1. Core user record in app_users (tenant_id NOT NULL, user_id FK → auth.users)
   INSERT INTO app_users (user_id, email, display_name, tenant_id, created_at, updated_at)
-  VALUES (v_vitana_id, 'vitana@vitana.app', 'Vitana', v_default_tenant, NOW(), NOW())
+  VALUES (v_id, 'vitana@vitana.app', 'Vitana', v_tenant, NOW(), NOW())
   ON CONFLICT (user_id) DO NOTHING;
 
-  -- 2. Global community profile (for frontend enrichProfiles lookup)
-  --    Table is Lovable-managed; safe upsert by user_id
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'global_community_profiles' AND table_schema = 'public') THEN
-    INSERT INTO global_community_profiles (user_id, display_name, avatar_url)
-    VALUES (v_vitana_id, 'Vitana', '/vitana-avatar.png')
-    ON CONFLICT (user_id) DO UPDATE SET
-      display_name = EXCLUDED.display_name,
-      avatar_url = EXCLUDED.avatar_url;
-  END IF;
+  -- 2. Global community profile (frontend enrichProfiles lookup)
+  INSERT INTO global_community_profiles (user_id, display_name, avatar_url)
+  VALUES (v_id, 'Vitana', '/vitana-avatar.png')
+  ON CONFLICT (user_id) DO UPDATE SET
+    display_name = EXCLUDED.display_name, avatar_url = EXCLUDED.avatar_url;
 
-  -- 3. Profiles table (fallback enrichment path)
-  --    Table is Lovable-managed; PK is "id" not "user_id"
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'profiles' AND table_schema = 'public') THEN
-    INSERT INTO profiles (id, user_id, full_name, avatar_url)
-    VALUES (v_vitana_id, v_vitana_id, 'Vitana', '/vitana-avatar.png')
-    ON CONFLICT (id) DO UPDATE SET
-      full_name = EXCLUDED.full_name,
-      avatar_url = EXCLUDED.avatar_url;
-  END IF;
+  -- 3. Profiles (user_id NOT NULL + FK → auth.users, id is PK)
+  INSERT INTO profiles (id, user_id, full_name, avatar_url)
+  VALUES (v_id, v_id, 'Vitana', '/vitana-avatar.png')
+  ON CONFLICT (id) DO UPDATE SET
+    full_name = EXCLUDED.full_name, avatar_url = EXCLUDED.avatar_url;
 END $$;
