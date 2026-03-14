@@ -23382,6 +23382,18 @@ async function orbLiveStart() {
                     state.orb.liveError = msg.message;
                     state.orb.isThinking = false;
                     renderApp();
+                } else if (msg.type === 'connection_issue' || msg.type === 'live_api_disconnected') {
+                    console.warn('[ORB-LIVE] Connection issue:', msg.type, msg.reason || msg.code, msg.message);
+                    state.orb.liveError = msg.message || 'Connection issue';
+                    state.orb.isThinking = false;
+                    state.orb.liveTranscript.push({
+                        id: Date.now(),
+                        role: 'system',
+                        text: msg.message || 'Connection issue detected. Please try starting a new conversation.',
+                        timestamp: new Date().toISOString(),
+                        isError: true
+                    });
+                    renderApp();
                 } else if (msg.type === 'session_ended') {
                     console.log('[ORB-LIVE] Session ended by server');
                     orbLiveCleanup();
@@ -24554,6 +24566,43 @@ function geminiLiveHandleMessage(msg) {
             renderApp();
             break;
 
+        case 'connection_issue':
+            // VTID-WATCHDOG: Backend detected stall/disconnect — notify user and end session
+            console.warn('[VTID-WATCHDOG] Connection issue:', msg.reason, msg.message);
+            state.orb.liveError = msg.message || 'Connection issue';
+            setOrbState('error');
+            state.orb.liveTranscript.push({
+                id: Date.now(),
+                role: 'system',
+                text: msg.message || 'Connection issue detected. Please try starting a new conversation.',
+                timestamp: new Date().toISOString(),
+                isError: true
+            });
+            playConnectionErrorTone();
+            scrollOrbLiveTranscript();
+            // Stop session after short delay so user sees the message
+            setTimeout(function() { geminiLiveStop(); }, 3000);
+            renderApp();
+            break;
+
+        case 'live_api_disconnected':
+            // VTID-WATCHDOG: Upstream Vertex API WebSocket closed
+            console.warn('[VTID-01155] Live API disconnected:', msg.code, msg.reason);
+            state.orb.liveError = 'Connection lost. Please try again.';
+            setOrbState('error');
+            state.orb.liveTranscript.push({
+                id: Date.now(),
+                role: 'system',
+                text: 'Connection lost. Please try starting a new conversation.',
+                timestamp: new Date().toISOString(),
+                isError: true
+            });
+            playConnectionErrorTone();
+            scrollOrbLiveTranscript();
+            setTimeout(function() { geminiLiveStop(); }, 3000);
+            renderApp();
+            break;
+
         case 'session_ended':
             console.log('[VTID-01155] Session ended by server');
             geminiLiveStop();
@@ -24783,6 +24832,49 @@ function playListenReadyBeep() {
         console.log('[ORB-FIX] Ready beep played');
     } catch (e) {
         console.warn('[ORB-FIX] Could not play ready beep:', e);
+    }
+}
+
+/**
+ * VTID-WATCHDOG: Play two descending tones to signal connection error
+ * 500Hz → 350Hz, distinct from the 800Hz ready beep
+ */
+function playConnectionErrorTone() {
+    try {
+        var audioContext = state.orb.geminiLiveAudioContext;
+        if (!audioContext || audioContext.state === 'closed') return;
+
+        var now = audioContext.currentTime;
+
+        // First tone: 500Hz for 200ms
+        var gain1 = audioContext.createGain();
+        gain1.connect(audioContext.destination);
+        gain1.gain.setValueAtTime(0, now);
+        gain1.gain.linearRampToValueAtTime(0.12, now + 0.03);
+        gain1.gain.linearRampToValueAtTime(0, now + 0.2);
+
+        var osc1 = audioContext.createOscillator();
+        osc1.frequency.value = 500;
+        osc1.connect(gain1);
+        osc1.start(now);
+        osc1.stop(now + 0.2);
+
+        // Second tone: 350Hz after 250ms gap
+        var gain2 = audioContext.createGain();
+        gain2.connect(audioContext.destination);
+        gain2.gain.setValueAtTime(0, now + 0.25);
+        gain2.gain.linearRampToValueAtTime(0.12, now + 0.28);
+        gain2.gain.linearRampToValueAtTime(0, now + 0.5);
+
+        var osc2 = audioContext.createOscillator();
+        osc2.frequency.value = 350;
+        osc2.connect(gain2);
+        osc2.start(now + 0.25);
+        osc2.stop(now + 0.5);
+
+        console.log('[VTID-WATCHDOG] Error tone played');
+    } catch (e) {
+        console.warn('[VTID-WATCHDOG] Could not play error tone:', e);
     }
 }
 
