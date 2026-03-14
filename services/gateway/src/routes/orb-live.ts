@@ -1302,54 +1302,65 @@ async function executeLiveApiToolInner(
       case 'search_events': {
         const query = (args.query as string) || '';
         const typeFilter = (args.type_filter as string) || 'all';
-        const SUPABASE_URL = process.env.SUPABASE_URL;
-        const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE;
 
-        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-          return { success: true, result: 'Event search is temporarily unavailable.' };
-        }
-
-        const headers = {
-          'Content-Type': 'application/json',
-          apikey: SUPABASE_SERVICE_ROLE_KEY,
-          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-        };
+        // VTID-01270A: Events live in the Lovable Supabase (global_community_events table)
+        const LOVABLE_SUPABASE_URL = process.env.LOVABLE_SUPABASE_URL || 'https://inmkhvwdcuyhnxkgfvsb.supabase.co';
+        const LOVABLE_SUPABASE_KEY = process.env.LOVABLE_SUPABASE_SERVICE_ROLE || '';
+        const PLATFORM_SUPABASE_URL = process.env.SUPABASE_URL;
+        const PLATFORM_SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE;
 
         const now = new Date().toISOString();
-        const tenantId = lens.tenant_id;
         const results: string[] = [];
 
-        // Fetch upcoming meetups
-        if (typeFilter === 'meetup' || typeFilter === 'all') {
-          let meetupsUrl = `${SUPABASE_URL}/rest/v1/community_meetups?select=id,title,starts_at,ends_at,location_text,mode&tenant_id=eq.${tenantId}&starts_at=gte.${now}&order=starts_at.asc&limit=6`;
+        // Primary: Fetch events from Lovable Supabase (global_community_events)
+        if (LOVABLE_SUPABASE_KEY && (typeFilter === 'meetup' || typeFilter === 'all')) {
+          const lovableHeaders = {
+            'Content-Type': 'application/json',
+            apikey: LOVABLE_SUPABASE_KEY,
+            Authorization: `Bearer ${LOVABLE_SUPABASE_KEY}`,
+          };
+
+          let eventsUrl = `${LOVABLE_SUPABASE_URL}/rest/v1/global_community_events?select=id,title,description,start_time,end_time,location,metadata&start_time=gte.${now}&order=start_time.asc&limit=8`;
           if (query) {
-            meetupsUrl += `&title=ilike.*${encodeURIComponent(query)}*`;
+            eventsUrl += `&or=(title.ilike.*${encodeURIComponent(query)}*,description.ilike.*${encodeURIComponent(query)}*)`;
           }
           try {
-            const resp = await fetch(meetupsUrl, { method: 'GET', headers });
+            const resp = await fetch(eventsUrl, { method: 'GET', headers: lovableHeaders });
             if (resp.ok) {
-              const meetups = await resp.json() as Array<{
-                id: string; title: string; starts_at: string; ends_at: string;
-                location_text: string; mode: string;
+              const events = await resp.json() as Array<{
+                id: string; title: string; description: string;
+                start_time: string; end_time: string; location: string;
+                metadata: { category?: string; host?: string; price?: number; is_paid?: boolean } | null;
               }>;
-              for (const m of meetups) {
-                const date = new Date(m.starts_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-                results.push(`[Meetup] ${m.title} | ${date} | ${m.mode} | ${m.location_text || 'TBD'}`);
+              for (const e of events) {
+                const date = new Date(e.start_time).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                const category = e.metadata?.category ? ` | ${e.metadata.category}` : '';
+                const host = e.metadata?.host ? ` | Host: ${e.metadata.host}` : '';
+                const price = e.metadata?.is_paid ? ` | €${e.metadata.price || '?'}` : ' | Free';
+                results.push(`${e.title} | ${date} | ${e.location || 'TBD'}${category}${host}${price}`);
               }
+            } else {
+              console.warn(`[VTID-01270A] Lovable events query failed: ${resp.status}`);
             }
           } catch (e: any) {
-            console.warn(`[VTID-01270A] meetups query failed: ${e.message}`);
+            console.warn(`[VTID-01270A] Lovable events query error: ${e.message}`);
           }
         }
 
-        // Fetch scheduled/live rooms
-        if (typeFilter === 'live_room' || typeFilter === 'all') {
-          let roomsUrl = `${SUPABASE_URL}/rest/v1/live_rooms?select=id,title,starts_at,status&tenant_id=eq.${tenantId}&status=in.(scheduled,live)&order=starts_at.asc&limit=4`;
+        // Secondary: Fetch live rooms from Platform Supabase
+        if (PLATFORM_SUPABASE_URL && PLATFORM_SUPABASE_KEY && (typeFilter === 'live_room' || typeFilter === 'all')) {
+          const platformHeaders = {
+            'Content-Type': 'application/json',
+            apikey: PLATFORM_SUPABASE_KEY,
+            Authorization: `Bearer ${PLATFORM_SUPABASE_KEY}`,
+          };
+          const tenantId = lens.tenant_id;
+          let roomsUrl = `${PLATFORM_SUPABASE_URL}/rest/v1/live_rooms?select=id,title,starts_at,status&tenant_id=eq.${tenantId}&status=in.(scheduled,live)&order=starts_at.asc&limit=4`;
           if (query) {
             roomsUrl += `&title=ilike.*${encodeURIComponent(query)}*`;
           }
           try {
-            const resp = await fetch(roomsUrl, { method: 'GET', headers });
+            const resp = await fetch(roomsUrl, { method: 'GET', headers: platformHeaders });
             if (resp.ok) {
               const rooms = await resp.json() as Array<{
                 id: string; title: string; starts_at: string; status: string;
