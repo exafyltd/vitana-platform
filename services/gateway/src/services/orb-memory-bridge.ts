@@ -671,197 +671,204 @@ export async function fetchMemoryContextWithIdentity(
       (cat: string) => !MEMORY_CONFIG.PERSISTENT_CATEGORIES.includes(cat)
     );
 
-    // Query persistent categories (no time filter)
+    // VTID-01224-FIX: Run ALL 6 queries in parallel instead of sequentially.
+    // Previous sequential execution took 300-1200ms. Parallel cuts to ~100-300ms.
+    const BOOTSTRAP_FETCH_TIMEOUT_MS = 2000;
+    const bootstrapController = new AbortController();
+    const bootstrapTimeout = setTimeout(() => bootstrapController.abort(), BOOTSTRAP_FETCH_TIMEOUT_MS);
+    const bootstrapStartTime = Date.now();
+
     let persistentItems: MemoryItem[] = [];
-    if (persistentCategories.length > 0) {
-      const { data, error } = await supabase
-        .from('memory_items')
-        .select('id, category_key, source, content, content_json, importance, occurred_at, created_at')
-        .eq('tenant_id', effectiveIdentity.tenant_id)
-        .eq('user_id', effectiveIdentity.user_id)
-        .in('category_key', persistentCategories)
-        .order('importance', { ascending: false })
-        .limit(limit);
-
-      if (!error) {
-        persistentItems = (data || []) as MemoryItem[];
-      }
-    }
-
-    // Query time-sensitive categories
     let timeSensitiveItems: MemoryItem[] = [];
-    if (timeSensitiveCategories.length > 0) {
-      const { data, error } = await supabase
-        .from('memory_items')
-        .select('id, category_key, source, content, content_json, importance, occurred_at, created_at')
-        .eq('tenant_id', effectiveIdentity.tenant_id)
-        .eq('user_id', effectiveIdentity.user_id)
-        .in('category_key', timeSensitiveCategories)
-        .gte('occurred_at', sinceTimestamp)
-        .order('importance', { ascending: false })
-        .limit(limit);
-
-      if (!error) {
-        timeSensitiveItems = (data || []) as MemoryItem[];
-      }
-    }
-
-    // VTID-01225-READ-FIX: Fetch structured facts from memory_facts table
-    // This is the critical fix — memory_facts contains extracted knowledge (user_name,
-    // user_birthday, etc.) but was previously invisible to ORB chat and Live API bootstrap.
-    // The context-pack-builder already reads this table; now the ORB path does too.
     let structuredFacts: MemoryItem[] = [];
-    try {
-      const SUPABASE_URL_ENV = process.env.SUPABASE_URL;
-      const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
-      if (SUPABASE_URL_ENV && SUPABASE_KEY) {
-        const factsUrl = `${SUPABASE_URL_ENV}/rest/v1/memory_facts?select=id,fact_key,fact_value,entity,provenance_confidence&tenant_id=eq.${effectiveIdentity.tenant_id}&user_id=eq.${effectiveIdentity.user_id}&superseded_by=is.null&order=provenance_confidence.desc,extracted_at.desc&limit=50`;
-        const factsResp = await fetch(factsUrl, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: SUPABASE_KEY,
-            Authorization: `Bearer ${SUPABASE_KEY}`,
-          },
-        });
-        if (factsResp.ok) {
-          const factsData = await factsResp.json() as Array<{
-            id: string;
-            fact_key: string;
-            fact_value: string;
-            entity: string;
-            provenance_confidence: number;
-          }>;
-          structuredFacts = factsData.map((f) => ({
-            id: f.id,
-            category_key: 'personal',
-            source: 'memory_facts',
-            content: `${f.fact_key}: ${f.fact_value}`,
-            content_json: { fact_key: f.fact_key, fact_value: f.fact_value, entity: f.entity } as Record<string, unknown>,
-            importance: Math.round((f.provenance_confidence || 0.85) * 100),
-            occurred_at: new Date().toISOString(),
-            created_at: new Date().toISOString(),
-          }));
-          if (structuredFacts.length > 0) {
-            console.log(`[VTID-01225-READ-FIX] Fetched ${structuredFacts.length} structured facts from memory_facts`);
-          }
-        }
-      }
-    } catch (factsErr: any) {
-      console.warn(`[VTID-01225-READ-FIX] memory_facts fetch failed (non-fatal): ${factsErr.message}`);
-    }
-
-    // VTID-01082-BRIDGE: Fetch diary entries from memory_diary_entries table.
-    // The Lovable frontend writes user diary entries to this separate table (not memory_items).
-    // Without this query, manually entered Memory Garden data is invisible to ORB voice sessions.
     let diaryItems: MemoryItem[] = [];
-    try {
-      const { data: diaryData, error: diaryError } = await supabase
-        .from('memory_diary_entries')
-        .select('id, raw_text, tags, entry_date, created_at, entry_type')
-        .eq('tenant_id', effectiveIdentity.tenant_id)
-        .eq('user_id', effectiveIdentity.user_id)
-        .order('created_at', { ascending: false })
-        .limit(20);
-
-      if (!diaryError && diaryData && diaryData.length > 0) {
-        diaryItems = (diaryData as Array<{
-          id: string;
-          raw_text: string;
-          tags: string[];
-          entry_date: string;
-          created_at: string;
-          entry_type: string;
-        }>).map((d) => ({
-          id: d.id,
-          // Map diary tags to a category_key (use first tag or 'notes')
-          category_key: d.tags && d.tags.length > 0
-            ? d.tags[0].replace(/-/g, '_')  // 'business-projects' → 'business_projects'
-            : 'notes',
-          source: 'diary',
-          content: d.raw_text,
-          content_json: { tags: d.tags, entry_type: d.entry_type } as Record<string, unknown>,
-          importance: 60, // Diary entries are manually entered — moderate-high importance
-          occurred_at: d.entry_date ? new Date(d.entry_date).toISOString() : d.created_at,
-          created_at: d.created_at,
-        }));
-        console.log(`[VTID-01082-BRIDGE] Fetched ${diaryItems.length} diary entries from memory_diary_entries`);
-      }
-    } catch (diaryErr: any) {
-      console.warn(`[VTID-01082-BRIDGE] memory_diary_entries fetch failed (non-fatal): ${diaryErr.message}`);
-    }
-
-    // VTID-MEMORY-BRIDGE: Also read from Lovable's diary_entries table.
-    // The Lovable frontend writes to `diary_entries` (NOT `memory_diary_entries`).
-    // Without this bridge, manually entered Memory Garden data from vitanaland.com is invisible.
     let lovableDiaryItems: MemoryItem[] = [];
-    try {
-      const { data: lovDiaryData, error: lovDiaryErr } = await supabase
-        .from('diary_entries')
-        .select('id, text, source, tags, created_at')
-        .eq('user_id', effectiveIdentity.user_id)
-        .order('created_at', { ascending: false })
-        .limit(20);
-
-      if (!lovDiaryErr && lovDiaryData && lovDiaryData.length > 0) {
-        lovableDiaryItems = (lovDiaryData as Array<{
-          id: string;
-          text: string;
-          source: string;
-          tags: string[];
-          created_at: string;
-        }>).map((d) => ({
-          id: d.id,
-          category_key: d.tags && d.tags.length > 0
-            ? d.tags[0].replace(/-/g, '_')
-            : 'notes',
-          source: d.source || 'diary',
-          content: d.text,
-          content_json: { tags: d.tags, source: d.source } as Record<string, unknown>,
-          importance: 60,
-          occurred_at: d.created_at,
-          created_at: d.created_at,
-        }));
-        console.log(`[VTID-MEMORY-BRIDGE] Fetched ${lovableDiaryItems.length} entries from diary_entries (Lovable)`);
-      }
-    } catch (lovDiaryErr: any) {
-      // Table may not exist in all environments — non-fatal
-      console.warn(`[VTID-MEMORY-BRIDGE] diary_entries fetch failed (non-fatal): ${lovDiaryErr.message}`);
-    }
-
-    // VTID-MEMORY-BRIDGE: Also read from Lovable's ai_memory table.
-    // The Lovable frontend stores extracted knowledge (facts, preferences, goals) in ai_memory.
     let lovableMemoryItems: MemoryItem[] = [];
-    try {
-      const { data: lovMemData, error: lovMemErr } = await supabase
-        .from('ai_memory')
-        .select('id, content, memory_type, category, created_at')
-        .eq('user_id', effectiveIdentity.user_id)
-        .order('created_at', { ascending: false })
-        .limit(30);
 
-      if (!lovMemErr && lovMemData && lovMemData.length > 0) {
-        lovableMemoryItems = (lovMemData as Array<{
-          id: string;
-          content: string;
-          memory_type: string;
-          category: string;
-          created_at: string;
-        }>).map((m) => ({
-          id: m.id,
-          category_key: m.category ? m.category.replace(/-/g, '_') : 'notes',
-          source: 'ai_memory',
-          content: m.content,
-          content_json: { memory_type: m.memory_type } as Record<string, unknown>,
-          importance: 55,
-          occurred_at: m.created_at,
-          created_at: m.created_at,
-        }));
-        console.log(`[VTID-MEMORY-BRIDGE] Fetched ${lovableMemoryItems.length} entries from ai_memory (Lovable)`);
-      }
-    } catch (lovMemErr: any) {
-      console.warn(`[VTID-MEMORY-BRIDGE] ai_memory fetch failed (non-fatal): ${lovMemErr.message}`);
+    const bootstrapPromises: Promise<void>[] = [];
+
+    // 1. Persistent categories (no time filter)
+    if (persistentCategories.length > 0) {
+      bootstrapPromises.push(
+        Promise.resolve(
+          supabase
+            .from('memory_items')
+            .select('id, category_key, source, content, content_json, importance, occurred_at, created_at')
+            .eq('tenant_id', effectiveIdentity.tenant_id)
+            .eq('user_id', effectiveIdentity.user_id)
+            .in('category_key', persistentCategories)
+            .order('importance', { ascending: false })
+            .limit(limit)
+            .abortSignal(bootstrapController.signal)
+        ).then(({ data, error }) => {
+            if (!error) persistentItems = (data || []) as MemoryItem[];
+          })
+          .catch((e: any) => console.warn(`[VTID-01224-FIX] persistent items fetch failed: ${e.message}`))
+      );
     }
+
+    // 2. Time-sensitive categories
+    if (timeSensitiveCategories.length > 0) {
+      bootstrapPromises.push(
+        Promise.resolve(
+          supabase
+            .from('memory_items')
+            .select('id, category_key, source, content, content_json, importance, occurred_at, created_at')
+            .eq('tenant_id', effectiveIdentity.tenant_id)
+            .eq('user_id', effectiveIdentity.user_id)
+            .in('category_key', timeSensitiveCategories)
+            .gte('occurred_at', sinceTimestamp)
+            .order('importance', { ascending: false })
+            .limit(limit)
+            .abortSignal(bootstrapController.signal)
+        ).then(({ data, error }) => {
+            if (!error) timeSensitiveItems = (data || []) as MemoryItem[];
+          })
+          .catch((e: any) => console.warn(`[VTID-01224-FIX] time-sensitive items fetch failed: ${e.message}`))
+      );
+    }
+
+    // 3. Structured facts (memory_facts via REST — previously had NO timeout)
+    const SUPABASE_URL_ENV = process.env.SUPABASE_URL;
+    const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+    if (SUPABASE_URL_ENV && SUPABASE_KEY) {
+      bootstrapPromises.push(
+        (async () => {
+          try {
+            const factsUrl = `${SUPABASE_URL_ENV}/rest/v1/memory_facts?select=id,fact_key,fact_value,entity,provenance_confidence&tenant_id=eq.${effectiveIdentity.tenant_id}&user_id=eq.${effectiveIdentity.user_id}&superseded_by=is.null&order=provenance_confidence.desc,extracted_at.desc&limit=50`;
+            const factsResp = await fetch(factsUrl, {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json',
+                apikey: SUPABASE_KEY,
+                Authorization: `Bearer ${SUPABASE_KEY}`,
+              },
+              signal: bootstrapController.signal,
+            });
+            if (factsResp.ok) {
+              const factsData = await factsResp.json() as Array<{
+                id: string; fact_key: string; fact_value: string;
+                entity: string; provenance_confidence: number;
+              }>;
+              structuredFacts = factsData.map((f) => ({
+                id: f.id,
+                category_key: 'personal',
+                source: 'memory_facts',
+                content: `${f.fact_key}: ${f.fact_value}`,
+                content_json: { fact_key: f.fact_key, fact_value: f.fact_value, entity: f.entity } as Record<string, unknown>,
+                importance: Math.round((f.provenance_confidence || 0.85) * 100),
+                occurred_at: new Date().toISOString(),
+                created_at: new Date().toISOString(),
+              }));
+              if (structuredFacts.length > 0) {
+                console.log(`[VTID-01225-READ-FIX] Fetched ${structuredFacts.length} structured facts from memory_facts`);
+              }
+            }
+          } catch (factsErr: any) {
+            console.warn(`[VTID-01225-READ-FIX] memory_facts fetch failed (non-fatal): ${factsErr.message}`);
+          }
+        })()
+      );
+    }
+
+    // 4. Diary entries (memory_diary_entries)
+    bootstrapPromises.push(
+      Promise.resolve(
+        supabase
+          .from('memory_diary_entries')
+          .select('id, raw_text, tags, entry_date, created_at, entry_type')
+          .eq('tenant_id', effectiveIdentity.tenant_id)
+          .eq('user_id', effectiveIdentity.user_id)
+          .order('created_at', { ascending: false })
+          .limit(20)
+          .abortSignal(bootstrapController.signal)
+      ).then(({ data: diaryData, error: diaryError }) => {
+          if (!diaryError && diaryData && diaryData.length > 0) {
+            diaryItems = (diaryData as Array<{
+              id: string; raw_text: string; tags: string[];
+              entry_date: string; created_at: string; entry_type: string;
+            }>).map((d) => ({
+              id: d.id,
+              category_key: d.tags && d.tags.length > 0 ? d.tags[0].replace(/-/g, '_') : 'notes',
+              source: 'diary',
+              content: d.raw_text,
+              content_json: { tags: d.tags, entry_type: d.entry_type } as Record<string, unknown>,
+              importance: 60,
+              occurred_at: d.entry_date ? new Date(d.entry_date).toISOString() : d.created_at,
+              created_at: d.created_at,
+            }));
+            console.log(`[VTID-01082-BRIDGE] Fetched ${diaryItems.length} diary entries from memory_diary_entries`);
+          }
+        })
+        .catch((e: any) => console.warn(`[VTID-01082-BRIDGE] memory_diary_entries fetch failed (non-fatal): ${e.message}`))
+    );
+
+    // 5. Lovable diary entries (diary_entries)
+    bootstrapPromises.push(
+      Promise.resolve(
+        supabase
+          .from('diary_entries')
+          .select('id, text, source, tags, created_at')
+          .eq('user_id', effectiveIdentity.user_id)
+          .order('created_at', { ascending: false })
+          .limit(20)
+          .abortSignal(bootstrapController.signal)
+      ).then(({ data: lovDiaryData, error: lovDiaryErr }) => {
+          if (!lovDiaryErr && lovDiaryData && lovDiaryData.length > 0) {
+            lovableDiaryItems = (lovDiaryData as Array<{
+              id: string; text: string; source: string;
+              tags: string[]; created_at: string;
+            }>).map((d) => ({
+              id: d.id,
+              category_key: d.tags && d.tags.length > 0 ? d.tags[0].replace(/-/g, '_') : 'notes',
+              source: d.source || 'diary',
+              content: d.text,
+              content_json: { tags: d.tags, source: d.source } as Record<string, unknown>,
+              importance: 60,
+              occurred_at: d.created_at,
+              created_at: d.created_at,
+            }));
+            console.log(`[VTID-MEMORY-BRIDGE] Fetched ${lovableDiaryItems.length} entries from diary_entries (Lovable)`);
+          }
+        })
+        .catch((e: any) => console.warn(`[VTID-MEMORY-BRIDGE] diary_entries fetch failed (non-fatal): ${e.message}`))
+    );
+
+    // 6. Lovable AI memory (ai_memory)
+    bootstrapPromises.push(
+      Promise.resolve(
+        supabase
+          .from('ai_memory')
+          .select('id, content, memory_type, category, created_at')
+          .eq('user_id', effectiveIdentity.user_id)
+          .order('created_at', { ascending: false })
+          .limit(30)
+          .abortSignal(bootstrapController.signal)
+      ).then(({ data: lovMemData, error: lovMemErr }) => {
+          if (!lovMemErr && lovMemData && lovMemData.length > 0) {
+            lovableMemoryItems = (lovMemData as Array<{
+              id: string; content: string; memory_type: string;
+              category: string; created_at: string;
+            }>).map((m) => ({
+              id: m.id,
+              category_key: m.category ? m.category.replace(/-/g, '_') : 'notes',
+              source: 'ai_memory',
+              content: m.content,
+              content_json: { memory_type: m.memory_type } as Record<string, unknown>,
+              importance: 55,
+              occurred_at: m.created_at,
+              created_at: m.created_at,
+            }));
+            console.log(`[VTID-MEMORY-BRIDGE] Fetched ${lovableMemoryItems.length} entries from ai_memory (Lovable)`);
+          }
+        })
+        .catch((e: any) => console.warn(`[VTID-MEMORY-BRIDGE] ai_memory fetch failed (non-fatal): ${e.message}`))
+    );
+
+    // Execute ALL 6 queries in parallel with 2s hard timeout
+    await Promise.all(bootstrapPromises);
+    clearTimeout(bootstrapTimeout);
+    console.log(`[VTID-01224-FIX] Bootstrap parallel fetch completed in ${Date.now() - bootstrapStartTime}ms`);
 
     // Merge: structured facts FIRST, then diary entries (both tables), then Lovable memory,
     // then persistent items, then time-sensitive

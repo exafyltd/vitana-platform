@@ -647,6 +647,8 @@ interface GeminiLiveSession {
   // VTID-AUDIO-READY: Whether greeting is deferred until client sends audio_ready.
   // Used by WebSocket (mobile) path to avoid greeting truncation from race condition.
   greetingDeferred: boolean;
+  // VTID-01224-FIX: Last session timestamp for context-aware greeting
+  lastSessionTime?: string | null;
 }
 
 /**
@@ -950,18 +952,18 @@ function buildLiveApiTools(): object[] {
       function_declarations: [
         {
           name: 'search_memory',
-          description: 'Search the user\'s personal memory for information they have previously shared, including personal details, health data, preferences, goals, and past conversations.',
+          description: 'Search the user\'s personal memory and Memory Garden for information they have previously shared or recorded, including personal details, health data, preferences, goals, past conversations, daily diary entries, journal notes, and any other personal records.',
           parameters: {
             type: 'object',
             properties: {
               query: {
                 type: 'string',
-                description: 'The search query to find relevant memories',
+                description: 'The search query to find relevant memories, diary entries, or personal records',
               },
               categories: {
                 type: 'array',
                 items: { type: 'string' },
-                description: 'Optional categories to filter: personal, health, preferences, goals, relationships, conversation',
+                description: 'Optional categories to filter: personal, health, preferences, goals, relationships, conversation, diary, notes',
               },
             },
             required: ['query'],
@@ -2383,6 +2385,36 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   };
 
   let prompt = greetingPrompts[lang] || greetingPrompts['en'];
+
+  // VTID-01224-FIX: Add temporal awareness to greeting
+  if (session.lastSessionTime) {
+    const lastTime = new Date(session.lastSessionTime);
+    const now = new Date();
+    const diffMs = now.getTime() - lastTime.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    let timeAgo: string;
+    if (diffMins < 2) {
+      timeAgo = 'just moments ago';
+    } else if (diffMins < 60) {
+      timeAgo = `about ${diffMins} minutes ago`;
+    } else if (diffHours < 24) {
+      timeAgo = diffHours === 1 ? 'about an hour ago' : `about ${diffHours} hours ago`;
+    } else {
+      timeAgo = diffDays === 1 ? 'yesterday' : `${diffDays} days ago`;
+    }
+
+    if (diffMins < 5) {
+      prompt = `The user was here ${timeAgo}. Give a very brief, casual welcome back — something like "Hey, welcome back!" or "Back so soon!" Keep it to one short sentence. Do NOT greet them as if you haven't spoken in a long time.`;
+    } else if (diffMins < 60) {
+      prompt = `The user was last here ${timeAgo}. Greet them warmly as a returning user. Keep it to 1 short sentence. Acknowledge that you spoke recently.`;
+    } else if (diffHours < 24) {
+      prompt = `The user was last here ${timeAgo}. Greet them warmly. Keep it to 1-2 short sentences.`;
+    }
+    // For 24h+, use the default generic greeting
+  }
 
   if (session.conversationSummary) {
     prompt += ` You may briefly mention you're glad to continue the conversation, but do NOT recite the summary.`;
@@ -5106,6 +5138,42 @@ router.get('/debug/context-bootstrap', async (req: Request, res: Response) => {
 // =============================================================================
 
 /**
+ * VTID-01224-FIX: Fetch the user's last session timestamp from oasis_events.
+ * Used to make the greeting context-aware (e.g., "Welcome back! We talked just a few minutes ago").
+ */
+async function fetchLastSessionTime(userId: string): Promise<string | null> {
+  try {
+    const SUPABASE_URL = process.env.SUPABASE_URL;
+    const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+    if (!SUPABASE_URL || !SUPABASE_KEY) return null;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1500);
+    try {
+      const url = `${SUPABASE_URL}/rest/v1/oasis_events?select=created_at&topic=eq.vtid.live.session.start&metadata->>user_id=eq.${userId}&order=created_at.desc&limit=1`;
+      const resp = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+        },
+        signal: controller.signal,
+      });
+      if (resp.ok) {
+        const data = await resp.json() as Array<{ created_at: string }>;
+        if (data.length > 0) return data[0].created_at;
+      }
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  } catch (e: any) {
+    console.warn(`[VTID-01224-FIX] fetchLastSessionTime failed (non-fatal): ${e.message}`);
+  }
+  return null;
+}
+
+/**
  * VTID-01155: Helper to emit Live session events to OASIS
  */
 async function emitLiveSessionEvent(
@@ -5322,19 +5390,23 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
 
   // VTID-01225-ROLE: Fetch real application role alongside context bootstrap
   let sseActiveRole: string | null = null;
+  // VTID-01224-FIX: Last session time for context-aware greeting
+  let lastSessionTime: string | null = null;
 
   if (bootstrapIdentity) {
     const usingDevFallback = bootstrapIdentity.user_id === DEV_IDENTITY.USER_ID;
     console.log(`[VTID-01224] Building bootstrap context for SSE session ${sessionId} user=${bootstrapIdentity.user_id.substring(0, 8)}...${usingDevFallback ? ' (DEV_IDENTITY fallback)' : ''}`);
 
-    // Fetch role and context in parallel for minimal latency
-    const [bootstrapResult, fetchedSseRole] = await Promise.all([
+    // Fetch role, context, and last session time in parallel for minimal latency
+    const [bootstrapResult, fetchedSseRole, lastSessionTs] = await Promise.all([
       buildBootstrapContextPack(bootstrapIdentity, sessionId),
       usingDevFallback
         ? Promise.resolve(DEV_IDENTITY.ACTIVE_ROLE)
         : fetchUserActiveRole(bootstrapIdentity.user_id, bootstrapIdentity.tenant_id || ''),
+      fetchLastSessionTime(bootstrapIdentity.user_id),
     ]);
     sseActiveRole = fetchedSseRole;
+    lastSessionTime = lastSessionTs;
 
     contextInstruction = bootstrapResult.contextInstruction;
     contextPack = bootstrapResult.contextPack;
@@ -5395,6 +5467,8 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
       ? (body as any).vad_silence_ms : VAD_SILENCE_DURATION_MS_DEFAULT,
     // VTID-AUDIO-READY: SSE path sends greeting immediately (no handshake)
     greetingDeferred: false,
+    // VTID-01224-FIX: Last session time for context-aware greeting
+    lastSessionTime,
   };
 
   // Store session
@@ -6723,19 +6797,23 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
 
   // VTID-01225-ROLE: Fetch real application role in parallel with context bootstrap
   let activeRole: string | null = null;
+  // VTID-01224-FIX: Last session time for context-aware greeting
+  let wsLastSessionTime: string | null = null;
 
   if (effectiveBootstrapIdentity) {
     const usingDevFallbackWs = effectiveBootstrapIdentity.user_id === DEV_IDENTITY.USER_ID;
     console.log(`[VTID-01224] Building bootstrap context for session ${sessionId} user=${effectiveBootstrapIdentity.user_id.substring(0, 8)}...${usingDevFallbackWs ? ' (DEV_IDENTITY fallback)' : ''}`);
 
-    // Fetch role and context in parallel for minimal latency
-    const [bootstrapResult, fetchedRole] = await Promise.all([
+    // Fetch role, context, and last session time in parallel for minimal latency
+    const [bootstrapResult, fetchedRole, wsLastSessionTs] = await Promise.all([
       buildBootstrapContextPack(effectiveBootstrapIdentity, sessionId),
       usingDevFallbackWs
         ? Promise.resolve(DEV_IDENTITY.ACTIVE_ROLE)
         : fetchUserActiveRole(effectiveBootstrapIdentity.user_id, effectiveBootstrapIdentity.tenant_id || ''),
+      fetchLastSessionTime(effectiveBootstrapIdentity.user_id),
     ]);
     activeRole = fetchedRole;
+    wsLastSessionTime = wsLastSessionTs;
 
     contextInstruction = bootstrapResult.contextInstruction;
     contextPack = bootstrapResult.contextPack;
@@ -6843,6 +6921,8 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     greetingDeferred: true,
     // VTID-STREAM-RECONNECT: Store client WS reference for transparent reconnection notifications
     clientWs,
+    // VTID-01224-FIX: Last session time for context-aware greeting
+    lastSessionTime: wsLastSessionTime,
   };
 
   clientSession.liveSession = liveSession;
