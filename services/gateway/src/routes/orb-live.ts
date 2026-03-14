@@ -1036,13 +1036,33 @@ function buildLiveApiTools(): object[] {
         // VTID-01270A: Community & Events voice tools
         {
           name: 'search_events',
-          description: 'Search upcoming community events, meetups, and live rooms. Use when the user asks about events, gatherings, what\'s happening, or things to attend. Call with NO query to list all upcoming events. IMPORTANT: Results include full details (location, organizer, description, price). For follow-up questions about events you already listed, answer from your conversation context — do NOT call this tool again.',
+          description: 'Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again.',
           parameters: {
             type: 'object',
             properties: {
               query: {
                 type: 'string',
-                description: 'Optional keyword to filter events (e.g., "yoga", "nutrition"). Omit to list all upcoming events.',
+                description: 'Activity or keyword to search (e.g., "yoga", "dance", "boat trip", "fitness", "wellness", "coffee"). Searches title, description, and category.',
+              },
+              location: {
+                type: 'string',
+                description: 'City, venue, or country to filter by (e.g., "Berlin", "Mallorca", "Germany", "Dubai").',
+              },
+              organizer: {
+                type: 'string',
+                description: 'Name of the event organizer or host to filter by.',
+              },
+              date_from: {
+                type: 'string',
+                description: 'Start of date range in YYYY-MM-DD format (e.g., "2026-04-01"). Defaults to today.',
+              },
+              date_to: {
+                type: 'string',
+                description: 'End of date range in YYYY-MM-DD format (e.g., "2026-04-30").',
+              },
+              max_price: {
+                type: 'number',
+                description: 'Maximum price in EUR. Use 0 for free events only.',
               },
               type_filter: {
                 type: 'string',
@@ -1315,9 +1335,13 @@ async function executeLiveApiToolInner(
       case 'search_events': {
         const query = (args.query as string) || '';
         const typeFilter = (args.type_filter as string) || 'all';
+        const locationFilter = (args.location as string) || '';
+        const organizerFilter = (args.organizer as string) || '';
+        const dateFrom = (args.date_from as string) || '';
+        const dateTo = (args.date_to as string) || '';
+        const maxPrice = args.max_price !== undefined ? Number(args.max_price) : undefined;
 
         // VTID-01270A: Events live in the Lovable Supabase (global_community_events table)
-        // Hardcoded fallback like GCP_PROJECT_ID — env var override available for future migration
         const LOVABLE_SUPABASE_URL = process.env.LOVABLE_SUPABASE_URL || 'https://inmkhvwdcuyhnxkgfvsb.supabase.co';
         const LOVABLE_SUPABASE_KEY = process.env.LOVABLE_SUPABASE_SERVICE_ROLE || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlubWtodndkY3V5aG54a2dmdnNiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTg2NjYzNywiZXhwIjoyMDcxNDQyNjM3fQ.P4bD2YrbzgvDqM4APVxk_5LzetSTsYx-fAp5GOX4n2M';
         const PLATFORM_SUPABASE_URL = process.env.SUPABASE_URL;
@@ -1334,22 +1358,68 @@ async function executeLiveApiToolInner(
             Authorization: `Bearer ${LOVABLE_SUPABASE_KEY}`,
           };
 
-          let eventsUrl = `${LOVABLE_SUPABASE_URL}/rest/v1/global_community_events?select=id,title,description,start_time,end_time,location,virtual_link,metadata&start_time=gte.${now}&order=start_time.asc&limit=6`;
-          if (query) {
-            eventsUrl += `&or=(title.ilike.*${encodeURIComponent(query)}*,description.ilike.*${encodeURIComponent(query)}*)`;
+          // Build URL with PostgREST filters — fetch 20 to allow post-fetch filtering
+          const startTimeGte = dateFrom ? `${dateFrom}T00:00:00Z` : now;
+          let eventsUrl = `${LOVABLE_SUPABASE_URL}/rest/v1/global_community_events?select=id,title,description,start_time,end_time,location,virtual_link,metadata&start_time=gte.${startTimeGte}&order=start_time.asc&limit=20`;
+
+          // Date range upper bound
+          if (dateTo) {
+            eventsUrl += `&start_time=lte.${dateTo}T23:59:59Z`;
           }
+
+          // Location filter (PostgREST column filter)
+          if (locationFilter) {
+            eventsUrl += `&location=ilike.*${encodeURIComponent(locationFilter)}*`;
+          }
+
           try {
-            console.log(`[VTID-01270A] search_events: querying Lovable Supabase, query="${query}", url_len=${eventsUrl.length}, key_prefix=${LOVABLE_SUPABASE_KEY.substring(0, 20)}...`);
+            const filterSummary = [query && `query="${query}"`, locationFilter && `loc="${locationFilter}"`, organizerFilter && `org="${organizerFilter}"`, dateFrom && `from=${dateFrom}`, dateTo && `to=${dateTo}`, maxPrice !== undefined && `maxPrice=${maxPrice}`].filter(Boolean).join(', ') || 'no filters';
+            console.log(`[VTID-01270A] search_events: ${filterSummary}`);
             const resp = await fetch(eventsUrl, { method: 'GET', headers: lovableHeaders });
-            console.log(`[VTID-01270A] search_events: Lovable response status=${resp.status}`);
             if (resp.ok) {
-              const events = await resp.json() as Array<{
+              let events = await resp.json() as Array<{
                 id: string; title: string; description: string;
                 start_time: string; end_time: string; location: string;
                 virtual_link: string | null;
                 metadata: { category?: string; host?: string; guest?: string; price?: number; is_paid?: boolean; venue_type?: string } | null;
               }>;
-              console.log(`[VTID-01270A] search_events: got ${events.length} events from Lovable Supabase`);
+              console.log(`[VTID-01270A] search_events: ${events.length} raw results from Lovable Supabase`);
+
+              // Post-fetch filters
+
+              // Activity/keyword: match title, description, OR metadata.category
+              if (query) {
+                const qLower = query.toLowerCase();
+                events = events.filter(e =>
+                  (e.title || '').toLowerCase().includes(qLower) ||
+                  (e.description || '').toLowerCase().includes(qLower) ||
+                  (e.metadata?.category || '').toLowerCase().includes(qLower)
+                );
+              }
+
+              // Organizer: match metadata.host or metadata.guest
+              if (organizerFilter) {
+                const orgLower = organizerFilter.toLowerCase();
+                events = events.filter(e =>
+                  (e.metadata?.host || '').toLowerCase().includes(orgLower) ||
+                  (e.metadata?.guest || '').toLowerCase().includes(orgLower)
+                );
+              }
+
+              // Price filter
+              if (maxPrice !== undefined) {
+                if (maxPrice === 0) {
+                  events = events.filter(e => !e.metadata?.is_paid);
+                } else {
+                  events = events.filter(e =>
+                    !e.metadata?.is_paid || (e.metadata?.price ?? 0) <= maxPrice
+                  );
+                }
+              }
+
+              // Cap to 6 for voice path
+              events = events.slice(0, 6);
+
               for (const e of events) {
                 const date = new Date(e.start_time).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
                 const category = e.metadata?.category ? ` | Category: ${e.metadata.category}` : '';
@@ -1402,8 +1472,9 @@ async function executeLiveApiToolInner(
         }
 
         if (results.length === 0) {
-          console.log(`[VTID-01270A] search_events: 0 hits for "${query}", ${Date.now() - startTime}ms`);
-          return { success: true, result: 'No upcoming events or meetups found matching your query.' };
+          const filterDesc = [query, locationFilter, organizerFilter, dateFrom, dateTo, maxPrice !== undefined ? `max €${maxPrice}` : ''].filter(Boolean).join(', ') || 'none';
+          console.log(`[VTID-01270A] search_events: 0 hits (filters: ${filterDesc}), ${Date.now() - startTime}ms`);
+          return { success: true, result: 'No upcoming events found matching your filters. Try broadening your search — remove the location, date range, or price filter.' };
         }
 
         const MAX_TOOL_RESPONSE_CHARS = 3000;
@@ -1412,7 +1483,7 @@ async function executeLiveApiToolInner(
           formatted = formatted.substring(0, MAX_TOOL_RESPONSE_CHARS) + '\n... (truncated)';
         }
 
-        console.log(`[VTID-01270A] search_events: ${results.length} hits for "${query}", ${formatted.length} chars, ${Date.now() - startTime}ms`);
+        console.log(`[VTID-01270A] search_events: ${results.length} hits, ${formatted.length} chars, ${Date.now() - startTime}ms`);
         return { success: true, result: `Found ${results.length} upcoming events:\n${formatted}` };
       }
 

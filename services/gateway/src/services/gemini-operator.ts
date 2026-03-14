@@ -389,13 +389,33 @@ Returns checklist items with pass/fail status based on OASIS evidence.`,
     // VTID-01270A: Community & Events tools for ORB text chat
     {
       name: 'search_events',
-      description: 'Search upcoming community events, meetups, and live rooms. Use when the user asks about events, gatherings, what\'s happening, or things to attend. Call with NO query to list all upcoming events. IMPORTANT: Results include full details (location, organizer, description, price). For follow-up questions about events you already listed, answer from your conversation context — do NOT call this tool again.',
+      description: 'Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again.',
       parameters: {
         type: 'object',
         properties: {
           query: {
             type: 'string',
-            description: 'Optional keyword to filter events (e.g., "yoga", "nutrition"). Omit to list all upcoming events.'
+            description: 'Activity or keyword to search (e.g., "yoga", "dance", "boat trip", "fitness", "wellness", "coffee"). Searches title, description, and category.'
+          },
+          location: {
+            type: 'string',
+            description: 'City, venue, or country to filter by (e.g., "Berlin", "Mallorca", "Germany", "Dubai").'
+          },
+          organizer: {
+            type: 'string',
+            description: 'Name of the event organizer or host to filter by.'
+          },
+          date_from: {
+            type: 'string',
+            description: 'Start of date range in YYYY-MM-DD format (e.g., "2026-04-01"). Defaults to today.'
+          },
+          date_to: {
+            type: 'string',
+            description: 'End of date range in YYYY-MM-DD format (e.g., "2026-04-30").'
+          },
+          max_price: {
+            type: 'number',
+            description: 'Maximum price in EUR. Use 0 for free events only.'
           },
           type_filter: {
             type: 'string',
@@ -1882,18 +1902,21 @@ function buildDeployChecklist(
  * VTID-01270A: Search upcoming events and meetups
  */
 async function executeCommunitySearchEvents(
-  args: { query: string; type_filter?: string },
+  args: { query?: string; type_filter?: string; location?: string; organizer?: string; date_from?: string; date_to?: string; max_price?: number },
   threadId: string
 ): Promise<ToolExecutionResult> {
   const identity = threadIdentityMap.get(threadId);
 
-  // VTID-01270A: Events live in the Lovable Supabase (global_community_events table)
-  // Hardcoded fallback like GCP_PROJECT_ID — env var override available for future migration
   const LOVABLE_SUPABASE_URL = process.env.LOVABLE_SUPABASE_URL || 'https://inmkhvwdcuyhnxkgfvsb.supabase.co';
   const LOVABLE_SUPABASE_KEY = process.env.LOVABLE_SUPABASE_SERVICE_ROLE || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlubWtodndkY3V5aG54a2dmdnNiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTg2NjYzNywiZXhwIjoyMDcxNDQyNjM3fQ.P4bD2YrbzgvDqM4APVxk_5LzetSTsYx-fAp5GOX4n2M';
 
   const query = args.query || '';
   const typeFilter = args.type_filter || 'all';
+  const locationFilter = args.location || '';
+  const organizerFilter = args.organizer || '';
+  const dateFrom = args.date_from || '';
+  const dateTo = args.date_to || '';
+  const maxPrice = args.max_price !== undefined ? Number(args.max_price) : undefined;
   const now = new Date().toISOString();
   const results: string[] = [];
 
@@ -1904,28 +1927,75 @@ async function executeCommunitySearchEvents(
       apikey: LOVABLE_SUPABASE_KEY,
       Authorization: `Bearer ${LOVABLE_SUPABASE_KEY}`,
     };
-    let eventsUrl = `${LOVABLE_SUPABASE_URL}/rest/v1/global_community_events?select=id,title,description,start_time,end_time,location,metadata&start_time=gte.${now}&order=start_time.asc&limit=10`;
-    if (query) {
-      eventsUrl += `&or=(title.ilike.*${encodeURIComponent(query)}*,description.ilike.*${encodeURIComponent(query)}*)`;
+
+    // Build URL with PostgREST filters — fetch 20 to allow post-fetch filtering
+    const startTimeGte = dateFrom ? `${dateFrom}T00:00:00Z` : now;
+    let eventsUrl = `${LOVABLE_SUPABASE_URL}/rest/v1/global_community_events?select=id,title,description,start_time,end_time,location,virtual_link,metadata&start_time=gte.${startTimeGte}&order=start_time.asc&limit=20`;
+
+    if (dateTo) {
+      eventsUrl += `&start_time=lte.${dateTo}T23:59:59Z`;
     }
+    if (locationFilter) {
+      eventsUrl += `&location=ilike.*${encodeURIComponent(locationFilter)}*`;
+    }
+
     try {
-      console.log(`[VTID-01270A] search_events (text): querying Lovable Supabase, query="${query}", key_prefix=${LOVABLE_SUPABASE_KEY.substring(0, 20)}...`);
+      const filterSummary = [query && `query="${query}"`, locationFilter && `loc="${locationFilter}"`, organizerFilter && `org="${organizerFilter}"`, dateFrom && `from=${dateFrom}`, dateTo && `to=${dateTo}`, maxPrice !== undefined && `maxPrice=${maxPrice}`].filter(Boolean).join(', ') || 'no filters';
+      console.log(`[VTID-01270A] search_events (text): ${filterSummary}`);
       const resp = await fetch(eventsUrl, { method: 'GET', headers: lovableHeaders });
-      console.log(`[VTID-01270A] search_events (text): Lovable response status=${resp.status}`);
       if (resp.ok) {
-        const events = await resp.json() as Array<{
+        let events = await resp.json() as Array<{
           id: string; title: string; description: string;
           start_time: string; end_time: string; location: string;
-          metadata: { category?: string; host?: string; price?: number; is_paid?: boolean } | null;
+          virtual_link: string | null;
+          metadata: { category?: string; host?: string; guest?: string; price?: number; is_paid?: boolean; venue_type?: string } | null;
         }>;
-        console.log(`[VTID-01270A] search_events (text): got ${events.length} events from Lovable Supabase`);
+        console.log(`[VTID-01270A] search_events (text): ${events.length} raw results`);
+
+        // Post-fetch filters
+
+        // Activity/keyword: match title, description, OR metadata.category
+        if (query) {
+          const qLower = query.toLowerCase();
+          events = events.filter(e =>
+            (e.title || '').toLowerCase().includes(qLower) ||
+            (e.description || '').toLowerCase().includes(qLower) ||
+            (e.metadata?.category || '').toLowerCase().includes(qLower)
+          );
+        }
+
+        // Organizer: match metadata.host or metadata.guest
+        if (organizerFilter) {
+          const orgLower = organizerFilter.toLowerCase();
+          events = events.filter(e =>
+            (e.metadata?.host || '').toLowerCase().includes(orgLower) ||
+            (e.metadata?.guest || '').toLowerCase().includes(orgLower)
+          );
+        }
+
+        // Price filter
+        if (maxPrice !== undefined) {
+          if (maxPrice === 0) {
+            events = events.filter(e => !e.metadata?.is_paid);
+          } else {
+            events = events.filter(e =>
+              !e.metadata?.is_paid || (e.metadata?.price ?? 0) <= maxPrice
+            );
+          }
+        }
+
+        // Cap to 10 for text path
+        events = events.slice(0, 10);
+
         for (const e of events) {
           const date = new Date(e.start_time).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-          const category = e.metadata?.category ? ` | ${e.metadata.category}` : '';
-          const host = e.metadata?.host ? ` | Host: ${e.metadata.host}` : '';
+          const category = e.metadata?.category ? ` | Category: ${e.metadata.category}` : '';
+          const host = e.metadata?.host ? ` | Organizer: ${e.metadata.host}` : '';
+          const guest = e.metadata?.guest ? ` | Guest: ${e.metadata.guest}` : '';
           const price = e.metadata?.is_paid ? ` | €${e.metadata.price || '?'}` : ' | Free';
-          const desc = (e.description || '').substring(0, 150);
-          results.push(`**${e.title}** | ${date} | ${e.location || 'TBD'}${category}${host}${price}\n  ${desc}`);
+          const venue = e.metadata?.venue_type ? ` | ${e.metadata.venue_type}` : '';
+          const desc = (e.description || '').substring(0, 200);
+          results.push(`**${e.title}** | ${date} | ${e.location || 'TBD'}${category}${host}${guest}${price}${venue}\n  ${desc}`);
         }
       } else {
         const body = await resp.text();
@@ -1968,12 +2038,13 @@ async function executeCommunitySearchEvents(
   }
 
   if (results.length === 0) {
-    console.log(`[VTID-01270A] search_events (text): 0 hits for "${query}"`);
-    return { ok: true, data: { result: 'No upcoming events or meetups found matching your query.' } };
+    const filterDesc = [query, locationFilter, organizerFilter, dateFrom, dateTo, maxPrice !== undefined ? `max €${maxPrice}` : ''].filter(Boolean).join(', ') || 'none';
+    console.log(`[VTID-01270A] search_events (text): 0 hits (filters: ${filterDesc})`);
+    return { ok: true, data: { result: 'No upcoming events found matching your filters. Try broadening your search — remove the location, date range, or price filter.' } };
   }
 
   const formatted = results.join('\n');
-  console.log(`[VTID-01270A] search_events (text): ${results.length} hits for "${query}"`);
+  console.log(`[VTID-01270A] search_events (text): ${results.length} hits`);
   return { ok: true, data: { result: `Found ${results.length} upcoming events:\n${formatted}` } };
 }
 
@@ -2207,7 +2278,7 @@ export async function executeTool(
       // VTID-01270A: Community & Events tools
       case 'search_events':
         result = await executeCommunitySearchEvents(
-          args as { query: string; type_filter?: string },
+          args as { query?: string; type_filter?: string; location?: string; organizer?: string; date_from?: string; date_to?: string; max_price?: number },
           threadId
         );
         break;
