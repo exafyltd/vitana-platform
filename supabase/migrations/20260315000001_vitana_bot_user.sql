@@ -15,10 +15,15 @@
 DO $$
 DECLARE
   v_vitana_id UUID := '00000000-0000-0000-0000-000000000001';
+  v_default_tenant UUID;
 BEGIN
+  -- Get the default tenant (app_users.tenant_id is NOT NULL)
+  SELECT tenant_id INTO v_default_tenant
+  FROM tenants ORDER BY created_at ASC LIMIT 1;
+
   -- 1. Core user record in app_users
-  INSERT INTO app_users (user_id, email, display_name, created_at, updated_at)
-  VALUES (v_vitana_id, 'vitana@vitana.app', 'Vitana', NOW(), NOW())
+  INSERT INTO app_users (user_id, email, display_name, tenant_id, created_at, updated_at)
+  VALUES (v_vitana_id, 'vitana@vitana.app', 'Vitana', v_default_tenant, NOW(), NOW())
   ON CONFLICT (user_id) DO NOTHING;
 
   -- 2. Global community profile (for frontend enrichProfiles lookup)
