@@ -62,9 +62,13 @@ BEGIN
   ON CONFLICT (user_id) DO UPDATE SET
     display_name = EXCLUDED.display_name, avatar_url = EXCLUDED.avatar_url;
 
-  -- 3. Profiles (user_id NOT NULL + FK → auth.users, id is PK)
+  -- 3. Profiles — auth.users trigger may have auto-created a row, so UPDATE.
+  --    profiles has UNIQUE on both id (PK) and user_id, so INSERT ON CONFLICT
+  --    can't handle both constraints. UPDATE is safe regardless.
+  UPDATE profiles SET full_name = 'Vitana', avatar_url = '/vitana-avatar.png'
+  WHERE user_id = v_id;
+  -- If trigger didn't fire (e.g. fresh DB), insert with both unique columns
   INSERT INTO profiles (id, user_id, full_name, avatar_url)
   VALUES (v_id, v_id, 'Vitana', '/vitana-avatar.png')
-  ON CONFLICT (id) DO UPDATE SET
-    full_name = EXCLUDED.full_name, avatar_url = EXCLUDED.avatar_url;
+  ON CONFLICT (id) DO NOTHING;
 END $$;
