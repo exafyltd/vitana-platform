@@ -1036,13 +1036,13 @@ function buildLiveApiTools(): object[] {
         // VTID-01270A: Community & Events voice tools
         {
           name: 'search_events',
-          description: 'Search upcoming community events, meetups, and live rooms. Use when the user asks about events, gatherings, what\'s happening, or things to attend.',
+          description: 'Search upcoming community events, meetups, and live rooms. Use when the user asks about events, gatherings, what\'s happening, or things to attend. Call with NO query to list all upcoming events.',
           parameters: {
             type: 'object',
             properties: {
               query: {
                 type: 'string',
-                description: 'Search query for events (e.g., "yoga", "nutrition workshop", "this weekend")',
+                description: 'Optional keyword to filter events (e.g., "yoga", "nutrition"). Omit to list all upcoming events.',
               },
               type_filter: {
                 type: 'string',
@@ -1050,7 +1050,7 @@ function buildLiveApiTools(): object[] {
                 description: 'Filter by event type. Defaults to all.',
               },
             },
-            required: ['query'],
+            required: [],
           },
         },
         {
@@ -1339,13 +1339,16 @@ async function executeLiveApiToolInner(
             eventsUrl += `&or=(title.ilike.*${encodeURIComponent(query)}*,description.ilike.*${encodeURIComponent(query)}*)`;
           }
           try {
+            console.log(`[VTID-01270A] search_events: querying Lovable Supabase, query="${query}", url_len=${eventsUrl.length}, key_prefix=${LOVABLE_SUPABASE_KEY.substring(0, 20)}...`);
             const resp = await fetch(eventsUrl, { method: 'GET', headers: lovableHeaders });
+            console.log(`[VTID-01270A] search_events: Lovable response status=${resp.status}`);
             if (resp.ok) {
               const events = await resp.json() as Array<{
                 id: string; title: string; description: string;
                 start_time: string; end_time: string; location: string;
                 metadata: { category?: string; host?: string; price?: number; is_paid?: boolean } | null;
               }>;
+              console.log(`[VTID-01270A] search_events: got ${events.length} events from Lovable Supabase`);
               for (const e of events) {
                 const date = new Date(e.start_time).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
                 const category = e.metadata?.category ? ` | ${e.metadata.category}` : '';
@@ -1354,7 +1357,8 @@ async function executeLiveApiToolInner(
                 results.push(`${e.title} | ${date} | ${e.location || 'TBD'}${category}${host}${price}`);
               }
             } else {
-              console.warn(`[VTID-01270A] Lovable events query failed: ${resp.status}`);
+              const body = await resp.text();
+              console.warn(`[VTID-01270A] Lovable events query failed: ${resp.status} — ${body.substring(0, 200)}`);
             }
           } catch (e: any) {
             console.warn(`[VTID-01270A] Lovable events query error: ${e.message}`);
