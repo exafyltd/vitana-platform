@@ -1435,7 +1435,7 @@ async function executeLiveApiToolInner(
             };
 
             const startTimeGte = dateFrom ? `${dateFrom}T00:00:00Z` : now;
-            let eventsUrl = `${LOVABLE_SUPABASE_URL}/rest/v1/global_community_events?select=id,title,description,start_time,end_time,location,virtual_link,metadata&start_time=gte.${startTimeGte}&order=start_time.asc&limit=50`;
+            let eventsUrl = `${LOVABLE_SUPABASE_URL}/rest/v1/global_community_events?select=id,title,description,start_time,end_time,location,virtual_link,slug,metadata&start_time=gte.${startTimeGte}&order=start_time.asc&limit=50`;
 
             if (dateTo) {
               eventsUrl += `&start_time=lte.${dateTo}T23:59:59Z`;
@@ -1808,6 +1808,11 @@ ${voiceLiveConfig.repetition_prevention || '- NEVER repeat the same response ver
 
 TOOLS:
 ${voiceLiveConfig.tools_section || '- Use search_memory to recall information the user has shared before\n- Use search_knowledge for Vitana platform and health information\n- Use search_web for current events, news, and external information'}
+
+EVENT LINK SHARING:
+- When search_events returns results, each event includes a "Link:" field with a URL like https://vitanaland.com/e/{slug}.
+- When the user asks about events, always include the link in your response. Say something like: "Here is the link: https://vitanaland.com/e/city-by-bike"
+- NEVER say "I'll send the link" or "the link is on its way" without including the actual URL.
 
 IMPORTANT:
 ${voiceLiveConfig.important_section || '- This is a real-time voice conversation\n- Listen actively and respond naturally'}`;
