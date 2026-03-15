@@ -2302,6 +2302,14 @@ export async function executeTool(
             matchIdentity.tenant_id,
             args as { date?: string; match_type?: string; topic_filter?: string; min_score?: number; limit?: number }
           );
+          // Build presentation hint so Gemini knows exactly how to format the response
+          const matchHints = matchResult.matches.map((m: any) =>
+            `${m.display_name} (${m.match_type}, score ${m.score}) → deep_link: ${m.deep_link}`
+          ).join('\n');
+          const presentationHint = matchResult.matches.length > 0
+            ? `IMPORTANT: Present each match with its deep_link URL on its own line. Example:\n🎉 ${matchResult.matches[0].display_name}\n${matchResult.matches[0].deep_link}\nAll matches:\n${matchHints}\nDiscover all: ${matchResult.discover_all_link}`
+            : 'No matches found. Suggest the user check ' + matchResult.discover_all_link;
+
           result = {
             ok: matchResult.ok,
             data: {
@@ -2309,6 +2317,7 @@ export async function executeTool(
               total_available: matchResult.total_available,
               date: matchResult.date,
               discover_all_link: matchResult.discover_all_link,
+              _presentation_hint: presentationHint,
             },
           };
         } else {
@@ -2966,9 +2975,21 @@ async function sendToolResultsToGemini(
     ],
     systemInstruction: {
       parts: [{
-        text: `You are the Vitana Operator Assistant. Summarize the tool results for the operator in a clear, helpful way.
+        text: `You are Vitana, a friendly community assistant. Present the tool results to the user in a warm, helpful way.
 If there were errors or governance blocks, explain them clearly.
-If successful, confirm what was done and any next steps.`
+If successful, present the results naturally.
+
+CRITICAL — For get_user_matches results:
+- Each match object has a "deep_link" field containing a URL like "https://e.vitanaland.com/matches/some-uuid"
+- You MUST copy this deep_link URL into your response on its own line so it becomes a clickable card
+- Present the best match first with an emoji, then put the deep_link on the NEXT line by itself
+- Example format:
+  🎉 Morning Walk Group — 92% match! You share interest in walking and outdoor fitness.
+  https://e.vitanaland.com/matches/abc-123-def
+  I also found more matches for you — see them all:
+  https://vitanaland.com/discover
+- NEVER say "I cannot find a link" — the deep_link field IS the link. Copy it exactly.
+- The discover_all_link field contains the URL for browsing all matches.`
       }]
     },
     generationConfig: {
