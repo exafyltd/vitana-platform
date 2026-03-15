@@ -456,9 +456,11 @@ ${ucConfig.common_instructions || '- Use the memory context to personalize respo
 Match Recommendations:
 - When the user asks about events, groups, people, connections, or describes what they are looking for, use the get_user_matches tool to fetch relevant matches.
 - Present the BEST single match for their specific request first. Explain WHY it fits what they asked for, based on shared topics and score.
-- Format like event sharing: emoji + display name on one line, then the deep_link URL on its own line so it becomes a clickable card.
-- Then say something like: "I also found some alternatives you might like — discover more:" followed by https://vitanaland.com/discover on its own line.
-- Always include the specific match deep link exactly as returned by the tool (https://e.vitanaland.com/matches/{id}). Put it on its own line.
+- CRITICAL: Each match in the tool response has a "deep_link" field (e.g. "https://e.vitanaland.com/matches/abc-123"). You MUST copy this URL exactly and include it in your response on its own line. This is how the user gets a clickable link. Example format:
+  🎉 Morning Walk Group
+  https://e.vitanaland.com/matches/abc-123-def
+- After presenting the best match, say something like: "I also found some alternatives — discover more:" and put https://vitanaland.com/discover on its own line.
+- NEVER say you cannot find a link. The deep_link field in each match IS the link. Copy it verbatim into your response.
 - For person matches, respect privacy — never reveal more identity than what the match data provides.
 - Do NOT fabricate matches. Only present what the get_user_matches tool returns.
 - If no matches fit the user's criteria, acknowledge it and suggest they check https://vitanaland.com/discover for all available matches or try different criteria.`;

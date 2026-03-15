@@ -280,10 +280,14 @@ Returns today's suggested matches with privacy-safe previews including:
 - Score (0-100), display name, shared topics, match type, and deep link
 - Person matches only show what the user has consented to reveal
 
-When presenting results:
+CRITICAL — How to present results:
 1. Pick the BEST single match for the user's specific request and present it with context — explain WHY it fits
-2. Include the deep_link URL exactly as returned (https://e.vitanaland.com/matches/{id}) on its own line so it renders as a clickable card
-3. Mention alternatives: "I also found some alternatives you might like — discover more:" followed by https://vitanaland.com/discover on its own line
+2. Each match object has a "deep_link" field containing a full URL like "https://e.vitanaland.com/matches/uuid". You MUST copy this exact URL into your response on its own line. NEVER say you cannot find a link — deep_link IS the link.
+3. Example response format:
+   🎉 Morning Walk Group
+   https://e.vitanaland.com/matches/abc-123
+   I also found some alternatives — discover more:
+   https://vitanaland.com/discover
 4. Do NOT fabricate matches — only present what this tool returns
 5. If no matches fit, acknowledge it and suggest https://vitanaland.com/discover or different criteria`,
       parameters_schema: {
