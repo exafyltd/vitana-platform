@@ -29,6 +29,7 @@ export interface EventRecord {
   end_time: string;
   location: string;
   virtual_link: string | null;
+  slug: string | null;
   metadata: {
     category?: string;
     host?: string;
@@ -330,6 +331,11 @@ export function scoreAndRankEvents(
 // Formatters
 // =============================================================================
 
+function buildEventLink(e: EventRecord): string {
+  if (e.slug) return `https://e.vitanaland.com/events/${e.slug}`;
+  return `https://e.vitanaland.com/pub/events/${e.id}`;
+}
+
 function formatEventLineVoice(s: ScoredEvent): string {
   const e = s.event;
   const date = new Date(e.start_time).toLocaleDateString('en-US', {
@@ -341,7 +347,7 @@ function formatEventLineVoice(s: ScoredEvent): string {
   const guest = e.metadata?.guest ? ` | Guest: ${e.metadata.guest}` : '';
   const price = e.metadata?.is_paid ? ` | €${e.metadata.price || '?'}` : ' | Free';
   const venue = e.metadata?.venue_type ? ` | ${e.metadata.venue_type}` : '';
-  const link = e.virtual_link ? ` | Link: ${e.virtual_link}` : '';
+  const link = ` | Link: ${buildEventLink(e)}`;
   const desc = e.description ? ` | About: ${e.description.substring(0, 120)}` : '';
   return `${e.title} | ${date} | ${e.location || 'TBD'}${category}${host}${guest}${price}${venue}${link}${desc}`;
 }
@@ -358,7 +364,8 @@ function formatEventLineText(s: ScoredEvent): string {
   const price = e.metadata?.is_paid ? ` | €${e.metadata.price || '?'}` : ' | Free';
   const venue = e.metadata?.venue_type ? ` | ${e.metadata.venue_type}` : '';
   const desc = (e.description || '').substring(0, 200);
-  return `**${e.title}** | ${date} | ${e.location || 'TBD'}${category}${host}${guest}${price}${venue}\n  ${desc}`;
+  const link = buildEventLink(e);
+  return `**${e.title}** | ${date} | ${e.location || 'TBD'}${category}${host}${guest}${price}${venue}\n  ${desc}\n  Link: ${link}`;
 }
 
 /**

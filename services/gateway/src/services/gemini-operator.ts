@@ -1937,7 +1937,7 @@ async function executeCommunitySearchEvents(
     };
 
     const startTimeGte = dateFrom ? `${dateFrom}T00:00:00Z` : now;
-    let eventsUrl = `${LOVABLE_SUPABASE_URL}/rest/v1/global_community_events?select=id,title,description,start_time,end_time,location,virtual_link,metadata&start_time=gte.${startTimeGte}&order=start_time.asc&limit=50`;
+    let eventsUrl = `${LOVABLE_SUPABASE_URL}/rest/v1/global_community_events?select=id,title,description,start_time,end_time,location,virtual_link,slug,metadata&start_time=gte.${startTimeGte}&order=start_time.asc&limit=50`;
 
     if (dateTo) {
       eventsUrl += `&start_time=lte.${dateTo}T23:59:59Z`;
@@ -2979,17 +2979,18 @@ async function sendToolResultsToGemini(
 If there were errors or governance blocks, explain them clearly.
 If successful, present the results naturally.
 
-CRITICAL — For get_user_matches results:
-- Each match object has a "deep_link" field containing a URL like "https://e.vitanaland.com/matches/some-uuid"
-- You MUST copy this deep_link URL into your response on its own line so it becomes a clickable card
-- Present the best match first with an emoji, then put the deep_link on the NEXT line by itself
-- Example format:
-  🎉 Morning Walk Group — 92% match! You share interest in walking and outdoor fitness.
+CRITICAL — Sharing links:
+- Event search results contain "Link: https://e.vitanaland.com/events/..." for each event. You MUST include this URL in your response when presenting events.
+- Match results contain "deep_link: https://e.vitanaland.com/matches/..." for each match. You MUST include this URL in your response.
+- ALWAYS put the URL on its own line so it becomes clickable.
+- NEVER say "I'll send the link", "the link is on its way", or "I cannot find a link". The URL IS in the data — copy it exactly.
+- Example event response:
+  🎉 City by Bike Tour in Lyon — Sat, Mar 21
+  https://e.vitanaland.com/events/city-by-bike-tour-lyon
+- Example match response:
+  🤝 Morning Walk Group — 92% match!
   https://e.vitanaland.com/matches/abc-123-def
-  I also found more matches for you — see them all:
-  https://vitanaland.com/discover
-- NEVER say "I cannot find a link" — the deep_link field IS the link. Copy it exactly.
-- The discover_all_link field contains the URL for browsing all matches.`
+  See all matches: https://vitanaland.com/discover`
       }]
     },
     generationConfig: {
