@@ -494,6 +494,166 @@ router.get('/live/sessions/:sessionId/turns', async (req: Request, res: Response
 });
 
 /**
+ * GET /api/v1/voice-lab/live/sessions/:sessionId/diagnostics
+ *
+ * Get pipeline diagnostic events for a session.
+ * These are emitted by emitDiag() at critical pipeline points in orb-live.ts.
+ *
+ * Response:
+ * {
+ *   ok: true,
+ *   session_id: string,
+ *   diagnostics: DiagEvent[],
+ *   analysis: { stall_detected, missing_stages, last_stage, ... }
+ * }
+ */
+router.get('/live/sessions/:sessionId/diagnostics', async (req: Request, res: Response) => {
+  const { sessionId } = req.params;
+  console.log(`[VTID-01218A] GET /voice-lab/live/sessions/${sessionId}/diagnostics`);
+
+  try {
+    const config = getSupabaseConfig();
+    if (!config) {
+      return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+    }
+
+    // Query orb.live.diag events for this session
+    const query = `${config.url}/rest/v1/oasis_events?` +
+      `topic=eq.orb.live.diag&` +
+      `metadata->>session_id=eq.${sessionId}&` +
+      `order=created_at.asc&` +
+      `limit=200`;
+
+    const resp = await fetch(query, {
+      headers: {
+        'apikey': config.key,
+        'Authorization': `Bearer ${config.key}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!resp.ok) {
+      const errorText = await resp.text();
+      console.error(`[VTID-01218A] Diag query failed: ${resp.status} - ${errorText}`);
+      return res.status(resp.status).json({ ok: false, error: 'Query failed', details: errorText });
+    }
+
+    const events = await resp.json() as any[];
+    console.log(`[VTID-01218A] Found ${events.length} diagnostic events for session ${sessionId}`);
+
+    // Extract diagnostic data from events
+    const diagnostics = events.map((e: any) => ({
+      stage: e.metadata?.stage,
+      ts: e.metadata?.ts,
+      created_at: e.created_at,
+      active: e.metadata?.active,
+      turn_count: e.metadata?.turn_count,
+      audio_in: e.metadata?.audio_in,
+      audio_out: e.metadata?.audio_out,
+      is_model_speaking: e.metadata?.is_model_speaking,
+      greeting_sent: e.metadata?.greeting_sent,
+      consecutive_model_turns: e.metadata?.consecutive_model_turns,
+      has_upstream_ws: e.metadata?.has_upstream_ws,
+      upstream_ws_state: e.metadata?.upstream_ws_state,
+      has_sse: e.metadata?.has_sse,
+      has_watchdog: e.metadata?.has_watchdog,
+      // Pass through any extra fields
+      reason: e.metadata?.reason,
+      error: e.metadata?.error,
+      code: e.metadata?.code,
+      tool_name: e.metadata?.tool_name,
+    }));
+
+    // Analyze the pipeline flow for stall detection
+    const EXPECTED_FLOW = [
+      'greeting_sent',
+      'model_start_speaking',
+      'turn_complete',
+      'input_transcription',
+    ];
+    const stagesSeen = diagnostics.map((d: any) => d.stage);
+    const uniqueStages = [...new Set(stagesSeen)];
+    const lastStage = stagesSeen.length > 0 ? stagesSeen[stagesSeen.length - 1] : null;
+
+    // Detect stall patterns
+    const hasGreeting = stagesSeen.includes('greeting_sent');
+    const hasModelStart = stagesSeen.includes('model_start_speaking');
+    const hasTurnComplete = stagesSeen.includes('turn_complete');
+    const hasInput = stagesSeen.includes('input_transcription');
+    const hasWatchdogFired = stagesSeen.includes('watchdog_fired');
+    const hasWsError = stagesSeen.includes('upstream_ws_error');
+    const hasWsClose = stagesSeen.includes('upstream_ws_close');
+
+    let stallType: string | null = null;
+    let stallDescription: string | null = null;
+
+    if (hasWatchdogFired) {
+      stallType = 'watchdog_timeout';
+      stallDescription = 'Watchdog fired — model stopped responding mid-stream';
+    } else if (hasWsError || hasWsClose) {
+      if (!hasTurnComplete && hasModelStart) {
+        stallType = 'upstream_disconnect_mid_response';
+        stallDescription = 'Upstream WS dropped while model was speaking';
+      } else if (!hasModelStart && hasGreeting) {
+        stallType = 'upstream_disconnect_before_response';
+        stallDescription = 'Upstream WS dropped before model started speaking';
+      } else {
+        stallType = 'upstream_disconnect';
+        stallDescription = 'Upstream WebSocket disconnected';
+      }
+    } else if (hasGreeting && hasModelStart && !hasTurnComplete) {
+      stallType = 'mid_stream_stall';
+      stallDescription = 'Model started speaking but never sent turn_complete — audio froze mid-stream';
+    } else if (hasGreeting && !hasModelStart) {
+      stallType = 'no_model_response';
+      stallDescription = 'Greeting sent but model never started speaking';
+    }
+
+    // Find gaps in timestamps (>5s between stages = suspicious)
+    const gaps: Array<{ from: string; to: string; gap_ms: number }> = [];
+    for (let i = 1; i < diagnostics.length; i++) {
+      const prev = diagnostics[i - 1];
+      const curr = diagnostics[i];
+      if (prev.ts && curr.ts) {
+        const gapMs = curr.ts - prev.ts;
+        if (gapMs > 5000) {
+          gaps.push({ from: prev.stage, to: curr.stage, gap_ms: gapMs });
+        }
+      }
+    }
+
+    const analysis = {
+      total_events: diagnostics.length,
+      stages_seen: uniqueStages,
+      last_stage: lastStage,
+      stall_detected: stallType !== null,
+      stall_type: stallType,
+      stall_description: stallDescription,
+      flow: {
+        greeting_sent: hasGreeting,
+        model_start_speaking: hasModelStart,
+        turn_complete: hasTurnComplete,
+        input_transcription: hasInput,
+        watchdog_fired: hasWatchdogFired,
+        upstream_ws_error: hasWsError,
+        upstream_ws_close: hasWsClose,
+      },
+      suspicious_gaps: gaps,
+    };
+
+    return res.json({
+      ok: true,
+      session_id: sessionId,
+      diagnostics,
+      analysis,
+    });
+  } catch (err: any) {
+    console.error(`[VTID-01218A] Error getting diagnostics for ${sessionId}:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Failed to get diagnostics', details: err.message });
+  }
+});
+
+/**
  * GET /api/v1/voice-lab/health
  *
  * Health check for Voice LAB API

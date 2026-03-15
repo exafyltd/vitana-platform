@@ -8,6 +8,7 @@ const VoiceLab = (function() {
   let sessions = [];
   let currentSession = null;
   let currentTurns = [];
+  let currentDiagnostics = null;
   let statusFilter = 'all';
 
   // DOM Elements
@@ -119,6 +120,22 @@ const VoiceLab = (function() {
     } catch (err) {
       console.error('[VoiceLab] Network error:', err);
       return [];
+    }
+  }
+
+  async function fetchSessionDiagnostics(sessionId) {
+    try {
+      var response = await fetch('/api/v1/voice-lab/live/sessions/' + sessionId + '/diagnostics');
+      var data = await response.json();
+      if (data.ok) {
+        return data;
+      } else {
+        console.error('[VoiceLab] Error fetching diagnostics:', data.error);
+        return null;
+      }
+    } catch (err) {
+      console.error('[VoiceLab] Network error:', err);
+      return null;
     }
   }
 
@@ -258,6 +275,9 @@ const VoiceLab = (function() {
       </div>
     `;
 
+    // Pipeline Diagnostics section
+    html += renderPipelineDiagnostics();
+
     // Errors section (if any)
     if (s.errors && s.errors.length > 0) {
       html += `
@@ -310,19 +330,147 @@ const VoiceLab = (function() {
     }).join('');
   }
 
+  // Pipeline Diagnostics Rendering
+  function renderPipelineDiagnostics() {
+    if (!currentDiagnostics || !currentDiagnostics.diagnostics || currentDiagnostics.diagnostics.length === 0) {
+      return '<div class="vlab-detail-section">' +
+        '<h3>Pipeline Diagnostics</h3>' +
+        '<p class="vlab-text-muted">No diagnostic events recorded for this session</p>' +
+        '</div>';
+    }
+
+    var diags = currentDiagnostics.diagnostics;
+    var analysis = currentDiagnostics.analysis;
+    var html = '<div class="vlab-detail-section">';
+    html += '<h3>Pipeline Diagnostics</h3>';
+
+    // Analysis banner
+    if (analysis && analysis.stall_detected) {
+      html += '<div class="vlab-diag-alert vlab-diag-alert-error">' +
+        '<div class="vlab-diag-alert-title">STALL DETECTED: ' + escapeHtml(analysis.stall_type || '') + '</div>' +
+        '<div class="vlab-diag-alert-desc">' + escapeHtml(analysis.stall_description || '') + '</div>' +
+        '</div>';
+    } else if (analysis && analysis.total_events > 0) {
+      html += '<div class="vlab-diag-alert vlab-diag-alert-ok">' +
+        '<div class="vlab-diag-alert-title">Pipeline OK</div>' +
+        '<div class="vlab-diag-alert-desc">All expected stages completed (' + analysis.total_events + ' events)</div>' +
+        '</div>';
+    }
+
+    // Pipeline flow checkmarks
+    if (analysis && analysis.flow) {
+      var flow = analysis.flow;
+      html += '<div class="vlab-diag-flow">';
+      var stages = [
+        { key: 'greeting_sent', label: 'Greeting' },
+        { key: 'model_start_speaking', label: 'Model Speaking' },
+        { key: 'turn_complete', label: 'Turn Complete' },
+        { key: 'input_transcription', label: 'User Input' },
+        { key: 'watchdog_fired', label: 'Watchdog Fired', isError: true },
+        { key: 'upstream_ws_error', label: 'WS Error', isError: true },
+        { key: 'upstream_ws_close', label: 'WS Close', isError: true },
+      ];
+      for (var i = 0; i < stages.length; i++) {
+        var st = stages[i];
+        var reached = flow[st.key];
+        var cls = 'vlab-diag-stage';
+        if (reached && st.isError) cls += ' vlab-diag-stage-error';
+        else if (reached) cls += ' vlab-diag-stage-ok';
+        else cls += ' vlab-diag-stage-missing';
+        var icon = reached ? (st.isError ? '!' : '\u2713') : '\u2717';
+        html += '<div class="' + cls + '">' +
+          '<span class="vlab-diag-stage-icon">' + icon + '</span>' +
+          '<span class="vlab-diag-stage-label">' + st.label + '</span>' +
+          '</div>';
+      }
+      html += '</div>';
+    }
+
+    // Suspicious gaps
+    if (analysis && analysis.suspicious_gaps && analysis.suspicious_gaps.length > 0) {
+      html += '<div class="vlab-diag-gaps">';
+      html += '<div class="vlab-diag-gaps-title">Suspicious Gaps (>5s)</div>';
+      for (var g = 0; g < analysis.suspicious_gaps.length; g++) {
+        var gap = analysis.suspicious_gaps[g];
+        html += '<div class="vlab-diag-gap-item">' +
+          escapeHtml(gap.from || '?') + ' \u2192 ' + escapeHtml(gap.to || '?') +
+          ': <strong>' + (gap.gap_ms / 1000).toFixed(1) + 's</strong>' +
+          '</div>';
+      }
+      html += '</div>';
+    }
+
+    // Event timeline
+    html += '<div class="vlab-diag-timeline-title">Event Timeline (' + diags.length + ' events)</div>';
+    html += '<div class="vlab-diag-timeline">';
+
+    var firstTs = diags[0].ts;
+    for (var j = 0; j < diags.length; j++) {
+      var d = diags[j];
+      var relMs = d.ts ? (d.ts - firstTs) : 0;
+      var relLabel = '+' + (relMs / 1000).toFixed(2) + 's';
+      var stageLabel = d.stage || 'unknown';
+
+      // Determine dot color by stage type
+      var dotCls = 'vlab-diag-dot';
+      if (stageLabel === 'watchdog_fired' || stageLabel === 'upstream_ws_error' || stageLabel === 'audio_forward_failed' || stageLabel === 'audio_no_ws') {
+        dotCls += ' vlab-diag-dot-error';
+      } else if (stageLabel === 'upstream_ws_close') {
+        dotCls += ' vlab-diag-dot-warn';
+      } else if (stageLabel === 'turn_complete') {
+        dotCls += ' vlab-diag-dot-ok';
+      }
+
+      // Build meta info
+      var meta = [];
+      if (d.turn_count !== undefined) meta.push('turns:' + d.turn_count);
+      if (d.audio_in !== undefined) meta.push('in:' + d.audio_in);
+      if (d.audio_out !== undefined) meta.push('out:' + d.audio_out);
+      if (d.is_model_speaking) meta.push('speaking');
+      if (d.has_watchdog) meta.push('watchdog-active');
+      if (!d.has_upstream_ws) meta.push('NO-WS');
+      if (!d.has_sse) meta.push('NO-SSE');
+      if (d.reason) meta.push(d.reason);
+      if (d.error) meta.push(d.error);
+      if (d.tool_name) meta.push('tool:' + d.tool_name);
+
+      html += '<div class="vlab-diag-event">' +
+        '<div class="' + dotCls + '"></div>' +
+        '<div class="vlab-diag-event-content">' +
+        '<div class="vlab-diag-event-header">' +
+        '<span class="vlab-diag-event-stage">' + escapeHtml(stageLabel) + '</span>' +
+        '<span class="vlab-diag-event-time">' + relLabel + '</span>' +
+        '</div>' +
+        (meta.length > 0 ? '<div class="vlab-diag-event-meta">' + escapeHtml(meta.join(' | ')) + '</div>' : '') +
+        '</div>' +
+        '</div>';
+    }
+
+    html += '</div>';
+    html += '</div>';
+    return html;
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
   // Drawer Functions
   async function openSession(sessionId) {
     elements.drawer.classList.remove('vlab-drawer-hidden');
     elements.drawerBody.innerHTML = '<p class="vlab-text-muted vlab-text-center">Loading session details...</p>';
 
-    // Fetch session detail and turns in parallel
-    const [session, turns] = await Promise.all([
+    // Fetch session detail, turns, and diagnostics in parallel
+    var results = await Promise.all([
       fetchSessionDetail(sessionId),
       fetchSessionTurns(sessionId),
+      fetchSessionDiagnostics(sessionId),
     ]);
 
-    currentSession = session;
-    currentTurns = turns;
+    currentSession = results[0];
+    currentTurns = results[1];
+    currentDiagnostics = results[2];
 
     renderSessionDrawer();
   }
@@ -331,6 +479,7 @@ const VoiceLab = (function() {
     elements.drawer.classList.add('vlab-drawer-hidden');
     currentSession = null;
     currentTurns = [];
+    currentDiagnostics = null;
   }
 
   // Utility Functions
