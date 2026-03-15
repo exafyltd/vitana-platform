@@ -2646,6 +2646,7 @@ const state = {
         // VTID-01218B: Session details and turns
         selectedSessionDetails: null,
         selectedSessionTurns: [],
+        selectedSessionDiagnostics: null,
         sessionDetailsLoading: false,
         // Pagination
         sessionsHasMore: false,
@@ -12773,6 +12774,7 @@ function renderVoiceLabSessionDrawer() {
         state.voiceLab.selectedSession = null;
         state.voiceLab.selectedSessionDetails = null;
         state.voiceLab.selectedSessionTurns = [];
+        state.voiceLab.selectedSessionDiagnostics = null;
         var overlay = document.querySelector('.voice-lab-drawer-overlay');
         if (overlay) overlay.remove();
         renderApp();
@@ -13137,9 +13139,183 @@ function renderVoiceLabSessionDrawer() {
         drawerContent.appendChild(noTurns);
     }
 
+    // Pipeline Diagnostics Section
+    drawerContent.appendChild(renderVoiceLabPipelineDiagnostics());
+
     drawer.appendChild(drawerContent);
     overlay.appendChild(drawer);
     return overlay;
+}
+
+/**
+ * Render pipeline diagnostics section for the session detail drawer.
+ * Shows orb.live.diag events: stall analysis, flow checkmarks, timeline.
+ */
+function renderVoiceLabPipelineDiagnostics() {
+    var section = document.createElement('div');
+    section.className = 'session-detail-section';
+
+    var heading = document.createElement('div');
+    heading.className = 'session-detail-section-title';
+    heading.textContent = 'Pipeline Diagnostics';
+    section.appendChild(heading);
+
+    var diagData = state.voiceLab.selectedSessionDiagnostics;
+    if (!diagData || !diagData.diagnostics || diagData.diagnostics.length === 0) {
+        var empty = document.createElement('p');
+        empty.className = 'voice-lab-no-turns';
+        empty.textContent = 'No pipeline diagnostic events recorded for this session.';
+        section.appendChild(empty);
+        return section;
+    }
+
+    var diags = diagData.diagnostics;
+    var analysis = diagData.analysis;
+
+    // Stall detection banner
+    if (analysis && analysis.stall_detected) {
+        var alertDiv = document.createElement('div');
+        alertDiv.className = 'session-diagnostic-item diagnostic-critical';
+        alertDiv.innerHTML = '<div class="diagnostic-title">\u2716 STALL: ' + escapeHtml(analysis.stall_type || '') + '</div>' +
+            '<div class="diagnostic-detail">' + escapeHtml(analysis.stall_description || '') + '</div>';
+        section.appendChild(alertDiv);
+    } else if (analysis && analysis.total_events > 0) {
+        var okDiv = document.createElement('div');
+        okDiv.className = 'session-diagnostics session-diagnostics-healthy';
+        okDiv.style.marginBottom = '0.75rem';
+        okDiv.innerHTML = '<div class="session-diagnostics-header">\u2714 Pipeline OK (' + analysis.total_events + ' events)</div>';
+        section.appendChild(okDiv);
+    }
+
+    // Pipeline flow checkmarks
+    if (analysis && analysis.flow) {
+        var flowDiv = document.createElement('div');
+        flowDiv.className = 'pipeline-flow-badges';
+        flowDiv.style.cssText = 'display:flex;flex-wrap:wrap;gap:0.4rem;margin-bottom:0.75rem;';
+
+        var stages = [
+            { key: 'greeting_sent', label: 'Greeting' },
+            { key: 'model_start_speaking', label: 'Model Speaking' },
+            { key: 'turn_complete', label: 'Turn Complete' },
+            { key: 'input_transcription', label: 'User Input' },
+            { key: 'watchdog_fired', label: 'Watchdog Fired', isError: true },
+            { key: 'upstream_ws_error', label: 'WS Error', isError: true },
+            { key: 'upstream_ws_close', label: 'WS Close', isError: true }
+        ];
+
+        for (var i = 0; i < stages.length; i++) {
+            var st = stages[i];
+            var reached = analysis.flow[st.key];
+            var badge = document.createElement('span');
+            if (reached && st.isError) {
+                badge.style.cssText = 'display:inline-flex;align-items:center;gap:0.25rem;padding:0.25rem 0.5rem;border-radius:0.25rem;font-size:0.7rem;font-weight:600;background:rgba(127,29,29,0.4);color:#fca5a5;border:1px solid rgba(220,38,38,0.4);';
+                badge.textContent = '! ' + st.label;
+            } else if (reached) {
+                badge.style.cssText = 'display:inline-flex;align-items:center;gap:0.25rem;padding:0.25rem 0.5rem;border-radius:0.25rem;font-size:0.7rem;font-weight:600;background:rgba(22,101,52,0.3);color:#86efac;border:1px solid rgba(34,197,94,0.3);';
+                badge.textContent = '\u2713 ' + st.label;
+            } else {
+                badge.style.cssText = 'display:inline-flex;align-items:center;gap:0.25rem;padding:0.25rem 0.5rem;border-radius:0.25rem;font-size:0.7rem;font-weight:600;background:rgba(51,65,85,0.3);color:#64748b;border:1px solid #334155;';
+                badge.textContent = '\u2717 ' + st.label;
+            }
+            flowDiv.appendChild(badge);
+        }
+        section.appendChild(flowDiv);
+    }
+
+    // Suspicious gaps
+    if (analysis && analysis.suspicious_gaps && analysis.suspicious_gaps.length > 0) {
+        var gapsDiv = document.createElement('div');
+        gapsDiv.style.cssText = 'margin-bottom:0.75rem;padding:0.5rem 0.6rem;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:0.375rem;';
+        var gapsTitle = document.createElement('div');
+        gapsTitle.style.cssText = 'font-size:0.7rem;font-weight:600;color:#fbbf24;margin-bottom:0.3rem;';
+        gapsTitle.textContent = 'Suspicious Gaps (>5s)';
+        gapsDiv.appendChild(gapsTitle);
+        for (var g = 0; g < analysis.suspicious_gaps.length; g++) {
+            var gap = analysis.suspicious_gaps[g];
+            var gapItem = document.createElement('div');
+            gapItem.style.cssText = 'font-size:0.7rem;color:#d4d4d8;margin-top:0.15rem;';
+            gapItem.innerHTML = escapeHtml(gap.from || '?') + ' \u2192 ' + escapeHtml(gap.to || '?') +
+                ': <strong>' + (gap.gap_ms / 1000).toFixed(1) + 's</strong>';
+            gapsDiv.appendChild(gapItem);
+        }
+        section.appendChild(gapsDiv);
+    }
+
+    // Event timeline
+    var timelineTitle = document.createElement('div');
+    timelineTitle.style.cssText = 'font-size:0.7rem;font-weight:600;color:#94a3b8;margin-bottom:0.4rem;';
+    timelineTitle.textContent = 'Event Timeline (' + diags.length + ' events)';
+    section.appendChild(timelineTitle);
+
+    var timeline = document.createElement('div');
+    timeline.style.cssText = 'position:relative;';
+
+    var firstTs = diags[0].ts;
+    for (var j = 0; j < diags.length; j++) {
+        var d = diags[j];
+        var relMs = d.ts ? (d.ts - firstTs) : 0;
+        var relLabel = '+' + (relMs / 1000).toFixed(2) + 's';
+        var stageLabel = d.stage || 'unknown';
+
+        var eventDiv = document.createElement('div');
+        eventDiv.style.cssText = 'display:flex;align-items:flex-start;gap:0.5rem;padding:0.3rem 0;border-left:2px solid #334155;margin-left:0.3rem;padding-left:0.8rem;position:relative;';
+        if (j === diags.length - 1) eventDiv.style.borderLeftColor = 'transparent';
+
+        // Dot
+        var dot = document.createElement('div');
+        var dotColor = '#3b82f6';
+        if (stageLabel === 'watchdog_fired' || stageLabel === 'upstream_ws_error' || stageLabel === 'audio_forward_failed' || stageLabel === 'audio_no_ws') {
+            dotColor = '#ef4444';
+        } else if (stageLabel === 'upstream_ws_close') {
+            dotColor = '#f59e0b';
+        } else if (stageLabel === 'turn_complete') {
+            dotColor = '#22c55e';
+        }
+        dot.style.cssText = 'position:absolute;left:-0.25rem;top:0.45rem;width:0.5rem;height:0.5rem;border-radius:50%;background:' + dotColor + ';flex-shrink:0;';
+        eventDiv.appendChild(dot);
+
+        // Content
+        var content = document.createElement('div');
+        content.style.cssText = 'min-width:0;flex:1;';
+
+        var header = document.createElement('div');
+        header.style.cssText = 'display:flex;justify-content:space-between;align-items:baseline;';
+        var stageSpan = document.createElement('span');
+        stageSpan.style.cssText = 'font-family:monospace;font-size:0.7rem;font-weight:600;color:#e2e8f0;';
+        stageSpan.textContent = stageLabel;
+        var timeSpan = document.createElement('span');
+        timeSpan.style.cssText = 'font-family:monospace;font-size:0.6rem;color:#64748b;';
+        timeSpan.textContent = relLabel;
+        header.appendChild(stageSpan);
+        header.appendChild(timeSpan);
+        content.appendChild(header);
+
+        // Meta info
+        var meta = [];
+        if (d.turn_count !== undefined) meta.push('turns:' + d.turn_count);
+        if (d.audio_in !== undefined) meta.push('in:' + d.audio_in);
+        if (d.audio_out !== undefined) meta.push('out:' + d.audio_out);
+        if (d.is_model_speaking) meta.push('speaking');
+        if (d.has_watchdog) meta.push('watchdog-active');
+        if (!d.has_upstream_ws) meta.push('NO-WS');
+        if (!d.has_sse) meta.push('NO-SSE');
+        if (d.reason) meta.push(d.reason);
+        if (d.error) meta.push(d.error);
+        if (d.tool_name) meta.push('tool:' + d.tool_name);
+
+        if (meta.length > 0) {
+            var metaDiv = document.createElement('div');
+            metaDiv.style.cssText = 'font-size:0.6rem;color:#94a3b8;margin-top:0.1rem;word-break:break-all;';
+            metaDiv.textContent = meta.join(' | ');
+            content.appendChild(metaDiv);
+        }
+
+        eventDiv.appendChild(content);
+        timeline.appendChild(eventDiv);
+    }
+
+    section.appendChild(timeline);
+    return section;
 }
 
 /**
@@ -13210,22 +13386,28 @@ function fetchVoiceLabSessionDetails(sessionId) {
     state.voiceLab.sessionDetailsLoading = true;
     state.voiceLab.selectedSessionDetails = null;
     state.voiceLab.selectedSessionTurns = [];
+    state.voiceLab.selectedSessionDiagnostics = null;
     renderApp();
 
-    // Fetch session details and turns in parallel
+    // Fetch session details, turns, and pipeline diagnostics in parallel
     Promise.all([
         fetch('/api/v1/voice-lab/live/sessions/' + sessionId).then(function (r) { return r.json(); }),
-        fetch('/api/v1/voice-lab/live/sessions/' + sessionId + '/turns').then(function (r) { return r.json(); })
+        fetch('/api/v1/voice-lab/live/sessions/' + sessionId + '/turns').then(function (r) { return r.json(); }),
+        fetch('/api/v1/voice-lab/live/sessions/' + sessionId + '/diagnostics').then(function (r) { return r.json(); }).catch(function () { return null; })
     ])
         .then(function (results) {
             var detailsResp = results[0];
             var turnsResp = results[1];
+            var diagResp = results[2];
 
             if (detailsResp.ok && detailsResp.session) {
                 state.voiceLab.selectedSessionDetails = detailsResp.session;
             }
             if (turnsResp.ok && turnsResp.turns) {
                 state.voiceLab.selectedSessionTurns = turnsResp.turns;
+            }
+            if (diagResp && diagResp.ok) {
+                state.voiceLab.selectedSessionDiagnostics = diagResp;
             }
             state.voiceLab.sessionDetailsLoading = false;
             renderApp();
