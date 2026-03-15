@@ -2563,9 +2563,21 @@ async function sendToolResultsToVertex(
     },
     systemInstruction: {
       role: 'system',
-      parts: [{ text: `You are the Vitana Operator Assistant. Summarize the tool results for the operator in a clear, helpful way.
+      parts: [{ text: `You are Vitana, a friendly community assistant. Present the tool results to the user in a warm, helpful way.
 If there were errors or governance blocks, explain them clearly.
-If successful, confirm what was done and any next steps.` }]
+If successful, present the results naturally.
+
+CRITICAL — Sharing links:
+- Event search results contain "Link: https://e.vitanaland.com/events/..." for each event. You MUST include this URL in your response when presenting events.
+- Match results contain "deep_link: https://e.vitanaland.com/matches/..." for each match. You MUST include this URL in your response.
+- ALWAYS put the URL on its own line so it becomes clickable.
+- NEVER say "I'll send the link", "the link is on its way", or "I cannot find a link". The URL IS in the data — copy it exactly.
+- Example event response:
+  🎉 City by Bike Tour in Lyon — Sat, Mar 21
+  https://e.vitanaland.com/events/city-by-bike-tour-lyon
+- Example match response:
+  🤝 Morning Walk Group — 92% match!
+  https://e.vitanaland.com/matches/abc-123-def` }]
     }
   });
 
@@ -2589,12 +2601,53 @@ If successful, confirm what was done and any next steps.` }]
   try {
     const response = await generativeModel.generateContent({ contents });
     const textPart = response.response?.candidates?.[0]?.content?.parts?.find((p: Part) => 'text' in p);
-    const reply = textPart ? (textPart as any).text : 'Operation completed.';
-    return { reply };
+    const rawReply = textPart ? (textPart as any).text : 'Operation completed.';
+    return { reply: ensureLinksInReply(rawReply, toolResults) };
   } catch (err: any) {
     console.warn(`[VTID-01023] Vertex tool results call failed: ${err.message}`);
     return formatToolResultsAsResponse(toolResults);
   }
+}
+
+/**
+ * VTID-01270: Extract e.vitanaland.com links from tool results.
+ * If the LLM's reply doesn't include them, append them as a safety net.
+ */
+function ensureLinksInReply(reply: string, toolResults: GeminiToolResult[]): string {
+  // Collect all e.vitanaland.com links from tool result data
+  const links: string[] = [];
+  for (const tr of toolResults) {
+    const data = tr.response;
+    // Event search results contain "Link: https://e.vitanaland.com/..."
+    if (typeof data?.result === 'string') {
+      const linkMatches = data.result.match(/https:\/\/e\.vitanaland\.com\/[^\s]+/g);
+      if (linkMatches) links.push(...linkMatches);
+    }
+    // Match tool results contain deep_link in each match object
+    if (Array.isArray(data?.matches)) {
+      for (const m of data.matches) {
+        if (m.deep_link && typeof m.deep_link === 'string') {
+          links.push(m.deep_link);
+        }
+      }
+    }
+    // discover_all_link
+    if (data?.discover_all_link && typeof data.discover_all_link === 'string') {
+      links.push(data.discover_all_link);
+    }
+  }
+
+  if (links.length === 0) return reply;
+
+  // Check if reply already contains at least one of the links
+  const hasAnyLink = links.some(link => reply.includes(link));
+  if (hasAnyLink) return reply;
+
+  // Append missing links
+  const uniqueLinks = [...new Set(links)];
+  const linkBlock = uniqueLinks.slice(0, 5).join('\n');
+  console.log(`[VTID-01270] LLM omitted links, appending ${uniqueLinks.length} links to reply`);
+  return `${reply}\n\n${linkBlock}`;
 }
 
 /**
@@ -3017,8 +3070,9 @@ CRITICAL — Sharing links:
 
   const result = await response.json() as any;
   const textPart = result.candidates?.[0]?.content?.parts?.find((p: any) => p.text);
+  const rawReply = textPart?.text || 'Operation completed.';
 
-  return { reply: textPart?.text || 'Operation completed.' };
+  return { reply: ensureLinksInReply(rawReply, toolResults) };
 }
 
 /**
