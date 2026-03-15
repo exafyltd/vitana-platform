@@ -366,7 +366,7 @@ export interface ToolDefinition {
   enabled: boolean;
 
   /** Tool category */
-  category: 'autopilot' | 'knowledge' | 'memory' | 'system' | 'custom' | 'fallback';
+  category: 'autopilot' | 'knowledge' | 'memory' | 'system' | 'custom' | 'fallback' | 'matchmaking';
 
   /** Average latency in ms */
   avg_latency_ms?: number;

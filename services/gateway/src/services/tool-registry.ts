@@ -264,6 +264,62 @@ Autopilot is the single source of truth for "what to do next".`,
     },
   ],
 
+  // ===== VTID-01270: Matchmaking Tools =====
+  [
+    'get_user_matches',
+    {
+      name: 'get_user_matches',
+      description: `Fetch the current user's match recommendations from the matchmaking engine.
+Call this tool when:
+- User asks about events, groups, people to meet, connections, or community
+- User mentions loneliness, wanting to meet people, or looking for something to do
+- User asks "what's new", "anything for me today", or describes criteria (e.g. "walking groups near me")
+- User asks about recommendations, suggestions, or matches
+
+Returns today's suggested matches with privacy-safe previews including:
+- Score (0-100), display name, shared topics, match type, and deep link
+- Person matches only show what the user has consented to reveal
+
+When presenting results:
+1. Pick the BEST single match for the user's specific request and present it with context — explain WHY it fits
+2. Include the deep link: /discover?m={match_id}
+3. Mention alternatives: "I also found some alternatives you might like — discover more: /discover"
+4. Do NOT fabricate matches — only present what this tool returns
+5. If no matches fit, acknowledge it and suggest /discover or different criteria`,
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          date: {
+            type: 'string',
+            description: 'Date in YYYY-MM-DD format. Defaults to today.',
+          },
+          match_type: {
+            type: 'string',
+            enum: ['person', 'group', 'event', 'service', 'product', 'location', 'live_room'],
+            description: 'Optional filter by match type.',
+          },
+          topic_filter: {
+            type: 'string',
+            description: 'Optional topic keyword to filter matches (e.g. "walking", "sleep", "nutrition").',
+          },
+          min_score: {
+            type: 'integer',
+            description: 'Minimum match score (0-100). Default: 0.',
+          },
+          limit: {
+            type: 'integer',
+            description: 'Maximum number of matches to return. Default: 5.',
+          },
+        },
+        required: [],
+      },
+      allowed_roles: ['user', 'operator', 'admin', 'developer', 'system'],
+      enabled: true,
+      category: 'matchmaking',
+      vtid: 'VTID-01270',
+    },
+  ],
+
   // ===== VTID-01221: Deterministic Fallback Tools =====
   [
     'oasis_analyze_vtid',

@@ -23,6 +23,7 @@ import { randomUUID } from 'crypto';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { notifyUserAsync } from '../services/notification-service';
+import { sendProactiveMatchMessages, ProactiveMatchResult } from '../services/proactive-match-messenger';
 
 const router = Router();
 
@@ -625,7 +626,8 @@ router.get('/', (_req: Request, res: Response) => {
     endpoints: [
       'POST /api/v1/match/recompute/daily',
       'GET /api/v1/match/daily?date=YYYY-MM-DD',
-      'POST /api/v1/match/:id/state'
+      'POST /api/v1/match/:id/state',
+      'POST /api/v1/match/proactive/send'
     ],
     match_types: MATCH_TARGET_TYPES,
     match_states: MATCH_STATES,
@@ -669,6 +671,144 @@ router.get('/health', (_req: Request, res: Response) => {
       'VTID-01103': 'health_compute (vitana_index_scores for longevity signals)'
     }
   });
+});
+
+// =============================================================================
+// VTID-01270: Proactive Match Messenger
+// =============================================================================
+
+/**
+ * Proactive send request schema
+ */
+const ProactiveSendRequestSchema = z.object({
+  tenant_id: z.string().uuid(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format').optional(),
+  user_ids: z.array(z.string().uuid()).optional(),
+  min_score: z.number().int().min(0).max(100).optional(),
+  max_matches_per_user: z.number().int().min(1).max(10).optional(),
+  dry_run: z.boolean().optional(),
+});
+
+/**
+ * POST /proactive/send -> POST /api/v1/match/proactive/send
+ *
+ * Trigger proactive match messages for users in a tenant.
+ * Called by the daily scheduler after match recompute completes,
+ * or manually for testing.
+ */
+router.post('/proactive/send', async (req: Request, res: Response) => {
+  console.log(`[${VTID}] POST /match/proactive/send`);
+
+  const validation = ProactiveSendRequestSchema.safeParse(req.body);
+  if (!validation.success) {
+    return res.status(400).json({
+      ok: false,
+      error: 'VALIDATION_FAILED',
+      details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', '),
+    });
+  }
+
+  const {
+    tenant_id,
+    date: requestDate,
+    user_ids,
+    min_score = 60,
+    max_matches_per_user = 3,
+    dry_run = false,
+  } = validation.data;
+
+  const date = requestDate || getCurrentDate();
+  const startTime = Date.now();
+
+  try {
+    // Determine target users
+    let targetUserIds: string[] = user_ids || [];
+
+    if (targetUserIds.length === 0) {
+      // Query all users with suggested matches for this date
+      const { createClient } = await import('@supabase/supabase-js');
+      const supa = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
+
+      const { data: users, error } = await supa
+        .from('matches_daily')
+        .select('user_id')
+        .eq('match_date', date)
+        .eq('state', 'suggested')
+        .gte('score', min_score);
+
+      if (error) {
+        console.error(`[${VTID}] Failed to query users with matches:`, error.message);
+        return res.status(502).json({ ok: false, error: 'UPSTREAM_ERROR', message: error.message });
+      }
+
+      // Deduplicate user IDs
+      targetUserIds = [...new Set((users || []).map((u: any) => u.user_id))];
+    }
+
+    if (dry_run) {
+      return res.status(200).json({
+        ok: true,
+        dry_run: true,
+        target_users: targetUserIds.length,
+        date,
+        min_score,
+        max_matches_per_user,
+      });
+    }
+
+    // Process each user
+    let sent = 0;
+    let skipped = 0;
+    let failed = 0;
+    const errors: Array<{ user_id: string; error: string }> = [];
+
+    for (const uid of targetUserIds) {
+      const result: ProactiveMatchResult = await sendProactiveMatchMessages({
+        user_id: uid,
+        tenant_id,
+        date,
+        max_matches: max_matches_per_user,
+        min_score,
+      });
+
+      if (result.messages_sent > 0) {
+        sent++;
+      } else if (result.skipped_reason) {
+        skipped++;
+      } else if (!result.ok) {
+        failed++;
+        errors.push({ user_id: uid, error: result.error || 'Unknown error' });
+      } else {
+        skipped++;
+      }
+    }
+
+    const elapsed = Date.now() - startTime;
+
+    // Emit batch completed event
+    await emitMatchEvent(
+      'match.proactive.batch.completed' as any,
+      'success',
+      `Proactive batch completed: ${sent} sent, ${skipped} skipped, ${failed} failed`,
+      { tenant_id, date, sent, skipped, failed, total_users: targetUserIds.length, elapsed_ms: elapsed }
+    );
+
+    console.log(`[${VTID}] Proactive send batch: ${sent} sent, ${skipped} skipped, ${failed} failed in ${elapsed}ms`);
+
+    return res.status(200).json({
+      ok: failed === 0,
+      date,
+      sent,
+      skipped,
+      failed,
+      total_users: targetUserIds.length,
+      elapsed_ms: elapsed,
+      errors: errors.length > 0 ? errors : undefined,
+    });
+  } catch (err: any) {
+    console.error(`[${VTID}] Proactive send error:`, err.message);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 export default router;

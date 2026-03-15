@@ -451,7 +451,16 @@ User's role: ${role}
 
 Instructions:
 ${ucConfig.common_instructions || '- Use the memory context to personalize responses\n- Use knowledge context for Vitana-specific questions\n- Be helpful and accurate'}
-- ${channel === 'orb' ? (ucConfig.instructions_orb || 'Keep responses brief and natural for voice') : (ucConfig.instructions_operator || 'You can use markdown formatting and be more detailed')}`;
+- ${channel === 'orb' ? (ucConfig.instructions_orb || 'Keep responses brief and natural for voice') : (ucConfig.instructions_operator || 'You can use markdown formatting and be more detailed')}
+
+Match Recommendations:
+- When the user asks about events, groups, people, connections, or describes what they are looking for, use the get_user_matches tool to fetch relevant matches.
+- Present the BEST single match for their specific request first. Explain WHY it fits what they asked for, based on shared topics and score.
+- Then say something like: "I also found some alternatives you might like — discover more: /discover"
+- Always include the specific match deep link: /discover?m={match_id}
+- For person matches, respect privacy — never reveal more identity than what the match data provides.
+- Do NOT fabricate matches. Only present what the get_user_matches tool returns.
+- If no matches fit the user's criteria, acknowledge it and suggest they check /discover for all available matches or try different criteria.`;
 }
 
 // Re-export isUnifiedConversationEnabled from system-controls-service

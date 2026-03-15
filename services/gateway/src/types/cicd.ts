@@ -499,7 +499,12 @@ export type CicdEventType =
   | 'autopilot.recommendations.failed'
   | 'dev.recommendation.presented'
   | 'dev.recommendation.selected'
-  | 'dev.fallback.tool_used';
+  | 'dev.fallback.tool_used'
+  // VTID-01270: Proactive Match Messenger Events
+  | 'match.proactive.sent'
+  | 'match.proactive.skipped'
+  | 'match.proactive.error'
+  | 'match.proactive.batch.completed';
 
 export interface CicdOasisEvent {
   vtid: string;

@@ -449,6 +449,15 @@ async function executePipelineForUser(
     console.warn(`[Notifications] daily_recompute_complete dispatch error: ${err.message}`);
   }
 
+  // VTID-01270: Send proactive match messages after pipeline completion (fire-and-forget)
+  try {
+    const { sendProactiveMatchMessages } = await import('./proactive-match-messenger');
+    sendProactiveMatchMessages({ user_id: userId, tenant_id: tenantId, date: runDate })
+      .catch(err => console.warn(`[VTID-01270] Proactive match send failed for ${userId}: ${err.message}`));
+  } catch (err: any) {
+    console.warn(`[VTID-01270] Proactive match import failed: ${err.message}`);
+  }
+
   return { ok: true, run_id: run.id };
 }
 

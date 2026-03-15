@@ -49,6 +49,8 @@ import {
 } from './llm-telemetry-service';
 import { getPersonalityConfigSync } from './ai-personality-service';
 import { scoreAndRankEvents, formatForText, EventRecord, EventSearchFilters, ScoredEventResults } from './event-relevance-scoring';
+// VTID-01270: Matchmaking tool handler
+import { executeGetUserMatches as executeGetUserMatchesTool } from './match-tool-handler';
 
 // Environment config
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -2290,6 +2292,33 @@ export async function executeTool(
           threadId
         );
         break;
+
+      // VTID-01270: Matchmaking tool — fetch user's daily matches
+      case 'get_user_matches': {
+        const matchIdentity = threadIdentityMap.get(threadId);
+        if (matchIdentity?.user_id && matchIdentity?.tenant_id) {
+          const matchResult = await executeGetUserMatchesTool(
+            matchIdentity.user_id,
+            matchIdentity.tenant_id,
+            args as { date?: string; match_type?: string; topic_filter?: string; min_score?: number; limit?: number }
+          );
+          result = {
+            ok: matchResult.ok,
+            data: {
+              matches: matchResult.matches,
+              total_available: matchResult.total_available,
+              date: matchResult.date,
+              discover_all_link: matchResult.discover_all_link,
+            },
+          };
+        } else {
+          result = {
+            ok: false,
+            error: 'User context not available for matchmaking tool',
+          };
+        }
+        break;
+      }
 
       default:
         result = {
