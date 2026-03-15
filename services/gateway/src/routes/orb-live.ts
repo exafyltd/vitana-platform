@@ -930,6 +930,19 @@ const GREETING_RESPONSE_TIMEOUT_MS = 8_000; // 8s for greeting to arrive
 const TURN_RESPONSE_TIMEOUT_MS = 10_000;    // 10s for response after user speech
 
 // =============================================================================
+// VTID-FORWARDING-WATCHDOG: Detect zombie upstream WebSocket connections
+// =============================================================================
+// After turn_complete, the response watchdog is cleared. When the user speaks
+// again, the watchdog only re-starts when Vertex sends input_transcription.
+// If the upstream WS is zombie (technically OPEN but not processing audio),
+// the forwarded audio goes nowhere — no transcription, no watchdog, no recovery.
+// This timeout starts when user audio is successfully forwarded to Vertex
+// but no existing watchdog is running. If Vertex doesn't acknowledge the
+// audio (via input_transcription or model response) within this window,
+// the stall recovery kicks in (terminate WS → transparent reconnect).
+const FORWARDING_ACK_TIMEOUT_MS = 15_000; // 15s for Vertex to acknowledge forwarded audio
+
+// =============================================================================
 // VTID-LOOPGUARD: Response loop prevention
 // =============================================================================
 // Gemini Live API can enter a generative loop where the model keeps responding
@@ -6552,6 +6565,13 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
         const sent = sendAudioToLiveAPI(session.upstreamWs, body.data_b64, body.mime || 'audio/pcm;rate=16000');
         if (sent) {
           session.lastAudioForwardedTime = Date.now(); // VTID-STREAM-SILENCE: reset idle timer
+          // VTID-FORWARDING-WATCHDOG: If user audio is being forwarded but no
+          // watchdog is running, start one. This catches zombie upstream WS
+          // connections where audio goes in but nothing comes back (no
+          // input_transcription → no watchdog → stuck forever).
+          if (!session.responseWatchdogTimer && !session.isModelSpeaking) {
+            startResponseWatchdog(session, FORWARDING_ACK_TIMEOUT_MS, 'forwarding_no_ack');
+          }
           // VTID-DIAG: Periodic audio forward diagnostic (every 100 chunks)
           if (session.audioInChunks % 100 === 0) {
             emitDiag(session, 'audio_forwarding', { chunk: session.audioInChunks });
@@ -7711,6 +7731,10 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
 
     if (sent) {
       liveSession.lastAudioForwardedTime = Date.now(); // VTID-STREAM-SILENCE: reset idle timer
+      // VTID-FORWARDING-WATCHDOG: Same as SSE path — detect zombie upstream WS
+      if (!liveSession.responseWatchdogTimer && !liveSession.isModelSpeaking) {
+        startResponseWatchdog(liveSession, FORWARDING_ACK_TIMEOUT_MS, 'forwarding_no_ack');
+      }
     } else {
       console.warn(`[VTID-01222] Failed to forward audio chunk for ${sessionId}`);
     }
