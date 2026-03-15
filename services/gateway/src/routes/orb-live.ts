@@ -829,6 +829,66 @@ const LIVE_API_VOICES: Record<string, string> = {
 };
 
 // =============================================================================
+// VTID-INSTANT-FEEDBACK: Server-side activation chime for mobile (WebSocket path)
+// =============================================================================
+// The mobile app (Lovable frontend) can't be directly edited, so we generate
+// a short chime as raw PCM audio on the server and send it through the existing
+// WebSocket audio pipeline. The client plays it via its normal audio playback
+// code — no frontend changes needed.
+//
+// Two-tone ascending chime: C5 (523Hz) → E5 (659Hz), ~400ms total
+// Format: 24kHz mono 16-bit PCM (matches Gemini Live API output format)
+
+let cachedChimePcmB64: string | null = null;
+
+function generateChimePcm(): string {
+  if (cachedChimePcmB64) return cachedChimePcmB64;
+
+  const sampleRate = 24000;
+  const duration = 0.40; // 400ms total
+  const totalSamples = Math.floor(sampleRate * duration);
+  const buffer = Buffer.alloc(totalSamples * 2); // 16-bit = 2 bytes per sample
+
+  const tone1Freq = 523.25; // C5
+  const tone2Freq = 659.25; // E5
+  const tone1End = 0.15;    // First tone: 0-150ms
+  const tone2Start = 0.15;  // Second tone: 150-400ms
+  const amplitude = 4000;   // ~12% of max (gentle volume)
+
+  for (let i = 0; i < totalSamples; i++) {
+    const t = i / sampleRate;
+    let sample = 0;
+
+    if (t < tone1End) {
+      // First tone with fade-in (0-20ms) and fade-out (80-150ms)
+      let env = 1.0;
+      if (t < 0.02) env = t / 0.02;
+      else if (t > 0.08) env = (tone1End - t) / (tone1End - 0.08);
+      sample = Math.sin(2 * Math.PI * tone1Freq * t) * amplitude * env;
+    } else if (t >= tone2Start) {
+      // Second tone with fade-in (150-170ms) and fade-out (250-400ms)
+      const t2 = t - tone2Start;
+      const tone2Duration = duration - tone2Start;
+      let env = 1.0;
+      if (t2 < 0.02) env = t2 / 0.02;
+      else if (t2 > 0.10) env = (tone2Duration - t2) / (tone2Duration - 0.10);
+      sample = Math.sin(2 * Math.PI * tone2Freq * t) * amplitude * env;
+    }
+
+    // Clamp to 16-bit range
+    const clamped = Math.max(-32768, Math.min(32767, Math.round(sample)));
+    buffer.writeInt16LE(clamped, i * 2);
+  }
+
+  cachedChimePcmB64 = buffer.toString('base64');
+  console.log(`[VTID-INSTANT-FEEDBACK] Chime PCM generated: ${totalSamples} samples, ${buffer.length} bytes, ${cachedChimePcmB64.length} b64 chars`);
+  return cachedChimePcmB64;
+}
+
+// Pre-generate at module load
+generateChimePcm();
+
+// =============================================================================
 // VTID-RESPONSE-DELAY: VAD silence threshold for end-of-speech detection
 // =============================================================================
 // How long Vertex waits after user stops speaking before triggering a response.
@@ -6302,6 +6362,24 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
         }
       }
 
+      // VTID-INSTANT-FEEDBACK: Send activation chime via SSE before greeting prompt.
+      // Gives instant audio feedback while Gemini generates the real greeting (2-5s).
+      if (session.sseResponse) {
+        try {
+          const chimePcm = generateChimePcm();
+          session.sseResponse.write(`data: ${JSON.stringify({
+            type: 'audio',
+            data_b64: chimePcm,
+            mime: 'audio/pcm;rate=24000',
+            chunk_number: session.audioOutChunks++,
+            source: 'activation_chime'
+          })}\n\n`);
+          console.log(`[VTID-INSTANT-FEEDBACK] Activation chime sent via SSE for session ${sessionId}`);
+        } catch (err) {
+          console.warn('[VTID-INSTANT-FEEDBACK] Failed to send chime via SSE:', err);
+        }
+      }
+
       // Send greeting prompt — Gemini generates it with the real Live API voice
       sendGreetingPromptToLiveAPI(ws, session);
     }).catch((err: any) => {
@@ -7154,7 +7232,22 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
         return;
       }
       if (liveSession.greetingDeferred && !liveSession.greetingSent && liveSession.upstreamWs) {
-        console.log(`[VTID-AUDIO-READY] Client audio_ready received — sending deferred greeting for session ${liveSession.sessionId}`);
+        console.log(`[VTID-AUDIO-READY] Client audio_ready received — sending chime + deferred greeting for session ${liveSession.sessionId}`);
+        // VTID-INSTANT-FEEDBACK: Send activation chime immediately so user hears
+        // instant audio feedback while Gemini generates the real greeting (2-5s).
+        try {
+          const chimePcm = generateChimePcm();
+          sendWsMessage(clientWs, {
+            type: 'audio',
+            data_b64: chimePcm,
+            mime: 'audio/pcm;rate=24000',
+            chunk_number: liveSession.audioOutChunks++,
+            source: 'activation_chime'
+          });
+          console.log(`[VTID-INSTANT-FEEDBACK] Activation chime sent via WS for session ${liveSession.sessionId}`);
+        } catch (err) {
+          console.warn('[VTID-INSTANT-FEEDBACK] Failed to send chime via WS:', err);
+        }
         sendGreetingPromptToLiveAPI(liveSession.upstreamWs, liveSession);
         liveSession.greetingDeferred = false;
       } else {
@@ -7511,7 +7604,20 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       console.log(`[VTID-AUDIO-READY] Greeting deferred — waiting for client audio_ready: session=${sessionId}`);
       setTimeout(() => {
         if (!liveSession.greetingSent && liveSession.active && liveSession.upstreamWs) {
-          console.log(`[VTID-AUDIO-READY] Fallback: sending greeting after 2s timeout: session=${sessionId}`);
+          console.log(`[VTID-AUDIO-READY] Fallback: sending chime + greeting after 2s timeout: session=${sessionId}`);
+          // VTID-INSTANT-FEEDBACK: Send chime before fallback greeting too
+          try {
+            const chimePcm = generateChimePcm();
+            sendWsMessage(clientWs, {
+              type: 'audio',
+              data_b64: chimePcm,
+              mime: 'audio/pcm;rate=24000',
+              chunk_number: liveSession.audioOutChunks++,
+              source: 'activation_chime'
+            });
+          } catch (err) {
+            console.warn('[VTID-INSTANT-FEEDBACK] Failed to send chime in fallback:', err);
+          }
           sendGreetingPromptToLiveAPI(liveSession.upstreamWs, liveSession);
           liveSession.greetingDeferred = false;
         }
