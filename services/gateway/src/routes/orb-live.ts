@@ -6219,75 +6219,109 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
     }
   }
 
-  // VTID-01219: Connect to Vertex AI Live API WebSocket
-  let liveApiConnected = false;
+  // VTID-INSTANT-FEEDBACK: Send ready event IMMEDIATELY so client transitions UI
+  // and can play the activation chime before Live API connects.
+  res.write(`data: ${JSON.stringify({
+    type: 'ready',
+    session_id: sessionId,
+    live_api_connected: false, // Live API connects in parallel
+    meta: {
+      model: VERTEX_LIVE_MODEL,
+      lang: session.lang,
+      voice: LIVE_API_VOICES[session.lang] || LIVE_API_VOICES['en'] || getVoiceForLang(session.lang),
+      audio_out_rate: 24000,
+      audio_in_rate: 16000
+    }
+  })}\n\n`);
+
+  // VTID-01219: Connect to Vertex AI Live API WebSocket IN PARALLEL (non-blocking).
+  // The ready event is already sent so the client gets instant visual + audio feedback
+  // (chime) while this connection establishes in the background.
   console.log(`[VTID-ORBC] Live API check: googleAuth=${!!googleAuth}, VERTEX_PROJECT_ID=${VERTEX_PROJECT_ID || 'EMPTY'}, sessionId=${sessionId}`);
   if (googleAuth && VERTEX_PROJECT_ID) {
-    try {
-      console.log(`[VTID-01219] Connecting to Vertex AI Live API for session ${sessionId}...`);
-
-      const ws = await connectToLiveAPI(
-        session,
-        // Audio response handler - forward to client via SSE
-        // FIX: Send raw PCM for Web Audio API scheduled playback (eliminates gaps between chunks)
-        (audioB64: string) => {
-          if (session.sseResponse) {
-            try {
-              // Send raw PCM - client uses Web Audio API scheduling for seamless playback
-              session.sseResponse.write(`data: ${JSON.stringify({
-                type: 'audio',
-                data_b64: audioB64,
-                mime: 'audio/pcm;rate=24000',
-                chunk_number: session.audioOutChunks
-              })}\n\n`);
-            } catch (err) {
-              console.error('[VTID-01219] Error sending audio to client:', err);
-            }
-          }
-        },
-        // Text response handler - forward to client via SSE
-        (text: string) => {
-          if (session.sseResponse) {
-            try {
-              session.sseResponse.write(`data: ${JSON.stringify({
-                type: 'transcript',
-                text
-              })}\n\n`);
-            } catch (err) {
-              console.error('[VTID-01219] Error sending transcript to client:', err);
-            }
-          }
-        },
-        // Error handler
-        (error: Error) => {
-          console.error(`[VTID-01219] Live API error for session ${sessionId}:`, error);
-          if (session.sseResponse) {
-            try {
-              session.sseResponse.write(`data: ${JSON.stringify({
-                type: 'error',
-                message: 'Live API connection error'
-              })}\n\n`);
-            } catch (err) {
-              // Ignore
-            }
+    const liveApiPromise = connectToLiveAPI(
+      session,
+      // Audio response handler - forward to client via SSE
+      (audioB64: string) => {
+        if (session.sseResponse) {
+          try {
+            session.sseResponse.write(`data: ${JSON.stringify({
+              type: 'audio',
+              data_b64: audioB64,
+              mime: 'audio/pcm;rate=24000',
+              chunk_number: session.audioOutChunks
+            })}\n\n`);
+          } catch (err) {
+            console.error('[VTID-01219] Error sending audio to client:', err);
           }
         }
-      );
+      },
+      // Text response handler - forward to client via SSE
+      (text: string) => {
+        if (session.sseResponse) {
+          try {
+            session.sseResponse.write(`data: ${JSON.stringify({
+              type: 'transcript',
+              text
+            })}\n\n`);
+          } catch (err) {
+            console.error('[VTID-01219] Error sending transcript to client:', err);
+          }
+        }
+      },
+      // Error handler
+      (error: Error) => {
+        console.error(`[VTID-01219] Live API error for session ${sessionId}:`, error);
+        if (session.sseResponse) {
+          try {
+            session.sseResponse.write(`data: ${JSON.stringify({
+              type: 'error',
+              message: 'Live API connection error'
+            })}\n\n`);
+          } catch (err) {
+            // Ignore
+          }
+        }
+      }
+    );
 
+    // Handle Live API connection result asynchronously
+    liveApiPromise.then((ws) => {
       session.upstreamWs = ws;
-      liveApiConnected = true;
       console.log(`[VTID-01219] Live API WebSocket connected for session ${sessionId}`);
 
-      // Send greeting prompt so Vitana speaks first
+      // Send live_api_ready event so frontend knows full voice conversation is active
+      if (session.sseResponse) {
+        try {
+          session.sseResponse.write(`data: ${JSON.stringify({
+            type: 'live_api_ready',
+            session_id: sessionId
+          })}\n\n`);
+        } catch (err) {
+          // SSE might be closed
+        }
+      }
+
+      // Send greeting prompt — Gemini generates it with the real Live API voice
       sendGreetingPromptToLiveAPI(ws, session);
-    } catch (err: any) {
+    }).catch((err: any) => {
       console.error(`[VTID-01219] Failed to connect Live API for session ${sessionId}:`, err.message);
       emitLiveSessionEvent('orb.live.connection_failed', {
         session_id: sessionId,
         error: err.message,
         vertex_project_id: VERTEX_PROJECT_ID || 'EMPTY',
       }, 'error').catch(() => {});
-    }
+
+      // Notify client of connection failure
+      if (session.sseResponse) {
+        try {
+          session.sseResponse.write(`data: ${JSON.stringify({
+            type: 'error',
+            message: 'Voice connection failed. Please try again.'
+          })}\n\n`);
+        } catch { /* ignore */ }
+      }
+    });
   } else {
     console.warn('[VTID-01219] Live API not available - missing auth or project ID');
     emitLiveSessionEvent('orb.live.config_missing', {
@@ -6296,20 +6330,6 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
       vertex_project_id: VERTEX_PROJECT_ID || 'EMPTY',
     }, 'error').catch(() => {});
   }
-
-  // Send ready event with session config
-  res.write(`data: ${JSON.stringify({
-    type: 'ready',
-    session_id: sessionId,
-    live_api_connected: liveApiConnected,
-    meta: {
-      model: VERTEX_LIVE_MODEL,
-      lang: session.lang,
-      voice: liveApiConnected ? LIVE_API_VOICES[session.lang] || LIVE_API_VOICES['en'] : getVoiceForLang(session.lang),
-      audio_out_rate: 24000,  // 24kHz output
-      audio_in_rate: 16000    // 16kHz input
-    }
-  })}\n\n`);
 
   // Heartbeat every 15 seconds (must be < Cloud Run's ~22-25s idle timeout for SSE)
   const heartbeatInterval = setInterval(() => {

@@ -6792,6 +6792,45 @@ function renderTaskDrawer() {
             };
             specActions.appendChild(activateBtn);
 
+            // Reject button (soft deny — keeps VTID, marks as rejected)
+            var rejectBtn = document.createElement('button');
+            rejectBtn.className = 'btn btn-warning task-spec-btn';
+            rejectBtn.textContent = 'Reject';
+            rejectBtn.title = 'Reject this task (removes from Scheduled, keeps VTID for audit)';
+            rejectBtn.style.cssText = 'background: #f59e0b; border: none; color: white;';
+            rejectBtn.onclick = async function () {
+                var reason = prompt('Reason for rejection (optional):');
+                if (reason === null) return; // User cancelled
+                rejectBtn.disabled = true;
+                rejectBtn.textContent = 'Rejecting...';
+                try {
+                    var response = await fetch('/api/v1/vtid/lifecycle/reject', {
+                        method: 'POST',
+                        headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                        body: JSON.stringify({
+                            vtid: vtid,
+                            source: 'command-hub',
+                            reason: reason || 'Rejected from Command Hub'
+                        })
+                    });
+                    var result = await response.json();
+                    if (result.ok) {
+                        showToast('Task rejected: ' + vtid, 'info');
+                        state.selectedTask = null;
+                        state.selectedTaskDetail = null;
+                        state.drawerSpecVtid = null;
+                        await fetchTasks();
+                    } else {
+                        showToast('Rejection failed: ' + (result.error || result.message || 'Unknown error'), 'error');
+                    }
+                } catch (e) {
+                    showToast('Rejection failed: ' + e.message, 'error');
+                }
+                rejectBtn.disabled = false;
+                rejectBtn.textContent = 'Reject';
+            };
+            specActions.appendChild(rejectBtn);
+
             // VTID-01052: Delete button (Scheduled tasks only)
             // Soft deletes the task, voids the VTID, logs OASIS event
             var deleteBtn = document.createElement('button');
@@ -24450,6 +24489,49 @@ function orbToggleScreenShare() {
 // =============================================================================
 
 /**
+ * VTID-INSTANT-FEEDBACK: Play a short activation chime when the ORB opens.
+ * Gives immediate audio feedback while Gemini Live API connects (3-8s).
+ * Uses Web Audio API oscillators — no external audio files needed.
+ */
+function playOrbActivationChime(audioCtx) {
+    if (!audioCtx || audioCtx.state === 'closed') return;
+    try {
+        var now = audioCtx.currentTime;
+
+        // Gentle two-tone ascending chime: C5 (523Hz) → E5 (659Hz)
+        var gainNode = audioCtx.createGain();
+        gainNode.connect(audioCtx.destination);
+        gainNode.gain.setValueAtTime(0, now);
+        gainNode.gain.linearRampToValueAtTime(0.15, now + 0.02);  // Quick fade in
+        gainNode.gain.setValueAtTime(0.15, now + 0.08);
+        gainNode.gain.linearRampToValueAtTime(0.0, now + 0.15);   // Fade out first tone
+        gainNode.gain.linearRampToValueAtTime(0.15, now + 0.15);  // Second tone in
+        gainNode.gain.setValueAtTime(0.15, now + 0.25);
+        gainNode.gain.linearRampToValueAtTime(0.0, now + 0.40);   // Fade out second tone
+
+        // First tone: C5
+        var osc1 = audioCtx.createOscillator();
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(523.25, now);
+        osc1.connect(gainNode);
+        osc1.start(now);
+        osc1.stop(now + 0.15);
+
+        // Second tone: E5 (major third up — warm, positive feel)
+        var osc2 = audioCtx.createOscillator();
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(659.25, now + 0.15);
+        osc2.connect(gainNode);
+        osc2.start(now + 0.15);
+        osc2.stop(now + 0.40);
+
+        console.log('[VTID-INSTANT-FEEDBACK] Activation chime played');
+    } catch (e) {
+        console.warn('[VTID-INSTANT-FEEDBACK] Chime playback failed:', e);
+    }
+}
+
+/**
  * VTID-01155: Start Gemini Live session
  * Creates session, connects SSE stream, and sets up audio capture
  */
@@ -24478,6 +24560,10 @@ async function geminiLiveStart() {
             console.warn('[VTID-AUDIO-RACE-FIX] Playback AudioContext resume failed:', e);
         });
     }
+
+    // VTID-INSTANT-FEEDBACK: Play activation chime immediately in user gesture context.
+    // This gives instant audio feedback while the Live API connects (3-8s).
+    playOrbActivationChime(state.orb.geminiLivePlaybackContext);
 
     try {
         // 1. Start Live session via API
@@ -24708,6 +24794,13 @@ function geminiLiveHandleMessage(msg) {
                 }
             }, 15000);
             renderApp();
+            break;
+
+        case 'live_api_ready':
+            // VTID-INSTANT-FEEDBACK: Live API WebSocket is now connected.
+            // The ready event + chime already fired. This confirms full voice-to-voice
+            // capability is active — Gemini greeting will follow shortly.
+            console.log('[VTID-INSTANT-FEEDBACK] Live API ready — full voice conversation active');
             break;
 
         case 'audio':
