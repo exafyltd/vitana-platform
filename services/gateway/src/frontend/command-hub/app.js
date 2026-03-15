@@ -2932,7 +2932,8 @@ const state = {
         geminiLiveSessionId: null,    // Current Gemini Live session ID
         geminiLiveActive: false,      // Whether Live session is active
         geminiLiveEventSource: null,  // SSE EventSource for Live stream
-        geminiLiveAudioContext: null, // AudioContext for PCM playback
+        geminiLiveAudioContext: null, // AudioContext for audio CAPTURE (16kHz mic input)
+        geminiLivePlaybackContext: null, // AudioContext for audio PLAYBACK (separate from capture to avoid race condition)
         geminiLiveAudioQueue: [],     // Queue of audio chunks to play
         geminiLiveAudioPlaying: false, // Whether audio is currently playing
         geminiLiveLastScheduledEnd: 0, // FIX: Track when last audio ends for seamless playback
@@ -2947,7 +2948,10 @@ const state = {
         useLiveApi: true,             // VTID-01219: Use Gemini Live API for voice-to-voice
         // VTID-WATCHDOG: Client-side activity watchdog
         clientWatchdogInterval: null, // Interval for checking activity
-        clientLastActivityAt: 0       // Timestamp of last meaningful SSE event
+        clientLastActivityAt: 0,      // Timestamp of last meaningful SSE event
+        // VTID-STUCK-GUARD: Client-side stuck-state watchdog
+        stuckGuardTimer: null,        // Timer that fires if ORB stays in connecting/thinking too long
+        greetingAudioReceived: false  // Whether any greeting audio has been received and played
     },
 
     // VTID-0600: Operational Visibility Foundation State
@@ -24457,6 +24461,24 @@ async function geminiLiveStart() {
 
     console.log('[VTID-01155] Starting Gemini Live session...');
 
+    // VTID-STUCK-GUARD: Reset greeting audio flag
+    state.orb.greetingAudioReceived = false;
+
+    // VTID-AUDIO-RACE-FIX: Create playback AudioContext IMMEDIATELY in user gesture context.
+    // On mobile, AudioContext.resume() only works within a user gesture. If we defer creation
+    // to when the first audio chunk arrives (after async fetch + SSE), the gesture expires and
+    // audio silently fails to play. Creating it here guarantees it starts in 'running' state.
+    if (!state.orb.geminiLivePlaybackContext || state.orb.geminiLivePlaybackContext.state === 'closed') {
+        state.orb.geminiLivePlaybackContext = new (window.AudioContext || window.webkitAudioContext)();
+        console.log('[VTID-AUDIO-RACE-FIX] Playback AudioContext created in user gesture: state=' + state.orb.geminiLivePlaybackContext.state);
+    }
+    // Force resume (best-effort — we're in user gesture context so this should succeed)
+    if (state.orb.geminiLivePlaybackContext.state === 'suspended') {
+        state.orb.geminiLivePlaybackContext.resume().catch(function(e) {
+            console.warn('[VTID-AUDIO-RACE-FIX] Playback AudioContext resume failed:', e);
+        });
+    }
+
     try {
         // 1. Start Live session via API
         var lang = state.orb.orbLang || 'en-US';
@@ -24594,6 +24616,17 @@ async function geminiLiveStop() {
         state.orb.geminiLiveAudioContext = null;
     }
 
+    // VTID-AUDIO-RACE-FIX: Close separate playback context
+    if (state.orb.geminiLivePlaybackContext) {
+        state.orb.geminiLivePlaybackContext.close().catch(function () { });
+        state.orb.geminiLivePlaybackContext = null;
+    }
+
+    // VTID-STUCK-GUARD: Clear stuck guard timer
+    clearTimeout(state.orb.stuckGuardTimer);
+    state.orb.stuckGuardTimer = null;
+    state.orb.greetingAudioReceived = false;
+
     // FIX: Reset audio scheduling for clean reconnect
     state.orb.geminiLiveLastScheduledEnd = 0;
 
@@ -24647,6 +24680,9 @@ function geminiLiveHandleMessage(msg) {
     switch (msg.type) {
         case 'ready':
             console.log('[VTID-01155] Live stream ready:', msg.meta);
+            // Transition ORB from connecting → thinking (Vitana is about to speak)
+            setOrbState('thinking');
+            state.orb.voiceState = 'THINKING';
             // Show connection status
             state.orb.liveTranscript.push({
                 id: Date.now(),
@@ -24654,6 +24690,23 @@ function geminiLiveHandleMessage(msg) {
                 text: msg.live_api_connected ? 'Voice-to-voice connected. Start speaking!' : 'Connected (text mode)',
                 timestamp: new Date().toISOString()
             });
+            // VTID-STUCK-GUARD: Start stuck-state watchdog — if no audio arrives within 15s,
+            // show text feedback so user isn't left staring at a silent spinner.
+            clearTimeout(state.orb.stuckGuardTimer);
+            state.orb.stuckGuardTimer = setTimeout(function() {
+                if (!state.orb.greetingAudioReceived && state.orb.geminiLiveActive) {
+                    console.warn('[VTID-STUCK-GUARD] No audio received within 15s of ready — showing text fallback');
+                    state.orb.liveTranscript.push({
+                        id: Date.now(),
+                        role: 'system',
+                        text: state.orb.orbLang === 'de' ? 'Audio-Verbindung verzögert. Du kannst trotzdem sprechen.' : 'Audio connection delayed. You can still speak.',
+                        timestamp: new Date().toISOString()
+                    });
+                    setOrbState('listening');
+                    state.orb.voiceState = 'LISTENING';
+                    renderApp();
+                }
+            }, 15000);
             renderApp();
             break;
 
@@ -24665,6 +24718,15 @@ function geminiLiveHandleMessage(msg) {
                 break;
             }
             if (msg.data_b64) {
+                // VTID-STUCK-GUARD: First audio chunk received — clear stuck guard, update state
+                if (!state.orb.greetingAudioReceived) {
+                    state.orb.greetingAudioReceived = true;
+                    clearTimeout(state.orb.stuckGuardTimer);
+                    // Transition to speaking state so ORB shows speaking animation
+                    setOrbState('speaking');
+                    state.orb.voiceState = 'SPEAKING';
+                    renderApp();
+                }
                 geminiLivePlayAudio(msg.data_b64, msg.mime || 'audio/wav');
             }
             break;
@@ -24700,9 +24762,18 @@ function geminiLiveHandleMessage(msg) {
             break;
 
         case 'output_transcript':
-            // Model's response transcription
+            // Model's response transcription — display as text bubble so the user
+            // can read what Vitana said even if audio playback fails (mobile audio issues).
             if (msg.text) {
                 console.log('[VTID-01219] Model said:', msg.text);
+                state.orb.liveTranscript.push({
+                    id: Date.now(),
+                    role: 'assistant',
+                    text: msg.text,
+                    timestamp: new Date().toISOString()
+                });
+                scrollOrbLiveTranscript();
+                renderApp();
             }
             break;
 
@@ -25013,7 +25084,8 @@ function geminiLiveSendAudio(base64Data) {
  */
 function playListenReadyBeep() {
     try {
-        var audioContext = state.orb.geminiLiveAudioContext;
+        // VTID-AUDIO-RACE-FIX: Use playback context (capture context is 16kHz, not ideal for tones)
+        var audioContext = state.orb.geminiLivePlaybackContext || state.orb.geminiLiveAudioContext;
         if (!audioContext || audioContext.state === 'closed') {
             console.log('[ORB-FIX] AudioContext not available for ready beep');
             return;
@@ -25046,7 +25118,8 @@ function playListenReadyBeep() {
  */
 function playConnectionErrorTone() {
     try {
-        var audioContext = state.orb.geminiLiveAudioContext;
+        // VTID-AUDIO-RACE-FIX: Use playback context
+        var audioContext = state.orb.geminiLivePlaybackContext || state.orb.geminiLiveAudioContext;
         if (!audioContext || audioContext.state === 'closed') return;
 
         var now = audioContext.currentTime;
@@ -25417,21 +25490,24 @@ function geminiLiveProcessQueue() {
     // If we receive WAV (fallback), we must play sequentially to avoid overlap clutter
     // but the backend should now be sending PCM.
 
-    // Ensure AudioContext exists
-    if (!state.orb.geminiLiveAudioContext || state.orb.geminiLiveAudioContext.state === 'closed') {
-        state.orb.geminiLiveAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+    // VTID-AUDIO-RACE-FIX: Use SEPARATE playback context (not the capture context).
+    // The capture context is 16kHz and gets created/overwritten during getUserMedia setup.
+    // The playback context was created early in geminiLiveStart() within user gesture.
+    if (!state.orb.geminiLivePlaybackContext || state.orb.geminiLivePlaybackContext.state === 'closed') {
+        state.orb.geminiLivePlaybackContext = new (window.AudioContext || window.webkitAudioContext)();
+        console.log('[VTID-AUDIO-RACE-FIX] Late playback AudioContext creation (fallback)');
     }
-    var audioContext = state.orb.geminiLiveAudioContext;
+    var audioContext = state.orb.geminiLivePlaybackContext;
 
     // MOBILE-FIX: Ensure AudioContext is running (critical for mobile browsers)
     if (audioContext.state === 'suspended') {
-        console.log('[MOBILE-FIX] AudioContext suspended, resuming...');
+        console.log('[MOBILE-FIX] Playback AudioContext suspended, resuming...');
         audioContext.resume().then(function() {
-            console.log('[MOBILE-FIX] AudioContext resumed, state:', audioContext.state);
+            console.log('[MOBILE-FIX] Playback AudioContext resumed, state:', audioContext.state);
             // Process queue again after resume
             setTimeout(geminiLiveProcessQueue, 50);
         }).catch(function(e) {
-            console.error('[MOBILE-FIX] Failed to resume AudioContext:', e);
+            console.error('[MOBILE-FIX] Failed to resume Playback AudioContext:', e);
         });
         return; // Exit and retry after resume
     }
