@@ -10,6 +10,9 @@ function isCrawler(ua) {
 function parseRoute(pathname) {
   const match = pathname.match(/^\/(events|profiles|rooms|matches)\/(.+)$/);
   if (match) return { type: match[1], identifier: match[2] };
+  // Handle /pub/events/{id} format
+  const pubMatch = pathname.match(/^\/pub\/events\/(.+)$/);
+  if (pubMatch) return { type: 'events', identifier: pubMatch[1] };
   // Backward compat: bare /{slug} → events
   const bare = pathname.replace(/^\//, '');
   if (bare) return { type: 'events', identifier: bare };
@@ -19,7 +22,8 @@ function parseRoute(pathname) {
 function getOgFunctionUrl(type, identifier) {
   switch (type) {
     case 'events':
-      return `${SUPABASE_FUNCTIONS}/og-event?slug=${encodeURIComponent(identifier)}`;
+      const isUUID = /^[0-9a-f]{8}-/.test(identifier);
+      return `${SUPABASE_FUNCTIONS}/og-event?${isUUID ? 'id' : 'slug'}=${encodeURIComponent(identifier)}`;
     case 'profiles':
       return `${SUPABASE_FUNCTIONS}/og-profile?id=${encodeURIComponent(identifier)}`;
     case 'rooms':
@@ -34,6 +38,10 @@ function getOgFunctionUrl(type, identifier) {
 function getRedirectUrl(type, identifier) {
   switch (type) {
     case 'events':
+      const isUUID = /^[0-9a-f]{8}-/.test(identifier);
+      if (isUUID) {
+        return `https://vitanaland.com/?share=event&id=${encodeURIComponent(identifier)}`;
+      }
       return `https://vitanaland.com/?share=event&slug=${encodeURIComponent(identifier)}`;
     case 'profiles':
       return `https://vitanaland.com/?share=profile&id=${encodeURIComponent(identifier)}`;
