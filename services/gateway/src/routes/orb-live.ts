@@ -1369,143 +1369,167 @@ async function executeLiveApiToolInner(
           'mallorca': ['palma', 'portixol', 'cala major', 'santa catalina', 'puerto portals', 'mallorca', 'box palma'],
         };
 
+        // VTID-STALL-FIX: Run BOTH Supabase queries in parallel to stay within
+        // the 3s TOOL_TIMEOUT_MS. Sequential fetches to two external services
+        // frequently exceeded the timeout, causing Gemini Live API to stall
+        // after receiving the error function_response.
+
+        const filterSummary = [query && `query="${query}"`, locationFilter && `loc="${locationFilter}"`, organizerFilter && `org="${organizerFilter}"`, dateFrom && `from=${dateFrom}`, dateTo && `to=${dateTo}`, maxPrice !== undefined && `maxPrice=${maxPrice}`].filter(Boolean).join(', ') || 'no filters';
+        console.log(`[VTID-01270A] search_events: ${filterSummary}`);
+
+        // Build both fetch promises
+        const fetchPromises: Promise<void>[] = [];
+
         // Primary: Fetch events from Lovable Supabase (global_community_events)
         if (LOVABLE_SUPABASE_KEY && (typeFilter === 'meetup' || typeFilter === 'all')) {
-          const lovableHeaders = {
-            'Content-Type': 'application/json',
-            apikey: LOVABLE_SUPABASE_KEY,
-            Authorization: `Bearer ${LOVABLE_SUPABASE_KEY}`,
-          };
+          fetchPromises.push((async () => {
+            const lovableHeaders = {
+              'Content-Type': 'application/json',
+              apikey: LOVABLE_SUPABASE_KEY,
+              Authorization: `Bearer ${LOVABLE_SUPABASE_KEY}`,
+            };
 
-          // Build URL with PostgREST filters — fetch more to allow post-fetch filtering
-          const startTimeGte = dateFrom ? `${dateFrom}T00:00:00Z` : now;
-          let eventsUrl = `${LOVABLE_SUPABASE_URL}/rest/v1/global_community_events?select=id,title,description,start_time,end_time,location,virtual_link,metadata&start_time=gte.${startTimeGte}&order=start_time.asc&limit=50`;
+            // Build URL with PostgREST filters
+            const startTimeGte = dateFrom ? `${dateFrom}T00:00:00Z` : now;
+            // VTID-STALL-FIX: Reduced limit from 50→15. We cap at 6 for voice output,
+            // so 15 is enough headroom for post-fetch filtering without over-fetching.
+            let eventsUrl = `${LOVABLE_SUPABASE_URL}/rest/v1/global_community_events?select=id,title,description,start_time,end_time,location,virtual_link,metadata&start_time=gte.${startTimeGte}&order=start_time.asc&limit=15`;
 
-          // Date range upper bound
-          if (dateTo) {
-            eventsUrl += `&start_time=lte.${dateTo}T23:59:59Z`;
-          }
+            // Date range upper bound
+            if (dateTo) {
+              eventsUrl += `&start_time=lte.${dateTo}T23:59:59Z`;
+            }
 
-          // NOTE: location filter is done post-fetch (not via PostgREST)
-          // because the location column stores venue/city names, NOT countries.
-          // A search for "France" needs to match "Lyon", "Paris", "Nice", etc.
+            // VTID-STALL-FIX: Re-add PostgREST title/description filter when query is set.
+            // This was removed during enrichment but is critical for performance — filtering
+            // at the database level avoids fetching 15 events when only 2-3 match.
+            if (query) {
+              eventsUrl += `&or=(title.ilike.*${encodeURIComponent(query)}*,description.ilike.*${encodeURIComponent(query)}*)`;
+            }
 
-          try {
-            const filterSummary = [query && `query="${query}"`, locationFilter && `loc="${locationFilter}"`, organizerFilter && `org="${organizerFilter}"`, dateFrom && `from=${dateFrom}`, dateTo && `to=${dateTo}`, maxPrice !== undefined && `maxPrice=${maxPrice}`].filter(Boolean).join(', ') || 'no filters';
-            console.log(`[VTID-01270A] search_events: ${filterSummary}`);
-            const resp = await fetch(eventsUrl, { method: 'GET', headers: lovableHeaders });
-            if (resp.ok) {
-              let events = await resp.json() as Array<{
-                id: string; title: string; description: string;
-                start_time: string; end_time: string; location: string;
-                virtual_link: string | null;
-                metadata: { category?: string; host?: string; guest?: string; price?: number; is_paid?: boolean; venue_type?: string } | null;
-              }>;
-              console.log(`[VTID-01270A] search_events: ${events.length} raw results from Lovable Supabase`);
+            // NOTE: location filter is done post-fetch (not via PostgREST)
+            // because the location column stores venue/city names, NOT countries.
+            // A search for "France" needs to match "Lyon", "Paris", "Nice", etc.
 
-              // Post-fetch filters
+            try {
+              const resp = await fetch(eventsUrl, { method: 'GET', headers: lovableHeaders });
+              if (resp.ok) {
+                let events = await resp.json() as Array<{
+                  id: string; title: string; description: string;
+                  start_time: string; end_time: string; location: string;
+                  virtual_link: string | null;
+                  metadata: { category?: string; host?: string; guest?: string; price?: number; is_paid?: boolean; venue_type?: string } | null;
+                }>;
+                console.log(`[VTID-01270A] search_events: ${events.length} raw results from Lovable Supabase`);
 
-              // Location: check direct match on location column first,
-              // then expand via country→city mapping if the input is a country/region name
-              if (locationFilter) {
-                const locLower = locationFilter.toLowerCase();
-                const expandedTerms = COUNTRY_CITY_MAP[locLower] || [];
-                events = events.filter(e => {
-                  const loc = (e.location || '').toLowerCase();
-                  const title = (e.title || '').toLowerCase();
-                  // Direct match on location or title
-                  if (loc.includes(locLower) || title.includes(locLower)) return true;
-                  // Expanded country→city match
-                  if (expandedTerms.length > 0) {
-                    return expandedTerms.some(city => loc.includes(city) || title.includes(city));
-                  }
-                  return false;
-                });
-              }
+                // Post-fetch filters (location, organizer, metadata.category, price)
 
-              // Activity/keyword: match title, description, OR metadata.category
-              if (query) {
-                const qLower = query.toLowerCase();
-                events = events.filter(e =>
-                  (e.title || '').toLowerCase().includes(qLower) ||
-                  (e.description || '').toLowerCase().includes(qLower) ||
-                  (e.metadata?.category || '').toLowerCase().includes(qLower)
-                );
-              }
+                // Location: check direct match on location column first,
+                // then expand via country→city mapping if the input is a country/region name
+                if (locationFilter) {
+                  const locLower = locationFilter.toLowerCase();
+                  const expandedTerms = COUNTRY_CITY_MAP[locLower] || [];
+                  events = events.filter(e => {
+                    const loc = (e.location || '').toLowerCase();
+                    const title = (e.title || '').toLowerCase();
+                    if (loc.includes(locLower) || title.includes(locLower)) return true;
+                    if (expandedTerms.length > 0) {
+                      return expandedTerms.some(city => loc.includes(city) || title.includes(city));
+                    }
+                    return false;
+                  });
+                }
 
-              // Organizer: match metadata.host or metadata.guest
-              if (organizerFilter) {
-                const orgLower = organizerFilter.toLowerCase();
-                events = events.filter(e =>
-                  (e.metadata?.host || '').toLowerCase().includes(orgLower) ||
-                  (e.metadata?.guest || '').toLowerCase().includes(orgLower)
-                );
-              }
-
-              // Price filter
-              if (maxPrice !== undefined) {
-                if (maxPrice === 0) {
-                  events = events.filter(e => !e.metadata?.is_paid);
-                } else {
+                // Activity/keyword: post-fetch filter on metadata.category
+                // (title/description already filtered via PostgREST when query is set)
+                if (query) {
+                  const qLower = query.toLowerCase();
                   events = events.filter(e =>
-                    !e.metadata?.is_paid || (e.metadata?.price ?? 0) <= maxPrice
+                    (e.title || '').toLowerCase().includes(qLower) ||
+                    (e.description || '').toLowerCase().includes(qLower) ||
+                    (e.metadata?.category || '').toLowerCase().includes(qLower)
                   );
                 }
-              }
 
-              // Cap to 6 for voice path
-              events = events.slice(0, 6);
+                // Organizer: match metadata.host or metadata.guest
+                if (organizerFilter) {
+                  const orgLower = organizerFilter.toLowerCase();
+                  events = events.filter(e =>
+                    (e.metadata?.host || '').toLowerCase().includes(orgLower) ||
+                    (e.metadata?.guest || '').toLowerCase().includes(orgLower)
+                  );
+                }
 
-              for (const e of events) {
-                const date = new Date(e.start_time).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-                const category = e.metadata?.category ? ` | Category: ${e.metadata.category}` : '';
-                const host = e.metadata?.host ? ` | Organizer: ${e.metadata.host}` : '';
-                const guest = e.metadata?.guest ? ` | Guest: ${e.metadata.guest}` : '';
-                const price = e.metadata?.is_paid ? ` | €${e.metadata.price || '?'}` : ' | Free';
-                const venue = e.metadata?.venue_type ? ` | ${e.metadata.venue_type}` : '';
-                const link = e.virtual_link ? ` | Link: ${e.virtual_link}` : '';
-                const desc = e.description ? ` | About: ${e.description.substring(0, 120)}` : '';
-                results.push(`${e.title} | ${date} | ${e.location || 'TBD'}${category}${host}${guest}${price}${venue}${link}${desc}`);
+                // Price filter
+                if (maxPrice !== undefined) {
+                  if (maxPrice === 0) {
+                    events = events.filter(e => !e.metadata?.is_paid);
+                  } else {
+                    events = events.filter(e =>
+                      !e.metadata?.is_paid || (e.metadata?.price ?? 0) <= maxPrice
+                    );
+                  }
+                }
+
+                // Cap to 6 for voice path
+                events = events.slice(0, 6);
+
+                for (const e of events) {
+                  const date = new Date(e.start_time).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                  const category = e.metadata?.category ? ` | Category: ${e.metadata.category}` : '';
+                  const host = e.metadata?.host ? ` | Organizer: ${e.metadata.host}` : '';
+                  const guest = e.metadata?.guest ? ` | Guest: ${e.metadata.guest}` : '';
+                  const price = e.metadata?.is_paid ? ` | €${e.metadata.price || '?'}` : ' | Free';
+                  const venue = e.metadata?.venue_type ? ` | ${e.metadata.venue_type}` : '';
+                  const link = e.virtual_link ? ` | Link: ${e.virtual_link}` : '';
+                  const desc = e.description ? ` | About: ${e.description.substring(0, 120)}` : '';
+                  results.push(`${e.title} | ${date} | ${e.location || 'TBD'}${category}${host}${guest}${price}${venue}${link}${desc}`);
+                }
+              } else {
+                const body = await resp.text();
+                console.warn(`[VTID-01270A] Lovable events query failed: ${resp.status} — ${body.substring(0, 200)}`);
               }
-            } else {
-              const body = await resp.text();
-              console.warn(`[VTID-01270A] Lovable events query failed: ${resp.status} — ${body.substring(0, 200)}`);
+            } catch (e: any) {
+              console.warn(`[VTID-01270A] Lovable events query error: ${e.message}`);
             }
-          } catch (e: any) {
-            console.warn(`[VTID-01270A] Lovable events query error: ${e.message}`);
-          }
+          })());
         }
 
         // Secondary: Fetch live rooms from Platform Supabase
         if (PLATFORM_SUPABASE_URL && PLATFORM_SUPABASE_KEY && (typeFilter === 'live_room' || typeFilter === 'all')) {
-          const platformHeaders = {
-            'Content-Type': 'application/json',
-            apikey: PLATFORM_SUPABASE_KEY,
-            Authorization: `Bearer ${PLATFORM_SUPABASE_KEY}`,
-          };
-          const tenantId = lens.tenant_id;
-          let roomsUrl = `${PLATFORM_SUPABASE_URL}/rest/v1/live_rooms?select=id,title,starts_at,status&tenant_id=eq.${tenantId}&status=in.(scheduled,live)&order=starts_at.asc&limit=4`;
-          if (query) {
-            roomsUrl += `&title=ilike.*${encodeURIComponent(query)}*`;
-          }
-          try {
-            const resp = await fetch(roomsUrl, { method: 'GET', headers: platformHeaders });
-            if (resp.ok) {
-              const rooms = await resp.json() as Array<{
-                id: string; title: string; starts_at: string; status: string;
-              }>;
-              for (const r of rooms) {
-                const date = r.starts_at
-                  ? new Date(r.starts_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-                  : 'TBD';
-                const statusLabel = r.status === 'live' ? 'LIVE NOW' : date;
-                results.push(`[Live Room] ${r.title} | ${statusLabel}`);
-              }
+          fetchPromises.push((async () => {
+            const platformHeaders = {
+              'Content-Type': 'application/json',
+              apikey: PLATFORM_SUPABASE_KEY,
+              Authorization: `Bearer ${PLATFORM_SUPABASE_KEY}`,
+            };
+            const tenantId = lens.tenant_id;
+            let roomsUrl = `${PLATFORM_SUPABASE_URL}/rest/v1/live_rooms?select=id,title,starts_at,status&tenant_id=eq.${tenantId}&status=in.(scheduled,live)&order=starts_at.asc&limit=4`;
+            if (query) {
+              roomsUrl += `&title=ilike.*${encodeURIComponent(query)}*`;
             }
-          } catch (e: any) {
-            console.warn(`[VTID-01270A] live_rooms query failed: ${e.message}`);
-          }
+            try {
+              const resp = await fetch(roomsUrl, { method: 'GET', headers: platformHeaders });
+              if (resp.ok) {
+                const rooms = await resp.json() as Array<{
+                  id: string; title: string; starts_at: string; status: string;
+                }>;
+                for (const r of rooms) {
+                  const date = r.starts_at
+                    ? new Date(r.starts_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+                    : 'TBD';
+                  const statusLabel = r.status === 'live' ? 'LIVE NOW' : date;
+                  results.push(`[Live Room] ${r.title} | ${statusLabel}`);
+                }
+              }
+            } catch (e: any) {
+              console.warn(`[VTID-01270A] live_rooms query failed: ${e.message}`);
+            }
+          })());
         }
+
+        // Wait for all queries to complete in parallel
+        await Promise.allSettled(fetchPromises);
 
         if (results.length === 0) {
           const filterDesc = [query, locationFilter, organizerFilter, dateFrom, dateTo, maxPrice !== undefined ? `max €${maxPrice}` : ''].filter(Boolean).join(', ') || 'none';
@@ -1597,49 +1621,58 @@ async function executeLiveApiToolInner(
         const today = new Date().toISOString().split('T')[0];
         const results: string[] = [];
 
+        // VTID-STALL-FIX: Run both queries in parallel to stay within 3s TOOL_TIMEOUT_MS
+        const recPromises: Promise<void>[] = [];
+
         // Fetch community recommendations (groups + meetups)
         if (recType === 'community' || recType === 'all') {
-          const recsUrl = `${SUPABASE_URL}/rest/v1/community_recommendations?select=id,rec_type,target_id,score,reasons&tenant_id=eq.${tenantId}&user_id=eq.${userId}&rec_date=eq.${today}&order=score.desc&limit=5`;
-          try {
-            const resp = await fetch(recsUrl, { method: 'GET', headers });
-            if (resp.ok) {
-              const recs = await resp.json() as Array<{
-                id: string; rec_type: string; target_id: string;
-                score: number; reasons: Record<string, unknown>;
-              }>;
-              for (const r of recs) {
-                const reasonText = r.reasons && typeof r.reasons === 'object'
-                  ? Object.values(r.reasons).filter(v => typeof v === 'string').join(', ')
-                  : '';
-                results.push(`[${r.rec_type}] Score: ${r.score}/100${reasonText ? ` — ${reasonText}` : ''}`);
+          recPromises.push((async () => {
+            const recsUrl = `${SUPABASE_URL}/rest/v1/community_recommendations?select=id,rec_type,target_id,score,reasons&tenant_id=eq.${tenantId}&user_id=eq.${userId}&rec_date=eq.${today}&order=score.desc&limit=5`;
+            try {
+              const resp = await fetch(recsUrl, { method: 'GET', headers });
+              if (resp.ok) {
+                const recs = await resp.json() as Array<{
+                  id: string; rec_type: string; target_id: string;
+                  score: number; reasons: Record<string, unknown>;
+                }>;
+                for (const r of recs) {
+                  const reasonText = r.reasons && typeof r.reasons === 'object'
+                    ? Object.values(r.reasons).filter(v => typeof v === 'string').join(', ')
+                    : '';
+                  results.push(`[${r.rec_type}] Score: ${r.score}/100${reasonText ? ` — ${reasonText}` : ''}`);
+                }
               }
+            } catch (e: any) {
+              console.warn(`[VTID-01270A] community_recommendations query failed: ${e.message}`);
             }
-          } catch (e: any) {
-            console.warn(`[VTID-01270A] community_recommendations query failed: ${e.message}`);
-          }
+          })());
         }
 
         // Fetch daily matches
         if (recType === 'match' || recType === 'all') {
-          const matchesUrl = `${SUPABASE_URL}/rest/v1/matches_daily?select=id,score,state,reasons&tenant_id=eq.${tenantId}&user_id=eq.${userId}&match_date=eq.${today}&state=eq.suggested&order=score.desc&limit=3`;
-          try {
-            const resp = await fetch(matchesUrl, { method: 'GET', headers });
-            if (resp.ok) {
-              const matches = await resp.json() as Array<{
-                id: string; score: number; state: string;
-                reasons: Record<string, unknown>;
-              }>;
-              for (const m of matches) {
-                const reasonText = m.reasons && typeof m.reasons === 'object'
-                  ? Object.values(m.reasons).filter(v => typeof v === 'string').join(', ')
-                  : '';
-                results.push(`[Daily Match] Score: ${m.score}/100${reasonText ? ` — ${reasonText}` : ''}`);
+          recPromises.push((async () => {
+            const matchesUrl = `${SUPABASE_URL}/rest/v1/matches_daily?select=id,score,state,reasons&tenant_id=eq.${tenantId}&user_id=eq.${userId}&match_date=eq.${today}&state=eq.suggested&order=score.desc&limit=3`;
+            try {
+              const resp = await fetch(matchesUrl, { method: 'GET', headers });
+              if (resp.ok) {
+                const matches = await resp.json() as Array<{
+                  id: string; score: number; state: string;
+                  reasons: Record<string, unknown>;
+                }>;
+                for (const m of matches) {
+                  const reasonText = m.reasons && typeof m.reasons === 'object'
+                    ? Object.values(m.reasons).filter(v => typeof v === 'string').join(', ')
+                    : '';
+                  results.push(`[Daily Match] Score: ${m.score}/100${reasonText ? ` — ${reasonText}` : ''}`);
+                }
               }
+            } catch (e: any) {
+              console.warn(`[VTID-01270A] matches_daily query failed: ${e.message}`);
             }
-          } catch (e: any) {
-            console.warn(`[VTID-01270A] matches_daily query failed: ${e.message}`);
-          }
+          })());
         }
+
+        await Promise.allSettled(recPromises);
 
         if (results.length === 0) {
           console.log(`[VTID-01270A] get_recommendations: 0 results (type=${recType}), ${Date.now() - startTime}ms`);
@@ -2449,11 +2482,15 @@ async function connectToLiveAPI(
 
       if (!setupComplete) {
         reject(new Error(`WebSocket closed before setup: code=${code}, reason=${reason}`));
-      } else if (code === 1000 && session.active) {
-        // VTID-STREAM-RECONNECT: Code 1000 = Vertex ended the session normally (5-min limit).
-        // Attempt transparent reconnection — the client (SSE/WS) keeps its connection open
-        // and we create a new upstream Vertex session with conversation history injected.
-        console.log(`[VTID-STREAM-RECONNECT] Code 1000 on active session ${session.sessionId} — attempting transparent reconnect`);
+      } else if ((code === 1000 && session.active) || ((session as any)._stallRecoveryPending && session.active)) {
+        // VTID-STREAM-RECONNECT: Transparent reconnection for two cases:
+        // 1. Code 1000 = Vertex ended the session normally (5-min limit)
+        // 2. _stallRecoveryPending = watchdog detected a stall and force-terminated the WS
+        const isStallRecovery = !!(session as any)._stallRecoveryPending;
+        (session as any)._stallRecoveryPending = false;
+        const reconnectReason = isStallRecovery ? 'stall_recovery' : 'session_expired';
+        console.log(`[VTID-STREAM-RECONNECT] ${reconnectReason} on active session ${session.sessionId} — attempting transparent reconnect`);
+        emitDiag(session, 'reconnect_triggered', { reason: reconnectReason, code });
 
         // Fire extraction for accumulated facts before reconnecting
         if (session.identity && session.identity.tenant_id && isInlineExtractionAvailable() && session.transcriptTurns.length > 0) {
@@ -2482,8 +2519,7 @@ async function connectToLiveAPI(
           if (!reconnected) {
             // Reconnection failed — notify client as final disconnect (SSE or WS)
             console.warn(`[VTID-STREAM-RECONNECT] Reconnection failed for ${session.sessionId} — notifying client`);
-            const failMsg = { type: 'live_api_disconnected', code, reason: 'session_expired_reconnect_failed' };
-            // VTID-WATCHDOG: Also send connection_issue with user-facing message
+            const failMsg = { type: 'live_api_disconnected', code, reason: `${reconnectReason}_reconnect_failed` };
             const lang = session.lang || 'en';
             const issueEvent = {
               type: 'connection_issue',
@@ -2497,6 +2533,14 @@ async function connectToLiveAPI(
             } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
               try { sendWsMessage(session.clientWs, failMsg); } catch (e) { /* ignore */ }
               try { session.clientWs.send(JSON.stringify(issueEvent)); } catch (e) { /* ignore */ }
+            }
+          } else if (isStallRecovery) {
+            // VTID-STALL-FIX: Reconnect succeeded after stall — re-send greeting so user
+            // knows the session recovered (model lost all context in the new upstream session)
+            console.log(`[VTID-STALL-FIX] Stall recovery reconnect succeeded for ${session.sessionId} — sending greeting on new upstream`);
+            if (session.upstreamWs && session.upstreamWs.readyState === WebSocket.OPEN) {
+              session.greetingSent = false; // Reset so greeting can be sent again
+              sendGreetingPromptToLiveAPI(session.upstreamWs, session);
             }
           }
         }).catch(err => {
@@ -2664,9 +2708,14 @@ function sendEndOfTurn(ws: WebSocket): boolean {
 
 /**
  * Start the response watchdog timer. If the model doesn't produce any output
- * (audio/text) within timeoutMs, fire a `connection_issue` event to the client.
- * Does NOT close the upstream WS — the session stays alive so the user can
- * still speak or retry. The notification is informational only.
+ * (audio/text) within timeoutMs, fire a `connection_issue` event to the client
+ * and force-close the stalled upstream WebSocket to trigger transparent reconnection.
+ *
+ * VTID-STALL-FIX: Previously the watchdog only sent an informational event and
+ * left the upstream WS open. But when Gemini Live API stalls (e.g. after a tool
+ * call timeout), it stops processing ALL input — the session is permanently stuck.
+ * Now the watchdog terminates the upstream WS with _stallRecoveryPending=true,
+ * which the close handler recognizes and triggers transparent reconnection.
  */
 function startResponseWatchdog(
   session: GeminiLiveSession,
@@ -2685,25 +2734,6 @@ function startResponseWatchdog(
     console.warn(`[VTID-WATCHDOG] Response watchdog fired for session ${session.sessionId}: ${reason} (${timeoutMs}ms)`);
     emitDiag(session, 'watchdog_fired', { reason, timeout_ms: timeoutMs });
 
-    const issueEvent = {
-      type: 'connection_issue',
-      reason,
-      message,
-      should_close: false, // Informational — don't kill the session
-    };
-
-    // Send to client via whichever transport is active
-    if (session.sseResponse) {
-      try {
-        session.sseResponse.write(`data: ${JSON.stringify(issueEvent)}\n\n`);
-      } catch (_e) { /* SSE already closed */ }
-    }
-    if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
-      try {
-        session.clientWs.send(JSON.stringify(issueEvent));
-      } catch (_e) { /* WS already closed */ }
-    }
-
     // Emit OASIS telemetry (fire-and-forget)
     emitLiveSessionEvent('orb.live.stall_detected', {
       session_id: session.sessionId,
@@ -2714,8 +2744,29 @@ function startResponseWatchdog(
       greeting_sent: session.greetingSent || false,
     }, 'error').catch(() => { });
 
-    // Do NOT close upstream WS — session stays alive for user to retry.
-    // The upstream connection/error/close handlers will clean up if needed.
+    // VTID-STALL-FIX: Force-close the stalled upstream WS to trigger transparent
+    // reconnection via the close handler. The _stallRecoveryPending flag tells the
+    // close handler to reconnect instead of sending disconnect events.
+    if (session.upstreamWs) {
+      console.log(`[VTID-STALL-FIX] Terminating stalled upstream WS for session ${session.sessionId} — will attempt reconnect`);
+      (session as any)._stallRecoveryPending = true;
+      session.isModelSpeaking = false; // Ungate mic audio for reconnected session
+      try { session.upstreamWs.terminate(); } catch (_e) { /* WS already closing */ }
+    } else {
+      // No upstream WS — just send connection_issue to client
+      const issueEvent = {
+        type: 'connection_issue',
+        reason,
+        message,
+        should_close: false,
+      };
+      if (session.sseResponse) {
+        try { session.sseResponse.write(`data: ${JSON.stringify(issueEvent)}\n\n`); } catch (_e) { /* SSE already closed */ }
+      }
+      if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+        try { session.clientWs.send(JSON.stringify(issueEvent)); } catch (_e) { /* WS already closed */ }
+      }
+    }
   }, timeoutMs);
 }
 
