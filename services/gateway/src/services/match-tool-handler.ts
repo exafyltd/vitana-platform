@@ -12,6 +12,8 @@ import { createClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
 
 const VTID = 'VTID-01270';
+const MATCH_SHARE_BASE = 'https://e.vitanaland.com/matches';
+const DISCOVER_URL = 'https://vitanaland.com/discover';
 
 interface MatchToolArgs {
   date?: string;
@@ -75,7 +77,7 @@ export async function executeGetUserMatches(
       matches: [],
       total_available: 0,
       date,
-      discover_all_link: '/discover',
+      discover_all_link: DISCOVER_URL,
       error: 'Database not configured',
     };
   }
@@ -127,7 +129,7 @@ export async function executeGetUserMatches(
           matches: [],
           total_available: 0,
           date,
-          discover_all_link: '/discover',
+          discover_all_link: DISCOVER_URL,
         };
       }
 
@@ -136,7 +138,7 @@ export async function executeGetUserMatches(
         matches: [],
         total_available: 0,
         date,
-        discover_all_link: '/discover',
+        discover_all_link: DISCOVER_URL,
         error: error.message,
       };
     }
@@ -196,7 +198,7 @@ export async function executeGetUserMatches(
         score: m.score,
         shared_topics: sharedTopics,
         reasons_summary: reasonsSummary,
-        deep_link: `/discover?m=${m.id}`,
+        deep_link: `${MATCH_SHARE_BASE}/${m.id}`,
       };
     });
 
@@ -231,7 +233,7 @@ export async function executeGetUserMatches(
       matches: previews,
       total_available: totalCount || 0,
       date,
-      discover_all_link: '/discover',
+      discover_all_link: DISCOVER_URL,
     };
   } catch (err: any) {
     console.error(`[${VTID}] get_user_matches error:`, err.message);
@@ -240,7 +242,7 @@ export async function executeGetUserMatches(
       matches: [],
       total_available: 0,
       date,
-      discover_all_link: '/discover',
+      discover_all_link: DISCOVER_URL,
       error: err.message,
     };
   }

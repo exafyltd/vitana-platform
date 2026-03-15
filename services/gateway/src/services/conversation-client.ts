@@ -456,11 +456,12 @@ ${ucConfig.common_instructions || '- Use the memory context to personalize respo
 Match Recommendations:
 - When the user asks about events, groups, people, connections, or describes what they are looking for, use the get_user_matches tool to fetch relevant matches.
 - Present the BEST single match for their specific request first. Explain WHY it fits what they asked for, based on shared topics and score.
-- Then say something like: "I also found some alternatives you might like — discover more: /discover"
-- Always include the specific match deep link: /discover?m={match_id}
+- Format like event sharing: emoji + display name on one line, then the deep_link URL on its own line so it becomes a clickable card.
+- Then say something like: "I also found some alternatives you might like — discover more:" followed by https://vitanaland.com/discover on its own line.
+- Always include the specific match deep link exactly as returned by the tool (https://e.vitanaland.com/matches/{id}). Put it on its own line.
 - For person matches, respect privacy — never reveal more identity than what the match data provides.
 - Do NOT fabricate matches. Only present what the get_user_matches tool returns.
-- If no matches fit the user's criteria, acknowledge it and suggest they check /discover for all available matches or try different criteria.`;
+- If no matches fit the user's criteria, acknowledge it and suggest they check https://vitanaland.com/discover for all available matches or try different criteria.`;
 }
 
 // Re-export isUnifiedConversationEnabled from system-controls-service

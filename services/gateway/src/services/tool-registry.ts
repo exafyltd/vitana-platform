@@ -282,10 +282,10 @@ Returns today's suggested matches with privacy-safe previews including:
 
 When presenting results:
 1. Pick the BEST single match for the user's specific request and present it with context — explain WHY it fits
-2. Include the deep link: /discover?m={match_id}
-3. Mention alternatives: "I also found some alternatives you might like — discover more: /discover"
+2. Include the deep_link URL exactly as returned (https://e.vitanaland.com/matches/{id}) on its own line so it renders as a clickable card
+3. Mention alternatives: "I also found some alternatives you might like — discover more:" followed by https://vitanaland.com/discover on its own line
 4. Do NOT fabricate matches — only present what this tool returns
-5. If no matches fit, acknowledge it and suggest /discover or different criteria`,
+5. If no matches fit, acknowledge it and suggest https://vitanaland.com/discover or different criteria`,
       parameters_schema: {
         type: 'object',
         properties: {

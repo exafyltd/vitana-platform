@@ -8,7 +8,7 @@
  * - Dedup: Max 1 proactive match message per user per day
  * - Privacy: Respects reveal_identity_mode for person matches
  * - Template-based: Fast, deterministic message generation (no LLM)
- * - Deep links: /discover?m={match_id} for each match
+ * - Deep links: https://e.vitanaland.com/matches/{match_id} for each match
  * - Push notification via orb_proactive_message (P1 push+inapp)
  * - OASIS event tracking
  */
@@ -19,6 +19,8 @@ import { notifyUserAsync } from './notification-service';
 import { emitOasisEvent } from './oasis-event-service';
 
 const VTID = 'VTID-01270';
+const MATCH_SHARE_BASE = 'https://e.vitanaland.com/matches';
+const DISCOVER_URL = 'https://vitanaland.com/discover';
 
 // =============================================================================
 // Types
@@ -88,7 +90,7 @@ function buildProactiveMessage(
 
   lines.push(`Your top match: ${top.display_name} [${topLabel}]`);
   lines.push(`You both share interest in ${topTopics}. Score: ${top.score}/100`);
-  lines.push(`Check it out: ${top.deep_link}`);
+  lines.push(top.deep_link);
 
   // Additional matches
   if (matches.length > 1) {
@@ -98,9 +100,11 @@ function buildProactiveMessage(
 
   // Discover all CTA
   if (totalAvailable > matches.length) {
-    lines.push(`See all ${totalAvailable} matches: /discover`);
+    lines.push(`See all ${totalAvailable} matches:`);
+    lines.push(DISCOVER_URL);
   } else {
-    lines.push('See all your matches: /discover');
+    lines.push('See all your matches:');
+    lines.push(DISCOVER_URL);
   }
 
   return lines.join('\n');
@@ -269,7 +273,7 @@ export async function sendProactiveMatchMessages(
         display_name: displayName,
         score: m.score,
         shared_topics: sharedTopics,
-        deep_link: `/discover?m=${m.id}`,
+        deep_link: `${MATCH_SHARE_BASE}/${m.id}`,
       };
     });
 
@@ -282,7 +286,7 @@ export async function sendProactiveMatchMessages(
       proactive_match_date: date,
       vtid: VTID,
       matches: matchPreviews,
-      discover_link: '/discover',
+      discover_link: DISCOVER_URL,
       total_matches_today: totalCount || matches.length,
     };
 
