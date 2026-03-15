@@ -48,6 +48,7 @@ import {
   hashPrompt
 } from './llm-telemetry-service';
 import { getPersonalityConfigSync } from './ai-personality-service';
+import { scoreAndRankEvents, formatForText, EventRecord, EventSearchFilters, ScoredEventResults } from './event-relevance-scoring';
 
 // Environment config
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -1918,25 +1919,14 @@ async function executeCommunitySearchEvents(
   const dateTo = args.date_to || '';
   const maxPrice = args.max_price !== undefined ? Number(args.max_price) : undefined;
   const now = new Date().toISOString();
-  const results: string[] = [];
+  const liveRoomResults: string[] = [];
 
-  // Country/region → city/keyword mapping for geo-aware location search.
-  // The location column stores venue/city names, NOT countries.
-  const COUNTRY_CITY_MAP: Record<string, string[]> = {
-    'france': ['paris', 'lyon', 'nice', 'marseille', 'montmartre', 'bordeaux', 'toulouse', 'strasbourg', 'rivoli'],
-    'germany': ['berlin', 'munich', 'münchen', 'hamburg', 'frankfurt', 'cologne', 'köln', 'bremen', 'düsseldorf', 'garmisch', 'neukölln', 'prenzlauer'],
-    'spain': ['mallorca', 'palma', 'barcelona', 'madrid', 'portixol', 'cala major', 'santa catalina', 'puerto portals'],
-    'usa': ['new york', 'los angeles', 'chicago', 'san francisco', 'miami', 'brooklyn', 'manhattan'],
-    'united states': ['new york', 'los angeles', 'chicago', 'san francisco', 'miami', 'brooklyn', 'manhattan'],
-    'uae': ['dubai', 'abu dhabi'],
-    'united arab emirates': ['dubai', 'abu dhabi'],
-    'austria': ['vienna', 'wien', 'salzburg', 'graz', 'innsbruck'],
-    'serbia': ['belgrade', 'beograd', 'novi sad', 'petrovaradin'],
-    'luxembourg': ['luxembourg'],
-    'mallorca': ['palma', 'portixol', 'cala major', 'santa catalina', 'puerto portals', 'mallorca', 'box palma'],
-  };
+  // Scoring engine result (populated by Lovable fetch)
+  let scoredResult: ScoredEventResults | null = null;
 
   // Primary: Fetch events from Lovable Supabase (global_community_events)
+  // VTID-01270A Scoring: Fetch broadly (no query ilike filter) so scoring engine
+  // can rank ALL events — no event is pre-excluded at the DB level.
   if (LOVABLE_SUPABASE_KEY && (typeFilter === 'meetup' || typeFilter === 'all')) {
     const lovableHeaders = {
       'Content-Type': 'application/json',
@@ -1944,7 +1934,6 @@ async function executeCommunitySearchEvents(
       Authorization: `Bearer ${LOVABLE_SUPABASE_KEY}`,
     };
 
-    // Build URL — fetch more to allow post-fetch filtering (location is post-fetch)
     const startTimeGte = dateFrom ? `${dateFrom}T00:00:00Z` : now;
     let eventsUrl = `${LOVABLE_SUPABASE_URL}/rest/v1/global_community_events?select=id,title,description,start_time,end_time,location,virtual_link,metadata&start_time=gte.${startTimeGte}&order=start_time.asc&limit=50`;
 
@@ -1952,82 +1941,44 @@ async function executeCommunitySearchEvents(
       eventsUrl += `&start_time=lte.${dateTo}T23:59:59Z`;
     }
 
-    // NOTE: location filter is done post-fetch (not via PostgREST)
-    // because the location column stores venue/city names, NOT countries.
+    // NOTE: No query ilike filter — scoring engine handles relevance ranking.
+    // Date range is the only hard constraint (true temporal boundary).
 
     try {
       const filterSummary = [query && `query="${query}"`, locationFilter && `loc="${locationFilter}"`, organizerFilter && `org="${organizerFilter}"`, dateFrom && `from=${dateFrom}`, dateTo && `to=${dateTo}`, maxPrice !== undefined && `maxPrice=${maxPrice}`].filter(Boolean).join(', ') || 'no filters';
       console.log(`[VTID-01270A] search_events (text): ${filterSummary}`);
       const resp = await fetch(eventsUrl, { method: 'GET', headers: lovableHeaders });
       if (resp.ok) {
-        let events = await resp.json() as Array<{
-          id: string; title: string; description: string;
-          start_time: string; end_time: string; location: string;
-          virtual_link: string | null;
-          metadata: { category?: string; host?: string; guest?: string; price?: number; is_paid?: boolean; venue_type?: string } | null;
-        }>;
+        const events = await resp.json() as EventRecord[];
         console.log(`[VTID-01270A] search_events (text): ${events.length} raw results`);
 
-        // Post-fetch filters
-
-        // Location: direct match + country→city expansion
-        if (locationFilter) {
-          const locLower = locationFilter.toLowerCase();
-          const expandedTerms = COUNTRY_CITY_MAP[locLower] || [];
-          events = events.filter(e => {
-            const loc = (e.location || '').toLowerCase();
-            const title = (e.title || '').toLowerCase();
-            if (loc.includes(locLower) || title.includes(locLower)) return true;
-            if (expandedTerms.length > 0) {
-              return expandedTerms.some(city => loc.includes(city) || title.includes(city));
-            }
-            return false;
-          });
-        }
-
-        // Activity/keyword: match title, description, OR metadata.category
-        if (query) {
-          const qLower = query.toLowerCase();
-          events = events.filter(e =>
-            (e.title || '').toLowerCase().includes(qLower) ||
-            (e.description || '').toLowerCase().includes(qLower) ||
-            (e.metadata?.category || '').toLowerCase().includes(qLower)
-          );
-        }
-
-        // Organizer: match metadata.host or metadata.guest
-        if (organizerFilter) {
-          const orgLower = organizerFilter.toLowerCase();
-          events = events.filter(e =>
-            (e.metadata?.host || '').toLowerCase().includes(orgLower) ||
-            (e.metadata?.guest || '').toLowerCase().includes(orgLower)
-          );
-        }
-
-        // Price filter
-        if (maxPrice !== undefined) {
-          if (maxPrice === 0) {
-            events = events.filter(e => !e.metadata?.is_paid);
-          } else {
-            events = events.filter(e =>
-              !e.metadata?.is_paid || (e.metadata?.price ?? 0) <= maxPrice
+        // Fetch user's home_city for proximity boost
+        let userHomeCity: string | undefined;
+        if (identity && SUPABASE_URL && SUPABASE_SERVICE_ROLE) {
+          try {
+            const locResp = await fetch(
+              `${SUPABASE_URL}/rest/v1/location_preferences?user_id=eq.${identity.user_id}&select=home_city&limit=1`,
+              { method: 'GET', headers: { 'Content-Type': 'application/json', apikey: SUPABASE_SERVICE_ROLE, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}` } }
             );
-          }
+            if (locResp.ok) {
+              const locRows = await locResp.json() as Array<{ home_city: string | null }>;
+              if (locRows.length > 0 && locRows[0].home_city) {
+                userHomeCity = locRows[0].home_city;
+              }
+            }
+          } catch { /* location_preferences lookup failed — proceed without proximity */ }
         }
 
-        // Cap to 10 for text path
-        events = events.slice(0, 10);
+        const filters: EventSearchFilters = {
+          query,
+          location: locationFilter,
+          organizer: organizerFilter,
+          maxPrice,
+          userHomeCity,
+        };
 
-        for (const e of events) {
-          const date = new Date(e.start_time).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-          const category = e.metadata?.category ? ` | Category: ${e.metadata.category}` : '';
-          const host = e.metadata?.host ? ` | Organizer: ${e.metadata.host}` : '';
-          const guest = e.metadata?.guest ? ` | Guest: ${e.metadata.guest}` : '';
-          const price = e.metadata?.is_paid ? ` | €${e.metadata.price || '?'}` : ' | Free';
-          const venue = e.metadata?.venue_type ? ` | ${e.metadata.venue_type}` : '';
-          const desc = (e.description || '').substring(0, 200);
-          results.push(`**${e.title}** | ${date} | ${e.location || 'TBD'}${category}${host}${guest}${price}${venue}\n  ${desc}`);
-        }
+        scoredResult = scoreAndRankEvents(events, filters, 10);
+        console.log(`[VTID-01270A] search_events (text) scored: ${scoredResult.best.length} best, ${scoredResult.alternatives.length} alternatives, homeCity=${userHomeCity || 'none'}`);
       } else {
         const body = await resp.text();
         console.warn(`[VTID-01270A] Lovable events query failed: ${resp.status} — ${body.substring(0, 200)}`);
@@ -2060,7 +2011,7 @@ async function executeCommunitySearchEvents(
             ? new Date(r.starts_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
             : 'TBD';
           const statusLabel = r.status === 'live' ? 'LIVE NOW' : date;
-          results.push(`[Live Room] ${r.title} | ${statusLabel}`);
+          liveRoomResults.push(`[Live Room] ${r.title} | ${statusLabel}`);
         }
       }
     } catch (e: any) {
@@ -2068,15 +2019,27 @@ async function executeCommunitySearchEvents(
     }
   }
 
-  if (results.length === 0) {
+  // Build final output: scored events + live rooms
+  const hasEvents = scoredResult && (scoredResult.best.length > 0 || scoredResult.alternatives.length > 0);
+  const hasRooms = liveRoomResults.length > 0;
+
+  if (!hasEvents && !hasRooms) {
     const filterDesc = [query, locationFilter, organizerFilter, dateFrom, dateTo, maxPrice !== undefined ? `max €${maxPrice}` : ''].filter(Boolean).join(', ') || 'none';
     console.log(`[VTID-01270A] search_events (text): 0 hits (filters: ${filterDesc})`);
-    return { ok: true, data: { result: 'No upcoming events found matching your filters. Try broadening your search — remove the location, date range, or price filter.' } };
+    return { ok: true, data: { result: 'No upcoming events found at this time. Check back soon — new events are added regularly!' } };
   }
 
-  const formatted = results.join('\n');
-  console.log(`[VTID-01270A] search_events (text): ${results.length} hits`);
-  return { ok: true, data: { result: `Found ${results.length} upcoming events:\n${formatted}` } };
+  let formatted = '';
+  if (hasEvents) {
+    formatted = formatForText(scoredResult!);
+  }
+  if (hasRooms) {
+    if (formatted) formatted += '\n\n';
+    formatted += liveRoomResults.join('\n');
+  }
+
+  console.log(`[VTID-01270A] search_events (text): ${(scoredResult?.best.length || 0) + (scoredResult?.alternatives.length || 0)} scored + ${liveRoomResults.length} rooms`);
+  return { ok: true, data: { result: formatted } };
 }
 
 /**
