@@ -454,15 +454,10 @@ ${ucConfig.common_instructions || '- Use the memory context to personalize respo
 - ${channel === 'orb' ? (ucConfig.instructions_orb || 'Keep responses brief and natural for voice') : (ucConfig.instructions_operator || 'You can use markdown formatting and be more detailed')}
 
 Sharing Links:
-- Event search results include a "Link:" field with a URL like https://e.vitanaland.com/events/{slug}. When the user asks about an event or asks for a link, you MUST copy this exact URL into your response on its own line. NEVER say "the link is on its way" or "I'll send the link" — paste the actual URL.
-- Match results include a "deep_link" field with a URL like https://e.vitanaland.com/matches/{id}. Same rule: copy it exactly into your response.
-- Example format for sharing an event link:
+- Event search results include a "Link:" field with a URL like https://vitanaland.com/e/{slug}. When the user asks about an event or asks for a link, you MUST copy this exact URL into your response on its own line. NEVER say "the link is on its way" or "I'll send the link" — paste the actual URL.
+- Example:
   🎉 City by Bike Tour in Lyon
-  https://e.vitanaland.com/events/city-by-bike-tour-lyon
-- Example format for sharing a match link:
-  🤝 Morning Walk Group
-  https://e.vitanaland.com/matches/abc-123-def
-- For "discover more" or "see all matches": https://vitanaland.com/discover
+  https://vitanaland.com/e/city-by-bike
 - NEVER fabricate links. Only use URLs that appear in tool results or event data.
 - For person matches, respect privacy — never reveal more identity than what the match data provides.`;
 }

@@ -2568,16 +2568,11 @@ If there were errors or governance blocks, explain them clearly.
 If successful, present the results naturally.
 
 CRITICAL — Sharing links:
-- Event search results contain "Link: https://e.vitanaland.com/events/..." for each event. You MUST include this URL in your response when presenting events.
-- Match results contain "deep_link: https://e.vitanaland.com/matches/..." for each match. You MUST include this URL in your response.
-- ALWAYS put the URL on its own line so it becomes clickable.
-- NEVER say "I'll send the link", "the link is on its way", or "I cannot find a link". The URL IS in the data — copy it exactly.
-- Example event response:
-  🎉 City by Bike Tour in Lyon — Sat, Mar 21
-  https://e.vitanaland.com/events/city-by-bike-tour-lyon
-- Example match response:
-  🤝 Morning Walk Group — 92% match!
-  https://e.vitanaland.com/matches/abc-123-def` }]
+- Event search results contain "Link: https://vitanaland.com/e/..." for each event. You MUST include this URL in your response.
+- Put the URL on its own line. NEVER say "I'll send the link" — paste the actual URL.
+- Example:
+  🎉 City by Bike Tour in Lyon
+  https://vitanaland.com/e/city-by-bike` }]
     }
   });
 
@@ -2610,17 +2605,16 @@ CRITICAL — Sharing links:
 }
 
 /**
- * VTID-01270: Extract e.vitanaland.com links from tool results.
+ * VTID-01270: Extract vitanaland.com links from tool results.
  * If the LLM's reply doesn't include them, append them as a safety net.
  */
 function ensureLinksInReply(reply: string, toolResults: GeminiToolResult[]): string {
-  // Collect all e.vitanaland.com links from tool result data
   const links: string[] = [];
   for (const tr of toolResults) {
     const data = tr.response;
-    // Event search results contain "Link: https://e.vitanaland.com/..."
+    // Event search results contain "Link: https://vitanaland.com/e/..."
     if (typeof data?.result === 'string') {
-      const linkMatches = data.result.match(/https:\/\/e\.vitanaland\.com\/[^\s]+/g);
+      const linkMatches = data.result.match(/https:\/\/vitanaland\.com\/e\/[^\s]+/g);
       if (linkMatches) links.push(...linkMatches);
     }
     // Match tool results contain deep_link in each match object
@@ -2630,10 +2624,6 @@ function ensureLinksInReply(reply: string, toolResults: GeminiToolResult[]): str
           links.push(m.deep_link);
         }
       }
-    }
-    // discover_all_link
-    if (data?.discover_all_link && typeof data.discover_all_link === 'string') {
-      links.push(data.discover_all_link);
     }
   }
 
@@ -3033,17 +3023,11 @@ If there were errors or governance blocks, explain them clearly.
 If successful, present the results naturally.
 
 CRITICAL — Sharing links:
-- Event search results contain "Link: https://e.vitanaland.com/events/..." for each event. You MUST include this URL in your response when presenting events.
-- Match results contain "deep_link: https://e.vitanaland.com/matches/..." for each match. You MUST include this URL in your response.
-- ALWAYS put the URL on its own line so it becomes clickable.
-- NEVER say "I'll send the link", "the link is on its way", or "I cannot find a link". The URL IS in the data — copy it exactly.
-- Example event response:
-  🎉 City by Bike Tour in Lyon — Sat, Mar 21
-  https://e.vitanaland.com/events/city-by-bike-tour-lyon
-- Example match response:
-  🤝 Morning Walk Group — 92% match!
-  https://e.vitanaland.com/matches/abc-123-def
-  See all matches: https://vitanaland.com/discover`
+- Event search results contain "Link: https://vitanaland.com/e/..." for each event. You MUST include this URL in your response.
+- Put the URL on its own line. NEVER say "I'll send the link" — paste the actual URL.
+- Example:
+  🎉 City by Bike Tour in Lyon
+  https://vitanaland.com/e/city-by-bike`
       }]
     },
     generationConfig: {

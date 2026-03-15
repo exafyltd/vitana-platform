@@ -332,8 +332,7 @@ export function scoreAndRankEvents(
 // =============================================================================
 
 function buildEventLink(e: EventRecord): string {
-  if (e.slug) return `https://e.vitanaland.com/events/${e.slug}`;
-  return `https://e.vitanaland.com/pub/events/${e.id}`;
+  return `https://vitanaland.com/e/${e.slug || e.id}`;
 }
 
 function formatEventLineVoice(s: ScoredEvent): string {
