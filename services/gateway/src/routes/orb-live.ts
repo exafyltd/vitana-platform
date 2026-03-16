@@ -977,8 +977,17 @@ const VAD_SILENCE_DURATION_MS_DEFAULT = 1_200;
 // But the client is still draining its audio playback queue (Web Audio API scheduled
 // sources). During this window, speaker output gets picked up by the mic and
 // forwarded to Vertex as new user speech, causing phantom responses.
-// This cooldown gates mic audio for N ms after turn_complete to let playback finish.
-const POST_TURN_COOLDOWN_MS = 500;
+//
+// Mobile devices (Android/iOS) have poor acoustic echo cancellation (AEC).
+// Diagnostics show Vertex triggering on just 2 audio chunks (170ms of echo)
+// within 740ms of turn_complete, creating cascading ghost responses that
+// destabilize the upstream connection. The playback buffer on mobile typically
+// drains 1-2 seconds after the server's turn_complete.
+//
+// 2000ms covers the realistic playback drain window on mobile while keeping
+// the conversation responsive (Vertex's own VAD adds 1200ms silence detection
+// on top of this, so total latency from user speech start is ~3.2s).
+const POST_TURN_COOLDOWN_MS = 2000;
 
 // =============================================================================
 // VTID-STREAM-SILENCE: Silence audio keepalive for Vertex Live API
@@ -2626,15 +2635,16 @@ async function connectToLiveAPI(
               try { session.clientWs.send(JSON.stringify(issueEvent)); } catch (e) { /* ignore */ }
             }
           } else if (isStallRecovery) {
-            // VTID-STALL-FIX: Reconnect succeeded after stall — re-send greeting so user
-            // knows the session recovered (model lost all context in the new upstream session)
-            console.log(`[VTID-STALL-FIX] Stall recovery reconnect succeeded for ${session.sessionId} — sending greeting on new upstream`);
+            // VTID-STALL-FIX: Reconnect succeeded after stall — do NOT re-greet.
+            // Conversation history is already injected into the new upstream session's
+            // system instruction by connectToLiveAPI(). Re-greeting caused the assistant
+            // to say "Hello Dragan!" repeatedly during an ongoing conversation (4x in 1 min).
+            // The user is mid-conversation — their audio will be forwarded and Gemini
+            // responds naturally. No greeting prompt needed.
+            console.log(`[VTID-STALL-FIX] Stall recovery reconnect succeeded for ${session.sessionId} — resuming silently (no re-greeting)`);
             // Reset loop counter so loopguard doesn't fire prematurely on the fresh connection
             session.consecutiveModelTurns = 0;
-            if (session.upstreamWs && session.upstreamWs.readyState === WebSocket.OPEN) {
-              session.greetingSent = false; // Reset so greeting can be sent again
-              sendGreetingPromptToLiveAPI(session.upstreamWs, session);
-            }
+            emitDiag(session, 'stall_recovery_resumed', { reconnect_count: (session as any)._reconnectCount || 0 });
           }
         }).catch(err => {
           console.error(`[VTID-STREAM-RECONNECT] Reconnection error for ${session.sessionId}: ${err.message}`);
