@@ -16,8 +16,20 @@
   // 1. CONFIG & STATE
   // ============================================================
 
+  // Auto-detect gateway URL from the <script src> that loaded this file
+  var _autoGw = (function () {
+    try {
+      var scripts = document.querySelectorAll('script[src*="orb-widget"]');
+      if (scripts.length) {
+        var u = new URL(scripts[scripts.length - 1].src);
+        return u.origin; // e.g. https://gateway-q74ibpv6ia-uc.a.run.app
+      }
+    } catch (e) { /* ignore */ }
+    return '';
+  })();
+
   var _cfg = {
-    gw: '',       // Gateway URL (e.g. https://vitana-gateway-xxx.run.app)
+    gw: _autoGw,  // Gateway URL — auto-detected from script src, overridden by init()
     token: '',    // Supabase JWT
     lang: 'en-US'
   };
@@ -872,6 +884,10 @@
   }
 
   function _show() {
+    if (!_cfg.gw) {
+      console.error('[VTOrb] No gateway URL — call VitanaOrb.init({gatewayUrl}) or load this script from the gateway.');
+      return;
+    }
     _injectStyles();
     _renderOverlay();
     _renderFab();
