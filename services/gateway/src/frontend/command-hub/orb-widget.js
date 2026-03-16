@@ -25,7 +25,7 @@
         return u.origin; // e.g. https://gateway-q74ibpv6ia-uc.a.run.app
       }
     } catch (e) { /* ignore */ }
-    return '';
+    return 'https://gateway-q74ibpv6ia-uc.a.run.app'; // hardcoded fallback
   })();
 
   var _cfg = {
@@ -913,9 +913,9 @@
 
     init: function (opts) {
       opts = opts || {};
-      _cfg.gw = (opts.gatewayUrl || '').replace(/\/$/, '');
-      _cfg.token = opts.authToken || '';
-      _cfg.lang = opts.lang || 'en-US';
+      if (opts.gatewayUrl) _cfg.gw = opts.gatewayUrl.replace(/\/$/, '');
+      if (opts.authToken) _cfg.token = opts.authToken;
+      if (opts.lang) _cfg.lang = opts.lang;
 
       _injectStyles();
       _renderOverlay();
