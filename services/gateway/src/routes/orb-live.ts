@@ -1856,7 +1856,8 @@ function buildLiveSystemInstruction(
   bootstrapContext?: string,
   activeRole?: string | null,
   conversationSummary?: string,
-  conversationHistory?: string
+  conversationHistory?: string,
+  isReconnect?: boolean
 ): string {
   const languageNames: Record<string, string> = {
     'en': 'English',
@@ -1893,7 +1894,9 @@ GENERAL BEHAVIOR:
 ${voiceLiveConfig.general_behavior || '- Be warm, patient, and empathetic\n- Keep responses concise for voice interaction (2-3 sentences max)\n- Use natural conversational tone'}
 
 GREETING RULES (CRITICAL):
-${voiceLiveConfig.greeting_rules || '- When the conversation starts, you MUST speak first with a warm, brief greeting'}
+${isReconnect
+    ? '- This is a SESSION CONTINUATION after a brief connection interruption. Do NOT greet the user again. Do NOT say hello, welcome back, or any greeting. Simply continue the conversation naturally from where you left off. Wait for the user to speak.'
+    : (voiceLiveConfig.greeting_rules || '- When the conversation starts, you MUST speak first with a warm, brief greeting')}
 
 INTERRUPTION HANDLING (CRITICAL):
 ${voiceLiveConfig.interruption_handling || '- If the user starts speaking while you are talking, STOP immediately'}
@@ -1923,10 +1926,10 @@ ${voiceLiveConfig.important_section || '- This is a real-time voice conversation
   }
 
   // VTID-01225 + VTID-STREAM-KEEPALIVE: Append conversation history for reconnect continuity.
-  // Capped to last 5 turns and 2000 chars to prevent oversized setup messages that
-  // Vertex AI rejects (causing connection timeout). Previous version was unbounded.
+  // Increased from 5 turns/2000 chars to 10 turns/4000 chars for deeper context on reconnect.
+  // Vertex AI setup message limit is ~32k chars; 4k for history leaves ample room.
   if (conversationHistory) {
-    const MAX_HISTORY_CHARS = 2000;
+    const MAX_HISTORY_CHARS = 4000;
     const trimmedHistory = conversationHistory.length > MAX_HISTORY_CHARS
       ? '...' + conversationHistory.slice(-MAX_HISTORY_CHARS)
       : conversationHistory;
@@ -2036,10 +2039,12 @@ async function connectToLiveAPI(
                 session.contextInstruction,
                 session.active_role,
                 session.conversationSummary,
-                // VTID-STREAM-KEEPALIVE: Limit to last 5 turns to prevent oversized setup messages
+                // VTID-STREAM-KEEPALIVE: Pass last 10 turns for reconnect continuity
                 session.transcriptTurns.length > 0
-                  ? session.transcriptTurns.slice(-5).map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`).join('\n')
-                  : undefined
+                  ? session.transcriptTurns.slice(-10).map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`).join('\n')
+                  : undefined,
+                // Pass reconnect flag so greeting rules are suppressed on reconnect
+                ((session as any)._reconnectCount || 0) > 0
               )
             }]
           },
