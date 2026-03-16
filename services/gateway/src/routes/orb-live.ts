@@ -703,6 +703,79 @@ type LiveStreamMessage = LiveStreamAudioChunk | LiveStreamVideoFrame;
 // VTID-01155: In-memory Live session store
 const liveSessions = new Map<string, GeminiLiveSession>();
 
+// =============================================================================
+// VTID-SESSION-LIMIT: Enforce single active ORB session per user
+// =============================================================================
+// Users (especially on mobile) may open the ORB multiple times without properly
+// closing the previous session. This creates zombie sessions that waste upstream
+// WebSocket connections and compete for resources. Enforce at most 1 active
+// session per user_id — terminate all existing active sessions before creating
+// a new one.
+function terminateExistingSessionsForUser(userId: string, excludeSessionId?: string): number {
+  let terminated = 0;
+  for (const [sid, existingSession] of liveSessions) {
+    if (sid === excludeSessionId) continue;
+    if (!existingSession.active) continue;
+    if (!existingSession.identity || existingSession.identity.user_id !== userId) continue;
+
+    console.log(`[VTID-SESSION-LIMIT] Terminating existing session ${sid} for user=${userId.substring(0, 8)}... (new session starting)`);
+
+    // Close upstream WebSocket
+    if (existingSession.upstreamWs) {
+      try { existingSession.upstreamWs.close(); } catch (_e) { /* ignore */ }
+      existingSession.upstreamWs = null;
+    }
+
+    // Notify and close SSE
+    if (existingSession.sseResponse) {
+      try {
+        existingSession.sseResponse.write(`data: ${JSON.stringify({
+          type: 'session_ended',
+          reason: 'new_session_started'
+        })}\n\n`);
+        existingSession.sseResponse.end();
+      } catch (_e) { /* ignore */ }
+      existingSession.sseResponse = null;
+    }
+
+    // Notify and close client WebSocket
+    if (existingSession.clientWs && existingSession.clientWs.readyState === WebSocket.OPEN) {
+      try {
+        sendWsMessage(existingSession.clientWs, {
+          type: 'session_ended',
+          reason: 'new_session_started'
+        });
+        existingSession.clientWs.close();
+      } catch (_e) { /* ignore */ }
+    }
+
+    // Clean up timers
+    if (existingSession.upstreamPingInterval) {
+      clearInterval(existingSession.upstreamPingInterval);
+      existingSession.upstreamPingInterval = undefined;
+    }
+    if (existingSession.silenceKeepaliveInterval) {
+      clearInterval(existingSession.silenceKeepaliveInterval);
+      existingSession.silenceKeepaliveInterval = undefined;
+    }
+    clearResponseWatchdog(existingSession);
+
+    existingSession.active = false;
+    terminated++;
+
+    // Emit OASIS event (fire-and-forget)
+    emitLiveSessionEvent('vtid.live.session.stop', {
+      session_id: sid,
+      reason: 'superseded_by_new_session',
+      audio_in_chunks: existingSession.audioInChunks,
+      audio_out_chunks: existingSession.audioOutChunks,
+      duration_ms: Date.now() - existingSession.createdAt.getTime(),
+      turn_count: existingSession.turn_count,
+    }).catch(() => {});
+  }
+  return terminated;
+}
+
 // VTID-01155: Vertex AI Live API configuration
 // Cloud Run does NOT auto-set GOOGLE_CLOUD_PROJECT env var.
 // Fallback to hardcoded project ID for Cloud Run deployments.
@@ -2556,6 +2629,8 @@ async function connectToLiveAPI(
             // VTID-STALL-FIX: Reconnect succeeded after stall — re-send greeting so user
             // knows the session recovered (model lost all context in the new upstream session)
             console.log(`[VTID-STALL-FIX] Stall recovery reconnect succeeded for ${session.sessionId} — sending greeting on new upstream`);
+            // Reset loop counter so loopguard doesn't fire prematurely on the fresh connection
+            session.consecutiveModelTurns = 0;
             if (session.upstreamWs && session.upstreamWs.readyState === WebSocket.OPEN) {
               session.greetingSent = false; // Reset so greeting can be sent again
               sendGreetingPromptToLiveAPI(session.upstreamWs, session);
@@ -2659,6 +2734,8 @@ async function attemptTransparentReconnect(
     );
 
     session.upstreamWs = newWs;
+    // Reset loop counter — fresh upstream connection starts clean
+    session.consecutiveModelTurns = 0;
     console.log(`[VTID-STREAM-RECONNECT] Reconnected successfully for session ${session.sessionId} (reconnect #${reconnectCount + 1})`);
 
     // Notify client that reconnection succeeded (both SSE and WS)
@@ -5957,6 +6034,16 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     consecutiveModelTurns: 0,
   };
 
+  // VTID-SESSION-LIMIT: Terminate any existing active sessions for this user.
+  // Prevents zombie sessions when user re-opens the ORB without closing the previous one.
+  let terminatedCount = 0;
+  if (orbIdentity?.user_id) {
+    terminatedCount = terminateExistingSessionsForUser(orbIdentity.user_id, sessionId);
+    if (terminatedCount > 0) {
+      console.log(`[VTID-SESSION-LIMIT] Terminated ${terminatedCount} existing session(s) for user=${orbIdentity.user_id.substring(0, 8)}... before starting ${sessionId}`);
+    }
+  }
+
   // Store session
   liveSessions.set(sessionId, session);
 
@@ -7480,6 +7567,15 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     // VTID-LOOPGUARD: Track consecutive model turns for loop prevention
     consecutiveModelTurns: 0,
   };
+
+  // VTID-SESSION-LIMIT: Terminate existing sessions for this user (WS path)
+  const wsEffectiveUserId = (effectiveBootstrapIdentity || identity)?.user_id;
+  if (wsEffectiveUserId) {
+    const wsTerminated = terminateExistingSessionsForUser(wsEffectiveUserId, sessionId);
+    if (wsTerminated > 0) {
+      console.log(`[VTID-SESSION-LIMIT] WS: Terminated ${wsTerminated} existing session(s) for user=${wsEffectiveUserId.substring(0, 8)}... before starting ${sessionId}`);
+    }
+  }
 
   clientSession.liveSession = liveSession;
   liveSessions.set(sessionId, liveSession);
