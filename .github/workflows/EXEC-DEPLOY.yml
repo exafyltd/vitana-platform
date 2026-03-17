@@ -249,6 +249,10 @@ jobs:
               CLOUD_RUN_SERVICE="vitana-verification-engine"
               SOURCE_PATH="services/agents/vitana-orchestrator"
               ;;
+            cognee-extractor)
+              CLOUD_RUN_SERVICE="cognee-extractor"
+              SOURCE_PATH="services/agents/cognee-extractor"
+              ;;
             *)
               # Use inputs directly for custom services
               CLOUD_RUN_SERVICE="$SERVICE"
@@ -271,8 +275,12 @@ jobs:
             EXTRA_ENV_ARGS+=(--update-env-vars=ENVIRONMENT=dev-sandbox)
             # VTID-01219: Cloud Run does NOT auto-set GOOGLE_CLOUD_PROJECT; required for Vertex AI Live API
             EXTRA_ENV_ARGS+=(--update-env-vars=GCP_PROJECT_ID=lovable-vitana-vers1)
+            # VTID-01225: Cognee Extractor URL for entity extraction
+            EXTRA_ENV_ARGS+=(--update-env-vars=COGNEE_EXTRACTOR_URL=https://cognee-extractor-86804897789.us-central1.run.app)
             # VTID-01155: Bind Gemini API key for TTS and chat
             SECRETS_ARGS+=(--update-secrets=GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest)
+            # VTID-01184: OpenAI API key for embedding generation (primary provider)
+            SECRETS_ARGS+=(--update-secrets=OPENAI_API_KEY=OPENAI_API_KEY:latest)
             # Bind other required secrets
             SECRETS_ARGS+=(--update-secrets=SUPABASE_URL=SUPABASE_URL:latest)
             SECRETS_ARGS+=(--update-secrets=SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest)
