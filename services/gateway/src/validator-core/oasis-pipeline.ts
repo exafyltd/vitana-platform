@@ -13,7 +13,7 @@ export class OasisPipeline {
         const { error } = await supabase.from('oasis_events_v1').insert({
             task_type: eventType,
             metadata: payload.data,
-            vtid: 'DEV-OASIS-GOV-0101' // Tag with current task ID
+            vtid: 'VTID-00000' // System governance events (no specific task)
         });
 
         if (error) console.error('Failed to log governance event to OASIS:', error);

@@ -1220,41 +1220,42 @@ router.get('/pipeline/summary', async (_req: Request, res: Response) => {
     ] = await Promise.all([
       getEventLoopStatus(),
 
-      // Task counts by status — direct queries (RPC may not exist)
+      // VTID Unification: ALL queries filter by vtid=like.VTID-% to match board (VTID-XXXXX only)
+      // Task counts by status — direct queries
       Promise.all([
-        fetch(`${supabaseUrl}/rest/v1/vtid_ledger?status=in.(scheduled,pending)&select=vtid&limit=500`, { headers }).then(r => r.ok ? r.json() : []).catch(() => []),
-        fetch(`${supabaseUrl}/rest/v1/vtid_ledger?status=eq.in_progress&select=vtid&limit=500`, { headers }).then(r => r.ok ? r.json() : []).catch(() => []),
-        fetch(`${supabaseUrl}/rest/v1/vtid_ledger?status=eq.completed&select=vtid&limit=500`, { headers }).then(r => r.ok ? r.json() : []).catch(() => []),
-        fetch(`${supabaseUrl}/rest/v1/vtid_ledger?status=eq.rejected&select=vtid&limit=500`, { headers }).then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch(`${supabaseUrl}/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=in.(scheduled,pending)&select=vtid&limit=500`, { headers }).then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch(`${supabaseUrl}/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.in_progress&select=vtid&limit=500`, { headers }).then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch(`${supabaseUrl}/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.completed&select=vtid&limit=500`, { headers }).then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch(`${supabaseUrl}/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.rejected&select=vtid&limit=500`, { headers }).then(r => r.ok ? r.json() : []).catch(() => []),
       ]).catch(() => null),
 
       // Stuck: in_progress > 1 hour
       fetch(
-        `${supabaseUrl}/rest/v1/vtid_ledger?status=eq.in_progress&updated_at=lt.${encodeURIComponent(oneHourAgo)}&select=vtid,title,updated_at,spec_status&limit=20`,
+        `${supabaseUrl}/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.in_progress&updated_at=lt.${encodeURIComponent(oneHourAgo)}&select=vtid,title,updated_at,spec_status&limit=20`,
         { headers }
       ).catch(() => null),
 
-      // Broken: in_progress with last event being error/failure (check oasis_events)
+      // Broken: in_progress with last event being error/failure
       fetch(
-        `${supabaseUrl}/rest/v1/vtid_ledger?status=eq.in_progress&updated_at=lt.${encodeURIComponent(oneHourAgo)}&select=vtid,title,updated_at,spec_status&limit=20`,
+        `${supabaseUrl}/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.in_progress&updated_at=lt.${encodeURIComponent(oneHourAgo)}&select=vtid,title,updated_at,spec_status&limit=20`,
         { headers }
       ).catch(() => null),
 
       // Blocked: scheduled/pending with no spec
       fetch(
-        `${supabaseUrl}/rest/v1/vtid_ledger?status=in.(scheduled,pending)&or=(spec_status.is.null,spec_status.eq.missing)&select=vtid,title,updated_at,spec_status&limit=20`,
+        `${supabaseUrl}/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=in.(scheduled,pending)&or=(spec_status.is.null,spec_status.eq.missing)&select=vtid,title,updated_at,spec_status&limit=20`,
         { headers }
       ).catch(() => null),
 
       // New/ready: scheduled/pending with spec validated (awaiting human approval)
       fetch(
-        `${supabaseUrl}/rest/v1/vtid_ledger?status=in.(scheduled,pending)&spec_status=eq.validated&select=vtid,title,updated_at,spec_status&limit=20`,
+        `${supabaseUrl}/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=in.(scheduled,pending)&spec_status=eq.validated&select=vtid,title,updated_at,spec_status&limit=20`,
         { headers }
       ).catch(() => null),
 
-      // Entry points: count oasis_events by source for task creation events (last 30 days)
+      // Entry points: count oasis_events by source for task creation events (last 7 days)
       fetch(
-        `${supabaseUrl}/rest/v1/oasis_events?topic=in.(email.intake.task_created,vtid.task.scheduled,vtid.lifecycle.execution_approved)&created_at=gt.${encodeURIComponent(sevenDaysAgo)}&select=source,vtid&limit=500`,
+        `${supabaseUrl}/rest/v1/oasis_events?vtid=like.VTID-%25&topic=in.(email.intake.task_created,vtid.task.scheduled,vtid.lifecycle.execution_approved)&created_at=gt.${encodeURIComponent(sevenDaysAgo)}&select=source,vtid&limit=500`,
         { headers }
       ).catch(() => null),
 
@@ -1272,13 +1273,13 @@ router.get('/pipeline/summary', async (_req: Request, res: Response) => {
 
       // Completed in last 7 days (for success rate)
       fetch(
-        `${supabaseUrl}/rest/v1/vtid_ledger?status=eq.completed&updated_at=gt.${encodeURIComponent(sevenDaysAgo)}&select=vtid&limit=500`,
+        `${supabaseUrl}/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.completed&updated_at=gt.${encodeURIComponent(sevenDaysAgo)}&select=vtid&limit=500`,
         { headers }
       ).catch(() => null),
 
       // Failed/rejected in last 7 days (for success rate)
       fetch(
-        `${supabaseUrl}/rest/v1/vtid_ledger?status=in.(rejected,voided)&updated_at=gt.${encodeURIComponent(sevenDaysAgo)}&select=vtid&limit=500`,
+        `${supabaseUrl}/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=in.(rejected,voided)&updated_at=gt.${encodeURIComponent(sevenDaysAgo)}&select=vtid&limit=500`,
         { headers }
       ).catch(() => null),
     ]);

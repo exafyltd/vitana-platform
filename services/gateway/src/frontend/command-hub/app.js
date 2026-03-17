@@ -5840,9 +5840,8 @@ function renderTasksView() {
 
         // VTID-01005: Use OASIS-derived column for task placement (single source of truth)
         const colTasks = state.tasks.filter(t => {
-            // VTID-01022: Hard governance filter - ONLY human tasks (VTID-NNNN) appear on board
-            // Excludes: DEV-*, DEV-CICDL-*, DEV-COMHU-*, AUTODEPLOY-*, OASIS-CMD-*, etc.
-            if (!isHumanTask(t)) return false;
+            // VTID Unification: All tasks now use VTID-XXXXX format (legacy prefixes deleted).
+            // isHumanTask() filter removed — format enforced at creation time, not display time.
 
             // VTID-01055: Suppress deleted/voided tasks (client-side safety net)
             if (!isTaskRenderable(t)) return false;
