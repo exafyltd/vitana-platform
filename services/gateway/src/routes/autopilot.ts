@@ -1220,12 +1220,13 @@ router.get('/pipeline/summary', async (_req: Request, res: Response) => {
     ] = await Promise.all([
       getEventLoopStatus(),
 
-      // Task counts by status
-      fetch(`${supabaseUrl}/rest/v1/rpc/count_tasks_by_status`, {
-        method: 'POST',
-        headers,
-        body: '{}',
-      }).catch(() => null),
+      // Task counts by status — direct queries (RPC may not exist)
+      Promise.all([
+        fetch(`${supabaseUrl}/rest/v1/vtid_ledger?status=in.(scheduled,pending)&select=vtid&limit=500`, { headers }).then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch(`${supabaseUrl}/rest/v1/vtid_ledger?status=eq.in_progress&select=vtid&limit=500`, { headers }).then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch(`${supabaseUrl}/rest/v1/vtid_ledger?status=eq.completed&select=vtid&limit=500`, { headers }).then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch(`${supabaseUrl}/rest/v1/vtid_ledger?status=eq.rejected&select=vtid&limit=500`, { headers }).then(r => r.ok ? r.json() : []).catch(() => []),
+      ]).catch(() => null),
 
       // Stuck: in_progress > 1 hour
       fetch(
@@ -1239,15 +1240,15 @@ router.get('/pipeline/summary', async (_req: Request, res: Response) => {
         { headers }
       ).catch(() => null),
 
-      // Blocked: scheduled with no spec
+      // Blocked: scheduled/pending with no spec
       fetch(
-        `${supabaseUrl}/rest/v1/vtid_ledger?status=eq.scheduled&or=(spec_status.is.null,spec_status.eq.missing)&select=vtid,title,updated_at,spec_status&limit=20`,
+        `${supabaseUrl}/rest/v1/vtid_ledger?status=in.(scheduled,pending)&or=(spec_status.is.null,spec_status.eq.missing)&select=vtid,title,updated_at,spec_status&limit=20`,
         { headers }
       ).catch(() => null),
 
-      // New/ready: scheduled with spec validated (awaiting human approval)
+      // New/ready: scheduled/pending with spec validated (awaiting human approval)
       fetch(
-        `${supabaseUrl}/rest/v1/vtid_ledger?status=eq.scheduled&spec_status=eq.validated&select=vtid,title,updated_at,spec_status&limit=20`,
+        `${supabaseUrl}/rest/v1/vtid_ledger?status=in.(scheduled,pending)&spec_status=eq.validated&select=vtid,title,updated_at,spec_status&limit=20`,
         { headers }
       ).catch(() => null),
 
@@ -1282,13 +1283,14 @@ router.get('/pipeline/summary', async (_req: Request, res: Response) => {
       ).catch(() => null),
     ]);
 
-    // --- Parse task counts ---
-    let taskCounts: Record<string, number> = {};
-    if (taskCountsResp && taskCountsResp.ok) {
-      const countsData = await taskCountsResp.json() as any;
-      taskCounts = Array.isArray(countsData)
-        ? countsData.reduce((acc: Record<string, number>, r: any) => { acc[r.status] = r.count; return acc; }, {})
-        : countsData;
+    // --- Parse task counts (from direct queries) ---
+    let taskCounts: Record<string, number> = { scheduled: 0, in_progress: 0, completed: 0, rejected: 0 };
+    if (Array.isArray(taskCountsResp)) {
+      const [scheduledArr, inProgressArr, completedArr, rejectedArr] = taskCountsResp as any[][];
+      taskCounts.scheduled = Array.isArray(scheduledArr) ? scheduledArr.length : 0;
+      taskCounts.in_progress = Array.isArray(inProgressArr) ? inProgressArr.length : 0;
+      taskCounts.completed = Array.isArray(completedArr) ? completedArr.length : 0;
+      taskCounts.rejected = Array.isArray(rejectedArr) ? rejectedArr.length : 0;
     }
 
     // --- Parse stuck tasks ---

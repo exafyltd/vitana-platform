@@ -28856,12 +28856,18 @@ function renderOverviewSystemView() {
     header.appendChild(refreshBtn);
     container.appendChild(header);
 
-    // Loading
+    // Loading — VTID-01239: animated spinner
     if (state.overviewPipelineSummary.loading && !state.overviewPipelineSummary.snapshot) {
-        var loading = document.createElement('div');
-        loading.className = 'placeholder-content';
-        loading.textContent = 'Loading attention center...';
-        container.appendChild(loading);
+        var spinnerWrap = document.createElement('div');
+        spinnerWrap.className = 'attention-spinner-container';
+        var spinner = document.createElement('div');
+        spinner.className = 'attention-spinner';
+        spinnerWrap.appendChild(spinner);
+        var spinText = document.createElement('div');
+        spinText.className = 'attention-spinner-text';
+        spinText.textContent = 'Loading attention center\u2026';
+        spinnerWrap.appendChild(spinText);
+        container.appendChild(spinnerWrap);
         return container;
     }
 
@@ -29201,12 +29207,18 @@ function renderOverviewLiveMetricsView() {
         fetchPipelineSummary();
     }
 
-    // Loading
+    // Loading — VTID-01239: animated spinner
     if (state.overviewPipelineSummary.loading && !state.overviewPipelineSummary.snapshot) {
-        var loading = document.createElement('div');
-        loading.className = 'placeholder-content';
-        loading.textContent = 'Loading pipeline dashboard...';
-        container.appendChild(loading);
+        var spinnerWrap = document.createElement('div');
+        spinnerWrap.className = 'attention-spinner-container';
+        var spinner = document.createElement('div');
+        spinner.className = 'attention-spinner';
+        spinnerWrap.appendChild(spinner);
+        var spinText = document.createElement('div');
+        spinText.className = 'attention-spinner-text';
+        spinText.textContent = 'Loading pipeline dashboard\u2026';
+        spinnerWrap.appendChild(spinText);
+        container.appendChild(spinnerWrap);
         return container;
     }
 
