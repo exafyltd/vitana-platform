@@ -58,6 +58,10 @@ function mapStatusToColumn(status: string): BoardColumn | null {
   if (s === 'allocated') {
     return 'SCHEDULED';
   }
+  // Rejected tasks are excluded from the active board (soft deny, keeps VTID for audit)
+  if (s === 'rejected') {
+    return null;
+  }
   if (s === 'completed' || s === 'done' || s === 'closed' || s === 'deployed' || s === 'merged' || s === 'complete' || s === 'failed' || s === 'error') {
     return 'COMPLETED';
   }

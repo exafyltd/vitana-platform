@@ -194,6 +194,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const autopilotRecommendationsRouter = require('./routes/autopilot-recommendations').default;
   // VTID-01188: Unified "Generate Spec" Pipeline Routes
   const { specsRouter } = require('./routes/specs');
+  // Email Intake — Receives emails from Cloudflare Email Worker, creates tasks
+  const { emailIntakeRouter } = require('./routes/email-intake');
   // VTID-01208: LLM Routing Policy & Telemetry API
   const llmRouter = require('./routes/llm').default;
   // VTID-01223: Interactive Visual Testing API
@@ -392,6 +394,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01148: Approvals API v1 — Pending Queue + Count + Approve/Reject (Gateway + OASIS-backed)
   mountRouterSync(app, '/api/v1/approvals', approvalsRouter, { owner: 'approvals-api' });
+
+  // Email Intake — Receives emails from Cloudflare Email Worker, creates scheduled tasks
+  mountRouterSync(app, '/api/v1/intake', emailIntakeRouter, { owner: 'email-intake' });
 
   // VTID-01208: LLM Routing Policy & Telemetry API
   mountRouterSync(app, '/api/v1/llm', llmRouter, { owner: 'llm-routing-telemetry' });

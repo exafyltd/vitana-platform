@@ -1384,6 +1384,47 @@ router.post("/api/v1/vtid/lifecycle/start", async (req: Request, res: Response) 
       }
     }
 
+    // Spec gate: verify spec is approved before allowing execution (defense in depth)
+    const specCheckResp = await fetch(
+      `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${body.vtid}&select=spec_status,spec_current_hash,spec_approved_hash`,
+      {
+        headers: {
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+      }
+    );
+
+    if (specCheckResp.ok) {
+      const specRows = await specCheckResp.json() as any[];
+      if (specRows.length > 0) {
+        const specStatus = specRows[0].spec_status;
+        if (specStatus !== 'approved') {
+          console.warn(`[VTID-01194] Spec gate blocked ${body.vtid}: spec_status=${specStatus}`);
+          return res.status(409).json({
+            ok: false,
+            vtid: body.vtid,
+            error: 'SPEC_NOT_APPROVED',
+            code: 'SPEC_NOT_APPROVED',
+            spec_status: specStatus || 'missing',
+            message: `Cannot start execution: spec must be approved first (current: ${specStatus || 'missing'}). Approve the spec in Command Hub, then click Activate.`,
+          });
+        }
+        // Also check hash integrity
+        const { spec_current_hash, spec_approved_hash } = specRows[0];
+        if (spec_approved_hash && spec_current_hash && spec_approved_hash !== spec_current_hash) {
+          console.warn(`[VTID-01194] Spec hash mismatch for ${body.vtid}`);
+          return res.status(409).json({
+            ok: false,
+            vtid: body.vtid,
+            error: 'SPEC_HASH_MISMATCH',
+            code: 'SPEC_HASH_MISMATCH',
+            message: 'Spec was modified after approval. Re-validate and re-approve the spec.',
+          });
+        }
+      }
+    }
+
     const timestamp = new Date().toISOString();
     const defaultMessage = `${body.vtid}: Execution approved - moving to IN_PROGRESS`;
 
@@ -1514,6 +1555,159 @@ router.post("/api/v1/vtid/lifecycle/start", async (req: Request, res: Response) 
       ok: false,
       error: "Internal server error",
     });
+  }
+});
+
+/**
+ * POST /api/v1/vtid/lifecycle/reject
+ * Reject a scheduled task (soft deny — keeps the VTID, marks status as 'rejected').
+ *
+ * Body:
+ * - vtid: The VTID to reject (required)
+ * - source: "command-hub", "operator", "claude", or "cicd" (required)
+ * - reason: Optional rejection reason
+ *
+ * Guards:
+ * - VTID must exist in vtid_ledger
+ * - VTID must not already be in a terminal state (completed, failed, cancelled)
+ * - VTID must not be in_progress (cannot reject running tasks — block or cancel instead)
+ */
+const LifecycleRejectEventSchema = z.object({
+  vtid: z.string().min(1, "vtid required"),
+  source: z.enum(["claude", "cicd", "operator", "command-hub"], {
+    errorMap: () => ({ message: "source must be: claude, cicd, operator, or command-hub" }),
+  }),
+  reason: z.string().nullish(),
+});
+
+router.post("/api/v1/vtid/lifecycle/reject", async (req: Request, res: Response) => {
+  try {
+    const validation = LifecycleRejectEventSchema.safeParse(req.body);
+
+    if (!validation.success) {
+      return res.status(400).json({
+        ok: false,
+        error: validation.error.errors
+          .map((e) => `${e.path.join(".")}: ${e.message}`)
+          .join(", "),
+      });
+    }
+
+    const body = validation.data;
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+
+    if (!svcKey || !supabaseUrl) {
+      return res.status(500).json({ ok: false, error: "Gateway misconfigured" });
+    }
+
+    // Fetch current task status
+    const ledgerResp = await fetch(
+      `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${body.vtid}&select=vtid,status,is_terminal`,
+      {
+        headers: {
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+      }
+    );
+
+    if (!ledgerResp.ok) {
+      return res.status(502).json({ ok: false, error: "Database query failed" });
+    }
+
+    const rows = await ledgerResp.json() as any[];
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: `VTID ${body.vtid} not found in ledger` });
+    }
+
+    const task = rows[0];
+    const terminalStatuses = ['completed', 'failed', 'cancelled', 'merged', 'deployed', 'done'];
+
+    if (task.is_terminal || terminalStatuses.includes(task.status)) {
+      return res.status(409).json({
+        ok: false,
+        error: 'ALREADY_TERMINAL',
+        message: `Cannot reject ${body.vtid}: already in terminal status '${task.status}'`,
+      });
+    }
+
+    if (task.status === 'in_progress' || task.status === 'running') {
+      return res.status(409).json({
+        ok: false,
+        error: 'TASK_IN_PROGRESS',
+        message: `Cannot reject ${body.vtid}: task is currently in progress. Use block or cancel instead.`,
+      });
+    }
+
+    const timestamp = new Date().toISOString();
+
+    // Update vtid_ledger status to 'rejected'
+    const updateResp = await fetch(
+      `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${body.vtid}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+        body: JSON.stringify({
+          status: "rejected",
+          updated_at: timestamp,
+        }),
+      }
+    );
+
+    if (!updateResp.ok) {
+      const errText = await updateResp.text();
+      console.error(`[lifecycle/reject] Ledger update failed for ${body.vtid}: ${errText}`);
+      return res.status(502).json({ ok: false, error: "Ledger update failed" });
+    }
+
+    // Emit OASIS event
+    const eventId = randomUUID();
+    await fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+      },
+      body: JSON.stringify({
+        id: eventId,
+        created_at: timestamp,
+        vtid: body.vtid,
+        topic: "vtid.lifecycle.rejected",
+        service: `vtid-lifecycle-${body.source}`,
+        role: "GOVERNANCE",
+        model: "vtid-lifecycle-reject",
+        status: "warning",
+        message: `${body.vtid}: Rejected — ${body.reason || 'No reason provided'}`,
+        metadata: {
+          vtid: body.vtid,
+          source: body.source,
+          reason: body.reason || null,
+          previous_status: task.status,
+          rejected_at: timestamp,
+        },
+      }),
+    }).catch(err => {
+      console.warn(`[lifecycle/reject] OASIS event insert failed (non-blocking): ${err.message}`);
+    });
+
+    console.log(`[lifecycle/reject] ${body.vtid} rejected by ${body.source}: ${body.reason || 'No reason'}`);
+
+    return res.status(200).json({
+      ok: true,
+      vtid: body.vtid,
+      status: "rejected",
+      event_id: eventId,
+      message: `Task ${body.vtid} has been rejected`,
+    });
+  } catch (e: any) {
+    console.error("[lifecycle/reject] Unexpected error:", e);
+    return res.status(500).json({ ok: false, error: "Internal server error" });
   }
 });
 

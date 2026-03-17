@@ -882,9 +882,76 @@ async function runLoopIteration(): Promise<void> {
       await updateLoopCursor(lastProcessedEvent.created_at, lastProcessedEvent.created_at);
     }
 
+    // Periodically check for stuck tasks (every 5 minutes)
+    await checkForStuckTasks();
+
   } catch (error) {
     console.error(`${LOG_PREFIX} Loop iteration error: ${error}`);
     await recordLoopError(String(error));
+  }
+}
+
+// =============================================================================
+// Stuck Task Detection
+// =============================================================================
+
+let lastStuckCheckTime = 0;
+const STUCK_CHECK_INTERVAL_MS = 5 * 60 * 1000; // Every 5 minutes
+const STUCK_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour without progress
+
+/**
+ * Check for tasks stuck in in_progress with no recent OASIS events.
+ * Emits alert events for stuck tasks.
+ */
+async function checkForStuckTasks(): Promise<void> {
+  const now = Date.now();
+  if (now - lastStuckCheckTime < STUCK_CHECK_INTERVAL_MS) return;
+  lastStuckCheckTime = now;
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+  if (!supabaseUrl || !supabaseKey) return;
+
+  try {
+    const stuckThreshold = new Date(now - STUCK_THRESHOLD_MS).toISOString();
+
+    // Find tasks in_progress that haven't been updated in over 1 hour
+    const resp = await fetch(
+      `${supabaseUrl}/rest/v1/vtid_ledger?status=eq.in_progress&updated_at=lt.${encodeURIComponent(stuckThreshold)}&is_terminal=eq.false&select=vtid,title,updated_at&limit=20`,
+      {
+        headers: {
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+        },
+      }
+    );
+
+    if (!resp.ok) return;
+
+    const stuckTasks = await resp.json() as { vtid: string; title: string; updated_at: string }[];
+    if (stuckTasks.length === 0) return;
+
+    console.warn(`${LOG_PREFIX} STUCK TASKS DETECTED: ${stuckTasks.length} tasks in_progress for >1 hour`);
+
+    for (const task of stuckTasks) {
+      const stuckMinutes = Math.round((now - new Date(task.updated_at).getTime()) / 60000);
+      console.warn(`${LOG_PREFIX}   - ${task.vtid}: "${task.title}" stuck for ${stuckMinutes} minutes`);
+
+      await emitOasisEvent({
+        vtid: task.vtid,
+        type: 'autopilot.health.stuck_task' as any,
+        source: 'autopilot-event-loop',
+        status: 'warning',
+        message: `Task ${task.vtid} stuck in_progress for ${stuckMinutes} minutes`,
+        payload: {
+          vtid: task.vtid,
+          stuck_minutes: stuckMinutes,
+          last_updated: task.updated_at,
+        },
+      });
+    }
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} Stuck task check error: ${err}`);
   }
 }
 
