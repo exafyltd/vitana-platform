@@ -280,7 +280,9 @@ jobs:
             # VTID-01155: Bind Gemini API key for TTS and chat
             SECRETS_ARGS+=(--update-secrets=GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest)
             # VTID-01184: OpenAI API key for embedding generation (primary provider)
-            SECRETS_ARGS+=(--update-secrets=OPENAI_API_KEY=OPENAI_API_KEY:latest)
+            # NOTE: Requires 'OPENAI_API_KEY' secret in GCP Secret Manager.
+            # Uncomment once created: gcloud secrets create OPENAI_API_KEY --data-file=-
+            # SECRETS_ARGS+=(--update-secrets=OPENAI_API_KEY=OPENAI_API_KEY:latest)
             # Bind other required secrets
             SECRETS_ARGS+=(--update-secrets=SUPABASE_URL=SUPABASE_URL:latest)
             SECRETS_ARGS+=(--update-secrets=SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest)
