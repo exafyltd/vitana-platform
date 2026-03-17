@@ -239,8 +239,14 @@ export async function analyzeRoadmap(
   console.log(`${LOG_PREFIX} Starting roadmap analysis...`);
 
   try {
-    // Scan spec files
-    const specs = await scanSpecFiles(basePath, fullConfig);
+    // Check if basePath exists (it won't on Cloud Run)
+    const { existsSync } = await import('fs');
+    const specPathExists = fullConfig.spec_paths.some(p => {
+      try { return existsSync(`${basePath}/${p}`); } catch { return false; }
+    });
+
+    // Scan spec files (skip if path doesn't exist)
+    const specs = specPathExists ? await scanSpecFiles(basePath, fullConfig) : [];
     const unimplementedSpecs = specs.filter((s) => s.status === 'specified');
 
     // Convert to signals

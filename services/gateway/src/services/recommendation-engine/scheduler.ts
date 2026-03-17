@@ -124,12 +124,12 @@ async function runFullCodebaseScan(basePath: string): Promise<void> {
       message: 'Daily codebase scan started',
       payload: {
         schedule_type: 'daily_2am',
-        sources: ['codebase', 'oasis', 'health', 'roadmap'],
+        sources: ['codebase', 'oasis', 'health', 'roadmap', 'llm', 'behavior'],
       },
     });
 
     const result = await generateRecommendations(basePath, {
-      sources: ['codebase', 'oasis', 'health', 'roadmap'],
+      sources: ['codebase', 'oasis', 'health', 'roadmap', 'llm', 'behavior'],
       limit: 20,
       force: true, // Force regeneration for daily scan
       triggered_by: 'scheduler',

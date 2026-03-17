@@ -424,6 +424,68 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
 });
 
 // =============================================================================
+// POST /recommendation-cleanup — Daily 3 AM UTC (alongside signal-cleanup)
+// VTID-01185: Clean up expired/stale recommendations
+// =============================================================================
+router.post('/recommendation-cleanup', async (_req: Request, res: Response) => {
+  try {
+    const supa = await getServiceClient();
+    if (!supa) return res.status(500).json({ ok: false, error: 'Missing Supabase credentials' });
+
+    const now = new Date().toISOString();
+    let expired = 0;
+    let unsnoozed = 0;
+    let stalePurged = 0;
+
+    // 1. Expire recommendations past their expires_at
+    const { count: expiredCount } = await supa
+      .from('autopilot_recommendations')
+      .update({ status: 'rejected', updated_at: now })
+      .eq('status', 'new')
+      .not('expires_at', 'is', null)
+      .lt('expires_at', now);
+    expired = expiredCount || 0;
+
+    // 2. Unsnoze past-due snoozed recommendations
+    const { count: unsnoozedCount } = await supa
+      .from('autopilot_recommendations')
+      .update({ status: 'new', snoozed_until: null, updated_at: now })
+      .eq('status', 'snoozed')
+      .lt('snoozed_until', now);
+    unsnoozed = unsnoozedCount || 0;
+
+    // 3. Purge stale seed data (no fingerprint, >30 days old)
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const { count: staleCount } = await supa
+      .from('autopilot_recommendations')
+      .update({ status: 'rejected', updated_at: now })
+      .eq('status', 'new')
+      .is('fingerprint', null)
+      .lt('created_at', thirtyDaysAgo);
+    stalePurged = staleCount || 0;
+
+    // 4. Try RPC cleanup if available
+    try {
+      await supa.rpc('cleanup_expired_autopilot_recommendations');
+    } catch {
+      // RPC may not exist yet
+    }
+
+    console.log(`[RecommendationCleanup] expired=${expired} unsnoozed=${unsnoozed} stale_purged=${stalePurged}`);
+    return res.status(200).json({
+      ok: true,
+      expired,
+      unsnoozed,
+      stale_purged: stalePurged,
+      timestamp: now,
+    });
+  } catch (err: any) {
+    console.error('[RecommendationCleanup] Error:', err.message || err);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// =============================================================================
 // Health check
 // =============================================================================
 router.get('/health', (_req: Request, res: Response) => {

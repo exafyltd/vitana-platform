@@ -388,7 +388,7 @@ router.post('/generate', async (req: Request, res: Response) => {
     } = req.body;
 
     // Validate sources
-    const validSources: SourceType[] = ['codebase', 'oasis', 'health', 'roadmap'];
+    const validSources: SourceType[] = ['codebase', 'oasis', 'health', 'roadmap', 'llm', 'behavior'];
     const requestedSources = (Array.isArray(sources) ? sources : [sources]).filter(
       (s: string) => validSources.includes(s as SourceType)
     ) as SourceType[];

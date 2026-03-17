@@ -135,6 +135,20 @@ function isForwardTransition(from: AutopilotState, to: AutopilotState): boolean 
  */
 export const EVENT_MAPPING_RULES: EventMappingRule[] = [
   // -------------------------------------------------------------------------
+  // ALLOCATION/SCHEDULED → IN_PROGRESS (VTID-01185: Recommendation Activation)
+  // -------------------------------------------------------------------------
+  // When a recommendation is activated (manually or auto), dispatch to worker
+  {
+    eventTypes: [
+      'autopilot.recommendation.activated',     // VTID-01185: Manual activation
+      'autopilot.recommendation.auto_activated', // VTID-01185: Autonomous engine auto-activation
+    ],
+    fromStates: ['allocated'],
+    toState: 'in_progress',
+    triggerAction: 'dispatch',
+    description: 'VTID-01185: Recommendation activated - auto-dispatch to worker',
+  },
+  // -------------------------------------------------------------------------
   // ALLOCATION/SCHEDULED → IN_PROGRESS (VTID-01194: Execution Trigger)
   // -------------------------------------------------------------------------
   // VTID-01194: The execution_approved event is the canonical trigger
