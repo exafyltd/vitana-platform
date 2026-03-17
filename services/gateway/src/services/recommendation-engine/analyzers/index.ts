@@ -8,3 +8,5 @@ export * from './codebase-analyzer';
 export * from './oasis-analyzer';
 export * from './health-analyzer';
 export * from './roadmap-analyzer';
+export * from './llm-analyzer';
+export * from './user-behavior-analyzer';

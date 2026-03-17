@@ -245,6 +245,23 @@ export async function analyzeCodebase(
   console.log(`${LOG_PREFIX} Starting codebase analysis...`);
 
   try {
+    // Check if basePath exists (it won't on Cloud Run)
+    const { existsSync } = await import('fs');
+    if (!existsSync(basePath)) {
+      console.log(`${LOG_PREFIX} Base path ${basePath} does not exist (Cloud Run?) — skipping codebase scan`);
+      return {
+        ok: true,
+        signals: [],
+        summary: {
+          files_scanned: 0,
+          todos_found: 0,
+          large_files_found: 0,
+          missing_tests_found: 0,
+          duration_ms: Date.now() - startTime,
+        },
+      };
+    }
+
     // Run scans in parallel
     const [todos, largeFiles, missingTests] = await Promise.all([
       scanTodos(basePath, fullConfig),

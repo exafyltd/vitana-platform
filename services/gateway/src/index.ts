@@ -681,6 +681,32 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Autopilot event loop initialization failed (non-fatal):', error);
       }
 
+      // VTID-01185: Initialize recommendation scheduler (autonomous self-improvement)
+      try {
+        const { startScheduler } = require('./services/recommendation-engine/scheduler');
+        const schedulerEnabled = process.env.RECOMMENDATION_SCHEDULER_ENABLED !== 'false';
+        if (schedulerEnabled) {
+          startScheduler({
+            enabled: true,
+            basePath: process.env.VITANA_BASE_PATH || '/workspace/vitana-platform',
+          });
+          console.log('🧠 Recommendation scheduler started (VTID-01185)');
+        } else {
+          console.log('⏸️ Recommendation scheduler disabled (VTID-01185)');
+        }
+      } catch (error) {
+        console.warn('⚠️ Recommendation scheduler initialization failed (non-fatal):', error);
+      }
+
+      // VTID-01185: Initialize autonomous self-improvement engine
+      try {
+        const { initializeAutonomousEngine } = require('./services/recommendation-engine/autonomous-engine');
+        await initializeAutonomousEngine();
+        console.log('🔄 Autonomous self-improvement engine initialized (VTID-01185)');
+      } catch (error) {
+        console.warn('⚠️ Autonomous engine initialization failed (non-fatal):', error);
+      }
+
       // AI Personality: Pre-warm config cache from Supabase
       try {
         const { warmPersonalityCache } = require('./services/ai-personality-service');
