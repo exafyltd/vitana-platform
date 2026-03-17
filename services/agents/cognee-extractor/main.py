@@ -23,6 +23,7 @@ from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field
 import cognee
+from cognee import SearchType
 
 # Configure logging
 logging.basicConfig(
@@ -38,7 +39,7 @@ logger = logging.getLogger('cognee-extractor')
 # LLM Configuration - Uses Gemini API (same key as ORB)
 # Cognee requires API key authentication for Gemini
 LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'gemini')
-LLM_MODEL = os.getenv('LLM_MODEL', 'gemini/gemini-2.0-flash')
+LLM_MODEL = os.getenv('LLM_MODEL', 'gemini/gemini-3.1-pro-preview')
 LLM_API_KEY = os.getenv('GOOGLE_GEMINI_API_KEY') or os.getenv('LLM_API_KEY')
 LLM_ENDPOINT = os.getenv('LLM_ENDPOINT', 'https://generativelanguage.googleapis.com/')
 
@@ -319,6 +320,12 @@ async def process_with_cognee(
 
     Uses dataset-per-tenant pattern (NOT per-user) per design constraints.
     Dataset is pruned after extraction to maintain statelessness.
+
+    Cognee SDK 0.5.x API:
+    - cognee.add(data, dataset_name) → ingest text
+    - cognee.cognify() → build knowledge graph
+    - cognee.search(query_text, query_type=SearchType.INSIGHTS) → extract entities/relationships
+    - cognee.prune.prune_data() → clear all data (no dataset_name arg)
     """
     dataset_name = f'tenant_{tenant_id}'
 
@@ -332,19 +339,27 @@ async def process_with_cognee(
         # Generate knowledge graph
         await cognee.cognify()
 
-        # Search for entities and relationships
-        # Note: Cognee's search API may vary by version
+        # Search for entities and relationships using SearchType.INSIGHTS
+        # SDK 0.5.x uses query_text/query_type parameters (not query/search_type)
         try:
             search_results = await cognee.search(
-                query='all entities and relationships',
-                search_type='insights'
+                query_text='all entities and relationships',
+                query_type=SearchType.INSIGHTS
             )
-        except Exception:
-            # Fallback to graph search if insights not available
-            search_results = await cognee.search(
-                query='entities',
-                search_type='graph'
-            )
+        except (TypeError, AttributeError) as e:
+            # Fallback: try GRAPH_COMPLETION if INSIGHTS not available
+            logger.warning(f'[{VTID}] INSIGHTS search failed ({e}), trying GRAPH_COMPLETION')
+            try:
+                search_results = await cognee.search(
+                    query_text='entities and relationships',
+                    query_type=SearchType.GRAPH_COMPLETION
+                )
+            except (TypeError, AttributeError):
+                # Last resort: try without query_type (uses default)
+                logger.warning(f'[{VTID}] GRAPH_COMPLETION failed, using default search')
+                search_results = await cognee.search(
+                    query_text='entities and relationships'
+                )
 
         # Extract nodes and edges from results
         nodes = []
@@ -354,21 +369,36 @@ async def process_with_cognee(
             nodes = search_results.get('nodes', [])
             edges = search_results.get('edges', [])
         elif isinstance(search_results, list):
-            # Handle list-based results
+            # Handle list-based results (common in 0.5.x)
             for item in search_results:
                 if isinstance(item, dict):
                     if 'source' in item and 'target' in item:
                         edges.append(item)
-                    elif 'name' in item or 'label' in item:
+                    elif 'name' in item or 'label' in item or 'title' in item:
                         nodes.append(item)
+                elif hasattr(item, '__dict__'):
+                    # Handle Pydantic model objects returned by cognee
+                    item_dict = item.__dict__ if not hasattr(item, 'model_dump') else item.model_dump()
+                    if 'source' in item_dict and 'target' in item_dict:
+                        edges.append(item_dict)
+                    elif any(k in item_dict for k in ('name', 'label', 'title')):
+                        nodes.append(item_dict)
 
+        logger.info(f'[{VTID}] Cognee returned {len(nodes)} nodes, {len(edges)} edges')
         return nodes, edges
 
     finally:
         # Prune dataset to maintain statelessness
         # All persistence happens in Vitana's Supabase
+        # SDK 0.5.x: prune.prune_data() takes no arguments (clears all)
         try:
-            await cognee.prune.prune_data(dataset_name)
+            await cognee.prune.prune_data()
+        except TypeError:
+            # Some versions accept dataset_name
+            try:
+                await cognee.prune.prune_data(dataset_name)
+            except Exception as e2:
+                logger.warning(f'Failed to prune dataset {dataset_name}: {e2}')
         except Exception as e:
             logger.warning(f'Failed to prune dataset {dataset_name}: {e}')
 
@@ -384,17 +414,33 @@ async def lifespan(app: FastAPI):
 
     # Configure Cognee LLM with Gemini API
     # Uses same GOOGLE_GEMINI_API_KEY as gateway ORB
-    try:
-        if LLM_API_KEY:
+    #
+    # Cognee SDK 0.5.x reads LLM config from environment variables:
+    #   LLM_API_KEY, LLM_PROVIDER, LLM_MODEL, LLM_ENDPOINT
+    # We set these env vars so Cognee picks them up automatically.
+    # Also try the programmatic config API as a fallback.
+    if LLM_API_KEY:
+        # Set env vars for Cognee to auto-detect (primary approach in 0.5.x)
+        os.environ['LLM_API_KEY'] = LLM_API_KEY
+        os.environ['LLM_PROVIDER'] = LLM_PROVIDER
+        os.environ['LLM_MODEL'] = LLM_MODEL
+        if LLM_ENDPOINT:
+            os.environ['LLM_ENDPOINT'] = LLM_ENDPOINT
+        logger.info(f'[{VTID}] Set LLM env vars: provider={LLM_PROVIDER}, model={LLM_MODEL}')
+
+        # Also try programmatic config API (works in some versions)
+        try:
+            cognee.config.set_llm_api_key(LLM_API_KEY)
             cognee.config.set_llm_provider(LLM_PROVIDER)
             cognee.config.set_llm_model(LLM_MODEL)
-            cognee.config.set_llm_api_key(LLM_API_KEY)
             cognee.config.set_llm_endpoint(LLM_ENDPOINT)
-            logger.info(f'[{VTID}] Configured Cognee with {LLM_PROVIDER}/{LLM_MODEL}')
-        else:
-            logger.warning(f'[{VTID}] No LLM_API_KEY provided - Cognee will use defaults')
-    except Exception as e:
-        logger.warning(f'[{VTID}] Failed to configure Cognee LLM: {e}')
+            logger.info(f'[{VTID}] Programmatic config also applied')
+        except AttributeError as e:
+            logger.info(f'[{VTID}] Programmatic config not available (using env vars): {e}')
+        except Exception as e:
+            logger.warning(f'[{VTID}] Programmatic config failed (env vars still set): {e}')
+    else:
+        logger.warning(f'[{VTID}] No LLM_API_KEY provided - Cognee will use defaults')
 
     logger.info(f'[{VTID}] {SERVICE_NAME} ready')
     yield
