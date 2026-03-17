@@ -34,6 +34,27 @@ const TARGET_ROLE_LABELS = {
 };
 
 // ===========================================================================
+// Task Title Rules: "Area: Short description" format
+// ===========================================================================
+const SYSTEM_AREAS = ['ORB', 'Gateway', 'Command Hub', 'Pipeline', 'Operator',
+    'Auth', 'Governance', 'OASIS', 'Memory', 'Agents', 'Infra', 'Frontend'];
+
+function validateTaskTitle(title) {
+    var t = (title || '').trim();
+    if (t.length < 8) return { ok: false, error: 'Title too short (min 8 chars)' };
+    if (t.length > 60) return { ok: false, error: 'Title too long (max 60 chars)' };
+    var colonIdx = t.indexOf(':');
+    if (colonIdx === -1) return { ok: false, error: 'Use format "Area: Description". Areas: ' + SYSTEM_AREAS.join(', ') };
+    var area = t.slice(0, colonIdx).trim().toLowerCase();
+    var matched = SYSTEM_AREAS.find(function (a) { return a.toLowerCase() === area; });
+    if (!matched) return { ok: false, error: 'Unknown area "' + t.slice(0, colonIdx).trim() + '". Use: ' + SYSTEM_AREAS.join(', ') };
+    var desc = t.slice(colonIdx + 1).trim();
+    if (!desc) return { ok: false, error: 'Description after colon cannot be empty' };
+    if (desc.split(/\s+/).filter(Boolean).length < 2) return { ok: false, error: 'Description needs at least 2 words' };
+    return { ok: true };
+}
+
+// ===========================================================================
 // VTID-01049: Me Context State (Authoritative Role from Gateway)
 // ===========================================================================
 const MeState = {
@@ -6084,7 +6105,8 @@ function startInlineTitleEdit(titleElement, task) {
     input.type = 'text';
     input.className = 'task-card-title-input';
     input.value = isPlaceholder ? '' : currentTitle;
-    input.placeholder = 'Enter task title...';
+    input.placeholder = 'Area: Short description';
+    input.maxLength = 60;
 
     // Save original text for cancel
     var originalText = titleElement.textContent;
@@ -6099,6 +6121,12 @@ function startInlineTitleEdit(titleElement, task) {
     function saveTitle() {
         var newTitle = input.value.trim();
         if (newTitle && newTitle !== originalText) {
+            var check = validateTaskTitle(newTitle);
+            if (!check.ok) {
+                input.style.borderColor = '#ef4444';
+                input.title = check.error;
+                return; // Don't save invalid title
+            }
             setTaskTitleOverride(task.vtid, newTitle);
             console.log('[VTID-01041] Title saved for', task.vtid, ':', newTitle);
         }
@@ -6155,7 +6183,8 @@ function startDrawerTitleEdit(titleValueElement, task) {
     input.type = 'text';
     input.className = 'drawer-title-input';
     input.value = isPlaceholder ? '' : currentTitle;
-    input.placeholder = 'Enter task title...';
+    input.placeholder = 'Area: Short description';
+    input.maxLength = 60;
 
     // Save original text for cancel
     var originalText = titleValueElement.textContent;
@@ -6170,6 +6199,12 @@ function startDrawerTitleEdit(titleValueElement, task) {
     function saveTitle() {
         var newTitle = input.value.trim();
         if (newTitle && newTitle !== originalText) {
+            var check = validateTaskTitle(newTitle);
+            if (!check.ok) {
+                input.style.borderColor = '#ef4444';
+                input.title = check.error;
+                return; // Don't save invalid title
+            }
             setTaskTitleOverride(task.vtid, newTitle);
             console.log('[VTID-01041] Drawer title saved for', task.vtid, ':', newTitle);
         }
@@ -8072,28 +8107,70 @@ function renderTaskModal() {
     const body = document.createElement('div');
     body.className = 'modal-body';
 
-    // VTID-01003: Title input with controlled state
+    // Title: Area dropdown + short description input
     const titleGroup = document.createElement('div');
     titleGroup.className = 'form-group';
     const titleLabel = document.createElement('label');
-    titleLabel.textContent = 'Task Title';
+    titleLabel.textContent = 'Task Title (Area: Description)';
     titleGroup.appendChild(titleLabel);
-    const titleInput = document.createElement('input');
-    titleInput.type = 'text';
-    titleInput.className = 'form-control';
-    titleInput.placeholder = 'Enter title';
-    titleInput.value = state.modalDraftTitle;
-    titleInput.onfocus = function () {
+
+    const titleRow = document.createElement('div');
+    titleRow.className = 'form-row';
+    titleRow.style.gap = '0.5rem';
+
+    // Area dropdown
+    const areaGroup = document.createElement('div');
+    areaGroup.style.flex = '0 0 140px';
+    const areaSelect = document.createElement('select');
+    areaSelect.className = 'form-control';
+    // Parse existing area from state if present
+    var existingArea = '';
+    var existingDesc = state.modalDraftTitle || '';
+    var colonIdx = existingDesc.indexOf(':');
+    if (colonIdx > 0) {
+        var candidateArea = existingDesc.slice(0, colonIdx).trim();
+        if (SYSTEM_AREAS.find(function (a) { return a.toLowerCase() === candidateArea.toLowerCase(); })) {
+            existingArea = candidateArea;
+            existingDesc = existingDesc.slice(colonIdx + 1).trim();
+        }
+    }
+    areaSelect.innerHTML = '<option value="">Select area</option>' +
+        SYSTEM_AREAS.map(function (a) {
+            var sel = (existingArea && a.toLowerCase() === existingArea.toLowerCase()) ? ' selected' : '';
+            return '<option value="' + a + '"' + sel + '>' + a + '</option>';
+        }).join('');
+    areaSelect.onchange = function (e) {
+        var descVal = titleDescInput.value.trim();
+        state.modalDraftTitle = e.target.value && descVal ? e.target.value + ': ' + descVal : '';
+    };
+    areaGroup.appendChild(areaSelect);
+    titleRow.appendChild(areaGroup);
+
+    // Description input
+    const descGroup = document.createElement('div');
+    descGroup.style.flex = '1';
+    const titleDescInput = document.createElement('input');
+    titleDescInput.type = 'text';
+    titleDescInput.className = 'form-control';
+    titleDescInput.placeholder = 'Brief description (2-5 words)';
+    titleDescInput.maxLength = 50;
+    titleDescInput.value = existingDesc;
+    titleDescInput.onfocus = function () {
         state.modalDraftEditing = true;
     };
-    titleInput.oninput = function (e) {
-        state.modalDraftTitle = e.target.value;
+    titleDescInput.oninput = function (e) {
+        var area = areaSelect.value;
+        var desc = e.target.value.trim();
+        state.modalDraftTitle = area && desc ? area + ': ' + desc : '';
         state.modalDraftEditing = true;
     };
-    titleInput.onblur = function () {
+    titleDescInput.onblur = function () {
         state.modalDraftEditing = false;
     };
-    titleGroup.appendChild(titleInput);
+    descGroup.appendChild(titleDescInput);
+    titleRow.appendChild(descGroup);
+
+    titleGroup.appendChild(titleRow);
     body.appendChild(titleGroup);
 
     // VTID-01012: VTID + Status in one row
@@ -8253,9 +8330,10 @@ function renderTaskModal() {
         // VTID-01010: Get target roles from state
         const targetRoles = state.modalDraftTargetRoles;
 
-        // Basic validation
-        if (!title) {
-            alert('Title is required');
+        // Title validation: must be "Area: Short description"
+        var titleCheck = validateTaskTitle(title);
+        if (!titleCheck.ok) {
+            alert(titleCheck.error);
             return;
         }
 
