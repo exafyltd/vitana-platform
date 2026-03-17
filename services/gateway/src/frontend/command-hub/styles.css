@@ -258,6 +258,7 @@ body {
   border-right: 3px solid var(--color-accent);
 }
 
+/* VTID-01232: Operator nav color changed to neutral (matches all other nav items) */
 .nav-item[data-module="Operator"]::before {
   content: '';
   position: absolute;
@@ -265,12 +266,12 @@ body {
   top: 0;
   bottom: 0;
   width: 3px;
-  background-color: var(--color-operator);
+  background-color: var(--color-accent);
   display: none;
 }
 
 .nav-item[data-module="Operator"] {
-  color: var(--color-operator);
+  color: inherit;
 }
 
 .nav-item[data-module="Operator"].active::before {
@@ -17143,6 +17144,35 @@ border-bottom: 1px solid var(--color-border, #333);
 
 .event-row-error td {
     color: #fca5a5 !important;
+}
+
+/* -- Loading Spinner (VTID-01239) -- */
+@keyframes vtSpinnerRotate {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.attention-spinner-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem 1rem;
+    gap: 1rem;
+}
+
+.attention-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--border-color, #2d3748);
+    border-top-color: var(--color-accent, #3b82f6);
+    border-radius: 50%;
+    animation: vtSpinnerRotate 0.8s linear infinite;
+}
+
+.attention-spinner-text {
+    font-size: 0.9rem;
+    color: var(--text-secondary, #94a3b8);
 }
 
 /* -- Responsive -- */
