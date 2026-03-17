@@ -412,7 +412,7 @@ jobs:
       - name: Record Software Version (VTID-0510)
         if: success()
         env:
-          GATEWAY_URL: ${{ steps.deploy.outputs.service_url }}
+          GATEWAY_URL: ${{ github.event.inputs.service == 'gateway' && steps.deploy.outputs.service_url || 'https://gateway-q74ibpv6ia-uc.a.run.app' }}
         run: |
           # Record deployment version in OASIS via Gateway API
           SERVICE_NAME="${{ steps.deploy.outputs.cloud_run_service }}"
@@ -432,7 +432,7 @@ jobs:
       - name: Emit OASIS Deploy Success Event (VTID-0416)
         if: success()
         env:
-          GATEWAY_URL: ${{ steps.deploy.outputs.service_url }}
+          GATEWAY_URL: ${{ github.event.inputs.service == 'gateway' && steps.deploy.outputs.service_url || 'https://gateway-q74ibpv6ia-uc.a.run.app' }}
         run: |
           VTID="${{ github.event.inputs.vtid }}"
           SERVICE="${{ steps.deploy.outputs.cloud_run_service }}"
@@ -473,7 +473,8 @@ jobs:
         id: terminal_completion
         if: success()
         env:
-          GATEWAY_URL: ${{ steps.deploy.outputs.service_url }}
+          # Always use the gateway URL for OASIS completion (not the deployed service URL)
+          GATEWAY_URL: ${{ github.event.inputs.service == 'gateway' && steps.deploy.outputs.service_url || 'https://gateway-q74ibpv6ia-uc.a.run.app' }}
         run: |
           set -e
           VTID="${{ github.event.inputs.vtid }}"
