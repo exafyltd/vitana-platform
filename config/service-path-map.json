@@ -52,6 +52,11 @@
       "paths": ["services/validators/"],
       "cloud_run_service": null,
       "deployable": false
+    },
+    "openclaw-bridge": {
+      "paths": ["services/openclaw-bridge/"],
+      "cloud_run_service": "openclaw-bridge",
+      "deployable": true
     }
   },
   "shared": {
