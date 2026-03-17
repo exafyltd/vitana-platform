@@ -17,6 +17,7 @@
 import { randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
 import { allocateVtid } from './operator-service';
+import { validateTaskTitle, normalizeTaskTitle, SYSTEM_AREAS } from '../utils/task-title';
 
 // =============================================================================
 // VTID-01149: Task Intake Types
@@ -101,7 +102,7 @@ export interface ScheduleTaskResult {
  */
 export const INTAKE_QUESTIONS = {
   spec: 'What do you want to add to the spec?',
-  header: 'What is the header of this task?'
+  header: `Give a short title — start with the system area (${SYSTEM_AREAS.join(', ')}) then a brief description. Example: "Gateway: Add rate limiting"`
 } as const;
 
 // =============================================================================
@@ -432,6 +433,15 @@ export async function ensureScheduledDevTask(params: {
     return { ok: false, vtid, error };
   }
 
+  // Title rules: must be "Area: Short description" format
+  const titleValidation = validateTaskTitle(header);
+  if (!titleValidation.ok) {
+    const error = `Invalid title: ${titleValidation.error}`;
+    console.warn(`[VTID-01149] Title rejected for ${vtid}: ${error}`);
+    await emitScheduleFailedEvent(vtid, error);
+    return { ok: false, vtid, error };
+  }
+
   if (!spec_text || typeof spec_text !== 'string' || spec_text.trim().length === 0) {
     const error = 'Spec text is required and cannot be empty';
     await emitScheduleFailedEvent(vtid, error);
@@ -450,7 +460,7 @@ export async function ensureScheduledDevTask(params: {
     // Build upsert payload with DEV defaults (Section 2.3)
     const taskPayload = {
       vtid,
-      title: header.trim(),
+      title: normalizeTaskTitle(header),
       description: spec_text.trim(),
       summary: spec_text.trim(),
       status: 'pending', // VTID-01150: Use 'pending' like the button does (NOT 'scheduled')

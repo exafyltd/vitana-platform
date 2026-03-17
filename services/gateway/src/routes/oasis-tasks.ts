@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
+import { validateTaskTitle, normalizeTaskTitle } from '../utils/task-title';
 
 export const oasisTasksRouter = Router();
 
@@ -339,7 +340,13 @@ oasisTasksRouter.patch('/api/v1/oasis/tasks/:id', async (req: Request, res: Resp
     if (!svcKey || !supabaseUrl) return res.status(500).json({ error: 'Gateway misconfigured' });
 
     const payload: Record<string, any> = { updated_at: new Date().toISOString() };
-    if (body.title !== undefined) payload.title = body.title;
+    if (body.title !== undefined) {
+      const titleCheck = validateTaskTitle(body.title);
+      if (!titleCheck.ok) {
+        return res.status(400).json({ error: 'Invalid title', detail: titleCheck.error });
+      }
+      payload.title = normalizeTaskTitle(body.title);
+    }
     if (body.status !== undefined) payload.status = body.status;
     if (body.summary !== undefined) payload.summary = body.summary;
     // VTID-01010: Support metadata update (including target_roles)
