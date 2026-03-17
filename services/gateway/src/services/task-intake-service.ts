@@ -657,6 +657,12 @@ export async function completeIntakeAndSchedule(sessionId: string): Promise<Sche
     state.intake_active = false;
     intakeStateStore.set(sessionId, state);
     console.log(`[VTID-01149] Intake complete and task scheduled: ${vtid}`);
+
+    // Auto-generate and validate spec (fire-and-forget)
+    // This makes the task ready for human spec approval → activation
+    autoGenerateAndValidateSpec(vtid, state.spec_text!).catch(err => {
+      console.warn(`[VTID-01149] Auto-spec generation failed for ${vtid} (non-blocking): ${err}`);
+    });
   }
 
   return result;
@@ -702,6 +708,87 @@ export function looksLikeAnswer(message: string): boolean {
   const trimmed = message.trim();
   // Not empty, not a question, at least a few words
   return trimmed.length > 5 && !trimmed.endsWith('?');
+}
+
+// =============================================================================
+// Auto-Spec Generation (Phase 1.1 of E2E Pipeline)
+// =============================================================================
+
+/**
+ * Auto-generate and validate a spec for a newly scheduled task.
+ * Calls the spec pipeline endpoints (generate → validate).
+ * Stops at "validated" — human must approve spec before activation.
+ *
+ * Fire-and-forget: failures are logged but do not block task scheduling.
+ * If auto-spec fails, the task still appears in SCHEDULED and the human
+ * can create/generate the spec manually via Command Hub buttons.
+ */
+async function autoGenerateAndValidateSpec(vtid: string, seedNotes: string): Promise<void> {
+  const gatewayUrl = process.env.GATEWAY_URL || `http://localhost:${process.env.PORT || 8080}`;
+
+  try {
+    // Step 1: Generate spec from intake seed notes
+    const genResp = await fetch(`${gatewayUrl}/api/v1/specs/${vtid}/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        seed_notes: seedNotes,
+        source: 'task-intake-auto'
+      })
+    });
+
+    if (!genResp.ok) {
+      const errBody = await genResp.text().catch(() => 'unknown');
+      console.warn(`[VTID-01149] Auto-generate spec failed for ${vtid}: ${genResp.status} ${errBody}`);
+      return;
+    }
+
+    const genResult = await genResp.json() as { ok: boolean; spec_id?: string };
+    if (!genResult.ok) {
+      console.warn(`[VTID-01149] Auto-generate spec returned not ok for ${vtid}`);
+      return;
+    }
+
+    console.log(`[VTID-01149] Auto-generated spec for ${vtid}, spec_id=${genResult.spec_id}`);
+
+    // Step 2: Validate spec
+    const valResp = await fetch(`${gatewayUrl}/api/v1/specs/${vtid}/validate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (!valResp.ok) {
+      console.warn(`[VTID-01149] Auto-validate spec failed for ${vtid}: ${valResp.status}`);
+      return;
+    }
+
+    const valResult = await valResp.json() as { ok: boolean; result?: string; spec_status?: string };
+    if (!valResult.ok || valResult.result === 'fail') {
+      console.warn(`[VTID-01149] Spec validation failed for ${vtid}: ${valResult.spec_status}`);
+      // Task stays in SCHEDULED with spec_status = 'rejected' — human can fix manually
+      return;
+    }
+
+    console.log(`[VTID-01149] Auto-spec complete for ${vtid}: spec_status=${valResult.spec_status} (awaiting human approval)`);
+
+    // Emit auto-spec event for OASIS trail
+    await emitOasisEvent({
+      vtid,
+      type: 'autopilot.task.spec.auto_generated' as any,
+      source: 'task-intake-service',
+      status: 'success',
+      message: `Spec auto-generated and validated for ${vtid} — awaiting human approval`,
+      payload: {
+        spec_id: genResult.spec_id,
+        spec_status: valResult.spec_status,
+        source: 'task-intake-auto'
+      }
+    });
+
+  } catch (err) {
+    console.error(`[VTID-01149] Auto-spec pipeline error for ${vtid}:`, err);
+    // Non-blocking: task is still scheduled, spec can be done manually
+  }
 }
 
 // INTAKE_QUESTIONS and INTAKE_TIMEOUT_MS are already exported at their definitions

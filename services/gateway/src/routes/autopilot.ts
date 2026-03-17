@@ -1080,4 +1080,345 @@ router.get('/health', async (_req: Request, res: Response) => {
   });
 });
 
+/**
+ * GET /pipeline/health → /api/v1/autopilot/pipeline/health
+ * Unified pipeline health dashboard for the E2E execution system.
+ * Returns: loop status, task counts by status, worker info, stuck tasks.
+ */
+router.get('/pipeline/health', async (_req: Request, res: Response) => {
+  try {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+
+    if (!supabaseUrl || !svcKey) {
+      return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+    }
+
+    // Fetch in parallel: loop status, task counts, stuck tasks, worker count
+    const [loopStatus, taskCountsResp, stuckTasksResp, workersResp] = await Promise.all([
+      getEventLoopStatus(),
+      fetch(
+        `${supabaseUrl}/rest/v1/rpc/count_tasks_by_status`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: svcKey,
+            Authorization: `Bearer ${svcKey}`,
+          },
+          body: '{}',
+        }
+      ).catch(() => null),
+      // Find tasks stuck in_progress for >1 hour
+      fetch(
+        `${supabaseUrl}/rest/v1/vtid_ledger?status=eq.in_progress&updated_at=lt.${encodeURIComponent(new Date(Date.now() - 3600000).toISOString())}&is_terminal=eq.false&select=vtid,title,updated_at&limit=10`,
+        {
+          headers: {
+            apikey: svcKey,
+            Authorization: `Bearer ${svcKey}`,
+          },
+        }
+      ).catch(() => null),
+      // Count registered workers (from recent heartbeats)
+      fetch(
+        `${supabaseUrl}/rest/v1/oasis_events?topic=eq.vtid.stage.worker_orchestrator.heartbeat&created_at=gt.${encodeURIComponent(new Date(Date.now() - 300000).toISOString())}&select=id&limit=1`,
+        {
+          headers: {
+            apikey: svcKey,
+            Authorization: `Bearer ${svcKey}`,
+          },
+        }
+      ).catch(() => null),
+    ]);
+
+    // Parse task counts
+    let taskCounts: Record<string, number> = {};
+    if (taskCountsResp && taskCountsResp.ok) {
+      const countsData = await taskCountsResp.json() as any;
+      taskCounts = Array.isArray(countsData)
+        ? countsData.reduce((acc: Record<string, number>, r: any) => { acc[r.status] = r.count; return acc; }, {})
+        : countsData;
+    }
+
+    // Parse stuck tasks
+    let stuckTasks: { vtid: string; title: string; stuck_minutes: number }[] = [];
+    if (stuckTasksResp && stuckTasksResp.ok) {
+      const stuckData = await stuckTasksResp.json() as any[];
+      stuckTasks = stuckData.map(t => ({
+        vtid: t.vtid,
+        title: t.title,
+        stuck_minutes: Math.round((Date.now() - new Date(t.updated_at).getTime()) / 60000),
+      }));
+    }
+
+    // Parse workers
+    let workersActive = false;
+    if (workersResp && workersResp.ok) {
+      const workerData = await workersResp.json() as any[];
+      workersActive = workerData.length > 0;
+    }
+
+    return res.status(200).json({
+      ok: true,
+      timestamp: new Date().toISOString(),
+      loop_running: loopStatus.is_running,
+      execution_armed: loopStatus.execution_armed,
+      tasks: {
+        scheduled: taskCounts.scheduled || taskCounts.pending || 0,
+        in_progress: taskCounts.in_progress || 0,
+        completed: taskCounts.completed || 0,
+        rejected: taskCounts.rejected || 0,
+        blocked: taskCounts.blocked || 0,
+      },
+      stuck_tasks: stuckTasks,
+      stuck_count: stuckTasks.length,
+      workers_active: workersActive,
+      loop_config: loopStatus.config,
+      loop_stats: loopStatus.stats || null,
+    });
+  } catch (error: any) {
+    console.error('[pipeline/health] Error:', error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * GET /pipeline/summary → /api/v1/autopilot/pipeline/summary
+ * Full pipeline dashboard data: funnel, entry points, attention queue, recommendations, success rate.
+ */
+router.get('/pipeline/summary', async (_req: Request, res: Response) => {
+  try {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+
+    if (!supabaseUrl || !svcKey) {
+      return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+    }
+
+    const headers = {
+      'Content-Type': 'application/json',
+      apikey: svcKey,
+      Authorization: `Bearer ${svcKey}`,
+    };
+
+    // --- Parallel fetches ---
+    const oneHourAgo = new Date(Date.now() - 3600000).toISOString();
+    const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
+
+    const [
+      loopStatus,
+      taskCountsResp,
+      stuckResp,
+      brokenResp,
+      blockedResp,
+      newReadyResp,
+      entryPointResp,
+      recsResp,
+      workersResp,
+      completedWeekResp,
+      failedWeekResp,
+    ] = await Promise.all([
+      getEventLoopStatus(),
+
+      // Task counts by status
+      fetch(`${supabaseUrl}/rest/v1/rpc/count_tasks_by_status`, {
+        method: 'POST',
+        headers,
+        body: '{}',
+      }).catch(() => null),
+
+      // Stuck: in_progress > 1 hour
+      fetch(
+        `${supabaseUrl}/rest/v1/vtid_ledger?status=eq.in_progress&updated_at=lt.${encodeURIComponent(oneHourAgo)}&select=vtid,title,updated_at,spec_status&limit=20`,
+        { headers }
+      ).catch(() => null),
+
+      // Broken: in_progress with last event being error/failure (check oasis_events)
+      fetch(
+        `${supabaseUrl}/rest/v1/vtid_ledger?status=eq.in_progress&updated_at=lt.${encodeURIComponent(oneHourAgo)}&select=vtid,title,updated_at,spec_status&limit=20`,
+        { headers }
+      ).catch(() => null),
+
+      // Blocked: scheduled with no spec
+      fetch(
+        `${supabaseUrl}/rest/v1/vtid_ledger?status=eq.scheduled&or=(spec_status.is.null,spec_status.eq.missing)&select=vtid,title,updated_at,spec_status&limit=20`,
+        { headers }
+      ).catch(() => null),
+
+      // New/ready: scheduled with spec validated (awaiting human approval)
+      fetch(
+        `${supabaseUrl}/rest/v1/vtid_ledger?status=eq.scheduled&spec_status=eq.validated&select=vtid,title,updated_at,spec_status&limit=20`,
+        { headers }
+      ).catch(() => null),
+
+      // Entry points: count oasis_events by source for task creation events (last 30 days)
+      fetch(
+        `${supabaseUrl}/rest/v1/oasis_events?topic=in.(email.intake.task_created,vtid.task.scheduled,vtid.lifecycle.execution_approved)&created_at=gt.${encodeURIComponent(sevenDaysAgo)}&select=source,vtid&limit=500`,
+        { headers }
+      ).catch(() => null),
+
+      // Recommendations: pending, limit 5
+      fetch(
+        `${supabaseUrl}/rest/v1/autopilot_recommendations?status=eq.pending&order=impact_score.desc&limit=5&select=id,title,summary,domain,risk_level,impact_score,status,created_at`,
+        { headers }
+      ).catch(() => null),
+
+      // Workers active (recent heartbeat)
+      fetch(
+        `${supabaseUrl}/rest/v1/oasis_events?topic=eq.vtid.stage.worker_orchestrator.heartbeat&created_at=gt.${encodeURIComponent(new Date(Date.now() - 300000).toISOString())}&select=id&limit=1`,
+        { headers }
+      ).catch(() => null),
+
+      // Completed in last 7 days (for success rate)
+      fetch(
+        `${supabaseUrl}/rest/v1/vtid_ledger?status=eq.completed&updated_at=gt.${encodeURIComponent(sevenDaysAgo)}&select=vtid&limit=500`,
+        { headers }
+      ).catch(() => null),
+
+      // Failed/rejected in last 7 days (for success rate)
+      fetch(
+        `${supabaseUrl}/rest/v1/vtid_ledger?status=in.(rejected,voided)&updated_at=gt.${encodeURIComponent(sevenDaysAgo)}&select=vtid&limit=500`,
+        { headers }
+      ).catch(() => null),
+    ]);
+
+    // --- Parse task counts ---
+    let taskCounts: Record<string, number> = {};
+    if (taskCountsResp && taskCountsResp.ok) {
+      const countsData = await taskCountsResp.json() as any;
+      taskCounts = Array.isArray(countsData)
+        ? countsData.reduce((acc: Record<string, number>, r: any) => { acc[r.status] = r.count; return acc; }, {})
+        : countsData;
+    }
+
+    // --- Parse stuck tasks ---
+    let stuckTasks: any[] = [];
+    if (stuckResp && stuckResp.ok) {
+      const data = await stuckResp.json() as any[];
+      stuckTasks = data.map(t => ({
+        vtid: t.vtid,
+        title: t.title || t.vtid,
+        severity: 'STUCK',
+        reason: `In progress for ${Math.round((Date.now() - new Date(t.updated_at).getTime()) / 60000)} minutes with no progress`,
+        stuck_minutes: Math.round((Date.now() - new Date(t.updated_at).getTime()) / 60000),
+        status: 'in_progress',
+        spec_status: t.spec_status,
+      }));
+    }
+
+    // --- Parse broken (reuse stuck data — broken = stuck with error events) ---
+    // For now, stuck and broken overlap; we differentiate by duration
+    const brokenTasks = stuckTasks
+      .filter(t => t.stuck_minutes > 120) // > 2 hours = likely broken
+      .map(t => ({ ...t, severity: 'BROKEN', reason: `Execution stalled for ${t.stuck_minutes} minutes — likely broken` }));
+    const justStuck = stuckTasks.filter(t => t.stuck_minutes <= 120);
+
+    // --- Parse blocked tasks ---
+    let blockedTasks: any[] = [];
+    if (blockedResp && blockedResp.ok) {
+      const data = await blockedResp.json() as any[];
+      blockedTasks = data.map(t => ({
+        vtid: t.vtid,
+        title: t.title || t.vtid,
+        severity: 'BLOCKED',
+        reason: 'No spec generated — cannot activate',
+        stuck_minutes: Math.round((Date.now() - new Date(t.updated_at).getTime()) / 60000),
+        status: 'scheduled',
+        spec_status: t.spec_status || 'missing',
+      }));
+    }
+
+    // --- Parse new/ready tasks ---
+    let newReadyTasks: any[] = [];
+    if (newReadyResp && newReadyResp.ok) {
+      const data = await newReadyResp.json() as any[];
+      newReadyTasks = data.map(t => ({
+        vtid: t.vtid,
+        title: t.title || t.vtid,
+        severity: 'NEW',
+        reason: 'Spec validated — waiting for human approval',
+        stuck_minutes: Math.round((Date.now() - new Date(t.updated_at).getTime()) / 60000),
+        status: 'scheduled',
+        spec_status: 'validated',
+      }));
+    }
+
+    // --- Build attention queue (sorted by severity priority) ---
+    const severityOrder: Record<string, number> = { BROKEN: 0, STUCK: 1, BLOCKED: 2, NEW: 3 };
+    const attentionQueue = [...brokenTasks, ...justStuck, ...blockedTasks, ...newReadyTasks]
+      .sort((a, b) => (severityOrder[a.severity] ?? 99) - (severityOrder[b.severity] ?? 99));
+
+    // --- Parse entry points ---
+    const entryPoints: Record<string, number> = {
+      'command-hub': 0,
+      'orb': 0,
+      'operator': 0,
+      'email-intake': 0,
+      'system': 0,
+    };
+    if (entryPointResp && entryPointResp.ok) {
+      const events = await entryPointResp.json() as any[];
+      events.forEach((ev: any) => {
+        const src = (ev.source || '').toLowerCase();
+        if (src.includes('email')) entryPoints['email-intake']++;
+        else if (src.includes('orb')) entryPoints['orb']++;
+        else if (src.includes('operator')) entryPoints['operator']++;
+        else if (src.includes('command-hub') || src.includes('commandhub')) entryPoints['command-hub']++;
+        else if (src.includes('task-intake')) entryPoints['orb']++; // task-intake = ORB/Operator
+        else entryPoints['system']++;
+      });
+    }
+
+    // --- Parse recommendations ---
+    let recommendations: any[] = [];
+    if (recsResp && recsResp.ok) {
+      recommendations = await recsResp.json() as any[];
+    }
+
+    // --- Workers active ---
+    let workersActive = false;
+    if (workersResp && workersResp.ok) {
+      const workerData = await workersResp.json() as any[];
+      workersActive = workerData.length > 0;
+    }
+
+    // --- Success rate (last 7 days) ---
+    let completedCount = 0;
+    let failedCount = 0;
+    if (completedWeekResp && completedWeekResp.ok) {
+      const data = await completedWeekResp.json() as any[];
+      completedCount = data.length;
+    }
+    if (failedWeekResp && failedWeekResp.ok) {
+      const data = await failedWeekResp.json() as any[];
+      failedCount = data.length;
+    }
+    const totalResolved = completedCount + failedCount + brokenTasks.length;
+    const successRate = totalResolved > 0 ? Math.round((completedCount / totalResolved) * 100) : 0;
+
+    return res.status(200).json({
+      ok: true,
+      timestamp: new Date().toISOString(),
+      funnel: {
+        scheduled: taskCounts.scheduled || taskCounts.pending || 0,
+        in_progress: taskCounts.in_progress || 0,
+        completed: taskCounts.completed || 0,
+        rejected: taskCounts.rejected || 0,
+        stuck: justStuck.length,
+        broken: brokenTasks.length,
+      },
+      entry_points: entryPoints,
+      success_rate: successRate,
+      attention_queue: attentionQueue,
+      recommendations,
+      loop_running: loopStatus.is_running,
+      execution_armed: loopStatus.execution_armed,
+      workers_active: workersActive,
+    });
+  } catch (error: any) {
+    console.error('[pipeline/summary] Error:', error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
 export default router;

@@ -1,0 +1,10 @@
+name = "vitana-email-intake"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+[vars]
+GATEWAY_URL = "https://vitana-gateway-q74ibpv6ia-uc.a.run.app"
+
+# Email routing: configure in Cloudflare dashboard
+# Route: tasks@exacy.io → this worker
+# Requires Email Routing enabled on exacy.io domain

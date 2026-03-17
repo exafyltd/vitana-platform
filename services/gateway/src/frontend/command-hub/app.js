@@ -3266,6 +3266,8 @@ const state = {
     overviewRecentEvents: { items: [], loading: false, error: null, fetched: false },
     overviewErrors: { items: [], loading: false, error: null, fetched: false },
     overviewReleases: { items: [], loading: false, error: null, fetched: false },
+    overviewPipelineSummary: { snapshot: null, loading: false, error: null, fetched: false },
+    overviewRecentEventsFilter: 'pipeline',
 
     // Operator module
     operatorTaskQueue: { items: [], loading: false, error: null, fetched: false },
@@ -5041,29 +5043,47 @@ function renderHeader() {
     const right = document.createElement('div');
     right.className = 'header-toolbar-right';
 
-    // LIVE/OFFLINE pill with CI/CD dropdown (restored from pre-0010)
-    const hasStageCounters = state.stageCounters && (state.stageCounters.PLANNER > 0 || state.stageCounters.WORKER > 0 || state.stageCounters.VALIDATOR > 0 || state.stageCounters.DEPLOY > 0 || state.lastTelemetryRefresh);
-    const isLive = state.operatorHeartbeatActive || hasStageCounters;
-
-    // CI/CD Health Indicator container (holds pill + dropdown)
+    // CI/CD Health Score pill with dropdown
     const cicdHealthIndicator = document.createElement('div');
     cicdHealthIndicator.className = 'cicd-health-indicator';
 
-    // VTID-0541 D4: Determine health status with proper distinction
+    // Determine health status
     const healthStatus = state.cicdHealth?.status;
     const isFullyHealthy = state.cicdHealth && state.cicdHealth.ok === true && healthStatus === 'ok';
     const isGovernanceLimited = healthStatus === 'ok_governance_limited';
     const isDegraded = healthStatus === 'degraded' || (state.cicdHealth && state.cicdHealth.ok === false);
 
-    // LIVE/OFFLINE status pill (clickable to show CI/CD dropdown)
-    const statusPill = document.createElement('button');
-    if (isLive) {
-        statusPill.className = 'header-pill header-pill--live';
-        statusPill.innerHTML = '<span class="header-pill__dot"></span>LIVE';
-    } else {
-        statusPill.className = 'header-pill header-pill--offline';
-        statusPill.innerHTML = '<span class="header-pill__dot"></span>OFFLINE';
+    // Compute capability score from health data
+    let capsTotal = 0;
+    let capsHealthy = 0;
+    if (state.cicdHealth?.capabilities) {
+        for (const v of Object.values(state.cicdHealth.capabilities)) {
+            capsTotal++;
+            if (v) capsHealthy++;
+        }
     }
+    const capsFailing = capsTotal - capsHealthy;
+
+    // Score-based pill: shows green/red counts at a glance
+    const statusPill = document.createElement('button');
+    if (!state.cicdHealth) {
+        statusPill.className = 'header-pill header-pill--neutral';
+        statusPill.innerHTML = '<span class="header-pill__dot"></span>...';
+    } else if (capsFailing === 0) {
+        statusPill.className = 'header-pill header-pill--live';
+        statusPill.innerHTML = '<span class="header-pill__dot"></span><span class="pill-score pill-score--green">' + capsHealthy + '</span>';
+    } else if (capsHealthy === 0) {
+        statusPill.className = 'header-pill header-pill--offline';
+        statusPill.innerHTML = '<span class="header-pill__dot"></span><span class="pill-score pill-score--red">' + capsFailing + '</span>';
+    } else {
+        // Mixed: show green count / red count
+        const pillClass = capsFailing <= 4 ? 'header-pill--warning' : 'header-pill--offline';
+        statusPill.className = 'header-pill ' + pillClass;
+        statusPill.innerHTML = '<span class="pill-score pill-score--green">' + capsHealthy + '</span>' +
+            '<span class="pill-score-sep">/</span>' +
+            '<span class="pill-score pill-score--red">' + capsFailing + '</span>';
+    }
+    statusPill.title = capsTotal ? (capsHealthy + ' healthy, ' + capsFailing + ' down') : 'Loading health...';
     statusPill.onclick = (e) => {
         e.stopPropagation();
         state.cicdHealthTooltipOpen = !state.cicdHealthTooltipOpen;
@@ -5095,28 +5115,63 @@ function renderHeader() {
             const details = document.createElement('div');
             details.className = 'cicd-health-tooltip__details';
 
-            // Status line
-            const statusLine = document.createElement('div');
-            statusLine.className = 'cicd-health-tooltip__row';
-            statusLine.innerHTML = '<span class="cicd-health-tooltip__label">Status:</span>' +
-                '<span class="cicd-health-tooltip__value">' + (state.cicdHealth.status || 'unknown') + '</span>';
-            details.appendChild(statusLine);
+            // Score summary row
+            const scoreLine = document.createElement('div');
+            scoreLine.className = 'cicd-health-tooltip__row';
+            scoreLine.innerHTML = '<span class="cicd-health-tooltip__label">Score:</span>' +
+                '<span class="cicd-health-tooltip__value">' +
+                '<span class="cicd-health-tooltip__value--yes">' + capsHealthy + ' up</span>' +
+                (capsFailing > 0 ? (' &middot; <span class="cicd-health-tooltip__value--no">' + capsFailing + ' down</span>') : '') +
+                '</span>';
+            details.appendChild(scoreLine);
 
-            // Capabilities
+            // Grouped capabilities
             if (state.cicdHealth.capabilities) {
-                const capsHeader = document.createElement('div');
-                capsHeader.className = 'cicd-health-tooltip__caps-header';
-                capsHeader.textContent = 'Capabilities';
-                details.appendChild(capsHeader);
+                const groups = [
+                    { label: 'CI/CD & Governance', keys: ['github_integration', 'create_pr', 'safe_merge', 'approvals', 'deploy_service', 'concurrency_locks', 'command_hub_merge', 'command_hub_deploy'] },
+                    { label: 'AI Services', keys: ['ai_chat', 'gemini_operator', 'orb_live_voice', 'assistant'] },
+                    { label: 'Platform', keys: ['oasis_events', 'memory_system', 'voice_lab', 'autopilot', 'sse_events', 'notifications', 'worker_orchestration'] },
+                ];
+                const caps = state.cicdHealth.capabilities;
+                for (const group of groups) {
+                    // Only show group if it has at least one matching key
+                    const groupKeys = group.keys.filter(k => k in caps);
+                    if (groupKeys.length === 0) continue;
+                    const capsHeader = document.createElement('div');
+                    capsHeader.className = 'cicd-health-tooltip__caps-header';
+                    capsHeader.textContent = group.label;
+                    details.appendChild(capsHeader);
 
-                for (const [key, value] of Object.entries(state.cicdHealth.capabilities)) {
-                    const capRow = document.createElement('div');
-                    capRow.className = 'cicd-health-tooltip__row';
-                    const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-                    capRow.innerHTML = '<span class="cicd-health-tooltip__label">' + label + ':</span>' +
-                        '<span class="cicd-health-tooltip__value cicd-health-tooltip__value--' + (value ? 'yes' : 'no') + '">' +
-                        (value ? 'Yes' : 'No') + '</span>';
-                    details.appendChild(capRow);
+                    for (const key of groupKeys) {
+                        const value = caps[key];
+                        const capRow = document.createElement('div');
+                        capRow.className = 'cicd-health-tooltip__row';
+                        const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                        capRow.innerHTML = '<span class="cicd-health-tooltip__label">' + label + ':</span>' +
+                            '<span class="cicd-health-tooltip__value cicd-health-tooltip__value--' + (value ? 'yes' : 'no') + '">' +
+                            (value ? 'Yes' : 'No') + '</span>';
+                        details.appendChild(capRow);
+                    }
+                }
+
+                // Render any remaining capabilities not in groups
+                const allGroupedKeys = groups.flatMap(g => g.keys);
+                const ungroupedKeys = Object.keys(caps).filter(k => !allGroupedKeys.includes(k));
+                if (ungroupedKeys.length > 0) {
+                    const otherHeader = document.createElement('div');
+                    otherHeader.className = 'cicd-health-tooltip__caps-header';
+                    otherHeader.textContent = 'Other';
+                    details.appendChild(otherHeader);
+                    for (const key of ungroupedKeys) {
+                        const value = caps[key];
+                        const capRow = document.createElement('div');
+                        capRow.className = 'cicd-health-tooltip__row';
+                        const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                        capRow.innerHTML = '<span class="cicd-health-tooltip__label">' + label + ':</span>' +
+                            '<span class="cicd-health-tooltip__value cicd-health-tooltip__value--' + (value ? 'yes' : 'no') + '">' +
+                            (value ? 'Yes' : 'No') + '</span>';
+                        details.appendChild(capRow);
+                    }
                 }
             }
 
@@ -22869,19 +22924,37 @@ async function fetchCicdHealth(silentRefresh) {
  * VTID-01002: Updates CI/CD health indicator in header incrementally without full render.
  */
 function updateCicdHealthIndicator() {
-    var indicator = document.querySelector('.cicd-health-indicator');
-    if (!indicator) return;
+    var pill = document.querySelector('.cicd-health-indicator .header-pill');
+    if (!pill) return;
 
     var health = state.cicdHealth;
-    if (!health) return;
+    if (!health || !health.capabilities) return;
 
-    // Update indicator class based on health status
-    indicator.className = 'cicd-health-indicator';
-    if (health.ok) {
-        indicator.classList.add('healthy');
-    } else {
-        indicator.classList.add('degraded');
+    // Recompute score
+    var total = 0, healthy = 0;
+    for (var k in health.capabilities) {
+        if (health.capabilities.hasOwnProperty(k)) {
+            total++;
+            if (health.capabilities[k]) healthy++;
+        }
     }
+    var failing = total - healthy;
+
+    // Update pill class and content
+    pill.className = 'header-pill';
+    if (failing === 0) {
+        pill.classList.add('header-pill--live');
+        pill.innerHTML = '<span class="header-pill__dot"></span><span class="pill-score pill-score--green">' + healthy + '</span>';
+    } else if (healthy === 0) {
+        pill.classList.add('header-pill--offline');
+        pill.innerHTML = '<span class="header-pill__dot"></span><span class="pill-score pill-score--red">' + failing + '</span>';
+    } else {
+        pill.classList.add(failing <= 4 ? 'header-pill--warning' : 'header-pill--offline');
+        pill.innerHTML = '<span class="pill-score pill-score--green">' + healthy + '</span>' +
+            '<span class="pill-score-sep">/</span>' +
+            '<span class="pill-score pill-score--red">' + failing + '</span>';
+    }
+    pill.title = healthy + ' healthy, ' + failing + ' down';
 }
 
 /**
@@ -28752,109 +28825,341 @@ async function fetchOverviewHealth() {
 // ---------------------------------------------------------------------------
 function renderOverviewSystemView() {
     var container = document.createElement('div');
-    container.className = 'overview-system-container';
+    container.className = 'attention-center-container';
 
-    // Auto-fetch
+    // Auto-fetch pipeline summary (shared with Pipeline Dashboard)
+    if (!state.overviewPipelineSummary.fetched && !state.overviewPipelineSummary.loading) {
+        fetchPipelineSummary();
+    }
+    // Also auto-fetch health for compact strip
     if (!state.overviewHealth.fetched && !state.overviewHealth.loading) {
         fetchOverviewHealth();
-    }
-
-    // Loading
-    if (state.overviewHealth.loading && state.overviewHealth.items.length === 0) {
-        var loading = document.createElement('div');
-        loading.className = 'placeholder-content';
-        loading.textContent = 'Loading service health...';
-        container.appendChild(loading);
-        return container;
-    }
-
-    // Error
-    if (state.overviewHealth.error) {
-        var errorDiv = document.createElement('div');
-        errorDiv.className = 'placeholder-content error-text';
-        errorDiv.textContent = 'Error: ' + state.overviewHealth.error;
-        container.appendChild(errorDiv);
-        return container;
-    }
-
-    // Empty
-    if (state.overviewHealth.items.length === 0) {
-        var emptyDiv = document.createElement('div');
-        emptyDiv.className = 'placeholder-content';
-        emptyDiv.textContent = 'No service health data available.';
-        container.appendChild(emptyDiv);
-        return container;
     }
 
     // Header
     var header = document.createElement('div');
     header.className = 'list-toolbar';
-    var title = document.createElement('span');
-    title.className = 'toolbar-title';
-    title.textContent = 'Service Health (' + state.overviewHealth.items.length + ' services)';
-    header.appendChild(title);
+    var titleEl = document.createElement('span');
+    titleEl.className = 'toolbar-title';
+    titleEl.textContent = 'Attention Center';
+    header.appendChild(titleEl);
 
     var refreshBtn = document.createElement('button');
     refreshBtn.className = 'btn btn-sm';
     refreshBtn.textContent = 'Refresh';
     refreshBtn.onclick = function () {
+        state.overviewPipelineSummary.fetched = false;
         state.overviewHealth.fetched = false;
+        fetchPipelineSummary();
         fetchOverviewHealth();
     };
     header.appendChild(refreshBtn);
     container.appendChild(header);
 
-    // Grid
-    var grid = document.createElement('div');
-    grid.className = 'overview-services-grid';
+    // Loading
+    if (state.overviewPipelineSummary.loading && !state.overviewPipelineSummary.snapshot) {
+        var loading = document.createElement('div');
+        loading.className = 'placeholder-content';
+        loading.textContent = 'Loading attention center...';
+        container.appendChild(loading);
+        return container;
+    }
 
-    state.overviewHealth.items.forEach(function (svc) {
-        var card = document.createElement('div');
-        card.className = 'service-health-card';
+    // Error
+    if (state.overviewPipelineSummary.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'placeholder-content error-text';
+        errorDiv.textContent = 'Error: ' + state.overviewPipelineSummary.error;
+        container.appendChild(errorDiv);
+        return container;
+    }
 
-        var statusColor = 'green';
-        if (svc.status === 'degraded' || svc.status === 'warning') statusColor = 'yellow';
-        if (svc.status === 'down' || svc.status === 'error' || svc.status === 'unhealthy') statusColor = 'red';
+    var summary = state.overviewPipelineSummary.snapshot;
 
-        var dot = document.createElement('span');
-        dot.className = 'health-status-dot health-status-' + statusColor;
-        dot.style.display = 'inline-block';
-        dot.style.width = '10px';
-        dot.style.height = '10px';
-        dot.style.borderRadius = '50%';
-        dot.style.backgroundColor = statusColor;
-        dot.style.marginRight = '8px';
+    // ── A. Priority Queue ──
+    var attQueue = (summary && summary.attention_queue) || [];
+    var attSection = document.createElement('div');
+    attSection.className = 'attention-priority-section';
 
-        var nameSpan = document.createElement('span');
-        nameSpan.className = 'service-name';
-        nameSpan.textContent = svc.name;
+    var attTitle = document.createElement('div');
+    attTitle.className = 'section-title';
+    attTitle.textContent = attQueue.length > 0
+        ? 'Priority Queue (' + attQueue.length + ' items need attention)'
+        : 'Priority Queue — All Clear';
+    attSection.appendChild(attTitle);
 
-        var statusSpan = document.createElement('span');
-        statusSpan.className = 'service-status status-badge status-' + svc.status;
-        statusSpan.textContent = svc.status;
+    var severityColors = { BROKEN: '#ef4444', STUCK: '#f59e0b', BLOCKED: '#6b7280', NEW: '#3b82f6' };
 
-        var latencySpan = document.createElement('span');
-        latencySpan.className = 'service-latency';
-        latencySpan.textContent = svc.latency_ms >= 0 ? svc.latency_ms + 'ms' : 'N/A';
+    if (attQueue.length === 0) {
+        var allClear = document.createElement('div');
+        allClear.className = 'attention-all-clear';
+        allClear.textContent = 'No tasks need immediate attention. Pipeline is running smoothly.';
+        attSection.appendChild(allClear);
+    } else {
+        attQueue.forEach(function (item) {
+            var card = document.createElement('div');
+            card.className = 'attention-item';
+            card.style.borderLeftColor = severityColors[item.severity] || '#6b7280';
 
-        var cardHeader = document.createElement('div');
-        cardHeader.className = 'service-card-header';
-        cardHeader.appendChild(dot);
-        cardHeader.appendChild(nameSpan);
+            var topRow = document.createElement('div');
+            topRow.className = 'attention-item-top';
 
-        var cardBody = document.createElement('div');
-        cardBody.className = 'service-card-body';
-        cardBody.appendChild(statusSpan);
-        cardBody.appendChild(latencySpan);
+            var badge = document.createElement('span');
+            badge.className = 'severity-badge';
+            badge.style.backgroundColor = severityColors[item.severity] || '#6b7280';
+            badge.textContent = item.severity;
 
-        card.appendChild(cardHeader);
-        card.appendChild(cardBody);
-        grid.appendChild(card);
-    });
+            var vtidEl = document.createElement('span');
+            vtidEl.className = 'attention-vtid';
+            vtidEl.textContent = item.vtid;
 
-    container.appendChild(grid);
-    autoAddLoadMore(container, 'overviewHealth');
+            var titleSpan = document.createElement('span');
+            titleSpan.className = 'attention-title';
+            titleSpan.textContent = item.title || '';
+
+            topRow.appendChild(badge);
+            topRow.appendChild(vtidEl);
+            topRow.appendChild(titleSpan);
+
+            var bottomRow = document.createElement('div');
+            bottomRow.className = 'attention-item-bottom';
+
+            var reasonEl = document.createElement('span');
+            reasonEl.textContent = item.reason || '';
+            bottomRow.appendChild(reasonEl);
+
+            if (item.stuck_minutes) {
+                var timeEl = document.createElement('span');
+                timeEl.className = 'attention-time';
+                var mins = item.stuck_minutes;
+                timeEl.textContent = mins >= 60 ? Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm ago' : mins + 'm ago';
+                bottomRow.appendChild(timeEl);
+            }
+
+            var viewBtn = document.createElement('button');
+            viewBtn.className = 'btn btn-sm';
+            viewBtn.textContent = 'View Task';
+            viewBtn.onclick = function (e) {
+                e.stopPropagation();
+                navigateTo('command-hub', 'tasks');
+            };
+
+            card.appendChild(topRow);
+            card.appendChild(bottomRow);
+            card.appendChild(viewBtn);
+            attSection.appendChild(card);
+        });
+    }
+
+    container.appendChild(attSection);
+
+    // ── B. Vitana Recommendations ──
+    var recs = (summary && summary.recommendations) || [];
+    var recsSection = document.createElement('div');
+    recsSection.className = 'attention-recs-section';
+
+    var recsHeader = document.createElement('div');
+    recsHeader.className = 'section-title-row';
+
+    var recsTitle = document.createElement('div');
+    recsTitle.className = 'section-title';
+    recsTitle.textContent = 'Vitana Recommends (' + recs.length + ')';
+    recsHeader.appendChild(recsTitle);
+
+    var genBtn = document.createElement('button');
+    genBtn.className = 'btn btn-sm';
+    genBtn.textContent = 'Generate New';
+    genBtn.onclick = async function () {
+        genBtn.disabled = true;
+        genBtn.textContent = 'Generating...';
+        try {
+            await fetch('/api/v1/autopilot/recommendations/generate', { method: 'POST' });
+            state.overviewPipelineSummary.fetched = false;
+            fetchPipelineSummary();
+        } catch (err) {
+            console.error('Failed to generate recommendations:', err);
+        } finally {
+            genBtn.disabled = false;
+            genBtn.textContent = 'Generate New';
+        }
+    };
+    recsHeader.appendChild(genBtn);
+    recsSection.appendChild(recsHeader);
+
+    if (recs.length === 0) {
+        var noRecs = document.createElement('div');
+        noRecs.className = 'placeholder-content';
+        noRecs.textContent = 'No pending recommendations. Click "Generate New" to analyze the platform.';
+        recsSection.appendChild(noRecs);
+    } else {
+        recs.forEach(function (rec) {
+            var card = document.createElement('div');
+            card.className = 'recommendation-card';
+
+            var cardTop = document.createElement('div');
+            cardTop.className = 'rec-card-top';
+
+            var recTitle = document.createElement('span');
+            recTitle.className = 'rec-title';
+            recTitle.textContent = rec.title;
+
+            var domainBadge = document.createElement('span');
+            domainBadge.className = 'rec-domain-badge';
+            domainBadge.textContent = rec.domain || 'general';
+
+            cardTop.appendChild(recTitle);
+            cardTop.appendChild(domainBadge);
+
+            var cardMeta = document.createElement('div');
+            cardMeta.className = 'rec-card-meta';
+
+            var riskEl = document.createElement('span');
+            riskEl.className = 'rec-risk risk-' + (rec.risk_level || 'low');
+            riskEl.textContent = 'Risk: ' + (rec.risk_level || 'low');
+
+            var impactEl = document.createElement('span');
+            impactEl.className = 'rec-impact';
+            impactEl.textContent = 'Impact: ' + (rec.impact_score || 0) + '/10';
+
+            cardMeta.appendChild(riskEl);
+            cardMeta.appendChild(impactEl);
+
+            if (rec.summary) {
+                var summaryEl = document.createElement('div');
+                summaryEl.className = 'rec-summary';
+                summaryEl.textContent = rec.summary;
+                card.appendChild(cardTop);
+                card.appendChild(summaryEl);
+                card.appendChild(cardMeta);
+            } else {
+                card.appendChild(cardTop);
+                card.appendChild(cardMeta);
+            }
+
+            var cardActions = document.createElement('div');
+            cardActions.className = 'rec-actions';
+
+            var activateBtn = document.createElement('button');
+            activateBtn.className = 'btn btn-sm btn-primary';
+            activateBtn.textContent = 'Activate';
+            activateBtn.onclick = async function (e) {
+                e.stopPropagation();
+                activateBtn.disabled = true;
+                try {
+                    var resp = await fetch('/api/v1/autopilot/recommendations/' + rec.id + '/activate', { method: 'POST' });
+                    if (resp.ok) {
+                        state.overviewPipelineSummary.fetched = false;
+                        fetchPipelineSummary();
+                    }
+                } catch (err) {
+                    console.error('Failed to activate recommendation:', err);
+                }
+            };
+
+            var dismissBtn = document.createElement('button');
+            dismissBtn.className = 'btn btn-sm';
+            dismissBtn.textContent = 'Dismiss';
+            dismissBtn.onclick = async function (e) {
+                e.stopPropagation();
+                dismissBtn.disabled = true;
+                try {
+                    await fetch('/api/v1/autopilot/recommendations/' + rec.id + '/reject', { method: 'POST' });
+                    state.overviewPipelineSummary.fetched = false;
+                    fetchPipelineSummary();
+                } catch (err) {
+                    console.error('Failed to dismiss recommendation:', err);
+                }
+            };
+
+            cardActions.appendChild(activateBtn);
+            cardActions.appendChild(dismissBtn);
+            card.appendChild(cardActions);
+            recsSection.appendChild(card);
+        });
+    }
+
+    container.appendChild(recsSection);
+
+    // ── C. Compact Service Health ──
+    var healthSection = document.createElement('div');
+    healthSection.className = 'attention-compact-health';
+
+    var healthTitle = document.createElement('div');
+    healthTitle.className = 'section-title';
+    healthTitle.textContent = 'Service Health';
+    healthSection.appendChild(healthTitle);
+
+    if (state.overviewHealth.loading && state.overviewHealth.items.length === 0) {
+        var loadingHealth = document.createElement('div');
+        loadingHealth.className = 'placeholder-content';
+        loadingHealth.textContent = 'Loading...';
+        healthSection.appendChild(loadingHealth);
+    } else if (state.overviewHealth.items.length > 0) {
+        state.overviewHealth.items.forEach(function (svc) {
+            var row = document.createElement('div');
+            row.className = 'compact-health-row';
+
+            var dotColor = 'green';
+            if (svc.status === 'degraded' || svc.status === 'warning') dotColor = 'yellow';
+            if (svc.status === 'down' || svc.status === 'error' || svc.status === 'unhealthy') dotColor = 'red';
+
+            var dot = document.createElement('span');
+            dot.className = 'health-dot health-dot-' + dotColor;
+
+            var name = document.createElement('span');
+            name.className = 'compact-health-name';
+            name.textContent = svc.name;
+
+            var status = document.createElement('span');
+            status.className = 'compact-health-status';
+            status.textContent = svc.status;
+
+            var latency = document.createElement('span');
+            latency.className = 'compact-health-latency';
+            latency.textContent = svc.latency_ms >= 0 ? svc.latency_ms + 'ms' : '';
+
+            row.appendChild(dot);
+            row.appendChild(name);
+            row.appendChild(status);
+            row.appendChild(latency);
+            healthSection.appendChild(row);
+        });
+    } else {
+        var noHealth = document.createElement('div');
+        noHealth.className = 'placeholder-content';
+        noHealth.textContent = 'No health data available.';
+        healthSection.appendChild(noHealth);
+    }
+
+    container.appendChild(healthSection);
     return container;
+}
+
+// ---------------------------------------------------------------------------
+// 2b. fetchPipelineSummary — GET /api/v1/autopilot/pipeline/summary
+// ---------------------------------------------------------------------------
+async function fetchPipelineSummary() {
+    if (state.overviewPipelineSummary.loading) return;
+    state.overviewPipelineSummary.loading = true;
+    state.overviewPipelineSummary.error = null;
+    renderApp();
+
+    try {
+        var response = await fetch('/api/v1/autopilot/pipeline/summary');
+        if (!response.ok) throw new Error('Pipeline summary fetch failed: ' + response.status);
+
+        var data = await response.json();
+        state.overviewPipelineSummary.snapshot = data;
+        state.overviewPipelineSummary.fetched = true;
+        state.overviewPipelineSummary.error = null;
+        console.log('[Pipeline] Summary loaded');
+    } catch (error) {
+        console.error('[Pipeline] Failed to fetch summary:', error);
+        state.overviewPipelineSummary.error = error.message;
+    } finally {
+        state.overviewPipelineSummary.loading = false;
+        renderApp();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -28885,40 +29190,40 @@ async function fetchOverviewMetrics() {
 }
 
 // ---------------------------------------------------------------------------
-// 4. renderOverviewLiveMetricsView — heartbeat snapshot metric cards
+// 4. renderOverviewLiveMetricsView — Pipeline Dashboard (replaced heartbeat)
 // ---------------------------------------------------------------------------
 function renderOverviewLiveMetricsView() {
     var container = document.createElement('div');
-    container.className = 'overview-metrics-container';
+    container.className = 'pipeline-dashboard-container';
 
-    // Auto-fetch
-    if (!state.overviewMetrics.fetched && !state.overviewMetrics.loading) {
-        fetchOverviewMetrics();
+    // Auto-fetch pipeline summary
+    if (!state.overviewPipelineSummary.fetched && !state.overviewPipelineSummary.loading) {
+        fetchPipelineSummary();
     }
 
     // Loading
-    if (state.overviewMetrics.loading && !state.overviewMetrics.snapshot) {
+    if (state.overviewPipelineSummary.loading && !state.overviewPipelineSummary.snapshot) {
         var loading = document.createElement('div');
         loading.className = 'placeholder-content';
-        loading.textContent = 'Loading live metrics...';
+        loading.textContent = 'Loading pipeline dashboard...';
         container.appendChild(loading);
         return container;
     }
 
     // Error
-    if (state.overviewMetrics.error) {
+    if (state.overviewPipelineSummary.error) {
         var errorDiv = document.createElement('div');
         errorDiv.className = 'placeholder-content error-text';
-        errorDiv.textContent = 'Error: ' + state.overviewMetrics.error;
+        errorDiv.textContent = 'Error: ' + state.overviewPipelineSummary.error;
         container.appendChild(errorDiv);
         return container;
     }
 
-    var snapshot = state.overviewMetrics.snapshot;
-    if (!snapshot) {
+    var summary = state.overviewPipelineSummary.snapshot;
+    if (!summary || !summary.ok) {
         var emptyDiv = document.createElement('div');
         emptyDiv.className = 'placeholder-content';
-        emptyDiv.textContent = 'No metrics data available.';
+        emptyDiv.textContent = 'No pipeline data available.';
         container.appendChild(emptyDiv);
         return container;
     }
@@ -28928,83 +29233,252 @@ function renderOverviewLiveMetricsView() {
     header.className = 'list-toolbar';
     var title = document.createElement('span');
     title.className = 'toolbar-title';
-    title.textContent = 'Live Metrics — Heartbeat Snapshot';
+    title.textContent = 'Pipeline Dashboard';
     header.appendChild(title);
 
     var refreshBtn = document.createElement('button');
     refreshBtn.className = 'btn btn-sm';
     refreshBtn.textContent = 'Refresh';
     refreshBtn.onclick = function () {
-        state.overviewMetrics.fetched = false;
-        fetchOverviewMetrics();
+        state.overviewPipelineSummary.fetched = false;
+        fetchPipelineSummary();
     };
     header.appendChild(refreshBtn);
     container.appendChild(header);
 
-    // Stage counters
-    var stages = snapshot.stage_counters || snapshot.stageCounters || {};
-    var stageNames = ['PLANNER', 'WORKER', 'VALIDATOR', 'DEPLOY'];
+    var funnel = summary.funnel || {};
 
-    var stageGrid = document.createElement('div');
-    stageGrid.className = 'metrics-grid';
+    // ── A. Pipeline Funnel ──
+    var funnelSection = document.createElement('div');
+    funnelSection.className = 'pipeline-funnel';
 
-    stageNames.forEach(function (stage) {
-        var card = document.createElement('div');
-        card.className = 'metric-card';
-
-        var label = document.createElement('div');
-        label.className = 'metric-label';
-        label.textContent = stage;
-
-        var value = document.createElement('div');
-        value.className = 'metric-value';
-        value.textContent = stages[stage] !== undefined ? stages[stage] : '0';
-
-        card.appendChild(label);
-        card.appendChild(value);
-        stageGrid.appendChild(card);
-    });
-
-    container.appendChild(stageGrid);
-
-    // Request and error rate cards
-    var rateGrid = document.createElement('div');
-    rateGrid.className = 'metrics-grid';
-
-    var rateMetrics = [
-        { label: 'Request Rate', key: 'request_rate', fallback: 'requests_per_min' },
-        { label: 'Error Rate', key: 'error_rate', fallback: 'errors_per_min' },
-        { label: 'Active Tasks', key: 'active_tasks', fallback: 'active_vtids' },
-        { label: 'Uptime', key: 'uptime', fallback: 'uptime_seconds' }
+    var funnelStages = [
+        { key: 'scheduled', label: 'Scheduled', color: '#3b82f6' },
+        { key: 'in_progress', label: 'In Progress', color: '#f59e0b' },
+        { key: 'completed', label: 'Completed', color: '#10b981' }
     ];
 
-    rateMetrics.forEach(function (metric) {
-        var card = document.createElement('div');
-        card.className = 'metric-card';
+    funnelStages.forEach(function (stage, idx) {
+        var stageEl = document.createElement('div');
+        stageEl.className = 'funnel-stage';
+        stageEl.style.borderTopColor = stage.color;
 
-        var label = document.createElement('div');
-        label.className = 'metric-label';
-        label.textContent = metric.label;
+        var countEl = document.createElement('div');
+        countEl.className = 'funnel-count';
+        countEl.textContent = String(funnel[stage.key] || 0);
+        countEl.style.color = stage.color;
 
-        var val = snapshot[metric.key] !== undefined ? snapshot[metric.key] :
-                  (snapshot[metric.fallback] !== undefined ? snapshot[metric.fallback] : 'N/A');
+        var labelEl = document.createElement('div');
+        labelEl.className = 'funnel-label';
+        labelEl.textContent = stage.label;
 
-        var valueDiv = document.createElement('div');
-        valueDiv.className = 'metric-value';
-        valueDiv.textContent = val;
+        stageEl.appendChild(countEl);
+        stageEl.appendChild(labelEl);
+        funnelSection.appendChild(stageEl);
 
-        card.appendChild(label);
-        card.appendChild(valueDiv);
-        rateGrid.appendChild(card);
+        // Arrow between stages
+        if (idx < funnelStages.length - 1) {
+            var arrow = document.createElement('div');
+            arrow.className = 'funnel-arrow';
+            arrow.textContent = '\u2192';
+            funnelSection.appendChild(arrow);
+        }
     });
 
-    container.appendChild(rateGrid);
+    container.appendChild(funnelSection);
+
+    // Sub-counts: stuck, broken, rejected
+    var subCounts = document.createElement('div');
+    subCounts.className = 'funnel-sub-counts';
+
+    var subItems = [
+        { label: 'Broken', count: funnel.broken || 0, color: '#ef4444' },
+        { label: 'Stuck', count: funnel.stuck || 0, color: '#f59e0b' },
+        { label: 'Rejected', count: funnel.rejected || 0, color: '#6b7280' }
+    ];
+
+    subItems.forEach(function (item) {
+        var badge = document.createElement('span');
+        badge.className = 'funnel-sub-badge';
+        badge.style.color = item.color;
+        badge.style.borderColor = item.color;
+        badge.textContent = item.label + ': ' + item.count;
+        subCounts.appendChild(badge);
+    });
+
+    container.appendChild(subCounts);
+
+    // ── B. Entry Point Breakdown + Health Strip (side by side) ──
+    var middleRow = document.createElement('div');
+    middleRow.className = 'pipeline-middle-row';
+
+    // Entry points
+    var epSection = document.createElement('div');
+    epSection.className = 'pipeline-entry-points';
+
+    var epTitle = document.createElement('div');
+    epTitle.className = 'section-title';
+    epTitle.textContent = 'Task Sources (7 days)';
+    epSection.appendChild(epTitle);
+
+    var epGrid = document.createElement('div');
+    epGrid.className = 'entry-point-grid';
+
+    var entryPoints = summary.entry_points || {};
+    var epConfig = [
+        { key: 'command-hub', label: 'Command Hub', icon: '\u2318' },
+        { key: 'orb', label: 'ORB Voice', icon: '\u{1F399}' },
+        { key: 'operator', label: 'Operator Chat', icon: '\u{1F4AC}' },
+        { key: 'email-intake', label: 'Email', icon: '\u2709' },
+        { key: 'system', label: 'System', icon: '\u2699' }
+    ];
+
+    epConfig.forEach(function (ep) {
+        var card = document.createElement('div');
+        card.className = 'entry-point-card';
+
+        var iconEl = document.createElement('span');
+        iconEl.className = 'ep-icon';
+        iconEl.textContent = ep.icon;
+
+        var countEl = document.createElement('span');
+        countEl.className = 'ep-count';
+        countEl.textContent = String(entryPoints[ep.key] || 0);
+
+        var labelEl = document.createElement('span');
+        labelEl.className = 'ep-label';
+        labelEl.textContent = ep.label;
+
+        card.appendChild(iconEl);
+        card.appendChild(countEl);
+        card.appendChild(labelEl);
+        epGrid.appendChild(card);
+    });
+
+    epSection.appendChild(epGrid);
+    middleRow.appendChild(epSection);
+
+    // ── C. Pipeline Health Strip ──
+    var healthSection = document.createElement('div');
+    healthSection.className = 'pipeline-health-strip';
+
+    var healthTitle = document.createElement('div');
+    healthTitle.className = 'section-title';
+    healthTitle.textContent = 'Pipeline Health';
+    healthSection.appendChild(healthTitle);
+
+    var healthItems = [
+        { label: 'Loop Running', ok: summary.loop_running },
+        { label: 'Execution Armed', ok: summary.execution_armed },
+        { label: 'Workers Active', ok: summary.workers_active }
+    ];
+
+    healthItems.forEach(function (item) {
+        var row = document.createElement('div');
+        row.className = 'health-strip-item';
+
+        var dot = document.createElement('span');
+        dot.className = 'health-dot ' + (item.ok ? 'health-dot-green' : 'health-dot-red');
+
+        var label = document.createElement('span');
+        label.className = 'health-strip-label';
+        label.textContent = item.label;
+
+        row.appendChild(dot);
+        row.appendChild(label);
+        healthSection.appendChild(row);
+    });
+
+    // Success rate
+    var rateRow = document.createElement('div');
+    rateRow.className = 'success-rate-row';
+
+    var rateLabel = document.createElement('span');
+    rateLabel.className = 'health-strip-label';
+    rateLabel.textContent = 'Success Rate (7d)';
+
+    var rateValue = document.createElement('span');
+    rateValue.className = 'success-rate-value';
+    var rate = summary.success_rate || 0;
+    rateValue.textContent = rate + '%';
+    rateValue.style.color = rate >= 80 ? '#10b981' : (rate >= 50 ? '#f59e0b' : '#ef4444');
+
+    rateRow.appendChild(rateLabel);
+    rateRow.appendChild(rateValue);
+    healthSection.appendChild(rateRow);
+
+    middleRow.appendChild(healthSection);
+    container.appendChild(middleRow);
+
+    // ── D. Attention Required ──
+    var attQueue = summary.attention_queue || [];
+    if (attQueue.length > 0) {
+        var attSection = document.createElement('div');
+        attSection.className = 'pipeline-attention-section';
+
+        var attTitle = document.createElement('div');
+        attTitle.className = 'section-title';
+        attTitle.textContent = 'Needs Attention (' + attQueue.length + ')';
+        attSection.appendChild(attTitle);
+
+        var severityColors = { BROKEN: '#ef4444', STUCK: '#f59e0b', BLOCKED: '#6b7280', NEW: '#3b82f6' };
+
+        attQueue.slice(0, 8).forEach(function (item) {
+            var card = document.createElement('div');
+            card.className = 'attention-item';
+            card.style.borderLeftColor = severityColors[item.severity] || '#6b7280';
+
+            var topRow = document.createElement('div');
+            topRow.className = 'attention-item-top';
+
+            var badge = document.createElement('span');
+            badge.className = 'severity-badge';
+            badge.style.backgroundColor = severityColors[item.severity] || '#6b7280';
+            badge.textContent = item.severity;
+
+            var vtidEl = document.createElement('span');
+            vtidEl.className = 'attention-vtid';
+            vtidEl.textContent = item.vtid;
+
+            var titleEl = document.createElement('span');
+            titleEl.className = 'attention-title';
+            titleEl.textContent = item.title || '';
+
+            topRow.appendChild(badge);
+            topRow.appendChild(vtidEl);
+            topRow.appendChild(titleEl);
+
+            var bottomRow = document.createElement('div');
+            bottomRow.className = 'attention-item-bottom';
+            bottomRow.textContent = item.reason || '';
+
+            if (item.stuck_minutes) {
+                var timeEl = document.createElement('span');
+                timeEl.className = 'attention-time';
+                var mins = item.stuck_minutes;
+                timeEl.textContent = mins >= 60 ? Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm' : mins + 'm';
+                bottomRow.appendChild(timeEl);
+            }
+
+            card.appendChild(topRow);
+            card.appendChild(bottomRow);
+
+            card.style.cursor = 'pointer';
+            card.onclick = function () {
+                navigateTo('command-hub', 'tasks');
+            };
+
+            attSection.appendChild(card);
+        });
+
+        container.appendChild(attSection);
+    }
 
     // Timestamp
-    if (snapshot.timestamp || snapshot.ts) {
+    if (summary.timestamp) {
         var tsDiv = document.createElement('div');
         tsDiv.className = 'metrics-timestamp';
-        tsDiv.textContent = 'Last updated: ' + formatEventTimestamp(snapshot.timestamp || snapshot.ts);
+        tsDiv.textContent = 'Last updated: ' + formatEventTimestamp(summary.timestamp);
         container.appendChild(tsDiv);
     }
 
@@ -29012,8 +29486,32 @@ function renderOverviewLiveMetricsView() {
 }
 
 // ---------------------------------------------------------------------------
-// 5. fetchOverviewRecentEvents — GET /api/v1/oasis/events?limit=50
+// 5. fetchOverviewRecentEvents — GET /api/v1/oasis/events?limit=100
 // ---------------------------------------------------------------------------
+var NOISE_TOPICS = [
+    'pending_served', 'heartbeat', 'health_check', 'health.check',
+    'vtid.stage.worker_orchestrator.heartbeat', 'autopilot.loop.tick'
+];
+
+var EVENT_FILTERS = {
+    'pipeline': function (ev) {
+        var topic = (ev.topic || ev.type || '').toLowerCase();
+        return !NOISE_TOPICS.some(function (n) { return topic.includes(n); });
+    },
+    'errors': function (ev) {
+        var status = (ev.status || '').toLowerCase();
+        var topic = (ev.topic || ev.type || '').toLowerCase();
+        return status === 'error' || status === 'failure' || status === 'failed'
+            || topic.includes('error') || topic.includes('fail') || topic.includes('violation');
+    },
+    'lifecycle': function (ev) {
+        var topic = (ev.topic || ev.type || '').toLowerCase();
+        return topic.includes('lifecycle') || topic.includes('task.scheduled')
+            || topic.includes('execution') || topic.includes('spec.');
+    },
+    'all': function () { return true; }
+};
+
 async function fetchOverviewRecentEvents() {
     if (state.overviewRecentEvents.loading) return;
     state.overviewRecentEvents.loading = true;
@@ -29021,7 +29519,7 @@ async function fetchOverviewRecentEvents() {
     renderApp();
 
     try {
-        var response = await fetch('/api/v1/oasis/events?limit=50');
+        var response = await fetch('/api/v1/oasis/events?limit=100');
         if (!response.ok) throw new Error('Recent events fetch failed: ' + response.status);
 
         var data = await response.json();
@@ -29029,9 +29527,9 @@ async function fetchOverviewRecentEvents() {
         state.overviewRecentEvents.items = items;
         state.overviewRecentEvents.fetched = true;
         state.overviewRecentEvents.error = null;
-        console.log('[VTID-01240] Overview recent events loaded:', items.length);
+        console.log('[Pipeline] Recent events loaded:', items.length);
     } catch (error) {
-        console.error('[VTID-01240] Failed to fetch overview recent events:', error);
+        console.error('[Pipeline] Failed to fetch recent events:', error);
         state.overviewRecentEvents.error = error.message;
     } finally {
         state.overviewRecentEvents.loading = false;
@@ -29040,7 +29538,7 @@ async function fetchOverviewRecentEvents() {
 }
 
 // ---------------------------------------------------------------------------
-// 6. renderOverviewRecentEventsView — table of recent OASIS events
+// 6. renderOverviewRecentEventsView — smart filtered OASIS events table
 // ---------------------------------------------------------------------------
 function renderOverviewRecentEventsView() {
     var container = document.createElement('div');
@@ -29069,22 +29567,42 @@ function renderOverviewRecentEventsView() {
         return container;
     }
 
-    // Empty
-    if (state.overviewRecentEvents.items.length === 0) {
-        var emptyDiv = document.createElement('div');
-        emptyDiv.className = 'placeholder-content';
-        emptyDiv.textContent = 'No recent events found.';
-        container.appendChild(emptyDiv);
-        return container;
-    }
+    // Apply filter
+    var currentFilter = state.overviewRecentEventsFilter || 'pipeline';
+    var filterFn = EVENT_FILTERS[currentFilter] || EVENT_FILTERS['pipeline'];
+    var filteredItems = state.overviewRecentEvents.items.filter(filterFn);
 
     // Header
     var header = document.createElement('div');
     header.className = 'list-toolbar';
     var title = document.createElement('span');
     title.className = 'toolbar-title';
-    title.textContent = 'Recent Events (' + state.overviewRecentEvents.items.length + ')';
+    title.textContent = 'Recent Events (' + filteredItems.length + ')';
     header.appendChild(title);
+
+    // Filter dropdown
+    var filterSelect = document.createElement('select');
+    filterSelect.className = 'event-filter-select';
+    var filterOptions = [
+        { value: 'pipeline', label: 'Pipeline Events' },
+        { value: 'lifecycle', label: 'Lifecycle Events' },
+        { value: 'errors', label: 'Errors Only' },
+        { value: 'all', label: 'All Events' }
+    ];
+
+    filterOptions.forEach(function (opt) {
+        var option = document.createElement('option');
+        option.value = opt.value;
+        option.textContent = opt.label;
+        if (opt.value === currentFilter) option.selected = true;
+        filterSelect.appendChild(option);
+    });
+
+    filterSelect.onchange = function () {
+        state.overviewRecentEventsFilter = filterSelect.value;
+        renderApp();
+    };
+    header.appendChild(filterSelect);
 
     var refreshBtn = document.createElement('button');
     refreshBtn.className = 'btn btn-sm';
@@ -29096,13 +29614,22 @@ function renderOverviewRecentEventsView() {
     header.appendChild(refreshBtn);
     container.appendChild(header);
 
+    // Empty
+    if (filteredItems.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'placeholder-content';
+        emptyDiv.textContent = 'No events match the current filter.';
+        container.appendChild(emptyDiv);
+        return container;
+    }
+
     // Table
     var table = document.createElement('table');
     table.className = 'list-table';
 
     var thead = document.createElement('thead');
     var headerRow = document.createElement('tr');
-    ['Time', 'Topic', 'VTID', 'Status', 'Message'].forEach(function (h) {
+    ['Time', 'Topic', 'VTID', 'Source', 'Status', 'Message'].forEach(function (h) {
         var th = document.createElement('th');
         th.textContent = h;
         headerRow.appendChild(th);
@@ -29111,14 +29638,21 @@ function renderOverviewRecentEventsView() {
     table.appendChild(thead);
 
     var tbody = document.createElement('tbody');
-    state.overviewRecentEvents.items.forEach(function (event) {
+    filteredItems.forEach(function (event) {
         var row = document.createElement('tr');
+
+        // Highlight error rows
+        var evStatus = (event.status || '').toLowerCase();
+        if (evStatus === 'error' || evStatus === 'failure' || evStatus === 'failed') {
+            row.className = 'event-row-error';
+        }
 
         var timeTd = document.createElement('td');
         timeTd.textContent = formatEventTimestamp(event.created_at || event.timestamp);
         row.appendChild(timeTd);
 
         var topicTd = document.createElement('td');
+        topicTd.className = 'topic-cell';
         topicTd.textContent = event.topic || event.type || '';
         row.appendChild(topicTd);
 
@@ -29126,6 +29660,11 @@ function renderOverviewRecentEventsView() {
         vtidTd.className = 'vtid-cell';
         vtidTd.textContent = event.vtid || '';
         row.appendChild(vtidTd);
+
+        var sourceTd = document.createElement('td');
+        sourceTd.className = 'source-cell';
+        sourceTd.textContent = event.source || '';
+        row.appendChild(sourceTd);
 
         var statusTd = document.createElement('td');
         var statusBadge = document.createElement('span');
