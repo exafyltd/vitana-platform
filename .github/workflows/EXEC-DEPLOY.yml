@@ -333,9 +333,14 @@ jobs:
           echo "service_url=$URL" >> $GITHUB_OUTPUT
           echo "cloud_run_service=$CLOUD_RUN_SERVICE" >> $GITHUB_OUTPUT
 
-          # Health check
-          echo "Running health check: $URL${{ github.event.inputs.health_path }}"
-          curl -fsS "$URL${{ github.event.inputs.health_path }}" -H "X-VTID: ${{ github.event.inputs.vtid }}"
+          # Health check (skip for internal-ingress services — not reachable from CI)
+          if [ "$CLOUD_RUN_SERVICE" = "cognee-extractor" ]; then
+            echo "Skipping health check for internal-ingress service: $CLOUD_RUN_SERVICE"
+            echo "Service deployed successfully at $URL"
+          else
+            echo "Running health check: $URL${{ github.event.inputs.health_path }}"
+            curl -fsS "$URL${{ github.event.inputs.health_path }}" -H "X-VTID: ${{ github.event.inputs.vtid }}"
+          fi
 
       # =========================================================================
       # VTID-0416: Post-Deploy Smoke Tests
