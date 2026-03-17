@@ -283,6 +283,8 @@ jobs:
             # NOTE: Requires 'OPENAI_API_KEY' secret in GCP Secret Manager.
             # Uncomment once created: gcloud secrets create OPENAI_API_KEY --data-file=-
             # SECRETS_ARGS+=(--update-secrets=OPENAI_API_KEY=OPENAI_API_KEY:latest)
+            # Remove stale OPENAI_API_KEY binding from previous revision (secret doesn't exist in GCP)
+            SECRETS_ARGS+=(--remove-secrets=OPENAI_API_KEY)
             # Bind other required secrets
             SECRETS_ARGS+=(--update-secrets=SUPABASE_URL=SUPABASE_URL:latest)
             SECRETS_ARGS+=(--update-secrets=SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest)
