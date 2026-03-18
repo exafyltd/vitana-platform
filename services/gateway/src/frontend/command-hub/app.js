@@ -6849,7 +6849,8 @@ function renderTaskDrawer() {
                 generateBtn.disabled = true;
                 generateBtn.textContent = 'Generating...';
                 try {
-                    var seedNotes = state.drawerSpecText || state.selectedTask.summary || state.selectedTask.title || '';
+                    // Use task title + summary as seed, NOT drawerSpecText (which may contain attention reason text)
+                    var seedNotes = (state.selectedTask.title || '') + '\n' + (state.selectedTask.summary || '');
                     var response = await fetch('/api/v1/specs/' + vtid + '/generate', {
                         method: 'POST',
                         headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
