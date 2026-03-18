@@ -652,12 +652,14 @@ async function setActiveRole(role) {
             return null;
         }
 
-        console.log('[VTID-01049] setActiveRole success:', data.me);
-        state.meContext = data.me;
+        // VTID-01230: Server returns { ok, tenant_id, user_id, active_role, tenant_slug }
+        // (no nested .me property)
+        console.log('[VTID-01049] setActiveRole success:', data);
+        state.meContext = data;
 
         // Update viewRole to match (capitalized for UI)
-        if (data.me.active_role) {
-            var capitalizedRole = data.me.active_role.charAt(0).toUpperCase() + data.me.active_role.slice(1);
+        if (data.active_role) {
+            var capitalizedRole = data.active_role.charAt(0).toUpperCase() + data.active_role.slice(1);
             state.viewRole = capitalizedRole;
             localStorage.setItem('vitana.viewRole', capitalizedRole);
         }
@@ -665,11 +667,9 @@ async function setActiveRole(role) {
         showToast('Switched to ' + state.viewRole + ' role', 'success');
 
         // VTID-01049: Trigger full data refresh after successful role switch
-        // This ensures no stale data from the previous role context remains.
         console.log('[VTID-01049] Role switch successful. Refreshing all data...');
-        renderApp(); // Immediate UI update (shows loading states if any)
+        renderApp();
 
-        // Refresh all major data streams in parallel
         Promise.all([
             fetchTasks(),
             fetchTelemetrySnapshot(),
@@ -682,7 +682,7 @@ async function setActiveRole(role) {
             console.error('[VTID-01049] Error during data refresh:', err);
         });
 
-        return data.me;
+        return data;
     } catch (err) {
         console.error('[VTID-01049] setActiveRole exception:', err);
         showToast('Network error switching role', 'error');
