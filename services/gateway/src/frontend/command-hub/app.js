@@ -6850,20 +6850,20 @@ function renderTaskDrawer() {
                     });
                     var result = await response.json();
                     if (result.ok) {
-                        showToast('Spec generated for ' + vtid, 'success');
-                        // Refresh task detail
+                        // Refresh BEFORE toast (showToast calls renderApp which destroys button DOM)
                         await fetchVtidDetail(vtid);
                         await fetchTasks();
+                        showToast('Spec generated for ' + vtid, 'success');
                     } else {
-                        showToast('Generate failed: ' + (result.message || result.error || 'Unknown error'), 'error');
                         generateBtn.disabled = false;
                         generateBtn.textContent = 'Generate Spec';
+                        showToast('Generate failed: ' + (result.message || result.error || 'Unknown error'), 'error');
                     }
                 } catch (e) {
                     console.error('[VTID-01188] Generate spec error:', e);
-                    showToast('Generate failed: Network error', 'error');
                     generateBtn.disabled = false;
                     generateBtn.textContent = 'Generate Spec';
+                    showToast('Generate failed: Network error', 'error');
                 }
             };
             specPipelineActions.appendChild(generateBtn);
@@ -6885,23 +6885,24 @@ function renderTaskDrawer() {
                     });
                     var result = await response.json();
                     if (result.ok) {
+                        // Refresh BEFORE toast (showToast calls renderApp which destroys button DOM)
+                        await fetchVtidDetail(vtid);
+                        await fetchTasks();
                         if (result.result === 'pass') {
                             showToast('Spec validated for ' + vtid, 'success');
                         } else {
                             showToast('Validation failed: ' + (result.message || 'Check report'), 'warning');
                         }
-                        await fetchVtidDetail(vtid);
-                        await fetchTasks();
                     } else {
-                        showToast('Validation error: ' + (result.message || result.error || 'Unknown error'), 'error');
                         validateBtn.disabled = false;
                         validateBtn.textContent = 'Validate';
+                        showToast('Validation error: ' + (result.message || result.error || 'Unknown error'), 'error');
                     }
                 } catch (e) {
                     console.error('[VTID-01188] Validate spec error:', e);
-                    showToast('Validation failed: Network error', 'error');
                     validateBtn.disabled = false;
                     validateBtn.textContent = 'Validate';
+                    showToast('Validation failed: Network error', 'error');
                 }
             };
             specPipelineActions.appendChild(validateBtn);
@@ -6930,19 +6931,20 @@ function renderTaskDrawer() {
                         if (failedChecks.length > 0) {
                             msg += ' | Failed: ' + failedChecks.map(function(c) { return c.check_id; }).join(', ');
                         }
-                        showToast(msg, r.overall_result === 'fail' ? 'error' : 'success');
+                        // Refresh BEFORE toast (showToast calls renderApp which destroys button DOM)
                         await fetchVtidDetail(vtid);
                         await fetchTasks();
+                        showToast(msg, r.overall_result === 'fail' ? 'error' : 'success');
                     } else {
-                        showToast('Quality check failed: ' + (result.message || result.error || 'Unknown'), 'error');
                         qualityBtn.disabled = false;
                         qualityBtn.textContent = 'Quality Check';
+                        showToast('Quality check failed: ' + (result.message || result.error || 'Unknown'), 'error');
                     }
                 } catch (e) {
                     console.error('[spec-quality] Quality check error:', e);
-                    showToast('Quality check failed: Network error', 'error');
                     qualityBtn.disabled = false;
                     qualityBtn.textContent = 'Quality Check';
+                    showToast('Quality check failed: Network error', 'error');
                 }
             };
             specPipelineActions.appendChild(qualityBtn);
@@ -6973,19 +6975,20 @@ function renderTaskDrawer() {
                     });
                     var result = await response.json();
                     if (result.ok) {
-                        showToast('Spec approved for ' + vtid + ' - Activate is now enabled', 'success');
+                        // Refresh BEFORE toast (showToast calls renderApp which destroys button DOM)
                         await fetchVtidDetail(vtid);
                         await fetchTasks();
+                        showToast('Spec approved for ' + vtid + ' - Activate is now enabled', 'success');
                     } else {
-                        showToast('Approval failed: ' + (result.message || result.error || 'Unknown error'), 'error');
                         approveBtn.disabled = false;
                         approveBtn.textContent = 'Approve Spec';
+                        showToast('Approval failed: ' + (result.message || result.error || 'Unknown error'), 'error');
                     }
                 } catch (e) {
                     console.error('[VTID-01188] Approve spec error:', e);
-                    showToast('Approval failed: Network error', 'error');
                     approveBtn.disabled = false;
                     approveBtn.textContent = 'Approve Spec';
+                    showToast('Approval failed: Network error', 'error');
                 }
             };
             specPipelineActions.appendChild(approveBtn);
@@ -7194,19 +7197,22 @@ function renderTaskDrawer() {
                     });
                     var result = await response.json();
                     if (result.ok) {
-                        showToast('Task rejected: ' + vtid, 'info');
+                        // Close drawer and refresh BEFORE toast (showToast calls renderApp which destroys button DOM)
                         state.selectedTask = null;
                         state.selectedTaskDetail = null;
                         state.drawerSpecVtid = null;
                         await fetchTasks();
+                        showToast('Task rejected: ' + vtid, 'info');
                     } else {
+                        rejectBtn.disabled = false;
+                        rejectBtn.textContent = 'Reject';
                         showToast('Rejection failed: ' + (result.error || result.message || 'Unknown error'), 'error');
                     }
                 } catch (e) {
+                    rejectBtn.disabled = false;
+                    rejectBtn.textContent = 'Reject';
                     showToast('Rejection failed: ' + e.message, 'error');
                 }
-                rejectBtn.disabled = false;
-                rejectBtn.textContent = 'Reject';
             };
             specActions.appendChild(rejectBtn);
 
@@ -7241,26 +7247,26 @@ function renderTaskDrawer() {
                         // VTID-01052: Clear local storage spec for this task
                         localStorage.removeItem('vitana.taskSpec.' + vtid);
                         clearTaskStatusOverride(vtid);
-                        showToast('Task deleted: ' + vtid, 'success');
-                        // Close drawer and refresh
+                        // Close drawer and refresh BEFORE toast (showToast calls renderApp which destroys DOM)
                         state.selectedTask = null;
                         state.selectedTaskDetail = null;
                         state.drawerSpecVtid = null;
                         state.drawerSpecText = '';
                         state.drawerSpecEditing = false;
                         await fetchTasks();
+                        showToast('Task deleted: ' + vtid, 'success');
                     } else {
                         // VTID-01052: Handle errors (e.g., INVALID_STATE for non-scheduled tasks)
                         var errorMsg = result.message || result.error || 'Unknown error';
-                        showToast('Delete failed: ' + errorMsg, 'error');
                         deleteBtn.disabled = false;
                         deleteBtn.textContent = 'Delete';
+                        showToast('Delete failed: ' + errorMsg, 'error');
                     }
                 } catch (e) {
                     console.error('[VTID-01052] Delete failed:', e);
-                    showToast('Delete failed: Network error', 'error');
                     deleteBtn.disabled = false;
                     deleteBtn.textContent = 'Delete';
+                    showToast('Delete failed: Network error', 'error');
                 }
             };
             specActions.appendChild(deleteBtn);
@@ -21849,11 +21855,11 @@ function renderPublishModal() {
 
         } catch (error) {
             console.error('[VTID-0523-B] Deploy error:', error);
-            // VTID-01019: Immediate failure is shown directly (backend error, not OASIS failure)
-            showToast('Deploy failed: ' + error.message, 'error');
+            // Reset button BEFORE toast (showToast calls renderApp which destroys button DOM)
             deployBtn.disabled = false;
             deployBtn.textContent = 'Deploy ' + selectedVersion.swv;
             deployBtn.style.opacity = '1';
+            showToast('Deploy failed: ' + error.message, 'error');
         }
     };
 
@@ -22116,10 +22122,12 @@ function createRecommendationCard(rec) {
                 showToast('Snoozed for 24 hours', 'info');
             } else {
                 snoozeBtn.disabled = false;
+                snoozeBtn.textContent = 'Snooze';
                 showToast('Snooze failed: ' + (data.error || 'Unknown error'), 'error');
             }
         } catch (err) {
             snoozeBtn.disabled = false;
+            snoozeBtn.textContent = 'Snooze';
             showToast('Snooze error: ' + err.message, 'error');
         }
     };
@@ -22146,10 +22154,12 @@ function createRecommendationCard(rec) {
                 showToast('Recommendation dismissed', 'info');
             } else {
                 rejectBtn.disabled = false;
+                rejectBtn.textContent = 'Dismiss';
                 showToast('Dismiss failed: ' + (data.error || 'Unknown error'), 'error');
             }
         } catch (err) {
             rejectBtn.disabled = false;
+            rejectBtn.textContent = 'Dismiss';
             showToast('Dismiss error: ' + err.message, 'error');
         }
     };
