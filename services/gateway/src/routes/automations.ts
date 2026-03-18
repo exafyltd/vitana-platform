@@ -28,6 +28,7 @@ import {
   AUTOMATION_REGISTRY,
   getAutomation,
   getAutomationsByDomain,
+  getAutomationsByRole,
   getRegistrySummary,
 } from '../services/automation-registry';
 import {
@@ -67,9 +68,11 @@ async function getServiceClient() {
 router.get('/registry', (_req: Request, res: Response) => {
   const domain = _req.query.domain as string | undefined;
   const status = _req.query.status as string | undefined;
+  const role = _req.query.role as string | undefined;
 
   let automations = domain ? getAutomationsByDomain(domain) : [...AUTOMATION_REGISTRY];
   if (status) automations = automations.filter(a => a.status === status);
+  if (role) automations = automations.filter(a => a.targetRoles === 'all' || a.targetRoles.includes(role as any));
 
   return res.json({ ok: true, total: automations.length, automations });
 });

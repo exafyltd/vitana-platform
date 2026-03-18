@@ -15,6 +15,8 @@ import { executeSkillAction, listSkills, hasSkillAction } from '../skills';
 // Schema
 // ---------------------------------------------------------------------------
 
+const VALID_ROLES = ['patient', 'professional', 'staff', 'admin', 'developer', 'community'] as const;
+
 const WebhookPayloadSchema = z.object({
   /** Tenant making the request */
   tenant_id: z.string().uuid(),
@@ -30,6 +32,10 @@ const WebhookPayloadSchema = z.object({
   input: z.record(z.unknown()).optional(),
   /** Optional: VTID to associate with this execution */
   vtid: z.string().optional(),
+  /** Optional: user role context for role-scoped execution */
+  user_role: z.enum(VALID_ROLES).optional(),
+  /** Optional: user_id for tracing */
+  user_id: z.string().uuid().optional(),
 });
 
 type WebhookPayload = z.infer<typeof WebhookPayloadSchema>;
@@ -111,14 +117,16 @@ export function createWebhookRouter(): Router {
           skill: payload.skill,
           action: payload.action,
           tenant_id: payload.tenant_id,
-          input: { ...payload.input, tenant_id: payload.tenant_id },
+          input: { ...payload.input, tenant_id: payload.tenant_id, user_role: payload.user_role },
           goal: payload.goal,
+          user_role: payload.user_role,
           executeAction: (input) => executeSkillAction(payload.skill!, payload.action!, input),
         });
 
         if (payload.callback) {
           await sendCallback(payload.callback, {
             request_id: requestId,
+            user_role: payload.user_role,
             ...result,
           });
         }
@@ -151,6 +159,8 @@ export function createWebhookRouter(): Router {
         request_id: requestId,
         goal: payload.goal,
         callback: payload.callback,
+        user_role: payload.user_role,
+        user_id: payload.user_id,
       },
     });
   });

@@ -179,10 +179,11 @@ export async function executeWithGovernance(params: {
   tenant_id: string;
   input: unknown;
   goal?: string;
+  user_role?: string;
   enforceGovernance?: boolean;
   executeAction: (input: unknown) => Promise<unknown>;
 }): Promise<{ success: boolean; result?: unknown; blocked?: string }> {
-  const { skill, action, tenant_id, input, goal, enforceGovernance = true, executeAction } = params;
+  const { skill, action, tenant_id, input, goal, user_role, enforceGovernance = true, executeAction } = params;
 
   // 1. Validate tenant scope
   validateTenantScope(tenant_id);
@@ -214,7 +215,7 @@ export async function executeWithGovernance(params: {
   await emitOasisEvent({
     type: 'openclaw.action_started',
     tenant_id,
-    payload: { skill, action, goal },
+    payload: { skill, action, goal, user_role },
   });
 
   // 5. Execute

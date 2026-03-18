@@ -25,6 +25,17 @@ export type AutomationPriority = 'P0' | 'P1' | 'P2' | 'P3';
 export type TriggerType = 'cron' | 'event' | 'heartbeat' | 'manual' | 'webhook';
 export type RunStatus = 'running' | 'completed' | 'failed' | 'skipped';
 
+// ── User roles for automation targeting ───────────────────────
+export const AUTOMATION_ROLES = ['patient', 'professional', 'staff', 'admin', 'developer', 'community'] as const;
+export type AutomationRole = typeof AUTOMATION_ROLES[number];
+
+/**
+ * Role targeting mode:
+ * - 'all': runs for all roles (default, backward-compatible)
+ * - explicit array: runs only for users with matching active_role
+ */
+export type RoleTarget = 'all' | AutomationRole[];
+
 // ── Automation definition (static registry entry) ───────────
 export interface AutomationDefinition {
   id: string;                  // AP-XXXX
@@ -38,6 +49,7 @@ export interface AutomationDefinition {
     eventTopic?: string;       // OASIS event to listen for
     intervalMinutes?: number;  // heartbeat interval
   };
+  targetRoles: RoleTarget;     // which user roles this automation applies to
   requires?: string[];         // AP-XXXX dependencies
   handler?: string;            // function name in executor
 }
@@ -49,6 +61,7 @@ export interface AutomationRun {
   automation_id: string;
   trigger_type: TriggerType;
   trigger_source?: string;
+  target_roles: RoleTarget;
   status: RunStatus;
   users_affected: number;
   actions_taken: number;
@@ -61,11 +74,17 @@ export interface AutomationRun {
 // ── Automation context (passed to handler) ──────────────────
 export interface AutomationContext {
   tenantId: string;
+  targetRoles: RoleTarget;
   supabase: any;               // SupabaseClient (service role)
   run: AutomationRun;
   log: (msg: string) => void;
   notify: (userId: string, type: string, payload: NotificationPayload) => void;
   emitEvent: (topic: string, metadata: Record<string, unknown>) => Promise<void>;
+  /**
+   * Query users in this tenant filtered to the automation's target roles.
+   * Returns users whose active_role matches the automation's targetRoles.
+   */
+  queryTargetUsers: (selectColumns?: string) => Promise<Array<{ user_id: string; active_role: string }>>;
 }
 
 export interface NotificationPayload {

@@ -218,6 +218,11 @@ export async function runHeartbeat(): Promise<HeartbeatResult> {
       tasks_checked: tasksChecked,
       actions_taken: actionsTaken,
       error_count: allErrors.length,
+      role_scope: {
+        stripe_retry: 'all',
+        room_reminders: ['community', 'patient', 'professional'],
+        health_reports: ['patient'],
+      },
     },
   });
 

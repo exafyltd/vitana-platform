@@ -13,8 +13,8 @@
  */
 
 import { randomUUID } from 'crypto';
-import { AutomationDefinition, AutomationContext, RunStatus, TriggerType } from '../types/automations';
-import { getAutomation, getHeartbeatAutomations, getEventAutomations } from './automation-registry';
+import { AutomationDefinition, AutomationContext, RunStatus, TriggerType, RoleTarget } from '../types/automations';
+import { getAutomation, getHeartbeatAutomations, getEventAutomations, automationTargetsRole } from './automation-registry';
 import { notifyUserAsync } from './notification-service';
 
 // ── Environment ─────────────────────────────────────────────
@@ -135,6 +135,38 @@ export function registerHandler(
 }
 
 // =============================================================================
+// Role-aware user query
+// =============================================================================
+
+/**
+ * Query users in a tenant filtered by the automation's target roles.
+ * Uses the user_tenants M:N table which stores active_role per tenant membership.
+ * If targetRoles is 'all', returns all users without role filtering.
+ */
+async function queryUsersByRole(
+  supabase: any,
+  tenantId: string,
+  targetRoles: RoleTarget,
+  selectColumns: string = 'user_id, active_role',
+): Promise<Array<{ user_id: string; active_role: string }>> {
+  let query = supabase
+    .from('user_tenants')
+    .select(selectColumns)
+    .eq('tenant_id', tenantId);
+
+  if (targetRoles !== 'all') {
+    query = query.in('active_role', targetRoles);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.warn(`[AutomationExecutor] queryUsersByRole failed: ${error.message}`);
+    return [];
+  }
+  return data || [];
+}
+
+// =============================================================================
 // Core execution function
 // =============================================================================
 
@@ -174,6 +206,8 @@ export async function executeAutomation(
   const supabase = await getServiceClient();
   if (!supabase) return { ok: false, error: 'Supabase not configured' };
 
+  const targetRoles: RoleTarget = definition.targetRoles;
+
   // Create run record
   const runId = await createRun(tenantId, automationId, triggerType, triggerSource);
   const logs: string[] = [];
@@ -181,6 +215,7 @@ export async function executeAutomation(
   // Build context
   const ctx: AutomationContext = {
     tenantId,
+    targetRoles,
     supabase,
     run: {
       id: runId,
@@ -188,6 +223,7 @@ export async function executeAutomation(
       automation_id: automationId,
       trigger_type: triggerType,
       trigger_source: triggerSource,
+      target_roles: targetRoles,
       status: 'running',
       users_affected: 0,
       actions_taken: 0,
@@ -204,6 +240,9 @@ export async function executeAutomation(
     emitEvent: async (topic: string, metadata: Record<string, unknown>) => {
       await emitOasisEvent(topic, { ...metadata, automation_id: automationId, run_id: runId });
     },
+    queryTargetUsers: async (selectColumns?: string) => {
+      return queryUsersByRole(supabase, tenantId, targetRoles, selectColumns);
+    },
   };
 
   try {
@@ -218,6 +257,7 @@ export async function executeAutomation(
     await emitOasisEvent(`autopilot.automation.completed`, {
       automation_id: automationId,
       run_id: runId,
+      target_roles: targetRoles,
       users_affected: result.usersAffected,
       actions_taken: result.actionsTaken,
     });
