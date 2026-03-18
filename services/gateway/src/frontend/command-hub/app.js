@@ -8162,6 +8162,7 @@ function renderProfileModal() {
 
     // VTID-01014 + VTID-01171: Role Switcher
     // Populate from memberships if available, otherwise use default list
+    // VTID-01230: Community is ALWAYS available (public role for all users)
     var VIEW_ROLES = ['Community', 'Patient', 'Professional', 'Staff', 'Admin', 'Developer'];
     if (state.authIdentity && state.authIdentity.memberships && state.authIdentity.memberships.length > 0) {
         // Use roles from memberships
@@ -8175,9 +8176,13 @@ function renderProfileModal() {
         if (state.authIdentity.identity && state.authIdentity.identity.exafy_admin && VIEW_ROLES.indexOf('Admin') === -1) {
             VIEW_ROLES.unshift('Admin');
         }
+        // VTID-01230: Community is always available as a role option
+        if (VIEW_ROLES.indexOf('Community') === -1) {
+            VIEW_ROLES.push('Community');
+        }
     } else if (state.authIdentity && state.authIdentity.identity && state.authIdentity.identity.exafy_admin) {
-        // exafy_admin with no memberships - show Admin
-        VIEW_ROLES = ['Admin'];
+        // exafy_admin with no memberships - show Admin + Community
+        VIEW_ROLES = ['Admin', 'Community'];
     }
 
     // VTID-01196: Single dropdown for role selection (removed duplicate list)
@@ -8267,9 +8272,12 @@ function renderProfileModal() {
         logoutBtn.style.borderColor = 'var(--color-border, #444)';
         logoutBtn.style.color = 'var(--color-text-primary, #fff)';
     };
-    logoutBtn.onclick = () => {
+    logoutBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        e.preventDefault();
+        console.log('[VTID-01230] Sign Out clicked');
         doLogout();
-    };
+    });
     footer.appendChild(logoutBtn);
 
     const closeBtn = document.createElement('button');
