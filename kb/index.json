@@ -1,5 +1,5 @@
 {
-  "total_docs": 5,
+  "total_docs": 6,
   "docs": [
     {
       "doc_id": "00-foundation-doc-00-0001_vitana-vision-strategy-ecosystem",
@@ -88,6 +88,27 @@
       "last_updated": "2025-11-04T15:23:15.318Z",
       "word_count": 4428,
       "section_count": 35
+    },
+    {
+      "doc_id": "95-playbooks-autopilot-doc-95-9501_autopilot-automations-registry",
+      "title": "Autopilot Automations Registry",
+      "family_id": "playbooks-autopilot",
+      "family_name": "Playbooks Autopilot",
+      "status": "canonical",
+      "version": "1.0.0",
+      "tags": [
+        "autopilot",
+        "automations",
+        "registry",
+        "community",
+        "matchmaking",
+        "sharing",
+        "growth",
+        "openclaw"
+      ],
+      "last_updated": "2026-03-18T00:00:00.000Z",
+      "word_count": 0,
+      "section_count": 2
     }
   ],
   "families": {
@@ -101,8 +122,8 @@
     },
     "playbooks-autopilot": {
       "name": "Playbooks Autopilot",
-      "doc_count": 1
+      "doc_count": 2
     }
   },
-  "generated_at": "2025-11-04T15:23:15.319Z"
+  "generated_at": "2026-03-18T00:00:00.000Z"
 }
