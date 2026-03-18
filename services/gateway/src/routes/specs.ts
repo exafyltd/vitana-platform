@@ -12,10 +12,28 @@
 
 import { Router, Request, Response } from 'express';
 import { createHash } from 'crypto';
+import { VertexAI } from '@google-cloud/vertexai';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { runFullQualityCheck } from '../services/spec-quality-agent';
 
 const router = Router();
+
+// ===========================================================================
+// Vertex AI for LLM-powered spec generation
+// ===========================================================================
+const VERTEX_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || 'lovable-vitana-vers1';
+const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'us-central1';
+const SPEC_GEN_MODEL = 'gemini-2.5-pro';
+
+let vertexAI: VertexAI | null = null;
+try {
+  if (VERTEX_PROJECT && VERTEX_LOCATION) {
+    vertexAI = new VertexAI({ project: VERTEX_PROJECT, location: VERTEX_LOCATION });
+    console.log(`[VTID-01188] Vertex AI initialized for spec generation: project=${VERTEX_PROJECT}`);
+  }
+} catch (err: any) {
+  console.warn(`[VTID-01188] Failed to init Vertex AI for spec gen: ${err.message}`);
+}
 
 // ===========================================================================
 // VTID-01188: Spec Template (Mandatory Output Format)
@@ -164,37 +182,298 @@ function validateSpecSections(specMarkdown: string): { valid: boolean; missing: 
 }
 
 /**
- * Generate a spec from seed notes
- * This is a deterministic template-based generation
+ * Gather deep system context for spec generation — scans vtid_ledger,
+ * oasis_events, existing specs, and related tasks to give the LLM
+ * real knowledge about the current system state.
  */
-function generateSpecFromSeed(vtid: string, title: string, seedNotes: string, source: string): string {
-  // Parse seed notes for structure hints
-  const lines = seedNotes.split('\n').map(l => l.trim()).filter(l => l);
+async function gatherSystemContext(vtid: string, title: string): Promise<string> {
+  const { supabaseUrl, svcKey } = getSupabaseConfig();
+  const headers = { apikey: svcKey, Authorization: `Bearer ${svcKey}` };
+  const contextParts: string[] = [];
 
-  // Default values based on seed notes
-  const goal = lines[0] || 'Implement the requested functionality';
-  const inScope = lines.slice(0, 3).map(l => `- ${l}`).join('\n') || '- TBD based on requirements';
-  const outScope = '- Items not explicitly mentioned in acceptance criteria';
+  try {
+    // 1. Get related tasks (same domain keywords) for conflict/dependency awareness
+    const keywords = title.split(/[\s\-_]+/).filter(w => w.length > 3).slice(0, 3);
+    if (keywords.length > 0) {
+      const searchTerm = keywords.join(' ');
+      const relatedResp = await fetch(
+        `${supabaseUrl}/rest/v1/vtid_ledger?or=(title.ilike.*${encodeURIComponent(keywords[0])}*,summary.ilike.*${encodeURIComponent(keywords[0])}*)&vtid=neq.${vtid}&select=vtid,title,status,spec_status,layer,module&limit=10&order=updated_at.desc`,
+        { headers }
+      );
+      if (relatedResp.ok) {
+        const related = await relatedResp.json() as any[];
+        if (related.length > 0) {
+          contextParts.push('## Related/Similar Tasks in System');
+          related.forEach((t: any) => {
+            contextParts.push(`- ${t.vtid}: "${t.title}" (status=${t.status}, spec=${t.spec_status || 'missing'}, layer=${t.layer || 'unknown'})`);
+          });
+        }
+      }
+    }
 
-  const specContent = SPEC_TEMPLATE
+    // 2. Get recent OASIS events related to this VTID or its domain
+    const eventsResp = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_events?vtid=eq.${vtid}&select=topic,message,created_at&limit=10&order=created_at.desc`,
+      { headers }
+    );
+    if (eventsResp.ok) {
+      const events = await eventsResp.json() as any[];
+      if (events.length > 0) {
+        contextParts.push('## OASIS Events for This VTID');
+        events.forEach((e: any) => {
+          contextParts.push(`- [${e.topic}] ${e.message} (${e.created_at})`);
+        });
+      }
+    }
+
+    // 3. Get system health summary — active tasks, blocked tasks
+    const statsResp = await fetch(
+      `${supabaseUrl}/rest/v1/vtid_ledger?select=status,spec_status&limit=200`,
+      { headers }
+    );
+    if (statsResp.ok) {
+      const allTasks = await statsResp.json() as any[];
+      const statusCounts: Record<string, number> = {};
+      const specCounts: Record<string, number> = {};
+      allTasks.forEach((t: any) => {
+        statusCounts[t.status || 'unknown'] = (statusCounts[t.status || 'unknown'] || 0) + 1;
+        specCounts[t.spec_status || 'missing'] = (specCounts[t.spec_status || 'missing'] || 0) + 1;
+      });
+      contextParts.push('## Current System State');
+      contextParts.push(`Total tasks: ${allTasks.length}`);
+      contextParts.push(`Status breakdown: ${Object.entries(statusCounts).map(([k, v]) => `${k}=${v}`).join(', ')}`);
+      contextParts.push(`Spec status breakdown: ${Object.entries(specCounts).map(([k, v]) => `${k}=${v}`).join(', ')}`);
+    }
+
+    // 4. Get existing specs for reference (what good specs look like)
+    const recentSpecResp = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_specs?status=eq.approved&select=vtid,title,spec_markdown&limit=2&order=created_at.desc`,
+      { headers }
+    );
+    if (recentSpecResp.ok) {
+      const recentSpecs = await recentSpecResp.json() as any[];
+      if (recentSpecs.length > 0) {
+        contextParts.push('## Example of Approved Spec Structure (for reference)');
+        const example = recentSpecs[0];
+        // Include just the first 500 chars as a structural reference
+        contextParts.push(`Approved spec "${example.title}" (${example.vtid}):`);
+        contextParts.push(example.spec_markdown?.substring(0, 500) + '...');
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[VTID-01188] Context gathering error (non-fatal): ${err.message}`);
+  }
+
+  return contextParts.join('\n');
+}
+
+/**
+ * Generate a spec using Gemini 2.5 Pro with deep system context analysis.
+ * Falls back to a minimal template if LLM is unavailable.
+ */
+async function generateSpecWithLLM(vtid: string, title: string, summary: string, seedNotes: string, source: string): Promise<string> {
+  // Try LLM generation with deep context
+  if (vertexAI) {
+    try {
+      // Gather system context in parallel with model init
+      const systemContext = await gatherSystemContext(vtid, title);
+
+      const model = vertexAI.getGenerativeModel({
+        model: SPEC_GEN_MODEL,
+        generationConfig: {
+          temperature: 0.3,
+          maxOutputTokens: 8192,
+          topP: 0.9,
+        },
+        systemInstruction: {
+          role: 'system',
+          parts: [{ text: SPEC_GEN_SYSTEM_PROMPT }],
+        },
+      });
+
+      // Build rich prompt with all available context
+      const promptParts = [
+        `Generate a complete, high-quality implementation specification for the following task.`,
+        ``,
+        `VTID: ${vtid}`,
+        `Task Title: ${title}`,
+        summary ? `Task Summary: ${summary}` : '',
+        seedNotes && seedNotes.trim() !== title.trim() ? `Additional Context:\n${seedNotes}` : '',
+        ``,
+        systemContext ? `--- SYSTEM CONTEXT (use this to make the spec specific and accurate) ---\n${systemContext}` : '',
+        ``,
+        `INSTRUCTIONS:`,
+        `- Use the EXACT markdown template format from your system instructions`,
+        `- Fill EVERY section with specific, actionable, concrete content`,
+        `- Reference actual Vitana file paths (services/gateway/src/..., supabase/migrations/...)`,
+        `- Reference actual API patterns (POST /api/v1/..., Supabase RPC calls)`,
+        `- Identify real database tables that may need changes (vtid_ledger, oasis_events, etc.)`,
+        `- Consider conflicts with related tasks listed in the system context`,
+        `- Be specific about risk level based on the scope of changes`,
+        `- NEVER use placeholder text like "TBD", "to be determined", or "None identified"`,
+      ].filter(Boolean).join('\n');
+
+      console.log(`[VTID-01188] Generating spec with ${SPEC_GEN_MODEL} for ${vtid}: "${title}" (context: ${systemContext.length} chars)`);
+      const response = await model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: promptParts }] }],
+      });
+
+      const candidate = response.response?.candidates?.[0];
+      const text = candidate?.content?.parts?.[0]?.text;
+
+      if (text && text.length > 200) {
+        console.log(`[VTID-01188] LLM spec generated for ${vtid}: ${text.length} chars`);
+        return text;
+      }
+      console.warn(`[VTID-01188] LLM returned insufficient content (${text?.length || 0} chars), falling back to template`);
+    } catch (err: any) {
+      console.error(`[VTID-01188] LLM spec generation failed for ${vtid}: ${err.message}`);
+    }
+  }
+
+  // Fallback: minimal template (clearly marked as needing manual editing)
+  console.log(`[VTID-01188] Using template fallback for ${vtid} (Vertex AI unavailable)`);
+  return SPEC_TEMPLATE
     .replace('{TITLE}', title || `Task ${vtid}`)
     .replace('{VTID}', vtid)
-    .replace('{GOAL}', goal)
-    .replace('{GOVERNANCE_RULES}', '- To be determined during analysis')
-    .replace('{IN_SCOPE}', inScope)
-    .replace('{OUT_SCOPE}', outScope)
-    .replace('{DB_MIGRATIONS}', '- None identified (to be updated)')
-    .replace('{API_CHANGES}', '- None identified (to be updated)')
-    .replace('{UI_CHANGES}', '- None identified (to be updated)')
-    .replace('{FILES_TO_MODIFY}', '- To be determined during implementation planning')
-    .replace('{ACCEPTANCE_CRITERIA}', lines.map((l, i) => `${i + 1}. ${l}`).join('\n') || '- [ ] Task completed successfully')
-    .replace('{CURL_VERIFICATION}', '```bash\n# Verification commands TBD\n```')
-    .replace('{UI_VERIFICATION}', '- [ ] UI verification steps TBD')
+    .replace('{GOAL}', summary || title || 'Define the goal for this task')
+    .replace('{GOVERNANCE_RULES}', '- Review governance rules that this task touches')
+    .replace('{IN_SCOPE}', `- ${title}\n- Implementation and testing`)
+    .replace('{OUT_SCOPE}', '- Items not explicitly mentioned in acceptance criteria')
+    .replace('{DB_MIGRATIONS}', '- Identify required database changes')
+    .replace('{API_CHANGES}', '- Identify required API changes')
+    .replace('{UI_CHANGES}', '- Identify required UI changes')
+    .replace('{FILES_TO_MODIFY}', '- Identify files that need modification')
+    .replace('{ACCEPTANCE_CRITERIA}', `1. ${title} is implemented and working\n2. All tests pass\n3. Documentation updated`)
+    .replace('{CURL_VERIFICATION}', '```bash\n# Add verification commands\n```')
+    .replace('{UI_VERIFICATION}', '- [ ] Verify UI changes work correctly')
     .replace('{ROLLBACK_PLAN}', '- Revert commit if issues detected\n- No database rollback required (additive changes only)')
-    .replace('{RISK_LEVEL}', `**Risk:** LOW\n\n**Source:** ${source}`);
-
-  return specContent;
+    .replace('{RISK_LEVEL}', `**Risk:** MEDIUM\n\n**Source:** ${source} (template fallback — LLM unavailable)`);
 }
+
+// ===========================================================================
+// LLM System Prompt for Spec Generation
+// ===========================================================================
+const SPEC_GEN_SYSTEM_PROMPT = `You are a senior software architect generating implementation specifications for the Vitana platform. You have deep knowledge of the system architecture and produce production-ready specs.
+
+## Vitana Platform Architecture
+
+### Services
+- **Gateway** (Node.js/Express, TypeScript): Main backend API on Cloud Run
+  - Routes: services/gateway/src/routes/ (auth.ts, orb-live.ts, specs.ts, autopilot.ts, vtid.ts, board-adapter.ts, etc.)
+  - Services: services/gateway/src/services/ (oasis-event-service.ts, gemini-operator.ts, spec-quality-agent.ts, etc.)
+  - Frontend: services/gateway/src/frontend/command-hub/app.js (vanilla JS, ~30k lines)
+  - Middleware: services/gateway/src/middleware/auth-supabase-jwt.ts
+  - Entry: services/gateway/src/index.ts
+
+### Database (Supabase/PostgreSQL)
+- **vtid_ledger**: Master task table (vtid, title, summary, status, spec_status, layer, module, is_terminal, terminal_outcome)
+- **oasis_events**: Event log (topic, vtid, message, metadata, status, created_at)
+- **oasis_specs**: Generated specs (vtid, version, spec_markdown, spec_hash, status)
+- **oasis_spec_validations**: Validation records
+- **oasis_spec_approvals**: Approval records
+- **oasis_spec_quality_reports**: Quality check results
+- **autopilot_recommendations**: Auto-generated improvement recommendations
+- **app_users**, **user_tenants**, **tenants**: User/tenant management
+- **memory_facts**: Conversation memory facts
+- Migrations: supabase/migrations/
+
+### Key Patterns
+- All DB access via Supabase REST API (PostgREST): fetch(\`\${supabaseUrl}/rest/v1/table_name\`)
+- OASIS events emitted via emitOasisEvent() for observability
+- VTID format: VTID-XXXXX (numeric) or VTID-XXXXX (hex from autopilot)
+- Spec pipeline: missing → draft → validated → quality_checked → approved
+- Task lifecycle: scheduled → in_progress → completed/failed
+- Frontend uses showToast() for notifications, renderApp() rebuilds entire DOM
+- Deploy via GitHub Actions EXEC-DEPLOY.yml → Cloud Run source deploy
+- Auth: Supabase JWT tokens, auth middleware validates on every request
+
+### API Patterns
+- Base URL: /api/v1/
+- Board data: GET /api/v1/commandhub/board
+- Task detail: GET /api/v1/vtid/:vtid
+- Spec operations: /api/v1/specs/:vtid/generate|validate|quality-check|approve
+- OASIS events: /api/v1/oasis/events
+- All endpoints return { ok: boolean, ...data } or { ok: false, error: string }
+
+## Output Rules
+1. Output ONLY the markdown spec — no preamble, no explanation, no wrapping code fences
+2. Use the EXACT section structure below — do not add or remove sections
+3. Fill EVERY section with specific, actionable content based on the task and system context
+4. NEVER use placeholder text like "TBD", "to be determined", "None identified", or "to be updated"
+5. Reference actual Vitana file paths, table names, API endpoints, and patterns
+6. Consider dependencies and conflicts with other tasks mentioned in the context
+7. Be concrete about risk based on what the task actually touches
+
+## Required Spec Structure
+
+# {Title}
+
+**VTID:** {VTID}
+
+---
+
+## 1. Goal
+(Clear 1-3 sentence description of what this task achieves and why it matters)
+
+---
+
+## 2. Non-negotiable Governance Rules Touched
+(List specific rules: OASIS event logging, auth requirements, VTID tracking, deploy gates, etc.)
+
+---
+
+## 3. Scope
+
+### IN SCOPE
+(Specific deliverables as bullet points)
+
+### OUT OF SCOPE
+(Specific exclusions — what this task does NOT do)
+
+---
+
+## 4. Changes
+
+### 4.1 Database Migrations (SQL)
+(Specific tables, columns, indexes, RPC functions, constraints)
+
+### 4.2 APIs (Routes, Request/Response)
+(Specific endpoints with HTTP methods, request/response shapes)
+
+### 4.3 UI Changes (Screens, States)
+(Specific Command Hub components, state changes, user flows)
+
+---
+
+## 5. Files to Modify
+(Specific file paths: services/gateway/src/routes/..., services/gateway/src/frontend/..., supabase/migrations/..., etc.)
+
+---
+
+## 6. Acceptance Criteria
+(Numbered, testable criteria — each must be verifiable)
+
+---
+
+## 7. Verification Steps
+
+### 7.1 curl Calls
+(Actual curl commands against the gateway API to verify the implementation)
+
+### 7.2 UI Checks
+(Specific UI verification steps in the Command Hub)
+
+---
+
+## 8. Rollback Plan
+(Specific rollback steps: revert commit, drop migration, restore data)
+
+---
+
+## 9. Risk Level
+(LOW/MEDIUM/HIGH/CRITICAL with specific justification based on blast radius)`;
+
 
 // ===========================================================================
 // POST /:vtid/generate - Generate Spec
@@ -280,8 +559,8 @@ router.post('/:vtid/generate', async (req: Request, res: Response) => {
       version = typeof versionData === 'number' ? versionData : 1;
     }
 
-    // Step 4: Generate spec content
-    const specMarkdown = generateSpecFromSeed(vtid, ledgerRow.title, seed_notes, source);
+    // Step 4: Generate spec content using LLM (falls back to template if unavailable)
+    const specMarkdown = await generateSpecWithLLM(vtid, ledgerRow.title, ledgerRow.summary || '', seed_notes, source);
     const specHash = computeHash(specMarkdown);
 
     // Step 5: Insert new spec into oasis_specs
