@@ -8214,12 +8214,11 @@ function renderProfileModal() {
         renderApp();
 
         // Call API to persist role
+        // VTID-01230: setActiveRole returns data.me on success, null on failure
         var result = await setActiveRole(newRole);
-        if (result.ok) {
-            // Success - update localStorage and show toast
+        if (result) {
+            // Success - navigate to role-specific screen or external redirect
             localStorage.setItem('vitana.viewRole', newRole);
-            showToast('Role set to ' + newRole, 'success');
-            // VTID-01186: Navigate to role-specific default screen
             state.showProfileModal = false;
             navigateToRoleDefaultScreen(newRole);
             renderApp();
@@ -8231,7 +8230,6 @@ function renderProfileModal() {
                 state.meContext.active_role = previousRole.toLowerCase();
             }
             renderApp();
-            showToast(result.error || 'Failed to change role', 'error');
         }
     };
 
