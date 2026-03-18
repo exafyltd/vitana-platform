@@ -13344,6 +13344,18 @@ body {
   box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.2);
 }
 
+.task-card-spec-pill-quality_checked {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.2);
+}
+
+.task-card-spec-pill-quality_failed {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.2);
+}
+
 /* Pulse animation for loading states */
 @keyframes pulse {
 
