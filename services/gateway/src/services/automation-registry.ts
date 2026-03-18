@@ -16,14 +16,30 @@ import { AutomationDefinition } from '../types/automations';
 // =============================================================================
 // Role targeting constants for readability
 // =============================================================================
+/**
+ * Role model:
+ *   community   — Primary user. Socializes, creates businesses/shops/services, buys, books.
+ *                  This is the default onboarding role for the first 6 months.
+ *   patient     — Person receiving medical care from a professional (doctor).
+ *   professional— Medical doctor in hospital/clinic. Uploads reports, manages clinical relationships.
+ *                  Regulated role — ONLY appears in health/medical automation contexts.
+ *   staff       — Back-office employees at hospital, lab, enterprise. Operational role.
+ *   admin       — Platform administrator.
+ *   developer   — Internal platform developer.
+ */
+
 /** Community-facing: all member-facing roles (community, patient, professional) */
 const MEMBER_ROLES = ['community', 'patient', 'professional'] as const;
-/** Patient-only: health intelligence automations */
+/** Patient-only: health intelligence automations requiring health data */
 const PATIENT_ROLES = ['patient'] as const;
-/** Professional-only: business, commerce, creator automations */
-const PROFESSIONAL_ROLES = ['professional'] as const;
+/** Medical professional: doctor/clinician — ONLY for medical/health contexts */
+const MEDICAL_ROLES = ['professional'] as const;
+/** Creator roles: community users who create businesses, shops, services, live rooms */
+const CREATOR_ROLES = ['community'] as const;
 /** Consumer roles: patient + community (buy, book, discover) */
 const CONSUMER_ROLES = ['community', 'patient'] as const;
+/** Clinical: both sides of the medical relationship */
+const CLINICAL_ROLES = ['patient', 'professional'] as const;
 /** Operations: staff + admin for platform ops */
 const OPS_ROLES = ['staff', 'admin'] as const;
 /** Everyone: runs for all roles without filtering */
@@ -219,7 +235,7 @@ const EVENTS_LIVE_ROOMS: AutomationDefinition[] = [
     id: 'AP-0306', name: 'Event Series Auto-Suggestion', domain: 'events-live-rooms',
     status: 'PLANNED', priority: 'P2', triggerType: 'heartbeat',
     triggerConfig: { intervalMinutes: 1440 },
-    targetRoles: [...PROFESSIONAL_ROLES],
+    targetRoles: [...CREATOR_ROLES],
   },
   {
     id: 'AP-0307', name: 'Live Room from Trending Chat Topic', domain: 'events-live-rooms',
@@ -374,28 +390,28 @@ const HEALTH_WELLNESS: AutomationDefinition[] = [
     id: 'AP-0601', name: 'PHI Redaction Gate', domain: 'health-wellness',
     status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
     triggerConfig: { eventTopic: 'health.data.incoming' },
-    targetRoles: [...PATIENT_ROLES],
+    targetRoles: [...CLINICAL_ROLES],
     handler: 'runPhiRedactionGate',
   },
   {
     id: 'AP-0602', name: 'Health Report Summarization', domain: 'health-wellness',
     status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
     triggerConfig: { intervalMinutes: 15 },
-    targetRoles: [...PATIENT_ROLES],
+    targetRoles: [...CLINICAL_ROLES],
     handler: 'runHealthReportSummarization',
   },
   {
     id: 'AP-0603', name: 'Consent Check Before Health Operations', domain: 'health-wellness',
     status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
     triggerConfig: { eventTopic: 'health.operation.requested' },
-    targetRoles: [...PATIENT_ROLES],
+    targetRoles: [...CLINICAL_ROLES],
     handler: 'runConsentCheck',
   },
   {
     id: 'AP-0604', name: 'Wellness Check-In Prompt', domain: 'health-wellness',
     status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
     triggerConfig: { cronExpression: '0 10 * * 3' }, // Wednesday 10am
-    targetRoles: [...PATIENT_ROLES, 'community'],
+    targetRoles: [...MEMBER_ROLES],
     handler: 'runWellnessCheckIn',
   },
   {
@@ -414,7 +430,7 @@ const HEALTH_WELLNESS: AutomationDefinition[] = [
     id: 'AP-0607', name: 'Lab Report Ingestion & Biomarker Extraction', domain: 'health-wellness',
     status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
     triggerConfig: { eventTopic: 'health.lab_report.uploaded' },
-    targetRoles: [...PATIENT_ROLES],
+    targetRoles: [...CLINICAL_ROLES],
     handler: 'runLabReportIngestion',
   },
   {
@@ -518,14 +534,14 @@ const PAYMENTS_WALLET: AutomationDefinition[] = [
     id: 'AP-0706', name: 'Creator Stripe Connect Onboarding', domain: 'payments-wallet-vtn',
     status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
     triggerConfig: { eventTopic: 'catalog.listing.first' },
-    targetRoles: [...PROFESSIONAL_ROLES],
+    targetRoles: [...CREATOR_ROLES],
     handler: 'runCreatorStripeOnboarding',
   },
   {
     id: 'AP-0707', name: 'Creator Payout Monitoring', domain: 'payments-wallet-vtn',
     status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
     triggerConfig: { eventTopic: 'stripe.connect.payout' },
-    targetRoles: [...PROFESSIONAL_ROLES],
+    targetRoles: [...CREATOR_ROLES],
     handler: 'runCreatorPayoutMonitor',
   },
   {
@@ -544,14 +560,14 @@ const PAYMENTS_WALLET: AutomationDefinition[] = [
     id: 'AP-0710', name: 'Monetization Readiness Scoring', domain: 'payments-wallet-vtn',
     status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
     triggerConfig: { eventTopic: 'automation.monetization.check' },
-    targetRoles: [...PROFESSIONAL_ROLES],
+    targetRoles: [...CREATOR_ROLES],
     handler: 'runMonetizationReadinessCheck',
   },
   {
     id: 'AP-0711', name: 'Weekly Earnings Report for Creators', domain: 'payments-wallet-vtn',
     status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
     triggerConfig: { cronExpression: '0 10 * * 1' },
-    targetRoles: [...PROFESSIONAL_ROLES],
+    targetRoles: [...CREATOR_ROLES],
     handler: 'runCreatorWeeklyEarnings',
   },
   {
@@ -615,14 +631,14 @@ const BUSINESS_MARKETPLACE: AutomationDefinition[] = [
     id: 'AP-1101', name: 'Service Listing Publication & Distribution', domain: 'business-hub-marketplace',
     status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
     triggerConfig: { eventTopic: 'catalog.service.created' },
-    targetRoles: [...PROFESSIONAL_ROLES],
+    targetRoles: [...CREATOR_ROLES],
     handler: 'runServiceListingDistribution',
   },
   {
     id: 'AP-1102', name: 'Product Listing & AI-Picks Matching', domain: 'business-hub-marketplace',
     status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
     triggerConfig: { eventTopic: 'catalog.product.created' },
-    targetRoles: [...PROFESSIONAL_ROLES],
+    targetRoles: [...CREATOR_ROLES],
     handler: 'runProductAiPicksMatching',
   },
   {
@@ -650,7 +666,7 @@ const BUSINESS_MARKETPLACE: AutomationDefinition[] = [
     id: 'AP-1106', name: 'Shop Setup Wizard', domain: 'business-hub-marketplace',
     status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
     triggerConfig: { eventTopic: 'user.business.started' },
-    targetRoles: [...PROFESSIONAL_ROLES],
+    targetRoles: [...CREATOR_ROLES],
     handler: 'runShopSetupWizard',
   },
   {
@@ -664,13 +680,13 @@ const BUSINESS_MARKETPLACE: AutomationDefinition[] = [
     id: 'AP-1108', name: 'Creator Analytics & Growth Tips', domain: 'business-hub-marketplace',
     status: 'PLANNED', priority: 'P2', triggerType: 'cron',
     triggerConfig: { cronExpression: '0 10 * * 1' },
-    targetRoles: [...PROFESSIONAL_ROLES],
+    targetRoles: [...CREATOR_ROLES],
   },
   {
     id: 'AP-1109', name: 'Seasonal & Trending Recommendations for Creators', domain: 'business-hub-marketplace',
     status: 'PLANNED', priority: 'P2', triggerType: 'cron',
     triggerConfig: { cronExpression: '0 10 1 * *' },
-    targetRoles: [...PROFESSIONAL_ROLES],
+    targetRoles: [...CREATOR_ROLES],
   },
   {
     id: 'AP-1110', name: 'Cross-Sell Service to Product Buyers', domain: 'business-hub-marketplace',
@@ -689,7 +705,7 @@ const LIVE_ROOMS_COMMERCE: AutomationDefinition[] = [
     id: 'AP-1201', name: 'Paid Live Room Setup', domain: 'live-rooms-commerce',
     status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
     triggerConfig: { eventTopic: 'catalog.service.live_room' },
-    targetRoles: [...PROFESSIONAL_ROLES],
+    targetRoles: [...CREATOR_ROLES],
     handler: 'runPaidLiveRoomSetup',
   },
   {
@@ -717,20 +733,20 @@ const LIVE_ROOMS_COMMERCE: AutomationDefinition[] = [
     id: 'AP-1205', name: 'Post-Session Revenue Report', domain: 'live-rooms-commerce',
     status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
     triggerConfig: { eventTopic: 'live_room.session.ended' },
-    targetRoles: [...PROFESSIONAL_ROLES],
+    targetRoles: [...CREATOR_ROLES],
     handler: 'runPostSessionRevenueReport',
   },
   {
     id: 'AP-1206', name: 'Session Highlight Clips for Marketing', domain: 'live-rooms-commerce',
     status: 'PLANNED', priority: 'P2', triggerType: 'event',
     triggerConfig: { eventTopic: 'live_room.highlights.ready' },
-    targetRoles: [...PROFESSIONAL_ROLES],
+    targetRoles: [...CREATOR_ROLES],
   },
   {
     id: 'AP-1207', name: 'Recurring Session Auto-Scheduling', domain: 'live-rooms-commerce',
     status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
     triggerConfig: { intervalMinutes: 1440 },
-    targetRoles: [...PROFESSIONAL_ROLES],
+    targetRoles: [...CREATOR_ROLES],
     handler: 'runRecurringSessionAutoSchedule',
   },
   {
@@ -744,14 +760,14 @@ const LIVE_ROOMS_COMMERCE: AutomationDefinition[] = [
     id: 'AP-1209', name: 'Free Trial Session for New Creators', domain: 'live-rooms-commerce',
     status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
     triggerConfig: { intervalMinutes: 1440 },
-    targetRoles: [...PROFESSIONAL_ROLES],
+    targetRoles: [...CREATOR_ROLES],
     handler: 'runFreeTrialSessionSuggestion',
   },
   {
     id: 'AP-1210', name: 'Live Room Revenue Optimization Tips', domain: 'live-rooms-commerce',
     status: 'PLANNED', priority: 'P2', triggerType: 'cron',
     triggerConfig: { cronExpression: '0 10 1 * *' },
-    targetRoles: [...PROFESSIONAL_ROLES],
+    targetRoles: [...CREATOR_ROLES],
   },
 ];
 

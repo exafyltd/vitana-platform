@@ -1,12 +1,13 @@
 /**
  * Automation Role Targeting Tests
  *
- * Validates that:
- * 1. All 108 automations have a targetRoles property
- * 2. Role filtering works correctly for each user type
- * 3. queryTargetUsers helper builds correct Supabase queries
- * 4. Registry summary includes role breakdown
- * 5. API endpoints support ?role= filtering
+ * Role model:
+ *   community    — Primary user. Social + business creator. Onboarding role for first 6 months.
+ *   patient      — Person receiving medical care from a professional (doctor).
+ *   professional — Medical doctor in hospital/clinic. Uploads reports, clinical relationships.
+ *   staff        — Back-office employees at hospital, lab, enterprise.
+ *   admin        — Platform administrator.
+ *   developer    — Internal platform developer.
  */
 
 import {
@@ -32,7 +33,6 @@ describe('AutomationDefinition.targetRoles — schema completeness', () => {
       if (roles !== 'all') {
         expect(Array.isArray(roles)).toBe(true);
         expect(roles.length).toBeGreaterThan(0);
-        // Each role must be valid
         for (const r of roles) {
           expect(AUTOMATION_ROLES).toContain(r);
         }
@@ -79,122 +79,189 @@ describe('automationTargetsRole', () => {
 });
 
 // =============================================================================
-// 3. Role-based registry queries
+// 3. Community user — the primary onboarding role
 // =============================================================================
 
-describe('getAutomationsByRole', () => {
-  test('patient sees health automations', () => {
+describe('community user — richest automation set', () => {
+  test('community has the most automations of any role', () => {
+    const summary = getRegistrySummary();
+    for (const role of ['patient', 'professional', 'staff', 'admin', 'developer']) {
+      expect(summary.roles.community).toBeGreaterThanOrEqual(summary.roles[role]);
+    }
+  });
+
+  test('community sees ALL social domains', () => {
+    const communityAutomations = getAutomationsByRole('community');
+    const domains = new Set(communityAutomations.map(a => a.domain));
+    expect(domains).toContain('connect-people');
+    expect(domains).toContain('community-groups');
+    expect(domains).toContain('events-live-rooms');
+    expect(domains).toContain('sharing-growth');
+    expect(domains).toContain('engagement-loops');
+    expect(domains).toContain('personalization-engines');
+    expect(domains).toContain('memory-intelligence');
+  });
+
+  test('community sees ALL business/creator automations (shop, services, products)', () => {
+    const communityAutomations = getAutomationsByRole('community');
+    const ids = communityAutomations.map(a => a.id);
+    // Business Hub — community creates businesses
+    expect(ids).toContain('AP-1101'); // Service Listing Publication
+    expect(ids).toContain('AP-1102'); // Product Listing
+    expect(ids).toContain('AP-1103'); // Discover Personalization
+    expect(ids).toContain('AP-1104'); // Client-Service Matching
+    expect(ids).toContain('AP-1106'); // Shop Setup Wizard
+    expect(ids).toContain('AP-1107'); // Product Review Follow-Up
+    expect(ids).toContain('AP-1108'); // Creator Analytics
+    expect(ids).toContain('AP-1110'); // Cross-Sell
+  });
+
+  test('community sees ALL creator payment automations', () => {
+    const communityAutomations = getAutomationsByRole('community');
+    const ids = communityAutomations.map(a => a.id);
+    expect(ids).toContain('AP-0706'); // Creator Stripe Connect Onboarding
+    expect(ids).toContain('AP-0707'); // Creator Payout Monitoring
+    expect(ids).toContain('AP-0710'); // Monetization Readiness
+    expect(ids).toContain('AP-0711'); // Weekly Earnings Report
+  });
+
+  test('community sees ALL live rooms commerce (creator side)', () => {
+    const communityAutomations = getAutomationsByRole('community');
+    const ids = communityAutomations.map(a => a.id);
+    expect(ids).toContain('AP-1201'); // Paid Live Room Setup
+    expect(ids).toContain('AP-1202'); // Booking & Payment (consumer)
+    expect(ids).toContain('AP-1203'); // Upsell (consumer)
+    expect(ids).toContain('AP-1205'); // Post-Session Revenue Report
+    expect(ids).toContain('AP-1207'); // Recurring Session Scheduling
+    expect(ids).toContain('AP-1209'); // Free Trial Session
+  });
+
+  test('community does NOT see patient-only health automations', () => {
+    const communityAutomations = getAutomationsByRole('community');
+    const ids = communityAutomations.map(a => a.id);
+    // These require health data / clinical relationship
+    expect(ids).not.toContain('AP-0608'); // Biomarker Trend Analysis
+    expect(ids).not.toContain('AP-0609'); // Quality-of-Life Recommendations
+    expect(ids).not.toContain('AP-0610'); // Wearable Anomaly Detection
+    expect(ids).not.toContain('AP-0611'); // Vitana Index Weekly
+    expect(ids).not.toContain('AP-0612'); // Professional Referral
+  });
+
+  test('community does NOT see platform ops', () => {
+    const communityAutomations = getAutomationsByRole('community');
+    const platformIds = communityAutomations
+      .filter(a => a.domain === 'platform-operations')
+      .map(a => a.id);
+    expect(platformIds.length).toBe(0);
+  });
+});
+
+// =============================================================================
+// 4. Professional — medical doctor only, NOT business creator
+// =============================================================================
+
+describe('professional — medical/clinical scope only', () => {
+  test('professional sees clinical health automations', () => {
+    const proAutomations = getAutomationsByRole('professional');
+    const ids = proAutomations.map(a => a.id);
+    expect(ids).toContain('AP-0601'); // PHI Redaction Gate (clinical)
+    expect(ids).toContain('AP-0602'); // Health Report Summarization (clinical)
+    expect(ids).toContain('AP-0603'); // Consent Check (clinical)
+    expect(ids).toContain('AP-0607'); // Lab Report Ingestion (doctor uploads)
+  });
+
+  test('professional does NOT see business/creator automations', () => {
+    const proAutomations = getAutomationsByRole('professional');
+    const ids = proAutomations.map(a => a.id);
+    // Business is for community users, not medical professionals
+    expect(ids).not.toContain('AP-1101'); // Service Listing
+    expect(ids).not.toContain('AP-1106'); // Shop Setup Wizard
+    expect(ids).not.toContain('AP-0706'); // Creator Stripe Onboarding
+    expect(ids).not.toContain('AP-0711'); // Weekly Earnings Report
+    expect(ids).not.toContain('AP-1201'); // Paid Live Room Setup
+  });
+
+  test('professional sees social/engagement automations (member role)', () => {
+    const proAutomations = getAutomationsByRole('professional');
+    const ids = proAutomations.map(a => a.id);
+    expect(ids).toContain('AP-0101'); // Daily Match Delivery
+    expect(ids).toContain('AP-0501'); // Morning Briefing
+  });
+});
+
+// =============================================================================
+// 5. Patient — health data recipient
+// =============================================================================
+
+describe('patient — health intelligence focus', () => {
+  test('patient sees all health automations', () => {
     const patientAutomations = getAutomationsByRole('patient');
     const healthIds = patientAutomations
       .filter(a => a.domain === 'health-wellness')
       .map(a => a.id);
-    // All 15 health automations target patient
     expect(healthIds).toContain('AP-0601'); // PHI Redaction Gate
     expect(healthIds).toContain('AP-0607'); // Lab Report Ingestion
     expect(healthIds).toContain('AP-0608'); // Biomarker Trend
     expect(healthIds).toContain('AP-0611'); // Vitana Index Weekly
+    expect(healthIds).toContain('AP-0612'); // Professional Referral
   });
 
-  test('professional sees business and creator automations', () => {
-    const proAutomations = getAutomationsByRole('professional');
-    const businessIds = proAutomations
-      .filter(a => a.domain === 'business-hub-marketplace')
-      .map(a => a.id);
-    expect(businessIds).toContain('AP-1101'); // Service Listing
-    expect(businessIds).toContain('AP-1102'); // Product Listing
-    expect(businessIds).toContain('AP-1106'); // Shop Setup Wizard
+  test('patient sees social/engagement automations (member role)', () => {
+    const patientAutomations = getAutomationsByRole('patient');
+    const ids = patientAutomations.map(a => a.id);
+    expect(ids).toContain('AP-0101'); // Daily Match Delivery
+    expect(ids).toContain('AP-0501'); // Morning Briefing
+    expect(ids).toContain('AP-1208'); // Consultation Matching
   });
 
-  test('professional does NOT see patient-only health automations', () => {
-    const proAutomations = getAutomationsByRole('professional');
-    const proHealthIds = proAutomations
-      .filter(a => a.domain === 'health-wellness')
-      .map(a => a.id);
-    // PHI Redaction, Lab Report, Biomarker are patient-only
-    expect(proHealthIds).not.toContain('AP-0601');
-    expect(proHealthIds).not.toContain('AP-0607');
-    expect(proHealthIds).not.toContain('AP-0608');
+  test('patient sees marketplace consumer automations', () => {
+    const patientAutomations = getAutomationsByRole('patient');
+    const ids = patientAutomations.map(a => a.id);
+    expect(ids).toContain('AP-1103'); // Discover Personalization
+    expect(ids).toContain('AP-1104'); // Client-Service Matching
+    expect(ids).toContain('AP-1202'); // Live Room Booking
   });
+});
 
-  test('developer only sees platform ops and universal automations', () => {
-    const devAutomations = getAutomationsByRole('developer');
-    const devDomains = new Set(devAutomations.map(a => a.domain));
-    // Developer should see platform-operations
-    expect(devDomains).toContain('platform-operations');
-    // Developer should NOT see health-wellness (patient-only)
-    const devHealthIds = devAutomations.filter(a => a.domain === 'health-wellness').map(a => a.id);
-    expect(devHealthIds.length).toBe(0);
-    // Developer should NOT see connect-people (member-only)
-    const devConnectIds = devAutomations.filter(a => a.domain === 'connect-people').map(a => a.id);
-    expect(devConnectIds.length).toBe(0);
-  });
+// =============================================================================
+// 6. Staff / Admin / Developer — operational roles
+// =============================================================================
 
-  test('admin sees platform ops and governance', () => {
-    const adminAutomations = getAutomationsByRole('admin');
-    const adminPlatformIds = adminAutomations
-      .filter(a => a.domain === 'platform-operations')
-      .map(a => a.id);
-    expect(adminPlatformIds).toContain('AP-1001'); // VTID Lifecycle
-    expect(adminPlatformIds).toContain('AP-1002'); // Governance Flag
-  });
-
-  test('staff sees platform ops but not health intelligence', () => {
+describe('staff — back-office hospital/lab/enterprise', () => {
+  test('staff sees platform ops', () => {
     const staffAutomations = getAutomationsByRole('staff');
-    const staffPlatformIds = staffAutomations
-      .filter(a => a.domain === 'platform-operations')
-      .map(a => a.id);
-    expect(staffPlatformIds).toContain('AP-1002'); // Governance Flag
-    // Staff should NOT see health
-    const staffHealthIds = staffAutomations.filter(a => a.domain === 'health-wellness').map(a => a.id);
-    expect(staffHealthIds.length).toBe(0);
+    const ids = staffAutomations.map(a => a.id);
+    expect(ids).toContain('AP-1002'); // Governance Flag Monitoring
   });
 
-  test('community sees social, engagement, and sharing but not business creator automations', () => {
-    const communityAutomations = getAutomationsByRole('community');
-    const communityDomains = new Set(communityAutomations.map(a => a.domain));
-    expect(communityDomains).toContain('connect-people');
-    expect(communityDomains).toContain('engagement-loops');
-    expect(communityDomains).toContain('sharing-growth');
+  test('staff does NOT see health intelligence or business', () => {
+    const staffAutomations = getAutomationsByRole('staff');
+    const healthIds = staffAutomations.filter(a => a.domain === 'health-wellness').map(a => a.id);
+    expect(healthIds.length).toBe(0);
+    const bizIds = staffAutomations.filter(a => a.domain === 'business-hub-marketplace').map(a => a.id);
+    expect(bizIds.length).toBe(0);
+  });
+});
 
-    // Community should not see professional creator automations like Shop Setup
-    const communityBusinessIds = communityAutomations
-      .filter(a => a.domain === 'business-hub-marketplace')
-      .map(a => a.id);
-    expect(communityBusinessIds).not.toContain('AP-1101'); // Service Listing (professional)
-    expect(communityBusinessIds).not.toContain('AP-1106'); // Shop Setup (professional)
+describe('developer — internal platform dev', () => {
+  test('developer sees only platform ops and universal automations', () => {
+    const devExec = getExecutableAutomationsForRole('developer');
+    for (const a of devExec) {
+      const isOps = a.domain === 'platform-operations';
+      const isAll = a.targetRoles === 'all';
+      expect(isOps || isAll).toBe(true);
+    }
+  });
+
+  test('developer sees zero health automations', () => {
+    const devAutomations = getAutomationsByRole('developer');
+    const healthIds = devAutomations.filter(a => a.domain === 'health-wellness').map(a => a.id);
+    expect(healthIds.length).toBe(0);
   });
 });
 
 // =============================================================================
-// 4. Role count in registry summary
-// =============================================================================
-
-describe('getRegistrySummary — role breakdown', () => {
-  test('summary includes role counts', () => {
-    const summary = getRegistrySummary();
-    expect(summary.roles).toBeDefined();
-    expect(typeof summary.roles.patient).toBe('number');
-    expect(typeof summary.roles.professional).toBe('number');
-    expect(typeof summary.roles.community).toBe('number');
-    expect(typeof summary.roles.admin).toBe('number');
-    expect(typeof summary.roles.staff).toBe('number');
-    expect(typeof summary.roles.developer).toBe('number');
-  });
-
-  test('patient has more automations than developer', () => {
-    const summary = getRegistrySummary();
-    expect(summary.roles.patient).toBeGreaterThan(summary.roles.developer);
-  });
-
-  test('community has the most automations (broadest audience)', () => {
-    const summary = getRegistrySummary();
-    expect(summary.roles.community).toBeGreaterThanOrEqual(summary.roles.staff);
-    expect(summary.roles.community).toBeGreaterThanOrEqual(summary.roles.developer);
-  });
-});
-
-// =============================================================================
-// 5. Cross-domain role isolation
+// 7. Cross-domain role isolation
 // =============================================================================
 
 describe('cross-domain role isolation', () => {
@@ -213,13 +280,21 @@ describe('cross-domain role isolation', () => {
     }
   });
 
-  test('creator automations (AP-1101, AP-1106, AP-0706) target professional only', () => {
+  test('creator automations (AP-1101, AP-1106, AP-0706) target community, NOT professional', () => {
     const creatorIds = ['AP-1101', 'AP-1106', 'AP-0706'];
     for (const id of creatorIds) {
       const def = getAutomation(id)!;
+      expect(automationTargetsRole(def, 'community')).toBe(true);
+      expect(automationTargetsRole(def, 'professional')).toBe(false);
+    }
+  });
+
+  test('clinical automations (AP-0601, AP-0603, AP-0607) target both patient AND professional', () => {
+    const clinicalIds = ['AP-0601', 'AP-0603', 'AP-0607'];
+    for (const id of clinicalIds) {
+      const def = getAutomation(id)!;
+      expect(automationTargetsRole(def, 'patient')).toBe(true);
       expect(automationTargetsRole(def, 'professional')).toBe(true);
-      expect(automationTargetsRole(def, 'community')).toBe(false);
-      expect(automationTargetsRole(def, 'patient')).toBe(false);
     }
   });
 
@@ -230,32 +305,23 @@ describe('cross-domain role isolation', () => {
 });
 
 // =============================================================================
-// 6. Executable automations respect role targeting
+// 8. Registry summary
 // =============================================================================
 
-describe('getExecutableAutomationsForRole', () => {
-  test('patient gets health executable automations', () => {
-    const patientExec = getExecutableAutomationsForRole('patient');
-    const ids = patientExec.map(a => a.id);
-    expect(ids).toContain('AP-0607'); // Lab Report Ingestion (IMPLEMENTED)
-    expect(ids).toContain('AP-0608'); // Biomarker Trend (IMPLEMENTED)
-  });
-
-  test('professional gets creator executable automations', () => {
-    const proExec = getExecutableAutomationsForRole('professional');
-    const ids = proExec.map(a => a.id);
-    expect(ids).toContain('AP-1101'); // Service Listing
-    expect(ids).toContain('AP-0706'); // Creator Stripe Onboarding
-    expect(ids).toContain('AP-0711'); // Weekly Earnings Report
-  });
-
-  test('developer gets only platform ops and universal executables', () => {
-    const devExec = getExecutableAutomationsForRole('developer');
-    for (const a of devExec) {
-      // Developer should only see platform ops or 'all' targeted
-      const isOps = a.domain === 'platform-operations';
-      const isAll = a.targetRoles === 'all';
-      expect(isOps || isAll).toBe(true);
+describe('getRegistrySummary — role breakdown', () => {
+  test('summary includes role counts', () => {
+    const summary = getRegistrySummary();
+    expect(summary.roles).toBeDefined();
+    for (const role of ['patient', 'professional', 'community', 'admin', 'staff', 'developer']) {
+      expect(typeof summary.roles[role]).toBe('number');
     }
+  });
+
+  test('community has the most automations (broadest audience, primary onboarding)', () => {
+    const summary = getRegistrySummary();
+    expect(summary.roles.community).toBeGreaterThanOrEqual(summary.roles.patient);
+    expect(summary.roles.community).toBeGreaterThanOrEqual(summary.roles.professional);
+    expect(summary.roles.community).toBeGreaterThanOrEqual(summary.roles.staff);
+    expect(summary.roles.community).toBeGreaterThanOrEqual(summary.roles.developer);
   });
 });
