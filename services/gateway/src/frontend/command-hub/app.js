@@ -8107,31 +8107,11 @@ function renderProfileModal() {
         body.appendChild(emailEl);
     }
 
-    // VTID-01171: Show role badge
+    // VTID-01230: Show role badge — always use state.viewRole as the source of truth
+    // in Command Hub. The viewRole is set on login and synced with the server.
     const badge = document.createElement('div');
     badge.className = 'profile-role-badge';
-
-    // Deterministic priority: 
-    // 1. Authoritative MeContext (from /api/v1/me)
-    // 2. AuthIdentity (from /api/v1/auth/me)
-    // 3. Fallback to state.viewRole
-    if (state.meContext && state.meContext.active_role) {
-        var role = state.meContext.active_role;
-        badge.textContent = role.charAt(0).toUpperCase() + role.slice(1);
-    } else if (state.authIdentity && state.authIdentity.identity) {
-        if (state.authIdentity.identity.exafy_admin) {
-            badge.textContent = 'Admin';
-        } else if (state.authIdentity.memberships && state.authIdentity.memberships.length > 0) {
-            var mRole = state.authIdentity.memberships[0].role || 'user';
-            badge.textContent = mRole.charAt(0).toUpperCase() + mRole.slice(1);
-        } else {
-            badge.textContent = 'User';
-        }
-    } else if (state.meContextLoading || state.authIdentityLoading) {
-        badge.textContent = 'Loading...';
-    } else {
-        badge.textContent = state.viewRole || 'User';
-    }
+    badge.textContent = state.viewRole || 'Developer';
     body.appendChild(badge);
 
     // VTID-01186: Edit Profile link (matching vitana-v1 design)
@@ -8163,30 +8143,9 @@ function renderProfileModal() {
         body.appendChild(tenantEl);
     }
 
-    // VTID-01014 + VTID-01171: Role Switcher
-    // Populate from memberships if available, otherwise use default list
-    // VTID-01230: Community is ALWAYS available (public role for all users)
-    var VIEW_ROLES = ['Community', 'Patient', 'Professional', 'Staff', 'Admin', 'Developer'];
-    if (state.authIdentity && state.authIdentity.memberships && state.authIdentity.memberships.length > 0) {
-        // Use roles from memberships
-        VIEW_ROLES = state.authIdentity.memberships.map(function (m) {
-            var role = m.role || 'user';
-            return role.charAt(0).toUpperCase() + role.slice(1);
-        });
-        // Ensure uniqueness
-        VIEW_ROLES = VIEW_ROLES.filter(function (r, i, arr) { return arr.indexOf(r) === i; });
-        // Add Admin if exafy_admin and not already in list
-        if (state.authIdentity.identity && state.authIdentity.identity.exafy_admin && VIEW_ROLES.indexOf('Admin') === -1) {
-            VIEW_ROLES.unshift('Admin');
-        }
-        // VTID-01230: Community is always available as a role option
-        if (VIEW_ROLES.indexOf('Community') === -1) {
-            VIEW_ROLES.push('Community');
-        }
-    } else if (state.authIdentity && state.authIdentity.identity && state.authIdentity.identity.exafy_admin) {
-        // exafy_admin with no memberships - show Admin + Community
-        VIEW_ROLES = ['Admin', 'Community'];
-    }
+    // VTID-01230: Role Switcher — always show all platform roles.
+    // Each non-Developer role redirects to its vitanaland.com page.
+    var VIEW_ROLES = ['Developer', 'Admin', 'Community', 'Professional', 'Staff', 'Patient'];
 
     // VTID-01196: Single dropdown for role selection (removed duplicate list)
     const roleSwitcher = document.createElement('div');
