@@ -937,6 +937,139 @@ async function doLogin(email, password) {
 }
 
 /**
+ * VTID-01230: Auth Gate - Full-screen login that blocks Command Hub access.
+ * No sidebar, no navigation, nothing loads until authenticated.
+ */
+function renderAuthGate() {
+    var gate = document.createElement('div');
+    gate.className = 'auth-gate';
+    gate.style.cssText = 'display:flex;align-items:center;justify-content:center;height:100vh;width:100vw;background:var(--color-bg, #0f172a);position:fixed;top:0;left:0;z-index:10000;';
+
+    var card = document.createElement('div');
+    card.style.cssText = 'background:var(--color-sidebar-bg, #1e293b);border:1px solid var(--color-border, #334155);border-radius:12px;padding:40px;width:100%;max-width:400px;box-shadow:0 8px 32px rgba(0,0,0,0.4);';
+
+    // Logo / Title
+    var title = document.createElement('h1');
+    title.textContent = 'VITANA';
+    title.style.cssText = 'margin:0 0 4px 0;font-size:1.8rem;font-weight:700;color:var(--color-accent, #3b82f6);letter-spacing:2px;text-align:center;';
+    card.appendChild(title);
+
+    var subtitle = document.createElement('div');
+    subtitle.textContent = 'Command Hub';
+    subtitle.style.cssText = 'margin:0 0 8px 0;font-size:0.95rem;color:var(--color-text-secondary, #94a3b8);text-align:center;';
+    card.appendChild(subtitle);
+
+    var divider = document.createElement('hr');
+    divider.style.cssText = 'border:none;border-top:1px solid var(--color-border, #334155);margin:16px 0 24px 0;';
+    card.appendChild(divider);
+
+    var authLabel = document.createElement('div');
+    authLabel.textContent = 'Authentication required to access the dev system.';
+    authLabel.style.cssText = 'margin-bottom:20px;font-size:0.85rem;color:var(--color-text-secondary, #94a3b8);text-align:center;';
+    card.appendChild(authLabel);
+
+    // Error banner
+    if (state.loginError) {
+        var errorBanner = document.createElement('div');
+        errorBanner.textContent = state.loginError;
+        errorBanner.style.cssText = 'background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);border-radius:6px;padding:10px 12px;margin-bottom:16px;font-size:0.85rem;';
+        card.appendChild(errorBanner);
+    }
+
+    // Email
+    var emailLabel = document.createElement('label');
+    emailLabel.textContent = 'Email';
+    emailLabel.style.cssText = 'display:block;margin-bottom:6px;font-weight:500;font-size:0.85rem;color:var(--color-text-primary, #f8fafc);';
+    card.appendChild(emailLabel);
+
+    var emailInput = document.createElement('input');
+    emailInput.type = 'email';
+    emailInput.placeholder = 'Enter your email';
+    emailInput.value = state.loginEmail || '';
+    emailInput.disabled = state.loginLoading;
+    emailInput.style.cssText = 'width:100%;padding:10px 12px;border:1px solid var(--color-border, #334155);border-radius:6px;background:var(--color-bg, #0f172a);color:var(--color-text-primary, #f8fafc);font-size:0.9rem;box-sizing:border-box;margin-bottom:14px;outline:none;';
+    emailInput.onfocus = function() { this.style.borderColor = 'var(--color-accent, #3b82f6)'; };
+    emailInput.onblur = function() { this.style.borderColor = 'var(--color-border, #334155)'; };
+    emailInput.oninput = function(e) { state.loginEmail = e.target.value; };
+    card.appendChild(emailInput);
+
+    // Password
+    var passwordLabel = document.createElement('label');
+    passwordLabel.textContent = 'Password';
+    passwordLabel.style.cssText = 'display:block;margin-bottom:6px;font-weight:500;font-size:0.85rem;color:var(--color-text-primary, #f8fafc);';
+    card.appendChild(passwordLabel);
+
+    var passwordWrapper = document.createElement('div');
+    passwordWrapper.style.cssText = 'position:relative;margin-bottom:24px;';
+
+    var passwordInput = document.createElement('input');
+    passwordInput.type = 'password';
+    passwordInput.placeholder = 'Enter your password';
+    passwordInput.value = state.loginPassword || '';
+    passwordInput.disabled = state.loginLoading;
+    passwordInput.style.cssText = 'width:100%;padding:10px 40px 10px 12px;border:1px solid var(--color-border, #334155);border-radius:6px;background:var(--color-bg, #0f172a);color:var(--color-text-primary, #f8fafc);font-size:0.9rem;box-sizing:border-box;outline:none;';
+    passwordInput.onfocus = function() { this.style.borderColor = 'var(--color-accent, #3b82f6)'; };
+    passwordInput.onblur = function() { this.style.borderColor = 'var(--color-border, #334155)'; };
+    passwordInput.oninput = function(e) { state.loginPassword = e.target.value; };
+    passwordInput.onkeydown = function(e) {
+        if (e.key === 'Enter' && !state.loginLoading) {
+            doLogin(state.loginEmail, state.loginPassword);
+        }
+    };
+    passwordWrapper.appendChild(passwordInput);
+
+    var eyeToggle = document.createElement('button');
+    eyeToggle.type = 'button';
+    eyeToggle.innerHTML = '&#128065;';
+    eyeToggle.title = 'Show password';
+    eyeToggle.style.cssText = 'position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:4px;color:var(--color-text-secondary, #94a3b8);font-size:1.1rem;';
+    eyeToggle.onclick = function() {
+        if (passwordInput.type === 'password') {
+            passwordInput.type = 'text';
+            eyeToggle.innerHTML = '&#128064;';
+            eyeToggle.title = 'Hide password';
+        } else {
+            passwordInput.type = 'password';
+            eyeToggle.innerHTML = '&#128065;';
+            eyeToggle.title = 'Show password';
+        }
+    };
+    passwordWrapper.appendChild(eyeToggle);
+    card.appendChild(passwordWrapper);
+
+    // Login button
+    var loginBtn = document.createElement('button');
+    loginBtn.textContent = state.loginLoading ? 'Authenticating...' : 'Login';
+    loginBtn.disabled = state.loginLoading;
+    loginBtn.style.cssText = 'width:100%;padding:12px;border:none;border-radius:6px;background:var(--color-accent, #3b82f6);color:white;font-size:0.95rem;font-weight:600;cursor:pointer;transition:background 0.2s;';
+    if (state.loginLoading) {
+        loginBtn.style.opacity = '0.7';
+        loginBtn.style.cursor = 'not-allowed';
+    }
+    loginBtn.onmouseover = function() { if (!state.loginLoading) this.style.background = 'var(--color-accent-hover, #2563eb)'; };
+    loginBtn.onmouseout = function() { this.style.background = 'var(--color-accent, #3b82f6)'; };
+    loginBtn.onclick = function() {
+        if (!state.loginLoading) {
+            doLogin(state.loginEmail, state.loginPassword);
+        }
+    };
+    card.appendChild(loginBtn);
+
+    gate.appendChild(card);
+
+    // Auto-focus email input after render
+    setTimeout(function() {
+        if (!state.loginEmail) {
+            emailInput.focus();
+        } else {
+            passwordInput.focus();
+        }
+    }, 50);
+
+    return gate;
+}
+
+/**
  * VTID-01186: Logout - clears auth state.
  */
 function doLogout() {
@@ -4591,6 +4724,13 @@ function showToast(message, type = 'info', duration = 4000) {
 function renderApp() {
     const root = document.getElementById('root');
 
+    // VTID-01230: Auth Gate - Block all access if not authenticated
+    if (!state.authToken) {
+        root.innerHTML = '';
+        root.appendChild(renderAuthGate());
+        return;
+    }
+
     // VTID-0526-E: Save chat textarea focus state before destroying DOM
     var chatTextarea = document.querySelector('.chat-textarea');
     var savedChatFocus = null;
@@ -6480,6 +6620,59 @@ function renderTaskDrawer() {
         if (isLocalOverride) {
             statusDisplay = effectiveStatus + ' (local override)';
         }
+    }
+
+    // Attention Center context banner — shows severity, reason, and recommended action
+    var attCtx = state.selectedTask._attentionContext;
+    if (attCtx) {
+        var bannerColors = { BROKEN: '#ef4444', STUCK: '#f59e0b', BLOCKED: '#6b7280', NEW: '#3b82f6' };
+        var bannerBg = { BROKEN: 'rgba(239,68,68,0.12)', STUCK: 'rgba(245,158,11,0.12)', BLOCKED: 'rgba(107,114,128,0.12)', NEW: 'rgba(59,130,246,0.12)' };
+        var borderColor = bannerColors[attCtx.severity] || '#6b7280';
+        var bgColor = bannerBg[attCtx.severity] || 'rgba(107,114,128,0.12)';
+
+        var banner = document.createElement('div');
+        banner.style.cssText = 'background:' + bgColor + '; border-left: 4px solid ' + borderColor + '; border-radius: 6px; padding: 12px 14px; margin-bottom: 14px;';
+
+        var sevRow = document.createElement('div');
+        sevRow.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 6px;';
+        var sevBadge = document.createElement('span');
+        sevBadge.style.cssText = 'background:' + borderColor + '; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;';
+        sevBadge.textContent = attCtx.severity;
+        sevRow.appendChild(sevBadge);
+        if (attCtx.stuck_minutes) {
+            var timeStr = attCtx.stuck_minutes >= 60
+                ? Math.floor(attCtx.stuck_minutes / 60) + 'h ' + (attCtx.stuck_minutes % 60) + 'm'
+                : attCtx.stuck_minutes + 'm';
+            var timeSpan = document.createElement('span');
+            timeSpan.style.cssText = 'font-size: 12px; color: var(--text-secondary, #888);';
+            timeSpan.textContent = 'Stuck for ' + timeStr;
+            sevRow.appendChild(timeSpan);
+        }
+        banner.appendChild(sevRow);
+
+        var reasonP = document.createElement('div');
+        reasonP.style.cssText = 'font-size: 13px; color: var(--text-color, #fff); margin-bottom: 8px;';
+        reasonP.textContent = attCtx.reason || '';
+        banner.appendChild(reasonP);
+
+        // Recommended next action based on severity
+        var nextAction = '';
+        if (attCtx.severity === 'BROKEN') {
+            nextAction = 'Execution has stalled beyond recovery threshold. Check the stage timeline below for the failing stage, review error logs, then either retry or cancel this task.';
+        } else if (attCtx.severity === 'STUCK') {
+            nextAction = 'Task is progressing slower than expected. Check the current stage below — if a worker or validator is hung, consider retrying that stage.';
+        } else if (attCtx.severity === 'BLOCKED') {
+            nextAction = 'This task needs a spec before it can be activated. Click "Generate Spec" below, or write one manually in the spec editor.';
+        } else if (attCtx.severity === 'NEW') {
+            nextAction = 'Spec is validated and ready. Review the spec below, then click "Approve & Execute" to start autonomous execution.';
+        }
+        if (nextAction) {
+            var actionDiv = document.createElement('div');
+            actionDiv.style.cssText = 'font-size: 12px; color: ' + borderColor + '; font-weight: 600; line-height: 1.4;';
+            actionDiv.textContent = 'Recommended: ' + nextAction;
+            banner.appendChild(actionDiv);
+        }
+        content.appendChild(banner);
     }
 
     const summary = document.createElement('p');
@@ -29057,7 +29250,26 @@ function renderOverviewSystemView() {
             viewBtn.textContent = 'View Task';
             viewBtn.onclick = function (e) {
                 e.stopPropagation();
-                navigateTo('command-hub', 'tasks');
+                // Open task drawer with attention context
+                state.selectedTask = {
+                    vtid: item.vtid,
+                    title: item.title,
+                    status: item.status || 'scheduled',
+                    spec_status: item.spec_status || 'missing',
+                    summary: item.reason || '',
+                    oasisColumn: '',
+                    _attentionContext: {
+                        severity: item.severity,
+                        reason: item.reason,
+                        stuck_minutes: item.stuck_minutes
+                    }
+                };
+                state.selectedTaskDetail = null;
+                state.selectedTaskDetailLoading = true;
+                state.executionStatus = null;
+                state.executionStatusLoading = false;
+                renderApp();
+                fetchVtidDetail(item.vtid);
             };
 
             card.appendChild(topRow);
@@ -32595,23 +32807,23 @@ document.addEventListener('DOMContentLoaded', async () => {
             history.replaceState(null, '', tab.path);
         }
 
+        // VTID-01230: If no auth token, show auth gate immediately — do NOT load any data
+        if (!state.authToken) {
+            console.log('[VTID-01230] No auth token — showing auth gate');
+            renderApp(); // Will render auth gate
+            return;
+        }
+
         renderApp();
 
         // VTID-01046: Unified Auth Boot Sequence
         // Synchronize identity and context before loading other data
         console.log('[VTID-01046] Booting Auth...');
-        if (state.authToken) {
-            await Promise.all([
-                fetchMeContext(),
-                fetchAuthMe()
-            ]);
-            console.log('[VTID-01046] Auth boot complete');
-        } else {
-            // VTID-01229: MeState kept for backwards compatibility during transition
-            console.log('[VTID-01046] Guest session - marking MeState loaded');
-            MeState.loaded = true;
-            MeState.me = null;
-        }
+        await Promise.all([
+            fetchMeContext(),
+            fetchAuthMe()
+        ]);
+        console.log('[VTID-01046] Auth boot complete');
 
         // Final UI refresh after auth data is in
         renderApp();
