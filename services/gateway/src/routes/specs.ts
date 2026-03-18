@@ -639,11 +639,22 @@ router.post('/:vtid/quality-check', async (req: Request, res: Response) => {
     // Step 5: Update spec_status based on result
     const newStatus = report.overall_result === 'fail' ? 'quality_failed' : 'quality_checked';
 
-    await fetch(`${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}`, {
+    const statusPatchResp = await fetch(`${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}`, {
       method: 'PATCH',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ spec_status: newStatus, updated_at: new Date().toISOString() }),
     });
+
+    if (!statusPatchResp.ok) {
+      const patchErr = await statusPatchResp.text().catch(() => 'unknown');
+      console.error(`[spec-quality] CRITICAL: Failed to update spec_status to ${newStatus} for ${vtid}: ${patchErr}`);
+      return res.status(502).json({
+        ok: false,
+        error: 'spec_status_update_failed',
+        message: `Quality check completed (${report.overall_result}) but failed to update spec_status. Check database constraints.`,
+        report,
+      });
+    }
 
     // Step 6: Emit OASIS event
     await emitOasisEvent({
