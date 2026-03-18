@@ -695,6 +695,34 @@ async function setActiveRole(role) {
 
 // VTID-01049: Redundant initMeContext removed. Auth boot is now handled in DOMContentLoaded.
 
+/**
+ * VTID-01230: Fetch permitted roles for the current user.
+ * Populates state.permittedRoles and state.isSuperAdmin.
+ */
+async function fetchPermittedRoles() {
+    if (!state.authToken) return;
+
+    try {
+        var response = await fetch('/api/v1/roles/my-roles', {
+            headers: buildContextHeaders()
+        });
+
+        if (!response.ok) {
+            console.warn('[VTID-01230] fetchPermittedRoles failed:', response.status);
+            return;
+        }
+
+        var data = await response.json();
+        if (data.ok) {
+            state.permittedRoles = data.roles || ['community'];
+            state.isSuperAdmin = data.is_super_admin === true;
+            console.log('[VTID-01230] Permitted roles:', state.permittedRoles, 'superAdmin:', state.isSuperAdmin);
+        }
+    } catch (err) {
+        console.warn('[VTID-01230] fetchPermittedRoles error:', err);
+    }
+}
+
 // ===========================================================================
 // VTID-01171: Auth Identity from /api/v1/auth/me
 // ===========================================================================
@@ -2870,6 +2898,10 @@ const state = {
     authIdentity: null,
     authIdentityLoading: false,
     authIdentityError: null,
+
+    // VTID-01230: Role Admission — permitted roles for dropdown filtering
+    permittedRoles: null, // Array of lowercase role strings, or null if not yet fetched
+    isSuperAdmin: false, // true if exafy_admin — sees all roles
 
     // VTID-01186: Login Form State
     loginEmail: '',
@@ -8143,9 +8175,21 @@ function renderProfileModal() {
         body.appendChild(tenantEl);
     }
 
-    // VTID-01230: Role Switcher — always show all platform roles.
+    // VTID-01230: Role Switcher — show only roles the user is permitted to use.
+    // Super admins (exafy_admin) see all roles. Others see only their granted roles.
     // Each non-Developer role redirects to its vitanaland.com page.
-    var VIEW_ROLES = ['Developer', 'Admin', 'Community', 'Professional', 'Staff', 'Patient'];
+    var ALL_ROLES = ['Developer', 'Admin', 'Community', 'Professional', 'Staff', 'Patient', 'Infra'];
+    var VIEW_ROLES;
+    if (state.isSuperAdmin || !state.permittedRoles) {
+        // Super admin or roles not yet loaded — show all
+        VIEW_ROLES = ALL_ROLES;
+    } else {
+        // Filter to permitted roles only (capitalize for display)
+        var permittedSet = new Set(state.permittedRoles.map(function(r) { return r.toLowerCase(); }));
+        VIEW_ROLES = ALL_ROLES.filter(function(r) { return permittedSet.has(r.toLowerCase()); });
+        // Always ensure at least Community is present
+        if (VIEW_ROLES.length === 0) VIEW_ROLES = ['Community'];
+    }
 
     // VTID-01196: Single dropdown for role selection (removed duplicate list)
     const roleSwitcher = document.createElement('div');
@@ -8189,7 +8233,11 @@ function renderProfileModal() {
                     window.location.href = ROLE_EXTERNAL_REDIRECTS[lowerNewRole];
                     return; // Page is navigating away
                 } else {
-                    showToast(data.error || 'Failed to switch role', 'error');
+                    // VTID-01230: Show user-friendly message for permission denial
+                    var errMsg = data.error === 'ROLE_NOT_PERMITTED'
+                        ? 'You do not have permission to use this role.'
+                        : (data.message || data.error || 'Failed to switch role');
+                    showToast(errMsg, 'error');
                     renderApp();
                     return;
                 }
@@ -32828,7 +32876,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log('[VTID-01046] Booting Auth...');
         await Promise.all([
             fetchMeContext(),
-            fetchAuthMe()
+            fetchAuthMe(),
+            fetchPermittedRoles()
         ]);
         console.log('[VTID-01046] Auth boot complete');
 

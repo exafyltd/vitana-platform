@@ -99,6 +99,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const devAuthRouter = require('./routes/dev-auth').default;
   // VTID-01172: Dev Access Management - exafy_admin toggle for DEV admin users
   const devAccessRouter = require('./routes/dev-access').default;
+  // VTID-01230: Role Admission Management - grant/revoke/list permitted roles
+  const roleAdminRouter = require('./routes/role-admin').default;
   // VTID-01081 + VTID-01103: Health Gateway (C2 ingest + C3 compute)
   const healthRouter = require('./routes/health').default;
   // VTID-01105: Memory Gateway Routes - memory write/context for ORB
@@ -448,6 +450,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01172: Dev Access Management - exafy_admin toggle (users, grant, revoke)
   mountRouterSync(app, '/api/v1/dev-access', devAccessRouter, { owner: 'dev-access' });
+
+  // VTID-01230: Role Admission Management - grant/revoke/list permitted roles
+  mountRouterSync(app, '/api/v1/roles', roleAdminRouter, { owner: 'role-admin' });
 
   // VTID-01157: Supabase JWT Auth Middleware + /api/v1/auth/me endpoint
   mountRouterSync(app, '/api/v1/auth', authRouter, { owner: 'auth' });

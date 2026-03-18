@@ -312,7 +312,7 @@ router.post('/active-role', async (req: Request, res: Response) => {
     const supabase = createUserSupabaseClient(token);
 
     // Set the active role via RPC
-    const { error: setError } = await supabase.rpc('me_set_active_role', { p_role: roleValue });
+    const { data: setData, error: setError } = await supabase.rpc('me_set_active_role', { p_role: roleValue });
 
     if (setError) {
       console.error('[VTID-01074] POST /me/active-role - RPC set error:', setError.message);
@@ -336,6 +336,26 @@ router.post('/active-role', async (req: Request, res: Response) => {
       return res.status(400).json({
         ok: false,
         error: setError.message,
+      });
+    }
+
+    // VTID-01230: Check RPC-level permission denial (returned as JSONB, not SQL error)
+    if (setData && setData.ok === false) {
+      const errorCode = setData.error || 'UNKNOWN';
+      console.warn(`[VTID-01230] POST /me/active-role - Permission denied: ${errorCode}`);
+
+      if (errorCode === 'ROLE_NOT_PERMITTED') {
+        return res.status(403).json({
+          ok: false,
+          error: 'ROLE_NOT_PERMITTED',
+          message: setData.message || 'You do not have permission to use this role.',
+        });
+      }
+
+      return res.status(400).json({
+        ok: false,
+        error: errorCode,
+        message: setData.message,
       });
     }
 
