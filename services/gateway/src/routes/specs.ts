@@ -124,7 +124,8 @@ function computeHash(content: string): string {
 }
 
 function validateVtidFormat(vtid: string): boolean {
-  return /^VTID-\d{4,5}(-[A-Za-z0-9]+)?$/.test(vtid);
+  // Allow both numeric VTIDs (VTID-01217) and hex VTIDs from autopilot (VTID-B95E9)
+  return /^VTID-[A-Za-z0-9]{4,6}(-[A-Za-z0-9]+)?$/.test(vtid);
 }
 
 /**
