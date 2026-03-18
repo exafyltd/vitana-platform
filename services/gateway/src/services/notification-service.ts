@@ -226,58 +226,6 @@ export async function sendPushToUser(
   return sent;
 }
 
-// ── Appilix Native Push (Maxina Android app) ────────────────
-
-/**
- * Send push notification via the Appilix Push Notification API.
- * This delivers a native Android notification branded as "Maxina"
- * (not a Chrome browser notification).
- *
- * Requires APPILIX_APP_KEY and APPILIX_API_KEY env vars.
- * User identity is mapped via window.appilix_push_notification_user_identity
- * in the Appilix Custom JS (set to the Supabase user ID).
- */
-export async function sendAppilixPush(
-  userId: string,
-  payload: NotificationPayload
-): Promise<boolean> {
-  const appKey = process.env.APPILIX_APP_KEY;
-  const apiKey = process.env.APPILIX_API_KEY;
-  if (!appKey || !apiKey) return false;
-
-  try {
-    const params = new URLSearchParams({
-      app_key: appKey,
-      api_key: apiKey,
-      notification_title: payload.title,
-      notification_body: payload.body,
-      user_identity: userId,
-    });
-    const url = payload.data?.url;
-    if (url) {
-      const baseUrl = process.env.APPILIX_APP_URL || 'https://vitanaland.com';
-      params.set('open_link_url', url.startsWith('http') ? url : `${baseUrl}${url}`);
-    }
-
-    const res = await fetch('https://appilix.com/api/push-notification', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: params.toString(),
-    });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      console.warn(`[Notifications] Appilix push failed (${res.status}):`, text);
-      return false;
-    }
-    console.log(`[Notifications] Appilix push sent for user=${userId.slice(0, 8)}…`);
-    return true;
-  } catch (err: any) {
-    console.error('[Notifications] Appilix push error:', err.message || err);
-    return false;
-  }
-}
-
 // ── Preference & DND Check ───────────────────────────────────
 
 interface UserPrefs {
@@ -390,18 +338,13 @@ export async function notifyUser(
     }
   }
 
-  // ── 5. Send FCM web push + Appilix native push ─────────
+  // ── 5. Send FCM push to all registered devices ─────────
   let pushed = 0;
-  let appilixSent = false;
   if (shouldSendPush) {
-    // FCM web push (desktop Chrome, mobile Chrome)
     pushed = await sendPushToUser(userId, tenantId, payload, supabase);
 
-    // Appilix native push (Maxina Android app)
-    appilixSent = await sendAppilixPush(userId, payload);
-
     // Mark as push-sent so the dispatch cron skips this row
-    if ((pushed > 0 || appilixSent) && notificationId) {
+    if (pushed > 0 && notificationId) {
       await supabase.from('user_notifications')
         .update({ push_sent_at: new Date().toISOString() })
         .eq('id', notificationId);
@@ -410,7 +353,7 @@ export async function notifyUser(
 
   console.log(
     `[Notifications] ${type} → user=${userId.slice(0, 8)}… ` +
-    `inapp=${inappWritten} push=${pushed} appilix=${appilixSent} ch=${meta.channel} pri=${meta.priority}` +
+    `inapp=${inappWritten} push=${pushed} ch=${meta.channel} pri=${meta.priority}` +
     (pushBlockedByDnd ? ' (DND)' : '') +
     (meta.channel === 'silent' ? ' (silent)' : '')
   );

@@ -291,9 +291,6 @@ jobs:
             # VTID-01184: JWT verification and frontend auth
             SECRETS_ARGS+=(--update-secrets=SUPABASE_JWT_SECRET=SUPABASE_JWT_SECRET:latest)
             SECRETS_ARGS+=(--update-secrets=SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest)
-            # Appilix native push (Maxina Android app)
-            EXTRA_ENV_ARGS+=(--update-env-vars=APPILIX_API_KEY=u9p6gt2iqnbrod7kmshy)
-            EXTRA_ENV_ARGS+=(--update-env-vars=APPILIX_APP_KEY=8kwa81zf6ye64b0j42unyk7j9wgbr3u35pfidvn9)
             # VTID-01270A: Lovable Supabase connection for events/community data
             EXTRA_ENV_ARGS+=(--update-env-vars=LOVABLE_SUPABASE_URL=https://inmkhvwdcuyhnxkgfvsb.supabase.co)
             EXTRA_ENV_ARGS+=(--update-env-vars=LOVABLE_SUPABASE_SERVICE_ROLE=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlubWtodndkY3V5aG54a2dmdnNiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTg2NjYzNywiZXhwIjoyMDcxNDQyNjM3fQ.P4bD2YrbzgvDqM4APVxk_5LzetSTsYx-fAp5GOX4n2M)
