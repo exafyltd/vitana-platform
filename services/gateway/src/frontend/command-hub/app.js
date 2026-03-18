@@ -2883,7 +2883,14 @@ const state = {
     },
 
     // VTID-01014: View Role (persisted in localStorage)
-    viewRole: localStorage.getItem('vitana.viewRole') || 'Admin',
+    // VTID-01230: Default to Developer in Command Hub; reset if stale 'Infra' persisted
+    viewRole: (function() {
+        var stored = localStorage.getItem('vitana.viewRole');
+        var valid = ['Developer', 'Admin', 'Community', 'Professional', 'Staff', 'Patient'];
+        if (stored && valid.indexOf(stored) !== -1) return stored;
+        localStorage.setItem('vitana.viewRole', 'Developer');
+        return 'Developer';
+    })(),
 
     // VTID-01049: Authoritative Me Context from Gateway API
     // This is the single source of truth for user identity and role
@@ -8229,7 +8236,7 @@ function renderProfileModal() {
     // VTID-01230: Role Switcher — show only roles the user is permitted to use.
     // Super admins (exafy_admin) see all roles. Others see only their granted roles.
     // Each non-Developer role redirects to its vitanaland.com page.
-    var ALL_ROLES = ['Developer', 'Admin', 'Community', 'Professional', 'Staff', 'Patient', 'Infra'];
+    var ALL_ROLES = ['Developer', 'Admin', 'Community', 'Professional', 'Staff', 'Patient'];
     var VIEW_ROLES;
     if (state.isSuperAdmin || !state.permittedRoles) {
         // Super admin or roles not yet loaded — show all
@@ -9003,7 +9010,10 @@ async function fetchTasks() {
                 createdAt: item.updated_at || item.created_at,
                 // VTID-01055: Capture deleted/metadata for client-side filtering
                 deleted_at: item.deleted_at,
-                metadata: item.metadata
+                metadata: item.metadata,
+                // VTID-01188: Spec pipeline status from board API
+                spec_status: item.spec_status || 'missing',
+                spec_current_id: item.spec_current_id || null
             };
             byVtid.set(item.vtid, task);
         });
