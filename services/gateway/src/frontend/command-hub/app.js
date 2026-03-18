@@ -6817,6 +6817,8 @@ function renderTaskDrawer() {
             'draft': 'DRAFT',
             'validating': 'VALIDATING...',
             'validated': 'VALIDATED',
+            'quality_checked': 'QUALITY OK',
+            'quality_failed': 'QUALITY FAILED',
             'rejected': 'REJECTED',
             'approved': 'APPROVED'
         };
@@ -6905,12 +6907,55 @@ function renderTaskDrawer() {
             specPipelineActions.appendChild(validateBtn);
         }
 
-        // Approve button (visible when validated)
-        if (specStatus === 'validated') {
+        // Quality Check button (visible when validated or quality_failed)
+        if (specStatus === 'validated' || specStatus === 'quality_failed') {
+            var qualityBtn = document.createElement('button');
+            qualityBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-validate';
+            qualityBtn.textContent = specStatus === 'quality_failed' ? 'Re-run Quality Check' : 'Quality Check';
+            qualityBtn.title = 'Run deep content validation (10 checks + risk + conflicts)';
+            qualityBtn.onclick = async function () {
+                qualityBtn.disabled = true;
+                qualityBtn.textContent = 'Checking...';
+                try {
+                    var response = await fetch('/api/v1/specs/' + vtid + '/quality-check', {
+                        method: 'POST',
+                        headers: buildContextHeaders({ 'Content-Type': 'application/json' })
+                    });
+                    var result = await response.json();
+                    if (result.ok && result.report) {
+                        var r = result.report;
+                        var scoreColor = r.overall_score >= 80 ? '#22c55e' : r.overall_score >= 60 ? '#eab308' : '#ef4444';
+                        var failedChecks = r.checks.filter(function(c) { return c.result === 'fail'; });
+                        var msg = 'Score: ' + r.overall_score + '/100 | Risk: ' + r.risk_level;
+                        if (failedChecks.length > 0) {
+                            msg += ' | Failed: ' + failedChecks.map(function(c) { return c.check_id; }).join(', ');
+                        }
+                        showToast(msg, r.overall_result === 'fail' ? 'error' : 'success');
+                        await fetchVtidDetail(vtid);
+                        await fetchTasks();
+                    } else {
+                        showToast('Quality check failed: ' + (result.message || result.error || 'Unknown'), 'error');
+                        qualityBtn.disabled = false;
+                        qualityBtn.textContent = 'Quality Check';
+                    }
+                } catch (e) {
+                    console.error('[spec-quality] Quality check error:', e);
+                    showToast('Quality check failed: Network error', 'error');
+                    qualityBtn.disabled = false;
+                    qualityBtn.textContent = 'Quality Check';
+                }
+            };
+            specPipelineActions.appendChild(qualityBtn);
+        }
+
+        // Approve button (visible when quality_checked or validated for legacy)
+        if (specStatus === 'quality_checked' || specStatus === 'validated') {
             var approveBtn = document.createElement('button');
             approveBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-approve';
-            approveBtn.textContent = 'Approve Spec';
-            approveBtn.title = 'Approve spec for activation';
+            approveBtn.textContent = specStatus === 'validated' ? 'Approve (Legacy)' : 'Approve Spec';
+            approveBtn.title = specStatus === 'validated'
+                ? 'Approve without quality check (legacy bypass)'
+                : 'Approve quality-checked spec for activation';
             approveBtn.onclick = async function () {
                 approveBtn.disabled = true;
                 approveBtn.textContent = 'Approving...';
@@ -6946,8 +6991,8 @@ function renderTaskDrawer() {
             specPipelineActions.appendChild(approveBtn);
         }
 
-        // View Spec button (visible when draft, validated, or approved)
-        if (specStatus === 'draft' || specStatus === 'validated' || specStatus === 'approved') {
+        // View Spec button (visible when draft, validated, quality_checked, quality_failed, or approved)
+        if (specStatus === 'draft' || specStatus === 'validated' || specStatus === 'quality_checked' || specStatus === 'quality_failed' || specStatus === 'approved') {
             var viewBtn = document.createElement('button');
             viewBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-view';
             viewBtn.textContent = 'View Spec';

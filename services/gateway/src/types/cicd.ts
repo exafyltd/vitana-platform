@@ -457,6 +457,14 @@ export type CicdEventType =
   | 'vtid.spec.validation.completed'
   | 'vtid.spec.approved'
   | 'vtid.execution.activation.blocked'
+  // Spec Quality Agent Events
+  | 'vtid.spec.quality_check.started'
+  | 'vtid.spec.quality_check.passed'
+  | 'vtid.spec.quality_check.failed'
+  | 'vtid.spec.conflict.detected'
+  | 'vtid.spec.governance_gap.detected'
+  | 'vtid.spec.risk.assessed'
+  | 'vtid.spec.approval.legacy_bypass'
   // VTID-01208: LLM Telemetry & Routing Policy Events
   | 'llm.call.started'
   | 'llm.call.completed'

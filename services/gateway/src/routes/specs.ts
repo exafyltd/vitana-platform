@@ -13,6 +13,7 @@
 import { Router, Request, Response } from 'express';
 import { createHash } from 'crypto';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { runFullQualityCheck } from '../services/spec-quality-agent';
 
 const router = Router();
 
@@ -547,6 +548,136 @@ router.post('/:vtid/validate', async (req: Request, res: Response) => {
 });
 
 // ===========================================================================
+// POST /:vtid/quality-check - Spec Quality Agent Gate
+// ===========================================================================
+
+router.post('/:vtid/quality-check', async (req: Request, res: Response) => {
+  const { vtid } = req.params;
+
+  console.log(`[spec-quality] Quality check requested for ${vtid}`);
+
+  if (!validateVtidFormat(vtid)) {
+    return res.status(400).json({ ok: false, error: 'invalid_vtid_format', vtid });
+  }
+
+  const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+  const supabaseUrl = process.env.SUPABASE_URL;
+  if (!svcKey || !supabaseUrl) {
+    return res.status(500).json({ ok: false, error: 'gateway_misconfigured' });
+  }
+
+  try {
+    const headers = { apikey: svcKey, Authorization: `Bearer ${svcKey}` };
+
+    // Step 1: Get ledger row
+    const ledgerResp = await fetch(
+      `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}&select=vtid,spec_status,spec_current_id,spec_current_hash&limit=1`,
+      { headers }
+    );
+    if (!ledgerResp.ok) return res.status(502).json({ ok: false, error: 'ledger_fetch_failed' });
+
+    const ledgerData = await ledgerResp.json() as any[];
+    if (ledgerData.length === 0) return res.status(404).json({ ok: false, error: 'vtid_not_found', vtid });
+
+    const ledgerRow = ledgerData[0];
+
+    // Must be 'validated' or 'quality_failed' (retry) to run quality check
+    if (ledgerRow.spec_status !== 'validated' && ledgerRow.spec_status !== 'quality_failed') {
+      return res.status(409).json({
+        ok: false,
+        error: 'spec_not_validated',
+        message: `Spec must be validated before quality check. Current status: ${ledgerRow.spec_status}`,
+        spec_status: ledgerRow.spec_status
+      });
+    }
+
+    // Step 2: Get spec content
+    if (!ledgerRow.spec_current_id) {
+      return res.status(400).json({ ok: false, error: 'no_spec_exists', message: 'No spec generated for this VTID' });
+    }
+
+    const specResp = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_specs?id=eq.${ledgerRow.spec_current_id}&select=id,spec_markdown,spec_hash&limit=1`,
+      { headers }
+    );
+    if (!specResp.ok) return res.status(502).json({ ok: false, error: 'spec_fetch_failed' });
+
+    const specData = await specResp.json() as any[];
+    if (specData.length === 0) return res.status(404).json({ ok: false, error: 'spec_not_found' });
+
+    const spec = specData[0];
+
+    // Step 3: Run full quality check
+    const report = await runFullQualityCheck(
+      vtid,
+      spec.spec_markdown,
+      spec.spec_hash || ledgerRow.spec_current_hash,
+      supabaseUrl,
+      svcKey
+    );
+
+    // Step 4: Store quality report (non-blocking)
+    const reportPayload = {
+      vtid,
+      spec_id: spec.id,
+      spec_hash: spec.spec_hash || ledgerRow.spec_current_hash,
+      overall_result: report.overall_result,
+      overall_score: report.overall_score,
+      risk_level: report.risk_level,
+      checks_json: report.checks,
+      impact_json: report.impact_analysis,
+      conflict_json: report.conflict_analysis,
+      governance_json: report.governance_analysis,
+    };
+
+    await fetch(`${supabaseUrl}/rest/v1/oasis_spec_quality_reports`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify(reportPayload),
+    }).catch(err => console.warn(`[spec-quality] Failed to store report: ${err}`));
+
+    // Step 5: Update spec_status based on result
+    const newStatus = report.overall_result === 'fail' ? 'quality_failed' : 'quality_checked';
+
+    await fetch(`${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}`, {
+      method: 'PATCH',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ spec_status: newStatus, updated_at: new Date().toISOString() }),
+    });
+
+    // Step 6: Emit OASIS event
+    await emitOasisEvent({
+      vtid,
+      type: report.overall_result === 'fail' ? 'vtid.spec.quality_check.failed' : 'vtid.spec.quality_check.passed',
+      source: 'spec-quality-agent',
+      status: report.overall_result === 'fail' ? 'error' : 'success',
+      message: `Quality check ${report.overall_result}: score=${report.overall_score}, risk=${report.risk_level}`,
+      payload: {
+        overall_score: report.overall_score,
+        risk_level: report.risk_level,
+        risk_reasons: report.risk_reasons,
+        failed_checks: report.checks.filter((c: any) => c.result === 'fail').map((c: any) => c.check_id),
+        conflict_count: report.conflict_analysis.overlap_count,
+        governance_gap: report.governance_analysis.governance_gap,
+      },
+    }).catch(err => console.warn(`[spec-quality] OASIS event error: ${err}`));
+
+    console.log(`[spec-quality] ${vtid}: ${report.overall_result} (score=${report.overall_score}, risk=${report.risk_level})`);
+
+    return res.status(200).json({
+      ok: true,
+      vtid,
+      spec_status: newStatus,
+      report,
+    });
+
+  } catch (e: any) {
+    console.error(`[spec-quality] Quality check error:`, e);
+    return res.status(500).json({ ok: false, error: 'internal_server_error', message: e.message });
+  }
+});
+
+// ===========================================================================
 // POST /:vtid/approve - Approve Spec
 // ===========================================================================
 
@@ -584,13 +715,26 @@ router.post('/:vtid/approve', async (req: Request, res: Response) => {
 
     const ledgerRow = ledgerData[0];
 
-    // Step 2: Check if spec is in 'validated' status
-    if (ledgerRow.spec_status !== 'validated') {
+    // Step 2: Check if spec has passed quality check (or legacy validated)
+    if (ledgerRow.spec_status === 'quality_checked') {
+      // New flow: quality gate passed — proceed to approval
+    } else if (ledgerRow.spec_status === 'validated') {
+      // Legacy bypass: spec validated before quality agent existed — allow with warning
+      console.warn(`[VTID-01188] Legacy approval bypass for ${vtid} (spec_status=validated, no quality check)`);
+      emitOasisEvent({
+        vtid,
+        type: 'vtid.spec.approval.legacy_bypass',
+        source: 'spec-quality-agent',
+        status: 'warning',
+        message: `Spec approved without quality check (legacy bypass)`,
+        payload: { spec_status: 'validated', reason: 'pre_quality_agent_spec' },
+      }).catch(() => {});
+    } else {
       return res.status(409).json({
         ok: false,
-        error: 'spec_not_validated',
-        code: 'SPEC_NOT_VALIDATED',
-        message: `Spec must be validated before approval. Current status: ${ledgerRow.spec_status}`,
+        error: 'spec_not_quality_checked',
+        code: 'SPEC_NOT_QUALITY_CHECKED',
+        message: `Spec must pass quality check before approval. Current status: ${ledgerRow.spec_status}. Run POST /specs/${vtid}/quality-check first.`,
         spec_status: ledgerRow.spec_status
       });
     }
