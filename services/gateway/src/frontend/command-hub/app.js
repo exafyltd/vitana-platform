@@ -78,10 +78,25 @@ const ROLE_DEFAULT_SCREENS = {
 
 /**
  * VTID-01186: Navigate to role-specific default screen
- * Called after role switch to redirect user to appropriate screen
+ * Called after role switch to redirect user to appropriate screen.
+ * VTID-01230: Community and Admin redirect to vitanaland.com (external app).
  */
+// External redirect targets per role (roles not listed stay in Command Hub)
+var ROLE_EXTERNAL_REDIRECTS = {
+    'community': 'https://vitanaland.com/comm/events-meetups?tab=hot',
+    'admin': 'https://vitanaland.com/admin/dashboard'
+};
+
 function navigateToRoleDefaultScreen(role) {
     var lowerRole = (role || 'community').toLowerCase();
+
+    // VTID-01230: If this role has an external redirect, navigate away from Command Hub
+    if (ROLE_EXTERNAL_REDIRECTS[lowerRole]) {
+        console.log('[VTID-01230] Redirecting to external app for role:', lowerRole, '->', ROLE_EXTERNAL_REDIRECTS[lowerRole]);
+        window.location.href = ROLE_EXTERNAL_REDIRECTS[lowerRole];
+        return;
+    }
+
     var defaultScreen = ROLE_DEFAULT_SCREENS[lowerRole] || ROLE_DEFAULT_SCREENS['community'];
 
     // Find the section config
@@ -1100,7 +1115,7 @@ function doLogout() {
     state.viewRole = 'User';
     state.showProfileModal = false;
 
-    showToast('Logged out successfully', 'info');
+    // VTID-01230: renderApp() will show auth gate since authToken is now null
     renderApp();
 }
 
