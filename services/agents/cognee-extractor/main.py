@@ -22,8 +22,25 @@ from typing import List, Optional, Dict, Any
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field
-import cognee
-from cognee import SearchType
+
+# Cognee imports are lazy — loaded on first extraction request.
+# This ensures health checks work even if cognee has dependency issues.
+cognee = None
+SearchType = None
+
+def _ensure_cognee():
+    """Lazy-load cognee SDK on first use."""
+    global cognee, SearchType
+    if cognee is None:
+        import cognee as _cognee
+        cognee = _cognee
+        try:
+            from cognee import SearchType as _ST
+            SearchType = _ST
+        except ImportError:
+            from cognee.api.v1.search import SearchType as _ST
+            SearchType = _ST
+        logger.info(f'[{VTID}] Cognee SDK loaded: version={getattr(cognee, "__version__", "unknown")}')
 
 # Configure logging
 logging.basicConfig(
@@ -327,6 +344,7 @@ async def process_with_cognee(
     - cognee.search(query_text, query_type=SearchType.INSIGHTS) → extract entities/relationships
     - cognee.prune.prune_data() → clear all data (no dataset_name arg)
     """
+    _ensure_cognee()
     dataset_name = f'tenant_{tenant_id}'
 
     try:
@@ -412,23 +430,23 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     logger.info(f'[{VTID}] Starting {SERVICE_NAME}...')
 
-    # Configure Cognee LLM with Gemini API
-    # Uses same GOOGLE_GEMINI_API_KEY as gateway ORB
-    #
-    # Cognee SDK 0.5.x reads LLM config from environment variables:
-    #   LLM_API_KEY, LLM_PROVIDER, LLM_MODEL, LLM_ENDPOINT
-    # We set these env vars so Cognee picks them up automatically.
-    # Also try the programmatic config API as a fallback.
+    # Set LLM env vars BEFORE importing cognee so it picks them up
     if LLM_API_KEY:
-        # Set env vars for Cognee to auto-detect (primary approach in 0.5.x)
         os.environ['LLM_API_KEY'] = LLM_API_KEY
         os.environ['LLM_PROVIDER'] = LLM_PROVIDER
         os.environ['LLM_MODEL'] = LLM_MODEL
         if LLM_ENDPOINT:
             os.environ['LLM_ENDPOINT'] = LLM_ENDPOINT
         logger.info(f'[{VTID}] Set LLM env vars: provider={LLM_PROVIDER}, model={LLM_MODEL}')
+    else:
+        logger.warning(f'[{VTID}] No LLM_API_KEY provided - Cognee will use defaults')
 
-        # Also try programmatic config API (works in some versions)
+    # Lazy-load cognee SDK (heavy import with many dependencies)
+    try:
+        _ensure_cognee()
+        logger.info(f'[{VTID}] Cognee SDK loaded successfully')
+
+        # Try programmatic config API as a fallback
         try:
             cognee.config.set_llm_api_key(LLM_API_KEY)
             cognee.config.set_llm_provider(LLM_PROVIDER)
@@ -439,8 +457,9 @@ async def lifespan(app: FastAPI):
             logger.info(f'[{VTID}] Programmatic config not available (using env vars): {e}')
         except Exception as e:
             logger.warning(f'[{VTID}] Programmatic config failed (env vars still set): {e}')
-    else:
-        logger.warning(f'[{VTID}] No LLM_API_KEY provided - Cognee will use defaults')
+    except Exception as e:
+        logger.error(f'[{VTID}] Cognee SDK failed to load: {e}')
+        logger.warning(f'[{VTID}] Service will start but extraction requests will fail')
 
     logger.info(f'[{VTID}] {SERVICE_NAME} ready')
     yield
