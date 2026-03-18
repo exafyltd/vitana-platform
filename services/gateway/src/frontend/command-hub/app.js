@@ -4972,6 +4972,8 @@ function renderHeader() {
             const data = await response.json();
             if (data.ok) {
                 state.autopilotRecommendations = data.recommendations || [];
+                // Sync badge count with actual list to avoid mismatch
+                state.autopilotRecommendationsCount = state.autopilotRecommendations.length;
             } else {
                 state.autopilotRecommendationsError = data.error || 'Unknown error';
             }
@@ -21575,6 +21577,34 @@ function renderPublishModal() {
  * VTID-01180: Render the Autopilot Recommendations modal
  * Shows AI-generated recommendations with Activate/Snooze/Reject actions
  */
+/**
+ * VTID-01180: Update the modal footer count label in-place (avoids full re-render)
+ */
+function updateRecommendationModalFooter() {
+    var modal = document.querySelector('.autopilot-recommendations-modal');
+    if (!modal) return;
+    var footer = modal.querySelector('.modal-footer');
+    if (!footer) return;
+    var countLabel = footer.querySelector('span');
+    if (countLabel) {
+        var len = state.autopilotRecommendations.length;
+        countLabel.textContent = len + ' recommendation' + (len !== 1 ? 's' : '');
+    }
+    // Show empty state if no items left
+    if (state.autopilotRecommendations.length === 0) {
+        var body = modal.querySelector('.modal-body');
+        if (body) {
+            body.innerHTML = '';
+            var emptyDiv = document.createElement('div');
+            emptyDiv.style.cssText = 'text-align: center; padding: 40px; color: var(--text-secondary, #888);';
+            emptyDiv.innerHTML = '<div style="font-size: 48px; margin-bottom: 16px;">\u2705</div>';
+            emptyDiv.innerHTML += '<div style="font-size: 16px;">All caught up!</div>';
+            emptyDiv.innerHTML += '<div style="font-size: 14px; margin-top: 8px;">No new recommendations at this time.</div>';
+            body.appendChild(emptyDiv);
+        }
+    }
+}
+
 function renderAutopilotRecommendationsModal() {
     var overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
@@ -21752,20 +21782,21 @@ function createRecommendationCard(rec) {
             });
             var data = await response.json();
             if (data.ok) {
-                showToast('Activated! VTID: ' + data.vtid, 'success');
-                // Remove from list
+                // Update state FIRST, then remove card for instant feedback
                 state.autopilotRecommendations = state.autopilotRecommendations.filter(function (r) { return r.id !== rec.id; });
                 state.autopilotRecommendationsCount = Math.max(0, state.autopilotRecommendationsCount - 1);
-                renderApp();
+                card.remove();
+                updateRecommendationModalFooter();
+                showToast('Activated! VTID: ' + data.vtid, 'success');
             } else {
-                showToast('Activation failed: ' + (data.error || 'Unknown error'), 'error');
                 activateBtn.disabled = false;
                 activateBtn.textContent = 'Activate';
+                showToast('Activation failed: ' + (data.error || 'Unknown error'), 'error');
             }
         } catch (err) {
-            showToast('Activation error: ' + err.message, 'error');
             activateBtn.disabled = false;
             activateBtn.textContent = 'Activate';
+            showToast('Activation error: ' + err.message, 'error');
         }
     };
     actionsRow.appendChild(activateBtn);
@@ -21785,17 +21816,18 @@ function createRecommendationCard(rec) {
             });
             var data = await response.json();
             if (data.ok) {
-                showToast('Snoozed for 24 hours', 'info');
                 state.autopilotRecommendations = state.autopilotRecommendations.filter(function (r) { return r.id !== rec.id; });
                 state.autopilotRecommendationsCount = Math.max(0, state.autopilotRecommendationsCount - 1);
-                renderApp();
+                card.remove();
+                updateRecommendationModalFooter();
+                showToast('Snoozed for 24 hours', 'info');
             } else {
-                showToast('Snooze failed: ' + (data.error || 'Unknown error'), 'error');
                 snoozeBtn.disabled = false;
+                showToast('Snooze failed: ' + (data.error || 'Unknown error'), 'error');
             }
         } catch (err) {
-            showToast('Snooze error: ' + err.message, 'error');
             snoozeBtn.disabled = false;
+            showToast('Snooze error: ' + err.message, 'error');
         }
     };
     actionsRow.appendChild(snoozeBtn);
@@ -21814,17 +21846,18 @@ function createRecommendationCard(rec) {
             });
             var data = await response.json();
             if (data.ok) {
-                showToast('Recommendation dismissed', 'info');
                 state.autopilotRecommendations = state.autopilotRecommendations.filter(function (r) { return r.id !== rec.id; });
                 state.autopilotRecommendationsCount = Math.max(0, state.autopilotRecommendationsCount - 1);
-                renderApp();
+                card.remove();
+                updateRecommendationModalFooter();
+                showToast('Recommendation dismissed', 'info');
             } else {
-                showToast('Dismiss failed: ' + (data.error || 'Unknown error'), 'error');
                 rejectBtn.disabled = false;
+                showToast('Dismiss failed: ' + (data.error || 'Unknown error'), 'error');
             }
         } catch (err) {
-            showToast('Dismiss error: ' + err.message, 'error');
             rejectBtn.disabled = false;
+            showToast('Dismiss error: ' + err.message, 'error');
         }
     };
     actionsRow.appendChild(rejectBtn);
