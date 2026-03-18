@@ -84,7 +84,10 @@ const ROLE_DEFAULT_SCREENS = {
 // External redirect targets per role (roles not listed stay in Command Hub)
 var ROLE_EXTERNAL_REDIRECTS = {
     'community': 'https://vitanaland.com/comm/events-meetups?tab=hot',
-    'admin': 'https://vitanaland.com/admin/dashboard'
+    'admin': 'https://vitanaland.com/admin/dashboard',
+    'professional': 'https://vitanaland.com/professional/dashboard',
+    'staff': 'https://vitanaland.com/staff/dashboard',
+    'patient': 'https://vitanaland.com/patient/dashboard'
 };
 
 function navigateToRoleDefaultScreen(role) {
@@ -8208,24 +8211,48 @@ function renderProfileModal() {
     roleSelect.onchange = async (e) => {
         const newRole = e.target.value;
         const previousRole = state.viewRole;
+        var lowerNewRole = newRole.toLowerCase();
 
-        // Optimistically update UI
+        // VTID-01230: For external redirects (Community, Admin), persist role then
+        // redirect IMMEDIATELY — do NOT call setActiveRole (it re-renders the DOM
+        // and the redirect never fires).
+        if (ROLE_EXTERNAL_REDIRECTS[lowerNewRole]) {
+            try {
+                var response = await fetch('/api/v1/me/active-role', {
+                    method: 'POST',
+                    headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({ role: lowerNewRole })
+                });
+                var data = await response.json();
+                if (response.ok && data.ok) {
+                    localStorage.setItem('vitana.viewRole', newRole);
+                    console.log('[VTID-01230] Role persisted, redirecting:', ROLE_EXTERNAL_REDIRECTS[lowerNewRole]);
+                    window.location.href = ROLE_EXTERNAL_REDIRECTS[lowerNewRole];
+                    return; // Page is navigating away
+                } else {
+                    showToast(data.error || 'Failed to switch role', 'error');
+                    renderApp();
+                    return;
+                }
+            } catch (err) {
+                showToast('Network error switching role', 'error');
+                renderApp();
+                return;
+            }
+        }
+
+        // Internal role switch (stays in Command Hub)
         state.viewRole = newRole;
         renderApp();
 
-        // Call API to persist role
-        // VTID-01230: setActiveRole returns data.me on success, null on failure
         var result = await setActiveRole(newRole);
         if (result) {
-            // Success - navigate to role-specific screen or external redirect
             localStorage.setItem('vitana.viewRole', newRole);
             state.showProfileModal = false;
             navigateToRoleDefaultScreen(newRole);
             renderApp();
         } else {
-            // Failure - revert to previous role
             state.viewRole = previousRole;
-            // VTID-01229: Use state.meContext instead of deprecated MeState.me
             if (state.meContext) {
                 state.meContext.active_role = previousRole.toLowerCase();
             }
