@@ -134,6 +134,16 @@ const TYPE_META: Record<string, TypeMeta> = {
   complete_your_profile:       { channel: 'inapp',          priority: 'p2', category: 'system' },
   onboarding_step_completed:   { channel: 'inapp',          priority: 'p3', category: 'system' },
   weekly_activity_summary:     { channel: 'push_and_inapp', priority: 'p2', category: 'system' },
+  // Wallet & Business (VTID-01250)
+  wallet_credits_earned:       { channel: 'push_and_inapp', priority: 'p1', category: 'offer' },
+  wallet_payout_received:      { channel: 'push_and_inapp', priority: 'p1', category: 'offer' },
+  wallet_payout_failed:        { channel: 'push_and_inapp', priority: 'p0', category: 'offer' },
+  creator_earnings_report:     { channel: 'inapp',          priority: 'p2', category: 'offer' },
+  creator_setup_reminder:      { channel: 'push_and_inapp', priority: 'p1', category: 'offer' },
+  // Sharing & Referrals (VTID-01250)
+  referral_signup:             { channel: 'push_and_inapp', priority: 'p1', category: 'growth' },
+  referral_reward_earned:      { channel: 'push_and_inapp', priority: 'p1', category: 'growth' },
+  share_countdown_prompt:      { channel: 'inapp',          priority: 'p2', category: 'growth' },
 };
 
 // Category → preference column in user_notification_preferences

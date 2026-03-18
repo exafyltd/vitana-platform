@@ -213,6 +213,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminNotificationsRouter = require('./routes/admin-notifications').default;
   // Voice Feedback — Test user bug reports & UX improvement suggestions
   const voiceFeedbackRouter = require('./routes/voice-feedback').default;
+  // VTID-01250: Autopilot Automations Engine — AP-XXXX registry, executor, wallet, sharing
+  const automationsRouter = require('./routes/automations').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -528,6 +530,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // Admin: Notification Compose & Tracking
   mountRouterSync(app, '/api/v1/admin/notifications', adminNotificationsRouter, { owner: 'admin-notifications' });
 
+  // VTID-01250: Autopilot Automations Engine — AP-XXXX registry, executor, wallet, sharing
+  mountRouterSync(app, '/api/v1/automations', automationsRouter, { owner: 'automations' });
+
   // VTID-01097: Diary Templates - guided diary templates for memory quality
   mountRouterSync(app, '/api/v1/diary', diaryRouter, { owner: 'diary' });
 
@@ -679,6 +684,17 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         }
       } catch (error) {
         console.warn('⚠️ Autopilot event loop initialization failed (non-fatal):', error);
+      }
+
+      // VTID-01250: Initialize Autopilot Automations Engine
+      try {
+        const { registerAllAutomationHandlers } = require('./services/automation-handlers');
+        registerAllAutomationHandlers();
+        const { getRegistrySummary } = require('./services/automation-registry');
+        const summary = getRegistrySummary();
+        console.log(`🔧 Automations engine initialized: ${summary.total} automations (${summary.executable} executable, ${summary.planned} planned)`);
+      } catch (error) {
+        console.warn('⚠️ Automations engine initialization failed (non-fatal):', error);
       }
 
       // AI Personality: Pre-warm config cache from Supabase
