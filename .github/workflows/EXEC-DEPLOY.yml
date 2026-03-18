@@ -299,13 +299,15 @@ jobs:
             EXTRA_ENV_ARGS+=(--update-env-vars=LOVABLE_SUPABASE_SERVICE_ROLE=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlubWtodndkY3V5aG54a2dmdnNiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTg2NjYzNywiZXhwIjoyMDcxNDQyNjM3fQ.P4bD2YrbzgvDqM4APVxk_5LzetSTsYx-fAp5GOX4n2M)
           fi
 
-          # VTID-01225: Cognee extractor uses internal ingress + Vertex AI ADC (no API key secrets)
+          # VTID-01225: Cognee extractor — internal ingress, Gemini LLM via API key
           if [ "$CLOUD_RUN_SERVICE" = "cognee-extractor" ]; then
             EXTRA_ENV_ARGS+=(--update-env-vars=LLM_PROVIDER=google)
-            EXTRA_ENV_ARGS+=(--update-env-vars=LLM_MODEL=gemini-2.0-flash)
+            EXTRA_ENV_ARGS+=(--update-env-vars=LLM_MODEL=gemini/gemini-2.0-flash)
             EXTRA_ENV_ARGS+=(--update-env-vars=GOOGLE_CLOUD_PROJECT=lovable-vitana-vers1)
             EXTRA_ENV_ARGS+=(--update-env-vars=VERTEX_LOCATION=us-central1)
             EXTRA_ENV_ARGS+=(--update-env-vars=ENV=production)
+            # Cognee SDK needs API key for Gemini LLM calls (not ADC)
+            SECRETS_ARGS+=(--update-secrets=GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest)
           fi
 
           # Build deploy args
