@@ -41,28 +41,33 @@ export interface GovernanceCheckResult {
 
 /**
  * Emit an OASIS event through the gateway.
+ * Non-fatal: OASIS events are telemetry — failure must never crash the service.
  */
 export async function emitOasisEvent(event: OasisEvent): Promise<void> {
   const validated = OasisEventSchema.parse(event);
   const gatewayUrl = process.env.GATEWAY_URL ?? 'http://localhost:8080';
 
-  const res = await fetch(`${gatewayUrl}/api/v1/oasis/events`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      event_type: validated.type,
-      vtid: validated.vtid,
-      tenant_id: validated.tenant_id,
-      payload: {
-        ...validated.payload,
-        source: validated.source,
-        timestamp: new Date().toISOString(),
-      },
-    }),
-  });
+  try {
+    const res = await fetch(`${gatewayUrl}/api/v1/oasis/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event_type: validated.type,
+        vtid: validated.vtid,
+        tenant_id: validated.tenant_id,
+        payload: {
+          ...validated.payload,
+          source: validated.source,
+          timestamp: new Date().toISOString(),
+        },
+      }),
+    });
 
-  if (!res.ok) {
-    console.error(`[oasis-bridge] Failed to emit event ${validated.type}: ${res.status}`);
+    if (!res.ok) {
+      console.warn(`[oasis-bridge] Failed to emit event ${validated.type}: ${res.status}`);
+    }
+  } catch (err) {
+    console.warn(`[oasis-bridge] Event ${validated.type} failed (non-fatal):`, err instanceof Error ? err.message : err);
   }
 }
 

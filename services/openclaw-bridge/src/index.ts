@@ -85,6 +85,8 @@ async function main(): Promise<void> {
       heartbeat_interval_ms: config.heartbeat.intervalMs,
       governance_enforced: config.oasis.enforceGovernance,
     },
+  }).catch((err) => {
+    console.warn('[oasis] Startup event failed (non-fatal):', err.message);
   });
 
   // ---------------------------------------------------------------------------
