@@ -718,6 +718,115 @@ router.post('/:vtid/generate', async (req: Request, res: Response) => {
 });
 
 // ===========================================================================
+// PATCH /:vtid - Save (update) spec markdown content
+// ===========================================================================
+
+router.patch('/:vtid', async (req: Request, res: Response) => {
+  const { vtid } = req.params;
+  const { spec_markdown } = req.body || {};
+
+  console.log(`[VTID-01188] Save spec requested for ${vtid}`);
+
+  if (!spec_markdown || typeof spec_markdown !== 'string' || spec_markdown.trim().length < 20) {
+    return res.status(400).json({ ok: false, error: 'spec_markdown required (min 20 chars)' });
+  }
+
+  if (!validateVtidFormat(vtid)) {
+    return res.status(400).json({ ok: false, error: 'invalid_format', vtid });
+  }
+
+  try {
+    const { supabaseUrl, svcKey } = getSupabaseConfig();
+
+    // Get current spec reference from ledger
+    const ledgerResp = await fetch(
+      `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}&select=vtid,spec_status,spec_current_id&limit=1`,
+      { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } }
+    );
+    if (!ledgerResp.ok) {
+      return res.status(500).json({ ok: false, error: 'ledger_query_failed' });
+    }
+    const ledgerRows = await ledgerResp.json() as any[];
+    if (ledgerRows.length === 0) {
+      return res.status(404).json({ ok: false, error: 'vtid_not_found', vtid });
+    }
+
+    const ledgerRow = ledgerRows[0];
+    const specId = ledgerRow.spec_current_id;
+
+    if (!specId) {
+      return res.status(400).json({ ok: false, error: 'no_spec_exists', message: 'Generate a spec first' });
+    }
+
+    // Only allow edits on draft or quality_failed specs
+    const editableStatuses = ['draft', 'quality_failed', 'rejected'];
+    if (!editableStatuses.includes(ledgerRow.spec_status)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'spec_not_editable',
+        message: `Cannot edit spec in status: ${ledgerRow.spec_status}`,
+      });
+    }
+
+    const newHash = computeHash(spec_markdown);
+
+    // Update oasis_specs content
+    const updateSpecResp = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_specs?id=eq.${specId}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+        body: JSON.stringify({
+          spec_markdown: spec_markdown,
+          spec_hash: newHash,
+          status: 'draft',
+        }),
+      }
+    );
+
+    if (!updateSpecResp.ok) {
+      const errText = await updateSpecResp.text();
+      console.error(`[VTID-01188] Failed to update oasis_specs: ${errText}`);
+      return res.status(502).json({ ok: false, error: 'spec_update_failed', message: errText });
+    }
+
+    // Update ledger hash and reset to draft (in case it was quality_failed)
+    await fetch(`${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+      },
+      body: JSON.stringify({
+        spec_status: 'draft',
+        spec_current_hash: newHash,
+        spec_last_error: null,
+        updated_at: new Date().toISOString(),
+      }),
+    });
+
+    console.log(`[VTID-01188] Spec saved for ${vtid}: hash=${newHash.substring(0, 8)}...`);
+
+    return res.status(200).json({
+      ok: true,
+      vtid,
+      spec_id: specId,
+      spec_hash: newHash,
+      spec_status: 'draft',
+      message: 'Spec saved successfully',
+    });
+  } catch (e: any) {
+    console.error(`[VTID-01188] Save spec error:`, e);
+    return res.status(500).json({ ok: false, error: 'internal_server_error', message: e.message });
+  }
+});
+
+// ===========================================================================
 // POST /:vtid/validate - Validate Spec
 // ===========================================================================
 

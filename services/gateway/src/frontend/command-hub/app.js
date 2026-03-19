@@ -7158,13 +7158,32 @@ function renderTaskDrawer() {
         var saveBtn = document.createElement('button');
         saveBtn.className = 'btn btn-primary task-spec-btn';
         saveBtn.textContent = 'Save';
-        saveBtn.onclick = function () {
-            // DEV-COMHU-2025-0013: Save from stable state, not DOM query
-            // DEV-COMHU-2025-0015: Show correct VTID in toast message
-            if (saveTaskSpec(vtid, state.drawerSpecText)) {
-                showToast('Saved task ' + vtid, 'success');
-            } else {
-                showToast('Failed to save spec for ' + vtid, 'error');
+        saveBtn.onclick = async function () {
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving...';
+            try {
+                // Persist to backend oasis_specs (so validate/quality-check see edits)
+                var resp = await fetch('/api/v1/specs/' + encodeURIComponent(vtid), {
+                    method: 'PATCH',
+                    headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({ spec_markdown: state.drawerSpecText })
+                });
+                var data = await resp.json();
+                if (data.ok) {
+                    // Also keep localStorage in sync
+                    saveTaskSpec(vtid, state.drawerSpecText);
+                    await fetchVtidDetail(vtid);
+                    await fetchTasks();
+                    showToast('Spec saved for ' + vtid, 'success');
+                } else {
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = 'Save';
+                    showToast('Save failed: ' + (data.error || data.message || 'Unknown error'), 'error');
+                }
+            } catch (err) {
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Save';
+                showToast('Save error: ' + err.message, 'error');
             }
         };
         specActions.appendChild(saveBtn);
