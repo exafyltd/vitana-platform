@@ -16,7 +16,7 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { notifyUserAsync, sendPushToUser } from '../services/notification-service';
+import { notifyUserAsync, sendPushToUser, sendAppilixPush } from '../services/notification-service';
 
 const router = Router();
 
@@ -400,14 +400,15 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
           : undefined,
       };
       const sent = await sendPushToUser(notif.user_id, notif.tenant_id, pushPayload, supa);
+      const appilixSent = await sendAppilixPush(notif.user_id, pushPayload);
 
       // Mark as dispatched
       await supa.from('user_notifications')
         .update({ push_sent_at: new Date().toISOString() })
         .eq('id', notif.id);
 
-      if (sent > 0) dispatched++;
-      else skipped++; // No device tokens found
+      if (sent > 0 || appilixSent) dispatched++;
+      else skipped++; // No device tokens found and Appilix not configured
     } catch (err: any) {
       console.error(`[PushDispatch] Failed for notification ${notif.id}:`, err.message || err);
       // Still mark as sent to avoid infinite retries
