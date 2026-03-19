@@ -85,8 +85,10 @@ export interface SpecQualityReport {
 
 /** Extract content between a section header and the next ## header. */
 function extractSectionContent(specMarkdown: string, sectionName: string): string {
+  // (?![\s\S]) = end-of-string only; bare $ with 'm' flag matches every line-end,
+  // causing the lazy quantifier to stop at the first line boundary.
   const pattern = new RegExp(
-    `^##?\\s*\\d*\\.?\\s*${sectionName}[^\\n]*\\n([\\s\\S]*?)(?=^##?\\s|$)`,
+    `^##?\\s*\\d*\\.?\\s*${sectionName}[^\\n]*\\n([\\s\\S]*?)(?=^##?\\s|(?![\\s\\S]))`,
     'im'
   );
   const match = specMarkdown.match(pattern);
@@ -301,7 +303,7 @@ export function checkSectionContent(specMarkdown: string): SpecCheck[] {
   const rollback = extractSectionContent(specMarkdown, 'Rollback Plan');
   const hasMigration = /migrat/i.test(specMarkdown);
   const hasConcreteRollback = rollback.length >= 20 && !isPlaceholder(rollback);
-  const mentionsMigrationRollback = /migrat.*rollback|rollback.*migrat|revert.*migrat/i.test(rollback);
+  const mentionsMigrationRollback = /migrat.*rollback|rollback.*migrat|revert.*migrat|revert.*database|DROP\s+(TABLE|FUNCTION|INDEX|SCHEMA)/i.test(rollback);
   if (!hasConcreteRollback) {
     checks.push({
       check_id: 'CQ-08', category: 'content', name: 'Rollback Plan',
