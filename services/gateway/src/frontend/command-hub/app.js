@@ -1185,12 +1185,12 @@ function doLogout() {
 function isEligibleScheduled(task) {
     if (!task) return false;
 
-    // Rule A: Only classic VTIDs (VTID-NNNN or VTID-NNNNN format)
-    // Note: This is redundant with isHumanTask check but kept for safety
-    // VTID-01028: Updated to support 5-digit VTIDs (e.g., VTID-01028, VTID-01029)
+    // Rule A: Only VTIDs with VTID- prefix (excludes DEV-*, AUTODEPLOY-*, etc.)
+    // Accepts both numeric (VTID-01217) and alphanumeric (VTID-E5DAA) suffixes
+    // to support autopilot-generated VTIDs
     var vtid = (task.vtid || '');
-    var classicVtidPattern = /^VTID-\d{4,5}$/;
-    if (!classicVtidPattern.test(vtid)) {
+    var vtidPattern = /^VTID-[A-Z0-9]{4,5}$/i;
+    if (!vtidPattern.test(vtid)) {
         return false;
     }
 
