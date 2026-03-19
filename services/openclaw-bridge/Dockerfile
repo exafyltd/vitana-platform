@@ -2,7 +2,7 @@ FROM node:22-slim AS builder
 
 WORKDIR /app
 COPY package.json pnpm-lock.yaml* ./
-RUN corepack enable && pnpm install --frozen-lockfile 2>/dev/null || pnpm install
+RUN corepack enable && corepack prepare --activate && pnpm install --frozen-lockfile
 COPY tsconfig.json ./
 COPY src/ ./src/
 RUN pnpm build

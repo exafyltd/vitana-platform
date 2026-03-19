@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "OpenClaw integration bridge for Vitana Autopilot - connects OpenClaw skills and heartbeat to OASIS governance pipeline",
+  "packageManager": "pnpm@9.0.0",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
