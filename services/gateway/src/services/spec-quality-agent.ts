@@ -301,7 +301,8 @@ export function checkSectionContent(specMarkdown: string): SpecCheck[] {
 
   // CQ-08: Rollback Plan
   const rollback = extractSectionContent(specMarkdown, 'Rollback Plan');
-  const hasMigration = /migrat/i.test(specMarkdown);
+  // Check for actual SQL DDL or migration files, not just the word "migration"
+  const hasMigration = /CREATE\s+(TABLE|INDEX|FUNCTION|TRIGGER|VIEW|TYPE)|ALTER\s+TABLE|supabase\/migrations/i.test(specMarkdown);
   const hasConcreteRollback = rollback.length >= 20 && !isPlaceholder(rollback);
   const mentionsMigrationRollback = /migrat.*rollback|rollback.*migrat|revert.*migrat|revert.*database|DROP\s+(TABLE|FUNCTION|INDEX|SCHEMA)/i.test(rollback);
   if (!hasConcreteRollback) {
