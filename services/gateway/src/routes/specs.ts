@@ -13,6 +13,7 @@
 import { Router, Request, Response } from 'express';
 import { createHash } from 'crypto';
 import { VertexAI } from '@google-cloud/vertexai';
+import { GoogleAuth } from 'google-auth-library';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { runFullQualityCheck } from '../services/spec-quality-agent';
 
@@ -22,18 +23,20 @@ const router = Router();
 // Vertex AI for LLM-powered spec generation
 // ===========================================================================
 const VERTEX_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || 'lovable-vitana-vers1';
-// Gemini 3.1 Pro requires the global endpoint, not regional (us-central1)
-const SPEC_GEN_LOCATION = 'global';
-const SPEC_GEN_MODEL = 'gemini-3.1-pro-preview';
 
+// Primary: Gemini 3.1 Pro via REST (requires global endpoint)
+const SPEC_GEN_MODEL_PRIMARY = 'gemini-3.1-pro-preview';
+// Fallback: Gemini 2.5 Pro via SDK (us-central1)
+const SPEC_GEN_MODEL_FALLBACK = 'gemini-2.5-pro';
+
+let googleAuth: GoogleAuth | null = null;
 let vertexAI: VertexAI | null = null;
 try {
-  if (VERTEX_PROJECT) {
-    vertexAI = new VertexAI({ project: VERTEX_PROJECT, location: SPEC_GEN_LOCATION });
-    console.log(`[VTID-01188] Vertex AI initialized for spec generation: project=${VERTEX_PROJECT}, location=${SPEC_GEN_LOCATION}, model=${SPEC_GEN_MODEL}`);
-  }
+  googleAuth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
+  vertexAI = new VertexAI({ project: VERTEX_PROJECT, location: 'us-central1' });
+  console.log(`[VTID-01188] Spec gen initialized: primary=${SPEC_GEN_MODEL_PRIMARY} (global), fallback=${SPEC_GEN_MODEL_FALLBACK} (us-central1)`);
 } catch (err: any) {
-  console.warn(`[VTID-01188] Failed to init Vertex AI for spec gen: ${err.message}`);
+  console.warn(`[VTID-01188] Failed to init spec gen: ${err.message}`);
 }
 
 // ===========================================================================
@@ -269,52 +272,108 @@ async function gatherSystemContext(vtid: string, title: string): Promise<string>
 }
 
 /**
- * Generate a spec using Gemini 2.5 Pro with deep system context analysis.
- * Falls back to a minimal template if LLM is unavailable.
+ * Call Gemini via Vertex AI REST API (supports global endpoint for 3.1 Pro).
+ */
+async function callGeminiREST(
+  model: string,
+  location: string,
+  systemPrompt: string,
+  userPrompt: string,
+  config: { temperature: number; maxOutputTokens: number; topP: number }
+): Promise<string | null> {
+  if (!googleAuth) return null;
+
+  const accessToken = await googleAuth.getAccessToken();
+  if (!accessToken) throw new Error('Failed to get access token');
+
+  // Global endpoint has no region prefix; regional endpoints use {region}-aiplatform...
+  const baseUrl = location === 'global'
+    ? 'https://aiplatform.googleapis.com'
+    : `https://${location}-aiplatform.googleapis.com`;
+
+  const url = `${baseUrl}/v1/projects/${VERTEX_PROJECT}/locations/${location}/publishers/google/models/${model}:generateContent`;
+
+  const body = {
+    contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+    systemInstruction: { role: 'system', parts: [{ text: systemPrompt }] },
+    generationConfig: {
+      temperature: config.temperature,
+      maxOutputTokens: config.maxOutputTokens,
+      topP: config.topP,
+    },
+  };
+
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => 'unknown');
+    throw new Error(`Vertex REST ${resp.status}: ${errText.substring(0, 300)}`);
+  }
+
+  const data = await resp.json() as any;
+  return data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
+}
+
+/**
+ * Generate a spec using Gemini 3.1 Pro (primary) or 2.5 Pro (fallback).
+ * Falls back to a minimal template if all LLMs are unavailable.
  */
 async function generateSpecWithLLM(vtid: string, title: string, summary: string, seedNotes: string, source: string): Promise<string> {
-  // Try LLM generation with deep context
+  const systemContext = await gatherSystemContext(vtid, title);
+
+  const promptParts = [
+    `Generate a complete, high-quality implementation specification for the following task.`,
+    ``,
+    `VTID: ${vtid}`,
+    `Task Title: ${title}`,
+    summary ? `Task Summary: ${summary}` : '',
+    seedNotes && seedNotes.trim() !== title.trim() ? `Additional Context:\n${seedNotes}` : '',
+    ``,
+    systemContext ? `--- SYSTEM CONTEXT (use this to make the spec specific and accurate) ---\n${systemContext}` : '',
+    ``,
+    `INSTRUCTIONS:`,
+    `- Use the EXACT markdown template format from your system instructions`,
+    `- Fill EVERY section with specific, actionable, concrete content`,
+    `- Reference actual Vitana file paths (services/gateway/src/..., supabase/migrations/...)`,
+    `- Reference actual API patterns (POST /api/v1/..., Supabase RPC calls)`,
+    `- Identify real database tables that may need changes (vtid_ledger, oasis_events, etc.)`,
+    `- Consider conflicts with related tasks listed in the system context`,
+    `- Be specific about risk level based on the scope of changes`,
+    `- NEVER use placeholder text like "TBD", "to be determined", or "None identified"`,
+  ].filter(Boolean).join('\n');
+
+  const genConfig = { temperature: 0.3, maxOutputTokens: 16384, topP: 0.9 };
+
+  // === Primary: Gemini 3.1 Pro via REST (global endpoint) ===
+  try {
+    console.log(`[VTID-01188] Trying ${SPEC_GEN_MODEL_PRIMARY} (global) for ${vtid}: "${title}" (context: ${systemContext.length} chars)`);
+    const text = await callGeminiREST(SPEC_GEN_MODEL_PRIMARY, 'global', SPEC_GEN_SYSTEM_PROMPT, promptParts, genConfig);
+    if (text && text.length > 200) {
+      console.log(`[VTID-01188] ${SPEC_GEN_MODEL_PRIMARY} spec generated for ${vtid}: ${text.length} chars`);
+      return text;
+    }
+    console.warn(`[VTID-01188] ${SPEC_GEN_MODEL_PRIMARY} returned insufficient content (${text?.length || 0} chars)`);
+  } catch (err: any) {
+    console.warn(`[VTID-01188] ${SPEC_GEN_MODEL_PRIMARY} failed for ${vtid}: ${err.message}`);
+  }
+
+  // === Fallback: Gemini 2.5 Pro via SDK (us-central1) ===
   if (vertexAI) {
     try {
-      // Gather system context in parallel with model init
-      const systemContext = await gatherSystemContext(vtid, title);
-
+      console.log(`[VTID-01188] Falling back to ${SPEC_GEN_MODEL_FALLBACK} (us-central1) for ${vtid}`);
       const model = vertexAI.getGenerativeModel({
-        model: SPEC_GEN_MODEL,
-        generationConfig: {
-          temperature: 0.3,
-          maxOutputTokens: 16384,
-          topP: 0.9,
-        },
-        systemInstruction: {
-          role: 'system',
-          parts: [{ text: SPEC_GEN_SYSTEM_PROMPT }],
-        },
+        model: SPEC_GEN_MODEL_FALLBACK,
+        generationConfig: genConfig,
+        systemInstruction: { role: 'system', parts: [{ text: SPEC_GEN_SYSTEM_PROMPT }] },
       });
 
-      // Build rich prompt with all available context
-      const promptParts = [
-        `Generate a complete, high-quality implementation specification for the following task.`,
-        ``,
-        `VTID: ${vtid}`,
-        `Task Title: ${title}`,
-        summary ? `Task Summary: ${summary}` : '',
-        seedNotes && seedNotes.trim() !== title.trim() ? `Additional Context:\n${seedNotes}` : '',
-        ``,
-        systemContext ? `--- SYSTEM CONTEXT (use this to make the spec specific and accurate) ---\n${systemContext}` : '',
-        ``,
-        `INSTRUCTIONS:`,
-        `- Use the EXACT markdown template format from your system instructions`,
-        `- Fill EVERY section with specific, actionable, concrete content`,
-        `- Reference actual Vitana file paths (services/gateway/src/..., supabase/migrations/...)`,
-        `- Reference actual API patterns (POST /api/v1/..., Supabase RPC calls)`,
-        `- Identify real database tables that may need changes (vtid_ledger, oasis_events, etc.)`,
-        `- Consider conflicts with related tasks listed in the system context`,
-        `- Be specific about risk level based on the scope of changes`,
-        `- NEVER use placeholder text like "TBD", "to be determined", or "None identified"`,
-      ].filter(Boolean).join('\n');
-
-      console.log(`[VTID-01188] Generating spec with ${SPEC_GEN_MODEL} for ${vtid}: "${title}" (context: ${systemContext.length} chars)`);
       const response = await model.generateContent({
         contents: [{ role: 'user', parts: [{ text: promptParts }] }],
       });
@@ -323,12 +382,12 @@ async function generateSpecWithLLM(vtid: string, title: string, summary: string,
       const text = candidate?.content?.parts?.[0]?.text;
 
       if (text && text.length > 200) {
-        console.log(`[VTID-01188] LLM spec generated for ${vtid}: ${text.length} chars`);
+        console.log(`[VTID-01188] ${SPEC_GEN_MODEL_FALLBACK} spec generated for ${vtid}: ${text.length} chars`);
         return text;
       }
-      console.warn(`[VTID-01188] LLM returned insufficient content (${text?.length || 0} chars), falling back to template`);
+      console.warn(`[VTID-01188] ${SPEC_GEN_MODEL_FALLBACK} returned insufficient content (${text?.length || 0} chars)`);
     } catch (err: any) {
-      console.error(`[VTID-01188] LLM spec generation failed for ${vtid}: ${err.message}`);
+      console.error(`[VTID-01188] ${SPEC_GEN_MODEL_FALLBACK} failed for ${vtid}: ${err.message}`);
     }
   }
 
