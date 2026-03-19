@@ -7723,12 +7723,25 @@ body {
 }
 
 /* VTID-01016: OASIS Event Authority - Deterministic Stage Values */
+.vtid-stage-backlog,
 .vtid-stage-scheduled {
   background: rgba(107, 114, 128, 0.15);
   color: #6b7280;
 }
 
 .vtid-stage-queued {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+/* Also add stage-backlog for OASIS Ledger (uses status-badge class prefix) */
+.stage-backlog {
+  background: rgba(107, 114, 128, 0.15);
+  color: #6b7280;
+}
+
+.vtid-status-blocked,
+.status-blocked {
   background: rgba(245, 158, 11, 0.15);
   color: #f59e0b;
 }

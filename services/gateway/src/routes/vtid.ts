@@ -542,8 +542,8 @@ router.get("/list", async (req: Request, res: Response) => {
  * Returns a computed projection with derived fields:
  * - vtid: The VTID identifier
  * - title: Title (fallback to "")
- * - current_stage: Planner/Worker/Validator/Deploy/Done
- * - status: Moving/Blocked/Done/Failed
+ * - current_stage: Backlog/Planner/Worker/Validator/Deploy/Done
+ * - status: Scheduled/Active/Blocked/Done/Failed
  * - attention_required: AUTO or HUMAN
  * - last_update: ISO timestamp of last activity
  * - last_decision: Most recent governance decision (optional)
@@ -553,14 +553,15 @@ router.get("/list", async (req: Request, res: Response) => {
 interface VtidProjectionItem {
   vtid: string;
   title: string;
-  current_stage: 'Planner' | 'Worker' | 'Validator' | 'Deploy' | 'Done';
-  status: 'Moving' | 'Blocked' | 'Done' | 'Failed';
+  current_stage: 'Backlog' | 'Planner' | 'Worker' | 'Validator' | 'Deploy' | 'Done';
+  status: 'Scheduled' | 'Active' | 'Blocked' | 'Done' | 'Failed';
   attention_required: 'AUTO' | 'HUMAN';
   last_update: string | null;
   last_decision: string | null;
   // VTID-01005: Terminal state fields
   is_terminal: boolean;
   terminal_outcome: 'success' | 'failed' | null;
+  ledger_status: string;
 }
 
 router.get("/projection", async (req: Request, res: Response) => {
@@ -608,30 +609,44 @@ router.get("/projection", async (req: Request, res: Response) => {
       });
     }
 
-    // Step 2: Fetch recent events for all these VTIDs (batch query)
-    // We fetch the last 500 events and filter client-side for efficiency
+    // Step 2: Fetch events filtered by the VTIDs on this page (not global last-500)
+    const vtidList = vtidRows.map((r: any) => r.vtid as string);
+    const vtidFilter = vtidList.map((v: string) => `"${v}"`).join(',');
     const eventsResp = await fetch(
-      `${supabaseUrl}/rest/v1/oasis_events?order=created_at.desc&limit=500`,
+      `${supabaseUrl}/rest/v1/oasis_events?vtid=in.(${vtidFilter})&order=created_at.desc&limit=2000`,
       { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } }
     );
 
     let allEvents: any[] = [];
     if (eventsResp.ok) {
       allEvents = await eventsResp.json() as any[];
-      console.log(`[VTID-01001] Fetched ${allEvents.length} events for projection`);
+      console.log(`[VTID-01001] Fetched ${allEvents.length} events for ${vtidList.length} VTIDs`);
     } else {
       console.warn(`[VTID-01001] Events query failed, proceeding without events`);
     }
 
     // Step 3: Build projection for each VTID
-    // VTID-01005: OASIS is the SINGLE SOURCE OF TRUTH for terminal states
+    // Use ledger status as baseline, OASIS events override when present
     const projections: VtidProjectionItem[] = vtidRows.map((row: any) => {
       const vtid = row.vtid;
       const vtidEvents = allEvents.filter((e: any) => e.vtid === vtid);
+      const ledgerStatus = (row.status || 'scheduled').toLowerCase();
 
-      // Derive current_stage from events using stage-mapping logic
-      let currentStage: VtidProjectionItem['current_stage'] = 'Planner';
-      let derivedStatus: VtidProjectionItem['status'] = 'Moving';
+      // Initialize stage/status from ledger status (real data, not hardcoded defaults)
+      let currentStage: VtidProjectionItem['current_stage'] = 'Backlog';
+      let derivedStatus: VtidProjectionItem['status'] = 'Scheduled';
+      if (ledgerStatus === 'in_progress' || ledgerStatus === 'running') {
+        currentStage = 'Worker';
+        derivedStatus = 'Active';
+      } else if (ledgerStatus === 'validating') {
+        currentStage = 'Validator';
+        derivedStatus = 'Active';
+      } else if (ledgerStatus === 'queued') {
+        currentStage = 'Planner';
+        derivedStatus = 'Active';
+      }
+      // scheduled, allocated, todo → Backlog/Scheduled (default above)
+
       let attentionRequired: VtidProjectionItem['attention_required'] = 'AUTO';
       let lastUpdate: string | null = row.updated_at || row.created_at || null;
       let lastDecision: string | null = null;
@@ -667,21 +682,33 @@ router.get("/projection", async (req: Request, res: Response) => {
 
         // If not determined by terminal lifecycle events, check other patterns
         if (!isTerminal) {
-          // Determine stage from latest event
+          // Events exist → VTID is at least active
+          derivedStatus = 'Active';
+
           const eventTopic = (latestEvent.topic || latestEvent.kind || '').toLowerCase();
           const eventStatus = (latestEvent.status || '').toLowerCase();
           const eventMessage = (latestEvent.message || '').toLowerCase();
           const combined = `${eventTopic} ${eventStatus} ${eventMessage}`;
 
-          // Stage detection (priority: later stages first)
-          if (combined.includes('deploy') || combined.includes('release') || combined.includes('publish')) {
-            currentStage = 'Deploy';
-          } else if (combined.includes('validat') || combined.includes('test') || combined.includes('verify') || combined.includes('check')) {
-            currentStage = 'Validator';
-          } else if (combined.includes('worker') || combined.includes('execut') || combined.includes('run') || combined.includes('build') || combined.includes('process')) {
-            currentStage = 'Worker';
-          } else if (combined.includes('plan') || combined.includes('schedul') || combined.includes('queue')) {
-            currentStage = 'Planner';
+          // Stage detection: prefer explicit task_stage column first
+          const eventWithStage = vtidEvents.find((e: any) => e.task_stage);
+          if (eventWithStage) {
+            const ts = eventWithStage.task_stage.toUpperCase();
+            if (ts === 'DEPLOY') currentStage = 'Deploy';
+            else if (ts === 'VALIDATOR') currentStage = 'Validator';
+            else if (ts === 'WORKER') currentStage = 'Worker';
+            else if (ts === 'PLANNER') currentStage = 'Planner';
+          } else {
+            // Fallback: infer stage from event content keywords
+            if (combined.includes('deploy') || combined.includes('release') || combined.includes('publish')) {
+              currentStage = 'Deploy';
+            } else if (combined.includes('validat') || combined.includes('test') || combined.includes('verify') || combined.includes('check')) {
+              currentStage = 'Validator';
+            } else if (combined.includes('worker') || combined.includes('execut') || combined.includes('run') || combined.includes('build') || combined.includes('process')) {
+              currentStage = 'Worker';
+            } else if (combined.includes('plan') || combined.includes('schedul') || combined.includes('queue')) {
+              currentStage = 'Planner';
+            }
           }
 
           // VTID-01005: Check for terminal success patterns in events
@@ -775,7 +802,6 @@ router.get("/projection", async (req: Request, res: Response) => {
       // VTID-01005: Use ledger status ONLY if no terminal OASIS event exists
       // OASIS events take precedence over local ledger state
       if (!isTerminal) {
-        const ledgerStatus = (row.status || '').toLowerCase();
         if (ledgerStatus === 'done' || ledgerStatus === 'closed' || ledgerStatus === 'deployed' || ledgerStatus === 'merged' || ledgerStatus === 'complete') {
           derivedStatus = 'Done';
           currentStage = 'Done';
@@ -803,6 +829,7 @@ router.get("/projection", async (req: Request, res: Response) => {
         // VTID-01005: Terminal state fields
         is_terminal: isTerminal,
         terminal_outcome: terminalOutcome,
+        ledger_status: row.status || 'scheduled',
       };
     });
 

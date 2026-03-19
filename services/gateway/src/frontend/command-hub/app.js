@@ -163,7 +163,7 @@ function deriveVtidStageStatus(item) {
     }
 
     var backendStatus = (item.status || '').toLowerCase();
-    var backendStage = item.current_stage || 'Planner';
+    var backendStage = item.current_stage || 'Backlog';
 
     // Priority 2: Check for explicit Done status
     if (backendStatus === 'done') {
@@ -171,12 +171,14 @@ function deriveVtidStageStatus(item) {
     }
 
     // Priority 3: Check for Failed/Blocked status
-    if (backendStatus === 'failed' || backendStatus === 'blocked') {
+    if (backendStatus === 'failed') {
         return { stage: backendStage, status: 'failed' };
     }
+    if (backendStatus === 'blocked') {
+        return { stage: backendStage, status: 'blocked' };
+    }
 
-    // Priority 4: Map "Moving" and other non-terminal statuses
-    // Stage determines display, status becomes 'in_progress' for active work
+    // Priority 4: Map stage from backend projection
     switch (backendStage) {
         case 'Done':
             return { stage: 'Done', status: 'success' };
@@ -187,11 +189,11 @@ function deriveVtidStageStatus(item) {
         case 'Worker':
             return { stage: 'Worker', status: 'in_progress' };
         case 'Planner':
-            // Planner stage with Moving → lifecycle started, queued for work
-            return { stage: 'Queued', status: 'in_progress' };
+            return { stage: 'Planner', status: 'in_progress' };
+        case 'Backlog':
+            return { stage: 'Backlog', status: 'scheduled' };
         default:
-            // Unknown stage → default to Scheduled
-            return { stage: 'Scheduled', status: 'scheduled' };
+            return { stage: 'Backlog', status: 'scheduled' };
     }
 }
 
@@ -1786,7 +1788,7 @@ function updateVtidsTableBodyFromProjection(tbody, items) {
             row.appendChild(titleCell);
 
             // Derive Stage/Status
-            var derived = deriveVtidStageStatus(item) || { stage: 'Scheduled', status: 'scheduled' };
+            var derived = deriveVtidStageStatus(item) || { stage: 'Backlog', status: 'scheduled' };
 
             // Stage column
             var stageCell = document.createElement('td');
@@ -17003,7 +17005,7 @@ function renderVtidProjectionTable(items) {
 
             // VTID-01016: Derive Stage/Status from OASIS event authority
             // VTID-01030: Null-safe derivation with fallback defaults
-            var derived = deriveVtidStageStatus(item) || { stage: 'Scheduled', status: 'scheduled' };
+            var derived = deriveVtidStageStatus(item) || { stage: 'Backlog', status: 'scheduled' };
 
             // Stage column (Scheduled/Queued/Planner/Worker/Validator/Deploy/Done)
             var stageCell = document.createElement('td');
@@ -17254,7 +17256,7 @@ function renderOasisLedgerTableWithDrilldown(items) {
 
             // VTID-01016: Derive Stage/Status from OASIS event authority
             // VTID-01030: Null-safe derivation with fallback defaults
-            var derived = deriveVtidStageStatus(item) || { stage: 'Scheduled', status: 'scheduled' };
+            var derived = deriveVtidStageStatus(item) || { stage: 'Backlog', status: 'scheduled' };
 
             // Stage column (Scheduled/Queued/Planner/Worker/Validator/Deploy/Done)
             var stageCell = document.createElement('td');
@@ -17510,19 +17512,23 @@ function renderOasisVtidLedgerView() {
             titleCell.textContent = item.title || '-';
             row.appendChild(titleCell);
 
-            // Stage
+            // Stage + Status: use deriveVtidStageStatus for consistent display
+            var derived = deriveVtidStageStatus(item) || { stage: 'Backlog', status: 'scheduled' };
+
             var stageCell = document.createElement('td');
             var stageBadge = document.createElement('span');
-            stageBadge.className = 'status-badge stage-' + (item.current_stage || 'pending').toLowerCase();
-            stageBadge.textContent = item.current_stage || '-';
+            var stageVal = (derived.stage || 'backlog').toLowerCase();
+            stageBadge.className = 'status-badge stage-' + stageVal;
+            stageBadge.textContent = derived.stage || 'Backlog';
             stageCell.appendChild(stageBadge);
             row.appendChild(stageCell);
 
             // Status
             var statusCell = document.createElement('td');
             var statusBadge = document.createElement('span');
-            statusBadge.className = 'status-badge status-' + (item.status || 'pending').toLowerCase();
-            statusBadge.textContent = item.status || '-';
+            var statusVal = (derived.status || 'scheduled').toLowerCase();
+            statusBadge.className = 'status-badge status-' + statusVal;
+            statusBadge.textContent = derived.status || 'scheduled';
             statusCell.appendChild(statusBadge);
             row.appendChild(statusCell);
 
