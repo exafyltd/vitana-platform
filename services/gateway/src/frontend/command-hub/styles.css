@@ -248,8 +248,8 @@ body {
 }
 
 .nav-item:hover {
-  background-color: rgba(255, 255, 255, 0.05);
-  color: var(--color-text-primary);
+  background-color: rgba(59, 130, 246, 0.08);
+  color: var(--color-accent);
 }
 
 .nav-item.active {
@@ -258,25 +258,7 @@ body {
   border-right: 3px solid var(--color-accent);
 }
 
-/* VTID-01232: Operator nav color changed to neutral (matches all other nav items) */
-.nav-item[data-module="Operator"]::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background-color: var(--color-accent);
-  display: none;
-}
-
-.nav-item[data-module="Operator"] {
-  color: inherit;
-}
-
-.nav-item[data-module="Operator"].active::before {
-  display: block;
-}
+/* VTID-01232: Operator nav uses same base styles as all other nav items (no overrides) */
 
 /* VTID-01014: Old collapse toggle - hidden (now in header) */
 .collapse-toggle {
