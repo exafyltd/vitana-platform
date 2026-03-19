@@ -782,11 +782,14 @@ body {
 
 .drawer-header {
   padding: 1.5rem;
+  padding-right: 3rem;
   border-bottom: 1px solid var(--color-border);
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
   align-items: center;
+  gap: 4px 8px;
   background: var(--color-bg);
+  position: relative;
 }
 
 .drawer-content {
@@ -2169,6 +2172,10 @@ body {
   color: var(--color-text-secondary);
   font-size: 1.5rem;
   cursor: pointer;
+  position: absolute;
+  top: 1rem;
+  right: 0.75rem;
+  z-index: 1;
 }
 
 .task-summary-text {
@@ -9116,6 +9123,9 @@ body {
   background: rgba(255, 255, 255, 0.03);
   border-radius: 4px;
   font-size: 0.9rem;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .drawer-title-row.drawer-title-editable {
@@ -9131,12 +9141,17 @@ body {
   color: var(--color-text-secondary);
   margin-right: 4px;
   font-weight: 500;
+  flex-shrink: 0;
 }
 
 .drawer-title-value {
   color: var(--color-text-primary);
   font-weight: 600;
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .drawer-title-placeholder .drawer-title-value {
@@ -13270,6 +13285,10 @@ body {
   font-size: 1.25rem;
   cursor: pointer;
   padding: 4px 8px;
+  position: absolute;
+  top: 1rem;
+  right: 0.75rem;
+  z-index: 1;
 }
 
 .drawer-close-btn:hover {
