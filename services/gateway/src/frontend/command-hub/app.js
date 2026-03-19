@@ -22103,6 +22103,7 @@ function createRecommendationCard(rec) {
                 state.autopilotRecommendationsCount = Math.max(0, state.autopilotRecommendationsCount - 1);
                 card.remove();
                 updateRecommendationModalFooter();
+                await fetchTasks();
                 showToast('Activated! VTID: ' + data.vtid, 'success');
             } else {
                 activateBtn.disabled = false;
@@ -29505,6 +29506,8 @@ function renderOverviewSystemView() {
                     if (resp.ok) {
                         state.overviewPipelineSummary.fetched = false;
                         fetchPipelineSummary();
+                        await fetchTasks();
+                        showToast('Recommendation activated!', 'success');
                     }
                 } catch (err) {
                     console.error('Failed to activate recommendation:', err);
