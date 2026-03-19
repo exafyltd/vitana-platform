@@ -22,14 +22,15 @@ const router = Router();
 // Vertex AI for LLM-powered spec generation
 // ===========================================================================
 const VERTEX_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || 'lovable-vitana-vers1';
-const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'us-central1';
-const SPEC_GEN_MODEL = 'gemini-2.5-pro';
+// Gemini 3.1 Pro requires the global endpoint, not regional (us-central1)
+const SPEC_GEN_LOCATION = 'global';
+const SPEC_GEN_MODEL = 'gemini-3.1-pro-preview';
 
 let vertexAI: VertexAI | null = null;
 try {
-  if (VERTEX_PROJECT && VERTEX_LOCATION) {
-    vertexAI = new VertexAI({ project: VERTEX_PROJECT, location: VERTEX_LOCATION });
-    console.log(`[VTID-01188] Vertex AI initialized for spec generation: project=${VERTEX_PROJECT}`);
+  if (VERTEX_PROJECT) {
+    vertexAI = new VertexAI({ project: VERTEX_PROJECT, location: SPEC_GEN_LOCATION });
+    console.log(`[VTID-01188] Vertex AI initialized for spec generation: project=${VERTEX_PROJECT}, location=${SPEC_GEN_LOCATION}, model=${SPEC_GEN_MODEL}`);
   }
 } catch (err: any) {
   console.warn(`[VTID-01188] Failed to init Vertex AI for spec gen: ${err.message}`);
@@ -282,7 +283,7 @@ async function generateSpecWithLLM(vtid: string, title: string, summary: string,
         model: SPEC_GEN_MODEL,
         generationConfig: {
           temperature: 0.3,
-          maxOutputTokens: 8192,
+          maxOutputTokens: 16384,
           topP: 0.9,
         },
         systemInstruction: {
