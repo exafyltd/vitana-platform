@@ -802,16 +802,21 @@ router.get("/projection", async (req: Request, res: Response) => {
       // VTID-01005: Use ledger status ONLY if no terminal OASIS event exists
       // OASIS events take precedence over local ledger state
       if (!isTerminal) {
-        if (ledgerStatus === 'done' || ledgerStatus === 'closed' || ledgerStatus === 'deployed' || ledgerStatus === 'merged' || ledgerStatus === 'complete') {
+        if (ledgerStatus === 'done' || ledgerStatus === 'closed' || ledgerStatus === 'deployed' || ledgerStatus === 'merged' || ledgerStatus === 'complete' || ledgerStatus === 'completed') {
           derivedStatus = 'Done';
           currentStage = 'Done';
           isTerminal = true;
           terminalOutcome = 'success';
-        } else if (ledgerStatus === 'failed' || ledgerStatus === 'error') {
+        } else if (ledgerStatus === 'failed' || ledgerStatus === 'error' || ledgerStatus === 'rejected') {
           derivedStatus = 'Failed';
           attentionRequired = 'HUMAN';
           isTerminal = true;
           terminalOutcome = 'failed';
+        } else if (ledgerStatus === 'deleted') {
+          derivedStatus = 'Done';
+          currentStage = 'Done';
+          isTerminal = true;
+          terminalOutcome = 'success';
         } else if (ledgerStatus === 'blocked') {
           derivedStatus = 'Blocked';
           attentionRequired = 'HUMAN';
