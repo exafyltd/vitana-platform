@@ -24,6 +24,7 @@ NC="\033[0m"
 declare -A SERVICE_MAPPINGS=(
   ["vitana-verification-engine"]="services/agents/vitana-orchestrator:/health:vitana-verification-engine"
   ["cognee-extractor"]="services/agents/cognee-extractor:/health:cognee-extractor"
+  ["openclaw-bridge"]="services/openclaw-bridge:/health:openclaw-bridge"
 )
 
 # =============================================================================
@@ -169,6 +170,20 @@ elif [ "$CLOUD_RUN_SERVICE" = "worker-runner" ]; then
     --allow-unauthenticated \
     --min-instances=1 \
     --set-env-vars "ENVIRONMENT=${ENVIRONMENT},GATEWAY_URL=${GATEWAY_URL_VALUE}" \
+    --set-secrets "SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest" \
+    --quiet
+elif [ "$CLOUD_RUN_SERVICE" = "openclaw-bridge" ]; then
+  # OpenClaw Bridge - Vitana Autopilot execution runtime
+  # Requires Supabase for tenant data/audit logs and Gateway URL for OASIS events + governance
+  echo -e "${YELLOW}Deploying OpenClaw Bridge with Supabase + Gateway config...${NC}"
+  GATEWAY_URL_VALUE="${GATEWAY_URL:-https://gateway-q74ibpv6ia-uc.a.run.app}"
+  gcloud run deploy "$CLOUD_RUN_SERVICE" \
+    --project "$PROJECT" \
+    --region "$REGION" \
+    --source "$SOURCE_PATH" \
+    --platform managed \
+    --allow-unauthenticated \
+    --set-env-vars "ENVIRONMENT=${ENVIRONMENT},GATEWAY_URL=${GATEWAY_URL_VALUE},OPENCLAW_HOME=/opt/vitana-autopilot,OPENCLAW_LLM_PROVIDER=anthropic,OPENCLAW_LLM_MODEL=claude-sonnet-4-6,OPENCLAW_WORKSPACE_ISOLATION=tenant_namespaces,OPENCLAW_DISABLED_SKILLS=shell:browser:file,OPENCLAW_ENFORCE_GOVERNANCE=true,OPENCLAW_HEARTBEAT_ENABLED=true,OPENCLAW_HEARTBEAT_INTERVAL_MS=900000" \
     --set-secrets "SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest" \
     --quiet
 elif [ "$CLOUD_RUN_SERVICE" = "cognee-extractor" ]; then
