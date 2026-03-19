@@ -6550,6 +6550,22 @@ function renderTaskDrawer() {
     if (state.drawerSpecVtid !== vtid) {
         state.drawerSpecVtid = vtid;
         state.drawerSpecText = getTaskSpec(vtid);
+        // VTID-01188: If spec exists on server but not in localStorage, fetch it
+        var taskSpecStatus = (state.selectedTaskDetail && state.selectedTaskDetail.spec_status)
+            ? state.selectedTaskDetail.spec_status
+            : (state.selectedTask && state.selectedTask.spec_status);
+        if (!state.drawerSpecText && taskSpecStatus && taskSpecStatus !== 'missing') {
+            fetch('/api/v1/specs/' + vtid, { headers: buildContextHeaders({}) })
+                .then(function(r) { return r.json(); })
+                .then(function(d) {
+                    if (d.ok && d.spec && d.spec.spec_markdown) {
+                        state.drawerSpecText = d.spec.spec_markdown;
+                        saveTaskSpec(vtid, d.spec.spec_markdown);
+                        renderApp();
+                    }
+                })
+                .catch(function(e) { console.warn('[VTID-01188] Spec fetch on drawer open:', e); });
+        }
     }
 
     const header = document.createElement('div');
@@ -6858,8 +6874,22 @@ function renderTaskDrawer() {
                         headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
                         body: JSON.stringify({ seed_notes: seedNotes, source: 'commandhub' })
                     });
+                    if (!response.ok) throw new Error('HTTP ' + response.status);
                     var result = await response.json();
                     if (result.ok) {
+                        // Fetch the generated spec content and load into textarea
+                        try {
+                            var specResp = await fetch('/api/v1/specs/' + vtid, {
+                                headers: buildContextHeaders({})
+                            });
+                            var specData = await specResp.json();
+                            if (specData.ok && specData.spec && specData.spec.spec_markdown) {
+                                state.drawerSpecText = specData.spec.spec_markdown;
+                                saveTaskSpec(vtid, specData.spec.spec_markdown);
+                            }
+                        } catch (specErr) {
+                            console.warn('[VTID-01188] Could not fetch spec content after generation:', specErr);
+                        }
                         // Refresh BEFORE toast (showToast calls renderApp which destroys button DOM)
                         await fetchVtidDetail(vtid);
                         await fetchTasks();
@@ -6893,6 +6923,7 @@ function renderTaskDrawer() {
                         method: 'POST',
                         headers: buildContextHeaders({ 'Content-Type': 'application/json' })
                     });
+                    if (!response.ok) throw new Error('HTTP ' + response.status);
                     var result = await response.json();
                     if (result.ok) {
                         // Refresh BEFORE toast (showToast calls renderApp which destroys button DOM)
@@ -6932,6 +6963,7 @@ function renderTaskDrawer() {
                         method: 'POST',
                         headers: buildContextHeaders({ 'Content-Type': 'application/json' })
                     });
+                    if (!response.ok) throw new Error('HTTP ' + response.status);
                     var result = await response.json();
                     if (result.ok && result.report) {
                         var r = result.report;
@@ -6983,6 +7015,7 @@ function renderTaskDrawer() {
                             'x-user-role': userRole
                         })
                     });
+                    if (!response.ok) throw new Error('HTTP ' + response.status);
                     var result = await response.json();
                     if (result.ok) {
                         // Refresh BEFORE toast (showToast calls renderApp which destroys button DOM)
@@ -7017,8 +7050,14 @@ function renderTaskDrawer() {
                     var response = await fetch('/api/v1/specs/' + vtid, {
                         headers: buildContextHeaders({})
                     });
+                    if (!response.ok) throw new Error('HTTP ' + response.status);
                     var result = await response.json();
                     if (result.ok && result.spec) {
+                        // Also load spec into textarea and localStorage
+                        if (result.spec.spec_markdown) {
+                            state.drawerSpecText = result.spec.spec_markdown;
+                            saveTaskSpec(vtid, result.spec.spec_markdown);
+                        }
                         // Show spec in a viewer
                         var existingViewer = specPipelineSection.querySelector('.task-spec-viewer');
                         if (existingViewer) {
