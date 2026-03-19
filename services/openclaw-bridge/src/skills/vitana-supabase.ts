@@ -112,8 +112,8 @@ export const actions = {
   /**
    * Query usage stats for a tenant (read-only).
    */
-  async audit_usage(input: { tenant_id: string }) {
-    const tenant_id = z.string().uuid().parse(input.tenant_id);
+  async audit_usage(input: unknown) {
+    const { tenant_id } = z.object({ tenant_id: z.string().uuid() }).parse(input);
     const supabase = getClient();
 
     const { data, error } = await supabase

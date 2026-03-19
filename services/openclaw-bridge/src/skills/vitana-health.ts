@@ -96,8 +96,8 @@ export const actions = {
   /**
    * Check if text contains PHI. Use as a gate before external LLM calls.
    */
-  async check_phi(input: { text: string }) {
-    const text = z.string().min(1).parse(input.text);
+  async check_phi(input: unknown) {
+    const { text } = z.object({ text: z.string().min(1) }).parse(input);
     const hasPhi = containsPhi(text);
 
     return {

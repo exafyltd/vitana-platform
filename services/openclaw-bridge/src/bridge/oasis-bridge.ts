@@ -23,7 +23,7 @@ const OasisEventSchema = z.object({
   source: z.string().default('openclaw-bridge'),
 });
 
-export type OasisEvent = z.infer<typeof OasisEventSchema>;
+export type OasisEvent = z.input<typeof OasisEventSchema>;
 
 export interface GovernanceCheckResult {
   allowed: boolean;
