@@ -167,6 +167,14 @@ Claude must apply the following **conditional logic**:
 19. **IF** deploying from Cloud Shell → **THEN run `git fetch origin && git log --oneline origin/main -3` and compare with local repo to confirm Cloud Shell has latest code.**
 20. **IF** Cloud Shell is behind `origin/main` → **THEN run `git reset --hard origin/main` before deploying.**
 
+### CI/CD Pipeline (CRITICAL - Added 2026-03-19)
+
+21. **IF** Auto Deploy shows "success" → **THEN check EXEC-DEPLOY runs to confirm actual deployment was dispatched. Auto Deploy success does NOT mean code was deployed.**
+22. **IF** commit message has no VTID → **THEN Auto Deploy will NOT dispatch EXEC-DEPLOY. Manually trigger EXEC-DEPLOY with BOOTSTRAP prefix.**
+23. **IF** merging a PR to main → **THEN ALWAYS verify EXEC-DEPLOY is running after merge. Do NOT assume Auto Deploy handled it.**
+24. **IF** EXEC-DEPLOY was not dispatched → **THEN manually dispatch it via GitHub API with `BOOTSTRAP-<description>` as the VTID.**
+25. **IF** making frontend CSS/JS changes → **THEN bump the `?v=` cache-busting parameter in index.html AND verify EXEC-DEPLOY completes.**
+
 ### Memory
 
 16. **IF** memory exists → **THEN retrieve, don't recreate.**
@@ -791,10 +799,79 @@ If post-deploy verification fails:
 
 ---
 
+## 16. CI/CD DEPLOYMENT PIPELINE — CRITICAL LESSONS (2026-03-19)
+
+**This section exists because of repeated deployment failures. READ CAREFULLY.**
+
+### AUTO-DEPLOY Does NOT Mean Code Is Deployed
+
+The `AUTO-DEPLOY.yml` workflow triggers on pushes to `main` under `services/gateway/**`, but it **ONLY dispatches `EXEC-DEPLOY.yml` if a VTID is found in the commit message**. If no VTID is found, the workflow exits with `success` status but **NO actual Cloud Run deployment happens**.
+
+**This is deceptive**: The GitHub Actions UI shows Auto Deploy as "success" even when nothing was deployed.
+
+### End-to-End Deployment Checklist (MANDATORY)
+
+When fixing bugs and deploying changes, you MUST complete ALL steps:
+
+1. **Code fix** — Make the change on the feature branch
+2. **Commit** — Include a VTID in the commit message (e.g., `fix: description (VTID-XXXXX)`)
+   - If no VTID exists, use `BOOTSTRAP-<description>` prefix
+3. **Push** — Push to the `claude/` branch
+4. **Create PR** — Via GitHub API using the Vitana Platform PAT
+5. **Merge PR** — Via GitHub API (squash merge)
+6. **Verify EXEC-DEPLOY was dispatched** — Check if Auto Deploy actually dispatched EXEC-DEPLOY:
+   ```
+   GET /repos/exafyltd/vitana-platform/actions/workflows/EXEC-DEPLOY.yml/runs?per_page=3
+   ```
+   If the latest EXEC-DEPLOY run is NOT `in_progress`, the deploy was NOT dispatched.
+7. **Manually trigger EXEC-DEPLOY if needed**:
+   ```
+   POST /repos/exafyltd/vitana-platform/actions/workflows/EXEC-DEPLOY.yml/dispatches
+   {
+     "ref": "main",
+     "inputs": {
+       "vtid": "BOOTSTRAP-<description>",
+       "service": "gateway",
+       "environment": "dev",
+       "health_path": "/alive",
+       "initiator": "auto"
+     }
+   }
+   ```
+8. **Wait for EXEC-DEPLOY to complete** — This does the actual `gcloud run deploy` to Cloud Run
+9. **Verify the deployment** — Confirm the fix is live on the deployed URL
+
+### Why Auto Deploy May Silently Skip Deployment
+
+The Auto Deploy workflow extracts VTIDs from commit messages using this pattern:
+```
+(DEV-[A-Z0-9]+-[0-9]{4}-[0-9]{4}|VTID-[0-9]{4,5}|BOOTSTRAP-[A-Z0-9\-]+)
+```
+
+If your commit message does NOT contain a VTID matching this pattern, the workflow logs "No VTID found" and exits cleanly — **without deploying**.
+
+### CSS/JS Cache-Busting
+
+The Gateway serves static files with `Cache-Control: no-cache, no-store, must-revalidate`, so browser caching is NOT an issue. However, `index.html` has `?v=` parameters on CSS/JS links. **Always bump these version strings** when making frontend changes to be safe:
+```html
+<link rel="stylesheet" href="/command-hub/styles.css?v=YYYYMMDD-HHMM" />
+<script src="/command-hub/app.js?v=YYYYMMDD-HHMM"></script>
+```
+
+### GitHub PATs for API Access
+
+- **Vitana Platform**: `github_pat_11BI6FN3I0...` (use for PR creation, merging, workflow dispatch)
+- **Lovable (Vitana v1)**: `ghp_vCNFyyrr...` (use for Lovable repo access)
+
+Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deployment operations.
+
+---
+
 ## CHANGE LOG
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-03-19 | Added CI/CD deployment pipeline critical lessons (Auto Deploy ≠ actual deploy) | BOOTSTRAP-OPERATOR-NAV-FIX |
 | 2026-02-13 | Added Deployment Verification Protocol section + rules | VTID-01228 |
 | 2026-02-03 | Added Memory & Intelligence Architecture section | VTID-01225 |
 | 2026-01-21 | Added ALWAYS/NEVER/IF-THEN core rules | VTID-01200 |
