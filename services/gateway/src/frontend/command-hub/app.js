@@ -3535,7 +3535,11 @@ const state = {
     // Models & Evaluations module
     modelsRegistry: { items: [], loading: false, error: null, fetched: false, pagination: { offset: 0, limit: 50, hasMore: true } },
     modelsPerformance: { data: null, loading: false, error: null, fetched: false },
-    modelsRouting: { config: null, domains: [], loading: false, error: null, fetched: false },
+    modelsRouting: { policy: null, providers: [], models: [], recommended: null, loading: false, error: null, fetched: false },
+    modelsTelemetry: { events: [], loading: false, error: null, fetched: false, pagination: { offset: 0, limit: 50, hasMore: true } },
+    modelsBenchmarks: { aggregated: [], loading: false, error: null, fetched: false },
+    modelsAutoRefreshEnabled: false,
+    modelsAutoRefreshInterval: null,
     modelsPlayground: { input: '', output: '', loading: false, error: null, model: '' },
 
     // Testing & QA (GitHub CI)
@@ -8844,6 +8848,11 @@ function handleModuleClick(sectionKey) {
     // VTID-01002: Capture scroll positions BEFORE changing route state
     captureAllScrollPositions();
 
+    // Stop models auto-refresh when leaving the models-evaluations module
+    if (state.currentModuleKey === 'models-evaluations' && sectionKey !== 'models-evaluations') {
+        stopModelsAutoRefresh();
+    }
+
     state.currentModuleKey = sectionKey;
     // Default to first tab
     const firstTab = section.tabs[0];
@@ -8939,6 +8948,10 @@ window.onpopstate = () => {
     captureAllScrollPositions();
 
     const route = getRouteFromPath(window.location.pathname);
+    // Stop models auto-refresh when navigating away
+    if (state.currentModuleKey === 'models-evaluations' && route.section !== 'models-evaluations') {
+        stopModelsAutoRefresh();
+    }
     state.currentModuleKey = route.section;
     state.currentTab = route.tab;
     renderApp();
@@ -32226,6 +32239,181 @@ function renderDiagnosticsDebugPanelView() {
 }
 
 // ===========================================================================
+// Models & Evaluations Module — Data Fetching
+// ===========================================================================
+
+/**
+ * Fetch model registry from API. Uses deferred fetch to avoid
+ * synchronous renderApp() calls inside render functions (which caused
+ * infinite render loops and screen freezing).
+ */
+function fetchModelsRegistry(silentRefresh) {
+    if (state.modelsRegistry.loading) return;
+    state.modelsRegistry.loading = true;
+    if (!silentRefresh) renderApp();
+    fetch('/api/v1/llm/models', { headers: buildContextHeaders() })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            state.modelsRegistry.items = data.data || data.models || (Array.isArray(data) ? data : []);
+            state.modelsRegistry.fetched = true;
+            state.modelsRegistry.loading = false;
+            state.modelsRegistry.error = null;
+            renderApp();
+        }).catch(function (err) {
+            state.modelsRegistry.error = err.message;
+            state.modelsRegistry.loading = false;
+            state.modelsRegistry.fetched = true;
+            renderApp();
+        });
+}
+
+/**
+ * Fetch LLM telemetry events for evaluations view (realtime data).
+ */
+function fetchModelsTelemetry(silentRefresh) {
+    if (state.modelsTelemetry.loading) return;
+    state.modelsTelemetry.loading = true;
+    if (!silentRefresh) renderApp();
+    fetch('/api/v1/llm/telemetry?limit=100', { headers: buildContextHeaders() })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            var events = (data.data && data.data.events) || [];
+            state.modelsTelemetry.events = events;
+            state.modelsTelemetry.fetched = true;
+            state.modelsTelemetry.loading = false;
+            state.modelsTelemetry.error = null;
+            // Derive benchmarks from telemetry
+            state.modelsBenchmarks.aggregated = aggregateBenchmarksFromTelemetry(events);
+            state.modelsBenchmarks.fetched = true;
+            state.modelsBenchmarks.loading = false;
+            renderApp();
+        }).catch(function (err) {
+            state.modelsTelemetry.error = err.message;
+            state.modelsTelemetry.loading = false;
+            state.modelsTelemetry.fetched = true;
+            state.modelsBenchmarks.fetched = true;
+            state.modelsBenchmarks.loading = false;
+            renderApp();
+        });
+}
+
+/**
+ * Fetch routing policy from API (realtime data).
+ */
+function fetchModelsRouting(silentRefresh) {
+    if (state.modelsRouting.loading) return;
+    state.modelsRouting.loading = true;
+    if (!silentRefresh) renderApp();
+    fetch('/api/v1/llm/routing-policy', { headers: buildContextHeaders() })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            var d = data.data || data;
+            state.modelsRouting.policy = d.policy || null;
+            state.modelsRouting.providers = d.providers || [];
+            state.modelsRouting.models = d.models || [];
+            state.modelsRouting.recommended = d.recommended || null;
+            state.modelsRouting.fetched = true;
+            state.modelsRouting.loading = false;
+            state.modelsRouting.error = null;
+            renderApp();
+        }).catch(function (err) {
+            state.modelsRouting.error = err.message;
+            state.modelsRouting.loading = false;
+            state.modelsRouting.fetched = true;
+            renderApp();
+        });
+}
+
+/**
+ * Aggregate telemetry events into per-model/stage benchmark stats.
+ */
+function aggregateBenchmarksFromTelemetry(events) {
+    var buckets = {};
+    events.forEach(function (ev) {
+        if (!ev || !ev.model || !ev.stage) return;
+        var key = ev.stage + '/' + ev.model;
+        if (!buckets[key]) {
+            buckets[key] = { stage: ev.stage, model: ev.model, provider: ev.provider || '-', latencies: [], successCount: 0, failCount: 0, totalCost: 0 };
+        }
+        var b = buckets[key];
+        if (typeof ev.latency_ms === 'number' && ev.latency_ms > 0) b.latencies.push(ev.latency_ms);
+        if (ev.cost_estimate_usd) b.totalCost += ev.cost_estimate_usd;
+        // Determine success/fail from event type or presence of error
+        if (ev.error_code || ev.error_message) { b.failCount++; } else { b.successCount++; }
+    });
+    var results = [];
+    Object.keys(buckets).forEach(function (key) {
+        var b = buckets[key];
+        var sorted = b.latencies.slice().sort(function (a, c) { return a - c; });
+        var len = sorted.length;
+        results.push({
+            stage: b.stage,
+            model: b.model,
+            provider: b.provider,
+            callCount: b.successCount + b.failCount,
+            successRate: b.successCount + b.failCount > 0 ? Math.round((b.successCount / (b.successCount + b.failCount)) * 100) : 0,
+            p50: len > 0 ? sorted[Math.floor(len * 0.5)] : 0,
+            p95: len > 0 ? sorted[Math.floor(len * 0.95)] : 0,
+            p99: len > 0 ? sorted[Math.floor(len * 0.99)] : 0,
+            avgLatency: len > 0 ? Math.round(sorted.reduce(function (a, c) { return a + c; }, 0) / len) : 0,
+            totalCost: Math.round(b.totalCost * 1000000) / 1000000
+        });
+    });
+    results.sort(function (a, b) { return b.callCount - a.callCount; });
+    return results;
+}
+
+/**
+ * Start auto-refresh for Models & Evaluations module (10s interval).
+ * Uses silentRefresh to avoid full DOM flicker during polling.
+ */
+function startModelsAutoRefresh() {
+    if (state.modelsAutoRefreshInterval) {
+        clearInterval(state.modelsAutoRefreshInterval);
+    }
+    state.modelsAutoRefreshEnabled = true;
+    state.modelsAutoRefreshInterval = setInterval(function () {
+        if (state.modelsAutoRefreshEnabled) {
+            fetchModelsTelemetry(true);
+            fetchModelsRouting(true);
+            fetchModelsRegistry(true);
+        }
+    }, 10000);
+    console.log('[Models] Auto-refresh started (10s interval)');
+}
+
+/**
+ * Stop auto-refresh for Models & Evaluations module.
+ */
+function stopModelsAutoRefresh() {
+    if (state.modelsAutoRefreshInterval) {
+        clearInterval(state.modelsAutoRefreshInterval);
+        state.modelsAutoRefreshInterval = null;
+    }
+    state.modelsAutoRefreshEnabled = false;
+    console.log('[Models] Auto-refresh stopped');
+}
+
+/**
+ * Ensure all Models data is loaded. Called when entering the module.
+ * Uses setTimeout(0) to defer fetches and avoid render-loop deadlocks.
+ */
+function ensureModelsFetched() {
+    if (!state.modelsRegistry.fetched && !state.modelsRegistry.loading) {
+        setTimeout(function () { fetchModelsRegistry(false); }, 0);
+    }
+    if (!state.modelsTelemetry.fetched && !state.modelsTelemetry.loading) {
+        setTimeout(function () { fetchModelsTelemetry(false); }, 0);
+    }
+    if (!state.modelsRouting.fetched && !state.modelsRouting.loading) {
+        setTimeout(function () { fetchModelsRouting(false); }, 0);
+    }
+    if (!state.modelsAutoRefreshEnabled) {
+        startModelsAutoRefresh();
+    }
+}
+
+// ===========================================================================
 // Models & Evaluations Module — Render Functions
 // ===========================================================================
 
@@ -32240,21 +32428,22 @@ function renderModelsListView() {
     subtitle.textContent = 'LLM models configured across the Vitana platform.';
     container.appendChild(subtitle);
 
-    if (!state.modelsRegistry.fetched && !state.modelsRegistry.loading) {
-        state.modelsRegistry.loading = true;
-        renderApp();
-        fetch('/api/v1/llm/models', { headers: buildContextHeaders() })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                state.modelsRegistry.items = data.data || data.models || (Array.isArray(data) ? data : []);
-                state.modelsRegistry.fetched = true;
-                state.modelsRegistry.loading = false;
-                renderApp();
-            }).catch(function (err) { state.modelsRegistry.error = err.message; state.modelsRegistry.loading = false; renderApp(); });
-    }
-    if (state.modelsRegistry.loading) { var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading...'; container.appendChild(l); return container; }
+    // Deferred fetch — never call renderApp() synchronously inside render
+    ensureModelsFetched();
+
+    if (state.modelsRegistry.loading && !state.modelsRegistry.fetched) { var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading models...'; container.appendChild(l); return container; }
     if (state.modelsRegistry.error) { var e = document.createElement('div'); e.className = 'placeholder-content error-text'; e.textContent = 'Error: ' + state.modelsRegistry.error; container.appendChild(e); return container; }
+    if (!state.modelsRegistry.fetched) { var w = document.createElement('div'); w.className = 'placeholder-content'; w.textContent = 'Waiting for data...'; container.appendChild(w); return container; }
     if (state.modelsRegistry.items.length === 0) { var em = document.createElement('div'); em.className = 'placeholder-content'; em.textContent = 'No models registered.'; container.appendChild(em); return container; }
+
+    // Realtime indicator
+    var liveBar = document.createElement('div');
+    liveBar.style.cssText = 'display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem;font-size:0.8rem;color:var(--color-text-secondary);';
+    var liveDot = document.createElement('span');
+    liveDot.style.cssText = 'width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block;animation:pulse 2s infinite;';
+    liveBar.appendChild(liveDot);
+    liveBar.appendChild(document.createTextNode('Live — auto-refreshing every 10s'));
+    container.appendChild(liveBar);
 
     var table = document.createElement('table');
     table.className = 'list-table';
@@ -32284,33 +32473,79 @@ function renderModelsEvaluationsView() {
     container.appendChild(title);
     var subtitle = document.createElement('p');
     subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Evaluation results comparing model performance across tasks.';
+    subtitle.textContent = 'Realtime evaluation results from LLM telemetry — success rates, latency, and cost per model/stage.';
     container.appendChild(subtitle);
 
-    var evals = [
-        { model: 'gemini-2.0-flash', task: 'Task Planning', score: 92, latency: '340ms', notes: 'Primary planner model' },
-        { model: 'gemini-2.0-flash', task: 'Code Generation', score: 88, latency: '280ms', notes: 'Worker execution model' },
-        { model: 'claude-3-haiku', task: 'Validation', score: 95, latency: '420ms', notes: 'Validator model' },
-        { model: 'text-embedding-ada-002', task: 'Embeddings', score: 91, latency: '120ms', notes: 'Memory embeddings' },
-        { model: 'gemini-2.0-flash', task: 'Summarization', score: 85, latency: '310ms', notes: 'Context summarization' }
-    ];
+    // Deferred fetch
+    ensureModelsFetched();
+
+    if (state.modelsTelemetry.loading && !state.modelsTelemetry.fetched) { var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading telemetry...'; container.appendChild(l); return container; }
+    if (state.modelsTelemetry.error) { var e = document.createElement('div'); e.className = 'placeholder-content error-text'; e.textContent = 'Error: ' + state.modelsTelemetry.error; container.appendChild(e); return container; }
+
+    // Realtime indicator
+    var liveBar = document.createElement('div');
+    liveBar.style.cssText = 'display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem;font-size:0.8rem;color:var(--color-text-secondary);';
+    var liveDot = document.createElement('span');
+    liveDot.style.cssText = 'width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block;animation:pulse 2s infinite;';
+    liveBar.appendChild(liveDot);
+    liveBar.appendChild(document.createTextNode('Live — auto-refreshing every 10s  |  ' + state.modelsTelemetry.events.length + ' events'));
+    container.appendChild(liveBar);
+
+    var benchmarks = state.modelsBenchmarks.aggregated || [];
+    if (benchmarks.length === 0) {
+        var em = document.createElement('div'); em.className = 'placeholder-content'; em.textContent = 'No telemetry events yet. LLM calls will appear here in realtime.'; container.appendChild(em); return container;
+    }
 
     var table = document.createElement('table');
     table.className = 'list-table';
-    table.innerHTML = '<thead><tr><th>Model</th><th>Task</th><th>Score</th><th>Avg Latency</th><th>Notes</th></tr></thead>';
+    table.innerHTML = '<thead><tr><th>Stage</th><th>Model</th><th>Provider</th><th>Calls</th><th>Success Rate</th><th>Avg Latency</th><th>Est. Cost</th></tr></thead>';
     var tbody = document.createElement('tbody');
-    evals.forEach(function (ev) {
+    benchmarks.forEach(function (b) {
         var row = document.createElement('tr');
-        var scoreColor = ev.score >= 90 ? '#22c55e' : ev.score >= 80 ? '#f59e0b' : '#ef4444';
-        row.innerHTML = '<td style="font-weight:600;">' + ev.model + '</td>' +
-            '<td>' + ev.task + '</td>' +
-            '<td style="font-weight:700;color:' + scoreColor + ';">' + ev.score + '%</td>' +
-            '<td>' + ev.latency + '</td>' +
-            '<td style="color:var(--color-text-secondary);">' + ev.notes + '</td>';
+        var rateColor = b.successRate >= 95 ? '#22c55e' : b.successRate >= 80 ? '#f59e0b' : '#ef4444';
+        row.innerHTML = '<td style="font-weight:600;text-transform:capitalize;">' + b.stage + '</td>' +
+            '<td style="font-family:monospace;font-size:0.85rem;">' + b.model + '</td>' +
+            '<td>' + b.provider + '</td>' +
+            '<td>' + b.callCount + '</td>' +
+            '<td style="font-weight:700;color:' + rateColor + ';">' + b.successRate + '%</td>' +
+            '<td>' + b.avgLatency + 'ms</td>' +
+            '<td style="font-family:monospace;font-size:0.85rem;">$' + b.totalCost.toFixed(6) + '</td>';
         tbody.appendChild(row);
     });
     table.appendChild(tbody);
     container.appendChild(table);
+
+    // Recent events timeline
+    var recentTitle = document.createElement('h3');
+    recentTitle.textContent = 'Recent LLM Calls';
+    recentTitle.style.marginTop = '2rem';
+    container.appendChild(recentTitle);
+
+    var recentEvents = state.modelsTelemetry.events.slice(0, 20);
+    if (recentEvents.length === 0) {
+        var noEv = document.createElement('div'); noEv.className = 'placeholder-content'; noEv.textContent = 'No recent events.'; container.appendChild(noEv);
+    } else {
+        var evTable = document.createElement('table');
+        evTable.className = 'list-table';
+        evTable.innerHTML = '<thead><tr><th>Time</th><th>Stage</th><th>Model</th><th>Latency</th><th>Tokens (in/out)</th><th>Status</th></tr></thead>';
+        var evTbody = document.createElement('tbody');
+        recentEvents.forEach(function (ev) {
+            var row = document.createElement('tr');
+            var ts = ev.created_at ? new Date(ev.created_at).toLocaleTimeString() : '-';
+            var hasError = ev.error_code || ev.error_message;
+            var statusBadge = hasError ? '<span class="status-badge status-error">failed</span>' : '<span class="status-badge status-active">ok</span>';
+            var tokens = (ev.input_tokens || '-') + ' / ' + (ev.output_tokens || '-');
+            row.innerHTML = '<td style="font-family:monospace;font-size:0.8rem;">' + ts + '</td>' +
+                '<td style="text-transform:capitalize;">' + (ev.stage || '-') + '</td>' +
+                '<td style="font-family:monospace;font-size:0.85rem;">' + (ev.model || '-') + '</td>' +
+                '<td>' + (ev.latency_ms ? ev.latency_ms + 'ms' : '-') + '</td>' +
+                '<td style="font-family:monospace;font-size:0.8rem;">' + tokens + '</td>' +
+                '<td>' + statusBadge + '</td>';
+            evTbody.appendChild(row);
+        });
+        evTable.appendChild(evTbody);
+        container.appendChild(evTable);
+    }
     return container;
 }
 
@@ -32322,24 +32557,42 @@ function renderModelsBenchmarksView() {
     container.appendChild(title);
     var subtitle = document.createElement('p');
     subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Performance benchmarks for model inference pipelines.';
+    subtitle.textContent = 'Realtime performance benchmarks derived from LLM telemetry (P50/P95/P99 latency).';
     container.appendChild(subtitle);
 
-    var benchmarks = [
-        { name: 'Chat Completion (Flash)', p50: '280ms', p95: '520ms', p99: '890ms', throughput: '42 req/min' },
-        { name: 'Embedding Generation', p50: '95ms', p95: '180ms', p99: '310ms', throughput: '120 req/min' },
-        { name: 'Memory Retrieval', p50: '45ms', p95: '120ms', p99: '250ms', throughput: '200 req/min' },
-        { name: 'Governance Evaluation', p50: '15ms', p95: '35ms', p99: '80ms', throughput: '500 req/min' },
-        { name: 'VTID Resolution', p50: '25ms', p95: '60ms', p99: '120ms', throughput: '350 req/min' }
-    ];
+    // Deferred fetch
+    ensureModelsFetched();
+
+    if (state.modelsBenchmarks.loading && !state.modelsBenchmarks.fetched) { var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading benchmarks...'; container.appendChild(l); return container; }
+
+    // Realtime indicator
+    var liveBar = document.createElement('div');
+    liveBar.style.cssText = 'display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem;font-size:0.8rem;color:var(--color-text-secondary);';
+    var liveDot = document.createElement('span');
+    liveDot.style.cssText = 'width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block;animation:pulse 2s infinite;';
+    liveBar.appendChild(liveDot);
+    liveBar.appendChild(document.createTextNode('Live — computed from telemetry, refreshing every 10s'));
+    container.appendChild(liveBar);
+
+    var benchmarks = state.modelsBenchmarks.aggregated || [];
+    if (benchmarks.length === 0) {
+        var em = document.createElement('div'); em.className = 'placeholder-content'; em.textContent = 'No benchmark data yet. LLM telemetry events will populate this view.'; container.appendChild(em); return container;
+    }
 
     var table = document.createElement('table');
     table.className = 'list-table';
-    table.innerHTML = '<thead><tr><th>Pipeline</th><th>P50</th><th>P95</th><th>P99</th><th>Throughput</th></tr></thead>';
+    table.innerHTML = '<thead><tr><th>Stage / Model</th><th>Calls</th><th>P50</th><th>P95</th><th>P99</th><th>Success Rate</th><th>Est. Cost</th></tr></thead>';
     var tbody = document.createElement('tbody');
     benchmarks.forEach(function (b) {
         var row = document.createElement('tr');
-        row.innerHTML = '<td style="font-weight:600;">' + b.name + '</td><td>' + b.p50 + '</td><td>' + b.p95 + '</td><td>' + b.p99 + '</td><td>' + b.throughput + '</td>';
+        var rateColor = b.successRate >= 95 ? '#22c55e' : b.successRate >= 80 ? '#f59e0b' : '#ef4444';
+        row.innerHTML = '<td style="font-weight:600;"><span style="text-transform:capitalize;">' + b.stage + '</span> <span style="font-family:monospace;font-size:0.8rem;color:var(--color-text-secondary);">(' + b.model + ')</span></td>' +
+            '<td>' + b.callCount + '</td>' +
+            '<td>' + b.p50 + 'ms</td>' +
+            '<td>' + b.p95 + 'ms</td>' +
+            '<td>' + b.p99 + 'ms</td>' +
+            '<td style="font-weight:700;color:' + rateColor + ';">' + b.successRate + '%</td>' +
+            '<td style="font-family:monospace;font-size:0.85rem;">$' + b.totalCost.toFixed(6) + '</td>';
         tbody.appendChild(row);
     });
     table.appendChild(tbody);
@@ -32355,33 +32608,73 @@ function renderModelsRoutingView() {
     container.appendChild(title);
     var subtitle = document.createElement('p');
     subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'How the platform routes requests to different LLM providers.';
+    subtitle.textContent = 'Live routing policy — how the platform routes requests to LLM providers per stage.';
     container.appendChild(subtitle);
 
-    var routes = [
-        { domain: 'Planning', model: 'gemini-2.0-flash', provider: 'Google AI', fallback: 'gemini-1.5-pro', reason: 'High speed, good reasoning' },
-        { domain: 'Worker Execution', model: 'gemini-2.0-flash', provider: 'Google AI', fallback: 'gemini-1.5-flash', reason: 'Fast code generation' },
-        { domain: 'Validation', model: 'claude-3-haiku', provider: 'Anthropic', fallback: 'gemini-2.0-flash', reason: 'Strong analytical capability' },
-        { domain: 'Embeddings', model: 'text-embedding-ada-002', provider: 'OpenAI', fallback: 'Vertex textembedding-gecko', reason: '1536-dim, high quality' },
-        { domain: 'Voice (ORB)', model: 'gemini-2.0-flash-live', provider: 'Google AI', fallback: 'None', reason: 'WebSocket multimodal live API' },
-        { domain: 'Summarization', model: 'gemini-2.0-flash', provider: 'Google AI', fallback: 'gemini-1.5-flash', reason: 'Context window management' }
-    ];
+    // Deferred fetch
+    ensureModelsFetched();
+
+    if (state.modelsRouting.loading && !state.modelsRouting.fetched) { var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading routing policy...'; container.appendChild(l); return container; }
+    if (state.modelsRouting.error) { var e = document.createElement('div'); e.className = 'placeholder-content error-text'; e.textContent = 'Error: ' + state.modelsRouting.error; container.appendChild(e); return container; }
+
+    // Realtime indicator
+    var liveBar = document.createElement('div');
+    liveBar.style.cssText = 'display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem;font-size:0.8rem;color:var(--color-text-secondary);';
+    var liveDot = document.createElement('span');
+    liveDot.style.cssText = 'width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block;animation:pulse 2s infinite;';
+    liveBar.appendChild(liveDot);
+    liveBar.appendChild(document.createTextNode('Live — auto-refreshing every 10s'));
+    container.appendChild(liveBar);
+
+    var policy = state.modelsRouting.policy;
+    if (!policy) {
+        var em = document.createElement('div'); em.className = 'placeholder-content'; em.textContent = 'No routing policy configured.'; container.appendChild(em); return container;
+    }
+
+    var stages = ['planner', 'worker', 'validator', 'operator', 'memory'];
+    var stageLabels = { planner: 'Planning', worker: 'Worker Execution', validator: 'Validation', operator: 'Operator (ORB)', memory: 'Memory' };
 
     var table = document.createElement('table');
     table.className = 'list-table';
-    table.innerHTML = '<thead><tr><th>Domain</th><th>Primary Model</th><th>Provider</th><th>Fallback</th><th>Routing Reason</th></tr></thead>';
+    table.innerHTML = '<thead><tr><th>Stage</th><th>Primary Model</th><th>Provider</th><th>Fallback Model</th><th>Fallback Provider</th></tr></thead>';
     var tbody = document.createElement('tbody');
-    routes.forEach(function (r) {
+    stages.forEach(function (stage) {
+        var cfg = policy[stage];
+        if (!cfg) return;
         var row = document.createElement('tr');
-        row.innerHTML = '<td style="font-weight:600;">' + r.domain + '</td>' +
-            '<td style="font-family:monospace;font-size:0.85rem;">' + r.model + '</td>' +
-            '<td>' + r.provider + '</td>' +
-            '<td style="font-family:monospace;font-size:0.85rem;color:var(--color-text-secondary);">' + r.fallback + '</td>' +
-            '<td style="font-size:0.85rem;">' + r.reason + '</td>';
+        row.innerHTML = '<td style="font-weight:600;">' + (stageLabels[stage] || stage) + '</td>' +
+            '<td style="font-family:monospace;font-size:0.85rem;">' + (cfg.primary_model || '-') + '</td>' +
+            '<td>' + (cfg.primary_provider || '-') + '</td>' +
+            '<td style="font-family:monospace;font-size:0.85rem;color:var(--color-text-secondary);">' + (cfg.fallback_model || '-') + '</td>' +
+            '<td style="color:var(--color-text-secondary);">' + (cfg.fallback_provider || '-') + '</td>';
         tbody.appendChild(row);
     });
     table.appendChild(tbody);
     container.appendChild(table);
+
+    // Reset to defaults button
+    var resetBtn = document.createElement('button');
+    resetBtn.className = 'btn btn-secondary';
+    resetBtn.textContent = 'Reset to Recommended Defaults';
+    resetBtn.style.marginTop = '1rem';
+    resetBtn.onclick = function () {
+        if (!confirm('Reset routing policy to recommended defaults?')) return;
+        fetch('/api/v1/llm/routing-policy/reset', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, buildContextHeaders()),
+            body: JSON.stringify({ reason: 'Manual reset from Command Hub' })
+        }).then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (data.ok) {
+                state.modelsRouting.fetched = false;
+                fetchModelsRouting(false);
+            } else {
+                alert('Reset failed: ' + (data.error || 'Unknown error'));
+            }
+        }).catch(function (err) { alert('Reset failed: ' + err.message); });
+    };
+    container.appendChild(resetBtn);
+
     return container;
 }
 
