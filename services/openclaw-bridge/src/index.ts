@@ -48,15 +48,17 @@ async function main(): Promise<void> {
     // Mount webhook router
     app.use(config.channel.path, createWebhookRouter());
 
-    // Root health check
-    app.get('/health', (_req, res) => {
+    // Root health check (both /health and /alive for Cloud Run convention)
+    const healthResponse = (_req: any, res: any) => {
       res.json({
         status: 'ok',
         service: 'openclaw-bridge',
         version: '0.1.0',
         uptime: process.uptime(),
       });
-    });
+    };
+    app.get('/health', healthResponse);
+    app.get('/alive', healthResponse);
 
     app.listen(config.channel.port, () => {
       console.log(`[http] Listening on port ${config.channel.port}`);
