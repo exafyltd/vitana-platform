@@ -6334,9 +6334,9 @@ function startInlineTitleEdit(titleElement, task) {
         if (newTitle && newTitle !== originalText) {
             var check = validateTaskTitle(newTitle);
             if (!check.ok) {
-                input.style.borderColor = '#ef4444';
-                input.title = check.error;
-                return; // Don't save invalid title
+                // Show visible error toast so user knows why title wasn't saved
+                showToast(check.error, 'warning');
+                return; // showToast calls renderApp() which reverts cleanly
             }
             setTaskTitleOverride(task.vtid, newTitle);
             console.log('[VTID-01041] Title saved for', task.vtid, ':', newTitle);
@@ -6364,7 +6364,8 @@ function startInlineTitleEdit(titleElement, task) {
     input.onblur = function () {
         // Small delay to allow click events to fire first
         setTimeout(function () {
-            if (input.parentNode === titleElement) {
+            // Use document.contains to avoid firing after another renderApp() already rebuilt DOM
+            if (document.contains(input)) {
                 saveTitle();
             }
         }, 100);
@@ -6412,9 +6413,9 @@ function startDrawerTitleEdit(titleValueElement, task) {
         if (newTitle && newTitle !== originalText) {
             var check = validateTaskTitle(newTitle);
             if (!check.ok) {
-                input.style.borderColor = '#ef4444';
-                input.title = check.error;
-                return; // Don't save invalid title
+                // Show visible error toast so user knows why title wasn't saved
+                showToast(check.error, 'warning');
+                return; // showToast calls renderApp() which reverts cleanly
             }
             setTaskTitleOverride(task.vtid, newTitle);
             console.log('[VTID-01041] Drawer title saved for', task.vtid, ':', newTitle);
@@ -6442,7 +6443,8 @@ function startDrawerTitleEdit(titleValueElement, task) {
     input.onblur = function () {
         // Small delay to allow click events to fire first
         setTimeout(function () {
-            if (input.parentNode === titleValueElement) {
+            // Use document.contains to avoid firing after another renderApp() already rebuilt DOM
+            if (document.contains(input)) {
                 saveTitle();
             }
         }, 100);
@@ -7233,8 +7235,8 @@ function renderTaskDrawer() {
                 activateBtn.classList.add('btn-disabled');
                 activateBtn.textContent = 'Activate (Spec Required)';
             } else {
-                activateBtn.textContent = 'Activate';
-                activateBtn.title = 'Move task from Scheduled to In Progress';
+                activateBtn.textContent = 'Activate (Auto)';
+                activateBtn.title = 'Start autonomous execution (PLANNER → WORKER → VALIDATOR → DEPLOY)';
             }
 
             activateBtn.onclick = async function () {
@@ -7251,6 +7253,57 @@ function renderTaskDrawer() {
                 renderApp();
             };
             specActions.appendChild(activateBtn);
+
+            // Manual Start button — moves to IN_PROGRESS without triggering autonomous pipeline
+            var manualStartBtn = document.createElement('button');
+            manualStartBtn.className = 'btn btn-info task-spec-btn';
+            manualStartBtn.style.cssText = 'background: #3b82f6; border: none; color: white;';
+
+            if (!isSpecApproved) {
+                manualStartBtn.disabled = true;
+                manualStartBtn.title = 'Spec must be approved before starting (current: ' + taskSpecStatus + ')';
+                manualStartBtn.classList.add('btn-disabled');
+                manualStartBtn.textContent = 'Manual Start (Spec Required)';
+            } else {
+                manualStartBtn.textContent = 'Manual Start';
+                manualStartBtn.title = 'Move to In Progress for manual work (no autonomous execution)';
+            }
+
+            manualStartBtn.onclick = async function () {
+                if (!isSpecApproved) {
+                    showToast('Cannot start: spec must be approved first', 'warning');
+                    return;
+                }
+                if (!confirm('Move ' + vtid + ' to In Progress for manual work?\n\nThis will NOT trigger autonomous execution — you will work on this task yourself.')) {
+                    return;
+                }
+                manualStartBtn.disabled = true;
+                manualStartBtn.textContent = 'Starting...';
+                try {
+                    var response = await fetch('/api/v1/oasis/tasks/' + vtid, {
+                        method: 'PATCH',
+                        headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                        body: JSON.stringify({ status: 'in_progress' })
+                    });
+                    if (!response.ok) {
+                        var errData = await response.json().catch(function () { return {}; });
+                        throw new Error(errData.error || 'Status update failed');
+                    }
+                    // Clear task selection and refresh
+                    state.selectedTask = null;
+                    state.selectedTaskDetail = null;
+                    state.drawerSpecVtid = null;
+                    state.drawerSpecText = '';
+                    state.drawerSpecEditing = false;
+                    fetchTasks();
+                    showToast(vtid + ' moved to In Progress (manual mode)', 'success');
+                } catch (err) {
+                    manualStartBtn.disabled = false;
+                    manualStartBtn.textContent = 'Manual Start';
+                    showToast('Failed to start: ' + err.message, 'error');
+                }
+            };
+            specActions.appendChild(manualStartBtn);
 
             // Reject button (soft deny — keeps VTID, marks as rejected)
             var rejectBtn = document.createElement('button');
