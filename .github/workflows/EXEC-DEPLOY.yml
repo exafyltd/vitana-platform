@@ -310,6 +310,12 @@ jobs:
             SECRETS_ARGS+=(--update-secrets=GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest)
           fi
 
+          # VTID-01250: OpenClaw bridge — Supabase secrets for heartbeat and OASIS events
+          if [ "$CLOUD_RUN_SERVICE" = "openclaw-bridge" ]; then
+            SECRETS_ARGS+=(--update-secrets=SUPABASE_URL=SUPABASE_URL:latest)
+            SECRETS_ARGS+=(--update-secrets=SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest)
+          fi
+
           # Build deploy args
           DEPLOY_ARGS=(
             --source="$SOURCE_PATH"
