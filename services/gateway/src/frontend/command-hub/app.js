@@ -3164,7 +3164,13 @@ const state = {
         clientLastActivityAt: 0,      // Timestamp of last meaningful SSE event
         // VTID-STUCK-GUARD: Client-side stuck-state watchdog
         stuckGuardTimer: null,        // Timer that fires if ORB stays in connecting/thinking too long
-        greetingAudioReceived: false  // Whether any greeting audio has been received and played
+        greetingAudioReceived: false, // Whether any greeting audio has been received and played
+        // VTID-TRANSCRIPT-FIX: Buffer transcript fragments until turn_complete
+        _inputTranscriptBuffer: '',   // Accumulates user speech fragments
+        _outputTranscriptBuffer: '',  // Accumulates model speech fragments
+        // VTID-FALLBACK: Text+TTS fallback mode when Vertex Live API fails
+        _fallbackMode: false,         // Whether we're using fallback chat-tts
+        _fallbackReason: ''           // Why we switched to fallback
     },
 
     // VTID-0600: Operational Visibility Foundation State
@@ -25120,6 +25126,12 @@ async function geminiLiveStart() {
 
     // VTID-STUCK-GUARD: Reset greeting audio flag
     state.orb.greetingAudioReceived = false;
+    // VTID-TRANSCRIPT-FIX: Reset transcript buffers
+    state.orb._inputTranscriptBuffer = '';
+    state.orb._outputTranscriptBuffer = '';
+    // VTID-FALLBACK: Reset fallback mode
+    state.orb._fallbackMode = false;
+    state.orb._fallbackReason = '';
 
     // VTID-AUDIO-RACE-FIX: Create playback AudioContext IMMEDIATELY in user gesture context.
     // On mobile, AudioContext.resume() only works within a user gesture. If we defer creation
@@ -25287,6 +25299,9 @@ async function geminiLiveStop() {
     clearTimeout(state.orb.stuckGuardTimer);
     state.orb.stuckGuardTimer = null;
     state.orb.greetingAudioReceived = false;
+    // VTID-TRANSCRIPT-FIX: Reset transcript buffers
+    state.orb._inputTranscriptBuffer = '';
+    state.orb._outputTranscriptBuffer = '';
 
     // FIX: Reset audio scheduling for clean reconnect
     state.orb.geminiLiveLastScheduledEnd = 0;
@@ -25401,47 +25416,34 @@ function geminiLiveHandleMessage(msg) {
 
         case 'text':
         case 'transcript':
-            // Display text response
+            // VTID-TRANSCRIPT-FIX: Buffer text/transcript into output buffer
+            // (will be flushed as a single bubble on turn_complete)
             if (msg.text) {
-                state.orb.liveTranscript.push({
-                    id: Date.now(),
-                    role: 'assistant',
-                    text: msg.text,
-                    timestamp: new Date().toISOString()
-                });
-                scrollOrbLiveTranscript();
-                renderApp();
+                state.orb._outputTranscriptBuffer += msg.text;
+                // Show live interim text in the transcript
+                _updateInterimTranscript();
             }
             break;
 
         case 'input_transcript':
-            // User's speech transcription from Gemini
+            // VTID-TRANSCRIPT-FIX: Buffer user speech fragments (Vertex sends word-by-word).
+            // Flushed as a single bubble on turn_complete.
             if (msg.text) {
-                console.log('[VTID-01219] User said:', msg.text);
-                state.orb.liveTranscript.push({
-                    id: Date.now(),
-                    role: 'user',
-                    text: msg.text,
-                    timestamp: new Date().toISOString()
-                });
-                scrollOrbLiveTranscript();
-                renderApp();
+                console.log('[VTID-01219] User said (fragment):', msg.text);
+                state.orb._inputTranscriptBuffer += (state.orb._inputTranscriptBuffer ? ' ' : '') + msg.text;
+                // Show live interim user text
+                _updateInterimTranscript();
             }
             break;
 
         case 'output_transcript':
-            // Model's response transcription — display as text bubble so the user
-            // can read what Vitana said even if audio playback fails (mobile audio issues).
+            // VTID-TRANSCRIPT-FIX: Buffer model speech fragments (Vertex sends word-by-word).
+            // Flushed as a single bubble on turn_complete.
             if (msg.text) {
-                console.log('[VTID-01219] Model said:', msg.text);
-                state.orb.liveTranscript.push({
-                    id: Date.now(),
-                    role: 'assistant',
-                    text: msg.text,
-                    timestamp: new Date().toISOString()
-                });
-                scrollOrbLiveTranscript();
-                renderApp();
+                console.log('[VTID-01219] Model said (fragment):', msg.text);
+                state.orb._outputTranscriptBuffer += msg.text;
+                // Show live interim model text
+                _updateInterimTranscript();
             }
             break;
 
@@ -25456,6 +25458,29 @@ function geminiLiveHandleMessage(msg) {
             // will skip sending for 500ms to let playback drain and avoid echo pickup
             state.orb.geminiLiveTurnCompleteAt = Date.now();
             console.log('[VTID-VOICE-INIT] Turn complete — scheduler reset, 500ms post-turn cooldown started');
+
+            // VTID-TRANSCRIPT-FIX: Flush buffered transcripts as single bubbles.
+            // Remove any interim placeholder first.
+            _removeInterimTranscript();
+            if (state.orb._inputTranscriptBuffer.trim()) {
+                state.orb.liveTranscript.push({
+                    id: Date.now(),
+                    role: 'user',
+                    text: state.orb._inputTranscriptBuffer.trim(),
+                    timestamp: new Date().toISOString()
+                });
+                state.orb._inputTranscriptBuffer = '';
+            }
+            if (state.orb._outputTranscriptBuffer.trim()) {
+                state.orb.liveTranscript.push({
+                    id: Date.now() + 1,
+                    role: 'assistant',
+                    text: state.orb._outputTranscriptBuffer.trim(),
+                    timestamp: new Date().toISOString()
+                });
+                state.orb._outputTranscriptBuffer = '';
+            }
+            scrollOrbLiveTranscript();
 
             // FIX: Signal ready to listen after greeting/response completes
             setTimeout(function() {
@@ -25511,40 +25536,15 @@ function geminiLiveHandleMessage(msg) {
             break;
 
         case 'connection_issue':
-            // VTID-WATCHDOG: Backend detected stall/disconnect — notify user and end session
-            console.warn('[VTID-WATCHDOG] Connection issue:', msg.reason, msg.message);
-            state.orb.liveError = msg.message || 'Connection issue';
-            setOrbState('error');
-            state.orb.liveTranscript.push({
-                id: Date.now(),
-                role: 'system',
-                text: msg.message || 'Connection issue detected. Please try starting a new conversation.',
-                timestamp: new Date().toISOString(),
-                isError: true
-            });
-            playConnectionErrorTone();
-            scrollOrbLiveTranscript();
-            // Stop session after short delay so user sees the message
-            setTimeout(function() { geminiLiveStop(); }, 3000);
-            renderApp();
+            // VTID-FALLBACK: Switch to fallback text+TTS mode instead of dying
+            console.warn('[VTID-FALLBACK] Connection issue — switching to fallback mode:', msg.reason, msg.message);
+            _activateFallbackMode('Connection issue: ' + (msg.reason || 'unknown'));
             break;
 
         case 'live_api_disconnected':
-            // VTID-WATCHDOG: Upstream Vertex API WebSocket closed
-            console.warn('[VTID-01155] Live API disconnected:', msg.code, msg.reason);
-            state.orb.liveError = 'Connection lost. Please try again.';
-            setOrbState('error');
-            state.orb.liveTranscript.push({
-                id: Date.now(),
-                role: 'system',
-                text: 'Connection lost. Please try starting a new conversation.',
-                timestamp: new Date().toISOString(),
-                isError: true
-            });
-            playConnectionErrorTone();
-            scrollOrbLiveTranscript();
-            setTimeout(function() { geminiLiveStop(); }, 3000);
-            renderApp();
+            // VTID-FALLBACK: Switch to fallback text+TTS mode instead of dying
+            console.warn('[VTID-FALLBACK] Live API disconnected — switching to fallback mode:', msg.code, msg.reason);
+            _activateFallbackMode('Live API disconnected: code=' + (msg.code || 'unknown'));
             break;
 
         case 'session_ended':
@@ -25552,9 +25552,222 @@ function geminiLiveHandleMessage(msg) {
             geminiLiveStop();
             break;
 
+        case 'heartbeat':
+            // VTID-HEARTBEAT-FIX: Server data heartbeat — watchdog already reset
+            // by resetClientWatchdog() in onmessage handler. Nothing else needed.
+            break;
+
         default:
             console.log('[VTID-01155] Unknown message type:', msg.type, msg);
     }
+}
+
+/**
+ * VTID-FALLBACK: Activate text+TTS fallback mode when Vertex Live API fails.
+ * Uses Web Speech API for STT (client-side) and gateway /live/chat-tts for
+ * Gemini text generation + Google Cloud TTS audio synthesis.
+ */
+function _activateFallbackMode(reason) {
+    if (state.orb._fallbackMode) return; // Already in fallback
+    state.orb._fallbackMode = true;
+    state.orb._fallbackReason = reason;
+
+    console.log('[VTID-FALLBACK] Activating fallback mode:', reason);
+
+    // Stop Live API resources but keep overlay open
+    stopClientWatchdog();
+    if (state.orb.geminiLiveEventSource) {
+        state.orb.geminiLiveEventSource.close();
+        state.orb.geminiLiveEventSource = null;
+    }
+    // Keep audio capture alive for Web Speech API transcription
+
+    state.orb.liveTranscript.push({
+        id: Date.now(),
+        role: 'system',
+        text: state.orb.orbLang && state.orb.orbLang.startsWith('de')
+            ? 'Sprachverbindung umgestellt auf Textmodus.'
+            : 'Voice connection switched to text mode.',
+        timestamp: new Date().toISOString(),
+        isError: false
+    });
+
+    setOrbState('listening');
+    state.orb.voiceState = 'LISTENING';
+
+    // Start Web Speech API if not already running (for user STT)
+    geminiLiveStartTranscriber();
+
+    scrollOrbLiveTranscript();
+    renderApp();
+
+    // Emit diagnostic event
+    emitOrbDiagEvent('fallback_activated', { reason: reason });
+}
+
+/**
+ * VTID-FALLBACK: Send text to fallback chat-tts endpoint and play response.
+ * Called from Web Speech API final transcript handler when in fallback mode.
+ */
+async function _sendFallbackMessage(userText) {
+    if (!userText || !userText.trim()) return;
+
+    state.orb.liveTranscript.push({
+        id: Date.now(),
+        role: 'user',
+        text: userText.trim(),
+        timestamp: new Date().toISOString()
+    });
+    setOrbState('thinking');
+    state.orb.voiceState = 'THINKING';
+    scrollOrbLiveTranscript();
+    renderApp();
+
+    try {
+        var headers = { 'Content-Type': 'application/json' };
+        if (state.authToken) headers['Authorization'] = 'Bearer ' + state.authToken;
+
+        var contextTurns = state.orb.liveTranscript
+            .filter(function(t) { return t.role === 'user' || t.role === 'assistant'; })
+            .slice(-10)
+            .map(function(t) { return { role: t.role, text: t.text }; });
+
+        var response = await fetch('/api/v1/orb/live/chat-tts', {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify({
+                text: userText.trim(),
+                lang: state.orb.orbLang || 'en-US',
+                session_id: state.orb.geminiLiveSessionId,
+                context_turns: contextTurns
+            })
+        });
+
+        var data = await response.json();
+        if (!data.ok) throw new Error(data.error || 'Fallback request failed');
+
+        // Add assistant response to transcript
+        if (data.text) {
+            state.orb.liveTranscript.push({
+                id: Date.now(),
+                role: 'assistant',
+                text: data.text,
+                timestamp: new Date().toISOString()
+            });
+        }
+
+        // Play audio response
+        if (data.audio_b64) {
+            setOrbState('speaking');
+            state.orb.voiceState = 'SPEAKING';
+            var audio = new Audio('data:' + (data.audio_mime || 'audio/mp3') + ';base64,' + data.audio_b64);
+            audio.onended = function() {
+                setOrbState('listening');
+                state.orb.voiceState = 'LISTENING';
+                playListenReadyBeep();
+                renderApp();
+            };
+            audio.onerror = function() {
+                setOrbState('listening');
+                state.orb.voiceState = 'LISTENING';
+                renderApp();
+            };
+            audio.play().catch(function(e) {
+                console.warn('[VTID-FALLBACK] Audio playback failed:', e);
+                setOrbState('listening');
+                state.orb.voiceState = 'LISTENING';
+                renderApp();
+            });
+        } else {
+            setOrbState('listening');
+            state.orb.voiceState = 'LISTENING';
+        }
+
+        scrollOrbLiveTranscript();
+        renderApp();
+    } catch (err) {
+        console.error('[VTID-FALLBACK] Fallback request failed:', err);
+        state.orb.liveTranscript.push({
+            id: Date.now(),
+            role: 'system',
+            text: 'Error: ' + err.message,
+            timestamp: new Date().toISOString(),
+            isError: true
+        });
+        setOrbState('listening');
+        state.orb.voiceState = 'LISTENING';
+        scrollOrbLiveTranscript();
+        renderApp();
+    }
+}
+
+/**
+ * VTID-FALLBACK: Emit diagnostic OASIS event (best-effort, non-blocking).
+ */
+function emitOrbDiagEvent(eventName, payload) {
+    try {
+        var headers = { 'Content-Type': 'application/json' };
+        if (state.authToken) headers['Authorization'] = 'Bearer ' + state.authToken;
+        fetch('/api/v1/oasis/emit', {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify({
+                type: 'orb.live.' + eventName,
+                source: 'command-hub-frontend',
+                payload: payload || {}
+            })
+        }).catch(function() {});
+    } catch (_e) { /* non-blocking */ }
+}
+
+/**
+ * VTID-TRANSCRIPT-FIX: Update interim transcript display while fragments buffer.
+ * Shows a "typing" preview that will be replaced by the final bubble on turn_complete.
+ */
+function _updateInterimTranscript() {
+    // Update the existing interim element or create one
+    var chatStream = document.querySelector('.orb-chat-stream');
+    if (!chatStream) return;
+
+    // Remove old interims
+    var oldInterims = chatStream.querySelectorAll('.orb-stream-msg-interim-live');
+    for (var i = 0; i < oldInterims.length; i++) oldInterims[i].remove();
+
+    // Show buffered output as interim assistant bubble
+    if (state.orb._outputTranscriptBuffer) {
+        var assistantInterim = document.createElement('div');
+        assistantInterim.className = 'orb-stream-msg orb-stream-msg-assistant orb-stream-msg-interim-live';
+        var aBubble = document.createElement('div');
+        aBubble.className = 'orb-stream-bubble';
+        aBubble.style.opacity = '0.7';
+        aBubble.textContent = state.orb._outputTranscriptBuffer;
+        assistantInterim.appendChild(aBubble);
+        chatStream.appendChild(assistantInterim);
+    }
+
+    // Show buffered input as interim user bubble
+    if (state.orb._inputTranscriptBuffer) {
+        var userInterim = document.createElement('div');
+        userInterim.className = 'orb-stream-msg orb-stream-msg-user orb-stream-msg-interim-live';
+        var uBubble = document.createElement('div');
+        uBubble.className = 'orb-stream-bubble';
+        uBubble.style.opacity = '0.7';
+        uBubble.textContent = state.orb._inputTranscriptBuffer;
+        userInterim.appendChild(uBubble);
+        chatStream.appendChild(userInterim);
+    }
+
+    scrollOrbLiveTranscript();
+}
+
+/**
+ * VTID-TRANSCRIPT-FIX: Remove interim transcript elements before flushing final bubbles.
+ */
+function _removeInterimTranscript() {
+    var chatStream = document.querySelector('.orb-chat-stream');
+    if (!chatStream) return;
+    var interims = chatStream.querySelectorAll('.orb-stream-msg-interim-live');
+    for (var i = 0; i < interims.length; i++) interims[i].remove();
 }
 
 /**
@@ -25829,7 +26042,10 @@ function playConnectionErrorTone() {
  * Detects when NO data arrives from the server (SSE broken, backend crash, network loss).
  * Checks every 5s — if last activity was >15s ago, show error and stop session.
  */
-var CLIENT_WATCHDOG_TIMEOUT_MS = 12000; // 12s with no data = stuck
+// VTID-HEARTBEAT-FIX: Increased from 12s to 30s. With the server now sending
+// actual data heartbeats every 10s (not SSE comments), 30s gives 2+ heartbeat
+// cycles before triggering — prevents false disconnects during natural pauses.
+var CLIENT_WATCHDOG_TIMEOUT_MS = 30000; // 30s with no data = stuck
 
 function startClientWatchdog() {
     stopClientWatchdog();
@@ -25980,14 +26196,21 @@ function geminiLiveStartTranscriber() {
             console.log('[VTID-01225] User said:', finalTranscript);
             state.orb.interimTranscript = '';
 
-            // Add to transcript display (user's spoken words)
-            state.orb.liveTranscript.push({
-                id: Date.now(),
-                role: 'user',
-                text: finalTranscript.trim(),
-                mode: 'voice',
-                timestamp: new Date().toISOString()
-            });
+            // VTID-FALLBACK: In fallback mode, send text to chat-tts endpoint
+            if (state.orb._fallbackMode) {
+                _sendFallbackMessage(finalTranscript);
+            } else {
+                // Normal mode: Add to transcript display (user's spoken words)
+                // Note: In Live API mode, input_transcript from Vertex is the primary
+                // source. This parallel transcriber is just a visual aid.
+                state.orb.liveTranscript.push({
+                    id: Date.now(),
+                    role: 'user',
+                    text: finalTranscript.trim(),
+                    mode: 'voice',
+                    timestamp: new Date().toISOString()
+                });
+            }
 
             // Persist conversation state
             orbSaveConversationState();

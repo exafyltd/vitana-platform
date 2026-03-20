@@ -66,7 +66,13 @@
     voiceState: 'IDLE', // IDLE | LISTENING | THINKING | SPEAKING | MUTED
     overlayVisible: false,
     liveError: null,
-    _audioSendErrorLogged: false
+    _audioSendErrorLogged: false,
+
+    // VTID-TRANSCRIPT-FIX: Transcript buffering and display
+    _inputTranscriptBuffer: '',
+    _outputTranscriptBuffer: '',
+    _transcriptHistory: [],  // Array of { role: 'user'|'assistant', text: string }
+    _reconnectCount: 0       // Track reconnection attempts
   };
 
   var _root = null; // Widget DOM root
@@ -233,6 +239,35 @@
       '.vtorb-status.vtorb-status-speaking { color: rgba(245,158,11,0.8); }',
       '.vtorb-status.vtorb-status-error { color: rgba(239,68,68,0.8); }',
 
+      // --- Transcript panel ---
+      '.vtorb-transcript {',
+      '  width: 90%; max-width: 400px; max-height: 200px; overflow-y: auto;',
+      '  margin-top: 16px; padding: 8px; border-radius: 12px;',
+      '  background: rgba(255,255,255,0.06); backdrop-filter: blur(8px);',
+      '  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;',
+      '  font-size: 13px; line-height: 1.4;',
+      '}',
+      '.vtorb-transcript:empty { display: none; }',
+      '.vtorb-transcript-msg {',
+      '  display: flex; margin-bottom: 6px;',
+      '}',
+      '.vtorb-transcript-msg-user { justify-content: flex-end; }',
+      '.vtorb-transcript-msg-assistant { justify-content: flex-start; }',
+      '.vtorb-transcript-bubble {',
+      '  max-width: 80%; padding: 6px 12px; border-radius: 12px; word-wrap: break-word;',
+      '}',
+      '.vtorb-transcript-msg-assistant .vtorb-transcript-bubble {',
+      '  background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.85);',
+      '  border-bottom-left-radius: 4px;',
+      '}',
+      '.vtorb-transcript-msg-user .vtorb-transcript-bubble {',
+      '  background: rgba(99,102,241,0.3); color: rgba(255,255,255,0.9);',
+      '  border-bottom-right-radius: 4px;',
+      '}',
+      '.vtorb-transcript-interim {',
+      '  opacity: 0.5; font-style: italic;',
+      '}',
+
       // --- Mobile responsive ---
       '@media (max-width: 600px) {',
       '  .vtorb-shell { width: 60vmin; height: 60vmin; max-width: 260px; max-height: 260px; }',
@@ -392,6 +427,8 @@
 
     _s.greetingAudioReceived = false;
     _s._audioSendErrorLogged = false;
+    _s._inputTranscriptBuffer = '';
+    _s._outputTranscriptBuffer = '';
 
     // Create playback AudioContext in user gesture (critical for mobile)
     if (!_s.playbackCtx || _s.playbackCtx.state === 'closed') {
@@ -444,11 +481,16 @@
       es.onerror = function () {
         if (es.readyState === EventSource.CLOSED) {
           _stopWatchdog();
-          _s.liveError = 'Connection lost.';
-          _setOrbState('error');
-          _playErrorTone();
-          _updateUI();
-          setTimeout(_sessionStop, 3000);
+          // VTID-RECONNECT: Try auto-reconnect instead of just dying
+          if (_s._reconnectCount < MAX_WIDGET_RECONNECTS) {
+            _attemptReconnect();
+          } else {
+            _s.liveError = 'Connection lost.';
+            _setOrbState('error');
+            _playErrorTone();
+            _updateUI();
+            setTimeout(_sessionStop, 3000);
+          }
         }
       };
       _s.eventSource = es;
@@ -519,6 +561,10 @@
     _s.liveError = null;
     _s.interruptPending = false;
     _s.turnCompleteAt = 0;
+    _s._inputTranscriptBuffer = '';
+    _s._outputTranscriptBuffer = '';
+    _s._transcriptHistory = [];
+    _s._reconnectCount = 0;
 
     _updateUI();
   }
@@ -570,6 +616,18 @@
         _s.lastScheduledEnd = 0;
         _s.interruptPending = false;
         _s.turnCompleteAt = Date.now();
+
+        // VTID-TRANSCRIPT-FIX: Flush buffered transcripts as single entries
+        if (_s._inputTranscriptBuffer.trim()) {
+          _s._transcriptHistory.push({ role: 'user', text: _s._inputTranscriptBuffer.trim() });
+          _s._inputTranscriptBuffer = '';
+        }
+        if (_s._outputTranscriptBuffer.trim()) {
+          _s._transcriptHistory.push({ role: 'assistant', text: _s._outputTranscriptBuffer.trim() });
+          _s._outputTranscriptBuffer = '';
+        }
+        _updateTranscriptUI();
+
         setTimeout(function () {
           if (!_s.audioPlaying) {
             _setOrbState('listening');
@@ -600,19 +658,47 @@
 
       case 'connection_issue':
       case 'live_api_disconnected':
-        _s.liveError = msg.message || 'Connection lost.';
-        _setOrbState('error');
-        _setStatus(_cfg.lang.startsWith('de') ? 'Verbindung verloren.' : 'Connection lost.');
-        _playErrorTone();
-        _updateUI();
-        setTimeout(_sessionStop, 3000);
+        // VTID-RECONNECT: Try auto-reconnect before giving up
+        if (_s._reconnectCount < MAX_WIDGET_RECONNECTS) {
+          console.warn('[VTOrb] Connection issue — attempting reconnect');
+          _attemptReconnect();
+        } else {
+          _s.liveError = msg.message || 'Connection lost.';
+          _setOrbState('error');
+          _setStatus(_cfg.lang.startsWith('de') ? 'Verbindung verloren.' : 'Connection lost.');
+          _playErrorTone();
+          _updateUI();
+          setTimeout(_sessionStop, 3000);
+        }
         break;
 
       case 'session_ended':
         _sessionStop();
         break;
 
-      // audio_ack, video_ack, text, transcript, input_transcript, output_transcript — ignore in minimal UI
+      case 'heartbeat':
+        // VTID-HEARTBEAT-FIX: Server data heartbeat — watchdog already reset
+        // by _resetWatchdog() in onmessage handler. Nothing else needed.
+        break;
+
+      case 'transcript':
+      case 'output_transcript':
+        // VTID-TRANSCRIPT-FIX: Buffer assistant transcript fragments, display on turn_complete
+        if (msg.text) {
+          _s._outputTranscriptBuffer = (_s._outputTranscriptBuffer || '') + msg.text;
+          _updateTranscriptUI();
+        }
+        break;
+
+      case 'input_transcript':
+        // VTID-TRANSCRIPT-FIX: Buffer user transcript fragments, display on turn_complete
+        if (msg.text) {
+          _s._inputTranscriptBuffer = (_s._inputTranscriptBuffer || '') + msg.text;
+          _updateTranscriptUI();
+        }
+        break;
+
+      // audio_ack, video_ack — ignore
     }
   }
 
@@ -730,7 +816,9 @@
   // 9. WATCHDOGS
   // ============================================================
 
-  var WATCHDOG_TIMEOUT = 12000;
+  // VTID-HEARTBEAT-FIX: Increased from 12s to 30s. Server now sends data
+  // heartbeats every 10s that trigger onmessage and reset this watchdog.
+  var WATCHDOG_TIMEOUT = 30000;
 
   function _startWatchdog() {
     _stopWatchdog();
@@ -739,12 +827,18 @@
       if (!_s.active) { _stopWatchdog(); return; }
       if (Date.now() - _s.clientLastActivityAt > WATCHDOG_TIMEOUT) {
         _stopWatchdog();
-        _s.liveError = 'Connection lost.';
-        _setOrbState('error');
-        _setStatus(_cfg.lang.startsWith('de') ? 'Keine Antwort vom Server.' : 'No response from server.');
-        _playErrorTone();
-        _updateUI();
-        setTimeout(_sessionStop, 3000);
+        // VTID-RECONNECT: Try auto-reconnect before giving up
+        if (_s._reconnectCount < MAX_WIDGET_RECONNECTS) {
+          console.warn('[VTOrb] Watchdog fired — attempting reconnect');
+          _attemptReconnect();
+        } else {
+          _s.liveError = 'Connection lost.';
+          _setOrbState('error');
+          _setStatus(_cfg.lang.startsWith('de') ? 'Keine Antwort vom Server.' : 'No response from server.');
+          _playErrorTone();
+          _updateUI();
+          setTimeout(_sessionStop, 3000);
+        }
       }
     }, 5000);
   }
@@ -798,6 +892,11 @@
     var status = document.createElement('div');
     status.className = 'vtorb-status';
     _root.appendChild(status);
+
+    // Transcript panel (Vitana left, user right)
+    var transcript = document.createElement('div');
+    transcript.className = 'vtorb-transcript';
+    _root.appendChild(transcript);
 
     // Controls
     var controls = document.createElement('div');
@@ -905,7 +1004,183 @@
   }
 
   // ============================================================
-  // 12. PUBLIC API
+  // 12. TRANSCRIPT UI
+  // ============================================================
+
+  function _updateTranscriptUI() {
+    if (!_root) return;
+    var container = _root.querySelector('.vtorb-transcript');
+    if (!container) return;
+
+    // Clear and re-render
+    container.innerHTML = '';
+
+    // Render committed transcript history (Vitana=left, User=right)
+    for (var i = 0; i < _s._transcriptHistory.length; i++) {
+      var entry = _s._transcriptHistory[i];
+      var msgEl = document.createElement('div');
+      msgEl.className = 'vtorb-transcript-msg vtorb-transcript-msg-' + entry.role;
+      var bubble = document.createElement('div');
+      bubble.className = 'vtorb-transcript-bubble';
+      bubble.textContent = entry.text;
+      msgEl.appendChild(bubble);
+      container.appendChild(msgEl);
+    }
+
+    // Show interim buffers with typing indicator
+    if (_s._outputTranscriptBuffer) {
+      var interimA = document.createElement('div');
+      interimA.className = 'vtorb-transcript-msg vtorb-transcript-msg-assistant';
+      var interimABubble = document.createElement('div');
+      interimABubble.className = 'vtorb-transcript-bubble vtorb-transcript-interim';
+      interimABubble.textContent = _s._outputTranscriptBuffer;
+      interimA.appendChild(interimABubble);
+      container.appendChild(interimA);
+    }
+    if (_s._inputTranscriptBuffer) {
+      var interimU = document.createElement('div');
+      interimU.className = 'vtorb-transcript-msg vtorb-transcript-msg-user';
+      var interimUBubble = document.createElement('div');
+      interimUBubble.className = 'vtorb-transcript-bubble vtorb-transcript-interim';
+      interimUBubble.textContent = _s._inputTranscriptBuffer;
+      interimU.appendChild(interimUBubble);
+      container.appendChild(interimU);
+    }
+
+    // Auto-scroll to bottom
+    container.scrollTop = container.scrollHeight;
+  }
+
+  // ============================================================
+  // 13. AUTO-RECONNECT
+  // ============================================================
+
+  var MAX_WIDGET_RECONNECTS = 3;
+  var RECONNECT_DELAYS = [2000, 4000, 8000]; // Exponential backoff
+
+  async function _attemptReconnect() {
+    if (_s._reconnectCount >= MAX_WIDGET_RECONNECTS) {
+      console.warn('[VTOrb] Max reconnection attempts reached');
+      _setStatus(_cfg.lang.startsWith('de') ? 'Verbindung verloren. Bitte erneut starten.' : 'Connection lost. Please restart.');
+      _setOrbState('error');
+      return;
+    }
+
+    var delay = RECONNECT_DELAYS[_s._reconnectCount] || 8000;
+    _s._reconnectCount++;
+    console.log('[VTOrb] Reconnecting in ' + delay + 'ms (attempt ' + _s._reconnectCount + '/' + MAX_WIDGET_RECONNECTS + ')');
+    _setStatus(_cfg.lang.startsWith('de') ? 'Verbindung wird wiederhergestellt...' : 'Reconnecting...');
+    _setOrbState('connecting');
+
+    setTimeout(async function () {
+      if (!_s.overlayVisible) return; // User closed overlay
+
+      try {
+        // Clean up old session resources
+        if (_s.captureStream) {
+          _s.captureStream.getTracks().forEach(function (t) { t.stop(); });
+          _s.captureStream = null;
+        }
+        if (_s.captureProcessor) { _s.captureProcessor.disconnect(); _s.captureProcessor = null; }
+        if (_s.captureCtx) { _s.captureCtx.close().catch(function () {}); _s.captureCtx = null; }
+        if (_s.eventSource) { _s.eventSource.close(); _s.eventSource = null; }
+
+        // Keep playback context and transcript history alive
+        _s.sessionId = null;
+        _s.active = false;
+        _s.liveError = null;
+        _s._audioSendErrorLogged = false;
+        _s.greetingAudioReceived = false;
+
+        // Restart session
+        await _sessionStart();
+        if (_s.active) {
+          _s._reconnectCount = 0; // Reset on successful reconnect
+          console.log('[VTOrb] Reconnected successfully');
+        }
+      } catch (err) {
+        console.error('[VTOrb] Reconnection failed:', err);
+        _attemptReconnect(); // Try again
+      }
+    }, delay);
+  }
+
+  // ============================================================
+  // 14. FALLBACK MODE (Text+TTS when Vertex Live API fails)
+  // ============================================================
+
+  var _fallbackMode = false;
+
+  function _activateFallbackMode() {
+    if (_fallbackMode) return;
+    _fallbackMode = true;
+    console.log('[VTOrb] Activating fallback text+TTS mode');
+    _s._transcriptHistory.push({
+      role: 'assistant',
+      text: _cfg.lang.startsWith('de') ? 'Sprachverbindung umgestellt auf Textmodus.' : 'Voice connection switched to text mode.'
+    });
+    _setOrbState('listening');
+    _s.voiceState = 'LISTENING';
+    _setStatus(_cfg.lang.startsWith('de') ? 'Textmodus aktiv' : 'Text mode active');
+    _updateTranscriptUI();
+    _updateUI();
+  }
+
+  async function _sendFallbackMessage(text) {
+    if (!text || !text.trim()) return;
+    _s._transcriptHistory.push({ role: 'user', text: text.trim() });
+    _setOrbState('thinking');
+    _s.voiceState = 'THINKING';
+    _updateTranscriptUI();
+
+    try {
+      var headers = { 'Content-Type': 'application/json' };
+      if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
+
+      var contextTurns = _s._transcriptHistory.slice(-10);
+      var resp = await fetch(_cfg.gw + '/api/v1/orb/live/chat-tts', {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify({ text: text.trim(), lang: _cfg.lang, context_turns: contextTurns })
+      });
+
+      var data = await resp.json();
+      if (!data.ok) throw new Error(data.error || 'Fallback failed');
+
+      if (data.text) {
+        _s._transcriptHistory.push({ role: 'assistant', text: data.text });
+      }
+
+      if (data.audio_b64) {
+        _setOrbState('speaking');
+        _s.voiceState = 'SPEAKING';
+        var audio = new Audio('data:' + (data.audio_mime || 'audio/mp3') + ';base64,' + data.audio_b64);
+        audio.onended = function () {
+          _setOrbState('listening');
+          _s.voiceState = 'LISTENING';
+          _setStatus(_cfg.lang.startsWith('de') ? 'Ich höre zu...' : 'Listening...');
+          _playReadyBeep();
+          _updateUI();
+        };
+        audio.play().catch(function () {});
+      } else {
+        _setOrbState('listening');
+        _s.voiceState = 'LISTENING';
+      }
+      _updateTranscriptUI();
+      _updateUI();
+    } catch (err) {
+      console.error('[VTOrb] Fallback error:', err);
+      _s._transcriptHistory.push({ role: 'assistant', text: 'Error: ' + err.message });
+      _setOrbState('listening');
+      _s.voiceState = 'LISTENING';
+      _updateTranscriptUI();
+      _updateUI();
+    }
+  }
+
+  // ============================================================
+  // 15. PUBLIC API
   // ============================================================
 
   window.VitanaOrb = {
