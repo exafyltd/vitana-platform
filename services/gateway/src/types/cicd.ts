@@ -495,6 +495,9 @@ export type CicdEventType =
   | 'orb.live.stall_detected'
   // VTID-DIAG: Pipeline diagnostics
   | 'orb.live.diag'
+  // VTID-FALLBACK: Chat-TTS fallback events
+  | 'orb.live.fallback_used'
+  | 'orb.live.fallback_error'
   // VTID-01225: Cognee Entity Extraction Events
   | 'cognee.extraction.started'
   | 'cognee.extraction.completed'

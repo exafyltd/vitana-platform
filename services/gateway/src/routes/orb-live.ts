@@ -5729,7 +5729,7 @@ async function fetchLastSessionInfo(userId: string): Promise<{ time: string; was
  * VTID-01155: Helper to emit Live session events to OASIS
  */
 async function emitLiveSessionEvent(
-  eventType: 'vtid.live.session.start' | 'vtid.live.session.stop' | 'vtid.live.audio.in.chunk' | 'vtid.live.video.in.frame' | 'vtid.live.audio.out.chunk' | 'orb.live.config_missing' | 'orb.live.connection_failed' | 'orb.live.stall_detected' | 'orb.live.diag',
+  eventType: 'vtid.live.session.start' | 'vtid.live.session.stop' | 'vtid.live.audio.in.chunk' | 'vtid.live.video.in.frame' | 'vtid.live.audio.out.chunk' | 'orb.live.config_missing' | 'orb.live.connection_failed' | 'orb.live.stall_detected' | 'orb.live.diag' | 'orb.live.fallback_used' | 'orb.live.fallback_error',
   payload: Record<string, unknown>,
   status: 'info' | 'error' = 'info'
 ): Promise<void> {
@@ -7055,8 +7055,8 @@ router.post('/live/chat-tts', optionalAuth, async (req: AuthenticatedRequest, re
         const memoryCtx = isMemoryBridgeEnabled()
           ? await fetchMemoryContextWithIdentity(identity as MemoryIdentity)
           : null;
-        if (memoryCtx && memoryCtx.contextItems.length > 0) {
-          const memoryText = memoryCtx.contextItems
+        if (memoryCtx && memoryCtx.items.length > 0) {
+          const memoryText = memoryCtx.items
             .slice(0, 10)
             .map((item: any) => item.content || item.text)
             .filter(Boolean)
@@ -7097,8 +7097,12 @@ router.post('/live/chat-tts', optionalAuth, async (req: AuthenticatedRequest, re
       replyText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
     } else {
       // Vertex AI fallback via processWithGemini
-      const result = await processWithGemini(text, systemInstruction);
-      replyText = result || '';
+      const result = await processWithGemini({
+        text,
+        threadId: session_id || `fallback-${Date.now()}`,
+        systemInstruction
+      });
+      replyText = result?.reply || '';
     }
 
     if (!replyText) {
