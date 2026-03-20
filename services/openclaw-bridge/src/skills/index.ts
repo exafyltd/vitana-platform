@@ -17,6 +17,21 @@ import * as knowledgeSkill from './vitana-knowledge';
 import * as analyticsSkill from './vitana-analytics';
 import * as complianceSkill from './vitana-compliance';
 import * as integrationsSkill from './vitana-integrations';
+import * as automationsSkill from './vitana-automations';
+import * as onboardingSkill from './vitana-onboarding';
+import * as communitySkill from './vitana-community';
+import * as messagingSkill from './vitana-messaging';
+import * as walletSkill from './vitana-wallet';
+import * as marketplaceSkill from './vitana-marketplace';
+import * as monetizationSkill from './vitana-monetization';
+import * as liveroomsSkill from './vitana-liverooms';
+import * as voiceSkill from './vitana-voice';
+import * as diarySkill from './vitana-diary';
+import * as topicsSkill from './vitana-topics';
+import * as adminOpsSkill from './vitana-admin-ops';
+import * as cicdSkill from './vitana-cicd';
+import * as llmRoutingSkill from './vitana-llm-routing';
+import * as assessmentsSkill from './vitana-assessments';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -52,6 +67,21 @@ const SKILLS: Record<string, SkillModule> = {
   'vitana-analytics': analyticsSkill,
   'vitana-compliance': complianceSkill,
   'vitana-integrations': integrationsSkill,
+  'vitana-automations': automationsSkill,
+  'vitana-onboarding': onboardingSkill,
+  'vitana-community': communitySkill,
+  'vitana-messaging': messagingSkill,
+  'vitana-wallet': walletSkill,
+  'vitana-marketplace': marketplaceSkill,
+  'vitana-monetization': monetizationSkill,
+  'vitana-liverooms': liveroomsSkill,
+  'vitana-voice': voiceSkill,
+  'vitana-diary': diarySkill,
+  'vitana-topics': topicsSkill,
+  'vitana-admin-ops': adminOpsSkill,
+  'vitana-cicd': cicdSkill,
+  'vitana-llm-routing': llmRoutingSkill,
+  'vitana-assessments': assessmentsSkill,
 };
 
 /**
