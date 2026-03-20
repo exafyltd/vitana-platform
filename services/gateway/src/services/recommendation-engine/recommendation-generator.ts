@@ -26,6 +26,16 @@ import {
   RoadmapSignal,
   generateRoadmapFingerprint,
 } from './analyzers/roadmap-analyzer';
+import {
+  analyzeLLM,
+  LLMSignal,
+  generateLLMFingerprint,
+} from './analyzers/llm-analyzer';
+import {
+  analyzeUserBehavior,
+  UserBehaviorSignal,
+  generateUserBehaviorFingerprint,
+} from './analyzers/user-behavior-analyzer';
 
 const LOG_PREFIX = '[VTID-01185:Generator]';
 
@@ -33,7 +43,7 @@ const LOG_PREFIX = '[VTID-01185:Generator]';
 // Types
 // =============================================================================
 
-export type SourceType = 'codebase' | 'oasis' | 'health' | 'roadmap';
+export type SourceType = 'codebase' | 'oasis' | 'health' | 'roadmap' | 'llm' | 'behavior';
 
 export interface GeneratedRecommendation {
   title: string;
@@ -254,6 +264,48 @@ function convertRoadmapSignal(signal: RoadmapSignal): GeneratedRecommendation {
   };
 }
 
+function convertLLMSignal(signal: LLMSignal): GeneratedRecommendation {
+  return {
+    title: signal.title.substring(0, 100),
+    summary: signal.message,
+    domain: signal.type === 'security' ? 'security' : signal.type === 'architecture' ? 'infra' : 'dev',
+    impact_score: signal.confidence > 0.8 ? 8 : signal.confidence > 0.5 ? 6 : 4,
+    effort_score: signal.type === 'architecture' ? 7 : 5,
+    risk_level: signal.severity,
+    source_type: 'llm',
+    source_ref: signal.source_ref,
+    fingerprint: generateLLMFingerprint(signal),
+    suggested_files: signal.suggested_files || [],
+    suggested_endpoints: [],
+    suggested_tests: ['integration'],
+  };
+}
+
+function convertUserBehaviorSignal(signal: UserBehaviorSignal): GeneratedRecommendation {
+  const impactMap: Record<string, number> = {
+    unmet_need: 7,
+    feature_gap: 5,
+    high_dismiss_rate: 4,
+    recurring_topic: 6,
+    low_engagement: 5,
+  };
+
+  return {
+    title: signal.suggested_action.substring(0, 100),
+    summary: signal.message,
+    domain: 'dev',
+    impact_score: impactMap[signal.type] || 5,
+    effort_score: signal.type === 'feature_gap' ? 7 : 4,
+    risk_level: signal.severity,
+    source_type: 'behavior',
+    source_ref: signal.source,
+    fingerprint: generateUserBehaviorFingerprint(signal),
+    suggested_files: [],
+    suggested_endpoints: [],
+    suggested_tests: [],
+  };
+}
+
 // =============================================================================
 // Main Generator Function
 // =============================================================================
@@ -433,6 +485,50 @@ export async function generateRecommendations(
               p_status: 'error',
               p_last_error: result.error,
             });
+          }
+        })()
+      );
+    }
+
+    // LLM-powered analyzer (Phase 3A)
+    if (fullConfig.sources.includes('llm')) {
+      analyzerPromises.push(
+        (async () => {
+          try {
+            const result = await analyzeLLM();
+            analysisSummary.llm = result.summary;
+
+            if (result.ok) {
+              for (const signal of result.signals.slice(0, Math.ceil(fullConfig.limit / 4))) {
+                recommendations.push(convertLLMSignal(signal));
+              }
+            } else {
+              errors.push({ source: 'llm', error: result.error || 'Unknown error' });
+            }
+          } catch (err) {
+            errors.push({ source: 'llm', error: String(err) });
+          }
+        })()
+      );
+    }
+
+    // User behavior analyzer (Phase 3C)
+    if (fullConfig.sources.includes('behavior')) {
+      analyzerPromises.push(
+        (async () => {
+          try {
+            const result = await analyzeUserBehavior();
+            analysisSummary.behavior = result.summary;
+
+            if (result.ok) {
+              for (const signal of result.signals.slice(0, Math.ceil(fullConfig.limit / 4))) {
+                recommendations.push(convertUserBehaviorSignal(signal));
+              }
+            } else {
+              errors.push({ source: 'behavior', error: result.error || 'Unknown error' });
+            }
+          } catch (err) {
+            errors.push({ source: 'behavior', error: String(err) });
           }
         })()
       );

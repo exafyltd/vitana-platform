@@ -21,6 +21,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import { createHash } from 'crypto';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { generateRecommendations, SourceType } from '../services/recommendation-engine';
 import { notifyUserAsync } from '../services/notification-service';
@@ -246,6 +247,164 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
       },
     });
 
+    // Create draft spec in oasis_specs from recommendation data so the task
+    // enters the spec pipeline with content ready for validate → approve flow
+    if (!response.already_activated && response.vtid) {
+      try {
+        const supabaseUrl = process.env.SUPABASE_URL;
+        const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+        if (supabaseUrl && svcKey) {
+          // Fetch recommendation to get full data (summary, domain, risk_level)
+          const recResp = await fetch(
+            `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${id}&select=title,summary,domain,risk_level,impact_score,effort_score,spec_snapshot&limit=1`,
+            { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } }
+          );
+          const recRows = recResp.ok ? await recResp.json() as any[] : [];
+          const rec = recRows[0];
+
+          if (rec) {
+            const vtid = response.vtid;
+            const snapshot = rec.spec_snapshot || {};
+
+            // Build markdown spec from recommendation data
+            const specMarkdown = [
+              `# ${rec.title}`,
+              '',
+              `**VTID:** ${vtid}`,
+              '',
+              '---',
+              '',
+              '## 1. Goal',
+              '',
+              rec.summary || 'TBD',
+              '',
+              '---',
+              '',
+              '## 2. Non-negotiable Governance Rules Touched',
+              '',
+              (snapshot.non_negotiables || ['Safety check required', 'User consent required'])
+                .map((r: string) => `- ${r}`).join('\n'),
+              '',
+              '---',
+              '',
+              '## 3. Scope',
+              '',
+              '### IN SCOPE',
+              (snapshot.scope_in || [rec.domain]).map((s: string) => `- ${s}`).join('\n'),
+              '',
+              '### OUT OF SCOPE',
+              (snapshot.scope_out || []).length > 0
+                ? snapshot.scope_out.map((s: string) => `- ${s}`).join('\n')
+                : '- TBD',
+              '',
+              '---',
+              '',
+              '## 4. Changes',
+              '',
+              '### 4.1 Database Migrations (SQL)',
+              'TBD — to be detailed during implementation',
+              '',
+              '### 4.2 APIs (Routes, Request/Response)',
+              'TBD — to be detailed during implementation',
+              '',
+              '### 4.3 UI Changes (Screens, States)',
+              'TBD — to be detailed during implementation',
+              '',
+              '---',
+              '',
+              '## 5. Files to Modify',
+              '',
+              (snapshot.files_expected || []).length > 0
+                ? snapshot.files_expected.map((f: string) => `- \`${f}\``).join('\n')
+                : 'TBD — to be identified during implementation',
+              '',
+              '---',
+              '',
+              '## 6. Acceptance Criteria',
+              '',
+              (snapshot.definition_of_done || ['Implementation complete', 'Tests passing'])
+                .map((c: string, i: number) => `${i + 1}. ${c}`).join('\n'),
+              '',
+              '---',
+              '',
+              '## 7. Verification Steps',
+              '',
+              '### 7.1 curl Calls',
+              'TBD — to be defined during implementation',
+              '',
+              '### 7.2 UI Checks',
+              'TBD — to be defined during implementation',
+              '',
+              '---',
+              '',
+              '## 8. Rollback Plan',
+              '',
+              'Revert the commit and redeploy. No data migration required.',
+              '',
+              '---',
+              '',
+              '## 9. Risk Level',
+              '',
+              `**${(rec.risk_level || 'low').toUpperCase()}** (Impact: ${rec.impact_score || '?'}/10, Effort: ${rec.effort_score || '?'}/10)`,
+              '',
+              `> Source: Autopilot recommendation (domain: ${rec.domain || 'general'})`,
+            ].join('\n');
+
+            const specHash = createHash('sha256').update(specMarkdown).digest('hex');
+
+            // Insert into oasis_specs
+            const insertResp = await fetch(`${supabaseUrl}/rest/v1/oasis_specs`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                apikey: svcKey,
+                Authorization: `Bearer ${svcKey}`,
+                Prefer: 'return=representation',
+              },
+              body: JSON.stringify({
+                vtid,
+                version: 1,
+                title: rec.title,
+                spec_markdown: specMarkdown,
+                spec_hash: specHash,
+                status: 'draft',
+                created_by: 'autopilot',
+              }),
+            });
+
+            if (insertResp.ok) {
+              const specData = await insertResp.json() as any[];
+              const newSpec = specData[0];
+
+              // Update vtid_ledger with spec reference
+              await fetch(`${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}`, {
+                method: 'PATCH',
+                headers: {
+                  'Content-Type': 'application/json',
+                  apikey: svcKey,
+                  Authorization: `Bearer ${svcKey}`,
+                },
+                body: JSON.stringify({
+                  spec_status: 'draft',
+                  spec_current_id: newSpec.id,
+                  spec_current_hash: specHash,
+                  spec_last_error: null,
+                  updated_at: new Date().toISOString(),
+                }),
+              });
+
+              console.log(`${LOG_PREFIX} Spec created for ${vtid}: hash=${specHash.substring(0, 8)}...`);
+            } else {
+              console.error(`${LOG_PREFIX} Failed to create spec for ${vtid}:`, await insertResp.text());
+            }
+          }
+        }
+      } catch (specErr: any) {
+        // Non-fatal: VTID was created, spec can be generated manually
+        console.error(`${LOG_PREFIX} Spec creation failed (non-fatal):`, specErr.message);
+      }
+    }
+
     return res.status(200).json({
       ...response,
       vtid_ref: 'VTID-01180',
@@ -388,7 +547,7 @@ router.post('/generate', async (req: Request, res: Response) => {
     } = req.body;
 
     // Validate sources
-    const validSources: SourceType[] = ['codebase', 'oasis', 'health', 'roadmap'];
+    const validSources: SourceType[] = ['codebase', 'oasis', 'health', 'roadmap', 'llm', 'behavior'];
     const requestedSources = (Array.isArray(sources) ? sources : [sources]).filter(
       (s: string) => validSources.includes(s as SourceType)
     ) as SourceType[];

@@ -144,6 +144,7 @@ if [ "$CLOUD_RUN_SERVICE" = "gateway" ]; then
   echo -e "${YELLOW}VTID-01228: Including DAILY_API_KEY for Daily.co video integration...${NC}"
   echo -e "${YELLOW}VTID-01228: Including Stripe secrets for payment integration...${NC}"
   echo -e "${YELLOW}VTID-01231: Including STRIPE_CONNECT_WEBHOOK_SECRET for Stripe Connect backend...${NC}"
+  # VTID-01184: OPENAI_API_KEY not yet in GCP Secret Manager; embeddings use Gemini fallback
   # VTID-01228: Session affinity required — ORB Live API stores sessions in-memory.
   # Without affinity, Cloud Run multi-instance routing causes 403/404 on /send requests.
   gcloud run deploy "$CLOUD_RUN_SERVICE" \

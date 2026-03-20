@@ -10,6 +10,7 @@
 
 import fetch from 'node-fetch';
 import { randomUUID } from 'crypto';
+import { guessAreaFromText, buildTitle, validateTaskTitle, normalizeTaskTitle } from '../utils/task-title';
 
 // ==================== VTID-01004: Event Classification ====================
 // Event categories for OASIS ingestion control
@@ -701,35 +702,34 @@ export interface TaskSpecEventPayload {
 }
 
 /**
- * Extract title from raw description
- * Uses first sentence or first ~100-120 characters
+ * Extract a structured title from raw description.
+ * Format: "Area: Short description" (max 60 chars).
+ * Auto-detects system area from keywords in the description.
  */
 function extractTitle(rawDescription: string): string {
   if (!rawDescription || rawDescription.trim().length === 0) {
-    return 'Untitled Operator Task';
+    return 'Gateway: Untitled task';
   }
 
   const trimmed = rawDescription.trim();
 
-  // Try to get first sentence (ending with . ! or ?)
-  const sentenceMatch = trimmed.match(/^[^.!?]+[.!?]/);
-  if (sentenceMatch && sentenceMatch[0].length <= 120) {
-    return sentenceMatch[0].trim();
+  // If user already provided a valid "Area: description" format, normalize and use it
+  const validation = validateTaskTitle(trimmed);
+  if (validation.ok) {
+    return normalizeTaskTitle(trimmed);
   }
 
-  // Otherwise, take first 100-120 characters at word boundary
-  if (trimmed.length <= 120) {
-    return trimmed;
+  // Auto-detect area from keywords in the description
+  const area = guessAreaFromText(trimmed);
+
+  // Extract a short description: first sentence or first ~40 chars
+  let desc = trimmed;
+  const sentenceMatch = trimmed.match(/^[^.!?]+/);
+  if (sentenceMatch) {
+    desc = sentenceMatch[0].trim();
   }
 
-  // Find last space before 120 chars
-  const truncated = trimmed.slice(0, 120);
-  const lastSpace = truncated.lastIndexOf(' ');
-  if (lastSpace > 80) {
-    return truncated.slice(0, lastSpace) + '...';
-  }
-
-  return truncated + '...';
+  return buildTitle(area, desc);
 }
 
 /**

@@ -997,7 +997,7 @@ workerOrchestratorRouter.get('/api/v1/worker/orchestrator/tasks/pending', async 
     // base filters and then filter claim window in code
     const queryResult = await supabaseRequest<any[]>(
       `/rest/v1/vtid_ledger?` +
-      `status=eq.in_progress&` +
+      `status=in.(scheduled,in_progress)&` +
       `spec_status=eq.approved&` +
       `select=vtid,title,summary,status,layer,module,created_at,updated_at,claimed_by,claim_expires_at,claim_started_at,is_terminal,spec_status&` +
       `order=created_at.asc&` +

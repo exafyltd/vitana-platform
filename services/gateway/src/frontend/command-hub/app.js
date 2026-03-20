@@ -34,6 +34,27 @@ const TARGET_ROLE_LABELS = {
 };
 
 // ===========================================================================
+// Task Title Rules: "Area: Short description" format
+// ===========================================================================
+const SYSTEM_AREAS = ['ORB', 'Gateway', 'Command Hub', 'Pipeline', 'Operator',
+    'Auth', 'Governance', 'OASIS', 'Memory', 'Agents', 'Infra', 'Frontend'];
+
+function validateTaskTitle(title) {
+    var t = (title || '').trim();
+    if (t.length < 8) return { ok: false, error: 'Title too short (min 8 chars)' };
+    if (t.length > 60) return { ok: false, error: 'Title too long (max 60 chars)' };
+    var colonIdx = t.indexOf(':');
+    if (colonIdx === -1) return { ok: false, error: 'Use format "Area: Description". Areas: ' + SYSTEM_AREAS.join(', ') };
+    var area = t.slice(0, colonIdx).trim().toLowerCase();
+    var matched = SYSTEM_AREAS.find(function (a) { return a.toLowerCase() === area; });
+    if (!matched) return { ok: false, error: 'Unknown area "' + t.slice(0, colonIdx).trim() + '". Use: ' + SYSTEM_AREAS.join(', ') };
+    var desc = t.slice(colonIdx + 1).trim();
+    if (!desc) return { ok: false, error: 'Description after colon cannot be empty' };
+    if (desc.split(/\s+/).filter(Boolean).length < 2) return { ok: false, error: 'Description needs at least 2 words' };
+    return { ok: true };
+}
+
+// ===========================================================================
 // VTID-01049: Me Context State (Authoritative Role from Gateway)
 // ===========================================================================
 const MeState = {
@@ -57,10 +78,28 @@ const ROLE_DEFAULT_SCREENS = {
 
 /**
  * VTID-01186: Navigate to role-specific default screen
- * Called after role switch to redirect user to appropriate screen
+ * Called after role switch to redirect user to appropriate screen.
+ * VTID-01230: Community and Admin redirect to vitanaland.com (external app).
  */
+// External redirect targets per role (roles not listed stay in Command Hub)
+var ROLE_EXTERNAL_REDIRECTS = {
+    'community': 'https://vitanaland.com/comm/events-meetups?tab=hot',
+    'admin': 'https://vitanaland.com/admin/dashboard',
+    'professional': 'https://vitanaland.com/professional/dashboard',
+    'staff': 'https://vitanaland.com/staff/dashboard',
+    'patient': 'https://vitanaland.com/patient/dashboard'
+};
+
 function navigateToRoleDefaultScreen(role) {
     var lowerRole = (role || 'community').toLowerCase();
+
+    // VTID-01230: If this role has an external redirect, navigate away from Command Hub
+    if (ROLE_EXTERNAL_REDIRECTS[lowerRole]) {
+        console.log('[VTID-01230] Redirecting to external app for role:', lowerRole, '->', ROLE_EXTERNAL_REDIRECTS[lowerRole]);
+        window.location.href = ROLE_EXTERNAL_REDIRECTS[lowerRole];
+        return;
+    }
+
     var defaultScreen = ROLE_DEFAULT_SCREENS[lowerRole] || ROLE_DEFAULT_SCREENS['community'];
 
     // Find the section config
@@ -124,7 +163,7 @@ function deriveVtidStageStatus(item) {
     }
 
     var backendStatus = (item.status || '').toLowerCase();
-    var backendStage = item.current_stage || 'Planner';
+    var backendStage = item.current_stage || 'Backlog';
 
     // Priority 2: Check for explicit Done status
     if (backendStatus === 'done') {
@@ -132,12 +171,14 @@ function deriveVtidStageStatus(item) {
     }
 
     // Priority 3: Check for Failed/Blocked status
-    if (backendStatus === 'failed' || backendStatus === 'blocked') {
+    if (backendStatus === 'failed') {
         return { stage: backendStage, status: 'failed' };
     }
+    if (backendStatus === 'blocked') {
+        return { stage: backendStage, status: 'blocked' };
+    }
 
-    // Priority 4: Map "Moving" and other non-terminal statuses
-    // Stage determines display, status becomes 'in_progress' for active work
+    // Priority 4: Map stage from backend projection
     switch (backendStage) {
         case 'Done':
             return { stage: 'Done', status: 'success' };
@@ -148,11 +189,11 @@ function deriveVtidStageStatus(item) {
         case 'Worker':
             return { stage: 'Worker', status: 'in_progress' };
         case 'Planner':
-            // Planner stage with Moving → lifecycle started, queued for work
-            return { stage: 'Queued', status: 'in_progress' };
+            return { stage: 'Planner', status: 'in_progress' };
+        case 'Backlog':
+            return { stage: 'Backlog', status: 'scheduled' };
         default:
-            // Unknown stage → default to Scheduled
-            return { stage: 'Scheduled', status: 'scheduled' };
+            return { stage: 'Backlog', status: 'scheduled' };
     }
 }
 
@@ -616,12 +657,14 @@ async function setActiveRole(role) {
             return null;
         }
 
-        console.log('[VTID-01049] setActiveRole success:', data.me);
-        state.meContext = data.me;
+        // VTID-01230: Server returns { ok, tenant_id, user_id, active_role, tenant_slug }
+        // (no nested .me property)
+        console.log('[VTID-01049] setActiveRole success:', data);
+        state.meContext = data;
 
         // Update viewRole to match (capitalized for UI)
-        if (data.me.active_role) {
-            var capitalizedRole = data.me.active_role.charAt(0).toUpperCase() + data.me.active_role.slice(1);
+        if (data.active_role) {
+            var capitalizedRole = data.active_role.charAt(0).toUpperCase() + data.active_role.slice(1);
             state.viewRole = capitalizedRole;
             localStorage.setItem('vitana.viewRole', capitalizedRole);
         }
@@ -629,11 +672,9 @@ async function setActiveRole(role) {
         showToast('Switched to ' + state.viewRole + ' role', 'success');
 
         // VTID-01049: Trigger full data refresh after successful role switch
-        // This ensures no stale data from the previous role context remains.
         console.log('[VTID-01049] Role switch successful. Refreshing all data...');
-        renderApp(); // Immediate UI update (shows loading states if any)
+        renderApp();
 
-        // Refresh all major data streams in parallel
         Promise.all([
             fetchTasks(),
             fetchTelemetrySnapshot(),
@@ -646,7 +687,7 @@ async function setActiveRole(role) {
             console.error('[VTID-01049] Error during data refresh:', err);
         });
 
-        return data.me;
+        return data;
     } catch (err) {
         console.error('[VTID-01049] setActiveRole exception:', err);
         showToast('Network error switching role', 'error');
@@ -655,6 +696,34 @@ async function setActiveRole(role) {
 }
 
 // VTID-01049: Redundant initMeContext removed. Auth boot is now handled in DOMContentLoaded.
+
+/**
+ * VTID-01230: Fetch permitted roles for the current user.
+ * Populates state.permittedRoles and state.isSuperAdmin.
+ */
+async function fetchPermittedRoles() {
+    if (!state.authToken) return;
+
+    try {
+        var response = await fetch('/api/v1/roles/my-roles', {
+            headers: buildContextHeaders()
+        });
+
+        if (!response.ok) {
+            console.warn('[VTID-01230] fetchPermittedRoles failed:', response.status);
+            return;
+        }
+
+        var data = await response.json();
+        if (data.ok) {
+            state.permittedRoles = data.roles || ['community'];
+            state.isSuperAdmin = data.is_super_admin === true;
+            console.log('[VTID-01230] Permitted roles:', state.permittedRoles, 'superAdmin:', state.isSuperAdmin);
+        }
+    } catch (err) {
+        console.warn('[VTID-01230] fetchPermittedRoles error:', err);
+    }
+}
 
 // ===========================================================================
 // VTID-01171: Auth Identity from /api/v1/auth/me
@@ -916,6 +985,139 @@ async function doLogin(email, password) {
 }
 
 /**
+ * VTID-01230: Auth Gate - Full-screen login that blocks Command Hub access.
+ * No sidebar, no navigation, nothing loads until authenticated.
+ */
+function renderAuthGate() {
+    var gate = document.createElement('div');
+    gate.className = 'auth-gate';
+    gate.style.cssText = 'display:flex;align-items:center;justify-content:center;height:100vh;width:100vw;background:var(--color-bg, #0f172a);position:fixed;top:0;left:0;z-index:10000;';
+
+    var card = document.createElement('div');
+    card.style.cssText = 'background:var(--color-sidebar-bg, #1e293b);border:1px solid var(--color-border, #334155);border-radius:12px;padding:40px;width:100%;max-width:400px;box-shadow:0 8px 32px rgba(0,0,0,0.4);';
+
+    // Logo / Title
+    var title = document.createElement('h1');
+    title.textContent = 'VITANA';
+    title.style.cssText = 'margin:0 0 4px 0;font-size:1.8rem;font-weight:700;color:var(--color-accent, #3b82f6);letter-spacing:2px;text-align:center;';
+    card.appendChild(title);
+
+    var subtitle = document.createElement('div');
+    subtitle.textContent = 'Command Hub';
+    subtitle.style.cssText = 'margin:0 0 8px 0;font-size:0.95rem;color:var(--color-text-secondary, #94a3b8);text-align:center;';
+    card.appendChild(subtitle);
+
+    var divider = document.createElement('hr');
+    divider.style.cssText = 'border:none;border-top:1px solid var(--color-border, #334155);margin:16px 0 24px 0;';
+    card.appendChild(divider);
+
+    var authLabel = document.createElement('div');
+    authLabel.textContent = 'Authentication required to access the dev system.';
+    authLabel.style.cssText = 'margin-bottom:20px;font-size:0.85rem;color:var(--color-text-secondary, #94a3b8);text-align:center;';
+    card.appendChild(authLabel);
+
+    // Error banner
+    if (state.loginError) {
+        var errorBanner = document.createElement('div');
+        errorBanner.textContent = state.loginError;
+        errorBanner.style.cssText = 'background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);border-radius:6px;padding:10px 12px;margin-bottom:16px;font-size:0.85rem;';
+        card.appendChild(errorBanner);
+    }
+
+    // Email
+    var emailLabel = document.createElement('label');
+    emailLabel.textContent = 'Email';
+    emailLabel.style.cssText = 'display:block;margin-bottom:6px;font-weight:500;font-size:0.85rem;color:var(--color-text-primary, #f8fafc);';
+    card.appendChild(emailLabel);
+
+    var emailInput = document.createElement('input');
+    emailInput.type = 'email';
+    emailInput.placeholder = 'Enter your email';
+    emailInput.value = state.loginEmail || '';
+    emailInput.disabled = state.loginLoading;
+    emailInput.style.cssText = 'width:100%;padding:10px 12px;border:1px solid var(--color-border, #334155);border-radius:6px;background:var(--color-bg, #0f172a);color:var(--color-text-primary, #f8fafc);font-size:0.9rem;box-sizing:border-box;margin-bottom:14px;outline:none;';
+    emailInput.onfocus = function() { this.style.borderColor = 'var(--color-accent, #3b82f6)'; };
+    emailInput.onblur = function() { this.style.borderColor = 'var(--color-border, #334155)'; };
+    emailInput.oninput = function(e) { state.loginEmail = e.target.value; };
+    card.appendChild(emailInput);
+
+    // Password
+    var passwordLabel = document.createElement('label');
+    passwordLabel.textContent = 'Password';
+    passwordLabel.style.cssText = 'display:block;margin-bottom:6px;font-weight:500;font-size:0.85rem;color:var(--color-text-primary, #f8fafc);';
+    card.appendChild(passwordLabel);
+
+    var passwordWrapper = document.createElement('div');
+    passwordWrapper.style.cssText = 'position:relative;margin-bottom:24px;';
+
+    var passwordInput = document.createElement('input');
+    passwordInput.type = 'password';
+    passwordInput.placeholder = 'Enter your password';
+    passwordInput.value = state.loginPassword || '';
+    passwordInput.disabled = state.loginLoading;
+    passwordInput.style.cssText = 'width:100%;padding:10px 40px 10px 12px;border:1px solid var(--color-border, #334155);border-radius:6px;background:var(--color-bg, #0f172a);color:var(--color-text-primary, #f8fafc);font-size:0.9rem;box-sizing:border-box;outline:none;';
+    passwordInput.onfocus = function() { this.style.borderColor = 'var(--color-accent, #3b82f6)'; };
+    passwordInput.onblur = function() { this.style.borderColor = 'var(--color-border, #334155)'; };
+    passwordInput.oninput = function(e) { state.loginPassword = e.target.value; };
+    passwordInput.onkeydown = function(e) {
+        if (e.key === 'Enter' && !state.loginLoading) {
+            doLogin(state.loginEmail, state.loginPassword);
+        }
+    };
+    passwordWrapper.appendChild(passwordInput);
+
+    var eyeToggle = document.createElement('button');
+    eyeToggle.type = 'button';
+    eyeToggle.innerHTML = '&#128065;';
+    eyeToggle.title = 'Show password';
+    eyeToggle.style.cssText = 'position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:4px;color:var(--color-text-secondary, #94a3b8);font-size:1.1rem;';
+    eyeToggle.onclick = function() {
+        if (passwordInput.type === 'password') {
+            passwordInput.type = 'text';
+            eyeToggle.innerHTML = '&#128064;';
+            eyeToggle.title = 'Hide password';
+        } else {
+            passwordInput.type = 'password';
+            eyeToggle.innerHTML = '&#128065;';
+            eyeToggle.title = 'Show password';
+        }
+    };
+    passwordWrapper.appendChild(eyeToggle);
+    card.appendChild(passwordWrapper);
+
+    // Login button
+    var loginBtn = document.createElement('button');
+    loginBtn.textContent = state.loginLoading ? 'Authenticating...' : 'Login';
+    loginBtn.disabled = state.loginLoading;
+    loginBtn.style.cssText = 'width:100%;padding:12px;border:none;border-radius:6px;background:var(--color-accent, #3b82f6);color:white;font-size:0.95rem;font-weight:600;cursor:pointer;transition:background 0.2s;';
+    if (state.loginLoading) {
+        loginBtn.style.opacity = '0.7';
+        loginBtn.style.cursor = 'not-allowed';
+    }
+    loginBtn.onmouseover = function() { if (!state.loginLoading) this.style.background = 'var(--color-accent-hover, #2563eb)'; };
+    loginBtn.onmouseout = function() { this.style.background = 'var(--color-accent, #3b82f6)'; };
+    loginBtn.onclick = function() {
+        if (!state.loginLoading) {
+            doLogin(state.loginEmail, state.loginPassword);
+        }
+    };
+    card.appendChild(loginBtn);
+
+    gate.appendChild(card);
+
+    // Auto-focus email input after render
+    setTimeout(function() {
+        if (!state.loginEmail) {
+            emailInput.focus();
+        } else {
+            passwordInput.focus();
+        }
+    }, 50);
+
+    return gate;
+}
+
+/**
  * VTID-01186: Logout - clears auth state.
  */
 function doLogout() {
@@ -946,7 +1148,7 @@ function doLogout() {
     state.viewRole = 'User';
     state.showProfileModal = false;
 
-    showToast('Logged out successfully', 'info');
+    // VTID-01230: renderApp() will show auth gate since authToken is now null
     renderApp();
 }
 
@@ -983,12 +1185,12 @@ function doLogout() {
 function isEligibleScheduled(task) {
     if (!task) return false;
 
-    // Rule A: Only classic VTIDs (VTID-NNNN or VTID-NNNNN format)
-    // Note: This is redundant with isHumanTask check but kept for safety
-    // VTID-01028: Updated to support 5-digit VTIDs (e.g., VTID-01028, VTID-01029)
+    // Rule A: Only VTIDs with VTID- prefix (excludes DEV-*, AUTODEPLOY-*, etc.)
+    // Accepts both numeric (VTID-01217) and alphanumeric (VTID-E5DAA) suffixes
+    // to support autopilot-generated VTIDs
     var vtid = (task.vtid || '');
-    var classicVtidPattern = /^VTID-\d{4,5}$/;
-    if (!classicVtidPattern.test(vtid)) {
+    var vtidPattern = /^VTID-[A-Z0-9]{4,5}$/i;
+    if (!vtidPattern.test(vtid)) {
         return false;
     }
 
@@ -1586,7 +1788,7 @@ function updateVtidsTableBodyFromProjection(tbody, items) {
             row.appendChild(titleCell);
 
             // Derive Stage/Status
-            var derived = deriveVtidStageStatus(item) || { stage: 'Scheduled', status: 'scheduled' };
+            var derived = deriveVtidStageStatus(item) || { stage: 'Backlog', status: 'scheduled' };
 
             // Stage column
             var stageCell = document.createElement('td');
@@ -2683,7 +2885,14 @@ const state = {
     },
 
     // VTID-01014: View Role (persisted in localStorage)
-    viewRole: localStorage.getItem('vitana.viewRole') || 'Admin',
+    // VTID-01230: Default to Developer in Command Hub; reset if stale 'Infra' persisted
+    viewRole: (function() {
+        var stored = localStorage.getItem('vitana.viewRole');
+        var valid = ['Developer', 'Admin', 'Community', 'Professional', 'Staff', 'Patient'];
+        if (stored && valid.indexOf(stored) !== -1) return stored;
+        localStorage.setItem('vitana.viewRole', 'Developer');
+        return 'Developer';
+    })(),
 
     // VTID-01049: Authoritative Me Context from Gateway API
     // This is the single source of truth for user identity and role
@@ -2698,6 +2907,10 @@ const state = {
     authIdentity: null,
     authIdentityLoading: false,
     authIdentityError: null,
+
+    // VTID-01230: Role Admission — permitted roles for dropdown filtering
+    permittedRoles: null, // Array of lowercase role strings, or null if not yet fetched
+    isSuperAdmin: false, // true if exafy_admin — sees all roles
 
     // VTID-01186: Login Form State
     loginEmail: '',
@@ -2951,7 +3164,13 @@ const state = {
         clientLastActivityAt: 0,      // Timestamp of last meaningful SSE event
         // VTID-STUCK-GUARD: Client-side stuck-state watchdog
         stuckGuardTimer: null,        // Timer that fires if ORB stays in connecting/thinking too long
-        greetingAudioReceived: false  // Whether any greeting audio has been received and played
+        greetingAudioReceived: false, // Whether any greeting audio has been received and played
+        // VTID-TRANSCRIPT-FIX: Buffer transcript fragments until turn_complete
+        _inputTranscriptBuffer: '',   // Accumulates user speech fragments
+        _outputTranscriptBuffer: '',  // Accumulates model speech fragments
+        // VTID-FALLBACK: Text+TTS fallback mode when Vertex Live API fails
+        _fallbackMode: false,         // Whether we're using fallback chat-tts
+        _fallbackReason: ''           // Why we switched to fallback
     },
 
     // VTID-0600: Operational Visibility Foundation State
@@ -3322,7 +3541,11 @@ const state = {
     // Models & Evaluations module
     modelsRegistry: { items: [], loading: false, error: null, fetched: false, pagination: { offset: 0, limit: 50, hasMore: true } },
     modelsPerformance: { data: null, loading: false, error: null, fetched: false },
-    modelsRouting: { config: null, domains: [], loading: false, error: null, fetched: false },
+    modelsRouting: { policy: null, providers: [], models: [], recommended: null, loading: false, error: null, fetched: false },
+    modelsTelemetry: { events: [], loading: false, error: null, fetched: false, pagination: { offset: 0, limit: 50, hasMore: true } },
+    modelsBenchmarks: { aggregated: [], loading: false, error: null, fetched: false },
+    modelsAutoRefreshEnabled: false,
+    modelsAutoRefreshInterval: null,
     modelsPlayground: { input: '', output: '', loading: false, error: null, model: '' },
 
     // Testing & QA (GitHub CI)
@@ -4570,6 +4793,13 @@ function showToast(message, type = 'info', duration = 4000) {
 function renderApp() {
     const root = document.getElementById('root');
 
+    // VTID-01230: Auth Gate - Block all access if not authenticated
+    if (!state.authToken) {
+        root.innerHTML = '';
+        root.appendChild(renderAuthGate());
+        return;
+    }
+
     // VTID-0526-E: Save chat textarea focus state before destroying DOM
     var chatTextarea = document.querySelector('.chat-textarea');
     var savedChatFocus = null;
@@ -4951,6 +5181,8 @@ function renderHeader() {
             const data = await response.json();
             if (data.ok) {
                 state.autopilotRecommendations = data.recommendations || [];
+                // Sync badge count with actual list to avoid mismatch
+                state.autopilotRecommendationsCount = state.autopilotRecommendations.length;
             } else {
                 state.autopilotRecommendationsError = data.error || 'Unknown error';
             }
@@ -6084,7 +6316,8 @@ function startInlineTitleEdit(titleElement, task) {
     input.type = 'text';
     input.className = 'task-card-title-input';
     input.value = isPlaceholder ? '' : currentTitle;
-    input.placeholder = 'Enter task title...';
+    input.placeholder = 'Area: Short description';
+    input.maxLength = 60;
 
     // Save original text for cancel
     var originalText = titleElement.textContent;
@@ -6099,6 +6332,12 @@ function startInlineTitleEdit(titleElement, task) {
     function saveTitle() {
         var newTitle = input.value.trim();
         if (newTitle && newTitle !== originalText) {
+            var check = validateTaskTitle(newTitle);
+            if (!check.ok) {
+                // Show visible error toast so user knows why title wasn't saved
+                showToast(check.error, 'warning');
+                return; // showToast calls renderApp() which reverts cleanly
+            }
             setTaskTitleOverride(task.vtid, newTitle);
             console.log('[VTID-01041] Title saved for', task.vtid, ':', newTitle);
         }
@@ -6125,7 +6364,8 @@ function startInlineTitleEdit(titleElement, task) {
     input.onblur = function () {
         // Small delay to allow click events to fire first
         setTimeout(function () {
-            if (input.parentNode === titleElement) {
+            // Use document.contains to avoid firing after another renderApp() already rebuilt DOM
+            if (document.contains(input)) {
                 saveTitle();
             }
         }, 100);
@@ -6155,7 +6395,8 @@ function startDrawerTitleEdit(titleValueElement, task) {
     input.type = 'text';
     input.className = 'drawer-title-input';
     input.value = isPlaceholder ? '' : currentTitle;
-    input.placeholder = 'Enter task title...';
+    input.placeholder = 'Area: Short description';
+    input.maxLength = 60;
 
     // Save original text for cancel
     var originalText = titleValueElement.textContent;
@@ -6170,6 +6411,12 @@ function startDrawerTitleEdit(titleValueElement, task) {
     function saveTitle() {
         var newTitle = input.value.trim();
         if (newTitle && newTitle !== originalText) {
+            var check = validateTaskTitle(newTitle);
+            if (!check.ok) {
+                // Show visible error toast so user knows why title wasn't saved
+                showToast(check.error, 'warning');
+                return; // showToast calls renderApp() which reverts cleanly
+            }
             setTaskTitleOverride(task.vtid, newTitle);
             console.log('[VTID-01041] Drawer title saved for', task.vtid, ':', newTitle);
         }
@@ -6196,7 +6443,8 @@ function startDrawerTitleEdit(titleValueElement, task) {
     input.onblur = function () {
         // Small delay to allow click events to fire first
         setTimeout(function () {
-            if (input.parentNode === titleValueElement) {
+            // Use document.contains to avoid firing after another renderApp() already rebuilt DOM
+            if (document.contains(input)) {
                 saveTitle();
             }
         }, 100);
@@ -6314,6 +6562,22 @@ function renderTaskDrawer() {
     if (state.drawerSpecVtid !== vtid) {
         state.drawerSpecVtid = vtid;
         state.drawerSpecText = getTaskSpec(vtid);
+        // VTID-01188: If spec exists on server but not in localStorage, fetch it
+        var taskSpecStatus = (state.selectedTaskDetail && state.selectedTaskDetail.spec_status)
+            ? state.selectedTaskDetail.spec_status
+            : (state.selectedTask && state.selectedTask.spec_status);
+        if (!state.drawerSpecText && taskSpecStatus && taskSpecStatus !== 'missing') {
+            fetch('/api/v1/specs/' + vtid, { headers: buildContextHeaders({}) })
+                .then(function(r) { return r.json(); })
+                .then(function(d) {
+                    if (d.ok && d.spec && d.spec.spec_markdown) {
+                        state.drawerSpecText = d.spec.spec_markdown;
+                        saveTaskSpec(vtid, d.spec.spec_markdown);
+                        renderApp();
+                    }
+                })
+                .catch(function(e) { console.warn('[VTID-01188] Spec fetch on drawer open:', e); });
+        }
     }
 
     const header = document.createElement('div');
@@ -6445,6 +6709,59 @@ function renderTaskDrawer() {
         }
     }
 
+    // Attention Center context banner — shows severity, reason, and recommended action
+    var attCtx = state.selectedTask._attentionContext;
+    if (attCtx) {
+        var bannerColors = { BROKEN: '#ef4444', STUCK: '#f59e0b', BLOCKED: '#6b7280', NEW: '#3b82f6' };
+        var bannerBg = { BROKEN: 'rgba(239,68,68,0.12)', STUCK: 'rgba(245,158,11,0.12)', BLOCKED: 'rgba(107,114,128,0.12)', NEW: 'rgba(59,130,246,0.12)' };
+        var borderColor = bannerColors[attCtx.severity] || '#6b7280';
+        var bgColor = bannerBg[attCtx.severity] || 'rgba(107,114,128,0.12)';
+
+        var banner = document.createElement('div');
+        banner.style.cssText = 'background:' + bgColor + '; border-left: 4px solid ' + borderColor + '; border-radius: 6px; padding: 12px 14px; margin-bottom: 14px;';
+
+        var sevRow = document.createElement('div');
+        sevRow.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 6px;';
+        var sevBadge = document.createElement('span');
+        sevBadge.style.cssText = 'background:' + borderColor + '; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;';
+        sevBadge.textContent = attCtx.severity;
+        sevRow.appendChild(sevBadge);
+        if (attCtx.stuck_minutes) {
+            var timeStr = attCtx.stuck_minutes >= 60
+                ? Math.floor(attCtx.stuck_minutes / 60) + 'h ' + (attCtx.stuck_minutes % 60) + 'm'
+                : attCtx.stuck_minutes + 'm';
+            var timeSpan = document.createElement('span');
+            timeSpan.style.cssText = 'font-size: 12px; color: var(--text-secondary, #888);';
+            timeSpan.textContent = 'Stuck for ' + timeStr;
+            sevRow.appendChild(timeSpan);
+        }
+        banner.appendChild(sevRow);
+
+        var reasonP = document.createElement('div');
+        reasonP.style.cssText = 'font-size: 13px; color: var(--text-color, #fff); margin-bottom: 8px;';
+        reasonP.textContent = attCtx.reason || '';
+        banner.appendChild(reasonP);
+
+        // Recommended next action based on severity
+        var nextAction = '';
+        if (attCtx.severity === 'BROKEN') {
+            nextAction = 'Execution has stalled beyond recovery threshold. Check the stage timeline below for the failing stage, review error logs, then either retry or cancel this task.';
+        } else if (attCtx.severity === 'STUCK') {
+            nextAction = 'Task is progressing slower than expected. Check the current stage below — if a worker or validator is hung, consider retrying that stage.';
+        } else if (attCtx.severity === 'BLOCKED') {
+            nextAction = 'This task needs a spec before it can be activated. Click "Generate Spec" below, or write one manually in the spec editor.';
+        } else if (attCtx.severity === 'NEW') {
+            nextAction = 'Spec is validated and ready. Review the spec below, then click "Approve & Execute" to start autonomous execution.';
+        }
+        if (nextAction) {
+            var actionDiv = document.createElement('div');
+            actionDiv.style.cssText = 'font-size: 12px; color: ' + borderColor + '; font-weight: 600; line-height: 1.4;';
+            actionDiv.textContent = 'Recommended: ' + nextAction;
+            banner.appendChild(actionDiv);
+        }
+        content.appendChild(banner);
+    }
+
     const summary = document.createElement('p');
     summary.className = 'task-summary-text';
     summary.textContent = state.selectedTask.summary;
@@ -6537,6 +6854,8 @@ function renderTaskDrawer() {
             'draft': 'DRAFT',
             'validating': 'VALIDATING...',
             'validated': 'VALIDATED',
+            'quality_checked': 'QUALITY OK',
+            'quality_failed': 'QUALITY FAILED',
             'rejected': 'REJECTED',
             'approved': 'APPROVED'
         };
@@ -6560,28 +6879,43 @@ function renderTaskDrawer() {
                 generateBtn.disabled = true;
                 generateBtn.textContent = 'Generating...';
                 try {
-                    var seedNotes = state.drawerSpecText || state.selectedTask.summary || state.selectedTask.title || '';
+                    // Use task title + summary as seed, NOT drawerSpecText (which may contain attention reason text)
+                    var seedNotes = (state.selectedTask.title || '') + '\n' + (state.selectedTask.summary || '');
                     var response = await fetch('/api/v1/specs/' + vtid + '/generate', {
                         method: 'POST',
                         headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
                         body: JSON.stringify({ seed_notes: seedNotes, source: 'commandhub' })
                     });
+                    if (!response.ok) throw new Error('HTTP ' + response.status);
                     var result = await response.json();
                     if (result.ok) {
-                        showToast('Spec generated for ' + vtid, 'success');
-                        // Refresh task detail
+                        // Fetch the generated spec content and load into textarea
+                        try {
+                            var specResp = await fetch('/api/v1/specs/' + vtid, {
+                                headers: buildContextHeaders({})
+                            });
+                            var specData = await specResp.json();
+                            if (specData.ok && specData.spec && specData.spec.spec_markdown) {
+                                state.drawerSpecText = specData.spec.spec_markdown;
+                                saveTaskSpec(vtid, specData.spec.spec_markdown);
+                            }
+                        } catch (specErr) {
+                            console.warn('[VTID-01188] Could not fetch spec content after generation:', specErr);
+                        }
+                        // Refresh BEFORE toast (showToast calls renderApp which destroys button DOM)
                         await fetchVtidDetail(vtid);
                         await fetchTasks();
+                        showToast('Spec generated for ' + vtid, 'success');
                     } else {
-                        showToast('Generate failed: ' + (result.message || result.error || 'Unknown error'), 'error');
                         generateBtn.disabled = false;
                         generateBtn.textContent = 'Generate Spec';
+                        showToast('Generate failed: ' + (result.message || result.error || 'Unknown error'), 'error');
                     }
                 } catch (e) {
                     console.error('[VTID-01188] Generate spec error:', e);
-                    showToast('Generate failed: Network error', 'error');
                     generateBtn.disabled = false;
                     generateBtn.textContent = 'Generate Spec';
+                    showToast('Generate failed: Network error', 'error');
                 }
             };
             specPipelineActions.appendChild(generateBtn);
@@ -6601,36 +6935,83 @@ function renderTaskDrawer() {
                         method: 'POST',
                         headers: buildContextHeaders({ 'Content-Type': 'application/json' })
                     });
+                    if (!response.ok) throw new Error('HTTP ' + response.status);
                     var result = await response.json();
                     if (result.ok) {
+                        // Refresh BEFORE toast (showToast calls renderApp which destroys button DOM)
+                        await fetchVtidDetail(vtid);
+                        await fetchTasks();
                         if (result.result === 'pass') {
                             showToast('Spec validated for ' + vtid, 'success');
                         } else {
                             showToast('Validation failed: ' + (result.message || 'Check report'), 'warning');
                         }
-                        await fetchVtidDetail(vtid);
-                        await fetchTasks();
                     } else {
-                        showToast('Validation error: ' + (result.message || result.error || 'Unknown error'), 'error');
                         validateBtn.disabled = false;
                         validateBtn.textContent = 'Validate';
+                        showToast('Validation error: ' + (result.message || result.error || 'Unknown error'), 'error');
                     }
                 } catch (e) {
                     console.error('[VTID-01188] Validate spec error:', e);
-                    showToast('Validation failed: Network error', 'error');
                     validateBtn.disabled = false;
                     validateBtn.textContent = 'Validate';
+                    showToast('Validation failed: Network error', 'error');
                 }
             };
             specPipelineActions.appendChild(validateBtn);
         }
 
-        // Approve button (visible when validated)
-        if (specStatus === 'validated') {
+        // Quality Check button (visible when validated or quality_failed)
+        if (specStatus === 'validated' || specStatus === 'quality_failed') {
+            var qualityBtn = document.createElement('button');
+            qualityBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-validate';
+            qualityBtn.textContent = specStatus === 'quality_failed' ? 'Re-run Quality Check' : 'Quality Check';
+            qualityBtn.title = 'Run deep content validation (10 checks + risk + conflicts)';
+            qualityBtn.onclick = async function () {
+                qualityBtn.disabled = true;
+                qualityBtn.textContent = 'Checking...';
+                try {
+                    var response = await fetch('/api/v1/specs/' + vtid + '/quality-check', {
+                        method: 'POST',
+                        headers: buildContextHeaders({ 'Content-Type': 'application/json' })
+                    });
+                    if (!response.ok) throw new Error('HTTP ' + response.status);
+                    var result = await response.json();
+                    if (result.ok && result.report) {
+                        var r = result.report;
+                        var scoreColor = r.overall_score >= 80 ? '#22c55e' : r.overall_score >= 60 ? '#eab308' : '#ef4444';
+                        var failedChecks = r.checks.filter(function(c) { return c.result === 'fail'; });
+                        var msg = 'Score: ' + r.overall_score + '/100 | Risk: ' + r.risk_level;
+                        if (failedChecks.length > 0) {
+                            msg += ' | Failed: ' + failedChecks.map(function(c) { return c.check_id; }).join(', ');
+                        }
+                        // Refresh BEFORE toast (showToast calls renderApp which destroys button DOM)
+                        await fetchVtidDetail(vtid);
+                        await fetchTasks();
+                        showToast(msg, r.overall_result === 'fail' ? 'error' : 'success');
+                    } else {
+                        qualityBtn.disabled = false;
+                        qualityBtn.textContent = 'Quality Check';
+                        showToast('Quality check failed: ' + (result.message || result.error || 'Unknown'), 'error');
+                    }
+                } catch (e) {
+                    console.error('[spec-quality] Quality check error:', e);
+                    qualityBtn.disabled = false;
+                    qualityBtn.textContent = 'Quality Check';
+                    showToast('Quality check failed: Network error', 'error');
+                }
+            };
+            specPipelineActions.appendChild(qualityBtn);
+        }
+
+        // Approve button (visible when quality_checked or validated for legacy)
+        if (specStatus === 'quality_checked' || specStatus === 'validated') {
             var approveBtn = document.createElement('button');
             approveBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-approve';
-            approveBtn.textContent = 'Approve Spec';
-            approveBtn.title = 'Approve spec for activation';
+            approveBtn.textContent = specStatus === 'validated' ? 'Approve (Legacy)' : 'Approve Spec';
+            approveBtn.title = specStatus === 'validated'
+                ? 'Approve without quality check (legacy bypass)'
+                : 'Approve quality-checked spec for activation';
             approveBtn.onclick = async function () {
                 approveBtn.disabled = true;
                 approveBtn.textContent = 'Approving...';
@@ -6646,28 +7027,30 @@ function renderTaskDrawer() {
                             'x-user-role': userRole
                         })
                     });
+                    if (!response.ok) throw new Error('HTTP ' + response.status);
                     var result = await response.json();
                     if (result.ok) {
-                        showToast('Spec approved for ' + vtid + ' - Activate is now enabled', 'success');
+                        // Refresh BEFORE toast (showToast calls renderApp which destroys button DOM)
                         await fetchVtidDetail(vtid);
                         await fetchTasks();
+                        showToast('Spec approved for ' + vtid + ' - Activate is now enabled', 'success');
                     } else {
-                        showToast('Approval failed: ' + (result.message || result.error || 'Unknown error'), 'error');
                         approveBtn.disabled = false;
                         approveBtn.textContent = 'Approve Spec';
+                        showToast('Approval failed: ' + (result.message || result.error || 'Unknown error'), 'error');
                     }
                 } catch (e) {
                     console.error('[VTID-01188] Approve spec error:', e);
-                    showToast('Approval failed: Network error', 'error');
                     approveBtn.disabled = false;
                     approveBtn.textContent = 'Approve Spec';
+                    showToast('Approval failed: Network error', 'error');
                 }
             };
             specPipelineActions.appendChild(approveBtn);
         }
 
-        // View Spec button (visible when draft, validated, or approved)
-        if (specStatus === 'draft' || specStatus === 'validated' || specStatus === 'approved') {
+        // View Spec button (visible when draft, validated, quality_checked, quality_failed, or approved)
+        if (specStatus === 'draft' || specStatus === 'validated' || specStatus === 'quality_checked' || specStatus === 'quality_failed' || specStatus === 'approved') {
             var viewBtn = document.createElement('button');
             viewBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-view';
             viewBtn.textContent = 'View Spec';
@@ -6679,8 +7062,14 @@ function renderTaskDrawer() {
                     var response = await fetch('/api/v1/specs/' + vtid, {
                         headers: buildContextHeaders({})
                     });
+                    if (!response.ok) throw new Error('HTTP ' + response.status);
                     var result = await response.json();
                     if (result.ok && result.spec) {
+                        // Also load spec into textarea and localStorage
+                        if (result.spec.spec_markdown) {
+                            state.drawerSpecText = result.spec.spec_markdown;
+                            saveTaskSpec(vtid, result.spec.spec_markdown);
+                        }
                         // Show spec in a viewer
                         var existingViewer = specPipelineSection.querySelector('.task-spec-viewer');
                         if (existingViewer) {
@@ -6781,13 +7170,32 @@ function renderTaskDrawer() {
         var saveBtn = document.createElement('button');
         saveBtn.className = 'btn btn-primary task-spec-btn';
         saveBtn.textContent = 'Save';
-        saveBtn.onclick = function () {
-            // DEV-COMHU-2025-0013: Save from stable state, not DOM query
-            // DEV-COMHU-2025-0015: Show correct VTID in toast message
-            if (saveTaskSpec(vtid, state.drawerSpecText)) {
-                showToast('Saved task ' + vtid, 'success');
-            } else {
-                showToast('Failed to save spec for ' + vtid, 'error');
+        saveBtn.onclick = async function () {
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving...';
+            try {
+                // Persist to backend oasis_specs (so validate/quality-check see edits)
+                var resp = await fetch('/api/v1/specs/' + encodeURIComponent(vtid), {
+                    method: 'PATCH',
+                    headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({ spec_markdown: state.drawerSpecText })
+                });
+                var data = await resp.json();
+                if (data.ok) {
+                    // Also keep localStorage in sync
+                    saveTaskSpec(vtid, state.drawerSpecText);
+                    await fetchVtidDetail(vtid);
+                    await fetchTasks();
+                    showToast('Spec saved for ' + vtid, 'success');
+                } else {
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = 'Save';
+                    showToast('Save failed: ' + (data.error || data.message || 'Unknown error'), 'error');
+                }
+            } catch (err) {
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Save';
+                showToast('Save error: ' + err.message, 'error');
             }
         };
         specActions.appendChild(saveBtn);
@@ -6827,8 +7235,8 @@ function renderTaskDrawer() {
                 activateBtn.classList.add('btn-disabled');
                 activateBtn.textContent = 'Activate (Spec Required)';
             } else {
-                activateBtn.textContent = 'Activate';
-                activateBtn.title = 'Move task from Scheduled to In Progress';
+                activateBtn.textContent = 'Activate (Auto)';
+                activateBtn.title = 'Start autonomous execution (PLANNER → WORKER → VALIDATOR → DEPLOY)';
             }
 
             activateBtn.onclick = async function () {
@@ -6845,6 +7253,57 @@ function renderTaskDrawer() {
                 renderApp();
             };
             specActions.appendChild(activateBtn);
+
+            // Manual Start button — moves to IN_PROGRESS without triggering autonomous pipeline
+            var manualStartBtn = document.createElement('button');
+            manualStartBtn.className = 'btn btn-info task-spec-btn';
+            manualStartBtn.style.cssText = 'background: #3b82f6; border: none; color: white;';
+
+            if (!isSpecApproved) {
+                manualStartBtn.disabled = true;
+                manualStartBtn.title = 'Spec must be approved before starting (current: ' + taskSpecStatus + ')';
+                manualStartBtn.classList.add('btn-disabled');
+                manualStartBtn.textContent = 'Manual Start (Spec Required)';
+            } else {
+                manualStartBtn.textContent = 'Manual Start';
+                manualStartBtn.title = 'Move to In Progress for manual work (no autonomous execution)';
+            }
+
+            manualStartBtn.onclick = async function () {
+                if (!isSpecApproved) {
+                    showToast('Cannot start: spec must be approved first', 'warning');
+                    return;
+                }
+                if (!confirm('Move ' + vtid + ' to In Progress for manual work?\n\nThis will NOT trigger autonomous execution — you will work on this task yourself.')) {
+                    return;
+                }
+                manualStartBtn.disabled = true;
+                manualStartBtn.textContent = 'Starting...';
+                try {
+                    var response = await fetch('/api/v1/oasis/tasks/' + vtid, {
+                        method: 'PATCH',
+                        headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                        body: JSON.stringify({ status: 'in_progress' })
+                    });
+                    if (!response.ok) {
+                        var errData = await response.json().catch(function () { return {}; });
+                        throw new Error(errData.error || 'Status update failed');
+                    }
+                    // Clear task selection and refresh
+                    state.selectedTask = null;
+                    state.selectedTaskDetail = null;
+                    state.drawerSpecVtid = null;
+                    state.drawerSpecText = '';
+                    state.drawerSpecEditing = false;
+                    fetchTasks();
+                    showToast(vtid + ' moved to In Progress (manual mode)', 'success');
+                } catch (err) {
+                    manualStartBtn.disabled = false;
+                    manualStartBtn.textContent = 'Manual Start';
+                    showToast('Failed to start: ' + err.message, 'error');
+                }
+            };
+            specActions.appendChild(manualStartBtn);
 
             // Reject button (soft deny — keeps VTID, marks as rejected)
             var rejectBtn = document.createElement('button');
@@ -6869,19 +7328,22 @@ function renderTaskDrawer() {
                     });
                     var result = await response.json();
                     if (result.ok) {
-                        showToast('Task rejected: ' + vtid, 'info');
+                        // Close drawer and refresh BEFORE toast (showToast calls renderApp which destroys button DOM)
                         state.selectedTask = null;
                         state.selectedTaskDetail = null;
                         state.drawerSpecVtid = null;
                         await fetchTasks();
+                        showToast('Task rejected: ' + vtid, 'info');
                     } else {
+                        rejectBtn.disabled = false;
+                        rejectBtn.textContent = 'Reject';
                         showToast('Rejection failed: ' + (result.error || result.message || 'Unknown error'), 'error');
                     }
                 } catch (e) {
+                    rejectBtn.disabled = false;
+                    rejectBtn.textContent = 'Reject';
                     showToast('Rejection failed: ' + e.message, 'error');
                 }
-                rejectBtn.disabled = false;
-                rejectBtn.textContent = 'Reject';
             };
             specActions.appendChild(rejectBtn);
 
@@ -6916,26 +7378,26 @@ function renderTaskDrawer() {
                         // VTID-01052: Clear local storage spec for this task
                         localStorage.removeItem('vitana.taskSpec.' + vtid);
                         clearTaskStatusOverride(vtid);
-                        showToast('Task deleted: ' + vtid, 'success');
-                        // Close drawer and refresh
+                        // Close drawer and refresh BEFORE toast (showToast calls renderApp which destroys DOM)
                         state.selectedTask = null;
                         state.selectedTaskDetail = null;
                         state.drawerSpecVtid = null;
                         state.drawerSpecText = '';
                         state.drawerSpecEditing = false;
                         await fetchTasks();
+                        showToast('Task deleted: ' + vtid, 'success');
                     } else {
                         // VTID-01052: Handle errors (e.g., INVALID_STATE for non-scheduled tasks)
                         var errorMsg = result.message || result.error || 'Unknown error';
-                        showToast('Delete failed: ' + errorMsg, 'error');
                         deleteBtn.disabled = false;
                         deleteBtn.textContent = 'Delete';
+                        showToast('Delete failed: ' + errorMsg, 'error');
                     }
                 } catch (e) {
                     console.error('[VTID-01052] Delete failed:', e);
-                    showToast('Delete failed: Network error', 'error');
                     deleteBtn.disabled = false;
                     deleteBtn.textContent = 'Delete';
+                    showToast('Delete failed: Network error', 'error');
                 }
             };
             specActions.appendChild(deleteBtn);
@@ -7859,31 +8321,11 @@ function renderProfileModal() {
         body.appendChild(emailEl);
     }
 
-    // VTID-01171: Show role badge
+    // VTID-01230: Show role badge — always use state.viewRole as the source of truth
+    // in Command Hub. The viewRole is set on login and synced with the server.
     const badge = document.createElement('div');
     badge.className = 'profile-role-badge';
-
-    // Deterministic priority: 
-    // 1. Authoritative MeContext (from /api/v1/me)
-    // 2. AuthIdentity (from /api/v1/auth/me)
-    // 3. Fallback to state.viewRole
-    if (state.meContext && state.meContext.active_role) {
-        var role = state.meContext.active_role;
-        badge.textContent = role.charAt(0).toUpperCase() + role.slice(1);
-    } else if (state.authIdentity && state.authIdentity.identity) {
-        if (state.authIdentity.identity.exafy_admin) {
-            badge.textContent = 'Admin';
-        } else if (state.authIdentity.memberships && state.authIdentity.memberships.length > 0) {
-            var mRole = state.authIdentity.memberships[0].role || 'user';
-            badge.textContent = mRole.charAt(0).toUpperCase() + mRole.slice(1);
-        } else {
-            badge.textContent = 'User';
-        }
-    } else if (state.meContextLoading || state.authIdentityLoading) {
-        badge.textContent = 'Loading...';
-    } else {
-        badge.textContent = state.viewRole || 'User';
-    }
+    badge.textContent = state.viewRole || 'Developer';
     body.appendChild(badge);
 
     // VTID-01186: Edit Profile link (matching vitana-v1 design)
@@ -7915,24 +8357,20 @@ function renderProfileModal() {
         body.appendChild(tenantEl);
     }
 
-    // VTID-01014 + VTID-01171: Role Switcher
-    // Populate from memberships if available, otherwise use default list
-    var VIEW_ROLES = ['Community', 'Patient', 'Professional', 'Staff', 'Admin', 'Developer'];
-    if (state.authIdentity && state.authIdentity.memberships && state.authIdentity.memberships.length > 0) {
-        // Use roles from memberships
-        VIEW_ROLES = state.authIdentity.memberships.map(function (m) {
-            var role = m.role || 'user';
-            return role.charAt(0).toUpperCase() + role.slice(1);
-        });
-        // Ensure uniqueness
-        VIEW_ROLES = VIEW_ROLES.filter(function (r, i, arr) { return arr.indexOf(r) === i; });
-        // Add Admin if exafy_admin and not already in list
-        if (state.authIdentity.identity && state.authIdentity.identity.exafy_admin && VIEW_ROLES.indexOf('Admin') === -1) {
-            VIEW_ROLES.unshift('Admin');
-        }
-    } else if (state.authIdentity && state.authIdentity.identity && state.authIdentity.identity.exafy_admin) {
-        // exafy_admin with no memberships - show Admin
-        VIEW_ROLES = ['Admin'];
+    // VTID-01230: Role Switcher — show only roles the user is permitted to use.
+    // Super admins (exafy_admin) see all roles. Others see only their granted roles.
+    // Each non-Developer role redirects to its vitanaland.com page.
+    var ALL_ROLES = ['Developer', 'Admin', 'Community', 'Professional', 'Staff', 'Patient'];
+    var VIEW_ROLES;
+    if (state.isSuperAdmin || !state.permittedRoles) {
+        // Super admin or roles not yet loaded — show all
+        VIEW_ROLES = ALL_ROLES;
+    } else {
+        // Filter to permitted roles only (capitalize for display)
+        var permittedSet = new Set(state.permittedRoles.map(function(r) { return r.toLowerCase(); }));
+        VIEW_ROLES = ALL_ROLES.filter(function(r) { return permittedSet.has(r.toLowerCase()); });
+        // Always ensure at least Community is present
+        if (VIEW_ROLES.length === 0) VIEW_ROLES = ['Community'];
     }
 
     // VTID-01196: Single dropdown for role selection (removed duplicate list)
@@ -7958,30 +8396,56 @@ function renderProfileModal() {
     roleSelect.onchange = async (e) => {
         const newRole = e.target.value;
         const previousRole = state.viewRole;
+        var lowerNewRole = newRole.toLowerCase();
 
-        // Optimistically update UI
+        // VTID-01230: For external redirects (Community, Admin), persist role then
+        // redirect IMMEDIATELY — do NOT call setActiveRole (it re-renders the DOM
+        // and the redirect never fires).
+        if (ROLE_EXTERNAL_REDIRECTS[lowerNewRole]) {
+            try {
+                var response = await fetch('/api/v1/me/active-role', {
+                    method: 'POST',
+                    headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({ role: lowerNewRole })
+                });
+                var data = await response.json();
+                if (response.ok && data.ok) {
+                    localStorage.setItem('vitana.viewRole', newRole);
+                    console.log('[VTID-01230] Role persisted, redirecting:', ROLE_EXTERNAL_REDIRECTS[lowerNewRole]);
+                    window.location.href = ROLE_EXTERNAL_REDIRECTS[lowerNewRole];
+                    return; // Page is navigating away
+                } else {
+                    // VTID-01230: Show user-friendly message for permission denial
+                    var errMsg = data.error === 'ROLE_NOT_PERMITTED'
+                        ? 'You do not have permission to use this role.'
+                        : (data.message || data.error || 'Failed to switch role');
+                    showToast(errMsg, 'error');
+                    renderApp();
+                    return;
+                }
+            } catch (err) {
+                showToast('Network error switching role', 'error');
+                renderApp();
+                return;
+            }
+        }
+
+        // Internal role switch (stays in Command Hub)
         state.viewRole = newRole;
         renderApp();
 
-        // Call API to persist role
         var result = await setActiveRole(newRole);
-        if (result.ok) {
-            // Success - update localStorage and show toast
+        if (result) {
             localStorage.setItem('vitana.viewRole', newRole);
-            showToast('Role set to ' + newRole, 'success');
-            // VTID-01186: Navigate to role-specific default screen
             state.showProfileModal = false;
             navigateToRoleDefaultScreen(newRole);
             renderApp();
         } else {
-            // Failure - revert to previous role
             state.viewRole = previousRole;
-            // VTID-01229: Use state.meContext instead of deprecated MeState.me
             if (state.meContext) {
                 state.meContext.active_role = previousRole.toLowerCase();
             }
             renderApp();
-            showToast(result.error || 'Failed to change role', 'error');
         }
     };
 
@@ -8022,9 +8486,12 @@ function renderProfileModal() {
         logoutBtn.style.borderColor = 'var(--color-border, #444)';
         logoutBtn.style.color = 'var(--color-text-primary, #fff)';
     };
-    logoutBtn.onclick = () => {
+    logoutBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        e.preventDefault();
+        console.log('[VTID-01230] Sign Out clicked');
         doLogout();
-    };
+    });
     footer.appendChild(logoutBtn);
 
     const closeBtn = document.createElement('button');
@@ -8072,28 +8539,70 @@ function renderTaskModal() {
     const body = document.createElement('div');
     body.className = 'modal-body';
 
-    // VTID-01003: Title input with controlled state
+    // Title: Area dropdown + short description input
     const titleGroup = document.createElement('div');
     titleGroup.className = 'form-group';
     const titleLabel = document.createElement('label');
-    titleLabel.textContent = 'Task Title';
+    titleLabel.textContent = 'Task Title (Area: Description)';
     titleGroup.appendChild(titleLabel);
-    const titleInput = document.createElement('input');
-    titleInput.type = 'text';
-    titleInput.className = 'form-control';
-    titleInput.placeholder = 'Enter title';
-    titleInput.value = state.modalDraftTitle;
-    titleInput.onfocus = function () {
+
+    const titleRow = document.createElement('div');
+    titleRow.className = 'form-row';
+    titleRow.style.gap = '0.5rem';
+
+    // Area dropdown
+    const areaGroup = document.createElement('div');
+    areaGroup.style.flex = '0 0 140px';
+    const areaSelect = document.createElement('select');
+    areaSelect.className = 'form-control';
+    // Parse existing area from state if present
+    var existingArea = '';
+    var existingDesc = state.modalDraftTitle || '';
+    var colonIdx = existingDesc.indexOf(':');
+    if (colonIdx > 0) {
+        var candidateArea = existingDesc.slice(0, colonIdx).trim();
+        if (SYSTEM_AREAS.find(function (a) { return a.toLowerCase() === candidateArea.toLowerCase(); })) {
+            existingArea = candidateArea;
+            existingDesc = existingDesc.slice(colonIdx + 1).trim();
+        }
+    }
+    areaSelect.innerHTML = '<option value="">Select area</option>' +
+        SYSTEM_AREAS.map(function (a) {
+            var sel = (existingArea && a.toLowerCase() === existingArea.toLowerCase()) ? ' selected' : '';
+            return '<option value="' + a + '"' + sel + '>' + a + '</option>';
+        }).join('');
+    areaSelect.onchange = function (e) {
+        var descVal = titleDescInput.value.trim();
+        state.modalDraftTitle = e.target.value && descVal ? e.target.value + ': ' + descVal : '';
+    };
+    areaGroup.appendChild(areaSelect);
+    titleRow.appendChild(areaGroup);
+
+    // Description input
+    const descGroup = document.createElement('div');
+    descGroup.style.flex = '1';
+    const titleDescInput = document.createElement('input');
+    titleDescInput.type = 'text';
+    titleDescInput.className = 'form-control';
+    titleDescInput.placeholder = 'Brief description (2-5 words)';
+    titleDescInput.maxLength = 50;
+    titleDescInput.value = existingDesc;
+    titleDescInput.onfocus = function () {
         state.modalDraftEditing = true;
     };
-    titleInput.oninput = function (e) {
-        state.modalDraftTitle = e.target.value;
+    titleDescInput.oninput = function (e) {
+        var area = areaSelect.value;
+        var desc = e.target.value.trim();
+        state.modalDraftTitle = area && desc ? area + ': ' + desc : '';
         state.modalDraftEditing = true;
     };
-    titleInput.onblur = function () {
+    titleDescInput.onblur = function () {
         state.modalDraftEditing = false;
     };
-    titleGroup.appendChild(titleInput);
+    descGroup.appendChild(titleDescInput);
+    titleRow.appendChild(descGroup);
+
+    titleGroup.appendChild(titleRow);
     body.appendChild(titleGroup);
 
     // VTID-01012: VTID + Status in one row
@@ -8253,9 +8762,10 @@ function renderTaskModal() {
         // VTID-01010: Get target roles from state
         const targetRoles = state.modalDraftTargetRoles;
 
-        // Basic validation
-        if (!title) {
-            alert('Title is required');
+        // Title validation: must be "Area: Short description"
+        var titleCheck = validateTaskTitle(title);
+        if (!titleCheck.ok) {
+            alert(titleCheck.error);
             return;
         }
 
@@ -8397,6 +8907,11 @@ function handleModuleClick(sectionKey) {
     // VTID-01002: Capture scroll positions BEFORE changing route state
     captureAllScrollPositions();
 
+    // Stop models auto-refresh when leaving the models-evaluations module
+    if (state.currentModuleKey === 'models-evaluations' && sectionKey !== 'models-evaluations') {
+        stopModelsAutoRefresh();
+    }
+
     state.currentModuleKey = sectionKey;
     // Default to first tab
     const firstTab = section.tabs[0];
@@ -8492,6 +9007,10 @@ window.onpopstate = () => {
     captureAllScrollPositions();
 
     const route = getRouteFromPath(window.location.pathname);
+    // Stop models auto-refresh when navigating away
+    if (state.currentModuleKey === 'models-evaluations' && route.section !== 'models-evaluations') {
+        stopModelsAutoRefresh();
+    }
     state.currentModuleKey = route.section;
     state.currentTab = route.tab;
     renderApp();
@@ -8624,7 +9143,10 @@ async function fetchTasks() {
                 createdAt: item.updated_at || item.created_at,
                 // VTID-01055: Capture deleted/metadata for client-side filtering
                 deleted_at: item.deleted_at,
-                metadata: item.metadata
+                metadata: item.metadata,
+                // VTID-01188: Spec pipeline status from board API
+                spec_status: item.spec_status || 'missing',
+                spec_current_id: item.spec_current_id || null
             };
             byVtid.set(item.vtid, task);
         });
@@ -16613,7 +17135,7 @@ function renderVtidProjectionTable(items) {
 
             // VTID-01016: Derive Stage/Status from OASIS event authority
             // VTID-01030: Null-safe derivation with fallback defaults
-            var derived = deriveVtidStageStatus(item) || { stage: 'Scheduled', status: 'scheduled' };
+            var derived = deriveVtidStageStatus(item) || { stage: 'Backlog', status: 'scheduled' };
 
             // Stage column (Scheduled/Queued/Planner/Worker/Validator/Deploy/Done)
             var stageCell = document.createElement('td');
@@ -16864,7 +17386,7 @@ function renderOasisLedgerTableWithDrilldown(items) {
 
             // VTID-01016: Derive Stage/Status from OASIS event authority
             // VTID-01030: Null-safe derivation with fallback defaults
-            var derived = deriveVtidStageStatus(item) || { stage: 'Scheduled', status: 'scheduled' };
+            var derived = deriveVtidStageStatus(item) || { stage: 'Backlog', status: 'scheduled' };
 
             // Stage column (Scheduled/Queued/Planner/Worker/Validator/Deploy/Done)
             var stageCell = document.createElement('td');
@@ -17120,19 +17642,23 @@ function renderOasisVtidLedgerView() {
             titleCell.textContent = item.title || '-';
             row.appendChild(titleCell);
 
-            // Stage
+            // Stage + Status: use deriveVtidStageStatus for consistent display
+            var derived = deriveVtidStageStatus(item) || { stage: 'Backlog', status: 'scheduled' };
+
             var stageCell = document.createElement('td');
             var stageBadge = document.createElement('span');
-            stageBadge.className = 'status-badge stage-' + (item.current_stage || 'pending').toLowerCase();
-            stageBadge.textContent = item.current_stage || '-';
+            var stageVal = (derived.stage || 'backlog').toLowerCase();
+            stageBadge.className = 'status-badge stage-' + stageVal;
+            stageBadge.textContent = derived.stage || 'Backlog';
             stageCell.appendChild(stageBadge);
             row.appendChild(stageCell);
 
             // Status
             var statusCell = document.createElement('td');
             var statusBadge = document.createElement('span');
-            statusBadge.className = 'status-badge status-' + (item.status || 'pending').toLowerCase();
-            statusBadge.textContent = item.status || '-';
+            var statusVal = (derived.status || 'scheduled').toLowerCase();
+            statusBadge.className = 'status-badge status-' + statusVal;
+            statusBadge.textContent = derived.status || 'scheduled';
             statusCell.appendChild(statusBadge);
             row.appendChild(statusCell);
 
@@ -21476,11 +22002,11 @@ function renderPublishModal() {
 
         } catch (error) {
             console.error('[VTID-0523-B] Deploy error:', error);
-            // VTID-01019: Immediate failure is shown directly (backend error, not OASIS failure)
-            showToast('Deploy failed: ' + error.message, 'error');
+            // Reset button BEFORE toast (showToast calls renderApp which destroys button DOM)
             deployBtn.disabled = false;
             deployBtn.textContent = 'Deploy ' + selectedVersion.swv;
             deployBtn.style.opacity = '1';
+            showToast('Deploy failed: ' + error.message, 'error');
         }
     };
 
@@ -21497,6 +22023,34 @@ function renderPublishModal() {
  * VTID-01180: Render the Autopilot Recommendations modal
  * Shows AI-generated recommendations with Activate/Snooze/Reject actions
  */
+/**
+ * VTID-01180: Update the modal footer count label in-place (avoids full re-render)
+ */
+function updateRecommendationModalFooter() {
+    var modal = document.querySelector('.autopilot-recommendations-modal');
+    if (!modal) return;
+    var footer = modal.querySelector('.modal-footer');
+    if (!footer) return;
+    var countLabel = footer.querySelector('span');
+    if (countLabel) {
+        var len = state.autopilotRecommendations.length;
+        countLabel.textContent = len + ' recommendation' + (len !== 1 ? 's' : '');
+    }
+    // Show empty state if no items left
+    if (state.autopilotRecommendations.length === 0) {
+        var body = modal.querySelector('.modal-body');
+        if (body) {
+            body.innerHTML = '';
+            var emptyDiv = document.createElement('div');
+            emptyDiv.style.cssText = 'text-align: center; padding: 40px; color: var(--text-secondary, #888);';
+            emptyDiv.innerHTML = '<div style="font-size: 48px; margin-bottom: 16px;">\u2705</div>';
+            emptyDiv.innerHTML += '<div style="font-size: 16px;">All caught up!</div>';
+            emptyDiv.innerHTML += '<div style="font-size: 14px; margin-top: 8px;">No new recommendations at this time.</div>';
+            body.appendChild(emptyDiv);
+        }
+    }
+}
+
 function renderAutopilotRecommendationsModal() {
     var overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
@@ -21674,20 +22228,22 @@ function createRecommendationCard(rec) {
             });
             var data = await response.json();
             if (data.ok) {
-                showToast('Activated! VTID: ' + data.vtid, 'success');
-                // Remove from list
+                // Update state FIRST, then remove card for instant feedback
                 state.autopilotRecommendations = state.autopilotRecommendations.filter(function (r) { return r.id !== rec.id; });
                 state.autopilotRecommendationsCount = Math.max(0, state.autopilotRecommendationsCount - 1);
-                renderApp();
+                card.remove();
+                updateRecommendationModalFooter();
+                await fetchTasks();
+                showToast('Activated! VTID: ' + data.vtid, 'success');
             } else {
-                showToast('Activation failed: ' + (data.error || 'Unknown error'), 'error');
                 activateBtn.disabled = false;
                 activateBtn.textContent = 'Activate';
+                showToast('Activation failed: ' + (data.error || 'Unknown error'), 'error');
             }
         } catch (err) {
-            showToast('Activation error: ' + err.message, 'error');
             activateBtn.disabled = false;
             activateBtn.textContent = 'Activate';
+            showToast('Activation error: ' + err.message, 'error');
         }
     };
     actionsRow.appendChild(activateBtn);
@@ -21707,17 +22263,20 @@ function createRecommendationCard(rec) {
             });
             var data = await response.json();
             if (data.ok) {
-                showToast('Snoozed for 24 hours', 'info');
                 state.autopilotRecommendations = state.autopilotRecommendations.filter(function (r) { return r.id !== rec.id; });
                 state.autopilotRecommendationsCount = Math.max(0, state.autopilotRecommendationsCount - 1);
-                renderApp();
+                card.remove();
+                updateRecommendationModalFooter();
+                showToast('Snoozed for 24 hours', 'info');
             } else {
-                showToast('Snooze failed: ' + (data.error || 'Unknown error'), 'error');
                 snoozeBtn.disabled = false;
+                snoozeBtn.textContent = 'Snooze';
+                showToast('Snooze failed: ' + (data.error || 'Unknown error'), 'error');
             }
         } catch (err) {
-            showToast('Snooze error: ' + err.message, 'error');
             snoozeBtn.disabled = false;
+            snoozeBtn.textContent = 'Snooze';
+            showToast('Snooze error: ' + err.message, 'error');
         }
     };
     actionsRow.appendChild(snoozeBtn);
@@ -21736,17 +22295,20 @@ function createRecommendationCard(rec) {
             });
             var data = await response.json();
             if (data.ok) {
-                showToast('Recommendation dismissed', 'info');
                 state.autopilotRecommendations = state.autopilotRecommendations.filter(function (r) { return r.id !== rec.id; });
                 state.autopilotRecommendationsCount = Math.max(0, state.autopilotRecommendationsCount - 1);
-                renderApp();
+                card.remove();
+                updateRecommendationModalFooter();
+                showToast('Recommendation dismissed', 'info');
             } else {
-                showToast('Dismiss failed: ' + (data.error || 'Unknown error'), 'error');
                 rejectBtn.disabled = false;
+                rejectBtn.textContent = 'Dismiss';
+                showToast('Dismiss failed: ' + (data.error || 'Unknown error'), 'error');
             }
         } catch (err) {
-            showToast('Dismiss error: ' + err.message, 'error');
             rejectBtn.disabled = false;
+            rejectBtn.textContent = 'Dismiss';
+            showToast('Dismiss error: ' + err.message, 'error');
         }
     };
     actionsRow.appendChild(rejectBtn);
@@ -24617,6 +25179,12 @@ async function geminiLiveStart() {
 
     // VTID-STUCK-GUARD: Reset greeting audio flag
     state.orb.greetingAudioReceived = false;
+    // VTID-TRANSCRIPT-FIX: Reset transcript buffers
+    state.orb._inputTranscriptBuffer = '';
+    state.orb._outputTranscriptBuffer = '';
+    // VTID-FALLBACK: Reset fallback mode
+    state.orb._fallbackMode = false;
+    state.orb._fallbackReason = '';
 
     // VTID-AUDIO-RACE-FIX: Create playback AudioContext IMMEDIATELY in user gesture context.
     // On mobile, AudioContext.resume() only works within a user gesture. If we defer creation
@@ -24784,6 +25352,9 @@ async function geminiLiveStop() {
     clearTimeout(state.orb.stuckGuardTimer);
     state.orb.stuckGuardTimer = null;
     state.orb.greetingAudioReceived = false;
+    // VTID-TRANSCRIPT-FIX: Reset transcript buffers
+    state.orb._inputTranscriptBuffer = '';
+    state.orb._outputTranscriptBuffer = '';
 
     // FIX: Reset audio scheduling for clean reconnect
     state.orb.geminiLiveLastScheduledEnd = 0;
@@ -24898,47 +25469,34 @@ function geminiLiveHandleMessage(msg) {
 
         case 'text':
         case 'transcript':
-            // Display text response
+            // VTID-TRANSCRIPT-FIX: Buffer text/transcript into output buffer
+            // (will be flushed as a single bubble on turn_complete)
             if (msg.text) {
-                state.orb.liveTranscript.push({
-                    id: Date.now(),
-                    role: 'assistant',
-                    text: msg.text,
-                    timestamp: new Date().toISOString()
-                });
-                scrollOrbLiveTranscript();
-                renderApp();
+                state.orb._outputTranscriptBuffer += msg.text;
+                // Show live interim text in the transcript
+                _updateInterimTranscript();
             }
             break;
 
         case 'input_transcript':
-            // User's speech transcription from Gemini
+            // VTID-TRANSCRIPT-FIX: Buffer user speech fragments (Vertex sends word-by-word).
+            // Flushed as a single bubble on turn_complete.
             if (msg.text) {
-                console.log('[VTID-01219] User said:', msg.text);
-                state.orb.liveTranscript.push({
-                    id: Date.now(),
-                    role: 'user',
-                    text: msg.text,
-                    timestamp: new Date().toISOString()
-                });
-                scrollOrbLiveTranscript();
-                renderApp();
+                console.log('[VTID-01219] User said (fragment):', msg.text);
+                state.orb._inputTranscriptBuffer += (state.orb._inputTranscriptBuffer ? ' ' : '') + msg.text;
+                // Show live interim user text
+                _updateInterimTranscript();
             }
             break;
 
         case 'output_transcript':
-            // Model's response transcription — display as text bubble so the user
-            // can read what Vitana said even if audio playback fails (mobile audio issues).
+            // VTID-TRANSCRIPT-FIX: Buffer model speech fragments (Vertex sends word-by-word).
+            // Flushed as a single bubble on turn_complete.
             if (msg.text) {
-                console.log('[VTID-01219] Model said:', msg.text);
-                state.orb.liveTranscript.push({
-                    id: Date.now(),
-                    role: 'assistant',
-                    text: msg.text,
-                    timestamp: new Date().toISOString()
-                });
-                scrollOrbLiveTranscript();
-                renderApp();
+                console.log('[VTID-01219] Model said (fragment):', msg.text);
+                state.orb._outputTranscriptBuffer += msg.text;
+                // Show live interim model text
+                _updateInterimTranscript();
             }
             break;
 
@@ -24953,6 +25511,29 @@ function geminiLiveHandleMessage(msg) {
             // will skip sending for 500ms to let playback drain and avoid echo pickup
             state.orb.geminiLiveTurnCompleteAt = Date.now();
             console.log('[VTID-VOICE-INIT] Turn complete — scheduler reset, 500ms post-turn cooldown started');
+
+            // VTID-TRANSCRIPT-FIX: Flush buffered transcripts as single bubbles.
+            // Remove any interim placeholder first.
+            _removeInterimTranscript();
+            if (state.orb._inputTranscriptBuffer.trim()) {
+                state.orb.liveTranscript.push({
+                    id: Date.now(),
+                    role: 'user',
+                    text: state.orb._inputTranscriptBuffer.trim(),
+                    timestamp: new Date().toISOString()
+                });
+                state.orb._inputTranscriptBuffer = '';
+            }
+            if (state.orb._outputTranscriptBuffer.trim()) {
+                state.orb.liveTranscript.push({
+                    id: Date.now() + 1,
+                    role: 'assistant',
+                    text: state.orb._outputTranscriptBuffer.trim(),
+                    timestamp: new Date().toISOString()
+                });
+                state.orb._outputTranscriptBuffer = '';
+            }
+            scrollOrbLiveTranscript();
 
             // FIX: Signal ready to listen after greeting/response completes
             setTimeout(function() {
@@ -25008,40 +25589,15 @@ function geminiLiveHandleMessage(msg) {
             break;
 
         case 'connection_issue':
-            // VTID-WATCHDOG: Backend detected stall/disconnect — notify user and end session
-            console.warn('[VTID-WATCHDOG] Connection issue:', msg.reason, msg.message);
-            state.orb.liveError = msg.message || 'Connection issue';
-            setOrbState('error');
-            state.orb.liveTranscript.push({
-                id: Date.now(),
-                role: 'system',
-                text: msg.message || 'Connection issue detected. Please try starting a new conversation.',
-                timestamp: new Date().toISOString(),
-                isError: true
-            });
-            playConnectionErrorTone();
-            scrollOrbLiveTranscript();
-            // Stop session after short delay so user sees the message
-            setTimeout(function() { geminiLiveStop(); }, 3000);
-            renderApp();
+            // VTID-FALLBACK: Switch to fallback text+TTS mode instead of dying
+            console.warn('[VTID-FALLBACK] Connection issue — switching to fallback mode:', msg.reason, msg.message);
+            _activateFallbackMode('Connection issue: ' + (msg.reason || 'unknown'));
             break;
 
         case 'live_api_disconnected':
-            // VTID-WATCHDOG: Upstream Vertex API WebSocket closed
-            console.warn('[VTID-01155] Live API disconnected:', msg.code, msg.reason);
-            state.orb.liveError = 'Connection lost. Please try again.';
-            setOrbState('error');
-            state.orb.liveTranscript.push({
-                id: Date.now(),
-                role: 'system',
-                text: 'Connection lost. Please try starting a new conversation.',
-                timestamp: new Date().toISOString(),
-                isError: true
-            });
-            playConnectionErrorTone();
-            scrollOrbLiveTranscript();
-            setTimeout(function() { geminiLiveStop(); }, 3000);
-            renderApp();
+            // VTID-FALLBACK: Switch to fallback text+TTS mode instead of dying
+            console.warn('[VTID-FALLBACK] Live API disconnected — switching to fallback mode:', msg.code, msg.reason);
+            _activateFallbackMode('Live API disconnected: code=' + (msg.code || 'unknown'));
             break;
 
         case 'session_ended':
@@ -25049,9 +25605,222 @@ function geminiLiveHandleMessage(msg) {
             geminiLiveStop();
             break;
 
+        case 'heartbeat':
+            // VTID-HEARTBEAT-FIX: Server data heartbeat — watchdog already reset
+            // by resetClientWatchdog() in onmessage handler. Nothing else needed.
+            break;
+
         default:
             console.log('[VTID-01155] Unknown message type:', msg.type, msg);
     }
+}
+
+/**
+ * VTID-FALLBACK: Activate text+TTS fallback mode when Vertex Live API fails.
+ * Uses Web Speech API for STT (client-side) and gateway /live/chat-tts for
+ * Gemini text generation + Google Cloud TTS audio synthesis.
+ */
+function _activateFallbackMode(reason) {
+    if (state.orb._fallbackMode) return; // Already in fallback
+    state.orb._fallbackMode = true;
+    state.orb._fallbackReason = reason;
+
+    console.log('[VTID-FALLBACK] Activating fallback mode:', reason);
+
+    // Stop Live API resources but keep overlay open
+    stopClientWatchdog();
+    if (state.orb.geminiLiveEventSource) {
+        state.orb.geminiLiveEventSource.close();
+        state.orb.geminiLiveEventSource = null;
+    }
+    // Keep audio capture alive for Web Speech API transcription
+
+    state.orb.liveTranscript.push({
+        id: Date.now(),
+        role: 'system',
+        text: state.orb.orbLang && state.orb.orbLang.startsWith('de')
+            ? 'Sprachverbindung umgestellt auf Textmodus.'
+            : 'Voice connection switched to text mode.',
+        timestamp: new Date().toISOString(),
+        isError: false
+    });
+
+    setOrbState('listening');
+    state.orb.voiceState = 'LISTENING';
+
+    // Start Web Speech API if not already running (for user STT)
+    geminiLiveStartTranscriber();
+
+    scrollOrbLiveTranscript();
+    renderApp();
+
+    // Emit diagnostic event
+    emitOrbDiagEvent('fallback_activated', { reason: reason });
+}
+
+/**
+ * VTID-FALLBACK: Send text to fallback chat-tts endpoint and play response.
+ * Called from Web Speech API final transcript handler when in fallback mode.
+ */
+async function _sendFallbackMessage(userText) {
+    if (!userText || !userText.trim()) return;
+
+    state.orb.liveTranscript.push({
+        id: Date.now(),
+        role: 'user',
+        text: userText.trim(),
+        timestamp: new Date().toISOString()
+    });
+    setOrbState('thinking');
+    state.orb.voiceState = 'THINKING';
+    scrollOrbLiveTranscript();
+    renderApp();
+
+    try {
+        var headers = { 'Content-Type': 'application/json' };
+        if (state.authToken) headers['Authorization'] = 'Bearer ' + state.authToken;
+
+        var contextTurns = state.orb.liveTranscript
+            .filter(function(t) { return t.role === 'user' || t.role === 'assistant'; })
+            .slice(-10)
+            .map(function(t) { return { role: t.role, text: t.text }; });
+
+        var response = await fetch('/api/v1/orb/live/chat-tts', {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify({
+                text: userText.trim(),
+                lang: state.orb.orbLang || 'en-US',
+                session_id: state.orb.geminiLiveSessionId,
+                context_turns: contextTurns
+            })
+        });
+
+        var data = await response.json();
+        if (!data.ok) throw new Error(data.error || 'Fallback request failed');
+
+        // Add assistant response to transcript
+        if (data.text) {
+            state.orb.liveTranscript.push({
+                id: Date.now(),
+                role: 'assistant',
+                text: data.text,
+                timestamp: new Date().toISOString()
+            });
+        }
+
+        // Play audio response
+        if (data.audio_b64) {
+            setOrbState('speaking');
+            state.orb.voiceState = 'SPEAKING';
+            var audio = new Audio('data:' + (data.audio_mime || 'audio/mp3') + ';base64,' + data.audio_b64);
+            audio.onended = function() {
+                setOrbState('listening');
+                state.orb.voiceState = 'LISTENING';
+                playListenReadyBeep();
+                renderApp();
+            };
+            audio.onerror = function() {
+                setOrbState('listening');
+                state.orb.voiceState = 'LISTENING';
+                renderApp();
+            };
+            audio.play().catch(function(e) {
+                console.warn('[VTID-FALLBACK] Audio playback failed:', e);
+                setOrbState('listening');
+                state.orb.voiceState = 'LISTENING';
+                renderApp();
+            });
+        } else {
+            setOrbState('listening');
+            state.orb.voiceState = 'LISTENING';
+        }
+
+        scrollOrbLiveTranscript();
+        renderApp();
+    } catch (err) {
+        console.error('[VTID-FALLBACK] Fallback request failed:', err);
+        state.orb.liveTranscript.push({
+            id: Date.now(),
+            role: 'system',
+            text: 'Error: ' + err.message,
+            timestamp: new Date().toISOString(),
+            isError: true
+        });
+        setOrbState('listening');
+        state.orb.voiceState = 'LISTENING';
+        scrollOrbLiveTranscript();
+        renderApp();
+    }
+}
+
+/**
+ * VTID-FALLBACK: Emit diagnostic OASIS event (best-effort, non-blocking).
+ */
+function emitOrbDiagEvent(eventName, payload) {
+    try {
+        var headers = { 'Content-Type': 'application/json' };
+        if (state.authToken) headers['Authorization'] = 'Bearer ' + state.authToken;
+        fetch('/api/v1/oasis/emit', {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify({
+                type: 'orb.live.' + eventName,
+                source: 'command-hub-frontend',
+                payload: payload || {}
+            })
+        }).catch(function() {});
+    } catch (_e) { /* non-blocking */ }
+}
+
+/**
+ * VTID-TRANSCRIPT-FIX: Update interim transcript display while fragments buffer.
+ * Shows a "typing" preview that will be replaced by the final bubble on turn_complete.
+ */
+function _updateInterimTranscript() {
+    // Update the existing interim element or create one
+    var chatStream = document.querySelector('.orb-chat-stream');
+    if (!chatStream) return;
+
+    // Remove old interims
+    var oldInterims = chatStream.querySelectorAll('.orb-stream-msg-interim-live');
+    for (var i = 0; i < oldInterims.length; i++) oldInterims[i].remove();
+
+    // Show buffered output as interim assistant bubble
+    if (state.orb._outputTranscriptBuffer) {
+        var assistantInterim = document.createElement('div');
+        assistantInterim.className = 'orb-stream-msg orb-stream-msg-assistant orb-stream-msg-interim-live';
+        var aBubble = document.createElement('div');
+        aBubble.className = 'orb-stream-bubble';
+        aBubble.style.opacity = '0.7';
+        aBubble.textContent = state.orb._outputTranscriptBuffer;
+        assistantInterim.appendChild(aBubble);
+        chatStream.appendChild(assistantInterim);
+    }
+
+    // Show buffered input as interim user bubble
+    if (state.orb._inputTranscriptBuffer) {
+        var userInterim = document.createElement('div');
+        userInterim.className = 'orb-stream-msg orb-stream-msg-user orb-stream-msg-interim-live';
+        var uBubble = document.createElement('div');
+        uBubble.className = 'orb-stream-bubble';
+        uBubble.style.opacity = '0.7';
+        uBubble.textContent = state.orb._inputTranscriptBuffer;
+        userInterim.appendChild(uBubble);
+        chatStream.appendChild(userInterim);
+    }
+
+    scrollOrbLiveTranscript();
+}
+
+/**
+ * VTID-TRANSCRIPT-FIX: Remove interim transcript elements before flushing final bubbles.
+ */
+function _removeInterimTranscript() {
+    var chatStream = document.querySelector('.orb-chat-stream');
+    if (!chatStream) return;
+    var interims = chatStream.querySelectorAll('.orb-stream-msg-interim-live');
+    for (var i = 0; i < interims.length; i++) interims[i].remove();
 }
 
 /**
@@ -25326,7 +26095,10 @@ function playConnectionErrorTone() {
  * Detects when NO data arrives from the server (SSE broken, backend crash, network loss).
  * Checks every 5s — if last activity was >15s ago, show error and stop session.
  */
-var CLIENT_WATCHDOG_TIMEOUT_MS = 12000; // 12s with no data = stuck
+// VTID-HEARTBEAT-FIX: Increased from 12s to 30s. With the server now sending
+// actual data heartbeats every 10s (not SSE comments), 30s gives 2+ heartbeat
+// cycles before triggering — prevents false disconnects during natural pauses.
+var CLIENT_WATCHDOG_TIMEOUT_MS = 30000; // 30s with no data = stuck
 
 function startClientWatchdog() {
     stopClientWatchdog();
@@ -25477,14 +26249,21 @@ function geminiLiveStartTranscriber() {
             console.log('[VTID-01225] User said:', finalTranscript);
             state.orb.interimTranscript = '';
 
-            // Add to transcript display (user's spoken words)
-            state.orb.liveTranscript.push({
-                id: Date.now(),
-                role: 'user',
-                text: finalTranscript.trim(),
-                mode: 'voice',
-                timestamp: new Date().toISOString()
-            });
+            // VTID-FALLBACK: In fallback mode, send text to chat-tts endpoint
+            if (state.orb._fallbackMode) {
+                _sendFallbackMessage(finalTranscript);
+            } else {
+                // Normal mode: Add to transcript display (user's spoken words)
+                // Note: In Live API mode, input_transcript from Vertex is the primary
+                // source. This parallel transcriber is just a visual aid.
+                state.orb.liveTranscript.push({
+                    id: Date.now(),
+                    role: 'user',
+                    text: finalTranscript.trim(),
+                    mode: 'voice',
+                    timestamp: new Date().toISOString()
+                });
+            }
 
             // Persist conversation state
             orbSaveConversationState();
@@ -28946,7 +29725,26 @@ function renderOverviewSystemView() {
             viewBtn.textContent = 'View Task';
             viewBtn.onclick = function (e) {
                 e.stopPropagation();
-                navigateTo('command-hub', 'tasks');
+                // Open task drawer with attention context
+                state.selectedTask = {
+                    vtid: item.vtid,
+                    title: item.title,
+                    status: item.status || 'scheduled',
+                    spec_status: item.spec_status || 'missing',
+                    summary: item.reason || '',
+                    oasisColumn: '',
+                    _attentionContext: {
+                        severity: item.severity,
+                        reason: item.reason,
+                        stuck_minutes: item.stuck_minutes
+                    }
+                };
+                state.selectedTaskDetail = null;
+                state.selectedTaskDetailLoading = true;
+                state.executionStatus = null;
+                state.executionStatusLoading = false;
+                renderApp();
+                fetchVtidDetail(item.vtid);
             };
 
             card.appendChild(topRow);
@@ -29055,6 +29853,8 @@ function renderOverviewSystemView() {
                     if (resp.ok) {
                         state.overviewPipelineSummary.fetched = false;
                         fetchPipelineSummary();
+                        await fetchTasks();
+                        showToast('Recommendation activated!', 'success');
                     }
                 } catch (err) {
                     console.error('Failed to activate recommendation:', err);
@@ -31715,6 +32515,181 @@ function renderDiagnosticsDebugPanelView() {
 }
 
 // ===========================================================================
+// Models & Evaluations Module — Data Fetching
+// ===========================================================================
+
+/**
+ * Fetch model registry from API. Uses deferred fetch to avoid
+ * synchronous renderApp() calls inside render functions (which caused
+ * infinite render loops and screen freezing).
+ */
+function fetchModelsRegistry(silentRefresh) {
+    if (state.modelsRegistry.loading) return;
+    state.modelsRegistry.loading = true;
+    if (!silentRefresh) renderApp();
+    fetch('/api/v1/llm/models', { headers: buildContextHeaders() })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            state.modelsRegistry.items = data.data || data.models || (Array.isArray(data) ? data : []);
+            state.modelsRegistry.fetched = true;
+            state.modelsRegistry.loading = false;
+            state.modelsRegistry.error = null;
+            renderApp();
+        }).catch(function (err) {
+            state.modelsRegistry.error = err.message;
+            state.modelsRegistry.loading = false;
+            state.modelsRegistry.fetched = true;
+            renderApp();
+        });
+}
+
+/**
+ * Fetch LLM telemetry events for evaluations view (realtime data).
+ */
+function fetchModelsTelemetry(silentRefresh) {
+    if (state.modelsTelemetry.loading) return;
+    state.modelsTelemetry.loading = true;
+    if (!silentRefresh) renderApp();
+    fetch('/api/v1/llm/telemetry?limit=100', { headers: buildContextHeaders() })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            var events = (data.data && data.data.events) || [];
+            state.modelsTelemetry.events = events;
+            state.modelsTelemetry.fetched = true;
+            state.modelsTelemetry.loading = false;
+            state.modelsTelemetry.error = null;
+            // Derive benchmarks from telemetry
+            state.modelsBenchmarks.aggregated = aggregateBenchmarksFromTelemetry(events);
+            state.modelsBenchmarks.fetched = true;
+            state.modelsBenchmarks.loading = false;
+            renderApp();
+        }).catch(function (err) {
+            state.modelsTelemetry.error = err.message;
+            state.modelsTelemetry.loading = false;
+            state.modelsTelemetry.fetched = true;
+            state.modelsBenchmarks.fetched = true;
+            state.modelsBenchmarks.loading = false;
+            renderApp();
+        });
+}
+
+/**
+ * Fetch routing policy from API (realtime data).
+ */
+function fetchModelsRouting(silentRefresh) {
+    if (state.modelsRouting.loading) return;
+    state.modelsRouting.loading = true;
+    if (!silentRefresh) renderApp();
+    fetch('/api/v1/llm/routing-policy', { headers: buildContextHeaders() })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            var d = data.data || data;
+            state.modelsRouting.policy = d.policy || null;
+            state.modelsRouting.providers = d.providers || [];
+            state.modelsRouting.models = d.models || [];
+            state.modelsRouting.recommended = d.recommended || null;
+            state.modelsRouting.fetched = true;
+            state.modelsRouting.loading = false;
+            state.modelsRouting.error = null;
+            renderApp();
+        }).catch(function (err) {
+            state.modelsRouting.error = err.message;
+            state.modelsRouting.loading = false;
+            state.modelsRouting.fetched = true;
+            renderApp();
+        });
+}
+
+/**
+ * Aggregate telemetry events into per-model/stage benchmark stats.
+ */
+function aggregateBenchmarksFromTelemetry(events) {
+    var buckets = {};
+    events.forEach(function (ev) {
+        if (!ev || !ev.model || !ev.stage) return;
+        var key = ev.stage + '/' + ev.model;
+        if (!buckets[key]) {
+            buckets[key] = { stage: ev.stage, model: ev.model, provider: ev.provider || '-', latencies: [], successCount: 0, failCount: 0, totalCost: 0 };
+        }
+        var b = buckets[key];
+        if (typeof ev.latency_ms === 'number' && ev.latency_ms > 0) b.latencies.push(ev.latency_ms);
+        if (ev.cost_estimate_usd) b.totalCost += ev.cost_estimate_usd;
+        // Determine success/fail from event type or presence of error
+        if (ev.error_code || ev.error_message) { b.failCount++; } else { b.successCount++; }
+    });
+    var results = [];
+    Object.keys(buckets).forEach(function (key) {
+        var b = buckets[key];
+        var sorted = b.latencies.slice().sort(function (a, c) { return a - c; });
+        var len = sorted.length;
+        results.push({
+            stage: b.stage,
+            model: b.model,
+            provider: b.provider,
+            callCount: b.successCount + b.failCount,
+            successRate: b.successCount + b.failCount > 0 ? Math.round((b.successCount / (b.successCount + b.failCount)) * 100) : 0,
+            p50: len > 0 ? sorted[Math.floor(len * 0.5)] : 0,
+            p95: len > 0 ? sorted[Math.floor(len * 0.95)] : 0,
+            p99: len > 0 ? sorted[Math.floor(len * 0.99)] : 0,
+            avgLatency: len > 0 ? Math.round(sorted.reduce(function (a, c) { return a + c; }, 0) / len) : 0,
+            totalCost: Math.round(b.totalCost * 1000000) / 1000000
+        });
+    });
+    results.sort(function (a, b) { return b.callCount - a.callCount; });
+    return results;
+}
+
+/**
+ * Start auto-refresh for Models & Evaluations module (10s interval).
+ * Uses silentRefresh to avoid full DOM flicker during polling.
+ */
+function startModelsAutoRefresh() {
+    if (state.modelsAutoRefreshInterval) {
+        clearInterval(state.modelsAutoRefreshInterval);
+    }
+    state.modelsAutoRefreshEnabled = true;
+    state.modelsAutoRefreshInterval = setInterval(function () {
+        if (state.modelsAutoRefreshEnabled) {
+            fetchModelsTelemetry(true);
+            fetchModelsRouting(true);
+            fetchModelsRegistry(true);
+        }
+    }, 10000);
+    console.log('[Models] Auto-refresh started (10s interval)');
+}
+
+/**
+ * Stop auto-refresh for Models & Evaluations module.
+ */
+function stopModelsAutoRefresh() {
+    if (state.modelsAutoRefreshInterval) {
+        clearInterval(state.modelsAutoRefreshInterval);
+        state.modelsAutoRefreshInterval = null;
+    }
+    state.modelsAutoRefreshEnabled = false;
+    console.log('[Models] Auto-refresh stopped');
+}
+
+/**
+ * Ensure all Models data is loaded. Called when entering the module.
+ * Uses setTimeout(0) to defer fetches and avoid render-loop deadlocks.
+ */
+function ensureModelsFetched() {
+    if (!state.modelsRegistry.fetched && !state.modelsRegistry.loading) {
+        setTimeout(function () { fetchModelsRegistry(false); }, 0);
+    }
+    if (!state.modelsTelemetry.fetched && !state.modelsTelemetry.loading) {
+        setTimeout(function () { fetchModelsTelemetry(false); }, 0);
+    }
+    if (!state.modelsRouting.fetched && !state.modelsRouting.loading) {
+        setTimeout(function () { fetchModelsRouting(false); }, 0);
+    }
+    if (!state.modelsAutoRefreshEnabled) {
+        startModelsAutoRefresh();
+    }
+}
+
+// ===========================================================================
 // Models & Evaluations Module — Render Functions
 // ===========================================================================
 
@@ -31729,21 +32704,22 @@ function renderModelsListView() {
     subtitle.textContent = 'LLM models configured across the Vitana platform.';
     container.appendChild(subtitle);
 
-    if (!state.modelsRegistry.fetched && !state.modelsRegistry.loading) {
-        state.modelsRegistry.loading = true;
-        renderApp();
-        fetch('/api/v1/llm/models', { headers: buildContextHeaders() })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                state.modelsRegistry.items = data.data || data.models || (Array.isArray(data) ? data : []);
-                state.modelsRegistry.fetched = true;
-                state.modelsRegistry.loading = false;
-                renderApp();
-            }).catch(function (err) { state.modelsRegistry.error = err.message; state.modelsRegistry.loading = false; renderApp(); });
-    }
-    if (state.modelsRegistry.loading) { var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading...'; container.appendChild(l); return container; }
+    // Deferred fetch — never call renderApp() synchronously inside render
+    ensureModelsFetched();
+
+    if (state.modelsRegistry.loading && !state.modelsRegistry.fetched) { var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading models...'; container.appendChild(l); return container; }
     if (state.modelsRegistry.error) { var e = document.createElement('div'); e.className = 'placeholder-content error-text'; e.textContent = 'Error: ' + state.modelsRegistry.error; container.appendChild(e); return container; }
+    if (!state.modelsRegistry.fetched) { var w = document.createElement('div'); w.className = 'placeholder-content'; w.textContent = 'Waiting for data...'; container.appendChild(w); return container; }
     if (state.modelsRegistry.items.length === 0) { var em = document.createElement('div'); em.className = 'placeholder-content'; em.textContent = 'No models registered.'; container.appendChild(em); return container; }
+
+    // Realtime indicator
+    var liveBar = document.createElement('div');
+    liveBar.style.cssText = 'display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem;font-size:0.8rem;color:var(--color-text-secondary);';
+    var liveDot = document.createElement('span');
+    liveDot.style.cssText = 'width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block;animation:pulse 2s infinite;';
+    liveBar.appendChild(liveDot);
+    liveBar.appendChild(document.createTextNode('Live — auto-refreshing every 10s'));
+    container.appendChild(liveBar);
 
     var table = document.createElement('table');
     table.className = 'list-table';
@@ -31773,33 +32749,79 @@ function renderModelsEvaluationsView() {
     container.appendChild(title);
     var subtitle = document.createElement('p');
     subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Evaluation results comparing model performance across tasks.';
+    subtitle.textContent = 'Realtime evaluation results from LLM telemetry — success rates, latency, and cost per model/stage.';
     container.appendChild(subtitle);
 
-    var evals = [
-        { model: 'gemini-2.0-flash', task: 'Task Planning', score: 92, latency: '340ms', notes: 'Primary planner model' },
-        { model: 'gemini-2.0-flash', task: 'Code Generation', score: 88, latency: '280ms', notes: 'Worker execution model' },
-        { model: 'claude-3-haiku', task: 'Validation', score: 95, latency: '420ms', notes: 'Validator model' },
-        { model: 'text-embedding-ada-002', task: 'Embeddings', score: 91, latency: '120ms', notes: 'Memory embeddings' },
-        { model: 'gemini-2.0-flash', task: 'Summarization', score: 85, latency: '310ms', notes: 'Context summarization' }
-    ];
+    // Deferred fetch
+    ensureModelsFetched();
+
+    if (state.modelsTelemetry.loading && !state.modelsTelemetry.fetched) { var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading telemetry...'; container.appendChild(l); return container; }
+    if (state.modelsTelemetry.error) { var e = document.createElement('div'); e.className = 'placeholder-content error-text'; e.textContent = 'Error: ' + state.modelsTelemetry.error; container.appendChild(e); return container; }
+
+    // Realtime indicator
+    var liveBar = document.createElement('div');
+    liveBar.style.cssText = 'display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem;font-size:0.8rem;color:var(--color-text-secondary);';
+    var liveDot = document.createElement('span');
+    liveDot.style.cssText = 'width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block;animation:pulse 2s infinite;';
+    liveBar.appendChild(liveDot);
+    liveBar.appendChild(document.createTextNode('Live — auto-refreshing every 10s  |  ' + state.modelsTelemetry.events.length + ' events'));
+    container.appendChild(liveBar);
+
+    var benchmarks = state.modelsBenchmarks.aggregated || [];
+    if (benchmarks.length === 0) {
+        var em = document.createElement('div'); em.className = 'placeholder-content'; em.textContent = 'No telemetry events yet. LLM calls will appear here in realtime.'; container.appendChild(em); return container;
+    }
 
     var table = document.createElement('table');
     table.className = 'list-table';
-    table.innerHTML = '<thead><tr><th>Model</th><th>Task</th><th>Score</th><th>Avg Latency</th><th>Notes</th></tr></thead>';
+    table.innerHTML = '<thead><tr><th>Stage</th><th>Model</th><th>Provider</th><th>Calls</th><th>Success Rate</th><th>Avg Latency</th><th>Est. Cost</th></tr></thead>';
     var tbody = document.createElement('tbody');
-    evals.forEach(function (ev) {
+    benchmarks.forEach(function (b) {
         var row = document.createElement('tr');
-        var scoreColor = ev.score >= 90 ? '#22c55e' : ev.score >= 80 ? '#f59e0b' : '#ef4444';
-        row.innerHTML = '<td style="font-weight:600;">' + ev.model + '</td>' +
-            '<td>' + ev.task + '</td>' +
-            '<td style="font-weight:700;color:' + scoreColor + ';">' + ev.score + '%</td>' +
-            '<td>' + ev.latency + '</td>' +
-            '<td style="color:var(--color-text-secondary);">' + ev.notes + '</td>';
+        var rateColor = b.successRate >= 95 ? '#22c55e' : b.successRate >= 80 ? '#f59e0b' : '#ef4444';
+        row.innerHTML = '<td style="font-weight:600;text-transform:capitalize;">' + b.stage + '</td>' +
+            '<td style="font-family:monospace;font-size:0.85rem;">' + b.model + '</td>' +
+            '<td>' + b.provider + '</td>' +
+            '<td>' + b.callCount + '</td>' +
+            '<td style="font-weight:700;color:' + rateColor + ';">' + b.successRate + '%</td>' +
+            '<td>' + b.avgLatency + 'ms</td>' +
+            '<td style="font-family:monospace;font-size:0.85rem;">$' + b.totalCost.toFixed(6) + '</td>';
         tbody.appendChild(row);
     });
     table.appendChild(tbody);
     container.appendChild(table);
+
+    // Recent events timeline
+    var recentTitle = document.createElement('h3');
+    recentTitle.textContent = 'Recent LLM Calls';
+    recentTitle.style.marginTop = '2rem';
+    container.appendChild(recentTitle);
+
+    var recentEvents = state.modelsTelemetry.events.slice(0, 20);
+    if (recentEvents.length === 0) {
+        var noEv = document.createElement('div'); noEv.className = 'placeholder-content'; noEv.textContent = 'No recent events.'; container.appendChild(noEv);
+    } else {
+        var evTable = document.createElement('table');
+        evTable.className = 'list-table';
+        evTable.innerHTML = '<thead><tr><th>Time</th><th>Stage</th><th>Model</th><th>Latency</th><th>Tokens (in/out)</th><th>Status</th></tr></thead>';
+        var evTbody = document.createElement('tbody');
+        recentEvents.forEach(function (ev) {
+            var row = document.createElement('tr');
+            var ts = ev.created_at ? new Date(ev.created_at).toLocaleTimeString() : '-';
+            var hasError = ev.error_code || ev.error_message;
+            var statusBadge = hasError ? '<span class="status-badge status-error">failed</span>' : '<span class="status-badge status-active">ok</span>';
+            var tokens = (ev.input_tokens || '-') + ' / ' + (ev.output_tokens || '-');
+            row.innerHTML = '<td style="font-family:monospace;font-size:0.8rem;">' + ts + '</td>' +
+                '<td style="text-transform:capitalize;">' + (ev.stage || '-') + '</td>' +
+                '<td style="font-family:monospace;font-size:0.85rem;">' + (ev.model || '-') + '</td>' +
+                '<td>' + (ev.latency_ms ? ev.latency_ms + 'ms' : '-') + '</td>' +
+                '<td style="font-family:monospace;font-size:0.8rem;">' + tokens + '</td>' +
+                '<td>' + statusBadge + '</td>';
+            evTbody.appendChild(row);
+        });
+        evTable.appendChild(evTbody);
+        container.appendChild(evTable);
+    }
     return container;
 }
 
@@ -31811,24 +32833,42 @@ function renderModelsBenchmarksView() {
     container.appendChild(title);
     var subtitle = document.createElement('p');
     subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Performance benchmarks for model inference pipelines.';
+    subtitle.textContent = 'Realtime performance benchmarks derived from LLM telemetry (P50/P95/P99 latency).';
     container.appendChild(subtitle);
 
-    var benchmarks = [
-        { name: 'Chat Completion (Flash)', p50: '280ms', p95: '520ms', p99: '890ms', throughput: '42 req/min' },
-        { name: 'Embedding Generation', p50: '95ms', p95: '180ms', p99: '310ms', throughput: '120 req/min' },
-        { name: 'Memory Retrieval', p50: '45ms', p95: '120ms', p99: '250ms', throughput: '200 req/min' },
-        { name: 'Governance Evaluation', p50: '15ms', p95: '35ms', p99: '80ms', throughput: '500 req/min' },
-        { name: 'VTID Resolution', p50: '25ms', p95: '60ms', p99: '120ms', throughput: '350 req/min' }
-    ];
+    // Deferred fetch
+    ensureModelsFetched();
+
+    if (state.modelsBenchmarks.loading && !state.modelsBenchmarks.fetched) { var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading benchmarks...'; container.appendChild(l); return container; }
+
+    // Realtime indicator
+    var liveBar = document.createElement('div');
+    liveBar.style.cssText = 'display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem;font-size:0.8rem;color:var(--color-text-secondary);';
+    var liveDot = document.createElement('span');
+    liveDot.style.cssText = 'width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block;animation:pulse 2s infinite;';
+    liveBar.appendChild(liveDot);
+    liveBar.appendChild(document.createTextNode('Live — computed from telemetry, refreshing every 10s'));
+    container.appendChild(liveBar);
+
+    var benchmarks = state.modelsBenchmarks.aggregated || [];
+    if (benchmarks.length === 0) {
+        var em = document.createElement('div'); em.className = 'placeholder-content'; em.textContent = 'No benchmark data yet. LLM telemetry events will populate this view.'; container.appendChild(em); return container;
+    }
 
     var table = document.createElement('table');
     table.className = 'list-table';
-    table.innerHTML = '<thead><tr><th>Pipeline</th><th>P50</th><th>P95</th><th>P99</th><th>Throughput</th></tr></thead>';
+    table.innerHTML = '<thead><tr><th>Stage / Model</th><th>Calls</th><th>P50</th><th>P95</th><th>P99</th><th>Success Rate</th><th>Est. Cost</th></tr></thead>';
     var tbody = document.createElement('tbody');
     benchmarks.forEach(function (b) {
         var row = document.createElement('tr');
-        row.innerHTML = '<td style="font-weight:600;">' + b.name + '</td><td>' + b.p50 + '</td><td>' + b.p95 + '</td><td>' + b.p99 + '</td><td>' + b.throughput + '</td>';
+        var rateColor = b.successRate >= 95 ? '#22c55e' : b.successRate >= 80 ? '#f59e0b' : '#ef4444';
+        row.innerHTML = '<td style="font-weight:600;"><span style="text-transform:capitalize;">' + b.stage + '</span> <span style="font-family:monospace;font-size:0.8rem;color:var(--color-text-secondary);">(' + b.model + ')</span></td>' +
+            '<td>' + b.callCount + '</td>' +
+            '<td>' + b.p50 + 'ms</td>' +
+            '<td>' + b.p95 + 'ms</td>' +
+            '<td>' + b.p99 + 'ms</td>' +
+            '<td style="font-weight:700;color:' + rateColor + ';">' + b.successRate + '%</td>' +
+            '<td style="font-family:monospace;font-size:0.85rem;">$' + b.totalCost.toFixed(6) + '</td>';
         tbody.appendChild(row);
     });
     table.appendChild(tbody);
@@ -31844,33 +32884,73 @@ function renderModelsRoutingView() {
     container.appendChild(title);
     var subtitle = document.createElement('p');
     subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'How the platform routes requests to different LLM providers.';
+    subtitle.textContent = 'Live routing policy — how the platform routes requests to LLM providers per stage.';
     container.appendChild(subtitle);
 
-    var routes = [
-        { domain: 'Planning', model: 'gemini-2.0-flash', provider: 'Google AI', fallback: 'gemini-1.5-pro', reason: 'High speed, good reasoning' },
-        { domain: 'Worker Execution', model: 'gemini-2.0-flash', provider: 'Google AI', fallback: 'gemini-1.5-flash', reason: 'Fast code generation' },
-        { domain: 'Validation', model: 'claude-3-haiku', provider: 'Anthropic', fallback: 'gemini-2.0-flash', reason: 'Strong analytical capability' },
-        { domain: 'Embeddings', model: 'text-embedding-ada-002', provider: 'OpenAI', fallback: 'Vertex textembedding-gecko', reason: '1536-dim, high quality' },
-        { domain: 'Voice (ORB)', model: 'gemini-2.0-flash-live', provider: 'Google AI', fallback: 'None', reason: 'WebSocket multimodal live API' },
-        { domain: 'Summarization', model: 'gemini-2.0-flash', provider: 'Google AI', fallback: 'gemini-1.5-flash', reason: 'Context window management' }
-    ];
+    // Deferred fetch
+    ensureModelsFetched();
+
+    if (state.modelsRouting.loading && !state.modelsRouting.fetched) { var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading routing policy...'; container.appendChild(l); return container; }
+    if (state.modelsRouting.error) { var e = document.createElement('div'); e.className = 'placeholder-content error-text'; e.textContent = 'Error: ' + state.modelsRouting.error; container.appendChild(e); return container; }
+
+    // Realtime indicator
+    var liveBar = document.createElement('div');
+    liveBar.style.cssText = 'display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem;font-size:0.8rem;color:var(--color-text-secondary);';
+    var liveDot = document.createElement('span');
+    liveDot.style.cssText = 'width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block;animation:pulse 2s infinite;';
+    liveBar.appendChild(liveDot);
+    liveBar.appendChild(document.createTextNode('Live — auto-refreshing every 10s'));
+    container.appendChild(liveBar);
+
+    var policy = state.modelsRouting.policy;
+    if (!policy) {
+        var em = document.createElement('div'); em.className = 'placeholder-content'; em.textContent = 'No routing policy configured.'; container.appendChild(em); return container;
+    }
+
+    var stages = ['planner', 'worker', 'validator', 'operator', 'memory'];
+    var stageLabels = { planner: 'Planning', worker: 'Worker Execution', validator: 'Validation', operator: 'Operator (ORB)', memory: 'Memory' };
 
     var table = document.createElement('table');
     table.className = 'list-table';
-    table.innerHTML = '<thead><tr><th>Domain</th><th>Primary Model</th><th>Provider</th><th>Fallback</th><th>Routing Reason</th></tr></thead>';
+    table.innerHTML = '<thead><tr><th>Stage</th><th>Primary Model</th><th>Provider</th><th>Fallback Model</th><th>Fallback Provider</th></tr></thead>';
     var tbody = document.createElement('tbody');
-    routes.forEach(function (r) {
+    stages.forEach(function (stage) {
+        var cfg = policy[stage];
+        if (!cfg) return;
         var row = document.createElement('tr');
-        row.innerHTML = '<td style="font-weight:600;">' + r.domain + '</td>' +
-            '<td style="font-family:monospace;font-size:0.85rem;">' + r.model + '</td>' +
-            '<td>' + r.provider + '</td>' +
-            '<td style="font-family:monospace;font-size:0.85rem;color:var(--color-text-secondary);">' + r.fallback + '</td>' +
-            '<td style="font-size:0.85rem;">' + r.reason + '</td>';
+        row.innerHTML = '<td style="font-weight:600;">' + (stageLabels[stage] || stage) + '</td>' +
+            '<td style="font-family:monospace;font-size:0.85rem;">' + (cfg.primary_model || '-') + '</td>' +
+            '<td>' + (cfg.primary_provider || '-') + '</td>' +
+            '<td style="font-family:monospace;font-size:0.85rem;color:var(--color-text-secondary);">' + (cfg.fallback_model || '-') + '</td>' +
+            '<td style="color:var(--color-text-secondary);">' + (cfg.fallback_provider || '-') + '</td>';
         tbody.appendChild(row);
     });
     table.appendChild(tbody);
     container.appendChild(table);
+
+    // Reset to defaults button
+    var resetBtn = document.createElement('button');
+    resetBtn.className = 'btn btn-secondary';
+    resetBtn.textContent = 'Reset to Recommended Defaults';
+    resetBtn.style.marginTop = '1rem';
+    resetBtn.onclick = function () {
+        if (!confirm('Reset routing policy to recommended defaults?')) return;
+        fetch('/api/v1/llm/routing-policy/reset', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, buildContextHeaders()),
+            body: JSON.stringify({ reason: 'Manual reset from Command Hub' })
+        }).then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (data.ok) {
+                state.modelsRouting.fetched = false;
+                fetchModelsRouting(false);
+            } else {
+                alert('Reset failed: ' + (data.error || 'Unknown error'));
+            }
+        }).catch(function (err) { alert('Reset failed: ' + err.message); });
+    };
+    container.appendChild(resetBtn);
+
     return container;
 }
 
@@ -32484,23 +33564,24 @@ document.addEventListener('DOMContentLoaded', async () => {
             history.replaceState(null, '', tab.path);
         }
 
+        // VTID-01230: If no auth token, show auth gate immediately — do NOT load any data
+        if (!state.authToken) {
+            console.log('[VTID-01230] No auth token — showing auth gate');
+            renderApp(); // Will render auth gate
+            return;
+        }
+
         renderApp();
 
         // VTID-01046: Unified Auth Boot Sequence
         // Synchronize identity and context before loading other data
         console.log('[VTID-01046] Booting Auth...');
-        if (state.authToken) {
-            await Promise.all([
-                fetchMeContext(),
-                fetchAuthMe()
-            ]);
-            console.log('[VTID-01046] Auth boot complete');
-        } else {
-            // VTID-01229: MeState kept for backwards compatibility during transition
-            console.log('[VTID-01046] Guest session - marking MeState loaded');
-            MeState.loaded = true;
-            MeState.me = null;
-        }
+        await Promise.all([
+            fetchMeContext(),
+            fetchAuthMe(),
+            fetchPermittedRoles()
+        ]);
+        console.log('[VTID-01046] Auth boot complete');
 
         // Final UI refresh after auth data is in
         renderApp();

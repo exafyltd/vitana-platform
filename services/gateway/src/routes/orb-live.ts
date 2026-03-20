@@ -3769,14 +3769,15 @@ router.get('/live', (req: Request, res: Response) => {
   // Send ready event
   res.write(`data: ${JSON.stringify({ type: 'ready', meta: { model: GEMINI_MODEL } })}\n\n`);
 
-  // Heartbeat every 15 seconds (must be < Cloud Run's ~22-25s idle timeout for SSE)
+  // VTID-HEARTBEAT-FIX: Send actual data heartbeats (not SSE comments) so client
+  // watchdog resets properly. SSE comments don't trigger EventSource.onmessage.
   const heartbeatInterval = setInterval(() => {
     try {
-      res.write(`:heartbeat\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'heartbeat', ts: Date.now() })}\n\n`);
     } catch (e) {
       clearInterval(heartbeatInterval);
     }
-  }, 15000);
+  }, 10000);
 
   // Handle client disconnect
   req.on('close', () => {
@@ -5728,7 +5729,7 @@ async function fetchLastSessionInfo(userId: string): Promise<{ time: string; was
  * VTID-01155: Helper to emit Live session events to OASIS
  */
 async function emitLiveSessionEvent(
-  eventType: 'vtid.live.session.start' | 'vtid.live.session.stop' | 'vtid.live.audio.in.chunk' | 'vtid.live.video.in.frame' | 'vtid.live.audio.out.chunk' | 'orb.live.config_missing' | 'orb.live.connection_failed' | 'orb.live.stall_detected' | 'orb.live.diag',
+  eventType: 'vtid.live.session.start' | 'vtid.live.session.stop' | 'vtid.live.audio.in.chunk' | 'vtid.live.video.in.frame' | 'vtid.live.audio.out.chunk' | 'orb.live.config_missing' | 'orb.live.connection_failed' | 'orb.live.stall_detected' | 'orb.live.diag' | 'orb.live.fallback_used' | 'orb.live.fallback_error',
   payload: Record<string, unknown>,
   status: 'info' | 'error' = 'info'
 ): Promise<void> {
@@ -6529,14 +6530,19 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
     }, 'error').catch(() => {});
   }
 
-  // Heartbeat every 15 seconds (must be < Cloud Run's ~22-25s idle timeout for SSE)
+  // VTID-HEARTBEAT-FIX: Send actual data heartbeats, not SSE comments.
+  // SSE comments (`:heartbeat`) keep the HTTP connection alive but do NOT trigger
+  // EventSource.onmessage on the client. The client watchdog only resets on
+  // onmessage events, so after the greeting turn_complete, if the user doesn't
+  // speak for 12s the watchdog fires → "No response from server" → disconnect.
+  // Sending { type: 'heartbeat' } as a data message fixes this.
   const heartbeatInterval = setInterval(() => {
     try {
-      res.write(`:heartbeat\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'heartbeat', ts: Date.now() })}\n\n`);
     } catch (e) {
       clearInterval(heartbeatInterval);
     }
-  }, 15000);
+  }, 10000);
 
   // Handle client disconnect
   req.on('close', () => {
@@ -7009,6 +7015,167 @@ router.post('/tts', optionalAuth, async (req: AuthenticatedRequest, res: Respons
 });
 
 /**
+ * VTID-FALLBACK: POST /live/chat-tts — Text-mode fallback when Vertex Live API is unavailable.
+ *
+ * Flow: Client sends text (from Web Speech API STT) → Gemini generates reply → Cloud TTS
+ * synthesizes audio → response returned as JSON with text + audio_b64.
+ *
+ * This provides a degraded but functional voice experience when:
+ * - Vertex Live API WebSocket fails to connect
+ * - Live API connection is unstable / keeps disconnecting
+ * - Project has exhausted Live API quota
+ *
+ * The client handles STT locally (Web Speech API) and plays the TTS audio.
+ */
+router.post('/live/chat-tts', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const { session_id, text, lang: reqLang, context_turns } = req.body;
+
+  if (!text || typeof text !== 'string' || !text.trim()) {
+    return res.status(400).json({ ok: false, error: 'text is required' });
+  }
+
+  const lang = normalizeLang(reqLang || 'en');
+  const identity = await resolveOrbIdentity(req);
+
+  console.log(`[VTID-FALLBACK] chat-tts request: lang=${lang}, text_length=${text.length}, user=${identity?.user_id?.substring(0, 8) || 'anon'}`);
+
+  try {
+    // 1. Build conversation context from recent turns
+    const conversationHistory = (context_turns || []).slice(-10).map((t: any) => ({
+      role: t.role === 'user' ? 'user' : 'model',
+      parts: [{ text: t.text }]
+    }));
+
+    // 2. Build system instruction
+    let systemInstruction = `You are Vitana, a friendly and empathetic AI assistant. Respond conversationally in ${lang === 'de' ? 'German' : lang === 'es' ? 'Spanish' : lang === 'fr' ? 'French' : 'English'}. Keep responses concise (2-3 sentences) as they will be spoken aloud.`;
+
+    // Add memory context if available
+    if (identity?.user_id && identity?.tenant_id) {
+      try {
+        const memoryCtx = isMemoryBridgeEnabled()
+          ? await fetchMemoryContextWithIdentity(identity as MemoryIdentity)
+          : null;
+        if (memoryCtx && memoryCtx.items.length > 0) {
+          const memoryText = memoryCtx.items
+            .slice(0, 10)
+            .map((item: any) => item.content || item.text)
+            .filter(Boolean)
+            .join('\n');
+          if (memoryText) {
+            systemInstruction += '\n\nContext about this user:\n' + memoryText;
+          }
+        }
+      } catch (memErr: any) {
+        console.warn(`[VTID-FALLBACK] Memory fetch failed: ${memErr.message}`);
+      }
+    }
+
+    // 3. Call Gemini API for text response
+    let replyText = '';
+    if (GEMINI_API_KEY) {
+      const geminiResponse = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            ...conversationHistory,
+            { role: 'user', parts: [{ text: text.trim() }] }
+          ],
+          systemInstruction: { parts: [{ text: systemInstruction }] },
+          generationConfig: {
+            maxOutputTokens: 256,
+            temperature: 0.7
+          }
+        })
+      });
+
+      if (!geminiResponse.ok) {
+        throw new Error(`Gemini API error: ${geminiResponse.status}`);
+      }
+
+      const geminiData = await geminiResponse.json() as any;
+      replyText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    } else {
+      // Vertex AI fallback via processWithGemini
+      const result = await processWithGemini({
+        text,
+        threadId: session_id || `fallback-${Date.now()}`,
+        systemInstruction
+      });
+      replyText = result?.reply || '';
+    }
+
+    if (!replyText) {
+      return res.status(500).json({ ok: false, error: 'Empty response from language model' });
+    }
+
+    // 4. Synthesize audio with Google Cloud TTS
+    let audioB64 = '';
+    let audioMime = '';
+    if (ttsClient) {
+      const useNeural2 = NEURAL2_ENABLED_LANGUAGES.includes(lang);
+      const voiceConfig = useNeural2
+        ? (NEURAL2_TTS_VOICES[lang] || NEURAL2_TTS_VOICES['en'])
+        : (GEMINI_TTS_VOICES[lang] || GEMINI_TTS_VOICES['en']);
+
+      const voiceParams: any = {
+        languageCode: voiceConfig.languageCode,
+        name: voiceConfig.name,
+      };
+      if (!useNeural2) {
+        voiceParams.modelName = 'gemini-2.5-flash-tts';
+      }
+
+      const [ttsResponse] = await ttsClient.synthesizeSpeech({
+        input: { text: replyText },
+        voice: voiceParams,
+        audioConfig: {
+          audioEncoding: 'MP3' as any,
+          speakingRate: 1.0,
+          pitch: 0
+        }
+      });
+
+      if (ttsResponse.audioContent) {
+        audioB64 = Buffer.isBuffer(ttsResponse.audioContent)
+          ? ttsResponse.audioContent.toString('base64')
+          : Buffer.from(ttsResponse.audioContent as Uint8Array).toString('base64');
+        audioMime = 'audio/mp3';
+      }
+    }
+
+    console.log(`[VTID-FALLBACK] chat-tts success: reply_length=${replyText.length}, audio_bytes=${audioB64.length}`);
+
+    // 5. Emit OASIS event for observability
+    emitLiveSessionEvent('orb.live.fallback_used', {
+      session_id: session_id || 'none',
+      text_length: text.length,
+      reply_length: replyText.length,
+      has_audio: !!audioB64,
+      lang,
+    }, 'info').catch(() => {});
+
+    return res.status(200).json({
+      ok: true,
+      text: replyText,
+      audio_b64: audioB64,
+      audio_mime: audioMime,
+      mode: 'fallback_chat_tts'
+    });
+  } catch (error: any) {
+    console.error('[VTID-FALLBACK] chat-tts error:', error);
+    emitLiveSessionEvent('orb.live.fallback_error', {
+      session_id: session_id || 'none',
+      error: error.message,
+    }, 'error').catch(() => {});
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'Fallback processing failed'
+    });
+  }
+});
+
+/**
  * GET /health - Health check
  * VTID-01106: Added memory bridge status
  * VTID-01113: Added intent detection status
@@ -7032,6 +7199,12 @@ router.get('/health', (_req: Request, res: Response) => {
     active_conversations: orbConversations.size,
     active_transcripts: orbTranscripts.size,
     voice_conversation_enabled: true,
+    // VTID-FALLBACK: Fallback voice provider status
+    fallback_chat_tts: {
+      available: !!(GEMINI_API_KEY || googleAuth) && !!ttsClient,
+      gemini_api: !!GEMINI_API_KEY,
+      tts_ready: !!ttsClient,
+    },
     // VTID-01106: Memory bridge status
     memory_bridge: {
       enabled: memoryBridgeEnabled,

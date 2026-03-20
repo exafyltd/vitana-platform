@@ -12,9 +12,32 @@
 
 import { Router, Request, Response } from 'express';
 import { createHash } from 'crypto';
+import { VertexAI } from '@google-cloud/vertexai';
+import { GoogleAuth } from 'google-auth-library';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { runFullQualityCheck } from '../services/spec-quality-agent';
 
 const router = Router();
+
+// ===========================================================================
+// Vertex AI for LLM-powered spec generation
+// ===========================================================================
+const VERTEX_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || 'lovable-vitana-vers1';
+
+// Primary: Gemini 3.1 Pro via REST (requires global endpoint)
+const SPEC_GEN_MODEL_PRIMARY = 'gemini-3.1-pro-preview';
+// Fallback: Gemini 2.5 Pro via SDK (us-central1)
+const SPEC_GEN_MODEL_FALLBACK = 'gemini-2.5-pro';
+
+let googleAuth: GoogleAuth | null = null;
+let vertexAI: VertexAI | null = null;
+try {
+  googleAuth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
+  vertexAI = new VertexAI({ project: VERTEX_PROJECT, location: 'us-central1' });
+  console.log(`[VTID-01188] Spec gen initialized: primary=${SPEC_GEN_MODEL_PRIMARY} (global), fallback=${SPEC_GEN_MODEL_FALLBACK} (us-central1)`);
+} catch (err: any) {
+  console.warn(`[VTID-01188] Failed to init spec gen: ${err.message}`);
+}
 
 // ===========================================================================
 // VTID-01188: Spec Template (Mandatory Output Format)
@@ -123,7 +146,8 @@ function computeHash(content: string): string {
 }
 
 function validateVtidFormat(vtid: string): boolean {
-  return /^VTID-\d{4,5}(-[A-Za-z0-9]+)?$/.test(vtid);
+  // Allow both numeric VTIDs (VTID-01217) and hex VTIDs from autopilot (VTID-B95E9)
+  return /^VTID-[A-Za-z0-9]{4,6}(-[A-Za-z0-9]+)?$/.test(vtid);
 }
 
 /**
@@ -162,37 +186,354 @@ function validateSpecSections(specMarkdown: string): { valid: boolean; missing: 
 }
 
 /**
- * Generate a spec from seed notes
- * This is a deterministic template-based generation
+ * Gather deep system context for spec generation — scans vtid_ledger,
+ * oasis_events, existing specs, and related tasks to give the LLM
+ * real knowledge about the current system state.
  */
-function generateSpecFromSeed(vtid: string, title: string, seedNotes: string, source: string): string {
-  // Parse seed notes for structure hints
-  const lines = seedNotes.split('\n').map(l => l.trim()).filter(l => l);
+async function gatherSystemContext(vtid: string, title: string): Promise<string> {
+  const { supabaseUrl, svcKey } = getSupabaseConfig();
+  const headers = { apikey: svcKey, Authorization: `Bearer ${svcKey}` };
+  const contextParts: string[] = [];
 
-  // Default values based on seed notes
-  const goal = lines[0] || 'Implement the requested functionality';
-  const inScope = lines.slice(0, 3).map(l => `- ${l}`).join('\n') || '- TBD based on requirements';
-  const outScope = '- Items not explicitly mentioned in acceptance criteria';
+  try {
+    // 1. Get related tasks (same domain keywords) for conflict/dependency awareness
+    const keywords = title.split(/[\s\-_]+/).filter(w => w.length > 3).slice(0, 3);
+    if (keywords.length > 0) {
+      const searchTerm = keywords.join(' ');
+      const relatedResp = await fetch(
+        `${supabaseUrl}/rest/v1/vtid_ledger?or=(title.ilike.*${encodeURIComponent(keywords[0])}*,summary.ilike.*${encodeURIComponent(keywords[0])}*)&vtid=neq.${vtid}&select=vtid,title,status,spec_status,layer,module&limit=10&order=updated_at.desc`,
+        { headers }
+      );
+      if (relatedResp.ok) {
+        const related = await relatedResp.json() as any[];
+        if (related.length > 0) {
+          contextParts.push('## Related/Similar Tasks in System');
+          related.forEach((t: any) => {
+            contextParts.push(`- ${t.vtid}: "${t.title}" (status=${t.status}, spec=${t.spec_status || 'missing'}, layer=${t.layer || 'unknown'})`);
+          });
+        }
+      }
+    }
 
-  const specContent = SPEC_TEMPLATE
+    // 2. Get recent OASIS events related to this VTID or its domain
+    const eventsResp = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_events?vtid=eq.${vtid}&select=topic,message,created_at&limit=10&order=created_at.desc`,
+      { headers }
+    );
+    if (eventsResp.ok) {
+      const events = await eventsResp.json() as any[];
+      if (events.length > 0) {
+        contextParts.push('## OASIS Events for This VTID');
+        events.forEach((e: any) => {
+          contextParts.push(`- [${e.topic}] ${e.message} (${e.created_at})`);
+        });
+      }
+    }
+
+    // 3. Get system health summary — active tasks, blocked tasks
+    const statsResp = await fetch(
+      `${supabaseUrl}/rest/v1/vtid_ledger?select=status,spec_status&limit=200`,
+      { headers }
+    );
+    if (statsResp.ok) {
+      const allTasks = await statsResp.json() as any[];
+      const statusCounts: Record<string, number> = {};
+      const specCounts: Record<string, number> = {};
+      allTasks.forEach((t: any) => {
+        statusCounts[t.status || 'unknown'] = (statusCounts[t.status || 'unknown'] || 0) + 1;
+        specCounts[t.spec_status || 'missing'] = (specCounts[t.spec_status || 'missing'] || 0) + 1;
+      });
+      contextParts.push('## Current System State');
+      contextParts.push(`Total tasks: ${allTasks.length}`);
+      contextParts.push(`Status breakdown: ${Object.entries(statusCounts).map(([k, v]) => `${k}=${v}`).join(', ')}`);
+      contextParts.push(`Spec status breakdown: ${Object.entries(specCounts).map(([k, v]) => `${k}=${v}`).join(', ')}`);
+    }
+
+    // 4. Get existing specs for reference (what good specs look like)
+    const recentSpecResp = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_specs?status=eq.approved&select=vtid,title,spec_markdown&limit=2&order=created_at.desc`,
+      { headers }
+    );
+    if (recentSpecResp.ok) {
+      const recentSpecs = await recentSpecResp.json() as any[];
+      if (recentSpecs.length > 0) {
+        contextParts.push('## Example of Approved Spec Structure (for reference)');
+        const example = recentSpecs[0];
+        // Include just the first 500 chars as a structural reference
+        contextParts.push(`Approved spec "${example.title}" (${example.vtid}):`);
+        contextParts.push(example.spec_markdown?.substring(0, 500) + '...');
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[VTID-01188] Context gathering error (non-fatal): ${err.message}`);
+  }
+
+  return contextParts.join('\n');
+}
+
+/**
+ * Call Gemini via Vertex AI REST API (supports global endpoint for 3.1 Pro).
+ */
+async function callGeminiREST(
+  model: string,
+  location: string,
+  systemPrompt: string,
+  userPrompt: string,
+  config: { temperature: number; maxOutputTokens: number; topP: number }
+): Promise<string | null> {
+  if (!googleAuth) return null;
+
+  const accessToken = await googleAuth.getAccessToken();
+  if (!accessToken) throw new Error('Failed to get access token');
+
+  // Global endpoint has no region prefix; regional endpoints use {region}-aiplatform...
+  const baseUrl = location === 'global'
+    ? 'https://aiplatform.googleapis.com'
+    : `https://${location}-aiplatform.googleapis.com`;
+
+  const url = `${baseUrl}/v1/projects/${VERTEX_PROJECT}/locations/${location}/publishers/google/models/${model}:generateContent`;
+
+  const body = {
+    contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+    systemInstruction: { role: 'system', parts: [{ text: systemPrompt }] },
+    generationConfig: {
+      temperature: config.temperature,
+      maxOutputTokens: config.maxOutputTokens,
+      topP: config.topP,
+    },
+  };
+
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => 'unknown');
+    throw new Error(`Vertex REST ${resp.status}: ${errText.substring(0, 300)}`);
+  }
+
+  const data = await resp.json() as any;
+  return data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
+}
+
+/**
+ * Generate a spec using Gemini 3.1 Pro (primary) or 2.5 Pro (fallback).
+ * Falls back to a minimal template if all LLMs are unavailable.
+ */
+async function generateSpecWithLLM(vtid: string, title: string, summary: string, seedNotes: string, source: string): Promise<string> {
+  const systemContext = await gatherSystemContext(vtid, title);
+
+  const promptParts = [
+    `Generate a complete, high-quality implementation specification for the following task.`,
+    ``,
+    `VTID: ${vtid}`,
+    `Task Title: ${title}`,
+    summary ? `Task Summary: ${summary}` : '',
+    seedNotes && seedNotes.trim() !== title.trim() ? `Additional Context:\n${seedNotes}` : '',
+    ``,
+    systemContext ? `--- SYSTEM CONTEXT (use this to make the spec specific and accurate) ---\n${systemContext}` : '',
+    ``,
+    `INSTRUCTIONS:`,
+    `- Use the EXACT markdown template format from your system instructions`,
+    `- Fill EVERY section with specific, actionable, concrete content`,
+    `- Reference actual Vitana file paths (services/gateway/src/..., supabase/migrations/...)`,
+    `- Reference actual API patterns (POST /api/v1/..., Supabase RPC calls)`,
+    `- Identify real database tables that may need changes (vtid_ledger, oasis_events, etc.)`,
+    `- Consider conflicts with related tasks listed in the system context`,
+    `- Be specific about risk level based on the scope of changes`,
+    `- NEVER use placeholder text like "TBD", "to be determined", or "None identified"`,
+  ].filter(Boolean).join('\n');
+
+  const genConfig = { temperature: 0.3, maxOutputTokens: 16384, topP: 0.9 };
+
+  // === Primary: Gemini 3.1 Pro via REST (global endpoint) ===
+  try {
+    console.log(`[VTID-01188] Trying ${SPEC_GEN_MODEL_PRIMARY} (global) for ${vtid}: "${title}" (context: ${systemContext.length} chars)`);
+    const text = await callGeminiREST(SPEC_GEN_MODEL_PRIMARY, 'global', SPEC_GEN_SYSTEM_PROMPT, promptParts, genConfig);
+    if (text && text.length > 200) {
+      console.log(`[VTID-01188] ${SPEC_GEN_MODEL_PRIMARY} spec generated for ${vtid}: ${text.length} chars`);
+      return text;
+    }
+    console.warn(`[VTID-01188] ${SPEC_GEN_MODEL_PRIMARY} returned insufficient content (${text?.length || 0} chars)`);
+  } catch (err: any) {
+    console.warn(`[VTID-01188] ${SPEC_GEN_MODEL_PRIMARY} failed for ${vtid}: ${err.message}`);
+  }
+
+  // === Fallback: Gemini 2.5 Pro via SDK (us-central1) ===
+  if (vertexAI) {
+    try {
+      console.log(`[VTID-01188] Falling back to ${SPEC_GEN_MODEL_FALLBACK} (us-central1) for ${vtid}`);
+      const model = vertexAI.getGenerativeModel({
+        model: SPEC_GEN_MODEL_FALLBACK,
+        generationConfig: genConfig,
+        systemInstruction: { role: 'system', parts: [{ text: SPEC_GEN_SYSTEM_PROMPT }] },
+      });
+
+      const response = await model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: promptParts }] }],
+      });
+
+      const candidate = response.response?.candidates?.[0];
+      const text = candidate?.content?.parts?.[0]?.text;
+
+      if (text && text.length > 200) {
+        console.log(`[VTID-01188] ${SPEC_GEN_MODEL_FALLBACK} spec generated for ${vtid}: ${text.length} chars`);
+        return text;
+      }
+      console.warn(`[VTID-01188] ${SPEC_GEN_MODEL_FALLBACK} returned insufficient content (${text?.length || 0} chars)`);
+    } catch (err: any) {
+      console.error(`[VTID-01188] ${SPEC_GEN_MODEL_FALLBACK} failed for ${vtid}: ${err.message}`);
+    }
+  }
+
+  // Fallback: minimal template (clearly marked as needing manual editing)
+  console.log(`[VTID-01188] Using template fallback for ${vtid} (Vertex AI unavailable)`);
+  return SPEC_TEMPLATE
     .replace('{TITLE}', title || `Task ${vtid}`)
     .replace('{VTID}', vtid)
-    .replace('{GOAL}', goal)
-    .replace('{GOVERNANCE_RULES}', '- To be determined during analysis')
-    .replace('{IN_SCOPE}', inScope)
-    .replace('{OUT_SCOPE}', outScope)
-    .replace('{DB_MIGRATIONS}', '- None identified (to be updated)')
-    .replace('{API_CHANGES}', '- None identified (to be updated)')
-    .replace('{UI_CHANGES}', '- None identified (to be updated)')
-    .replace('{FILES_TO_MODIFY}', '- To be determined during implementation planning')
-    .replace('{ACCEPTANCE_CRITERIA}', lines.map((l, i) => `${i + 1}. ${l}`).join('\n') || '- [ ] Task completed successfully')
-    .replace('{CURL_VERIFICATION}', '```bash\n# Verification commands TBD\n```')
-    .replace('{UI_VERIFICATION}', '- [ ] UI verification steps TBD')
+    .replace('{GOAL}', summary || title || 'Define the goal for this task')
+    .replace('{GOVERNANCE_RULES}', '- Review governance rules that this task touches')
+    .replace('{IN_SCOPE}', `- ${title}\n- Implementation and testing`)
+    .replace('{OUT_SCOPE}', '- Items not explicitly mentioned in acceptance criteria')
+    .replace('{DB_MIGRATIONS}', '- Identify required database changes')
+    .replace('{API_CHANGES}', '- Identify required API changes')
+    .replace('{UI_CHANGES}', '- Identify required UI changes')
+    .replace('{FILES_TO_MODIFY}', '- Identify files that need modification')
+    .replace('{ACCEPTANCE_CRITERIA}', `1. ${title} is implemented and working\n2. All tests pass\n3. Documentation updated`)
+    .replace('{CURL_VERIFICATION}', '```bash\n# Add verification commands\n```')
+    .replace('{UI_VERIFICATION}', '- [ ] Verify UI changes work correctly')
     .replace('{ROLLBACK_PLAN}', '- Revert commit if issues detected\n- No database rollback required (additive changes only)')
-    .replace('{RISK_LEVEL}', `**Risk:** LOW\n\n**Source:** ${source}`);
-
-  return specContent;
+    .replace('{RISK_LEVEL}', `**Risk:** MEDIUM\n\n**Source:** ${source} (template fallback — LLM unavailable)`);
 }
+
+// ===========================================================================
+// LLM System Prompt for Spec Generation
+// ===========================================================================
+const SPEC_GEN_SYSTEM_PROMPT = `You are a senior software architect generating implementation specifications for the Vitana platform. You have deep knowledge of the system architecture and produce production-ready specs.
+
+## Vitana Platform Architecture
+
+### Services
+- **Gateway** (Node.js/Express, TypeScript): Main backend API on Cloud Run
+  - Routes: services/gateway/src/routes/ (auth.ts, orb-live.ts, specs.ts, autopilot.ts, vtid.ts, board-adapter.ts, etc.)
+  - Services: services/gateway/src/services/ (oasis-event-service.ts, gemini-operator.ts, spec-quality-agent.ts, etc.)
+  - Frontend: services/gateway/src/frontend/command-hub/app.js (vanilla JS, ~30k lines)
+  - Middleware: services/gateway/src/middleware/auth-supabase-jwt.ts
+  - Entry: services/gateway/src/index.ts
+
+### Database (Supabase/PostgreSQL)
+- **vtid_ledger**: Master task table (vtid, title, summary, status, spec_status, layer, module, is_terminal, terminal_outcome)
+- **oasis_events**: Event log (topic, vtid, message, metadata, status, created_at)
+- **oasis_specs**: Generated specs (vtid, version, spec_markdown, spec_hash, status)
+- **oasis_spec_validations**: Validation records
+- **oasis_spec_approvals**: Approval records
+- **oasis_spec_quality_reports**: Quality check results
+- **autopilot_recommendations**: Auto-generated improvement recommendations
+- **app_users**, **user_tenants**, **tenants**: User/tenant management
+- **memory_facts**: Conversation memory facts
+- Migrations: supabase/migrations/
+
+### Key Patterns
+- All DB access via Supabase REST API (PostgREST): fetch(\`\${supabaseUrl}/rest/v1/table_name\`)
+- OASIS events emitted via emitOasisEvent() for observability
+- VTID format: VTID-XXXXX (numeric) or VTID-XXXXX (hex from autopilot)
+- Spec pipeline: missing → draft → validated → quality_checked → approved
+- Task lifecycle: scheduled → in_progress → completed/failed
+- Frontend uses showToast() for notifications, renderApp() rebuilds entire DOM
+- Deploy via GitHub Actions EXEC-DEPLOY.yml → Cloud Run source deploy
+- Auth: Supabase JWT tokens, auth middleware validates on every request
+
+### API Patterns
+- Base URL: /api/v1/
+- Board data: GET /api/v1/commandhub/board
+- Task detail: GET /api/v1/vtid/:vtid
+- Spec operations: /api/v1/specs/:vtid/generate|validate|quality-check|approve
+- OASIS events: /api/v1/oasis/events
+- All endpoints return { ok: boolean, ...data } or { ok: false, error: string }
+
+## Output Rules
+1. Output ONLY the markdown spec — no preamble, no explanation, no wrapping code fences
+2. Use the EXACT section structure below — do not add or remove sections
+3. Fill EVERY section with specific, actionable content based on the task and system context
+4. NEVER use placeholder text like "TBD", "to be determined", "None identified", or "to be updated"
+5. Reference actual Vitana file paths, table names, API endpoints, and patterns
+6. Consider dependencies and conflicts with other tasks mentioned in the context
+7. Be concrete about risk based on what the task actually touches
+
+## Required Spec Structure
+
+# {Title}
+
+**VTID:** {VTID}
+
+---
+
+## 1. Goal
+(Clear 1-3 sentence description of what this task achieves and why it matters)
+
+---
+
+## 2. Non-negotiable Governance Rules Touched
+(List specific rules: OASIS event logging, auth requirements, VTID tracking, deploy gates, etc.)
+
+---
+
+## 3. Scope
+
+### IN SCOPE
+(Specific deliverables as bullet points)
+
+### OUT OF SCOPE
+(Specific exclusions — what this task does NOT do)
+
+---
+
+## 4. Changes
+
+### 4.1 Database Migrations (SQL)
+(Specific tables, columns, indexes, RPC functions, constraints)
+
+### 4.2 APIs (Routes, Request/Response)
+(Specific endpoints with HTTP methods, request/response shapes)
+
+### 4.3 UI Changes (Screens, States)
+(Specific Command Hub components, state changes, user flows)
+
+---
+
+## 5. Files to Modify
+(Specific file paths: services/gateway/src/routes/..., services/gateway/src/frontend/..., supabase/migrations/..., etc.)
+
+---
+
+## 6. Acceptance Criteria
+(Numbered, testable criteria — each must be verifiable)
+
+---
+
+## 7. Verification Steps
+
+### 7.1 curl Calls
+(Actual curl commands against the gateway API to verify the implementation)
+
+### 7.2 UI Checks
+(Specific UI verification steps in the Command Hub)
+
+---
+
+## 8. Rollback Plan
+(Specific rollback steps: revert commit, drop migration, restore data)
+
+---
+
+## 9. Risk Level
+(LOW/MEDIUM/HIGH/CRITICAL with specific justification based on blast radius)`;
+
 
 // ===========================================================================
 // POST /:vtid/generate - Generate Spec
@@ -278,8 +619,8 @@ router.post('/:vtid/generate', async (req: Request, res: Response) => {
       version = typeof versionData === 'number' ? versionData : 1;
     }
 
-    // Step 4: Generate spec content
-    const specMarkdown = generateSpecFromSeed(vtid, ledgerRow.title, seed_notes, source);
+    // Step 4: Generate spec content using LLM (falls back to template if unavailable)
+    const specMarkdown = await generateSpecWithLLM(vtid, ledgerRow.title, ledgerRow.summary || '', seed_notes, source);
     const specHash = computeHash(specMarkdown);
 
     // Step 5: Insert new spec into oasis_specs
@@ -372,6 +713,115 @@ router.post('/:vtid/generate', async (req: Request, res: Response) => {
 
   } catch (e: any) {
     console.error(`[VTID-01188] Generate spec error:`, e);
+    return res.status(500).json({ ok: false, error: 'internal_server_error', message: e.message });
+  }
+});
+
+// ===========================================================================
+// PATCH /:vtid - Save (update) spec markdown content
+// ===========================================================================
+
+router.patch('/:vtid', async (req: Request, res: Response) => {
+  const { vtid } = req.params;
+  const { spec_markdown } = req.body || {};
+
+  console.log(`[VTID-01188] Save spec requested for ${vtid}`);
+
+  if (!spec_markdown || typeof spec_markdown !== 'string' || spec_markdown.trim().length < 20) {
+    return res.status(400).json({ ok: false, error: 'spec_markdown required (min 20 chars)' });
+  }
+
+  if (!validateVtidFormat(vtid)) {
+    return res.status(400).json({ ok: false, error: 'invalid_format', vtid });
+  }
+
+  try {
+    const { supabaseUrl, svcKey } = getSupabaseConfig();
+
+    // Get current spec reference from ledger
+    const ledgerResp = await fetch(
+      `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}&select=vtid,spec_status,spec_current_id&limit=1`,
+      { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } }
+    );
+    if (!ledgerResp.ok) {
+      return res.status(500).json({ ok: false, error: 'ledger_query_failed' });
+    }
+    const ledgerRows = await ledgerResp.json() as any[];
+    if (ledgerRows.length === 0) {
+      return res.status(404).json({ ok: false, error: 'vtid_not_found', vtid });
+    }
+
+    const ledgerRow = ledgerRows[0];
+    const specId = ledgerRow.spec_current_id;
+
+    if (!specId) {
+      return res.status(400).json({ ok: false, error: 'no_spec_exists', message: 'Generate a spec first' });
+    }
+
+    // Only allow edits on draft or quality_failed specs
+    const editableStatuses = ['draft', 'quality_failed', 'rejected'];
+    if (!editableStatuses.includes(ledgerRow.spec_status)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'spec_not_editable',
+        message: `Cannot edit spec in status: ${ledgerRow.spec_status}`,
+      });
+    }
+
+    const newHash = computeHash(spec_markdown);
+
+    // Update oasis_specs content
+    const updateSpecResp = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_specs?id=eq.${specId}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+        body: JSON.stringify({
+          spec_markdown: spec_markdown,
+          spec_hash: newHash,
+          status: 'draft',
+        }),
+      }
+    );
+
+    if (!updateSpecResp.ok) {
+      const errText = await updateSpecResp.text();
+      console.error(`[VTID-01188] Failed to update oasis_specs: ${errText}`);
+      return res.status(502).json({ ok: false, error: 'spec_update_failed', message: errText });
+    }
+
+    // Update ledger hash and reset to draft (in case it was quality_failed)
+    await fetch(`${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+      },
+      body: JSON.stringify({
+        spec_status: 'draft',
+        spec_current_hash: newHash,
+        spec_last_error: null,
+        updated_at: new Date().toISOString(),
+      }),
+    });
+
+    console.log(`[VTID-01188] Spec saved for ${vtid}: hash=${newHash.substring(0, 8)}...`);
+
+    return res.status(200).json({
+      ok: true,
+      vtid,
+      spec_id: specId,
+      spec_hash: newHash,
+      spec_status: 'draft',
+      message: 'Spec saved successfully',
+    });
+  } catch (e: any) {
+    console.error(`[VTID-01188] Save spec error:`, e);
     return res.status(500).json({ ok: false, error: 'internal_server_error', message: e.message });
   }
 });
@@ -547,6 +997,147 @@ router.post('/:vtid/validate', async (req: Request, res: Response) => {
 });
 
 // ===========================================================================
+// POST /:vtid/quality-check - Spec Quality Agent Gate
+// ===========================================================================
+
+router.post('/:vtid/quality-check', async (req: Request, res: Response) => {
+  const { vtid } = req.params;
+
+  console.log(`[spec-quality] Quality check requested for ${vtid}`);
+
+  if (!validateVtidFormat(vtid)) {
+    return res.status(400).json({ ok: false, error: 'invalid_vtid_format', vtid });
+  }
+
+  const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+  const supabaseUrl = process.env.SUPABASE_URL;
+  if (!svcKey || !supabaseUrl) {
+    return res.status(500).json({ ok: false, error: 'gateway_misconfigured' });
+  }
+
+  try {
+    const headers = { apikey: svcKey, Authorization: `Bearer ${svcKey}` };
+
+    // Step 1: Get ledger row
+    const ledgerResp = await fetch(
+      `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}&select=vtid,spec_status,spec_current_id,spec_current_hash&limit=1`,
+      { headers }
+    );
+    if (!ledgerResp.ok) return res.status(502).json({ ok: false, error: 'ledger_fetch_failed' });
+
+    const ledgerData = await ledgerResp.json() as any[];
+    if (ledgerData.length === 0) return res.status(404).json({ ok: false, error: 'vtid_not_found', vtid });
+
+    const ledgerRow = ledgerData[0];
+
+    // Must be 'validated' or 'quality_failed' (retry) to run quality check
+    if (ledgerRow.spec_status !== 'validated' && ledgerRow.spec_status !== 'quality_failed') {
+      return res.status(409).json({
+        ok: false,
+        error: 'spec_not_validated',
+        message: `Spec must be validated before quality check. Current status: ${ledgerRow.spec_status}`,
+        spec_status: ledgerRow.spec_status
+      });
+    }
+
+    // Step 2: Get spec content
+    if (!ledgerRow.spec_current_id) {
+      return res.status(400).json({ ok: false, error: 'no_spec_exists', message: 'No spec generated for this VTID' });
+    }
+
+    const specResp = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_specs?id=eq.${ledgerRow.spec_current_id}&select=id,spec_markdown,spec_hash&limit=1`,
+      { headers }
+    );
+    if (!specResp.ok) return res.status(502).json({ ok: false, error: 'spec_fetch_failed' });
+
+    const specData = await specResp.json() as any[];
+    if (specData.length === 0) return res.status(404).json({ ok: false, error: 'spec_not_found' });
+
+    const spec = specData[0];
+
+    // Step 3: Run full quality check
+    const report = await runFullQualityCheck(
+      vtid,
+      spec.spec_markdown,
+      spec.spec_hash || ledgerRow.spec_current_hash,
+      supabaseUrl,
+      svcKey
+    );
+
+    // Step 4: Store quality report (non-blocking)
+    const reportPayload = {
+      vtid,
+      spec_id: spec.id,
+      spec_hash: spec.spec_hash || ledgerRow.spec_current_hash,
+      overall_result: report.overall_result,
+      overall_score: report.overall_score,
+      risk_level: report.risk_level,
+      checks_json: report.checks,
+      impact_json: report.impact_analysis,
+      conflict_json: report.conflict_analysis,
+      governance_json: report.governance_analysis,
+    };
+
+    await fetch(`${supabaseUrl}/rest/v1/oasis_spec_quality_reports`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify(reportPayload),
+    }).catch(err => console.warn(`[spec-quality] Failed to store report: ${err}`));
+
+    // Step 5: Update spec_status based on result
+    const newStatus = report.overall_result === 'fail' ? 'quality_failed' : 'quality_checked';
+
+    const statusPatchResp = await fetch(`${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}`, {
+      method: 'PATCH',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ spec_status: newStatus, updated_at: new Date().toISOString() }),
+    });
+
+    if (!statusPatchResp.ok) {
+      const patchErr = await statusPatchResp.text().catch(() => 'unknown');
+      console.error(`[spec-quality] CRITICAL: Failed to update spec_status to ${newStatus} for ${vtid}: ${patchErr}`);
+      return res.status(502).json({
+        ok: false,
+        error: 'spec_status_update_failed',
+        message: `Quality check completed (${report.overall_result}) but failed to update spec_status. Check database constraints.`,
+        report,
+      });
+    }
+
+    // Step 6: Emit OASIS event
+    await emitOasisEvent({
+      vtid,
+      type: report.overall_result === 'fail' ? 'vtid.spec.quality_check.failed' : 'vtid.spec.quality_check.passed',
+      source: 'spec-quality-agent',
+      status: report.overall_result === 'fail' ? 'error' : 'success',
+      message: `Quality check ${report.overall_result}: score=${report.overall_score}, risk=${report.risk_level}`,
+      payload: {
+        overall_score: report.overall_score,
+        risk_level: report.risk_level,
+        risk_reasons: report.risk_reasons,
+        failed_checks: report.checks.filter((c: any) => c.result === 'fail').map((c: any) => c.check_id),
+        conflict_count: report.conflict_analysis.overlap_count,
+        governance_gap: report.governance_analysis.governance_gap,
+      },
+    }).catch(err => console.warn(`[spec-quality] OASIS event error: ${err}`));
+
+    console.log(`[spec-quality] ${vtid}: ${report.overall_result} (score=${report.overall_score}, risk=${report.risk_level})`);
+
+    return res.status(200).json({
+      ok: true,
+      vtid,
+      spec_status: newStatus,
+      report,
+    });
+
+  } catch (e: any) {
+    console.error(`[spec-quality] Quality check error:`, e);
+    return res.status(500).json({ ok: false, error: 'internal_server_error', message: e.message });
+  }
+});
+
+// ===========================================================================
 // POST /:vtid/approve - Approve Spec
 // ===========================================================================
 
@@ -584,13 +1175,26 @@ router.post('/:vtid/approve', async (req: Request, res: Response) => {
 
     const ledgerRow = ledgerData[0];
 
-    // Step 2: Check if spec is in 'validated' status
-    if (ledgerRow.spec_status !== 'validated') {
+    // Step 2: Check if spec has passed quality check (or legacy validated)
+    if (ledgerRow.spec_status === 'quality_checked') {
+      // New flow: quality gate passed — proceed to approval
+    } else if (ledgerRow.spec_status === 'validated') {
+      // Legacy bypass: spec validated before quality agent existed — allow with warning
+      console.warn(`[VTID-01188] Legacy approval bypass for ${vtid} (spec_status=validated, no quality check)`);
+      emitOasisEvent({
+        vtid,
+        type: 'vtid.spec.approval.legacy_bypass',
+        source: 'spec-quality-agent',
+        status: 'warning',
+        message: `Spec approved without quality check (legacy bypass)`,
+        payload: { spec_status: 'validated', reason: 'pre_quality_agent_spec' },
+      }).catch(() => {});
+    } else {
       return res.status(409).json({
         ok: false,
-        error: 'spec_not_validated',
-        code: 'SPEC_NOT_VALIDATED',
-        message: `Spec must be validated before approval. Current status: ${ledgerRow.spec_status}`,
+        error: 'spec_not_quality_checked',
+        code: 'SPEC_NOT_QUALITY_CHECKED',
+        message: `Spec must pass quality check before approval. Current status: ${ledgerRow.spec_status}. Run POST /specs/${vtid}/quality-check first.`,
         spec_status: ledgerRow.spec_status
       });
     }

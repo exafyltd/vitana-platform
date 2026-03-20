@@ -457,6 +457,14 @@ export type CicdEventType =
   | 'vtid.spec.validation.completed'
   | 'vtid.spec.approved'
   | 'vtid.execution.activation.blocked'
+  // Spec Quality Agent Events
+  | 'vtid.spec.quality_check.started'
+  | 'vtid.spec.quality_check.passed'
+  | 'vtid.spec.quality_check.failed'
+  | 'vtid.spec.conflict.detected'
+  | 'vtid.spec.governance_gap.detected'
+  | 'vtid.spec.risk.assessed'
+  | 'vtid.spec.approval.legacy_bypass'
   // VTID-01208: LLM Telemetry & Routing Policy Events
   | 'llm.call.started'
   | 'llm.call.completed'
@@ -487,6 +495,9 @@ export type CicdEventType =
   | 'orb.live.stall_detected'
   // VTID-DIAG: Pipeline diagnostics
   | 'orb.live.diag'
+  // VTID-FALLBACK: Chat-TTS fallback events
+  | 'orb.live.fallback_used'
+  | 'orb.live.fallback_error'
   // VTID-01225: Cognee Entity Extraction Events
   | 'cognee.extraction.started'
   | 'cognee.extraction.completed'

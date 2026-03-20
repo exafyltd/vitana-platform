@@ -18,6 +18,7 @@ import { Router, Request, Response } from 'express';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { allocateVtid } from '../services/operator-service';
 import { ensureScheduledDevTask } from '../services/task-intake-service';
+import { guessAreaFromText, buildTitle } from '../utils/task-title';
 
 const router = Router();
 
@@ -191,8 +192,10 @@ router.post('/email', async (req: Request, res: Response) => {
     // Classify intent
     const { task_type, layer } = classifyIntent(subject);
 
-    // Build task description from email content
-    const taskTitle = subject.replace(/^(Re:|Fwd?:|Bug:|Feature:|Improvement:)\s*/gi, '').trim();
+    // Build task title with system area prefix
+    const rawSubject = subject.replace(/^(Re:|Fwd?:|Bug:|Feature:|Improvement:)\s*/gi, '').trim();
+    const area = guessAreaFromText(rawSubject + ' ' + (text || ''));
+    const taskTitle = buildTitle(area, rawSubject);
     const taskDescription = text
       ? `${taskTitle}\n\n${text}`
       : taskTitle;

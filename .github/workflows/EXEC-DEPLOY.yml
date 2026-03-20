@@ -249,6 +249,10 @@ jobs:
               CLOUD_RUN_SERVICE="vitana-verification-engine"
               SOURCE_PATH="services/agents/vitana-orchestrator"
               ;;
+            cognee-extractor)
+              CLOUD_RUN_SERVICE="cognee-extractor"
+              SOURCE_PATH="services/agents/cognee-extractor"
+              ;;
             *)
               # Use inputs directly for custom services
               CLOUD_RUN_SERVICE="$SERVICE"
@@ -271,8 +275,16 @@ jobs:
             EXTRA_ENV_ARGS+=(--update-env-vars=ENVIRONMENT=dev-sandbox)
             # VTID-01219: Cloud Run does NOT auto-set GOOGLE_CLOUD_PROJECT; required for Vertex AI Live API
             EXTRA_ENV_ARGS+=(--update-env-vars=GCP_PROJECT_ID=lovable-vitana-vers1)
+            # VTID-01225: Cognee Extractor URL for entity extraction
+            EXTRA_ENV_ARGS+=(--update-env-vars=COGNEE_EXTRACTOR_URL=https://cognee-extractor-86804897789.us-central1.run.app)
             # VTID-01155: Bind Gemini API key for TTS and chat
             SECRETS_ARGS+=(--update-secrets=GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest)
+            # VTID-01184: OpenAI API key for embedding generation (primary provider)
+            # NOTE: Requires 'OPENAI_API_KEY' secret in GCP Secret Manager.
+            # Uncomment once created: gcloud secrets create OPENAI_API_KEY --data-file=-
+            # SECRETS_ARGS+=(--update-secrets=OPENAI_API_KEY=OPENAI_API_KEY:latest)
+            # Remove stale OPENAI_API_KEY binding from previous revision (secret doesn't exist in GCP)
+            SECRETS_ARGS+=(--remove-secrets=OPENAI_API_KEY)
             # Bind other required secrets
             SECRETS_ARGS+=(--update-secrets=SUPABASE_URL=SUPABASE_URL:latest)
             SECRETS_ARGS+=(--update-secrets=SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest)
@@ -287,11 +299,33 @@ jobs:
             EXTRA_ENV_ARGS+=(--update-env-vars=LOVABLE_SUPABASE_SERVICE_ROLE=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlubWtodndkY3V5aG54a2dmdnNiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTg2NjYzNywiZXhwIjoyMDcxNDQyNjM3fQ.P4bD2YrbzgvDqM4APVxk_5LzetSTsYx-fAp5GOX4n2M)
           fi
 
+          # VTID-01225: Cognee extractor — internal ingress, Gemini LLM via API key
+          if [ "$CLOUD_RUN_SERVICE" = "cognee-extractor" ]; then
+            EXTRA_ENV_ARGS+=(--update-env-vars=LLM_PROVIDER=google)
+            EXTRA_ENV_ARGS+=(--update-env-vars=LLM_MODEL=gemini/gemini-2.0-flash)
+            EXTRA_ENV_ARGS+=(--update-env-vars=GOOGLE_CLOUD_PROJECT=lovable-vitana-vers1)
+            EXTRA_ENV_ARGS+=(--update-env-vars=VERTEX_LOCATION=us-central1)
+            EXTRA_ENV_ARGS+=(--update-env-vars=ENV=production)
+            # Cognee SDK needs API key for Gemini LLM calls (not ADC)
+            SECRETS_ARGS+=(--update-secrets=GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest)
+          fi
+
+          # Build deploy args
+          DEPLOY_ARGS=(
+            --source="$SOURCE_PATH"
+            --region=us-central1
+            --project=lovable-vitana-vers1
+            --allow-unauthenticated
+          )
+
+          # Cognee-extractor: internal-only ingress, override custom SA to avoid IAM actAs error
+          if [ "$CLOUD_RUN_SERVICE" = "cognee-extractor" ]; then
+            DEPLOY_ARGS+=(--ingress=internal-and-cloud-load-balancing)
+            DEPLOY_ARGS+=(--service-account=86804897789-compute@developer.gserviceaccount.com)
+          fi
+
           gcloud run deploy "$CLOUD_RUN_SERVICE" \
-            --source="$SOURCE_PATH" \
-            --region=us-central1 \
-            --project=lovable-vitana-vers1 \
-            --allow-unauthenticated \
+            "${DEPLOY_ARGS[@]}" \
             "${EXTRA_ENV_ARGS[@]}" \
             "${SECRETS_ARGS[@]}" \
             --quiet
@@ -301,9 +335,14 @@ jobs:
           echo "service_url=$URL" >> $GITHUB_OUTPUT
           echo "cloud_run_service=$CLOUD_RUN_SERVICE" >> $GITHUB_OUTPUT
 
-          # Health check
-          echo "Running health check: $URL${{ github.event.inputs.health_path }}"
-          curl -fsS "$URL${{ github.event.inputs.health_path }}" -H "X-VTID: ${{ github.event.inputs.vtid }}"
+          # Health check (skip for internal-ingress services — not reachable from CI)
+          if [ "$CLOUD_RUN_SERVICE" = "cognee-extractor" ]; then
+            echo "Skipping health check for internal-ingress service: $CLOUD_RUN_SERVICE"
+            echo "Service deployed successfully at $URL"
+          else
+            echo "Running health check: $URL${{ github.event.inputs.health_path }}"
+            curl -fsS "$URL${{ github.event.inputs.health_path }}" -H "X-VTID: ${{ github.event.inputs.vtid }}"
+          fi
 
       # =========================================================================
       # VTID-0416: Post-Deploy Smoke Tests
@@ -375,7 +414,7 @@ jobs:
       - name: Record Software Version (VTID-0510)
         if: success()
         env:
-          GATEWAY_URL: ${{ steps.deploy.outputs.service_url }}
+          GATEWAY_URL: ${{ github.event.inputs.service == 'gateway' && steps.deploy.outputs.service_url || 'https://gateway-q74ibpv6ia-uc.a.run.app' }}
         run: |
           # Record deployment version in OASIS via Gateway API
           SERVICE_NAME="${{ steps.deploy.outputs.cloud_run_service }}"
@@ -395,7 +434,7 @@ jobs:
       - name: Emit OASIS Deploy Success Event (VTID-0416)
         if: success()
         env:
-          GATEWAY_URL: ${{ steps.deploy.outputs.service_url }}
+          GATEWAY_URL: ${{ github.event.inputs.service == 'gateway' && steps.deploy.outputs.service_url || 'https://gateway-q74ibpv6ia-uc.a.run.app' }}
         run: |
           VTID="${{ github.event.inputs.vtid }}"
           SERVICE="${{ steps.deploy.outputs.cloud_run_service }}"
@@ -436,7 +475,8 @@ jobs:
         id: terminal_completion
         if: success()
         env:
-          GATEWAY_URL: ${{ steps.deploy.outputs.service_url }}
+          # Always use the gateway URL for OASIS completion (not the deployed service URL)
+          GATEWAY_URL: ${{ github.event.inputs.service == 'gateway' && steps.deploy.outputs.service_url || 'https://gateway-q74ibpv6ia-uc.a.run.app' }}
         run: |
           set -e
           VTID="${{ github.event.inputs.vtid }}"
