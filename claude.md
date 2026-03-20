@@ -860,10 +860,10 @@ The Gateway serves static files with `Cache-Control: no-cache, no-store, must-re
 
 ### GitHub PATs for API Access
 
-- **Vitana Platform**: `github_pat_11BI6FN3I0...` (use for PR creation, merging, workflow dispatch)
-- **Lovable (Vitana v1)**: `ghp_vCNFyyrr...` (use for Lovable repo access)
+- **Vitana Platform** (repo: `exafyltd/vitana-platform`): See `.claude/.secrets` or user-provided session context. Prefix: `github_pat_11BI6FN3I0`
+- **Lovable / Vitana Vers1** (repo: Lovable Vitana v1): See `.claude/.secrets` or user-provided session context. Prefix: `ghp_vCNFyyrr`
 
-Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deployment operations.
+Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deployment operations. NEVER ask the user for these again. Full PATs cannot be stored in git-tracked files (GitHub Push Protection blocks them). User provides them in session when needed.
 
 ---
 
