@@ -9,6 +9,14 @@ import * as supabaseSkill from './vitana-supabase';
 import * as stripeSkill from './vitana-stripe';
 import * as dailySkill from './vitana-daily';
 import * as healthSkill from './vitana-health';
+import * as notificationsSkill from './vitana-notifications';
+import * as schedulingSkill from './vitana-scheduling';
+import * as documentsSkill from './vitana-documents';
+import * as vtnWalletSkill from './vitana-vtn-wallet';
+import * as knowledgeSkill from './vitana-knowledge';
+import * as analyticsSkill from './vitana-analytics';
+import * as complianceSkill from './vitana-compliance';
+import * as integrationsSkill from './vitana-integrations';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -36,6 +44,14 @@ const SKILLS: Record<string, SkillModule> = {
   'vitana-stripe': stripeSkill,
   'vitana-daily': dailySkill,
   'vitana-health': healthSkill,
+  'vitana-notifications': notificationsSkill,
+  'vitana-scheduling': schedulingSkill,
+  'vitana-documents': documentsSkill,
+  'vitana-vtn-wallet': vtnWalletSkill,
+  'vitana-knowledge': knowledgeSkill,
+  'vitana-analytics': analyticsSkill,
+  'vitana-compliance': complianceSkill,
+  'vitana-integrations': integrationsSkill,
 };
 
 /**
