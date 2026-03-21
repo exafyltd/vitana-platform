@@ -36042,7 +36042,12 @@ function renderAutopilotRegistryView() {
     var tableWrap = document.createElement('div');
     tableWrap.style.cssText = 'overflow-x:auto;';
     var table = document.createElement('table');
-    table.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.85rem;';
+    table.style.cssText = 'width:100%;min-width:960px;border-collapse:collapse;font-size:0.85rem;table-layout:fixed;';
+
+    // Column widths: ID 70px, Name flex, Domain 130px, Trigger 90px, Config 180px, Status 110px, Roles 150px, Actions 70px
+    var colgroup = document.createElement('colgroup');
+    colgroup.innerHTML = '<col style="width:70px"><col><col style="width:130px"><col style="width:90px"><col style="width:180px"><col style="width:110px"><col style="width:150px"><col style="width:70px">';
+    table.appendChild(colgroup);
 
     var thead = document.createElement('thead');
     thead.innerHTML = '<tr style="border-bottom:1px solid #333;text-align:left;">' +
@@ -36073,15 +36078,16 @@ function renderAutopilotRegistryView() {
 
         var roles = a.targetRoles === 'all' ? 'all' : (Array.isArray(a.targetRoles) ? a.targetRoles.join(', ') : String(a.targetRoles));
 
+        var cellClip = 'padding:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
         row.innerHTML =
-            '<td style="padding:8px;font-family:monospace;color:#64b5f6;">' + a.id + '</td>' +
-            '<td style="padding:8px;">' + a.name + '</td>' +
-            '<td style="padding:8px;color:#888;font-size:0.8rem;">' + a.domain + '</td>' +
-            '<td style="padding:8px;">' + autopilotTriggerIcon(a.triggerType) + ' ' + a.triggerType + '</td>' +
-            '<td style="padding:8px;font-family:monospace;font-size:0.75rem;color:#999;">' + trigConf + '</td>' +
-            '<td style="padding:8px;"><span style="background:' + autopilotStatusColor(a.status) + '22;color:' + autopilotStatusColor(a.status) + ';padding:2px 8px;border-radius:4px;font-size:0.75rem;">' + a.status + '</span></td>' +
-            '<td style="padding:8px;color:#888;font-size:0.75rem;">' + roles + '</td>' +
-            '<td style="padding:8px;"></td>';
+            '<td style="' + cellClip + 'font-family:monospace;color:#64b5f6;">' + a.id + '</td>' +
+            '<td style="' + cellClip + '" title="' + a.name.replace(/"/g, '&quot;') + '">' + a.name + '</td>' +
+            '<td style="' + cellClip + 'color:#888;font-size:0.8rem;">' + a.domain + '</td>' +
+            '<td style="' + cellClip + '">' + autopilotTriggerIcon(a.triggerType) + ' ' + a.triggerType + '</td>' +
+            '<td style="' + cellClip + 'font-family:monospace;font-size:0.75rem;color:#999;" title="' + trigConf.replace(/"/g, '&quot;') + '">' + trigConf + '</td>' +
+            '<td style="' + cellClip + '"><span style="background:' + autopilotStatusColor(a.status) + '22;color:' + autopilotStatusColor(a.status) + ';padding:2px 8px;border-radius:4px;font-size:0.75rem;">' + a.status + '</span></td>' +
+            '<td style="' + cellClip + 'color:#888;font-size:0.75rem;" title="' + roles.replace(/"/g, '&quot;') + '">' + roles + '</td>' +
+            '<td style="padding:8px;text-align:center;"></td>';
 
         // Add Run button for executable automations
         var actionsCell = row.querySelector('td:last-child');
@@ -36285,7 +36291,11 @@ function renderAutopilotRunsView() {
     var tableWrap = document.createElement('div');
     tableWrap.style.cssText = 'overflow-x:auto;';
     var table = document.createElement('table');
-    table.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.85rem;';
+    table.style.cssText = 'width:100%;min-width:860px;border-collapse:collapse;font-size:0.85rem;table-layout:fixed;';
+
+    var colgroup = document.createElement('colgroup');
+    colgroup.innerHTML = '<col style="width:170px"><col style="width:90px"><col style="width:85px"><col style="width:110px"><col style="width:65px"><col style="width:70px"><col style="width:75px"><col>';
+    table.appendChild(colgroup);
 
     var thead = document.createElement('thead');
     thead.innerHTML = '<tr style="border-bottom:1px solid #333;text-align:left;">' +
@@ -36314,15 +36324,16 @@ function renderAutopilotRunsView() {
 
         var statusIcon = r.status === 'completed' ? '\u2705' : r.status === 'failed' ? '\u274C' : r.status === 'running' ? '\u{1F535}' : '\u26A0\uFE0F';
 
+        var runCellClip = 'padding:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
         row.innerHTML =
-            '<td style="padding:8px;font-size:0.8rem;color:#999;">' + timeStr + '</td>' +
-            '<td style="padding:8px;font-family:monospace;color:#64b5f6;">' + r.automation_id + '</td>' +
-            '<td style="padding:8px;">' + (r.trigger_type || '-') + '</td>' +
-            '<td style="padding:8px;"><span style="background:' + autopilotStatusColor(r.status) + '22;color:' + autopilotStatusColor(r.status) + ';padding:2px 8px;border-radius:4px;font-size:0.75rem;">' + statusIcon + ' ' + r.status + '</span></td>' +
-            '<td style="padding:8px;text-align:center;">' + (r.users_affected || 0) + '</td>' +
-            '<td style="padding:8px;text-align:center;">' + (r.actions_taken || 0) + '</td>' +
-            '<td style="padding:8px;color:#999;">' + duration + '</td>' +
-            '<td style="padding:8px;color:#f44336;font-size:0.75rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (r.error_message || '') + '</td>';
+            '<td style="' + runCellClip + 'font-size:0.8rem;color:#999;">' + timeStr + '</td>' +
+            '<td style="' + runCellClip + 'font-family:monospace;color:#64b5f6;">' + r.automation_id + '</td>' +
+            '<td style="' + runCellClip + '">' + (r.trigger_type || '-') + '</td>' +
+            '<td style="' + runCellClip + '"><span style="background:' + autopilotStatusColor(r.status) + '22;color:' + autopilotStatusColor(r.status) + ';padding:2px 8px;border-radius:4px;font-size:0.75rem;">' + statusIcon + ' ' + r.status + '</span></td>' +
+            '<td style="' + runCellClip + 'text-align:center;">' + (r.users_affected || 0) + '</td>' +
+            '<td style="' + runCellClip + 'text-align:center;">' + (r.actions_taken || 0) + '</td>' +
+            '<td style="' + runCellClip + 'color:#999;">' + duration + '</td>' +
+            '<td style="' + runCellClip + 'color:#f44336;font-size:0.75rem;" title="' + (r.error_message || '').replace(/"/g, '&quot;') + '">' + (r.error_message || '') + '</td>';
 
         tbody.appendChild(row);
     });
