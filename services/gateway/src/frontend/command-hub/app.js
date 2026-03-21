@@ -9280,10 +9280,20 @@ function startExecutionStatusPolling(vtid) {
             return;
         }
 
-        // Stop polling if task is no longer active
+        // Stop polling if task is no longer active — refresh board to update columns and drawer
         if (state.executionStatus && !state.executionStatus.isActive) {
-            console.log('[VTID-01209] Task no longer active, stopping polling');
+            console.log('[VTID-01209] Task completed, refreshing board and stopping polling');
             stopExecutionStatusPolling();
+            fetchTasks().then(function () {
+                // Re-fetch the selected task detail so drawer shows terminal state
+                if (state.selectedTask && state.selectedTask.vtid) {
+                    fetchVtidDetail(state.selectedTask.vtid).then(function () {
+                        renderApp();
+                    });
+                } else {
+                    renderApp();
+                }
+            });
             return;
         }
 
