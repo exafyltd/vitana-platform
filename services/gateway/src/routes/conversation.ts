@@ -61,6 +61,9 @@ import { writeMemoryItemWithIdentity } from '../services/orb-memory-bridge';
 import { cogneeExtractorClient } from '../services/cognee-extractor-client';
 // VTID-01225: Inline fact extraction fallback when Cognee is unavailable
 import { extractAndPersistFacts, isInlineExtractionAvailable } from '../services/inline-fact-extractor';
+// VTID-01230: Session buffer for short-term memory + extraction dedup
+import { addTurn as addSessionTurn } from '../services/session-memory-buffer';
+import { deduplicatedExtract } from '../services/extraction-dedup-manager';
 // Supabase client for persistent message storage
 import { getSupabase } from '../lib/supabase';
 
@@ -257,6 +260,8 @@ router.post('/turn', async (req: Request, res: Response) => {
       } : undefined,
       router_decision: routerDecision,
       vtid,
+      // VTID-01230: Session buffer lookup key
+      session_id: thread.thread_id,
     };
 
     const contextPack = await buildContextPack(contextPackInput);
@@ -308,6 +313,10 @@ Instructions:
       // Track conversation history for context continuity
       thread.history.push({ role: 'user', content: message.text });
       thread.history.push({ role: 'assistant', content: reply });
+
+      // VTID-01230: Add turns to session buffer (Tier 0 short-term memory)
+      addSessionTurn(thread.thread_id, tenant_id, user_id, 'user', message.text);
+      addSessionTurn(thread.thread_id, tenant_id, user_id, 'assistant', reply);
 
       // Persist both messages to Supabase (fire-and-forget, non-blocking)
       persistMessage({
@@ -456,19 +465,19 @@ Instructions:
         }
       }
 
-      // VTID-01225: Inline fact extraction - always runs alongside Cognee.
-      // write_fact() RPC auto-supersedes duplicates, so no conflict.
-      // This ensures facts are persisted even when Cognee is down (404).
-      if (isInlineExtractionAvailable()) {
-        extractAndPersistFacts({
-          conversationText,
-          tenant_id,
-          user_id,
-          session_id: thread.thread_id,
-        }).catch(err => {
-          console.warn(`[VTID-01225-inline] Inline extraction failed (non-blocking):`, err.message);
-        });
-        console.log(`[VTID-01225-inline] Inline fact extraction queued for: ${thread.thread_id}`);
+      // VTID-01230: Deduplicated inline fact extraction (replaces raw extractAndPersistFacts)
+      // Prevents redundant Gemini API calls when the same text is processed multiple times
+      const extractResult = deduplicatedExtract({
+        conversationText,
+        tenant_id,
+        user_id,
+        session_id: thread.thread_id,
+        turn_count: thread.turn_count,
+      });
+      if (extractResult.extracted) {
+        console.log(`[VTID-01230] Fact extraction triggered for: ${thread.thread_id}`);
+      } else {
+        console.debug(`[VTID-01230] Extraction skipped: ${extractResult.skip_reason}`);
       }
     }
 
@@ -602,6 +611,8 @@ router.post('/stream', async (req: Request, res: Response) => {
       conversation_start: thread.started_at,
       role: input.role,
       router_decision: routerDecision,
+      // VTID-01230: Session buffer lookup key
+      session_id: thread.thread_id,
     };
 
     const contextPack = await buildContextPack(contextPackInput);
@@ -670,7 +681,10 @@ Instructions:
         metadata: { model: 'gemini-2.5-pro', turn_number: thread.turn_count },
       }).catch(err => console.warn('[conversation] Stream assistant message persist failed:', err.message));
 
-      // VTID-01225: Fire-and-forget fact extraction from streamed conversation
+      // VTID-01230: Session buffer + deduplicated extraction for streamed conversation
+      addSessionTurn(thread.thread_id, input.tenant_id, input.user_id, 'user', input.message.text);
+      addSessionTurn(thread.thread_id, input.tenant_id, input.user_id, 'assistant', geminiResult.reply);
+
       const streamedText = `User: ${input.message.text}\nAssistant: ${geminiResult.reply}`;
       if (streamedText.length > 50) {
         if (cogneeExtractorClient.isEnabled()) {
@@ -682,16 +696,13 @@ Instructions:
             active_role: input.role,
           });
         }
-        if (isInlineExtractionAvailable()) {
-          extractAndPersistFacts({
-            conversationText: streamedText,
-            tenant_id: input.tenant_id,
-            user_id: input.user_id,
-            session_id: thread.thread_id,
-          }).catch(err => {
-            console.warn(`[VTID-01225-inline] Stream extraction failed (non-blocking):`, err.message);
-          });
-        }
+        deduplicatedExtract({
+          conversationText: streamedText,
+          tenant_id: input.tenant_id,
+          user_id: input.user_id,
+          session_id: thread.thread_id,
+          turn_count: thread.turn_count,
+        });
       }
 
     } catch (llmError: any) {

@@ -51,6 +51,9 @@ import { notifyUserAsync } from '../services/notification-service';
 import { cogneeExtractorClient, type CogneeExtractionRequest } from '../services/cognee-extractor-client';
 // VTID-01225-READ-FIX: Inline fact extraction for voice sessions
 import { extractAndPersistFacts, isInlineExtractionAvailable } from '../services/inline-fact-extractor';
+// VTID-01230: Session buffer (Tier 0 short-term memory) + extraction dedup
+import { addTurn as addSessionTurn, destroySessionBuffer, addSessionFact } from '../services/session-memory-buffer';
+import { deduplicatedExtract, clearExtractionState } from '../services/extraction-dedup-manager';
 // VTID-01149: Unified Task-Creation Intake
 import {
   detectTaskCreationIntent,
@@ -2195,6 +2198,10 @@ async function connectToLiveAPI(
                 text: userText,
                 timestamp: new Date().toISOString()
               });
+              // VTID-01230: Mirror to session buffer (Tier 0 short-term memory)
+              if (session.identity && session.identity.tenant_id && session.identity.user_id) {
+                addSessionTurn(session.sessionId, session.identity.tenant_id, session.identity.user_id, 'user', userText);
+              }
               // Write to memory_items (single write per turn, not per-fragment)
               let userMemoryIdentity: MemoryIdentity | null = null;
               if (session.identity && session.identity.tenant_id) {
@@ -2241,6 +2248,10 @@ async function connectToLiveAPI(
                   text: fullTranscript,
                   timestamp: new Date().toISOString()
                 });
+                // VTID-01230: Mirror to session buffer (Tier 0 short-term memory)
+                if (session.identity && session.identity.tenant_id && session.identity.user_id) {
+                  addSessionTurn(session.sessionId, session.identity.tenant_id, session.identity.user_id, 'assistant', fullTranscript);
+                }
 
                 // Write to memory_items for persistence
                 // Use session identity if available, otherwise fall back to DEV_IDENTITY in dev-sandbox
@@ -2324,27 +2335,21 @@ async function connectToLiveAPI(
             // Live API WebSocket. The 60s throttle preserves durability (facts survive
             // disconnects) without hammering the API during active conversation.
             const EXTRACTION_THROTTLE_MS = 60_000;
-            const now = Date.now();
-            const timeSinceLastExtraction = now - (session.lastExtractionTime || 0);
-            if (session.identity && session.identity.tenant_id && isInlineExtractionAvailable() && timeSinceLastExtraction >= EXTRACTION_THROTTLE_MS) {
-              const recentTurns = session.transcriptTurns.slice(-4); // Last 2 user+assistant exchanges
+            // VTID-01230: Deduplicated extraction replaces manual throttle logic
+            if (session.identity && session.identity.tenant_id) {
+              const recentTurns = session.transcriptTurns.slice(-4);
               if (recentTurns.length > 0) {
                 const recentText = recentTurns
                   .map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`)
                   .join('\n');
-                if (recentText.length > 30) {
-                  session.lastExtractionTime = now;
-                  extractAndPersistFacts({
-                    conversationText: recentText,
-                    tenant_id: session.identity.tenant_id,
-                    user_id: session.identity.user_id,
-                    session_id: session.sessionId,
-                  }).catch(err => console.warn(`[VTID-01225-inline] Incremental extraction failed:`, err.message));
-                  console.log(`[VTID-01225-THROTTLE] Extraction triggered for ${session.sessionId} (${recentTurns.length} recent turns, ${Math.round(timeSinceLastExtraction / 1000)}s since last)`);
-                }
+                deduplicatedExtract({
+                  conversationText: recentText,
+                  tenant_id: session.identity.tenant_id,
+                  user_id: session.identity.user_id,
+                  session_id: session.sessionId,
+                  turn_count: session.turn_count,
+                });
               }
-            } else if (session.identity && session.identity.tenant_id && isInlineExtractionAvailable()) {
-              console.log(`[VTID-01225-THROTTLE] Extraction skipped for ${session.sessionId} (${Math.round(timeSinceLastExtraction / 1000)}s since last, need ${EXTRACTION_THROTTLE_MS / 1000}s)`);
             }
 
             // Notify client that response is complete
@@ -2597,19 +2602,18 @@ async function connectToLiveAPI(
         console.log(`[VTID-STREAM-RECONNECT] ${reconnectReason} on active session ${session.sessionId} — attempting transparent reconnect`);
         emitDiag(session, 'reconnect_triggered', { reason: reconnectReason, code });
 
-        // Fire extraction for accumulated facts before reconnecting
-        if (session.identity && session.identity.tenant_id && isInlineExtractionAvailable() && session.transcriptTurns.length > 0) {
+        // VTID-01230: Deduplicated extraction before reconnecting
+        if (session.identity && session.identity.tenant_id && session.transcriptTurns.length > 0) {
           const allText = session.transcriptTurns
             .map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`)
             .join('\n');
-          if (allText.length > 50) {
-            extractAndPersistFacts({
-              conversationText: allText,
-              tenant_id: session.identity.tenant_id,
-              user_id: session.identity.user_id,
-              session_id: session.sessionId,
-            }).catch(err => console.warn(`[VTID-STREAM-RECONNECT] Pre-reconnect extraction failed: ${err.message}`));
-          }
+          deduplicatedExtract({
+            conversationText: allText,
+            tenant_id: session.identity.tenant_id,
+            user_id: session.identity.user_id,
+            session_id: session.sessionId,
+            turn_count: session.turn_count,
+          });
         }
 
         // Attempt reconnection (async, fire-and-forget from close handler perspective)
@@ -2678,18 +2682,21 @@ async function connectToLiveAPI(
         }
 
         // Fire final extraction on genuine disconnect
-        if (session.identity && session.identity.tenant_id && isInlineExtractionAvailable() && session.transcriptTurns.length > 0) {
+        if (session.identity && session.identity.tenant_id && session.transcriptTurns.length > 0) {
           const allText = session.transcriptTurns
             .map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`)
             .join('\n');
-          if (allText.length > 50) {
-            extractAndPersistFacts({
-              conversationText: allText,
-              tenant_id: session.identity.tenant_id,
-              user_id: session.identity.user_id,
-              session_id: session.sessionId,
-            }).catch(err => console.warn(`[VTID-01225-THROTTLE] Disconnect extraction failed: ${err.message}`));
-          }
+          // VTID-01230: Force extraction on disconnect (session end)
+          deduplicatedExtract({
+            conversationText: allText,
+            tenant_id: session.identity.tenant_id,
+            user_id: session.identity.user_id,
+            session_id: session.sessionId,
+            force: true,
+          });
+          // Clean up session buffer and extraction state
+          destroySessionBuffer(session.sessionId);
+          clearExtractionState(session.sessionId);
         }
       }
     });
@@ -4935,15 +4942,16 @@ router.post('/end-session', async (req: Request, res: Response) => {
         console.log(`[VTID-01225] Cognee extraction queued for session: ${orb_session_id} (tenant=${tenantId.substring(0, 8)}..., user=${userId.substring(0, 8)}...)`);
       }
 
-      // VTID-01225: Inline fact extraction - always runs (write_fact auto-supersedes)
-      if (isInlineExtractionAvailable() && fullTranscript.length > 50) {
-        extractAndPersistFacts({
-          conversationText: fullTranscript,
-          tenant_id: tenantId,
-          user_id: userId,
-          session_id: orb_session_id,
-        }).catch(err => console.warn(`[VTID-01225-inline] ORB session extraction failed:`, err.message));
-      }
+      // VTID-01230: Deduplicated extraction (force on session end)
+      deduplicatedExtract({
+        conversationText: fullTranscript,
+        tenant_id: tenantId,
+        user_id: userId,
+        session_id: orb_session_id,
+        force: true,
+      });
+      destroySessionBuffer(orb_session_id);
+      clearExtractionState(orb_session_id);
     }
   }
 
@@ -5212,15 +5220,16 @@ router.post('/session/finalize', async (req: Request, res: Response) => {
       console.log(`[VTID-01225] Cognee extraction queued for session: ${orb_session_id} (tenant=${tenantId.substring(0, 8)}..., user=${userId.substring(0, 8)}...)`);
     }
 
-    // VTID-01225: Inline fact extraction - always runs
-    if (isInlineExtractionAvailable() && fullTranscript.length > 50) {
-      extractAndPersistFacts({
-        conversationText: fullTranscript,
-        tenant_id: tenantId,
-        user_id: userId,
-        session_id: orb_session_id,
-      }).catch(err => console.warn(`[VTID-01225-inline] ORB session extraction failed:`, err.message));
-    }
+    // VTID-01230: Deduplicated extraction (force on session end)
+    deduplicatedExtract({
+      conversationText: fullTranscript,
+      tenant_id: tenantId,
+      user_id: userId,
+      session_id: orb_session_id,
+      force: true,
+    });
+    destroySessionBuffer(orb_session_id);
+    clearExtractionState(orb_session_id);
   }
 
   return res.status(200).json({
@@ -6203,15 +6212,14 @@ router.post('/live/session/stop', optionalAuth, async (req: AuthenticatedRequest
           console.log(`[VTID-01225] Cognee extraction queued from transcriptTurns (${session.transcriptTurns.length} turns): ${session_id}`);
         }
 
-        // VTID-01225: Inline fact extraction - always runs
-        if (isInlineExtractionAvailable()) {
-          extractAndPersistFacts({
-            conversationText: fullTranscript,
-            tenant_id: tenantId,
-            user_id: userId,
-            session_id: session_id,
-          }).catch(err => console.warn(`[VTID-01225-inline] Live session extraction failed:`, err.message));
-        }
+        // VTID-01230: Deduplicated extraction (force on session end)
+        deduplicatedExtract({
+          conversationText: fullTranscript,
+          tenant_id: tenantId,
+          user_id: userId,
+          session_id: session_id,
+          force: true,
+        });
       }
     } else {
       // Fallback: query memory_items if no in-memory transcript available
@@ -6229,15 +6237,14 @@ router.post('/live/session/stop', optionalAuth, async (req: AuthenticatedRequest
               console.log(`[VTID-01225] Cognee extraction queued from memory_items fallback: ${session_id}`);
             }
 
-            // VTID-01225: Inline fact extraction from memory_items fallback
-            if (isInlineExtractionAvailable()) {
-              extractAndPersistFacts({
-                conversationText: transcript,
-                tenant_id: tenantId,
-                user_id: userId,
-                session_id: session_id,
-              }).catch(err => console.warn(`[VTID-01225-inline] Memory fallback extraction failed:`, err.message));
-            }
+            // VTID-01230: Deduplicated extraction from memory_items fallback
+            deduplicatedExtract({
+              conversationText: transcript,
+              tenant_id: tenantId,
+              user_id: userId,
+              session_id: session_id,
+              force: true,
+            });
           } else {
             console.log(`[VTID-01225] No meaningful transcript for extraction: ${session_id}`);
           }
@@ -6249,29 +6256,9 @@ router.post('/live/session/stop', optionalAuth, async (req: AuthenticatedRequest
   }
   // VTID-01226: Removed fallback for unauthenticated sessions - auth is now required
 
-  // VTID-01225-READ-FIX: Fire inline fact extraction alongside Cognee.
-  // Previously, inline extraction only ran from conversation.ts (text path).
-  // Voice sessions (the primary interaction mode) produced ZERO per-session facts
-  // unless Cognee was enabled. Now both paths extract facts.
-  if (isInlineExtractionAvailable() && session.identity && session.identity.tenant_id) {
-    const transcript = session.transcriptTurns.length > 0
-      ? session.transcriptTurns
-          .map(turn => `${turn.role === 'user' ? 'User' : 'Assistant'}: ${turn.text}`)
-          .join('\n')
-      : null;
-
-    if (transcript && transcript.length > 50) {
-      extractAndPersistFacts({
-        conversationText: transcript,
-        tenant_id: session.identity.tenant_id,
-        user_id: session.identity.user_id,
-        session_id: session_id,
-      }).catch(err => {
-        console.warn(`[VTID-01225-READ-FIX] Inline fact extraction failed (non-blocking): ${err.message}`);
-      });
-      console.log(`[VTID-01225-READ-FIX] Inline fact extraction queued for voice session: ${session_id}`);
-    }
-  }
+  // VTID-01230: Clean up session buffer and extraction state on session stop
+  destroySessionBuffer(session_id);
+  clearExtractionState(session_id);
 
   // Remove from store
   liveSessions.delete(session_id);
@@ -6553,22 +6540,18 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
       session.sseResponse = null;
     }
 
-    // VTID-01225: Extract facts from accumulated transcript on disconnect
-    // This ensures facts learned during the live session are persisted before
-    // a potential reconnect, so they survive even if the session is never stopped.
-    if (session.identity && session.identity.tenant_id && session.transcriptTurns.length > 0 && isInlineExtractionAvailable()) {
+    // VTID-01230: Deduplicated extraction on SSE disconnect
+    if (session.identity && session.identity.tenant_id && session.transcriptTurns.length > 0) {
       const fullTranscript = session.transcriptTurns
         .map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`)
         .join('\n');
-      if (fullTranscript.length > 50) {
-        extractAndPersistFacts({
-          conversationText: fullTranscript,
-          tenant_id: session.identity.tenant_id,
-          user_id: session.identity.user_id,
-          session_id: sessionId,
-        }).catch(err => console.warn(`[VTID-01225-inline] Disconnect extraction failed:`, err.message));
-        console.log(`[VTID-01225] Triggered fact extraction on disconnect for ${sessionId} (${session.transcriptTurns.length} turns)`);
-      }
+      deduplicatedExtract({
+        conversationText: fullTranscript,
+        tenant_id: session.identity.tenant_id,
+        user_id: session.identity.user_id,
+        session_id: sessionId,
+        force: true,
+      });
     }
 
     // VTID-01219: Close upstream WebSocket on client disconnect
@@ -8220,21 +8203,21 @@ function cleanupWsSession(sessionId: string): void {
 
   // Close Live API session if active
   if (clientSession.liveSession) {
-    // VTID-01225: Extract facts from accumulated transcript on WebSocket disconnect
+    // VTID-01230: Deduplicated extraction on WebSocket disconnect
     const ls = clientSession.liveSession;
-    if (ls.identity && ls.identity.tenant_id && ls.transcriptTurns.length > 0 && isInlineExtractionAvailable()) {
+    if (ls.identity && ls.identity.tenant_id && ls.transcriptTurns.length > 0) {
       const fullTranscript = ls.transcriptTurns
         .map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`)
         .join('\n');
-      if (fullTranscript.length > 50) {
-        extractAndPersistFacts({
-          conversationText: fullTranscript,
-          tenant_id: ls.identity.tenant_id,
-          user_id: ls.identity.user_id,
-          session_id: sessionId,
-        }).catch(err => console.warn(`[VTID-01225-inline] WS disconnect extraction failed:`, err.message));
-        console.log(`[VTID-01225] Triggered fact extraction on WS disconnect for ${sessionId} (${ls.transcriptTurns.length} turns)`);
-      }
+      deduplicatedExtract({
+        conversationText: fullTranscript,
+        tenant_id: ls.identity.tenant_id,
+        user_id: ls.identity.user_id,
+        session_id: sessionId,
+        force: true,
+      });
+      destroySessionBuffer(sessionId);
+      clearExtractionState(sessionId);
     }
 
     clientSession.liveSession.active = false;

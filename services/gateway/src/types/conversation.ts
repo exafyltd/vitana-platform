@@ -271,6 +271,13 @@ export interface ContextPack {
   /** Relationship graph context from cognee extraction (human-readable strings) */
   relationship_context?: string[];
 
+  /** VTID-01230: Session buffer — recent turns from the current conversation */
+  session_buffer?: {
+    turn_count: number;
+    session_facts_count: number;
+    formatted_context: string;
+  };
+
   /** Retrieval trace for debugging */
   retrieval_trace: {
     router_decision: RetrievalRouterDecision;

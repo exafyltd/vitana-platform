@@ -43,6 +43,8 @@ import { searchKnowledge, KnowledgeSearchRequest } from './knowledge-hub';
 import { getCurrentFacts } from './memory-facts-service';
 import { generateEmbedding } from './embedding-service';
 import { ContextLens } from '../types/context-lens';
+// VTID-01230: Session buffer for Tier 0 short-term memory
+import { formatSessionBufferForLLM, getSessionContext } from './session-memory-buffer';
 
 // =============================================================================
 // Identity Core — fact keys that are ALWAYS loaded regardless of limits
@@ -111,8 +113,11 @@ function fetchWithTimeout(timeoutMs: number = CONTEXT_PACK_CONFIG.FETCH_TIMEOUT_
 // =============================================================================
 
 /**
- * Fetch memory hits from Memory Garden
- * Queries memory_items directly with user/tenant scoping (SERVICE_ROLE bypasses RLS)
+ * VTID-01230: Fetch memory hits using semantic search (primary) with REST fallback.
+ *
+ * Previous approach: REST query sorted by importance+recency, then keyword scoring.
+ * New approach: Generate embedding for query → pgvector cosine similarity search.
+ * Falls back to REST if embedding generation fails or query is too short.
  */
 async function fetchMemoryHits(
   lens: ContextLens,
@@ -135,70 +140,183 @@ async function fetchMemoryHits(
       return { hits: [], latency_ms: Date.now() - startTime };
     }
 
-    // Query memory_items directly with user/tenant scoping
-    // The RPC memory_get_context relies on JWT context (auth.uid()) which doesn't
-    // work with SERVICE_ROLE key, so we query the table directly instead.
-    // VTID-01225: Fetch more items and use compound sorting (importance + recency)
-    // so recent ORB conversations aren't buried under old high-importance items
-    const fetchLimit = limit * 3; // Over-fetch to allow re-ranking by relevance
-
-    let url = `${SUPABASE_URL}/rest/v1/memory_items?select=id,category_key,content,importance,occurred_at,source&tenant_id=eq.${lens.tenant_id}&user_id=eq.${lens.user_id}&order=importance.desc,occurred_at.desc&limit=${fetchLimit}`;
-
-    if (lens.allowed_categories && lens.allowed_categories.length > 0) {
-      url += `&category_key=in.(${lens.allowed_categories.join(',')})`;
-    }
-
-    // VTID-01224-FIX: Add AbortController timeout to prevent hanging fetch
-    const timeout = fetchWithTimeout();
-    try {
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: SUPABASE_SERVICE_ROLE,
-          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-        },
-        signal: timeout.signal,
-      });
-
-      if (!response.ok) {
-        console.warn(`[VTID-01216] Memory retrieval failed: ${response.status}`);
-        return { hits: [], latency_ms: Date.now() - startTime };
+    // VTID-01230: Try semantic search first for meaningful queries
+    if (query && query.trim().length > 5) {
+      const semanticHits = await fetchMemoryHitsSemantic(
+        SUPABASE_URL, SUPABASE_SERVICE_ROLE, lens, query, limit
+      );
+      if (semanticHits.length > 0) {
+        console.log(`[VTID-01230] Semantic memory_items: ${semanticHits.length} hits (${Date.now() - startTime}ms)`);
+        return { hits: semanticHits, latency_ms: Date.now() - startTime };
       }
-
-      const results = await response.json() as Array<{
-        id: string;
-        category_key: string;
-        content: string;
-        importance: number;
-        occurred_at: string;
-        source: string;
-      }>;
-
-      // Score and transform results
-      const hits: MemoryHit[] = results.map((r, index) => ({
-        id: r.id,
-        category_key: r.category_key,
-        content: r.content.substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
-        importance: r.importance,
-        occurred_at: r.occurred_at,
-        source: r.source,
-        relevance_score: computeRelevanceScore(r, query, index),
-      }));
-
-      // Sort by relevance score
-      hits.sort((a, b) => b.relevance_score - a.relevance_score);
-
-      return {
-        hits: hits.slice(0, Math.min(limit, CONTEXT_PACK_CONFIG.MAX_MEMORY_HITS)),
-        latency_ms: Date.now() - startTime,
-      };
-    } finally {
-      timeout.clear();
+      // Fall through to REST if semantic search returned nothing
     }
+
+    // Fallback: REST query with importance+recency sort
+    return await fetchMemoryHitsREST(SUPABASE_URL, SUPABASE_SERVICE_ROLE, lens, query, limit, startTime);
   } catch (error: any) {
     console.error(`[VTID-01216] Memory retrieval error: ${error.message}`);
     return { hits: [], latency_ms: Date.now() - startTime };
+  }
+}
+
+/**
+ * VTID-01230: Semantic search path for memory_items.
+ * Generates query embedding → calls existing semantic_memory_search RPC (VTID-01184).
+ * No new migration required — this RPC was deployed in 20260221.
+ */
+async function fetchMemoryHitsSemantic(
+  supabaseUrl: string,
+  serviceRole: string,
+  lens: ContextLens,
+  query: string,
+  limit: number,
+): Promise<MemoryHit[]> {
+  const timeout = fetchWithTimeout();
+  try {
+    // Generate query embedding
+    const embResult = await generateEmbedding(query);
+    if (!embResult.ok || !embResult.embedding) {
+      console.warn(`[VTID-01230] Embedding generation failed for memory_items semantic search: ${embResult.error}`);
+      return [];
+    }
+
+    // Use the existing semantic_memory_search RPC (deployed in VTID-01184/01225)
+    const resp = await fetch(`${supabaseUrl}/rest/v1/rpc/semantic_memory_search`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: serviceRole,
+        Authorization: `Bearer ${serviceRole}`,
+      },
+      body: JSON.stringify({
+        p_query_embedding: JSON.stringify(embResult.embedding),
+        p_top_k: limit * 2,
+        p_tenant_id: lens.tenant_id,
+        p_user_id: lens.user_id,
+      }),
+      signal: timeout.signal,
+    });
+
+    if (!resp.ok) {
+      // RPC may not exist yet — fall through to REST silently
+      if (resp.status === 404) {
+        console.log(`[VTID-01230] semantic_memory_search RPC not found — using REST fallback`);
+      } else {
+        console.warn(`[VTID-01230] Semantic search RPC failed: ${resp.status}`);
+      }
+      return [];
+    }
+
+    // The RPC returns: id, category_key, content, content_json, importance,
+    // source, embedding_similarity, created_at, updated_at
+    const results = await resp.json() as Array<{
+      id: string;
+      category_key: string;
+      content: string;
+      importance: number;
+      source: string;
+      embedding_similarity: number;
+      created_at: string;
+    }>;
+
+    return results.map((r) => ({
+      id: r.id,
+      category_key: r.category_key,
+      content: r.content.substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
+      importance: r.importance,
+      occurred_at: r.created_at, // RPC returns created_at, not occurred_at
+      source: r.source,
+      // Blend semantic similarity with importance and recency
+      relevance_score: Math.min(1,
+        r.embedding_similarity * 0.5 +
+        (r.importance / 100) * 0.3 +
+        computeRecencyBoost(r.created_at) * 0.2
+      ),
+    })).slice(0, Math.min(limit, CONTEXT_PACK_CONFIG.MAX_MEMORY_HITS));
+  } catch (err: any) {
+    if (err.name === 'AbortError') {
+      console.warn(`[VTID-01230] Semantic memory_items search timed out`);
+    } else {
+      console.warn(`[VTID-01230] Semantic memory_items search error: ${err.message}`);
+    }
+    return [];
+  } finally {
+    timeout.clear();
+  }
+}
+
+/**
+ * Compute a 0-1 recency boost (exponential decay, 7-day half-life).
+ */
+function computeRecencyBoost(occurred_at: string): number {
+  const ageHours = (Date.now() - new Date(occurred_at).getTime()) / (1000 * 60 * 60);
+  return Math.exp(-ageHours / 168);
+}
+
+/**
+ * Original REST-based memory_items retrieval (fallback).
+ */
+async function fetchMemoryHitsREST(
+  supabaseUrl: string,
+  serviceRole: string,
+  lens: ContextLens,
+  query: string,
+  limit: number,
+  startTime: number,
+): Promise<{ hits: MemoryHit[]; latency_ms: number }> {
+  const fetchLimit = limit * 3;
+
+  let url = `${supabaseUrl}/rest/v1/memory_items?select=id,category_key,content,importance,occurred_at,source&tenant_id=eq.${lens.tenant_id}&user_id=eq.${lens.user_id}&order=importance.desc,occurred_at.desc&limit=${fetchLimit}`;
+
+  if (lens.allowed_categories && lens.allowed_categories.length > 0) {
+    url += `&category_key=in.(${lens.allowed_categories.join(',')})`;
+  }
+
+  const timeout = fetchWithTimeout();
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: serviceRole,
+        Authorization: `Bearer ${serviceRole}`,
+      },
+      signal: timeout.signal,
+    });
+
+    if (!response.ok) {
+      console.warn(`[VTID-01216] Memory REST retrieval failed: ${response.status}`);
+      return { hits: [], latency_ms: Date.now() - startTime };
+    }
+
+    const results = await response.json() as Array<{
+      id: string;
+      category_key: string;
+      content: string;
+      importance: number;
+      occurred_at: string;
+      source: string;
+    }>;
+
+    const hits: MemoryHit[] = results.map((r, index) => ({
+      id: r.id,
+      category_key: r.category_key,
+      content: r.content.substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
+      importance: r.importance,
+      occurred_at: r.occurred_at,
+      source: r.source,
+      relevance_score: computeRelevanceScore(r, query, index),
+    }));
+
+    hits.sort((a, b) => b.relevance_score - a.relevance_score);
+
+    return {
+      hits: hits.slice(0, Math.min(limit, CONTEXT_PACK_CONFIG.MAX_MEMORY_HITS)),
+      latency_ms: Date.now() - startTime,
+    };
+  } finally {
+    timeout.clear();
   }
 }
 
@@ -910,6 +1028,9 @@ export interface BuildContextPackInput {
 
   /** Optional VTID link */
   vtid?: string;
+
+  /** VTID-01230: Session ID for session buffer lookup (thread_id or orb session ID) */
+  session_id?: string;
 }
 
 /**
@@ -1034,11 +1155,30 @@ export async function buildContextPack(
     hitCounts.memory_garden = memoryHits.length;
   }
 
+  // VTID-01230: Session buffer — inject recent turns from Tier 0
+  // This is the FASTEST path: no DB round-trip, guaranteed turn-to-turn coherence
+  const sessionId = input.session_id || input.thread_id;
+  const sessionCtx = getSessionContext(sessionId);
+  const sessionBufferFormatted = formatSessionBufferForLLM(sessionId);
+  const sessionBufferData = sessionCtx ? {
+    turn_count: sessionCtx.turn_count,
+    session_facts_count: Object.keys(sessionCtx.session_facts).length,
+    formatted_context: sessionBufferFormatted,
+  } : undefined;
+
+  if (sessionBufferData && sessionBufferData.turn_count > 0) {
+    console.log(`[VTID-01230] Session buffer: ${sessionBufferData.turn_count} turns, ${sessionBufferData.session_facts_count} facts for session ${sessionId.substring(0, 8)}...`);
+  }
+
   // Estimate token usage
   const estimateTokens = (obj: unknown): number => {
     const str = JSON.stringify(obj);
     return Math.ceil(str.length / CONTEXT_PACK_CONFIG.CHARS_PER_TOKEN);
   };
+
+  const sessionBufferTokens = sessionBufferFormatted
+    ? Math.ceil(sessionBufferFormatted.length / CONTEXT_PACK_CONFIG.CHARS_PER_TOKEN)
+    : 0;
 
   const tokensUsed =
     estimateTokens(memoryHits) +
@@ -1047,6 +1187,7 @@ export async function buildContextPack(
     estimateTokens(activeVtids) +
     estimateTokens(toolHealth) +
     estimateTokens(relationshipContext) +
+    sessionBufferTokens +
     500; // Overhead for other fields
 
   // Build the pack
@@ -1081,6 +1222,7 @@ export async function buildContextPack(
     tool_health: toolHealth,
     ui_context: input.ui_context,
     relationship_context: relationshipContext.length > 0 ? relationshipContext : undefined,
+    session_buffer: sessionBufferData,
 
     retrieval_trace: {
       router_decision: input.router_decision,
@@ -1126,6 +1268,13 @@ export async function buildContextPack(
  */
 export function formatContextPackForLLM(pack: ContextPack): string {
   let context = '';
+
+  // VTID-01230: Session buffer FIRST — highest priority, most recent context
+  // This ensures the LLM always sees what was just said, even before async
+  // fact extraction completes or DB writes propagate
+  if (pack.session_buffer && pack.session_buffer.formatted_context) {
+    context += pack.session_buffer.formatted_context;
+  }
 
   // Identity section
   context += `<user_context>\n`;
