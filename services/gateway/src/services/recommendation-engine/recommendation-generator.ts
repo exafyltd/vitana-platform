@@ -36,6 +36,11 @@ import {
   UserBehaviorSignal,
   generateUserBehaviorFingerprint,
 } from './analyzers/user-behavior-analyzer';
+import {
+  analyzeCommunityUser,
+  CommunityUserSignal,
+  generateCommunityUserFingerprint,
+} from './analyzers/community-user-analyzer';
 
 const LOG_PREFIX = '[VTID-01185:Generator]';
 
@@ -43,7 +48,7 @@ const LOG_PREFIX = '[VTID-01185:Generator]';
 // Types
 // =============================================================================
 
-export type SourceType = 'codebase' | 'oasis' | 'health' | 'roadmap' | 'llm' | 'behavior';
+export type SourceType = 'codebase' | 'oasis' | 'health' | 'roadmap' | 'llm' | 'behavior' | 'community';
 
 export interface GeneratedRecommendation {
   title: string;
@@ -58,6 +63,8 @@ export interface GeneratedRecommendation {
   suggested_files: string[];
   suggested_endpoints: string[];
   suggested_tests: string[];
+  user_id?: string;
+  time_estimate_seconds?: number;
 }
 
 export interface GenerationResult {
@@ -559,6 +566,8 @@ export async function generateRecommendations(
         p_suggested_endpoints: rec.suggested_endpoints,
         p_suggested_tests: rec.suggested_tests,
         p_expires_days: 30,
+        p_user_id: rec.user_id || null,
+        p_time_estimate_seconds: rec.time_estimate_seconds || null,
       });
 
       if (insertResult.ok) {
@@ -618,6 +627,179 @@ export async function generateRecommendations(
       errors: [{ source: 'system', error: errorMessage }],
       duration_ms: Date.now() - startTime,
       analysis_summary: analysisSummary,
+    };
+  }
+}
+
+// =============================================================================
+// Community User Signal Converter
+// =============================================================================
+
+function convertCommunityUserSignal(
+  signal: CommunityUserSignal,
+  userId: string
+): GeneratedRecommendation {
+  return {
+    title: signal.title,
+    summary: signal.summary,
+    domain: signal.domain,
+    impact_score: signal.impact_score,
+    effort_score: signal.effort_score,
+    risk_level: signal.priority === 'critical' ? 'critical' : signal.priority as 'low' | 'medium' | 'high',
+    source_type: 'community',
+    source_ref: signal.source_detail,
+    fingerprint: generateCommunityUserFingerprint(userId, signal.signal_type, signal.title),
+    suggested_files: [],
+    suggested_endpoints: [],
+    suggested_tests: [],
+    user_id: userId,
+    time_estimate_seconds: signal.time_estimate_seconds,
+  };
+}
+
+// =============================================================================
+// Per-User Personal Recommendation Generator
+// =============================================================================
+
+export async function generatePersonalRecommendations(
+  userId: string,
+  tenantId: string,
+  config?: Partial<GenerationConfig>
+): Promise<GenerationResult> {
+  const startTime = Date.now();
+  const errors: Array<{ source: string; error: string }> = [];
+
+  console.log(`${LOG_PREFIX} Generating personal recommendations for user ${userId.slice(0, 8)}...`);
+
+  // Create run record
+  const runResult = await callRpc<{ run_id: string }>('create_autopilot_recommendation_run', {
+    p_sources: ['community'],
+    p_trigger_type: config?.trigger_type || 'manual',
+    p_triggered_by: userId,
+  });
+
+  if (!runResult.ok || !runResult.data?.run_id) {
+    console.error(`${LOG_PREFIX} Failed to create personal run record:`, runResult.error);
+    return {
+      ok: false,
+      run_id: 'unknown',
+      generated: 0,
+      duplicates_skipped: 0,
+      errors: [{ source: 'system', error: runResult.error || 'Failed to create run' }],
+      duration_ms: Date.now() - startTime,
+      analysis_summary: {},
+    };
+  }
+
+  const runId = runResult.data.run_id;
+
+  try {
+    // Get Supabase client
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error('Missing Supabase credentials');
+    }
+
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Run community user analyzer
+    const result = await analyzeCommunityUser(userId, tenantId, supabase);
+
+    if (!result.ok) {
+      errors.push({ source: 'community', error: result.error || 'Analysis failed' });
+    }
+
+    // Convert signals to recommendations
+    const recommendations: GeneratedRecommendation[] = result.signals.map((s) =>
+      convertCommunityUserSignal(s, userId)
+    );
+
+    // Insert with deduplication
+    let generated = 0;
+    let duplicatesSkipped = 0;
+
+    for (const rec of recommendations) {
+      const insertResult = await callRpc<{ duplicate?: boolean }>('insert_autopilot_recommendation', {
+        p_title: rec.title,
+        p_summary: rec.summary,
+        p_domain: rec.domain,
+        p_risk_level: rec.risk_level,
+        p_impact_score: rec.impact_score,
+        p_effort_score: rec.effort_score,
+        p_source_type: rec.source_type,
+        p_source_ref: rec.source_ref,
+        p_fingerprint: rec.fingerprint,
+        p_run_id: runId,
+        p_suggested_files: rec.suggested_files,
+        p_suggested_endpoints: rec.suggested_endpoints,
+        p_suggested_tests: rec.suggested_tests,
+        p_expires_days: 7, // Personal recs expire faster
+        p_user_id: rec.user_id || null,
+        p_time_estimate_seconds: rec.time_estimate_seconds || null,
+      });
+
+      if (insertResult.ok) {
+        if (insertResult.data?.duplicate) {
+          duplicatesSkipped++;
+        } else {
+          generated++;
+        }
+      } else {
+        errors.push({ source: 'community', error: insertResult.error || 'Insert failed' });
+      }
+    }
+
+    // Complete the run
+    const duration = Date.now() - startTime;
+    await callRpc('complete_autopilot_recommendation_run', {
+      p_run_id: runId,
+      p_status: 'completed',
+      p_recommendations_generated: generated,
+      p_duplicates_skipped: duplicatesSkipped,
+      p_errors: JSON.stringify(errors),
+      p_analysis_summary: JSON.stringify({
+        community: result.user_context,
+      }),
+    });
+
+    console.log(
+      `${LOG_PREFIX} Personal generation complete for ${userId.slice(0, 8)}. ` +
+      `Generated: ${generated}, Duplicates: ${duplicatesSkipped}, Duration: ${duration}ms`
+    );
+
+    return {
+      ok: true,
+      run_id: runId,
+      generated,
+      duplicates_skipped: duplicatesSkipped,
+      errors,
+      duration_ms: duration,
+      analysis_summary: { community: result.user_context },
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`${LOG_PREFIX} Personal generation failed:`, errorMessage);
+
+    await callRpc('complete_autopilot_recommendation_run', {
+      p_run_id: runId,
+      p_status: 'failed',
+      p_recommendations_generated: 0,
+      p_duplicates_skipped: 0,
+      p_errors: JSON.stringify([{ source: 'system', error: errorMessage }]),
+      p_analysis_summary: '{}',
+    });
+
+    return {
+      ok: false,
+      run_id: runId,
+      generated: 0,
+      duplicates_skipped: 0,
+      errors: [{ source: 'system', error: errorMessage }],
+      duration_ms: Date.now() - startTime,
+      analysis_summary: {},
     };
   }
 }

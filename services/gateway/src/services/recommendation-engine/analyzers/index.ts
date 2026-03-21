@@ -10,3 +10,4 @@ export * from './health-analyzer';
 export * from './roadmap-analyzer';
 export * from './llm-analyzer';
 export * from './user-behavior-analyzer';
+export * from './community-user-analyzer';

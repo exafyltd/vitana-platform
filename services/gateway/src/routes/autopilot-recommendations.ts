@@ -23,7 +23,7 @@
 import { Router, Request, Response } from 'express';
 import { createHash } from 'crypto';
 import { emitOasisEvent } from '../services/oasis-event-service';
-import { generateRecommendations, SourceType } from '../services/recommendation-engine';
+import { generateRecommendations, generatePersonalRecommendations, SourceType } from '../services/recommendation-engine';
 import { notifyUserAsync } from '../services/notification-service';
 
 const router = Router();
@@ -182,6 +182,75 @@ router.get('/count', async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error(`${LOG_PREFIX} Count error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// =============================================================================
+// POST /recommendations/generate-personal - Generate per-user personalized recs
+// =============================================================================
+/**
+ * POST /recommendations/generate-personal
+ *
+ * Generates personalized community recommendations for the authenticated user.
+ * Uses the Community User Analyzer to assess onboarding stage, health scores,
+ * diary mood, connections, and more.
+ *
+ * Body:
+ * {
+ *   force?: boolean // Force regeneration even if recently run
+ * }
+ *
+ * Response:
+ * {
+ *   ok: true,
+ *   generated: 5,
+ *   duplicates_skipped: 2,
+ *   run_id: "rec-gen-...",
+ *   duration_ms: 1200
+ * }
+ */
+router.post('/generate-personal', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ ok: false, error: 'User ID required' });
+    }
+
+    console.log(`${LOG_PREFIX} Personal generation requested for ${userId.slice(0, 8)}`);
+
+    // Get tenant ID for the user
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    if (!supabaseUrl || !svcKey) {
+      return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+    }
+
+    const { createClient } = await import('@supabase/supabase-js');
+    const supa = createClient(supabaseUrl, svcKey);
+    const { data: tenantRow } = await supa
+      .from('user_tenants')
+      .select('tenant_id')
+      .eq('user_id', userId)
+      .eq('is_primary', true)
+      .maybeSingle();
+
+    const tenantId = tenantRow?.tenant_id || process.env.DEFAULT_TENANT_ID;
+    if (!tenantId) {
+      return res.status(400).json({ ok: false, error: 'No tenant found for user' });
+    }
+
+    const result = await generatePersonalRecommendations(userId, tenantId, {
+      trigger_type: 'manual',
+    });
+
+    return res.status(result.ok ? 200 : 500).json({
+      ...result,
+      vtid: 'VTID-01185',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error(`${LOG_PREFIX} Personal generation error:`, error);
     return res.status(500).json({ ok: false, error: error.message });
   }
 });

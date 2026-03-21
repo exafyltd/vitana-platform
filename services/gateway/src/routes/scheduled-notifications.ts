@@ -17,6 +17,7 @@
 
 import { Router, Request, Response } from 'express';
 import { notifyUserAsync, sendPushToUser, sendAppilixPush } from '../services/notification-service';
+import { generatePersonalRecommendations } from '../services/recommendation-engine';
 
 const router = Router();
 
@@ -45,8 +46,160 @@ function getTenantId(req: Request): string | null {
 }
 
 // =============================================================================
-// POST /morning-briefing — Daily 7 AM UTC
+// POST /morning-briefing — Daily 7 AM UTC (Personalized from Maxina)
 // =============================================================================
+
+const MORNING_GREETINGS = [
+  'Guten Morgen',
+  'Schönen guten Morgen',
+  'Einen wunderschönen Morgen',
+  'Hey',
+  'Hallo',
+  'Moin',
+];
+
+const MAXINA_CLOSINGS = [
+  'Deine Maxina wünscht dir einen tollen Tag!',
+  'Ich bin da, wenn du mich brauchst. Deine Maxina.',
+  'Lass uns gemeinsam einen guten Tag machen!',
+  'Du schaffst das! Deine Maxina.',
+  'Einen schönen Tag wünscht dir Maxina.',
+  'Maxina glaubt an dich!',
+  'Mach das Beste aus heute! Deine Maxina.',
+];
+
+interface BriefingContext {
+  userName: string | null;
+  healthScore: number | null;
+  healthTrend: 'steigend' | 'stabil' | 'sinkend' | null;
+  diaryMood: string | null;
+  diaryStreak: number;
+  pendingMatchCount: number;
+  newRecCount: number;
+  connectionCount: number;
+}
+
+async function gatherBriefingContext(supa: any, userId: string, tenantId: string): Promise<BriefingContext> {
+  const [nameResult, healthResult, diaryResult, matchResult, recResult, connResult, streakResult] = await Promise.all([
+    supa.from('memory_facts').select('fact_value').eq('user_id', userId).in('fact_key', ['display_name', 'name']).limit(1),
+    supa.from('vitana_index_scores').select('score_total').eq('user_id', userId).order('created_at', { ascending: false }).limit(2),
+    supa.from('memory_items').select('tags, metadata').eq('user_id', userId).eq('item_type', 'diary').order('created_at', { ascending: false }).limit(1),
+    supa.from('matches_daily').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('tenant_id', tenantId).is('feedback', null),
+    supa.from('autopilot_recommendations').select('id', { count: 'exact', head: true }).eq('status', 'new').or(`user_id.is.null,user_id.eq.${userId}`),
+    supa.from('relationship_edges').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('tenant_id', tenantId).eq('target_type', 'person').eq('relationship_type', 'connected'),
+    supa.from('memory_items').select('created_at').eq('user_id', userId).eq('item_type', 'diary').order('created_at', { ascending: false }).limit(14),
+  ]);
+
+  // Parse health trend
+  const healthRows = healthResult.data || [];
+  let healthScore: number | null = null;
+  let healthTrend: 'steigend' | 'stabil' | 'sinkend' | null = null;
+  if (healthRows.length > 0) {
+    healthScore = healthRows[0].score_total;
+    if (healthRows.length > 1) {
+      const delta = healthRows[0].score_total - healthRows[1].score_total;
+      healthTrend = delta > 2 ? 'steigend' : delta < -2 ? 'sinkend' : 'stabil';
+    }
+  }
+
+  // Parse diary mood
+  let diaryMood: string | null = null;
+  if (diaryResult.data?.length > 0) {
+    const meta = diaryResult.data[0].metadata as any;
+    const tags = diaryResult.data[0].tags as string[] || [];
+    diaryMood = meta?.mood || tags.find((t: string) => ['happy', 'sad', 'anxious', 'calm', 'stressed', 'energetic', 'tired'].includes(t)) || null;
+  }
+
+  // Calculate diary streak
+  let diaryStreak = 0;
+  const entries = streakResult.data || [];
+  if (entries.length > 0) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    let checkDate = new Date(today);
+    for (const entry of entries) {
+      const entryDate = new Date(entry.created_at);
+      entryDate.setHours(0, 0, 0, 0);
+      if (entryDate.getTime() === checkDate.getTime()) {
+        diaryStreak++;
+        checkDate.setDate(checkDate.getDate() - 1);
+      } else if (entryDate.getTime() < checkDate.getTime()) {
+        if (checkDate.getTime() - entryDate.getTime() <= 86400000) {
+          checkDate = new Date(entryDate);
+          diaryStreak++;
+          checkDate.setDate(checkDate.getDate() - 1);
+        } else {
+          break;
+        }
+      }
+    }
+  }
+
+  return {
+    userName: nameResult.data?.[0]?.fact_value || null,
+    healthScore,
+    healthTrend,
+    diaryMood,
+    diaryStreak,
+    pendingMatchCount: matchResult.count || 0,
+    newRecCount: recResult.count || 0,
+    connectionCount: connResult.count || 0,
+  };
+}
+
+function composeMorningBriefing(ctx: BriefingContext): string {
+  const parts: string[] = [];
+
+  // 1. Greeting
+  const greeting = MORNING_GREETINGS[Math.floor(Math.random() * MORNING_GREETINGS.length)];
+  parts.push(ctx.userName ? `${greeting}, ${ctx.userName}!` : `${greeting}!`);
+
+  // 2. Health pulse
+  if (ctx.healthScore !== null) {
+    const trendEmoji = ctx.healthTrend === 'steigend' ? '↑' : ctx.healthTrend === 'sinkend' ? '↓' : '→';
+    parts.push(`Dein Vitana-Index: ${ctx.healthScore}/100 ${trendEmoji}`);
+  }
+
+  // 3. Mood acknowledgment
+  if (ctx.diaryMood) {
+    const moodMessages: Record<string, string> = {
+      sad: 'Gestern war ein schwieriger Tag. Heute wird besser!',
+      anxious: 'Ich sehe, dass es dir nicht so gut ging. Ich bin für dich da.',
+      stressed: 'Lass uns heute etwas ruhiger angehen.',
+      happy: 'Toll, dass es dir gut geht! Weiter so!',
+      energetic: 'Du hattest gestern richtig viel Energie!',
+      calm: 'Schön, dass du ausgeglichen bist.',
+      tired: 'Nimm dir heute Zeit für dich.',
+    };
+    if (moodMessages[ctx.diaryMood]) {
+      parts.push(moodMessages[ctx.diaryMood]);
+    }
+  }
+
+  // 4. Streak celebration
+  if (ctx.diaryStreak >= 7) {
+    parts.push(`${ctx.diaryStreak}-Tage-Tagebuch-Serie! Beeindruckend!`);
+  } else if (ctx.diaryStreak >= 3) {
+    parts.push(`Schon ${ctx.diaryStreak} Tage in Folge Tagebuch geschrieben. Bleib dran!`);
+  }
+
+  // 5. Social pulse
+  if (ctx.pendingMatchCount > 0) {
+    parts.push(`${ctx.pendingMatchCount} neue Match${ctx.pendingMatchCount > 1 ? 'es' : ''} warten auf dich.`);
+  }
+
+  // 6. Recommendations
+  if (ctx.newRecCount > 0) {
+    parts.push(`${ctx.newRecCount} Autopilot-Aktion${ctx.newRecCount > 1 ? 'en' : ''} bereit.`);
+  }
+
+  // 7. Closing
+  const closing = MAXINA_CLOSINGS[Math.floor(Math.random() * MAXINA_CLOSINGS.length)];
+  parts.push(closing);
+
+  return parts.join(' ');
+}
+
 router.post('/morning-briefing', async (req: Request, res: Response) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
@@ -58,15 +211,33 @@ router.post('/morning-briefing', async (req: Request, res: Response) => {
   let dispatched = 0;
 
   for (const { user_id } of users) {
-    notifyUserAsync(user_id, tenantId, 'morning_briefing_ready', {
-      title: 'Good Morning!',
-      body: 'Your daily briefing is ready. See what\'s happening today.',
-      data: { url: '/dashboard' },
-    }, supa);
-    dispatched++;
+    try {
+      // Generate fresh personal recommendations for this user
+      await generatePersonalRecommendations(user_id, tenantId, { trigger_type: 'scheduled' });
+
+      // Gather briefing context and compose personalized message
+      const ctx = await gatherBriefingContext(supa, user_id, tenantId);
+      const briefingBody = composeMorningBriefing(ctx);
+
+      notifyUserAsync(user_id, tenantId, 'morning_briefing_ready', {
+        title: ctx.userName ? `${MORNING_GREETINGS[Math.floor(Math.random() * MORNING_GREETINGS.length)]}, ${ctx.userName}!` : 'Guten Morgen!',
+        body: briefingBody,
+        data: { url: '/dashboard' },
+      }, supa);
+      dispatched++;
+    } catch (err: any) {
+      console.warn(`[Scheduled] morning_briefing error for ${user_id.slice(0, 8)}: ${err.message}`);
+      // Fallback to basic notification
+      notifyUserAsync(user_id, tenantId, 'morning_briefing_ready', {
+        title: 'Guten Morgen!',
+        body: 'Dein tägliches Briefing ist bereit. Schau mal rein!',
+        data: { url: '/dashboard' },
+      }, supa);
+      dispatched++;
+    }
   }
 
-  console.log(`[Scheduled] morning_briefing_ready → ${dispatched} users`);
+  console.log(`[Scheduled] morning_briefing_ready → ${dispatched} users (personalized)`);
   return res.status(200).json({ ok: true, dispatched });
 });
 

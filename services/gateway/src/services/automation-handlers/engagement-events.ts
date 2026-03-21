@@ -148,8 +148,30 @@ async function runNoShowFollowUp(ctx: AutomationContext) {
 // =============================================================================
 
 async function runMorningBriefing(ctx: AutomationContext) {
-  ctx.log('Morning briefing (delegates to scheduled-notifications/morning-briefing)');
-  return { usersAffected: 0, actionsTaken: 0 };
+  ctx.log('Morning briefing — generating personal recs + dispatching briefings');
+  const { tenantId } = ctx;
+
+  try {
+    // Delegate to scheduled-notifications/morning-briefing endpoint
+    const gatewayUrl = process.env.GATEWAY_INTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
+    const resp = await fetch(`${gatewayUrl}/api/v1/scheduled-notifications/morning-briefing`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tenant_id: tenantId }),
+    });
+
+    if (!resp.ok) {
+      ctx.log(`Morning briefing endpoint failed: ${resp.status}`);
+      return { usersAffected: 0, actionsTaken: 0 };
+    }
+
+    const result = await resp.json() as any;
+    ctx.log(`Morning briefing dispatched to ${result.dispatched || 0} users`);
+    return { usersAffected: result.dispatched || 0, actionsTaken: result.dispatched || 0 };
+  } catch (err: any) {
+    ctx.log(`Morning briefing error: ${err.message}`);
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
 }
 
 async function runWeeklyCommunityDigest(ctx: AutomationContext) {
