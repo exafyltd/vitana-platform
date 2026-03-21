@@ -733,8 +733,8 @@ function extractTitle(rawDescription: string): string {
 }
 
 /**
- * Create a VTID for an operator task
- * Uses the existing VTID generation RPC
+ * @deprecated Legacy VTID generation using next_vtid RPC. Use allocateVtid() instead.
+ * Produces wrong format (DEV-MODULE-YYYY-NNNN) instead of VTID-XXXXX.
  */
 async function generateVtid(family: string, module: string): Promise<string | null> {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
@@ -767,7 +767,8 @@ async function generateVtid(family: string, module: string): Promise<string | nu
 }
 
 /**
- * Insert a task entry into vtid_ledger
+ * @deprecated Legacy task entry insertion. Shell entries are now created atomically
+ * by allocate_global_vtid RPC and updated via updateAllocatedTaskEntry().
  */
 async function insertTaskEntry(params: {
   vtid: string;
@@ -801,7 +802,7 @@ async function insertTaskEntry(params: {
     };
 
     // Use VtidLedger (PascalCase) to match existing vtid.ts pattern
-    const resp = await fetch(`${SUPABASE_URL}/rest/v1/VtidLedger`, {
+    const resp = await fetch(`${SUPABASE_URL}/rest/v1/vtid_ledger`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -925,14 +926,14 @@ async function updateAllocatedTaskEntry(params: {
     };
 
     const resp = await fetch(
-      `${SUPABASE_URL}/rest/v1/VtidLedger?vtid=eq.${encodeURIComponent(params.vtid)}`,
+      `${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(params.vtid)}`,
       {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           apikey: SUPABASE_SERVICE_ROLE,
           Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-          Prefer: 'return=minimal'
+          Prefer: 'return=representation'
         },
         body: JSON.stringify(updatePayload)
       }
@@ -940,11 +941,18 @@ async function updateAllocatedTaskEntry(params: {
 
     if (!resp.ok) {
       const text = await resp.text();
-      console.warn(`[VTID-0542] Task update failed: ${resp.status} - ${text}`);
+      console.error(`[VTID-0542] Task update failed: ${resp.status} - ${text}`);
       return false;
     }
 
-    console.log(`[VTID-0542] Task entry updated: ${params.vtid}`);
+    // Verify rows were actually updated
+    const updatedRows = await resp.json() as unknown[];
+    if (!Array.isArray(updatedRows) || updatedRows.length === 0) {
+      console.error(`[VTID-0542] PATCH returned 0 rows for ${params.vtid} — shell entry may not exist in vtid_ledger`);
+      return false;
+    }
+
+    console.log(`[VTID-0542] Task entry updated: ${params.vtid} (${updatedRows.length} row(s))`);
     return true;
   } catch (error: any) {
     console.warn(`[VTID-0542] Task update error: ${error.message}`);
@@ -995,40 +1003,13 @@ export async function createOperatorTask(params: {
     });
 
     if (!updated) {
-      console.warn(`[VTID-0542] Failed to update allocated task entry for ${vtid}`);
-      // Continue anyway since the shell entry exists
+      console.error(`[VTID-0542] Failed to update allocated task entry for ${vtid} — task will appear as 'Allocated - Pending Title'`);
+      return undefined;
     }
   } else {
-    // Allocator failed - fall back to legacy method for backwards compatibility
-    console.warn(`[VTID-0542] Allocator failed (${allocResult.error}), falling back to legacy generateVtid`);
-
-    const legacyVtid = await generateVtid(layer, module);
-    if (!legacyVtid) {
-      console.warn('[VTID-0532] Failed to generate VTID via legacy method');
-      return undefined;
-    }
-
-    vtid = legacyVtid;
-
-    // Insert task entry via legacy method
-    const inserted = await insertTaskEntry({
-      vtid,
-      layer,
-      module,
-      title,
-      summary: rawDescription,
-      status: 'pending',
-      metadata: {
-        source: 'operator-chat',
-        threadId: sourceThreadId,
-        createdVia: 'legacy-fallback'
-      }
-    });
-
-    if (!inserted) {
-      console.warn(`[VTID-0532] Failed to insert task entry for ${vtid}`);
-      return undefined;
-    }
+    // Allocator failed — DO NOT fall back to legacy (produces wrong VTID format)
+    console.error(`[VTID-0542] Allocator failed (${allocResult.error}): ${allocResult.message}. No legacy fallback.`);
+    return undefined;
   }
 
   // Emit task spec event
@@ -1121,7 +1102,7 @@ export async function getPendingPlanTasks(): Promise<PendingPlanTask[]> {
     // Fetch task entries for these VTIDs (use VtidLedger to match insert pattern)
     const vtidList = vtids.map(v => `"${v}"`).join(',');
     const tasksResp = await fetch(
-      `${SUPABASE_URL}/rest/v1/VtidLedger?vtid=in.(${vtidList})&status=in.(pending,scheduled)&select=vtid,title,description_md,module,status,created_at`,
+      `${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=in.(${vtidList})&status=in.(pending,scheduled)&select=vtid,title,description_md,module,status,created_at`,
       {
         headers: {
           'Content-Type': 'application/json',
@@ -1299,7 +1280,7 @@ async function updateTaskStatus(vtid: string, status: AutopilotTaskStatus, metad
     }
 
     const resp = await fetch(
-      `${SUPABASE_URL}/rest/v1/VtidLedger?vtid=eq.${encodeURIComponent(vtid)}`,
+      `${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}`,
       {
         method: 'PATCH',
         headers: {
@@ -1395,7 +1376,7 @@ export async function getTaskInfo(vtid: string): Promise<{ exists: boolean; stat
 
   try {
     const resp = await fetch(
-      `${SUPABASE_URL}/rest/v1/VtidLedger?vtid=eq.${encodeURIComponent(vtid)}&select=vtid,status,title,metadata&limit=1`,
+      `${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}&select=vtid,status,title,metadata&limit=1`,
       {
         headers: {
           'Content-Type': 'application/json',
@@ -1629,7 +1610,7 @@ export async function getAutopilotTaskStatus(vtid: string): Promise<TaskStatusRe
 
   try {
     const resp = await fetch(
-      `${SUPABASE_URL}/rest/v1/VtidLedger?vtid=eq.${encodeURIComponent(vtid)}&select=vtid,status,title,metadata,created_at,updated_at&limit=1`,
+      `${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}&select=vtid,status,title,metadata,created_at,updated_at&limit=1`,
       {
         headers: {
           'Content-Type': 'application/json',

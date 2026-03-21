@@ -933,7 +933,7 @@ async function queryRecentTasks(limit: number, statusFilter?: string): Promise<A
   }
 
   try {
-    let queryUrl = `${SUPABASE_URL}/rest/v1/VtidLedger?select=vtid,title,status,created_at&order=created_at.desc&limit=${limit}`;
+    let queryUrl = `${SUPABASE_URL}/rest/v1/vtid_ledger?select=vtid,title,status,created_at&order=created_at.desc&limit=${limit}`;
 
     if (statusFilter) {
       queryUrl += `&status=eq.${encodeURIComponent(statusFilter)}`;

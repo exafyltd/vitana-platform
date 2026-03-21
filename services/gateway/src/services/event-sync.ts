@@ -23,7 +23,7 @@ export async function syncVtidFromEvent(event: any): Promise<void> {
 
     // Check if VTID exists
     const { data: existing, error: fetchError } = await supabase
-      .from('VtidLedger')
+      .from('vtid_ledger')
       .select('vtid, status')
       .eq('vtid', event.vtid)
       .single();
@@ -36,7 +36,7 @@ export async function syncVtidFromEvent(event: any): Promise<void> {
     if (!existing) {
       // Create new VTID
       const { error: insertError } = await supabase
-        .from('VtidLedger')
+        .from('vtid_ledger')
         .insert({
           vtid: event.vtid,
           layer: event.layer || 'UNKNOWN',
@@ -62,7 +62,7 @@ export async function syncVtidFromEvent(event: any): Promise<void> {
 
     if (newPriority > currentPriority) {
       const { error: updateError } = await supabase
-        .from('VtidLedger')
+        .from('vtid_ledger')
         .update({
           status: event.status,
           updated_at: new Date().toISOString()

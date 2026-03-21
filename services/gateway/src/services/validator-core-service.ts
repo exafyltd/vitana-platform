@@ -536,7 +536,7 @@ async function updateTaskStatusFromValidation(
     const taskStatus = finalStatus === 'success' ? 'completed' : 'failed';
 
     const resp = await fetch(
-      `${SUPABASE_URL}/rest/v1/VtidLedger?vtid=eq.${encodeURIComponent(vtid)}`,
+      `${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}`,
       {
         method: 'PATCH',
         headers: {

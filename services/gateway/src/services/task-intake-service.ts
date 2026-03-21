@@ -627,12 +627,11 @@ export async function completeIntakeAndSchedule(sessionId: string): Promise<Sche
   if (!vtid) {
     const allocResult = await allocateVtid('task-intake', 'DEV', 'COMHU');
     if (!allocResult.ok || !allocResult.vtid) {
-      // Generate fallback VTID
-      vtid = `VTID-${Date.now().toString().slice(-5)}`;
-      console.warn(`[VTID-01149] Allocator failed, using fallback VTID: ${vtid}`);
-    } else {
-      vtid = allocResult.vtid;
+      // DO NOT generate timestamp-based fallback VTIDs (wrong format, won't appear on board)
+      console.error(`[VTID-01149] Allocator failed (${allocResult.error}): ${allocResult.message}. Cannot schedule task.`);
+      return { ok: false, vtid: '', error: `VTID allocation failed: ${allocResult.error}` };
     }
+    vtid = allocResult.vtid;
     state.intake_vtid = vtid;
     intakeStateStore.set(sessionId, state);
   }
