@@ -992,7 +992,7 @@ export async function createOperatorTask(params: {
       vtid,
       title,
       summary: rawDescription,
-      status: 'pending',
+      status: 'scheduled',
       metadata: {
         source: 'operator-chat',
         threadId: sourceThreadId,

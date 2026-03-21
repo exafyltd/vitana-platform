@@ -468,12 +468,15 @@ router.get("/list", async (req: Request, res: Response) => {
       console.warn(`[VTID-LIST] Schema discovery failed: ${schemaErr.message}`);
     }
 
-    // VTID-0543: Determine order column - prefer created_at, fallback to id
+    // VTID-0543: Determine order column - prefer updated_at, fallback to created_at, then id
+    // VTID-0542: Sort by updated_at to match board sort order
+    const hasUpdatedAt = allowedColumns.includes('updated_at');
     const hasCreatedAt = allowedColumns.includes('created_at');
-    const orderCol = hasCreatedAt ? 'created_at' : 'id';
+    const orderCol = hasUpdatedAt ? 'updated_at' : (hasCreatedAt ? 'created_at' : 'id');
 
     // Build base query with safe ordering
-    let queryUrl = `${supabaseUrl}/rest/v1/vtid_ledger?order=${orderCol}.desc&limit=${limit}`;
+    // VTID-0542: Exclude deleted/voided/cancelled entries
+    let queryUrl = `${supabaseUrl}/rest/v1/vtid_ledger?status=not.in.(deleted,voided,cancelled)&order=${orderCol}.desc&limit=${limit}`;
 
     // VTID-0543: Add tenant filter only if column exists
     if (allowedColumns.length === 0 || allowedColumns.includes('tenant')) {
@@ -581,8 +584,9 @@ router.get("/projection", async (req: Request, res: Response) => {
 
     // Step 1: Fetch VTIDs from ledger with pagination
     // VTID-01189: Added offset for infinite scroll
+    // VTID-0542: Sort by updated_at (matches board) and exclude deleted/voided entries
     const vtidResp = await fetch(
-      `${supabaseUrl}/rest/v1/vtid_ledger?order=created_at.desc&limit=${limit + 1}&offset=${offset}`,
+      `${supabaseUrl}/rest/v1/vtid_ledger?status=not.in.(deleted,voided,cancelled)&order=updated_at.desc&limit=${limit + 1}&offset=${offset}`,
       { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } }
     );
 
