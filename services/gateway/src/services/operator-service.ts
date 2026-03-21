@@ -919,7 +919,6 @@ async function updateAllocatedTaskEntry(params: {
       title: params.title,
       description: params.summary,
       summary: params.summary,
-      description_md: params.summary,
       status: params.status,
       metadata: params.metadata,
       updated_at: new Date().toISOString()
