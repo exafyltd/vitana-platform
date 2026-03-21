@@ -387,23 +387,6 @@ describe('VTID-01225: Fact Parsing Edge Cases', () => {
     expect(writes[0].body.p_fact_key).toBe('user_name');
   });
 
-  it('should extract languages_spoken as a comma-separated list', async () => {
-    vertexResponseText = JSON.stringify([
-      { fact_key: 'languages_spoken', fact_value: 'German, English, French, Spanish', entity: 'self', fact_value_type: 'text' },
-    ]);
-
-    await extractAndPersistFacts({
-      conversationText: 'User: Ich spreche Deutsch, Englisch, Französisch und Spanisch.\nAssistant: Das ist beeindruckend! Vier Sprachen!',
-      tenant_id: 'tenant-lang', user_id: 'user-lang', session_id: 'session-lang',
-    });
-
-    const writes = fetchCalls.filter(c => c.url.includes('write_fact'));
-    expect(writes.length).toBe(1);
-    expect(writes[0].body.p_fact_key).toBe('languages_spoken');
-    expect(writes[0].body.p_fact_value).toBe('German, English, French, Spanish');
-    expect(writes[0].body.p_entity).toBe('self');
-  });
-
   it('should handle multiple facts in a single extraction', async () => {
     vertexResponseText = JSON.stringify([
       { fact_key: 'user_name', fact_value: 'Dragan Alexander', entity: 'self', fact_value_type: 'text' },

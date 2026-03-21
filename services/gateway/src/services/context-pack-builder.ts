@@ -54,7 +54,7 @@ const IDENTITY_CORE_KEYS = [
   'spouse_name', 'fiancee_name', 'mother_name', 'father_name',
   'fiancee_birthday',
   'user_health_condition', 'user_medication', 'user_allergy',
-  'preferred_language', 'languages_spoken',
+  'preferred_language',
 ];
 
 // =============================================================================
@@ -155,7 +155,7 @@ async function fetchMemoryHits(
       try {
         const embResult = await generateEmbedding(query);
         if (embResult.ok && embResult.embedding) {
-          const semResp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/semantic_memory_search`, {
+          const semResp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/memory_semantic_search`, {
             method: 'POST',
             headers,
             body: JSON.stringify({
@@ -163,10 +163,8 @@ async function fetchMemoryHits(
               p_top_k: fetchLimit,
               p_tenant_id: lens.tenant_id,
               p_user_id: lens.user_id,
-              p_category_keys: lens.allowed_categories && lens.allowed_categories.length > 0
+              p_categories: lens.allowed_categories && lens.allowed_categories.length > 0
                 ? lens.allowed_categories : null,
-              p_min_importance: 0,
-              p_active_only: true,
             }),
             signal: semTimeout.signal,
           });
@@ -178,8 +176,9 @@ async function fetchMemoryHits(
               content: string;
               importance: number;
               source: string;
-              embedding_similarity: number;
-              created_at: string;
+              occurred_at: string;
+              similarity_score: number;
+              combined_score: number;
             }>;
 
             semanticHits = semResults.map((r) => ({
@@ -187,14 +186,14 @@ async function fetchMemoryHits(
               category_key: r.category_key,
               content: r.content.substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
               importance: r.importance,
-              occurred_at: r.created_at,
+              occurred_at: r.occurred_at,
               source: r.source,
-              // Semantic similarity is the primary signal — boost high-similarity items
-              relevance_score: Math.min(1, 0.5 + r.embedding_similarity * 0.5),
+              // Use the RPC's combined_score (70% similarity + 30% recency)
+              relevance_score: Math.min(1, r.combined_score),
             }));
             console.log(`[VTID-01216] Semantic memory_items search: ${semanticHits.length} hits`);
           } else {
-            console.warn(`[VTID-01216] semantic_memory_search RPC failed: ${semResp.status} (falling back to REST)`);
+            console.warn(`[VTID-01216] memory_semantic_search RPC failed: ${semResp.status} (falling back to REST)`);
           }
         }
       } catch (semErr: any) {
