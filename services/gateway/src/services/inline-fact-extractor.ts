@@ -59,6 +59,7 @@ Common fact keys:
 - user_favorite_color, user_favorite_food, user_favorite_drink, user_favorite_*
 - user_allergy, user_medication, user_health_condition
 - user_preference_*, user_goal_*
+- languages_spoken (comma-separated list of ALL languages the user says they speak, e.g. "German, English, French, Spanish")
 - spouse_name, fiancee_name, partner_name, mother_name, father_name, child_name, friend_name_*
 
 Rules:
@@ -67,13 +68,21 @@ Rules:
 - Do NOT invent facts. Only extract what is clearly stated.
 - Keep fact_value concise (1-5 words)
 - For preferences, use "user_favorite_X" or "user_preference_X" as the key
+- IMPORTANT: When a user mentions languages they speak, use "languages_spoken" as the key with ALL languages as a comma-separated value. Do NOT use "preferred_language" for this — preferred_language is only for the language the user wants the assistant to respond in.
 
 Example input:
 User: My name is Dusan and I live in Amsterdam. My favorite tea is Earl Grey.
 Assistant: Nice to meet you Dusan! Amsterdam is a beautiful city.
 
 Example output:
-[{"fact_key":"user_name","fact_value":"Dusan","entity":"self","fact_value_type":"text"},{"fact_key":"user_residence","fact_value":"Amsterdam","entity":"self","fact_value_type":"text"},{"fact_key":"user_favorite_tea","fact_value":"Earl Grey","entity":"self","fact_value_type":"text"}]`;
+[{"fact_key":"user_name","fact_value":"Dusan","entity":"self","fact_value_type":"text"},{"fact_key":"user_residence","fact_value":"Amsterdam","entity":"self","fact_value_type":"text"},{"fact_key":"user_favorite_tea","fact_value":"Earl Grey","entity":"self","fact_value_type":"text"}]
+
+Example input:
+User: I speak German, English, and a bit of French.
+Assistant: That's impressive! Three languages!
+
+Example output:
+[{"fact_key":"languages_spoken","fact_value":"German, English, French","entity":"self","fact_value_type":"text"}]`;
 
 // =============================================================================
 // Types
