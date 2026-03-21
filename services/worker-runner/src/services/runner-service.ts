@@ -272,53 +272,116 @@ export class WorkerRunner {
       }
 
       runId = routingResult.run_id || runId;
-      domain = (routingResult.dispatched_to?.replace('worker-', '') || 'backend') as TaskDomain;
 
-      await runnerEvents.routed(
-        this.config,
-        vtid,
-        routingResult.dispatched_to || 'worker-backend',
-        runId
-      );
+      // Resolve execution domain(s) from routing result
+      // For mixed tasks, routing returns stages instead of dispatched_to
+      const stages = routingResult.stages;
+      if (stages && stages.length > 0) {
+        // Mixed task: execute stages sequentially, succeed if ANY stage succeeds
+        domain = stages[0].domain;
+        console.log(`[${VTID}] Mixed task ${vtid}: ${stages.length} stages: ${stages.map(s => s.domain).join(' → ')}`);
 
-      // Step 3: Report subagent start
-      await reportSubagentStart(this.config, vtid, domain, runId);
+        await runnerEvents.routed(
+          this.config,
+          vtid,
+          `worker-${stages.map(s => s.domain).join('+')}`,
+          runId
+        );
 
-      // Get model info for events
-      const modelInfo = getModelInfo(this.config);
+        const modelInfo = getModelInfo(this.config);
+        let anyStageSucceeded = false;
+        let lastError: string | undefined;
+        const allResults: ExecutionResult[] = [];
 
-      await runnerEvents.execStarted(
-        this.config,
-        vtid,
-        domain,
-        runId,
-        modelInfo.model,
-        modelInfo.provider
-      );
+        for (const stage of stages) {
+          const stageDomain = stage.domain;
+          console.log(`[${VTID}] Executing stage ${stage.order}/${stages.length}: ${stageDomain} for ${vtid}`);
 
-      // Step 4: Execute the actual work
-      executionResult = await executeTask(this.config, task, routingResult, domain);
+          await reportSubagentStart(this.config, vtid, stageDomain, runId);
+          await runnerEvents.execStarted(this.config, vtid, stageDomain, runId, modelInfo.model, modelInfo.provider);
 
-      await runnerEvents.execCompleted(
-        this.config,
-        vtid,
-        domain,
-        runId,
-        executionResult.duration_ms || 0,
-        modelInfo.model,
-        modelInfo.provider,
-        executionResult.ok,
-        executionResult.summary
-      );
+          const stageResult = await executeTask(this.config, task, routingResult, stageDomain);
+          allResults.push(stageResult);
 
-      executionSuccess = executionResult.ok;
+          await runnerEvents.execCompleted(
+            this.config, vtid, stageDomain, runId,
+            stageResult.duration_ms || 0, modelInfo.model, modelInfo.provider,
+            stageResult.ok, stageResult.summary
+          );
+
+          if (stageResult.ok) {
+            anyStageSucceeded = true;
+            // Merge successful results
+            executionResult = {
+              ...executionResult,
+              ...stageResult,
+              ok: true,
+              summary: (executionResult.summary ? executionResult.summary + ' | ' : '') + (stageResult.summary || ''),
+              files_changed: [...(executionResult.files_changed || []), ...(stageResult.files_changed || [])],
+              files_created: [...(executionResult.files_created || []), ...(stageResult.files_created || [])],
+            };
+          } else {
+            lastError = stageResult.error;
+            console.log(`[${VTID}] Stage ${stageDomain} failed for ${vtid}: ${stageResult.error} — continuing to next stage`);
+          }
+        }
+
+        executionSuccess = anyStageSucceeded;
+        domain = stages[0].domain; // Use first stage domain for completion reporting
+
+        if (!anyStageSucceeded) {
+          executionResult = { ok: false, error: lastError || 'All stages failed', duration_ms: 0 };
+        }
+      } else {
+        // Single domain: original behavior
+        domain = (routingResult.dispatched_to?.replace('worker-', '') || 'backend') as TaskDomain;
+
+        await runnerEvents.routed(
+          this.config,
+          vtid,
+          routingResult.dispatched_to || 'worker-backend',
+          runId
+        );
+
+        // Step 3: Report subagent start
+        await reportSubagentStart(this.config, vtid, domain, runId);
+
+        // Get model info for events
+        const modelInfo = getModelInfo(this.config);
+
+        await runnerEvents.execStarted(
+          this.config,
+          vtid,
+          domain,
+          runId,
+          modelInfo.model,
+          modelInfo.provider
+        );
+
+        // Step 4: Execute the actual work
+        executionResult = await executeTask(this.config, task, routingResult, domain);
+
+        await runnerEvents.execCompleted(
+          this.config,
+          vtid,
+          domain,
+          runId,
+          executionResult.duration_ms || 0,
+          modelInfo.model,
+          modelInfo.provider,
+          executionResult.ok,
+          executionResult.summary
+        );
+
+        executionSuccess = executionResult.ok;
+      }
 
       // Step 5: Complete the task
       await this.completeTask(
         vtid,
         runId,
         domain,
-        executionResult.ok,
+        executionSuccess,
         executionResult.error,
         executionResult
       );

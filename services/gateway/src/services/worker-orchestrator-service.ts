@@ -911,9 +911,11 @@ export async function routeWorkOrder(payload: WorkOrderPayload): Promise<Routing
         ...detectDomainFromKeywords(payload.spec_content || '')
       ])];
 
-      // Order: memory -> backend -> frontend
+      // Order: memory -> infra -> ai -> backend -> frontend
       const orderedDomains: TaskDomain[] = [];
       if (detectedDomains.includes('memory')) orderedDomains.push('memory');
+      if (detectedDomains.includes('infra')) orderedDomains.push('infra');
+      if (detectedDomains.includes('ai')) orderedDomains.push('ai');
       if (detectedDomains.includes('backend')) orderedDomains.push('backend');
       if (detectedDomains.includes('frontend')) orderedDomains.push('frontend');
 

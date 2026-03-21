@@ -77,7 +77,7 @@ export async function registerWorker(config: RunnerConfig): Promise<boolean> {
       method: 'POST',
       body: JSON.stringify({
         worker_id: config.workerId,
-        capabilities: ['frontend', 'backend', 'memory'],
+        capabilities: ['frontend', 'backend', 'memory', 'infra', 'ai'],
         max_concurrent: config.maxConcurrent,
         version: '1.0.0',
         metadata: {

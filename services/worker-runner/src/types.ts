@@ -7,12 +7,12 @@
 /**
  * Task domain types
  */
-export type TaskDomain = 'frontend' | 'backend' | 'memory' | 'mixed';
+export type TaskDomain = 'frontend' | 'backend' | 'memory' | 'infra' | 'ai' | 'mixed';
 
 /**
  * Worker subagent identifiers
  */
-export type WorkerSubagent = 'worker-frontend' | 'worker-backend' | 'worker-memory';
+export type WorkerSubagent = 'worker-frontend' | 'worker-backend' | 'worker-memory' | 'worker-infra' | 'worker-ai';
 
 /**
  * Terminal outcome for VTID completion

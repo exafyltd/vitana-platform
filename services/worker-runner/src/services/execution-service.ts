@@ -173,6 +173,47 @@ PATTERNS TO FOLLOW:
 - Tenant context awareness
 - Safe migration practices`,
 
+    infra: `
+## INFRASTRUCTURE DOMAIN RULES
+
+You are the infra worker. You handle CI/CD, deployment, configuration, and DevOps changes.
+
+ALLOWED PATHS:
+- .github/workflows/**
+- Dockerfile, docker-compose.yml
+- *.yaml, *.yml (CI/CD configs)
+- .eslintrc.*, .prettierrc.*, tsconfig.json, jest.config.*
+- config/**
+
+FORBIDDEN:
+- Application logic (routes, services, components)
+- Database migrations (use memory worker)
+
+PATTERNS TO FOLLOW:
+- GitHub Actions workflow syntax
+- Docker best practices
+- Configuration file conventions`,
+
+    ai: `
+## AI DOMAIN RULES
+
+You are the AI worker. You handle LLM integrations, agents, intelligence engines, and AI processing.
+
+ALLOWED PATHS:
+- services/agents/**
+- services/gateway/src/services/*intelligence*
+- services/gateway/src/services/*agent*
+- services/gateway/src/routes/orb*
+
+FORBIDDEN:
+- Frontend files (use frontend worker)
+- Database migrations (use memory worker)
+
+PATTERNS TO FOLLOW:
+- Vertex AI / Gemini API conventions
+- Agent orchestration patterns
+- Prompt engineering best practices`,
+
     mixed: `
 ## MIXED DOMAIN RULES
 
@@ -180,6 +221,8 @@ This task spans multiple domains. Analyze carefully and describe changes for eac
 - Frontend (UI, CSS, components)
 - Backend (API, services, routes)
 - Memory (database, migrations)
+- Infrastructure (CI/CD, config)
+- AI (agents, intelligence engines)
 
 Be explicit about which changes belong to which domain.`,
   };

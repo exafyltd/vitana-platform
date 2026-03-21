@@ -190,20 +190,8 @@ async function executeSkillAsGovernance(
     rule_name: skillId.toUpperCase(),
   };
 
-  // Emit governance check start event
-  await emitOasisEvent({
-    vtid,
-    type: 'GOVERNANCE_CHECK' as any,
-    source: 'preflight-runner',
-    status: 'info',
-    message: `Evaluating governance rule: ${ruleMapping.rule_name}`,
-    payload: {
-      rule_id: ruleMapping.rule_id,
-      rule_name: ruleMapping.rule_name,
-      skill_id: skillId,
-      tenant_id: IDENTITY_DEFAULTS.tenant,
-    },
-  });
+  // Log governance check start (no OASIS event — per-rule detail is noise)
+  console.log(`[GOVERNANCE] Evaluating rule: ${ruleMapping.rule_name} (${ruleMapping.rule_id}) for ${vtid}`);
 
   try {
     let ok = true;
@@ -257,29 +245,8 @@ async function executeSkillAsGovernance(
     const status: 'PASS' | 'FAIL' = ok ? 'PASS' : 'FAIL';
     const evaluated_at = new Date().toISOString();
 
-    // Emit governance evaluation result (same format as governance system)
-    await emitOasisEvent({
-      vtid,
-      type: 'GOVERNANCE_CHECK' as any,
-      source: 'preflight-runner',
-      status: ok ? 'success' : 'warning',
-      message: `Rule ${ruleMapping.rule_name}: ${status}`,
-      payload: {
-        eventType: 'GOVERNANCE_CHECK',
-        data: {
-          ruleId: ruleMapping.rule_id,
-          entityId: vtid,
-          result: status,
-          tenantId: IDENTITY_DEFAULTS.tenant,
-          details: {
-            skill_id: skillId,
-            recommendation,
-            issues,
-            duration_ms: duration,
-          },
-        },
-      },
-    });
+    // Log per-rule result (no OASIS event — batch summary is sufficient)
+    console.log(`[GOVERNANCE] Rule ${ruleMapping.rule_name}: ${status} (${duration}ms) for ${vtid}`);
 
     return {
       rule_id: ruleMapping.rule_id,
@@ -298,24 +265,8 @@ async function executeSkillAsGovernance(
     const duration = Date.now() - startTime;
     const errorMsg = error instanceof Error ? error.message : 'Unknown error';
 
-    // Emit governance evaluation error
-    await emitOasisEvent({
-      vtid,
-      type: 'GOVERNANCE_CHECK' as any,
-      source: 'preflight-runner',
-      status: 'error',
-      message: `Rule ${ruleMapping.rule_name} evaluation failed: ${errorMsg}`,
-      payload: {
-        eventType: 'GOVERNANCE_CHECK',
-        data: {
-          ruleId: ruleMapping.rule_id,
-          entityId: vtid,
-          result: 'FAIL',
-          tenantId: IDENTITY_DEFAULTS.tenant,
-          details: { error: errorMsg },
-        },
-      },
-    });
+    // Log governance evaluation error (batch summary will report the failure)
+    console.error(`[GOVERNANCE] Rule ${ruleMapping.rule_name} evaluation FAILED for ${vtid}: ${errorMsg}`);
 
     return {
       rule_id: ruleMapping.rule_id,
@@ -603,20 +554,6 @@ export async function runPreflightChain(
   const evaluations: GovernanceSkillResult[] = [];
 
   console.log(`[VTID-01167] Running governance preflight chain for ${domain}: ${chain.length} rules`);
-
-  // Emit chain start as governance batch
-  await emitOasisEvent({
-    vtid,
-    type: 'GOVERNANCE_CHECK' as any,
-    source: 'preflight-runner',
-    status: 'info',
-    message: `Starting governance evaluation batch for ${domain}`,
-    payload: {
-      domain,
-      rules: chain.map(s => SKILL_TO_GOVERNANCE_RULE[s]?.rule_id),
-      tenant_id: IDENTITY_DEFAULTS.tenant,
-    },
-  });
 
   // Execute each skill as a governance evaluation
   for (const skillId of chain) {

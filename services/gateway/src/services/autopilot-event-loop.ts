@@ -772,28 +772,20 @@ async function fetchSpecFromOasis(vtid: string): Promise<string | null> {
 }
 
 /**
- * Emit loop-specific OASIS event
+ * Log loop-specific event (internal bookkeeping — NOT emitted to OASIS)
+ *
+ * Loop events (transition, event_processed, action_triggered) are internal
+ * state machine bookkeeping. They duplicate the actual OASIS events that
+ * triggered them and create 2-3x noise in the OASIS timeline.
+ * Console logging is sufficient for debugging.
  */
 async function emitLoopEvent(
   type: string,
   vtid: string,
   payload: Record<string, unknown>
 ): Promise<void> {
-  try {
-    await emitOasisEvent({
-      vtid,
-      type: type as any,
-      source: 'autopilot-event-loop',
-      status: 'info',
-      message: `${type}: ${vtid}`,
-      payload: {
-        ...payload,
-        timestamp: new Date().toISOString(),
-      },
-    });
-  } catch (error) {
-    console.warn(`${LOG_PREFIX} Failed to emit loop event: ${error}`);
-  }
+  // Log for debugging only — no OASIS emission
+  console.log(`${LOG_PREFIX} [loop] ${type}: ${vtid} ${JSON.stringify(payload)}`);
 }
 
 // =============================================================================

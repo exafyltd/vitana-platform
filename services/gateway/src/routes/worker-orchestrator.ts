@@ -1044,28 +1044,8 @@ workerOrchestratorRouter.get('/api/v1/worker/orchestrator/tasks/pending', async 
         claim_started_at: task.claim_started_at || null,
       }));
 
+    // Telemetry only — no OASIS event (polling ≠ progress)
     console.log(`${LOG_VTID} Pending tasks query: ${claimableTasks.length} eligible tasks found (worker_id=${workerId || 'none'})`);
-
-    // Emit telemetry event for observability
-    await emitOasisEvent({
-      vtid: 'VTID-01202',
-      type: 'vtid.stage.worker_orchestrator.pending_served' as any,
-      source: 'worker-orchestrator',
-      status: 'info',
-      message: `Served ${claimableTasks.length} eligible tasks (worker_id=${workerId || 'none'})`,
-      payload: {
-        count: claimableTasks.length,
-        eligible_count: claimableTasks.length,
-        limit,
-        worker_id: workerId,
-        filters: {
-          status: 'in_progress',
-          spec_status: 'approved',
-          is_terminal: false,
-          claim_inclusion: 'unclaimed_or_claimed_by_worker_or_expired'
-        }
-      }
-    });
 
     return res.status(200).json({
       ok: true,
