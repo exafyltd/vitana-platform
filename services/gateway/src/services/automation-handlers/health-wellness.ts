@@ -137,13 +137,13 @@ async function runBiomarkerTrendAnalysis(ctx: AutomationContext) {
   if (!latestBiomarkers?.length) return { usersAffected: 0, actionsTaken: 0 };
 
   // Check for critical values
-  const criticalMarkers = latestBiomarkers.filter(b => b.status === 'critical');
-  const highMarkers = latestBiomarkers.filter(b => b.status === 'high');
+  const criticalMarkers = latestBiomarkers.filter((b: any) => b.status === 'critical');
+  const highMarkers = latestBiomarkers.filter((b: any) => b.status === 'high');
 
   if (criticalMarkers.length > 0) {
-    ctx.log(`Critical biomarkers detected for ${user_id}: ${criticalMarkers.map(b => b.biomarker_code).join(', ')}`);
+    ctx.log(`Critical biomarkers detected for ${user_id}: ${criticalMarkers.map((b: any) => b.biomarker_code).join(', ')}`);
     // Trigger professional referral
-    await ctx.emitEvent('health.biomarker.critical', { user_id, biomarkers: criticalMarkers.map(b => b.biomarker_code) });
+    await ctx.emitEvent('health.biomarker.critical', { user_id, biomarkers: criticalMarkers.map((b: any) => b.biomarker_code) });
   }
 
   // Trigger daily recompute
@@ -308,7 +308,7 @@ async function runHealthAwareProductRecs(ctx: AutomationContext) {
   if (!recs?.length) return { usersAffected: 0, actionsTaken: 0 };
 
   // Find matching products
-  const pillars = recs.map(r => r.pillar);
+  const pillars = recs.map((r: any) => r.pillar);
   const { data: products } = await supabase
     .from('products_catalog')
     .select('id, name, product_type')

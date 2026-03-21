@@ -170,8 +170,8 @@ async function runMutualAcceptIntroduction(ctx: AutomationContext) {
     .order('score', { ascending: false })
     .limit(5);
 
-  const userTopicSet = new Set((userTopics || []).map(t => t.topic_key));
-  const shared = (otherTopics || []).filter(t => userTopicSet.has(t.topic_key));
+  const userTopicSet = new Set((userTopics || []).map((t: any) => t.topic_key));
+  const shared = (otherTopics || []).filter((t: any) => userTopicSet.has(t.topic_key));
   const sharedTopic = shared[0]?.topic_key || 'wellness';
   const topicName = sharedTopic.replace(/-/g, ' ');
 

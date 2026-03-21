@@ -553,14 +553,14 @@ router.get("/list", async (req: Request, res: Response) => {
 interface VtidProjectionItem {
   vtid: string;
   title: string;
-  current_stage: 'Backlog' | 'Planner' | 'Worker' | 'Validator' | 'Deploy' | 'Done';
-  status: 'Scheduled' | 'Active' | 'Blocked' | 'Done' | 'Failed';
+  current_stage: 'Backlog' | 'Planner' | 'Worker' | 'Validator' | 'Deploy' | 'Done' | 'Deleted';
+  status: 'Scheduled' | 'Active' | 'Blocked' | 'Done' | 'Failed' | 'Deleted';
   attention_required: 'AUTO' | 'HUMAN';
   last_update: string | null;
   last_decision: string | null;
   // VTID-01005: Terminal state fields
   is_terminal: boolean;
-  terminal_outcome: 'success' | 'failed' | null;
+  terminal_outcome: 'success' | 'failed' | 'deleted' | null;
   ledger_status: string;
 }
 
@@ -653,7 +653,7 @@ router.get("/projection", async (req: Request, res: Response) => {
 
       // VTID-01005: Terminal state detection from OASIS events (AUTHORITATIVE)
       let isTerminal = false;
-      let terminalOutcome: 'success' | 'failed' | null = null;
+      let terminalOutcome: VtidProjectionItem['terminal_outcome'] = null;
 
       if (vtidEvents.length > 0) {
         // Get the most recent event

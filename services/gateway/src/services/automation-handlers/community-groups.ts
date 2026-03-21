@@ -121,7 +121,7 @@ async function runMeetupRsvpEncouragement(ctx: AutomationContext) {
       .select('user_id')
       .eq('meetup_id', meetup.id);
 
-    const rsvpSet = new Set((rsvpUsers || []).map(r => r.user_id));
+    const rsvpSet = new Set((rsvpUsers || []).map((r: any) => r.user_id));
 
     const { data: groupMembers } = await supabase
       .from('community_memberships')

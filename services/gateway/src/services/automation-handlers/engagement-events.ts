@@ -43,7 +43,7 @@ async function runGoTogetherMatch(ctx: AutomationContext) {
     .eq('relationship_type', 'connected')
     .limit(10);
 
-  const connectionIds = (connections || []).map(c => c.target_id);
+  const connectionIds = (connections || []).map((c: any) => c.target_id);
   if (!connectionIds.length) {
     ctx.notify(user_id, 'event_match_suggested', {
       title: 'Event Match',
