@@ -58,9 +58,9 @@ function mapStatusToColumn(status: string): BoardColumn | null {
   if (s === 'allocated') {
     return 'SCHEDULED';
   }
-  // Rejected tasks are excluded from the active board (soft deny, keeps VTID for audit)
+  // Rejected tasks should be visible as FAILED so users see what happened
   if (s === 'rejected') {
-    return null;
+    return 'COMPLETED';
   }
   if (s === 'completed' || s === 'done' || s === 'closed' || s === 'deployed' || s === 'merged' || s === 'complete' || s === 'failed' || s === 'error') {
     return 'COMPLETED';
@@ -237,6 +237,12 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
           terminalOutcome = 'failed'; // Treat cancelled as failed for column placement
           column = 'COMPLETED';
           derivedStatus = 'cancelled';
+        } else if (row.terminal_outcome === 'deleted') {
+          // Deleted tasks should already be filtered out by the deleted_at check above,
+          // but handle explicitly to avoid falling into success default
+          terminalOutcome = 'failed';
+          column = 'COMPLETED';
+          derivedStatus = 'deleted';
         } else {
           // is_terminal=true but no outcome - default to success
           terminalOutcome = 'success';
