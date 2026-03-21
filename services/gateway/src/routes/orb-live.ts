@@ -1011,8 +1011,8 @@ const SILENCE_AUDIO_B64 = Buffer.alloc(SILENCE_PCM_BYTES, 0).toString('base64');
 // after the user finishes speaking or after the greeting is sent.
 // Catches: Vertex API stalls, tool call cascading failures, internet drops,
 // Gemini hanging after receiving function_response errors, etc.
-const GREETING_RESPONSE_TIMEOUT_MS = 8_000; // 8s for greeting to arrive
-const TURN_RESPONSE_TIMEOUT_MS = 10_000;    // 10s for response after user speech
+const GREETING_RESPONSE_TIMEOUT_MS = 12_000; // 12s for greeting to arrive (was 8s — too aggressive)
+const TURN_RESPONSE_TIMEOUT_MS = 20_000;    // 20s for response after user speech (was 10s — caused premature cutoffs)
 
 // =============================================================================
 // VTID-FORWARDING-WATCHDOG: Detect zombie upstream WebSocket connections
@@ -1025,7 +1025,7 @@ const TURN_RESPONSE_TIMEOUT_MS = 10_000;    // 10s for response after user speec
 // but no existing watchdog is running. If Vertex doesn't acknowledge the
 // audio (via input_transcription or model response) within this window,
 // the stall recovery kicks in (terminate WS → transparent reconnect).
-const FORWARDING_ACK_TIMEOUT_MS = 15_000; // 15s for Vertex to acknowledge forwarded audio
+const FORWARDING_ACK_TIMEOUT_MS = 25_000; // 25s for Vertex to acknowledge forwarded audio (was 15s — too aggressive)
 
 // =============================================================================
 // VTID-LOOPGUARD: Response loop prevention
@@ -1035,7 +1035,7 @@ const FORWARDING_ACK_TIMEOUT_MS = 15_000; // 15s for Vertex to acknowledge forwa
 // may be interpreted as "user is still listening, keep talking."
 // After MAX_CONSECUTIVE_MODEL_TURNS without user speech, we pause the silence
 // keepalive to let Vertex's idle timeout naturally stop the model.
-const MAX_CONSECUTIVE_MODEL_TURNS = 3;
+const MAX_CONSECUTIVE_MODEL_TURNS = 5;
 
 const connectionIssueMessages: Record<string, string> = {
   'en': "I'm sorry, I seem to be having connection issues right now. Please try starting a new conversation.",
@@ -1283,11 +1283,12 @@ async function executeLiveApiTool(
   args: Record<string, unknown>
 ): Promise<{ success: boolean; result: string; error?: string }> {
   const startTime = Date.now();
-  // VTID-01224-FIX: Reduced from 5s→3s. Gemini Live API has its own internal
-  // timeout for function_response (~3-4s). If we take longer, the model enters
-  // a stalled state where it stops generating audio. 3s gives enough time for
-  // fast queries while preventing session death on slow ones.
-  const TOOL_TIMEOUT_MS = 3000;
+  // VTID-01224-FIX: Tool timeout for Live API function calls.
+  // Previously 3s which was too aggressive — tools like task creation and
+  // knowledge search routinely take 3-5s due to Supabase + Vertex latency.
+  // 6s gives adequate headroom while still preventing session death on truly
+  // stuck tools. Gemini's internal timeout is ~8s, so 6s stays well within.
+  const TOOL_TIMEOUT_MS = 6000;
 
   const executeWithTimeout = async (): Promise<{ success: boolean; result: string; error?: string }> => {
     return Promise.race([

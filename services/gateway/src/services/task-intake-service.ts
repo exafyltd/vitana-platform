@@ -155,7 +155,7 @@ const TASK_CREATION_KEYWORDS: RegExp[] = [
   /\b(schedule|plan|queue)\s+(a\s+)?(task|work|item)\b/i,
   /\b(add\s+to|put\s+on)\s+(the\s+)?(backlog|board|queue|list)\b/i,
   /\b(track|capture)\s+(this|that|the)\s+(as\s+a\s+)?(task|issue|ticket)\b/i,
-  // German - expanded patterns
+  // German - expanded patterns (verb-first: "erstelle einen Task")
   /\b(erstell|anleg|hinzuf[uü]g)(en|e|st|t)?\s*(mir\s*)?(eine?n?\s*)?(neue?n?\s*)?(aufgabe|ticket|task|bug|fehler|eintrag)\b/i,
   /\b(meld|bericht|logg)(en|e|st|t)?\s*(eine?n?\s*)?(bug|fehler|problem)\b/i,
   /\b(ich\s+)?(m[oö]chte|will|brauche|h[aä]tte\s+gerne?)\s+(eine?n?\s*)?(neue?n?\s*)?(aufgabe|ticket|task|eintrag)\b/i,
@@ -165,6 +165,16 @@ const TASK_CREATION_KEYWORDS: RegExp[] = [
   /\b(ich\s+)?(brauche|ben[oö]tige)\s+(eine?n?\s*)?(neue?n?\s*)?(aufgabe|ticket|task)\b/i,
   /\baufgabe\s+(erstellen|anlegen|hinzuf[uü]gen)\b/i,
   /\bticket\s+(erstellen|anlegen|aufmachen)\b/i,
+  // German - subordinate clause patterns (verb-last: "dass du eine Task erstellst")
+  // German subordinate clauses move the verb to the end, so we must match noun-before-verb
+  /\b(eine?n?\s*)(neue?n?\s*)?(aufgabe|ticket|task)\s+(erstell|anleg|mach)(en|e|st|t)\b/i,
+  /\b(dass\s+)(du\s+|ihr\s+|wir\s+|sie\s+)?(mir\s+)?(eine?n?\s*)?(neue?n?\s*)?(aufgabe|ticket|task)\s*(erstell|anleg|mach)(en|e|st|t)\b/i,
+  // German - "ich möchte dass du ... erstellst" with intervening words
+  /\b(m[oö]chte|will)\s+(dass\s+)?(du\s+)?.{0,30}(aufgabe|ticket|task)\s*(erstell|anleg|mach)(en|e|st|t)\b/i,
+  // German - imperative with "mit dem Titel" (create task with title)
+  /\b(erstell|anleg|mach)(en|e|st|t)?\s+.{0,20}(mit\s+dem\s+titel)\b/i,
+  // German - VT ID / VTID mention in task creation context
+  /\b(erstell|anleg|mach)(en|e|st|t)?\s+.{0,20}(vt\s*id|vtid)\b/i,
 ];
 
 /**

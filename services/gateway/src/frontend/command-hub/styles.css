@@ -9811,9 +9811,12 @@ body {
 
 /* VTID-01069-C: Responsive - stack vertically on narrow screens */
 /* VTID-01069-F: Mobile-ready with centered stage */
+/* VTID-TRANSCRIPT-FIX: Changed from column-reverse to column. column-reverse
+   flipped the entire layout upside down, making chat input appear at top and
+   orb at bottom. Normal column order: orb on top, chat below. */
 @media (max-width: 900px) {
   .orb-overlay-layout {
-    flex-direction: column-reverse;
+    flex-direction: column;
   }
 
   .orb-left {

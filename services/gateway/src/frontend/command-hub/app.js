@@ -25489,6 +25489,12 @@ function geminiLiveHandleMessage(msg) {
 
         case 'text':
         case 'transcript':
+            // VTID-RECONNECT-GRACE: Cancel reconnect grace timer — data flowing means session is alive
+            if (state.orb._reconnectGraceTimer) {
+                clearTimeout(state.orb._reconnectGraceTimer);
+                state.orb._reconnectGraceTimer = null;
+                console.log('[VTID-RECONNECT-GRACE] Reconnect grace timer cleared — text/transcript received');
+            }
             // VTID-TRANSCRIPT-FIX: Buffer text/transcript into output buffer
             // (will be flushed as a single bubble on turn_complete)
             if (msg.text) {
@@ -25521,6 +25527,12 @@ function geminiLiveHandleMessage(msg) {
             break;
 
         case 'turn_complete':
+            // VTID-RECONNECT-GRACE: Cancel reconnect grace timer — session is alive
+            if (state.orb._reconnectGraceTimer) {
+                clearTimeout(state.orb._reconnectGraceTimer);
+                state.orb._reconnectGraceTimer = null;
+                console.log('[VTID-RECONNECT-GRACE] Reconnect grace timer cleared — session recovered');
+            }
             // VTID-VOICE-INIT: Model finished speaking — reset audio scheduling state
             // Don't stop nodes (they'll finish naturally), but reset scheduler
             // so next response doesn't have a gap
@@ -25609,15 +25621,48 @@ function geminiLiveHandleMessage(msg) {
             break;
 
         case 'connection_issue':
-            // VTID-FALLBACK: Switch to fallback text+TTS mode instead of dying
-            console.warn('[VTID-FALLBACK] Connection issue — switching to fallback mode:', msg.reason, msg.message);
-            _activateFallbackMode('Connection issue: ' + (msg.reason || 'unknown'));
+            // VTID-RECONNECT-GRACE: Don't immediately switch to fallback mode.
+            // The server-side transparent reconnect may succeed within a few seconds.
+            // Only activate fallback if should_close is explicitly true (reconnect failed)
+            // or if no recovery happens within 8 seconds.
+            console.warn('[VTID-RECONNECT-GRACE] Connection issue — waiting for transparent reconnect:', msg.reason, msg.message);
+            if (msg.should_close) {
+                // Server explicitly says reconnect failed — go to fallback immediately
+                console.warn('[VTID-FALLBACK] Server confirmed no recovery — switching to fallback mode');
+                _activateFallbackMode('Connection issue: ' + (msg.reason || 'unknown'));
+            } else {
+                // Set orb to "reconnecting" visual state
+                setOrbState('thinking');
+                setOrbMicroStatus('Reconnecting...', 0);
+                // Grace period: if no new audio/text arrives within 8s, activate fallback
+                if (state.orb._reconnectGraceTimer) clearTimeout(state.orb._reconnectGraceTimer);
+                state.orb._reconnectGraceTimer = setTimeout(function () {
+                    if (!state.orb._fallbackMode && state.orb.voiceState !== 'LISTENING') {
+                        console.warn('[VTID-FALLBACK] Reconnect grace period expired — switching to fallback mode');
+                        _activateFallbackMode('Reconnect timeout after connection issue');
+                    }
+                }, 8000);
+            }
             break;
 
         case 'live_api_disconnected':
-            // VTID-FALLBACK: Switch to fallback text+TTS mode instead of dying
-            console.warn('[VTID-FALLBACK] Live API disconnected — switching to fallback mode:', msg.code, msg.reason);
-            _activateFallbackMode('Live API disconnected: code=' + (msg.code || 'unknown'));
+            // VTID-RECONNECT-GRACE: Only activate fallback if reconnect explicitly failed
+            console.warn('[VTID-RECONNECT-GRACE] Live API disconnected:', msg.code, msg.reason);
+            if (msg.reason && (msg.reason.includes('reconnect_failed') || msg.reason.includes('genuine'))) {
+                console.warn('[VTID-FALLBACK] Reconnect failed — switching to fallback mode');
+                _activateFallbackMode('Live API disconnected: code=' + (msg.code || 'unknown'));
+            } else {
+                // Might be a transparent reconnect in progress — wait briefly
+                setOrbState('thinking');
+                setOrbMicroStatus('Reconnecting...', 0);
+                if (state.orb._reconnectGraceTimer) clearTimeout(state.orb._reconnectGraceTimer);
+                state.orb._reconnectGraceTimer = setTimeout(function () {
+                    if (!state.orb._fallbackMode && state.orb.voiceState !== 'LISTENING') {
+                        console.warn('[VTID-FALLBACK] Reconnect grace period expired — switching to fallback mode');
+                        _activateFallbackMode('Live API disconnected: code=' + (msg.code || 'unknown'));
+                    }
+                }, 8000);
+            }
             break;
 
         case 'session_ended':
@@ -26273,16 +26318,14 @@ function geminiLiveStartTranscriber() {
             if (state.orb._fallbackMode) {
                 _sendFallbackMessage(finalTranscript);
             } else {
-                // Normal mode: Add to transcript display (user's spoken words)
-                // Note: In Live API mode, input_transcript from Vertex is the primary
-                // source. This parallel transcriber is just a visual aid.
-                state.orb.liveTranscript.push({
-                    id: Date.now(),
-                    role: 'user',
-                    text: finalTranscript.trim(),
-                    mode: 'voice',
-                    timestamp: new Date().toISOString()
-                });
+                // VTID-TRANSCRIPT-DEDUP: In Live API mode, do NOT add user messages here.
+                // Vertex input_transcript is the authoritative source and gets flushed
+                // as a single bubble on turn_complete. Adding here too causes:
+                // 1. Duplicate user messages (one from Web Speech, one from Vertex)
+                // 2. Wrong message ordering (Web Speech fires before/after Vertex turn_complete)
+                // The interimTranscript (set above) provides real-time visual feedback
+                // while the user is speaking — that's sufficient for the typing effect.
+                console.log('[VTID-TRANSCRIPT-DEDUP] Skipping Web Speech final transcript in Live API mode (Vertex input_transcript is primary)');
             }
 
             // Persist conversation state
@@ -27811,22 +27854,41 @@ function orbSendMessage(message) {
     renderApp();
     scrollOrbChatToBottom();
 
-    // Build context from current state
-    var context = {
-        route: state.currentModuleKey || '',
-        selectedId: state.selectedTaskId || ''
-    };
+    // Initialize orbSessionId if not set (required for /orb/chat endpoint)
+    if (!state.orb.orbSessionId) {
+        state.orb.orbSessionId = 'orb-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+        console.log('[ORB] Generated orbSessionId for chat drawer:', state.orb.orbSessionId);
+    }
 
-    // Call Assistant Core API
-    sendOrbMessage(message.trim(), context)
+    // Route through /api/v1/orb/chat (supports task creation intent detection)
+    fetch('/api/v1/orb/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            orb_session_id: state.orb.orbSessionId,
+            conversation_id: state.orb.conversationId || null,
+            input_text: message.trim(),
+            meta: {
+                mode: 'orb_text',
+                source: 'command-hub-drawer',
+                vtid: null
+            }
+        })
+    })
+        .then(function (res) { return res.json(); })
         .then(function (data) {
             console.log('[ORB] Response received:', data.ok ? 'success' : 'error');
+
+            // Track conversation ID for continuity
+            if (data.conversation_id) {
+                state.orb.conversationId = data.conversation_id;
+            }
 
             // Add assistant response
             state.orb.chatMessages.push({
                 id: Date.now() + 1,
                 role: 'assistant',
-                content: data.reply || 'I could not generate a response.',
+                content: data.reply_text || data.reply || 'I could not generate a response.',
                 timestamp: new Date().toISOString(),
                 meta: data.meta
             });
