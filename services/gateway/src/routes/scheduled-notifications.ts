@@ -17,6 +17,7 @@
 
 import { Router, Request, Response } from 'express';
 import { notifyUserAsync, sendPushToUser, sendAppilixPush } from '../services/notification-service';
+import { generateMorningBriefing } from '../services/autopilot-morning-briefing-service';
 
 const router = Router();
 
@@ -58,15 +59,13 @@ router.post('/morning-briefing', async (req: Request, res: Response) => {
   let dispatched = 0;
 
   for (const { user_id } of users) {
-    notifyUserAsync(user_id, tenantId, 'morning_briefing_ready', {
-      title: 'Good Morning!',
-      body: 'Your daily briefing is ready. See what\'s happening today.',
-      data: { url: '/dashboard' },
-    }, supa);
+    // Generate a personalized, inspiring morning message per user
+    const briefing = await generateMorningBriefing(user_id, tenantId, supa);
+    notifyUserAsync(user_id, tenantId, 'morning_briefing_ready', briefing, supa);
     dispatched++;
   }
 
-  console.log(`[Scheduled] morning_briefing_ready → ${dispatched} users`);
+  console.log(`[Scheduled] morning_briefing_ready (personalized) → ${dispatched} users`);
   return res.status(200).json({ ok: true, dispatched });
 });
 
