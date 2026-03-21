@@ -35909,12 +35909,16 @@ async function fetchAutopilotRegistry() {
         if (regRes.ok) {
             var regData = await regRes.json();
             state.autopilot.registry.data = regData.automations || [];
+        } else {
+            console.error('[Autopilot] fetchRegistry failed:', regRes.status);
+            state.autopilot.registry.data = state.autopilot.registry.data || [];
         }
         if (sumRes.ok) {
             state.autopilot.registry.summary = await sumRes.json();
         }
     } catch (err) {
         console.error('[Autopilot] fetchRegistry error:', err);
+        state.autopilot.registry.data = state.autopilot.registry.data || [];
     } finally {
         state.autopilot.registry.loading = false;
         renderApp();
@@ -36185,9 +36189,13 @@ async function fetchAutopilotRuns() {
         if (res.ok) {
             var data = await res.json();
             state.autopilot.runs.data = data.runs || [];
+        } else {
+            console.error('[Autopilot] fetchRuns failed:', res.status);
+            state.autopilot.runs.data = [];
         }
     } catch (err) {
         console.error('[Autopilot] fetchRuns error:', err);
+        state.autopilot.runs.data = [];
     } finally {
         state.autopilot.runs.loading = false;
         renderApp();
@@ -36349,16 +36357,22 @@ async function fetchAutopilotLive() {
         if (activeRes.ok) {
             var data = await activeRes.json();
             state.autopilot.live.activeRuns = data.runs || [];
+        } else {
+            state.autopilot.live.activeRuns = state.autopilot.live.activeRuns || [];
         }
         if (runsRes.ok) {
             var data = await runsRes.json();
             state.autopilot.live.recentRuns = data.runs || [];
+        } else {
+            state.autopilot.live.recentRuns = state.autopilot.live.recentRuns || [];
         }
         if (healthRes.ok) {
             state.autopilot.live.engineStatus = await healthRes.json();
         }
     } catch (err) {
         console.error('[Autopilot] fetchLive error:', err);
+        state.autopilot.live.activeRuns = state.autopilot.live.activeRuns || [];
+        state.autopilot.live.recentRuns = state.autopilot.live.recentRuns || [];
     } finally {
         state.autopilot.live.loading = false;
         renderApp();
@@ -36684,9 +36698,13 @@ async function fetchAutopilotGrowth() {
         if (runsRes.ok) {
             var data = await runsRes.json();
             state.autopilot.growth.metrics = computeGrowthMetrics(data.runs || []);
+        } else {
+            console.error('[Autopilot] fetchGrowth failed:', runsRes.status);
+            state.autopilot.growth.metrics = state.autopilot.growth.metrics || computeGrowthMetrics([]);
         }
     } catch (err) {
         console.error('[Autopilot] fetchGrowth error:', err);
+        state.autopilot.growth.metrics = state.autopilot.growth.metrics || computeGrowthMetrics([]);
     } finally {
         state.autopilot.growth.loading = false;
         renderApp();
