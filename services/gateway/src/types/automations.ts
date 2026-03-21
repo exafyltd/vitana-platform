@@ -18,7 +18,8 @@ export type AutomationDomain =
   | 'memory-intelligence'      // AP-0900
   | 'platform-operations'      // AP-1000
   | 'business-hub-marketplace' // AP-1100
-  | 'live-rooms-commerce';     // AP-1200
+  | 'live-rooms-commerce'      // AP-1200
+  | 'onboarding-growth';       // AP-1300
 
 export type AutomationStatus = 'PLANNED' | 'IN_PROGRESS' | 'IMPLEMENTED' | 'LIVE' | 'DEPRECATED';
 export type AutomationPriority = 'P0' | 'P1' | 'P2' | 'P3';

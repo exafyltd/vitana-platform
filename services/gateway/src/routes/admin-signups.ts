@@ -20,6 +20,7 @@ import { Router, Request, Response } from 'express';
 import { getSupabase } from '../lib/supabase';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { notifyUserAsync } from '../services/notification-service';
+import { dispatchEvent } from '../services/automation-executor';
 
 const router = Router();
 const VTID = 'ADMIN-SIGNUPS';
@@ -264,6 +265,40 @@ router.post('/log-result', async (req: Request, res: Response) => {
     if (error) {
       console.error(`[${VTID}] POST /log-result error:`, error.message);
       return res.status(500).json({ ok: false, error: error.message });
+    }
+
+    // Dispatch automation event when user completes onboarding
+    if (status === 'onboarded' && auth_user_id) {
+      const tenantId = process.env.DEFAULT_TENANT_ID;
+      if (tenantId) {
+        // Look up referral/shared_link source from signup_attempts
+        const { data: attempt } = await supabase
+          .from('signup_attempts')
+          .select('referral_code, utm_source, utm_campaign')
+          .eq('id', attempt_id)
+          .maybeSingle();
+
+        dispatchEvent(tenantId, 'user.signup.completed', {
+          user_id: auth_user_id,
+          attempt_id,
+        }).catch(err => console.warn(`[${VTID}] dispatch user.signup.completed failed:`, err.message));
+
+        // Dispatch referral event if applicable
+        if (attempt?.referral_code) {
+          dispatchEvent(tenantId, 'user.signup.referral', {
+            user_id: auth_user_id,
+            referral_code: attempt.referral_code,
+          }).catch(err => console.warn(`[${VTID}] dispatch user.signup.referral failed:`, err.message));
+        }
+
+        // Dispatch shared_link event if applicable
+        if (attempt?.utm_source === 'sharing_link' || attempt?.utm_campaign?.startsWith('share_')) {
+          dispatchEvent(tenantId, 'user.signup.shared_link', {
+            user_id: auth_user_id,
+            utm_campaign: attempt.utm_campaign,
+          }).catch(err => console.warn(`[${VTID}] dispatch user.signup.shared_link failed:`, err.message));
+        }
+      }
     }
 
     return res.json({ ok: true });

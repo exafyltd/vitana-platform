@@ -17,6 +17,65 @@ import { AutomationDefinition, AutomationContext, RunStatus, TriggerType, RoleTa
 import { getAutomation, getHeartbeatAutomations, getEventAutomations, automationTargetsRole } from './automation-registry';
 import { notifyUserAsync } from './notification-service';
 
+// ── Notification throttle ────────────────────────────────────
+// Tracks daily notification counts per user to prevent flooding.
+// Resets at midnight UTC (or when the process restarts).
+
+const DEFAULT_MAX_PROMPTS_PER_DAY = 8;
+const dailyNotifCounts: Map<string, { count: number; date: string }> = new Map();
+
+function getTodayKey(): string {
+  return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+/**
+ * Check if a user has room for more notifications today.
+ * Returns true if the notification should be sent, false if throttled.
+ */
+async function checkNotificationThrottle(
+  userId: string,
+  supabase: any
+): Promise<boolean> {
+  const today = getTodayKey();
+  const entry = dailyNotifCounts.get(userId);
+
+  // Reset if new day
+  if (!entry || entry.date !== today) {
+    dailyNotifCounts.set(userId, { count: 0, date: today });
+  }
+
+  // Look up user's max_prompts_per_day preference
+  let maxPerDay = DEFAULT_MAX_PROMPTS_PER_DAY;
+  try {
+    const { data } = await supabase
+      .from('autopilot_prompt_prefs')
+      .select('max_prompts_per_day')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (data?.max_prompts_per_day != null) {
+      maxPerDay = data.max_prompts_per_day;
+    }
+  } catch {
+    // Use default if table doesn't exist or query fails
+  }
+
+  const current = dailyNotifCounts.get(userId)!;
+  if (current.count >= maxPerDay) {
+    return false; // throttled
+  }
+
+  current.count++;
+  return true;
+}
+
+// Periodically clean up stale entries (users from previous days)
+setInterval(() => {
+  const today = getTodayKey();
+  for (const [userId, entry] of dailyNotifCounts) {
+    if (entry.date !== today) dailyNotifCounts.delete(userId);
+  }
+}, 3600_000); // every hour
+
 // ── Environment ─────────────────────────────────────────────
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
@@ -235,7 +294,17 @@ export async function executeAutomation(
       console.log(`[${automationId}] ${msg}`);
     },
     notify: (userId: string, type: string, payload) => {
-      notifyUserAsync(userId, tenantId, type, payload, supabase);
+      // Throttle: check daily limit before sending
+      checkNotificationThrottle(userId, supabase).then(allowed => {
+        if (allowed) {
+          notifyUserAsync(userId, tenantId, type, payload, supabase);
+        } else {
+          console.log(`[AutomationExecutor] Throttled notification for user=${userId.slice(0, 8)}… (daily limit reached)`);
+        }
+      }).catch(() => {
+        // On throttle check failure, send anyway (fail open)
+        notifyUserAsync(userId, tenantId, type, payload, supabase);
+      });
     },
     emitEvent: async (topic: string, metadata: Record<string, unknown>) => {
       await emitOasisEvent(topic, { ...metadata, automation_id: automationId, run_id: runId });

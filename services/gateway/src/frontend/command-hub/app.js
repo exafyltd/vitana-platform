@@ -71,7 +71,7 @@ const ROLE_DEFAULT_SCREENS = {
     'community': { section: 'overview', tab: 'system-overview' },
     'patient': { section: 'overview', tab: 'system-overview' },
     'professional': { section: 'overview', tab: 'system-overview' },
-    'staff': { section: 'operator', tab: 'task-queue' },
+    'staff': { section: 'operator', tab: 'dashboard' },
     'admin': { section: 'admin', tab: 'users' },
     'developer': { section: 'command-hub', tab: 'tasks' }
 };
@@ -1605,14 +1605,7 @@ async function triggerGlobalRefresh() {
                 await fetchGovernanceCategories();
             }
         } else if (moduleKey === 'operator') {
-            if (tab === 'task-queue' || tab === 'task-details') {
-                await fetchOperatorTasks();
-            } else if (tab === 'execution-logs') {
-                await fetchOperatorLogs();
-            } else if (tab === 'pipelines') {
-                state.operatorPipelines.fetched = false;
-                await fetchOperatorPipelines();
-            }
+            // Tabs auto-fetch in their render functions; no explicit init needed
         } else if (moduleKey === 'memory-garden') {
             state.memoryGarden.loading = true;
             await fetchMemoryGardenProgress();
@@ -2529,10 +2522,10 @@ const NAVIGATION_CONFIG = [
         "section": "operator",
         "basePath": "/command-hub/operator/",
         "tabs": [
+            { "key": "dashboard", "path": "/command-hub/operator/dashboard/" },
             { "key": "task-queue", "path": "/command-hub/operator/task-queue/" },
-            { "key": "task-details", "path": "/command-hub/operator/task-details/" },
-            { "key": "execution-logs", "path": "/command-hub/operator/execution-logs/" },
-            { "key": "pipelines", "path": "/command-hub/operator/pipelines/" },
+            { "key": "event-stream", "path": "/command-hub/operator/event-stream/" },
+            { "key": "deployments", "path": "/command-hub/operator/deployments/" },
             { "key": "runbook", "path": "/command-hub/operator/runbook/" }
         ]
     },
@@ -2572,14 +2565,14 @@ const NAVIGATION_CONFIG = [
         ]
     },
     {
-        "section": "workflows",
-        "basePath": "/command-hub/workflows/",
+        "section": "autopilot",
+        "basePath": "/command-hub/autopilot/",
         "tabs": [
-            { "key": "workflow-list", "path": "/command-hub/workflows/workflow-list/" },
-            { "key": "triggers", "path": "/command-hub/workflows/triggers/" },
-            { "key": "actions", "path": "/command-hub/workflows/actions/" },
-            { "key": "schedules", "path": "/command-hub/workflows/schedules/" },
-            { "key": "history", "path": "/command-hub/workflows/history/" }
+            { "key": "registry", "path": "/command-hub/autopilot/registry/" },
+            { "key": "runs", "path": "/command-hub/autopilot/runs/" },
+            { "key": "live", "path": "/command-hub/autopilot/live/" },
+            { "key": "engine", "path": "/command-hub/autopilot/engine/" },
+            { "key": "growth", "path": "/command-hub/autopilot/growth/" }
         ]
     },
     {
@@ -2702,7 +2695,7 @@ const SECTION_LABELS = {
     'command-hub': 'Command Hub',
     'governance': 'Governance',
     'agents': 'Agents',
-    'workflows': 'Workflows',
+    'autopilot': 'Autopilot',
     'oasis': 'OASIS',
     'databases': 'Databases',
     'infrastructure': 'Infrastructure',
@@ -2716,11 +2709,11 @@ const SECTION_LABELS = {
 };
 
 const splitScreenCombos = [
-    { id: 'operatorLogs+commandHubTasks', label: 'Operator Logs + Tasks', left: { module: 'operator', tab: 'execution-logs' }, right: { module: 'command-hub', tab: 'tasks' } },
+    { id: 'operatorEvents+commandHubTasks', label: 'Operator Events + Tasks', left: { module: 'operator', tab: 'event-stream' }, right: { module: 'command-hub', tab: 'tasks' } },
     { id: 'commandHubTasks+commandHubDetail', label: 'Tasks + Live Console', left: { module: 'command-hub', tab: 'tasks' }, right: { module: 'command-hub', tab: 'live-console' } },
     { id: 'oasisEvents+commandHubHistory', label: 'OASIS Events + History', left: { module: 'oasis', tab: 'events' }, right: { module: 'governance', tab: 'history' } },
     { id: 'governanceEvaluations+commandHubTasks', label: 'Gov Evals + Tasks', left: { module: 'governance', tab: 'evaluations' }, right: { module: 'command-hub', tab: 'tasks' } },
-    { id: 'agentsActivity+operatorLogs', label: 'Agents + Operator', left: { module: 'agents', tab: 'pipelines' }, right: { module: 'operator', tab: 'execution-logs' } },
+    { id: 'agentsActivity+operatorEvents', label: 'Agents + Operator', left: { module: 'agents', tab: 'pipelines' }, right: { module: 'operator', tab: 'event-stream' } },
     { id: 'testingRuns+commandHubTasks', label: 'Test Runs + Tasks', left: { module: 'testing-qa', tab: 'e2e' }, right: { module: 'command-hub', tab: 'tasks' } }
 ];
 
@@ -3491,11 +3484,12 @@ const state = {
     overviewPipelineSummary: { snapshot: null, loading: false, error: null, fetched: false },
     overviewRecentEventsFilter: 'pipeline',
 
-    // Operator module
-    operatorTaskQueue: { items: [], loading: false, error: null, fetched: false },
-    operatorExecLogs: { items: [], loading: false, error: null, fetched: false },
-    operatorPipelines: { items: [], loading: false, error: null, fetched: false },
-    operatorRunbook: { items: [], loading: false, error: null, fetched: false },
+    // Operator module — Supervision Dashboard
+    operatorDashboard: { data: null, loading: false, error: null, fetched: false },
+    operatorTaskQueue: { items: [], loading: false, error: null, fetched: false, statusFilter: 'all' },
+    operatorEventStream: { items: [], loading: false, error: null, fetched: false, domainFilter: 'all' },
+    operatorDeployments: { deployments: [], approvals: [], loading: false, error: null, fetched: false },
+    operatorRunbook: { attention: [], recommendations: [], loading: false, error: null, fetched: false },
 
     // Governance missing
     governanceViolations: { items: [], loading: false, error: null, fetched: false, pagination: { offset: 0, limit: 50, hasMore: true } },
@@ -5779,15 +5773,15 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'overview' && tab === 'release-feed') {
         container.appendChild(renderOverviewReleaseFeedView());
 
-    // ──── Operator Module ────
+    // ──── Operator Module — Supervision Dashboard ────
+    } else if (moduleKey === 'operator' && tab === 'dashboard') {
+        container.appendChild(renderOperatorDashboardView());
     } else if (moduleKey === 'operator' && tab === 'task-queue') {
         container.appendChild(renderOperatorTaskQueueView());
-    } else if (moduleKey === 'operator' && tab === 'task-details') {
-        container.appendChild(renderOperatorTaskDetailsView());
-    } else if (moduleKey === 'operator' && tab === 'execution-logs') {
-        container.appendChild(renderOperatorExecutionLogsView());
-    } else if (moduleKey === 'operator' && tab === 'pipelines') {
-        container.appendChild(renderOperatorPipelinesView());
+    } else if (moduleKey === 'operator' && tab === 'event-stream') {
+        container.appendChild(renderOperatorEventStreamView());
+    } else if (moduleKey === 'operator' && tab === 'deployments') {
+        container.appendChild(renderOperatorDeploymentsView());
     } else if (moduleKey === 'operator' && tab === 'runbook') {
         container.appendChild(renderOperatorRunbookView());
 
@@ -5812,18 +5806,6 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderOasisStreamsView());
     } else if (moduleKey === 'oasis' && tab === 'command-log') {
         container.appendChild(renderOasisCommandLogView());
-
-    // ──── Workflows Module ────
-    } else if (moduleKey === 'workflows' && tab === 'workflow-list') {
-        container.appendChild(renderWorkflowsListView());
-    } else if (moduleKey === 'workflows' && tab === 'triggers') {
-        container.appendChild(renderWorkflowsTriggersView());
-    } else if (moduleKey === 'workflows' && tab === 'actions') {
-        container.appendChild(renderWorkflowsActionsView());
-    } else if (moduleKey === 'workflows' && tab === 'schedules') {
-        container.appendChild(renderWorkflowsSchedulesView());
-    } else if (moduleKey === 'workflows' && tab === 'history') {
-        container.appendChild(renderWorkflowsHistoryView());
 
     // ──── Databases Module ────
     } else if (moduleKey === 'databases' && tab === 'supabase') {
@@ -5922,6 +5904,18 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderDocsArchitectureView());
     } else if (moduleKey === 'docs' && tab === 'workforce') {
         container.appendChild(renderDocsWorkforceView());
+
+    // ──── Autopilot tabs ────
+    } else if (moduleKey === 'autopilot' && tab === 'registry') {
+        container.appendChild(renderAutopilotRegistryView());
+    } else if (moduleKey === 'autopilot' && tab === 'runs') {
+        container.appendChild(renderAutopilotRunsView());
+    } else if (moduleKey === 'autopilot' && tab === 'live') {
+        container.appendChild(renderAutopilotLiveView());
+    } else if (moduleKey === 'autopilot' && tab === 'engine') {
+        container.appendChild(renderAutopilotEngineView());
+    } else if (moduleKey === 'autopilot' && tab === 'growth') {
+        container.appendChild(renderAutopilotGrowthView());
 
     } else {
         // Fallback placeholder for any unmapped screens
@@ -9013,6 +9007,10 @@ window.onpopstate = () => {
     // Stop models auto-refresh when navigating away
     if (state.currentModuleKey === 'models-evaluations' && route.section !== 'models-evaluations') {
         stopModelsAutoRefresh();
+    }
+    // Stop event stream auto-refresh when navigating away from operator event-stream
+    if (state.currentTab === 'event-stream' && (route.section !== 'operator' || route.tab !== 'event-stream')) {
+        stopOperatorEventStreamRefresh();
     }
     state.currentModuleKey = route.section;
     state.currentTab = route.tab;
@@ -22713,6 +22711,10 @@ function renderExecutionApprovalModal() {
         state.executionApprovalLoading = true;
         renderApp();
 
+        // Timeout: abort if server doesn't respond within 30 seconds
+        var abortController = new AbortController();
+        var timeoutId = setTimeout(function () { abortController.abort(); }, 30000);
+
         try {
             // VTID-01194: Call lifecycle/start with approval_reason
             var response = await fetch('/api/v1/vtid/lifecycle/start', {
@@ -22723,12 +22725,14 @@ function renderExecutionApprovalModal() {
                     source: 'command-hub',
                     summary: vtid + ': Execution approved from Command Hub',
                     approval_reason: state.executionApprovalReason || null
-                })
+                }),
+                signal: abortController.signal
             });
+            clearTimeout(timeoutId);
             var result = await response.json();
 
             if (result.ok) {
-                // Clear modal state IMMEDIATELY for responsiveness
+                // Clear modal state BEFORE toast (showToast calls renderApp)
                 state.showExecutionApprovalModal = false;
                 state.executionApprovalVtid = null;
                 state.executionApprovalReason = '';
@@ -22742,22 +22746,31 @@ function renderExecutionApprovalModal() {
                 state.drawerSpecText = '';
                 state.drawerSpecEditing = false;
 
-                // Show success toast
-                showToast('Execution approved: ' + vtid + ' \u2192 Autonomous execution started', 'success');
-
-                // Trigger refresh but don't block UI close on it
+                // Trigger refresh BEFORE toast (fetchTasks is async, won't block)
                 fetchTasks();
-                renderApp();
+
+                // Show success toast LAST (calls renderApp which rebuilds DOM)
+                showToast('Execution approved: ' + vtid + ' \u2192 Autonomous execution started', 'success');
             } else {
+                // Spec gate or other rejection — show specific message
+                var errorMsg = result.message || result.error || 'Unknown error';
+                if (result.code === 'SPEC_NOT_APPROVED') {
+                    errorMsg = 'Spec must be approved before execution. Approve the spec first, then try again.';
+                } else if (result.code === 'SPEC_HASH_MISMATCH') {
+                    errorMsg = 'Spec was modified after approval. Re-validate and re-approve the spec.';
+                }
                 state.executionApprovalLoading = false;
-                showToast('Approval failed: ' + (result.error || 'Unknown error'), 'error');
-                renderApp();
+                showToast('Approval failed: ' + errorMsg, 'error');
             }
         } catch (e) {
+            clearTimeout(timeoutId);
             console.error('[VTID-01194] Execution approval failed:', e);
+            var msg = 'Network error';
+            if (e && e.name === 'AbortError') {
+                msg = 'Request timed out (30s). Server may be overloaded — try again.';
+            }
             state.executionApprovalLoading = false;
-            showToast('Approval failed: Network error', 'error');
-            renderApp();
+            showToast('Approval failed: ' + msg, 'error');
         }
     };
     footer.appendChild(confirmBtn);
@@ -30794,7 +30807,7 @@ async function fetchOperatorTaskQueue() {
     renderApp();
 
     try {
-        var response = await fetch('/api/v1/tasks?status=pending,in_progress');
+        var response = await fetch('/api/v1/tasks?status=pending,in_progress,scheduled,blocked,failed&limit=50');
         if (!response.ok) throw new Error('Task queue fetch failed: ' + response.status);
 
         var data = await response.json();
@@ -30802,7 +30815,7 @@ async function fetchOperatorTaskQueue() {
         state.operatorTaskQueue.items = items;
         state.operatorTaskQueue.fetched = true;
         state.operatorTaskQueue.error = null;
-        console.log('[VTID-01240] Operator task queue loaded:', items.length);
+        console.log('[Supervision] Operator task queue loaded:', items.length);
     } catch (error) {
         console.error('[VTID-01240] Failed to fetch operator task queue:', error);
         state.operatorTaskQueue.error = error.message;
@@ -30846,7 +30859,7 @@ function renderOperatorTaskQueueView() {
     if (state.operatorTaskQueue.items.length === 0) {
         var emptyDiv = document.createElement('div');
         emptyDiv.className = 'placeholder-content';
-        emptyDiv.textContent = 'No pending or in-progress tasks.';
+        emptyDiv.textContent = 'No active tasks found.';
         container.appendChild(emptyDiv);
         return container;
     }
@@ -30869,13 +30882,52 @@ function renderOperatorTaskQueueView() {
     header.appendChild(refreshBtn);
     container.appendChild(header);
 
+    // Status filter buttons
+    var filterBar = document.createElement('div');
+    filterBar.style.cssText = 'display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;';
+    var filters = [
+        { key: 'all', label: 'All' },
+        { key: 'scheduled', label: 'Scheduled' },
+        { key: 'in_progress', label: 'In Progress' },
+        { key: 'pending', label: 'Pending' },
+        { key: 'blocked', label: 'Blocked' },
+        { key: 'failed', label: 'Failed' }
+    ];
+    filters.forEach(function (f) {
+        var btn = document.createElement('button');
+        btn.className = 'btn btn-sm' + (state.operatorTaskQueue.statusFilter === f.key ? ' btn-primary' : '');
+        btn.textContent = f.label;
+        btn.onclick = function () {
+            state.operatorTaskQueue.statusFilter = f.key;
+            renderApp();
+        };
+        filterBar.appendChild(btn);
+    });
+    container.appendChild(filterBar);
+
+    // Filter items
+    var displayItems = state.operatorTaskQueue.items;
+    if (state.operatorTaskQueue.statusFilter !== 'all') {
+        displayItems = displayItems.filter(function (task) {
+            return (task.status || '').toLowerCase() === state.operatorTaskQueue.statusFilter;
+        });
+    }
+
+    if (displayItems.length === 0) {
+        var noMatch = document.createElement('div');
+        noMatch.className = 'placeholder-content';
+        noMatch.textContent = 'No tasks matching filter "' + state.operatorTaskQueue.statusFilter + '".';
+        container.appendChild(noMatch);
+        return container;
+    }
+
     // Table
     var table = document.createElement('table');
     table.className = 'list-table';
 
     var thead = document.createElement('thead');
     var headerRow = document.createElement('tr');
-    ['VTID', 'Title', 'Status', 'Role', 'Created'].forEach(function (h) {
+    ['VTID', 'Title', 'Status', 'Spec', 'Role', 'Updated'].forEach(function (h) {
         var th = document.createElement('th');
         th.textContent = h;
         headerRow.appendChild(th);
@@ -30884,7 +30936,7 @@ function renderOperatorTaskQueueView() {
     table.appendChild(thead);
 
     var tbody = document.createElement('tbody');
-    state.operatorTaskQueue.items.forEach(function (task) {
+    displayItems.forEach(function (task) {
         var row = document.createElement('tr');
         row.className = 'clickable-row';
         if (state.selectedTask && state.selectedTask.vtid === task.vtid) {
@@ -30892,16 +30944,12 @@ function renderOperatorTaskQueueView() {
         }
         row.onclick = function () {
             state.selectedTask = task;
-            // Navigate to task details tab
-            state.currentTab = 'task-details';
-            var section = NAVIGATION_CONFIG.find(function (s) { return s.section === 'operator'; });
-            if (section) {
-                var detailTab = section.tabs.find(function (t) { return t.key === 'task-details'; });
-                if (detailTab && detailTab.path) {
-                    history.pushState(null, '', detailTab.path);
-                }
-            }
+            state.selectedTaskDetail = null;
+            state.selectedTaskDetailLoading = true;
+            state.executionStatus = null;
+            state.executionStatusLoading = false;
             renderApp();
+            fetchVtidDetail(task.vtid);
         };
         row.style.cursor = 'pointer';
 
@@ -30921,314 +30969,559 @@ function renderOperatorTaskQueueView() {
         statusTd.appendChild(statusBadge);
         row.appendChild(statusTd);
 
+        var specTd = document.createElement('td');
+        var specStatus = task.spec_status || 'missing';
+        var specBadge = document.createElement('span');
+        specBadge.className = 'status-badge status-' + specStatus.toLowerCase();
+        specBadge.textContent = specStatus;
+        specTd.appendChild(specBadge);
+        row.appendChild(specTd);
+
         var roleTd = document.createElement('td');
         var roles = task.target_roles || task.target_role || [];
         if (typeof roles === 'string') roles = [roles];
         roleTd.textContent = Array.isArray(roles) ? roles.join(', ') : '';
         row.appendChild(roleTd);
 
-        var createdTd = document.createElement('td');
-        createdTd.textContent = formatEventTimestamp(task.created_at);
-        row.appendChild(createdTd);
+        var updatedTd = document.createElement('td');
+        updatedTd.textContent = formatEventTimestamp(task.updated_at || task.created_at);
+        row.appendChild(updatedTd);
 
         tbody.appendChild(row);
     });
     table.appendChild(tbody);
     container.appendChild(table);
 
-    autoAddLoadMore(container, 'operatorTaskQueue');
-
     return container;
 }
 
 // ---------------------------------------------------------------------------
-// 13. renderOperatorTaskDetailsView — selected task detail panel
+// 13. fetchOperatorDashboard — composite fetch for supervision dashboard
 // ---------------------------------------------------------------------------
-function renderOperatorTaskDetailsView() {
-    var container = document.createElement('div');
-    container.className = 'operator-task-details-container';
-
-    var task = state.selectedTask;
-
-    // No task selected
-    if (!task) {
-        var emptyDiv = document.createElement('div');
-        emptyDiv.className = 'placeholder-content';
-        emptyDiv.textContent = 'Select a task from Task Queue to view details.';
-        container.appendChild(emptyDiv);
-        return container;
-    }
-
-    // Header with back button
-    var header = document.createElement('div');
-    header.className = 'list-toolbar';
-
-    var backBtn = document.createElement('button');
-    backBtn.className = 'btn btn-sm';
-    backBtn.textContent = 'Back to Queue';
-    backBtn.onclick = function () {
-        state.currentTab = 'task-queue';
-        var section = NAVIGATION_CONFIG.find(function (s) { return s.section === 'operator'; });
-        if (section) {
-            var queueTab = section.tabs.find(function (t) { return t.key === 'task-queue'; });
-            if (queueTab && queueTab.path) {
-                history.pushState(null, '', queueTab.path);
-            }
-        }
-        renderApp();
-    };
-    header.appendChild(backBtn);
-
-    var title = document.createElement('span');
-    title.className = 'toolbar-title';
-    title.textContent = task.vtid || 'Task Details';
-    header.appendChild(title);
-    container.appendChild(header);
-
-    // Task summary card
-    var summary = document.createElement('div');
-    summary.className = 'task-detail-summary';
-
-    var titleBlock = document.createElement('h3');
-    titleBlock.className = 'task-detail-title';
-    titleBlock.textContent = task.title || task.vtid || '';
-    summary.appendChild(titleBlock);
-
-    // Status badge
-    var statusDiv = document.createElement('div');
-    statusDiv.className = 'task-detail-status';
-    var statusLabel = document.createElement('strong');
-    statusLabel.textContent = 'Status: ';
-    statusDiv.appendChild(statusLabel);
-    var statusBadge = document.createElement('span');
-    statusBadge.className = 'status-badge status-' + (task.status || 'pending').toLowerCase();
-    statusBadge.textContent = task.status || 'pending';
-    statusDiv.appendChild(statusBadge);
-    summary.appendChild(statusDiv);
-
-    // Metadata
-    var metaFields = [
-        { label: 'VTID', value: task.vtid },
-        { label: 'Created', value: formatEventTimestamp(task.created_at) },
-        { label: 'Updated', value: formatEventTimestamp(task.updated_at) },
-        { label: 'Target Roles', value: Array.isArray(task.target_roles) ? task.target_roles.join(', ') : (task.target_role || '') },
-        { label: 'Spec Status', value: task.spec_status || '' },
-        { label: 'Current Stage', value: task.current_stage || '' },
-        { label: 'Claimed By', value: task.claimed_by || '' }
-    ];
-
-    metaFields.forEach(function (field) {
-        if (!field.value) return;
-        var row = document.createElement('div');
-        row.className = 'task-detail-row';
-        row.innerHTML = '<strong>' + field.label + ':</strong> ' + field.value;
-        summary.appendChild(row);
-    });
-
-    container.appendChild(summary);
-
-    // Task spec
-    var spec = task.spec || getTaskSpec(task.vtid);
-    if (spec) {
-        var specSection = document.createElement('div');
-        specSection.className = 'task-detail-spec';
-
-        var specLabel = document.createElement('h4');
-        specLabel.textContent = 'Task Spec';
-        specSection.appendChild(specLabel);
-
-        var specPre = document.createElement('pre');
-        specPre.className = 'task-spec-content';
-        specPre.textContent = spec;
-        specSection.appendChild(specPre);
-        container.appendChild(specSection);
-    }
-
-    // Stage timeline (if stageTimeline exists on the task)
-    var timeline = task.stageTimeline || task.stage_timeline;
-    if (timeline && Array.isArray(timeline) && timeline.length > 0) {
-        var timelineSection = document.createElement('div');
-        timelineSection.className = 'task-detail-timeline';
-
-        var timelineLabel = document.createElement('h4');
-        timelineLabel.textContent = 'Stage Timeline';
-        timelineSection.appendChild(timelineLabel);
-
-        var timelineList = document.createElement('div');
-        timelineList.className = 'stage-timeline-list';
-
-        timeline.forEach(function (entry) {
-            var timelineItem = document.createElement('div');
-            timelineItem.className = 'stage-timeline-item';
-
-            var stageBadge = document.createElement('span');
-            stageBadge.className = 'status-badge status-' + (entry.status || 'info').toLowerCase();
-            stageBadge.textContent = entry.stage || entry.name || '';
-
-            var stageTime = document.createElement('span');
-            stageTime.className = 'stage-timeline-time';
-            stageTime.textContent = formatEventTimestamp(entry.timestamp || entry.created_at);
-
-            var stageMsg = document.createElement('span');
-            stageMsg.className = 'stage-timeline-message';
-            stageMsg.textContent = entry.message || '';
-
-            timelineItem.appendChild(stageBadge);
-            timelineItem.appendChild(stageTime);
-            timelineItem.appendChild(stageMsg);
-            timelineList.appendChild(timelineItem);
-        });
-
-        timelineSection.appendChild(timelineList);
-        container.appendChild(timelineSection);
-    }
-
-    // Event history for this task (filter from oasisEvents if available)
-    var taskEvents = [];
-    if (state.oasisEvents && state.oasisEvents.items && task.vtid) {
-        taskEvents = state.oasisEvents.items.filter(function (ev) {
-            return ev.vtid === task.vtid;
-        });
-    }
-
-    if (taskEvents.length > 0) {
-        var eventsSection = document.createElement('div');
-        eventsSection.className = 'task-detail-events';
-
-        var eventsLabel = document.createElement('h4');
-        eventsLabel.textContent = 'Event History (' + taskEvents.length + ')';
-        eventsSection.appendChild(eventsLabel);
-
-        var eventsTable = document.createElement('table');
-        eventsTable.className = 'list-table';
-
-        var evThead = document.createElement('thead');
-        var evHeaderRow = document.createElement('tr');
-        ['Time', 'Topic', 'Status', 'Message'].forEach(function (h) {
-            var th = document.createElement('th');
-            th.textContent = h;
-            evHeaderRow.appendChild(th);
-        });
-        evThead.appendChild(evHeaderRow);
-        eventsTable.appendChild(evThead);
-
-        var evTbody = document.createElement('tbody');
-        taskEvents.forEach(function (ev) {
-            var evRow = document.createElement('tr');
-
-            var evTimeTd = document.createElement('td');
-            evTimeTd.textContent = formatEventTimestamp(ev.created_at || ev.timestamp);
-            evRow.appendChild(evTimeTd);
-
-            var evTopicTd = document.createElement('td');
-            evTopicTd.textContent = ev.topic || ev.type || '';
-            evRow.appendChild(evTopicTd);
-
-            var evStatusTd = document.createElement('td');
-            var evStatusBadge = document.createElement('span');
-            evStatusBadge.className = 'status-badge status-' + (ev.status || 'info');
-            evStatusBadge.textContent = ev.status || 'info';
-            evStatusTd.appendChild(evStatusBadge);
-            evRow.appendChild(evStatusTd);
-
-            var evMsgTd = document.createElement('td');
-            evMsgTd.textContent = ev.message || '';
-            evRow.appendChild(evMsgTd);
-
-            evTbody.appendChild(evRow);
-        });
-        eventsTable.appendChild(evTbody);
-        eventsSection.appendChild(eventsTable);
-        container.appendChild(eventsSection);
-    }
-
-    return container;
-}
-
-// ---------------------------------------------------------------------------
-// 14. fetchOperatorExecLogs — GET /api/v1/operator/history?limit=100
-// ---------------------------------------------------------------------------
-async function fetchOperatorExecLogs() {
-    if (state.operatorExecLogs.loading) return;
-    state.operatorExecLogs.loading = true;
-    state.operatorExecLogs.error = null;
+async function fetchOperatorDashboard() {
+    if (state.operatorDashboard.loading) return;
+    state.operatorDashboard.loading = true;
+    state.operatorDashboard.error = null;
     renderApp();
 
     try {
-        var response = await fetch('/api/v1/operator/history?limit=100');
-        if (!response.ok) throw new Error('Execution logs fetch failed: ' + response.status);
+        var results = await Promise.allSettled([
+            fetch('/api/v1/autopilot/pipeline/summary').then(function (r) {
+                if (!r.ok) throw new Error('Pipeline summary: ' + r.status);
+                return r.json();
+            }),
+            fetch('/api/v1/operator/heartbeat').then(function (r) {
+                if (!r.ok) throw new Error('Heartbeat: ' + r.status);
+                return r.json();
+            }),
+            fetch('/api/v1/approvals/pending?limit=5').then(function (r) {
+                if (!r.ok) throw new Error('Approvals: ' + r.status);
+                return r.json();
+            })
+        ]);
 
-        var data = await response.json();
-        var items = data.data || data.history || (Array.isArray(data) ? data : []);
-        state.operatorExecLogs.items = items;
-        state.operatorExecLogs.fetched = true;
-        state.operatorExecLogs.error = null;
-        console.log('[VTID-01240] Operator execution logs loaded:', items.length);
+        var pipeline = results[0].status === 'fulfilled' ? results[0].value : null;
+        var heartbeat = results[1].status === 'fulfilled' ? results[1].value : null;
+        var approvals = results[2].status === 'fulfilled' ? results[2].value : null;
+
+        state.operatorDashboard.data = {
+            pipeline: pipeline,
+            heartbeat: heartbeat,
+            approvals: approvals
+        };
+        state.operatorDashboard.fetched = true;
+        state.operatorDashboard.error = null;
+        console.log('[Supervision] Dashboard loaded');
     } catch (error) {
-        console.error('[VTID-01240] Failed to fetch operator execution logs:', error);
-        state.operatorExecLogs.error = error.message;
+        console.error('[Supervision] Dashboard fetch error:', error);
+        state.operatorDashboard.error = error.message;
     } finally {
-        state.operatorExecLogs.loading = false;
+        state.operatorDashboard.loading = false;
         renderApp();
     }
 }
 
 // ---------------------------------------------------------------------------
-// 15. renderOperatorExecutionLogsView — execution logs table
+// 14. renderOperatorDashboardView — supervision dashboard landing page
 // ---------------------------------------------------------------------------
-function renderOperatorExecutionLogsView() {
+function renderOperatorDashboardView() {
     var container = document.createElement('div');
-    container.className = 'operator-exec-logs-container';
+    container.className = 'operator-dashboard-container';
 
     // Auto-fetch
-    if (!state.operatorExecLogs.fetched && !state.operatorExecLogs.loading) {
-        fetchOperatorExecLogs();
+    if (!state.operatorDashboard.fetched && !state.operatorDashboard.loading) {
+        fetchOperatorDashboard();
     }
 
     // Loading
-    if (state.operatorExecLogs.loading && state.operatorExecLogs.items.length === 0) {
-        var loading = document.createElement('div');
-        loading.className = 'placeholder-content';
-        loading.textContent = 'Loading execution logs...';
-        container.appendChild(loading);
+    if (state.operatorDashboard.loading && !state.operatorDashboard.data) {
+        var spinnerWrap = document.createElement('div');
+        spinnerWrap.className = 'attention-spinner-container';
+        var spinner = document.createElement('div');
+        spinner.className = 'attention-spinner';
+        spinnerWrap.appendChild(spinner);
+        var spinText = document.createElement('div');
+        spinText.className = 'attention-spinner-text';
+        spinText.textContent = 'Loading supervision dashboard\u2026';
+        spinnerWrap.appendChild(spinText);
+        container.appendChild(spinnerWrap);
         return container;
     }
 
     // Error
-    if (state.operatorExecLogs.error) {
+    if (state.operatorDashboard.error && !state.operatorDashboard.data) {
         var errorDiv = document.createElement('div');
         errorDiv.className = 'placeholder-content error-text';
-        errorDiv.textContent = 'Error: ' + state.operatorExecLogs.error;
+        errorDiv.textContent = 'Error: ' + state.operatorDashboard.error;
         container.appendChild(errorDiv);
         return container;
     }
 
-    // Empty
-    if (state.operatorExecLogs.items.length === 0) {
-        var emptyDiv = document.createElement('div');
-        emptyDiv.className = 'placeholder-content';
-        emptyDiv.textContent = 'No execution logs found.';
-        container.appendChild(emptyDiv);
+    var dashData = state.operatorDashboard.data || {};
+    var pipeline = dashData.pipeline || {};
+    var heartbeat = dashData.heartbeat || {};
+    var approvals = dashData.approvals || {};
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'list-toolbar';
+    var titleEl = document.createElement('span');
+    titleEl.className = 'toolbar-title';
+    titleEl.textContent = 'Supervision Dashboard';
+    header.appendChild(titleEl);
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-sm';
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.onclick = function () {
+        state.operatorDashboard.fetched = false;
+        fetchOperatorDashboard();
+    };
+    header.appendChild(refreshBtn);
+    container.appendChild(header);
+
+    // ── A. Operational Readiness Strip ──
+    var readinessSection = document.createElement('div');
+    readinessSection.className = 'pipeline-middle-row';
+    readinessSection.style.cssText = 'display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap;';
+
+    var readinessItems = [
+        { label: 'Autopilot Loop', value: pipeline.loop_running, type: 'bool' },
+        { label: 'Execution Armed', value: pipeline.execution_armed, type: 'bool' },
+        { label: 'Workers Active', value: pipeline.workers_active, type: 'bool' },
+        { label: 'Success Rate', value: pipeline.success_rate, type: 'percent' }
+    ];
+
+    readinessItems.forEach(function (item) {
+        var card = document.createElement('div');
+        card.style.cssText = 'background:#1e293b;border-radius:8px;padding:12px 16px;flex:1;min-width:140px;text-align:center;';
+
+        if (item.type === 'bool') {
+            var dot = document.createElement('div');
+            dot.className = 'health-dot';
+            dot.style.cssText = 'width:12px;height:12px;border-radius:50%;display:inline-block;margin-right:8px;background:' +
+                (item.value ? '#10b981' : '#ef4444') + ';';
+            card.appendChild(dot);
+
+            var label = document.createElement('span');
+            label.style.color = '#94a3b8';
+            label.textContent = item.label;
+            card.appendChild(label);
+
+            var status = document.createElement('div');
+            status.style.cssText = 'font-size:13px;margin-top:4px;color:' + (item.value ? '#10b981' : '#ef4444') + ';';
+            status.textContent = item.value ? 'Active' : 'Inactive';
+            card.appendChild(status);
+        } else {
+            var pctLabel = document.createElement('div');
+            pctLabel.style.color = '#94a3b8';
+            pctLabel.textContent = item.label;
+            card.appendChild(pctLabel);
+
+            var pctVal = document.createElement('div');
+            var rate = typeof item.value === 'number' ? item.value : 0;
+            pctVal.style.cssText = 'font-size:24px;font-weight:bold;color:' +
+                (rate >= 80 ? '#10b981' : rate >= 50 ? '#f59e0b' : '#ef4444') + ';';
+            pctVal.textContent = rate + '%';
+            card.appendChild(pctVal);
+        }
+
+        readinessSection.appendChild(card);
+    });
+
+    container.appendChild(readinessSection);
+
+    // ── B. Pipeline Funnel ──
+    var funnel = pipeline.funnel || {};
+    var funnelSection = document.createElement('div');
+    funnelSection.className = 'pipeline-funnel';
+
+    var funnelStages = [
+        { key: 'scheduled', label: 'Scheduled', color: '#3b82f6' },
+        { key: 'in_progress', label: 'In Progress', color: '#f59e0b' },
+        { key: 'completed', label: 'Completed', color: '#10b981' }
+    ];
+
+    funnelStages.forEach(function (stage, idx) {
+        var stageEl = document.createElement('div');
+        stageEl.className = 'funnel-stage';
+        stageEl.style.borderTopColor = stage.color;
+
+        var countEl = document.createElement('div');
+        countEl.className = 'funnel-count';
+        countEl.textContent = String(funnel[stage.key] || 0);
+        countEl.style.color = stage.color;
+
+        var labelEl = document.createElement('div');
+        labelEl.className = 'funnel-label';
+        labelEl.textContent = stage.label;
+
+        stageEl.appendChild(countEl);
+        stageEl.appendChild(labelEl);
+        funnelSection.appendChild(stageEl);
+
+        if (idx < funnelStages.length - 1) {
+            var arrow = document.createElement('div');
+            arrow.className = 'funnel-arrow';
+            arrow.textContent = '\u2192';
+            funnelSection.appendChild(arrow);
+        }
+    });
+
+    container.appendChild(funnelSection);
+
+    // Sub-counts
+    var subCounts = document.createElement('div');
+    subCounts.className = 'funnel-sub-counts';
+
+    var subItems = [
+        { label: 'Broken', count: funnel.broken || 0, color: '#ef4444' },
+        { label: 'Stuck', count: funnel.stuck || 0, color: '#f59e0b' },
+        { label: 'Rejected', count: funnel.rejected || 0, color: '#6b7280' }
+    ];
+
+    subItems.forEach(function (item) {
+        var badge = document.createElement('span');
+        badge.className = 'funnel-sub-badge';
+        badge.style.color = item.color;
+        badge.style.borderColor = item.color;
+        badge.textContent = item.label + ': ' + item.count;
+        subCounts.appendChild(badge);
+    });
+
+    container.appendChild(subCounts);
+
+    // ── C. Needs Your Action ──
+    var actionSection = document.createElement('div');
+    actionSection.style.cssText = 'display:flex;gap:12px;margin:16px 0;flex-wrap:wrap;';
+
+    var attQueue = (pipeline.attention_queue || []);
+    var approvalCount = 0;
+    if (approvals.data) approvalCount = approvals.data.length;
+    else if (approvals.items) approvalCount = approvals.items.length;
+    else if (Array.isArray(approvals)) approvalCount = approvals.length;
+    var recsCount = (pipeline.recommendations || []).length;
+
+    var actionCards = [
+        { label: 'Approvals Pending', count: approvalCount, color: '#f59e0b', tab: 'deployments' },
+        { label: 'Attention Items', count: attQueue.length, color: '#ef4444', tab: 'runbook' },
+        { label: 'Recommendations', count: recsCount, color: '#3b82f6', tab: 'runbook' }
+    ];
+
+    actionCards.forEach(function (card) {
+        var el = document.createElement('div');
+        el.style.cssText = 'background:#1e293b;border-radius:8px;padding:16px;flex:1;min-width:160px;cursor:pointer;border-left:3px solid ' + card.color + ';';
+        el.onclick = function () {
+            var section = NAVIGATION_CONFIG.find(function (s) { return s.section === 'operator'; });
+            if (section) {
+                var t = section.tabs.find(function (t) { return t.key === card.tab; });
+                if (t && t.path) {
+                    history.pushState(null, '', t.path);
+                    renderApp();
+                }
+            }
+        };
+
+        var countEl = document.createElement('div');
+        countEl.style.cssText = 'font-size:28px;font-weight:bold;color:' + card.color + ';';
+        countEl.textContent = String(card.count);
+        el.appendChild(countEl);
+
+        var labelEl = document.createElement('div');
+        labelEl.style.cssText = 'color:#94a3b8;font-size:13px;margin-top:4px;';
+        labelEl.textContent = card.label;
+        el.appendChild(labelEl);
+
+        actionSection.appendChild(el);
+    });
+
+    container.appendChild(actionSection);
+
+    // ── D. Attention Queue (top 5) ──
+    var attTitle = document.createElement('div');
+    attTitle.className = 'section-title';
+    attTitle.textContent = attQueue.length > 0
+        ? 'Attention Queue (' + attQueue.length + ')'
+        : 'Attention Queue \u2014 All Clear';
+    container.appendChild(attTitle);
+
+    var severityColors = { BROKEN: '#ef4444', STUCK: '#f59e0b', BLOCKED: '#6b7280', NEW: '#3b82f6' };
+
+    if (attQueue.length === 0) {
+        var allClear = document.createElement('div');
+        allClear.className = 'attention-all-clear';
+        allClear.textContent = 'No tasks need immediate attention. System is running smoothly.';
+        container.appendChild(allClear);
+    } else {
+        var displayQueue = attQueue.slice(0, 5);
+        displayQueue.forEach(function (item) {
+            var card = document.createElement('div');
+            card.className = 'attention-item';
+            card.style.borderLeftColor = severityColors[item.severity] || '#6b7280';
+
+            var topRow = document.createElement('div');
+            topRow.className = 'attention-item-top';
+
+            var badge = document.createElement('span');
+            badge.className = 'severity-badge';
+            badge.style.backgroundColor = severityColors[item.severity] || '#6b7280';
+            badge.textContent = item.severity;
+
+            var vtidEl = document.createElement('span');
+            vtidEl.className = 'attention-vtid';
+            vtidEl.textContent = item.vtid;
+
+            var titleSpan = document.createElement('span');
+            titleSpan.className = 'attention-title';
+            titleSpan.textContent = item.title || '';
+
+            topRow.appendChild(badge);
+            topRow.appendChild(vtidEl);
+            topRow.appendChild(titleSpan);
+
+            var bottomRow = document.createElement('div');
+            bottomRow.className = 'attention-item-bottom';
+
+            var reasonEl = document.createElement('span');
+            reasonEl.textContent = item.reason || '';
+            bottomRow.appendChild(reasonEl);
+
+            if (item.stuck_minutes) {
+                var timeEl = document.createElement('span');
+                timeEl.className = 'attention-time';
+                var mins = item.stuck_minutes;
+                timeEl.textContent = mins >= 60 ? Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm' : mins + 'm';
+                bottomRow.appendChild(timeEl);
+            }
+
+            var viewBtn = document.createElement('button');
+            viewBtn.className = 'btn btn-sm';
+            viewBtn.textContent = 'View Task';
+            viewBtn.onclick = function (e) {
+                e.stopPropagation();
+                state.selectedTask = {
+                    vtid: item.vtid,
+                    title: item.title,
+                    status: item.status || 'scheduled',
+                    spec_status: item.spec_status || 'missing',
+                    summary: item.reason || '',
+                    oasisColumn: '',
+                    _attentionContext: {
+                        severity: item.severity,
+                        reason: item.reason,
+                        stuck_minutes: item.stuck_minutes
+                    }
+                };
+                state.selectedTaskDetail = null;
+                state.selectedTaskDetailLoading = true;
+                state.executionStatus = null;
+                state.executionStatusLoading = false;
+                renderApp();
+                fetchVtidDetail(item.vtid);
+            };
+
+            card.appendChild(topRow);
+            card.appendChild(bottomRow);
+            card.appendChild(viewBtn);
+            container.appendChild(card);
+        });
+
+        if (attQueue.length > 5) {
+            var viewAll = document.createElement('div');
+            viewAll.style.cssText = 'text-align:center;margin-top:8px;';
+            var viewAllBtn = document.createElement('button');
+            viewAllBtn.className = 'btn btn-sm';
+            viewAllBtn.textContent = 'View all ' + attQueue.length + ' items in Runbook';
+            viewAllBtn.onclick = function () {
+                var section = NAVIGATION_CONFIG.find(function (s) { return s.section === 'operator'; });
+                if (section) {
+                    var t = section.tabs.find(function (t) { return t.key === 'runbook'; });
+                    if (t && t.path) {
+                        history.pushState(null, '', t.path);
+                        renderApp();
+                    }
+                }
+            };
+            viewAll.appendChild(viewAllBtn);
+            container.appendChild(viewAll);
+        }
+    }
+
+    return container;
+}
+
+// ---------------------------------------------------------------------------
+// 15. fetchOperatorEventStream — GET /api/v1/oasis/events?limit=100
+// ---------------------------------------------------------------------------
+var _operatorEventStreamInterval = null;
+
+async function fetchOperatorEventStream() {
+    if (state.operatorEventStream.loading) return;
+    state.operatorEventStream.loading = true;
+    state.operatorEventStream.error = null;
+    if (!state.operatorEventStream.fetched) renderApp();
+
+    try {
+        var response = await fetch('/api/v1/oasis/events?limit=100');
+        if (!response.ok) throw new Error('Events fetch failed: ' + response.status);
+
+        var data = await response.json();
+        var items = data.data || data.events || (Array.isArray(data) ? data : []);
+        state.operatorEventStream.items = items;
+        state.operatorEventStream.fetched = true;
+        state.operatorEventStream.error = null;
+        console.log('[Supervision] Event stream loaded:', items.length);
+    } catch (error) {
+        console.error('[Supervision] Event stream fetch error:', error);
+        state.operatorEventStream.error = error.message;
+    } finally {
+        state.operatorEventStream.loading = false;
+        renderApp();
+    }
+}
+
+function startOperatorEventStreamRefresh() {
+    if (_operatorEventStreamInterval) return;
+    _operatorEventStreamInterval = setInterval(function () {
+        fetchOperatorEventStream();
+    }, 30000);
+}
+
+function stopOperatorEventStreamRefresh() {
+    if (_operatorEventStreamInterval) {
+        clearInterval(_operatorEventStreamInterval);
+        _operatorEventStreamInterval = null;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 16. renderOperatorEventStreamView — OASIS event feed
+// ---------------------------------------------------------------------------
+function renderOperatorEventStreamView() {
+    var container = document.createElement('div');
+    container.className = 'operator-event-stream-container';
+
+    // Auto-fetch + start auto-refresh
+    if (!state.operatorEventStream.fetched && !state.operatorEventStream.loading) {
+        fetchOperatorEventStream();
+        startOperatorEventStreamRefresh();
+    } else if (!_operatorEventStreamInterval) {
+        startOperatorEventStreamRefresh();
+    }
+
+    // Loading
+    if (state.operatorEventStream.loading && state.operatorEventStream.items.length === 0) {
+        var spinnerWrap = document.createElement('div');
+        spinnerWrap.className = 'attention-spinner-container';
+        var spinner = document.createElement('div');
+        spinner.className = 'attention-spinner';
+        spinnerWrap.appendChild(spinner);
+        var spinText = document.createElement('div');
+        spinText.className = 'attention-spinner-text';
+        spinText.textContent = 'Loading event stream\u2026';
+        spinnerWrap.appendChild(spinText);
+        container.appendChild(spinnerWrap);
+        return container;
+    }
+
+    // Error
+    if (state.operatorEventStream.error && state.operatorEventStream.items.length === 0) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'placeholder-content error-text';
+        errorDiv.textContent = 'Error: ' + state.operatorEventStream.error;
+        container.appendChild(errorDiv);
         return container;
     }
 
     // Header
     var header = document.createElement('div');
     header.className = 'list-toolbar';
-    var title = document.createElement('span');
-    title.className = 'toolbar-title';
-    title.textContent = 'Execution Logs (' + state.operatorExecLogs.items.length + ')';
-    header.appendChild(title);
+    var titleEl = document.createElement('span');
+    titleEl.className = 'toolbar-title';
+    titleEl.textContent = 'Event Stream (' + state.operatorEventStream.items.length + ')';
+    header.appendChild(titleEl);
+
+    var autoLabel = document.createElement('span');
+    autoLabel.style.cssText = 'color:#10b981;font-size:12px;margin-right:8px;';
+    autoLabel.textContent = 'Auto-refresh 30s';
+    header.appendChild(autoLabel);
 
     var refreshBtn = document.createElement('button');
     refreshBtn.className = 'btn btn-sm';
     refreshBtn.textContent = 'Refresh';
     refreshBtn.onclick = function () {
-        state.operatorExecLogs.fetched = false;
-        fetchOperatorExecLogs();
+        fetchOperatorEventStream();
     };
     header.appendChild(refreshBtn);
     container.appendChild(header);
+
+    // Domain filter buttons
+    var filterBar = document.createElement('div');
+    filterBar.style.cssText = 'display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;';
+
+    var domainColors = {
+        'all': '#94a3b8',
+        'cicd': '#3b82f6',
+        'operator': '#10b981',
+        'vtid': '#8b5cf6',
+        'deploy': '#f59e0b',
+        'governance': '#ef4444',
+        'autopilot': '#06b6d4'
+    };
+
+    var domainFilters = ['all', 'cicd', 'operator', 'vtid', 'deploy', 'governance', 'autopilot'];
+    domainFilters.forEach(function (d) {
+        var btn = document.createElement('button');
+        btn.className = 'btn btn-sm' + (state.operatorEventStream.domainFilter === d ? ' btn-primary' : '');
+        btn.textContent = d === 'all' ? 'All' : d;
+        if (d !== 'all') {
+            btn.style.borderLeft = '3px solid ' + (domainColors[d] || '#94a3b8');
+        }
+        btn.onclick = function () {
+            state.operatorEventStream.domainFilter = d;
+            renderApp();
+        };
+        filterBar.appendChild(btn);
+    });
+    container.appendChild(filterBar);
+
+    // Filter items by domain
+    var displayItems = state.operatorEventStream.items;
+    if (state.operatorEventStream.domainFilter !== 'all') {
+        var filterDomain = state.operatorEventStream.domainFilter;
+        displayItems = displayItems.filter(function (ev) {
+            var topic = (ev.topic || ev.type || '').toLowerCase();
+            return topic.startsWith(filterDomain);
+        });
+    }
+
+    if (displayItems.length === 0) {
+        var noMatch = document.createElement('div');
+        noMatch.className = 'placeholder-content';
+        noMatch.textContent = 'No events matching filter "' + state.operatorEventStream.domainFilter + '".';
+        container.appendChild(noMatch);
+        return container;
+    }
 
     // Table
     var table = document.createElement('table');
@@ -31236,7 +31529,7 @@ function renderOperatorExecutionLogsView() {
 
     var thead = document.createElement('thead');
     var headerRow = document.createElement('tr');
-    ['Time', 'Type', 'Actor', 'VTID', 'Status', 'Detail'].forEach(function (h) {
+    ['Time', 'VTID', 'Topic', 'Status', 'Message'].forEach(function (h) {
         var th = document.createElement('th');
         th.textContent = h;
         headerRow.appendChild(th);
@@ -31245,197 +31538,281 @@ function renderOperatorExecutionLogsView() {
     table.appendChild(thead);
 
     var tbody = document.createElement('tbody');
-    state.operatorExecLogs.items.forEach(function (entry) {
+    displayItems.forEach(function (ev) {
         var row = document.createElement('tr');
 
         var timeTd = document.createElement('td');
-        timeTd.textContent = formatEventTimestamp(entry.created_at || entry.timestamp);
+        timeTd.style.whiteSpace = 'nowrap';
+        timeTd.textContent = formatEventTimestamp(ev.created_at || ev.timestamp);
         row.appendChild(timeTd);
-
-        var typeTd = document.createElement('td');
-        typeTd.textContent = entry.type || entry.action || '';
-        row.appendChild(typeTd);
-
-        var actorTd = document.createElement('td');
-        actorTd.textContent = entry.actor || entry.actor_email || entry.source || '';
-        row.appendChild(actorTd);
 
         var vtidTd = document.createElement('td');
         vtidTd.className = 'vtid-cell';
-        vtidTd.textContent = entry.vtid || '';
+        vtidTd.textContent = ev.vtid || '';
+        if (ev.vtid) {
+            vtidTd.style.cursor = 'pointer';
+            vtidTd.onclick = function (e) {
+                e.stopPropagation();
+                state.selectedTask = { vtid: ev.vtid, title: '', status: 'unknown' };
+                state.selectedTaskDetail = null;
+                state.selectedTaskDetailLoading = true;
+                renderApp();
+                fetchVtidDetail(ev.vtid);
+            };
+        }
         row.appendChild(vtidTd);
+
+        var topicTd = document.createElement('td');
+        var topic = ev.topic || ev.type || '';
+        var topicDomain = topic.split('.')[0];
+        topicTd.textContent = topic;
+        topicTd.style.color = domainColors[topicDomain] || '#94a3b8';
+        topicTd.style.fontSize = '12px';
+        row.appendChild(topicTd);
 
         var statusTd = document.createElement('td');
         var statusBadge = document.createElement('span');
-        statusBadge.className = 'status-badge status-' + (entry.status || 'info').toLowerCase();
-        statusBadge.textContent = entry.status || 'info';
+        statusBadge.className = 'status-badge status-' + (ev.status || 'info').toLowerCase();
+        statusBadge.textContent = ev.status || 'info';
         statusTd.appendChild(statusBadge);
         row.appendChild(statusTd);
 
-        var detailTd = document.createElement('td');
-        detailTd.className = 'message-cell';
-        detailTd.textContent = entry.detail || entry.message || entry.description || '';
-        row.appendChild(detailTd);
+        var msgTd = document.createElement('td');
+        msgTd.className = 'message-cell';
+        msgTd.textContent = ev.message || '';
+        row.appendChild(msgTd);
 
         tbody.appendChild(row);
     });
     table.appendChild(tbody);
     container.appendChild(table);
 
-    autoAddLoadMore(container, 'operatorExecLogs');
-
     return container;
 }
 
 // ---------------------------------------------------------------------------
-// 16. fetchOperatorPipelines — GET /api/v1/autopilot/controller/runs?limit=30
+// 17. fetchOperatorDeployments — deployments + pending approvals
 // ---------------------------------------------------------------------------
-async function fetchOperatorPipelines() {
-    if (state.operatorPipelines.loading) return;
-    state.operatorPipelines.loading = true;
-    state.operatorPipelines.error = null;
+async function fetchOperatorDeployments() {
+    if (state.operatorDeployments.loading) return;
+    state.operatorDeployments.loading = true;
+    state.operatorDeployments.error = null;
     renderApp();
 
     try {
-        var response = await fetch('/api/v1/autopilot/controller/runs?limit=30');
-        if (!response.ok) throw new Error('Pipelines fetch failed: ' + response.status);
+        var results = await Promise.allSettled([
+            fetch('/api/v1/operator/deployments?limit=20').then(function (r) {
+                if (!r.ok) throw new Error('Deployments: ' + r.status);
+                return r.json();
+            }),
+            fetch('/api/v1/approvals/pending?limit=20').then(function (r) {
+                if (!r.ok) throw new Error('Approvals: ' + r.status);
+                return r.json();
+            })
+        ]);
 
-        var data = await response.json();
-        var items = data.data || data.runs || (Array.isArray(data) ? data : []);
-        state.operatorPipelines.items = items;
-        state.operatorPipelines.fetched = true;
-        state.operatorPipelines.error = null;
-        console.log('[VTID-01240] Operator pipelines loaded:', items.length);
+        var deploys = results[0].status === 'fulfilled' ? results[0].value : { data: [] };
+        var approvalsData = results[1].status === 'fulfilled' ? results[1].value : { data: [] };
+
+        state.operatorDeployments.deployments = deploys.data || deploys.deployments || (Array.isArray(deploys) ? deploys : []);
+        state.operatorDeployments.approvals = approvalsData.data || approvalsData.items || (Array.isArray(approvalsData) ? approvalsData : []);
+        state.operatorDeployments.fetched = true;
+        state.operatorDeployments.error = null;
+        console.log('[Supervision] Deployments loaded:', state.operatorDeployments.deployments.length, 'deploys,', state.operatorDeployments.approvals.length, 'approvals');
     } catch (error) {
-        console.error('[VTID-01240] Failed to fetch operator pipelines:', error);
-        state.operatorPipelines.error = error.message;
+        console.error('[Supervision] Deployments fetch error:', error);
+        state.operatorDeployments.error = error.message;
     } finally {
-        state.operatorPipelines.loading = false;
+        state.operatorDeployments.loading = false;
         renderApp();
     }
 }
 
 // ---------------------------------------------------------------------------
-// 17. renderOperatorPipelinesView — pipeline runs table
+// 18. renderOperatorDeploymentsView — approvals + deployment history
 // ---------------------------------------------------------------------------
-function renderOperatorPipelinesView() {
+function renderOperatorDeploymentsView() {
     var container = document.createElement('div');
-    container.className = 'operator-pipelines-container';
+    container.className = 'operator-deployments-container';
 
     // Auto-fetch
-    if (!state.operatorPipelines.fetched && !state.operatorPipelines.loading) {
-        fetchOperatorPipelines();
+    if (!state.operatorDeployments.fetched && !state.operatorDeployments.loading) {
+        fetchOperatorDeployments();
     }
 
     // Loading
-    if (state.operatorPipelines.loading && state.operatorPipelines.items.length === 0) {
-        var loading = document.createElement('div');
-        loading.className = 'placeholder-content';
-        loading.textContent = 'Loading pipelines...';
-        container.appendChild(loading);
+    if (state.operatorDeployments.loading && state.operatorDeployments.deployments.length === 0 && state.operatorDeployments.approvals.length === 0) {
+        var spinnerWrap = document.createElement('div');
+        spinnerWrap.className = 'attention-spinner-container';
+        var spinner = document.createElement('div');
+        spinner.className = 'attention-spinner';
+        spinnerWrap.appendChild(spinner);
+        var spinText = document.createElement('div');
+        spinText.className = 'attention-spinner-text';
+        spinText.textContent = 'Loading deployments\u2026';
+        spinnerWrap.appendChild(spinText);
+        container.appendChild(spinnerWrap);
         return container;
     }
 
     // Error
-    if (state.operatorPipelines.error) {
+    if (state.operatorDeployments.error && state.operatorDeployments.deployments.length === 0) {
         var errorDiv = document.createElement('div');
         errorDiv.className = 'placeholder-content error-text';
-        errorDiv.textContent = 'Error: ' + state.operatorPipelines.error;
+        errorDiv.textContent = 'Error: ' + state.operatorDeployments.error;
         container.appendChild(errorDiv);
-        return container;
-    }
-
-    // Empty
-    if (state.operatorPipelines.items.length === 0) {
-        var emptyDiv = document.createElement('div');
-        emptyDiv.className = 'placeholder-content';
-        emptyDiv.textContent = 'No pipeline runs found.';
-        container.appendChild(emptyDiv);
         return container;
     }
 
     // Header
     var header = document.createElement('div');
     header.className = 'list-toolbar';
-    var title = document.createElement('span');
-    title.className = 'toolbar-title';
-    title.textContent = 'Pipeline Runs (' + state.operatorPipelines.items.length + ')';
-    header.appendChild(title);
+    var titleEl = document.createElement('span');
+    titleEl.className = 'toolbar-title';
+    titleEl.textContent = 'Deployments & Approvals';
+    header.appendChild(titleEl);
 
     var refreshBtn = document.createElement('button');
     refreshBtn.className = 'btn btn-sm';
     refreshBtn.textContent = 'Refresh';
     refreshBtn.onclick = function () {
-        state.operatorPipelines.fetched = false;
-        fetchOperatorPipelines();
+        state.operatorDeployments.fetched = false;
+        fetchOperatorDeployments();
     };
     header.appendChild(refreshBtn);
     container.appendChild(header);
 
-    // Table
-    var table = document.createElement('table');
-    table.className = 'list-table';
+    // ── A. Pending Approvals ──
+    var apprSection = document.createElement('div');
+    var apprTitle = document.createElement('div');
+    apprTitle.className = 'section-title';
+    apprTitle.textContent = 'Pending Approvals (' + state.operatorDeployments.approvals.length + ')';
+    apprSection.appendChild(apprTitle);
 
-    var thead = document.createElement('thead');
-    var headerRow = document.createElement('tr');
-    ['VTID', 'Stage', 'Status', 'Started', 'Duration'].forEach(function (h) {
-        var th = document.createElement('th');
-        th.textContent = h;
-        headerRow.appendChild(th);
-    });
-    thead.appendChild(headerRow);
-    table.appendChild(thead);
+    if (state.operatorDeployments.approvals.length === 0) {
+        var noAppr = document.createElement('div');
+        noAppr.className = 'attention-all-clear';
+        noAppr.textContent = 'No approvals pending.';
+        apprSection.appendChild(noAppr);
+    } else {
+        state.operatorDeployments.approvals.forEach(function (appr) {
+            var card = document.createElement('div');
+            card.className = 'attention-item';
+            card.style.borderLeftColor = '#f59e0b';
 
-    var tbody = document.createElement('tbody');
-    state.operatorPipelines.items.forEach(function (run) {
-        var row = document.createElement('tr');
+            var topRow = document.createElement('div');
+            topRow.className = 'attention-item-top';
 
-        var vtidTd = document.createElement('td');
-        vtidTd.className = 'vtid-cell';
-        vtidTd.textContent = run.vtid || '';
-        row.appendChild(vtidTd);
+            var vtidEl = document.createElement('span');
+            vtidEl.className = 'attention-vtid';
+            vtidEl.textContent = appr.vtid || 'PR #' + (appr.pr_number || '?');
+            topRow.appendChild(vtidEl);
 
-        var stageTd = document.createElement('td');
-        stageTd.textContent = run.stage || run.current_stage || '';
-        row.appendChild(stageTd);
+            var titleSpan = document.createElement('span');
+            titleSpan.className = 'attention-title';
+            titleSpan.textContent = appr.pr_title || appr.title || '';
+            topRow.appendChild(titleSpan);
 
-        var statusTd = document.createElement('td');
-        var statusBadge = document.createElement('span');
-        statusBadge.className = 'status-badge status-' + (run.status || 'pending').toLowerCase();
-        statusBadge.textContent = run.status || 'pending';
-        statusTd.appendChild(statusBadge);
-        row.appendChild(statusTd);
+            card.appendChild(topRow);
 
-        var startedTd = document.createElement('td');
-        startedTd.textContent = formatEventTimestamp(run.started_at || run.created_at);
-        row.appendChild(startedTd);
+            var bottomRow = document.createElement('div');
+            bottomRow.className = 'attention-item-bottom';
 
-        var durationTd = document.createElement('td');
-        if (run.duration_ms !== undefined && run.duration_ms !== null) {
-            var durationSec = (run.duration_ms / 1000).toFixed(1);
-            durationTd.textContent = durationSec + 's';
-        } else if (run.duration) {
-            durationTd.textContent = run.duration;
-        } else if (run.started_at && run.completed_at) {
-            var dur = new Date(run.completed_at) - new Date(run.started_at);
-            durationTd.textContent = (dur / 1000).toFixed(1) + 's';
-        } else {
-            durationTd.textContent = '';
-        }
-        row.appendChild(durationTd);
+            if (appr.ci_status) {
+                var ciBadge = document.createElement('span');
+                ciBadge.className = 'status-badge status-' + (appr.ci_status === 'pass' ? 'success' : appr.ci_status).toLowerCase();
+                ciBadge.textContent = 'CI: ' + appr.ci_status;
+                bottomRow.appendChild(ciBadge);
+            }
 
-        tbody.appendChild(row);
-    });
-    table.appendChild(tbody);
-    container.appendChild(table);
+            if (appr.governance_status) {
+                var govBadge = document.createElement('span');
+                govBadge.className = 'status-badge status-' + (appr.governance_status === 'pass' ? 'success' : appr.governance_status).toLowerCase();
+                govBadge.style.marginLeft = '6px';
+                govBadge.textContent = 'Gov: ' + appr.governance_status;
+                bottomRow.appendChild(govBadge);
+            }
 
-    autoAddLoadMore(container, 'operatorPipelines');
+            card.appendChild(bottomRow);
+            apprSection.appendChild(card);
+        });
+    }
+
+    container.appendChild(apprSection);
+
+    // ── B. Recent Deployments ──
+    var deplSection = document.createElement('div');
+    deplSection.style.marginTop = '20px';
+
+    var deplTitle = document.createElement('div');
+    deplTitle.className = 'section-title';
+    deplTitle.textContent = 'Recent Deployments (' + state.operatorDeployments.deployments.length + ')';
+    deplSection.appendChild(deplTitle);
+
+    if (state.operatorDeployments.deployments.length === 0) {
+        var noDepl = document.createElement('div');
+        noDepl.className = 'placeholder-content';
+        noDepl.textContent = 'No recent deployments found.';
+        deplSection.appendChild(noDepl);
+    } else {
+        var table = document.createElement('table');
+        table.className = 'list-table';
+
+        var thead = document.createElement('thead');
+        var headerRow = document.createElement('tr');
+        ['Service', 'Commit', 'Status', 'Env', 'Initiator', 'Time'].forEach(function (h) {
+            var th = document.createElement('th');
+            th.textContent = h;
+            headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        var tbody = document.createElement('tbody');
+        state.operatorDeployments.deployments.forEach(function (d) {
+            var row = document.createElement('tr');
+
+            var svcTd = document.createElement('td');
+            svcTd.textContent = d.service || '';
+            row.appendChild(svcTd);
+
+            var commitTd = document.createElement('td');
+            commitTd.className = 'vtid-cell';
+            commitTd.textContent = (d.git_commit || '').substring(0, 7);
+            row.appendChild(commitTd);
+
+            var statusTd = document.createElement('td');
+            var statusBadge = document.createElement('span');
+            statusBadge.className = 'status-badge status-' + (d.status || 'pending').toLowerCase();
+            statusBadge.textContent = d.status || 'pending';
+            statusTd.appendChild(statusBadge);
+            row.appendChild(statusTd);
+
+            var envTd = document.createElement('td');
+            envTd.textContent = d.environment || '';
+            row.appendChild(envTd);
+
+            var initTd = document.createElement('td');
+            initTd.textContent = d.initiator || '';
+            row.appendChild(initTd);
+
+            var timeTd = document.createElement('td');
+            timeTd.textContent = formatEventTimestamp(d.created_at);
+            row.appendChild(timeTd);
+
+            tbody.appendChild(row);
+        });
+        table.appendChild(tbody);
+        deplSection.appendChild(table);
+    }
+
+    container.appendChild(deplSection);
 
     return container;
 }
 
 // ---------------------------------------------------------------------------
-// 18. fetchOperatorRunbook — GET /api/v1/execute/workorders?limit=30
+// 19. fetchOperatorRunbook — attention queue + recommendations
 // ---------------------------------------------------------------------------
 async function fetchOperatorRunbook() {
     if (state.operatorRunbook.loading) return;
@@ -31444,17 +31821,27 @@ async function fetchOperatorRunbook() {
     renderApp();
 
     try {
-        var response = await fetch('/api/v1/execute/workorders?limit=30');
-        if (!response.ok) throw new Error('Runbook fetch failed: ' + response.status);
+        var results = await Promise.allSettled([
+            fetch('/api/v1/autopilot/pipeline/summary').then(function (r) {
+                if (!r.ok) throw new Error('Pipeline summary: ' + r.status);
+                return r.json();
+            }),
+            fetch('/api/v1/autopilot/recommendations?status=new&limit=20').then(function (r) {
+                if (!r.ok) throw new Error('Recommendations: ' + r.status);
+                return r.json();
+            })
+        ]);
 
-        var data = await response.json();
-        var items = data.data || data.workorders || (Array.isArray(data) ? data : []);
-        state.operatorRunbook.items = items;
+        var pipelineSummary = results[0].status === 'fulfilled' ? results[0].value : {};
+        var recsData = results[1].status === 'fulfilled' ? results[1].value : {};
+
+        state.operatorRunbook.attention = pipelineSummary.attention_queue || [];
+        state.operatorRunbook.recommendations = recsData.data || recsData.recommendations || (Array.isArray(recsData) ? recsData : []);
         state.operatorRunbook.fetched = true;
         state.operatorRunbook.error = null;
-        console.log('[VTID-01240] Operator runbook loaded:', items.length);
+        console.log('[Supervision] Runbook loaded:', state.operatorRunbook.attention.length, 'attention,', state.operatorRunbook.recommendations.length, 'recs');
     } catch (error) {
-        console.error('[VTID-01240] Failed to fetch operator runbook:', error);
+        console.error('[Supervision] Runbook fetch error:', error);
         state.operatorRunbook.error = error.message;
     } finally {
         state.operatorRunbook.loading = false;
@@ -31463,7 +31850,7 @@ async function fetchOperatorRunbook() {
 }
 
 // ---------------------------------------------------------------------------
-// 19. renderOperatorRunbookView — work orders table
+// 20. renderOperatorRunbookView — attention queue + recommendations
 // ---------------------------------------------------------------------------
 function renderOperatorRunbookView() {
     var container = document.createElement('div');
@@ -31475,16 +31862,22 @@ function renderOperatorRunbookView() {
     }
 
     // Loading
-    if (state.operatorRunbook.loading && state.operatorRunbook.items.length === 0) {
-        var loading = document.createElement('div');
-        loading.className = 'placeholder-content';
-        loading.textContent = 'Loading runbook...';
-        container.appendChild(loading);
+    if (state.operatorRunbook.loading && state.operatorRunbook.attention.length === 0 && state.operatorRunbook.recommendations.length === 0) {
+        var spinnerWrap = document.createElement('div');
+        spinnerWrap.className = 'attention-spinner-container';
+        var spinner = document.createElement('div');
+        spinner.className = 'attention-spinner';
+        spinnerWrap.appendChild(spinner);
+        var spinText = document.createElement('div');
+        spinText.className = 'attention-spinner-text';
+        spinText.textContent = 'Loading runbook\u2026';
+        spinnerWrap.appendChild(spinText);
+        container.appendChild(spinnerWrap);
         return container;
     }
 
     // Error
-    if (state.operatorRunbook.error) {
+    if (state.operatorRunbook.error && state.operatorRunbook.attention.length === 0) {
         var errorDiv = document.createElement('div');
         errorDiv.className = 'placeholder-content error-text';
         errorDiv.textContent = 'Error: ' + state.operatorRunbook.error;
@@ -31492,22 +31885,13 @@ function renderOperatorRunbookView() {
         return container;
     }
 
-    // Empty
-    if (state.operatorRunbook.items.length === 0) {
-        var emptyDiv = document.createElement('div');
-        emptyDiv.className = 'placeholder-content';
-        emptyDiv.textContent = 'No work orders found.';
-        container.appendChild(emptyDiv);
-        return container;
-    }
-
     // Header
     var header = document.createElement('div');
     header.className = 'list-toolbar';
-    var title = document.createElement('span');
-    title.className = 'toolbar-title';
-    title.textContent = 'Runbook (' + state.operatorRunbook.items.length + ')';
-    header.appendChild(title);
+    var titleEl = document.createElement('span');
+    titleEl.className = 'toolbar-title';
+    titleEl.textContent = 'Runbook';
+    header.appendChild(titleEl);
 
     var refreshBtn = document.createElement('button');
     refreshBtn.className = 'btn btn-sm';
@@ -31519,60 +31903,168 @@ function renderOperatorRunbookView() {
     header.appendChild(refreshBtn);
     container.appendChild(header);
 
-    // Table
-    var table = document.createElement('table');
-    table.className = 'list-table';
+    // ── A. Attention Required ──
+    var attQueue = state.operatorRunbook.attention;
+    var attSection = document.createElement('div');
 
-    var thead = document.createElement('thead');
-    var headerRow = document.createElement('tr');
-    ['VTID', 'Title', 'Stage', 'Status', 'Evidence'].forEach(function (h) {
-        var th = document.createElement('th');
-        th.textContent = h;
-        headerRow.appendChild(th);
-    });
-    thead.appendChild(headerRow);
-    table.appendChild(thead);
+    var attTitle = document.createElement('div');
+    attTitle.className = 'section-title';
+    attTitle.textContent = attQueue.length > 0
+        ? 'Attention Required (' + attQueue.length + ' items)'
+        : 'Attention Required \u2014 All Clear';
+    attSection.appendChild(attTitle);
 
-    var tbody = document.createElement('tbody');
-    state.operatorRunbook.items.forEach(function (wo) {
-        var row = document.createElement('tr');
+    var severityColors = { BROKEN: '#ef4444', STUCK: '#f59e0b', BLOCKED: '#6b7280', NEW: '#3b82f6' };
 
-        var vtidTd = document.createElement('td');
-        vtidTd.className = 'vtid-cell';
-        vtidTd.textContent = wo.vtid || '';
-        row.appendChild(vtidTd);
+    if (attQueue.length === 0) {
+        var allClear = document.createElement('div');
+        allClear.className = 'attention-all-clear';
+        allClear.textContent = 'No tasks need immediate attention. System is running smoothly.';
+        attSection.appendChild(allClear);
+    } else {
+        attQueue.forEach(function (item) {
+            var card = document.createElement('div');
+            card.className = 'attention-item';
+            card.style.borderLeftColor = severityColors[item.severity] || '#6b7280';
 
-        var titleTd = document.createElement('td');
-        titleTd.textContent = wo.title || wo.vtid || '';
-        row.appendChild(titleTd);
+            var topRow = document.createElement('div');
+            topRow.className = 'attention-item-top';
 
-        var stageTd = document.createElement('td');
-        stageTd.textContent = wo.stage || wo.current_stage || '';
-        row.appendChild(stageTd);
+            var badge = document.createElement('span');
+            badge.className = 'severity-badge';
+            badge.style.backgroundColor = severityColors[item.severity] || '#6b7280';
+            badge.textContent = item.severity;
 
-        var statusTd = document.createElement('td');
-        var statusBadge = document.createElement('span');
-        statusBadge.className = 'status-badge status-' + (wo.status || 'pending').toLowerCase();
-        statusBadge.textContent = wo.status || 'pending';
-        statusTd.appendChild(statusBadge);
-        row.appendChild(statusTd);
+            var vtidEl = document.createElement('span');
+            vtidEl.className = 'attention-vtid';
+            vtidEl.textContent = item.vtid;
 
-        var evidenceTd = document.createElement('td');
-        var evidenceCount = 0;
-        if (wo.evidence && Array.isArray(wo.evidence)) {
-            evidenceCount = wo.evidence.length;
-        } else if (wo.evidence_count !== undefined) {
-            evidenceCount = wo.evidence_count;
-        }
-        evidenceTd.textContent = evidenceCount;
-        row.appendChild(evidenceTd);
+            var titleSpan = document.createElement('span');
+            titleSpan.className = 'attention-title';
+            titleSpan.textContent = item.title || '';
 
-        tbody.appendChild(row);
-    });
-    table.appendChild(tbody);
-    container.appendChild(table);
+            topRow.appendChild(badge);
+            topRow.appendChild(vtidEl);
+            topRow.appendChild(titleSpan);
 
-    autoAddLoadMore(container, 'operatorRunbook');
+            var bottomRow = document.createElement('div');
+            bottomRow.className = 'attention-item-bottom';
+
+            var reasonEl = document.createElement('span');
+            reasonEl.textContent = item.reason || '';
+            bottomRow.appendChild(reasonEl);
+
+            if (item.stuck_minutes) {
+                var timeEl = document.createElement('span');
+                timeEl.className = 'attention-time';
+                var mins = item.stuck_minutes;
+                timeEl.textContent = mins >= 60 ? Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm' : mins + 'm';
+                bottomRow.appendChild(timeEl);
+            }
+
+            var viewBtn = document.createElement('button');
+            viewBtn.className = 'btn btn-sm';
+            viewBtn.textContent = 'View Task';
+            viewBtn.onclick = function (e) {
+                e.stopPropagation();
+                state.selectedTask = {
+                    vtid: item.vtid,
+                    title: item.title,
+                    status: item.status || 'scheduled',
+                    spec_status: item.spec_status || 'missing',
+                    summary: item.reason || '',
+                    oasisColumn: '',
+                    _attentionContext: {
+                        severity: item.severity,
+                        reason: item.reason,
+                        stuck_minutes: item.stuck_minutes
+                    }
+                };
+                state.selectedTaskDetail = null;
+                state.selectedTaskDetailLoading = true;
+                state.executionStatus = null;
+                state.executionStatusLoading = false;
+                renderApp();
+                fetchVtidDetail(item.vtid);
+            };
+
+            card.appendChild(topRow);
+            card.appendChild(bottomRow);
+            card.appendChild(viewBtn);
+            attSection.appendChild(card);
+        });
+    }
+
+    container.appendChild(attSection);
+
+    // ── B. Recommendations ──
+    var recs = state.operatorRunbook.recommendations;
+    var recsSection = document.createElement('div');
+    recsSection.style.marginTop = '20px';
+
+    var recsTitle = document.createElement('div');
+    recsTitle.className = 'section-title';
+    recsTitle.textContent = 'Recommendations (' + recs.length + ')';
+    recsSection.appendChild(recsTitle);
+
+    if (recs.length === 0) {
+        var noRecs = document.createElement('div');
+        noRecs.className = 'placeholder-content';
+        noRecs.textContent = 'No pending recommendations.';
+        recsSection.appendChild(noRecs);
+    } else {
+        recs.forEach(function (rec) {
+            var card = document.createElement('div');
+            card.className = 'recommendation-card';
+
+            var cardTop = document.createElement('div');
+            cardTop.className = 'rec-card-top';
+
+            var recTitle = document.createElement('span');
+            recTitle.className = 'rec-card-title';
+            recTitle.textContent = rec.title || '';
+            cardTop.appendChild(recTitle);
+
+            if (rec.domain) {
+                var domainBadge = document.createElement('span');
+                domainBadge.className = 'status-badge status-info';
+                domainBadge.textContent = rec.domain;
+                cardTop.appendChild(domainBadge);
+            }
+
+            card.appendChild(cardTop);
+
+            if (rec.summary) {
+                var summaryEl = document.createElement('div');
+                summaryEl.style.cssText = 'color:#94a3b8;font-size:13px;margin:6px 0;';
+                summaryEl.textContent = rec.summary;
+                card.appendChild(summaryEl);
+            }
+
+            var cardBottom = document.createElement('div');
+            cardBottom.style.cssText = 'display:flex;gap:8px;margin-top:8px;';
+
+            if (rec.risk_level) {
+                var riskBadge = document.createElement('span');
+                var riskColor = rec.risk_level === 'low' ? '#10b981' : rec.risk_level === 'high' ? '#ef4444' : '#f59e0b';
+                riskBadge.style.cssText = 'font-size:12px;color:' + riskColor + ';';
+                riskBadge.textContent = 'Risk: ' + rec.risk_level;
+                cardBottom.appendChild(riskBadge);
+            }
+
+            if (rec.impact_score !== undefined) {
+                var impactBadge = document.createElement('span');
+                impactBadge.style.cssText = 'font-size:12px;color:#94a3b8;';
+                impactBadge.textContent = 'Impact: ' + rec.impact_score;
+                cardBottom.appendChild(impactBadge);
+            }
+
+            card.appendChild(cardBottom);
+            recsSection.appendChild(card);
+        });
+    }
+
+    container.appendChild(recsSection);
 
     return container;
 }
@@ -35339,6 +35831,995 @@ function renderSecurityRlsAccessView() {
         '<li>OASIS events and vtid_ledger use service role for cross-tenant system operations.</li>' +
         '</ul>';
     container.appendChild(noteDiv);
+
+    return container;
+}
+
+// =============================================================================
+// AUTOPILOT ADMIN SCREENS — VTID-01250
+// =============================================================================
+
+// ── Shared autopilot state ─────────────────────────────────────
+if (!state.autopilot) {
+    state.autopilot = {
+        registry: { loading: false, data: null, summary: null, filters: { domain: '', status: '', trigger: '', search: '' } },
+        runs: { loading: false, data: null, filters: { automation_id: '', status: '', limit: 50 } },
+        live: { loading: false, activeRuns: null, recentRuns: null, engineStatus: null },
+        engine: { loading: false, loopStatus: null, cronJobs: null },
+        growth: { loading: false, metrics: null, period: '7d' },
+        selectedAutomation: null,
+        drawerOpen: false,
+    };
+}
+
+// ── Helper: status badge color ───────────────────────────────
+function autopilotStatusColor(status) {
+    switch (status) {
+        case 'IMPLEMENTED': return '#4caf50';
+        case 'LIVE': return '#2196f3';
+        case 'PLANNED': return '#ff9800';
+        case 'DEPRECATED': return '#666';
+        case 'completed': return '#4caf50';
+        case 'failed': return '#f44336';
+        case 'running': return '#2196f3';
+        case 'skipped': return '#999';
+        default: return '#888';
+    }
+}
+
+function autopilotTriggerIcon(type) {
+    switch (type) {
+        case 'cron': return '\u23F0';      // alarm clock
+        case 'heartbeat': return '\u2764';  // heart
+        case 'event': return '\u26A1';      // lightning
+        case 'manual': return '\u270B';     // hand
+        case 'webhook': return '\u{1F310}'; // globe
+        default: return '\u2022';
+    }
+}
+
+// ── Helper: create summary card ───────────────────────────────
+function createSummaryCard(label, value, color) {
+    var card = document.createElement('div');
+    card.style.cssText = 'background:var(--color-bg-secondary,#1a1a2e);border:1px solid var(--color-border,#333);border-radius:8px;padding:1rem;text-align:center;min-width:100px;';
+    var valEl = document.createElement('div');
+    valEl.style.cssText = 'font-size:1.8rem;font-weight:700;color:' + (color || '#fff') + ';';
+    valEl.textContent = value;
+    card.appendChild(valEl);
+    var labelEl = document.createElement('div');
+    labelEl.style.cssText = 'font-size:0.75rem;color:#888;margin-top:4px;text-transform:uppercase;';
+    labelEl.textContent = label;
+    card.appendChild(labelEl);
+    return card;
+}
+
+// =============================================================================
+// Tab 1: Registry Browser
+// =============================================================================
+
+async function fetchAutopilotRegistry() {
+    if (state.autopilot.registry.loading) return;
+    state.autopilot.registry.loading = true;
+    renderApp();
+    try {
+        var [regRes, sumRes] = await Promise.all([
+            fetch('/api/v1/automations/registry', { headers: buildContextHeaders({}) }),
+            fetch('/api/v1/automations/registry/summary', { headers: buildContextHeaders({}) }),
+        ]);
+        if (regRes.ok) {
+            var regData = await regRes.json();
+            state.autopilot.registry.data = regData.automations || [];
+        }
+        if (sumRes.ok) {
+            state.autopilot.registry.summary = await sumRes.json();
+        }
+    } catch (err) {
+        console.error('[Autopilot] fetchRegistry error:', err);
+    } finally {
+        state.autopilot.registry.loading = false;
+        renderApp();
+    }
+}
+
+function renderAutopilotRegistryView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+
+    // Title
+    var title = document.createElement('h2');
+    title.textContent = 'Autopilot Registry';
+    container.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Browse all AP-XXXX automations, filter by domain/status/trigger, and manually execute.';
+    container.appendChild(subtitle);
+
+    var reg = state.autopilot.registry;
+
+    // Auto-fetch on first load
+    if (!reg.data && !reg.loading) {
+        setTimeout(function () { fetchAutopilotRegistry(); }, 0);
+    }
+
+    if (reg.loading) {
+        var loader = document.createElement('div');
+        loader.className = 'loading-indicator';
+        loader.textContent = 'Loading registry...';
+        container.appendChild(loader);
+        return container;
+    }
+
+    if (!reg.data) return container;
+
+    // Summary cards
+    var sum = reg.summary || {};
+    var cardsRow = document.createElement('div');
+    cardsRow.style.cssText = 'display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem;';
+    cardsRow.appendChild(createSummaryCard('Total', sum.total || reg.data.length, '#fff'));
+    cardsRow.appendChild(createSummaryCard('Executable', sum.executable || 0, '#4caf50'));
+    cardsRow.appendChild(createSummaryCard('Planned', sum.planned || 0, '#ff9800'));
+    // Count by trigger type
+    var cronCount = reg.data.filter(function (a) { return a.triggerType === 'cron'; }).length;
+    var heartbeatCount = reg.data.filter(function (a) { return a.triggerType === 'heartbeat'; }).length;
+    var eventCount = reg.data.filter(function (a) { return a.triggerType === 'event'; }).length;
+    cardsRow.appendChild(createSummaryCard('CRON', cronCount, '#9c27b0'));
+    cardsRow.appendChild(createSummaryCard('Heartbeat', heartbeatCount, '#e91e63'));
+    cardsRow.appendChild(createSummaryCard('Event', eventCount, '#ff5722'));
+    container.appendChild(cardsRow);
+
+    // Filters row
+    var filtersRow = document.createElement('div');
+    filtersRow.style.cssText = 'display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;align-items:center;';
+
+    // Domain filter
+    var domains = [...new Set(reg.data.map(function (a) { return a.domain; }))].sort();
+    var domainSelect = document.createElement('select');
+    domainSelect.style.cssText = 'padding:6px 10px;border-radius:6px;background:#1a1a2e;color:#ccc;border:1px solid #333;font-size:0.85rem;';
+    domainSelect.innerHTML = '<option value="">All Domains</option>';
+    domains.forEach(function (d) {
+        domainSelect.innerHTML += '<option value="' + d + '"' + (reg.filters.domain === d ? ' selected' : '') + '>' + d + '</option>';
+    });
+    domainSelect.onchange = function () { reg.filters.domain = this.value; renderApp(); };
+    filtersRow.appendChild(domainSelect);
+
+    // Status filter
+    var statusSelect = document.createElement('select');
+    statusSelect.style.cssText = domainSelect.style.cssText;
+    statusSelect.innerHTML = '<option value="">All Statuses</option><option value="IMPLEMENTED">Implemented</option><option value="PLANNED">Planned</option><option value="LIVE">Live</option><option value="DEPRECATED">Deprecated</option>';
+    statusSelect.value = reg.filters.status;
+    statusSelect.onchange = function () { reg.filters.status = this.value; renderApp(); };
+    filtersRow.appendChild(statusSelect);
+
+    // Trigger filter
+    var trigSelect = document.createElement('select');
+    trigSelect.style.cssText = domainSelect.style.cssText;
+    trigSelect.innerHTML = '<option value="">All Triggers</option><option value="cron">CRON</option><option value="heartbeat">Heartbeat</option><option value="event">Event</option><option value="manual">Manual</option>';
+    trigSelect.value = reg.filters.trigger;
+    trigSelect.onchange = function () { reg.filters.trigger = this.value; renderApp(); };
+    filtersRow.appendChild(trigSelect);
+
+    // Search
+    var searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.placeholder = 'Search by name or ID...';
+    searchInput.value = reg.filters.search;
+    searchInput.style.cssText = 'padding:6px 10px;border-radius:6px;background:#1a1a2e;color:#ccc;border:1px solid #333;font-size:0.85rem;flex:1;min-width:200px;';
+    searchInput.oninput = function () { reg.filters.search = this.value; renderApp(); };
+    filtersRow.appendChild(searchInput);
+
+    // Refresh button
+    var refreshBtn = document.createElement('button');
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.style.cssText = 'padding:6px 14px;border-radius:6px;background:#333;color:#ccc;border:1px solid #444;cursor:pointer;font-size:0.85rem;';
+    refreshBtn.onclick = function () { state.autopilot.registry.data = null; fetchAutopilotRegistry(); };
+    filtersRow.appendChild(refreshBtn);
+
+    container.appendChild(filtersRow);
+
+    // Filter data
+    var filtered = reg.data.filter(function (a) {
+        if (reg.filters.domain && a.domain !== reg.filters.domain) return false;
+        if (reg.filters.status && a.status !== reg.filters.status) return false;
+        if (reg.filters.trigger && a.triggerType !== reg.filters.trigger) return false;
+        if (reg.filters.search) {
+            var q = reg.filters.search.toLowerCase();
+            if (!a.id.toLowerCase().includes(q) && !a.name.toLowerCase().includes(q)) return false;
+        }
+        return true;
+    });
+
+    // Count label
+    var countLabel = document.createElement('div');
+    countLabel.style.cssText = 'color:#888;font-size:0.8rem;margin-bottom:0.5rem;';
+    countLabel.textContent = 'Showing ' + filtered.length + ' of ' + reg.data.length + ' automations';
+    container.appendChild(countLabel);
+
+    // Table
+    var tableWrap = document.createElement('div');
+    tableWrap.style.cssText = 'overflow-x:auto;';
+    var table = document.createElement('table');
+    table.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.85rem;';
+
+    var thead = document.createElement('thead');
+    thead.innerHTML = '<tr style="border-bottom:1px solid #333;text-align:left;">' +
+        '<th style="padding:8px;color:#888;">ID</th>' +
+        '<th style="padding:8px;color:#888;">Name</th>' +
+        '<th style="padding:8px;color:#888;">Domain</th>' +
+        '<th style="padding:8px;color:#888;">Trigger</th>' +
+        '<th style="padding:8px;color:#888;">Config</th>' +
+        '<th style="padding:8px;color:#888;">Status</th>' +
+        '<th style="padding:8px;color:#888;">Roles</th>' +
+        '<th style="padding:8px;color:#888;">Actions</th>' +
+        '</tr>';
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    filtered.forEach(function (a) {
+        var row = document.createElement('tr');
+        row.style.cssText = 'border-bottom:1px solid #222;cursor:pointer;';
+        row.onmouseenter = function () { this.style.background = '#1a1a3e'; };
+        row.onmouseleave = function () { this.style.background = ''; };
+
+        var trigConf = '';
+        if (a.triggerConfig) {
+            if (a.triggerConfig.cronExpression) trigConf = a.triggerConfig.cronExpression;
+            else if (a.triggerConfig.intervalMinutes) trigConf = a.triggerConfig.intervalMinutes + 'm';
+            else if (a.triggerConfig.eventTopic) trigConf = a.triggerConfig.eventTopic;
+        }
+
+        var roles = a.targetRoles === 'all' ? 'all' : (Array.isArray(a.targetRoles) ? a.targetRoles.join(', ') : String(a.targetRoles));
+
+        row.innerHTML =
+            '<td style="padding:8px;font-family:monospace;color:#64b5f6;">' + a.id + '</td>' +
+            '<td style="padding:8px;">' + a.name + '</td>' +
+            '<td style="padding:8px;color:#888;font-size:0.8rem;">' + a.domain + '</td>' +
+            '<td style="padding:8px;">' + autopilotTriggerIcon(a.triggerType) + ' ' + a.triggerType + '</td>' +
+            '<td style="padding:8px;font-family:monospace;font-size:0.75rem;color:#999;">' + trigConf + '</td>' +
+            '<td style="padding:8px;"><span style="background:' + autopilotStatusColor(a.status) + '22;color:' + autopilotStatusColor(a.status) + ';padding:2px 8px;border-radius:4px;font-size:0.75rem;">' + a.status + '</span></td>' +
+            '<td style="padding:8px;color:#888;font-size:0.75rem;">' + roles + '</td>' +
+            '<td style="padding:8px;"></td>';
+
+        // Add Run button for executable automations
+        var actionsCell = row.querySelector('td:last-child');
+        if (a.handler && (a.status === 'IMPLEMENTED' || a.status === 'LIVE')) {
+            var runBtn = document.createElement('button');
+            runBtn.textContent = '\u25B6 Run';
+            runBtn.style.cssText = 'padding:3px 10px;border-radius:4px;background:#2196f322;color:#2196f3;border:1px solid #2196f344;cursor:pointer;font-size:0.75rem;';
+            runBtn.onclick = function (e) {
+                e.stopPropagation();
+                if (!confirm('Execute ' + a.id + ' (' + a.name + ') manually?')) return;
+                runBtn.disabled = true;
+                runBtn.textContent = 'Running...';
+                fetch('/api/v1/automations/execute/' + a.id, {
+                    method: 'POST',
+                    headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({})
+                }).then(function (r) { return r.json(); }).then(function (data) {
+                    runBtn.disabled = false;
+                    runBtn.textContent = '\u25B6 Run';
+                    if (data.ok) {
+                        showToast(a.id + ' executed successfully', 'success');
+                    } else {
+                        showToast(a.id + ' failed: ' + (data.error || 'Unknown'), 'error');
+                    }
+                }).catch(function (err) {
+                    runBtn.disabled = false;
+                    runBtn.textContent = '\u25B6 Run';
+                    showToast('Error: ' + err.message, 'error');
+                });
+            };
+            actionsCell.appendChild(runBtn);
+        }
+
+        // Click row to see details
+        row.onclick = function () {
+            state.autopilot.selectedAutomation = a;
+            state.autopilot.drawerOpen = true;
+            renderApp();
+        };
+
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    tableWrap.appendChild(table);
+    container.appendChild(tableWrap);
+
+    // Automation detail drawer
+    if (state.autopilot.drawerOpen && state.autopilot.selectedAutomation) {
+        var overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9998;';
+        overlay.onclick = function () { state.autopilot.drawerOpen = false; renderApp(); };
+        container.appendChild(overlay);
+
+        var a = state.autopilot.selectedAutomation;
+        var drawer = document.createElement('div');
+        drawer.style.cssText = 'position:fixed;top:0;right:0;bottom:0;width:480px;background:#12122a;border-left:1px solid #333;z-index:9999;overflow-y:auto;padding:1.5rem;';
+
+        var closeBtn = document.createElement('button');
+        closeBtn.textContent = '\u2715';
+        closeBtn.style.cssText = 'position:absolute;top:1rem;right:1rem;background:none;border:none;color:#888;font-size:1.2rem;cursor:pointer;';
+        closeBtn.onclick = function () { state.autopilot.drawerOpen = false; renderApp(); };
+        drawer.appendChild(closeBtn);
+
+        drawer.innerHTML += '<h3 style="margin-bottom:0.5rem;">' + a.id + ': ' + a.name + '</h3>' +
+            '<div style="color:#888;margin-bottom:1rem;">' + a.domain + '</div>' +
+            '<div style="margin-bottom:1rem;">' +
+            '<span style="background:' + autopilotStatusColor(a.status) + '22;color:' + autopilotStatusColor(a.status) + ';padding:3px 10px;border-radius:4px;font-size:0.8rem;margin-right:8px;">' + a.status + '</span>' +
+            '<span style="color:#888;">' + a.priority + '</span>' +
+            '</div>' +
+            '<div style="background:#1a1a2e;border:1px solid #333;border-radius:8px;padding:1rem;margin-bottom:1rem;">' +
+            '<div style="color:#888;font-size:0.75rem;text-transform:uppercase;margin-bottom:4px;">Trigger</div>' +
+            '<div>' + autopilotTriggerIcon(a.triggerType) + ' ' + a.triggerType + '</div>' +
+            (a.triggerConfig ? '<div style="font-family:monospace;font-size:0.8rem;color:#999;margin-top:4px;">' + JSON.stringify(a.triggerConfig) + '</div>' : '') +
+            '</div>' +
+            '<div style="background:#1a1a2e;border:1px solid #333;border-radius:8px;padding:1rem;margin-bottom:1rem;">' +
+            '<div style="color:#888;font-size:0.75rem;text-transform:uppercase;margin-bottom:4px;">Handler</div>' +
+            '<div style="font-family:monospace;">' + (a.handler || '<span style="color:#f44336;">No handler</span>') + '</div>' +
+            '</div>' +
+            '<div style="background:#1a1a2e;border:1px solid #333;border-radius:8px;padding:1rem;margin-bottom:1rem;">' +
+            '<div style="color:#888;font-size:0.75rem;text-transform:uppercase;margin-bottom:4px;">Target Roles</div>' +
+            '<div>' + (a.targetRoles === 'all' ? 'all roles' : (Array.isArray(a.targetRoles) ? a.targetRoles.join(', ') : String(a.targetRoles))) + '</div>' +
+            '</div>' +
+            (a.requires ? '<div style="background:#1a1a2e;border:1px solid #333;border-radius:8px;padding:1rem;margin-bottom:1rem;"><div style="color:#888;font-size:0.75rem;text-transform:uppercase;margin-bottom:4px;">Dependencies</div><div>' + a.requires.join(', ') + '</div></div>' : '');
+
+        container.appendChild(drawer);
+    }
+
+    return container;
+}
+
+// =============================================================================
+// Tab 2: Run History
+// =============================================================================
+
+async function fetchAutopilotRuns() {
+    if (state.autopilot.runs.loading) return;
+    state.autopilot.runs.loading = true;
+    renderApp();
+    try {
+        var params = new URLSearchParams();
+        if (state.autopilot.runs.filters.automation_id) params.set('automation_id', state.autopilot.runs.filters.automation_id);
+        if (state.autopilot.runs.filters.limit) params.set('limit', String(state.autopilot.runs.filters.limit));
+
+        var res = await fetch('/api/v1/automations/runs?' + params.toString(), { headers: buildContextHeaders({}) });
+        if (res.ok) {
+            var data = await res.json();
+            state.autopilot.runs.data = data.runs || [];
+        }
+    } catch (err) {
+        console.error('[Autopilot] fetchRuns error:', err);
+    } finally {
+        state.autopilot.runs.loading = false;
+        renderApp();
+    }
+}
+
+function renderAutopilotRunsView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+
+    var title = document.createElement('h2');
+    title.textContent = 'Automation Runs';
+    container.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Execution history of all autopilot automations with status, timing, and user impact.';
+    container.appendChild(subtitle);
+
+    var runs = state.autopilot.runs;
+
+    if (!runs.data && !runs.loading) {
+        setTimeout(function () { fetchAutopilotRuns(); }, 0);
+    }
+
+    if (runs.loading) {
+        var loader = document.createElement('div');
+        loader.className = 'loading-indicator';
+        loader.textContent = 'Loading runs...';
+        container.appendChild(loader);
+        return container;
+    }
+
+    if (!runs.data) return container;
+
+    // Summary
+    var completed = runs.data.filter(function (r) { return r.status === 'completed'; }).length;
+    var failed = runs.data.filter(function (r) { return r.status === 'failed'; }).length;
+    var running = runs.data.filter(function (r) { return r.status === 'running'; }).length;
+    var skipped = runs.data.filter(function (r) { return r.status === 'skipped'; }).length;
+
+    var summaryRow = document.createElement('div');
+    summaryRow.style.cssText = 'display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem;';
+    summaryRow.appendChild(createSummaryCard('Total', runs.data.length, '#fff'));
+    summaryRow.appendChild(createSummaryCard('Completed', completed, '#4caf50'));
+    summaryRow.appendChild(createSummaryCard('Failed', failed, '#f44336'));
+    summaryRow.appendChild(createSummaryCard('Running', running, '#2196f3'));
+    summaryRow.appendChild(createSummaryCard('Skipped', skipped, '#999'));
+    container.appendChild(summaryRow);
+
+    // Filters
+    var filtersRow = document.createElement('div');
+    filtersRow.style.cssText = 'display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;align-items:center;';
+
+    var automationFilter = document.createElement('input');
+    automationFilter.type = 'text';
+    automationFilter.placeholder = 'Filter by AP-XXXX...';
+    automationFilter.value = runs.filters.automation_id;
+    automationFilter.style.cssText = 'padding:6px 10px;border-radius:6px;background:#1a1a2e;color:#ccc;border:1px solid #333;font-size:0.85rem;width:160px;';
+    automationFilter.onchange = function () {
+        runs.filters.automation_id = this.value;
+        state.autopilot.runs.data = null;
+        fetchAutopilotRuns();
+    };
+    filtersRow.appendChild(automationFilter);
+
+    var statusFilter = document.createElement('select');
+    statusFilter.style.cssText = 'padding:6px 10px;border-radius:6px;background:#1a1a2e;color:#ccc;border:1px solid #333;font-size:0.85rem;';
+    statusFilter.innerHTML = '<option value="">All Statuses</option><option value="completed">Completed</option><option value="failed">Failed</option><option value="running">Running</option><option value="skipped">Skipped</option>';
+    statusFilter.value = runs.filters.status || '';
+    statusFilter.onchange = function () { runs.filters.status = this.value; renderApp(); };
+    filtersRow.appendChild(statusFilter);
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.style.cssText = 'padding:6px 14px;border-radius:6px;background:#333;color:#ccc;border:1px solid #444;cursor:pointer;font-size:0.85rem;';
+    refreshBtn.onclick = function () { state.autopilot.runs.data = null; fetchAutopilotRuns(); };
+    filtersRow.appendChild(refreshBtn);
+    container.appendChild(filtersRow);
+
+    // Filter locally by status
+    var filteredRuns = runs.data;
+    if (runs.filters.status) {
+        filteredRuns = filteredRuns.filter(function (r) { return r.status === runs.filters.status; });
+    }
+
+    // Table
+    var tableWrap = document.createElement('div');
+    tableWrap.style.cssText = 'overflow-x:auto;';
+    var table = document.createElement('table');
+    table.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.85rem;';
+
+    var thead = document.createElement('thead');
+    thead.innerHTML = '<tr style="border-bottom:1px solid #333;text-align:left;">' +
+        '<th style="padding:8px;color:#888;">Time</th>' +
+        '<th style="padding:8px;color:#888;">AP ID</th>' +
+        '<th style="padding:8px;color:#888;">Trigger</th>' +
+        '<th style="padding:8px;color:#888;">Status</th>' +
+        '<th style="padding:8px;color:#888;">Users</th>' +
+        '<th style="padding:8px;color:#888;">Actions</th>' +
+        '<th style="padding:8px;color:#888;">Duration</th>' +
+        '<th style="padding:8px;color:#888;">Error</th>' +
+        '</tr>';
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    filteredRuns.forEach(function (r) {
+        var row = document.createElement('tr');
+        row.style.cssText = 'border-bottom:1px solid #222;';
+        row.onmouseenter = function () { this.style.background = '#1a1a3e'; };
+        row.onmouseleave = function () { this.style.background = ''; };
+
+        var startedAt = r.started_at ? new Date(r.started_at) : null;
+        var completedAt = r.completed_at ? new Date(r.completed_at) : null;
+        var duration = (startedAt && completedAt) ? ((completedAt - startedAt) / 1000).toFixed(1) + 's' : (r.status === 'running' ? '...' : '-');
+        var timeStr = startedAt ? startedAt.toLocaleString() : '-';
+
+        var statusIcon = r.status === 'completed' ? '\u2705' : r.status === 'failed' ? '\u274C' : r.status === 'running' ? '\u{1F535}' : '\u26A0\uFE0F';
+
+        row.innerHTML =
+            '<td style="padding:8px;font-size:0.8rem;color:#999;">' + timeStr + '</td>' +
+            '<td style="padding:8px;font-family:monospace;color:#64b5f6;">' + r.automation_id + '</td>' +
+            '<td style="padding:8px;">' + (r.trigger_type || '-') + '</td>' +
+            '<td style="padding:8px;"><span style="background:' + autopilotStatusColor(r.status) + '22;color:' + autopilotStatusColor(r.status) + ';padding:2px 8px;border-radius:4px;font-size:0.75rem;">' + statusIcon + ' ' + r.status + '</span></td>' +
+            '<td style="padding:8px;text-align:center;">' + (r.users_affected || 0) + '</td>' +
+            '<td style="padding:8px;text-align:center;">' + (r.actions_taken || 0) + '</td>' +
+            '<td style="padding:8px;color:#999;">' + duration + '</td>' +
+            '<td style="padding:8px;color:#f44336;font-size:0.75rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (r.error_message || '') + '</td>';
+
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    tableWrap.appendChild(table);
+    container.appendChild(tableWrap);
+
+    if (filteredRuns.length === 0) {
+        var empty = document.createElement('div');
+        empty.style.cssText = 'text-align:center;color:#666;padding:2rem;';
+        empty.textContent = 'No automation runs found.';
+        container.appendChild(empty);
+    }
+
+    return container;
+}
+
+// =============================================================================
+// Tab 3: Live Monitor
+// =============================================================================
+
+async function fetchAutopilotLive() {
+    if (state.autopilot.live.loading) return;
+    state.autopilot.live.loading = true;
+    renderApp();
+    try {
+        var [activeRes, runsRes, healthRes] = await Promise.all([
+            fetch('/api/v1/automations/runs/active', { headers: buildContextHeaders({}) }),
+            fetch('/api/v1/automations/runs?limit=10', { headers: buildContextHeaders({}) }),
+            fetch('/api/v1/automations/health', { headers: buildContextHeaders({}) }),
+        ]);
+        if (activeRes.ok) {
+            var data = await activeRes.json();
+            state.autopilot.live.activeRuns = data.runs || [];
+        }
+        if (runsRes.ok) {
+            var data = await runsRes.json();
+            state.autopilot.live.recentRuns = data.runs || [];
+        }
+        if (healthRes.ok) {
+            state.autopilot.live.engineStatus = await healthRes.json();
+        }
+    } catch (err) {
+        console.error('[Autopilot] fetchLive error:', err);
+    } finally {
+        state.autopilot.live.loading = false;
+        renderApp();
+    }
+}
+
+function renderAutopilotLiveView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+
+    var title = document.createElement('h2');
+    title.textContent = 'Live Autopilot Monitor';
+    container.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Real-time view of engine status, active runs, and recent completions.';
+    container.appendChild(subtitle);
+
+    var live = state.autopilot.live;
+
+    if (!live.engineStatus && !live.loading) {
+        setTimeout(function () { fetchAutopilotLive(); }, 0);
+    }
+
+    // Auto-refresh every 10 seconds
+    if (!state.autopilot.live._refreshTimer) {
+        state.autopilot.live._refreshTimer = setInterval(function () {
+            if (state.currentModuleKey === 'autopilot' && state.currentTab === 'live') {
+                fetchAutopilotLive();
+            }
+        }, 10000);
+    }
+
+    if (live.loading && !live.engineStatus) {
+        var loader = document.createElement('div');
+        loader.className = 'loading-indicator';
+        loader.textContent = 'Loading live status...';
+        container.appendChild(loader);
+        return container;
+    }
+
+    // Two-column layout
+    var grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:320px 1fr;gap:1.5rem;';
+
+    // Left column: Engine Status
+    var leftCol = document.createElement('div');
+
+    var engineCard = document.createElement('div');
+    engineCard.style.cssText = 'background:#1a1a2e;border:1px solid #333;border-radius:8px;padding:1.25rem;margin-bottom:1rem;';
+
+    var eng = live.engineStatus || {};
+    engineCard.innerHTML = '<h3 style="margin-bottom:1rem;font-size:1rem;">Engine Status</h3>' +
+        '<div style="margin-bottom:0.75rem;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #222;">' +
+        '<span style="color:#888;">Automations</span>' +
+        '<span style="font-weight:600;">' + (eng.total_automations || 0) + ' total</span></div>' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #222;">' +
+        '<span style="color:#888;">Executable</span>' +
+        '<span style="color:#4caf50;font-weight:600;">' + (eng.executable || 0) + '</span></div>' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #222;">' +
+        '<span style="color:#888;">Planned</span>' +
+        '<span style="color:#ff9800;font-weight:600;">' + (eng.planned || 0) + '</span></div>' +
+        '</div>';
+
+    leftCol.appendChild(engineCard);
+
+    // Manual controls
+    var controlsCard = document.createElement('div');
+    controlsCard.style.cssText = 'background:#1a1a2e;border:1px solid #333;border-radius:8px;padding:1.25rem;margin-bottom:1rem;';
+    controlsCard.innerHTML = '<h3 style="margin-bottom:1rem;font-size:1rem;">Manual Controls</h3>';
+
+    var heartbeatBtn = document.createElement('button');
+    heartbeatBtn.textContent = '\u2764 Trigger Heartbeat';
+    heartbeatBtn.style.cssText = 'display:block;width:100%;padding:8px;border-radius:6px;background:#e91e6322;color:#e91e63;border:1px solid #e91e6344;cursor:pointer;margin-bottom:8px;font-size:0.85rem;';
+    heartbeatBtn.onclick = function () {
+        heartbeatBtn.disabled = true;
+        heartbeatBtn.textContent = 'Running...';
+        fetch('/api/v1/automations/heartbeat', {
+            method: 'POST',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({})
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            heartbeatBtn.disabled = false;
+            heartbeatBtn.textContent = '\u2764 Trigger Heartbeat';
+            if (data.ok) {
+                showToast('Heartbeat: ' + (data.executed || []).length + ' executed, ' + (data.skipped || []).length + ' skipped, ' + (data.failed || []).length + ' failed', 'success');
+            } else {
+                showToast('Heartbeat failed: ' + (data.error || 'Unknown'), 'error');
+            }
+            fetchAutopilotLive();
+        }).catch(function (err) {
+            heartbeatBtn.disabled = false;
+            heartbeatBtn.textContent = '\u2764 Trigger Heartbeat';
+            showToast('Error: ' + err.message, 'error');
+        });
+    };
+    controlsCard.appendChild(heartbeatBtn);
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.style.cssText = 'display:block;width:100%;padding:8px;border-radius:6px;background:#333;color:#ccc;border:1px solid #444;cursor:pointer;font-size:0.85rem;';
+    refreshBtn.onclick = function () { fetchAutopilotLive(); };
+    controlsCard.appendChild(refreshBtn);
+
+    leftCol.appendChild(controlsCard);
+    grid.appendChild(leftCol);
+
+    // Right column: Active + Recent runs
+    var rightCol = document.createElement('div');
+
+    // Active runs
+    var activeCard = document.createElement('div');
+    activeCard.style.cssText = 'background:#1a1a2e;border:1px solid #333;border-radius:8px;padding:1.25rem;margin-bottom:1rem;';
+    activeCard.innerHTML = '<h3 style="margin-bottom:0.75rem;font-size:1rem;">Active Runs <span style="color:#2196f3;">(' + ((live.activeRuns || []).length) + ')</span></h3>';
+
+    if (live.activeRuns && live.activeRuns.length > 0) {
+        live.activeRuns.forEach(function (r) {
+            var item = document.createElement('div');
+            item.style.cssText = 'padding:8px;border-bottom:1px solid #222;display:flex;justify-content:space-between;align-items:center;';
+            item.innerHTML = '<span style="font-family:monospace;color:#64b5f6;">' + r.automation_id + '</span>' +
+                '<span style="color:#2196f3;font-size:0.8rem;">\u{1F535} running</span>';
+            activeCard.appendChild(item);
+        });
+    } else {
+        var noActive = document.createElement('div');
+        noActive.style.cssText = 'color:#666;text-align:center;padding:1rem;';
+        noActive.textContent = 'No active runs';
+        activeCard.appendChild(noActive);
+    }
+    rightCol.appendChild(activeCard);
+
+    // Recent completed
+    var recentCard = document.createElement('div');
+    recentCard.style.cssText = 'background:#1a1a2e;border:1px solid #333;border-radius:8px;padding:1.25rem;';
+    recentCard.innerHTML = '<h3 style="margin-bottom:0.75rem;font-size:1rem;">Last 10 Runs</h3>';
+
+    if (live.recentRuns && live.recentRuns.length > 0) {
+        live.recentRuns.forEach(function (r) {
+            var item = document.createElement('div');
+            item.style.cssText = 'padding:8px;border-bottom:1px solid #222;display:flex;justify-content:space-between;align-items:center;font-size:0.85rem;';
+            var statusIcon = r.status === 'completed' ? '\u2705' : r.status === 'failed' ? '\u274C' : r.status === 'skipped' ? '\u26A0\uFE0F' : '\u{1F535}';
+            var timeAgo = r.started_at ? new Date(r.started_at).toLocaleTimeString() : '';
+            item.innerHTML = '<span>' + statusIcon + ' <span style="font-family:monospace;color:#64b5f6;">' + r.automation_id + '</span></span>' +
+                '<span style="color:#888;font-size:0.75rem;">' + (r.users_affected || 0) + ' users, ' + (r.actions_taken || 0) + ' actions</span>' +
+                '<span style="color:#666;font-size:0.75rem;">' + timeAgo + '</span>';
+            recentCard.appendChild(item);
+        });
+    } else {
+        var noRecent = document.createElement('div');
+        noRecent.style.cssText = 'color:#666;text-align:center;padding:1rem;';
+        noRecent.textContent = 'No runs yet';
+        recentCard.appendChild(noRecent);
+    }
+    rightCol.appendChild(recentCard);
+
+    grid.appendChild(rightCol);
+    container.appendChild(grid);
+
+    return container;
+}
+
+// =============================================================================
+// Tab 4: Engine Config
+// =============================================================================
+
+function renderAutopilotEngineView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+
+    var title = document.createElement('h2');
+    title.textContent = 'Engine Configuration';
+    container.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Heartbeat loop, Cloud Scheduler CRON jobs, event dispatch wiring, and notification throttle.';
+    container.appendChild(subtitle);
+
+    // CRON Jobs table
+    var cronCard = document.createElement('div');
+    cronCard.style.cssText = 'background:#1a1a2e;border:1px solid #333;border-radius:8px;padding:1.25rem;margin-bottom:1.5rem;';
+    cronCard.innerHTML = '<h3 style="margin-bottom:0.75rem;font-size:1rem;">\u23F0 Cloud Scheduler CRON Jobs</h3>' +
+        '<p style="color:#888;font-size:0.8rem;margin-bottom:1rem;">These jobs are managed via scripts/setup-cloud-scheduler.sh and POST to /api/v1/automations/cron/&lt;AP-ID&gt;</p>';
+
+    var cronJobs = [
+        { id: 'AP-0101', name: 'Daily Match Delivery', schedule: '0 8 * * *', tz: 'Europe/Berlin' },
+        { id: 'AP-0501', name: 'Morning Briefing', schedule: '0 7 * * *', tz: 'Europe/Berlin' },
+        { id: 'AP-0505', name: 'Diary Reminder', schedule: '0 21 * * *', tz: 'Europe/Berlin' },
+        { id: 'AP-0502', name: 'Weekly Community Digest', schedule: '0 18 * * 0', tz: 'Europe/Berlin' },
+        { id: 'AP-0506', name: 'Weekly Reflection', schedule: '0 20 * * 5', tz: 'Europe/Berlin' },
+        { id: 'AP-0105', name: 'Group Recommendation Push', schedule: '0 10 * * 1', tz: 'Europe/Berlin' },
+        { id: 'AP-0107', name: 'Social Alignment', schedule: '0 9 * * 1', tz: 'Europe/Berlin' },
+        { id: 'AP-0210', name: 'Creator Digest', schedule: '0 18 * * 0', tz: 'Europe/Berlin' },
+        { id: 'AP-0305', name: 'Trending Events', schedule: '0 18 * * 0', tz: 'Europe/Berlin' },
+        { id: 'AP-0604', name: 'Wellness Check-In', schedule: '0 10 * * 3', tz: 'Europe/Berlin' },
+    ];
+
+    var cronTable = document.createElement('table');
+    cronTable.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.85rem;';
+    cronTable.innerHTML = '<thead><tr style="border-bottom:1px solid #333;text-align:left;">' +
+        '<th style="padding:6px 8px;color:#888;">AP ID</th>' +
+        '<th style="padding:6px 8px;color:#888;">Name</th>' +
+        '<th style="padding:6px 8px;color:#888;">Schedule</th>' +
+        '<th style="padding:6px 8px;color:#888;">Timezone</th>' +
+        '</tr></thead>';
+    var cronTbody = document.createElement('tbody');
+    cronJobs.forEach(function (job) {
+        var tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid #222';
+        tr.innerHTML = '<td style="padding:6px 8px;font-family:monospace;color:#64b5f6;">' + job.id + '</td>' +
+            '<td style="padding:6px 8px;">' + job.name + '</td>' +
+            '<td style="padding:6px 8px;font-family:monospace;color:#9c27b0;">' + job.schedule + '</td>' +
+            '<td style="padding:6px 8px;color:#888;">' + job.tz + '</td>';
+        cronTbody.appendChild(tr);
+    });
+    cronTable.appendChild(cronTbody);
+    cronCard.appendChild(cronTable);
+    container.appendChild(cronCard);
+
+    // Event Dispatch Wiring
+    var eventCard = document.createElement('div');
+    eventCard.style.cssText = 'background:#1a1a2e;border:1px solid #333;border-radius:8px;padding:1.25rem;margin-bottom:1.5rem;';
+    eventCard.innerHTML = '<h3 style="margin-bottom:0.75rem;font-size:1rem;">\u26A1 Event Dispatch Wiring</h3>' +
+        '<p style="color:#888;font-size:0.8rem;margin-bottom:1rem;">Gateway route actions that dispatch events to matching automations via dispatchEvent().</p>';
+
+    var events = [
+        { topic: 'community.member.joined', route: 'community.ts', triggers: 'AP-0203' },
+        { topic: 'match.state.accepted', route: 'matchmaking.ts', triggers: 'AP-0103' },
+        { topic: 'match.feedback.like', route: 'match-feedback.ts', triggers: 'AP-0404' },
+        { topic: 'user.signup.completed', route: 'admin-signups.ts', triggers: 'AP-1304' },
+        { topic: 'user.signup.referral', route: 'admin-signups.ts', triggers: 'AP-0405' },
+        { topic: 'user.signup.shared_link', route: 'admin-signups.ts', triggers: 'AP-0410' },
+    ];
+
+    var eventTable = document.createElement('table');
+    eventTable.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.85rem;';
+    eventTable.innerHTML = '<thead><tr style="border-bottom:1px solid #333;text-align:left;">' +
+        '<th style="padding:6px 8px;color:#888;">Event Topic</th>' +
+        '<th style="padding:6px 8px;color:#888;">Route</th>' +
+        '<th style="padding:6px 8px;color:#888;">Triggers</th>' +
+        '</tr></thead>';
+    var eventTbody = document.createElement('tbody');
+    events.forEach(function (ev) {
+        var tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid #222';
+        tr.innerHTML = '<td style="padding:6px 8px;font-family:monospace;color:#ff5722;">' + ev.topic + '</td>' +
+            '<td style="padding:6px 8px;color:#888;">' + ev.route + '</td>' +
+            '<td style="padding:6px 8px;font-family:monospace;color:#64b5f6;">' + ev.triggers + '</td>';
+        eventTbody.appendChild(tr);
+    });
+    eventTable.appendChild(eventTbody);
+    eventCard.appendChild(eventTable);
+    container.appendChild(eventCard);
+
+    // Manual Event Dispatch form
+    var dispatchCard = document.createElement('div');
+    dispatchCard.style.cssText = 'background:#1a1a2e;border:1px solid #333;border-radius:8px;padding:1.25rem;margin-bottom:1.5rem;';
+    dispatchCard.innerHTML = '<h3 style="margin-bottom:0.75rem;font-size:1rem;">Manual Event Dispatch</h3>';
+
+    var dispatchForm = document.createElement('div');
+    dispatchForm.style.cssText = 'display:flex;gap:0.75rem;flex-wrap:wrap;align-items:flex-end;';
+
+    var topicInput = document.createElement('input');
+    topicInput.type = 'text';
+    topicInput.placeholder = 'Event topic (e.g. user.signup.completed)';
+    topicInput.style.cssText = 'padding:8px 10px;border-radius:6px;background:#0d0d1e;color:#ccc;border:1px solid #333;font-size:0.85rem;flex:1;min-width:250px;';
+    dispatchForm.appendChild(topicInput);
+
+    var payloadInput = document.createElement('input');
+    payloadInput.type = 'text';
+    payloadInput.placeholder = '{"key":"value"} (optional payload)';
+    payloadInput.style.cssText = topicInput.style.cssText;
+    dispatchForm.appendChild(payloadInput);
+
+    var dispatchBtn = document.createElement('button');
+    dispatchBtn.textContent = '\u26A1 Dispatch';
+    dispatchBtn.style.cssText = 'padding:8px 16px;border-radius:6px;background:#ff572222;color:#ff5722;border:1px solid #ff572244;cursor:pointer;font-size:0.85rem;';
+    dispatchBtn.onclick = function () {
+        var topic = topicInput.value.trim();
+        if (!topic) { showToast('Event topic required', 'error'); return; }
+        var payload = {};
+        if (payloadInput.value.trim()) {
+            try { payload = JSON.parse(payloadInput.value.trim()); }
+            catch (e) { showToast('Invalid JSON payload', 'error'); return; }
+        }
+        dispatchBtn.disabled = true;
+        dispatchBtn.textContent = 'Dispatching...';
+        fetch('/api/v1/automations/dispatch', {
+            method: 'POST',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ event_topic: topic, event_payload: payload })
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            dispatchBtn.disabled = false;
+            dispatchBtn.textContent = '\u26A1 Dispatch';
+            if (data.ok) {
+                showToast('Dispatched to ' + (data.dispatched || []).length + ' automations', 'success');
+            } else {
+                showToast('Dispatch failed: ' + (data.error || 'Unknown'), 'error');
+            }
+        }).catch(function (err) {
+            dispatchBtn.disabled = false;
+            dispatchBtn.textContent = '\u26A1 Dispatch';
+            showToast('Error: ' + err.message, 'error');
+        });
+    };
+    dispatchForm.appendChild(dispatchBtn);
+    dispatchCard.appendChild(dispatchForm);
+    container.appendChild(dispatchCard);
+
+    return container;
+}
+
+// =============================================================================
+// Tab 5: Growth Dashboard
+// =============================================================================
+
+async function fetchAutopilotGrowth() {
+    if (state.autopilot.growth.loading) return;
+    state.autopilot.growth.loading = true;
+    renderApp();
+    try {
+        var runsRes = await fetch('/api/v1/automations/runs?limit=200', { headers: buildContextHeaders({}) });
+        if (runsRes.ok) {
+            var data = await runsRes.json();
+            state.autopilot.growth.metrics = computeGrowthMetrics(data.runs || []);
+        }
+    } catch (err) {
+        console.error('[Autopilot] fetchGrowth error:', err);
+    } finally {
+        state.autopilot.growth.loading = false;
+        renderApp();
+    }
+}
+
+function computeGrowthMetrics(runs) {
+    var now = Date.now();
+    var periodDays = state.autopilot.growth.period === '30d' ? 30 : 7;
+    var cutoff = now - periodDays * 86400000;
+
+    var periodRuns = runs.filter(function (r) {
+        return r.started_at && new Date(r.started_at).getTime() > cutoff;
+    });
+
+    var totalRuns = periodRuns.length;
+    var totalUsers = 0;
+    var totalActions = 0;
+    var byAutomation = {};
+
+    periodRuns.forEach(function (r) {
+        totalUsers += r.users_affected || 0;
+        totalActions += r.actions_taken || 0;
+        if (!byAutomation[r.automation_id]) {
+            byAutomation[r.automation_id] = { runs: 0, users: 0, actions: 0 };
+        }
+        byAutomation[r.automation_id].runs++;
+        byAutomation[r.automation_id].users += r.users_affected || 0;
+        byAutomation[r.automation_id].actions += r.actions_taken || 0;
+    });
+
+    // Sort by users descending
+    var topAutomations = Object.keys(byAutomation).map(function (id) {
+        return { id: id, ...byAutomation[id] };
+    }).sort(function (a, b) { return b.users - a.users; }).slice(0, 10);
+
+    return { totalRuns: totalRuns, totalUsers: totalUsers, totalActions: totalActions, topAutomations: topAutomations, periodDays: periodDays };
+}
+
+function renderAutopilotGrowthView() {
+    var container = document.createElement('div');
+    container.style.padding = '1.5rem';
+
+    var title = document.createElement('h2');
+    title.textContent = 'Growth Dashboard';
+    container.appendChild(title);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Automation impact metrics, top performers, and user reach.';
+    container.appendChild(subtitle);
+
+    var growth = state.autopilot.growth;
+
+    if (!growth.metrics && !growth.loading) {
+        setTimeout(function () { fetchAutopilotGrowth(); }, 0);
+    }
+
+    // Period selector
+    var periodRow = document.createElement('div');
+    periodRow.style.cssText = 'display:flex;gap:0.5rem;margin-bottom:1.5rem;';
+    ['7d', '30d'].forEach(function (p) {
+        var btn = document.createElement('button');
+        btn.textContent = p;
+        btn.style.cssText = 'padding:6px 16px;border-radius:6px;cursor:pointer;font-size:0.85rem;' +
+            (growth.period === p ? 'background:#2196f3;color:#fff;border:1px solid #2196f3;' : 'background:#1a1a2e;color:#888;border:1px solid #333;');
+        btn.onclick = function () {
+            growth.period = p;
+            growth.metrics = null;
+            fetchAutopilotGrowth();
+        };
+        periodRow.appendChild(btn);
+    });
+    container.appendChild(periodRow);
+
+    if (growth.loading) {
+        var loader = document.createElement('div');
+        loader.className = 'loading-indicator';
+        loader.textContent = 'Loading growth metrics...';
+        container.appendChild(loader);
+        return container;
+    }
+
+    if (!growth.metrics) return container;
+
+    var m = growth.metrics;
+
+    // Summary cards
+    var cardsRow = document.createElement('div');
+    cardsRow.style.cssText = 'display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem;';
+    cardsRow.appendChild(createSummaryCard('Runs/' + m.periodDays + 'd', m.totalRuns, '#fff'));
+    cardsRow.appendChild(createSummaryCard('Users Reached', m.totalUsers, '#4caf50'));
+    cardsRow.appendChild(createSummaryCard('Actions Taken', m.totalActions, '#2196f3'));
+    container.appendChild(cardsRow);
+
+    // Top automations table
+    var topCard = document.createElement('div');
+    topCard.style.cssText = 'background:#1a1a2e;border:1px solid #333;border-radius:8px;padding:1.25rem;';
+    topCard.innerHTML = '<h3 style="margin-bottom:0.75rem;font-size:1rem;">Top Automations by User Impact</h3>';
+
+    if (m.topAutomations.length > 0) {
+        var topTable = document.createElement('table');
+        topTable.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.85rem;';
+        topTable.innerHTML = '<thead><tr style="border-bottom:1px solid #333;text-align:left;">' +
+            '<th style="padding:6px 8px;color:#888;">#</th>' +
+            '<th style="padding:6px 8px;color:#888;">AP ID</th>' +
+            '<th style="padding:6px 8px;color:#888;">Runs</th>' +
+            '<th style="padding:6px 8px;color:#888;">Users</th>' +
+            '<th style="padding:6px 8px;color:#888;">Actions</th>' +
+            '<th style="padding:6px 8px;color:#888;">Impact</th>' +
+            '</tr></thead>';
+        var topTbody = document.createElement('tbody');
+        var maxUsers = m.topAutomations[0]?.users || 1;
+        m.topAutomations.forEach(function (a, i) {
+            var tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid #222';
+            var barWidth = Math.round((a.users / maxUsers) * 100);
+            tr.innerHTML = '<td style="padding:6px 8px;color:#888;">' + (i + 1) + '</td>' +
+                '<td style="padding:6px 8px;font-family:monospace;color:#64b5f6;">' + a.id + '</td>' +
+                '<td style="padding:6px 8px;text-align:center;">' + a.runs + '</td>' +
+                '<td style="padding:6px 8px;text-align:center;font-weight:600;">' + a.users + '</td>' +
+                '<td style="padding:6px 8px;text-align:center;">' + a.actions + '</td>' +
+                '<td style="padding:6px 8px;"><div style="background:#4caf5033;border-radius:3px;height:8px;width:100%;"><div style="background:#4caf50;border-radius:3px;height:100%;width:' + barWidth + '%;"></div></div></td>';
+            topTbody.appendChild(tr);
+        });
+        topTable.appendChild(topTbody);
+        topCard.appendChild(topTable);
+    } else {
+        var empty = document.createElement('div');
+        empty.style.cssText = 'text-align:center;color:#666;padding:1.5rem;';
+        empty.textContent = 'No automation runs in this period.';
+        topCard.appendChild(empty);
+    }
+    container.appendChild(topCard);
 
     return container;
 }

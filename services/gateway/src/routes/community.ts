@@ -26,6 +26,7 @@ import { z } from 'zod';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { notifyUserAsync, notifyUsersAsync } from '../services/notification-service';
+import { dispatchEvent } from '../services/automation-executor';
 
 const router = Router();
 
@@ -269,6 +270,15 @@ router.post('/groups/:id/join', async (req: Request, res: Response) => {
         membership_id: data?.membership_id
       }
     );
+
+    // Dispatch automation event for community.member.joined
+    const tenantId = process.env.DEFAULT_TENANT_ID;
+    if (tenantId) {
+      dispatchEvent(tenantId, 'community.member.joined', {
+        group_id: groupId,
+        membership_id: data?.membership_id,
+      }).catch(err => console.warn(`[${VTID}] dispatch community.member.joined failed:`, err.message));
+    }
 
     console.log(`[${VTID}] User joined group: ${groupId}`);
 

@@ -24,6 +24,7 @@ import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { notifyUserAsync } from '../services/notification-service';
 import { sendProactiveMatchMessages, ProactiveMatchResult } from '../services/proactive-match-messenger';
+import { dispatchEvent } from '../services/automation-executor';
 
 const router = Router();
 
@@ -552,6 +553,17 @@ router.post('/:id/state', async (req: Request, res: Response) => {
           origin: 'autopilot'
         }
       );
+    }
+
+    // Dispatch automation event for match acceptance
+    if (newState === 'accepted') {
+      const tenantId = process.env.DEFAULT_TENANT_ID;
+      if (tenantId) {
+        dispatchEvent(tenantId, 'match.state.accepted', {
+          match_id: matchId,
+          edge_created: data.edge_created || false,
+        }).catch(err => console.warn(`[${VTID}] dispatch match.state.accepted failed:`, err.message));
+      }
     }
 
     console.log(`[${VTID}] POST /match/:id/state - Success: ${matchId} -> ${newState}`);

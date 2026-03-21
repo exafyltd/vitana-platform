@@ -772,6 +772,52 @@ const LIVE_ROOMS_COMMERCE: AutomationDefinition[] = [
 ];
 
 // =============================================================================
+// AP-1300: Onboarding & Viral Growth
+// =============================================================================
+const ONBOARDING_GROWTH: AutomationDefinition[] = [
+  {
+    id: 'AP-1301', name: 'ORB-Guided Conversational Onboarding', domain: 'onboarding-growth',
+    status: 'PLANNED', priority: 'P0', triggerType: 'event',
+    triggerConfig: { eventTopic: 'user.signup.completed' },
+    targetRoles: [...MEMBER_ROLES],
+  },
+  {
+    id: 'AP-1302', name: 'Starter Pack Delivery', domain: 'onboarding-growth',
+    status: 'PLANNED', priority: 'P0', triggerType: 'event',
+    triggerConfig: { eventTopic: 'onboarding.assessment.completed' },
+    targetRoles: [...MEMBER_ROLES],
+  },
+  {
+    id: 'AP-1303', name: 'Contact Book Sync & Bulk Invite', domain: 'onboarding-growth',
+    status: 'PLANNED', priority: 'P0', triggerType: 'manual',
+    targetRoles: [...MEMBER_ROLES],
+  },
+  {
+    id: 'AP-1304', name: '"X Joined Vitana!" Social Proof Notifications', domain: 'onboarding-growth',
+    status: 'PLANNED', priority: 'P0', triggerType: 'event',
+    triggerConfig: { eventTopic: 'user.signup.completed' },
+    targetRoles: [...MEMBER_ROLES],
+  },
+  {
+    id: 'AP-1305', name: 'Social Account Connect', domain: 'onboarding-growth',
+    status: 'PLANNED', priority: 'P1', triggerType: 'manual',
+    targetRoles: [...MEMBER_ROLES],
+  },
+  {
+    id: 'AP-1306', name: 'Auto-Share to Social Accounts', domain: 'onboarding-growth',
+    status: 'PLANNED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'user.milestone.reached' },
+    targetRoles: [...MEMBER_ROLES],
+  },
+  {
+    id: 'AP-1307', name: 'Contact Activity Feed Digest', domain: 'onboarding-growth',
+    status: 'PLANNED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 360 },
+    targetRoles: [...MEMBER_ROLES],
+  },
+];
+
+// =============================================================================
 // Full Registry
 // =============================================================================
 export const AUTOMATION_REGISTRY: AutomationDefinition[] = [
@@ -787,6 +833,7 @@ export const AUTOMATION_REGISTRY: AutomationDefinition[] = [
   ...PLATFORM_OPS,
   ...BUSINESS_MARKETPLACE,
   ...LIVE_ROOMS_COMMERCE,
+  ...ONBOARDING_GROWTH,
 ];
 
 // ── Lookup helpers ──────────────────────────────────────────

@@ -20,6 +20,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { dispatchEvent } from '../services/automation-executor';
 
 const router = Router();
 
@@ -274,6 +275,17 @@ router.post('/:id/feedback', async (req: Request, res: Response) => {
     );
 
     console.log(`[VTID-01094] Feedback recorded: ${data.feedback_id} (${feedback_type})`);
+
+    // Dispatch automation event for positive feedback
+    if (feedback_type === 'like') {
+      const tenantId = process.env.DEFAULT_TENANT_ID;
+      if (tenantId) {
+        dispatchEvent(tenantId, 'match.feedback.like', {
+          feedback_id: data.feedback_id,
+          match_id: matchId,
+        }).catch(err => console.warn(`[VTID-01094] dispatch match.feedback.like failed:`, err.message));
+      }
+    }
 
     // 10. Return success
     return res.status(200).json({

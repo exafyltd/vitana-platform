@@ -702,6 +702,36 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Automations engine initialization failed (non-fatal):', error);
       }
 
+      // VTID-01250: Start Heartbeat Loop for autopilot automations
+      try {
+        const heartbeatEnabled = process.env.AUTOPILOT_HEARTBEAT_ENABLED === 'true';
+        const heartbeatTenantId = process.env.DEFAULT_TENANT_ID;
+        if (heartbeatEnabled && heartbeatTenantId) {
+          const { runHeartbeatCycle } = require('./services/automation-executor');
+          const HEARTBEAT_INTERVAL_MS = parseInt(process.env.AUTOPILOT_HEARTBEAT_INTERVAL_MS || '60000', 10);
+          let heartbeatRunning = false;
+          setInterval(async () => {
+            if (heartbeatRunning) return; // skip if previous cycle still running
+            heartbeatRunning = true;
+            try {
+              const result = await runHeartbeatCycle(heartbeatTenantId);
+              if (result.executed.length > 0 || result.failed.length > 0) {
+                console.log(`[Heartbeat] executed=${result.executed.length} skipped=${result.skipped.length} failed=${result.failed.length}`);
+              }
+            } catch (err: any) {
+              console.warn('[Heartbeat] Cycle error:', err.message || err);
+            } finally {
+              heartbeatRunning = false;
+            }
+          }, HEARTBEAT_INTERVAL_MS);
+          console.log(`💓 Autopilot heartbeat loop started (interval: ${HEARTBEAT_INTERVAL_MS}ms, tenant: ${heartbeatTenantId.slice(0, 8)}…)`);
+        } else {
+          console.log('⏸️ Autopilot heartbeat loop disabled — set AUTOPILOT_HEARTBEAT_ENABLED=true and DEFAULT_TENANT_ID to enable');
+        }
+      } catch (error) {
+        console.warn('⚠️ Autopilot heartbeat loop initialization failed (non-fatal):', error);
+      }
+
       // VTID-01185: Initialize recommendation scheduler (autonomous self-improvement)
       try {
         const { startScheduler } = require('./services/recommendation-engine/scheduler');

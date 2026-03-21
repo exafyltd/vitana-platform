@@ -37,10 +37,10 @@ export const NAVIGATION_CONFIG = [
     module: 'operator',
     label: 'Operator',
     tabs: [
+      { key: 'dashboard', label: 'Dashboard' },
       { key: 'task-queue', label: 'Task Queue' },
-      { key: 'task-details', label: 'Task Details' },
-      { key: 'execution-logs', label: 'Execution Logs' },
-      { key: 'pipelines', label: 'Pipelines' },
+      { key: 'event-stream', label: 'Event Stream' },
+      { key: 'deployments', label: 'Deployments' },
       { key: 'runbook', label: 'Runbook' }
     ]
   },
