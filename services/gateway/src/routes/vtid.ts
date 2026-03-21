@@ -813,10 +813,10 @@ router.get("/projection", async (req: Request, res: Response) => {
           isTerminal = true;
           terminalOutcome = 'failed';
         } else if (ledgerStatus === 'deleted') {
-          derivedStatus = 'Done';
-          currentStage = 'Done';
+          derivedStatus = 'Deleted';
+          currentStage = 'Deleted';
           isTerminal = true;
-          terminalOutcome = 'success';
+          terminalOutcome = 'deleted';
         } else if (ledgerStatus === 'blocked') {
           derivedStatus = 'Blocked';
           attentionRequired = 'HUMAN';

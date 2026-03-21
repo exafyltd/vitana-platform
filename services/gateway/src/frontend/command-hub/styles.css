@@ -7760,6 +7760,19 @@ body {
   color: #10b981;
 }
 
+.vtid-status-deleted,
+.status-deleted {
+  background: rgba(107, 114, 128, 0.15);
+  color: #6b7280;
+  text-decoration: line-through;
+}
+
+.vtid-stage-deleted,
+.stage-deleted {
+  background: rgba(107, 114, 128, 0.15);
+  color: #6b7280;
+}
+
 /* --- Approvals View --- */
 .approvals-container {
   padding: 1.5rem;

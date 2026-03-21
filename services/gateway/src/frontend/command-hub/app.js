@@ -156,6 +156,9 @@ function navigateToRoleDefaultScreen(role) {
 function deriveVtidStageStatus(item) {
     // Priority 1: Terminal states have highest precedence (OASIS authority)
     if (item.is_terminal === true) {
+        if (item.terminal_outcome === 'deleted') {
+            return { stage: 'Deleted', status: 'Deleted' };
+        }
         return {
             stage: 'Done',
             status: item.terminal_outcome === 'success' ? 'success' : 'failed'
@@ -17242,8 +17245,12 @@ function renderVtidsView() {
     } else if (state.vtidProjection.items.length === 0 && !state.vtidProjection.error) {
         content.innerHTML = '<div class="placeholder-content">No VTIDs found.</div>';
     } else if (state.vtidProjection.items.length > 0) {
+        // Filter out deleted VTIDs from the decision view (they need no action)
+        var activeItems = state.vtidProjection.items.filter(function (item) {
+            return item.ledger_status !== 'deleted' && item.terminal_outcome !== 'deleted';
+        });
         // Use projection table renderer with 5 columns
-        content.appendChild(renderVtidProjectionTable(state.vtidProjection.items));
+        content.appendChild(renderVtidProjectionTable(activeItems));
 
         // VTID-01211: Add Load More button
         if (state.vtidProjection.pagination.hasMore || state.vtidProjection.loading) {

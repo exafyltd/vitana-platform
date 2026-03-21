@@ -448,9 +448,11 @@ oasisTasksRouter.delete('/api/v1/oasis/tasks/:id', async (req: Request, res: Res
     const timestamp = new Date().toISOString();
     const deletedBy = req.headers['x-vitana-user-email'] as string || 'command-hub';
 
-    // Update vtid_ledger: set status='deleted', deleted_at, deleted_by, delete_reason, voided_at, voided_reason
+    // Update vtid_ledger: set status='deleted', terminal state, deleted_at, deleted_by, delete_reason, voided_at, voided_reason
     const updatePayload = {
       status: 'deleted',
+      is_terminal: true,
+      terminal_outcome: 'deleted',
       deleted_at: timestamp,
       deleted_by: deletedBy,
       delete_reason: 'user_cancelled',
