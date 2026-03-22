@@ -730,9 +730,30 @@
 
       case 'input_transcript':
         // VTID-TRANSCRIPT-FIX: Buffer user transcript fragments, display on turn_complete
+        // VTID-ECHO-FILTER: Filter echo of assistant's own speech picked up by mic
         if (msg.text) {
-          _s._inputTranscriptBuffer = (_s._inputTranscriptBuffer || '') + msg.text;
-          _updateTranscriptUI();
+          var _inputFrag = msg.text.trim().toLowerCase().replace(/[.,!?;:'"]/g, '');
+          var _recentOut = (_s._outputTranscriptBuffer || '').toLowerCase().replace(/[.,!?;:'"]/g, '');
+          var _lastAssist = '';
+          for (var _ei = _s._transcriptHistory.length - 1; _ei >= 0; _ei--) {
+            if (_s._transcriptHistory[_ei].role === 'assistant') {
+              _lastAssist = (_s._transcriptHistory[_ei].text || '').toLowerCase().replace(/[.,!?;:'"]/g, '');
+              break;
+            }
+          }
+          var _isEcho = false;
+          if (_inputFrag.length > 3) {
+            if (_recentOut && _recentOut.indexOf(_inputFrag) !== -1) _isEcho = true;
+            if (!_isEcho && _lastAssist && _lastAssist.indexOf(_inputFrag) !== -1) _isEcho = true;
+            if (!_isEcho && _s.voiceState === 'SPEAKING') _isEcho = true;
+            if (!_isEcho && _s.audioPlaying) _isEcho = true;
+          }
+          if (_isEcho) {
+            console.log('[VTID-ECHO-FILTER] Dropping echo input_transcript:', msg.text.substring(0, 40));
+          } else {
+            _s._inputTranscriptBuffer = (_s._inputTranscriptBuffer || '') + msg.text;
+            _updateTranscriptUI();
+          }
         }
         break;
 

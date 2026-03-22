@@ -1263,6 +1263,30 @@ function buildLiveApiTools(): object[] {
             required: [],
           },
         },
+        // VTID-01149: Task creation tool for voice-to-voice
+        {
+          name: 'create_task',
+          description: 'Create a new task on the Command Hub task board. Use when the user asks to create, add, or make a task, ticket, issue, bug report, or work item. Ask the user for a short description if they haven\'t provided one. Works in both English and German (e.g., "erstelle einen Task", "kreiere eine Aufgabe").',
+          parameters: {
+            type: 'object',
+            properties: {
+              title: {
+                type: 'string',
+                description: 'Task title in "Area: Description" format. Area must be one of: ORB, Gateway, Command Hub, Pipeline, Operator, Auth, Governance, OASIS, Memory, Agents, Infra, Frontend. Example: "ORB: Fix chat transcript display"',
+              },
+              spec: {
+                type: 'string',
+                description: 'Detailed task specification or description of what needs to be done.',
+              },
+              target_role: {
+                type: 'string',
+                enum: ['DEV', 'COM', 'ADM', 'PRO', 'ERP', 'PAT', 'INFRA'],
+                description: 'Target role for the task. Defaults to DEV.',
+              },
+            },
+            required: ['title'],
+          },
+        },
       ],
     },
   ];
@@ -1788,6 +1812,68 @@ async function executeLiveApiToolInner(
         return { success: true, result: `Here are your personalized recommendations:\n${formatted}` };
       }
 
+      // VTID-01149: Task creation via voice tool call
+      case 'create_task': {
+        const title = (args.title as string) || '';
+        const spec = (args.spec as string) || title;
+        const targetRole = (args.target_role as string) || 'DEV';
+
+        if (!title) {
+          return { success: false, result: '', error: 'Task title is required' };
+        }
+
+        console.log(`[VTID-01149] Voice create_task: title="${title}", spec="${spec.substring(0, 80)}"`);
+
+        // Use a unique session ID for this voice task creation
+        const intakeSessionId = `voice-task-${session.sessionId}-${Date.now()}`;
+
+        // Start intake, set spec and header, then schedule
+        await startIntake({
+          sessionId: intakeSessionId,
+          surface: 'orb',
+          tenant: 'vitana'
+        });
+
+        // Process spec answer (Q1)
+        await processIntakeAnswer({
+          sessionId: intakeSessionId,
+          question: 'spec',
+          answer: spec,
+          surface: 'orb'
+        });
+
+        // Process header answer (Q2) - the title
+        const headerResult = await processIntakeAnswer({
+          sessionId: intakeSessionId,
+          question: 'header',
+          answer: title,
+          surface: 'orb'
+        });
+
+        if (headerResult.ready_to_schedule) {
+          const scheduleResult = await completeIntakeAndSchedule(intakeSessionId);
+          if (scheduleResult.ok) {
+            console.log(`[VTID-01149] Voice task created: ${scheduleResult.vtid}`);
+            return {
+              success: true,
+              result: `Task created successfully! VTID: ${scheduleResult.vtid}. Title: "${title}". It has been scheduled on the Command Hub board and you can track its progress there.`
+            };
+          } else {
+            return {
+              success: false,
+              result: '',
+              error: `Failed to schedule task: ${scheduleResult.error}`
+            };
+          }
+        } else {
+          return {
+            success: false,
+            result: '',
+            error: 'Task intake did not complete. Please provide both a title and description.'
+          };
+        }
+      }
+
       default:
         return {
           success: false,
@@ -1909,7 +1995,7 @@ REPETITION PREVENTION (CRITICAL):
 ${voiceLiveConfig.repetition_prevention || '- NEVER repeat the same response verbatim'}
 
 TOOLS:
-${voiceLiveConfig.tools_section || '- Use search_memory to recall information the user has shared before\n- Use search_knowledge for Vitana platform and health information\n- Use search_web for current events, news, and external information'}
+${voiceLiveConfig.tools_section || '- Use search_memory to recall information the user has shared before\n- Use search_knowledge for Vitana platform and health information\n- Use search_web for current events, news, and external information\n- Use create_task to create tasks on the Command Hub board when the user asks to create, add, or make a task/ticket/issue (works in English and German)'}
 
 EVENT LINK SHARING:
 - When search_events returns results, each event includes a "Link:" field with a URL like https://vitanaland.com/e/{slug}.
@@ -2423,8 +2509,23 @@ async function connectToLiveAPI(
             // Filter out the server-injected greeting prompt from transcription/memory
             const isGreetingPrompt = session.greetingSent && session.turn_count === 0 &&
               (inputTranscription.includes('greet the user') || inputTranscription.includes('begrüße den Benutzer'));
+
+            // VTID-ECHO-FILTER: Filter echo of assistant's own speech picked up by mic.
+            // When the model is speaking, the mic picks up TTS audio and Vertex transcribes
+            // it as input_transcription. Compare against recent output buffer to detect echo.
+            const normalizeForEcho = (s: string) => s.toLowerCase().replace(/[.,!?;:'"]/g, '').trim();
+            const inputNorm = normalizeForEcho(inputTranscription);
+            const outputNorm = normalizeForEcho(session.outputTranscriptBuffer || '');
+            const isEchoOfOutput = inputNorm.length > 3 && (
+              (outputNorm.length > 3 && outputNorm.includes(inputNorm)) ||
+              (outputNorm.length > 3 && inputNorm.includes(outputNorm)) ||
+              session.isModelSpeaking
+            );
+
             if (isGreetingPrompt) {
               console.log(`[VTID-VOICE-INIT] Filtering greeting prompt from input transcription: "${inputTranscription.substring(0, 60)}..."`);
+            } else if (isEchoOfOutput) {
+              console.log(`[VTID-ECHO-FILTER] Dropping echo input_transcription while model speaking: "${inputTranscription.substring(0, 60)}"`);
             } else {
               console.log(`[VTID-01219] Input transcription: ${inputTranscription}`);
               emitDiag(session, 'input_transcription', { text_preview: inputTranscription.substring(0, 80) });

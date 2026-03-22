@@ -25507,11 +25507,40 @@ function geminiLiveHandleMessage(msg) {
         case 'input_transcript':
             // VTID-TRANSCRIPT-FIX: Buffer user speech fragments (Vertex sends word-by-word).
             // Flushed as a single bubble on turn_complete.
+            // VTID-ECHO-FILTER: Filter out echo of assistant's own speech picked up by mic.
+            // When TTS plays through speakers, the mic picks it up and Vertex transcribes it
+            // as input_transcript, causing the same text to appear on both user and assistant sides.
             if (msg.text) {
-                console.log('[VTID-01219] User said (fragment):', msg.text);
-                state.orb._inputTranscriptBuffer += (state.orb._inputTranscriptBuffer ? ' ' : '') + msg.text;
-                // Show live interim user text
-                _updateInterimTranscript();
+                var inputFrag = msg.text.trim().toLowerCase().replace(/[.,!?;:'"]/g, '');
+                var recentOutput = (state.orb._outputTranscriptBuffer || '').toLowerCase().replace(/[.,!?;:'"]/g, '');
+                // Also check the last committed assistant message
+                var lastAssistantText = '';
+                for (var ei = state.orb.liveTranscript.length - 1; ei >= 0; ei--) {
+                    if (state.orb.liveTranscript[ei].role === 'assistant') {
+                        lastAssistantText = (state.orb.liveTranscript[ei].text || '').toLowerCase().replace(/[.,!?;:'"]/g, '');
+                        break;
+                    }
+                }
+                var isEcho = false;
+                if (inputFrag.length > 3) {
+                    // Check if input fragment is a substring of recent output or last assistant message
+                    if (recentOutput && recentOutput.indexOf(inputFrag) !== -1) isEcho = true;
+                    if (!isEcho && lastAssistantText && lastAssistantText.indexOf(inputFrag) !== -1) isEcho = true;
+                    // Check reverse: output is substring of accumulated input (echo builds up)
+                    var accInput = ((state.orb._inputTranscriptBuffer || '') + ' ' + msg.text).trim().toLowerCase().replace(/[.,!?;:'"]/g, '');
+                    if (!isEcho && recentOutput && accInput.length > 10 && recentOutput.indexOf(accInput) !== -1) isEcho = true;
+                    if (!isEcho && lastAssistantText && accInput.length > 10 && lastAssistantText.indexOf(accInput) !== -1) isEcho = true;
+                    // Also check if speaking state — mic should not produce user messages while model is speaking
+                    if (!isEcho && (state.orb.voiceState === 'SPEAKING' || state.orb.geminiLiveAudioPlaying)) isEcho = true;
+                }
+                if (isEcho) {
+                    console.log('[VTID-ECHO-FILTER] Dropping echo input_transcript:', msg.text.substring(0, 40));
+                } else {
+                    console.log('[VTID-01219] User said (fragment):', msg.text);
+                    state.orb._inputTranscriptBuffer += (state.orb._inputTranscriptBuffer ? ' ' : '') + msg.text;
+                    // Show live interim user text
+                    _updateInterimTranscript();
+                }
             }
             break;
 
