@@ -648,7 +648,7 @@ function convertCommunityUserSignal(
     risk_level: signal.priority === 'critical' ? 'critical' : signal.priority as 'low' | 'medium' | 'high',
     source_type: 'community',
     source_ref: signal.source_detail,
-    fingerprint: generateCommunityUserFingerprint(userId, signal.signal_type, signal.title),
+    fingerprint: generateCommunityUserFingerprint(userId, signal.signal_type),
     suggested_files: [],
     suggested_endpoints: [],
     suggested_tests: [],
