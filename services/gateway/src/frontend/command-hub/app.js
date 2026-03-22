@@ -28412,7 +28412,7 @@ function renderOasisEntitiesView() {
 
     // Table
     var table = document.createElement('table');
-    table.className = 'list-table oasis-entities-table';
+    table.className = 'list-table oasis-events-table';
 
     var thead = document.createElement('thead');
     var headerRow = document.createElement('tr');
@@ -28460,11 +28460,13 @@ function renderOasisEntitiesView() {
 
         // Created
         var createdTd = document.createElement('td');
+        createdTd.className = 'event-timestamp';
         createdTd.textContent = formatEventTimestamp(item.created_at);
         row.appendChild(createdTd);
 
         // Last Event
         var lastEventTd = document.createElement('td');
+        lastEventTd.className = 'event-timestamp';
         lastEventTd.textContent = formatEventTimestamp(item.last_event_at || item.updated_at);
         row.appendChild(lastEventTd);
 
@@ -30466,7 +30468,7 @@ function renderOverviewRecentEventsView() {
 
     // Table
     var table = document.createElement('table');
-    table.className = 'list-table';
+    table.className = 'list-table oasis-events-table';
 
     var thead = document.createElement('thead');
     var headerRow = document.createElement('tr');
@@ -30489,21 +30491,22 @@ function renderOverviewRecentEventsView() {
         }
 
         var timeTd = document.createElement('td');
+        timeTd.className = 'event-timestamp';
         timeTd.textContent = formatEventTimestamp(event.created_at || event.timestamp);
         row.appendChild(timeTd);
 
         var topicTd = document.createElement('td');
-        topicTd.className = 'topic-cell';
+        topicTd.className = 'event-topic';
         topicTd.textContent = event.topic || event.type || '';
         row.appendChild(topicTd);
 
         var vtidTd = document.createElement('td');
-        vtidTd.className = 'vtid-cell';
+        vtidTd.className = 'event-vtid';
         vtidTd.textContent = event.vtid || '';
         row.appendChild(vtidTd);
 
         var sourceTd = document.createElement('td');
-        sourceTd.className = 'source-cell';
+        sourceTd.className = 'event-surface';
         sourceTd.textContent = event.source || '';
         row.appendChild(sourceTd);
 
@@ -30515,8 +30518,9 @@ function renderOverviewRecentEventsView() {
         row.appendChild(statusTd);
 
         var msgTd = document.createElement('td');
-        msgTd.className = 'message-cell';
-        msgTd.textContent = event.message || '';
+        msgTd.className = 'event-message';
+        var msgText = (event.message || '');
+        msgTd.textContent = msgText.length > 80 ? msgText.substring(0, 80) + '...' : msgText;
         row.appendChild(msgTd);
 
         tbody.appendChild(row);
@@ -30754,7 +30758,7 @@ function renderOverviewReleaseFeedView() {
 
     // Table
     var table = document.createElement('table');
-    table.className = 'list-table';
+    table.className = 'list-table oasis-events-table';
 
     var thead = document.createElement('thead');
     var headerRow = document.createElement('tr');
@@ -30771,6 +30775,7 @@ function renderOverviewReleaseFeedView() {
         var row = document.createElement('tr');
 
         var timeTd = document.createElement('td');
+        timeTd.className = 'event-timestamp';
         timeTd.textContent = formatEventTimestamp(item.created_at || item.deployed_at || item.timestamp);
         row.appendChild(timeTd);
 
@@ -30779,7 +30784,7 @@ function renderOverviewReleaseFeedView() {
         row.appendChild(serviceTd);
 
         var versionTd = document.createElement('td');
-        versionTd.className = 'version-cell';
+        versionTd.className = 'event-vtid';
         var ver = item.version || item.image_tag || item.commit_sha || '';
         if (ver.length > 12) ver = ver.substring(0, 12) + '...';
         versionTd.textContent = ver;
@@ -31533,9 +31538,9 @@ function renderOperatorEventStreamView() {
         return container;
     }
 
-    // Table
+    // Table — uses oasis-events-table CSS for consistent sizing
     var table = document.createElement('table');
-    table.className = 'list-table';
+    table.className = 'list-table oasis-events-table';
 
     var thead = document.createElement('thead');
     var headerRow = document.createElement('tr');
@@ -31552,16 +31557,17 @@ function renderOperatorEventStreamView() {
         var row = document.createElement('tr');
 
         var timeTd = document.createElement('td');
-        timeTd.style.whiteSpace = 'nowrap';
+        timeTd.className = 'event-timestamp';
         timeTd.textContent = formatEventTimestamp(ev.created_at || ev.timestamp);
         row.appendChild(timeTd);
 
         var vtidTd = document.createElement('td');
-        vtidTd.className = 'vtid-cell';
-        vtidTd.textContent = ev.vtid || '';
+        vtidTd.className = 'event-vtid';
         if (ev.vtid) {
-            vtidTd.style.cursor = 'pointer';
-            vtidTd.onclick = function (e) {
+            var vtidLink = document.createElement('span');
+            vtidLink.className = 'vtid-link';
+            vtidLink.textContent = ev.vtid;
+            vtidLink.onclick = function (e) {
                 e.stopPropagation();
                 state.selectedTask = { vtid: ev.vtid, title: '', status: 'unknown' };
                 state.selectedTaskDetail = null;
@@ -31569,15 +31575,15 @@ function renderOperatorEventStreamView() {
                 renderApp();
                 fetchVtidDetail(ev.vtid);
             };
+            vtidTd.appendChild(vtidLink);
+        } else {
+            vtidTd.textContent = '-';
         }
         row.appendChild(vtidTd);
 
         var topicTd = document.createElement('td');
-        var topic = ev.topic || ev.type || '';
-        var topicDomain = topic.split('.')[0];
-        topicTd.textContent = topic;
-        topicTd.style.color = domainColors[topicDomain] || '#94a3b8';
-        topicTd.style.fontSize = '12px';
+        topicTd.className = 'event-topic';
+        topicTd.textContent = ev.topic || ev.type || '';
         row.appendChild(topicTd);
 
         var statusTd = document.createElement('td');
@@ -31588,8 +31594,9 @@ function renderOperatorEventStreamView() {
         row.appendChild(statusTd);
 
         var msgTd = document.createElement('td');
-        msgTd.className = 'message-cell';
-        msgTd.textContent = ev.message || '';
+        msgTd.className = 'event-message';
+        var msgText = (ev.message || '');
+        msgTd.textContent = msgText.length > 80 ? msgText.substring(0, 80) + '...' : msgText;
         row.appendChild(msgTd);
 
         tbody.appendChild(row);
@@ -31766,7 +31773,7 @@ function renderOperatorDeploymentsView() {
         deplSection.appendChild(noDepl);
     } else {
         var table = document.createElement('table');
-        table.className = 'list-table';
+        table.className = 'list-table oasis-events-table';
 
         var thead = document.createElement('thead');
         var headerRow = document.createElement('tr');
@@ -31787,7 +31794,7 @@ function renderOperatorDeploymentsView() {
             row.appendChild(svcTd);
 
             var commitTd = document.createElement('td');
-            commitTd.className = 'vtid-cell';
+            commitTd.className = 'event-vtid';
             commitTd.textContent = (d.git_commit || '').substring(0, 7);
             row.appendChild(commitTd);
 
@@ -31807,6 +31814,7 @@ function renderOperatorDeploymentsView() {
             row.appendChild(initTd);
 
             var timeTd = document.createElement('td');
+            timeTd.className = 'event-timestamp';
             timeTd.textContent = formatEventTimestamp(d.created_at);
             row.appendChild(timeTd);
 
