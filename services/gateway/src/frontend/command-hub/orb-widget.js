@@ -613,6 +613,12 @@
         break;
 
       case 'turn_complete':
+        // VTID-RECONNECT-GRACE: Cancel reconnect grace timer — session is alive
+        if (_s._reconnectGraceTimer) {
+          clearTimeout(_s._reconnectGraceTimer);
+          _s._reconnectGraceTimer = null;
+          console.log('[VTOrb] Reconnect grace timer cleared — turn_complete received');
+        }
         _s.lastScheduledEnd = 0;
         _s.interruptPending = false;
         _s.turnCompleteAt = Date.now();
@@ -658,17 +664,43 @@
 
       case 'connection_issue':
       case 'live_api_disconnected':
-        // VTID-RECONNECT: Try auto-reconnect before giving up
-        if (_s._reconnectCount < MAX_WIDGET_RECONNECTS) {
-          console.warn('[VTOrb] Connection issue — attempting reconnect');
-          _attemptReconnect();
+        // VTID-RECONNECT-GRACE: Server-side transparent reconnect may be in progress.
+        // If should_close is explicitly set or reconnect explicitly failed, reconnect
+        // immediately. Otherwise, wait 8s grace period for transparent reconnect to
+        // succeed before attempting client-side reconnect.
+        if (msg.should_close || (msg.reason && msg.reason.indexOf('reconnect_failed') !== -1)) {
+          console.warn('[VTOrb] Server confirmed no recovery — reconnecting now');
+          if (_s._reconnectCount < MAX_WIDGET_RECONNECTS) {
+            _attemptReconnect();
+          } else {
+            _s.liveError = msg.message || 'Connection lost.';
+            _setOrbState('error');
+            _setStatus(_cfg.lang.startsWith('de') ? 'Verbindung verloren.' : 'Connection lost.');
+            _playErrorTone();
+            _updateUI();
+            setTimeout(_sessionStop, 3000);
+          }
         } else {
-          _s.liveError = msg.message || 'Connection lost.';
-          _setOrbState('error');
-          _setStatus(_cfg.lang.startsWith('de') ? 'Verbindung verloren.' : 'Connection lost.');
-          _playErrorTone();
+          console.warn('[VTOrb] Connection issue — waiting for transparent reconnect:', msg.reason);
+          _setOrbState('connecting');
+          _setStatus(_cfg.lang.startsWith('de') ? 'Verbindung wird wiederhergestellt...' : 'Reconnecting...');
           _updateUI();
-          setTimeout(_sessionStop, 3000);
+          // Grace period: wait for server-side transparent reconnect
+          if (_s._reconnectGraceTimer) clearTimeout(_s._reconnectGraceTimer);
+          _s._reconnectGraceTimer = setTimeout(function () {
+            if (_s.active && _s.voiceState !== 'LISTENING' && _s.voiceState !== 'SPEAKING') {
+              console.warn('[VTOrb] Reconnect grace expired — attempting client reconnect');
+              if (_s._reconnectCount < MAX_WIDGET_RECONNECTS) {
+                _attemptReconnect();
+              } else {
+                _s.liveError = 'Connection lost after retry.';
+                _setOrbState('error');
+                _playErrorTone();
+                _updateUI();
+                setTimeout(_sessionStop, 3000);
+              }
+            }
+          }, 8000);
         }
         break;
 
@@ -683,6 +715,12 @@
 
       case 'transcript':
       case 'output_transcript':
+        // VTID-RECONNECT-GRACE: Cancel reconnect grace timer — data flowing means session is alive
+        if (_s._reconnectGraceTimer) {
+          clearTimeout(_s._reconnectGraceTimer);
+          _s._reconnectGraceTimer = null;
+          console.log('[VTOrb] Reconnect grace timer cleared — transcript received');
+        }
         // VTID-TRANSCRIPT-FIX: Buffer assistant transcript fragments, display on turn_complete
         if (msg.text) {
           _s._outputTranscriptBuffer = (_s._outputTranscriptBuffer || '') + msg.text;
@@ -1055,8 +1093,8 @@
   // 13. AUTO-RECONNECT
   // ============================================================
 
-  var MAX_WIDGET_RECONNECTS = 3;
-  var RECONNECT_DELAYS = [2000, 4000, 8000]; // Exponential backoff
+  var MAX_WIDGET_RECONNECTS = 5;
+  var RECONNECT_DELAYS = [2000, 3000, 5000, 8000, 12000]; // Exponential backoff
 
   async function _attemptReconnect() {
     if (_s._reconnectCount >= MAX_WIDGET_RECONNECTS) {
