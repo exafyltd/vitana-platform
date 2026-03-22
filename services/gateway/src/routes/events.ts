@@ -1356,9 +1356,36 @@ router.post("/api/v1/vtid/lifecycle/start", async (req: Request, res: Response) 
       });
     }
 
-    // VTID-01194: Check for existing execution_approved OR started event (idempotency)
+    // VTID-01194/VTID-01843: Check for existing execution_approved OR started event (idempotency)
+    // Must respect retry_reset: only consider events AFTER the most recent retry_reset
+    let idempotencyFilter = `vtid=eq.${body.vtid}&or=(topic.eq.vtid.lifecycle.execution_approved,topic.eq.vtid.lifecycle.started)&order=created_at.desc&limit=1`;
+
+    // First check if there's a retry_reset event that invalidates old started/execution_approved events
+    const retryResetResp = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_events?vtid=eq.${body.vtid}&topic=eq.vtid.lifecycle.retry_reset&order=created_at.desc&limit=1`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+      }
+    );
+
+    let retryResetCutoff: string | null = null;
+    if (retryResetResp.ok) {
+      const retryResets = await retryResetResp.json() as any[];
+      if (retryResets.length > 0) {
+        retryResetCutoff = retryResets[0].created_at;
+        // Only look for started/execution_approved events AFTER the retry_reset
+        idempotencyFilter = `vtid=eq.${body.vtid}&or=(topic.eq.vtid.lifecycle.execution_approved,topic.eq.vtid.lifecycle.started)&created_at=gt.${retryResetCutoff}&order=created_at.desc&limit=1`;
+        console.log(`[VTID-01194] Retry reset found for ${body.vtid} at ${retryResetCutoff}, scoping idempotency check`);
+      }
+    }
+
     const existingResp = await fetch(
-      `${supabaseUrl}/rest/v1/oasis_events?vtid=eq.${body.vtid}&or=(topic.eq.vtid.lifecycle.execution_approved,topic.eq.vtid.lifecycle.started)&limit=1`,
+      `${supabaseUrl}/rest/v1/oasis_events?${idempotencyFilter}`,
       {
         method: "GET",
         headers: {
