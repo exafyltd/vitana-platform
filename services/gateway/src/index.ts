@@ -213,6 +213,12 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminSignupsRouter = require('./routes/admin-signups').default;
   // Admin: Notification Compose & Tracking
   const adminNotificationsRouter = require('./routes/admin-notifications').default;
+  // Admin: User Management & Role Distribution
+  const adminUsersRouter = require('./routes/admin-users').default;
+  // Admin: Tenant Management
+  const adminTenantsRouter = require('./routes/admin-tenants').default;
+  // Admin: Content Moderation
+  const adminModerationRouter = require('./routes/admin-moderation').default;
   // Voice Feedback — Test user bug reports & UX improvement suggestions
   const voiceFeedbackRouter = require('./routes/voice-feedback').default;
   // VTID-01250: Autopilot Automations Engine — AP-XXXX registry, executor, wallet, sharing
@@ -534,6 +540,15 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // Admin: Notification Compose & Tracking
   mountRouterSync(app, '/api/v1/admin/notifications', adminNotificationsRouter, { owner: 'admin-notifications' });
+
+  // Admin: User Management & Role Distribution
+  mountRouterSync(app, '/api/v1/admin/users', adminUsersRouter, { owner: 'admin-users' });
+
+  // Admin: Tenant Management
+  mountRouterSync(app, '/api/v1/admin/tenants', adminTenantsRouter, { owner: 'admin-tenants' });
+
+  // Admin: Content Moderation
+  mountRouterSync(app, '/api/v1/admin/moderation', adminModerationRouter, { owner: 'admin-moderation' });
 
   // VTID-01250: Autopilot Automations Engine — AP-XXXX registry, executor, wallet, sharing
   mountRouterSync(app, '/api/v1/automations', automationsRouter, { owner: 'automations' });

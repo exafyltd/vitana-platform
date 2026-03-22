@@ -2936,6 +2936,7 @@ const state = {
     autopilotRecommendationsLoading: false,
     autopilotRecommendationsError: null,
     autopilotRecommendationsCount: 0,
+    autopilotRecommendationErrors: {}, // rec.id → error message for inline display
 
     // VTID-0407: Governance Blocked Modal
     showGovernanceBlockedModal: false,
@@ -2978,21 +2979,48 @@ const state = {
     adminDevUsersGrantLoading: false,
     adminDevUsersGrantError: null,
 
-    // VTID-01195: Admin Screens v1 State
+    // VTID-01195: Admin Screens v2 State — wired to real data
     // Users screen state
     adminUsersSearchQuery: '',
     adminUsersSelectedId: null,
-    // Permissions screen state
+    adminUsers: [],
+    adminUsersLoading: false,
+    adminUsersError: null,
+    adminUsersFetched: false,
+    // Permissions screen state (roles summary)
     adminPermissionsSearchQuery: '',
     adminPermissionsSelectedKey: null,
+    adminRolesSummary: [],
+    adminRolesSummaryLoading: false,
+    adminRolesSummaryError: null,
+    adminRolesSummaryFetched: false,
+    adminRoleUsers: [],
+    adminRoleUsersLoading: false,
     // Tenants screen state
     adminTenantsSearchQuery: '',
     adminTenantsSelectedId: null,
+    adminTenants: [],
+    adminTenantsLoading: false,
+    adminTenantsError: null,
+    adminTenantsFetched: false,
+    adminTenantDetail: null,
+    adminTenantDetailLoading: false,
     // Content Moderation screen state
     adminModerationTypeFilter: '',
     adminModerationStatusFilter: '',
     adminModerationSelectedId: null,
-    // Identity Access screen state (no selection needed - static panels)
+    adminModerationReports: [],
+    adminModerationLoading: false,
+    adminModerationError: null,
+    adminModerationFetched: false,
+    // Identity Access screen state
+    adminAccessLogs: [],
+    adminAccessLogsLoading: false,
+    adminAccessLogsFetched: false,
+    // Analytics extra stats
+    adminAnalyticsStats: null,
+    adminAnalyticsStatsLoading: false,
+    adminAnalyticsStatsFetched: false,
 
     // VTID-0406: Governance Evaluations (OASIS Integration)
     governanceEvaluations: [],
@@ -9794,39 +9822,222 @@ function renderAdminDevUsersView() {
 }
 
 // ===========================================================================
-// VTID-01195: Command Hub Admin Screens v1
+// VTID-01195: Command Hub Admin Screens v2 — Wired to Real Data
 // ===========================================================================
 
-/**
- * VTID-01195: Placeholder user data for Admin Users screen
- * This is static mock data - data source not wired in v1
- */
-var adminUsersMockData = [
-    { id: '1', email: 'admin@vitana.io', role: 'Admin', tenant: 'Vitana Core', status: 'Active' },
-    { id: '2', email: 'dev@vitana.io', role: 'Developer', tenant: 'Vitana Core', status: 'Active' },
-    { id: '3', email: 'user@tenant1.com', role: 'User', tenant: 'Tenant Alpha', status: 'Active' },
-    { id: '4', email: 'support@vitana.io', role: 'Support', tenant: 'Vitana Core', status: 'Inactive' }
-];
+// ── Fetch Functions ─────────────────────────────────────────
+
+async function fetchAdminUsers() {
+    state.adminUsersLoading = true;
+    state.adminUsersError = null;
+    renderApp();
+    try {
+        var query = state.adminUsersSearchQuery || '';
+        var url = '/api/v1/admin/users?limit=100';
+        if (query.trim()) url += '&query=' + encodeURIComponent(query.trim());
+        var response = await fetch(url, { method: 'GET', headers: buildContextHeaders() });
+        var json = await response.json();
+        if (!response.ok || !json.ok) {
+            if (response.status === 401) throw new Error('Unauthenticated - please log in');
+            if (response.status === 403) throw new Error('Access denied - requires exafy_admin');
+            throw new Error(json.error || 'Failed to fetch users');
+        }
+        state.adminUsers = json.users || [];
+        state.adminUsersFetched = true;
+        console.log('[VTID-01195] Admin users loaded:', state.adminUsers.length);
+    } catch (error) {
+        console.error('[VTID-01195] Failed to fetch admin users:', error);
+        state.adminUsersError = error.message;
+    } finally {
+        state.adminUsersLoading = false;
+        renderApp();
+    }
+}
+
+async function fetchAdminRolesSummary() {
+    state.adminRolesSummaryLoading = true;
+    state.adminRolesSummaryError = null;
+    renderApp();
+    try {
+        var response = await fetch('/api/v1/admin/users/roles-summary', { method: 'GET', headers: buildContextHeaders() });
+        var json = await response.json();
+        if (!response.ok || !json.ok) {
+            if (response.status === 401) throw new Error('Unauthenticated - please log in');
+            if (response.status === 403) throw new Error('Access denied - requires exafy_admin');
+            throw new Error(json.error || 'Failed to fetch roles');
+        }
+        state.adminRolesSummary = json.roles || [];
+        state.adminRolesSummaryFetched = true;
+    } catch (error) {
+        console.error('[VTID-01195] Failed to fetch roles summary:', error);
+        state.adminRolesSummaryError = error.message;
+    } finally {
+        state.adminRolesSummaryLoading = false;
+        renderApp();
+    }
+}
+
+async function fetchAdminRoleUsers(role) {
+    state.adminRoleUsersLoading = true;
+    renderApp();
+    try {
+        var response = await fetch('/api/v1/admin/users?role=' + encodeURIComponent(role) + '&limit=100', { method: 'GET', headers: buildContextHeaders() });
+        var json = await response.json();
+        if (!response.ok || !json.ok) throw new Error(json.error || 'Failed');
+        state.adminRoleUsers = json.users || [];
+    } catch (error) {
+        console.error('[VTID-01195] Failed to fetch role users:', error);
+        state.adminRoleUsers = [];
+    } finally {
+        state.adminRoleUsersLoading = false;
+        renderApp();
+    }
+}
+
+async function fetchAdminTenants() {
+    state.adminTenantsLoading = true;
+    state.adminTenantsError = null;
+    renderApp();
+    try {
+        var query = state.adminTenantsSearchQuery || '';
+        var url = '/api/v1/admin/tenants';
+        if (query.trim()) url += '?query=' + encodeURIComponent(query.trim());
+        var response = await fetch(url, { method: 'GET', headers: buildContextHeaders() });
+        var json = await response.json();
+        if (!response.ok || !json.ok) {
+            if (response.status === 401) throw new Error('Unauthenticated - please log in');
+            if (response.status === 403) throw new Error('Access denied - requires exafy_admin');
+            throw new Error(json.error || 'Failed to fetch tenants');
+        }
+        state.adminTenants = json.tenants || [];
+        state.adminTenantsFetched = true;
+        console.log('[VTID-01195] Admin tenants loaded:', state.adminTenants.length);
+    } catch (error) {
+        console.error('[VTID-01195] Failed to fetch admin tenants:', error);
+        state.adminTenantsError = error.message;
+    } finally {
+        state.adminTenantsLoading = false;
+        renderApp();
+    }
+}
+
+async function fetchAdminTenantDetail(tenantId) {
+    state.adminTenantDetailLoading = true;
+    renderApp();
+    try {
+        var response = await fetch('/api/v1/admin/tenants/' + encodeURIComponent(tenantId), { method: 'GET', headers: buildContextHeaders() });
+        var json = await response.json();
+        if (!response.ok || !json.ok) throw new Error(json.error || 'Failed');
+        state.adminTenantDetail = json.tenant || null;
+    } catch (error) {
+        console.error('[VTID-01195] Failed to fetch tenant detail:', error);
+        state.adminTenantDetail = null;
+    } finally {
+        state.adminTenantDetailLoading = false;
+        renderApp();
+    }
+}
+
+async function fetchAdminModerationReports() {
+    state.adminModerationLoading = true;
+    state.adminModerationError = null;
+    renderApp();
+    try {
+        var response = await fetch('/api/v1/admin/moderation/reports', { method: 'GET', headers: buildContextHeaders() });
+        var json = await response.json();
+        if (!response.ok || !json.ok) {
+            if (response.status === 401) throw new Error('Unauthenticated - please log in');
+            if (response.status === 403) throw new Error('Access denied - requires exafy_admin');
+            throw new Error(json.error || 'Failed to fetch moderation reports');
+        }
+        state.adminModerationReports = json.reports || [];
+        state.adminModerationFetched = true;
+    } catch (error) {
+        console.error('[VTID-01195] Failed to fetch moderation reports:', error);
+        state.adminModerationError = error.message;
+    } finally {
+        state.adminModerationLoading = false;
+        renderApp();
+    }
+}
+
+async function fetchAdminAccessLogs() {
+    state.adminAccessLogsLoading = true;
+    renderApp();
+    try {
+        var response = await fetch('/api/v1/oasis/events?limit=20&topic=auth.', { method: 'GET', headers: buildContextHeaders() });
+        if (!response.ok) throw new Error('Failed: ' + response.status);
+        var data = await response.json();
+        state.adminAccessLogs = Array.isArray(data) ? data : (data.data || []);
+        state.adminAccessLogsFetched = true;
+    } catch (error) {
+        console.error('[VTID-01195] Failed to fetch access logs:', error);
+        state.adminAccessLogs = [];
+    } finally {
+        state.adminAccessLogsLoading = false;
+        renderApp();
+    }
+}
+
+async function fetchAdminAnalyticsStats() {
+    state.adminAnalyticsStatsLoading = true;
+    renderApp();
+    try {
+        var stats = { signups: null, notifications: null, userCount: 0, tenantCount: 0 };
+        var results = await Promise.allSettled([
+            fetch('/api/v1/admin/signups/stats', { headers: buildContextHeaders() }).then(function(r) { return r.json(); }),
+            fetch('/api/v1/admin/notifications/preferences/stats', { headers: buildContextHeaders() }).then(function(r) { return r.json(); }),
+            fetch('/api/v1/admin/users?limit=200', { headers: buildContextHeaders() }).then(function(r) { return r.json(); }),
+            fetch('/api/v1/admin/tenants', { headers: buildContextHeaders() }).then(function(r) { return r.json(); })
+        ]);
+        if (results[0].status === 'fulfilled' && results[0].value.ok !== false) stats.signups = results[0].value;
+        if (results[1].status === 'fulfilled' && results[1].value.ok !== false) stats.notifications = results[1].value;
+        if (results[2].status === 'fulfilled' && results[2].value.users) stats.userCount = results[2].value.users.length;
+        if (results[3].status === 'fulfilled' && results[3].value.tenants) stats.tenantCount = results[3].value.tenants.length;
+        state.adminAnalyticsStats = stats;
+        state.adminAnalyticsStatsFetched = true;
+    } catch (error) {
+        console.error('[VTID-01195] Failed to fetch analytics stats:', error);
+    } finally {
+        state.adminAnalyticsStatsLoading = false;
+        renderApp();
+    }
+}
+
+var ROLE_DESCRIPTIONS = {
+    community: 'Standard community member with basic access',
+    patient: 'Patient role with health-related features',
+    professional: 'Professional service provider role',
+    staff: 'Staff member with operational access',
+    admin: 'Administrator with full tenant management',
+    developer: 'Developer with Command Hub and API access',
+    infra: 'Infrastructure admin with system-level access'
+};
+var ROLE_SCOPES = {
+    community: 'Tenant', patient: 'Tenant', professional: 'Tenant', staff: 'Tenant',
+    admin: 'Global', developer: 'Global', infra: 'Global'
+};
+
+// ── Render: Admin Users ─────────────────────────────────────
 
 /**
  * VTID-01195: Admin Users View - Split layout with user list + detail panel
- * v1 skeleton - data source not wired
+ * Wired to GET /api/v1/admin/users
  */
 function renderAdminUsersView() {
     var container = document.createElement('div');
     container.className = 'admin-screen-container admin-users-container';
+
+    // Auto-fetch if not loaded
+    if (!state.adminUsersFetched && !state.adminUsersLoading && !state.adminUsersError) {
+        fetchAdminUsers();
+    }
 
     // Header
     var header = document.createElement('div');
     header.className = 'admin-screen-header';
     header.innerHTML = '<h2>Users</h2><p class="admin-screen-subtitle">Manage user accounts, roles, and tenant assignments</p>';
     container.appendChild(header);
-
-    // Not-wired banner
-    var banner = document.createElement('div');
-    banner.className = 'admin-not-wired-banner';
-    banner.innerHTML = '<span class="admin-not-wired-icon">&#9888;</span> Data source not connected yet — showing placeholder data';
-    container.appendChild(banner);
 
     // Split layout
     var splitLayout = document.createElement('div');
@@ -9836,7 +10047,7 @@ function renderAdminUsersView() {
     var leftPanel = document.createElement('div');
     leftPanel.className = 'admin-split-left';
 
-    // Search input
+    // Search input with server-side search
     var searchWrapper = document.createElement('div');
     searchWrapper.className = 'admin-search-wrapper';
     var searchInput = document.createElement('input');
@@ -9844,50 +10055,54 @@ function renderAdminUsersView() {
     searchInput.className = 'search-field admin-search-input';
     searchInput.placeholder = 'Search by email...';
     searchInput.value = state.adminUsersSearchQuery;
+    var searchDebounceTimer = null;
     searchInput.oninput = function (e) {
         state.adminUsersSearchQuery = e.target.value;
-        renderApp();
+        clearTimeout(searchDebounceTimer);
+        searchDebounceTimer = setTimeout(function() { fetchAdminUsers(); }, 400);
     };
     searchWrapper.appendChild(searchInput);
     leftPanel.appendChild(searchWrapper);
 
-    // User list table
+    // User list
     var listContainer = document.createElement('div');
     listContainer.className = 'admin-list-container';
 
-    var table = document.createElement('table');
-    table.className = 'admin-list-table';
+    if (state.adminUsersLoading) {
+        listContainer.innerHTML = '<div class="admin-loading">Loading users...</div>';
+    } else if (state.adminUsersError) {
+        listContainer.innerHTML = '<div class="admin-error">' + state.adminUsersError + '<br><button class="btn btn-secondary btn-sm" onclick="state.adminUsersError=null;fetchAdminUsers();">Retry</button></div>';
+    } else if (state.adminUsers.length === 0) {
+        listContainer.innerHTML = '<div class="admin-empty-list">No users found</div>';
+    } else {
+        var table = document.createElement('table');
+        table.className = 'admin-list-table';
+        var thead = document.createElement('thead');
+        thead.innerHTML = '<tr><th>Email</th><th>Role</th><th>Tenant</th><th>Status</th></tr>';
+        table.appendChild(thead);
 
-    var thead = document.createElement('thead');
-    thead.innerHTML = '<tr><th>Email</th><th>Role</th><th>Tenant</th><th>Status</th></tr>';
-    table.appendChild(thead);
+        var tbody = document.createElement('tbody');
+        state.adminUsers.forEach(function (user) {
+            var row = document.createElement('tr');
+            row.className = 'admin-list-row clickable-row';
+            if (state.adminUsersSelectedId === user.user_id) row.classList.add('selected');
+            row.onclick = function () {
+                state.adminUsersSelectedId = user.user_id;
+                renderApp();
+            };
+            var role = user.active_role || 'none';
+            var tenant = user.tenant_name || '—';
+            var status = user.status || 'Inactive';
+            row.innerHTML = '<td class="admin-cell-email">' + (user.email || '—') + '</td>' +
+                '<td><span class="admin-role-badge admin-role-' + role.toLowerCase() + '">' + role + '</span></td>' +
+                '<td>' + tenant + '</td>' +
+                '<td><span class="admin-status-badge admin-status-' + status.toLowerCase() + '">' + status + '</span></td>';
+            tbody.appendChild(row);
+        });
+        table.appendChild(tbody);
+        listContainer.appendChild(table);
+    }
 
-    var tbody = document.createElement('tbody');
-    var filteredUsers = adminUsersMockData.filter(function (u) {
-        if (!state.adminUsersSearchQuery) return true;
-        return u.email.toLowerCase().includes(state.adminUsersSearchQuery.toLowerCase());
-    });
-
-    filteredUsers.forEach(function (user) {
-        var row = document.createElement('tr');
-        row.className = 'admin-list-row clickable-row';
-        if (state.adminUsersSelectedId === user.id) {
-            row.classList.add('selected');
-        }
-        row.onclick = function () {
-            state.adminUsersSelectedId = user.id;
-            renderApp();
-        };
-
-        row.innerHTML = '<td class="admin-cell-email">' + user.email + '</td>' +
-            '<td><span class="admin-role-badge admin-role-' + user.role.toLowerCase() + '">' + user.role + '</span></td>' +
-            '<td>' + user.tenant + '</td>' +
-            '<td><span class="admin-status-badge admin-status-' + user.status.toLowerCase() + '">' + user.status + '</span></td>';
-
-        tbody.appendChild(row);
-    });
-    table.appendChild(tbody);
-    listContainer.appendChild(table);
     leftPanel.appendChild(listContainer);
     splitLayout.appendChild(leftPanel);
 
@@ -9896,28 +10111,42 @@ function renderAdminUsersView() {
     rightPanel.className = 'admin-split-right';
 
     if (state.adminUsersSelectedId) {
-        var selectedUser = adminUsersMockData.find(function (u) { return u.id === state.adminUsersSelectedId; });
+        var selectedUser = state.adminUsers.find(function (u) { return u.user_id === state.adminUsersSelectedId; });
         if (selectedUser) {
+            var membershipsHtml = '';
+            if (selectedUser.memberships && selectedUser.memberships.length > 0) {
+                membershipsHtml = selectedUser.memberships.map(function(m) {
+                    return '<div class="admin-detail-field">' +
+                        '<span class="admin-role-badge admin-role-' + (m.active_role || 'none').toLowerCase() + '">' + (m.active_role || 'none') + '</span>' +
+                        ' <span class="admin-detail-value">' + (m.tenant_name || '—') + (m.is_primary ? ' (primary)' : '') + '</span>' +
+                        '</div>';
+                }).join('');
+            } else {
+                membershipsHtml = '<p class="admin-detail-note">No tenant memberships</p>';
+            }
+
+            var createdDate = selectedUser.created_at ? new Date(selectedUser.created_at).toLocaleString() : '—';
+            var userId = selectedUser.user_id || '—';
+            var shortId = userId.length > 12 ? userId.substring(0, 8) + '...' : userId;
+
             rightPanel.innerHTML = '<div class="admin-detail-panel">' +
                 '<div class="admin-detail-header">' +
-                '<h3>' + selectedUser.email + '</h3>' +
+                '<h3>' + (selectedUser.email || '—') + '</h3>' +
                 '<button class="admin-detail-close-btn" onclick="state.adminUsersSelectedId = null; renderApp();">&times;</button>' +
                 '</div>' +
                 '<div class="admin-detail-section">' +
                 '<h4>User Summary</h4>' +
                 '<div class="admin-detail-grid">' +
-                '<div class="admin-detail-field"><span class="admin-detail-label">User ID:</span><span class="admin-detail-value">' + selectedUser.id + '</span></div>' +
-                '<div class="admin-detail-field"><span class="admin-detail-label">Email:</span><span class="admin-detail-value">' + selectedUser.email + '</span></div>' +
-                '<div class="admin-detail-field"><span class="admin-detail-label">Status:</span><span class="admin-status-badge admin-status-' + selectedUser.status.toLowerCase() + '">' + selectedUser.status + '</span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">User ID:</span><span class="admin-detail-value" title="' + userId + '">' + shortId + '</span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Email:</span><span class="admin-detail-value">' + (selectedUser.email || '—') + '</span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Display Name:</span><span class="admin-detail-value">' + (selectedUser.display_name || '—') + '</span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Status:</span><span class="admin-status-badge admin-status-' + (selectedUser.status || 'inactive').toLowerCase() + '">' + (selectedUser.status || 'Inactive') + '</span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Created:</span><span class="admin-detail-value">' + createdDate + '</span></div>' +
                 '</div>' +
                 '</div>' +
                 '<div class="admin-detail-section">' +
-                '<h4>Role & Access</h4>' +
-                '<div class="admin-badges-row"><span class="admin-role-badge admin-role-' + selectedUser.role.toLowerCase() + '">' + selectedUser.role + '</span></div>' +
-                '</div>' +
-                '<div class="admin-detail-section">' +
-                '<h4>Tenant Assignment</h4>' +
-                '<div class="admin-detail-field"><span class="admin-detail-label">Primary Tenant:</span><span class="admin-detail-value">' + selectedUser.tenant + '</span></div>' +
+                '<h4>Tenant Memberships</h4>' +
+                membershipsHtml +
                 '</div>' +
                 '<div class="admin-detail-actions">' +
                 '<button class="btn btn-secondary" disabled>Edit User</button>' +
@@ -9935,35 +10164,23 @@ function renderAdminUsersView() {
 }
 
 /**
- * VTID-01195: Placeholder permission data for Admin Permissions screen
- */
-var adminPermissionsMockData = [
-    { key: 'admin.users.read', description: 'Read user accounts', scope: 'Global' },
-    { key: 'admin.users.write', description: 'Create and edit user accounts', scope: 'Global' },
-    { key: 'admin.tenants.manage', description: 'Manage tenant settings', scope: 'Tenant' },
-    { key: 'tasks.create', description: 'Create new tasks', scope: 'Tenant' },
-    { key: 'tasks.approve', description: 'Approve task execution', scope: 'Tenant' },
-    { key: 'governance.rules.edit', description: 'Edit governance rules', scope: 'Global' }
-];
-
-/**
- * VTID-01195: Admin Permissions View - Permission keys + scope
+ * VTID-01195: Admin Permissions View - Role distribution + user counts
+ * Wired to GET /api/v1/admin/users/roles-summary
  */
 function renderAdminPermissionsView() {
     var container = document.createElement('div');
     container.className = 'admin-screen-container admin-permissions-container';
 
+    // Auto-fetch
+    if (!state.adminRolesSummaryFetched && !state.adminRolesSummaryLoading && !state.adminRolesSummaryError) {
+        fetchAdminRolesSummary();
+    }
+
     // Header
     var header = document.createElement('div');
     header.className = 'admin-screen-header';
-    header.innerHTML = '<h2>Permissions</h2><p class="admin-screen-subtitle">View and manage permission keys and their scopes</p>';
+    header.innerHTML = '<h2>Permissions</h2><p class="admin-screen-subtitle">Role-based access control — view role distribution and user assignments</p>';
     container.appendChild(header);
-
-    // Not-wired banner
-    var banner = document.createElement('div');
-    banner.className = 'admin-not-wired-banner';
-    banner.innerHTML = '<span class="admin-not-wired-icon">&#9888;</span> Data source not connected yet — showing placeholder data';
-    container.appendChild(banner);
 
     // Split layout
     var splitLayout = document.createElement('div');
@@ -9979,7 +10196,7 @@ function renderAdminPermissionsView() {
     var searchInput = document.createElement('input');
     searchInput.type = 'text';
     searchInput.className = 'search-field admin-search-input';
-    searchInput.placeholder = 'Search permission key...';
+    searchInput.placeholder = 'Search role...';
     searchInput.value = state.adminPermissionsSearchQuery;
     searchInput.oninput = function (e) {
         state.adminPermissionsSearchQuery = e.target.value;
@@ -9988,78 +10205,91 @@ function renderAdminPermissionsView() {
     searchWrapper.appendChild(searchInput);
     leftPanel.appendChild(searchWrapper);
 
-    // Permissions list
+    // Roles list
     var listContainer = document.createElement('div');
     listContainer.className = 'admin-list-container';
 
-    var table = document.createElement('table');
-    table.className = 'admin-list-table';
+    if (state.adminRolesSummaryLoading) {
+        listContainer.innerHTML = '<div class="admin-loading">Loading roles...</div>';
+    } else if (state.adminRolesSummaryError) {
+        listContainer.innerHTML = '<div class="admin-error">' + state.adminRolesSummaryError + '<br><button class="btn btn-secondary btn-sm" onclick="state.adminRolesSummaryError=null;fetchAdminRolesSummary();">Retry</button></div>';
+    } else {
+        var table = document.createElement('table');
+        table.className = 'admin-list-table';
+        var thead = document.createElement('thead');
+        thead.innerHTML = '<tr><th>Role</th><th>Users</th><th>Scope</th></tr>';
+        table.appendChild(thead);
 
-    var thead = document.createElement('thead');
-    thead.innerHTML = '<tr><th>Key</th><th>Description</th><th>Scope</th></tr>';
-    table.appendChild(thead);
+        var tbody = document.createElement('tbody');
+        var filteredRoles = state.adminRolesSummary.filter(function (r) {
+            if (!state.adminPermissionsSearchQuery) return true;
+            return r.role.toLowerCase().includes(state.adminPermissionsSearchQuery.toLowerCase());
+        });
 
-    var tbody = document.createElement('tbody');
-    var filteredPerms = adminPermissionsMockData.filter(function (p) {
-        if (!state.adminPermissionsSearchQuery) return true;
-        return p.key.toLowerCase().includes(state.adminPermissionsSearchQuery.toLowerCase()) ||
-            p.description.toLowerCase().includes(state.adminPermissionsSearchQuery.toLowerCase());
-    });
+        filteredRoles.forEach(function (roleItem) {
+            var row = document.createElement('tr');
+            row.className = 'admin-list-row clickable-row';
+            if (state.adminPermissionsSelectedKey === roleItem.role) row.classList.add('selected');
+            row.onclick = function () {
+                state.adminPermissionsSelectedKey = roleItem.role;
+                fetchAdminRoleUsers(roleItem.role);
+            };
+            var scope = ROLE_SCOPES[roleItem.role] || 'Tenant';
+            row.innerHTML = '<td><span class="admin-role-badge admin-role-' + roleItem.role + '">' + roleItem.role + '</span></td>' +
+                '<td>' + roleItem.user_count + '</td>' +
+                '<td><span class="admin-scope-badge admin-scope-' + scope.toLowerCase() + '">' + scope + '</span></td>';
+            tbody.appendChild(row);
+        });
+        table.appendChild(tbody);
+        listContainer.appendChild(table);
+    }
 
-    filteredPerms.forEach(function (perm) {
-        var row = document.createElement('tr');
-        row.className = 'admin-list-row clickable-row';
-        if (state.adminPermissionsSelectedKey === perm.key) {
-            row.classList.add('selected');
-        }
-        row.onclick = function () {
-            state.adminPermissionsSelectedKey = perm.key;
-            renderApp();
-        };
-
-        row.innerHTML = '<td class="admin-cell-key"><code>' + perm.key + '</code></td>' +
-            '<td>' + perm.description + '</td>' +
-            '<td><span class="admin-scope-badge admin-scope-' + perm.scope.toLowerCase() + '">' + perm.scope + '</span></td>';
-
-        tbody.appendChild(row);
-    });
-    table.appendChild(tbody);
-    listContainer.appendChild(table);
     leftPanel.appendChild(listContainer);
     splitLayout.appendChild(leftPanel);
 
-    // Right panel
+    // Right panel - role detail with users
     var rightPanel = document.createElement('div');
     rightPanel.className = 'admin-split-right';
 
     if (state.adminPermissionsSelectedKey) {
-        var selectedPerm = adminPermissionsMockData.find(function (p) { return p.key === state.adminPermissionsSelectedKey; });
-        if (selectedPerm) {
-            rightPanel.innerHTML = '<div class="admin-detail-panel">' +
-                '<div class="admin-detail-header">' +
-                '<h3><code>' + selectedPerm.key + '</code></h3>' +
-                '<button class="admin-detail-close-btn" onclick="state.adminPermissionsSelectedKey = null; renderApp();">&times;</button>' +
-                '</div>' +
-                '<div class="admin-detail-section">' +
-                '<h4>Permission Details</h4>' +
-                '<div class="admin-detail-grid">' +
-                '<div class="admin-detail-field"><span class="admin-detail-label">Key:</span><span class="admin-detail-value"><code>' + selectedPerm.key + '</code></span></div>' +
-                '<div class="admin-detail-field"><span class="admin-detail-label">Description:</span><span class="admin-detail-value">' + selectedPerm.description + '</span></div>' +
-                '<div class="admin-detail-field"><span class="admin-detail-label">Scope:</span><span class="admin-scope-badge admin-scope-' + selectedPerm.scope.toLowerCase() + '">' + selectedPerm.scope + '</span></div>' +
-                '</div>' +
-                '</div>' +
-                '<div class="admin-detail-section">' +
-                '<h4>Roles with this Permission</h4>' +
-                '<div class="admin-placeholder-list">' +
-                '<div class="admin-placeholder-item"><span class="admin-role-badge admin-role-admin">Admin</span></div>' +
-                '<div class="admin-placeholder-item"><span class="admin-role-badge admin-role-developer">Developer</span></div>' +
-                '</div>' +
-                '<p class="admin-detail-note">Role assignments are placeholder data</p>' +
-                '</div>' +
-                '</div>';
+        var role = state.adminPermissionsSelectedKey;
+        var scope = ROLE_SCOPES[role] || 'Tenant';
+        var desc = ROLE_DESCRIPTIONS[role] || 'No description';
+        var roleData = state.adminRolesSummary.find(function(r) { return r.role === role; });
+        var userCount = roleData ? roleData.user_count : 0;
+
+        var usersListHtml = '';
+        if (state.adminRoleUsersLoading) {
+            usersListHtml = '<div class="admin-loading">Loading users...</div>';
+        } else if (state.adminRoleUsers.length === 0) {
+            usersListHtml = '<p class="admin-detail-note">No users with this role</p>';
+        } else {
+            usersListHtml = state.adminRoleUsers.map(function(u) {
+                return '<div class="admin-detail-field"><span class="admin-detail-value">' + (u.email || '—') + '</span></div>';
+            }).join('');
         }
+
+        rightPanel.innerHTML = '<div class="admin-detail-panel">' +
+            '<div class="admin-detail-header">' +
+            '<h3><span class="admin-role-badge admin-role-' + role + '">' + role + '</span></h3>' +
+            '<button class="admin-detail-close-btn" onclick="state.adminPermissionsSelectedKey = null; renderApp();">&times;</button>' +
+            '</div>' +
+            '<div class="admin-detail-section">' +
+            '<h4>Role Details</h4>' +
+            '<div class="admin-detail-grid">' +
+            '<div class="admin-detail-field"><span class="admin-detail-label">Role:</span><span class="admin-detail-value">' + role + '</span></div>' +
+            '<div class="admin-detail-field"><span class="admin-detail-label">Description:</span><span class="admin-detail-value">' + desc + '</span></div>' +
+            '<div class="admin-detail-field"><span class="admin-detail-label">Scope:</span><span class="admin-scope-badge admin-scope-' + scope.toLowerCase() + '">' + scope + '</span></div>' +
+            '<div class="admin-detail-field"><span class="admin-detail-label">Users:</span><span class="admin-detail-value">' + userCount + '</span></div>' +
+            '</div>' +
+            '</div>' +
+            '<div class="admin-detail-section">' +
+            '<h4>Users with this Role</h4>' +
+            usersListHtml +
+            '</div>' +
+            '</div>';
     } else {
-        rightPanel.innerHTML = '<div class="admin-detail-empty"><span class="admin-detail-empty-icon">&#128273;</span><p>Select a permission from the list to view details</p></div>';
+        rightPanel.innerHTML = '<div class="admin-detail-empty"><span class="admin-detail-empty-icon">&#128273;</span><p>Select a role from the list to view details</p></div>';
     }
     splitLayout.appendChild(rightPanel);
     container.appendChild(splitLayout);
@@ -10068,33 +10298,23 @@ function renderAdminPermissionsView() {
 }
 
 /**
- * VTID-01195: Placeholder tenant data for Admin Tenants screen
- */
-var adminTenantsMockData = [
-    { id: 't1', name: 'Vitana Core', plan: 'Enterprise', status: 'Active' },
-    { id: 't2', name: 'Tenant Alpha', plan: 'Professional', status: 'Active' },
-    { id: 't3', name: 'Tenant Beta', plan: 'Starter', status: 'Trial' },
-    { id: 't4', name: 'Demo Tenant', plan: 'Free', status: 'Inactive' }
-];
-
-/**
- * VTID-01195: Admin Tenants View - Tenant list + plan/limits
+ * VTID-01195: Admin Tenants View - Tenant list + details
+ * Wired to GET /api/v1/admin/tenants
  */
 function renderAdminTenantsView() {
     var container = document.createElement('div');
     container.className = 'admin-screen-container admin-tenants-container';
 
+    // Auto-fetch
+    if (!state.adminTenantsFetched && !state.adminTenantsLoading && !state.adminTenantsError) {
+        fetchAdminTenants();
+    }
+
     // Header
     var header = document.createElement('div');
     header.className = 'admin-screen-header';
-    header.innerHTML = '<h2>Tenants</h2><p class="admin-screen-subtitle">View and manage tenant organizations and their plans</p>';
+    header.innerHTML = '<h2>Tenants</h2><p class="admin-screen-subtitle">View and manage tenant organizations</p>';
     container.appendChild(header);
-
-    // Not-wired banner
-    var banner = document.createElement('div');
-    banner.className = 'admin-not-wired-banner';
-    banner.innerHTML = '<span class="admin-not-wired-icon">&#9888;</span> Data source not connected yet — showing placeholder data';
-    container.appendChild(banner);
 
     // Split layout
     var splitLayout = document.createElement('div');
@@ -10112,9 +10332,11 @@ function renderAdminTenantsView() {
     searchInput.className = 'search-field admin-search-input';
     searchInput.placeholder = 'Search tenant...';
     searchInput.value = state.adminTenantsSearchQuery;
+    var tenantSearchTimer = null;
     searchInput.oninput = function (e) {
         state.adminTenantsSearchQuery = e.target.value;
-        renderApp();
+        clearTimeout(tenantSearchTimer);
+        tenantSearchTimer = setTimeout(function() { fetchAdminTenants(); }, 400);
     };
     searchWrapper.appendChild(searchInput);
     leftPanel.appendChild(searchWrapper);
@@ -10123,80 +10345,93 @@ function renderAdminTenantsView() {
     var listContainer = document.createElement('div');
     listContainer.className = 'admin-list-container';
 
-    var table = document.createElement('table');
-    table.className = 'admin-list-table';
+    if (state.adminTenantsLoading) {
+        listContainer.innerHTML = '<div class="admin-loading">Loading tenants...</div>';
+    } else if (state.adminTenantsError) {
+        listContainer.innerHTML = '<div class="admin-error">' + state.adminTenantsError + '<br><button class="btn btn-secondary btn-sm" onclick="state.adminTenantsError=null;fetchAdminTenants();">Retry</button></div>';
+    } else if (state.adminTenants.length === 0) {
+        listContainer.innerHTML = '<div class="admin-empty-list">No tenants found</div>';
+    } else {
+        var table = document.createElement('table');
+        table.className = 'admin-list-table';
+        var thead = document.createElement('thead');
+        thead.innerHTML = '<tr><th>Tenant</th><th>Users</th><th>Status</th></tr>';
+        table.appendChild(thead);
 
-    var thead = document.createElement('thead');
-    thead.innerHTML = '<tr><th>Tenant</th><th>Plan</th><th>Status</th></tr>';
-    table.appendChild(thead);
+        var tbody = document.createElement('tbody');
+        state.adminTenants.forEach(function (tenant) {
+            var row = document.createElement('tr');
+            row.className = 'admin-list-row clickable-row';
+            if (state.adminTenantsSelectedId === tenant.id) row.classList.add('selected');
+            row.onclick = function () {
+                state.adminTenantsSelectedId = tenant.id;
+                fetchAdminTenantDetail(tenant.id);
+            };
+            var status = tenant.status || 'Empty';
+            row.innerHTML = '<td class="admin-cell-tenant">' + (tenant.name || '—') + '</td>' +
+                '<td>' + (tenant.user_count || 0) + '</td>' +
+                '<td><span class="admin-status-badge admin-status-' + status.toLowerCase() + '">' + status + '</span></td>';
+            tbody.appendChild(row);
+        });
+        table.appendChild(tbody);
+        listContainer.appendChild(table);
+    }
 
-    var tbody = document.createElement('tbody');
-    var filteredTenants = adminTenantsMockData.filter(function (t) {
-        if (!state.adminTenantsSearchQuery) return true;
-        return t.name.toLowerCase().includes(state.adminTenantsSearchQuery.toLowerCase());
-    });
-
-    filteredTenants.forEach(function (tenant) {
-        var row = document.createElement('tr');
-        row.className = 'admin-list-row clickable-row';
-        if (state.adminTenantsSelectedId === tenant.id) {
-            row.classList.add('selected');
-        }
-        row.onclick = function () {
-            state.adminTenantsSelectedId = tenant.id;
-            renderApp();
-        };
-
-        row.innerHTML = '<td class="admin-cell-tenant">' + tenant.name + '</td>' +
-            '<td><span class="admin-plan-badge admin-plan-' + tenant.plan.toLowerCase() + '">' + tenant.plan + '</span></td>' +
-            '<td><span class="admin-status-badge admin-status-' + tenant.status.toLowerCase() + '">' + tenant.status + '</span></td>';
-
-        tbody.appendChild(row);
-    });
-    table.appendChild(tbody);
-    listContainer.appendChild(table);
     leftPanel.appendChild(listContainer);
     splitLayout.appendChild(leftPanel);
 
-    // Right panel
+    // Right panel - tenant detail
     var rightPanel = document.createElement('div');
     rightPanel.className = 'admin-split-right';
 
     if (state.adminTenantsSelectedId) {
-        var selectedTenant = adminTenantsMockData.find(function (t) { return t.id === state.adminTenantsSelectedId; });
+        var selectedTenant = state.adminTenants.find(function (t) { return t.id === state.adminTenantsSelectedId; });
         if (selectedTenant) {
+            var createdDate = selectedTenant.created_at ? new Date(selectedTenant.created_at).toLocaleString() : '—';
+            var shortId = selectedTenant.id ? (selectedTenant.id.length > 12 ? selectedTenant.id.substring(0, 8) + '...' : selectedTenant.id) : '—';
+
+            // Members list from detail endpoint
+            var membersHtml = '';
+            if (state.adminTenantDetailLoading) {
+                membersHtml = '<div class="admin-loading">Loading members...</div>';
+            } else if (state.adminTenantDetail && state.adminTenantDetail.members && state.adminTenantDetail.members.length > 0) {
+                membersHtml = state.adminTenantDetail.members.map(function(m) {
+                    return '<div class="admin-detail-field">' +
+                        '<span class="admin-detail-value">' + (m.email || '—') + '</span> ' +
+                        '<span class="admin-role-badge admin-role-' + (m.active_role || 'none').toLowerCase() + '">' + (m.active_role || 'none') + '</span>' +
+                        '</div>';
+                }).join('');
+            } else {
+                membersHtml = '<p class="admin-detail-note">No members in this tenant</p>';
+            }
+
             rightPanel.innerHTML = '<div class="admin-detail-panel">' +
                 '<div class="admin-detail-header">' +
-                '<h3>' + selectedTenant.name + '</h3>' +
-                '<button class="admin-detail-close-btn" onclick="state.adminTenantsSelectedId = null; renderApp();">&times;</button>' +
+                '<h3>' + (selectedTenant.name || '—') + '</h3>' +
+                '<button class="admin-detail-close-btn" onclick="state.adminTenantsSelectedId = null; state.adminTenantDetail = null; renderApp();">&times;</button>' +
                 '</div>' +
                 '<div class="admin-detail-section">' +
                 '<h4>Tenant Details</h4>' +
                 '<div class="admin-detail-grid">' +
-                '<div class="admin-detail-field"><span class="admin-detail-label">Tenant ID:</span><span class="admin-detail-value">' + selectedTenant.id + '</span></div>' +
-                '<div class="admin-detail-field"><span class="admin-detail-label">Name:</span><span class="admin-detail-value">' + selectedTenant.name + '</span></div>' +
-                '<div class="admin-detail-field"><span class="admin-detail-label">Plan:</span><span class="admin-plan-badge admin-plan-' + selectedTenant.plan.toLowerCase() + '">' + selectedTenant.plan + '</span></div>' +
-                '<div class="admin-detail-field"><span class="admin-detail-label">Status:</span><span class="admin-status-badge admin-status-' + selectedTenant.status.toLowerCase() + '">' + selectedTenant.status + '</span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Tenant ID:</span><span class="admin-detail-value" title="' + (selectedTenant.id || '') + '">' + shortId + '</span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Name:</span><span class="admin-detail-value">' + (selectedTenant.name || '—') + '</span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Slug:</span><span class="admin-detail-value"><code>' + (selectedTenant.slug || '—') + '</code></span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Users:</span><span class="admin-detail-value">' + (selectedTenant.user_count || 0) + '</span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Status:</span><span class="admin-status-badge admin-status-' + (selectedTenant.status || 'empty').toLowerCase() + '">' + (selectedTenant.status || 'Empty') + '</span></div>' +
+                '<div class="admin-detail-field"><span class="admin-detail-label">Created:</span><span class="admin-detail-value">' + createdDate + '</span></div>' +
                 '</div>' +
+                '</div>' +
+                '<div class="admin-detail-section">' +
+                '<h4>Members</h4>' +
+                membersHtml +
                 '</div>' +
                 '<div class="admin-detail-section">' +
                 '<h4>Limits & Quotas</h4>' +
-                '<div class="admin-limits-grid">' +
-                '<div class="admin-limit-item"><span class="admin-limit-label">Users</span><span class="admin-limit-value">—</span></div>' +
-                '<div class="admin-limit-item"><span class="admin-limit-label">Storage</span><span class="admin-limit-value">—</span></div>' +
-                '<div class="admin-limit-item"><span class="admin-limit-label">API Calls/mo</span><span class="admin-limit-value">—</span></div>' +
-                '<div class="admin-limit-item"><span class="admin-limit-label">Tasks/day</span><span class="admin-limit-value">—</span></div>' +
-                '</div>' +
-                '<p class="admin-detail-note">Limits data not available yet</p>' +
+                '<p class="admin-detail-note">Not configured — no limits table in database yet</p>' +
                 '</div>' +
                 '<div class="admin-detail-section">' +
                 '<h4>Feature Flags</h4>' +
-                '<div class="admin-flags-list">' +
-                '<div class="admin-flag-item"><span class="admin-flag-name">advanced_analytics</span><span class="admin-flag-value admin-flag-unknown">—</span></div>' +
-                '<div class="admin-flag-item"><span class="admin-flag-name">custom_workflows</span><span class="admin-flag-value admin-flag-unknown">—</span></div>' +
-                '<div class="admin-flag-item"><span class="admin-flag-name">api_access</span><span class="admin-flag-value admin-flag-unknown">—</span></div>' +
-                '</div>' +
-                '<p class="admin-detail-note">Feature flags data not available yet</p>' +
+                '<p class="admin-detail-note">Not configured — no feature flags table in database yet</p>' +
                 '</div>' +
                 '</div>';
         }
@@ -10210,21 +10445,17 @@ function renderAdminTenantsView() {
 }
 
 /**
- * VTID-01195: Placeholder moderation report data
- */
-var adminModerationMockData = [
-    { id: 'r1', type: 'Spam', status: 'Pending', reporter: 'user@example.com', reportedAt: '2025-01-15T10:30:00Z' },
-    { id: 'r2', type: 'Abuse', status: 'Pending', reporter: 'admin@vitana.io', reportedAt: '2025-01-14T15:45:00Z' },
-    { id: 'r3', type: 'Inappropriate', status: 'Reviewed', reporter: 'support@vitana.io', reportedAt: '2025-01-13T09:00:00Z' },
-    { id: 'r4', type: 'Other', status: 'Resolved', reporter: 'user2@example.com', reportedAt: '2025-01-12T14:20:00Z' }
-];
-
-/**
- * VTID-01195: Admin Content Moderation View - Report queue + actions
+ * VTID-01195: Admin Content Moderation View - Report queue
+ * Wired to GET /api/v1/admin/moderation/reports
  */
 function renderAdminContentModerationView() {
     var container = document.createElement('div');
     container.className = 'admin-screen-container admin-moderation-container';
+
+    // Auto-fetch
+    if (!state.adminModerationFetched && !state.adminModerationLoading && !state.adminModerationError) {
+        fetchAdminModerationReports();
+    }
 
     // Header
     var header = document.createElement('div');
@@ -10232,143 +10463,75 @@ function renderAdminContentModerationView() {
     header.innerHTML = '<h2>Content Moderation</h2><p class="admin-screen-subtitle">Review and manage content moderation reports</p>';
     container.appendChild(header);
 
-    // Not-wired banner
-    var banner = document.createElement('div');
-    banner.className = 'admin-not-wired-banner';
-    banner.innerHTML = '<span class="admin-not-wired-icon">&#9888;</span> Data source not connected yet — showing placeholder data';
-    container.appendChild(banner);
-
     // Filters row
     var filtersRow = document.createElement('div');
     filtersRow.className = 'admin-filters-row';
 
-    // Type filter
     var typeFilter = document.createElement('select');
     typeFilter.className = 'admin-filter-select';
     typeFilter.innerHTML = '<option value="">All Types</option><option value="Spam">Spam</option><option value="Abuse">Abuse</option><option value="Inappropriate">Inappropriate</option><option value="Other">Other</option>';
     typeFilter.value = state.adminModerationTypeFilter;
     typeFilter.onchange = function (e) {
         state.adminModerationTypeFilter = e.target.value;
-        renderApp();
+        fetchAdminModerationReports();
     };
     filtersRow.appendChild(typeFilter);
 
-    // Status filter
     var statusFilter = document.createElement('select');
     statusFilter.className = 'admin-filter-select';
     statusFilter.innerHTML = '<option value="">All Statuses</option><option value="Pending">Pending</option><option value="Reviewed">Reviewed</option><option value="Resolved">Resolved</option>';
     statusFilter.value = state.adminModerationStatusFilter;
     statusFilter.onchange = function (e) {
         state.adminModerationStatusFilter = e.target.value;
-        renderApp();
+        fetchAdminModerationReports();
     };
     filtersRow.appendChild(statusFilter);
 
     container.appendChild(filtersRow);
 
-    // Split layout
-    var splitLayout = document.createElement('div');
-    splitLayout.className = 'admin-split-layout';
+    // Content area
+    var contentArea = document.createElement('div');
+    contentArea.className = 'admin-list-container admin-moderation-list';
 
-    // Left panel - report list
-    var leftPanel = document.createElement('div');
-    leftPanel.className = 'admin-split-left';
-
-    var listContainer = document.createElement('div');
-    listContainer.className = 'admin-list-container admin-moderation-list';
-
-    var filteredReports = adminModerationMockData.filter(function (r) {
-        if (state.adminModerationTypeFilter && r.type !== state.adminModerationTypeFilter) return false;
-        if (state.adminModerationStatusFilter && r.status !== state.adminModerationStatusFilter) return false;
-        return true;
-    });
-
-    filteredReports.forEach(function (report) {
-        var card = document.createElement('div');
-        card.className = 'admin-report-card clickable-row';
-        if (state.adminModerationSelectedId === report.id) {
-            card.classList.add('selected');
-        }
-        card.onclick = function () {
-            state.adminModerationSelectedId = report.id;
-            renderApp();
-        };
-
-        var reportDate = new Date(report.reportedAt);
-        card.innerHTML = '<div class="admin-report-card-header">' +
-            '<span class="admin-type-badge admin-type-' + report.type.toLowerCase() + '">' + report.type + '</span>' +
-            '<span class="admin-status-badge admin-status-' + report.status.toLowerCase() + '">' + report.status + '</span>' +
-            '</div>' +
-            '<div class="admin-report-card-body">' +
-            '<div class="admin-report-meta">Report #' + report.id + '</div>' +
-            '<div class="admin-report-meta">By: ' + report.reporter + '</div>' +
-            '<div class="admin-report-meta">' + reportDate.toLocaleDateString() + '</div>' +
+    if (state.adminModerationLoading) {
+        contentArea.innerHTML = '<div class="admin-loading">Loading reports...</div>';
+    } else if (state.adminModerationError) {
+        contentArea.innerHTML = '<div class="admin-error">' + state.adminModerationError + '<br><button class="btn btn-secondary btn-sm" onclick="state.adminModerationError=null;fetchAdminModerationReports();">Retry</button></div>';
+    } else if (state.adminModerationReports.length === 0) {
+        contentArea.innerHTML = '<div class="admin-empty-list" style="padding:3rem;text-align:center;">' +
+            '<span style="font-size:2.5rem;display:block;margin-bottom:0.75rem;">&#128221;</span>' +
+            '<p style="font-size:1.1rem;margin-bottom:0.5rem;">No moderation reports</p>' +
+            '<p class="admin-detail-note">Content moderation reports will appear here when the moderation system is configured and users submit reports.</p>' +
             '</div>';
-
-        listContainer.appendChild(card);
-    });
-
-    if (filteredReports.length === 0) {
-        listContainer.innerHTML = '<div class="admin-empty-list">No reports match the selected filters</div>';
-    }
-
-    leftPanel.appendChild(listContainer);
-    splitLayout.appendChild(leftPanel);
-
-    // Right panel - report detail
-    var rightPanel = document.createElement('div');
-    rightPanel.className = 'admin-split-right';
-
-    if (state.adminModerationSelectedId) {
-        var selectedReport = adminModerationMockData.find(function (r) { return r.id === state.adminModerationSelectedId; });
-        if (selectedReport) {
-            var reportDate = new Date(selectedReport.reportedAt);
-            rightPanel.innerHTML = '<div class="admin-detail-panel">' +
-                '<div class="admin-detail-header">' +
-                '<h3>Report #' + selectedReport.id + '</h3>' +
-                '<button class="admin-detail-close-btn" onclick="state.adminModerationSelectedId = null; renderApp();">&times;</button>' +
-                '</div>' +
-                '<div class="admin-detail-section">' +
-                '<h4>Report Details</h4>' +
-                '<div class="admin-detail-grid">' +
-                '<div class="admin-detail-field"><span class="admin-detail-label">Type:</span><span class="admin-type-badge admin-type-' + selectedReport.type.toLowerCase() + '">' + selectedReport.type + '</span></div>' +
-                '<div class="admin-detail-field"><span class="admin-detail-label">Status:</span><span class="admin-status-badge admin-status-' + selectedReport.status.toLowerCase() + '">' + selectedReport.status + '</span></div>' +
-                '<div class="admin-detail-field"><span class="admin-detail-label">Reporter:</span><span class="admin-detail-value">' + selectedReport.reporter + '</span></div>' +
-                '<div class="admin-detail-field"><span class="admin-detail-label">Reported At:</span><span class="admin-detail-value">' + reportDate.toLocaleString() + '</span></div>' +
-                '</div>' +
-                '</div>' +
-                '<div class="admin-detail-section">' +
-                '<h4>Content</h4>' +
-                '<div class="admin-content-preview">' +
-                '<p class="admin-placeholder-text">Content preview not available — data source not wired</p>' +
-                '</div>' +
-                '</div>' +
-                '<div class="admin-detail-section">' +
-                '<h4>Moderation Notes</h4>' +
-                '<textarea class="admin-notes-textarea" placeholder="Add moderation notes..." disabled></textarea>' +
-                '</div>' +
-                '<div class="admin-detail-actions">' +
-                '<button class="btn btn-primary" disabled>Approve</button>' +
-                '<button class="btn btn-danger" disabled>Remove Content</button>' +
-                '<button class="btn btn-secondary" disabled>Dismiss Report</button>' +
-                '</div>' +
-                '</div>';
-        }
     } else {
-        rightPanel.innerHTML = '<div class="admin-detail-empty"><span class="admin-detail-empty-icon">&#128221;</span><p>Select a report from the list to view details</p></div>';
+        // Render reports if they exist in future
+        state.adminModerationReports.forEach(function (report) {
+            var card = document.createElement('div');
+            card.className = 'admin-report-card';
+            card.innerHTML = '<div class="admin-report-card-header">' +
+                '<span class="admin-type-badge">' + (report.type || '—') + '</span>' +
+                '<span class="admin-status-badge">' + (report.status || '—') + '</span>' +
+                '</div>';
+            contentArea.appendChild(card);
+        });
     }
-    splitLayout.appendChild(rightPanel);
-    container.appendChild(splitLayout);
 
+    container.appendChild(contentArea);
     return container;
 }
 
 /**
  * VTID-01195: Admin Identity Access View - Auth status + role switching + access logs
+ * Wired to state.meContext + OASIS events
  */
 function renderAdminIdentityAccessView() {
     var container = document.createElement('div');
     container.className = 'admin-screen-container admin-identity-container';
+
+    // Auto-fetch access logs
+    if (!state.adminAccessLogsFetched && !state.adminAccessLogsLoading) {
+        fetchAdminAccessLogs();
+    }
 
     // Header
     var header = document.createElement('div');
@@ -10376,17 +10539,19 @@ function renderAdminIdentityAccessView() {
     header.innerHTML = '<h2>Identity & Access</h2><p class="admin-screen-subtitle">Authentication status, role switching rules, and access audit logs</p>';
     container.appendChild(header);
 
-    // Not-wired banner
-    var banner = document.createElement('div');
-    banner.className = 'admin-not-wired-banner';
-    banner.innerHTML = '<span class="admin-not-wired-icon">&#9888;</span> Data source not connected yet — showing placeholder data';
-    container.appendChild(banner);
-
     // Panels container
     var panelsContainer = document.createElement('div');
     panelsContainer.className = 'admin-panels-container';
 
-    // Authentication Status Panel
+    // Authentication Status Panel — wired from state.meContext
+    var me = state.meContext || {};
+    var sessionStatus = state.authToken ? 'Active' : 'Inactive';
+    var sessionStatusClass = state.authToken ? 'admin-auth-status-active' : '';
+    var lastLogin = me.last_sign_in_at ? new Date(me.last_sign_in_at).toLocaleString() : (me.created_at ? new Date(me.created_at).toLocaleString() : '—');
+    var currentEmail = me.email || '—';
+    var currentRole = me.active_role || '—';
+    var currentTenant = me.tenant_slug || me.tenant_id || '—';
+
     var authPanel = document.createElement('div');
     authPanel.className = 'admin-panel';
     authPanel.innerHTML = '<div class="admin-panel-header">' +
@@ -10400,26 +10565,29 @@ function renderAdminIdentityAccessView() {
         '</div>' +
         '<div class="admin-auth-item">' +
         '<span class="admin-auth-label">Session Status:</span>' +
-        '<span class="admin-auth-value admin-auth-status-active">Active</span>' +
+        '<span class="admin-auth-value ' + sessionStatusClass + '">' + sessionStatus + '</span>' +
         '</div>' +
         '<div class="admin-auth-item">' +
-        '<span class="admin-auth-label">MFA Enabled:</span>' +
-        '<span class="admin-auth-value">—</span>' +
+        '<span class="admin-auth-label">Logged in as:</span>' +
+        '<span class="admin-auth-value">' + currentEmail + '</span>' +
+        '</div>' +
+        '<div class="admin-auth-item">' +
+        '<span class="admin-auth-label">Active Role:</span>' +
+        '<span class="admin-auth-value"><span class="admin-role-badge admin-role-' + currentRole + '">' + currentRole + '</span></span>' +
+        '</div>' +
+        '<div class="admin-auth-item">' +
+        '<span class="admin-auth-label">Tenant:</span>' +
+        '<span class="admin-auth-value">' + currentTenant + '</span>' +
         '</div>' +
         '<div class="admin-auth-item">' +
         '<span class="admin-auth-label">Last Login:</span>' +
-        '<span class="admin-auth-value">—</span>' +
-        '</div>' +
-        '<div class="admin-auth-item">' +
-        '<span class="admin-auth-label">Session Expiry:</span>' +
-        '<span class="admin-auth-value">—</span>' +
+        '<span class="admin-auth-value">' + lastLogin + '</span>' +
         '</div>' +
         '</div>' +
-        '<p class="admin-detail-note">Session details will be populated when auth is fully wired</p>' +
         '</div>';
     panelsContainer.appendChild(authPanel);
 
-    // Role Switching Rules Panel
+    // Role Switching Rules Panel (static — design rules)
     var rolePanel = document.createElement('div');
     rolePanel.className = 'admin-panel';
     rolePanel.innerHTML = '<div class="admin-panel-header">' +
@@ -10451,34 +10619,45 @@ function renderAdminIdentityAccessView() {
         '</div>';
     panelsContainer.appendChild(rolePanel);
 
-    // Access Logs Panel
+    // Access Logs Panel — wired from OASIS events
     var logsPanel = document.createElement('div');
     logsPanel.className = 'admin-panel admin-panel-full';
-    logsPanel.innerHTML = '<div class="admin-panel-header">' +
+
+    var logsHeaderHtml = '<div class="admin-panel-header">' +
         '<h3>Access Logs</h3>' +
-        '<button class="btn btn-secondary btn-sm" disabled>Export</button>' +
-        '</div>' +
-        '<div class="admin-panel-body">' +
-        '<table class="admin-logs-table">' +
-        '<thead><tr><th>Timestamp</th><th>User</th><th>Action</th><th>Resource</th><th>Result</th></tr></thead>' +
-        '<tbody>' +
-        '<tr class="admin-log-row">' +
-        '<td class="admin-log-ts">—</td>' +
-        '<td class="admin-log-user">—</td>' +
-        '<td class="admin-log-action">—</td>' +
-        '<td class="admin-log-resource">—</td>' +
-        '<td class="admin-log-result">—</td>' +
-        '</tr>' +
-        '</tbody>' +
-        '</table>' +
-        '<div class="admin-logs-empty">' +
-        '<p>Access logs will be displayed when data source is connected</p>' +
-        '</div>' +
+        '<button class="btn btn-secondary btn-sm" onclick="fetchAdminAccessLogs();">Refresh</button>' +
         '</div>';
+
+    var logsBodyHtml = '<div class="admin-panel-body">';
+
+    if (state.adminAccessLogsLoading) {
+        logsBodyHtml += '<div class="admin-loading">Loading access logs...</div>';
+    } else if (state.adminAccessLogs.length === 0) {
+        logsBodyHtml += '<table class="admin-logs-table">' +
+            '<thead><tr><th>Timestamp</th><th>Topic</th><th>Service</th><th>Message</th></tr></thead>' +
+            '<tbody></tbody></table>' +
+            '<div class="admin-logs-empty"><p>No auth-related events found in OASIS logs</p></div>';
+    } else {
+        logsBodyHtml += '<table class="admin-logs-table">' +
+            '<thead><tr><th>Timestamp</th><th>Topic</th><th>Service</th><th>Message</th></tr></thead>' +
+            '<tbody>';
+        state.adminAccessLogs.forEach(function(log) {
+            var ts = log.created_at ? new Date(log.created_at).toLocaleString() : '—';
+            logsBodyHtml += '<tr class="admin-log-row">' +
+                '<td class="admin-log-ts">' + ts + '</td>' +
+                '<td>' + (log.topic || '—') + '</td>' +
+                '<td>' + (log.service || '—') + '</td>' +
+                '<td>' + (log.message || '—') + '</td>' +
+                '</tr>';
+        });
+        logsBodyHtml += '</tbody></table>';
+    }
+
+    logsBodyHtml += '</div>';
+    logsPanel.innerHTML = logsHeaderHtml + logsBodyHtml;
     panelsContainer.appendChild(logsPanel);
 
     container.appendChild(panelsContainer);
-
     return container;
 }
 
@@ -22263,6 +22442,7 @@ function createRecommendationCard(rec) {
             var data = await response.json();
             if (data.ok) {
                 // Update state FIRST, then remove card for instant feedback
+                delete state.autopilotRecommendationErrors[rec.id];
                 state.autopilotRecommendations = state.autopilotRecommendations.filter(function (r) { return r.id !== rec.id; });
                 state.autopilotRecommendationsCount = Math.max(0, state.autopilotRecommendationsCount - 1);
                 card.remove();
@@ -22270,14 +22450,18 @@ function createRecommendationCard(rec) {
                 await fetchTasks();
                 showToast('Activated! VTID: ' + data.vtid, 'success');
             } else {
+                var errMsg = data.error || 'Unknown error';
+                state.autopilotRecommendationErrors[rec.id] = errMsg;
                 activateBtn.disabled = false;
                 activateBtn.textContent = 'Activate';
-                showToast('Activation failed: ' + (data.error || 'Unknown error'), 'error');
+                showToast('Activation failed: ' + errMsg, 'error');
             }
         } catch (err) {
+            var errMsg = err.message || 'Network error';
+            state.autopilotRecommendationErrors[rec.id] = errMsg;
             activateBtn.disabled = false;
             activateBtn.textContent = 'Activate';
-            showToast('Activation error: ' + err.message, 'error');
+            showToast('Activation error: ' + errMsg, 'error');
         }
     };
     actionsRow.appendChild(activateBtn);
@@ -22348,6 +22532,14 @@ function createRecommendationCard(rec) {
     actionsRow.appendChild(rejectBtn);
 
     card.appendChild(actionsRow);
+
+    // Show inline error if activation/snooze/dismiss failed previously
+    if (state.autopilotRecommendationErrors[rec.id]) {
+        var errorEl = document.createElement('div');
+        errorEl.style.cssText = 'margin-top: 8px; padding: 6px 10px; background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); border-radius: 4px; font-size: 12px; color: #ef4444;';
+        errorEl.textContent = state.autopilotRecommendationErrors[rec.id];
+        card.appendChild(errorEl);
+    }
 
     return card;
 }
@@ -29899,16 +30091,27 @@ function renderOverviewSystemView() {
             activateBtn.onclick = async function (e) {
                 e.stopPropagation();
                 activateBtn.disabled = true;
+                activateBtn.textContent = 'Activating...';
                 try {
-                    var resp = await fetch('/api/v1/autopilot/recommendations/' + rec.id + '/activate', { method: 'POST' });
-                    if (resp.ok) {
+                    var resp = await fetch('/api/v1/autopilot/recommendations/' + rec.id + '/activate', {
+                        method: 'POST',
+                        headers: buildContextHeaders({ 'Content-Type': 'application/json' })
+                    });
+                    var data = await resp.json();
+                    if (data.ok) {
                         state.overviewPipelineSummary.fetched = false;
                         fetchPipelineSummary();
                         await fetchTasks();
                         showToast('Recommendation activated!', 'success');
+                    } else {
+                        activateBtn.disabled = false;
+                        activateBtn.textContent = 'Activate';
+                        showToast('Activation failed: ' + (data.error || 'Unknown error'), 'error');
                     }
                 } catch (err) {
-                    console.error('Failed to activate recommendation:', err);
+                    activateBtn.disabled = false;
+                    activateBtn.textContent = 'Activate';
+                    showToast('Activation error: ' + err.message, 'error');
                 }
             };
 
@@ -29919,11 +30122,22 @@ function renderOverviewSystemView() {
                 e.stopPropagation();
                 dismissBtn.disabled = true;
                 try {
-                    await fetch('/api/v1/autopilot/recommendations/' + rec.id + '/reject', { method: 'POST' });
-                    state.overviewPipelineSummary.fetched = false;
-                    fetchPipelineSummary();
+                    var resp = await fetch('/api/v1/autopilot/recommendations/' + rec.id + '/reject', {
+                        method: 'POST',
+                        headers: buildContextHeaders({ 'Content-Type': 'application/json' })
+                    });
+                    var data = await resp.json();
+                    if (data.ok) {
+                        state.overviewPipelineSummary.fetched = false;
+                        fetchPipelineSummary();
+                        showToast('Recommendation dismissed', 'success');
+                    } else {
+                        dismissBtn.disabled = false;
+                        showToast('Dismiss failed: ' + (data.error || 'Unknown error'), 'error');
+                    }
                 } catch (err) {
-                    console.error('Failed to dismiss recommendation:', err);
+                    dismissBtn.disabled = false;
+                    showToast('Dismiss error: ' + err.message, 'error');
                 }
             };
 
@@ -33722,6 +33936,12 @@ function renderTestingCiReportsView() {
 function renderAdminAnalyticsView() {
     var container = document.createElement('div');
     container.style.padding = '1.5rem';
+
+    // Auto-fetch analytics stats
+    if (!state.adminAnalyticsStatsFetched && !state.adminAnalyticsStatsLoading) {
+        fetchAdminAnalyticsStats();
+    }
+
     var title = document.createElement('h2');
     title.textContent = 'Admin Analytics';
     container.appendChild(title);
@@ -33730,12 +33950,29 @@ function renderAdminAnalyticsView() {
     subtitle.textContent = 'Platform usage analytics and operational metrics.';
     container.appendChild(subtitle);
 
+    // Existing metrics
     var metrics = [
         { label: 'Total OASIS Events', value: state.oasisEvents ? (state.oasisEvents.length || 0) : '—', color: '#6c63ff' },
         { label: 'Active VTIDs', value: state.vtidItems ? state.vtidItems.filter(function (v) { return v.status === 'in_progress'; }).length : '—', color: '#22c55e' },
         { label: 'Governance Rules', value: state.governanceRules ? state.governanceRules.length : '—', color: '#f59e0b' },
         { label: 'Memory Categories', value: state.memoryGarden ? Object.keys(state.memoryGarden).length : '—', color: '#3b82f6' }
     ];
+
+    // New metrics from admin APIs
+    var stats = state.adminAnalyticsStats;
+    if (stats) {
+        metrics.push({ label: 'Total Users', value: stats.userCount || '—', color: '#ec4899' });
+        metrics.push({ label: 'Active Tenants', value: stats.tenantCount || '—', color: '#14b8a6' });
+        if (stats.signups && stats.signups.total_registered_users !== undefined) {
+            metrics.push({ label: 'Registered Users', value: stats.signups.total_registered_users, color: '#8b5cf6' });
+        }
+        if (stats.notifications && stats.notifications.read_rate !== undefined) {
+            metrics.push({ label: 'Notification Read Rate', value: Math.round(stats.notifications.read_rate * 100) + '%', color: '#f97316' });
+        }
+    } else if (state.adminAnalyticsStatsLoading) {
+        metrics.push({ label: 'Total Users', value: '...', color: '#ec4899' });
+        metrics.push({ label: 'Active Tenants', value: '...', color: '#14b8a6' });
+    }
 
     var grid = document.createElement('div');
     grid.style.display = 'grid';
@@ -33755,10 +33992,44 @@ function renderAdminAnalyticsView() {
     });
     container.appendChild(grid);
 
+    // Signup funnel breakdown (if available)
+    if (stats && stats.signups && stats.signups.stages) {
+        var funnelSection = document.createElement('div');
+        funnelSection.style.marginTop = '1.5rem';
+        funnelSection.innerHTML = '<h3>Signup Funnel</h3>';
+        var funnelGrid = document.createElement('div');
+        funnelGrid.style.display = 'grid';
+        funnelGrid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(150px, 1fr))';
+        funnelGrid.style.gap = '0.75rem';
+        funnelGrid.style.marginTop = '0.5rem';
+        var stages = stats.signups.stages;
+        Object.keys(stages).forEach(function(stageName) {
+            var stageCard = document.createElement('div');
+            stageCard.style.background = 'var(--color-bg-secondary, #1a1a2e)';
+            stageCard.style.border = '1px solid var(--color-border, #333)';
+            stageCard.style.borderRadius = '6px';
+            stageCard.style.padding = '0.75rem';
+            stageCard.style.textAlign = 'center';
+            stageCard.innerHTML = '<div style="font-size:1.5rem;font-weight:700;color:#6c63ff;">' + stages[stageName] + '</div>' +
+                '<div style="font-size:0.75rem;color:var(--color-text-secondary);margin-top:0.25rem;">' + stageName + '</div>';
+            funnelGrid.appendChild(stageCard);
+        });
+        funnelSection.appendChild(funnelGrid);
+        container.appendChild(funnelSection);
+    }
+
     var note = document.createElement('div');
     note.className = 'databases-arch-note';
     note.style.marginTop = '1.5rem';
-    note.innerHTML = '<h3>Data Sources</h3><ul><li>OASIS Events from <code>/api/v1/oasis/events</code></li><li>VTID data from <code>/api/v1/vtid/list</code></li><li>Governance rules from <code>/api/v1/governance/rules</code></li><li>Memory data from <code>/api/v1/memory/garden/summary</code></li></ul>';
+    note.innerHTML = '<h3>Data Sources</h3><ul>' +
+        '<li>OASIS Events from <code>/api/v1/oasis/events</code></li>' +
+        '<li>VTID data from <code>/api/v1/vtid/list</code></li>' +
+        '<li>Governance rules from <code>/api/v1/governance/rules</code></li>' +
+        '<li>Memory data from <code>/api/v1/memory/garden/summary</code></li>' +
+        '<li>Users &amp; Tenants from <code>/api/v1/admin/users</code> &amp; <code>/api/v1/admin/tenants</code></li>' +
+        '<li>Signup funnel from <code>/api/v1/admin/signups/stats</code></li>' +
+        '<li>Notification stats from <code>/api/v1/admin/notifications/preferences/stats</code></li>' +
+        '</ul>';
     container.appendChild(note);
     return container;
 }
