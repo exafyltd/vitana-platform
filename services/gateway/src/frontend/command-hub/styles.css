@@ -8776,6 +8776,22 @@ body {
   color: #f59e0b;
 }
 
+/* VTID-01841: Retry banner for tasks back in scheduled after failure */
+.task-retry-banner {
+  background: linear-gradient(135deg, #3d3317 0%, #1f1a0d 100%);
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  color: #fcd34d;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.task-retry-banner strong {
+  color: #f59e0b;
+}
+
 /* Inconsistent state warning */
 .task-inconsistent-state-warning {
   background: linear-gradient(135deg, #3b1515 0%, #1f0a0a 100%);
@@ -9018,6 +9034,20 @@ body {
   color: #888;
   border: 1px solid rgba(100, 100, 100, 0.3);
   font-style: italic;
+}
+
+/* VTID-01841: Retry badge for tasks that previously failed */
+.task-card-retry-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  margin-left: 6px;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  background: rgba(245, 158, 11, 0.25);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.5);
 }
 
 /* --- Drawer Role Badge --- */

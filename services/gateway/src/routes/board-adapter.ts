@@ -30,6 +30,9 @@ interface BoardItem {
   column: BoardColumn;
   is_terminal: boolean;
   terminal_outcome: 'success' | 'failed' | null;
+  // VTID-01841: Retry lifecycle fields
+  failure_count: number;
+  last_failure_at: string | null;
   updated_at: string;
   id_namespace: IdNamespace;
   // VTID-01188: Spec pipeline status
@@ -254,13 +257,25 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
       // ==========================================================================
       // FALLBACK: If ledger doesn't have is_terminal=true, check events and status
       // This handles legacy VTIDs and provides backward compatibility
+      // VTID-01841: Filter events to current attempt cycle (after latest retry_reset)
       // ==========================================================================
+
+      // VTID-01841: Find most recent retry_reset event
+      const latestRetryReset = vtidEvents
+        .filter((e: any) => (e.topic || '').toLowerCase() === 'vtid.lifecycle.retry_reset')
+        .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+
+      // Only consider events from the current attempt for terminal derivation
+      const currentAttemptEvents = latestRetryReset
+        ? vtidEvents.filter((e: any) => new Date(e.created_at) > new Date(latestRetryReset.created_at))
+        : vtidEvents;
+
       if (!isTerminal) {
         // Check for terminal lifecycle events (secondary authority)
-        const terminalCompletedEvent = vtidEvents.find((e: any) =>
+        const terminalCompletedEvent = currentAttemptEvents.find((e: any) =>
           (e.topic || '').toLowerCase() === 'vtid.lifecycle.completed'
         );
-        const terminalFailedEvent = vtidEvents.find((e: any) =>
+        const terminalFailedEvent = currentAttemptEvents.find((e: any) =>
           (e.topic || '').toLowerCase() === 'vtid.lifecycle.failed'
         );
 
@@ -281,7 +296,7 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
       // This is authoritative: if OASIS has a started event and no terminal event,
       // the task is IN_PROGRESS regardless of ledger status or local overrides
       if (!isTerminal) {
-        const lifecycleStartedEvent = vtidEvents.find((e: any) =>
+        const lifecycleStartedEvent = currentAttemptEvents.find((e: any) =>
           (e.topic || '').toLowerCase() === 'vtid.lifecycle.started'
         );
         if (lifecycleStartedEvent) {
@@ -293,8 +308,9 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
       // VTID-01111: If not terminal from lifecycle events, check other OASIS patterns
       // Check deploy events BEFORE checking lifecycle.started so deploy success
       // takes priority over started status
+      // VTID-01841: Only check events from current attempt
       if (!isTerminal) {
-        const hasDeploySuccess = vtidEvents.some((e: any) => {
+        const hasDeploySuccess = currentAttemptEvents.some((e: any) => {
           const topic = (e.topic || '').toLowerCase();
           // VTID-01111: Added 'deploy.success' which is emitted by CI/CD telemetry action
           return topic === 'deploy.gateway.success' ||
@@ -304,7 +320,7 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
                  topic === 'cicd.merge.success';
         });
 
-        const hasDeployFailed = vtidEvents.some((e: any) => {
+        const hasDeployFailed = currentAttemptEvents.some((e: any) => {
           const topic = (e.topic || '').toLowerCase();
           // VTID-01111: Added 'deploy.failed' which is emitted by CI/CD telemetry action
           return topic === 'deploy.gateway.failed' ||
@@ -371,6 +387,9 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
         column: finalColumn,
         is_terminal: isTerminal,
         terminal_outcome: terminalOutcome,
+        // VTID-01841: Retry lifecycle fields
+        failure_count: row.failure_count ?? 0,
+        last_failure_at: row.last_failure_at ?? null,
         updated_at: row.updated_at || row.created_at,
         id_namespace: deriveNamespace(vtid),
         // VTID-01188: Spec pipeline status columns

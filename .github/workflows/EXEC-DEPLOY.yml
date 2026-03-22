@@ -612,4 +612,15 @@ jobs:
               }" 2>/dev/null || true
           fi
 
+          # VTID-01841: Trigger retry-reset via completion endpoint
+          # This resets the task to 'scheduled' for retry (if under max failure count)
+          if [[ "$VTID" != BOOTSTRAP-* ]] && [ -n "$GATEWAY_URL" ]; then
+            echo "VTID-01841: Calling completion endpoint to trigger retry-reset"
+            RETRY_RESPONSE=$(curl -s -X POST "${GATEWAY_URL}/api/v1/oasis/tasks/${VTID}/complete" \
+              -H "Content-Type: application/json" \
+              -H "X-VTID: $VTID" \
+              -d '{"terminal_outcome":"failed"}' 2>/dev/null || echo '{"ok":false}')
+            echo "VTID-01841: Retry-reset response: $RETRY_RESPONSE"
+          fi
+
           echo "VTID-0416: Deploy failed - check workflow logs for details"

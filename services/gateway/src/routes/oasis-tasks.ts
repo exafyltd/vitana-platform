@@ -611,17 +611,51 @@ oasisTasksRouter.post('/api/v1/oasis/tasks/:vtid/complete', async (req: Request,
       });
     }
 
-    // Step 3: Update task to terminal completion state
-    // VTID-01206: Set status based on outcome - 'rejected' for failed (shows red), 'completed' for success (shows green)
+    // Step 3: Determine update payload based on outcome
+    // VTID-01841: Failed tasks reset to 'scheduled' for retry (up to MAX_FAILURE_COUNT)
+    // VTID-01206: Success → 'completed' (terminal), Cancelled → 'cancelled' (terminal)
+    const MAX_FAILURE_COUNT = 3;
     const timestamp = new Date().toISOString();
-    const newStatus = terminal_outcome === 'success' ? 'completed' : terminal_outcome === 'failed' ? 'rejected' : 'cancelled';
-    const updatePayload = {
-      status: newStatus,
-      is_terminal: true,
-      terminal_outcome: terminal_outcome,
-      completed_at: timestamp,
-      updated_at: timestamp
-    };
+    const currentFailureCount = task.failure_count || 0;
+
+    // VTID-01841: On failure, retry-reset instead of terminal (unless max retries exceeded)
+    const isRetryReset = terminal_outcome === 'failed' && currentFailureCount < MAX_FAILURE_COUNT;
+
+    let updatePayload: Record<string, any>;
+    let eventTopic: string;
+    let eventMessage: string;
+
+    if (isRetryReset) {
+      // Retry-reset: return to scheduled with failure tracking
+      updatePayload = {
+        status: 'scheduled',
+        is_terminal: false,
+        terminal_outcome: null,
+        completed_at: null,
+        failure_count: currentFailureCount + 1,
+        last_failure_at: timestamp,
+        updated_at: timestamp,
+      };
+      eventTopic = 'vtid.lifecycle.retry_reset';
+      eventMessage = `Task ${vtid} reset for retry (attempt ${currentFailureCount + 1} of ${MAX_FAILURE_COUNT})`;
+      console.log(`[VTID-01841] ${eventMessage}`);
+    } else {
+      // Terminal: success, cancelled, or max failures exceeded
+      const newStatus = terminal_outcome === 'success' ? 'completed' : terminal_outcome === 'failed' ? 'rejected' : 'cancelled';
+      updatePayload = {
+        status: newStatus,
+        is_terminal: true,
+        terminal_outcome: terminal_outcome,
+        completed_at: timestamp,
+        updated_at: timestamp,
+        ...(terminal_outcome === 'failed' ? { failure_count: currentFailureCount + 1, last_failure_at: timestamp } : {}),
+      };
+      eventTopic = terminal_outcome === 'success' ? 'vtid.lifecycle.completed' : 'vtid.lifecycle.failed';
+      eventMessage = `Task ${vtid} marked as terminal with outcome: ${terminal_outcome}`;
+      if (terminal_outcome === 'failed' && currentFailureCount >= MAX_FAILURE_COUNT) {
+        eventMessage += ` (permanent after ${currentFailureCount + 1} failures)`;
+      }
+    }
 
     const updateResp = await fetch(`${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}`, {
       method: 'PATCH',
@@ -638,32 +672,28 @@ oasisTasksRouter.post('/api/v1/oasis/tasks/:vtid/complete', async (req: Request,
     const updatedTasks = await updateResp.json() as any[];
     const updated = updatedTasks[0];
 
-    // Step 4: Emit OASIS event for terminal completion
-    // VTID-01122-FIX: Use correct topic so board-adapter recognizes completion
-    // Previously used 'vtid.lifecycle.terminal_completion' which was not recognized
+    // Step 4: Emit OASIS event
     const eventId = randomUUID();
-    const completionTopic = terminal_outcome === 'success'
-      ? 'vtid.lifecycle.completed'
-      : 'vtid.lifecycle.failed';
     const eventPayload = {
       id: eventId,
       created_at: timestamp,
       vtid: vtid,
-      topic: completionTopic,
+      topic: eventTopic,
       service: 'cicd-terminal-gate',
       role: 'DEPLOY',
       model: 'vtid-01080-terminal-gate',
-      status: terminal_outcome === 'success' ? 'success' : 'error',
-      message: `Task ${vtid} marked as terminal with outcome: ${terminal_outcome}`,
+      status: isRetryReset ? 'info' : (terminal_outcome === 'success' ? 'success' : 'error'),
+      message: eventMessage,
       link: null,
       metadata: {
-        action: 'terminal_completion',
+        action: isRetryReset ? 'retry_reset' : 'terminal_completion',
         previous_status: task.status,
         previous_is_terminal: task.is_terminal,
-        new_status: newStatus,
-        is_terminal: true,
-        terminal_outcome: terminal_outcome,
-        completed_at: timestamp,
+        new_status: updated.status,
+        is_terminal: updated.is_terminal ?? false,
+        terminal_outcome: updated.terminal_outcome ?? null,
+        failure_count: updated.failure_count ?? 0,
+        ...(isRetryReset ? {} : { completed_at: timestamp }),
         vtid: vtid
       }
     };
@@ -675,19 +705,21 @@ oasisTasksRouter.post('/api/v1/oasis/tasks/:vtid/complete', async (req: Request,
     });
 
     if (!eventResp.ok) {
-      console.warn(`[VTID-01080] Task ${vtid} completed but failed to log OASIS event: ${eventResp.status}`);
+      console.warn(`[VTID-01080] Task ${vtid} updated but failed to log OASIS event: ${eventResp.status}`);
     } else {
-      console.log(`[VTID-01080] Task ${vtid} terminal completion recorded. Event: ${eventId}`);
+      console.log(`[VTID-01080] Task ${vtid} ${isRetryReset ? 'retry_reset' : 'terminal completion'} recorded. Event: ${eventId}`);
     }
 
     return res.status(200).json({
       ok: true,
       vtid,
       already_completed: false,
+      retried: isRetryReset,
       status: updated.status,
       is_terminal: updated.is_terminal,
       terminal_outcome: updated.terminal_outcome,
-      completed_at: updated.completed_at
+      failure_count: updated.failure_count ?? 0,
+      completed_at: updated.completed_at,
     });
   } catch (e: any) {
     console.error(`[VTID-01080] Unexpected error:`, e);

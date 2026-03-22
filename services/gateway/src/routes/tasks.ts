@@ -64,16 +64,27 @@ router.get('/api/v1/tasks', async (req: Request, res: Response) => {
       const vtidEvents = allEvents.filter((e: any) => e.vtid === vtid);
 
       // VTID-01005: Derive terminal state from OASIS events (AUTHORITATIVE)
+      // VTID-01841: Retry lifecycle — filter events to current attempt cycle
       let isTerminal = false;
       let terminalOutcome: 'success' | 'failed' | null = null;
       let column: 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' = 'SCHEDULED';
       let derivedStatus = row.status || 'scheduled';
 
+      // VTID-01841: Find most recent retry_reset event to scope terminal derivation
+      const latestRetryReset = vtidEvents
+        .filter((e: any) => (e.topic || '').toLowerCase() === 'vtid.lifecycle.retry_reset')
+        .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+
+      // Only consider events from the current attempt (after latest retry_reset)
+      const currentAttemptEvents = latestRetryReset
+        ? vtidEvents.filter((e: any) => new Date(e.created_at) > new Date(latestRetryReset.created_at))
+        : vtidEvents;
+
       // Check for terminal lifecycle events FIRST (highest authority)
-      const terminalCompletedEvent = vtidEvents.find((e: any) =>
+      const terminalCompletedEvent = currentAttemptEvents.find((e: any) =>
         (e.topic || '').toLowerCase() === 'vtid.lifecycle.completed'
       );
-      const terminalFailedEvent = vtidEvents.find((e: any) =>
+      const terminalFailedEvent = currentAttemptEvents.find((e: any) =>
         (e.topic || '').toLowerCase() === 'vtid.lifecycle.failed'
       );
 
@@ -91,14 +102,14 @@ router.get('/api/v1/tasks', async (req: Request, res: Response) => {
 
       // If not terminal from lifecycle events, check other OASIS patterns
       if (!isTerminal) {
-        const hasDeploySuccess = vtidEvents.some((e: any) => {
+        const hasDeploySuccess = currentAttemptEvents.some((e: any) => {
           const topic = (e.topic || '').toLowerCase();
           return topic === 'deploy.gateway.success' ||
                  topic === 'cicd.deploy.service.succeeded' ||
                  topic === 'cicd.github.safe_merge.executed';
         });
 
-        const hasDeployFailed = vtidEvents.some((e: any) => {
+        const hasDeployFailed = currentAttemptEvents.some((e: any) => {
           const topic = (e.topic || '').toLowerCase();
           return topic === 'deploy.gateway.failed' ||
                  topic === 'cicd.deploy.service.failed';
@@ -158,6 +169,10 @@ router.get('/api/v1/tasks', async (req: Request, res: Response) => {
         is_terminal: isTerminal,
         terminal_outcome: terminalOutcome,
         column: column,
+
+        // VTID-01841: Retry lifecycle fields
+        failure_count: row.failure_count ?? 0,
+        last_failure_at: row.last_failure_at ?? null,
 
         // Metadata
         assigned_to: row.assigned_to ?? null,

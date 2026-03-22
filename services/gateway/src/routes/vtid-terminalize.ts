@@ -653,6 +653,17 @@ router.post('/api/v1/scheduler/terminalize-repair', async (req: Request, res: Re
     for (const vtidRow of nonTerminalVtids) {
       const vtid = vtidRow.vtid;
 
+      // VTID-01841: Skip tasks that are in retry-pending state (scheduled with failure_count > 0)
+      if (vtidRow.status === 'scheduled' && (vtidRow.failure_count || 0) > 0) {
+        results.push({
+          vtid,
+          action: 'skipped',
+          reason: 'retry_pending',
+          failure_count: vtidRow.failure_count,
+        });
+        continue;
+      }
+
       // Check for FULL pipeline evidence (not just deploy success)
       const evidence = await checkPipelineEvidence(supabaseUrl, svcKey, vtid);
       const validation = validatePipelineEvidence(evidence, 'success');

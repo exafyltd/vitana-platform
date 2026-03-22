@@ -6237,6 +6237,15 @@ function createTaskCard(task) {
     statusPill.textContent = statusText;
     statusRow.appendChild(statusPill);
 
+    // VTID-01841: Retry badge for tasks that previously failed but are back in queue
+    if (task.failure_count > 0 && !task.is_terminal) {
+        var retryBadge = document.createElement('span');
+        retryBadge.className = 'task-card-retry-badge';
+        retryBadge.textContent = 'RETRY #' + (task.failure_count + 1);
+        retryBadge.title = 'This task previously failed ' + task.failure_count + ' time(s). Review OASIS timeline for diagnostics.';
+        statusRow.appendChild(retryBadge);
+    }
+
     // VTID-01010: Target Role badge(s)
     const targetRoles = getTaskTargetRoles(task);
     if (targetRoles && targetRoles.length > 0) {
@@ -6799,6 +6808,16 @@ function renderTaskDrawer() {
             taskStatus + ' without OASIS authority. ' +
             'No completion lifecycle event found in OASIS events.';
         content.appendChild(inconsistentWarning);
+    }
+
+    // VTID-01841: Retry banner for tasks that previously failed but are back in queue
+    if (task.failure_count > 0 && !task.is_terminal) {
+        var retryBanner = document.createElement('div');
+        retryBanner.className = 'task-retry-banner';
+        retryBanner.innerHTML = '<strong>Retry Attempt #' + (task.failure_count + 1) + '</strong> — ' +
+            'This task failed ' + task.failure_count + ' time(s) previously. ' +
+            'Review the OASIS timeline below for diagnostics from prior attempts.';
+        content.appendChild(retryBanner);
     }
 
     // VTID-01006: Finalization banner for completed/failed/cancelled tasks
