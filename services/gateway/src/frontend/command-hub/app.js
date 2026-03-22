@@ -22452,16 +22452,11 @@ function createRecommendationCard(rec) {
             } else {
                 var errMsg = data.error || 'Unknown error';
                 state.autopilotRecommendationErrors[rec.id] = errMsg;
-                activateBtn.disabled = false;
-                activateBtn.textContent = 'Activate';
-                showToast('Activation failed: ' + errMsg, 'error');
+                try { showToast('Activation failed: ' + errMsg, 'error'); } catch (e) { console.error('[Activate] Toast error:', e); renderApp(); }
             }
         } catch (err) {
-            var errMsg = err.message || 'Network error';
-            state.autopilotRecommendationErrors[rec.id] = errMsg;
-            activateBtn.disabled = false;
-            activateBtn.textContent = 'Activate';
-            showToast('Activation error: ' + errMsg, 'error');
+            state.autopilotRecommendationErrors[rec.id] = err.message || 'Network error';
+            try { showToast('Activation error: ' + (err.message || 'Network error'), 'error'); } catch (e) { console.error('[Activate] Toast error:', e); }
         }
     };
     actionsRow.appendChild(activateBtn);
