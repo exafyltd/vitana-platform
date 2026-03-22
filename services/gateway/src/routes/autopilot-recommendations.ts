@@ -114,13 +114,16 @@ router.get('/', async (req: Request, res: Response) => {
     const statuses = statusParam.split(',').map(s => s.trim());
     const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 20, 1), 100);
     const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+    // personal_only=true: Only return user-specific recommendations (excludes system-wide
+    // developer/operator recs where user_id IS NULL). Used by Lovable community frontend.
+    const personalOnly = req.query.personal_only === 'true';
 
-    console.log(`${LOG_PREFIX} Recommendations requested (status: ${statuses.join(',')}, limit: ${limit})`);
+    console.log(`${LOG_PREFIX} Recommendations requested (status: ${statuses.join(',')}, limit: ${limit}, personal_only: ${personalOnly})`);
 
     const result = await callRpc<any[]>('get_autopilot_recommendations', {
       p_status: statuses,
-      p_limit: limit + 1, // Fetch one extra to check has_more
-      p_offset: offset,
+      p_limit: personalOnly ? 200 : limit + 1, // Fetch more when filtering client-side
+      p_offset: personalOnly ? 0 : offset,
       p_user_id: userId,
     });
 
@@ -128,7 +131,18 @@ router.get('/', async (req: Request, res: Response) => {
       return res.status(400).json({ ok: false, error: result.error });
     }
 
-    const recommendations = result.data || [];
+    let recommendations = result.data || [];
+
+    // Filter out system-wide (developer/operator) recommendations for community users
+    if (personalOnly && userId) {
+      recommendations = recommendations.filter((r: any) => r.user_id === userId);
+    }
+
+    // Apply pagination after filtering
+    if (personalOnly) {
+      recommendations = recommendations.slice(offset, offset + limit + 1);
+    }
+
     const hasMore = recommendations.length > limit;
     if (hasMore) {
       recommendations.pop(); // Remove the extra item
@@ -163,8 +177,27 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/count', async (req: Request, res: Response) => {
   try {
     const userId = getUserId(req);
+    const personalOnly = req.query.personal_only === 'true';
 
-    console.log(`${LOG_PREFIX} Recommendations count requested`);
+    console.log(`${LOG_PREFIX} Recommendations count requested (personal_only: ${personalOnly})`);
+
+    // When personal_only, we need to count only user-specific recs (not system-wide).
+    // The count RPC doesn't support this filter, so fetch recs and count manually.
+    if (personalOnly && userId) {
+      const result = await callRpc<any[]>('get_autopilot_recommendations', {
+        p_status: ['new'],
+        p_limit: 200,
+        p_offset: 0,
+        p_user_id: userId,
+      });
+      const recs = (result.data || []).filter((r: any) => r.user_id === userId);
+      return res.status(200).json({
+        ok: true,
+        count: recs.length,
+        vtid: 'VTID-01180',
+        timestamp: new Date().toISOString(),
+      });
+    }
 
     const result = await callRpc<number>('get_autopilot_recommendations_count', {
       p_user_id: userId,
