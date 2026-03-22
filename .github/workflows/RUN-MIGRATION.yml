@@ -1,0 +1,23 @@
+name: Run SQL Migration
+on:
+  workflow_dispatch:
+    inputs:
+      migration_file:
+        description: 'Migration file path (relative to repo root)'
+        required: true
+        default: 'supabase/migrations/20260321000000_community_user_analyzer.sql'
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply migration
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          sudo apt-get install -y postgresql-client > /dev/null 2>&1
+          echo "Applying migration: ${{ inputs.migration_file }}"
+          psql "$SUPABASE_DB_URL" -f "${{ inputs.migration_file }}"
+          echo "Migration applied successfully"
