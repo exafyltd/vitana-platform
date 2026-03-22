@@ -59,48 +59,46 @@ router.get('/', async (req: Request, res: Response) => {
 
     const query = (req.query.query as string || '').trim();
 
-    // Get all tenants
-    let dbQuery = supabase
+    // Flat queries — no nested PostgREST relations
+    let tenantsQuery = supabase
       .from('tenants')
-      .select('id, name, slug, created_at, updated_at')
+      .select('*')
       .order('name', { ascending: true });
 
     if (query) {
-      dbQuery = dbQuery.ilike('name', `%${query}%`);
+      tenantsQuery = tenantsQuery.ilike('name', `%${query}%`);
     }
 
-    const { data: tenants, error: tenantsError } = await dbQuery;
+    const [tenantsResult, membershipsResult] = await Promise.all([
+      tenantsQuery,
+      supabase.from('user_tenants').select('tenant_id'),
+    ]);
 
-    if (tenantsError) {
-      console.error(`[${VTID}] Tenants query error:`, tenantsError.message);
-      return res.status(500).json({ ok: false, error: tenantsError.message });
-    }
-
-    // Get user counts per tenant
-    const { data: memberships, error: membError } = await supabase
-      .from('user_tenants')
-      .select('tenant_id');
-
-    if (membError) {
-      console.error(`[${VTID}] Memberships query error:`, membError.message);
-      return res.status(500).json({ ok: false, error: membError.message });
+    if (tenantsResult.error) {
+      console.error(`[${VTID}] Tenants query error:`, tenantsResult.error.message);
+      return res.status(500).json({ ok: false, error: tenantsResult.error.message });
     }
 
     // Count per tenant
     const counts: Record<string, number> = {};
-    (memberships || []).forEach((m: any) => {
+    (membershipsResult.data || []).forEach((m: any) => {
       counts[m.tenant_id] = (counts[m.tenant_id] || 0) + 1;
     });
 
-    const result = (tenants || []).map((t: any) => ({
-      id: t.id,
-      name: t.name,
-      slug: t.slug,
-      user_count: counts[t.id] || 0,
-      status: (counts[t.id] || 0) > 0 ? 'Active' : 'Empty',
-      created_at: t.created_at,
-      updated_at: t.updated_at,
-    }));
+    const result = (tenantsResult.data || []).map((t: any) => {
+      // Use whatever PK the table has
+      const tenantId = t.id || t.tenant_id;
+      const userCount = counts[tenantId] || 0;
+      return {
+        id: tenantId,
+        name: t.name,
+        slug: t.slug,
+        user_count: userCount,
+        status: userCount > 0 ? 'Active' : 'Empty',
+        created_at: t.created_at,
+        updated_at: t.updated_at,
+      };
+    });
 
     console.log(`[${VTID}] Listed ${result.length} tenants`);
     return res.json({ ok: true, tenants: result });
@@ -122,48 +120,52 @@ router.get('/:id', async (req: Request, res: Response) => {
 
     const { id } = req.params;
 
-    // Get tenant info
-    const { data: tenant, error: tenantError } = await supabase
-      .from('tenants')
-      .select('id, name, slug, created_at, updated_at')
-      .eq('id', id)
-      .single();
+    // Try to find tenant by id (could be 'id' or 'tenant_id' column)
+    let tenantResult = await supabase.from('tenants').select('*').eq('id', id).single();
 
-    if (tenantError || !tenant) {
+    // If that fails, try slug as fallback
+    if (tenantResult.error) {
+      tenantResult = await supabase.from('tenants').select('*').eq('slug', id).single();
+    }
+
+    if (tenantResult.error || !tenantResult.data) {
       return res.status(404).json({ ok: false, error: 'TENANT_NOT_FOUND' });
     }
 
-    // Get members of this tenant
-    const { data: members, error: membersError } = await supabase
-      .from('user_tenants')
-      .select(`
-        user_id,
-        active_role,
-        is_primary,
-        app_users (
-          email,
-          display_name
-        )
-      `)
-      .eq('tenant_id', id);
+    const tenant = tenantResult.data as any;
+    const tenantId = tenant.id || tenant.tenant_id;
 
-    if (membersError) {
-      console.error(`[${VTID}] Members query error:`, membersError.message);
-      return res.status(500).json({ ok: false, error: membersError.message });
+    // Get members — flat query, then lookup user emails separately
+    const { data: memberships } = await supabase
+      .from('user_tenants')
+      .select('*')
+      .eq('tenant_id', tenantId);
+
+    // Get user details for members
+    const userIds = (memberships || []).map((m: any) => m.user_id);
+    let usersMap: Record<string, any> = {};
+    if (userIds.length > 0) {
+      const { data: users } = await supabase
+        .from('app_users')
+        .select('user_id, email, display_name')
+        .in('user_id', userIds);
+      (users || []).forEach((u: any) => {
+        usersMap[u.user_id] = u;
+      });
     }
 
     const result = {
-      id: (tenant as any).id,
-      name: (tenant as any).name,
-      slug: (tenant as any).slug,
-      user_count: (members || []).length,
-      status: (members || []).length > 0 ? 'Active' : 'Empty',
-      created_at: (tenant as any).created_at,
-      updated_at: (tenant as any).updated_at,
-      members: (members || []).map((m: any) => ({
+      id: tenantId,
+      name: tenant.name,
+      slug: tenant.slug,
+      user_count: (memberships || []).length,
+      status: (memberships || []).length > 0 ? 'Active' : 'Empty',
+      created_at: tenant.created_at,
+      updated_at: tenant.updated_at,
+      members: (memberships || []).map((m: any) => ({
         user_id: m.user_id,
-        email: m.app_users?.email || null,
-        display_name: m.app_users?.display_name || null,
+        email: usersMap[m.user_id]?.email || null,
+        display_name: usersMap[m.user_id]?.display_name || null,
         active_role: m.active_role,
         is_primary: m.is_primary,
       })),

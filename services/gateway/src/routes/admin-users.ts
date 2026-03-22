@@ -48,6 +48,19 @@ async function verifyExafyAdmin(
   }
 }
 
+// ── Helper: build tenant lookup map ─────────────────────────
+
+async function getTenantMap(supabase: any): Promise<Record<string, { name: string; slug: string }>> {
+  const { data: tenants } = await supabase.from('tenants').select('*');
+  const map: Record<string, { name: string; slug: string }> = {};
+  (tenants || []).forEach((t: any) => {
+    // Use whatever PK the table has — check for 'id' or 'tenant_id'
+    const key = t.id || t.tenant_id;
+    if (key) map[key] = { name: t.name || t.slug || 'Unknown', slug: t.slug || '' };
+  });
+  return map;
+}
+
 // ── GET / — List users with tenant/role info ────────────────
 
 router.get('/', async (req: Request, res: Response) => {
@@ -63,45 +76,41 @@ router.get('/', async (req: Request, res: Response) => {
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
     const offset = parseInt(req.query.offset as string) || 0;
 
-    // Query app_users joined with user_tenants and tenants
-    let dbQuery = supabase
+    // 1. Get users (flat query, no nested relations)
+    let usersQuery = supabase
       .from('app_users')
-      .select(`
-        user_id,
-        email,
-        display_name,
-        avatar_url,
-        created_at,
-        updated_at,
-        user_tenants (
-          tenant_id,
-          active_role,
-          is_primary,
-          tenants (
-            id,
-            name,
-            slug
-          )
-        )
-      `)
+      .select('*')
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
     if (query) {
-      dbQuery = dbQuery.ilike('email', `%${query}%`);
+      usersQuery = usersQuery.ilike('email', `%${query}%`);
     }
 
-    const { data: users, error } = await dbQuery;
+    // 2. Get all memberships and tenants in parallel
+    const [usersResult, membershipsResult, tenantMap] = await Promise.all([
+      usersQuery,
+      supabase.from('user_tenants').select('*'),
+      getTenantMap(supabase),
+    ]);
 
-    if (error) {
-      console.error(`[${VTID}] Query error:`, error.message);
-      return res.status(500).json({ ok: false, error: error.message });
+    if (usersResult.error) {
+      console.error(`[${VTID}] Users query error:`, usersResult.error.message);
+      return res.status(500).json({ ok: false, error: usersResult.error.message });
     }
 
-    // Flatten: each user gets their primary membership info at top level
-    const flatUsers = (users || []).map((u: any) => {
-      const memberships = u.user_tenants || [];
+    // Build membership lookup by user_id
+    const membershipsByUser: Record<string, any[]> = {};
+    (membershipsResult.data || []).forEach((m: any) => {
+      if (!membershipsByUser[m.user_id]) membershipsByUser[m.user_id] = [];
+      membershipsByUser[m.user_id].push(m);
+    });
+
+    // 3. Flatten: each user gets their primary membership info at top level
+    const flatUsers = (usersResult.data || []).map((u: any) => {
+      const memberships = membershipsByUser[u.user_id] || [];
       const primary = memberships.find((m: any) => m.is_primary) || memberships[0] || null;
+      const tenantInfo = primary ? tenantMap[primary.tenant_id] : null;
 
       return {
         user_id: u.user_id,
@@ -109,7 +118,7 @@ router.get('/', async (req: Request, res: Response) => {
         display_name: u.display_name,
         avatar_url: u.avatar_url,
         active_role: primary?.active_role || null,
-        tenant_name: primary?.tenants?.name || null,
+        tenant_name: tenantInfo?.name || null,
         tenant_id: primary?.tenant_id || null,
         is_primary: primary?.is_primary || false,
         status: memberships.length > 0 ? 'Active' : 'Inactive',
@@ -117,15 +126,15 @@ router.get('/', async (req: Request, res: Response) => {
         updated_at: u.updated_at,
         memberships: memberships.map((m: any) => ({
           tenant_id: m.tenant_id,
-          tenant_name: m.tenants?.name || null,
-          tenant_slug: m.tenants?.slug || null,
+          tenant_name: tenantMap[m.tenant_id]?.name || null,
+          tenant_slug: tenantMap[m.tenant_id]?.slug || null,
           active_role: m.active_role,
           is_primary: m.is_primary,
         })),
       };
     });
 
-    // Filter by role if requested (post-query since it's on nested relation)
+    // Filter by role if requested
     const filtered = role
       ? flatUsers.filter((u: any) => u.memberships.some((m: any) => m.active_role === role))
       : flatUsers;
@@ -148,7 +157,6 @@ router.get('/roles-summary', async (req: Request, res: Response) => {
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
-    // Get all user_tenants to count by role
     const { data: memberships, error } = await supabase
       .from('user_tenants')
       .select('active_role');
@@ -158,14 +166,12 @@ router.get('/roles-summary', async (req: Request, res: Response) => {
       return res.status(500).json({ ok: false, error: error.message });
     }
 
-    // Count by role
     const counts: Record<string, number> = {};
     (memberships || []).forEach((m: any) => {
       const role = m.active_role || 'unknown';
       counts[role] = (counts[role] || 0) + 1;
     });
 
-    // All valid roles (include even those with 0 users)
     const ALL_ROLES = ['community', 'patient', 'professional', 'staff', 'admin', 'developer', 'infra'];
     const roles = ALL_ROLES.map(role => ({
       role,
@@ -192,53 +198,38 @@ router.get('/:userId', async (req: Request, res: Response) => {
 
     const { userId } = req.params;
 
-    const { data: user, error } = await supabase
-      .from('app_users')
-      .select(`
-        user_id,
-        email,
-        display_name,
-        avatar_url,
-        bio,
-        created_at,
-        updated_at,
-        user_tenants (
-          tenant_id,
-          active_role,
-          is_primary,
-          tenants (
-            id,
-            name,
-            slug
-          )
-        )
-      `)
-      .eq('user_id', userId)
-      .single();
+    // Flat queries — no nested PostgREST relations
+    const [userResult, membershipsResult, tenantMap] = await Promise.all([
+      supabase.from('app_users').select('*').eq('user_id', userId).single(),
+      supabase.from('user_tenants').select('*').eq('user_id', userId),
+      getTenantMap(supabase),
+    ]);
 
-    if (error || !user) {
+    if (userResult.error || !userResult.data) {
       return res.status(404).json({ ok: false, error: 'USER_NOT_FOUND' });
     }
 
-    const memberships = (user as any).user_tenants || [];
+    const u = userResult.data as any;
+    const memberships = (membershipsResult.data || []) as any[];
     const primary = memberships.find((m: any) => m.is_primary) || memberships[0] || null;
+    const tenantInfo = primary ? tenantMap[primary.tenant_id] : null;
 
     const result = {
-      user_id: (user as any).user_id,
-      email: (user as any).email,
-      display_name: (user as any).display_name,
-      avatar_url: (user as any).avatar_url,
-      bio: (user as any).bio,
+      user_id: u.user_id,
+      email: u.email,
+      display_name: u.display_name,
+      avatar_url: u.avatar_url,
+      bio: u.bio,
       active_role: primary?.active_role || null,
-      tenant_name: primary?.tenants?.name || null,
+      tenant_name: tenantInfo?.name || null,
       tenant_id: primary?.tenant_id || null,
       status: memberships.length > 0 ? 'Active' : 'Inactive',
-      created_at: (user as any).created_at,
-      updated_at: (user as any).updated_at,
+      created_at: u.created_at,
+      updated_at: u.updated_at,
       memberships: memberships.map((m: any) => ({
         tenant_id: m.tenant_id,
-        tenant_name: m.tenants?.name || null,
-        tenant_slug: m.tenants?.slug || null,
+        tenant_name: tenantMap[m.tenant_id]?.name || null,
+        tenant_slug: tenantMap[m.tenant_id]?.slug || null,
         active_role: m.active_role,
         is_primary: m.is_primary,
       })),
