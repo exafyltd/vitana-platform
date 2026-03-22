@@ -292,13 +292,15 @@ router.get('/', cors(corsOptions), async (req: Request, res: Response) => {
         }
       }
 
-      // VTID-01009: Check for lifecycle.started event → IN_PROGRESS
-      // This is authoritative: if OASIS has a started event and no terminal event,
+      // VTID-01009: Check for lifecycle.started OR execution_approved event → IN_PROGRESS
+      // This is authoritative: if OASIS has a started/execution_approved event and no terminal event,
       // the task is IN_PROGRESS regardless of ledger status or local overrides
+      // VTID-01843: Also recognize execution_approved (the awaited, canonical event)
       if (!isTerminal) {
-        const lifecycleStartedEvent = currentAttemptEvents.find((e: any) =>
-          (e.topic || '').toLowerCase() === 'vtid.lifecycle.started'
-        );
+        const lifecycleStartedEvent = currentAttemptEvents.find((e: any) => {
+          const topic = (e.topic || '').toLowerCase();
+          return topic === 'vtid.lifecycle.started' || topic === 'vtid.lifecycle.execution_approved';
+        });
         if (lifecycleStartedEvent) {
           column = 'IN_PROGRESS';
           derivedStatus = 'in_progress';

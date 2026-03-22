@@ -1499,38 +1499,52 @@ router.post("/api/v1/vtid/lifecycle/start", async (req: Request, res: Response) 
       },
     };
 
-    // Fire and forget for legacy event - don't block on it
-    fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: svcKey,
-        Authorization: `Bearer ${svcKey}`,
-      },
-      body: JSON.stringify(startedPayload),
-    }).catch(err => {
-      console.warn(`[VTID-01194] Legacy started event insert failed (non-blocking): ${err.message}`);
-    });
-
-    // Update the vtid_ledger status to in_progress
-    const ledgerUpdateResp = await fetch(
-      `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${body.vtid}`,
-      {
-        method: "PATCH",
+    // VTID-01843: Await legacy started event (was fire-and-forget, caused race condition)
+    try {
+      const startedResp = await fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
+        method: "POST",
         headers: {
           "Content-Type": "application/json",
           apikey: svcKey,
           Authorization: `Bearer ${svcKey}`,
         },
-        body: JSON.stringify({
-          status: "in_progress",
-          updated_at: timestamp,
-        }),
+        body: JSON.stringify(startedPayload),
+      });
+      if (!startedResp.ok) {
+        console.warn(`[VTID-01194] Legacy started event insert failed: ${startedResp.status}`);
       }
-    );
+    } catch (err: any) {
+      console.warn(`[VTID-01194] Legacy started event insert failed: ${err.message}`);
+    }
 
-    if (!ledgerUpdateResp.ok) {
-      console.warn(`[VTID-01194] Ledger update failed for ${body.vtid}, but execution_approved event was emitted`);
+    // Update the vtid_ledger status to in_progress (with retry)
+    let ledgerUpdateOk = false;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const ledgerUpdateResp = await fetch(
+        `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${body.vtid}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: svcKey,
+            Authorization: `Bearer ${svcKey}`,
+          },
+          body: JSON.stringify({
+            status: "in_progress",
+            updated_at: timestamp,
+          }),
+        }
+      );
+
+      if (ledgerUpdateResp.ok) {
+        ledgerUpdateOk = true;
+        break;
+      }
+      console.warn(`[VTID-01194] Ledger update attempt ${attempt} failed for ${body.vtid}: ${ledgerUpdateResp.status}`);
+    }
+
+    if (!ledgerUpdateOk) {
+      console.error(`[VTID-01194] Ledger update failed after retries for ${body.vtid}, but execution_approved event was emitted`);
     }
 
     // VTID-01194: Return response indicating execution will start
