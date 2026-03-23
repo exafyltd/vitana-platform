@@ -170,6 +170,18 @@ async function checkPipelineEvidence(
           evidence.has_deploy_success = true;
           evidence.events_found.push('event:vtid.lifecycle.completed');
         }
+
+        // Autopilot worker execution completed (autonomous pipeline — no separate PR/merge/deploy)
+        if (
+          topic === 'worker_runner.exec_completed' &&
+          event.status === 'success'
+        ) {
+          evidence.has_pr_created = true;
+          evidence.has_merged = true;
+          evidence.has_validator_passed = true;
+          evidence.has_deploy_success = true;
+          evidence.events_found.push('event:worker_runner.exec_completed');
+        }
       }
     }
   } catch (e: any) {
