@@ -156,7 +156,7 @@ export const GEMINI_TOOL_DEFINITIONS = {
   functionDeclarations: [
     {
       name: 'autopilot_create_task',
-      description: 'Create a new Autopilot task in the Vitana system. This will create a VTID, register the task, and trigger planning. You MUST call this tool whenever the user asks to create, log, or schedule a task. Do not ask for more details — use whatever description is available from the conversation.',
+      description: 'Create a new Autopilot task in the Vitana system. This will create a VTID, register the task, and trigger planning. Only call this tool when you have a clear description of what the task should accomplish. If the user\'s request is vague (e.g., just "create a task" without details), ask them for a title and description FIRST before calling this tool.',
       parameters: {
         type: 'object',
         properties: {
@@ -2383,7 +2383,9 @@ function getOperatorSystemPrompt(): string {
 - Calculations, date math, age calculations, unit conversions → use run_code
 
 **CRITICAL TASK CREATION RULES:**
-- When the user asks to create a task (e.g., "create a task", "make a ticket", "log this", "fix this"), IMMEDIATELY call autopilot_create_task with the description from the conversation. Do NOT ask clarifying questions — use whatever context the user has already provided.
+- When the user asks to create a task, check if they provided a meaningful description of what the task should accomplish.
+  - If YES (e.g., "Create a task to deploy the gateway to production"): call autopilot_create_task immediately.
+  - If NO (e.g., "create a task", "make a new ticket", "log this"): ask the user for a title and description BEFORE calling the tool. Example: "Sure! What should this task be about? Please give me a title and a brief description."
 - NEVER generate fake VTID numbers. VTIDs are only created by the autopilot_create_task tool.
 - NEVER claim a task was created unless the tool returned a successful result.
 - If a tool call fails, tell the user honestly.`;
@@ -3108,35 +3110,12 @@ async function processLocalRouting(text: string, threadId: string): Promise<Gemi
     }
   }
 
-  // Detect task creation requests
-  if (
-    lowerText.includes('create') && lowerText.includes('task') ||
-    lowerText.includes('new task') ||
-    lowerText.includes('add a task') ||
-    lowerText.match(/create.*autopilot/i)
-  ) {
-    // Extract description - take everything after "task" keyword or use full text
-    let description = text;
-    const taskMatch = text.match(/(?:create\s+(?:a\s+)?task\s+(?:to\s+)?|new\s+task[:\s]+|add\s+(?:a\s+)?task\s+(?:to\s+)?)(.*)/i);
-    if (taskMatch && taskMatch[1]) {
-      description = taskMatch[1].trim();
-    }
-
-    const result = await executeTool('autopilot_create_task', { description }, threadId);
-    toolResults.push({
-      name: 'autopilot_create_task',
-      response: {
-        ok: result.ok,
-        ...result.data,
-        error: result.error,
-        governanceBlocked: result.governanceBlocked
-      }
-    });
-  }
+  // Task creation requests are now handled by Gemini's tool-calling flow
+  // (no hardcoded shortcut — let the AI ask for details when needed)
 
   // Detect status requests
   // VTID-01007: Updated to match 4-5 digit VTIDs
-  else if (
+  if (
     lowerText.includes('status') ||
     lowerText.match(/what.*vtid/i) ||
     lowerText.match(/vtid-\d{4,5}/i)
