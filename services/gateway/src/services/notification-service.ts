@@ -408,15 +408,20 @@ export async function notifyUser(
     }
   }
 
-  // ── 5. Send FCM web push + Appilix native push ─────────
+  // ── 5. Send push — FCM first, Appilix as fallback ──────
+  // Only send ONE push per user to avoid duplicate notifications.
+  // FCM covers desktop Chrome + mobile Chrome; Appilix covers Maxina app
+  // users who have no FCM tokens registered.
   let pushed = 0;
   let appilixSent = false;
   if (shouldSendPush) {
-    // FCM web push (desktop Chrome, mobile Chrome)
+    // Try FCM first (delivers to all registered device tokens)
     pushed = await sendPushToUser(userId, tenantId, payload, supabase);
 
-    // Appilix native push (Maxina Android app)
-    appilixSent = await sendAppilixPush(userId, payload);
+    // Appilix native push only if no FCM tokens delivered
+    if (pushed === 0) {
+      appilixSent = await sendAppilixPush(userId, payload);
+    }
   }
 
   console.log(
