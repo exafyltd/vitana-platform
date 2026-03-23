@@ -379,10 +379,12 @@ export async function notifyUser(
     (prefs ? prefs.push_enabled !== false : true);
 
   // ── 4. Write in-app notification record ──────────────────
+  // When shouldSendPush is true, set push_sent_at at INSERT time to prevent
+  // the 30-second push-dispatch cron from picking it up and sending a duplicate.
   let inappWritten = false;
   let notificationId: string | null = null;
   if (shouldWriteInapp) {
-    const { data: inserted, error } = await supabase.from('user_notifications').insert({
+    const insertData: Record<string, any> = {
       user_id: userId,
       tenant_id: tenantId,
       type,
@@ -391,7 +393,13 @@ export async function notifyUser(
       title: payload.title,
       body: payload.body,
       data: payload.data || {},
-    }).select('id').single();
+    };
+    if (shouldSendPush) {
+      insertData.push_sent_at = new Date().toISOString();
+    }
+    const { data: inserted, error } = await supabase.from('user_notifications')
+      .insert(insertData)
+      .select('id').single();
     if (error) {
       console.error(`[Notifications] inapp write failed for ${type}:`, error.message);
     } else {
@@ -409,13 +417,6 @@ export async function notifyUser(
 
     // Appilix native push (Maxina Android app)
     appilixSent = await sendAppilixPush(userId, payload);
-
-    // Mark as push-sent so the dispatch cron skips this row
-    if ((pushed > 0 || appilixSent) && notificationId) {
-      await supabase.from('user_notifications')
-        .update({ push_sent_at: new Date().toISOString() })
-        .eq('id', notificationId);
-    }
   }
 
   console.log(
