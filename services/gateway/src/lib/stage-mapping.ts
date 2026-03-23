@@ -34,7 +34,7 @@ const STAGE_KEYWORDS: Record<TaskStage, string[]> = {
   DEPLOY: [
     'deploy', 'deploying', 'deployment', 'release', 'releasing', 'publish',
     'publishing', 'ship', 'shipping', 'rollout', 'live', 'production', 'prod',
-    'promote', 'promoting', 'complete', 'completed', 'done', 'finish', 'finished'
+    'promote', 'promoting'
   ]
 };
 

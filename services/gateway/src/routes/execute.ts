@@ -38,6 +38,7 @@ import { Router, Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import { randomUUID } from "crypto";
 import { emitOasisEvent } from "../services/oasis-event-service";
+import { TaskStage } from "../lib/stage-mapping";
 
 export const router = Router();
 
@@ -159,6 +160,7 @@ interface ExecutionContext {
 type ExecutionStage =
   | "requested"
   | "started"
+  | "planner.success"
   | "worker.started"
   | "worker.success"
   | "worker.failed"
@@ -573,8 +575,24 @@ async function createTask(
 // =============================================================================
 
 /**
+ * VTID-01874: Derive canonical TaskStage from ExecutionStage string.
+ * Ensures emitted events carry explicit task_stage, eliminating
+ * dependence on keyword inference in buildStageTimeline.
+ */
+function deriveTaskStage(stage: ExecutionStage): TaskStage | undefined {
+  if (stage.startsWith('planner.')) return 'PLANNER';
+  if (stage.startsWith('worker.')) return 'WORKER';
+  if (stage.startsWith('validator.')) return 'VALIDATOR';
+  if (stage.startsWith('deploy.')) return 'DEPLOY';
+  if (stage === 'requested' || stage === 'started') return 'PLANNER';
+  if (stage === 'completed') return 'DEPLOY';
+  return undefined;
+}
+
+/**
  * Emit execution stage event to OASIS
  * VTID-01150: Updated to use vtid-runner-v2 source
+ * VTID-01874: Now sets explicit task_stage for correct timeline mapping
  */
 async function emitStageEvent(
   ctx: ExecutionContext,
@@ -583,10 +601,12 @@ async function emitStageEvent(
   message: string,
   payload: Record<string, unknown> = {}
 ): Promise<void> {
+  const taskStage = deriveTaskStage(stage);
+
   await emitOasisEvent({
     vtid: ctx.vtid,
     type: `vtid.execute.${stage}`,
-    source: "vtid-runner-v2", // VTID-01150: Updated from v1 to v2
+    source: "vtid-runner-v2",
     status,
     message,
     payload: {
@@ -596,6 +616,7 @@ async function emitStageEvent(
       stage,
       ...payload,
     },
+    ...(taskStage && { task_stage: taskStage }),
   });
 }
 
@@ -1300,6 +1321,12 @@ router.post("/vtid", async (req: Request, res: Response) => {
 
     // Step 4: Emit execution requested event
     await emitStageEvent(ctx, "requested", "info", `VTID execution requested: ${vtid}`);
+
+    // Step 4.5: VTID-01874 - Emit planner.success (spec loaded, task validated)
+    await emitStageEvent(ctx, "planner.success", "success", `Planning stage passed for ${vtid}`, {
+      task_found: true,
+      spec_present: !!spec,
+    });
 
     // Step 5: Update task status to "scheduled" (queued for execution)
     // Status moves to "in_progress" only when work actually starts in executeWorker

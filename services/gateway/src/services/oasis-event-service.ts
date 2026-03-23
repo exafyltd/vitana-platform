@@ -39,6 +39,8 @@ export async function emitOasisEvent(event: CicdOasisEvent): Promise<{ ok: boole
     ...(event.actor_role && { actor_role: event.actor_role }),
     ...(event.surface && { surface: event.surface }),
     ...(event.conversation_turn_id && { conversation_turn_id: event.conversation_turn_id }),
+    // VTID-01874: Explicit stage annotation for correct timeline mapping
+    ...(event.task_stage && { task_stage: event.task_stage }),
   };
 
   try {

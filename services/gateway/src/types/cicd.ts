@@ -378,6 +378,7 @@ export type CicdEventType =
   // VTID-01146: Execute VTID Runner Events (One-Button End-to-End Pipeline)
   | 'vtid.execute.requested'
   | 'vtid.execute.started'
+  | 'vtid.execute.planner.success'
   | 'vtid.execute.worker.started'
   | 'vtid.execute.worker.success'
   | 'vtid.execute.worker.failed'
@@ -530,6 +531,8 @@ export interface CicdOasisEvent {
   actor_role?: 'user' | 'operator' | 'admin' | 'system' | 'agent';
   surface?: 'orb' | 'operator' | 'command-hub' | 'cicd' | 'system' | 'api';
   conversation_turn_id?: string;
+  // VTID-01874: Explicit stage annotation for correct timeline mapping
+  task_stage?: 'PLANNER' | 'WORKER' | 'VALIDATOR' | 'DEPLOY';
 }
 
 // ==================== Allowed Services for Deploy ====================
