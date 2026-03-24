@@ -829,7 +829,8 @@ async function fetchAuthMe(fallbackEmail) {
             role: roleLabel,
             avatar: initials,
             email: email,
-            avatarUrl: profile.avatar_url || null
+            avatarUrl: profile.avatar_url || null,
+            bio: profile.bio || ''
         };
 
         return data;
@@ -2907,6 +2908,13 @@ const state = {
     // VTID-01230: Role Admission — permitted roles for dropdown filtering
     permittedRoles: null, // Array of lowercase role strings, or null if not yet fetched
     isSuperAdmin: false, // true if exafy_admin — sees all roles
+
+    // VTID-01867: Edit Profile state
+    editingProfile: false,
+    editProfileName: undefined,
+    editProfileBio: undefined,
+    editProfileSaving: false,
+    editProfileError: null,
 
     // VTID-01186: Login Form State
     loginEmail: '',
@@ -8372,23 +8380,179 @@ function renderProfileModal() {
     badge.textContent = state.viewRole || 'Developer';
     body.appendChild(badge);
 
-    // VTID-01186: Edit Profile link (matching vitana-v1 design)
-    const editProfileLink = document.createElement('div');
-    editProfileLink.className = 'profile-edit-link';
-    editProfileLink.style.display = 'flex';
-    editProfileLink.style.alignItems = 'center';
-    editProfileLink.style.justifyContent = 'center';
-    editProfileLink.style.gap = '6px';
-    editProfileLink.style.marginTop = '12px';
-    editProfileLink.style.marginBottom = '16px';
-    editProfileLink.style.color = 'var(--color-text-secondary, #888)';
-    editProfileLink.style.cursor = 'pointer';
-    editProfileLink.style.fontSize = '0.9rem';
-    editProfileLink.innerHTML = '<span style="font-size: 1rem;">&#9998;</span> Edit Profile';
-    editProfileLink.onclick = function () {
-        showToast('Edit Profile coming soon', 'info');
-    };
-    body.appendChild(editProfileLink);
+    // VTID-01867: Edit Profile — inline edit form or link
+    if (state.editingProfile) {
+        // Render inline edit form
+        const editForm = document.createElement('div');
+        editForm.className = 'profile-edit-form';
+        editForm.style.width = '100%';
+        editForm.style.marginTop = '12px';
+        editForm.style.marginBottom = '16px';
+
+        // Display name field
+        const nameGroup = document.createElement('div');
+        nameGroup.style.marginBottom = '10px';
+        const nameLabel = document.createElement('label');
+        nameLabel.textContent = 'Display Name';
+        nameLabel.style.display = 'block';
+        nameLabel.style.marginBottom = '4px';
+        nameLabel.style.fontWeight = '500';
+        nameLabel.style.fontSize = '0.85rem';
+        nameGroup.appendChild(nameLabel);
+
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.className = 'form-control';
+        nameInput.value = state.editProfileName !== undefined ? state.editProfileName : (state.user.name || '');
+        nameInput.placeholder = 'Your display name';
+        nameInput.maxLength = 100;
+        nameInput.style.width = '100%';
+        nameInput.style.padding = '8px 12px';
+        nameInput.style.border = '1px solid var(--border-color, #ccc)';
+        nameInput.style.borderRadius = '4px';
+        nameInput.style.boxSizing = 'border-box';
+        nameInput.disabled = state.editProfileSaving;
+        nameInput.oninput = function (e) { state.editProfileName = e.target.value; };
+        nameGroup.appendChild(nameInput);
+        editForm.appendChild(nameGroup);
+
+        // Bio field
+        const bioGroup = document.createElement('div');
+        bioGroup.style.marginBottom = '10px';
+        const bioLabel = document.createElement('label');
+        bioLabel.textContent = 'Bio';
+        bioLabel.style.display = 'block';
+        bioLabel.style.marginBottom = '4px';
+        bioLabel.style.fontWeight = '500';
+        bioLabel.style.fontSize = '0.85rem';
+        bioGroup.appendChild(bioLabel);
+
+        const bioInput = document.createElement('textarea');
+        bioInput.className = 'form-control';
+        bioInput.value = state.editProfileBio !== undefined ? state.editProfileBio : (state.user.bio || '');
+        bioInput.placeholder = 'Tell us about yourself';
+        bioInput.maxLength = 500;
+        bioInput.rows = 3;
+        bioInput.style.width = '100%';
+        bioInput.style.padding = '8px 12px';
+        bioInput.style.border = '1px solid var(--border-color, #ccc)';
+        bioInput.style.borderRadius = '4px';
+        bioInput.style.boxSizing = 'border-box';
+        bioInput.style.resize = 'vertical';
+        bioInput.disabled = state.editProfileSaving;
+        bioInput.oninput = function (e) { state.editProfileBio = e.target.value; };
+        bioGroup.appendChild(bioInput);
+        editForm.appendChild(bioGroup);
+
+        // Error message
+        if (state.editProfileError) {
+            const errorEl = document.createElement('div');
+            errorEl.textContent = state.editProfileError;
+            errorEl.style.color = 'var(--color-error, #e53e3e)';
+            errorEl.style.fontSize = '0.8rem';
+            errorEl.style.marginBottom = '8px';
+            editForm.appendChild(errorEl);
+        }
+
+        // Button row
+        const btnRow = document.createElement('div');
+        btnRow.style.display = 'flex';
+        btnRow.style.gap = '8px';
+        btnRow.style.justifyContent = 'center';
+
+        const saveBtn = document.createElement('button');
+        saveBtn.textContent = state.editProfileSaving ? 'Saving...' : 'Save';
+        saveBtn.className = 'btn btn-primary';
+        saveBtn.style.padding = '6px 20px';
+        saveBtn.style.border = 'none';
+        saveBtn.style.borderRadius = '4px';
+        saveBtn.style.cursor = state.editProfileSaving ? 'not-allowed' : 'pointer';
+        saveBtn.style.backgroundColor = 'var(--color-primary, #4a90d9)';
+        saveBtn.style.color = '#fff';
+        saveBtn.style.fontWeight = '500';
+        saveBtn.disabled = state.editProfileSaving;
+        saveBtn.onclick = async function () {
+            state.editProfileSaving = true;
+            state.editProfileError = null;
+            renderApp();
+            try {
+                var resp = await fetch('/api/v1/auth/profile', {
+                    method: 'PUT',
+                    headers: Object.assign({ 'Content-Type': 'application/json' }, buildContextHeaders()),
+                    body: JSON.stringify({
+                        display_name: state.editProfileName !== undefined ? state.editProfileName : state.user.name,
+                        bio: state.editProfileBio !== undefined ? state.editProfileBio : (state.user.bio || ''),
+                    }),
+                });
+                var result = await resp.json();
+                if (!resp.ok || !result.ok) {
+                    state.editProfileError = result.error || 'Failed to save profile.';
+                    state.editProfileSaving = false;
+                    renderApp();
+                    return;
+                }
+                // Success — refresh identity and exit edit mode
+                state.editingProfile = false;
+                state.editProfileSaving = false;
+                state.editProfileError = null;
+                state.editProfileName = undefined;
+                state.editProfileBio = undefined;
+                await fetchAuthMe();
+                showToast('Profile updated', 'success');
+                renderApp();
+            } catch (err) {
+                state.editProfileError = 'Network error. Please try again.';
+                state.editProfileSaving = false;
+                renderApp();
+            }
+        };
+        btnRow.appendChild(saveBtn);
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.className = 'btn';
+        cancelBtn.style.padding = '6px 20px';
+        cancelBtn.style.border = '1px solid var(--border-color, #ccc)';
+        cancelBtn.style.borderRadius = '4px';
+        cancelBtn.style.cursor = 'pointer';
+        cancelBtn.style.backgroundColor = 'transparent';
+        cancelBtn.style.color = 'var(--color-text, #333)';
+        cancelBtn.disabled = state.editProfileSaving;
+        cancelBtn.onclick = function () {
+            state.editingProfile = false;
+            state.editProfileError = null;
+            state.editProfileName = undefined;
+            state.editProfileBio = undefined;
+            renderApp();
+        };
+        btnRow.appendChild(cancelBtn);
+
+        editForm.appendChild(btnRow);
+        body.appendChild(editForm);
+    } else {
+        // VTID-01186: Edit Profile link (matching vitana-v1 design)
+        const editProfileLink = document.createElement('div');
+        editProfileLink.className = 'profile-edit-link';
+        editProfileLink.style.display = 'flex';
+        editProfileLink.style.alignItems = 'center';
+        editProfileLink.style.justifyContent = 'center';
+        editProfileLink.style.gap = '6px';
+        editProfileLink.style.marginTop = '12px';
+        editProfileLink.style.marginBottom = '16px';
+        editProfileLink.style.color = 'var(--color-text-secondary, #888)';
+        editProfileLink.style.cursor = 'pointer';
+        editProfileLink.style.fontSize = '0.9rem';
+        editProfileLink.innerHTML = '<span style="font-size: 1rem;">&#9998;</span> Edit Profile';
+        editProfileLink.onclick = function () {
+            state.editingProfile = true;
+            state.editProfileName = state.user.name || '';
+            state.editProfileBio = state.user.bio || '';
+            state.editProfileError = null;
+            state.editProfileSaving = false;
+            renderApp();
+        };
+        body.appendChild(editProfileLink);
+    }
 
     // VTID-01171: Show active tenant if available
     if (state.authIdentity && state.authIdentity.identity && state.authIdentity.identity.tenant_id) {

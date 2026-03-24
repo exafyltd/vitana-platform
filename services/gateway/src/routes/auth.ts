@@ -6,6 +6,7 @@
  * - GET /config - Returns Supabase config for frontend auth (no auth required)
  * - POST /login - Email/password login via Supabase (no auth required)
  * - GET /me - Returns the authenticated user's identity
+ * - PUT /profile - Update the authenticated user's profile (VTID-01867)
  *
  * This endpoint verifies the Supabase JWT and returns identity claims
  * extracted from the token.
@@ -496,6 +497,92 @@ router.get('/me/debug', requireAuth, async (req: AuthenticatedRequest, res: Resp
     identity,
     raw_claims: req.auth_raw_claims,
   });
+});
+
+/**
+ * VTID-01867: PUT /profile
+ *
+ * Update the authenticated user's profile (display_name, bio).
+ * Persists to the app_users table.
+ *
+ * Request body:
+ * {
+ *   "display_name"?: string,
+ *   "bio"?: string
+ * }
+ *
+ * Response (success - 200):
+ * {
+ *   "ok": true,
+ *   "profile": { "display_name": "...", "avatar_url": "...", "bio": "..." }
+ * }
+ */
+router.put('/profile', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const identity = req.identity!;
+  const { display_name, bio } = req.body || {};
+
+  console.log(
+    `[VTID-01867] PUT /auth/profile - user_id=${identity.user_id} display_name=${display_name}`
+  );
+
+  // Validate: at least one field must be provided
+  if (display_name === undefined && bio === undefined) {
+    return res.status(400).json({ ok: false, error: 'No fields to update. Provide display_name or bio.' });
+  }
+
+  // Validate display_name if provided
+  if (display_name !== undefined) {
+    if (typeof display_name !== 'string' || display_name.trim().length === 0) {
+      return res.status(400).json({ ok: false, error: 'display_name must be a non-empty string.' });
+    }
+    if (display_name.trim().length > 100) {
+      return res.status(400).json({ ok: false, error: 'display_name must be 100 characters or less.' });
+    }
+  }
+
+  // Validate bio if provided
+  if (bio !== undefined && typeof bio !== 'string') {
+    return res.status(400).json({ ok: false, error: 'bio must be a string.' });
+  }
+  if (bio !== undefined && bio.length > 500) {
+    return res.status(400).json({ ok: false, error: 'bio must be 500 characters or less.' });
+  }
+
+  const supabase = getSupabase();
+  if (!supabase) {
+    return res.status(503).json({ ok: false, error: 'Database not available.' });
+  }
+
+  try {
+    const updates: Record<string, string> = {};
+    if (display_name !== undefined) updates.display_name = display_name.trim();
+    if (bio !== undefined) updates.bio = bio.trim();
+
+    const { data, error } = await supabase
+      .from('app_users')
+      .update(updates)
+      .eq('user_id', identity.user_id)
+      .select('display_name, avatar_url, bio')
+      .single();
+
+    if (error) {
+      console.error(`[VTID-01867] Profile update failed: ${error.message}`);
+      return res.status(500).json({ ok: false, error: 'Failed to update profile.' });
+    }
+
+    console.log(`[VTID-01867] Profile updated for ${identity.user_id}`);
+    return res.status(200).json({
+      ok: true,
+      profile: {
+        display_name: data.display_name || undefined,
+        avatar_url: data.avatar_url || undefined,
+        bio: data.bio || undefined,
+      },
+    });
+  } catch (err: any) {
+    console.error(`[VTID-01867] Profile update exception: ${err.message}`);
+    return res.status(500).json({ ok: false, error: 'Internal server error.' });
+  }
 });
 
 /**
