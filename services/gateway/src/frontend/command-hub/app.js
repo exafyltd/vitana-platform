@@ -761,9 +761,10 @@ async function fetchAuthMe(fallbackEmail) {
     state.authIdentityError = null;
 
     try {
-        var response = await fetch('/api/v1/auth/me', {
+        var response = await fetch('/api/v1/auth/me?_t=' + Date.now(), {
             method: 'GET',
-            headers: buildContextHeaders()
+            headers: buildContextHeaders(),
+            cache: 'no-store'
         });
 
         var data = await response.json();
@@ -8472,26 +8473,44 @@ function renderProfileModal() {
         saveBtn.style.fontWeight = '500';
         saveBtn.disabled = state.editProfileSaving;
         saveBtn.onclick = async function () {
+            // Capture values before any re-render to avoid losing them
+            var nameToSave = state.editProfileName !== undefined ? state.editProfileName : (state.user.name || '');
+            var bioToSave = state.editProfileBio !== undefined ? state.editProfileBio : (state.user.bio || '');
+
             state.editProfileSaving = true;
             state.editProfileError = null;
             renderApp();
             try {
+                console.log('[VTID-01867] Saving profile: display_name=' + nameToSave);
                 var resp = await fetch('/api/v1/auth/profile', {
                     method: 'PUT',
                     headers: Object.assign({ 'Content-Type': 'application/json' }, buildContextHeaders()),
                     body: JSON.stringify({
-                        display_name: state.editProfileName !== undefined ? state.editProfileName : state.user.name,
-                        bio: state.editProfileBio !== undefined ? state.editProfileBio : (state.user.bio || ''),
+                        display_name: nameToSave,
+                        bio: bioToSave,
                     }),
                 });
-                var result = await resp.json();
+                console.log('[VTID-01867] PUT /profile response status=' + resp.status);
+                var resultText = await resp.text();
+                var result;
+                try {
+                    result = JSON.parse(resultText);
+                } catch (parseErr) {
+                    console.error('[VTID-01867] Response is not JSON: ' + resultText.substring(0, 200));
+                    state.editProfileError = 'Server error (status ' + resp.status + '). Please try again.';
+                    state.editProfileSaving = false;
+                    renderApp();
+                    return;
+                }
                 if (!resp.ok || !result.ok) {
-                    state.editProfileError = result.error || 'Failed to save profile.';
+                    console.error('[VTID-01867] Save failed:', result.error || resp.status);
+                    state.editProfileError = result.error || 'Failed to save profile (status ' + resp.status + ').';
                     state.editProfileSaving = false;
                     renderApp();
                     return;
                 }
                 // Success — refresh identity and exit edit mode
+                console.log('[VTID-01867] Save succeeded, refreshing profile');
                 state.editingProfile = false;
                 state.editProfileSaving = false;
                 state.editProfileError = null;
@@ -8501,7 +8520,8 @@ function renderProfileModal() {
                 showToast('Profile updated', 'success');
                 renderApp();
             } catch (err) {
-                state.editProfileError = 'Network error. Please try again.';
+                console.error('[VTID-01867] Save exception:', err);
+                state.editProfileError = 'Network error: ' + (err.message || 'Please try again.');
                 state.editProfileSaving = false;
                 renderApp();
             }
