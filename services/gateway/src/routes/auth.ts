@@ -557,34 +557,60 @@ router.put('/profile', requireAuth, async (req: AuthenticatedRequest, res: Respo
     const trimmedName = display_name !== undefined ? display_name.trim() : undefined;
     const trimmedBio = bio !== undefined ? bio.trim() : undefined;
 
-    // Use upsert to handle users who may not yet have an app_users row
-    // (e.g., auto-provision in GET /me failed or was skipped).
-    const upsertPayload: Record<string, unknown> = {
-      user_id: identity.user_id,
-      email: identity.email || 'unknown@example.com',
-    };
-    if (trimmedName !== undefined) upsertPayload.display_name = trimmedName;
-    if (trimmedBio !== undefined) upsertPayload.bio = trimmedBio;
-    upsertPayload.updated_at = new Date().toISOString();
+    const updates: Record<string, unknown> = {};
+    if (trimmedName !== undefined) updates.display_name = trimmedName;
+    if (trimmedBio !== undefined) updates.bio = trimmedBio;
+    updates.updated_at = new Date().toISOString();
 
+    // Try UPDATE first (the row should exist from GET /me auto-provision)
     const { data, error } = await supabase
       .from('app_users')
-      .upsert(upsertPayload, { onConflict: 'user_id' })
-      .select('display_name, avatar_url, bio')
-      .single();
+      .update(updates)
+      .eq('user_id', identity.user_id)
+      .select('display_name, avatar_url, bio');
 
     if (error) {
-      console.error(`[VTID-01867] Profile update failed: ${error.message}`);
+      console.error(`[VTID-01867] Profile update failed: ${error.message} (code=${error.code})`);
       return res.status(500).json({ ok: false, error: 'Failed to update profile.' });
+    }
+
+    // If no row was found, create one first, then return the profile
+    if (!data || data.length === 0) {
+      console.warn(`[VTID-01867] No app_users row for ${identity.user_id}, creating one`);
+      const insertPayload: Record<string, unknown> = {
+        user_id: identity.user_id,
+        email: identity.email || 'unknown@example.com',
+        ...updates,
+      };
+      const { data: insertedData, error: insertError } = await supabase
+        .from('app_users')
+        .insert(insertPayload)
+        .select('display_name, avatar_url, bio')
+        .single();
+
+      if (insertError) {
+        console.error(`[VTID-01867] Profile insert failed: ${insertError.message}`);
+        return res.status(500).json({ ok: false, error: 'Failed to create profile.' });
+      }
+
+      console.log(`[VTID-01867] Profile created for ${identity.user_id}`);
+      return res.status(200).json({
+        ok: true,
+        profile: {
+          display_name: insertedData.display_name || undefined,
+          avatar_url: insertedData.avatar_url || undefined,
+          bio: insertedData.bio || undefined,
+        },
+      });
     }
 
     console.log(`[VTID-01867] Profile updated for ${identity.user_id}`);
     return res.status(200).json({
       ok: true,
       profile: {
-        display_name: data.display_name || undefined,
-        avatar_url: data.avatar_url || undefined,
-        bio: data.bio || undefined,
+        display_name: data[0].display_name || undefined,
+        avatar_url: data[0].avatar_url || undefined,
+        bio: data[0].bio || undefined,
       },
     });
   } catch (err: any) {
