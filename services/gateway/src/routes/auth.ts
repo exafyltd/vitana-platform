@@ -446,6 +446,10 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
     }
   }
 
+  // Prevent browser from caching profile data
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+
   return res.status(200).json({
     ok: true,
     identity: {
