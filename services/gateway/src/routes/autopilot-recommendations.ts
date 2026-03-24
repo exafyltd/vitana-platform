@@ -87,6 +87,78 @@ function getUserId(req: Request): string | null {
 }
 
 // =============================================================================
+// Helper: Extract active role from request
+// =============================================================================
+function getActiveRole(req: Request): string | null {
+  return (req.query.role as string)
+    || req.get('X-Vitana-Active-Role')
+    || null;
+}
+
+// =============================================================================
+// Helper: Direct PostgREST query for role-filtered recommendations
+// =============================================================================
+async function queryRecommendationsByRole(
+  role: string,
+  userId: string | null,
+  statuses: string[],
+  limit: number,
+  offset: number,
+): Promise<{ ok: boolean; data?: any[]; count?: number; error?: string }> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+  if (!supabaseUrl || !supabaseKey) {
+    return { ok: false, error: 'Missing Supabase credentials' };
+  }
+
+  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds';
+  const params = new URLSearchParams();
+  params.set('select', select);
+  params.set('status', `in.(${statuses.join(',')})`);
+  params.set('order', 'impact_score.desc,created_at.desc');
+  params.set('limit', String(limit));
+  params.set('offset', String(offset));
+
+  // Exclude snoozed recs
+  params.append('or', '(snoozed_until.is.null,snoozed_until.lt.now())');
+
+  if (role === 'community') {
+    // Community role: only personal recs from community analyzer
+    if (!userId) return { ok: true, data: [], count: 0 };
+    params.set('user_id', `eq.${userId}`);
+    params.set('source_type', 'eq.community');
+  } else if (role === 'developer') {
+    // Developer role: system-wide recs (user_id IS NULL), non-community source types
+    params.set('user_id', 'is.null');
+    params.set('source_type', 'neq.community');
+  }
+  // admin role or unknown: no extra filters (returns everything)
+
+  try {
+    const response = await fetch(
+      `${supabaseUrl}/rest/v1/autopilot_recommendations?${params.toString()}`,
+      {
+        headers: {
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Prefer': 'count=exact',
+        },
+      },
+    );
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { ok: false, error: `${response.status}: ${errorText}` };
+    }
+    const data = await response.json() as any[];
+    const contentRange = response.headers.get('content-range');
+    const totalCount = contentRange ? parseInt(contentRange.split('/')[1]) || data.length : data.length;
+    return { ok: true, data, count: totalCount };
+  } catch (error) {
+    return { ok: false, error: String(error) };
+  }
+}
+
+// =============================================================================
 // GET /recommendations - List recommendations
 // =============================================================================
 /**
@@ -108,22 +180,41 @@ function getUserId(req: Request): string | null {
 router.get('/', async (req: Request, res: Response) => {
   try {
     const userId = getUserId(req);
+    const role = getActiveRole(req);
 
     // Parse query params
     const statusParam = req.query.status as string || 'new';
     const statuses = statusParam.split(',').map(s => s.trim());
     const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 20, 1), 100);
     const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
-    // personal_only=true: Only return user-specific recommendations (excludes system-wide
-    // developer/operator recs where user_id IS NULL). Used by Lovable community frontend.
-    const personalOnly = req.query.personal_only === 'true';
 
-    console.log(`${LOG_PREFIX} Recommendations requested (status: ${statuses.join(',')}, limit: ${limit}, personal_only: ${personalOnly})`);
+    console.log(`${LOG_PREFIX} Recommendations requested (status: ${statuses.join(',')}, limit: ${limit}, role: ${role || 'none'})`);
 
+    // Role-based filtering: query table directly (RPC lacks source_type/user_id columns)
+    if (role) {
+      const result = await queryRecommendationsByRole(role, userId, statuses, limit + 1, offset);
+      if (!result.ok) {
+        return res.status(400).json({ ok: false, error: result.error });
+      }
+      const recommendations = result.data || [];
+      const hasMore = recommendations.length > limit;
+      if (hasMore) recommendations.pop();
+
+      return res.status(200).json({
+        ok: true,
+        recommendations,
+        count: recommendations.length,
+        has_more: hasMore,
+        vtid: 'VTID-01180',
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    // No role specified: backward-compatible RPC path (Command Hub default)
     const result = await callRpc<any[]>('get_autopilot_recommendations', {
       p_status: statuses,
-      p_limit: personalOnly ? 200 : limit + 1, // Fetch more when filtering client-side
-      p_offset: personalOnly ? 0 : offset,
+      p_limit: limit + 1,
+      p_offset: offset,
       p_user_id: userId,
     });
 
@@ -131,21 +222,10 @@ router.get('/', async (req: Request, res: Response) => {
       return res.status(400).json({ ok: false, error: result.error });
     }
 
-    let recommendations = result.data || [];
-
-    // Filter out system-wide (developer/operator) recommendations for community users
-    if (personalOnly && userId) {
-      recommendations = recommendations.filter((r: any) => r.user_id === userId);
-    }
-
-    // Apply pagination after filtering
-    if (personalOnly) {
-      recommendations = recommendations.slice(offset, offset + limit + 1);
-    }
-
+    const recommendations = result.data || [];
     const hasMore = recommendations.length > limit;
     if (hasMore) {
-      recommendations.pop(); // Remove the extra item
+      recommendations.pop();
     }
 
     return res.status(200).json({
@@ -177,28 +257,22 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/count', async (req: Request, res: Response) => {
   try {
     const userId = getUserId(req);
-    const personalOnly = req.query.personal_only === 'true';
+    const role = getActiveRole(req);
 
-    console.log(`${LOG_PREFIX} Recommendations count requested (personal_only: ${personalOnly})`);
+    console.log(`${LOG_PREFIX} Recommendations count requested (role: ${role || 'none'})`);
 
-    // When personal_only, we need to count only user-specific recs (not system-wide).
-    // The count RPC doesn't support this filter, so fetch recs and count manually.
-    if (personalOnly && userId) {
-      const result = await callRpc<any[]>('get_autopilot_recommendations', {
-        p_status: ['new'],
-        p_limit: 200,
-        p_offset: 0,
-        p_user_id: userId,
-      });
-      const recs = (result.data || []).filter((r: any) => r.user_id === userId);
+    // Role-based count: query table directly with same filters
+    if (role) {
+      const result = await queryRecommendationsByRole(role, userId, ['new'], 0, 0);
       return res.status(200).json({
         ok: true,
-        count: recs.length,
+        count: result.ok ? (result.count || 0) : 0,
         vtid: 'VTID-01180',
         timestamp: new Date().toISOString(),
       });
     }
 
+    // No role: backward-compatible RPC path
     const result = await callRpc<number>('get_autopilot_recommendations_count', {
       p_user_id: userId,
     });
