@@ -253,6 +253,10 @@ jobs:
               CLOUD_RUN_SERVICE="cognee-extractor"
               SOURCE_PATH="services/agents/cognee-extractor"
               ;;
+            worker-runner)
+              CLOUD_RUN_SERVICE="worker-runner"
+              SOURCE_PATH="services/worker-runner"
+              ;;
             *)
               # Use inputs directly for custom services
               CLOUD_RUN_SERVICE="$SERVICE"
@@ -312,6 +316,24 @@ jobs:
 
           # VTID-01250: OpenClaw bridge — Supabase secrets for heartbeat and OASIS events
           if [ "$CLOUD_RUN_SERVICE" = "openclaw-bridge" ]; then
+            SECRETS_ARGS+=(--update-secrets=SUPABASE_URL=SUPABASE_URL:latest)
+            SECRETS_ARGS+=(--update-secrets=SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest)
+          fi
+
+          # VTID-01200: Worker Runner — needs gateway URL, Supabase, and Vertex AI config
+          if [ "$CLOUD_RUN_SERVICE" = "worker-runner" ]; then
+            # Resolve gateway URL dynamically from Cloud Run
+            GATEWAY_URL=$(gcloud run services describe gateway --region=us-central1 --format='value(status.url)' 2>/dev/null || echo "")
+            if [ -z "$GATEWAY_URL" ]; then
+              echo "::error::Cannot resolve gateway URL for worker-runner"
+              exit 1
+            fi
+            EXTRA_ENV_ARGS+=(--update-env-vars=GATEWAY_URL=$GATEWAY_URL)
+            EXTRA_ENV_ARGS+=(--update-env-vars=GOOGLE_CLOUD_PROJECT=lovable-vitana-vers1)
+            EXTRA_ENV_ARGS+=(--update-env-vars=VERTEX_LOCATION=us-central1)
+            EXTRA_ENV_ARGS+=(--update-env-vars=VERTEX_MODEL=gemini-2.5-pro)
+            EXTRA_ENV_ARGS+=(--update-env-vars=AUTOPILOT_LOOP_ENABLED=true)
+            EXTRA_ENV_ARGS+=(--update-env-vars=POLL_INTERVAL_MS=5000)
             SECRETS_ARGS+=(--update-secrets=SUPABASE_URL=SUPABASE_URL:latest)
             SECRETS_ARGS+=(--update-secrets=SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest)
           fi

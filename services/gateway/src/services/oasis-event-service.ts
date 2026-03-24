@@ -7,6 +7,27 @@ import { randomUUID } from 'crypto';
 import { CicdEventType, CicdOasisEvent } from '../types/cicd';
 
 /**
+ * VTID-01874: Infer task_stage from event type when not explicitly set.
+ * Single-point fallback covering ALL callers of emitOasisEvent().
+ */
+function inferTaskStageFromType(eventType: string): 'PLANNER' | 'WORKER' | 'VALIDATOR' | 'DEPLOY' | undefined {
+  const t = eventType.toLowerCase();
+  // Spec lifecycle → PLANNER
+  if (t.includes('spec.generate') || t.includes('spec.created') || t.includes('spec.approved') || t.includes('spec.approval')) return 'PLANNER';
+  // Validation / quality / governance → VALIDATOR
+  if (t.includes('validation') || t.includes('quality_check') || t.includes('governance')) return 'VALIDATOR';
+  // Deploy / merge / PR / release → DEPLOY
+  if (t.includes('deploy') || t.includes('merge') || t.includes('create_pr') || t.includes('find_pr') || t.includes('release') || t.includes('lock.')) return 'DEPLOY';
+  // Worker execution → WORKER
+  if (t.includes('execute.worker') || t.includes('workorder') || t.includes('evidence')) return 'WORKER';
+  // Autopilot / task intake → PLANNER
+  if (t.includes('recommendation') || t.includes('autopilot.intent') || t.includes('task.intake') || t.includes('task.scheduled') || t.includes('task.ready_to_schedule')) return 'PLANNER';
+  // Safety → VALIDATOR
+  if (t.includes('guardrail') || t.includes('safety')) return 'VALIDATOR';
+  return undefined;
+}
+
+/**
  * Emit an event to OASIS via Supabase
  */
 export async function emitOasisEvent(event: CicdOasisEvent): Promise<{ ok: boolean; event_id?: string; error?: string }> {
@@ -40,7 +61,8 @@ export async function emitOasisEvent(event: CicdOasisEvent): Promise<{ ok: boole
     ...(event.surface && { surface: event.surface }),
     ...(event.conversation_turn_id && { conversation_turn_id: event.conversation_turn_id }),
     // VTID-01874: Explicit stage annotation for correct timeline mapping
-    ...(event.task_stage && { task_stage: event.task_stage }),
+    // Uses explicit task_stage if set, otherwise infers from event type
+    ...((event.task_stage || inferTaskStageFromType(event.type)) ? { task_stage: event.task_stage || inferTaskStageFromType(event.type) } : {}),
   };
 
   try {

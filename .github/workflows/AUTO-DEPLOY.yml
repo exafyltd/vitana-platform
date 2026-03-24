@@ -12,6 +12,7 @@ on:
     branches: [ "main" ]
     paths:
       - "services/gateway/**"
+      - "services/worker-runner/**"
       - ".github/workflows/**"
 
 permissions:
@@ -102,28 +103,72 @@ jobs:
           echo "found=true" >> "$GITHUB_OUTPUT"
           echo "vtid=$VTID" >> "$GITHUB_OUTPUT"
 
+      - name: Detect changed services
+        id: detect_services
+        run: |
+          # Check which services had files changed in this push
+          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
+          DEPLOY_GATEWAY=false
+          DEPLOY_WORKER_RUNNER=false
+
+          if echo "$CHANGED_FILES" | grep -q "^services/gateway/"; then
+            DEPLOY_GATEWAY=true
+          fi
+          if echo "$CHANGED_FILES" | grep -q "^services/worker-runner/"; then
+            DEPLOY_WORKER_RUNNER=true
+          fi
+
+          # If neither matched (e.g., workflow changes), default to gateway
+          if [ "$DEPLOY_GATEWAY" = "false" ] && [ "$DEPLOY_WORKER_RUNNER" = "false" ]; then
+            DEPLOY_GATEWAY=true
+          fi
+
+          echo "deploy_gateway=$DEPLOY_GATEWAY" >> "$GITHUB_OUTPUT"
+          echo "deploy_worker_runner=$DEPLOY_WORKER_RUNNER" >> "$GITHUB_OUTPUT"
+          echo "Gateway: $DEPLOY_GATEWAY, Worker-Runner: $DEPLOY_WORKER_RUNNER"
+
       - name: Dispatch governed deploy (EXEC-DEPLOY)
         if: steps.vtid.outputs.found == 'true'
         uses: actions/github-script@v7
         with:
           script: |
             const vtid = "${{ steps.vtid.outputs.vtid }}";
-            // Canonical defaults (adjust later ONLY under a dedicated VTID)
-            const service = "gateway";
             const environment = "dev";
+            const deployGateway = "${{ steps.detect_services.outputs.deploy_gateway }}" === "true";
+            const deployWorkerRunner = "${{ steps.detect_services.outputs.deploy_worker_runner }}" === "true";
 
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: "EXEC-DEPLOY.yml",
-              ref: "main",
-              inputs: {
-                vtid,
-                service,
-                environment,
-                health_path: "/alive",
-                initiator: "auto"
-              }
-            });
+            // Deploy gateway if changed (or default)
+            if (deployGateway) {
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: "EXEC-DEPLOY.yml",
+                ref: "main",
+                inputs: {
+                  vtid,
+                  service: "gateway",
+                  environment,
+                  health_path: "/alive",
+                  initiator: "auto"
+                }
+              });
+              core.info(`✅ Dispatched EXEC-DEPLOY.yml for VTID=${vtid} service=gateway`);
+            }
 
-            core.info(`✅ Dispatched EXEC-DEPLOY.yml for VTID=${vtid} service=${service} env=${environment}`);
+            // Deploy worker-runner if changed
+            if (deployWorkerRunner) {
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: "EXEC-DEPLOY.yml",
+                ref: "main",
+                inputs: {
+                  vtid,
+                  service: "worker-runner",
+                  environment,
+                  health_path: "/alive",
+                  initiator: "auto"
+                }
+              });
+              core.info(`✅ Dispatched EXEC-DEPLOY.yml for VTID=${vtid} service=worker-runner`);
+            }
