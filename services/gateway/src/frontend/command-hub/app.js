@@ -3584,6 +3584,20 @@ const state = {
 
     // Testing & QA (GitHub CI)
     testingCi: { runs: [], loading: false, error: null, fetched: false, pagination: { offset: 0, limit: 50, hasMore: true } },
+    // Testing & QA — E2E runs + suites
+    testingE2e: { runs: [], suites: [], loading: false, error: null, fetched: false, runningId: null },
+    // Testing & QA — Unit Tests
+    testingUnit: { runs: [], loading: false, error: null, fetched: false },
+    // Testing & QA — Integration Tests
+    testingIntegration: { runs: [], loading: false, error: null, fetched: false },
+    // Testing & QA — Validator Tests
+    testingValidator: { runs: [], loading: false, error: null, fetched: false },
+    // Testing & QA — Test Cycles
+    testingCycles: { cycles: [], loading: false, error: null, fetched: false },
+    // Testing & QA — selected run detail drawer
+    testingSelectedRun: null,
+    testingSelectedRunResults: [],
+    testingRunDetailLoading: false,
 
     // Admin analytics
     adminAnalytics: { data: null, loading: false, error: null, fetched: false },
@@ -33973,15 +33987,315 @@ function renderModelsPlaygroundView() {
 // Testing & QA Module — Render Functions
 // ===========================================================================
 
+// ─── Testing & QA: Shared Helpers ──────────────────────────────────────
+
+function testingStatusClass(status) {
+    if (status === 'passed' || status === 'expected') return 'status-active';
+    if (status === 'failed' || status === 'unexpected' || status === 'timedOut') return 'status-blocked';
+    if (status === 'running') return 'status-in-progress';
+    if (status === 'skipped') return 'status-pending';
+    return 'status-pending';
+}
+
+function testingFormatDuration(ms) {
+    if (!ms || ms <= 0) return '—';
+    if (ms < 1000) return ms + 'ms';
+    if (ms < 60000) return (ms / 1000).toFixed(1) + 's';
+    return Math.floor(ms / 60000) + 'm ' + Math.round((ms % 60000) / 1000) + 's';
+}
+
+function fetchTestingRuns(type, stateKey) {
+    if (state[stateKey].fetched || state[stateKey].loading) return;
+    state[stateKey].loading = true;
+    renderApp();
+    fetch('/api/v1/testing/runs?type=' + type + '&limit=50', { headers: buildContextHeaders() })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            state[stateKey].runs = data.runs || [];
+            state[stateKey].fetched = true;
+            state[stateKey].loading = false;
+            renderApp();
+        }).catch(function (err) {
+            state[stateKey].error = err.message;
+            state[stateKey].loading = false;
+            renderApp();
+        });
+}
+
+function fetchTestingSuites() {
+    if (state.testingE2e.suites.length > 0) return;
+    fetch('/api/v1/testing/suites', { headers: buildContextHeaders() })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            state.testingE2e.suites = data.suites || [];
+            renderApp();
+        }).catch(function () {});
+}
+
+function fetchTestingCycles() {
+    if (state.testingCycles.fetched || state.testingCycles.loading) return;
+    state.testingCycles.loading = true;
+    fetch('/api/v1/testing/cycles', { headers: buildContextHeaders() })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            state.testingCycles.cycles = data.cycles || [];
+            state.testingCycles.fetched = true;
+            state.testingCycles.loading = false;
+            renderApp();
+        }).catch(function (err) {
+            state.testingCycles.error = err.message;
+            state.testingCycles.loading = false;
+            renderApp();
+        });
+}
+
+async function triggerTestRun(type, projects, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = 'Running...'; }
+    try {
+        var response = await fetch('/api/v1/testing/run', {
+            method: 'POST',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ type: type, projects: projects })
+        });
+        var result = await response.json();
+        if (result.ok) {
+            // Reset fetched so runs table refreshes
+            var stateKey = 'testing' + type.charAt(0).toUpperCase() + type.slice(1);
+            if (type === 'e2e') stateKey = 'testingE2e';
+            if (state[stateKey]) { state[stateKey].fetched = false; }
+            renderApp();
+            showToast('Test run started (' + projects.join(', ') + ')', 'success');
+        } else {
+            if (btn) { btn.disabled = false; btn.textContent = 'Run'; }
+            showToast('Failed: ' + (result.error || 'Unknown'), 'error');
+        }
+    } catch (e) {
+        if (btn) { btn.disabled = false; btn.textContent = 'Run'; }
+        showToast('Network error', 'error');
+    }
+}
+
+async function triggerCycleRun(cycleId, cycleName, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = 'Running...'; }
+    try {
+        var response = await fetch('/api/v1/testing/cycles/' + cycleId + '/run', {
+            method: 'POST',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' })
+        });
+        var result = await response.json();
+        if (result.ok) {
+            state.testingE2e.fetched = false;
+            state.testingCycles.fetched = false;
+            renderApp();
+            showToast('Cycle "' + cycleName + '" started', 'success');
+        } else {
+            if (btn) { btn.disabled = false; btn.textContent = 'Run'; }
+            showToast('Failed: ' + (result.error || 'Unknown'), 'error');
+        }
+    } catch (e) {
+        if (btn) { btn.disabled = false; btn.textContent = 'Run'; }
+        showToast('Network error', 'error');
+    }
+}
+
+function openTestRunDrawer(runId) {
+    state.testingSelectedRun = null;
+    state.testingSelectedRunResults = [];
+    state.testingRunDetailLoading = true;
+    renderApp();
+    fetch('/api/v1/testing/runs/' + runId, { headers: buildContextHeaders() })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            state.testingSelectedRun = data.run;
+            state.testingSelectedRunResults = data.results || [];
+            state.testingRunDetailLoading = false;
+            renderApp();
+        }).catch(function () {
+            state.testingRunDetailLoading = false;
+            renderApp();
+        });
+}
+
+function closeTestRunDrawer() {
+    state.testingSelectedRun = null;
+    state.testingSelectedRunResults = [];
+    state.testingRunDetailLoading = false;
+    renderApp();
+}
+
+function renderTestRunsTable(runs) {
+    if (!runs || runs.length === 0) {
+        var empty = document.createElement('p');
+        empty.style.color = 'var(--color-text-secondary)';
+        empty.style.padding = '1rem 0';
+        empty.textContent = 'No test runs yet. Click a run button above to start.';
+        return empty;
+    }
+    var table = document.createElement('table');
+    table.className = 'list-table';
+    table.innerHTML = '<thead><tr><th>Status</th><th>Projects</th><th>Passed</th><th>Failed</th><th>Skipped</th><th>Duration</th><th>Triggered</th><th>Time</th></tr></thead>';
+    var tbody = document.createElement('tbody');
+    runs.forEach(function (run) {
+        var row = document.createElement('tr');
+        row.style.cursor = 'pointer';
+        row.onclick = function () { openTestRunDrawer(run.id); };
+        var projs = (run.projects || []).join(', ');
+        if (projs.length > 40) projs = projs.slice(0, 37) + '...';
+        row.innerHTML =
+            '<td><span class="status-badge ' + testingStatusClass(run.status) + '">' + (run.status || 'unknown') + '</span></td>' +
+            '<td style="font-size:0.85rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escapeHtml((run.projects || []).join(', ')) + '">' + escapeHtml(projs) + '</td>' +
+            '<td style="text-align:center;color:#4ade80;font-weight:600;">' + (run.passed || 0) + '</td>' +
+            '<td style="text-align:center;color:' + (run.failed > 0 ? '#ef4444' : 'var(--color-text-secondary)') + ';font-weight:600;">' + (run.failed || 0) + '</td>' +
+            '<td style="text-align:center;color:var(--color-text-secondary);">' + (run.skipped || 0) + '</td>' +
+            '<td>' + testingFormatDuration(run.duration_ms) + '</td>' +
+            '<td style="font-size:0.85rem;">' + (run.triggered_by || 'manual') + '</td>' +
+            '<td style="font-size:0.85rem;">' + formatEventTimestamp(run.created_at) + '</td>';
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    return table;
+}
+
+function renderTestRunDrawer() {
+    if (!state.testingSelectedRun && !state.testingRunDetailLoading) return null;
+
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;justify-content:flex-end;';
+    overlay.onclick = function (e) { if (e.target === overlay) closeTestRunDrawer(); };
+
+    var drawer = document.createElement('div');
+    drawer.style.cssText = 'width:600px;max-width:90vw;height:100vh;background:var(--color-bg-primary);overflow-y:auto;padding:1.5rem;box-shadow:-4px 0 20px rgba(0,0,0,0.3);';
+
+    if (state.testingRunDetailLoading) {
+        drawer.innerHTML = '<p style="color:var(--color-text-secondary);padding:2rem;">Loading run details...</p>';
+        overlay.appendChild(drawer);
+        return overlay;
+    }
+
+    var run = state.testingSelectedRun;
+    if (!run) { closeTestRunDrawer(); return null; }
+
+    // Header
+    var header = document.createElement('div');
+    header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;';
+    header.innerHTML = '<h3 style="margin:0;">Test Run Details</h3>';
+    var closeBtn = document.createElement('button');
+    closeBtn.textContent = '\u00d7';
+    closeBtn.style.cssText = 'background:none;border:none;color:var(--color-text-primary);font-size:1.5rem;cursor:pointer;padding:0.25rem 0.5rem;';
+    closeBtn.onclick = closeTestRunDrawer;
+    header.appendChild(closeBtn);
+    drawer.appendChild(header);
+
+    // Run summary
+    var summary = document.createElement('div');
+    summary.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:1.5rem;';
+    summary.innerHTML =
+        '<div><strong>Status:</strong> <span class="status-badge ' + testingStatusClass(run.status) + '">' + run.status + '</span></div>' +
+        '<div><strong>Duration:</strong> ' + testingFormatDuration(run.duration_ms) + '</div>' +
+        '<div><strong>Passed:</strong> <span style="color:#4ade80;font-weight:700;">' + run.passed + '</span> / ' + run.total + '</div>' +
+        '<div><strong>Failed:</strong> <span style="color:' + (run.failed > 0 ? '#ef4444' : 'var(--color-text-secondary)') + ';font-weight:700;">' + run.failed + '</span></div>' +
+        '<div><strong>Skipped:</strong> ' + (run.skipped || 0) + '</div>' +
+        '<div><strong>Triggered:</strong> ' + (run.triggered_by || 'manual') + '</div>' +
+        '<div style="grid-column:1/3;"><strong>Projects:</strong> ' + escapeHtml((run.projects || []).join(', ')) + '</div>' +
+        '<div style="grid-column:1/3;"><strong>Started:</strong> ' + formatEventTimestamp(run.created_at) + '</div>';
+    if (run.error_message) {
+        summary.innerHTML += '<div style="grid-column:1/3;"><strong>Error:</strong> <pre style="background:var(--color-bg-secondary);padding:0.5rem;border-radius:4px;font-size:0.8rem;max-height:100px;overflow:auto;margin-top:0.25rem;">' + escapeHtml(run.error_message) + '</pre></div>';
+    }
+    drawer.appendChild(summary);
+
+    // Results grouped by project
+    var results = state.testingSelectedRunResults;
+    if (results.length === 0) {
+        var noResults = document.createElement('p');
+        noResults.style.color = 'var(--color-text-secondary)';
+        noResults.textContent = run.status === 'running' ? 'Test run in progress... Results will appear when complete.' : 'No individual test results recorded for this run.';
+        drawer.appendChild(noResults);
+    } else {
+        // Group by project
+        var grouped = {};
+        results.forEach(function (r) {
+            if (!grouped[r.project]) grouped[r.project] = [];
+            grouped[r.project].push(r);
+        });
+        Object.keys(grouped).sort().forEach(function (proj) {
+            var projHeader = document.createElement('h4');
+            projHeader.style.cssText = 'margin:1rem 0 0.5rem;padding-bottom:0.25rem;border-bottom:1px solid var(--color-border);';
+            var projTests = grouped[proj];
+            var projPassed = projTests.filter(function (t) { return t.status === 'passed' || t.status === 'expected'; }).length;
+            projHeader.innerHTML = escapeHtml(proj) + ' <span style="font-weight:400;font-size:0.85rem;color:var(--color-text-secondary);">(' + projPassed + '/' + projTests.length + ' passed)</span>';
+            drawer.appendChild(projHeader);
+
+            projTests.forEach(function (t) {
+                var item = document.createElement('div');
+                item.style.cssText = 'display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0;font-size:0.9rem;';
+                var icon = (t.status === 'passed' || t.status === 'expected') ? '\u2705' : (t.status === 'skipped' ? '\u23ed\ufe0f' : '\u274c');
+                item.innerHTML = '<span>' + icon + '</span><span style="flex:1;">' + escapeHtml(t.test_name) + '</span><span style="color:var(--color-text-secondary);font-size:0.8rem;">' + testingFormatDuration(t.duration_ms) + '</span>';
+                drawer.appendChild(item);
+                if (t.error_message) {
+                    var errBox = document.createElement('pre');
+                    errBox.style.cssText = 'background:var(--color-bg-secondary);color:#ef4444;padding:0.5rem;border-radius:4px;font-size:0.75rem;margin:0.25rem 0 0.5rem 1.5rem;max-height:80px;overflow:auto;white-space:pre-wrap;';
+                    errBox.textContent = t.error_message;
+                    drawer.appendChild(errBox);
+                }
+            });
+        });
+    }
+
+    overlay.appendChild(drawer);
+    return overlay;
+}
+
+function renderTestingQuickRunButtons(type, buttons) {
+    var bar = document.createElement('div');
+    bar.style.cssText = 'display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:1.5rem;';
+    buttons.forEach(function (b) {
+        var btn = document.createElement('button');
+        btn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-generate';
+        btn.textContent = b.label;
+        btn.title = 'Run: ' + b.projects.join(', ');
+        btn.onclick = function () { triggerTestRun(type, b.projects, btn); };
+        bar.appendChild(btn);
+    });
+    return bar;
+}
+
+// ─── Testing & QA: Tab Render Functions ────────────────────────────────
+
 function renderTestingUnitView() {
     var container = document.createElement('div');
     container.style.padding = '1.5rem';
-    container.innerHTML = '<h2>Unit Tests</h2><p class="section-subtitle">Unit test results from the CI/CD pipeline. Tests run on every push.</p>';
+    container.innerHTML = '<h2>Unit Tests</h2><p class="section-subtitle">Unit test results from the CI/CD pipeline. Vitest (frontend) / Jest (gateway).</p>';
+
+    // Info card
     var info = document.createElement('div');
     info.className = 'databases-arch-note';
-    info.innerHTML = '<h3>Test Framework</h3><ul><li><strong>Runner:</strong> Vitest (for frontend) / Jest (for gateway)</li><li><strong>Coverage:</strong> Tracked via c8/istanbul</li><li><strong>CI:</strong> Runs automatically on Cloud Build</li><li><strong>Location:</strong> <code>services/gateway/tests/</code> and <code>temp_vitana_v1/src/__tests__/</code></li></ul>' +
-        '<h3>Latest Results</h3><p style="color:var(--color-text-secondary);">Connect CI/CD reporting to display live test results here.</p>';
+    info.innerHTML = '<h3>Test Framework</h3><ul>' +
+        '<li><strong>Frontend:</strong> Vitest — <code>temp_vitana_v1/src/__tests__/</code></li>' +
+        '<li><strong>Gateway:</strong> Jest — <code>services/gateway/tests/</code></li>' +
+        '<li><strong>Coverage:</strong> c8/istanbul</li>' +
+        '<li><strong>CI:</strong> Runs automatically on Cloud Build</li></ul>';
     container.appendChild(info);
+
+    // Quick run buttons
+    container.appendChild(renderTestingQuickRunButtons('unit', [
+        { label: 'Gateway Tests (Jest)', projects: ['gateway-jest'] },
+        { label: 'Frontend Tests (Vitest)', projects: ['frontend-vitest'] },
+    ]));
+
+    // Runs history
+    fetchTestingRuns('unit', 'testingUnit');
+    var runsTitle = document.createElement('h3');
+    runsTitle.textContent = 'Run History';
+    runsTitle.style.marginTop = '1rem';
+    container.appendChild(runsTitle);
+
+    if (state.testingUnit.loading) {
+        var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading...'; container.appendChild(l);
+    } else if (state.testingUnit.error) {
+        var e = document.createElement('div'); e.className = 'placeholder-content error-text'; e.textContent = 'Error: ' + state.testingUnit.error; container.appendChild(e);
+    } else {
+        container.appendChild(renderTestRunsTable(state.testingUnit.runs));
+    }
     return container;
 }
 
@@ -33989,11 +34303,37 @@ function renderTestingIntegrationView() {
     var container = document.createElement('div');
     container.style.padding = '1.5rem';
     container.innerHTML = '<h2>Integration Tests</h2><p class="section-subtitle">Cross-service integration test results.</p>';
+
+    // Scope info
     var info = document.createElement('div');
     info.className = 'databases-arch-note';
-    info.innerHTML = '<h3>Integration Test Scope</h3><ul><li><strong>Gateway -> OASIS Operator:</strong> Event emission, projection sync</li><li><strong>Gateway -> Worker Runner:</strong> Task claiming, execution callbacks</li><li><strong>Gateway -> Verification Engine:</strong> Governance evaluation flow</li><li><strong>Gateway -> Supabase:</strong> RLS enforcement, data persistence</li><li><strong>SSE Streaming:</strong> Event delivery, reconnection</li></ul>' +
-        '<p style="color:var(--color-text-secondary);margin-top:1rem;">Integration tests require all Cloud Run services running. Execute via <code>npm run test:integration</code>.</p>';
+    info.innerHTML = '<h3>Integration Test Scope</h3><ul>' +
+        '<li><strong>Gateway \u2192 OASIS Operator:</strong> Event emission, projection sync</li>' +
+        '<li><strong>Gateway \u2192 Worker Runner:</strong> Task claiming, execution callbacks</li>' +
+        '<li><strong>Gateway \u2192 Verification Engine:</strong> Governance evaluation flow</li>' +
+        '<li><strong>Gateway \u2192 Supabase:</strong> RLS enforcement, data persistence</li>' +
+        '<li><strong>SSE Streaming:</strong> Event delivery, reconnection</li></ul>';
     container.appendChild(info);
+
+    // Quick run buttons
+    container.appendChild(renderTestingQuickRunButtons('integration', [
+        { label: 'Full Integration Suite', projects: ['integration-full'] },
+    ]));
+
+    // Runs history
+    fetchTestingRuns('integration', 'testingIntegration');
+    var runsTitle = document.createElement('h3');
+    runsTitle.textContent = 'Run History';
+    runsTitle.style.marginTop = '1rem';
+    container.appendChild(runsTitle);
+
+    if (state.testingIntegration.loading) {
+        var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading...'; container.appendChild(l);
+    } else if (state.testingIntegration.error) {
+        var e = document.createElement('div'); e.className = 'placeholder-content error-text'; e.textContent = 'Error: ' + state.testingIntegration.error; container.appendChild(e);
+    } else {
+        container.appendChild(renderTestRunsTable(state.testingIntegration.runs));
+    }
     return container;
 }
 
@@ -34001,6 +34341,13 @@ function renderTestingValidatorView() {
     var container = document.createElement('div');
     container.style.padding = '1.5rem';
     container.innerHTML = '<h2>Validator Tests</h2><p class="section-subtitle">Governance validator agent test scenarios.</p>';
+
+    // Quick run button
+    container.appendChild(renderTestingQuickRunButtons('validator', [
+        { label: 'Run All Validator Tests', projects: ['validator-governance'] },
+    ]));
+
+    // Scenarios table
     var scenarios = [
         { name: 'Deploy Gate - Clean Build', expected: 'ALLOW', rule: 'GOV-001' },
         { name: 'Deploy Gate - Failing Tests', expected: 'BLOCK', rule: 'GOV-001' },
@@ -34009,6 +34356,10 @@ function renderTestingValidatorView() {
         { name: 'Resource Limit - Within Budget', expected: 'ALLOW', rule: 'GOV-005' },
         { name: 'Resource Limit - Over Budget', expected: 'BLOCK', rule: 'GOV-005' }
     ];
+    var scenariosTitle = document.createElement('h3');
+    scenariosTitle.textContent = 'Test Scenarios';
+    container.appendChild(scenariosTitle);
+
     var table = document.createElement('table');
     table.className = 'list-table';
     table.innerHTML = '<thead><tr><th>Scenario</th><th>Expected</th><th>Rule</th><th>Status</th></tr></thead>';
@@ -34023,34 +34374,164 @@ function renderTestingValidatorView() {
     });
     table.appendChild(tbody);
     container.appendChild(table);
+
+    // Runs history
+    fetchTestingRuns('validator', 'testingValidator');
+    var runsTitle = document.createElement('h3');
+    runsTitle.textContent = 'Run History';
+    runsTitle.style.marginTop = '1.5rem';
+    container.appendChild(runsTitle);
+
+    if (state.testingValidator.loading) {
+        var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading...'; container.appendChild(l);
+    } else if (state.testingValidator.error) {
+        var e2 = document.createElement('div'); e2.className = 'placeholder-content error-text'; e2.textContent = 'Error: ' + state.testingValidator.error; container.appendChild(e2);
+    } else {
+        container.appendChild(renderTestRunsTable(state.testingValidator.runs));
+    }
     return container;
 }
 
 function renderTestingE2eView() {
     var container = document.createElement('div');
     container.style.padding = '1.5rem';
-    container.innerHTML = '<h2>End-to-End Tests</h2><p class="section-subtitle">Full pipeline E2E test flows.</p>';
-    var flows = [
-        { name: 'VTID Lifecycle: Create -> Plan -> Execute -> Validate -> Deploy', steps: 12, status: 'defined' },
-        { name: 'Governance: Rule CRUD -> Evaluation -> Enforcement', steps: 8, status: 'defined' },
-        { name: 'Memory: Store -> Retrieve -> Contextualize -> Chat', steps: 6, status: 'defined' },
-        { name: 'Autopilot: Start Loop -> Poll -> Recommend -> Execute', steps: 10, status: 'defined' },
-        { name: 'ORB: Connect -> Speech -> Response -> TTS', steps: 5, status: 'defined' }
-    ];
-    var table = document.createElement('table');
-    table.className = 'list-table';
-    table.innerHTML = '<thead><tr><th>E2E Flow</th><th>Steps</th><th>Status</th><th>Last Run</th></tr></thead>';
-    var tbody = document.createElement('tbody');
-    flows.forEach(function (f) {
-        var row = document.createElement('tr');
-        row.innerHTML = '<td style="font-weight:600;">' + f.name + '</td>' +
-            '<td style="text-align:center;">' + f.steps + '</td>' +
-            '<td><span class="status-badge status-pending">' + f.status + '</span></td>' +
-            '<td style="color:var(--color-text-secondary);">—</td>';
-        tbody.appendChild(row);
-    });
-    table.appendChild(tbody);
-    container.appendChild(table);
+
+    // Title row with badge
+    var titleRow = document.createElement('div');
+    titleRow.style.cssText = 'display:flex;align-items:center;gap:1rem;margin-bottom:0.25rem;';
+    titleRow.innerHTML = '<h2 style="margin:0;">E2E Tests</h2><span class="status-badge status-active" style="font-size:0.75rem;">207 tests</span>';
+    container.appendChild(titleRow);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Playwright UI tests across 3 UIs (Desktop, Mobile, Command Hub) \u00d7 6 roles.';
+    container.appendChild(subtitle);
+
+    // Fetch suites + runs
+    fetchTestingSuites();
+    fetchTestingRuns('e2e', 'testingE2e');
+
+    // Quick run buttons — grouped by UI
+    var btnSection = document.createElement('div');
+    btnSection.style.marginBottom = '1.5rem';
+
+    // Desktop row
+    var desktopLabel = document.createElement('div');
+    desktopLabel.style.cssText = 'font-weight:600;font-size:0.85rem;color:var(--color-text-secondary);margin-bottom:0.4rem;margin-top:0.75rem;';
+    desktopLabel.textContent = 'DESKTOP';
+    btnSection.appendChild(desktopLabel);
+    btnSection.appendChild(renderTestingQuickRunButtons('e2e', [
+        { label: 'Community', projects: ['desktop-community'] },
+        { label: 'Patient', projects: ['desktop-patient'] },
+        { label: 'Professional', projects: ['desktop-professional'] },
+        { label: 'Staff', projects: ['desktop-staff'] },
+        { label: 'Admin', projects: ['desktop-admin'] },
+        { label: 'Shared', projects: ['desktop-shared'] },
+    ]));
+
+    // Mobile row
+    var mobileLabel = document.createElement('div');
+    mobileLabel.style.cssText = 'font-weight:600;font-size:0.85rem;color:var(--color-text-secondary);margin-bottom:0.4rem;margin-top:0.75rem;';
+    mobileLabel.textContent = 'MOBILE';
+    btnSection.appendChild(mobileLabel);
+    btnSection.appendChild(renderTestingQuickRunButtons('e2e', [
+        { label: 'Community', projects: ['mobile-community'] },
+        { label: 'Patient', projects: ['mobile-patient'] },
+        { label: 'Professional', projects: ['mobile-professional'] },
+        { label: 'Staff', projects: ['mobile-staff'] },
+        { label: 'Admin', projects: ['mobile-admin'] },
+        { label: 'Shared', projects: ['mobile-shared'] },
+    ]));
+
+    // Hub row
+    var hubLabel = document.createElement('div');
+    hubLabel.style.cssText = 'font-weight:600;font-size:0.85rem;color:var(--color-text-secondary);margin-bottom:0.4rem;margin-top:0.75rem;';
+    hubLabel.textContent = 'COMMAND HUB';
+    btnSection.appendChild(hubLabel);
+    btnSection.appendChild(renderTestingQuickRunButtons('e2e', [
+        { label: 'Developer', projects: ['hub-developer'] },
+        { label: 'Admin', projects: ['hub-admin'] },
+        { label: 'Staff', projects: ['hub-staff'] },
+        { label: 'Shared', projects: ['hub-shared'] },
+    ]));
+
+    // Batch run buttons
+    var batchLabel = document.createElement('div');
+    batchLabel.style.cssText = 'font-weight:600;font-size:0.85rem;color:var(--color-text-secondary);margin-bottom:0.4rem;margin-top:0.75rem;';
+    batchLabel.textContent = 'BATCH RUNS';
+    btnSection.appendChild(batchLabel);
+    btnSection.appendChild(renderTestingQuickRunButtons('e2e', [
+        { label: 'All Shared (fast)', projects: ['desktop-shared', 'mobile-shared', 'hub-shared'] },
+        { label: 'All Community', projects: ['desktop-community', 'mobile-community'] },
+        { label: 'Full Suite (all)', projects: ['desktop-community', 'desktop-patient', 'desktop-professional', 'desktop-staff', 'desktop-admin', 'desktop-shared', 'mobile-community', 'mobile-patient', 'mobile-professional', 'mobile-staff', 'mobile-admin', 'mobile-shared', 'hub-developer', 'hub-admin', 'hub-staff', 'hub-shared'] },
+    ]));
+
+    container.appendChild(btnSection);
+
+    // Test Cycles section
+    fetchTestingCycles();
+    if (state.testingCycles.cycles.length > 0) {
+        var cyclesTitle = document.createElement('h3');
+        cyclesTitle.textContent = 'Test Cycles';
+        cyclesTitle.style.marginBottom = '0.75rem';
+        container.appendChild(cyclesTitle);
+
+        var cyclesGrid = document.createElement('div');
+        cyclesGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:0.75rem;margin-bottom:1.5rem;';
+        state.testingCycles.cycles.forEach(function (cycle) {
+            var card = document.createElement('div');
+            card.style.cssText = 'background:var(--color-bg-secondary);border:1px solid var(--color-border);border-radius:8px;padding:1rem;';
+            var cardTitle = document.createElement('div');
+            cardTitle.style.cssText = 'font-weight:600;margin-bottom:0.5rem;';
+            cardTitle.textContent = cycle.name;
+            card.appendChild(cardTitle);
+
+            var tags = document.createElement('div');
+            tags.style.cssText = 'display:flex;flex-wrap:wrap;gap:0.25rem;margin-bottom:0.75rem;';
+            (cycle.projects || []).forEach(function (p) {
+                var tag = document.createElement('span');
+                tag.style.cssText = 'font-size:0.7rem;background:var(--color-bg-primary);padding:0.15rem 0.4rem;border-radius:3px;color:var(--color-text-secondary);';
+                tag.textContent = p;
+                tags.appendChild(tag);
+            });
+            card.appendChild(tags);
+
+            if (cycle.last_run_at) {
+                var lastRun = document.createElement('div');
+                lastRun.style.cssText = 'font-size:0.8rem;color:var(--color-text-secondary);margin-bottom:0.5rem;';
+                lastRun.textContent = 'Last run: ' + formatEventTimestamp(cycle.last_run_at);
+                card.appendChild(lastRun);
+            }
+
+            var runBtn = document.createElement('button');
+            runBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-generate';
+            runBtn.style.fontSize = '0.8rem';
+            runBtn.textContent = 'Run Now';
+            runBtn.onclick = function () { triggerCycleRun(cycle.id, cycle.name, runBtn); };
+            card.appendChild(runBtn);
+
+            cyclesGrid.appendChild(card);
+        });
+        container.appendChild(cyclesGrid);
+    }
+
+    // Runs history table
+    var runsTitle = document.createElement('h3');
+    runsTitle.textContent = 'Run History';
+    runsTitle.style.marginBottom = '0.5rem';
+    container.appendChild(runsTitle);
+
+    if (state.testingE2e.loading) {
+        var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading...'; container.appendChild(l);
+    } else if (state.testingE2e.error) {
+        var errDiv = document.createElement('div'); errDiv.className = 'placeholder-content error-text'; errDiv.textContent = 'Error: ' + state.testingE2e.error; container.appendChild(errDiv);
+    } else {
+        container.appendChild(renderTestRunsTable(state.testingE2e.runs));
+    }
+
+    // Drawer overlay (if a run is selected)
+    var drawerEl = renderTestRunDrawer();
+    if (drawerEl) container.appendChild(drawerEl);
+
     return container;
 }
 

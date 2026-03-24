@@ -396,6 +396,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/deploy', cicdRouter, { owner: 'cicd-deploy' });
   mountRouterSync(app, '/api/v1/cicd', cicdRouter, { owner: 'cicd' });
 
+  // Testing & QA — E2E test execution, run history, test cycles
+  const testingRouter = require('./routes/testing').default;
+  mountRouterSync(app, '/api/v1/testing', testingRouter, { owner: 'testing-qa' });
+
   // VTID-01146: Execute VTID Runner (One-Button End-to-End Pipeline)
   mountRouterSync(app, '/api/v1/execute', executeRouter, { owner: 'execute-runner' });
 
