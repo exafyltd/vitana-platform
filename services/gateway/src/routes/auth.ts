@@ -554,14 +554,22 @@ router.put('/profile', requireAuth, async (req: AuthenticatedRequest, res: Respo
   }
 
   try {
-    const updates: Record<string, string> = {};
-    if (display_name !== undefined) updates.display_name = display_name.trim();
-    if (bio !== undefined) updates.bio = bio.trim();
+    const trimmedName = display_name !== undefined ? display_name.trim() : undefined;
+    const trimmedBio = bio !== undefined ? bio.trim() : undefined;
+
+    // Use upsert to handle users who may not yet have an app_users row
+    // (e.g., auto-provision in GET /me failed or was skipped).
+    const upsertPayload: Record<string, unknown> = {
+      user_id: identity.user_id,
+      email: identity.email || 'unknown@example.com',
+    };
+    if (trimmedName !== undefined) upsertPayload.display_name = trimmedName;
+    if (trimmedBio !== undefined) upsertPayload.bio = trimmedBio;
+    upsertPayload.updated_at = new Date().toISOString();
 
     const { data, error } = await supabase
       .from('app_users')
-      .update(updates)
-      .eq('user_id', identity.user_id)
+      .upsert(upsertPayload, { onConflict: 'user_id' })
       .select('display_name, avatar_url, bio')
       .single();
 
