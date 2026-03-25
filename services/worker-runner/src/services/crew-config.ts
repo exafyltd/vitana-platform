@@ -77,7 +77,7 @@ export function loadCrewConfig(): CrewConfig {
   _cachedConfig = {
     version: 'fallback',
     models: {
-      gemini: { provider: 'vertex_ai', model_id: 'gemini-2.5-pro', fallback_model_id: 'gemini-1.5-pro' },
+      gemini: { provider: 'vertex_ai', model_id: 'gemini-3.1-pro-preview', fallback_model_id: 'gemini-1.5-pro' },
       claude: { provider: 'anthropic', model_id: 'claude-sonnet-4-5-20250929', fallback_model_id: 'claude-3-5-sonnet-20241022' },
     },
     roles: {

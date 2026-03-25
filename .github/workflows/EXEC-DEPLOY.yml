@@ -331,7 +331,7 @@ jobs:
             EXTRA_ENV_ARGS+=(--update-env-vars=GATEWAY_URL=$GATEWAY_URL)
             EXTRA_ENV_ARGS+=(--update-env-vars=GOOGLE_CLOUD_PROJECT=lovable-vitana-vers1)
             EXTRA_ENV_ARGS+=(--update-env-vars=VERTEX_LOCATION=us-central1)
-            EXTRA_ENV_ARGS+=(--update-env-vars=VERTEX_MODEL=gemini-2.5-pro)
+            EXTRA_ENV_ARGS+=(--update-env-vars=VERTEX_MODEL=gemini-3.1-pro-preview)
             EXTRA_ENV_ARGS+=(--update-env-vars=AUTOPILOT_LOOP_ENABLED=true)
             EXTRA_ENV_ARGS+=(--update-env-vars=POLL_INTERVAL_MS=5000)
             SECRETS_ARGS+=(--update-secrets=SUPABASE_URL=SUPABASE_URL:latest)

@@ -38,11 +38,11 @@ jest.mock('./execution-service', () => ({
     files_created: [],
     summary: 'Test execution completed',
     duration_ms: 1000,
-    model: 'gemini-2.5-pro',
+    model: 'gemini-3.1-pro-preview',
     provider: 'vertex-ai',
   }),
   getModelInfo: jest.fn().mockReturnValue({
-    model: 'gemini-2.5-pro',
+    model: 'gemini-3.1-pro-preview',
     provider: 'vertex-ai',
   }),
 }));

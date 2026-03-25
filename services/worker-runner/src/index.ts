@@ -84,7 +84,7 @@ app.get('/metrics', (_req: Request, res: Response) => {
       autopilot_enabled: process.env.AUTOPILOT_LOOP_ENABLED !== 'false',
       vertex_project: process.env.GOOGLE_CLOUD_PROJECT || 'not set',
       vertex_location: process.env.VERTEX_LOCATION || 'us-central1',
-      vertex_model: process.env.VERTEX_MODEL || 'gemini-2.5-pro',
+      vertex_model: process.env.VERTEX_MODEL || 'gemini-3.1-pro-preview',
     },
   });
 });
@@ -163,7 +163,7 @@ async function main(): Promise<void> {
   console.log(`  - AUTOPILOT_LOOP_ENABLED: ${process.env.AUTOPILOT_LOOP_ENABLED !== 'false'}`);
   console.log(`  - GOOGLE_CLOUD_PROJECT: ${process.env.GOOGLE_CLOUD_PROJECT || 'not set'}`);
   console.log(`  - VERTEX_LOCATION: ${process.env.VERTEX_LOCATION || 'us-central1'}`);
-  console.log(`  - VERTEX_MODEL: ${process.env.VERTEX_MODEL || 'gemini-2.5-pro'}`);
+  console.log(`  - VERTEX_MODEL: ${process.env.VERTEX_MODEL || 'gemini-3.1-pro-preview'}`);
 
   // Validate required environment variables
   const requiredVars = ['GATEWAY_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE'];
