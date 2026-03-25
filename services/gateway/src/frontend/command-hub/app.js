@@ -25929,6 +25929,8 @@ function geminiLiveHandleMessage(msg) {
             if (msg.text) {
                 console.log('[VTID-01219] Model said (fragment):', msg.text);
                 state.orb._outputTranscriptBuffer += msg.text;
+                // VTID-ECHO-FIX: Continuously update lastTTSText so echo filter works in real-time
+                state.orb.lastTTSText = state.orb._outputTranscriptBuffer;
                 // Show live interim model text
                 _updateInterimTranscript();
             }
@@ -25959,10 +25961,14 @@ function geminiLiveHandleMessage(msg) {
                 state.orb._inputTranscriptBuffer = '';
             }
             if (state.orb._outputTranscriptBuffer.trim()) {
+                var assistantText = state.orb._outputTranscriptBuffer.trim();
+                // VTID-ECHO-FIX: Track what Vitana said so transcriber can filter echo
+                state.orb.lastTTSText = assistantText;
+                state.orb.ignoreSTTUntil = Date.now() + 2000;
                 state.orb.liveTranscript.push({
                     id: Date.now() + 1,
                     role: 'assistant',
-                    text: state.orb._outputTranscriptBuffer.trim(),
+                    text: assistantText,
                     timestamp: new Date().toISOString()
                 });
                 state.orb._outputTranscriptBuffer = '';
@@ -26135,6 +26141,10 @@ async function _sendFallbackMessage(userText) {
 
         // Add assistant response to transcript
         if (data.text) {
+            // VTID-ECHO-FIX: Track what Vitana said so transcriber can filter echo
+            state.orb.lastTTSText = data.text;
+            state.orb.ignoreSTTUntil = Date.now() + 2000;
+            state.orb.speaking = true;
             state.orb.liveTranscript.push({
                 id: Date.now(),
                 role: 'assistant',
@@ -26147,25 +26157,42 @@ async function _sendFallbackMessage(userText) {
         if (data.audio_b64) {
             setOrbState('speaking');
             state.orb.voiceState = 'SPEAKING';
+
+            // VTID-ECHO-FIX: Pause transcriber during TTS to prevent echo pickup
+            if (state.orb.geminiLiveTranscriber) {
+                try { state.orb.geminiLiveTranscriber.abort(); } catch (e) { }
+            }
+
             var audio = new Audio('data:' + (data.audio_mime || 'audio/mp3') + ';base64,' + data.audio_b64);
             audio.onended = function() {
+                state.orb.speaking = false;
                 setOrbState('listening');
                 state.orb.voiceState = 'LISTENING';
+                // VTID-ECHO-FIX: Restart transcriber after TTS with delay to avoid tail echo
+                state.orb.ignoreSTTUntil = Date.now() + 800;
+                setTimeout(function() {
+                    geminiLiveStartTranscriber();
+                }, 300);
                 playListenReadyBeep();
                 renderApp();
             };
             audio.onerror = function() {
+                state.orb.speaking = false;
                 setOrbState('listening');
                 state.orb.voiceState = 'LISTENING';
+                setTimeout(function() { geminiLiveStartTranscriber(); }, 300);
                 renderApp();
             };
             audio.play().catch(function(e) {
                 console.warn('[VTID-FALLBACK] Audio playback failed:', e);
+                state.orb.speaking = false;
                 setOrbState('listening');
                 state.orb.voiceState = 'LISTENING';
+                setTimeout(function() { geminiLiveStartTranscriber(); }, 300);
                 renderApp();
             });
         } else {
+            state.orb.speaking = false;
             setOrbState('listening');
             state.orb.voiceState = 'LISTENING';
         }
@@ -26675,11 +26702,26 @@ function geminiLiveStartTranscriber() {
             }
         }
 
+        // VTID-ECHO-FIX: Echo filter — ignore TTS output picked up by mic
+        var currentTranscript = finalTranscript || interimTranscript;
+        var isSpeakingState = state.orb.voiceState === 'SPEAKING' || state.orb.speaking;
+        var looksLikeEcho = isLikelyEcho(currentTranscript, state.orb.lastTTSText);
+        if (isSpeakingState && looksLikeEcho) {
+            console.log('[VTID-ECHO-FIX] Transcriber ignoring echo during TTS:', currentTranscript.substring(0, 40));
+            return;
+        }
+
         // Update interim display
         state.orb.interimTranscript = interimTranscript;
 
         // Add final transcript to chat UI
         if (finalTranscript) {
+            // VTID-ECHO-FIX: Final echo guard
+            if (looksLikeEcho && (isSpeakingState || Date.now() < (state.orb.ignoreSTTUntil || 0))) {
+                console.log('[VTID-ECHO-FIX] Transcriber ignoring final echo:', finalTranscript.substring(0, 40));
+                return;
+            }
+
             console.log('[VTID-01225] User said:', finalTranscript);
             state.orb.interimTranscript = '';
 
