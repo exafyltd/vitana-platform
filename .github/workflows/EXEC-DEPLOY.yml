@@ -369,7 +369,21 @@ jobs:
             echo "Service deployed successfully at $URL"
           else
             echo "Running health check: $URL${{ github.event.inputs.health_path }}"
-            curl -fsS "$URL${{ github.event.inputs.health_path }}" -H "X-VTID: ${{ github.event.inputs.vtid }}"
+            # Retry health check up to 6 times with 10s delay (services like worker-runner
+            # need time to register with orchestrator before reporting healthy)
+            HEALTH_OK=false
+            for i in 1 2 3 4 5 6; do
+              if curl -fsS "$URL${{ github.event.inputs.health_path }}" -H "X-VTID: ${{ github.event.inputs.vtid }}" 2>/dev/null; then
+                HEALTH_OK=true
+                break
+              fi
+              echo "Health check attempt $i failed, retrying in 10s..."
+              sleep 10
+            done
+            if [ "$HEALTH_OK" != "true" ]; then
+              echo "::error::Health check failed after 6 attempts"
+              exit 1
+            fi
           fi
 
       # =========================================================================
