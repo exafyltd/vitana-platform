@@ -96,6 +96,11 @@ router.post('/run', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: 'projects array is required' });
   }
 
+  // Check if e2e directory exists (not available on Cloud Run)
+  if (!fs.existsSync(E2E_DIR)) {
+    return res.status(503).json({ ok: false, error: 'E2E test runner not available in this environment. Tests can only be run from a dev machine or via CI/CD.' });
+  }
+
   // Validate projects exist
   const validProjects = projects.filter((p: string) =>
     E2E_SUITES.some(s => s.project === p) || p === 'all'
@@ -177,6 +182,11 @@ router.post('/cycles/:id/run', async (req: Request, res: Response) => {
 
   if (cycleErr || !cycle) {
     return res.status(404).json({ ok: false, error: 'Cycle not found' });
+  }
+
+  // Check if e2e directory exists
+  if (!fs.existsSync(E2E_DIR)) {
+    return res.status(503).json({ ok: false, error: 'E2E test runner not available in this environment.' });
   }
 
   // Create run linked to cycle

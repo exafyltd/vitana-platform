@@ -34050,6 +34050,7 @@ function fetchTestingCycles() {
 }
 
 async function triggerTestRun(type, projects, btn) {
+    var originalLabel = btn ? btn.textContent : "";
     if (btn) { btn.disabled = true; btn.textContent = 'Running...'; }
     try {
         var response = await fetch('/api/v1/testing/run', {
@@ -34066,16 +34067,17 @@ async function triggerTestRun(type, projects, btn) {
             renderApp();
             showToast('Test run started (' + projects.join(', ') + ')', 'success');
         } else {
-            if (btn) { btn.disabled = false; btn.textContent = 'Run'; }
+            if (btn) { btn.disabled = false; btn.textContent = originalLabel; }
             showToast('Failed: ' + (result.error || 'Unknown'), 'error');
         }
     } catch (e) {
-        if (btn) { btn.disabled = false; btn.textContent = 'Run'; }
-        showToast('Network error', 'error');
+        if (btn) { btn.disabled = false; btn.textContent = originalLabel; }
+        showToast('Network error: ' + (e.message || 'Unknown'), 'error');
     }
 }
 
 async function triggerCycleRun(cycleId, cycleName, btn) {
+    var originalLabel = btn ? btn.textContent : "";
     if (btn) { btn.disabled = true; btn.textContent = 'Running...'; }
     try {
         var response = await fetch('/api/v1/testing/cycles/' + cycleId + '/run', {
@@ -34089,12 +34091,12 @@ async function triggerCycleRun(cycleId, cycleName, btn) {
             renderApp();
             showToast('Cycle "' + cycleName + '" started', 'success');
         } else {
-            if (btn) { btn.disabled = false; btn.textContent = 'Run'; }
+            if (btn) { btn.disabled = false; btn.textContent = originalLabel; }
             showToast('Failed: ' + (result.error || 'Unknown'), 'error');
         }
     } catch (e) {
-        if (btn) { btn.disabled = false; btn.textContent = 'Run'; }
-        showToast('Network error', 'error');
+        if (btn) { btn.disabled = false; btn.textContent = originalLabel; }
+        showToast('Network error: ' + (e.message || 'Unknown'), 'error');
     }
 }
 
