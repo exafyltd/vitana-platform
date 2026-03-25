@@ -31,6 +31,49 @@ const router = Router();
 const LOG_PREFIX = '[VTID-01180]';
 
 // =============================================================================
+// Community Action Map — signal_type → action for community user activation
+// =============================================================================
+interface CommunityAction {
+  action_type: 'navigate' | 'notify';
+  target?: string;
+  completion_message: string;
+}
+
+const COMMUNITY_ACTIONS: Record<string, CommunityAction> = {
+  // Onboarding
+  onboarding_profile:   { action_type: 'navigate', target: '/profile/edit', completion_message: 'Let\'s complete your profile!' },
+  onboarding_explore:   { action_type: 'navigate', target: '/community', completion_message: 'Discover your community!' },
+  onboarding_maxina:    { action_type: 'navigate', target: '/chat', completion_message: 'Maxina is ready to chat!' },
+  onboarding_diary:     { action_type: 'navigate', target: '/diary', completion_message: 'Time to write your first entry!' },
+  onboarding_matches:   { action_type: 'navigate', target: '/matches', completion_message: 'Check out your matches!' },
+  onboarding_group:     { action_type: 'navigate', target: '/groups', completion_message: 'Find a group that fits you!' },
+  // Engagement
+  engage_matches:       { action_type: 'navigate', target: '/matches', completion_message: 'Your matches are waiting!' },
+  engage_meetup:        { action_type: 'navigate', target: '/events', completion_message: 'Find a meetup near you!' },
+  engage_health:        { action_type: 'navigate', target: '/health', completion_message: 'Check your health scores!' },
+  deepen_connection:    { action_type: 'navigate', target: '/connections', completion_message: 'Reach out to a connection!' },
+  set_goal:             { action_type: 'navigate', target: '/health', completion_message: 'Set a health goal with Maxina!' },
+  invite_friend:        { action_type: 'navigate', target: '/invite', completion_message: 'Share Vitana with a friend!' },
+  // Advanced
+  share_expertise:      { action_type: 'navigate', target: '/groups', completion_message: 'Share your knowledge in a group!' },
+  start_streak:         { action_type: 'navigate', target: '/diary', completion_message: 'Start your wellness streak!' },
+  mentor_new:           { action_type: 'navigate', target: '/community', completion_message: 'Help newcomers get started!' },
+  organize_meetup:      { action_type: 'navigate', target: '/events/create', completion_message: 'Plan a meetup for your community!' },
+  // Weakness-driven
+  weakness_movement:    { action_type: 'navigate', target: '/health', completion_message: 'Let\'s get moving!' },
+  weakness_stress:      { action_type: 'navigate', target: '/health', completion_message: 'Try a breathing exercise!' },
+  weakness_social:      { action_type: 'navigate', target: '/connections', completion_message: 'Say hello to someone!' },
+  weakness_nutrition:   { action_type: 'navigate', target: '/health', completion_message: 'Track what you eat today!' },
+  weakness_sleep:       { action_type: 'navigate', target: '/health', completion_message: 'Set up your evening routine!' },
+  // Mood-driven
+  mood_support:         { action_type: 'navigate', target: '/chat', completion_message: 'Maxina is here to listen.' },
+  mood_energy:          { action_type: 'navigate', target: '/events', completion_message: 'Use your energy on an activity!' },
+  // Streak celebrations
+  streak_celebration:   { action_type: 'notify', completion_message: 'Amazing streak! Keep it up!' },
+  streak_continue:      { action_type: 'notify', completion_message: 'Great streak! Keep going!' },
+};
+
+// =============================================================================
 // Helper: Supabase RPC call
 // =============================================================================
 async function callRpc<T>(
@@ -111,7 +154,7 @@ async function queryRecommendationsByRole(
     return { ok: false, error: 'Missing Supabase credentials' };
   }
 
-  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds';
+  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref';
   const params = new URLSearchParams();
   params.set('select', select);
   params.set('status', `in.(${statuses.join(',')})`);
@@ -386,14 +429,155 @@ router.post('/generate-personal', async (req: Request, res: Response) => {
 router.post('/:id/activate', async (req: Request, res: Response) => {
   try {
     const userId = getUserId(req);
+    const role = getActiveRole(req);
     const { id } = req.params;
 
     if (!id) {
       return res.status(400).json({ ok: false, error: 'Recommendation ID required' });
     }
 
-    console.log(`${LOG_PREFIX} Activating recommendation ${id.slice(0, 8)}...`);
+    console.log(`${LOG_PREFIX} Activating recommendation ${id.slice(0, 8)}... (role: ${role || 'none'})`);
 
+    // =========================================================================
+    // Community activation path — NO VTIDs, returns action for frontend
+    // =========================================================================
+    if (role === 'community') {
+      const supabaseUrl = process.env.SUPABASE_URL;
+      const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+      if (!supabaseUrl || !svcKey) {
+        return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+      }
+
+      // Fetch the recommendation to get source_type, source_ref, user_id, status
+      const recResp = await fetch(
+        `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${id}&select=id,title,summary,source_type,source_ref,user_id,status,domain&limit=1`,
+        { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } }
+      );
+      if (!recResp.ok) {
+        return res.status(400).json({ ok: false, error: 'Failed to fetch recommendation' });
+      }
+      const recRows = await recResp.json() as any[];
+      const rec = recRows[0];
+      if (!rec) {
+        return res.status(404).json({ ok: false, error: 'Recommendation not found' });
+      }
+
+      // Verify this is a community recommendation belonging to this user
+      if (rec.source_type !== 'community') {
+        return res.status(403).json({ ok: false, error: 'Not a community recommendation' });
+      }
+      if (rec.user_id && userId && rec.user_id !== userId) {
+        return res.status(403).json({ ok: false, error: 'Recommendation belongs to another user' });
+      }
+
+      // Already activated? Return idempotent response
+      if (rec.status === 'activated') {
+        const action = COMMUNITY_ACTIONS[rec.source_ref] || null;
+        return res.status(200).json({
+          ok: true,
+          already_activated: true,
+          recommendation_id: id,
+          title: rec.title,
+          action_type: action?.action_type || 'notify',
+          target: action?.target || null,
+          completion_message: action?.completion_message || 'Already done!',
+          vtid: 'VTID-01180',
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      // Must be in activatable state
+      if (rec.status !== 'new' && rec.status !== 'snoozed') {
+        return res.status(400).json({ ok: false, error: `Cannot activate recommendation in status: ${rec.status}` });
+      }
+
+      // Look up the community action
+      const action = COMMUNITY_ACTIONS[rec.source_ref] || {
+        action_type: 'notify' as const,
+        completion_message: 'Done!',
+      };
+
+      // Update recommendation status to 'activated' via PostgREST — NO VTID
+      const patchResp = await fetch(
+        `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${id}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: svcKey,
+            Authorization: `Bearer ${svcKey}`,
+          },
+          body: JSON.stringify({
+            status: 'activated',
+            activated_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }),
+        }
+      );
+      if (!patchResp.ok) {
+        console.error(`${LOG_PREFIX} Community activate PATCH failed:`, await patchResp.text());
+        return res.status(500).json({ ok: false, error: 'Failed to update recommendation status' });
+      }
+
+      // Emit OASIS event
+      await emitOasisEvent({
+        vtid: 'SYSTEM',
+        type: 'autopilot.recommendation.activated' as any,
+        source: 'autopilot-recommendations',
+        status: 'info',
+        message: `Community recommendation activated: ${rec.title}`,
+        payload: {
+          recommendation_id: id,
+          user_id: userId,
+          role: 'community',
+          action_type: action.action_type,
+          target: action.target || null,
+          source_ref: rec.source_ref,
+        },
+      });
+
+      // Send push notification
+      if (userId) {
+        try {
+          const { createClient } = await import('@supabase/supabase-js');
+          const supa = createClient(supabaseUrl, svcKey);
+          const { data: tenantRow } = await supa
+            .from('user_tenants')
+            .select('tenant_id')
+            .eq('user_id', userId)
+            .eq('is_primary', true)
+            .maybeSingle();
+          if (tenantRow?.tenant_id) {
+            notifyUserAsync(userId, tenantRow.tenant_id, 'recommendation_activated', {
+              title: rec.title,
+              body: action.completion_message,
+              data: { url: action.target || '/', recommendation_id: id },
+            }, supa);
+          }
+        } catch (notifErr: any) {
+          console.warn(`${LOG_PREFIX} Notification error (non-fatal): ${notifErr.message}`);
+        }
+      }
+
+      console.log(`${LOG_PREFIX} Community activation: ${rec.source_ref} → ${action.action_type}:${action.target || 'none'}`);
+
+      return res.status(200).json({
+        ok: true,
+        recommendation_id: id,
+        title: rec.title,
+        status: 'activated',
+        activated_at: new Date().toISOString(),
+        action_type: action.action_type,
+        target: action.target || null,
+        completion_message: action.completion_message,
+        vtid: 'VTID-01180',
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    // =========================================================================
+    // Developer/Admin activation path — creates VTID (existing behavior)
+    // =========================================================================
     const result = await callRpc<any>('activate_autopilot_recommendation', {
       p_recommendation_id: id,
       p_user_id: userId,
