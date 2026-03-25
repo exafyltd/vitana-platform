@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "vitana-work": {
+      "command": "node",
+      "args": ["mcp/vitana-work/dist/index.js"],
+      "env": {
+        "VITANA_GATEWAY_URL": "https://gateway-q74ibpv6ia-uc.a.run.app"
+      }
+    }
+  }
+}

@@ -1,0 +1,1 @@
+{"version":3,"file":"complete-task.d.ts","sourceRoot":"","sources":["../../src/tools/complete-task.ts"],"names":[],"mappings":"AAAA;;;GAGG;AAIH,MAAM,WAAW,kBAAkB;IACjC,IAAI,EAAE,MAAM,CAAC;IACb,OAAO,EAAE,MAAM,CAAC;CACjB;AAED,MAAM,WAAW,kBAAkB;IACjC,EAAE,EAAE,OAAO,CAAC;IACZ,KAAK,CAAC,EAAE,MAAM,CAAC;CAChB;AAED,wBAAsB,YAAY,CAAC,MAAM,EAAE,kBAAkB,GAAG,OAAO,CAAC,kBAAkB,CAAC,CAe1F"}
