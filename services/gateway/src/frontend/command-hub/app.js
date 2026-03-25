@@ -25895,6 +25895,11 @@ function geminiLiveHandleMessage(msg) {
                     // Transition to speaking state so ORB shows speaking animation
                     setOrbState('speaking');
                     state.orb.voiceState = 'SPEAKING';
+                    state.orb.speaking = true;
+                    // VTID-ECHO-FIX: Abort transcriber while model speaks to prevent echo
+                    if (state.orb.geminiLiveTranscriber) {
+                        try { state.orb.geminiLiveTranscriber.abort(); } catch (e) { }
+                    }
                     renderApp();
                 }
                 geminiLivePlayAudio(msg.data_b64, msg.mime || 'audio/wav');
@@ -25976,11 +25981,16 @@ function geminiLiveHandleMessage(msg) {
             scrollOrbLiveTranscript();
 
             // FIX: Signal ready to listen after greeting/response completes
+            state.orb.speaking = false;
             setTimeout(function() {
                 if (!state.orb.geminiLiveAudioPlaying) {
                     // Update orb state to listening
                     setOrbState('listening');
                     state.orb.voiceState = 'LISTENING';
+
+                    // VTID-ECHO-FIX: Restart transcriber after model finishes speaking
+                    state.orb.ignoreSTTUntil = Date.now() + 1500;
+                    geminiLiveStartTranscriber();
 
                     // Play subtle beep to signal readiness
                     playListenReadyBeep();
@@ -26759,7 +26769,9 @@ function geminiLiveStartTranscriber() {
 
     recognition.onend = function () {
         // Auto-restart if session still active
-        if (state.orb.geminiLiveActive && state.orb.geminiLiveTranscriber) {
+        // VTID-ECHO-FIX: Don't auto-restart while model is speaking — we aborted on purpose
+        var modelSpeaking = state.orb.voiceState === 'SPEAKING' || state.orb.speaking;
+        if (state.orb.geminiLiveActive && state.orb.geminiLiveTranscriber && !modelSpeaking) {
             console.log('[VTID-01225] Restarting transcriber...');
             lastProcessedIndex = -1;
             try {
@@ -27639,6 +27651,19 @@ function isLikelyEcho(transcript, lastTTSText) {
     // Check if transcript is a substring of TTS or vice versa
     if (normTTS.indexOf(normTranscript) !== -1) return true;
     if (normTranscript.indexOf(normTTS) !== -1) return true;
+
+    // VTID-ECHO-FIX: Word overlap check — speech recognition often produces
+    // slightly different words (e.g. "das du" vs "das zu", missing punctuation).
+    // If 50%+ of transcript words appear in the TTS text, it's likely echo.
+    var transcriptWords = normTranscript.split(' ');
+    var ttsWords = normTTS.split(' ');
+    if (transcriptWords.length >= 3) {
+        var matchCount = 0;
+        for (var w = 0; w < transcriptWords.length; w++) {
+            if (ttsWords.indexOf(transcriptWords[w]) !== -1) matchCount++;
+        }
+        if (matchCount / transcriptWords.length >= 0.5) return true;
+    }
 
     // Short transcripts that match common fillers during TTS playback
     if (normTranscript.length < 6) {
