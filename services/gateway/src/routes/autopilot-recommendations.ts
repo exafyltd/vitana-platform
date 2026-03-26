@@ -395,6 +395,17 @@ router.get('/', async (req: Request, res: Response) => {
         console.log(`${LOG_PREFIX} Deduplication: ${beforeDedup} → ${recommendations.length} (${beforeDedup - recommendations.length} duplicates removed)`);
       }
 
+      // Filter out retired action types: only keep recs whose source_ref maps to
+      // a valid COMMUNITY_ACTIONS entry (or has no source_ref at all).
+      // This hides old DB rows like organize_meetup / mentor_new without needing a DB migration.
+      if (role === 'community') {
+        const beforeFilter = recommendations.length;
+        recommendations = recommendations.filter(rec => !rec.source_ref || COMMUNITY_ACTIONS[rec.source_ref]);
+        if (recommendations.length < beforeFilter) {
+          console.log(`${LOG_PREFIX} Retired-action filter: ${beforeFilter} → ${recommendations.length} (${beforeFilter - recommendations.length} retired recs hidden)`);
+        }
+      }
+
       const hasMore = recommendations.length > limit;
       if (hasMore) recommendations.pop();
 
