@@ -5220,13 +5220,36 @@ function renderHeader() {
 
         // VTID-01180: Fetch recommendations from API
         try {
+            var reqHeaders = buildContextHeaders({});
+            console.log('[VTID-01180] Fetching recommendations with headers:', JSON.stringify({
+                'X-Vitana-Active-Role': reqHeaders['X-Vitana-Active-Role'] || 'missing',
+                'X-Vitana-User': reqHeaders['X-Vitana-User'] || 'missing',
+                'X-Vitana-Tenant': reqHeaders['X-Vitana-Tenant'] || 'missing',
+                'Authorization': reqHeaders['Authorization'] ? 'present (' + reqHeaders['Authorization'].substring(0, 20) + '...)' : 'missing',
+            }));
+            console.log('[VTID-01180] meContext state:', JSON.stringify({
+                active_role: state.meContext?.active_role || 'none',
+                user_id: state.meContext?.user_id || 'none',
+                tenant_id: state.meContext?.tenant_id || 'none',
+            }));
             const response = await fetch('/api/v1/autopilot/recommendations?status=new&limit=20', {
-                headers: buildContextHeaders({})
+                headers: reqHeaders
             });
+            console.log('[VTID-01180] Response status:', response.status, response.statusText);
             if (!response.ok) {
-                throw new Error('Failed to fetch recommendations');
+                var errorBody = await response.text();
+                console.error('[VTID-01180] Non-OK response body:', errorBody);
+                throw new Error('Failed to fetch recommendations: ' + response.status);
             }
             const data = await response.json();
+            console.log('[VTID-01180] Response data:', JSON.stringify({
+                ok: data.ok,
+                count: data.count,
+                has_more: data.has_more,
+                recommendationsLength: (data.recommendations || []).length,
+                _debug: data._debug || 'none',
+                error: data.error || 'none',
+            }));
             if (data.ok) {
                 state.autopilotRecommendations = data.recommendations || [];
                 // Sync badge count with actual list to avoid mismatch
