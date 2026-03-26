@@ -717,11 +717,37 @@ export async function generatePersonalRecommendations(
       convertCommunityUserSignal(s, userId)
     );
 
-    // Insert with deduplication
+    // Pre-check: fetch ALL existing fingerprints for this user (ANY status)
+    // to prevent re-creating recommendations that were already activated/rejected.
+    // The RPC only checks new/snoozed, so we need this extra guard.
+    const existingFingerprints = new Set<string>();
+    try {
+      const fpResp = await fetch(
+        `${supabaseUrl}/rest/v1/autopilot_recommendations?user_id=eq.${userId}&select=fingerprint&fingerprint=not.is.null`,
+        { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }
+      );
+      if (fpResp.ok) {
+        const fpRows = await fpResp.json() as { fingerprint: string }[];
+        for (const row of fpRows) {
+          if (row.fingerprint) existingFingerprints.add(row.fingerprint);
+        }
+        console.log(`${LOG_PREFIX} Pre-check: ${existingFingerprints.size} existing fingerprints for user ${userId.slice(0, 8)}`);
+      }
+    } catch (fpErr) {
+      console.warn(`${LOG_PREFIX} Pre-check fingerprint query failed (non-fatal):`, fpErr);
+    }
+
+    // Insert with deduplication (skip if fingerprint exists in ANY status)
     let generated = 0;
     let duplicatesSkipped = 0;
 
     for (const rec of recommendations) {
+      // Skip if this fingerprint already exists (activated, rejected, etc.)
+      if (rec.fingerprint && existingFingerprints.has(rec.fingerprint)) {
+        duplicatesSkipped++;
+        continue;
+      }
+
       const insertResult = await callRpc<{ duplicate?: boolean }>('insert_autopilot_recommendation', {
         p_title: rec.title,
         p_summary: rec.summary,

@@ -658,8 +658,11 @@ const STAGE_TEMPLATES: Record<OnboardingStage, RecommendationTemplate[]> = {
     { key: 'start_streak', domain: 'health', priority: 'high', impact_score: 8, effort_score: 3, time_estimate_seconds: 120, signal_type: 'start_streak', condition: (ctx) => ctx.diaryStreak < 3 },
   ],
   day30plus: [
-    { key: 'mentor_new', domain: 'community', priority: 'medium', impact_score: 7, effort_score: 3, time_estimate_seconds: 300, signal_type: 'mentor_new' },
-    { key: 'organize_meetup', domain: 'community', priority: 'medium', impact_score: 8, effort_score: 5, time_estimate_seconds: 300, signal_type: 'organize_meetup' },
+    { key: 'engage_health', domain: 'health', priority: 'medium', impact_score: 7, effort_score: 1, time_estimate_seconds: 60, signal_type: 'engage_health' },
+    { key: 'start_streak', domain: 'health', priority: 'high', impact_score: 8, effort_score: 2, time_estimate_seconds: 120, signal_type: 'start_streak', condition: (ctx) => ctx.diaryStreak < 7 },
+    { key: 'deepen_connection', domain: 'community', priority: 'medium', impact_score: 7, effort_score: 2, time_estimate_seconds: 120, signal_type: 'deepen_connection', condition: (ctx) => ctx.connectionCount > 0 },
+    { key: 'engage_matches', domain: 'community', priority: 'high', impact_score: 8, effort_score: 1, time_estimate_seconds: 60, signal_type: 'engage_matches', condition: (ctx) => ctx.pendingMatchCount > 0 },
+    { key: 'invite_friend', domain: 'community', priority: 'low', impact_score: 6, effort_score: 1, time_estimate_seconds: 30, signal_type: 'invite_friend' },
   ],
 };
 

@@ -62,8 +62,7 @@ const COMMUNITY_ACTIONS: Record<string, CommunityAction> = {
   // Advanced
   share_expertise:      { action_type: 'navigate', target: '/groups', completion_message: 'Share your knowledge in a group!' },
   start_streak:         { action_type: 'navigate', target: '/diary', completion_message: 'Start your wellness streak!' },
-  mentor_new:           { action_type: 'navigate', target: '/community', completion_message: 'Help newcomers get started!' },
-  organize_meetup:      { action_type: 'navigate', target: '/events/create', completion_message: 'Plan a meetup for your community!' },
+  // mentor_new and organize_meetup removed — not automatable by autopilot
   // Weakness-driven
   weakness_movement:    { action_type: 'navigate', target: '/health', completion_message: 'Let\'s get moving!' },
   weakness_stress:      { action_type: 'navigate', target: '/health', completion_message: 'Try a breathing exercise!' },
@@ -302,7 +301,9 @@ router.get('/', async (req: Request, res: Response) => {
 
     // Role-based filtering: query table directly (RPC lacks source_type/user_id columns)
     if (role) {
-      const result = await queryRecommendationsByRole(role, userId, statuses, limit + 1, offset);
+      // Fetch extra rows to account for duplicates that will be collapsed by dedup
+      const fetchLimit = role === 'community' ? Math.max((limit + 1) * 4, 80) : limit + 1;
+      const result = await queryRecommendationsByRole(role, userId, statuses, fetchLimit, offset);
       console.log(`${LOG_PREFIX} queryRecommendationsByRole result`, {
         ok: result.ok,
         count: result.data?.length ?? 0,
@@ -333,20 +334,28 @@ router.get('/', async (req: Request, res: Response) => {
         }
       }
 
-      // Deduplicate by title: keep only one per title, preferring 'new' status over others
+      // Deduplicate by source_ref (signal_type) first, then by title as fallback.
+      // Keep only one per key, preferring 'new' status over others.
       const beforeDedup = recommendations.length;
-      const seenTitles = new Map<string, any>();
+      const seen = new Map<string, any>();
       for (const rec of recommendations) {
-        const existing = seenTitles.get(rec.title);
+        const key = rec.source_ref || rec.title;
+        const existing = seen.get(key);
         if (!existing) {
-          seenTitles.set(rec.title, rec);
+          seen.set(key, rec);
         } else if (rec.status === 'new' && existing.status !== 'new') {
-          // Prefer new over activated/snoozed
-          seenTitles.set(rec.title, rec);
+          seen.set(key, rec);
         }
-        // Otherwise keep the first (higher impact_score due to ORDER BY)
       }
-      recommendations = Array.from(seenTitles.values());
+      // Also deduplicate by title (different source_ref but same display title)
+      const seenTitles = new Set<string>();
+      const deduped: any[] = [];
+      for (const rec of seen.values()) {
+        if (seenTitles.has(rec.title)) continue;
+        seenTitles.add(rec.title);
+        deduped.push(rec);
+      }
+      recommendations = deduped;
       if (recommendations.length < beforeDedup) {
         console.log(`${LOG_PREFIX} Deduplication: ${beforeDedup} → ${recommendations.length} (${beforeDedup - recommendations.length} duplicates removed)`);
       }
