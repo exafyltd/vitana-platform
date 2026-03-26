@@ -292,7 +292,7 @@ router.get('/', async (req: Request, res: Response) => {
         'X-User-ID': req.get('X-User-ID') || 'missing',
         'Authorization': req.get('Authorization') ? 'present' : 'missing',
       },
-      reqUser: req.user ? { id: (req as any).user?.id, sub: (req as any).user?.sub } : 'no req.user',
+      reqUser: (req as any).user ? { id: (req as any).user?.id, sub: (req as any).user?.sub } : 'no req.user',
     });
 
     // Role-based filtering: query table directly (RPC lacks source_type/user_id columns)
