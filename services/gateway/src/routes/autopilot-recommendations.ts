@@ -41,12 +41,17 @@ interface CommunityAction {
 
 const COMMUNITY_ACTIONS: Record<string, CommunityAction> = {
   // Onboarding
-  onboarding_profile:   { action_type: 'navigate', target: '/profile/edit', completion_message: 'Let\'s complete your profile!' },
-  onboarding_explore:   { action_type: 'navigate', target: '/community', completion_message: 'Discover your community!' },
-  onboarding_maxina:    { action_type: 'navigate', target: '/chat', completion_message: 'Maxina is ready to chat!' },
-  onboarding_diary:     { action_type: 'navigate', target: '/diary', completion_message: 'Time to write your first entry!' },
-  onboarding_matches:   { action_type: 'navigate', target: '/matches', completion_message: 'Check out your matches!' },
-  onboarding_group:     { action_type: 'navigate', target: '/groups', completion_message: 'Find a group that fits you!' },
+  onboarding_profile:           { action_type: 'navigate', target: '/profile/edit', completion_message: 'Let\'s complete your profile!' },
+  onboarding_avatar:            { action_type: 'navigate', target: '/profile/edit', completion_message: 'Add a photo so others can recognize you!' },
+  onboarding_explore:           { action_type: 'navigate', target: '/community', completion_message: 'Discover your community!' },
+  onboarding_interests:         { action_type: 'navigate', target: '/profile/edit', completion_message: 'Tell us what you\'re into!' },
+  onboarding_maxina:            { action_type: 'navigate', target: '/chat', completion_message: 'Maxina is ready to chat!' },
+  onboarding_diary:             { action_type: 'navigate', target: '/diary', completion_message: 'Time to write your first entry!' },
+  onboarding_diary_day0:        { action_type: 'navigate', target: '/diary', completion_message: 'Start your well-being journal!' },
+  onboarding_health:            { action_type: 'navigate', target: '/health', completion_message: 'See your health overview!' },
+  onboarding_matches:           { action_type: 'navigate', target: '/matches', completion_message: 'Check out your matches!' },
+  onboarding_discover_matches:  { action_type: 'navigate', target: '/matches', completion_message: 'See who you\'ve been matched with!' },
+  onboarding_group:             { action_type: 'navigate', target: '/groups', completion_message: 'Find a group that fits you!' },
   // Engagement
   engage_matches:       { action_type: 'navigate', target: '/matches', completion_message: 'Your matches are waiting!' },
   engage_meetup:        { action_type: 'navigate', target: '/events', completion_message: 'Find a meetup near you!' },

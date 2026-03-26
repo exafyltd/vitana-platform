@@ -82,7 +82,7 @@ export interface GenerationConfig {
   limit: number;
   force: boolean;
   triggered_by?: string;
-  trigger_type?: 'manual' | 'scheduled' | 'pr_merge' | 'webhook';
+  trigger_type?: 'manual' | 'scheduled' | 'pr_merge' | 'webhook' | 'first_login';
 }
 
 // =============================================================================

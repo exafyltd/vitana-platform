@@ -19,6 +19,7 @@ import {
 } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
 import { notifyUserAsync } from '../services/notification-service';
+import { generatePersonalRecommendations } from '../services/recommendation-engine';
 
 const router = Router();
 
@@ -246,6 +247,18 @@ router.post('/login', async (req: Request, res: Response) => {
             body: 'Add your name, photo, and interests to get personalized matches.',
             data: { url: '/profile/edit' },
           }, supabase);
+
+          // Generate starter autopilot recommendations (fire-and-forget)
+          generatePersonalRecommendations(uid, tid, { trigger_type: 'first_login' })
+            .then(result => {
+              console.log(
+                `[VTID-01185] First-login recommendations for ${uid.slice(0, 8)}: ` +
+                `generated=${result.generated}, duplicates=${result.duplicates_skipped}`
+              );
+            })
+            .catch(err => {
+              console.warn(`[VTID-01185] First-login recommendations failed for ${uid.slice(0, 8)}: ${err.message}`);
+            });
         }
       }
     }
