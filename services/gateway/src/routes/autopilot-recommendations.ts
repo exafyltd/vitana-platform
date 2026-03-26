@@ -333,6 +333,24 @@ router.get('/', async (req: Request, res: Response) => {
         }
       }
 
+      // Deduplicate by title: keep only one per title, preferring 'new' status over others
+      const beforeDedup = recommendations.length;
+      const seenTitles = new Map<string, any>();
+      for (const rec of recommendations) {
+        const existing = seenTitles.get(rec.title);
+        if (!existing) {
+          seenTitles.set(rec.title, rec);
+        } else if (rec.status === 'new' && existing.status !== 'new') {
+          // Prefer new over activated/snoozed
+          seenTitles.set(rec.title, rec);
+        }
+        // Otherwise keep the first (higher impact_score due to ORDER BY)
+      }
+      recommendations = Array.from(seenTitles.values());
+      if (recommendations.length < beforeDedup) {
+        console.log(`${LOG_PREFIX} Deduplication: ${beforeDedup} → ${recommendations.length} (${beforeDedup - recommendations.length} duplicates removed)`);
+      }
+
       const hasMore = recommendations.length > limit;
       if (hasMore) recommendations.pop();
 
