@@ -334,6 +334,41 @@ router.get('/', async (req: Request, res: Response) => {
         }
       }
 
+      // Auto-generate: if community user still has 0 recommendations, generate them inline.
+      // This handles first-time users (race condition with fire-and-forget in auth.ts),
+      // existing users who never had recs generated, and day30+ users after old recs expired.
+      if (recommendations.length === 0 && role === 'community' && userId) {
+        console.log(`${LOG_PREFIX} No recommendations found for community user ${userId.slice(0, 8)}, auto-generating...`);
+        try {
+          const supabaseUrl = process.env.SUPABASE_URL;
+          const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+          if (supabaseUrl && svcKey) {
+            const { createClient } = await import('@supabase/supabase-js');
+            const supa = createClient(supabaseUrl, svcKey);
+            const { data: tenantRow } = await supa
+              .from('user_tenants')
+              .select('tenant_id')
+              .eq('user_id', userId)
+              .eq('is_primary', true)
+              .maybeSingle();
+            const tenantId = tenantRow?.tenant_id || process.env.DEFAULT_TENANT_ID;
+            if (tenantId) {
+              const genResult = await generatePersonalRecommendations(userId, tenantId, { trigger_type: 'manual' });
+              console.log(`${LOG_PREFIX} Auto-generation result: generated=${genResult.generated}, dupes=${genResult.duplicates_skipped}`);
+              // Re-fetch after generation
+              if (genResult.generated > 0) {
+                const freshResult = await queryRecommendationsByRole(role, userId, statuses, fetchLimit, offset);
+                if (freshResult.ok && (freshResult.data?.length ?? 0) > 0) {
+                  recommendations = freshResult.data!;
+                }
+              }
+            }
+          }
+        } catch (genErr: any) {
+          console.warn(`${LOG_PREFIX} Auto-generation failed (non-fatal): ${genErr.message}`);
+        }
+      }
+
       // Deduplicate by source_ref (signal_type) first, then by title as fallback.
       // Keep only one per key, preferring 'new' status over others.
       const beforeDedup = recommendations.length;
