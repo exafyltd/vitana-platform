@@ -178,8 +178,10 @@ async function queryRecommendationsByRole(
   // admin role or unknown: no extra filters (returns everything)
 
   try {
+    const queryUrl = `${supabaseUrl}/rest/v1/autopilot_recommendations?${params.toString()}`;
+    console.log(`${LOG_PREFIX} queryRecommendationsByRole PostgREST query:`, queryUrl.replace(supabaseKey!, '***'));
     const response = await fetch(
-      `${supabaseUrl}/rest/v1/autopilot_recommendations?${params.toString()}`,
+      queryUrl,
       {
         headers: {
           'apikey': supabaseKey,
@@ -188,6 +190,54 @@ async function queryRecommendationsByRole(
         },
       },
     );
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { ok: false, error: `${response.status}: ${errorText}` };
+    }
+    const data = await response.json() as any[];
+    const contentRange = response.headers.get('content-range');
+    const totalCount = contentRange ? parseInt(contentRange.split('/')[1]) || data.length : data.length;
+    return { ok: true, data, count: totalCount };
+  } catch (error) {
+    return { ok: false, error: String(error) };
+  }
+}
+
+// =============================================================================
+// Helper: Fallback query — fetch by user_id only (no source_type filter)
+// =============================================================================
+async function queryRecommendationsFallback(
+  userId: string,
+  statuses: string[],
+  limit: number,
+  offset: number,
+): Promise<{ ok: boolean; data?: any[]; count?: number; error?: string }> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+  if (!supabaseUrl || !supabaseKey) {
+    return { ok: false, error: 'Missing Supabase credentials' };
+  }
+
+  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref,source_type,user_id';
+  const params = new URLSearchParams();
+  params.set('select', select);
+  params.set('status', `in.(${statuses.join(',')})`);
+  params.set('order', 'impact_score.desc,created_at.desc');
+  params.set('limit', String(limit));
+  params.set('offset', String(offset));
+  params.append('or', '(snoozed_until.is.null,snoozed_until.lt.now())');
+  params.set('user_id', `eq.${userId}`);
+
+  try {
+    const url = `${supabaseUrl}/rest/v1/autopilot_recommendations?${params.toString()}`;
+    console.log(`${LOG_PREFIX} Fallback query URL: ${url.replace(supabaseKey, '***')}`);
+    const response = await fetch(url, {
+      headers: {
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`,
+        'Prefer': 'count=exact',
+      },
+    });
     if (!response.ok) {
       const errorText = await response.text();
       return { ok: false, error: `${response.status}: ${errorText}` };
@@ -231,15 +281,53 @@ router.get('/', async (req: Request, res: Response) => {
     const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 20, 1), 100);
     const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
 
-    console.log(`${LOG_PREFIX} Recommendations requested (status: ${statuses.join(',')}, limit: ${limit}, role: ${role || 'none'})`);
+    console.log(`${LOG_PREFIX} Recommendations requested`, {
+      status: statuses.join(','),
+      limit,
+      role: role || 'none',
+      userId: userId || 'null',
+      headers: {
+        'X-Vitana-Active-Role': req.get('X-Vitana-Active-Role') || 'missing',
+        'X-Vitana-User': req.get('X-Vitana-User') || 'missing',
+        'X-User-ID': req.get('X-User-ID') || 'missing',
+        'Authorization': req.get('Authorization') ? 'present' : 'missing',
+      },
+      reqUser: req.user ? { id: (req as any).user?.id, sub: (req as any).user?.sub } : 'no req.user',
+    });
 
     // Role-based filtering: query table directly (RPC lacks source_type/user_id columns)
     if (role) {
       const result = await queryRecommendationsByRole(role, userId, statuses, limit + 1, offset);
+      console.log(`${LOG_PREFIX} queryRecommendationsByRole result`, {
+        ok: result.ok,
+        count: result.data?.length ?? 0,
+        totalCount: result.count ?? 0,
+        error: result.error || 'none',
+        role,
+        userId: userId || 'null',
+        statuses,
+      });
+
       if (!result.ok) {
         return res.status(400).json({ ok: false, error: result.error });
       }
-      const recommendations = result.data || [];
+
+      let recommendations = result.data || [];
+
+      // Fallback: if community role returns empty but userId exists, try without source_type filter
+      if (recommendations.length === 0 && role === 'community' && userId) {
+        console.log(`${LOG_PREFIX} Community query returned 0 results, trying fallback without source_type filter`);
+        const fallbackResult = await queryRecommendationsFallback(userId, statuses, limit + 1, offset);
+        console.log(`${LOG_PREFIX} Fallback result`, {
+          ok: fallbackResult.ok,
+          count: fallbackResult.data?.length ?? 0,
+          error: fallbackResult.error || 'none',
+        });
+        if (fallbackResult.ok && (fallbackResult.data?.length ?? 0) > 0) {
+          recommendations = fallbackResult.data!;
+        }
+      }
+
       const hasMore = recommendations.length > limit;
       if (hasMore) recommendations.pop();
 
@@ -250,16 +338,24 @@ router.get('/', async (req: Request, res: Response) => {
         has_more: hasMore,
         vtid: 'VTID-01180',
         timestamp: new Date().toISOString(),
+        _debug: {
+          role,
+          userId: userId || null,
+          queryPath: 'role-based',
+          fallbackUsed: result.data?.length === 0 && recommendations.length > 0,
+        },
       });
     }
 
     // No role specified: backward-compatible RPC path (Command Hub default)
+    console.log(`${LOG_PREFIX} Using RPC fallback path (no role)`, { userId: userId || 'null', statuses });
     const result = await callRpc<any[]>('get_autopilot_recommendations', {
       p_status: statuses,
       p_limit: limit + 1,
       p_offset: offset,
       p_user_id: userId,
     });
+    console.log(`${LOG_PREFIX} RPC result`, { ok: result.ok, count: (result.data as any[])?.length ?? 0, error: result.error || 'none' });
 
     if (!result.ok) {
       return res.status(400).json({ ok: false, error: result.error });
@@ -278,6 +374,11 @@ router.get('/', async (req: Request, res: Response) => {
       has_more: hasMore,
       vtid: 'VTID-01180',
       timestamp: new Date().toISOString(),
+      _debug: {
+        role: null,
+        userId: userId || null,
+        queryPath: 'rpc',
+      },
     });
   } catch (error: any) {
     console.error(`${LOG_PREFIX} List recommendations error:`, error);
@@ -302,16 +403,19 @@ router.get('/count', async (req: Request, res: Response) => {
     const userId = getUserId(req);
     const role = getActiveRole(req);
 
-    console.log(`${LOG_PREFIX} Recommendations count requested (role: ${role || 'none'})`);
+    console.log(`${LOG_PREFIX} Recommendations count requested`, { role: role || 'none', userId: userId || 'null' });
 
     // Role-based count: query table directly with same filters
     if (role) {
       const result = await queryRecommendationsByRole(role, userId, ['new'], 0, 0);
+      const count = result.ok ? (result.count || 0) : 0;
+      console.log(`${LOG_PREFIX} Count result (role-based)`, { role, userId: userId || 'null', count, ok: result.ok, error: result.error || 'none' });
       return res.status(200).json({
         ok: true,
-        count: result.ok ? (result.count || 0) : 0,
+        count,
         vtid: 'VTID-01180',
         timestamp: new Date().toISOString(),
+        _debug: { role, userId: userId || null, queryPath: 'role-based' },
       });
     }
 
