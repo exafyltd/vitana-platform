@@ -24243,16 +24243,8 @@ function renderOrbOverlay() {
         });
     }
 
-    // VTID-01069-F: Show interim speech recognition results (word-by-word typing effect)
-    if (state.orb.interimTranscript) {
-        var interimEl = document.createElement('div');
-        interimEl.className = 'orb-stream-msg orb-stream-msg-user orb-stream-msg-interim';
-        var interimBubble = document.createElement('div');
-        interimBubble.className = 'orb-stream-bubble';
-        interimBubble.textContent = state.orb.interimTranscript;
-        interimEl.appendChild(interimBubble);
-        chatStream.appendChild(interimEl);
-    }
+    // VTID-INTERIM-FIX: Old Path A removed — interim display now handled exclusively
+    // by _updateInterimTranscript() which is called after renderApp() DOM rebuild.
 
     // Input zone wrapper
     var inputZoneWrap = document.createElement('div');
@@ -24475,6 +24467,9 @@ function renderOrbOverlay() {
         if (stream) {
             stream.scrollTop = stream.scrollHeight;
         }
+        // VTID-INTERIM-FIX: Re-apply interim bubbles after DOM rebuild
+        // renderApp() destroys all DOM elements; this restores any active interims
+        _updateInterimTranscript();
     }, 50);
 
     return overlay;
@@ -25208,9 +25203,9 @@ function orbVoiceStart() {
             // Send to backend
             orbVoiceSendText(finalTranscript.trim());
         } else {
-            // VTID-01069-F: Render interim transcript and scroll to show it
-            renderApp();
-            scrollOrbLiveTranscript();
+            // VTID-INTERIM-FIX: Use targeted DOM update instead of renderApp()
+            // to prevent full DOM rebuild flicker on every interim word
+            _updateInterimTranscript();
         }
     };
 
@@ -26011,8 +26006,9 @@ function geminiLiveHandleMessage(msg) {
                     setOrbState('listening');
                     state.orb.voiceState = 'LISTENING';
 
-                    // VTID-ECHO-FIX: Restart transcriber after model finishes speaking
+                    // VTID-ECHO-FIX: Set ignore window so echo filter catches any tail audio
                     state.orb.ignoreSTTUntil = Date.now() + 1500;
+                    // Restart transcriber — it was aborted when audio started
                     geminiLiveStartTranscriber();
 
                     // Play subtle beep to signal readiness
@@ -26272,7 +26268,8 @@ function emitOrbDiagEvent(eventName, payload) {
  * Shows a "typing" preview that will be replaced by the final bubble on turn_complete.
  */
 function _updateInterimTranscript() {
-    // Update the existing interim element or create one
+    // VTID-INTERIM-FIX: Single source of truth for all interim transcript display.
+    // Handles both Live API buffers and Web Speech API interimTranscript.
     var chatStream = document.querySelector('.orb-chat-stream');
     if (!chatStream) return;
 
@@ -26280,7 +26277,7 @@ function _updateInterimTranscript() {
     var oldInterims = chatStream.querySelectorAll('.orb-stream-msg-interim-live');
     for (var i = 0; i < oldInterims.length; i++) oldInterims[i].remove();
 
-    // Show buffered output as interim assistant bubble
+    // Show buffered output as interim assistant bubble (from Live API output_transcript)
     if (state.orb._outputTranscriptBuffer) {
         var assistantInterim = document.createElement('div');
         assistantInterim.className = 'orb-stream-msg orb-stream-msg-assistant orb-stream-msg-interim-live';
@@ -26292,7 +26289,7 @@ function _updateInterimTranscript() {
         chatStream.appendChild(assistantInterim);
     }
 
-    // Show buffered input as interim user bubble
+    // Show buffered input as interim user bubble (from Live API input_transcript)
     if (state.orb._inputTranscriptBuffer) {
         var userInterim = document.createElement('div');
         userInterim.className = 'orb-stream-msg orb-stream-msg-user orb-stream-msg-interim-live';
@@ -26302,6 +26299,18 @@ function _updateInterimTranscript() {
         uBubble.textContent = state.orb._inputTranscriptBuffer;
         userInterim.appendChild(uBubble);
         chatStream.appendChild(userInterim);
+    }
+
+    // VTID-INTERIM-FIX: Show Web Speech API interim transcript (parallel transcriber)
+    if (state.orb.interimTranscript && !state.orb._inputTranscriptBuffer) {
+        var speechInterim = document.createElement('div');
+        speechInterim.className = 'orb-stream-msg orb-stream-msg-user orb-stream-msg-interim-live';
+        var sBubble = document.createElement('div');
+        sBubble.className = 'orb-stream-bubble';
+        sBubble.style.opacity = '0.7';
+        sBubble.textContent = state.orb.interimTranscript;
+        speechInterim.appendChild(sBubble);
+        chatStream.appendChild(speechInterim);
     }
 
     scrollOrbLiveTranscript();
@@ -26777,9 +26786,12 @@ function geminiLiveStartTranscriber() {
             // Persist conversation state
             orbSaveConversationState();
             scrollOrbLiveTranscript();
+            renderApp();
+        } else {
+            // VTID-INTERIM-FIX: For interim-only updates, use targeted DOM patch
+            // instead of renderApp() which destroys the entire DOM and causes flicker
+            _updateInterimTranscript();
         }
-
-        renderApp();
     };
 
     recognition.onerror = function (event) {
