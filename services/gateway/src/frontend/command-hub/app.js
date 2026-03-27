@@ -26212,119 +26212,488 @@ async function fetchOverviewHealth() {
 }
 
 // ---------------------------------------------------------------------------
-// 2. renderOverviewSystemView — service health cards grid
+// 2. VTID-01864: renderOverviewSystemView — Supervisor Dashboard
 // ---------------------------------------------------------------------------
 function renderOverviewSystemView() {
     var container = document.createElement('div');
-    container.className = 'attention-center-container';
+    container.className = 'overview-dashboard';
 
-    // Auto-fetch pipeline summary (shared with Pipeline Dashboard)
+    // Auto-fetch dashboard data
+    if (!state.overviewDashboard.fetched && !state.overviewDashboard.loading) {
+        fetchOverviewDashboard();
+    }
+    // Also fetch pipeline summary (needed for attention queue + metrics)
     if (!state.overviewPipelineSummary.fetched && !state.overviewPipelineSummary.loading) {
         fetchPipelineSummary();
     }
-    // Also auto-fetch health for compact strip
-    if (!state.overviewHealth.fetched && !state.overviewHealth.loading) {
-        fetchOverviewHealth();
-    }
 
-    // Header
-    var header = document.createElement('div');
-    header.className = 'list-toolbar';
-    var titleEl = document.createElement('span');
-    titleEl.className = 'toolbar-title';
-    titleEl.textContent = 'Attention Center';
-    header.appendChild(titleEl);
+    var db = state.overviewDashboard;
 
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn btn-sm';
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.onclick = function () {
-        state.overviewPipelineSummary.fetched = false;
-        state.overviewHealth.fetched = false;
-        fetchPipelineSummary();
-        fetchOverviewHealth();
-    };
-    header.appendChild(refreshBtn);
-    container.appendChild(header);
-
-    // Loading — VTID-01239: animated spinner
-    if (state.overviewPipelineSummary.loading && !state.overviewPipelineSummary.snapshot) {
+    // ── Loading state ──
+    if (db.loading && !db.fetched) {
         var spinnerWrap = document.createElement('div');
-        spinnerWrap.className = 'attention-spinner-container';
+        spinnerWrap.className = 'overview-dashboard-loading';
         var spinner = document.createElement('div');
         spinner.className = 'attention-spinner';
         spinnerWrap.appendChild(spinner);
         var spinText = document.createElement('div');
         spinText.className = 'attention-spinner-text';
-        spinText.textContent = 'Loading attention center\u2026';
+        spinText.textContent = 'Loading supervisor dashboard\u2026';
         spinnerWrap.appendChild(spinText);
         container.appendChild(spinnerWrap);
         return container;
     }
 
-    // Error
-    if (state.overviewPipelineSummary.error) {
+    // ── Error state ──
+    if (db.error && !db.fetched) {
         var errorDiv = document.createElement('div');
-        errorDiv.className = 'placeholder-content error-text';
-        errorDiv.textContent = 'Error: ' + state.overviewPipelineSummary.error;
+        errorDiv.className = 'overview-dashboard-loading';
+        var errText = document.createElement('div');
+        errText.className = 'error-text';
+        errText.style.fontSize = '1rem';
+        errText.textContent = 'Dashboard Error: ' + (db.error || 'Unknown');
+        errorDiv.appendChild(errText);
+        var retryBtn = document.createElement('button');
+        retryBtn.className = 'btn btn-sm';
+        retryBtn.style.marginTop = '0.5rem';
+        retryBtn.textContent = 'Retry';
+        retryBtn.onclick = function () {
+            state.overviewDashboard.fetched = false;
+            state.overviewDashboard.error = null;
+            fetchOverviewDashboard();
+        };
+        errorDiv.appendChild(retryBtn);
         container.appendChild(errorDiv);
         return container;
     }
 
-    var summary = state.overviewPipelineSummary.snapshot;
+    // ═══════════════════════════════════════════════════════════════════════
+    // SECTION 1: System Status Banner
+    // ═══════════════════════════════════════════════════════════════════════
+    var statusClass = 'overview-status-operational';
+    var statusLabel = 'OPERATIONAL';
+    if (db.systemStatus === 'degraded') { statusClass = 'overview-status-degraded'; statusLabel = 'DEGRADED'; }
+    if (db.systemStatus === 'critical') { statusClass = 'overview-status-critical'; statusLabel = 'CRITICAL'; }
 
-    // ── A. Priority Queue ──
+    var banner = document.createElement('div');
+    banner.className = 'overview-status-banner ' + statusClass;
+
+    var bannerLeft = document.createElement('div');
+    bannerLeft.className = 'status-banner-left';
+
+    var bannerDot = document.createElement('span');
+    bannerDot.className = 'status-banner-dot';
+    if (db.systemStatus === 'critical') bannerDot.classList.add('status-banner-dot-pulse');
+
+    var bannerLabel = document.createElement('span');
+    bannerLabel.className = 'status-banner-label';
+    bannerLabel.textContent = statusLabel;
+
+    var bannerDetail = document.createElement('span');
+    bannerDetail.className = 'status-banner-detail';
+    bannerDetail.textContent = db.systemStatusMessage || '';
+
+    bannerLeft.appendChild(bannerDot);
+    bannerLeft.appendChild(bannerLabel);
+    bannerLeft.appendChild(bannerDetail);
+
+    var bannerRight = document.createElement('div');
+    bannerRight.className = 'status-banner-right';
+
+    var bannerTime = document.createElement('span');
+    bannerTime.className = 'status-banner-time';
+    bannerTime.textContent = db.lastRefreshed ? dashboardRelativeTime(db.lastRefreshed) : '';
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-sm';
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.onclick = function () {
+        state.overviewDashboard.fetched = false;
+        state.overviewPipelineSummary.fetched = false;
+        fetchOverviewDashboard();
+        fetchPipelineSummary();
+    };
+
+    bannerRight.appendChild(bannerTime);
+    bannerRight.appendChild(refreshBtn);
+    banner.appendChild(bannerLeft);
+    banner.appendChild(bannerRight);
+    container.appendChild(banner);
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // SECTION 2: Key Metrics Grid (2x4)
+    // ═══════════════════════════════════════════════════════════════════════
+    var metricsGrid = document.createElement('div');
+    metricsGrid.className = 'overview-metrics-grid';
+
+    var summary = state.overviewPipelineSummary.snapshot;
+    var deployRate = db.deploySuccessRate7d;
+    var orbStats = db.orbSessionStats;
+    var loopSt = db.loopStatus;
+
+    var metrics = [
+        {
+            value: deployRate && deployRate.rate !== null ? deployRate.rate + '%' : '\u2014',
+            label: 'Deploy Success',
+            subtitle: deployRate ? deployRate.succeeded + '/' + deployRate.total + ' (7d)' : 'No data',
+            color: deployRate && deployRate.rate !== null ? metricColor(deployRate.rate, 80, 50) : 'neutral'
+        },
+        {
+            value: orbStats ? orbStats.success_rate + '%' : '\u2014',
+            label: 'ORB Sessions',
+            subtitle: orbStats ? orbStats.sessions_24h + ' sessions (24h)' : 'No data',
+            color: orbStats && orbStats.sessions_24h > 0 ? metricColor(orbStats.success_rate, 80, 50) : (orbStats && orbStats.gemini_live_enabled ? 'neutral' : 'red')
+        },
+        {
+            value: summary && summary.funnel ? String(summary.funnel.completed || 0) : '\u2014',
+            label: 'Tasks Completed',
+            subtitle: summary && summary.funnel ? (summary.funnel.in_progress || 0) + ' in progress' : '',
+            color: summary && summary.funnel && summary.funnel.completed > 0 ? 'green' : 'neutral'
+        },
+        {
+            value: summary && summary.success_rate !== undefined ? Math.round(summary.success_rate) + '%' : '\u2014',
+            label: 'Automation Rate',
+            subtitle: '7d success rate',
+            color: summary ? metricColor(summary.success_rate, 80, 50) : 'neutral'
+        },
+        {
+            value: String(db.recentFailures.length),
+            label: 'Errors (24h)',
+            subtitle: db.recentFailures.length > 0 ? 'Latest: ' + dashboardRelativeTime(db.recentFailures[0] && db.recentFailures[0].created_at) : 'No errors',
+            color: metricColorInverse(db.recentFailures.length, 0, 5)
+        },
+        {
+            value: String(db.violationCount24h),
+            label: 'Violations',
+            subtitle: 'Governance (recent)',
+            color: metricColorInverse(db.violationCount24h, 0, 3)
+        },
+        {
+            value: loopSt && loopSt.is_running ? 'Running' : (loopSt ? 'Stopped' : '\u2014'),
+            label: 'Autopilot Loop',
+            subtitle: loopSt && loopSt.processed_1h ? loopSt.processed_1h + ' processed/h' : '',
+            color: loopSt ? (loopSt.is_running ? 'green' : 'red') : 'neutral'
+        },
+        {
+            value: summary && summary.workers_active !== undefined ? (summary.workers_active ? 'Active' : 'Inactive') : '\u2014',
+            label: 'Workers',
+            subtitle: summary && summary.execution_armed ? 'Execution armed' : 'Execution off',
+            color: summary ? (summary.workers_active ? 'green' : 'red') : 'neutral'
+        }
+    ];
+
+    metrics.forEach(function (m) {
+        var card = document.createElement('div');
+        card.className = 'overview-metric-card';
+        var val = document.createElement('div');
+        val.className = 'metric-value metric-value-' + m.color;
+        val.textContent = m.value;
+        var lbl = document.createElement('div');
+        lbl.className = 'metric-label';
+        lbl.textContent = m.label;
+        card.appendChild(val);
+        card.appendChild(lbl);
+        if (m.subtitle) {
+            var sub = document.createElement('div');
+            sub.className = 'metric-subtitle';
+            sub.textContent = m.subtitle;
+            card.appendChild(sub);
+        }
+        metricsGrid.appendChild(card);
+    });
+
+    container.appendChild(metricsGrid);
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // SECTION 3: Service Health Grid (left column)
+    // ═══════════════════════════════════════════════════════════════════════
+    var healthPanel = document.createElement('div');
+    healthPanel.className = 'overview-health-grid';
+
+    var healthTitleEl = document.createElement('div');
+    healthTitleEl.className = 'overview-panel-title';
+    healthTitleEl.textContent = 'Service Health (' + db.healthChecks.length + ')';
+    healthPanel.appendChild(healthTitleEl);
+
+    var criticalOrder = ['Gateway', 'ORB Live', 'CI/CD', 'Autopilot', 'Execute Runner', 'Operator'];
+    var sortedHealth = db.healthChecks.slice().sort(function (a, b) {
+        var ai = criticalOrder.indexOf(a.name);
+        var bi = criticalOrder.indexOf(b.name);
+        if (ai >= 0 && bi >= 0) return ai - bi;
+        if (ai >= 0) return -1;
+        if (bi >= 0) return 1;
+        return a.name.localeCompare(b.name);
+    });
+
+    if (sortedHealth.length === 0) {
+        var noH = document.createElement('div');
+        noH.className = 'placeholder-content';
+        noH.textContent = 'Loading health checks...';
+        healthPanel.appendChild(noH);
+    } else {
+        sortedHealth.forEach(function (svc) {
+            var row = document.createElement('div');
+            row.className = 'health-grid-row';
+            var dotColor = 'green';
+            if (svc.status === 'degraded' || svc.status === 'warning') dotColor = 'yellow';
+            if (svc.status === 'down' || svc.status === 'error' || svc.status === 'unhealthy') dotColor = 'red';
+            var dot = document.createElement('span');
+            dot.className = 'health-dot health-dot-' + dotColor;
+            var nameEl = document.createElement('span');
+            nameEl.className = 'health-grid-name';
+            nameEl.textContent = svc.name;
+            var statusEl = document.createElement('span');
+            statusEl.className = 'health-grid-status';
+            statusEl.style.color = dotColor === 'green' ? '#10b981' : (dotColor === 'yellow' ? '#f59e0b' : '#ef4444');
+            statusEl.textContent = svc.status;
+            var latencyEl = document.createElement('span');
+            latencyEl.className = 'health-grid-latency';
+            latencyEl.textContent = svc.latency_ms >= 0 ? svc.latency_ms + 'ms' : '\u2014';
+            row.appendChild(dot);
+            row.appendChild(nameEl);
+            row.appendChild(statusEl);
+            row.appendChild(latencyEl);
+            healthPanel.appendChild(row);
+        });
+    }
+    container.appendChild(healthPanel);
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // SECTION 4: ORB Communication Panel (right column)
+    // ═══════════════════════════════════════════════════════════════════════
+    var orbPanel = document.createElement('div');
+    orbPanel.className = 'overview-orb-panel';
+    var orbOk = orbStats && orbStats.gemini_live_enabled && orbStats.vertex_project_configured && orbStats.google_auth_ready;
+
+    var orbHeader = document.createElement('div');
+    orbHeader.className = 'overview-panel-title-row';
+    var orbDot = document.createElement('span');
+    orbDot.className = 'health-dot health-dot-' + (orbOk ? 'green' : 'red');
+    var orbTitleEl = document.createElement('span');
+    orbTitleEl.className = 'overview-panel-title';
+    orbTitleEl.style.margin = '0';
+    orbTitleEl.textContent = 'ORB Voice Communication';
+    orbHeader.appendChild(orbDot);
+    orbHeader.appendChild(orbTitleEl);
+    orbPanel.appendChild(orbHeader);
+
+    var configs = [
+        { label: 'Gemini Live', ok: orbStats && orbStats.gemini_live_enabled },
+        { label: 'Vertex Project', ok: orbStats && orbStats.vertex_project_configured },
+        { label: 'Google Auth', ok: orbStats && orbStats.google_auth_ready }
+    ];
+    configs.forEach(function (cfg) {
+        var row = document.createElement('div');
+        row.className = 'orb-config-row';
+        var cfgDot = document.createElement('span');
+        cfgDot.className = 'health-dot health-dot-' + (cfg.ok ? 'green' : 'red');
+        var cfgLabel = document.createElement('span');
+        cfgLabel.className = 'orb-config-label';
+        cfgLabel.textContent = cfg.label;
+        var cfgVal = document.createElement('span');
+        cfgVal.className = 'orb-config-value';
+        cfgVal.style.color = cfg.ok ? '#10b981' : '#ef4444';
+        cfgVal.textContent = cfg.ok ? 'OK' : 'FAIL';
+        row.appendChild(cfgDot);
+        row.appendChild(cfgLabel);
+        row.appendChild(cfgVal);
+        orbPanel.appendChild(row);
+    });
+
+    if (!orbOk) {
+        var alertBox = document.createElement('div');
+        alertBox.className = 'orb-alert';
+        var issues = [];
+        if (!orbStats || !orbStats.gemini_live_enabled) issues.push('Gemini Live disabled');
+        if (!orbStats || !orbStats.vertex_project_configured) issues.push('VERTEX_PROJECT_ID empty');
+        if (!orbStats || !orbStats.google_auth_ready) issues.push('Google Auth not ready');
+        alertBox.textContent = 'ORB BROKEN: ' + issues.join(' \u2022 ');
+        orbPanel.appendChild(alertBox);
+    }
+
+    var sep1 = document.createElement('div');
+    sep1.className = 'orb-separator';
+    orbPanel.appendChild(sep1);
+
+    var orbMetrics = [
+        { label: 'Sessions (24h)', value: orbStats ? String(orbStats.sessions_24h) : '0' },
+        { label: 'Failures (24h)', value: orbStats ? String(orbStats.failures_24h) : '0', warn: orbStats && orbStats.failures_24h > 0 },
+        { label: 'Success Rate', value: orbStats ? orbStats.success_rate + '%' : '\u2014' },
+        { label: 'Active Sessions', value: orbStats ? String(orbStats.active_sessions + (orbStats.active_live_sessions || 0)) : '0' },
+        { label: 'Last Success', value: orbStats && orbStats.last_success ? dashboardRelativeTime(orbStats.last_success) : 'Never' }
+    ];
+    orbMetrics.forEach(function (m) {
+        var row = document.createElement('div');
+        row.className = 'orb-metric-row';
+        var lbl = document.createElement('span');
+        lbl.textContent = m.label;
+        var val = document.createElement('span');
+        val.className = 'orb-metric-value';
+        if (m.warn) val.style.color = '#ef4444';
+        val.textContent = m.value;
+        row.appendChild(lbl);
+        row.appendChild(val);
+        orbPanel.appendChild(row);
+    });
+    container.appendChild(orbPanel);
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // SECTION 5: Recent Failures (left column, bottom)
+    // ═══════════════════════════════════════════════════════════════════════
+    var failPanel = document.createElement('div');
+    failPanel.className = 'overview-failures-panel';
+    var failHeader = document.createElement('div');
+    failHeader.className = 'overview-panel-title-row';
+    var failTitleEl = document.createElement('span');
+    failTitleEl.className = 'overview-panel-title';
+    failTitleEl.style.margin = '0';
+    failTitleEl.textContent = 'Recent Failures';
+    failHeader.appendChild(failTitleEl);
+    if (db.recentFailures.length > 0) {
+        var failBadge = document.createElement('span');
+        failBadge.className = 'overview-count-badge overview-count-badge-red';
+        failBadge.textContent = db.recentFailures.length;
+        failHeader.appendChild(failBadge);
+    }
+    failPanel.appendChild(failHeader);
+
+    if (db.recentFailures.length === 0) {
+        var noFail = document.createElement('div');
+        noFail.className = 'overview-no-failures';
+        noFail.textContent = 'No failures in the last 24h';
+        failPanel.appendChild(noFail);
+    } else {
+        db.recentFailures.slice(0, 8).forEach(function (evt) {
+            var row = document.createElement('div');
+            row.className = 'failure-row';
+            var time = document.createElement('span');
+            time.className = 'failure-time';
+            time.textContent = dashboardRelativeTime(evt.created_at);
+            var topic = document.createElement('span');
+            topic.className = 'failure-topic';
+            topic.textContent = (evt.topic || '').replace(/^vtid\./, '').replace(/^cicd\./, '');
+            topic.title = evt.topic || '';
+            var msg = document.createElement('span');
+            msg.className = 'failure-message';
+            msg.textContent = evt.message || (evt.metadata && evt.metadata.message) || evt.status || '';
+            row.appendChild(time);
+            row.appendChild(topic);
+            row.appendChild(msg);
+            failPanel.appendChild(row);
+        });
+    }
+    container.appendChild(failPanel);
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // SECTION 6: Deployment History (right column, bottom)
+    // ═══════════════════════════════════════════════════════════════════════
+    var deployPanel = document.createElement('div');
+    deployPanel.className = 'overview-deploy-panel';
+    var deployHeader = document.createElement('div');
+    deployHeader.className = 'overview-panel-title-row';
+    var deployTitleEl = document.createElement('span');
+    deployTitleEl.className = 'overview-panel-title';
+    deployTitleEl.style.margin = '0';
+    deployTitleEl.textContent = 'Recent Deployments';
+    deployHeader.appendChild(deployTitleEl);
+    if (deployRate && deployRate.total > 0) {
+        var rateBadge = document.createElement('span');
+        rateBadge.className = 'overview-count-badge overview-count-badge-' + (deployRate.rate >= 80 ? 'green' : (deployRate.rate >= 50 ? 'amber' : 'red'));
+        rateBadge.textContent = deployRate.rate + '%';
+        deployHeader.appendChild(rateBadge);
+    }
+    deployPanel.appendChild(deployHeader);
+
+    if (db.deployments.length === 0) {
+        var noDep = document.createElement('div');
+        noDep.className = 'placeholder-content';
+        noDep.textContent = 'No recent deployments';
+        deployPanel.appendChild(noDep);
+    } else {
+        db.deployments.slice(0, 7).forEach(function (dep) {
+            var row = document.createElement('div');
+            row.className = 'deploy-row';
+            var depStatus = (dep.status || '').toLowerCase();
+            var isSuccess = depStatus === 'succeeded' || depStatus === 'success' || depStatus === 'deployed';
+            var depDot = document.createElement('span');
+            depDot.className = 'deploy-status-dot ' + (isSuccess ? 'deploy-status-dot-success' : 'deploy-status-dot-failed');
+            var depService = document.createElement('span');
+            depService.className = 'deploy-service';
+            depService.textContent = dep.service || dep.service_name || 'gateway';
+            var depVersion = document.createElement('span');
+            depVersion.className = 'deploy-swv';
+            var ver = dep.version || dep.image_tag || dep.commit_sha || '';
+            depVersion.textContent = ver.length > 12 ? ver.substring(0, 12) : ver;
+            var depStatusEl = document.createElement('span');
+            depStatusEl.className = 'deploy-status-text';
+            depStatusEl.style.color = isSuccess ? '#10b981' : '#ef4444';
+            depStatusEl.textContent = dep.status || 'unknown';
+            var depTime = document.createElement('span');
+            depTime.className = 'deploy-time';
+            depTime.textContent = dashboardRelativeTime(dep.created_at || dep.deployed_at || dep.timestamp);
+            row.appendChild(depDot);
+            row.appendChild(depService);
+            row.appendChild(depVersion);
+            row.appendChild(depStatusEl);
+            row.appendChild(depTime);
+            deployPanel.appendChild(row);
+        });
+    }
+    container.appendChild(deployPanel);
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // SECTION 7: Attention Center (full width)
+    // ═══════════════════════════════════════════════════════════════════════
     var attQueue = (summary && summary.attention_queue) || [];
     var attSection = document.createElement('div');
-    attSection.className = 'attention-priority-section';
-
-    var attTitle = document.createElement('div');
-    attTitle.className = 'section-title';
-    attTitle.textContent = attQueue.length > 0
-        ? 'Priority Queue (' + attQueue.length + ' items need attention)'
-        : 'Priority Queue — All Clear';
-    attSection.appendChild(attTitle);
+    attSection.className = 'overview-attention-center';
+    var attHeader = document.createElement('div');
+    attHeader.className = 'overview-panel-title-row';
+    var attTitleEl = document.createElement('span');
+    attTitleEl.className = 'overview-panel-title';
+    attTitleEl.style.margin = '0';
+    attTitleEl.textContent = 'Attention Center';
+    attHeader.appendChild(attTitleEl);
+    if (attQueue.length > 0) {
+        var attBadge = document.createElement('span');
+        attBadge.className = 'overview-count-badge overview-count-badge-red';
+        attBadge.textContent = attQueue.length;
+        attHeader.appendChild(attBadge);
+    }
+    attSection.appendChild(attHeader);
 
     var severityColors = { BROKEN: '#ef4444', STUCK: '#f59e0b', BLOCKED: '#6b7280', NEW: '#3b82f6' };
 
     if (attQueue.length === 0) {
         var allClear = document.createElement('div');
-        allClear.className = 'attention-all-clear';
-        allClear.textContent = 'No tasks need immediate attention. Pipeline is running smoothly.';
+        allClear.className = 'overview-no-failures';
+        allClear.textContent = 'No tasks need immediate attention. Pipeline running smoothly.';
         attSection.appendChild(allClear);
     } else {
-        attQueue.forEach(function (item) {
+        attQueue.slice(0, 6).forEach(function (item) {
             var card = document.createElement('div');
             card.className = 'attention-item';
             card.style.borderLeftColor = severityColors[item.severity] || '#6b7280';
-
             var topRow = document.createElement('div');
             topRow.className = 'attention-item-top';
-
             var badge = document.createElement('span');
             badge.className = 'severity-badge';
             badge.style.backgroundColor = severityColors[item.severity] || '#6b7280';
             badge.textContent = item.severity;
-
             var vtidEl = document.createElement('span');
             vtidEl.className = 'attention-vtid';
             vtidEl.textContent = item.vtid;
-
             var titleSpan = document.createElement('span');
             titleSpan.className = 'attention-title';
             titleSpan.textContent = item.title || '';
-
             topRow.appendChild(badge);
             topRow.appendChild(vtidEl);
             topRow.appendChild(titleSpan);
-
             var bottomRow = document.createElement('div');
             bottomRow.className = 'attention-item-bottom';
-
             var reasonEl = document.createElement('span');
             reasonEl.textContent = item.reason || '';
             bottomRow.appendChild(reasonEl);
-
             if (item.stuck_minutes) {
                 var timeEl = document.createElement('span');
                 timeEl.className = 'attention-time';
@@ -26332,25 +26701,15 @@ function renderOverviewSystemView() {
                 timeEl.textContent = mins >= 60 ? Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm ago' : mins + 'm ago';
                 bottomRow.appendChild(timeEl);
             }
-
             var viewBtn = document.createElement('button');
             viewBtn.className = 'btn btn-sm';
             viewBtn.textContent = 'View Task';
             viewBtn.onclick = function (e) {
                 e.stopPropagation();
-                // Open task drawer with attention context
                 state.selectedTask = {
-                    vtid: item.vtid,
-                    title: item.title,
-                    status: item.status || 'scheduled',
-                    spec_status: item.spec_status || 'missing',
-                    summary: item.reason || '',
-                    oasisColumn: '',
-                    _attentionContext: {
-                        severity: item.severity,
-                        reason: item.reason,
-                        stuck_minutes: item.stuck_minutes
-                    }
+                    vtid: item.vtid, title: item.title, status: item.status || 'scheduled',
+                    spec_status: item.spec_status || 'missing', summary: item.reason || '', oasisColumn: '',
+                    _attentionContext: { severity: item.severity, reason: item.reason, stuck_minutes: item.stuck_minutes }
                 };
                 state.selectedTaskDetail = null;
                 state.selectedTaskDetailLoading = true;
@@ -26359,28 +26718,27 @@ function renderOverviewSystemView() {
                 renderApp();
                 fetchVtidDetail(item.vtid);
             };
-
             card.appendChild(topRow);
             card.appendChild(bottomRow);
             card.appendChild(viewBtn);
             attSection.appendChild(card);
         });
     }
-
     container.appendChild(attSection);
 
-    // ── B. Vitana Recommendations ──
+    // ═══════════════════════════════════════════════════════════════════════
+    // SECTION 8: Vitana Recommends (full width)
+    // ═══════════════════════════════════════════════════════════════════════
     var recs = (summary && summary.recommendations) || [];
     var recsSection = document.createElement('div');
-    recsSection.className = 'attention-recs-section';
-
+    recsSection.className = 'overview-attention-center';
     var recsHeader = document.createElement('div');
-    recsHeader.className = 'section-title-row';
-
-    var recsTitle = document.createElement('div');
-    recsTitle.className = 'section-title';
-    recsTitle.textContent = 'Vitana Recommends (' + recs.length + ')';
-    recsHeader.appendChild(recsTitle);
+    recsHeader.className = 'overview-panel-title-row';
+    var recsTitleEl = document.createElement('span');
+    recsTitleEl.className = 'overview-panel-title';
+    recsTitleEl.style.margin = '0';
+    recsTitleEl.textContent = 'Vitana Recommends (' + recs.length + ')';
+    recsHeader.appendChild(recsTitleEl);
 
     var genBtn = document.createElement('button');
     genBtn.className = 'btn btn-sm';
@@ -26405,41 +26763,33 @@ function renderOverviewSystemView() {
     if (recs.length === 0) {
         var noRecs = document.createElement('div');
         noRecs.className = 'placeholder-content';
+        noRecs.style.fontSize = '0.85rem';
         noRecs.textContent = 'No pending recommendations. Click "Generate New" to analyze the platform.';
         recsSection.appendChild(noRecs);
     } else {
         recs.forEach(function (rec) {
             var card = document.createElement('div');
             card.className = 'recommendation-card';
-
             var cardTop = document.createElement('div');
             cardTop.className = 'rec-card-top';
-
             var recTitle = document.createElement('span');
             recTitle.className = 'rec-title';
             recTitle.textContent = rec.title;
-
             var domainBadge = document.createElement('span');
             domainBadge.className = 'rec-domain-badge';
             domainBadge.textContent = rec.domain || 'general';
-
             cardTop.appendChild(recTitle);
             cardTop.appendChild(domainBadge);
-
             var cardMeta = document.createElement('div');
             cardMeta.className = 'rec-card-meta';
-
             var riskEl = document.createElement('span');
             riskEl.className = 'rec-risk risk-' + (rec.risk_level || 'low');
             riskEl.textContent = 'Risk: ' + (rec.risk_level || 'low');
-
             var impactEl = document.createElement('span');
             impactEl.className = 'rec-impact';
             impactEl.textContent = 'Impact: ' + (rec.impact_score || 0) + '/10';
-
             cardMeta.appendChild(riskEl);
             cardMeta.appendChild(impactEl);
-
             if (rec.summary) {
                 var summaryEl = document.createElement('div');
                 summaryEl.className = 'rec-summary';
@@ -26451,10 +26801,8 @@ function renderOverviewSystemView() {
                 card.appendChild(cardTop);
                 card.appendChild(cardMeta);
             }
-
             var cardActions = document.createElement('div');
             cardActions.className = 'rec-actions';
-
             var activateBtn = document.createElement('button');
             activateBtn.className = 'btn btn-sm btn-primary';
             activateBtn.textContent = 'Activate';
@@ -26464,8 +26812,7 @@ function renderOverviewSystemView() {
                 activateBtn.textContent = 'Activating...';
                 try {
                     var resp = await fetch('/api/v1/autopilot/recommendations/' + rec.id + '/activate', {
-                        method: 'POST',
-                        headers: buildContextHeaders({ 'Content-Type': 'application/json' })
+                        method: 'POST', headers: buildContextHeaders({ 'Content-Type': 'application/json' })
                     });
                     var data = await resp.json();
                     if (data.ok) {
@@ -26484,7 +26831,6 @@ function renderOverviewSystemView() {
                     showToast('Activation error: ' + err.message, 'error');
                 }
             };
-
             var dismissBtn = document.createElement('button');
             dismissBtn.className = 'btn btn-sm';
             dismissBtn.textContent = 'Dismiss';
@@ -26493,8 +26839,7 @@ function renderOverviewSystemView() {
                 dismissBtn.disabled = true;
                 try {
                     var resp = await fetch('/api/v1/autopilot/recommendations/' + rec.id + '/reject', {
-                        method: 'POST',
-                        headers: buildContextHeaders({ 'Content-Type': 'application/json' })
+                        method: 'POST', headers: buildContextHeaders({ 'Content-Type': 'application/json' })
                     });
                     var data = await resp.json();
                     if (data.ok) {
@@ -26510,68 +26855,14 @@ function renderOverviewSystemView() {
                     showToast('Dismiss error: ' + err.message, 'error');
                 }
             };
-
             cardActions.appendChild(activateBtn);
             cardActions.appendChild(dismissBtn);
             card.appendChild(cardActions);
             recsSection.appendChild(card);
         });
     }
-
     container.appendChild(recsSection);
 
-    // ── C. Compact Service Health ──
-    var healthSection = document.createElement('div');
-    healthSection.className = 'attention-compact-health';
-
-    var healthTitle = document.createElement('div');
-    healthTitle.className = 'section-title';
-    healthTitle.textContent = 'Service Health';
-    healthSection.appendChild(healthTitle);
-
-    if (state.overviewHealth.loading && state.overviewHealth.items.length === 0) {
-        var loadingHealth = document.createElement('div');
-        loadingHealth.className = 'placeholder-content';
-        loadingHealth.textContent = 'Loading...';
-        healthSection.appendChild(loadingHealth);
-    } else if (state.overviewHealth.items.length > 0) {
-        state.overviewHealth.items.forEach(function (svc) {
-            var row = document.createElement('div');
-            row.className = 'compact-health-row';
-
-            var dotColor = 'green';
-            if (svc.status === 'degraded' || svc.status === 'warning') dotColor = 'yellow';
-            if (svc.status === 'down' || svc.status === 'error' || svc.status === 'unhealthy') dotColor = 'red';
-
-            var dot = document.createElement('span');
-            dot.className = 'health-dot health-dot-' + dotColor;
-
-            var name = document.createElement('span');
-            name.className = 'compact-health-name';
-            name.textContent = svc.name;
-
-            var status = document.createElement('span');
-            status.className = 'compact-health-status';
-            status.textContent = svc.status;
-
-            var latency = document.createElement('span');
-            latency.className = 'compact-health-latency';
-            latency.textContent = svc.latency_ms >= 0 ? svc.latency_ms + 'ms' : '';
-
-            row.appendChild(dot);
-            row.appendChild(name);
-            row.appendChild(status);
-            row.appendChild(latency);
-            healthSection.appendChild(row);
-        });
-    } else {
-        var noHealth = document.createElement('div');
-        noHealth.className = 'placeholder-content';
-        noHealth.textContent = 'No health data available.';
-        healthSection.appendChild(noHealth);
-    }
-
-    container.appendChild(healthSection);
     return container;
 }
 
