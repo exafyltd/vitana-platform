@@ -334,10 +334,27 @@ async function runMilestoneCelebration(ctx: AutomationContext) {
   const { user_id, milestone } = payload || {};
   if (!user_id || !milestone) return { usersAffected: 0, actionsTaken: 0 };
 
+  // Look up rich milestone definition
+  let title = 'Congratulations!';
+  let body = `You reached a milestone: ${milestone}!`;
+  let target = '/profile';
+
+  try {
+    const { MILESTONES } = await import('../milestone-service');
+    const def = MILESTONES[milestone];
+    if (def) {
+      title = `${def.icon} ${def.name}!`;
+      body = def.celebration;
+      target = def.target;
+    }
+  } catch {
+    // Fallback to generic message if milestone-service not available
+  }
+
   ctx.notify(user_id, 'orb_proactive_message', {
-    title: 'Congratulations!',
-    body: `You reached a milestone: ${milestone}!`,
-    data: { url: '/profile' },
+    title,
+    body,
+    data: { url: target, milestone },
   });
 
   return { usersAffected: 1, actionsTaken: 1 };
@@ -449,6 +466,51 @@ async function runConversationContinuityNudge(ctx: AutomationContext) {
 }
 
 // =============================================================================
+// AP-0509: Milestone Scanner (heartbeat)
+// =============================================================================
+
+async function runMilestoneScanner(ctx: AutomationContext) {
+  ctx.log('Scanning users for new milestones');
+  const { supabase, tenantId } = ctx;
+  let usersAffected = 0;
+  let actionsTaken = 0;
+
+  // Get recently active users (logged in within last 24h — proxy via notification reads)
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+  const { data: activeUsers } = await supabase
+    .from('user_tenants')
+    .select('user_id')
+    .eq('tenant_id', tenantId)
+    .eq('is_primary', true)
+    .limit(100);
+
+  let scanUserMilestones: typeof import('../milestone-service').scanUserMilestones;
+  try {
+    const ms = await import('../milestone-service');
+    scanUserMilestones = ms.scanUserMilestones;
+  } catch (err: any) {
+    ctx.log(`Failed to import milestone-service: ${err.message}`);
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
+
+  for (const { user_id } of activeUsers || []) {
+    try {
+      const newMilestones = await scanUserMilestones(supabase, user_id, tenantId);
+      if (newMilestones.length > 0) {
+        usersAffected++;
+        actionsTaken += newMilestones.length;
+        ctx.log(`User ${user_id.slice(0, 8)}… achieved: ${newMilestones.join(', ')}`);
+      }
+    } catch (err: any) {
+      ctx.log(`Error scanning user ${user_id.slice(0, 8)}…: ${err.message}`);
+    }
+  }
+
+  return { usersAffected, actionsTaken };
+}
+
+// =============================================================================
 // AP-1000: Platform Operations
 // =============================================================================
 
@@ -483,6 +545,7 @@ export function registerEngagementEventsHandlers(): void {
   registerHandler('runDiaryReminderSocial', runDiaryReminderSocial);
   registerHandler('runWeeklyReflection', runWeeklyReflection);
   registerHandler('runConversationContinuityNudge', runConversationContinuityNudge);
+  registerHandler('runMilestoneScanner', runMilestoneScanner);
 
   // Platform Operations (AP-1000)
   registerHandler('runVtidLifecycle', runVtidLifecycle);

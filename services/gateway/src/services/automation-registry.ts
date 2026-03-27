@@ -380,6 +380,13 @@ const ENGAGEMENT_LOOPS: AutomationDefinition[] = [
     triggerConfig: { eventTopic: 'profile.viewed' },
     targetRoles: [...MEMBER_ROLES, 'professional'],
   },
+  {
+    id: 'AP-0509', name: 'Milestone Detection Scanner', domain: 'engagement-loops',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 360 }, // every 6h
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runMilestoneScanner',
+  },
 ];
 
 // =============================================================================
