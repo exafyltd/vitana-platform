@@ -497,6 +497,164 @@ async function runContactActivityDigest(ctx: AutomationContext) {
   return { usersAffected, actionsTaken };
 }
 
+// ── AP-1305: Social Account Connect ───────────────────────────
+// Triggered by: manual (user initiates from UI settings)
+// Reminds users to connect their social accounts for profile enrichment.
+// Also runs as a heartbeat to re-trigger enrichment for pending connections.
+async function runSocialAccountConnect(ctx: AutomationContext) {
+  const payload = ctx.run.metadata as any;
+  const userId = payload?.user_id;
+
+  // Manual mode: specific user triggered connection
+  if (userId) {
+    ctx.log(`Social account connect triggered for user ${userId.slice(0, 8)}…`);
+    return { usersAffected: 1, actionsTaken: 1 };
+  }
+
+  // Heartbeat mode: find users who haven't connected any social accounts
+  const { supabase, tenantId } = ctx;
+  let usersAffected = 0;
+  let actionsTaken = 0;
+
+  const users = await ctx.queryTargetUsers('user_id, active_role');
+
+  for (const { user_id } of users.slice(0, 50)) {
+    // Check if user has any social connections
+    const { count: socialCount } = await supabase
+      .from('social_connections')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user_id)
+      .eq('is_active', true);
+
+    if ((socialCount || 0) > 0) continue;
+
+    // Check account age (only nudge users who've been around 3+ days)
+    const { data: appUser } = await supabase
+      .from('app_users')
+      .select('created_at')
+      .eq('user_id', user_id)
+      .maybeSingle();
+
+    if (!appUser?.created_at) continue;
+    const daysSinceSignup = (Date.now() - new Date(appUser.created_at).getTime()) / (1000 * 60 * 60 * 24);
+    if (daysSinceSignup < 3) continue;
+
+    ctx.notify(user_id, 'orb_suggestion', {
+      title: 'Connect Your Social Accounts',
+      body: 'Link Instagram, Facebook, or LinkedIn to auto-fill your profile and share achievements!',
+      data: {
+        url: '/settings/social',
+        source: 'AP-1305',
+      },
+    });
+
+    usersAffected++;
+    actionsTaken++;
+  }
+
+  // Also re-trigger enrichment for connections stuck in 'pending'
+  const { data: pendingConns } = await supabase
+    .from('social_connections')
+    .select('id, user_id')
+    .eq('enrichment_status', 'pending')
+    .eq('is_active', true)
+    .limit(20);
+
+  if (pendingConns?.length) {
+    try {
+      const { enrichProfileFromSocial } = await import('../social-connect-service');
+      for (const conn of pendingConns) {
+        await enrichProfileFromSocial(supabase, conn.user_id, tenantId, conn.id);
+        actionsTaken++;
+      }
+    } catch (err: any) {
+      ctx.log(`Enrichment retry error: ${err.message}`);
+    }
+  }
+
+  return { usersAffected, actionsTaken };
+}
+
+// ── AP-1306: Auto-Share to Social Accounts ────────────────────
+// Triggered by: user.milestone.reached
+// Posts achievement to user's connected social accounts.
+// If auto-share is disabled, sends a notification with a share link instead.
+async function runAutoShareToSocial(ctx: AutomationContext) {
+  const payload = ctx.run.metadata as any;
+  const { user_id, milestone, tenant_id } = payload || {};
+  if (!user_id || !milestone) return { usersAffected: 0, actionsTaken: 0 };
+
+  const { supabase } = ctx;
+  const effectiveTenantId = tenant_id || ctx.tenantId;
+  let actionsTaken = 0;
+
+  // Get milestone definition
+  let milestoneDef: { id: string; name: string; celebration: string; icon: string } | null = null;
+  try {
+    const { MILESTONES } = await import('../milestone-service');
+    const def = MILESTONES[milestone];
+    if (def) {
+      milestoneDef = { id: milestone, name: def.name, celebration: def.celebration, icon: def.icon };
+    }
+  } catch {}
+
+  if (!milestoneDef) {
+    milestoneDef = { id: milestone, name: milestone, celebration: `Achievement unlocked: ${milestone}`, icon: '🏆' };
+  }
+
+  // Attempt auto-share
+  try {
+    const { shareMilestoneToSocial } = await import('../social-connect-service');
+    const shareResult = await shareMilestoneToSocial(supabase, user_id, effectiveTenantId, milestoneDef);
+
+    if (shareResult.shared.length > 0) {
+      ctx.log(`Shared "${milestone}" to: ${shareResult.shared.join(', ')}`);
+      actionsTaken += shareResult.shared.length;
+
+      // Notify user that their achievement was shared
+      ctx.notify(user_id, 'orb_proactive_message', {
+        title: `${milestoneDef.icon} Shared to ${shareResult.shared.join(', ')}!`,
+        body: `Your achievement "${milestoneDef.name}" was posted. If you'd like to disable auto-sharing, visit your Autopilot settings.`,
+        data: {
+          url: '/settings/autopilot',
+          milestone,
+          shared_to: shareResult.shared.join(','),
+        },
+      });
+      actionsTaken++;
+    }
+
+    if (shareResult.notify_instead) {
+      // Auto-share is off or no connected accounts — send share prompt instead
+      const shareUrl = `${process.env.APP_URL || 'https://vitana.app'}/profile?milestone=${milestone}`;
+
+      ctx.notify(user_id, 'orb_suggestion', {
+        title: `${milestoneDef.icon} Share Your Achievement!`,
+        body: `You earned "${milestoneDef.name}"! Share it with your network.`,
+        data: {
+          url: shareUrl,
+          milestone,
+          action: 'share_prompt',
+          settings_url: '/settings/autopilot',
+        },
+      });
+      actionsTaken++;
+    }
+  } catch (err: any) {
+    ctx.log(`Auto-share error: ${err.message}`);
+
+    // Fallback: always send a share prompt notification
+    ctx.notify(user_id, 'orb_suggestion', {
+      title: `${milestoneDef.icon} Share Your Achievement!`,
+      body: `You earned "${milestoneDef.name}"! Share it with friends.`,
+      data: { url: '/profile', milestone },
+    });
+    actionsTaken++;
+  }
+
+  return { usersAffected: 1, actionsTaken };
+}
+
 // ── Register all handlers ───────────────────────────────────
 export function registerOnboardingGrowthHandlers(): void {
   registerHandler('runOrbGuidedOnboarding', runOrbGuidedOnboarding);
@@ -504,4 +662,6 @@ export function registerOnboardingGrowthHandlers(): void {
   registerHandler('runContactBookSyncAndInvite', runContactBookSyncAndInvite);
   registerHandler('runSocialProofNotification', runSocialProofNotification);
   registerHandler('runContactActivityDigest', runContactActivityDigest);
+  registerHandler('runSocialAccountConnect', runSocialAccountConnect);
+  registerHandler('runAutoShareToSocial', runAutoShareToSocial);
 }

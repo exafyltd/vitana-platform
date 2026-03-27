@@ -812,14 +812,16 @@ const ONBOARDING_GROWTH: AutomationDefinition[] = [
   },
   {
     id: 'AP-1305', name: 'Social Account Connect', domain: 'onboarding-growth',
-    status: 'PLANNED', priority: 'P1', triggerType: 'manual',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'manual',
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runSocialAccountConnect',
   },
   {
     id: 'AP-1306', name: 'Auto-Share to Social Accounts', domain: 'onboarding-growth',
-    status: 'PLANNED', priority: 'P1', triggerType: 'event',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
     triggerConfig: { eventTopic: 'user.milestone.reached' },
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runAutoShareToSocial',
   },
   {
     id: 'AP-1307', name: 'Contact Activity Feed Digest', domain: 'onboarding-growth',

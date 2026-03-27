@@ -194,6 +194,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const recommendationInboxRouter = require('./routes/recommendation-inbox').default;
   // VTID-01180: Autopilot Recommendations API v1 (correct implementation)
   const autopilotRecommendationsRouter = require('./routes/autopilot-recommendations').default;
+  // VTID-01250: Social Connect (AP-1305/AP-1306)
+  const socialConnectRouter = require('./routes/social-connect').default;
   // VTID-01188: Unified "Generate Spec" Pipeline Routes
   const { specsRouter } = require('./routes/specs');
   // Email Intake — Receives emails from Cloudflare Email Worker, creates tasks
@@ -435,6 +437,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01180: Autopilot Recommendations API v1 (correct implementation with activate endpoint)
   mountRouterSync(app, '/api/v1/autopilot/recommendations', autopilotRecommendationsRouter, { owner: 'autopilot-recommendations' });
+
+  // VTID-01250: Social Connect — OAuth, profile enrichment, auto-share (AP-1305/AP-1306)
+  mountRouterSync(app, '/api/v1/social', socialConnectRouter, { owner: 'social-connect' });
 
   // VTID-01180: Autopilot Recommendation Inbox API v0 + Popup Wiring (legacy - kept for backwards compatibility)
   mountRouterSync(app, '/api/v1/recommendations', recommendationInboxRouter, { owner: 'recommendation-inbox' });
