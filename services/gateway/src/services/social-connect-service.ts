@@ -74,8 +74,8 @@ const PROVIDER_CONFIGS: Record<SocialProvider, ProviderConfig> = {
     name: 'YouTube',
     authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
     tokenUrl: 'https://oauth2.googleapis.com/token',
-    profileUrl: 'https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true',
-    scopes: ['https://www.googleapis.com/auth/youtube.readonly'],
+    profileUrl: 'https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true',
+    scopes: ['https://www.googleapis.com/auth/youtube.readonly', 'https://www.googleapis.com/auth/userinfo.profile'],
     clientIdEnv: 'GOOGLE_OAUTH_CLIENT_ID',
     clientSecretEnv: 'GOOGLE_OAUTH_CLIENT_SECRET',
   },
@@ -92,7 +92,7 @@ const PROVIDER_CONFIGS: Record<SocialProvider, ProviderConfig> = {
     name: 'X / Twitter',
     authUrl: 'https://twitter.com/i/oauth2/authorize',
     tokenUrl: 'https://api.twitter.com/2/oauth2/token',
-    profileUrl: 'https://api.twitter.com/2/users/me',
+    profileUrl: 'https://api.twitter.com/2/users/me?user.fields=description,location,url,profile_image_url,public_metrics,pinned_tweet_id',
     scopes: ['users.read', 'tweet.read'],
     clientIdEnv: 'TWITTER_CLIENT_ID',
     clientSecretEnv: 'TWITTER_CLIENT_SECRET',
@@ -230,6 +230,8 @@ interface SocialProfile {
   avatar_url: string;
   profile_url: string;
   bio: string;
+  location: string;
+  website: string;
   followers_count: number;
   following_count: number;
   posts_count: number;
@@ -254,10 +256,10 @@ export async function fetchSocialProfile(
 
     // Provider-specific profile URL adjustments
     if (provider === 'instagram') {
-      url += `?fields=id,username,account_type,media_count&access_token=${accessToken}`;
+      url += `?fields=id,username,account_type,media_count,biography,website,followers_count,follows_count&access_token=${accessToken}`;
       delete headers.Authorization;
     } else if (provider === 'facebook') {
-      url += `?fields=id,name,picture,email,link&access_token=${accessToken}`;
+      url += `?fields=id,name,picture,email,link,about,bio,location,website,friends.summary(true),likes.limit(50){name,category}&access_token=${accessToken}`;
       delete headers.Authorization;
     } else if (provider === 'tiktok') {
       url += `?fields=open_id,union_id,avatar_url,display_name,bio_description,follower_count,following_count,likes_count`;
@@ -289,9 +291,11 @@ function normalizeProfile(provider: SocialProvider, data: any): SocialProfile {
         display_name: data.username || '',
         avatar_url: '',
         profile_url: `https://instagram.com/${data.username}`,
-        bio: '',
-        followers_count: 0,
-        following_count: 0,
+        bio: data.biography || '',
+        location: '',
+        website: data.website || '',
+        followers_count: data.followers_count || 0,
+        following_count: data.follows_count || 0,
         posts_count: data.media_count || 0,
         interests: [],
         raw: data,
@@ -303,11 +307,13 @@ function normalizeProfile(provider: SocialProvider, data: any): SocialProfile {
         display_name: data.name || '',
         avatar_url: data.picture?.data?.url || '',
         profile_url: data.link || `https://facebook.com/${data.id}`,
-        bio: '',
-        followers_count: 0,
+        bio: data.about || data.bio || '',
+        location: data.location?.name || '',
+        website: data.website || '',
+        followers_count: data.friends?.summary?.total_count || 0,
         following_count: 0,
         posts_count: 0,
-        interests: [],
+        interests: (data.likes?.data || []).map((l: any) => l.name).slice(0, 20),
         raw: data,
       };
     case 'tiktok': {
@@ -319,6 +325,8 @@ function normalizeProfile(provider: SocialProvider, data: any): SocialProfile {
         avatar_url: user.avatar_url || '',
         profile_url: '',
         bio: user.bio_description || '',
+        location: '',
+        website: '',
         followers_count: user.follower_count || 0,
         following_count: user.following_count || 0,
         posts_count: user.video_count || 0,
@@ -328,16 +336,19 @@ function normalizeProfile(provider: SocialProvider, data: any): SocialProfile {
     }
     case 'youtube': {
       const channel = data.items?.[0]?.snippet || {};
+      const stats = data.items?.[0]?.statistics || {};
       return {
         provider_user_id: data.items?.[0]?.id || '',
         username: channel.customUrl || channel.title || '',
         display_name: channel.title || '',
-        avatar_url: channel.thumbnails?.default?.url || '',
+        avatar_url: channel.thumbnails?.medium?.url || channel.thumbnails?.default?.url || '',
         profile_url: channel.customUrl ? `https://youtube.com/${channel.customUrl}` : '',
         bio: channel.description || '',
-        followers_count: 0,
+        location: channel.country || '',
+        website: '',
+        followers_count: parseInt(stats.subscriberCount) || 0,
         following_count: 0,
-        posts_count: 0,
+        posts_count: parseInt(stats.videoCount) || 0,
         interests: [],
         raw: data,
       };
@@ -349,7 +360,9 @@ function normalizeProfile(provider: SocialProvider, data: any): SocialProfile {
         display_name: data.name || '',
         avatar_url: data.picture || '',
         profile_url: '',
-        bio: '',
+        bio: data.headline || '',
+        location: data.locale ? `${data.locale.language}-${data.locale.country}` : '',
+        website: '',
         followers_count: 0,
         following_count: 0,
         posts_count: 0,
@@ -362,9 +375,11 @@ function normalizeProfile(provider: SocialProvider, data: any): SocialProfile {
         provider_user_id: user.id || '',
         username: user.username || '',
         display_name: user.name || '',
-        avatar_url: user.profile_image_url || '',
+        avatar_url: user.profile_image_url?.replace('_normal', '_400x400') || '',
         profile_url: user.username ? `https://x.com/${user.username}` : '',
         bio: user.description || '',
+        location: user.location || '',
+        website: user.url || '',
         followers_count: user.public_metrics?.followers_count || 0,
         following_count: user.public_metrics?.following_count || 0,
         posts_count: user.public_metrics?.tweet_count || 0,
@@ -375,7 +390,8 @@ function normalizeProfile(provider: SocialProvider, data: any): SocialProfile {
     default:
       return {
         provider_user_id: '', username: '', display_name: '', avatar_url: '',
-        profile_url: '', bio: '', followers_count: 0, following_count: 0,
+        profile_url: '', bio: '', location: '', website: '',
+        followers_count: 0, following_count: 0,
         posts_count: 0, interests: [], raw: data,
       };
   }
@@ -490,12 +506,22 @@ export async function getUserConnections(
 }
 
 // =============================================================================
-// Profile Enrichment
+// Profile Enrichment — the core value of social connect
 // =============================================================================
 
 /**
- * Enrich a user's Vitana profile using data from their connected social accounts.
- * Pulls bio, avatar, interests from social profiles and merges into Vitana profile.
+ * Comprehensive profile enrichment from a connected social account.
+ *
+ * Pulls everything useful and merges into Vitana profile:
+ * 1. Avatar photo (if user has none)
+ * 2. Display name (if user has none)
+ * 3. Bio text (if user has none — merges from best source)
+ * 4. Interests → auto-populates user_topic_profile
+ * 5. Location (if detectable from profile)
+ * 6. Social links (stored as memory facts)
+ * 7. Social proof metrics (followers, posts)
+ * 8. Recent media URLs (for potential profile gallery)
+ * 9. All raw data stored for future enrichment passes
  */
 export async function enrichProfileFromSocial(
   supabase: SupabaseClient,
@@ -505,7 +531,6 @@ export async function enrichProfileFromSocial(
 ): Promise<{ ok: boolean; enrichments: string[]; error?: string }> {
   const enrichments: string[] = [];
 
-  // Get the connection
   const { data: conn } = await supabase
     .from('social_connections')
     .select('*')
@@ -517,13 +542,12 @@ export async function enrichProfileFromSocial(
     return { ok: false, enrichments, error: 'Connection not found or inactive' };
   }
 
-  // Update enrichment status
   await supabase.from('social_connections')
     .update({ enrichment_status: 'enriching', updated_at: new Date().toISOString() })
     .eq('id', connectionId);
 
   try {
-    // Fetch fresh profile data
+    // ── 1. Fetch fresh profile ──────────────────────────────────
     const profile = await fetchSocialProfile(conn.provider, conn.access_token);
     if (!profile) {
       await supabase.from('social_connections')
@@ -532,61 +556,121 @@ export async function enrichProfileFromSocial(
       return { ok: false, enrichments, error: 'Failed to fetch social profile' };
     }
 
-    // Get current Vitana profile
+    // ── 2. Fetch media/content (provider-specific) ──────────────
+    const media = await fetchProviderMedia(conn.provider, conn.access_token);
+
+    // ── 3. Get current Vitana profile ───────────────────────────
     const { data: vitanaUser } = await supabase
       .from('app_users')
       .select('display_name, avatar_url, bio')
       .eq('user_id', userId)
       .maybeSingle();
 
-    const updates: Record<string, string> = {};
+    const profileUpdates: Record<string, string> = {};
 
-    // Enrich avatar if missing
+    // ── 4. Enrich avatar ────────────────────────────────────────
     if (!vitanaUser?.avatar_url && profile.avatar_url) {
-      updates.avatar_url = profile.avatar_url;
+      profileUpdates.avatar_url = profile.avatar_url;
       enrichments.push('avatar');
     }
 
-    // Enrich bio if missing
+    // ── 5. Enrich display name ──────────────────────────────────
+    if (!vitanaUser?.display_name && profile.display_name) {
+      profileUpdates.display_name = profile.display_name;
+      enrichments.push('display_name');
+    }
+
+    // ── 6. Enrich bio (pick best available) ─────────────────────
     if (!vitanaUser?.bio && profile.bio) {
-      // Truncate to 500 chars (Vitana bio limit)
-      updates.bio = profile.bio.slice(0, 500);
+      profileUpdates.bio = profile.bio.slice(0, 500);
       enrichments.push('bio');
     }
 
-    // Apply updates to Vitana profile
-    if (Object.keys(updates).length > 0) {
-      updates.updated_at = new Date().toISOString();
-      await supabase
-        .from('app_users')
-        .update(updates)
-        .eq('user_id', userId);
+    // Apply profile updates
+    if (Object.keys(profileUpdates).length > 0) {
+      profileUpdates.updated_at = new Date().toISOString();
+      await supabase.from('app_users').update(profileUpdates).eq('user_id', userId);
     }
 
-    // Extract interests from bio text and store as topics
+    // ── 7. Store ALL scraped data as memory facts ───────────────
+    // These feed the recommendation engine, matchmaking, and Maxina conversations
+    const facts: Array<{ key: string; value: string }> = [];
+
     if (profile.bio) {
-      // Store the bio as a memory fact for the recommendation engine to use
+      facts.push({ key: `social_bio_${conn.provider}`, value: profile.bio.slice(0, 1000) });
+    }
+    if (profile.username) {
+      facts.push({ key: `social_handle_${conn.provider}`, value: profile.username });
+    }
+    if (profile.profile_url) {
+      facts.push({ key: `social_url_${conn.provider}`, value: profile.profile_url });
+    }
+    if (profile.followers_count > 0) {
+      facts.push({ key: `social_followers_${conn.provider}`, value: String(profile.followers_count) });
+    }
+    if (profile.location) {
+      facts.push({ key: 'location', value: profile.location });
+      enrichments.push('location');
+    }
+    if (profile.website) {
+      facts.push({ key: 'website', value: profile.website });
+      enrichments.push('website');
+    }
+
+    for (const fact of facts) {
       await supabase.from('memory_facts').upsert({
         user_id: userId,
-        key: `social_bio_${conn.provider}`,
-        value: profile.bio.slice(0, 1000),
+        key: fact.key,
+        value: fact.value,
         source: `social_${conn.provider}`,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'user_id,key' });
-      enrichments.push('interests_extracted');
+    }
+    if (facts.length > 0) enrichments.push('memory_facts');
+
+    // ── 8. Extract interests and auto-populate topics ───────────
+    const extractedTopics = extractInterestsFromProfile(profile, media);
+    if (extractedTopics.length > 0) {
+      for (const topic of extractedTopics) {
+        await supabase.from('user_topic_profile').upsert({
+          tenant_id: tenantId,
+          user_id: userId,
+          topic_key: topic.key,
+          score: topic.score,
+          source_weights: { [`social_${conn.provider}`]: topic.score },
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'tenant_id,user_id,topic_key' });
+      }
+      enrichments.push(`topics:${extractedTopics.map(t => t.key).join(',')}`);
     }
 
-    // Store enrichment data
+    // ── 9. Store media URLs for gallery ─────────────────────────
+    if (media.length > 0) {
+      await supabase.from('memory_facts').upsert({
+        user_id: userId,
+        key: `social_media_${conn.provider}`,
+        value: JSON.stringify(media.slice(0, 20)), // top 20 media items
+        source: `social_${conn.provider}`,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id,key' });
+      enrichments.push(`media:${media.length}`);
+    }
+
+    // ── 10. Mark enrichment complete ────────────────────────────
     await supabase.from('social_connections').update({
       enrichment_status: 'completed',
       enrichment_data: {
-        avatar_enriched: enrichments.includes('avatar'),
-        bio_enriched: enrichments.includes('bio'),
-        interests_extracted: enrichments.includes('interests_extracted'),
+        enrichments,
         profile_snapshot: {
+          display_name: profile.display_name,
+          bio: profile.bio?.slice(0, 200),
           followers: profile.followers_count,
           following: profile.following_count,
           posts: profile.posts_count,
+          location: profile.location,
+          website: profile.website,
+          topics_extracted: extractedTopics.map(t => t.key),
+          media_count: media.length,
         },
         enriched_at: new Date().toISOString(),
       },
@@ -595,13 +679,191 @@ export async function enrichProfileFromSocial(
       updated_at: new Date().toISOString(),
     }).eq('id', connectionId);
 
+    console.log(`[SocialConnect] Enriched ${conn.provider} for ${userId.slice(0, 8)}…: ${enrichments.join(', ')}`);
     return { ok: true, enrichments };
+
   } catch (err: any) {
     await supabase.from('social_connections')
       .update({ enrichment_status: 'failed', updated_at: new Date().toISOString() })
       .eq('id', connectionId);
     return { ok: false, enrichments, error: err.message };
   }
+}
+
+// =============================================================================
+// Media Fetching — provider-specific content retrieval
+// =============================================================================
+
+interface MediaItem {
+  type: 'image' | 'video' | 'post';
+  url: string;
+  thumbnail_url?: string;
+  caption?: string;
+  timestamp?: string;
+}
+
+async function fetchProviderMedia(
+  provider: SocialProvider,
+  accessToken: string,
+): Promise<MediaItem[]> {
+  try {
+    switch (provider) {
+      case 'instagram': {
+        const resp = await fetch(
+          `https://graph.instagram.com/me/media?fields=id,media_type,media_url,thumbnail_url,caption,timestamp&limit=20&access_token=${accessToken}`
+        );
+        if (!resp.ok) return [];
+        const data = await resp.json() as any;
+        return (data.data || []).map((m: any) => ({
+          type: m.media_type === 'VIDEO' ? 'video' : 'image',
+          url: m.media_url,
+          thumbnail_url: m.thumbnail_url || m.media_url,
+          caption: m.caption,
+          timestamp: m.timestamp,
+        }));
+      }
+      case 'youtube': {
+        const resp = await fetch(
+          `https://www.googleapis.com/youtube/v3/search?part=snippet&forMine=true&type=video&maxResults=20&order=date`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+        if (!resp.ok) return [];
+        const data = await resp.json() as any;
+        return (data.items || []).map((v: any) => ({
+          type: 'video' as const,
+          url: `https://youtube.com/watch?v=${v.id.videoId}`,
+          thumbnail_url: v.snippet.thumbnails?.medium?.url,
+          caption: v.snippet.title,
+          timestamp: v.snippet.publishedAt,
+        }));
+      }
+      case 'tiktok': {
+        const resp = await fetch(
+          `https://open.tiktokapis.com/v2/video/list/?fields=id,title,cover_image_url,create_time`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ max_count: 20 }),
+          }
+        );
+        if (!resp.ok) return [];
+        const data = await resp.json() as any;
+        return (data.data?.videos || []).map((v: any) => ({
+          type: 'video' as const,
+          url: v.share_url || '',
+          thumbnail_url: v.cover_image_url,
+          caption: v.title,
+          timestamp: v.create_time ? new Date(v.create_time * 1000).toISOString() : undefined,
+        }));
+      }
+      case 'facebook': {
+        const resp = await fetch(
+          `https://graph.facebook.com/v19.0/me/photos?fields=images,name,created_time&limit=20&access_token=${accessToken}`
+        );
+        if (!resp.ok) return [];
+        const data = await resp.json() as any;
+        return (data.data || []).map((p: any) => ({
+          type: 'image' as const,
+          url: p.images?.[0]?.source || '',
+          caption: p.name,
+          timestamp: p.created_time,
+        }));
+      }
+      // LinkedIn and Twitter don't easily expose media via basic API
+      default:
+        return [];
+    }
+  } catch (err) {
+    console.warn(`[SocialConnect] Media fetch failed for ${provider}:`, err);
+    return [];
+  }
+}
+
+// =============================================================================
+// Interest Extraction — turn social profile data into Vitana topics
+// =============================================================================
+
+/** Known topic keywords mapped to Vitana topic_keys */
+const TOPIC_KEYWORDS: Record<string, string[]> = {
+  'wellness': ['wellness', 'wellbeing', 'well-being', 'self-care', 'selfcare', 'mindfulness'],
+  'fitness': ['fitness', 'workout', 'gym', 'training', 'exercise', 'crossfit', 'running', 'marathon'],
+  'yoga': ['yoga', 'pilates', 'meditation', 'zen', 'breathwork'],
+  'nutrition': ['nutrition', 'diet', 'vegan', 'vegetarian', 'healthy eating', 'meal prep', 'food'],
+  'mental-health': ['mental health', 'therapy', 'anxiety', 'depression', 'psychology', 'mindset'],
+  'travel': ['travel', 'wanderlust', 'nomad', 'backpacking', 'adventure', 'exploring'],
+  'music': ['music', 'musician', 'singer', 'guitar', 'piano', 'dj', 'producer', 'beats'],
+  'art': ['art', 'artist', 'painting', 'drawing', 'illustration', 'creative', 'design'],
+  'photography': ['photography', 'photographer', 'photo', 'camera', 'portrait', 'landscape'],
+  'tech': ['tech', 'developer', 'coding', 'programming', 'startup', 'ai', 'software', 'engineer'],
+  'business': ['business', 'entrepreneur', 'founder', 'ceo', 'marketing', 'growth', 'sales'],
+  'cooking': ['cooking', 'chef', 'recipe', 'baking', 'kitchen', 'foodie'],
+  'reading': ['reading', 'books', 'bookworm', 'literature', 'author', 'writing', 'writer'],
+  'sports': ['sports', 'football', 'basketball', 'soccer', 'tennis', 'swimming', 'cycling'],
+  'nature': ['nature', 'hiking', 'outdoors', 'camping', 'mountains', 'ocean', 'gardening'],
+  'fashion': ['fashion', 'style', 'outfit', 'clothing', 'designer', 'beauty', 'makeup'],
+  'parenting': ['parent', 'mom', 'dad', 'family', 'kids', 'children', 'motherhood', 'fatherhood'],
+  'gaming': ['gaming', 'gamer', 'esports', 'twitch', 'streamer', 'playstation', 'xbox'],
+  'spirituality': ['spiritual', 'faith', 'prayer', 'church', 'mosque', 'temple', 'soul'],
+  'education': ['teacher', 'professor', 'education', 'learning', 'student', 'university', 'school'],
+  'social-impact': ['nonprofit', 'charity', 'volunteer', 'activism', 'sustainability', 'climate', 'impact'],
+  'pets': ['dog', 'cat', 'pet', 'puppy', 'kitten', 'animals', 'rescue'],
+};
+
+function extractInterestsFromProfile(
+  profile: SocialProfile,
+  media: MediaItem[],
+): Array<{ key: string; score: number }> {
+  const scores: Record<string, number> = {};
+
+  // Scan bio text
+  const bioLower = (profile.bio || '').toLowerCase();
+  for (const [topicKey, keywords] of Object.entries(TOPIC_KEYWORDS)) {
+    for (const kw of keywords) {
+      if (bioLower.includes(kw)) {
+        scores[topicKey] = (scores[topicKey] || 0) + 30;
+      }
+    }
+  }
+
+  // Scan media captions
+  for (const item of media.slice(0, 20)) {
+    const captionLower = (item.caption || '').toLowerCase();
+    for (const [topicKey, keywords] of Object.entries(TOPIC_KEYWORDS)) {
+      for (const kw of keywords) {
+        if (captionLower.includes(kw)) {
+          scores[topicKey] = (scores[topicKey] || 0) + 5; // lighter weight per caption
+        }
+      }
+    }
+  }
+
+  // Scan hashtags from captions
+  const allText = [profile.bio || '', ...media.map(m => m.caption || '')].join(' ');
+  const hashtags = allText.match(/#\w+/g) || [];
+  for (const tag of hashtags) {
+    const tagLower = tag.slice(1).toLowerCase();
+    for (const [topicKey, keywords] of Object.entries(TOPIC_KEYWORDS)) {
+      for (const kw of keywords) {
+        if (tagLower.includes(kw) || kw.includes(tagLower)) {
+          scores[topicKey] = (scores[topicKey] || 0) + 10;
+        }
+      }
+    }
+  }
+
+  // Normalize scores to 0-100 and return top matches
+  const maxScore = Math.max(...Object.values(scores), 1);
+  return Object.entries(scores)
+    .filter(([_, score]) => score >= 10) // minimum threshold
+    .map(([key, score]) => ({
+      key,
+      score: Math.min(Math.round((score / maxScore) * 80) + 20, 100), // scale to 20-100
+    }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 10); // max 10 topics per provider
 }
 
 // =============================================================================
