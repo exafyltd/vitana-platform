@@ -1395,11 +1395,12 @@ router.post('/:id/complete', async (req: Request, res: Response) => {
     // Emit OASIS event
     try {
       await emitOasisEvent({
+        vtid: 'VTID-01180',
         type: 'autopilot.recommendation.completed' as any,
-        service: 'autopilot-recommendations',
-        role: 'AUTOPILOT',
+        source: 'autopilot-recommendations',
+        status: 'info',
         message: `Community recommendation completed: ${rec.title}`,
-        metadata: {
+        payload: {
           recommendation_id: recId,
           user_id: userId,
           source_ref: rec.source_ref,
@@ -1452,11 +1453,12 @@ router.post('/:id/complete', async (req: Request, res: Response) => {
       if (!remaining || remaining.length === 0) {
         try {
           await emitOasisEvent({
+            vtid: 'VTID-01180',
             type: 'user.milestone.reached' as any,
-            service: 'autopilot-recommendations',
-            role: 'AUTOPILOT',
+            source: 'autopilot-recommendations',
+            status: 'info',
             message: 'User completed all onboarding recommendations',
-            metadata: {
+            payload: {
               user_id: userId,
               milestone: 'onboarding_complete',
               tenant_id: tenantRow.tenant_id,

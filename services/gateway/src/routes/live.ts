@@ -2114,14 +2114,27 @@ communityMeetupRouter.post('/meetups/:id/rsvp', async (req: Request, res: Respon
       console.warn(`[Notifications] meetup rsvp dispatch error: ${err.message}`);
     }
 
-    // Fire-and-forget milestone check for event RSVP
-    if (rsvpUserId && meetup?.tenant_id) {
-      import('../services/milestone-service').then(({ checkMilestonesForAction }) => {
-        const { createClient } = require('@supabase/supabase-js');
-        const svc = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
-        checkMilestonesForAction(svc, rsvpUserId, meetup.tenant_id, 'event_rsvp').catch(() => {});
-      }).catch(() => {});
-    }
+  }
+
+  // Fire-and-forget milestone check for event RSVP
+  if (status === 'rsvp') {
+    try {
+      const creds4 = getSupabaseCredentials();
+      if (creds4) {
+        let _uid = '';
+        try { _uid = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
+        if (_uid) {
+          const { createClient } = await import('@supabase/supabase-js');
+          const svc = createClient(creds4.url, creds4.key);
+          const { data: _m } = await svc.from('community_meetups').select('tenant_id').eq('id', meetupId).maybeSingle();
+          if (_m?.tenant_id) {
+            import('../services/milestone-service').then(({ checkMilestonesForAction }) => {
+              checkMilestonesForAction(svc, _uid, _m.tenant_id, 'event_rsvp').catch(() => {});
+            }).catch(() => {});
+          }
+        }
+      }
+    } catch { /* non-critical */ }
   }
 
   return res.status(200).json({

@@ -626,7 +626,7 @@ router.put('/profile', requireAuth, async (req: AuthenticatedRequest, res: Respo
     // Fire-and-forget milestone check for profile update
     if (identity.user_id && identity.tenant_id) {
       import('../services/milestone-service').then(({ checkMilestonesForAction }) => {
-        checkMilestonesForAction(supabase, identity.user_id, identity.tenant_id, 'profile_updated').catch(() => {});
+        checkMilestonesForAction(supabase, identity.user_id, identity.tenant_id!, 'profile_updated').catch(() => {});
       }).catch(() => {});
     }
 
