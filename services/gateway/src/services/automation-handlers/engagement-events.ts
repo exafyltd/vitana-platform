@@ -21,9 +21,29 @@ async function runAutoScheduleDailyRoom(ctx: AutomationContext) {
 }
 
 async function runGraduatedReminders(ctx: AutomationContext) {
-  // Delegates to existing scheduled-notifications/meetup-reminders endpoint
-  ctx.log('Running graduated meetup reminders (delegates to existing endpoint)');
-  return { usersAffected: 0, actionsTaken: 0 };
+  ctx.log('Graduated meetup reminders — dispatching via scheduled-notifications');
+  const { tenantId } = ctx;
+
+  try {
+    const gatewayUrl = process.env.GATEWAY_INTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
+    const resp = await fetch(`${gatewayUrl}/api/v1/scheduled-notifications/meetup-reminders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tenant_id: tenantId }),
+    });
+
+    if (!resp.ok) {
+      ctx.log(`Meetup reminders endpoint failed: ${resp.status}`);
+      return { usersAffected: 0, actionsTaken: 0 };
+    }
+
+    const result = await resp.json() as any;
+    ctx.log(`Meetup reminders dispatched to ${result.dispatched || 0} users`);
+    return { usersAffected: result.dispatched || 0, actionsTaken: result.dispatched || 0 };
+  } catch (err: any) {
+    ctx.log(`Meetup reminders error: ${err.message}`);
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
 }
 
 async function runGoTogetherMatch(ctx: AutomationContext) {
@@ -107,8 +127,68 @@ async function runPostEventFeedback(ctx: AutomationContext) {
 }
 
 async function runTrendingEventsDigest(ctx: AutomationContext) {
-  ctx.log('Running trending events digest (part of weekly digest)');
-  return { usersAffected: 0, actionsTaken: 0 };
+  ctx.log('Trending events weekly digest — finding popular upcoming events');
+  const { supabase, tenantId } = ctx;
+  let usersAffected = 0;
+  let actionsTaken = 0;
+
+  const now = new Date();
+  const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+  // Find upcoming events with highest RSVP count
+  const { data: meetups } = await supabase
+    .from('community_meetups')
+    .select('id, title, starts_at')
+    .eq('tenant_id', tenantId)
+    .gte('starts_at', now.toISOString())
+    .lte('starts_at', nextWeek.toISOString())
+    .order('starts_at', { ascending: true })
+    .limit(10);
+
+  if (!meetups?.length) return { usersAffected: 0, actionsTaken: 0 };
+
+  // Score meetups by RSVP count
+  const scored: Array<{ id: string; title: string; rsvps: number }> = [];
+  for (const meetup of meetups) {
+    const { count } = await supabase
+      .from('community_meetup_attendance')
+      .select('id', { count: 'exact', head: true })
+      .eq('meetup_id', meetup.id)
+      .eq('status', 'rsvp');
+
+    scored.push({ id: meetup.id, title: meetup.title, rsvps: count || 0 });
+  }
+
+  // Get top 3 by RSVPs
+  const trending = scored.sort((a, b) => b.rsvps - a.rsvps).slice(0, 3);
+  if (!trending.length || trending[0].rsvps === 0) return { usersAffected: 0, actionsTaken: 0 };
+
+  // Send to active users who haven't RSVP'd
+  const users = await ctx.queryTargetUsers('user_id, active_role');
+  const topEvent = trending[0];
+
+  for (const { user_id } of users.slice(0, 100)) {
+    // Skip users already RSVP'd to the top event
+    const { count: alreadyRsvpd } = await supabase
+      .from('community_meetup_attendance')
+      .select('id', { count: 'exact', head: true })
+      .eq('meetup_id', topEvent.id)
+      .eq('user_id', user_id)
+      .eq('status', 'rsvp');
+
+    if ((alreadyRsvpd || 0) > 0) continue;
+
+    ctx.notify(user_id, 'orb_suggestion', {
+      title: 'Trending This Week',
+      body: `"${topEvent.title}" has ${topEvent.rsvps} people going. ${trending.length > 1 ? `Plus ${trending.length - 1} more events!` : ''}`,
+      data: { url: '/events' },
+    });
+
+    usersAffected++;
+    actionsTaken++;
+  }
+
+  return { usersAffected, actionsTaken };
 }
 
 async function runNoShowFollowUp(ctx: AutomationContext) {
@@ -175,8 +255,29 @@ async function runMorningBriefing(ctx: AutomationContext) {
 }
 
 async function runWeeklyCommunityDigest(ctx: AutomationContext) {
-  ctx.log('Weekly digest (delegates to scheduled-notifications/weekly-digest)');
-  return { usersAffected: 0, actionsTaken: 0 };
+  ctx.log('Weekly community digest — dispatching via scheduled-notifications');
+  const { tenantId } = ctx;
+
+  try {
+    const gatewayUrl = process.env.GATEWAY_INTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
+    const resp = await fetch(`${gatewayUrl}/api/v1/scheduled-notifications/weekly-digest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tenant_id: tenantId }),
+    });
+
+    if (!resp.ok) {
+      ctx.log(`Weekly digest endpoint failed: ${resp.status}`);
+      return { usersAffected: 0, actionsTaken: 0 };
+    }
+
+    const result = await resp.json() as any;
+    ctx.log(`Weekly digest dispatched to ${result.dispatched || 0} users`);
+    return { usersAffected: result.dispatched || 0, actionsTaken: result.dispatched || 0 };
+  } catch (err: any) {
+    ctx.log(`Weekly digest error: ${err.message}`);
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
 }
 
 async function runDormantUserReEngagement(ctx: AutomationContext) {
@@ -243,13 +344,55 @@ async function runMilestoneCelebration(ctx: AutomationContext) {
 }
 
 async function runDiaryReminderSocial(ctx: AutomationContext) {
-  ctx.log('Diary reminder (delegates to scheduled-notifications/diary-reminder)');
-  return { usersAffected: 0, actionsTaken: 0 };
+  ctx.log('Diary reminder with social twist — dispatching via scheduled-notifications');
+  const { tenantId } = ctx;
+
+  try {
+    const gatewayUrl = process.env.GATEWAY_INTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
+    const resp = await fetch(`${gatewayUrl}/api/v1/scheduled-notifications/diary-reminder`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tenant_id: tenantId }),
+    });
+
+    if (!resp.ok) {
+      ctx.log(`Diary reminder endpoint failed: ${resp.status}`);
+      return { usersAffected: 0, actionsTaken: 0 };
+    }
+
+    const result = await resp.json() as any;
+    ctx.log(`Diary reminder dispatched to ${result.dispatched || 0} users`);
+    return { usersAffected: result.dispatched || 0, actionsTaken: result.dispatched || 0 };
+  } catch (err: any) {
+    ctx.log(`Diary reminder error: ${err.message}`);
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
 }
 
 async function runWeeklyReflection(ctx: AutomationContext) {
-  ctx.log('Weekly reflection (delegates to scheduled-notifications/weekly-reflection)');
-  return { usersAffected: 0, actionsTaken: 0 };
+  ctx.log('Weekly reflection with connection insights — dispatching via scheduled-notifications');
+  const { tenantId } = ctx;
+
+  try {
+    const gatewayUrl = process.env.GATEWAY_INTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
+    const resp = await fetch(`${gatewayUrl}/api/v1/scheduled-notifications/weekly-reflection`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tenant_id: tenantId }),
+    });
+
+    if (!resp.ok) {
+      ctx.log(`Weekly reflection endpoint failed: ${resp.status}`);
+      return { usersAffected: 0, actionsTaken: 0 };
+    }
+
+    const result = await resp.json() as any;
+    ctx.log(`Weekly reflection dispatched to ${result.dispatched || 0} users`);
+    return { usersAffected: result.dispatched || 0, actionsTaken: result.dispatched || 0 };
+  } catch (err: any) {
+    ctx.log(`Weekly reflection error: ${err.message}`);
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
 }
 
 async function runConversationContinuityNudge(ctx: AutomationContext) {
