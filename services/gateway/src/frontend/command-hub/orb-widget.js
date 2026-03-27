@@ -577,9 +577,13 @@
       case 'audio_out':
         if (_s.interruptPending) break;
         if (msg.data_b64) {
+          // Clear stuck guard on first audio
           if (!_s.greetingAudioReceived) {
             _s.greetingAudioReceived = true;
             clearTimeout(_s.stuckGuardTimer);
+          }
+          // Always update to SPEAKING when audio arrives
+          if (_s.voiceState !== 'SPEAKING') {
             _setOrbState('speaking');
             _s.voiceState = 'SPEAKING';
             _setStatus(_cfg.lang.startsWith('de') ? 'Vitana spricht...' : 'Vitana speaking...');
@@ -605,15 +609,21 @@
         }
         // (transcript UI removed)
 
-        setTimeout(function () {
-          if (!_s.audioPlaying) {
+        // Wait for audio playback to finish, then switch to LISTENING
+        (function _waitForAudioEnd() {
+          setTimeout(function () {
+            if (!_s.active) return; // Session ended
+            if (_s.audioPlaying) {
+              _waitForAudioEnd(); // Still playing — check again in 200ms
+              return;
+            }
             _setOrbState('listening');
             _s.voiceState = 'LISTENING';
             _setStatus(_cfg.lang.startsWith('de') ? 'Ich höre zu...' : 'Listening...');
             _playReadyBeep();
             _updateUI();
-          }
-        }, 250);
+          }, 200);
+        })();
         break;
 
       case 'interrupted':
