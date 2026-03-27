@@ -874,26 +874,33 @@
     _root.className = 'vtorb-overlay';
     _root.setAttribute('role', 'dialog');
     _root.setAttribute('aria-modal', 'true');
+    // CRITICAL: Inline styles guarantee overlay works even if CSS injection fails
+    _root.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:9500;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(10,12,20,0.92);backdrop-filter:blur(24px);';
 
     // ORB shell
     var shell = document.createElement('div');
     shell.className = 'vtorb-shell vtorb-st-connecting';
+    shell.style.cssText = 'position:relative;width:50vmin;height:50vmin;max-width:320px;max-height:320px;display:flex;align-items:center;justify-content:center;';
     var orb = document.createElement('div');
     orb.className = 'vtorb-large vtorb-large-idle';
+    orb.style.cssText = 'width:100%;height:100%;border-radius:50%;background:radial-gradient(circle at 35% 35%,#7c8db5,#5a6a8a 50%,#3a4a6a 100%);box-shadow:inset -8px -8px 24px rgba(0,0,0,0.4),inset 4px 4px 12px rgba(255,255,255,0.08),0 0 60px rgba(90,110,150,0.3);position:relative;';
     shell.appendChild(orb);
     _root.appendChild(shell);
 
     // Status
     var status = document.createElement('div');
     status.className = 'vtorb-status';
+    status.style.cssText = 'margin-top:20px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:14px;color:rgba(255,255,255,0.6);text-align:center;min-height:20px;';
     _root.appendChild(status);
 
     // Controls
     var controls = document.createElement('div');
     controls.className = 'vtorb-controls';
+    controls.style.cssText = 'display:flex;gap:20px;margin-top:40px;align-items:center;justify-content:center;';
 
     var micBtn = document.createElement('button');
     micBtn.className = 'vtorb-btn vtorb-btn-mic';
+    micBtn.style.cssText = 'width:56px;height:56px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;background:rgba(59,130,246,0.2);color:#93c5fd;';
     micBtn.innerHTML = _ICONS.mic;
     micBtn.setAttribute('aria-label', 'Toggle microphone');
     micBtn.addEventListener('click', _toggleMute);
@@ -901,6 +908,7 @@
 
     var closeBtn = document.createElement('button');
     closeBtn.className = 'vtorb-btn vtorb-btn-close';
+    closeBtn.style.cssText = 'width:56px;height:56px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.7);';
     closeBtn.innerHTML = _ICONS.close;
     closeBtn.setAttribute('aria-label', 'Close');
     closeBtn.addEventListener('click', _hide);
@@ -985,16 +993,8 @@
     if (_cfg.showFab) _renderFab();
     _s.overlayVisible = true;
     _root.classList.add('vtorb-visible');
-    // Failsafe: force inline styles in case CSS injection failed
     _root.style.display = 'flex';
-    _root.style.position = 'fixed';
-    _root.style.inset = '0';
-    _root.style.zIndex = '9500';
-    _root.style.alignItems = 'center';
-    _root.style.justifyContent = 'center';
-    _root.style.flexDirection = 'column';
-    _root.style.background = 'rgba(10, 12, 20, 0.92)';
-    console.log('[VTOrb] _show: overlay classes=' + _root.className + ', inDOM=' + document.body.contains(_root) + ', display=' + window.getComputedStyle(_root).display);
+    console.log('[VTOrb] _show: overlay inDOM=' + document.body.contains(_root) + ', display=' + _root.style.display);
     _updateUI();
     _sessionStart();
   }
