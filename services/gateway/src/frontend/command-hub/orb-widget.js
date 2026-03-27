@@ -87,7 +87,11 @@
   // ============================================================
 
   function _injectStyles() {
-    if (document.getElementById('vtorb-css')) return;
+    if (document.getElementById('vtorb-css')) {
+      console.log('[VTOrb] _injectStyles: vtorb-css already exists');
+      return;
+    }
+    console.log('[VTOrb] _injectStyles: creating vtorb-css style tag');
     var style = document.createElement('style');
     style.id = 'vtorb-css';
     style.textContent = [
@@ -861,7 +865,11 @@
   }
 
   function _renderOverlay() {
-    if (_root) return;
+    if (_root) {
+      console.log('[VTOrb] _renderOverlay: _root already exists, inDOM=' + document.body.contains(_root));
+      return;
+    }
+    console.log('[VTOrb] _renderOverlay: creating overlay DOM');
     _root = document.createElement('div');
     _root.className = 'vtorb-overlay';
     _root.setAttribute('role', 'dialog');
@@ -965,15 +973,28 @@
   }
 
   function _show() {
+    console.log('[VTOrb] _show() called — gw=' + _cfg.gw + ', _root=' + !!_root);
     if (!_cfg.gw) {
       console.error('[VTOrb] No gateway URL — call VitanaOrb.init({gatewayUrl}) or load this script from the gateway.');
       return;
     }
     _injectStyles();
+    var cssEl = document.getElementById('vtorb-css');
+    console.log('[VTOrb] _show: styles injected, vtorb-css in DOM=' + !!cssEl);
     _renderOverlay();
     if (_cfg.showFab) _renderFab();
     _s.overlayVisible = true;
     _root.classList.add('vtorb-visible');
+    // Failsafe: force inline styles in case CSS injection failed
+    _root.style.display = 'flex';
+    _root.style.position = 'fixed';
+    _root.style.inset = '0';
+    _root.style.zIndex = '9500';
+    _root.style.alignItems = 'center';
+    _root.style.justifyContent = 'center';
+    _root.style.flexDirection = 'column';
+    _root.style.background = 'rgba(10, 12, 20, 0.92)';
+    console.log('[VTOrb] _show: overlay classes=' + _root.className + ', inDOM=' + document.body.contains(_root) + ', display=' + window.getComputedStyle(_root).display);
     _updateUI();
     _sessionStart();
   }
@@ -981,7 +1002,10 @@
   function _hide() {
     _sessionStop();
     _s.overlayVisible = false;
-    if (_root) _root.classList.remove('vtorb-visible');
+    if (_root) {
+      _root.classList.remove('vtorb-visible');
+      _root.style.display = 'none';
+    }
     _updateUI();
     if (_cfg.onClose) try { _cfg.onClose(); } catch (e) { /* ignore */ }
   }
