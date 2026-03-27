@@ -603,6 +603,13 @@ router.post('/:id/state', async (req: Request, res: Response) => {
       } catch (err: any) {
         console.warn(`[Notifications] match_accepted dispatch error: ${err.message}`);
       }
+
+      // Fire-and-forget milestone check for match acceptance
+      if (acceptorId && match?.tenant_id) {
+        import('../services/milestone-service').then(({ checkMilestonesForAction }) => {
+          checkMilestonesForAction(supabase, acceptorId, match.tenant_id, 'match_accepted').catch(() => {});
+        }).catch(() => {});
+      }
     }
 
     return res.status(200).json({

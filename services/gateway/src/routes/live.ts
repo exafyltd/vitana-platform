@@ -2113,6 +2113,15 @@ communityMeetupRouter.post('/meetups/:id/rsvp', async (req: Request, res: Respon
     } catch (err: any) {
       console.warn(`[Notifications] meetup rsvp dispatch error: ${err.message}`);
     }
+
+    // Fire-and-forget milestone check for event RSVP
+    if (rsvpUserId && meetup?.tenant_id) {
+      import('../services/milestone-service').then(({ checkMilestonesForAction }) => {
+        const { createClient } = require('@supabase/supabase-js');
+        const svc = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
+        checkMilestonesForAction(svc, rsvpUserId, meetup.tenant_id, 'event_rsvp').catch(() => {});
+      }).catch(() => {});
+    }
   }
 
   return res.status(200).json({

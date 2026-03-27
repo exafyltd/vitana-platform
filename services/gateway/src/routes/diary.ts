@@ -698,6 +698,15 @@ router.post('/entry', async (req: Request, res: Response) => {
     // Trigger extraction hooks
     const extractionResult = await triggerExtractionHooks(token, memoryId, entry, jwtUserId, jwtTenantId);
 
+    // Fire-and-forget milestone check for diary actions
+    if (jwtUserId && jwtTenantId) {
+      import('../services/milestone-service').then(({ checkMilestonesForAction }) => {
+        const { createClient } = require('@supabase/supabase-js');
+        const supa = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
+        checkMilestonesForAction(supa, jwtUserId!, jwtTenantId!, 'diary_saved').catch(() => {});
+      }).catch(() => {});
+    }
+
     // Emit OASIS event
     await emitDiaryEvent(
       'diary.template.submitted',
