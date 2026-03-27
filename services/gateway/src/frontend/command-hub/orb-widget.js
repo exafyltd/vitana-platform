@@ -31,7 +31,11 @@
   var _cfg = {
     gw: _autoGw,  // Gateway URL — auto-detected from script src, overridden by init()
     token: '',    // Supabase JWT
-    lang: 'en-US'
+    lang: 'en-US',
+    showFab: true,       // Show floating action button (false when parent app has its own trigger)
+    onClose: null,       // Callback when overlay closes
+    onSessionStart: null, // Callback when voice session starts
+    onSessionEnd: null    // Callback when voice session ends
   };
 
   var _s = {
@@ -239,35 +243,6 @@
       '.vtorb-status.vtorb-status-speaking { color: rgba(245,158,11,0.8); }',
       '.vtorb-status.vtorb-status-error { color: rgba(239,68,68,0.8); }',
 
-      // --- Transcript panel ---
-      '.vtorb-transcript {',
-      '  width: 90%; max-width: 400px; max-height: 200px; overflow-y: auto;',
-      '  margin-top: 16px; padding: 8px; border-radius: 12px;',
-      '  background: rgba(255,255,255,0.06); backdrop-filter: blur(8px);',
-      '  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;',
-      '  font-size: 13px; line-height: 1.4;',
-      '}',
-      '.vtorb-transcript:empty { display: none; }',
-      '.vtorb-transcript-msg {',
-      '  display: flex; margin-bottom: 6px;',
-      '}',
-      '.vtorb-transcript-msg-user { justify-content: flex-end; }',
-      '.vtorb-transcript-msg-assistant { justify-content: flex-start; }',
-      '.vtorb-transcript-bubble {',
-      '  max-width: 80%; padding: 6px 12px; border-radius: 12px; word-wrap: break-word;',
-      '}',
-      '.vtorb-transcript-msg-assistant .vtorb-transcript-bubble {',
-      '  background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.85);',
-      '  border-bottom-left-radius: 4px;',
-      '}',
-      '.vtorb-transcript-msg-user .vtorb-transcript-bubble {',
-      '  background: rgba(99,102,241,0.3); color: rgba(255,255,255,0.9);',
-      '  border-bottom-right-radius: 4px;',
-      '}',
-      '.vtorb-transcript-interim {',
-      '  opacity: 0.5; font-style: italic;',
-      '}',
-
       // --- Mobile responsive ---
       '@media (max-width: 600px) {',
       '  .vtorb-shell { width: 60vmin; height: 60vmin; max-width: 260px; max-height: 260px; }',
@@ -461,6 +436,7 @@
 
       _s.sessionId = data.session_id;
       _s.active = true;
+      if (_cfg.onSessionStart) try { _cfg.onSessionStart(_s.sessionId); } catch (e) { /* ignore */ }
 
       // Connect SSE stream
       var sseUrl = _cfg.gw + '/api/v1/orb/live/stream?session_id=' + data.session_id;
@@ -545,6 +521,7 @@
       } catch (e) { /* ignore */ }
     }
 
+    if (_cfg.onSessionEnd) try { _cfg.onSessionEnd(); } catch (e) { /* ignore */ }
     _s.sessionId = null;
     _s.active = false;
     _s.audioQueue = [];
@@ -626,7 +603,7 @@
           _s._transcriptHistory.push({ role: 'assistant', text: _s._outputTranscriptBuffer.trim() });
           _s._outputTranscriptBuffer = '';
         }
-        _updateTranscriptUI();
+        // (transcript UI removed)
 
         setTimeout(function () {
           if (!_s.audioPlaying) {
@@ -686,7 +663,7 @@
         // VTID-TRANSCRIPT-FIX: Buffer assistant transcript fragments, display on turn_complete
         if (msg.text) {
           _s._outputTranscriptBuffer = (_s._outputTranscriptBuffer || '') + msg.text;
-          _updateTranscriptUI();
+          // (transcript UI removed)
         }
         break;
 
@@ -694,7 +671,7 @@
         // VTID-TRANSCRIPT-FIX: Buffer user transcript fragments, display on turn_complete
         if (msg.text) {
           _s._inputTranscriptBuffer = (_s._inputTranscriptBuffer || '') + msg.text;
-          _updateTranscriptUI();
+          // (transcript UI removed)
         }
         break;
 
@@ -893,11 +870,6 @@
     status.className = 'vtorb-status';
     _root.appendChild(status);
 
-    // Transcript panel (Vitana left, user right)
-    var transcript = document.createElement('div');
-    transcript.className = 'vtorb-transcript';
-    _root.appendChild(transcript);
-
     // Controls
     var controls = document.createElement('div');
     controls.className = 'vtorb-controls';
@@ -989,7 +961,7 @@
     }
     _injectStyles();
     _renderOverlay();
-    _renderFab();
+    if (_cfg.showFab) _renderFab();
     _s.overlayVisible = true;
     _root.classList.add('vtorb-visible');
     _updateUI();
@@ -1001,55 +973,10 @@
     _s.overlayVisible = false;
     if (_root) _root.classList.remove('vtorb-visible');
     _updateUI();
+    if (_cfg.onClose) try { _cfg.onClose(); } catch (e) { /* ignore */ }
   }
 
-  // ============================================================
-  // 12. TRANSCRIPT UI
-  // ============================================================
-
-  function _updateTranscriptUI() {
-    if (!_root) return;
-    var container = _root.querySelector('.vtorb-transcript');
-    if (!container) return;
-
-    // Clear and re-render
-    container.innerHTML = '';
-
-    // Render committed transcript history (Vitana=left, User=right)
-    for (var i = 0; i < _s._transcriptHistory.length; i++) {
-      var entry = _s._transcriptHistory[i];
-      var msgEl = document.createElement('div');
-      msgEl.className = 'vtorb-transcript-msg vtorb-transcript-msg-' + entry.role;
-      var bubble = document.createElement('div');
-      bubble.className = 'vtorb-transcript-bubble';
-      bubble.textContent = entry.text;
-      msgEl.appendChild(bubble);
-      container.appendChild(msgEl);
-    }
-
-    // Show interim buffers with typing indicator
-    if (_s._outputTranscriptBuffer) {
-      var interimA = document.createElement('div');
-      interimA.className = 'vtorb-transcript-msg vtorb-transcript-msg-assistant';
-      var interimABubble = document.createElement('div');
-      interimABubble.className = 'vtorb-transcript-bubble vtorb-transcript-interim';
-      interimABubble.textContent = _s._outputTranscriptBuffer;
-      interimA.appendChild(interimABubble);
-      container.appendChild(interimA);
-    }
-    if (_s._inputTranscriptBuffer) {
-      var interimU = document.createElement('div');
-      interimU.className = 'vtorb-transcript-msg vtorb-transcript-msg-user';
-      var interimUBubble = document.createElement('div');
-      interimUBubble.className = 'vtorb-transcript-bubble vtorb-transcript-interim';
-      interimUBubble.textContent = _s._inputTranscriptBuffer;
-      interimU.appendChild(interimUBubble);
-      container.appendChild(interimU);
-    }
-
-    // Auto-scroll to bottom
-    container.scrollTop = container.scrollHeight;
-  }
+  // 12. (Transcript UI removed — unified widget is voice-only, no chat bubbles)
 
   // ============================================================
   // 13. AUTO-RECONNECT
@@ -1122,7 +1049,6 @@
     _setOrbState('listening');
     _s.voiceState = 'LISTENING';
     _setStatus(_cfg.lang.startsWith('de') ? 'Textmodus aktiv' : 'Text mode active');
-    _updateTranscriptUI();
     _updateUI();
   }
 
@@ -1131,7 +1057,6 @@
     _s._transcriptHistory.push({ role: 'user', text: text.trim() });
     _setOrbState('thinking');
     _s.voiceState = 'THINKING';
-    _updateTranscriptUI();
 
     try {
       var headers = { 'Content-Type': 'application/json' };
@@ -1167,14 +1092,12 @@
         _setOrbState('listening');
         _s.voiceState = 'LISTENING';
       }
-      _updateTranscriptUI();
       _updateUI();
     } catch (err) {
       console.error('[VTOrb] Fallback error:', err);
       _s._transcriptHistory.push({ role: 'assistant', text: 'Error: ' + err.message });
       _setOrbState('listening');
       _s.voiceState = 'LISTENING';
-      _updateTranscriptUI();
       _updateUI();
     }
   }
@@ -1189,13 +1112,17 @@
     init: function (opts) {
       opts = opts || {};
       if (opts.gatewayUrl) _cfg.gw = opts.gatewayUrl.replace(/\/$/, '');
-      if (opts.authToken) _cfg.token = opts.authToken;
+      if (opts.authToken !== undefined) _cfg.token = opts.authToken || '';
       if (opts.lang) _cfg.lang = opts.lang;
+      if (opts.showFab !== undefined) _cfg.showFab = !!opts.showFab;
+      if (typeof opts.onClose === 'function') _cfg.onClose = opts.onClose;
+      if (typeof opts.onSessionStart === 'function') _cfg.onSessionStart = opts.onSessionStart;
+      if (typeof opts.onSessionEnd === 'function') _cfg.onSessionEnd = opts.onSessionEnd;
 
       _injectStyles();
       _renderOverlay();
-      _renderFab();
-      console.log('[VTOrb] Initialized — gateway: ' + _cfg.gw + ', lang: ' + _cfg.lang);
+      if (_cfg.showFab) _renderFab();
+      console.log('[VTOrb] Initialized — gateway: ' + _cfg.gw + ', lang: ' + _cfg.lang + ', showFab: ' + _cfg.showFab);
     },
 
     show: _show,
