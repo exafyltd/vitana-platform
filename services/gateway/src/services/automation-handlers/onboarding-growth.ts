@@ -1,7 +1,6 @@
 /**
  * Onboarding & Viral Growth Handlers — AP-1300 series
  *
- * VTID: VTID-01250
  * Automations for first-time user onboarding, starter packs,
  * social proof notifications, and contact-based growth loops.
  *
