@@ -559,14 +559,14 @@
       case 'ready':
         _setOrbState('thinking');
         _s.voiceState = 'THINKING';
-        _setStatus(_cfg.lang.startsWith('de') ? 'Verbindung hergestellt...' : 'Connected...');
+        _setStatus(_cfg.lang.startsWith('de') ? 'Denkt nach...' : 'Thinking...');
         // Stuck guard: 15s timeout
         clearTimeout(_s.stuckGuardTimer);
         _s.stuckGuardTimer = setTimeout(function () {
           if (!_s.greetingAudioReceived && _s.active) {
             _setOrbState('listening');
             _s.voiceState = 'LISTENING';
-            _setStatus(_cfg.lang.startsWith('de') ? 'Du kannst sprechen.' : 'You can speak.');
+            _setStatus(_cfg.lang.startsWith('de') ? 'Ich höre zu...' : 'Listening...');
             _updateUI();
           }
         }, 15000);
@@ -879,11 +879,24 @@
 
     // ORB shell
     var shell = document.createElement('div');
-    shell.className = 'vtorb-shell vtorb-st-connecting';
+    shell.className = 'vtorb-shell';
     shell.style.cssText = 'position:relative;width:50vmin;height:50vmin;max-width:320px;max-height:320px;display:flex;align-items:center;justify-content:center;';
+
+    // Aura glow elements (real DOM — pseudo-elements require CSS injection which can fail)
+    var auraInner = document.createElement('div');
+    auraInner.className = 'vtorb-aura-inner';
+    auraInner.style.cssText = 'position:absolute;inset:-20%;border-radius:50%;opacity:0;transition:opacity 0.6s;pointer-events:none;';
+    shell.appendChild(auraInner);
+
+    var auraOuter = document.createElement('div');
+    auraOuter.className = 'vtorb-aura-outer';
+    auraOuter.style.cssText = 'position:absolute;inset:-20%;border-radius:50%;opacity:0;transition:opacity 0.6s;pointer-events:none;';
+    shell.appendChild(auraOuter);
+
+    // Sphere (on top of auras)
     var orb = document.createElement('div');
-    orb.className = 'vtorb-large vtorb-large-idle';
-    orb.style.cssText = 'width:100%;height:100%;border-radius:50%;background:radial-gradient(circle at 35% 35%,#7c8db5,#5a6a8a 50%,#3a4a6a 100%);box-shadow:inset -8px -8px 24px rgba(0,0,0,0.4),inset 4px 4px 12px rgba(255,255,255,0.08),0 0 60px rgba(90,110,150,0.3);position:relative;';
+    orb.className = 'vtorb-large';
+    orb.style.cssText = 'width:100%;height:100%;border-radius:50%;background:radial-gradient(circle at 35% 35%,#7c8db5,#5a6a8a 50%,#3a4a6a 100%);box-shadow:inset -8px -8px 24px rgba(0,0,0,0.4),inset 4px 4px 12px rgba(255,255,255,0.08),0 0 60px rgba(90,110,150,0.3);position:relative;z-index:1;';
     shell.appendChild(orb);
     _root.appendChild(shell);
 
@@ -918,34 +931,71 @@
     document.body.appendChild(_root);
   }
 
+  // Aura color definitions — applied via inline styles on real DOM elements
+  var _AURA = {
+    connecting: { inner: 'rgba(226,232,240,0.4)', iOp: 0.4 },
+    thinking:   { inner: 'rgba(139,92,246,0.5)',  iOp: 0.5, outer: 'rgba(139,92,246,0.3)', oOp: 0.4 },
+    speaking:   { inner: 'rgba(245,158,11,0.5)',  iOp: 0.6, outer: 'rgba(245,158,11,0.3)', oOp: 0.4 },
+    listening:  { inner: 'rgba(59,130,246,0.5)',   iOp: 0.5, outer: 'rgba(59,130,246,0.3)', oOp: 0.4 },
+    paused:     { inner: 'rgba(107,114,128,0.3)',  iOp: 0.3 },
+    error:      { inner: 'rgba(239,68,68,0.4)',    iOp: 0.5 }
+  };
+
   function _setOrbState(state) {
     if (!_root) return;
     var shell = _root.querySelector('.vtorb-shell');
     if (!shell) return;
-    var states = ['ready', 'listening', 'thinking', 'speaking', 'paused', 'connecting', 'error'];
+
+    // Apply aura colors via inline styles on real DOM elements
+    var inner = shell.querySelector('.vtorb-aura-inner');
+    var outer = shell.querySelector('.vtorb-aura-outer');
+    var a = _AURA[state] || { inner: 'transparent', iOp: 0 };
+    if (inner) {
+      inner.style.background = 'radial-gradient(circle, ' + a.inner + ' 0%, transparent 70%)';
+      inner.style.opacity = String(a.iOp);
+    }
+    if (outer) {
+      if (a.outer) {
+        outer.style.background = 'radial-gradient(circle, ' + a.outer + ' 0%, transparent 70%)';
+        outer.style.opacity = String(a.oOp);
+      } else {
+        outer.style.background = 'none';
+        outer.style.opacity = '0';
+      }
+    }
+
+    // Keep CSS class toggle as enhancement (animations if CSS loads)
+    var states = ['listening', 'thinking', 'speaking', 'paused', 'connecting', 'error'];
     states.forEach(function (s) { shell.classList.remove('vtorb-st-' + s); });
     shell.classList.add('vtorb-st-' + state);
 
-    // Update large ORB animation class
+    // Update sphere appearance for muted state
     var orb = shell.querySelector('.vtorb-large');
     if (orb) {
-      orb.className = 'vtorb-large';
-      var map = { listening: 'listening', thinking: 'thinking', speaking: 'speaking', paused: 'muted', connecting: 'idle', ready: 'idle', error: 'idle' };
-      orb.classList.add('vtorb-large-' + (map[state] || 'idle'));
+      if (state === 'paused') {
+        orb.style.opacity = '0.6';
+        orb.style.filter = 'grayscale(40%)';
+      } else {
+        orb.style.opacity = '1';
+        orb.style.filter = 'none';
+      }
     }
   }
+
+  // Status text color map — applied inline
+  var _STATUS_COLOR = {
+    LISTENING: 'rgba(59,130,246,0.8)',   // blue
+    THINKING:  'rgba(139,92,246,0.8)',   // purple
+    SPEAKING:  'rgba(245,158,11,0.8)',   // amber
+  };
 
   function _setStatus(text) {
     if (!_root) return;
     var el = _root.querySelector('.vtorb-status');
     if (!el) return;
     el.textContent = text || '';
-    // Apply color class
-    el.className = 'vtorb-status';
-    if (_s.voiceState === 'LISTENING') el.classList.add('vtorb-status-listening');
-    else if (_s.voiceState === 'THINKING') el.classList.add('vtorb-status-thinking');
-    else if (_s.voiceState === 'SPEAKING') el.classList.add('vtorb-status-speaking');
-    else if (_s.liveError) el.classList.add('vtorb-status-error');
+    // Apply color inline (no CSS dependency)
+    el.style.color = _STATUS_COLOR[_s.voiceState] || (_s.liveError ? 'rgba(239,68,68,0.8)' : 'rgba(255,255,255,0.6)');
   }
 
   function _updateUI() {
@@ -955,7 +1005,9 @@
     if (micBtn) {
       var muted = _s.voiceState === 'MUTED';
       micBtn.innerHTML = muted ? _ICONS.micOff : _ICONS.mic;
-      micBtn.classList.toggle('vtorb-muted', muted);
+      // Apply muted style inline (no CSS dependency)
+      micBtn.style.background = muted ? 'rgba(239,68,68,0.2)' : 'rgba(59,130,246,0.2)';
+      micBtn.style.color = muted ? '#fca5a5' : '#93c5fd';
     }
     // Update FAB visibility
     if (_fab) {
@@ -975,7 +1027,7 @@
     } else {
       _s.voiceState = 'MUTED';
       _setOrbState('paused');
-      _setStatus(_cfg.lang.startsWith('de') ? 'Mikrofon stumm' : 'Microphone muted');
+      _setStatus(_cfg.lang.startsWith('de') ? 'Stummgeschaltet' : 'Muted');
     }
     _updateUI();
   }
@@ -995,6 +1047,9 @@
     _root.classList.add('vtorb-visible');
     _root.style.display = 'flex';
     console.log('[VTOrb] _show: overlay inDOM=' + document.body.contains(_root) + ', display=' + _root.style.display);
+    _setOrbState('connecting');
+    _s.voiceState = 'CONNECTING';
+    _setStatus(_cfg.lang.startsWith('de') ? 'Verbinden...' : 'Connecting...');
     _updateUI();
     _sessionStart();
   }
@@ -1183,6 +1238,14 @@
       _root = null;
       _fab = null;
       window.VitanaOrb._loaded = false;
+    },
+
+    // Test helper — allows Playwright to set state without a real voice session
+    _test_setState: function (state, text) {
+      _setOrbState(state);
+      _s.voiceState = state.toUpperCase();
+      _setStatus(text);
+      _updateUI();
     }
   };
 

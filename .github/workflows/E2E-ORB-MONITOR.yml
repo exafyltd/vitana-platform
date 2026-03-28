@@ -1,0 +1,48 @@
+name: ORB Widget Monitor
+
+on:
+  schedule:
+    # Every 15 minutes
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: orb-monitor
+  cancel-in-progress: true
+
+jobs:
+  orb-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install E2E dependencies
+        working-directory: e2e
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: e2e
+        run: npx playwright install chromium --with-deps
+
+      - name: Run ORB Widget tests
+        working-directory: e2e
+        run: npx playwright test --project=hub-shared orb-widget.spec.ts
+        env:
+          HUB_URL: https://gateway-q74ibpv6ia-uc.a.run.app
+          TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+          TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+
+      - name: Upload test results on failure
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: orb-test-results
+          path: |
+            e2e/test-results/
+            e2e/playwright-report/
+          retention-days: 7
