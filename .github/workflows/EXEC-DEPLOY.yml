@@ -289,8 +289,8 @@ jobs:
             # SECRETS_ARGS+=(--update-secrets=OPENAI_API_KEY=OPENAI_API_KEY:latest)
             # Remove stale OPENAI_API_KEY binding from previous revision (secret doesn't exist in GCP)
             SECRETS_ARGS+=(--remove-secrets=OPENAI_API_KEY)
-            # VTID-TESTING: GitHub PAT for workflow dispatch (test runs, ORB monitor)
-            SECRETS_ARGS+=(--update-secrets=GITHUB_SAFE_MERGE_TOKEN=GITHUB_SAFE_MERGE_TOKEN:latest)
+            # NOTE: GITHUB_SAFE_MERGE_TOKEN is set as env var directly on the Cloud Run service
+            # (not via GCP Secret Manager). Do not add --update-secrets for it.
             # Bind other required secrets
             SECRETS_ARGS+=(--update-secrets=SUPABASE_URL=SUPABASE_URL:latest)
             SECRETS_ARGS+=(--update-secrets=SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest)
