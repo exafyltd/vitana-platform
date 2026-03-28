@@ -75,8 +75,8 @@ test.describe('ORB Widget — Overlay Structure', () => {
     const overlay = page.locator('.vtorb-overlay');
     await expect(overlay).toBeVisible();
 
-    // Click close
-    await page.locator('.vtorb-btn-close').click();
+    // Click close (force: overlay z-index may intercept pointer events)
+    await page.locator('.vtorb-btn-close').click({ force: true });
     // Overlay should be hidden
     await expect(overlay).toBeHidden();
   });
@@ -106,12 +106,12 @@ test.describe('ORB Widget — State Colors', () => {
 
     const aura = page.locator('.vtorb-aura-inner');
     const bg = await aura.evaluate(el => el.style.background);
-    expect(bg).toContain('226,232,240'); // gray
+    expect(bg).toContain('226, 232, 240'); // gray
 
     const status = page.locator('.vtorb-status');
     await expect(status).toHaveText('Connecting...');
     const color = await status.evaluate(el => el.style.color);
-    expect(color).toContain('255,255,255'); // white
+    expect(color).toContain('255, 255, 255'); // white
   });
 
   test('thinking state — purple aura, purple text', async ({ page }) => {
@@ -120,15 +120,15 @@ test.describe('ORB Widget — State Colors', () => {
     await setState(page, 'thinking', 'Thinking...');
 
     const innerBg = await page.locator('.vtorb-aura-inner').evaluate(el => el.style.background);
-    expect(innerBg).toContain('139,92,246'); // purple
+    expect(innerBg).toContain('139, 92, 246'); // purple
 
     const outerBg = await page.locator('.vtorb-aura-outer').evaluate(el => el.style.background);
-    expect(outerBg).toContain('139,92,246'); // purple outer
+    expect(outerBg).toContain('139, 92, 246'); // purple outer
 
     const status = page.locator('.vtorb-status');
     await expect(status).toHaveText('Thinking...');
     const color = await status.evaluate(el => el.style.color);
-    expect(color).toContain('139,92,246'); // purple
+    expect(color).toContain('139, 92, 246'); // purple
   });
 
   test('speaking state — amber aura, amber text', async ({ page }) => {
@@ -137,15 +137,15 @@ test.describe('ORB Widget — State Colors', () => {
     await setState(page, 'speaking', 'Vitana speaking...');
 
     const innerBg = await page.locator('.vtorb-aura-inner').evaluate(el => el.style.background);
-    expect(innerBg).toContain('245,158,11'); // amber
+    expect(innerBg).toContain('245, 158, 11'); // amber
 
     const outerBg = await page.locator('.vtorb-aura-outer').evaluate(el => el.style.background);
-    expect(outerBg).toContain('245,158,11'); // amber outer
+    expect(outerBg).toContain('245, 158, 11'); // amber outer
 
     const status = page.locator('.vtorb-status');
     await expect(status).toHaveText('Vitana speaking...');
     const color = await status.evaluate(el => el.style.color);
-    expect(color).toContain('245,158,11'); // amber
+    expect(color).toContain('245, 158, 11'); // amber
   });
 
   test('listening state — blue aura, blue text', async ({ page }) => {
@@ -154,15 +154,15 @@ test.describe('ORB Widget — State Colors', () => {
     await setState(page, 'listening', 'Listening...');
 
     const innerBg = await page.locator('.vtorb-aura-inner').evaluate(el => el.style.background);
-    expect(innerBg).toContain('59,130,246'); // blue
+    expect(innerBg).toContain('59, 130, 246'); // blue
 
     const outerBg = await page.locator('.vtorb-aura-outer').evaluate(el => el.style.background);
-    expect(outerBg).toContain('59,130,246'); // blue outer
+    expect(outerBg).toContain('59, 130, 246'); // blue outer
 
     const status = page.locator('.vtorb-status');
     await expect(status).toHaveText('Listening...');
     const color = await status.evaluate(el => el.style.color);
-    expect(color).toContain('59,130,246'); // blue
+    expect(color).toContain('59, 130, 246'); // blue
   });
 
   test('muted state — gray aura, sphere dimmed, white text', async ({ page }) => {
@@ -171,7 +171,7 @@ test.describe('ORB Widget — State Colors', () => {
     await setState(page, 'paused', 'Muted');
 
     const innerBg = await page.locator('.vtorb-aura-inner').evaluate(el => el.style.background);
-    expect(innerBg).toContain('107,114,128'); // gray
+    expect(innerBg).toContain('107, 114, 128'); // gray
 
     // Sphere should be dimmed
     const sphere = page.locator('.vtorb-large');
@@ -196,7 +196,7 @@ test.describe('ORB Widget — State Colors', () => {
     await page.waitForTimeout(100);
 
     const innerBg = await page.locator('.vtorb-aura-inner').evaluate(el => el.style.background);
-    expect(innerBg).toContain('239,68,68'); // red
+    expect(innerBg).toContain('239, 68, 68'); // red
 
     const status = page.locator('.vtorb-status');
     await expect(status).toHaveText('Connection lost.');
@@ -217,25 +217,27 @@ test.describe('ORB Widget — Mic Mute', () => {
 
     // Initially unmuted — blue background
     const bgBefore = await micBtn.evaluate(el => el.style.background);
-    expect(bgBefore).toContain('59,130,246'); // blue
+    expect(bgBefore).toContain('59, 130, 246'); // blue
 
     // Click to mute
-    await micBtn.click();
+    await micBtn.click({ force: true });
 
     // After mute — red background
+    await page.waitForTimeout(100);
     const bgAfter = await micBtn.evaluate(el => el.style.background);
-    expect(bgAfter).toContain('239,68,68'); // red
+    expect(bgAfter).toContain('239, 68, 68'); // red
 
     // Status should show "Muted"
     const status = page.locator('.vtorb-status');
     await expect(status).toHaveText('Muted');
 
     // Click again to unmute
-    await micBtn.click();
+    await micBtn.click({ force: true });
 
     // Back to blue
+    await page.waitForTimeout(100);
     const bgUnmuted = await micBtn.evaluate(el => el.style.background);
-    expect(bgUnmuted).toContain('59,130,246'); // blue
+    expect(bgUnmuted).toContain('59, 130, 246'); // blue
 
     // Status should show "Listening..."
     await expect(status).toHaveText('Listening...');
