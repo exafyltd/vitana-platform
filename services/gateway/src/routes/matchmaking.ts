@@ -605,6 +605,20 @@ router.post('/:id/state', async (req: Request, res: Response) => {
       }
     }
 
+    // Fire-and-forget milestone check for match acceptance
+    if (newState === 'accepted') {
+      try {
+        let _uid = '';
+        try { _uid = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
+        const { data: _m } = await supabase.from('user_matches').select('tenant_id').eq('id', matchId).maybeSingle();
+        if (_uid && _m?.tenant_id) {
+          import('../services/milestone-service').then(({ checkMilestonesForAction }) => {
+            checkMilestonesForAction(supabase, _uid, _m.tenant_id, 'match_accepted').catch(() => {});
+          }).catch(() => {});
+        }
+      } catch { /* non-critical */ }
+    }
+
     return res.status(200).json({
       ok: true,
       match_id: matchId,

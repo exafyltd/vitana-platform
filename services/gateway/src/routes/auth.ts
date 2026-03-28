@@ -622,6 +622,14 @@ router.put('/profile', requireAuth, async (req: AuthenticatedRequest, res: Respo
     }
 
     console.log(`[VTID-01867] Profile updated for ${identity.user_id}`);
+
+    // Fire-and-forget milestone check for profile update
+    if (identity.user_id && identity.tenant_id) {
+      import('../services/milestone-service').then(({ checkMilestonesForAction }) => {
+        checkMilestonesForAction(supabase, identity.user_id, identity.tenant_id!, 'profile_updated').catch(() => {});
+      }).catch(() => {});
+    }
+
     return res.status(200).json({
       ok: true,
       profile: {

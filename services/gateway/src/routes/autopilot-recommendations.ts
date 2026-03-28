@@ -1319,17 +1319,182 @@ router.get('/history', async (req: Request, res: Response) => {
 // =============================================================================
 // GET /recommendations/health - Health check
 // =============================================================================
+// =============================================================================
+// POST /recommendations/:id/complete - Mark recommendation as fully completed
+// =============================================================================
+/**
+ * POST /recommendations/:id/complete
+ *
+ * Called by the frontend when a user has actually completed the recommended action
+ * (e.g., finished editing profile, wrote first diary entry, joined a group).
+ * This differs from "activate" which just means the user clicked to start the action.
+ *
+ * Community users only. Updates status from 'activated' to a completed marker,
+ * emits an OASIS event for tracking, and optionally rewards the user.
+ */
+router.post('/:id/complete', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ ok: false, error: 'User ID required' });
+    }
+
+    const recId = req.params.id;
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+    if (!supabaseUrl || !supabaseKey) {
+      return res.status(500).json({ ok: false, error: 'Missing Supabase credentials' });
+    }
+
+    // Fetch the recommendation
+    const fetchResp = await fetch(
+      `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${recId}&user_id=eq.${userId}&select=id,status,source_ref,title`,
+      {
+        headers: {
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+        },
+      },
+    );
+    const recs = await fetchResp.json() as any[];
+    const rec = recs?.[0];
+    if (!rec) {
+      return res.status(404).json({ ok: false, error: 'Recommendation not found' });
+    }
+
+    if (rec.status !== 'activated') {
+      return res.status(400).json({ ok: false, error: `Cannot complete recommendation in status: ${rec.status}` });
+    }
+
+    // Update status to 'completed' with completion timestamp in metadata
+    const patchResp = await fetch(
+      `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${recId}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify({
+          status: 'completed',
+          metadata: {
+            completed_at: new Date().toISOString(),
+            completed_by: userId,
+          },
+        }),
+      },
+    );
+
+    if (!patchResp.ok) {
+      console.error(`${LOG_PREFIX} Community complete PATCH failed:`, await patchResp.text());
+      return res.status(500).json({ ok: false, error: 'Failed to mark as completed' });
+    }
+
+    // Emit OASIS event
+    try {
+      await emitOasisEvent({
+        vtid: 'VTID-01180',
+        type: 'autopilot.recommendation.completed' as any,
+        source: 'autopilot-recommendations',
+        status: 'info',
+        message: `Community recommendation completed: ${rec.title}`,
+        payload: {
+          recommendation_id: recId,
+          user_id: userId,
+          source_ref: rec.source_ref,
+          title: rec.title,
+        },
+      });
+    } catch (e) {
+      console.warn(`${LOG_PREFIX} Failed to emit completion event:`, e);
+    }
+
+    // Look up tenant for notification
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabase = createClient(supabaseUrl, supabaseKey);
+    const { data: tenantRow } = await supabase
+      .from('user_tenants')
+      .select('tenant_id')
+      .eq('user_id', userId)
+      .eq('is_primary', true)
+      .maybeSingle();
+
+    // Check if user earned a reward for this action
+    const signalType = rec.source_ref;
+    const isOnboardingAction = signalType?.startsWith('onboarding_');
+    if (isOnboardingAction && tenantRow?.tenant_id) {
+      // Credit small reward for completing onboarding tasks
+      try {
+        await supabase.rpc('credit_wallet', {
+          p_tenant_id: tenantRow.tenant_id,
+          p_user_id: userId,
+          p_amount: 10,
+          p_type: 'reward',
+          p_source: 'recommendation_complete',
+          p_source_event_id: `rec_complete_${recId}`,
+          p_description: `Completed: ${rec.title}`,
+        });
+      } catch {
+        // Best-effort; may fail if duplicate
+      }
+    }
+
+    // Emit milestone event if all day-0 onboarding tasks are completed
+    if (isOnboardingAction && tenantRow?.tenant_id) {
+      const { data: remaining } = await supabase
+        .from('autopilot_recommendations')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('status', 'activated')
+        .like('source_ref', 'onboarding_%');
+
+      if (!remaining || remaining.length === 0) {
+        try {
+          await emitOasisEvent({
+            vtid: 'VTID-01180',
+            type: 'user.milestone.reached' as any,
+            source: 'autopilot-recommendations',
+            status: 'info',
+            message: 'User completed all onboarding recommendations',
+            payload: {
+              user_id: userId,
+              milestone: 'onboarding_complete',
+              tenant_id: tenantRow.tenant_id,
+            },
+          });
+        } catch {
+          // Best-effort
+        }
+      }
+    }
+
+    return res.status(200).json({
+      ok: true,
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+      reward: isOnboardingAction ? 10 : 0,
+    });
+
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} Error completing recommendation:`, err);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 router.get('/health', (_req: Request, res: Response) => {
   return res.status(200).json({
     ok: true,
     service: 'autopilot-recommendations',
     vtid: 'VTID-01180',
-    version: '2.0.0',
+    version: '2.1.0',
     timestamp: new Date().toISOString(),
     endpoints: [
       'GET /recommendations',
       'GET /recommendations/count',
       'POST /recommendations/:id/activate',
+      'POST /recommendations/:id/complete',
       'POST /recommendations/:id/reject',
       'POST /recommendations/:id/snooze',
       'POST /recommendations/generate',

@@ -13,6 +13,7 @@ import { registerWalletPaymentsHandlers } from './wallet-payments';
 import { registerBusinessMarketplaceHandlers } from './business-marketplace';
 import { registerLiveRoomsCommerceHandlers } from './live-rooms-commerce';
 import { registerEngagementEventsHandlers } from './engagement-events';
+import { registerOnboardingGrowthHandlers } from './onboarding-growth';
 import { registerHandler } from '../automation-executor';
 
 /**
@@ -30,6 +31,7 @@ export function registerAllAutomationHandlers(): void {
   registerBusinessMarketplaceHandlers();
   registerLiveRoomsCommerceHandlers();
   registerEngagementEventsHandlers();
+  registerOnboardingGrowthHandlers();
 
   console.log('[Automations] All handlers registered.');
 }

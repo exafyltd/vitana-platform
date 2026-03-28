@@ -334,6 +334,22 @@ router.post('/groups/:id/join', async (req: Request, res: Response) => {
       console.warn(`[Notifications] group join dispatch error: ${err.message}`);
     }
 
+    // Fire-and-forget milestone check for group join
+    {
+      const _supaUrl = process.env.SUPABASE_URL;
+      const _svcKey = process.env.SUPABASE_SERVICE_ROLE;
+      let _uid = '';
+      try { _uid = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
+      if (_uid && _supaUrl && _svcKey) {
+        import('../services/milestone-service').then(async ({ checkMilestonesForAction }) => {
+          const { createClient } = await import('@supabase/supabase-js');
+          const svc = createClient(_supaUrl, _svcKey);
+          const { data: grp } = await svc.from('community_groups').select('tenant_id').eq('id', groupId).maybeSingle();
+          if (grp?.tenant_id) await checkMilestonesForAction(svc, _uid, grp.tenant_id, 'group_joined');
+        }).catch(() => {});
+      }
+    }
+
     return res.status(200).json(data);
   } catch (err: any) {
     console.error(`[${VTID}] join group error:`, err.message);
