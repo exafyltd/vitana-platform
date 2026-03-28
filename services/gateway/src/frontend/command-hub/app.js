@@ -26327,6 +26327,7 @@ function renderOverviewSystemView() {
     // ═══════════════════════════════════════════════════════════════════════
     var metricsGrid = document.createElement('div');
     metricsGrid.className = 'overview-metrics-grid';
+    metricsGrid.style.cssText = 'display:flex;flex-wrap:wrap;gap:0.35rem;width:100%;box-sizing:border-box;';
 
     var summary = state.overviewPipelineSummary.snapshot;
     var deployRate = db.deploySuccessRate7d;
@@ -26387,6 +26388,7 @@ function renderOverviewSystemView() {
     metrics.forEach(function (m) {
         var card = document.createElement('div');
         card.className = 'overview-metric-card';
+        card.style.cssText = 'flex:0 0 calc(25% - 0.27rem);box-sizing:border-box;text-align:center;';
         var val = document.createElement('div');
         val.className = 'metric-value metric-value-' + m.color;
         val.textContent = m.value;
@@ -26435,9 +26437,11 @@ function renderOverviewSystemView() {
     } else {
         var healthGrid = document.createElement('div');
         healthGrid.className = 'health-compact-grid';
+        healthGrid.style.cssText = 'display:flex;flex-wrap:wrap;gap:0.15rem 0.4rem;';
         sortedHealth.forEach(function (svc) {
             var row = document.createElement('div');
             row.className = 'health-grid-row';
+            row.style.cssText = 'flex:0 0 calc(33.33% - 0.27rem);display:flex;align-items:center;gap:0.35rem;font-size:0.72rem;';
             row.title = svc.name + ': ' + svc.status + (svc.latency_ms >= 0 ? ' (' + svc.latency_ms + 'ms)' : '');
             var dotColor = 'green';
             if (svc.status === 'degraded' || svc.status === 'warning') dotColor = 'yellow';
@@ -26558,12 +26562,14 @@ function renderOverviewSystemView() {
         noFail.textContent = 'No failures in the last 24h';
         failPanel.appendChild(noFail);
     } else {
-        db.recentFailures.slice(0, 4).forEach(function (evt) {
+        var failListWrap = document.createElement('div');
+        failListWrap.style.cssText = 'overflow-y:auto;max-height:360px;';
+        db.recentFailures.slice(0, 20).forEach(function (evt) {
             var row = document.createElement('div');
             row.className = 'failure-row';
             var time = document.createElement('span');
             time.className = 'failure-time';
-            time.textContent = dashboardRelativeTime(evt.created_at);
+            time.textContent = evt.created_at ? new Date(evt.created_at).toLocaleString('de-DE', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '\u2014';
             var topic = document.createElement('span');
             topic.className = 'failure-topic';
             topic.textContent = (evt.topic || '').replace(/^vtid\./, '').replace(/^cicd\./, '');
@@ -26574,8 +26580,9 @@ function renderOverviewSystemView() {
             row.appendChild(time);
             row.appendChild(topic);
             row.appendChild(msg);
-            failPanel.appendChild(row);
+            failListWrap.appendChild(row);
         });
+        failPanel.appendChild(failListWrap);
     }
     container.appendChild(failPanel);
 
@@ -26605,7 +26612,9 @@ function renderOverviewSystemView() {
         noDep.textContent = 'No recent deployments';
         deployPanel.appendChild(noDep);
     } else {
-        db.deployments.slice(0, 4).forEach(function (dep) {
+        var deployListWrap = document.createElement('div');
+        deployListWrap.style.cssText = 'overflow-y:auto;max-height:360px;';
+        db.deployments.slice(0, 20).forEach(function (dep) {
             var row = document.createElement('div');
             row.className = 'deploy-row';
             var depStatus = (dep.status || '').toLowerCase();
@@ -26625,14 +26634,16 @@ function renderOverviewSystemView() {
             depStatusEl.textContent = dep.status || 'unknown';
             var depTime = document.createElement('span');
             depTime.className = 'deploy-time';
-            depTime.textContent = dashboardRelativeTime(dep.created_at || dep.deployed_at || dep.timestamp);
+            var depTs = dep.created_at || dep.deployed_at || dep.timestamp;
+            depTime.textContent = depTs ? new Date(depTs).toLocaleString('de-DE', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '\u2014';
             row.appendChild(depDot);
             row.appendChild(depService);
             row.appendChild(depVersion);
             row.appendChild(depStatusEl);
             row.appendChild(depTime);
-            deployPanel.appendChild(row);
+            deployListWrap.appendChild(row);
         });
+        deployPanel.appendChild(deployListWrap);
     }
     container.appendChild(deployPanel);
 
@@ -30528,7 +30539,8 @@ async function triggerTestRun(type, projects, btn) {
             if (type === 'e2e') stateKey = 'testingE2e';
             if (state[stateKey]) { state[stateKey].fetched = false; }
             renderApp();
-            showToast('Test run started (' + projects.join(', ') + ')', 'success');
+            var viaMsg = result.via === 'github-actions' ? ' (via GitHub Actions)' : '';
+            showToast('Test run started (' + projects.join(', ') + ')' + viaMsg, 'success');
         } else {
             if (btn) { btn.disabled = false; btn.textContent = originalLabel; }
             showToast('Failed: ' + (result.error || 'Unknown'), 'error');
@@ -30552,7 +30564,8 @@ async function triggerCycleRun(cycleId, cycleName, btn) {
             state.testingE2e.fetched = false;
             state.testingCycles.fetched = false;
             renderApp();
-            showToast('Cycle "' + cycleName + '" started', 'success');
+            var viaMsg = result.via === 'github-actions' ? ' (via GitHub Actions)' : '';
+            showToast('Cycle "' + cycleName + '" started' + viaMsg, 'success');
         } else {
             if (btn) { btn.disabled = false; btn.textContent = originalLabel; }
             showToast('Failed: ' + (result.error || 'Unknown'), 'error');
