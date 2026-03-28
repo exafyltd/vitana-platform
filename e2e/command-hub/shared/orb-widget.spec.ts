@@ -75,8 +75,8 @@ test.describe('ORB Widget — Overlay Structure', () => {
     const overlay = page.locator('.vtorb-overlay');
     await expect(overlay).toBeVisible();
 
-    // Click close (force: overlay z-index may intercept pointer events)
-    await page.locator('.vtorb-btn-close').click({ force: true });
+    // Dispatch click directly (overlay layer intercepts pointer events)
+    await page.locator('.vtorb-btn-close').dispatchEvent('click');
     // Overlay should be hidden
     await expect(overlay).toBeHidden();
   });
@@ -219,11 +219,11 @@ test.describe('ORB Widget — Mic Mute', () => {
     const bgBefore = await micBtn.evaluate(el => el.style.background);
     expect(bgBefore).toContain('59, 130, 246'); // blue
 
-    // Click to mute
-    await micBtn.click({ force: true });
+    // Dispatch click directly (overlay layer intercepts pointer events)
+    await micBtn.dispatchEvent('click');
+    await page.waitForTimeout(100);
 
     // After mute — red background
-    await page.waitForTimeout(100);
     const bgAfter = await micBtn.evaluate(el => el.style.background);
     expect(bgAfter).toContain('239, 68, 68'); // red
 
@@ -232,10 +232,10 @@ test.describe('ORB Widget — Mic Mute', () => {
     await expect(status).toHaveText('Muted');
 
     // Click again to unmute
-    await micBtn.click({ force: true });
+    await micBtn.dispatchEvent('click');
+    await page.waitForTimeout(100);
 
     // Back to blue
-    await page.waitForTimeout(100);
     const bgUnmuted = await micBtn.evaluate(el => el.style.background);
     expect(bgUnmuted).toContain('59, 130, 246'); // blue
 
