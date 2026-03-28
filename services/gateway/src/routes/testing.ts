@@ -7,6 +7,7 @@ import githubService from '../services/github-service';
 
 const GITHUB_REPO = 'exafyltd/vitana-platform';
 const ORB_MONITOR_WORKFLOW = 'E2E-ORB-MONITOR.yml';
+const E2E_TEST_WORKFLOW = 'E2E-TEST-RUN.yml';
 
 const router = Router();
 
@@ -92,17 +93,9 @@ router.get('/runs/:id', async (req: Request, res: Response) => {
 
 // ─── POST /run — Trigger a test run ──────────────────────────────────────
 router.post('/run', async (req: Request, res: Response) => {
-  const supabase = getSupabase();
-  if (!supabase) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
-
-  const { projects = [], type = 'e2e', cycle_id } = req.body;
+  const { projects = [], type = 'e2e' } = req.body;
   if (!Array.isArray(projects) || projects.length === 0) {
     return res.status(400).json({ ok: false, error: 'projects array is required' });
-  }
-
-  // Check if e2e directory exists (not available on Cloud Run)
-  if (!fs.existsSync(E2E_DIR)) {
-    return res.status(503).json({ ok: false, error: 'E2E test runner not available in this environment. Tests can only be run from a dev machine or via CI/CD.' });
   }
 
   // Validate projects exist
@@ -113,30 +106,42 @@ router.post('/run', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: 'No valid projects specified' });
   }
 
-  // Create run record
-  const { data: run, error: insertErr } = await supabase
-    .from('test_runs')
-    .insert({
-      type,
-      status: 'running',
-      projects: validProjects,
-      triggered_by: cycle_id ? 'cycle' : 'manual',
-      cycle_id: cycle_id || null,
-    })
-    .select()
-    .single();
+  // If e2e directory exists (local dev), run locally
+  if (fs.existsSync(E2E_DIR)) {
+    const supabase = getSupabase();
+    if (!supabase) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
 
-  if (insertErr || !run) {
-    return res.status(500).json({ ok: false, error: insertErr?.message || 'Failed to create run' });
+    const { data: run, error: insertErr } = await supabase
+      .from('test_runs')
+      .insert({
+        type,
+        status: 'running',
+        projects: validProjects,
+        triggered_by: 'manual',
+      })
+      .select()
+      .single();
+
+    if (insertErr || !run) {
+      return res.status(500).json({ ok: false, error: insertErr?.message || 'Failed to create run' });
+    }
+
+    res.json({ ok: true, run_id: run.id, status: 'running', via: 'local' });
+    executePlaywrightRun(run.id, validProjects, type, supabase).catch(err => {
+      console.error('[Testing] Run failed:', err);
+    });
+    return;
   }
 
-  // Return immediately — test execution happens in background
-  res.json({ ok: true, run_id: run.id, status: 'running' });
-
-  // Spawn Playwright in background
-  executePlaywrightRun(run.id, validProjects, type, supabase).catch(err => {
-    console.error('[Testing] Run failed:', err);
-  });
+  // Cloud Run: dispatch GitHub Actions workflow
+  try {
+    await githubService.triggerWorkflow(GITHUB_REPO, E2E_TEST_WORKFLOW, 'main', {
+      projects: validProjects.join(','),
+    });
+    res.json({ ok: true, status: 'dispatched', via: 'github-actions', projects: validProjects });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: 'GitHub dispatch failed: ' + (err.message || 'Unknown') });
+  }
 });
 
 // ─── GET /cycles — List test cycles ──────────────────────────────────────
@@ -188,40 +193,52 @@ router.post('/cycles/:id/run', async (req: Request, res: Response) => {
     return res.status(404).json({ ok: false, error: 'Cycle not found' });
   }
 
-  // Check if e2e directory exists
-  if (!fs.existsSync(E2E_DIR)) {
-    return res.status(503).json({ ok: false, error: 'E2E test runner not available in this environment.' });
+  // If e2e directory exists (local dev), run locally
+  if (fs.existsSync(E2E_DIR)) {
+    const { data: run, error: runErr } = await supabase
+      .from('test_runs')
+      .insert({
+        type: cycle.type,
+        status: 'running',
+        projects: cycle.projects,
+        triggered_by: 'cycle',
+        cycle_id: cycle.id,
+      })
+      .select()
+      .single();
+
+    if (runErr || !run) {
+      return res.status(500).json({ ok: false, error: runErr?.message || 'Failed to create run' });
+    }
+
+    await supabase
+      .from('test_cycles')
+      .update({ last_run_id: run.id, last_run_at: new Date().toISOString() })
+      .eq('id', cycle.id);
+
+    res.json({ ok: true, run_id: run.id, status: 'running', cycle_name: cycle.name, via: 'local' });
+    executePlaywrightRun(run.id, cycle.projects, cycle.type, supabase).catch(err => {
+      console.error('[Testing] Cycle run failed:', err);
+    });
+    return;
   }
 
-  // Create run linked to cycle
-  const { data: run, error: runErr } = await supabase
-    .from('test_runs')
-    .insert({
-      type: cycle.type,
-      status: 'running',
-      projects: cycle.projects,
-      triggered_by: 'cycle',
-      cycle_id: cycle.id,
-    })
-    .select()
-    .single();
+  // Cloud Run: dispatch GitHub Actions workflow
+  try {
+    const projects = Array.isArray(cycle.projects) ? cycle.projects : [];
+    await githubService.triggerWorkflow(GITHUB_REPO, E2E_TEST_WORKFLOW, 'main', {
+      projects: projects.join(','),
+    });
 
-  if (runErr || !run) {
-    return res.status(500).json({ ok: false, error: runErr?.message || 'Failed to create run' });
+    await supabase
+      .from('test_cycles')
+      .update({ last_run_at: new Date().toISOString() })
+      .eq('id', cycle.id);
+
+    res.json({ ok: true, status: 'dispatched', via: 'github-actions', cycle_name: cycle.name });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: 'GitHub dispatch failed: ' + (err.message || 'Unknown') });
   }
-
-  // Update cycle last_run
-  await supabase
-    .from('test_cycles')
-    .update({ last_run_id: run.id, last_run_at: new Date().toISOString() })
-    .eq('id', cycle.id);
-
-  res.json({ ok: true, run_id: run.id, status: 'running', cycle_name: cycle.name });
-
-  // Spawn Playwright in background
-  executePlaywrightRun(run.id, cycle.projects, cycle.type, supabase).catch(err => {
-    console.error('[Testing] Cycle run failed:', err);
-  });
 });
 
 // ─── Background test execution ───────────────────────────────────────────

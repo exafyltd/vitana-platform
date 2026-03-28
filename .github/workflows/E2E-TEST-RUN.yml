@@ -1,0 +1,74 @@
+name: E2E Test Run
+
+on:
+  workflow_dispatch:
+    inputs:
+      projects:
+        description: 'Comma-separated Playwright project names (e.g. hub-shared,desktop-shared)'
+        required: true
+        type: string
+      spec_filter:
+        description: 'Optional spec file filter (e.g. orb-widget.spec.ts)'
+        required: false
+        type: string
+        default: ''
+
+concurrency:
+  group: e2e-run-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  e2e-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install E2E dependencies
+        working-directory: e2e
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: e2e
+        run: npx playwright install chromium --with-deps
+
+      - name: Build Playwright command
+        id: cmd
+        run: |
+          PROJECTS="${{ inputs.projects }}"
+          SPEC="${{ inputs.spec_filter }}"
+          CMD="npx playwright test"
+          # Add each project as --project flag
+          IFS=',' read -ra PROJ_ARRAY <<< "$PROJECTS"
+          for proj in "${PROJ_ARRAY[@]}"; do
+            proj=$(echo "$proj" | xargs)  # trim whitespace
+            CMD="$CMD --project=$proj"
+          done
+          # Add spec filter if provided
+          if [ -n "$SPEC" ]; then
+            CMD="$CMD $SPEC"
+          fi
+          echo "cmd=$CMD" >> $GITHUB_OUTPUT
+          echo "Running: $CMD"
+
+      - name: Run E2E tests
+        working-directory: e2e
+        run: ${{ steps.cmd.outputs.cmd }}
+        env:
+          HUB_URL: https://gateway-q74ibpv6ia-uc.a.run.app
+          TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+          TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+
+      - name: Upload test results on failure
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-results-${{ github.run_id }}
+          path: |
+            e2e/test-results/
+            e2e/playwright-report/
+          retention-days: 7
