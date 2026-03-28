@@ -3534,6 +3534,8 @@ const state = {
     testingValidator: { runs: [], loading: false, error: null, fetched: false },
     // Testing & QA — Test Cycles
     testingCycles: { cycles: [], loading: false, error: null, fetched: false },
+    // Testing & QA — ORB Monitor (GitHub Actions)
+    orbMonitor: { runs: [], loading: false, error: null, fetched: false },
     // Testing & QA — selected run detail drawer
     testingSelectedRun: null,
     testingSelectedRunResults: [],
@@ -26431,9 +26433,12 @@ function renderOverviewSystemView() {
         noH.textContent = 'Loading health checks...';
         healthPanel.appendChild(noH);
     } else {
+        var healthGrid = document.createElement('div');
+        healthGrid.className = 'health-compact-grid';
         sortedHealth.forEach(function (svc) {
             var row = document.createElement('div');
             row.className = 'health-grid-row';
+            row.title = svc.name + ': ' + svc.status + (svc.latency_ms >= 0 ? ' (' + svc.latency_ms + 'ms)' : '');
             var dotColor = 'green';
             if (svc.status === 'degraded' || svc.status === 'warning') dotColor = 'yellow';
             if (svc.status === 'down' || svc.status === 'error' || svc.status === 'unhealthy') dotColor = 'red';
@@ -26442,19 +26447,15 @@ function renderOverviewSystemView() {
             var nameEl = document.createElement('span');
             nameEl.className = 'health-grid-name';
             nameEl.textContent = svc.name;
-            var statusEl = document.createElement('span');
-            statusEl.className = 'health-grid-status';
-            statusEl.style.color = dotColor === 'green' ? '#10b981' : (dotColor === 'yellow' ? '#f59e0b' : '#ef4444');
-            statusEl.textContent = svc.status;
             var latencyEl = document.createElement('span');
             latencyEl.className = 'health-grid-latency';
-            latencyEl.textContent = svc.latency_ms >= 0 ? svc.latency_ms + 'ms' : '\u2014';
+            latencyEl.textContent = svc.latency_ms >= 0 ? svc.latency_ms + 'ms' : '';
             row.appendChild(dot);
             row.appendChild(nameEl);
-            row.appendChild(statusEl);
             row.appendChild(latencyEl);
-            healthPanel.appendChild(row);
+            healthGrid.appendChild(row);
         });
+        healthPanel.appendChild(healthGrid);
     }
     container.appendChild(healthPanel);
 
@@ -26511,16 +26512,10 @@ function renderOverviewSystemView() {
         orbPanel.appendChild(alertBox);
     }
 
-    var sep1 = document.createElement('div');
-    sep1.className = 'orb-separator';
-    orbPanel.appendChild(sep1);
-
     var orbMetrics = [
         { label: 'Sessions (24h)', value: orbStats ? String(orbStats.sessions_24h) : '0' },
         { label: 'Failures (24h)', value: orbStats ? String(orbStats.failures_24h) : '0', warn: orbStats && orbStats.failures_24h > 0 },
-        { label: 'Success Rate', value: orbStats ? orbStats.success_rate + '%' : '\u2014' },
-        { label: 'Active Sessions', value: orbStats ? String(orbStats.active_sessions + (orbStats.active_live_sessions || 0)) : '0' },
-        { label: 'Last Success', value: orbStats && orbStats.last_success ? dashboardRelativeTime(orbStats.last_success) : 'Never' }
+        { label: 'Success Rate', value: orbStats ? orbStats.success_rate + '%' : '\u2014' }
     ];
     orbMetrics.forEach(function (m) {
         var row = document.createElement('div');
@@ -26563,7 +26558,7 @@ function renderOverviewSystemView() {
         noFail.textContent = 'No failures in the last 24h';
         failPanel.appendChild(noFail);
     } else {
-        db.recentFailures.slice(0, 8).forEach(function (evt) {
+        db.recentFailures.slice(0, 4).forEach(function (evt) {
             var row = document.createElement('div');
             row.className = 'failure-row';
             var time = document.createElement('span');
@@ -26610,7 +26605,7 @@ function renderOverviewSystemView() {
         noDep.textContent = 'No recent deployments';
         deployPanel.appendChild(noDep);
     } else {
-        db.deployments.slice(0, 7).forEach(function (dep) {
+        db.deployments.slice(0, 4).forEach(function (dep) {
             var row = document.createElement('div');
             row.className = 'deploy-row';
             var depStatus = (dep.status || '').toLowerCase();
@@ -26670,7 +26665,7 @@ function renderOverviewSystemView() {
         allClear.textContent = 'No tasks need immediate attention. Pipeline running smoothly.';
         attSection.appendChild(allClear);
     } else {
-        attQueue.slice(0, 6).forEach(function (item) {
+        attQueue.slice(0, 3).forEach(function (item) {
             var card = document.createElement('div');
             card.className = 'attention-item';
             card.style.borderLeftColor = severityColors[item.severity] || '#6b7280';
@@ -26701,11 +26696,8 @@ function renderOverviewSystemView() {
                 timeEl.textContent = mins >= 60 ? Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm ago' : mins + 'm ago';
                 bottomRow.appendChild(timeEl);
             }
-            var viewBtn = document.createElement('button');
-            viewBtn.className = 'btn btn-sm';
-            viewBtn.textContent = 'View Task';
-            viewBtn.onclick = function (e) {
-                e.stopPropagation();
+            card.style.cursor = 'pointer';
+            card.onclick = function () {
                 state.selectedTask = {
                     vtid: item.vtid, title: item.title, status: item.status || 'scheduled',
                     spec_status: item.spec_status || 'missing', summary: item.reason || '', oasisColumn: '',
@@ -26720,18 +26712,20 @@ function renderOverviewSystemView() {
             };
             card.appendChild(topRow);
             card.appendChild(bottomRow);
-            card.appendChild(viewBtn);
             attSection.appendChild(card);
         });
     }
-    container.appendChild(attSection);
 
     // ═══════════════════════════════════════════════════════════════════════
-    // SECTION 8: Vitana Recommends (full width)
+    // BOTTOM ROW: Attention Center + Vitana Recommends side by side
     // ═══════════════════════════════════════════════════════════════════════
+    var bottomRowWrap = document.createElement('div');
+    bottomRowWrap.className = 'overview-bottom-row';
+    bottomRowWrap.appendChild(attSection);
+
     var recs = (summary && summary.recommendations) || [];
     var recsSection = document.createElement('div');
-    recsSection.className = 'overview-attention-center';
+    recsSection.className = 'overview-recommends-panel';
     var recsHeader = document.createElement('div');
     recsHeader.className = 'overview-panel-title-row';
     var recsTitleEl = document.createElement('span');
@@ -26767,7 +26761,7 @@ function renderOverviewSystemView() {
         noRecs.textContent = 'No pending recommendations. Click "Generate New" to analyze the platform.';
         recsSection.appendChild(noRecs);
     } else {
-        recs.forEach(function (rec) {
+        recs.slice(0, 3).forEach(function (rec) {
             var card = document.createElement('div');
             card.className = 'recommendation-card';
             var cardTop = document.createElement('div');
@@ -26861,7 +26855,8 @@ function renderOverviewSystemView() {
             recsSection.appendChild(card);
         });
     }
-    container.appendChild(recsSection);
+    bottomRowWrap.appendChild(recsSection);
+    container.appendChild(bottomRowWrap);
 
     return container;
 }
@@ -30869,7 +30864,7 @@ function renderTestingE2eView() {
     // Title row with badge
     var titleRow = document.createElement('div');
     titleRow.style.cssText = 'display:flex;align-items:center;gap:1rem;margin-bottom:0.25rem;';
-    titleRow.innerHTML = '<h2 style="margin:0;">E2E Tests</h2><span class="status-badge status-active" style="font-size:0.75rem;">207 tests</span>';
+    titleRow.innerHTML = '<h2 style="margin:0;">E2E Tests</h2><span class="status-badge status-active" style="font-size:0.75rem;">219 tests</span>';
     container.appendChild(titleRow);
     var subtitle = document.createElement('p');
     subtitle.className = 'section-subtitle';
@@ -30922,6 +30917,7 @@ function renderTestingE2eView() {
         { label: 'Admin', projects: ['hub-admin'] },
         { label: 'Staff', projects: ['hub-staff'] },
         { label: 'Shared', projects: ['hub-shared'] },
+        { label: 'ORB Widget', projects: ['hub-shared'] },
     ]));
 
     // Batch run buttons
@@ -30984,6 +30980,9 @@ function renderTestingE2eView() {
         container.appendChild(cyclesGrid);
     }
 
+    // ─── ORB Monitor — GitHub Actions workflow status ───────────────
+    container.appendChild(renderOrbMonitorSection());
+
     // Runs history table
     var runsTitle = document.createElement('h3');
     runsTitle.textContent = 'Run History';
@@ -31003,6 +31002,177 @@ function renderTestingE2eView() {
     if (drawerEl) container.appendChild(drawerEl);
 
     return container;
+}
+
+// ─── ORB Monitor Section (E2E tab) ──────────────────────────────────────
+function renderOrbMonitorSection() {
+    var section = document.createElement('div');
+    section.style.cssText = 'margin-bottom:1.5rem;';
+
+    var titleRow = document.createElement('div');
+    titleRow.style.cssText = 'display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;';
+    titleRow.innerHTML = '<h3 style="margin:0;">ORB Monitor</h3><span style="font-size:0.75rem;color:var(--color-text-secondary);">Automated every 15 min via GitHub Actions</span>';
+    section.appendChild(titleRow);
+
+    // Fetch status if not fetched
+    if (!state.orbMonitor.fetched && !state.orbMonitor.loading) {
+        state.orbMonitor.loading = true;
+        fetch('/api/v1/testing/orb-monitor/status', { headers: buildContextHeaders() })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                state.orbMonitor.runs = data.runs || [];
+                state.orbMonitor.fetched = true;
+                state.orbMonitor.loading = false;
+                renderApp();
+            }).catch(function (err) {
+                state.orbMonitor.error = err.message;
+                state.orbMonitor.loading = false;
+                renderApp();
+            });
+    }
+
+    if (state.orbMonitor.loading) {
+        var loader = document.createElement('div');
+        loader.className = 'placeholder-content';
+        loader.textContent = 'Loading ORB Monitor status...';
+        section.appendChild(loader);
+        return section;
+    }
+
+    if (state.orbMonitor.error) {
+        var errDiv = document.createElement('div');
+        errDiv.className = 'placeholder-content';
+        errDiv.textContent = 'Could not load ORB Monitor: ' + state.orbMonitor.error;
+        errDiv.style.color = 'var(--color-text-secondary)';
+        section.appendChild(errDiv);
+
+        // Still show trigger button
+        var trigBtn = document.createElement('button');
+        trigBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-generate';
+        trigBtn.textContent = 'Trigger Run';
+        trigBtn.style.marginTop = '0.5rem';
+        trigBtn.onclick = function () { triggerOrbMonitor(trigBtn); };
+        section.appendChild(trigBtn);
+        return section;
+    }
+
+    // Card with status
+    var card = document.createElement('div');
+    card.style.cssText = 'background:var(--color-bg-secondary);border:1px solid var(--color-border);border-radius:8px;padding:1rem;';
+
+    // Top row: status dots (last 5 runs)
+    var dotsRow = document.createElement('div');
+    dotsRow.style.cssText = 'display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;';
+    var dotsLabel = document.createElement('span');
+    dotsLabel.style.cssText = 'font-size:0.8rem;color:var(--color-text-secondary);margin-right:0.25rem;';
+    dotsLabel.textContent = 'Recent:';
+    dotsRow.appendChild(dotsLabel);
+
+    var runs = state.orbMonitor.runs || [];
+    runs.slice(0, 5).forEach(function (run) {
+        var dot = document.createElement('span');
+        var color = run.conclusion === 'success' ? '#22c55e' :
+                    run.conclusion === 'failure' ? '#ef4444' :
+                    run.status === 'in_progress' ? '#f59e0b' : '#6b7280';
+        dot.style.cssText = 'width:12px;height:12px;border-radius:50%;display:inline-block;background:' + color + ';cursor:pointer;';
+        dot.title = (run.conclusion || run.status) + ' — ' + formatEventTimestamp(run.created_at);
+        dot.onclick = function () { window.open(run.html_url, '_blank'); };
+        dotsRow.appendChild(dot);
+    });
+    if (runs.length === 0) {
+        var noDots = document.createElement('span');
+        noDots.style.cssText = 'font-size:0.8rem;color:var(--color-text-secondary);';
+        noDots.textContent = 'No runs yet';
+        dotsRow.appendChild(noDots);
+    }
+    card.appendChild(dotsRow);
+
+    // Info row: last run details
+    if (runs.length > 0) {
+        var latest = runs[0];
+        var infoRow = document.createElement('div');
+        infoRow.style.cssText = 'display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;';
+
+        var statusBadge = document.createElement('span');
+        var statusClass = latest.conclusion === 'success' ? 'status-active' :
+                          latest.conclusion === 'failure' ? 'status-ended' :
+                          'status-badge';
+        statusBadge.className = 'status-badge ' + statusClass;
+        statusBadge.style.fontSize = '0.75rem';
+        statusBadge.textContent = latest.conclusion || latest.status || 'unknown';
+        infoRow.appendChild(statusBadge);
+
+        var timeSpan = document.createElement('span');
+        timeSpan.style.cssText = 'font-size:0.8rem;color:var(--color-text-secondary);';
+        timeSpan.textContent = formatEventTimestamp(latest.created_at);
+        infoRow.appendChild(timeSpan);
+
+        var linkSpan = document.createElement('a');
+        linkSpan.href = latest.html_url;
+        linkSpan.target = '_blank';
+        linkSpan.style.cssText = 'font-size:0.75rem;color:var(--color-accent);text-decoration:none;';
+        linkSpan.textContent = 'View on GitHub';
+        infoRow.appendChild(linkSpan);
+
+        card.appendChild(infoRow);
+    }
+
+    // Tests info
+    var testsInfo = document.createElement('div');
+    testsInfo.style.cssText = 'font-size:0.8rem;color:var(--color-text-secondary);margin-bottom:0.75rem;';
+    testsInfo.innerHTML = '<strong>12 tests:</strong> Overlay structure (3) \u00b7 State colors (6) \u00b7 Mic mute (1) \u00b7 Close (1) \u00b7 Aura elements (1)';
+    card.appendChild(testsInfo);
+
+    // Trigger button
+    var btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:0.5rem;';
+    var trigBtn = document.createElement('button');
+    trigBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-generate';
+    trigBtn.style.fontSize = '0.8rem';
+    trigBtn.textContent = 'Trigger Run';
+    trigBtn.onclick = function () { triggerOrbMonitor(trigBtn); };
+    btnRow.appendChild(trigBtn);
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'task-spec-pipeline-btn';
+    refreshBtn.style.cssText = 'font-size:0.8rem;background:var(--color-bg-primary);color:var(--color-text-secondary);border:1px solid var(--color-border);';
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.onclick = function () {
+        state.orbMonitor.fetched = false;
+        state.orbMonitor.loading = false;
+        renderApp();
+    };
+    btnRow.appendChild(refreshBtn);
+    card.appendChild(btnRow);
+
+    section.appendChild(card);
+    return section;
+}
+
+async function triggerOrbMonitor(btn) {
+    var originalLabel = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Triggering...';
+    try {
+        var response = await fetch('/api/v1/testing/orb-monitor/trigger', {
+            method: 'POST',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' })
+        });
+        var result = await response.json();
+        if (result.ok) {
+            state.orbMonitor.fetched = false;
+            renderApp();
+            showToast('ORB Monitor workflow triggered', 'success');
+        } else {
+            btn.disabled = false;
+            btn.textContent = originalLabel;
+            showToast('Failed: ' + (result.error || 'Unknown'), 'error');
+        }
+    } catch (e) {
+        btn.disabled = false;
+        btn.textContent = originalLabel;
+        showToast('Network error: ' + (e.message || 'Unknown'), 'error');
+    }
 }
 
 function renderTestingCiReportsView() {
