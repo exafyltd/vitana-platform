@@ -3,6 +3,10 @@ import { getSupabase } from '../lib/supabase';
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import githubService from '../services/github-service';
+
+const GITHUB_REPO = 'exafyltd/vitana-platform';
+const ORB_MONITOR_WORKFLOW = 'E2E-ORB-MONITOR.yml';
 
 const router = Router();
 
@@ -391,5 +395,32 @@ async function executePlaywrightRun(
       .eq('id', runId);
   }
 }
+
+// ─── ORB Monitor — GitHub Actions workflow status ────────────────────────
+
+router.get('/orb-monitor/status', async (_req: Request, res: Response) => {
+  try {
+    const data = await githubService.getWorkflowRuns(GITHUB_REPO, ORB_MONITOR_WORKFLOW);
+    const runs = (data.workflow_runs || []).map((r: any) => ({
+      id: r.id,
+      status: r.status,
+      conclusion: r.conclusion,
+      created_at: r.created_at,
+      html_url: r.html_url,
+    }));
+    res.json({ ok: true, runs, workflow: ORB_MONITOR_WORKFLOW });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err.message || 'Failed to fetch ORB monitor status' });
+  }
+});
+
+router.post('/orb-monitor/trigger', async (_req: Request, res: Response) => {
+  try {
+    await githubService.triggerWorkflow(GITHUB_REPO, ORB_MONITOR_WORKFLOW, 'main');
+    res.json({ ok: true, message: 'ORB Monitor workflow triggered' });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err.message || 'Failed to trigger ORB monitor' });
+  }
+});
 
 export default router;
