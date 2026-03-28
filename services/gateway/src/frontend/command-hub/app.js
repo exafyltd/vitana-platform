@@ -26326,7 +26326,7 @@ function renderOverviewSystemView() {
     // SECTION 2: Key Metrics Grid (2x4)
     // ═══════════════════════════════════════════════════════════════════════
     var metricsGrid = document.createElement('div');
-    metricsGrid.style.cssText = 'width:100%;';
+    metricsGrid.style.cssText = 'width:100%;grid-column:1/-1;';
 
     var summary = state.overviewPipelineSummary.snapshot;
     var deployRate = db.deploySuccessRate7d;
