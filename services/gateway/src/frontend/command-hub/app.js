@@ -26326,8 +26326,7 @@ function renderOverviewSystemView() {
     // SECTION 2: Key Metrics Grid (2x4)
     // ═══════════════════════════════════════════════════════════════════════
     var metricsGrid = document.createElement('div');
-    metricsGrid.className = 'overview-metrics-grid';
-    metricsGrid.style.cssText = 'display:flex;flex-wrap:wrap;gap:0.35rem;width:100%;box-sizing:border-box;';
+    metricsGrid.style.cssText = 'width:100%;';
 
     var summary = state.overviewPipelineSummary.snapshot;
     var deployRate = db.deploySuccessRate7d;
@@ -26385,10 +26384,15 @@ function renderOverviewSystemView() {
         }
     ];
 
-    metrics.forEach(function (m) {
+    var metricRow1 = document.createElement('div');
+    metricRow1.style.cssText = 'display:flex;gap:0.35rem;margin-bottom:0.35rem;';
+    var metricRow2 = document.createElement('div');
+    metricRow2.style.cssText = 'display:flex;gap:0.35rem;';
+
+    metrics.forEach(function (m, idx) {
         var card = document.createElement('div');
         card.className = 'overview-metric-card';
-        card.style.cssText = 'flex:0 0 calc(25% - 0.27rem);box-sizing:border-box;text-align:center;';
+        card.style.cssText = 'flex:1;text-align:center;';
         var val = document.createElement('div');
         val.className = 'metric-value metric-value-' + m.color;
         val.textContent = m.value;
@@ -26403,8 +26407,12 @@ function renderOverviewSystemView() {
             sub.textContent = m.subtitle;
             card.appendChild(sub);
         }
-        metricsGrid.appendChild(card);
+        if (idx < 4) metricRow1.appendChild(card);
+        else metricRow2.appendChild(card);
     });
+
+    metricsGrid.appendChild(metricRow1);
+    metricsGrid.appendChild(metricRow2);
 
     container.appendChild(metricsGrid);
 
@@ -26436,29 +26444,34 @@ function renderOverviewSystemView() {
         healthPanel.appendChild(noH);
     } else {
         var healthGrid = document.createElement('div');
-        healthGrid.className = 'health-compact-grid';
-        healthGrid.style.cssText = 'display:flex;flex-wrap:wrap;gap:0.15rem 0.4rem;';
-        sortedHealth.forEach(function (svc) {
-            var row = document.createElement('div');
-            row.className = 'health-grid-row';
-            row.style.cssText = 'flex:0 0 calc(33.33% - 0.27rem);display:flex;align-items:center;gap:0.35rem;font-size:0.72rem;';
-            row.title = svc.name + ': ' + svc.status + (svc.latency_ms >= 0 ? ' (' + svc.latency_ms + 'ms)' : '');
+        var healthRows = [];
+        var HEALTH_COLS = 3;
+        sortedHealth.forEach(function (svc, idx) {
+            var rowIdx = Math.floor(idx / HEALTH_COLS);
+            if (!healthRows[rowIdx]) {
+                healthRows[rowIdx] = document.createElement('div');
+                healthRows[rowIdx].style.cssText = 'display:flex;gap:0.4rem;margin-bottom:0.1rem;';
+            }
+            var cell = document.createElement('div');
+            cell.style.cssText = 'flex:1;display:flex;align-items:center;gap:0.3rem;font-size:0.72rem;';
+            cell.title = svc.name + ': ' + svc.status + (svc.latency_ms >= 0 ? ' (' + svc.latency_ms + 'ms)' : '');
             var dotColor = 'green';
             if (svc.status === 'degraded' || svc.status === 'warning') dotColor = 'yellow';
             if (svc.status === 'down' || svc.status === 'error' || svc.status === 'unhealthy') dotColor = 'red';
             var dot = document.createElement('span');
             dot.className = 'health-dot health-dot-' + dotColor;
             var nameEl = document.createElement('span');
-            nameEl.className = 'health-grid-name';
+            nameEl.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
             nameEl.textContent = svc.name;
             var latencyEl = document.createElement('span');
-            latencyEl.className = 'health-grid-latency';
+            latencyEl.style.cssText = 'margin-left:auto;font-size:0.62rem;color:#64748b;flex-shrink:0;font-family:monospace;';
             latencyEl.textContent = svc.latency_ms >= 0 ? svc.latency_ms + 'ms' : '';
-            row.appendChild(dot);
-            row.appendChild(nameEl);
-            row.appendChild(latencyEl);
-            healthGrid.appendChild(row);
+            cell.appendChild(dot);
+            cell.appendChild(nameEl);
+            cell.appendChild(latencyEl);
+            healthRows[rowIdx].appendChild(cell);
         });
+        healthRows.forEach(function (r) { healthGrid.appendChild(r); });
         healthPanel.appendChild(healthGrid);
     }
     container.appendChild(healthPanel);
