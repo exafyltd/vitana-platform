@@ -26515,22 +26515,25 @@ function renderOverviewSystemView() {
             '</div></td>';
     }
 
-    // Build Row 1: 9 cards
-    var row1HTML = '<tr>';
-    for (var ri1 = 0; ri1 < row1.length; ri1++) {
-        row1HTML += metricCardHTML(row1[ri1], '11.1%');
+    // Combine all 18 cards, lay out in 3 rows of 6 (proven column count)
+    var allMetrics = row1.concat(row2);
+    var METRIC_COLS = 6;
+    var metricsHTML = '';
+    for (var mri = 0; mri < Math.ceil(allMetrics.length / METRIC_COLS); mri++) {
+        metricsHTML += '<tr>';
+        for (var mci = 0; mci < METRIC_COLS; mci++) {
+            var midx = mri * METRIC_COLS + mci;
+            if (midx < allMetrics.length) {
+                metricsHTML += metricCardHTML(allMetrics[midx], '16.66%');
+            } else {
+                metricsHTML += '<td style="width:16.66%;"></td>';
+            }
+        }
+        metricsHTML += '</tr>';
     }
-    row1HTML += '</tr>';
 
-    // Build Row 2: 9 cards
-    var row2HTML = '<tr>';
-    for (var ri2 = 0; ri2 < row2.length; ri2++) {
-        row2HTML += metricCardHTML(row2[ri2], '11.1%');
-    }
-    row2HTML += '</tr>';
-
-    metricsGrid.innerHTML = '<table style="width:100%;border-collapse:separate;border-spacing:0.2rem;table-layout:fixed;">' +
-        row1HTML + row2HTML + '</table>';
+    metricsGrid.innerHTML = '<table style="width:100%;border-collapse:separate;border-spacing:0.15rem;table-layout:fixed;">' +
+        metricsHTML + '</table>';
 
     container.appendChild(metricsGrid);
 
