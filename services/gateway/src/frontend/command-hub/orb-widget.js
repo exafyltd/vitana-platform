@@ -67,7 +67,10 @@
     clientLastActivityAt: 0,
     stuckGuardTimer: null,
     thinkingDelayTimer: null, // Delayed thinking state — only show if response takes > 1.5s
+    thinkingProgressTimer: null, // Progress updates during long thinking
+    thinkingStartTime: 0,    // When thinking started — for elapsed time display
     greetingAudioReceived: false,
+    greetingComplete: false,  // True after first turn_complete — mic opens only after this
 
     // UI state
     voiceState: 'IDLE', // IDLE | LISTENING | THINKING | SPEAKING | MUTED
@@ -494,8 +497,9 @@
       };
       _s.eventSource = es;
 
-      // Start mic capture
-      await _startAudioCapture();
+      // Mic capture starts AFTER greeting completes (first turn_complete).
+      // Opening the mic during greeting causes echo-triggered interruptions
+      // because browser AEC can't fully suppress the greeting audio.
 
       _updateUI();
     } catch (err) {
@@ -549,8 +553,10 @@
     _s.active = false;
     _s.audioQueue = [];
     _s.audioPlaying = false;
+    _s.greetingComplete = false;
     clearTimeout(_s.audioEndGraceTimer);
     clearTimeout(_s.thinkingDelayTimer);
+    clearInterval(_s.thinkingProgressTimer);
     // Stop scheduled audio
     if (_s.scheduledSources) {
       for (var i = 0; i < _s.scheduledSources.length; i++) {
@@ -602,6 +608,7 @@
         // Server signals model is processing (user speech detected or tool call running).
         // Delay 1.5s before showing THINKING — if audio arrives faster, skip it entirely.
         // This avoids a distracting "Thinking..." flash on quick 1-2s responses.
+        _s.thinkingStartTime = Date.now();
         if (_s.voiceState === 'LISTENING' || _s.voiceState === 'IDLE') {
           clearTimeout(_s.thinkingDelayTimer);
           _s.thinkingDelayTimer = setTimeout(function () {
@@ -610,6 +617,7 @@
               _s.voiceState = 'THINKING';
               _setStatus(_cfg.lang.startsWith('de') ? 'Denkt nach...' : 'Thinking...');
               _updateUI();
+              _startThinkingProgress();
             }
           }, 1500);
         } else if (_s.voiceState === 'MUTED') {
@@ -625,8 +633,10 @@
       case 'audio':
       case 'audio_out':
         if (_s.interruptPending) break;
-        // Cancel pending thinking timer — response arrived fast, no need to flash "Thinking..."
+        // Cancel pending thinking timer and progress — response arrived
         clearTimeout(_s.thinkingDelayTimer);
+        clearInterval(_s.thinkingProgressTimer);
+        _s.thinkingProgressTimer = null;
         if (msg.data_b64) {
           // Clear stuck guard on first audio
           if (!_s.greetingAudioReceived) {
@@ -652,6 +662,9 @@
         _s.lastScheduledEnd = 0;
         _s.interruptPending = false;
         _s.turnCompleteAt = Date.now();
+        // Clear thinking progress if running
+        clearInterval(_s.thinkingProgressTimer);
+        _s.thinkingProgressTimer = null;
 
         // VTID-TRANSCRIPT-FIX: Flush buffered transcripts as single entries
         if (_s._inputTranscriptBuffer.trim()) {
@@ -678,6 +691,13 @@
             if (stillPlaying) {
               _waitForAudioEnd(); // Still playing — check again in 300ms
               return;
+            }
+            // Start mic on first turn_complete (greeting done) — not before.
+            if (!_s.greetingComplete) {
+              _s.greetingComplete = true;
+              _startAudioCapture().catch(function (err) {
+                console.error('[VTOrb] Mic capture failed after greeting:', err);
+              });
             }
             if (_s.voiceState === 'MUTED') {
               // Muted — don't change visual state, but update what unmute restores to
@@ -885,6 +905,41 @@
   // ============================================================
   // 9. WATCHDOGS
   // ============================================================
+
+  // Thinking progress: reassure user during long processing (memory search, slow network).
+  // Shows elapsed time and rotating messages so user knows it's still working.
+  function _startThinkingProgress() {
+    clearInterval(_s.thinkingProgressTimer);
+    var messages_en = [
+      'Searching memory...',
+      'Still working on it...',
+      'Processing your request...',
+      'Almost there...',
+      'Taking a bit longer than usual...'
+    ];
+    var messages_de = [
+      'Durchsuche Erinnerungen...',
+      'Arbeite noch daran...',
+      'Verarbeite deine Anfrage...',
+      'Fast fertig...',
+      'Dauert etwas länger als üblich...'
+    ];
+    var msgIndex = 0;
+    _s.thinkingProgressTimer = setInterval(function () {
+      if (_s.voiceState !== 'THINKING') {
+        clearInterval(_s.thinkingProgressTimer);
+        _s.thinkingProgressTimer = null;
+        return;
+      }
+      var elapsed = Math.floor((Date.now() - _s.thinkingStartTime) / 1000);
+      var msgs = _cfg.lang.startsWith('de') ? messages_de : messages_en;
+      // Cycle through messages every 5 seconds
+      if (elapsed >= 5) msgIndex = Math.min(Math.floor((elapsed - 5) / 5) + 1, msgs.length - 1);
+      var text = msgs[msgIndex];
+      if (elapsed >= 10) text += ' (' + elapsed + 's)';
+      _setStatus(text);
+    }, 3000);
+  }
 
   // VTID-HEARTBEAT-FIX: Increased from 12s to 30s. Server now sends data
   // heartbeats every 10s that trigger onmessage and reset this watchdog.
