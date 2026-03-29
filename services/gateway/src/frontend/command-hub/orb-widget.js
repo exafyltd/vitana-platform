@@ -392,20 +392,18 @@
           var idx = _s.scheduledSources.indexOf(src);
           if (idx !== -1) _s.scheduledSources.splice(idx, 1);
           if (_s.scheduledSources.length === 0) {
-            // Don't clear audioPlaying immediately — use a grace period.
-            // Gemini generates speech with natural pauses (500-800ms between phrases).
-            // During these pauses, all scheduled sources finish but more chunks are
-            // still being delivered from SSE. A 300ms grace was too short — "Hello
-            // Dragan!" (pause 600ms) "How can I help?" caused two flips to LISTENING.
-            // 1000ms covers natural speech pauses without adding noticeable latency
-            // to the LISTENING transition after speech truly ends.
+            // Grace period before clearing audioPlaying. Covers inter-chunk
+            // scheduling gaps (~50-100ms). Previously 1000ms to prevent
+            // greeting flicker, but mic is now off during greeting so 400ms
+            // is enough. _waitForAudioEnd also checks scheduledSources +
+            // audioQueue directly, so LISTENING only shows when truly done.
             clearTimeout(_s.audioEndGraceTimer);
             _s.audioEndGraceTimer = setTimeout(function () {
               if (_s.scheduledSources.length === 0 && _s.audioQueue.length === 0) {
                 _s.audioPlaying = false;
                 _s.lastAudioEndTime = Date.now();
               }
-            }, 1000);
+            }, 400);
           }
         };
 
