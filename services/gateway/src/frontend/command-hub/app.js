@@ -26063,7 +26063,9 @@ async function fetchOverviewDashboard() {
             // 7: Governance violations
             fetch('/api/v1/governance/violations?limit=50').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
             // 8: voice.live events (second ORB topic pattern)
-            fetch('/api/v1/oasis/events?topic=voice.live&limit=50').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; })
+            fetch('/api/v1/oasis/events?topic=voice.live&limit=50').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
+            // 9: User stats (for overview cards)
+            fetch('/api/v1/admin/users?limit=200', { headers: buildContextHeaders() }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; })
         ]);
 
         // Parse health checks
@@ -26123,6 +26125,23 @@ async function fetchOverviewDashboard() {
             violationCount = violations.length;
         }
 
+        // Parse user stats (index 9)
+        var userStats = { total: 0, active_now: 0, new_7d: 0 };
+        if (results[9] && results[9].status === 'fulfilled' && results[9].value) {
+            var uData = results[9].value;
+            var userList = uData.users || [];
+            userStats.total = userList.length;
+            var sevenDaysAgo = new Date(Date.now() - 7 * 86400000);
+            userStats.new_7d = userList.filter(function (u) {
+                return u.created_at && new Date(u.created_at) > sevenDaysAgo;
+            }).length;
+            // Active now: users with recent activity (updated_at within last hour)
+            var oneHourAgo = new Date(Date.now() - 3600000);
+            userStats.active_now = userList.filter(function (u) {
+                return u.updated_at && new Date(u.updated_at) > oneHourAgo;
+            }).length;
+        }
+
         // Compute aggregates
         var systemStatusResult = computeSystemStatus(healthChecks);
         var deploySuccessRate = computeDeploySuccessRate(deployEvents);
@@ -26140,6 +26159,7 @@ async function fetchOverviewDashboard() {
         state.overviewDashboard.controllerStatus = controllerStatus;
         state.overviewDashboard.loopStatus = loopStatus;
         state.overviewDashboard.violationCount24h = violationCount;
+        state.overviewDashboard.userStats = userStats;
         state.overviewDashboard.lastRefreshed = new Date().toISOString();
         state.overviewDashboard.fetched = true;
 
@@ -26333,7 +26353,20 @@ function renderOverviewSystemView() {
     var orbStats = db.orbSessionStats;
     var loopSt = db.loopStatus;
 
-    var metrics = [
+    var uStats = db.userStats || { total: 0, active_now: 0, new_7d: 0 };
+
+    // Compute VTID counts from pipeline summary and deployments
+    var todayStr = new Date().toISOString().slice(0, 10);
+    var deploymentsToday = db.deployments.filter(function (d) {
+        return d.created_at && d.created_at.slice(0, 10) === todayStr;
+    }).length;
+    var newVtidToday = state.tasks.filter(function (t) {
+        return t.createdAt && t.createdAt.slice(0, 10) === todayStr;
+    }).length;
+    var failedVtid = summary && summary.funnel ? (summary.funnel.rejected || 0) + (summary.funnel.broken || 0) : 0;
+
+    // ROW 1: 9 cards — core metrics + user metrics
+    var row1 = [
         {
             value: deployRate && deployRate.rate !== null ? deployRate.rate + '%' : '\u2014',
             label: 'Deploy Success',
@@ -26359,6 +26392,40 @@ function renderOverviewSystemView() {
             color: summary ? metricColor(summary.success_rate, 80, 50) : 'neutral'
         },
         {
+            value: loopSt && loopSt.is_running ? 'Running' : (loopSt ? 'Stopped' : '\u2014'),
+            label: 'Autopilot Loop',
+            subtitle: loopSt && loopSt.processed_1h ? loopSt.processed_1h + ' processed/h' : '',
+            color: loopSt ? (loopSt.is_running ? 'green' : 'red') : 'neutral'
+        },
+        {
+            value: summary && summary.workers_active !== undefined ? (summary.workers_active ? 'Active' : 'Inactive') : '\u2014',
+            label: 'Workers',
+            subtitle: summary && summary.execution_armed ? 'Execution armed' : 'Execution off',
+            color: summary ? (summary.workers_active ? 'green' : 'red') : 'neutral'
+        },
+        {
+            value: String(uStats.total),
+            label: 'Registered Users',
+            subtitle: 'Total accounts',
+            color: uStats.total > 0 ? 'green' : 'neutral'
+        },
+        {
+            value: String(uStats.active_now),
+            label: 'Active Now',
+            subtitle: 'Last hour',
+            color: uStats.active_now > 0 ? 'green' : 'neutral'
+        },
+        {
+            value: String(uStats.new_7d),
+            label: 'New Users (7d)',
+            subtitle: 'Last 7 days',
+            color: uStats.new_7d > 0 ? 'green' : 'neutral'
+        }
+    ];
+
+    // ROW 2: 9 cards — errors, violations, VTID pipeline metrics
+    var row2 = [
+        {
             value: String(db.recentFailures.length),
             label: 'Errors (24h)',
             subtitle: db.recentFailures.length > 0 ? 'Latest: ' + dashboardRelativeTime(db.recentFailures[0] && db.recentFailures[0].created_at) : 'No errors',
@@ -26371,16 +26438,46 @@ function renderOverviewSystemView() {
             color: metricColorInverse(db.violationCount24h, 0, 3)
         },
         {
-            value: loopSt && loopSt.is_running ? 'Running' : (loopSt ? 'Stopped' : '\u2014'),
-            label: 'Autopilot Loop',
-            subtitle: loopSt && loopSt.processed_1h ? loopSt.processed_1h + ' processed/h' : '',
-            color: loopSt ? (loopSt.is_running ? 'green' : 'red') : 'neutral'
+            value: String(newVtidToday),
+            label: 'New VTID Today',
+            subtitle: 'Created today',
+            color: newVtidToday > 0 ? 'green' : 'neutral'
         },
         {
-            value: summary && summary.workers_active !== undefined ? (summary.workers_active ? 'Active' : 'Inactive') : '\u2014',
-            label: 'Workers',
-            subtitle: summary && summary.execution_armed ? 'Execution armed' : 'Execution off',
-            color: summary ? (summary.workers_active ? 'green' : 'red') : 'neutral'
+            value: summary && summary.funnel ? String(summary.funnel.scheduled || 0) : '\u2014',
+            label: 'Scheduled VTID',
+            subtitle: 'Awaiting execution',
+            color: 'neutral'
+        },
+        {
+            value: summary && summary.funnel ? String(summary.funnel.in_progress || 0) : '\u2014',
+            label: 'In Progress VTID',
+            subtitle: 'Currently running',
+            color: summary && summary.funnel && summary.funnel.in_progress > 0 ? 'amber' : 'neutral'
+        },
+        {
+            value: String(deploymentsToday),
+            label: 'Deploys Today',
+            subtitle: 'Deployments',
+            color: deploymentsToday > 0 ? 'green' : 'neutral'
+        },
+        {
+            value: String(failedVtid),
+            label: 'Failed VTID',
+            subtitle: 'Rejected/broken',
+            color: metricColorInverse(failedVtid, 0, 3)
+        },
+        {
+            value: summary && summary.funnel ? String((summary.funnel.stuck || 0) + (summary.funnel.broken || 0)) : '0',
+            label: 'Stuck VTID',
+            subtitle: 'Needs attention',
+            color: summary && summary.funnel && (summary.funnel.stuck > 0 || summary.funnel.broken > 0) ? 'red' : 'green'
+        },
+        {
+            value: summary && summary.attention_queue ? String(summary.attention_queue.length) : '0',
+            label: 'Attention Queue',
+            subtitle: 'Action required',
+            color: summary && summary.attention_queue && summary.attention_queue.length > 0 ? 'amber' : 'green'
         }
     ];
 
@@ -26392,65 +26489,43 @@ function renderOverviewSystemView() {
         'Automation Rate': '<svg viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>',
         'Autopilot Loop': '<svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>',
         'Workers': '<svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+        'Registered Users': '<svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>',
+        'Active Now': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
+        'New Users (7d)': '<svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>',
         'Errors (24h)': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="#ef4444"/><line x1="12" y1="8" x2="12" y2="12" stroke="#ef4444"/><line x1="12" y1="16" x2="12.01" y2="16" stroke="#ef4444"/></svg>',
         'Violations': '<svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="#3b82f6"/><line x1="12" y1="8" x2="12" y2="12" stroke="#3b82f6"/><line x1="12" y1="16" x2="12.01" y2="16" stroke="#3b82f6"/></svg>',
-        'Operator': '<svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
-        'Assistant': '<svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>'
+        'New VTID Today': '<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>',
+        'Scheduled VTID': '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+        'In Progress VTID': '<svg viewBox="0 0 24 24"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>',
+        'Deploys Today': '<svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>',
+        'Failed VTID': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="#ef4444"/><line x1="15" y1="9" x2="9" y2="15" stroke="#ef4444"/><line x1="9" y1="9" x2="15" y2="15" stroke="#ef4444"/></svg>',
+        'Stuck VTID': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="#f59e0b"/><line x1="12" y1="8" x2="12" y2="12" stroke="#f59e0b"/><line x1="12" y1="16" x2="12.01" y2="16" stroke="#f59e0b"/></svg>',
+        'Attention Queue': '<svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>'
     };
 
-    // Row 1: 6 columns (4 standard @15% + 2 wide @20%)
-    var row1Metrics = metrics.slice(0, 4);
-    var row1Wide = metrics.slice(6, 8); // Autopilot Loop, Workers
-    // Row 2: 4 columns @25% (Errors, Violations, Operator latency, Assistant latency)
-    var row2Metrics = metrics.slice(4, 6); // Errors, Violations
-
-    // Add Operator and Assistant as latency metrics for row 2
-    var operatorHealth = db.serviceHealth && db.serviceHealth.find(function(s) { return s.name === 'Operator'; });
-    var assistantHealth = db.serviceHealth && db.serviceHealth.find(function(s) { return s.name === 'Assistant'; });
-    var row2Extra = [
-        {
-            value: operatorHealth ? operatorHealth.latency_ms + 'ms' : '\u2014',
-            label: 'Operator',
-            subtitle: operatorHealth ? operatorHealth.status : '',
-            color: operatorHealth ? (operatorHealth.status === 'healthy' || operatorHealth.status === 'ok' ? 'green' : 'red') : 'neutral'
-        },
-        {
-            value: assistantHealth ? assistantHealth.latency_ms + 'ms' : '\u2014',
-            label: 'Assistant',
-            subtitle: assistantHealth ? assistantHealth.status : '',
-            color: assistantHealth ? (assistantHealth.status === 'healthy' || assistantHealth.status === 'ok' ? 'green' : 'red') : 'neutral'
-        }
-    ];
-
     function metricCardHTML(m, width) {
-        var w = width || '25%';
+        var w = width || '11.1%';
         var icon = metricIcons[m.label] || '';
-        var iconClass = (m.label === 'Autopilot Loop' || m.label === 'Workers') ? 'metric-icon metric-icon-lg' : 'metric-icon';
-        var cardClass = (m.label === 'Autopilot Loop' || m.label === 'Workers') ? 'overview-metric-card-wide' : 'overview-metric-card';
-        return '<td style="width:' + w + ';padding:0.2rem;vertical-align:top;">' +
-            '<div class="' + cardClass + '">' +
-            (icon ? '<div class="' + iconClass + '">' + icon + '</div>' : '') +
+        return '<td style="width:' + w + ';padding:0.15rem;vertical-align:top;">' +
+            '<div class="overview-metric-card">' +
+            (icon ? '<div class="metric-icon">' + icon + '</div>' : '') +
             '<div class="metric-value metric-value-' + m.color + '">' + m.value + '</div>' +
             '<div class="metric-label">' + m.label + '</div>' +
             (m.subtitle ? '<div class="metric-subtitle">' + m.subtitle + '</div>' : '') +
             '</div></td>';
     }
 
-    // Build Row 1: 4 standard (15%) + 2 wide (20%)
+    // Build Row 1: 9 cards
     var row1HTML = '<tr>';
-    for (var ri1 = 0; ri1 < row1Metrics.length; ri1++) {
-        row1HTML += metricCardHTML(row1Metrics[ri1], '15%');
-    }
-    for (var ri1w = 0; ri1w < row1Wide.length; ri1w++) {
-        row1HTML += metricCardHTML(row1Wide[ri1w], '20%');
+    for (var ri1 = 0; ri1 < row1.length; ri1++) {
+        row1HTML += metricCardHTML(row1[ri1], '11.1%');
     }
     row1HTML += '</tr>';
 
-    // Build Row 2: 4 cards at 25%
-    var row2All = row2Metrics.concat(row2Extra);
+    // Build Row 2: 9 cards
     var row2HTML = '<tr>';
-    for (var ri2 = 0; ri2 < row2All.length; ri2++) {
-        row2HTML += metricCardHTML(row2All[ri2], '25%');
+    for (var ri2 = 0; ri2 < row2.length; ri2++) {
+        row2HTML += metricCardHTML(row2[ri2], '11.1%');
     }
     row2HTML += '</tr>';
 
