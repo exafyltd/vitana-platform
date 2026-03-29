@@ -660,6 +660,11 @@ interface GeminiLiveSession {
   // VTID-LOOPGUARD: Consecutive model turns without user speech.
   // Detects response loops where model keeps elaborating without being asked.
   consecutiveModelTurns: number;
+  // VTID-TOOLGUARD: Consecutive tool calls without audio output.
+  // Gemini can enter an infinite loop calling tools without producing audio.
+  // After MAX_CONSECUTIVE_TOOL_CALLS, we stop sending function_responses
+  // to force the model to generate an audio response.
+  consecutiveToolCalls: number;
 }
 
 /**
@@ -1054,6 +1059,12 @@ const FORWARDING_ACK_TIMEOUT_MS = 15_000; // 15s for Vertex to acknowledge forwa
 // After MAX_CONSECUTIVE_MODEL_TURNS without user speech, we pause the silence
 // keepalive to let Vertex's idle timeout naturally stop the model.
 const MAX_CONSECUTIVE_MODEL_TURNS = 3;
+// VTID-TOOLGUARD: Hard limit on consecutive tool calls without audio output.
+// Gemini Live can spiral calling tools (search_memory, search_events, etc.)
+// indefinitely without ever producing audio. After this many consecutive
+// tool calls, we stop sending function_responses — forcing the model to
+// respond to the user with the data it already has.
+const MAX_CONSECUTIVE_TOOL_CALLS = 5;
 
 const connectionIssueMessages: Record<string, string> = {
   'en': "I'm sorry, I seem to be having connection issues right now. Please try starting a new conversation.",
@@ -2394,6 +2405,8 @@ async function connectToLiveAPI(
                 // This gates inbound mic audio to prevent echo-triggered interruptions
                 if (!session.isModelSpeaking) {
                   session.isModelSpeaking = true;
+                  // VTID-TOOLGUARD: Model produced audio — reset tool call counter
+                  session.consecutiveToolCalls = 0;
                   console.log(`[VTID-VOICE-INIT] Model started speaking for session ${session.sessionId} — mic audio gated`);
                   emitDiag(session, 'model_start_speaking');
                 }
@@ -2456,6 +2469,8 @@ async function connectToLiveAPI(
 
               // VTID-LOOPGUARD: User spoke — reset consecutive model turn counter
               session.consecutiveModelTurns = 0;
+              // VTID-TOOLGUARD: User spoke — reset consecutive tool call counter
+              session.consecutiveToolCalls = 0;
               // VTID-LOOPGUARD: Re-enable silence keepalive if it was paused
               if (!session.silenceKeepaliveInterval && session.upstreamWs) {
                 session.silenceKeepaliveInterval = setInterval(() => {
@@ -2489,12 +2504,23 @@ async function connectToLiveAPI(
         // VTID-01224: Handle tool calls (function calling) - execute and respond
         const toolCall = message.tool_call || message.toolCall;
         if (toolCall) {
-          console.log(`[VTID-01224] Tool call received for session ${session.sessionId}:`, JSON.stringify(toolCall).substring(0, 500));
-          emitDiag(session, 'tool_call', { tools: (toolCall.function_calls || toolCall.functionCalls || []).map((fc: any) => fc.name) });
+          const toolNames = (toolCall.function_calls || toolCall.functionCalls || []).map((fc: any) => fc.name);
+          session.consecutiveToolCalls++;
+          console.log(`[VTID-01224] Tool call received for session ${session.sessionId} (consecutive: ${session.consecutiveToolCalls}/${MAX_CONSECUTIVE_TOOL_CALLS}):`, JSON.stringify(toolCall).substring(0, 500));
+          emitDiag(session, 'tool_call', { tools: toolNames, consecutive: session.consecutiveToolCalls });
 
           // Extract function calls (handle both formats)
           const functionCalls = toolCall.function_calls || toolCall.functionCalls || [];
-          for (const fc of functionCalls) {
+
+          // VTID-TOOLGUARD: If too many consecutive tool calls without audio,
+          // stop sending function_responses. This forces Gemini to respond
+          // to the user with whatever data it has already gathered.
+          if (session.consecutiveToolCalls > MAX_CONSECUTIVE_TOOL_CALLS) {
+            console.warn(`[VTID-TOOLGUARD] Tool call loop detected for session ${session.sessionId}: ${session.consecutiveToolCalls} consecutive calls (limit: ${MAX_CONSECUTIVE_TOOL_CALLS}). Dropping tool response to break loop.`);
+            emitDiag(session, 'tool_loop_guard', { consecutive: session.consecutiveToolCalls, dropped_tools: toolNames });
+            // Skip tool execution — don't send function_response back to Gemini
+          } else {
+            for (const fc of functionCalls) {
             const toolName = fc.name;
             const toolArgs = fc.args || {};
             const callId = fc.id || randomUUID();
@@ -2543,7 +2569,8 @@ async function connectToLiveAPI(
                   error: err.message,
                 });
               });
-          }
+            }
+          } // end else (tool guard)
         }
 
       } catch (err) {
@@ -6075,6 +6102,8 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     lastSessionInfo,
     // VTID-LOOPGUARD: Track consecutive model turns for loop prevention
     consecutiveModelTurns: 0,
+    // VTID-TOOLGUARD: Track consecutive tool calls for loop prevention
+    consecutiveToolCalls: 0,
   };
 
   // VTID-SESSION-LIMIT: Terminate any existing active sessions for this user.
@@ -7764,6 +7793,8 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     lastSessionInfo: wsLastSessionInfo,
     // VTID-LOOPGUARD: Track consecutive model turns for loop prevention
     consecutiveModelTurns: 0,
+    // VTID-TOOLGUARD: Track consecutive tool calls for loop prevention
+    consecutiveToolCalls: 0,
   };
 
   // VTID-SESSION-LIMIT: Terminate existing sessions for this user (WS path)
