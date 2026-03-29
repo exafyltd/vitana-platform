@@ -606,8 +606,9 @@
 
       case 'thinking':
         // Server signals model is processing (user speech detected or tool call running).
-        // Delay 1.5s before showing THINKING — if audio arrives faster, skip it entirely.
-        // This avoids a distracting "Thinking..." flash on quick 1-2s responses.
+        // 300ms delay — just enough to skip if audio arrives almost immediately.
+        // Previous 1.5s was too long: combined with Vertex VAD silence detection (~2s),
+        // total delay was ~4-5s before user saw "Thinking..." — felt broken.
         _s.thinkingStartTime = Date.now();
         if (_s.voiceState === 'LISTENING' || _s.voiceState === 'IDLE') {
           clearTimeout(_s.thinkingDelayTimer);
@@ -619,14 +620,14 @@
               _updateUI();
               _startThinkingProgress();
             }
-          }, 1500);
+          }, 300);
         } else if (_s.voiceState === 'MUTED') {
           clearTimeout(_s.thinkingDelayTimer);
           _s.thinkingDelayTimer = setTimeout(function () {
             if (_s.voiceState === 'MUTED') {
               _s.preMuteState = 'THINKING';
             }
-          }, 1500);
+          }, 300);
         }
         break;
 
