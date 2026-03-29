@@ -2489,6 +2489,18 @@ async function connectToLiveAPI(
               // Restart on each transcript fragment to give the model time from the
               // LAST user speech, not the first (user may still be speaking).
               startResponseWatchdog(session, TURN_RESPONSE_TIMEOUT_MS, 'response_timeout');
+
+              // VTID-THINKING: Notify client that model is processing (user spoke, waiting for response).
+              // Client uses this to show "Thinking..." state instead of staying on "Listening...".
+              if (!session.isModelSpeaking) {
+                const thinkingMsg = { type: 'thinking' };
+                if (session.sseResponse) {
+                  try { session.sseResponse.write(`data: ${JSON.stringify(thinkingMsg)}\n\n`); } catch (_e) { /* SSE closed */ }
+                }
+                if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+                  try { sendWsMessage(session.clientWs, thinkingMsg); } catch (_e) { /* WS closed */ }
+                }
+              }
             }
           }
           if (outputTranscription) {
@@ -2508,6 +2520,16 @@ async function connectToLiveAPI(
           session.consecutiveToolCalls++;
           console.log(`[VTID-01224] Tool call received for session ${session.sessionId} (consecutive: ${session.consecutiveToolCalls}/${MAX_CONSECUTIVE_TOOL_CALLS}):`, JSON.stringify(toolCall).substring(0, 500));
           emitDiag(session, 'tool_call', { tools: toolNames, consecutive: session.consecutiveToolCalls });
+
+          // VTID-THINKING: Notify client that model is processing a tool call.
+          // Shows "Thinking..." while memory search, event search etc. execute.
+          const toolThinkingMsg = { type: 'thinking', reason: 'tool_call', tools: toolNames };
+          if (session.sseResponse) {
+            try { session.sseResponse.write(`data: ${JSON.stringify(toolThinkingMsg)}\n\n`); } catch (_e) { /* SSE closed */ }
+          }
+          if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+            try { sendWsMessage(session.clientWs, toolThinkingMsg); } catch (_e) { /* WS closed */ }
+          }
 
           // Extract function calls (handle both formats)
           const functionCalls = toolCall.function_calls || toolCall.functionCalls || [];

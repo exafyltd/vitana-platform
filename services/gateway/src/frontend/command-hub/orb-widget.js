@@ -593,6 +593,19 @@
         // Full voice conversation active
         break;
 
+      case 'thinking':
+        // Server signals model is processing (user speech detected or tool call running).
+        // Switch to THINKING state — unless muted or already speaking.
+        if (_s.voiceState === 'LISTENING' || _s.voiceState === 'IDLE') {
+          _setOrbState('thinking');
+          _s.voiceState = 'THINKING';
+          _setStatus(_cfg.lang.startsWith('de') ? 'Denkt nach...' : 'Thinking...');
+          _updateUI();
+        } else if (_s.voiceState === 'MUTED') {
+          _s.preMuteState = 'THINKING';
+        }
+        break;
+
       case 'audio':
       case 'audio_out':
         if (_s.interruptPending) break;
