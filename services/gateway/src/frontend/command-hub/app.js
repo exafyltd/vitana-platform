@@ -26385,13 +26385,11 @@ function renderOverviewSystemView() {
     ];
 
     function metricCardHTML(m) {
-        var colorMap = { green: '#10b981', amber: '#f59e0b', red: '#ef4444', neutral: '#e2e8f0' };
-        var valColor = colorMap[m.color] || '#e2e8f0';
-        return '<td style="width:25%;text-align:center;padding:0.2rem;vertical-align:top;">' +
-            '<div style="background:var(--bg-tertiary,#16213e);border:1px solid var(--border-color,#2d3748);border-radius:6px;padding:0.6rem 0.5rem;text-align:center;">' +
-            '<div style="font-size:1.3rem;font-weight:700;line-height:1.2;color:' + valColor + ';font-variant-numeric:tabular-nums;">' + m.value + '</div>' +
-            '<div style="font-size:0.65rem;color:#94a3b8;margin-top:0.15rem;text-transform:uppercase;letter-spacing:0.03em;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + m.label + '</div>' +
-            (m.subtitle ? '<div style="font-size:0.55rem;color:#64748b;margin-top:0.15rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + m.subtitle + '</div>' : '') +
+        return '<td style="width:25%;padding:0.2rem;vertical-align:top;">' +
+            '<div class="overview-metric-card">' +
+            '<div class="metric-value metric-value-' + m.color + '">' + m.value + '</div>' +
+            '<div class="metric-label">' + m.label + '</div>' +
+            (m.subtitle ? '<div class="metric-subtitle">' + m.subtitle + '</div>' : '') +
             '</div></td>';
     }
 
@@ -26429,29 +26427,36 @@ function renderOverviewSystemView() {
         noH.textContent = 'Loading health checks...';
         healthPanel.appendChild(noH);
     } else {
-        var healthGrid = document.createElement('div');
-        healthGrid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:0.25rem 0.4rem;';
-        sortedHealth.forEach(function (svc) {
-            var cell = document.createElement('div');
-            cell.style.cssText = 'display:flex;align-items:center;gap:0.3rem;font-size:0.72rem;min-width:0;overflow:hidden;';
-            cell.title = svc.name + ': ' + svc.status + (svc.latency_ms >= 0 ? ' (' + svc.latency_ms + 'ms)' : '');
-            var dotColor = 'green';
-            if (svc.status === 'degraded' || svc.status === 'warning') dotColor = 'yellow';
-            if (svc.status === 'down' || svc.status === 'error' || svc.status === 'unhealthy') dotColor = 'red';
-            var dot = document.createElement('span');
-            dot.className = 'health-dot health-dot-' + dotColor;
-            var nameEl = document.createElement('span');
-            nameEl.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;';
-            nameEl.textContent = svc.name;
-            var latencyEl = document.createElement('span');
-            latencyEl.style.cssText = 'margin-left:auto;font-size:0.62rem;color:#64748b;font-family:monospace;white-space:nowrap;';
-            latencyEl.textContent = svc.latency_ms >= 0 ? svc.latency_ms + 'ms' : '';
-            cell.appendChild(dot);
-            cell.appendChild(nameEl);
-            cell.appendChild(latencyEl);
-            healthGrid.appendChild(cell);
+        var HEALTH_COLS = 3;
+        var healthRows = [];
+        for (var ri = 0; ri < Math.ceil(sortedHealth.length / HEALTH_COLS); ri++) {
+            healthRows.push(sortedHealth.slice(ri * HEALTH_COLS, ri * HEALTH_COLS + HEALTH_COLS));
+        }
+        var healthHTML = '<table style="width:100%;table-layout:fixed;border-collapse:collapse;">';
+        healthRows.forEach(function (row) {
+            healthHTML += '<tr>';
+            row.forEach(function (svc) {
+                var dotColor = 'green';
+                if (svc.status === 'degraded' || svc.status === 'warning') dotColor = 'yellow';
+                if (svc.status === 'down' || svc.status === 'error' || svc.status === 'unhealthy') dotColor = 'red';
+                var latency = svc.latency_ms >= 0 ? '<span style="margin-left:auto;font-size:0.6rem;color:#64748b;font-family:monospace;">' + svc.latency_ms + 'ms</span>' : '';
+                healthHTML += '<td style="padding:0.15rem 0.2rem;font-size:0.72rem;" title="' + svc.name + ': ' + svc.status + (svc.latency_ms >= 0 ? ' (' + svc.latency_ms + 'ms)' : '') + '">' +
+                    '<div style="display:flex;align-items:center;gap:0.3rem;">' +
+                    '<span class="health-dot health-dot-' + dotColor + '"></span>' +
+                    '<span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + svc.name + '</span>' +
+                    latency +
+                    '</div></td>';
+            });
+            // Fill empty cells if last row has fewer items
+            for (var pad = row.length; pad < HEALTH_COLS; pad++) {
+                healthHTML += '<td></td>';
+            }
+            healthHTML += '</tr>';
         });
-        healthPanel.appendChild(healthGrid);
+        healthHTML += '</table>';
+        var healthGridEl = document.createElement('div');
+        healthGridEl.innerHTML = healthHTML;
+        healthPanel.appendChild(healthGridEl);
     }
     container.appendChild(healthPanel);
 
