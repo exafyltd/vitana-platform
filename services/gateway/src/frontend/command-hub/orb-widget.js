@@ -66,6 +66,7 @@
     clientWatchdogInterval: null,
     clientLastActivityAt: 0,
     stuckGuardTimer: null,
+    thinkingDelayTimer: null, // Delayed thinking state — only show if response takes > 1.5s
     greetingAudioReceived: false,
 
     // UI state
@@ -546,6 +547,7 @@
     _s.audioQueue = [];
     _s.audioPlaying = false;
     clearTimeout(_s.audioEndGraceTimer);
+    clearTimeout(_s.thinkingDelayTimer);
     // Stop scheduled audio
     if (_s.scheduledSources) {
       for (var i = 0; i < _s.scheduledSources.length; i++) {
@@ -595,20 +597,33 @@
 
       case 'thinking':
         // Server signals model is processing (user speech detected or tool call running).
-        // Switch to THINKING state — unless muted or already speaking.
+        // Delay 1.5s before showing THINKING — if audio arrives faster, skip it entirely.
+        // This avoids a distracting "Thinking..." flash on quick 1-2s responses.
         if (_s.voiceState === 'LISTENING' || _s.voiceState === 'IDLE') {
-          _setOrbState('thinking');
-          _s.voiceState = 'THINKING';
-          _setStatus(_cfg.lang.startsWith('de') ? 'Denkt nach...' : 'Thinking...');
-          _updateUI();
+          clearTimeout(_s.thinkingDelayTimer);
+          _s.thinkingDelayTimer = setTimeout(function () {
+            if (_s.voiceState === 'LISTENING' || _s.voiceState === 'IDLE') {
+              _setOrbState('thinking');
+              _s.voiceState = 'THINKING';
+              _setStatus(_cfg.lang.startsWith('de') ? 'Denkt nach...' : 'Thinking...');
+              _updateUI();
+            }
+          }, 1500);
         } else if (_s.voiceState === 'MUTED') {
-          _s.preMuteState = 'THINKING';
+          clearTimeout(_s.thinkingDelayTimer);
+          _s.thinkingDelayTimer = setTimeout(function () {
+            if (_s.voiceState === 'MUTED') {
+              _s.preMuteState = 'THINKING';
+            }
+          }, 1500);
         }
         break;
 
       case 'audio':
       case 'audio_out':
         if (_s.interruptPending) break;
+        // Cancel pending thinking timer — response arrived fast, no need to flash "Thinking..."
+        clearTimeout(_s.thinkingDelayTimer);
         if (msg.data_b64) {
           // Clear stuck guard on first audio
           if (!_s.greetingAudioReceived) {
