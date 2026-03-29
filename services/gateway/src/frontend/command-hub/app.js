@@ -26457,14 +26457,14 @@ function renderOverviewSystemView() {
                 var idx = ri * HEALTH_COLS + ci;
                 if (idx < sortedHealth.length) {
                     var svc = sortedHealth[idx];
-                    var statusColor = '#10b981';
-                    if (svc.status === 'degraded' || svc.status === 'warning') statusColor = '#f59e0b';
-                    if (svc.status === 'down' || svc.status === 'error' || svc.status === 'unhealthy') statusColor = '#ef4444';
-                    var latencyStr = svc.latency_ms >= 0 ? '<span style="font-size:0.65rem;color:#64748b;font-family:monospace;flex-shrink:0;">' + svc.latency_ms + 'ms</span>' : '';
+                    var dotColor = 'green';
+                    if (svc.status === 'degraded' || svc.status === 'warning') dotColor = 'yellow';
+                    if (svc.status === 'down' || svc.status === 'error' || svc.status === 'unhealthy') dotColor = 'red';
+                    var latencyStr = svc.latency_ms >= 0 ? '<span class="health-card-latency">' + svc.latency_ms + 'ms</span>' : '';
                     healthHTML += '<td style="width:25%;vertical-align:top;">' +
-                        '<div style="background:rgba(30,41,59,0.5);border:1px solid rgba(148,163,184,0.12);border-radius:6px;padding:6px 8px;display:flex;align-items:center;gap:6px;overflow:hidden;" title="' + svc.name + ': ' + svc.status + '">' +
-                        '<div style="width:6px;height:6px;border-radius:50%;background:' + statusColor + ';box-shadow:0 0 4px ' + statusColor + '50;flex-shrink:0;"></div>' +
-                        '<span style="flex:1;font-size:0.75rem;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;">' + svc.name + '</span>' +
+                        '<div class="health-card" title="' + svc.name + ': ' + svc.status + '">' +
+                        '<div class="health-card-dot health-card-dot-' + dotColor + '"></div>' +
+                        '<span class="health-card-name">' + svc.name + '</span>' +
                         latencyStr +
                         '</div></td>';
                 } else {
