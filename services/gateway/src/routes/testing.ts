@@ -425,7 +425,24 @@ router.get('/orb-monitor/status', async (_req: Request, res: Response) => {
       created_at: r.created_at,
       html_url: r.html_url,
     }));
-    res.json({ ok: true, runs, workflow: ORB_MONITOR_WORKFLOW });
+
+    // Parse per-screen status from matrix jobs of the latest completed run
+    const screens: Record<string, { conclusion: string | null; status: string }> = {};
+    const latestCompleted = runs.find((r: any) => r.status === 'completed');
+    if (latestCompleted) {
+      try {
+        const jobsData = await githubService.getWorkflowRunJobs(GITHUB_REPO, latestCompleted.id);
+        for (const job of jobsData.jobs || []) {
+          // Matrix job names contain the screen name in parentheses: "orb-test (hub)"
+          const match = job.name.match(/\((\w+)\)/);
+          if (match) {
+            screens[match[1]] = { conclusion: job.conclusion, status: job.status };
+          }
+        }
+      } catch { /* jobs fetch is best-effort */ }
+    }
+
+    res.json({ ok: true, runs, screens, workflow: ORB_MONITOR_WORKFLOW });
   } catch (err: any) {
     res.status(500).json({ ok: false, error: err.message || 'Failed to fetch ORB monitor status' });
   }

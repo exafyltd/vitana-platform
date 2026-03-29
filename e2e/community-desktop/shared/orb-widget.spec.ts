@@ -2,15 +2,14 @@ import { test, expect } from '@playwright/test';
 import { waitForOrb, showOrbOverlay, setOrbState } from '../../fixtures/orb-helpers';
 
 /**
- * ORB Widget — Command Hub
+ * ORB Widget — Community Desktop (vitanaland.com)
  *
- * Tests the VitanaOrb widget UI on the Command Hub screen.
- * Uses VitanaOrb._test_setState() to simulate state transitions and
- * validates aura colors, status text, and mic mute styling.
+ * Same ORB tests as Command Hub, running on the Lovable community frontend.
+ * Validates that orb-widget.js is loaded and renders identically on desktop.
  */
 
 async function openPage(page: import('@playwright/test').Page) {
-  await page.goto('/command-hub/', { waitUntil: 'domcontentloaded' });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
   await waitForOrb(page);
 }
 
@@ -146,8 +145,7 @@ test.describe('ORB Widget — Mic Mute', () => {
 
     const micBtn = page.locator('.vtorb-btn-mic');
 
-    const bgBefore = await micBtn.evaluate(el => el.style.background);
-    expect(bgBefore).toContain('59, 130, 246');
+    expect(await micBtn.evaluate(el => el.style.background)).toContain('59, 130, 246');
 
     await micBtn.dispatchEvent('click');
     await page.waitForTimeout(100);

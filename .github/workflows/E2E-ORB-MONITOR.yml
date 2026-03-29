@@ -14,6 +14,20 @@ jobs:
   orb-test:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - screen: hub
+            project: hub-shared
+            spec: command-hub/shared/orb-widget.spec.ts
+          - screen: desktop
+            project: desktop-shared
+            spec: community-desktop/shared/orb-widget.spec.ts
+          - screen: mobile
+            project: mobile-shared
+            spec: community-mobile/shared/orb-widget.spec.ts
+
     steps:
       - uses: actions/checkout@v4
 
@@ -29,9 +43,9 @@ jobs:
         working-directory: e2e
         run: npx playwright install chromium --with-deps
 
-      - name: Run ORB Widget tests
+      - name: Run ORB Widget tests (${{ matrix.screen }})
         working-directory: e2e
-        run: npx playwright test --project=hub-shared orb-widget.spec.ts
+        run: npx playwright test --project=${{ matrix.project }} ${{ matrix.spec }}
         env:
           HUB_URL: https://gateway-q74ibpv6ia-uc.a.run.app
           TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
@@ -41,7 +55,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: orb-test-results
+          name: orb-${{ matrix.screen }}-results
           path: |
             e2e/test-results/
             e2e/playwright-report/

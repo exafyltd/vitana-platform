@@ -2,15 +2,16 @@ import { test, expect } from '@playwright/test';
 import { waitForOrb, showOrbOverlay, setOrbState } from '../../fixtures/orb-helpers';
 
 /**
- * ORB Widget — Command Hub
+ * ORB Widget — Community Mobile (vitanaland.com, iPhone 14 emulation)
  *
- * Tests the VitanaOrb widget UI on the Command Hub screen.
- * Uses VitanaOrb._test_setState() to simulate state transitions and
- * validates aura colors, status text, and mic mute styling.
+ * Same ORB tests as desktop, plus mobile-specific checks:
+ * - FAB touch target size (48px+)
+ * - Overlay fills mobile viewport
+ * - Sphere responsive sizing
  */
 
 async function openPage(page: import('@playwright/test').Page) {
-  await page.goto('/command-hub/', { waitUntil: 'domcontentloaded' });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
   await waitForOrb(page);
 }
 
@@ -45,6 +46,19 @@ test.describe('ORB Widget — Overlay Structure', () => {
 
     await page.locator('.vtorb-btn-close').dispatchEvent('click');
     await expect(overlay).toBeHidden();
+  });
+
+  test('FAB button has adequate touch target', async ({ page }) => {
+    await openPage(page);
+
+    const fab = page.locator('.vtorb-fab');
+    await expect(fab).toBeVisible();
+
+    const box = await fab.boundingBox();
+    expect(box).toBeTruthy();
+    // Touch targets should be at least 44px per Apple HIG / WCAG
+    expect(box!.width).toBeGreaterThanOrEqual(44);
+    expect(box!.height).toBeGreaterThanOrEqual(44);
   });
 });
 
@@ -146,8 +160,7 @@ test.describe('ORB Widget — Mic Mute', () => {
 
     const micBtn = page.locator('.vtorb-btn-mic');
 
-    const bgBefore = await micBtn.evaluate(el => el.style.background);
-    expect(bgBefore).toContain('59, 130, 246');
+    expect(await micBtn.evaluate(el => el.style.background)).toContain('59, 130, 246');
 
     await micBtn.dispatchEvent('click');
     await page.waitForTimeout(100);

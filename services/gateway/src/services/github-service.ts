@@ -364,6 +364,34 @@ export async function getWorkflowRuns(
 }
 
 /**
+ * Get jobs for a specific workflow run (for matrix strategy per-screen status)
+ */
+export async function getWorkflowRunJobs(
+  repo: string,
+  runId: number
+): Promise<{
+  jobs: Array<{
+    id: number;
+    name: string;
+    status: string;
+    conclusion: string | null;
+    started_at: string;
+    completed_at: string | null;
+  }>;
+}> {
+  return githubRequest<{
+    jobs: Array<{
+      id: number;
+      name: string;
+      status: string;
+      conclusion: string | null;
+      started_at: string;
+      completed_at: string | null;
+    }>;
+  }>(`/repos/${repo}/actions/runs/${runId}/jobs`);
+}
+
+/**
  * VTID-01154: GitHub-authoritative feed item for approvals
  */
 export interface GitHubFeedItem {
@@ -548,6 +576,7 @@ export const githubService = {
   evaluateGovernance,
   triggerWorkflow,
   getWorkflowRuns,
+  getWorkflowRunJobs,
   detectServiceFromFiles,
   listOpenPrsWithStatus,
 };
