@@ -3535,7 +3535,7 @@ const state = {
     // Testing & QA — Test Cycles
     testingCycles: { cycles: [], loading: false, error: null, fetched: false },
     // Testing & QA — ORB Monitor (GitHub Actions)
-    orbMonitor: { runs: [], loading: false, error: null, fetched: false },
+    orbMonitor: { runs: [], screens: {}, loading: false, error: null, fetched: false },
     // Testing & QA — selected run detail drawer
     testingSelectedRun: null,
     testingSelectedRunResults: [],
@@ -26406,11 +26406,6 @@ function renderOverviewSystemView() {
     var healthPanel = document.createElement('div');
     healthPanel.className = 'overview-health-grid';
 
-    var healthTitleEl = document.createElement('div');
-    healthTitleEl.className = 'overview-panel-title';
-    healthTitleEl.textContent = 'Service Health (' + db.healthChecks.length + ')';
-    healthPanel.appendChild(healthTitleEl);
-
     var criticalOrder = ['Gateway', 'ORB Live', 'CI/CD', 'Autopilot', 'Execute Runner', 'Operator'];
     var sortedHealth = db.healthChecks.slice().sort(function (a, b) {
         var ai = criticalOrder.indexOf(a.name);
@@ -26421,38 +26416,63 @@ function renderOverviewSystemView() {
         return a.name.localeCompare(b.name);
     });
 
+    // Header with healthy count badge
+    var healthyCount = sortedHealth.filter(function (s) { return s.status === 'healthy' || s.status === 'ok'; }).length;
+    var healthHeader = document.createElement('div');
+    healthHeader.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:0 0 10px 0;';
+    healthHeader.innerHTML = '<span class="overview-panel-title" style="margin:0;">Service Health</span>' +
+        '<span style="background:rgba(16,185,129,0.2);color:#10b981;padding:2px 8px;border-radius:12px;font-size:0.75rem;font-weight:600;">' + healthyCount + '/' + sortedHealth.length + ' healthy</span>';
+    healthPanel.appendChild(healthHeader);
+
     if (sortedHealth.length === 0) {
         var noH = document.createElement('div');
         noH.className = 'placeholder-content';
         noH.textContent = 'Loading health checks...';
         healthPanel.appendChild(noH);
     } else {
-        var HEALTH_COLS = 3;
-        var healthRows = [];
-        for (var ri = 0; ri < Math.ceil(sortedHealth.length / HEALTH_COLS); ri++) {
-            healthRows.push(sortedHealth.slice(ri * HEALTH_COLS, ri * HEALTH_COLS + HEALTH_COLS));
-        }
-        var healthHTML = '<table style="width:100%;table-layout:fixed;border-collapse:collapse;">';
-        healthRows.forEach(function (row) {
-            healthHTML += '<tr>';
-            row.forEach(function (svc) {
-                var dotColor = 'green';
-                if (svc.status === 'degraded' || svc.status === 'warning') dotColor = 'yellow';
-                if (svc.status === 'down' || svc.status === 'error' || svc.status === 'unhealthy') dotColor = 'red';
-                var latency = svc.latency_ms >= 0 ? '<span style="margin-left:auto;font-size:0.6rem;color:#64748b;font-family:monospace;">' + svc.latency_ms + 'ms</span>' : '';
-                healthHTML += '<td style="padding:0.15rem 0.2rem;font-size:0.72rem;" title="' + svc.name + ': ' + svc.status + (svc.latency_ms >= 0 ? ' (' + svc.latency_ms + 'ms)' : '') + '">' +
-                    '<div style="display:flex;align-items:center;gap:0.3rem;">' +
-                    '<span class="health-dot health-dot-' + dotColor + '"></span>' +
-                    '<span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + svc.name + '</span>' +
-                    latency +
-                    '</div></td>';
+        // Failed services section (if any)
+        var failedSvcs = sortedHealth.filter(function (s) {
+            return s.status === 'down' || s.status === 'error' || s.status === 'unhealthy' || s.status === 'failed';
+        });
+        if (failedSvcs.length > 0) {
+            var failSection = document.createElement('div');
+            failSection.style.cssText = 'margin-bottom:12px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);border-radius:8px;padding:10px 12px;';
+            var failHTML = '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;color:#ef4444;font-weight:600;font-size:0.8rem;">Critical Issues (' + failedSvcs.length + ')</div>';
+            failedSvcs.forEach(function (svc) {
+                failHTML += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:rgba(0,0,0,0.2);border-radius:4px;border-left:3px solid #ef4444;margin-bottom:4px;">' +
+                    '<span style="color:#e2e8f0;font-size:0.8rem;">' + svc.name + '</span>' +
+                    '<span style="color:#ef4444;font-size:0.7rem;text-transform:uppercase;font-weight:600;">' + svc.status + '</span>' +
+                    '</div>';
             });
-            // Fill empty cells if last row has fewer items
-            for (var pad = row.length; pad < HEALTH_COLS; pad++) {
-                healthHTML += '<td></td>';
+            failSection.innerHTML = failHTML;
+            healthPanel.appendChild(failSection);
+        }
+
+        // Health grid — table for guaranteed 3 columns, styled as cards
+        var healthHTML = '<table style="width:100%;table-layout:fixed;border-collapse:separate;border-spacing:6px;">';
+        var HEALTH_COLS = 3;
+        for (var ri = 0; ri < Math.ceil(sortedHealth.length / HEALTH_COLS); ri++) {
+            healthHTML += '<tr>';
+            for (var ci = 0; ci < HEALTH_COLS; ci++) {
+                var idx = ri * HEALTH_COLS + ci;
+                if (idx < sortedHealth.length) {
+                    var svc = sortedHealth[idx];
+                    var statusColor = '#10b981';
+                    if (svc.status === 'degraded' || svc.status === 'warning') statusColor = '#f59e0b';
+                    if (svc.status === 'down' || svc.status === 'error' || svc.status === 'unhealthy') statusColor = '#ef4444';
+                    var latencyStr = svc.latency_ms >= 0 ? '<span style="font-size:0.7rem;color:#64748b;font-family:monospace;white-space:nowrap;">' + svc.latency_ms + 'ms</span>' : '';
+                    healthHTML += '<td style="vertical-align:top;">' +
+                        '<div style="background:rgba(30,41,59,0.6);border:1px solid rgba(148,163,184,0.15);border-radius:6px;padding:8px 10px;display:flex;align-items:center;gap:8px;" title="' + svc.name + ': ' + svc.status + '">' +
+                        '<div style="width:8px;height:8px;border-radius:50%;background:' + statusColor + ';box-shadow:0 0 6px ' + statusColor + '60;flex-shrink:0;"></div>' +
+                        '<span style="flex:1;font-size:0.8rem;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + svc.name + '</span>' +
+                        latencyStr +
+                        '</div></td>';
+                } else {
+                    healthHTML += '<td></td>';
+                }
             }
             healthHTML += '</tr>';
-        });
+        }
         healthHTML += '</table>';
         var healthGridEl = document.createElement('div');
         healthGridEl.innerHTML = healthHTML;
@@ -31021,7 +31041,7 @@ function renderOrbMonitorSection() {
 
     var titleRow = document.createElement('div');
     titleRow.style.cssText = 'display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;';
-    titleRow.innerHTML = '<h3 style="margin:0;">ORB Monitor</h3><span style="font-size:0.75rem;color:var(--color-text-secondary);">Automated every 15 min via GitHub Actions</span>';
+    titleRow.innerHTML = '<h3 style="margin:0;">ORB Monitor</h3><span style="font-size:0.75rem;color:var(--color-text-secondary);">3 screens \u00b7 every 15 min via GitHub Actions</span>';
     section.appendChild(titleRow);
 
     // Fetch status if not fetched
@@ -31031,6 +31051,7 @@ function renderOrbMonitorSection() {
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 state.orbMonitor.runs = data.runs || [];
+                state.orbMonitor.screens = data.screens || {};
                 state.orbMonitor.fetched = true;
                 state.orbMonitor.loading = false;
                 renderApp();
@@ -31056,7 +31077,6 @@ function renderOrbMonitorSection() {
         errDiv.style.color = 'var(--color-text-secondary)';
         section.appendChild(errDiv);
 
-        // Still show trigger button
         var trigBtn = document.createElement('button');
         trigBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-generate';
         trigBtn.textContent = 'Trigger Run';
@@ -31066,55 +31086,90 @@ function renderOrbMonitorSection() {
         return section;
     }
 
-    // Card with status
+    // Card with per-screen status
     var card = document.createElement('div');
     card.style.cssText = 'background:var(--color-bg-secondary);border:1px solid var(--color-border);border-radius:8px;padding:1rem;';
 
-    // Top row: status dots (last 5 runs)
-    var dotsRow = document.createElement('div');
-    dotsRow.style.cssText = 'display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;';
-    var dotsLabel = document.createElement('span');
-    dotsLabel.style.cssText = 'font-size:0.8rem;color:var(--color-text-secondary);margin-right:0.25rem;';
-    dotsLabel.textContent = 'Recent:';
-    dotsRow.appendChild(dotsLabel);
+    // Per-screen status rows
+    var screens = state.orbMonitor.screens || {};
+    var screenDefs = [
+        { key: 'hub', label: 'Hub', desc: 'Command Hub' },
+        { key: 'desktop', label: 'Desktop', desc: 'vitanaland.com' },
+        { key: 'mobile', label: 'Mobile', desc: 'iPhone emulation' }
+    ];
 
     var runs = state.orbMonitor.runs || [];
-    runs.slice(0, 5).forEach(function (run) {
-        var dot = document.createElement('span');
-        var color = run.conclusion === 'success' ? '#22c55e' :
-                    run.conclusion === 'failure' ? '#ef4444' :
-                    run.status === 'in_progress' ? '#f59e0b' : '#6b7280';
-        dot.style.cssText = 'width:12px;height:12px;border-radius:50%;display:inline-block;background:' + color + ';cursor:pointer;';
-        dot.title = (run.conclusion || run.status) + ' — ' + formatEventTimestamp(run.created_at);
-        dot.onclick = function () { window.open(run.html_url, '_blank'); };
-        dotsRow.appendChild(dot);
-    });
-    if (runs.length === 0) {
-        var noDots = document.createElement('span');
-        noDots.style.cssText = 'font-size:0.8rem;color:var(--color-text-secondary);';
-        noDots.textContent = 'No runs yet';
-        dotsRow.appendChild(noDots);
-    }
-    card.appendChild(dotsRow);
+    var hasScreenData = Object.keys(screens).length > 0;
 
-    // Info row: last run details
+    if (hasScreenData) {
+        // Show per-screen rows
+        screenDefs.forEach(function (def) {
+            var row = document.createElement('div');
+            row.style.cssText = 'display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;';
+
+            var label = document.createElement('span');
+            label.style.cssText = 'font-size:0.8rem;color:var(--color-text-secondary);width:65px;';
+            label.textContent = def.label + ':';
+            row.appendChild(label);
+
+            var screenData = screens[def.key];
+            var dot = document.createElement('span');
+            if (screenData) {
+                var dotColor = screenData.conclusion === 'success' ? '#22c55e' :
+                               screenData.conclusion === 'failure' ? '#ef4444' :
+                               '#f59e0b';
+                dot.style.cssText = 'width:10px;height:10px;border-radius:50%;display:inline-block;background:' + dotColor + ';';
+                dot.title = def.desc + ': ' + (screenData.conclusion || screenData.status);
+            } else {
+                dot.style.cssText = 'width:10px;height:10px;border-radius:50%;display:inline-block;background:#6b7280;';
+                dot.title = def.desc + ': no data';
+            }
+            row.appendChild(dot);
+
+            var statusText = document.createElement('span');
+            statusText.style.cssText = 'font-size:0.75rem;color:var(--color-text-secondary);';
+            statusText.textContent = screenData ? (screenData.conclusion || screenData.status) : 'pending';
+            row.appendChild(statusText);
+
+            card.appendChild(row);
+        });
+    } else {
+        // Fallback: aggregate dots (pre-matrix runs)
+        var dotsRow = document.createElement('div');
+        dotsRow.style.cssText = 'display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;';
+        var dotsLabel = document.createElement('span');
+        dotsLabel.style.cssText = 'font-size:0.8rem;color:var(--color-text-secondary);margin-right:0.25rem;';
+        dotsLabel.textContent = 'Recent:';
+        dotsRow.appendChild(dotsLabel);
+
+        runs.slice(0, 5).forEach(function (run) {
+            var dot = document.createElement('span');
+            var color = run.conclusion === 'success' ? '#22c55e' :
+                        run.conclusion === 'failure' ? '#ef4444' :
+                        run.status === 'in_progress' ? '#f59e0b' : '#6b7280';
+            dot.style.cssText = 'width:12px;height:12px;border-radius:50%;display:inline-block;background:' + color + ';cursor:pointer;';
+            dot.title = (run.conclusion || run.status) + ' \u2014 ' + formatEventTimestamp(run.created_at);
+            dot.onclick = function () { window.open(run.html_url, '_blank'); };
+            dotsRow.appendChild(dot);
+        });
+        if (runs.length === 0) {
+            var noDots = document.createElement('span');
+            noDots.style.cssText = 'font-size:0.8rem;color:var(--color-text-secondary);';
+            noDots.textContent = 'No runs yet';
+            dotsRow.appendChild(noDots);
+        }
+        card.appendChild(dotsRow);
+    }
+
+    // Info row: last run timestamp + link
     if (runs.length > 0) {
         var latest = runs[0];
         var infoRow = document.createElement('div');
-        infoRow.style.cssText = 'display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;';
-
-        var statusBadge = document.createElement('span');
-        var statusClass = latest.conclusion === 'success' ? 'status-active' :
-                          latest.conclusion === 'failure' ? 'status-ended' :
-                          'status-badge';
-        statusBadge.className = 'status-badge ' + statusClass;
-        statusBadge.style.fontSize = '0.75rem';
-        statusBadge.textContent = latest.conclusion || latest.status || 'unknown';
-        infoRow.appendChild(statusBadge);
+        infoRow.style.cssText = 'display:flex;align-items:center;gap:0.75rem;margin-top:0.5rem;margin-bottom:0.75rem;padding-top:0.5rem;border-top:1px solid var(--color-border);';
 
         var timeSpan = document.createElement('span');
-        timeSpan.style.cssText = 'font-size:0.8rem;color:var(--color-text-secondary);';
-        timeSpan.textContent = formatEventTimestamp(latest.created_at);
+        timeSpan.style.cssText = 'font-size:0.75rem;color:var(--color-text-secondary);';
+        timeSpan.textContent = 'Last run: ' + formatEventTimestamp(latest.created_at);
         infoRow.appendChild(timeSpan);
 
         var linkSpan = document.createElement('a');
@@ -31129,11 +31184,11 @@ function renderOrbMonitorSection() {
 
     // Tests info
     var testsInfo = document.createElement('div');
-    testsInfo.style.cssText = 'font-size:0.8rem;color:var(--color-text-secondary);margin-bottom:0.75rem;';
-    testsInfo.innerHTML = '<strong>12 tests:</strong> Overlay structure (3) \u00b7 State colors (6) \u00b7 Mic mute (1) \u00b7 Close (1) \u00b7 Aura elements (1)';
+    testsInfo.style.cssText = 'font-size:0.75rem;color:var(--color-text-secondary);margin-bottom:0.75rem;';
+    testsInfo.innerHTML = '<strong>12 tests \u00d7 3 screens:</strong> Overlay (3) \u00b7 State colors (6) \u00b7 Mic mute (1) \u00b7 Close (1) \u00b7 Aura (1)';
     card.appendChild(testsInfo);
 
-    // Trigger button
+    // Trigger + Refresh buttons
     var btnRow = document.createElement('div');
     btnRow.style.cssText = 'display:flex;gap:0.5rem;';
     var trigBtn = document.createElement('button');
