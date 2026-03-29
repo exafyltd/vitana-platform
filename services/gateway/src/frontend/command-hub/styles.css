@@ -59,6 +59,7 @@ body {
   flex-direction: column;
   overflow: hidden;
   position: relative;
+  min-width: 0;
 }
 
 /* --- Header --- */
@@ -319,6 +320,8 @@ body {
   display: flex;
   flex-direction: column;
   position: relative;
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* --- Tasks View --- */
@@ -16371,7 +16374,7 @@ border-bottom: 1px solid var(--color-border, #333);
 .config-card .config-val { color: var(--color-text-primary); font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; }
 
 /* ── Live Console ── */
-.live-console-container { display: flex; flex-direction: column; height: calc(100vh - 220px); }
+.live-console-container { display: flex; flex-direction: column; height: calc(100vh - 220px); min-width: 0; max-width: 100%; overflow: hidden; }
 .console-output {
   flex: 1;
   background: #0a0f1a;
@@ -16379,16 +16382,28 @@ border-bottom: 1px solid var(--color-border, #333);
   border-radius: 8px 8px 0 0;
   padding: 1rem;
   overflow-y: auto;
+  overflow-x: hidden;
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.8rem;
   color: #e2e8f0;
+  min-width: 0;
+  max-width: 100%;
 }
-.console-msg { padding: 0.5rem 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
-.console-msg.msg-user { color: #60a5fa; }
+.console-msg,
+.console-message { padding: 0.5rem 0; border-bottom: 1px solid rgba(255,255,255,0.04); display: flex; gap: 0.25rem; word-break: break-word; overflow-wrap: break-word; min-width: 0; }
+.console-msg.msg-user,
+.console-message-user { color: #60a5fa; }
 .console-msg.msg-user::before { content: '> '; color: #3b82f6; font-weight: 700; }
-.console-msg.msg-assistant { color: #a5f3fc; }
-.console-msg.msg-error { color: #fca5a5; }
-.console-msg .console-ts { color: #475569; font-size: 0.7rem; margin-right: 0.5rem; }
+.console-msg.msg-assistant,
+.console-message-assistant { color: #a5f3fc; }
+.console-msg.msg-error,
+.console-message-error { color: #fca5a5; }
+.console-msg.msg-system,
+.console-message-system { color: #94a3b8; }
+.console-msg .console-ts,
+.console-timestamp { color: #475569; font-size: 0.7rem; margin-right: 0.5rem; flex-shrink: 0; margin-left: auto; }
+.console-role { font-weight: 700; flex-shrink: 0; color: #3b82f6; }
+.console-content { flex: 1; min-width: 0; overflow-wrap: break-word; word-break: break-word; white-space: pre-wrap; }
 .console-input-row {
   display: flex;
   gap: 0.5rem;
@@ -16836,11 +16851,8 @@ border-bottom: 1px solid var(--color-border, #333);
   .personality-field-group { grid-template-columns: 1fr; }
 }
 /* Option C: Scrollability for list tables */
-.module-content-wrapper {
-    max-height: calc(100vh - 200px);
-    overflow-y: auto;
-}
-
+/* Note: .module-content-wrapper is defined at line ~2118 with overflow: hidden.
+   Scrollability for list content is applied to inner wrappers only. */
 .list-table-wrapper,
 .gov-history-table-wrapper,
 .scrollable-container {
