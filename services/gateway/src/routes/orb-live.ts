@@ -706,6 +706,24 @@ type LiveStreamMessage = LiveStreamAudioChunk | LiveStreamVideoFrame;
 // VTID-01155: In-memory Live session store
 const liveSessions = new Map<string, GeminiLiveSession>();
 
+// VTID-SESSION-LEAK-FIX: Periodic sweep to purge zombie sessions.
+// Safety net in case SSE/WS close handlers miss cleanup (e.g. abrupt process kill).
+// Runs every 5 minutes, removes sessions older than 30 minutes.
+setInterval(() => {
+  const MAX_SESSION_AGE_MS = 30 * 60 * 1000;
+  const now = Date.now();
+  let purged = 0;
+  for (const [sid, s] of liveSessions) {
+    if (now - s.createdAt.getTime() > MAX_SESSION_AGE_MS) {
+      if (s.upstreamWs) { try { s.upstreamWs.close(); } catch (_) { /* ignore */ } }
+      s.active = false;
+      liveSessions.delete(sid);
+      purged++;
+    }
+  }
+  if (purged > 0) console.log(`[VTID-SESSION-TTL] Purged ${purged} expired sessions (remaining: ${liveSessions.size})`);
+}, 5 * 60 * 1000);
+
 // =============================================================================
 // VTID-SESSION-LIMIT: Enforce single active ORB session per user
 // =============================================================================
@@ -6563,6 +6581,15 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
       }
       session.upstreamWs = null;
     }
+
+    // VTID-SESSION-LEAK-FIX: Remove session from liveSessions to prevent zombie accumulation.
+    // Without this, every SSE disconnect leaves the session in the Map forever,
+    // eventually exhausting Vertex AI concurrent session limits.
+    session.active = false;
+    destroySessionBuffer(sessionId);
+    clearExtractionState(sessionId);
+    liveSessions.delete(sessionId);
+    console.log(`[VTID-SESSION-LEAK-FIX] Cleaned up live session on SSE disconnect: ${sessionId} (remaining: ${liveSessions.size})`);
   });
 });
 
