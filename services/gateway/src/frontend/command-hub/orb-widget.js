@@ -55,6 +55,8 @@
     audioPlaying: false,
     scheduledSources: [],
     lastScheduledEnd: 0,
+    audioEndGraceTimer: null, // Grace timer to prevent audioPlaying flicker
+    lastAudioEndTime: 0,     // Timestamp of last audio source end — for client-side echo cooldown
 
     // Barge-in / echo
     interruptPending: false,
@@ -385,7 +387,19 @@
         src.onended = function () {
           var idx = _s.scheduledSources.indexOf(src);
           if (idx !== -1) _s.scheduledSources.splice(idx, 1);
-          if (_s.scheduledSources.length === 0) _s.audioPlaying = false;
+          if (_s.scheduledSources.length === 0) {
+            // Don't clear audioPlaying immediately — use a grace period.
+            // More audio chunks may arrive from SSE within 300ms. Without this,
+            // audioPlaying flickers to false between chunks, mic audio leaks
+            // through the barge-in gate, and Vertex VAD cuts off the greeting.
+            clearTimeout(_s.audioEndGraceTimer);
+            _s.audioEndGraceTimer = setTimeout(function () {
+              if (_s.scheduledSources.length === 0 && _s.audioQueue.length === 0) {
+                _s.audioPlaying = false;
+                _s.lastAudioEndTime = Date.now();
+              }
+            }, 300);
+          }
         };
 
         _s.lastScheduledEnd += buf.duration;
@@ -531,6 +545,7 @@
     _s.active = false;
     _s.audioQueue = [];
     _s.audioPlaying = false;
+    clearTimeout(_s.audioEndGraceTimer);
     // Stop scheduled audio
     if (_s.scheduledSources) {
       for (var i = 0; i < _s.scheduledSources.length; i++) {
@@ -651,6 +666,7 @@
         }
         _s.lastScheduledEnd = 0;
         _s.audioPlaying = false;
+        clearTimeout(_s.audioEndGraceTimer);
         _s.interruptPending = false;
         break;
 
@@ -753,6 +769,7 @@
             _s.scheduledSources = [];
             _s.lastScheduledEnd = 0;
             _s.audioPlaying = false;
+            clearTimeout(_s.audioEndGraceTimer);
             _s.interruptPending = true;
             _sendInterrupt();
           }
@@ -765,8 +782,14 @@
         vadInterruptSent = false;
       }
 
-      // Post-turn cooldown (500ms)
+      // Post-turn cooldown (500ms) — server-side turn_complete
       if (_s.turnCompleteAt > 0 && (Date.now() - _s.turnCompleteAt) < 500) return;
+
+      // Client-side echo cooldown (500ms) — after audio playback actually ends.
+      // The server's POST_TURN_COOLDOWN_MS (2s) starts when Vertex sends turn_complete,
+      // but the client may still be playing buffered audio 1-3s later. This cooldown
+      // starts when the LAST audio source actually finishes playing on the client.
+      if (_s.lastAudioEndTime > 0 && (Date.now() - _s.lastAudioEndTime) < 500) return;
 
       // Convert Float32 → Int16 PCM → base64
       var pcm = new Int16Array(input.length);
