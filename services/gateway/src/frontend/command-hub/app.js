@@ -26326,7 +26326,7 @@ function renderOverviewSystemView() {
     // SECTION 2: Key Metrics Grid (2x4)
     // ═══════════════════════════════════════════════════════════════════════
     var metricsGrid = document.createElement('div');
-    metricsGrid.style.cssText = 'display:grid;grid-template-columns:repeat(4,1fr);gap:0.35rem;grid-column:1/-1;';
+    metricsGrid.style.cssText = 'grid-column: 1 / -1;';
 
     var summary = state.overviewPipelineSummary.snapshot;
     var deployRate = db.deploySuccessRate7d;
@@ -26384,28 +26384,21 @@ function renderOverviewSystemView() {
         }
     ];
 
-    metrics.forEach(function (m) {
-        var card = document.createElement('div');
-        card.className = 'overview-metric-card';
-        card.style.cssText = 'text-align:center;min-width:0;overflow:hidden;';
-        var val = document.createElement('div');
-        val.className = 'metric-value metric-value-' + m.color;
-        val.textContent = m.value;
-        var lbl = document.createElement('div');
-        lbl.className = 'metric-label';
-        lbl.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
-        lbl.textContent = m.label;
-        card.appendChild(val);
-        card.appendChild(lbl);
-        if (m.subtitle) {
-            var sub = document.createElement('div');
-            sub.className = 'metric-subtitle';
-            sub.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
-            sub.textContent = m.subtitle;
-            card.appendChild(sub);
-        }
-        metricsGrid.appendChild(card);
-    });
+    function metricCardHTML(m) {
+        var colorMap = { green: '#10b981', amber: '#f59e0b', red: '#ef4444', neutral: '#e2e8f0' };
+        var valColor = colorMap[m.color] || '#e2e8f0';
+        return '<td style="width:25%;text-align:center;padding:0.2rem;vertical-align:top;">' +
+            '<div style="background:var(--bg-tertiary,#16213e);border:1px solid var(--border-color,#2d3748);border-radius:6px;padding:0.6rem 0.5rem;text-align:center;">' +
+            '<div style="font-size:1.3rem;font-weight:700;line-height:1.2;color:' + valColor + ';font-variant-numeric:tabular-nums;">' + m.value + '</div>' +
+            '<div style="font-size:0.65rem;color:#94a3b8;margin-top:0.15rem;text-transform:uppercase;letter-spacing:0.03em;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + m.label + '</div>' +
+            (m.subtitle ? '<div style="font-size:0.55rem;color:#64748b;margin-top:0.15rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + m.subtitle + '</div>' : '') +
+            '</div></td>';
+    }
+
+    metricsGrid.innerHTML = '<table style="width:100%;border-collapse:separate;border-spacing:0.2rem;table-layout:fixed;">' +
+        '<tr>' + metrics.slice(0, 4).map(metricCardHTML).join('') + '</tr>' +
+        '<tr>' + metrics.slice(4, 8).map(metricCardHTML).join('') + '</tr>' +
+        '</table>';
 
     container.appendChild(metricsGrid);
 
