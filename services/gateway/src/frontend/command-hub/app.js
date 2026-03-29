@@ -26384,27 +26384,87 @@ function renderOverviewSystemView() {
         }
     ];
 
-    function metricCardHTML(m) {
-        return '<td style="width:25%;padding:0.2rem;vertical-align:top;">' +
-            '<div class="overview-metric-card">' +
+    // SVG icons for metric cards (Lucide/Feather style)
+    var metricIcons = {
+        'Deploy Success': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-5"/></svg>',
+        'ORB Sessions': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 010 8.49m-8.48-.01a6 6 0 010-8.49"/><path d="M19.07 4.93a10 10 0 010 14.14M4.93 19.07a10 10 0 010-14.14"/></svg>',
+        'Tasks Completed': '<svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M9 12l2 2 4-4"/></svg>',
+        'Automation Rate': '<svg viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>',
+        'Autopilot Loop': '<svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>',
+        'Workers': '<svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+        'Errors (24h)': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="#ef4444"/><line x1="12" y1="8" x2="12" y2="12" stroke="#ef4444"/><line x1="12" y1="16" x2="12.01" y2="16" stroke="#ef4444"/></svg>',
+        'Violations': '<svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="#3b82f6"/><line x1="12" y1="8" x2="12" y2="12" stroke="#3b82f6"/><line x1="12" y1="16" x2="12.01" y2="16" stroke="#3b82f6"/></svg>',
+        'Operator': '<svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+        'Assistant': '<svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>'
+    };
+
+    // Row 1: 6 columns (4 standard @15% + 2 wide @20%)
+    var row1Metrics = metrics.slice(0, 4);
+    var row1Wide = metrics.slice(6, 8); // Autopilot Loop, Workers
+    // Row 2: 4 columns @25% (Errors, Violations, Operator latency, Assistant latency)
+    var row2Metrics = metrics.slice(4, 6); // Errors, Violations
+
+    // Add Operator and Assistant as latency metrics for row 2
+    var operatorHealth = db.serviceHealth && db.serviceHealth.find(function(s) { return s.name === 'Operator'; });
+    var assistantHealth = db.serviceHealth && db.serviceHealth.find(function(s) { return s.name === 'Assistant'; });
+    var row2Extra = [
+        {
+            value: operatorHealth ? operatorHealth.latency_ms + 'ms' : '\u2014',
+            label: 'Operator',
+            subtitle: operatorHealth ? operatorHealth.status : '',
+            color: operatorHealth ? (operatorHealth.status === 'healthy' || operatorHealth.status === 'ok' ? 'green' : 'red') : 'neutral'
+        },
+        {
+            value: assistantHealth ? assistantHealth.latency_ms + 'ms' : '\u2014',
+            label: 'Assistant',
+            subtitle: assistantHealth ? assistantHealth.status : '',
+            color: assistantHealth ? (assistantHealth.status === 'healthy' || assistantHealth.status === 'ok' ? 'green' : 'red') : 'neutral'
+        }
+    ];
+
+    function metricCardHTML(m, width) {
+        var w = width || '25%';
+        var icon = metricIcons[m.label] || '';
+        var iconClass = (m.label === 'Autopilot Loop' || m.label === 'Workers') ? 'metric-icon metric-icon-lg' : 'metric-icon';
+        var cardClass = (m.label === 'Autopilot Loop' || m.label === 'Workers') ? 'overview-metric-card-wide' : 'overview-metric-card';
+        return '<td style="width:' + w + ';padding:0.2rem;vertical-align:top;">' +
+            '<div class="' + cardClass + '">' +
+            (icon ? '<div class="' + iconClass + '">' + icon + '</div>' : '') +
             '<div class="metric-value metric-value-' + m.color + '">' + m.value + '</div>' +
             '<div class="metric-label">' + m.label + '</div>' +
             (m.subtitle ? '<div class="metric-subtitle">' + m.subtitle + '</div>' : '') +
             '</div></td>';
     }
 
+    // Build Row 1: 4 standard (15%) + 2 wide (20%)
+    var row1HTML = '<tr>';
+    for (var ri1 = 0; ri1 < row1Metrics.length; ri1++) {
+        row1HTML += metricCardHTML(row1Metrics[ri1], '15%');
+    }
+    for (var ri1w = 0; ri1w < row1Wide.length; ri1w++) {
+        row1HTML += metricCardHTML(row1Wide[ri1w], '20%');
+    }
+    row1HTML += '</tr>';
+
+    // Build Row 2: 4 cards at 25%
+    var row2All = row2Metrics.concat(row2Extra);
+    var row2HTML = '<tr>';
+    for (var ri2 = 0; ri2 < row2All.length; ri2++) {
+        row2HTML += metricCardHTML(row2All[ri2], '25%');
+    }
+    row2HTML += '</tr>';
+
     metricsGrid.innerHTML = '<table style="width:100%;border-collapse:separate;border-spacing:0.2rem;table-layout:fixed;">' +
-        '<tr>' + metrics.slice(0, 4).map(metricCardHTML).join('') + '</tr>' +
-        '<tr>' + metrics.slice(4, 8).map(metricCardHTML).join('') + '</tr>' +
-        '</table>';
+        row1HTML + row2HTML + '</table>';
 
     container.appendChild(metricsGrid);
 
     // ═══════════════════════════════════════════════════════════════════════
-    // SECTION 3: Service Health Grid (left column)
+    // SECTION 3: Service Health — Full-Width 4x4 Grid
     // ═══════════════════════════════════════════════════════════════════════
     var healthPanel = document.createElement('div');
     healthPanel.className = 'overview-health-grid';
+    healthPanel.style.cssText = 'grid-column: 1 / -1;';
 
     var criticalOrder = ['Gateway', 'ORB Live', 'CI/CD', 'Autopilot', 'Execute Runner', 'Operator'];
     var sortedHealth = db.healthChecks.slice().sort(function (a, b) {
@@ -26418,11 +26478,11 @@ function renderOverviewSystemView() {
 
     // Header with healthy count badge
     var healthyCount = sortedHealth.filter(function (s) { return s.status === 'healthy' || s.status === 'ok'; }).length;
-    var healthHeader = document.createElement('div');
-    healthHeader.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:0 0 10px 0;';
-    healthHeader.innerHTML = '<span class="overview-panel-title" style="margin:0;">Service Health</span>' +
-        '<span style="background:rgba(16,185,129,0.2);color:#10b981;padding:2px 8px;border-radius:12px;font-size:0.75rem;font-weight:600;">' + healthyCount + '/' + sortedHealth.length + ' healthy</span>';
-    healthPanel.appendChild(healthHeader);
+    var healthHeaderEl = document.createElement('div');
+    healthHeaderEl.className = 'overview-panel-title-row';
+    healthHeaderEl.innerHTML = '<span class="overview-panel-title">Service Health</span>' +
+        '<span class="overview-count-badge overview-count-badge-green">' + healthyCount + '/' + sortedHealth.length + ' healthy</span>';
+    healthPanel.appendChild(healthHeaderEl);
 
     if (sortedHealth.length === 0) {
         var noH = document.createElement('div');
@@ -26430,45 +26490,43 @@ function renderOverviewSystemView() {
         noH.textContent = 'Loading health checks...';
         healthPanel.appendChild(noH);
     } else {
-        // Failed services section (if any)
+        // Failed services alert (if any)
         var failedSvcs = sortedHealth.filter(function (s) {
             return s.status === 'down' || s.status === 'error' || s.status === 'unhealthy' || s.status === 'failed';
         });
         if (failedSvcs.length > 0) {
             var failSection = document.createElement('div');
-            failSection.style.cssText = 'margin-bottom:12px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);border-radius:8px;padding:10px 12px;';
-            var failHTML = '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;color:#ef4444;font-weight:600;font-size:0.8rem;">Critical Issues (' + failedSvcs.length + ')</div>';
-            failedSvcs.forEach(function (svc) {
-                failHTML += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:rgba(0,0,0,0.2);border-radius:4px;border-left:3px solid #ef4444;margin-bottom:4px;">' +
-                    '<span style="color:#e2e8f0;font-size:0.8rem;">' + svc.name + '</span>' +
-                    '<span style="color:#ef4444;font-size:0.7rem;text-transform:uppercase;font-weight:600;">' + svc.status + '</span>' +
-                    '</div>';
-            });
+            failSection.className = 'overview-status-banner overview-status-critical';
+            failSection.style.cssText = 'margin-bottom:10px;padding:8px 12px;';
+            var failHTML = '<strong>Critical Issues (' + failedSvcs.length + '):</strong> ';
+            failHTML += failedSvcs.map(function(s) { return s.name + ' (' + s.status + ')'; }).join(', ');
             failSection.innerHTML = failHTML;
             healthPanel.appendChild(failSection);
         }
 
-        // Health grid — table for guaranteed 4 columns, compact card design
-        var healthHTML = '<table style="width:100%;table-layout:fixed;border-collapse:separate;border-spacing:5px;">';
+        // 4x4 health grid — 16 cells (15 services + 1 empty)
         var HEALTH_COLS = 4;
-        for (var ri = 0; ri < Math.ceil(sortedHealth.length / HEALTH_COLS); ri++) {
+        var healthHTML = '<table style="width:100%;table-layout:fixed;border-collapse:separate;border-spacing:4px;">';
+        for (var hri = 0; hri < 4; hri++) {
             healthHTML += '<tr>';
-            for (var ci = 0; ci < HEALTH_COLS; ci++) {
-                var idx = ri * HEALTH_COLS + ci;
-                if (idx < sortedHealth.length) {
-                    var svc = sortedHealth[idx];
-                    var dotColor = 'green';
-                    if (svc.status === 'degraded' || svc.status === 'warning') dotColor = 'yellow';
-                    if (svc.status === 'down' || svc.status === 'error' || svc.status === 'unhealthy') dotColor = 'red';
-                    var latencyStr = svc.latency_ms >= 0 ? '<span class="health-card-latency">' + svc.latency_ms + 'ms</span>' : '';
-                    healthHTML += '<td style="width:25%;vertical-align:top;">' +
-                        '<div class="health-card" title="' + svc.name + ': ' + svc.status + '">' +
-                        '<div class="health-card-dot health-card-dot-' + dotColor + '"></div>' +
-                        '<span class="health-card-name">' + svc.name + '</span>' +
-                        latencyStr +
+            for (var hci = 0; hci < HEALTH_COLS; hci++) {
+                var hidx = hri * HEALTH_COLS + hci;
+                if (hidx < sortedHealth.length) {
+                    var hsvc = sortedHealth[hidx];
+                    var hdot = 'green';
+                    if (hsvc.status === 'degraded' || hsvc.status === 'warning') hdot = 'yellow';
+                    if (hsvc.status === 'down' || hsvc.status === 'error' || hsvc.status === 'unhealthy') hdot = 'red';
+                    var hlatency = hsvc.latency_ms >= 0 ? '<div class="health-grid-card-latency">' + hsvc.latency_ms + 'ms</div>' : '';
+                    healthHTML += '<td style="width:25%;padding:2px;vertical-align:top;">' +
+                        '<div class="health-grid-card" title="' + hsvc.name + ': ' + hsvc.status + '">' +
+                        '<div class="health-grid-card-name">' +
+                        '<span class="health-dot health-dot-' + hdot + '"></span>' +
+                        hsvc.name +
+                        '</div>' +
+                        hlatency +
                         '</div></td>';
                 } else {
-                    healthHTML += '<td style="width:25%;"></td>';
+                    healthHTML += '<td style="width:25%;padding:2px;"></td>';
                 }
             }
             healthHTML += '</tr>';

@@ -17459,6 +17459,51 @@ border-bottom: 1px solid var(--color-border, #333);
     flex-shrink: 0;
 }
 
+/* Metric card icon */
+.metric-icon { display:flex; justify-content:center; margin-bottom:4px; }
+.metric-icon svg { width:28px; height:28px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+.metric-icon-lg svg { width:40px; height:40px; }
+
+/* Wide metric card (Autopilot, Workers) */
+.overview-metric-card-wide {
+    background: rgba(30, 41, 59, 0.5);
+    border: 1px solid rgba(148, 163, 184, 0.12);
+    border-radius: 8px;
+    padding: 12px 10px 8px;
+    text-align: center;
+    transition: border-color 0.2s;
+}
+.overview-metric-card-wide:hover { border-color: rgba(148, 163, 184, 0.3); }
+
+/* Health grid card — small box with name + latency (4x4 grid) */
+.health-grid-card {
+    background: rgba(30, 41, 59, 0.5);
+    border: 1px solid rgba(148, 163, 184, 0.12);
+    border-radius: 8px;
+    padding: 10px 12px;
+    transition: border-color 0.2s;
+}
+.health-grid-card:hover { border-color: rgba(148, 163, 184, 0.3); }
+.health-grid-card-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: #e2e8f0;
+    margin-bottom: 2px;
+}
+.health-grid-card-latency {
+    font-size: 0.75rem;
+    color: #64748b;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    padding-left: 13px;
+}
+.health-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+.health-dot-green { background:#10b981; box-shadow:0 0 6px rgba(16,185,129,0.4); }
+.health-dot-yellow { background:#f59e0b; box-shadow:0 0 6px rgba(245,158,11,0.4); }
+.health-dot-red { background:#ef4444; box-shadow:0 0 6px rgba(239,68,68,0.4); }
+
 /* ORB Communication Panel */
 .overview-orb-panel {
     background: var(--bg-tertiary, #16213e);
