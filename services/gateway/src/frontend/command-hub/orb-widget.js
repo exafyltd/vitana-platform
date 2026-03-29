@@ -390,16 +390,19 @@
           if (idx !== -1) _s.scheduledSources.splice(idx, 1);
           if (_s.scheduledSources.length === 0) {
             // Don't clear audioPlaying immediately — use a grace period.
-            // More audio chunks may arrive from SSE within 300ms. Without this,
-            // audioPlaying flickers to false between chunks, mic audio leaks
-            // through the barge-in gate, and Vertex VAD cuts off the greeting.
+            // Gemini generates speech with natural pauses (500-800ms between phrases).
+            // During these pauses, all scheduled sources finish but more chunks are
+            // still being delivered from SSE. A 300ms grace was too short — "Hello
+            // Dragan!" (pause 600ms) "How can I help?" caused two flips to LISTENING.
+            // 1000ms covers natural speech pauses without adding noticeable latency
+            // to the LISTENING transition after speech truly ends.
             clearTimeout(_s.audioEndGraceTimer);
             _s.audioEndGraceTimer = setTimeout(function () {
               if (_s.scheduledSources.length === 0 && _s.audioQueue.length === 0) {
                 _s.audioPlaying = false;
                 _s.lastAudioEndTime = Date.now();
               }
-            }, 300);
+            }, 1000);
           }
         };
 
@@ -663,11 +666,17 @@
 
         // Wait for audio playback to finish, then switch to LISTENING
         // (unless user has muted — then stay muted, just update preMuteState)
+        // Check all three signals: audioPlaying flag, scheduled sources, and queue.
+        // audioPlaying has a 1s grace period, but we also directly check sources/queue
+        // to catch edge cases where the flag lags behind reality.
         (function _waitForAudioEnd() {
           setTimeout(function () {
             if (!_s.active) return; // Session ended
-            if (_s.audioPlaying) {
-              _waitForAudioEnd(); // Still playing — check again in 200ms
+            var stillPlaying = _s.audioPlaying ||
+              (_s.scheduledSources && _s.scheduledSources.length > 0) ||
+              (_s.audioQueue && _s.audioQueue.length > 0);
+            if (stillPlaying) {
+              _waitForAudioEnd(); // Still playing — check again in 300ms
               return;
             }
             if (_s.voiceState === 'MUTED') {
@@ -680,7 +689,7 @@
               _playReadyBeep();
               _updateUI();
             }
-          }, 200);
+          }, 300);
         })();
         break;
 
