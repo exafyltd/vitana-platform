@@ -1246,6 +1246,22 @@
       _s.voiceState = state.toUpperCase();
       _setStatus(text);
       _updateUI();
+    },
+
+    // Test helper — show overlay UI without starting a real voice session.
+    // E2E tests must use this instead of show() to avoid creating Vertex AI
+    // sessions that leak and exhaust upstream connection limits.
+    _test_showOverlay: function () {
+      _injectStyles();
+      _renderOverlay();
+      if (_cfg.showFab) _renderFab();
+      _s.overlayVisible = true;
+      _root.classList.add('vtorb-visible');
+      _root.style.display = 'flex';
+      _setOrbState('connecting');
+      _s.voiceState = 'CONNECTING';
+      _setStatus('Connecting...');
+      _updateUI();
     }
   };
 
