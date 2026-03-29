@@ -2689,16 +2689,31 @@ async function connectToLiveAPI(
               try { session.clientWs.send(JSON.stringify(issueEvent)); } catch (e) { /* ignore */ }
             }
           } else if (isStallRecovery) {
-            // VTID-STALL-FIX: Reconnect succeeded after stall — do NOT re-greet.
-            // Conversation history is already injected into the new upstream session's
-            // system instruction by connectToLiveAPI(). Re-greeting caused the assistant
-            // to say "Hello Dragan!" repeatedly during an ongoing conversation (4x in 1 min).
-            // The user is mid-conversation — their audio will be forwarded and Gemini
-            // responds naturally. No greeting prompt needed.
-            console.log(`[VTID-STALL-FIX] Stall recovery reconnect succeeded for ${session.sessionId} — resuming silently (no re-greeting)`);
+            // VTID-STALL-FIX: Reconnect succeeded after stall.
             // Reset loop counter so loopguard doesn't fire prematurely on the fresh connection
             session.consecutiveModelTurns = 0;
-            emitDiag(session, 'stall_recovery_resumed', { reconnect_count: (session as any)._reconnectCount || 0 });
+
+            // VTID-GREETING-RECOVERY: If the stall happened before any turns completed
+            // (i.e. the greeting itself timed out), reset greetingSent so the greeting
+            // is re-sent on the new upstream connection. Without this, the session stays
+            // at 0 turns forever because sendGreetingPromptToLiveAPI skips when greetingSent=true.
+            if (session.turn_count === 0 && session.greetingSent) {
+              console.log(`[VTID-GREETING-RECOVERY] Greeting stall detected for ${session.sessionId} — resetting greetingSent to re-send on new connection`);
+              session.greetingSent = false;
+              session.greetingTurnIndex = undefined;
+              // Send greeting on the new upstream connection
+              if (session.upstreamWs && session.upstreamWs.readyState === WebSocket.OPEN) {
+                sendGreetingPromptToLiveAPI(session.upstreamWs, session);
+              }
+              emitDiag(session, 'greeting_recovery', { reconnect_count: (session as any)._reconnectCount || 0 });
+            } else {
+              // Mid-conversation stall — do NOT re-greet.
+              // Conversation history is already injected into the new upstream session's
+              // system instruction by connectToLiveAPI(). Re-greeting caused the assistant
+              // to say "Hello Dragan!" repeatedly during an ongoing conversation (4x in 1 min).
+              console.log(`[VTID-STALL-FIX] Stall recovery reconnect succeeded for ${session.sessionId} — resuming silently (no re-greeting)`);
+              emitDiag(session, 'stall_recovery_resumed', { reconnect_count: (session as any)._reconnectCount || 0 });
+            }
           }
         }).catch(err => {
           console.error(`[VTID-STREAM-RECONNECT] Reconnection error for ${session.sessionId}: ${err.message}`);
@@ -6108,8 +6123,12 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
 
   // VTID-SESSION-LIMIT: Terminate any existing active sessions for this user.
   // Prevents zombie sessions when user re-opens the ORB without closing the previous one.
+  // VTID-SESSION-LIMIT-FIX: Skip for dev-sandbox identity — all anonymous/dev users share
+  // the same user_id (DEV_IDENTITY.USER_ID), so enforcing session limit would kill every
+  // other anonymous session whenever a new one starts, creating a death spiral of 0-turn sessions.
   let terminatedCount = 0;
-  if (orbIdentity?.user_id) {
+  const isDevIdentity = orbIdentity?.user_id === DEV_IDENTITY.USER_ID;
+  if (orbIdentity?.user_id && !isDevIdentity) {
     terminatedCount = terminateExistingSessionsForUser(orbIdentity.user_id, sessionId);
     if (terminatedCount > 0) {
       console.log(`[VTID-SESSION-LIMIT] Terminated ${terminatedCount} existing session(s) for user=${orbIdentity.user_id.substring(0, 8)}... before starting ${sessionId}`);
@@ -7798,8 +7817,10 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
   };
 
   // VTID-SESSION-LIMIT: Terminate existing sessions for this user (WS path)
+  // VTID-SESSION-LIMIT-FIX: Skip for dev-sandbox identity (same reason as SSE path)
   const wsEffectiveUserId = (effectiveBootstrapIdentity || identity)?.user_id;
-  if (wsEffectiveUserId) {
+  const wsIsDevIdentity = wsEffectiveUserId === DEV_IDENTITY.USER_ID;
+  if (wsEffectiveUserId && !wsIsDevIdentity) {
     const wsTerminated = terminateExistingSessionsForUser(wsEffectiveUserId, sessionId);
     if (wsTerminated > 0) {
       console.log(`[VTID-SESSION-LIMIT] WS: Terminated ${wsTerminated} existing session(s) for user=${wsEffectiveUserId.substring(0, 8)}... before starting ${sessionId}`);
