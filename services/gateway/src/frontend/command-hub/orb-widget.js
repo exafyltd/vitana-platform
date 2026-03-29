@@ -68,6 +68,7 @@
 
     // UI state
     voiceState: 'IDLE', // IDLE | LISTENING | THINKING | SPEAKING | MUTED
+    preMuteState: null, // Remembers state before mute so we can restore correctly
     overlayVisible: false,
     liveError: null,
     _audioSendErrorLogged: false,
@@ -586,8 +587,12 @@
             _s.greetingAudioReceived = true;
             clearTimeout(_s.stuckGuardTimer);
           }
-          // Always update to SPEAKING when audio arrives
-          if (_s.voiceState !== 'SPEAKING') {
+          // Update to SPEAKING when audio arrives — but respect MUTED state.
+          // If muted, keep visual state as muted but track that model is speaking
+          // so unmute restores to SPEAKING (not LISTENING).
+          if (_s.voiceState === 'MUTED') {
+            _s.preMuteState = 'SPEAKING';
+          } else if (_s.voiceState !== 'SPEAKING') {
             _setOrbState('speaking');
             _s.voiceState = 'SPEAKING';
             _setStatus(_cfg.lang.startsWith('de') ? 'Vitana spricht...' : 'Vitana speaking...');
@@ -614,6 +619,7 @@
         // (transcript UI removed)
 
         // Wait for audio playback to finish, then switch to LISTENING
+        // (unless user has muted — then stay muted, just update preMuteState)
         (function _waitForAudioEnd() {
           setTimeout(function () {
             if (!_s.active) return; // Session ended
@@ -621,11 +627,16 @@
               _waitForAudioEnd(); // Still playing — check again in 200ms
               return;
             }
-            _setOrbState('listening');
-            _s.voiceState = 'LISTENING';
-            _setStatus(_cfg.lang.startsWith('de') ? 'Ich höre zu...' : 'Listening...');
-            _playReadyBeep();
-            _updateUI();
+            if (_s.voiceState === 'MUTED') {
+              // Muted — don't change visual state, but update what unmute restores to
+              _s.preMuteState = 'LISTENING';
+            } else {
+              _setOrbState('listening');
+              _s.voiceState = 'LISTENING';
+              _setStatus(_cfg.lang.startsWith('de') ? 'Ich höre zu...' : 'Listening...');
+              _playReadyBeep();
+              _updateUI();
+            }
           }, 200);
         })();
         break;
@@ -1021,10 +1032,24 @@
 
   function _toggleMute() {
     if (_s.voiceState === 'MUTED') {
-      _s.voiceState = 'LISTENING';
-      _setOrbState('listening');
-      _setStatus(_cfg.lang.startsWith('de') ? 'Ich höre zu...' : 'Listening...');
+      // Unmute — restore to the state we were in before muting.
+      // If model is still playing audio, go back to SPEAKING (not LISTENING)
+      // to avoid barge-in from speaker echo.
+      var restoreTo = _s.preMuteState || 'LISTENING';
+      // If audio is still playing, force SPEAKING regardless of saved state
+      if (_s.audioPlaying) restoreTo = 'SPEAKING';
+      _s.preMuteState = null;
+      _s.voiceState = restoreTo;
+      if (restoreTo === 'SPEAKING') {
+        _setOrbState('speaking');
+        _setStatus(_cfg.lang.startsWith('de') ? 'Vitana spricht...' : 'Vitana speaking...');
+      } else {
+        _setOrbState('listening');
+        _setStatus(_cfg.lang.startsWith('de') ? 'Ich höre zu...' : 'Listening...');
+      }
     } else {
+      // Mute — remember current state so we can restore it
+      _s.preMuteState = _s.voiceState;
       _s.voiceState = 'MUTED';
       _setOrbState('paused');
       _setStatus(_cfg.lang.startsWith('de') ? 'Stummgeschaltet' : 'Muted');
