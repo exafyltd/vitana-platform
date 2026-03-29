@@ -775,9 +775,14 @@
     var processor = ctx.createScriptProcessor(1024, 1, 1);
 
     // Client-side VAD for barge-in
-    var vadThreshold = 0.015;
+    // Threshold must be high enough to ignore speaker echo leaking through AEC.
+    // Typical speech RMS: 0.1-0.3. Echo through AEC: 0.01-0.04.
+    // Previous 0.015 was too low — triggered on echo, causing constant interruptions.
+    var vadThreshold = 0.06;
     var vadFrames = 0;
-    var vadConfirm = 3;
+    // Require 6 consecutive frames (~384ms at 1024 samples/16kHz) to confirm real speech.
+    // Previous 3 frames (~192ms) triggered on brief echo bursts.
+    var vadConfirm = 6;
     var vadInterruptSent = false;
 
     processor.onaudioprocess = function (e) {
@@ -791,8 +796,11 @@
       for (var k = 0; k < input.length; k++) sum += input[k] * input[k];
       var rms = Math.sqrt(sum / input.length);
 
-      // Barge-in detection
-      var modelPlaying = _s.audioPlaying && _s.scheduledSources && _s.scheduledSources.length > 0;
+      // Barge-in detection — gate mic while model audio is playing.
+      // Use audioPlaying (has 1s grace period) instead of checking scheduledSources
+      // directly, because scheduledSources can be briefly empty between chunks
+      // even though more audio is coming. The grace timer covers these gaps.
+      var modelPlaying = _s.audioPlaying;
       if (modelPlaying) {
         if (rms > vadThreshold) {
           vadFrames++;
