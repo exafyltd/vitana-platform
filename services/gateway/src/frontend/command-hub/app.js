@@ -26448,9 +26448,9 @@ function renderOverviewSystemView() {
             healthPanel.appendChild(failSection);
         }
 
-        // Health grid — table for guaranteed 3 columns, styled as cards
-        var healthHTML = '<table style="width:100%;table-layout:fixed;border-collapse:separate;border-spacing:6px;">';
-        var HEALTH_COLS = 3;
+        // Health grid — table for guaranteed 4 columns, compact card design
+        var healthHTML = '<table style="width:100%;table-layout:fixed;border-collapse:separate;border-spacing:5px;">';
+        var HEALTH_COLS = 4;
         for (var ri = 0; ri < Math.ceil(sortedHealth.length / HEALTH_COLS); ri++) {
             healthHTML += '<tr>';
             for (var ci = 0; ci < HEALTH_COLS; ci++) {
@@ -26460,15 +26460,15 @@ function renderOverviewSystemView() {
                     var statusColor = '#10b981';
                     if (svc.status === 'degraded' || svc.status === 'warning') statusColor = '#f59e0b';
                     if (svc.status === 'down' || svc.status === 'error' || svc.status === 'unhealthy') statusColor = '#ef4444';
-                    var latencyStr = svc.latency_ms >= 0 ? '<span style="font-size:0.7rem;color:#64748b;font-family:monospace;white-space:nowrap;">' + svc.latency_ms + 'ms</span>' : '';
-                    healthHTML += '<td style="vertical-align:top;">' +
-                        '<div style="background:rgba(30,41,59,0.6);border:1px solid rgba(148,163,184,0.15);border-radius:6px;padding:8px 10px;display:flex;align-items:center;gap:8px;" title="' + svc.name + ': ' + svc.status + '">' +
-                        '<div style="width:8px;height:8px;border-radius:50%;background:' + statusColor + ';box-shadow:0 0 6px ' + statusColor + '60;flex-shrink:0;"></div>' +
-                        '<span style="flex:1;font-size:0.8rem;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + svc.name + '</span>' +
+                    var latencyStr = svc.latency_ms >= 0 ? '<span style="font-size:0.65rem;color:#64748b;font-family:monospace;flex-shrink:0;">' + svc.latency_ms + 'ms</span>' : '';
+                    healthHTML += '<td style="width:25%;vertical-align:top;">' +
+                        '<div style="background:rgba(30,41,59,0.5);border:1px solid rgba(148,163,184,0.12);border-radius:6px;padding:6px 8px;display:flex;align-items:center;gap:6px;overflow:hidden;" title="' + svc.name + ': ' + svc.status + '">' +
+                        '<div style="width:6px;height:6px;border-radius:50%;background:' + statusColor + ';box-shadow:0 0 4px ' + statusColor + '50;flex-shrink:0;"></div>' +
+                        '<span style="flex:1;font-size:0.75rem;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;">' + svc.name + '</span>' +
                         latencyStr +
                         '</div></td>';
                 } else {
-                    healthHTML += '<td></td>';
+                    healthHTML += '<td style="width:25%;"></td>';
                 }
             }
             healthHTML += '</tr>';
