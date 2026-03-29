@@ -433,8 +433,8 @@ router.get('/orb-monitor/status', async (_req: Request, res: Response) => {
       try {
         const jobsData = await githubService.getWorkflowRunJobs(GITHUB_REPO, latestCompleted.id);
         for (const job of jobsData.jobs || []) {
-          // Matrix job names contain the screen name in parentheses: "orb-test (hub)"
-          const match = job.name.match(/\((\w+)\)/);
+          // Matrix job names: "orb-test (hub, hub-shared, ...)" — first word in parens is screen
+          const match = job.name.match(/\((\w+)/);
           if (match) {
             screens[match[1]] = { conclusion: job.conclusion, status: job.status };
           }
