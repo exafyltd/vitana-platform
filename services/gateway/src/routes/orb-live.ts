@@ -3533,31 +3533,43 @@ async function geolocateIP(ip: string): Promise<{ city?: string; country?: strin
     console.log(`[VTID-CONTEXT] IP geo cache hit: ${ip} → ${cached.data.city}, ${cached.data.country}`);
     return cached.data;
   }
-  try {
-    // ip-api.com free tier: HTTP only (not HTTPS), 45 req/min, no key needed.
-    // Using http:// is intentional — their free tier doesn't support https.
-    const url = `http://ip-api.com/json/${ip}?fields=status,message,city,country,timezone`;
-    console.log(`[VTID-CONTEXT] IP geo lookup: ${ip} → ${url}`);
-    const resp = await fetch(url, {
-      signal: AbortSignal.timeout(3000), // 3s timeout
-    });
-    if (!resp.ok) {
-      console.warn(`[VTID-CONTEXT] IP geo HTTP error: ${resp.status} for ${ip}`);
-      return {};
+  // Try multiple geo providers — Cloud Run may block HTTP (ip-api.com free tier).
+  // ipapi.co supports HTTPS for free (1000 req/day, no key).
+  const providers = [
+    {
+      name: 'ipapi.co',
+      url: `https://ipapi.co/${ip}/json/`,
+      parse: (json: any) => json.error ? null : { city: json.city, country: json.country_name, timezone: json.timezone },
+    },
+    {
+      name: 'ip-api.com',
+      url: `http://ip-api.com/json/${ip}?fields=status,message,city,country,timezone`,
+      parse: (json: any) => json.status === 'success' ? { city: json.city, country: json.country, timezone: json.timezone } : null,
+    },
+  ];
+
+  for (const provider of providers) {
+    try {
+      console.log(`[VTID-CONTEXT] Trying ${provider.name} for IP ${ip}`);
+      const resp = await fetch(provider.url, { signal: AbortSignal.timeout(3000) });
+      if (!resp.ok) {
+        console.warn(`[VTID-CONTEXT] ${provider.name} HTTP ${resp.status} for ${ip}`);
+        continue;
+      }
+      const json = await resp.json();
+      const data = provider.parse(json);
+      if (data) {
+        console.log(`[VTID-CONTEXT] ${provider.name} success: ${ip} → ${data.city}, ${data.country}, ${data.timezone}`);
+        ipGeoCache.set(ip, { data, ts: Date.now() });
+        return data;
+      }
+      console.warn(`[VTID-CONTEXT] ${provider.name} returned no data for ${ip}: ${JSON.stringify(json).substring(0, 200)}`);
+    } catch (err) {
+      console.warn(`[VTID-CONTEXT] ${provider.name} failed for ${ip}: ${(err as Error).message}`);
     }
-    const json = await resp.json();
-    console.log(`[VTID-CONTEXT] IP geo response for ${ip}: ${JSON.stringify(json)}`);
-    if (json.status !== 'success') {
-      console.warn(`[VTID-CONTEXT] IP geo failed for ${ip}: ${json.message || 'unknown'}`);
-      return {};
-    }
-    const data = { city: json.city, country: json.country, timezone: json.timezone };
-    ipGeoCache.set(ip, { data, ts: Date.now() });
-    return data;
-  } catch (err) {
-    console.warn(`[VTID-CONTEXT] IP geo lookup failed for ${ip}: ${(err as Error).message}`);
-    return {};
   }
+  console.warn(`[VTID-CONTEXT] All geo providers failed for IP ${ip}`);
+  return {};
 }
 
 /**
@@ -3626,6 +3638,8 @@ function getLocalTimeContext(timezone?: string): { localTime: string; timeOfDay:
  */
 async function buildClientContext(req: Request): Promise<ClientContext> {
   const ip = getClientIP(req);
+  // Log all IP-related headers for debugging Cloud Run IP extraction
+  console.log(`[VTID-CONTEXT] IP headers: xff="${req.get('x-forwarded-for') || ''}", xri="${req.get('x-real-ip') || ''}", xaui="${req.get('x-appengine-user-ip') || ''}", req.ip="${req.ip || ''}" → resolved="${ip}"`);
   const ua = req.get('user-agent');
   const referrer = req.get('referer') || req.get('referrer') || undefined;
   const acceptLang = req.get('accept-language')?.split(',')[0]?.trim();
