@@ -665,6 +665,29 @@ interface GeminiLiveSession {
   // After MAX_CONSECUTIVE_TOOL_CALLS, we stop sending function_responses
   // to force the model to generate an audio response.
   consecutiveToolCalls: number;
+  // VTID-ANON: Whether this is an anonymous/unauthenticated session (landing page)
+  isAnonymous: boolean;
+  // VTID-CONTEXT: Client environment context (IP geo, device, time)
+  clientContext?: ClientContext;
+}
+
+/**
+ * VTID-CONTEXT: Client environment context gathered at session start.
+ * Injected into system instruction to make Vitana contextually aware.
+ */
+interface ClientContext {
+  ip: string;
+  city?: string;
+  country?: string;
+  timezone?: string;
+  localTime?: string;       // e.g. "Saturday evening, 20:35"
+  timeOfDay?: string;       // morning | afternoon | evening | night
+  device?: string;          // iPhone, Android, Desktop
+  browser?: string;         // Chrome, Safari, Firefox
+  os?: string;              // iOS, Android, Windows, macOS
+  isMobile?: boolean;
+  lang?: string;            // from Accept-Language
+  referrer?: string;        // how they found us
 }
 
 /**
@@ -1975,6 +1998,109 @@ ${trimmedHistory}
 }
 
 /**
+ * VTID-ANON: Build system instruction for anonymous/unauthenticated sessions.
+ * No memory, no tools, no personal data. Focused on welcoming first-time users,
+ * explaining Vitana, and guiding toward signup.
+ */
+function buildAnonymousSystemInstruction(lang: string, voiceStyle: string, ctx?: ClientContext): string {
+  const languageNames: Record<string, string> = {
+    'en': 'English', 'de': 'German', 'fr': 'French', 'es': 'Spanish',
+    'ar': 'Arabic', 'zh': 'Chinese', 'ru': 'Russian', 'sr': 'Serbian'
+  };
+
+  // Build context-aware greeting hints
+  let contextHints = '';
+  if (ctx) {
+    const parts: string[] = [];
+    if (ctx.city && ctx.country) parts.push(`The user is located in ${ctx.city}, ${ctx.country}.`);
+    else if (ctx.country) parts.push(`The user is in ${ctx.country}.`);
+    if (ctx.localTime) parts.push(`Their local time is ${ctx.localTime}.`);
+    if (ctx.timeOfDay) parts.push(`Use an appropriate time-of-day greeting (good ${ctx.timeOfDay}).`);
+    if (ctx.device && ctx.isMobile) parts.push(`They are on a ${ctx.device} (mobile).`);
+    else if (ctx.device) parts.push(`They are on a ${ctx.device}.`);
+    if (ctx.referrer) parts.push(`They arrived from ${ctx.referrer}.`);
+    if (parts.length > 0) {
+      contextHints = `\nCONTEXT ABOUT THIS VISITOR:\n${parts.join('\n')}\nUse this context naturally in conversation — e.g. mention their city, use a time-appropriate greeting. Do NOT list these facts back robotically.`;
+    }
+  }
+
+  return `You are Vitana, an AI health and wellbeing companion. You are the voice interface for the Vitana platform.
+
+LANGUAGE: Respond ONLY in ${languageNames[lang] || 'English'}.
+
+VOICE STYLE: ${voiceStyle}
+
+WHO YOU ARE:
+- Vitana is a holistic health and wellbeing platform combining community, events, and personalized AI guidance
+- You help people with nutrition, fitness, mental wellness, mindfulness, social connection, and healthy lifestyle
+- The platform offers: community features, local health events & meetups, personalized wellness guidance, and an AI companion (you!)
+- Vitana operates primarily in the DACH region (Germany, Austria, Switzerland) and is expanding
+
+THIS IS AN ANONYMOUS SESSION (user is NOT logged in):
+- You do NOT know this person's name — NEVER guess or use a name from any other context
+- You have NO memory of previous conversations — this is a fresh start
+- You CANNOT search memory or events — do not pretend to have personal information
+- Your goal is to welcome them warmly, showcase what Vitana offers, and gently guide them to sign up
+${contextHints}
+
+GREETING RULES:
+- Greet warmly with a time-appropriate greeting if you know their local time
+- Introduce yourself briefly: "I'm Vitana, your health and wellbeing companion"
+- Keep it to 1-2 sentences — don't overwhelm on first contact
+
+WHAT YOU CAN HELP WITH (anonymous users):
+- Explain what Vitana is and what it offers
+- Describe the community, events, and AI companion features
+- Answer questions about health, nutrition, fitness, mindfulness (general knowledge)
+- Help them understand the benefits of signing up
+- Provide information about upcoming public events if asked
+- Share the Vitana vision and philosophy
+
+WHAT YOU CANNOT DO (anonymous users):
+- Access personal memories or past conversations (you have none)
+- Search user-specific events or preferences
+- Provide personalized health recommendations (suggest they sign up for this)
+- Use any personal names or data from other sessions
+
+GUIDING TO SIGNUP:
+- When appropriate, mention that signing up unlocks personalized features
+- Be natural about it — don't push signup in every response
+- Example: "If you create an account, I can remember our conversations and give you personalized wellness guidance"
+- Frame it as a benefit, not a requirement
+
+GENERAL BEHAVIOR:
+- Be warm, patient, and empathetic
+- Keep responses concise for voice (2-3 sentences max)
+- Use natural conversational tone
+- Be enthusiastic about wellness topics
+- If they ask something you can't help with anonymously, explain that creating an account would enable that feature
+
+INTERRUPTION HANDLING:
+- If the user starts speaking while you are talking, STOP immediately and listen
+
+IMPORTANT:
+- This is a real-time voice conversation
+- Listen actively and respond naturally
+- NEVER reference other users, names, or personal data — you know NOTHING about this visitor except their location/time`;
+}
+
+/**
+ * VTID-CONTEXT: Format client context into a context section for the system instruction.
+ * Used for both anonymous and authenticated sessions.
+ */
+function formatClientContextForInstruction(ctx: ClientContext): string {
+  const parts: string[] = [];
+  if (ctx.city && ctx.country) parts.push(`User location: ${ctx.city}, ${ctx.country}`);
+  else if (ctx.country) parts.push(`User location: ${ctx.country}`);
+  if (ctx.timezone) parts.push(`Timezone: ${ctx.timezone}`);
+  if (ctx.localTime) parts.push(`Local time: ${ctx.localTime}`);
+  if (ctx.device) parts.push(`Device: ${ctx.device}`);
+  if (ctx.os) parts.push(`OS: ${ctx.os}`);
+  if (parts.length === 0) return '';
+  return `\nENVIRONMENT CONTEXT:\n${parts.join('\n')}\nUse this naturally — e.g. time-appropriate greetings, location-relevant suggestions.`;
+}
+
+/**
  * VTID-01219: Connect to Vertex AI Live API WebSocket
  * Establishes bidirectional audio streaming connection
  * Returns a Promise that resolves only after WebSocket is open and setup is complete
@@ -2063,25 +2189,28 @@ async function connectToLiveAPI(
           input_audio_transcription: {},
           system_instruction: {
             parts: [{
-              // VTID-01224: Pass bootstrap context to system instruction
-              // VTID-01225-ROLE: Pass active_role + conversation history for continuity
-              text: buildLiveSystemInstruction(
-                session.lang,
-                session.voiceStyle || 'friendly, calm, empathetic',
-                session.contextInstruction,
-                session.active_role,
-                session.conversationSummary,
-                // VTID-STREAM-KEEPALIVE: Pass last 10 turns for reconnect continuity
-                session.transcriptTurns.length > 0
-                  ? session.transcriptTurns.slice(-10).map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`).join('\n')
-                  : undefined,
-                // Pass reconnect flag so greeting rules are suppressed on reconnect
-                ((session as any)._reconnectCount || 0) > 0
-              )
+              // VTID-ANON: Use anonymous instruction for unauthenticated sessions.
+              // VTID-CONTEXT: Include client context (location, time, device) for all sessions.
+              text: session.isAnonymous
+                ? buildAnonymousSystemInstruction(session.lang, session.voiceStyle || 'friendly, calm, empathetic', session.clientContext)
+                : buildLiveSystemInstruction(
+                    session.lang,
+                    session.voiceStyle || 'friendly, calm, empathetic',
+                    (session.contextInstruction || '') + (session.clientContext ? formatClientContextForInstruction(session.clientContext) : ''),
+                    session.active_role,
+                    session.conversationSummary,
+                    // VTID-STREAM-KEEPALIVE: Pass last 10 turns for reconnect continuity
+                    session.transcriptTurns.length > 0
+                      ? session.transcriptTurns.slice(-10).map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`).join('\n')
+                      : undefined,
+                    // Pass reconnect flag so greeting rules are suppressed on reconnect
+                    ((session as any)._reconnectCount || 0) > 0
+                  )
             }]
           },
-          // VTID-01224: Include tools for dynamic context retrieval during conversation
-          tools: session.identity ? buildLiveApiTools() : []
+          // VTID-ANON: No tools for anonymous sessions — they have no identity to search with.
+          // VTID-01224: Include tools for authenticated sessions.
+          tools: (session.identity && !session.isAnonymous) ? buildLiveApiTools() : []
         }
       };
 
@@ -3367,6 +3496,137 @@ async function emitMemoryWriteEvent(
 
 function getClientIP(req: Request): string {
   return (req.get('x-forwarded-for') || req.ip || 'unknown').split(',')[0].trim();
+}
+
+// =============================================================================
+// VTID-CONTEXT: Client context awareness (IP geo, device, time)
+// =============================================================================
+
+// Simple in-memory cache for IP geolocation (avoids hitting external API repeatedly)
+const ipGeoCache = new Map<string, { data: any; ts: number }>();
+const IP_GEO_CACHE_TTL_MS = 3600_000; // 1 hour
+
+/**
+ * Lightweight IP geolocation using ip-api.com (free, no key needed, 45 req/min).
+ * Returns city, country, timezone. Cached for 1 hour per IP.
+ */
+async function geolocateIP(ip: string): Promise<{ city?: string; country?: string; timezone?: string }> {
+  if (!ip || ip === 'unknown' || ip === '127.0.0.1' || ip.startsWith('10.') || ip.startsWith('192.168.')) {
+    return {};
+  }
+  const cached = ipGeoCache.get(ip);
+  if (cached && Date.now() - cached.ts < IP_GEO_CACHE_TTL_MS) {
+    return cached.data;
+  }
+  try {
+    const resp = await fetch(`http://ip-api.com/json/${ip}?fields=status,city,country,timezone`, {
+      signal: AbortSignal.timeout(2000), // 2s timeout — don't block session start
+    });
+    if (!resp.ok) return {};
+    const json = await resp.json();
+    if (json.status !== 'success') return {};
+    const data = { city: json.city, country: json.country, timezone: json.timezone };
+    ipGeoCache.set(ip, { data, ts: Date.now() });
+    return data;
+  } catch (err) {
+    // Geo lookup is best-effort — never block session start
+    console.warn(`[VTID-CONTEXT] IP geo lookup failed for ${ip}: ${(err as Error).message}`);
+    return {};
+  }
+}
+
+/**
+ * Parse User-Agent into device/browser/OS.
+ */
+function parseUserAgent(ua: string | undefined): { device?: string; browser?: string; os?: string; isMobile?: boolean } {
+  if (!ua) return {};
+  const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+  let device = 'Desktop';
+  if (/iPhone/i.test(ua)) device = 'iPhone';
+  else if (/iPad/i.test(ua)) device = 'iPad';
+  else if (/Android/i.test(ua)) device = isMobile ? 'Android phone' : 'Android tablet';
+
+  let browser = 'Unknown';
+  if (/Edg\//i.test(ua)) browser = 'Edge';
+  else if (/Chrome/i.test(ua)) browser = 'Chrome';
+  else if (/Safari/i.test(ua) && !/Chrome/i.test(ua)) browser = 'Safari';
+  else if (/Firefox/i.test(ua)) browser = 'Firefox';
+
+  let os = 'Unknown';
+  if (/iPhone|iPad|iPod/i.test(ua)) os = 'iOS';
+  else if (/Android/i.test(ua)) os = 'Android';
+  else if (/Windows/i.test(ua)) os = 'Windows';
+  else if (/Mac OS/i.test(ua)) os = 'macOS';
+  else if (/Linux/i.test(ua)) os = 'Linux';
+
+  return { device, browser, os, isMobile };
+}
+
+/**
+ * Get time-of-day string and local time for a timezone.
+ */
+function getLocalTimeContext(timezone?: string): { localTime: string; timeOfDay: string } {
+  try {
+    const tz = timezone || 'UTC';
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      weekday: 'long',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(now);
+    const weekday = parts.find(p => p.type === 'weekday')?.value || '';
+    const hour = parseInt(parts.find(p => p.type === 'hour')?.value || '12');
+    const minute = parts.find(p => p.type === 'minute')?.value || '00';
+
+    let timeOfDay = 'day';
+    if (hour >= 5 && hour < 12) timeOfDay = 'morning';
+    else if (hour >= 12 && hour < 17) timeOfDay = 'afternoon';
+    else if (hour >= 17 && hour < 21) timeOfDay = 'evening';
+    else timeOfDay = 'night';
+
+    return {
+      localTime: `${weekday} ${timeOfDay}, ${hour}:${minute}`,
+      timeOfDay,
+    };
+  } catch {
+    return { localTime: '', timeOfDay: 'day' };
+  }
+}
+
+/**
+ * Build full client context from request.
+ */
+async function buildClientContext(req: Request): Promise<ClientContext> {
+  const ip = getClientIP(req);
+  const ua = req.get('user-agent');
+  const referrer = req.get('referer') || req.get('referrer') || undefined;
+  const acceptLang = req.get('accept-language')?.split(',')[0]?.trim();
+
+  // Run geo lookup in parallel with UA parsing (geo is async, UA is sync)
+  const [geo, uaParsed] = await Promise.all([
+    geolocateIP(ip),
+    Promise.resolve(parseUserAgent(ua)),
+  ]);
+
+  const timeCtx = getLocalTimeContext(geo.timezone);
+
+  return {
+    ip,
+    city: geo.city,
+    country: geo.country,
+    timezone: geo.timezone,
+    localTime: timeCtx.localTime,
+    timeOfDay: timeCtx.timeOfDay,
+    device: uaParsed.device,
+    browser: uaParsed.browser,
+    os: uaParsed.os,
+    isMobile: uaParsed.isMobile,
+    lang: acceptLang,
+    referrer: referrer ? new URL(referrer).hostname : undefined,
+  };
 }
 
 function checkConnectionLimit(ip: string): boolean {
@@ -6024,9 +6284,12 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
   let contextBootstrapSkippedReason: string | undefined;
 
   // JWT identity takes priority so each user builds their own memory.
-  // DEV_IDENTITY is fallback only when no JWT is present (anonymous/unauthenticated).
+  // VTID-ANON: If no JWT and not dev-sandbox, this is an anonymous session.
+  // Anonymous sessions get NO memory, NO tools, NO personal context.
+  const hasRealIdentity = !!(orbIdentity && orbIdentity.tenant_id && orbIdentity.user_id);
+  const isAnonymousSession = !hasRealIdentity && !isDevSandbox();
   const bootstrapIdentity: SupabaseIdentity | null =
-    (orbIdentity && orbIdentity.tenant_id && orbIdentity.user_id)
+    hasRealIdentity
       ? orbIdentity
       : isDevSandbox()
         ? {
@@ -6040,6 +6303,10 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
             iat: null,
           }
         : null;
+
+  // VTID-CONTEXT: Build client context (IP geo, device, time) — for all sessions
+  const clientContext = await buildClientContext(req);
+  console.log(`[VTID-CONTEXT] Client context: city=${clientContext.city || 'unknown'}, country=${clientContext.country || 'unknown'}, time=${clientContext.localTime || 'unknown'}, device=${clientContext.device || 'unknown'}, anonymous=${isAnonymousSession}`);
 
   // Resolve language: use client-requested language, fall back to stored preference, then 'en'
   let lang = normalizeLang(clientRequestedLang || 'en');
@@ -6061,7 +6328,12 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
   // VTID-01224-FIX: Last session info for context-aware greeting
   let lastSessionInfo: { time: string; wasFailure: boolean } | null = null;
 
-  if (bootstrapIdentity) {
+  if (isAnonymousSession) {
+    // VTID-ANON: Anonymous session — skip ALL personal context.
+    // No memory, no tools, no lastSessionInfo, no role.
+    contextBootstrapSkippedReason = 'anonymous_session';
+    console.log(`[VTID-ANON] Anonymous session ${sessionId} — skipping memory, tools, lastSessionInfo. Context: city=${clientContext.city || 'unknown'}`);
+  } else if (bootstrapIdentity) {
     const usingDevFallback = bootstrapIdentity.user_id === DEV_IDENTITY.USER_ID;
     console.log(`[VTID-01224] Building bootstrap context for SSE session ${sessionId} user=${bootstrapIdentity.user_id.substring(0, 8)}...${usingDevFallback ? ' (DEV_IDENTITY fallback)' : ''}`);
 
@@ -6141,6 +6413,10 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     consecutiveModelTurns: 0,
     // VTID-TOOLGUARD: Track consecutive tool calls for loop prevention
     consecutiveToolCalls: 0,
+    // VTID-ANON: Anonymous session flag
+    isAnonymous: isAnonymousSession,
+    // VTID-CONTEXT: Client environment context
+    clientContext,
   };
 
   // VTID-SESSION-LIMIT: Terminate any existing active sessions for this user.
