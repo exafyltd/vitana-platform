@@ -6349,13 +6349,24 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
   const clientContext = await buildClientContext(req);
   console.log(`[VTID-CONTEXT] Client context: city=${clientContext.city || 'unknown'}, country=${clientContext.country || 'unknown'}, time=${clientContext.localTime || 'unknown'}, device=${clientContext.device || 'unknown'}, anonymous=${isAnonymousSession}`);
 
-  // Resolve language: use client-requested language, fall back to stored preference, then 'en'
+  // Resolve language priority: stored preference > client request > Accept-Language > 'en'
+  // Stored preference (from user settings) is the strongest signal — it represents
+  // an explicit user choice. Client-requested lang (from browser navigator.language)
+  // is a weaker signal — it's the OS/browser default, not necessarily the user's choice.
   let lang = normalizeLang(clientRequestedLang || 'en');
-  if (!clientRequestedLang && bootstrapIdentity?.user_id && bootstrapIdentity?.tenant_id) {
+  if (bootstrapIdentity?.user_id && bootstrapIdentity?.tenant_id) {
     const storedLang = await getStoredLanguagePreference(bootstrapIdentity.tenant_id, bootstrapIdentity.user_id);
     if (storedLang) {
       lang = storedLang;
-      console.log(`[LANG-PREF] Using stored language preference: ${lang} for user=${bootstrapIdentity.user_id.substring(0, 8)}...`);
+      console.log(`[LANG-PREF] Using stored language preference: ${lang} for user=${bootstrapIdentity.user_id.substring(0, 8)}... (client sent: ${clientRequestedLang || 'none'})`);
+    }
+  }
+  // For anonymous sessions: use Accept-Language header if client didn't specify
+  if (isAnonymousSession && !clientRequestedLang && clientContext.lang) {
+    const browserLang = normalizeLang(clientContext.lang);
+    if (browserLang !== 'en' || !clientRequestedLang) {
+      lang = browserLang;
+      console.log(`[LANG-PREF] Anonymous session using Accept-Language: ${lang}`);
     }
   }
 

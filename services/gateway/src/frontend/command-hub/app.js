@@ -31933,7 +31933,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.VitanaOrb.init({
                 gatewayUrl: window.location.origin,
                 authToken: state.authToken || '',
-                lang: 'en-US',
+                // Use browser language — server resolves stored preference if available
+                lang: (navigator.language || navigator.userLanguage || 'en').split('-')[0],
                 showFab: false, // Command Hub has its own sidebar trigger
                 onClose: function () {
                     state.orb.overlayVisible = false;
