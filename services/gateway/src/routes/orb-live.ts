@@ -6325,10 +6325,11 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
   let contextBootstrapSkippedReason: string | undefined;
 
   // JWT identity takes priority so each user builds their own memory.
-  // VTID-ANON: If no JWT and not dev-sandbox, this is an anonymous session.
-  // Anonymous sessions get NO memory, NO tools, NO personal context.
+  // VTID-ANON: If no JWT identity, this is an anonymous session — regardless of environment.
+  // Previously checked !isDevSandbox() which was always false on Cloud Run (ENVIRONMENT=dev),
+  // so anonymous users got DEV_IDENTITY → loaded other users' memory → "Hello Jovana!"
   const hasRealIdentity = !!(orbIdentity && orbIdentity.tenant_id && orbIdentity.user_id);
-  const isAnonymousSession = !hasRealIdentity && !isDevSandbox();
+  const isAnonymousSession = !hasRealIdentity;
   const bootstrapIdentity: SupabaseIdentity | null =
     hasRealIdentity
       ? orbIdentity
