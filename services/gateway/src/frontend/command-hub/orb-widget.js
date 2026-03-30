@@ -61,9 +61,12 @@
     return '';
   })();
 
-  // Auto-detect language from browser
+  // Auto-detect language: localStorage vitana.lang > navigator.language > 'en'
+  // vitana.lang is set by the Lovable language selector on all screens.
   var _autoLang = (function () {
     try {
+      var stored = localStorage.getItem('vitana.lang');
+      if (stored) return stored.split('-')[0];
       return (navigator.language || navigator.userLanguage || 'en').split('-')[0];
     } catch (e) { return 'en'; }
   })();
@@ -1239,8 +1242,12 @@
 
   function _show() {
     console.log('[VTOrb] _show() called — gw=' + _cfg.gw + ', _root=' + !!_root);
-    // Refresh token on every show — picks up login/logout since page load
+    // Refresh token and language on every show — picks up login/logout and language change
     _refreshToken();
+    try {
+      var storedLang = localStorage.getItem('vitana.lang');
+      if (storedLang) _cfg.lang = storedLang.split('-')[0];
+    } catch (e) { /* ignore */ }
     if (!_cfg.gw) {
       console.error('[VTOrb] No gateway URL — call VitanaOrb.init({gatewayUrl}) or load this script from the gateway.');
       return;
