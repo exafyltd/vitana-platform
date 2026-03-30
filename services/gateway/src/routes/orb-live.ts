@@ -3495,7 +3495,13 @@ async function emitMemoryWriteEvent(
 }
 
 function getClientIP(req: Request): string {
-  return (req.get('x-forwarded-for') || req.ip || 'unknown').split(',')[0].trim();
+  // Cloud Run sets x-forwarded-for with the real client IP.
+  // Also check x-real-ip and x-appengine-user-ip as fallbacks.
+  const xff = req.get('x-forwarded-for');
+  const xri = req.get('x-real-ip');
+  const xaui = req.get('x-appengine-user-ip');
+  const ip = (xff?.split(',')[0]?.trim()) || xri || xaui || req.ip || 'unknown';
+  return ip;
 }
 
 // =============================================================================
@@ -3510,26 +3516,45 @@ const IP_GEO_CACHE_TTL_MS = 3600_000; // 1 hour
  * Lightweight IP geolocation using ip-api.com (free, no key needed, 45 req/min).
  * Returns city, country, timezone. Cached for 1 hour per IP.
  */
+function isPrivateIP(ip: string): boolean {
+  return !ip || ip === 'unknown' || ip === '::1' ||
+    ip.startsWith('127.') || ip.startsWith('10.') ||
+    ip.startsWith('192.168.') || ip.startsWith('172.') ||
+    ip.startsWith('fc') || ip.startsWith('fd') || ip.startsWith('fe80');
+}
+
 async function geolocateIP(ip: string): Promise<{ city?: string; country?: string; timezone?: string }> {
-  if (!ip || ip === 'unknown' || ip === '127.0.0.1' || ip.startsWith('10.') || ip.startsWith('192.168.')) {
+  if (isPrivateIP(ip)) {
+    console.log(`[VTID-CONTEXT] Skipping geo lookup for private/local IP: ${ip}`);
     return {};
   }
   const cached = ipGeoCache.get(ip);
   if (cached && Date.now() - cached.ts < IP_GEO_CACHE_TTL_MS) {
+    console.log(`[VTID-CONTEXT] IP geo cache hit: ${ip} → ${cached.data.city}, ${cached.data.country}`);
     return cached.data;
   }
   try {
-    const resp = await fetch(`http://ip-api.com/json/${ip}?fields=status,city,country,timezone`, {
-      signal: AbortSignal.timeout(2000), // 2s timeout — don't block session start
+    // ip-api.com free tier: HTTP only (not HTTPS), 45 req/min, no key needed.
+    // Using http:// is intentional — their free tier doesn't support https.
+    const url = `http://ip-api.com/json/${ip}?fields=status,message,city,country,timezone`;
+    console.log(`[VTID-CONTEXT] IP geo lookup: ${ip} → ${url}`);
+    const resp = await fetch(url, {
+      signal: AbortSignal.timeout(3000), // 3s timeout
     });
-    if (!resp.ok) return {};
+    if (!resp.ok) {
+      console.warn(`[VTID-CONTEXT] IP geo HTTP error: ${resp.status} for ${ip}`);
+      return {};
+    }
     const json = await resp.json();
-    if (json.status !== 'success') return {};
+    console.log(`[VTID-CONTEXT] IP geo response for ${ip}: ${JSON.stringify(json)}`);
+    if (json.status !== 'success') {
+      console.warn(`[VTID-CONTEXT] IP geo failed for ${ip}: ${json.message || 'unknown'}`);
+      return {};
+    }
     const data = { city: json.city, country: json.country, timezone: json.timezone };
     ipGeoCache.set(ip, { data, ts: Date.now() });
     return data;
   } catch (err) {
-    // Geo lookup is best-effort — never block session start
     console.warn(`[VTID-CONTEXT] IP geo lookup failed for ${ip}: ${(err as Error).message}`);
     return {};
   }
@@ -3625,8 +3650,10 @@ async function buildClientContext(req: Request): Promise<ClientContext> {
     os: uaParsed.os,
     isMobile: uaParsed.isMobile,
     lang: acceptLang,
-    referrer: referrer ? new URL(referrer).hostname : undefined,
+    referrer: (() => { try { return referrer ? new URL(referrer).hostname : undefined; } catch { return undefined; } })(),
   };
+
+  console.log(`[VTID-CONTEXT] Built client context: ip=${ip}, city=${geo.city || 'none'}, country=${geo.country || 'none'}, tz=${geo.timezone || 'none'}, time=${timeCtx.localTime || 'none'}, device=${uaParsed.device || 'none'}`);
 }
 
 function checkConnectionLimit(ip: string): boolean {
