@@ -3433,6 +3433,9 @@ const state = {
 
     // ──── New Module States (51-screen build) ────
 
+    // Shared service health (feeds both header pill and dashboard grid)
+    serviceHealth: { items: [], loading: false, fetched: false, lastRefreshed: null },
+
     // Overview module
     overviewHealth: { items: [], loading: false, error: null, fetched: false },
     overviewMetrics: { snapshot: null, loading: false, error: null, fetched: false },
@@ -5252,26 +5255,21 @@ function renderHeader() {
     const cicdHealthIndicator = document.createElement('div');
     cicdHealthIndicator.className = 'cicd-health-indicator';
 
-    // Determine health status
-    const healthStatus = state.cicdHealth?.status;
-    const isFullyHealthy = state.cicdHealth && state.cicdHealth.ok === true && healthStatus === 'ok';
-    const isGovernanceLimited = healthStatus === 'ok_governance_limited';
-    const isDegraded = healthStatus === 'degraded' || (state.cicdHealth && state.cicdHealth.ok === false);
-
-    // Compute capability score from health data
+    // Compute service health score (shared with dashboard grid)
     let capsTotal = 0;
     let capsHealthy = 0;
-    if (state.cicdHealth?.capabilities) {
-        for (const v of Object.values(state.cicdHealth.capabilities)) {
-            capsTotal++;
-            if (v) capsHealthy++;
-        }
+    if (state.serviceHealth.items.length > 0) {
+        capsTotal = state.serviceHealth.items.length;
+        capsHealthy = state.serviceHealth.items.filter(function (s) { return s.healthy; }).length;
+    } else if (state.cicdHealth?.capabilities) {
+        // Fallback while service health loads
+        for (const v of Object.values(state.cicdHealth.capabilities)) { capsTotal++; if (v) capsHealthy++; }
     }
     const capsFailing = capsTotal - capsHealthy;
 
     // Score-based pill: shows green/red counts at a glance
     const statusPill = document.createElement('button');
-    if (!state.cicdHealth) {
+    if (capsTotal === 0) {
         statusPill.className = 'header-pill header-pill--neutral';
         statusPill.innerHTML = '<span class="header-pill__dot"></span>...';
     } else if (capsFailing === 0) {
@@ -5288,7 +5286,7 @@ function renderHeader() {
             '<span class="pill-score-sep">/</span>' +
             '<span class="pill-score pill-score--red">' + capsFailing + '</span>';
     }
-    statusPill.title = capsTotal ? (capsHealthy + ' healthy, ' + capsFailing + ' down') : 'Loading health...';
+    statusPill.title = capsTotal ? (capsHealthy + ' healthy, ' + capsFailing + ' down of ' + capsTotal + ' services') : 'Loading health...';
     statusPill.onclick = (e) => {
         e.stopPropagation();
         state.cicdHealthTooltipOpen = !state.cicdHealthTooltipOpen;
@@ -5301,91 +5299,70 @@ function renderHeader() {
         const tooltip = document.createElement('div');
         tooltip.className = 'cicd-health-tooltip';
 
-        // Header - VTID-0541 D4: Show proper status distinction
+        // Header
         const tooltipHeader = document.createElement('div');
         tooltipHeader.className = 'cicd-health-tooltip__header';
-        if (isDegraded) {
-            tooltipHeader.innerHTML = '<span class="cicd-health-tooltip__status cicd-health-tooltip__status--error">&#9829; CI/CD Degraded</span>';
-        } else if (isGovernanceLimited) {
-            tooltipHeader.innerHTML = '<span class="cicd-health-tooltip__status cicd-health-tooltip__status--warning">&#9829; CI/CD OK (Governance Limited)</span>';
-        } else if (isFullyHealthy) {
-            tooltipHeader.innerHTML = '<span class="cicd-health-tooltip__status cicd-health-tooltip__status--healthy">&#9829; CI/CD Healthy</span>';
+        if (capsFailing > 0) {
+            tooltipHeader.innerHTML = '<span class="cicd-health-tooltip__status cicd-health-tooltip__status--error">Service Health (' + capsHealthy + '/' + capsTotal + ')</span>';
+        } else if (capsTotal > 0) {
+            tooltipHeader.innerHTML = '<span class="cicd-health-tooltip__status cicd-health-tooltip__status--healthy">Service Health (' + capsHealthy + '/' + capsTotal + ')</span>';
         } else {
-            tooltipHeader.innerHTML = '<span class="cicd-health-tooltip__status">&#9829; CI/CD Status</span>';
+            tooltipHeader.innerHTML = '<span class="cicd-health-tooltip__status">Service Health</span>';
         }
         tooltip.appendChild(tooltipHeader);
 
-        // Status details
-        if (state.cicdHealth) {
+        // Service list
+        if (state.serviceHealth.items.length > 0) {
             const details = document.createElement('div');
             details.className = 'cicd-health-tooltip__details';
 
-            // Score summary row
-            const scoreLine = document.createElement('div');
-            scoreLine.className = 'cicd-health-tooltip__row';
-            scoreLine.innerHTML = '<span class="cicd-health-tooltip__label">Score:</span>' +
-                '<span class="cicd-health-tooltip__value">' +
-                '<span class="cicd-health-tooltip__value--yes">' + capsHealthy + ' up</span>' +
-                (capsFailing > 0 ? (' &middot; <span class="cicd-health-tooltip__value--no">' + capsFailing + ' down</span>') : '') +
-                '</span>';
-            details.appendChild(scoreLine);
+            for (var shi = 0; shi < state.serviceHealth.items.length; shi++) {
+                var svc = state.serviceHealth.items[shi];
+                var svcRow = document.createElement('div');
+                svcRow.className = 'cicd-health-tooltip__row';
+                svcRow.innerHTML = '<span class="cicd-health-tooltip__label">' + svc.name + ':</span>' +
+                    '<span class="cicd-health-tooltip__value cicd-health-tooltip__value--' + (svc.healthy ? 'yes' : 'no') + '">' +
+                    (svc.healthy ? 'OK' : svc.status) +
+                    (svc.latency_ms >= 0 ? ' (' + svc.latency_ms + 'ms)' : '') +
+                    '</span>';
+                details.appendChild(svcRow);
+            }
 
-            // Grouped capabilities
-            if (state.cicdHealth.capabilities) {
-                const groups = [
-                    { label: 'CI/CD & Governance', keys: ['github_integration', 'create_pr', 'safe_merge', 'approvals', 'deploy_service', 'concurrency_locks', 'command_hub_merge', 'command_hub_deploy'] },
-                    { label: 'AI Services', keys: ['ai_chat', 'gemini_operator', 'orb_live_voice', 'assistant'] },
-                    { label: 'Platform', keys: ['oasis_events', 'memory_system', 'voice_lab', 'autopilot', 'sse_events', 'notifications', 'worker_orchestration'] },
-                ];
-                const caps = state.cicdHealth.capabilities;
-                for (const group of groups) {
-                    // Only show group if it has at least one matching key
-                    const groupKeys = group.keys.filter(k => k in caps);
-                    if (groupKeys.length === 0) continue;
-                    const capsHeader = document.createElement('div');
-                    capsHeader.className = 'cicd-health-tooltip__caps-header';
-                    capsHeader.textContent = group.label;
-                    details.appendChild(capsHeader);
-
-                    for (const key of groupKeys) {
-                        const value = caps[key];
-                        const capRow = document.createElement('div');
-                        capRow.className = 'cicd-health-tooltip__row';
-                        const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-                        capRow.innerHTML = '<span class="cicd-health-tooltip__label">' + label + ':</span>' +
-                            '<span class="cicd-health-tooltip__value cicd-health-tooltip__value--' + (value ? 'yes' : 'no') + '">' +
-                            (value ? 'Yes' : 'No') + '</span>';
-                        details.appendChild(capRow);
+            // CI/CD Capabilities detail (collapsible)
+            if (state.cicdHealth && state.cicdHealth.capabilities) {
+                var capToggle = document.createElement('div');
+                capToggle.className = 'cicd-health-tooltip__caps-header';
+                capToggle.style.cssText = 'cursor:pointer;margin-top:8px;';
+                capToggle.textContent = '\u25B8 CI/CD Capabilities';
+                var capList = document.createElement('div');
+                capList.style.display = 'none';
+                var caps = state.cicdHealth.capabilities;
+                for (var ck in caps) {
+                    if (caps.hasOwnProperty(ck)) {
+                        var cr = document.createElement('div');
+                        cr.className = 'cicd-health-tooltip__row';
+                        var cl = ck.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+                        cr.innerHTML = '<span class="cicd-health-tooltip__label">' + cl + ':</span>' +
+                            '<span class="cicd-health-tooltip__value cicd-health-tooltip__value--' + (caps[ck] ? 'yes' : 'no') + '">' +
+                            (caps[ck] ? 'Yes' : 'No') + '</span>';
+                        capList.appendChild(cr);
                     }
                 }
-
-                // Render any remaining capabilities not in groups
-                const allGroupedKeys = groups.flatMap(g => g.keys);
-                const ungroupedKeys = Object.keys(caps).filter(k => !allGroupedKeys.includes(k));
-                if (ungroupedKeys.length > 0) {
-                    const otherHeader = document.createElement('div');
-                    otherHeader.className = 'cicd-health-tooltip__caps-header';
-                    otherHeader.textContent = 'Other';
-                    details.appendChild(otherHeader);
-                    for (const key of ungroupedKeys) {
-                        const value = caps[key];
-                        const capRow = document.createElement('div');
-                        capRow.className = 'cicd-health-tooltip__row';
-                        const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-                        capRow.innerHTML = '<span class="cicd-health-tooltip__label">' + label + ':</span>' +
-                            '<span class="cicd-health-tooltip__value cicd-health-tooltip__value--' + (value ? 'yes' : 'no') + '">' +
-                            (value ? 'Yes' : 'No') + '</span>';
-                        details.appendChild(capRow);
+                capToggle.onclick = function (e) {
+                    e.stopPropagation();
+                    if (capList.style.display === 'none') {
+                        capList.style.display = 'block';
+                        capToggle.textContent = '\u25BE CI/CD Capabilities';
+                    } else {
+                        capList.style.display = 'none';
+                        capToggle.textContent = '\u25B8 CI/CD Capabilities';
                     }
-                }
+                };
+                details.appendChild(capToggle);
+                details.appendChild(capList);
             }
 
             tooltip.appendChild(details);
-        } else if (state.cicdHealthError) {
-            const errorDetails = document.createElement('div');
-            errorDetails.className = 'cicd-health-tooltip__error';
-            errorDetails.textContent = 'Error: ' + state.cicdHealthError;
-            tooltip.appendChild(errorDetails);
         } else {
             const loadingDetails = document.createElement('div');
             loadingDetails.className = 'cicd-health-tooltip__loading';
@@ -23809,31 +23786,70 @@ let cicdHealthPollInterval = null;
  * VTID-01002: Added silentRefresh parameter for polling - skips renderApp() if true
  * @param {boolean} silentRefresh - If true, skip renderApp() (CI/CD health updates header only)
  */
-async function fetchCicdHealth(silentRefresh) {
-    console.log('[CICD] Fetching health status...', silentRefresh ? '(silent)' : '');
-    state.cicdHealthLoading = true;
+async function fetchServiceHealth(silentRefresh) {
+    if (state.serviceHealth.loading) return;
+    state.serviceHealth.loading = true;
+
+    var healthEndpoints = [
+        { name: 'Gateway',           url: '/health' },
+        { name: 'CI/CD',             url: '/api/v1/cicd/health' },
+        { name: 'Operator',          url: '/api/v1/operator/health' },
+        { name: 'Autopilot',         url: '/api/v1/autopilot/health' },
+        { name: 'Assistant',         url: '/api/v1/assistant/health' },
+        { name: 'ORB Live',          url: '/api/v1/orb/health' },
+        { name: 'Conversation',      url: '/api/v1/conversation/health' },
+        { name: 'Community',         url: '/api/v1/community/health' },
+        { name: 'Automations',       url: '/api/v1/automations/health' },
+        { name: 'Execute Runner',    url: '/api/v1/execute/health' },
+        { name: 'Scheduler',         url: '/api/v1/scheduler/health' },
+        { name: 'Memory',            url: '/api/v1/memory/health' },
+        { name: 'Auth',              url: '/api/v1/auth/health' },
+        { name: 'Recommendations',   url: '/api/v1/autopilot/recommendations/health' },
+        { name: 'Diary',             url: '/api/v1/diary/health' }
+    ];
 
     try {
-        const response = await fetch('/api/v1/cicd/health');
-        if (!response.ok) {
-            throw new Error(`CICD health fetch failed: ${response.status}`);
+        var results = await Promise.allSettled(healthEndpoints.map(function (ep) {
+            var start = Date.now();
+            return fetch(ep.url)
+                .then(function (r) {
+                    var latency = Date.now() - start;
+                    var ok = r.ok;
+                    return r.json().then(function (body) {
+                        var rawStatus = ok ? (body.status || 'healthy') : 'degraded';
+                        var isHealthy = (rawStatus === 'ok' || rawStatus === 'healthy' || rawStatus === 'ok_governance_limited');
+                        return { name: ep.name, url: ep.url, status: rawStatus, healthy: isHealthy, latency_ms: latency, details: body };
+                    }).catch(function () {
+                        return { name: ep.name, url: ep.url, status: ok ? 'healthy' : 'degraded', healthy: ok, latency_ms: latency, details: null };
+                    });
+                })
+                .catch(function () {
+                    return { name: ep.name, url: ep.url, status: 'down', healthy: false, latency_ms: -1, details: null };
+                });
+        }));
+
+        var items = results.map(function (r) {
+            return r.status === 'fulfilled' ? r.value : { name: 'Unknown', status: 'down', healthy: false, latency_ms: -1, details: null };
+        });
+
+        state.serviceHealth.items = items;
+        state.serviceHealth.fetched = true;
+        state.serviceHealth.lastRefreshed = new Date().toISOString();
+
+        // Populate cicdHealth from the CI/CD response so tooltip detail still works
+        var cicdItem = items.find(function (i) { return i.name === 'CI/CD'; });
+        if (cicdItem && cicdItem.details) {
+            state.cicdHealth = cicdItem.details;
+            state.cicdHealthError = null;
         }
 
-        const data = await response.json();
-        console.log('[CICD] Health status:', data);
-
-        state.cicdHealth = data;
-        state.cicdHealthError = null;
-
+        console.log('[ServiceHealth] Fetched', items.length, 'services,', items.filter(function (i) { return i.healthy; }).length, 'healthy');
     } catch (error) {
-        console.error('[CICD] Health fetch error:', error);
-        state.cicdHealthError = error.message;
-        state.cicdHealth = null;
+        console.error('[ServiceHealth] Fetch error:', error);
     } finally {
-        state.cicdHealthLoading = false;
-        // VTID-01002: For CI/CD health, update header indicator incrementally if possible
+        state.serviceHealth.loading = false;
         if (silentRefresh) {
-            updateCicdHealthIndicator();
+            updateServiceHealthPill();
         } else {
             renderApp();
         }
@@ -23841,26 +23857,18 @@ async function fetchCicdHealth(silentRefresh) {
 }
 
 /**
- * VTID-01002: Updates CI/CD health indicator in header incrementally without full render.
+ * Updates service health indicator pill in header incrementally without full render.
  */
-function updateCicdHealthIndicator() {
+function updateServiceHealthPill() {
     var pill = document.querySelector('.cicd-health-indicator .header-pill');
     if (!pill) return;
 
-    var health = state.cicdHealth;
-    if (!health || !health.capabilities) return;
+    var items = state.serviceHealth.items;
+    if (!items || items.length === 0) return;
 
-    // Recompute score
-    var total = 0, healthy = 0;
-    for (var k in health.capabilities) {
-        if (health.capabilities.hasOwnProperty(k)) {
-            total++;
-            if (health.capabilities[k]) healthy++;
-        }
-    }
-    var failing = total - healthy;
+    var healthy = items.filter(function (s) { return s.healthy; }).length;
+    var failing = items.length - healthy;
 
-    // Update pill class and content
     pill.className = 'header-pill';
     if (failing === 0) {
         pill.classList.add('header-pill--live');
@@ -23874,29 +23882,27 @@ function updateCicdHealthIndicator() {
             '<span class="pill-score-sep">/</span>' +
             '<span class="pill-score pill-score--red">' + failing + '</span>';
     }
-    pill.title = healthy + ' healthy, ' + failing + ' down';
+    pill.title = healthy + ' healthy, ' + failing + ' down (of ' + items.length + ' services)';
 }
 
 /**
- * Starts polling for CI/CD health every 10 seconds.
- * VTID-01002: Uses silentRefresh to avoid full DOM rebuild during polling
+ * Starts polling service health every 30 seconds.
  */
 function startCicdHealthPolling() {
     // Fetch immediately on start (full render for initial state)
-    fetchCicdHealth();
+    fetchServiceHealth();
 
     // Clear any existing interval
     if (cicdHealthPollInterval) {
         clearInterval(cicdHealthPollInterval);
     }
 
-    // Poll every 10 seconds with silent refresh
+    // Poll every 30 seconds with silent refresh
     cicdHealthPollInterval = setInterval(() => {
-        // VTID-01002: Use silentRefresh=true to preserve scroll positions
-        fetchCicdHealth(true);
-    }, 10000);
+        fetchServiceHealth(true);
+    }, 30000);
 
-    console.log('[CICD] Health polling started (10s interval, scroll-safe)');
+    console.log('[ServiceHealth] Polling started (30s interval, scroll-safe)');
 }
 
 /**
@@ -26011,43 +26017,53 @@ async function fetchOverviewDashboard() {
     state.overviewDashboard.error = null;
     renderApp();
 
-    var healthEndpoints = [
-        { name: 'Gateway',           url: '/health' },
-        { name: 'CI/CD',             url: '/api/v1/cicd/health' },
-        { name: 'Operator',          url: '/api/v1/operator/health' },
-        { name: 'Autopilot',         url: '/api/v1/autopilot/health' },
-        { name: 'Assistant',         url: '/api/v1/assistant/health' },
-        { name: 'ORB Live',          url: '/api/v1/orb/health' },
-        { name: 'Conversation',      url: '/api/v1/conversation/health' },
-        { name: 'Community',         url: '/api/v1/community/health' },
-        { name: 'Automations',       url: '/api/v1/automations/health' },
-        { name: 'Execute Runner',    url: '/api/v1/execute/health' },
-        { name: 'Scheduler',         url: '/api/v1/scheduler/health' },
-        { name: 'Memory',            url: '/api/v1/memory/health' },
-        { name: 'Auth',              url: '/api/v1/auth/health' },
-        { name: 'Recommendations',   url: '/api/v1/autopilot/recommendations/health' },
-        { name: 'Diary',             url: '/api/v1/diary/health' }
-    ];
+    // Reuse shared serviceHealth data if fresh (< 90s), otherwise fetch fresh
+    var useSharedHealth = state.serviceHealth.fetched && state.serviceHealth.lastRefreshed &&
+        (Date.now() - new Date(state.serviceHealth.lastRefreshed).getTime() < 90000);
+
+    var healthCheckPromise;
+    if (useSharedHealth) {
+        healthCheckPromise = Promise.resolve({ status: 'fulfilled', value: state.serviceHealth.items.map(function (s) { return { status: 'fulfilled', value: s }; }) });
+    } else {
+        var healthEndpoints = [
+            { name: 'Gateway',           url: '/health' },
+            { name: 'CI/CD',             url: '/api/v1/cicd/health' },
+            { name: 'Operator',          url: '/api/v1/operator/health' },
+            { name: 'Autopilot',         url: '/api/v1/autopilot/health' },
+            { name: 'Assistant',         url: '/api/v1/assistant/health' },
+            { name: 'ORB Live',          url: '/api/v1/orb/health' },
+            { name: 'Conversation',      url: '/api/v1/conversation/health' },
+            { name: 'Community',         url: '/api/v1/community/health' },
+            { name: 'Automations',       url: '/api/v1/automations/health' },
+            { name: 'Execute Runner',    url: '/api/v1/execute/health' },
+            { name: 'Scheduler',         url: '/api/v1/scheduler/health' },
+            { name: 'Memory',            url: '/api/v1/memory/health' },
+            { name: 'Auth',              url: '/api/v1/auth/health' },
+            { name: 'Recommendations',   url: '/api/v1/autopilot/recommendations/health' },
+            { name: 'Diary',             url: '/api/v1/diary/health' }
+        ];
+        healthCheckPromise = Promise.allSettled(healthEndpoints.map(function (ep) {
+            var start = Date.now();
+            return fetch(ep.url)
+                .then(function (r) {
+                    var latency = Date.now() - start;
+                    var ok = r.ok;
+                    return r.json().then(function (body) {
+                        return { name: ep.name, url: ep.url, status: ok ? (body.status || 'healthy') : 'degraded', latency_ms: latency, details: body };
+                    }).catch(function () {
+                        return { name: ep.name, url: ep.url, status: ok ? 'healthy' : 'degraded', latency_ms: latency, details: null };
+                    });
+                })
+                .catch(function () {
+                    return { name: ep.name, url: ep.url, status: 'down', latency_ms: -1, details: null };
+                });
+        }));
+    }
 
     try {
         var results = await Promise.allSettled([
-            // 0: Health checks
-            Promise.allSettled(healthEndpoints.map(function (ep) {
-                var start = Date.now();
-                return fetch(ep.url)
-                    .then(function (r) {
-                        var latency = Date.now() - start;
-                        var ok = r.ok;
-                        return r.json().then(function (body) {
-                            return { name: ep.name, url: ep.url, status: ok ? (body.status || 'healthy') : 'degraded', latency_ms: latency, details: body };
-                        }).catch(function () {
-                            return { name: ep.name, url: ep.url, status: ok ? 'healthy' : 'degraded', latency_ms: latency, details: null };
-                        });
-                    })
-                    .catch(function () {
-                        return { name: ep.name, url: ep.url, status: 'down', latency_ms: -1, details: null };
-                    });
-            })),
+            // 0: Health checks (shared or fresh)
+            healthCheckPromise,
             // 1: Deployments
             fetch('/api/v1/operator/deployments?limit=10').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
             // 2: Deploy events (OASIS)
@@ -26166,6 +26182,16 @@ async function fetchOverviewDashboard() {
         // Also update legacy overviewHealth for backward compat
         state.overviewHealth.items = healthChecks.map(function (h) { return { name: h.name, status: h.status, latency_ms: h.latency_ms }; });
         state.overviewHealth.fetched = true;
+
+        // Sync fresh health data back to shared serviceHealth (keeps pill and grid aligned)
+        if (!useSharedHealth && healthChecks.length > 0) {
+            state.serviceHealth.items = healthChecks.map(function (h) {
+                var isHealthy = (h.status === 'ok' || h.status === 'healthy' || h.status === 'ok_governance_limited');
+                return { name: h.name, url: h.url || '', status: h.status, healthy: isHealthy, latency_ms: h.latency_ms, details: h.details };
+            });
+            state.serviceHealth.fetched = true;
+            state.serviceHealth.lastRefreshed = new Date().toISOString();
+        }
 
         console.log('[VTID-01864] Dashboard loaded:', healthChecks.length, 'services,', deployEvents.length, 'deploy events,', orbEvents.length, 'ORB events,', recentFailures.length, 'failures');
     } catch (error) {
@@ -26592,7 +26618,7 @@ function renderOverviewSystemView() {
                 if (hidx < sortedHealth.length) {
                     var hsvc = sortedHealth[hidx];
                     var hdot = 'green';
-                    if (hsvc.status === 'degraded' || hsvc.status === 'warning') hdot = 'yellow';
+                    if (hsvc.status === 'degraded' || hsvc.status === 'warning' || hsvc.status === 'ok_governance_limited') hdot = 'yellow';
                     if (hsvc.status === 'down' || hsvc.status === 'error' || hsvc.status === 'unhealthy') hdot = 'red';
                     var hlatency = hsvc.latency_ms >= 0 ? '<div class="health-grid-card-latency">' + hsvc.latency_ms + 'ms</div>' : '';
                     healthHTML += '<td style="width:25%;padding:2px;vertical-align:top;">' +
