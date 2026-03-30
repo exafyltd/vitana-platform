@@ -1,8 +1,16 @@
 /**
  * Vitana ORB Voice Widget — Standalone Gemini Live voice-to-voice
  * Self-contained IIFE — no external dependencies.
- * Load via <script src="gateway/command-hub/orb-widget.js"></script>
- * Then call: VitanaOrb.init({ gatewayUrl, authToken, lang })
+ *
+ * ZERO-CONFIG: Just load the script. No init() call needed.
+ *   <script src="https://gateway-xxx.a.run.app/command-hub/orb-widget.js"></script>
+ *
+ * The widget auto-detects:
+ *   - gatewayUrl: from <script src> origin
+ *   - authToken: from localStorage (vitana.authToken or Supabase native key)
+ *   - lang: from navigator.language (server overrides with stored preference)
+ *
+ * Optional: call VitanaOrb.init({ ... }) to override any auto-detected value.
  *
  * VTID-WIDGET: Extracted from command-hub app.js
  */
@@ -28,10 +36,42 @@
     return 'https://gateway-q74ibpv6ia-uc.a.run.app'; // hardcoded fallback
   })();
 
+  // Auto-detect auth token from localStorage (read-only, never writes/deletes)
+  var _autoToken = (function () {
+    try {
+      // 1. Command Hub custom key (primary)
+      var t = localStorage.getItem('vitana.authToken');
+      if (t) return t;
+      // 2. Supabase native key (Lovable community app)
+      var sbKey = Object.keys(localStorage).find(function (k) {
+        return k.startsWith('sb-') && k.endsWith('-auth-token');
+      });
+      if (sbKey) {
+        var sbData = localStorage.getItem(sbKey);
+        if (sbData) {
+          try {
+            var parsed = JSON.parse(sbData);
+            return parsed.access_token || '';
+          } catch (_) {
+            return sbData; // might be raw token
+          }
+        }
+      }
+    } catch (e) { /* localStorage may be blocked */ }
+    return '';
+  })();
+
+  // Auto-detect language from browser
+  var _autoLang = (function () {
+    try {
+      return (navigator.language || navigator.userLanguage || 'en').split('-')[0];
+    } catch (e) { return 'en'; }
+  })();
+
   var _cfg = {
-    gw: _autoGw,  // Gateway URL — auto-detected from script src, overridden by init()
-    token: '',    // Supabase JWT
-    lang: 'en-US',
+    gw: _autoGw,       // Gateway URL — auto-detected, overridden by init()
+    token: _autoToken,  // Supabase JWT — auto-detected from localStorage, overridden by init()
+    lang: _autoLang,    // Language — auto-detected from browser, server resolves stored preference
     showFab: true,       // Show floating action button (false when parent app has its own trigger)
     onClose: null,       // Callback when overlay closes
     onSessionStart: null, // Callback when voice session starts
@@ -1179,8 +1219,28 @@
     _updateUI();
   }
 
+  // Refresh auth token from localStorage (user may have logged in/out since init)
+  function _refreshToken() {
+    if (_cfg.token) return; // Already set by init() — don't override
+    try {
+      var t = localStorage.getItem('vitana.authToken');
+      if (t) { _cfg.token = t; return; }
+      var sbKey = Object.keys(localStorage).find(function (k) {
+        return k.startsWith('sb-') && k.endsWith('-auth-token');
+      });
+      if (sbKey) {
+        var sbData = localStorage.getItem(sbKey);
+        if (sbData) {
+          try { _cfg.token = JSON.parse(sbData).access_token || ''; } catch (_) { _cfg.token = sbData; }
+        }
+      }
+    } catch (e) { /* ignore */ }
+  }
+
   function _show() {
     console.log('[VTOrb] _show() called — gw=' + _cfg.gw + ', _root=' + !!_root);
+    // Refresh token on every show — picks up login/logout since page load
+    _refreshToken();
     if (!_cfg.gw) {
       console.error('[VTOrb] No gateway URL — call VitanaOrb.init({gatewayUrl}) or load this script from the gateway.');
       return;
@@ -1348,6 +1408,8 @@
     init: function (opts) {
       opts = opts || {};
       if (opts.gatewayUrl) _cfg.gw = opts.gatewayUrl.replace(/\/$/, '');
+      // authToken: explicit value overrides auto-detect. Passing '' clears it (anonymous).
+      // Not passing it at all preserves the auto-detected token.
       if (opts.authToken !== undefined) _cfg.token = opts.authToken || '';
       if (opts.lang) _cfg.lang = opts.lang;
       if (opts.showFab !== undefined) _cfg.showFab = !!opts.showFab;

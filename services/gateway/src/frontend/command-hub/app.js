@@ -31930,11 +31930,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Initialize unified VitanaOrb widget (voice overlay handled by orb-widget.js)
         if (window.VitanaOrb) {
+            // ORB widget is self-configuring: auto-detects gateway URL (from
+            // script src), auth token (from localStorage), and language (from
+            // navigator.language + server stored preference). Only pass overrides.
             window.VitanaOrb.init({
-                gatewayUrl: window.location.origin,
-                authToken: state.authToken || '',
-                // Use browser language — server resolves stored preference if available
-                lang: (navigator.language || navigator.userLanguage || 'en').split('-')[0],
                 showFab: false, // Command Hub has its own sidebar trigger
                 onClose: function () {
                     state.orb.overlayVisible = false;
