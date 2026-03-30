@@ -4,6 +4,12 @@
  * Cloud Scheduler (or manual cron) triggers these endpoints to dispatch
  * time-based notifications to all active users in a tenant.
  *
+ * VTID-01250: Upgraded from generic push to personalized content:
+ *   - Morning Briefing: matches + events + unread messages + health score
+ *   - Diary Reminder: social twist with connection activity
+ *   - Weekly Digest: real community activity summary
+ *   - Weekly Reflection: connection insights and progress
+ *
  * Endpoints:
  *   POST /api/v1/scheduled-notifications/morning-briefing
  *   POST /api/v1/scheduled-notifications/diary-reminder
@@ -44,8 +50,29 @@ function getTenantId(req: Request): string | null {
   return req.body?.tenant_id || process.env.DEFAULT_TENANT_ID || null;
 }
 
+// ── Helper: get user display name ────────────────────────────
+async function getUserName(supabase: any, userId: string): Promise<string> {
+  const { data } = await supabase
+    .from('app_users')
+    .select('display_name')
+    .eq('user_id', userId)
+    .maybeSingle();
+  return data?.display_name || '';
+}
+
+// ── Helper: greeting based on time of day ────────────────────
+function timeGreeting(): string {
+  const hour = new Date().getUTCHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
 // =============================================================================
 // POST /morning-briefing — Daily 7 AM UTC
+// AP-0501: Morning Briefing with Social Context
+//
+// Gathers per-user: new matches, upcoming events, unread messages, health score
 // =============================================================================
 router.post('/morning-briefing', async (req: Request, res: Response) => {
   const tenantId = getTenantId(req);
@@ -56,22 +83,116 @@ router.post('/morning-briefing', async (req: Request, res: Response) => {
 
   const users = await getActiveUsers(supa, tenantId);
   let dispatched = 0;
+  const today = new Date().toISOString().slice(0, 10);
+  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const greeting = timeGreeting();
 
   for (const { user_id } of users) {
-    notifyUserAsync(user_id, tenantId, 'morning_briefing_ready', {
-      title: 'Good Morning!',
-      body: 'Your daily briefing is ready. See what\'s happening today.',
-      data: { url: '/dashboard' },
-    }, supa);
-    dispatched++;
+    try {
+      // Gather personalized data in parallel
+      const [matchesRes, eventsRes, unreadRes, healthRes, nameRes] = await Promise.all([
+        // Today's matches
+        supa.from('matches_daily')
+          .select('id', { count: 'exact', head: true })
+          .eq('tenant_id', tenantId)
+          .eq('user_id', user_id)
+          .eq('match_date', today)
+          .eq('state', 'suggested'),
+        // Upcoming events (next 24h) user RSVP'd to
+        supa.from('community_meetup_attendance')
+          .select('meetup_id, community_meetups!inner(title, starts_at)')
+          .eq('user_id', user_id)
+          .eq('status', 'rsvp')
+          .gte('community_meetups.starts_at', new Date().toISOString())
+          .lte('community_meetups.starts_at', tomorrow)
+          .limit(3),
+        // Unread messages
+        supa.from('chat_messages')
+          .select('id', { count: 'exact', head: true })
+          .eq('receiver_id', user_id)
+          .eq('tenant_id', tenantId)
+          .is('read_at', null),
+        // Latest Vitana Index score
+        supa.from('vitana_index_scores')
+          .select('score_total, score_social')
+          .eq('tenant_id', tenantId)
+          .eq('user_id', user_id)
+          .order('date', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        // User name
+        supa.from('app_users')
+          .select('display_name')
+          .eq('user_id', user_id)
+          .maybeSingle(),
+      ]);
+
+      const matchCount = matchesRes.count || 0;
+      const events = eventsRes.data || [];
+      const unreadCount = unreadRes.count || 0;
+      const healthScore = healthRes.data?.score_total || null;
+      const firstName = (nameRes.data?.display_name || '').split(' ')[0];
+
+      // Build personalized body
+      const parts: string[] = [];
+
+      if (matchCount > 0) {
+        parts.push(`${matchCount} new match${matchCount > 1 ? 'es' : ''} waiting`);
+      }
+      if (events.length > 0) {
+        const eventTitle = (events[0] as any).community_meetups?.title || 'an event';
+        parts.push(events.length === 1
+          ? `"${eventTitle}" today`
+          : `${events.length} events today`);
+      }
+      if (unreadCount > 0) {
+        parts.push(`${unreadCount} unread message${unreadCount > 1 ? 's' : ''}`);
+      }
+      if (healthScore !== null) {
+        parts.push(`Vitana Index: ${healthScore}`);
+      }
+
+      const title = firstName
+        ? `${greeting}, ${firstName}!`
+        : `${greeting}!`;
+
+      const body = parts.length > 0
+        ? parts.join(' · ')
+        : 'Check in with your community and see what\'s new today.';
+
+      notifyUserAsync(user_id, tenantId, 'morning_briefing_ready', {
+        title,
+        body,
+        data: {
+          url: '/dashboard',
+          match_count: String(matchCount),
+          event_count: String(events.length),
+          unread_count: String(unreadCount),
+          health_score: String(healthScore || 0),
+        },
+      }, supa);
+      dispatched++;
+    } catch (err: any) {
+      console.error(`[MorningBriefing] Error for user ${user_id}:`, err.message);
+      // Fall back to generic notification
+      notifyUserAsync(user_id, tenantId, 'morning_briefing_ready', {
+        title: `${greeting}!`,
+        body: 'Your daily briefing is ready. See what\'s happening today.',
+        data: { url: '/dashboard' },
+      }, supa);
+      dispatched++;
+    }
   }
 
-  console.log(`[Scheduled] morning_briefing_ready → ${dispatched} users`);
+  console.log(`[Scheduled] morning_briefing_ready → ${dispatched} users (personalized)`);
   return res.status(200).json({ ok: true, dispatched });
 });
 
 // =============================================================================
 // POST /diary-reminder — Daily 9 PM UTC
+// AP-0505: Diary Reminder with Social Twist
+//
+// Tells user what happened today: new connections, conversations, events attended
 // =============================================================================
 router.post('/diary-reminder', async (req: Request, res: Response) => {
   const tenantId = getTenantId(req);
@@ -82,22 +203,79 @@ router.post('/diary-reminder', async (req: Request, res: Response) => {
 
   const users = await getActiveUsers(supa, tenantId);
   let dispatched = 0;
+  const todayStart = new Date();
+  todayStart.setUTCHours(0, 0, 0, 0);
+  const todayStartISO = todayStart.toISOString();
 
   for (const { user_id } of users) {
-    notifyUserAsync(user_id, tenantId, 'daily_diary_reminder', {
-      title: 'Diary Reminder',
-      body: 'Take a moment to reflect on your day.',
-      data: { url: '/diary' },
-    }, supa);
-    dispatched++;
+    try {
+      const [sentMsgsRes, receivedMsgsRes, diaryRes] = await Promise.all([
+        // Messages sent today (conversations had)
+        supa.from('chat_messages')
+          .select('receiver_id', { count: 'exact', head: true })
+          .eq('sender_id', user_id)
+          .eq('tenant_id', tenantId)
+          .gte('created_at', todayStartISO),
+        // Messages received today
+        supa.from('chat_messages')
+          .select('sender_id', { count: 'exact', head: true })
+          .eq('receiver_id', user_id)
+          .eq('tenant_id', tenantId)
+          .gte('created_at', todayStartISO),
+        // Already wrote diary today?
+        supa.from('memory_diary_entries')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user_id)
+          .eq('tenant_id', tenantId)
+          .eq('entry_date', new Date().toISOString().slice(0, 10)),
+      ]);
+
+      const chatsSent = sentMsgsRes.count || 0;
+      const chatsReceived = receivedMsgsRes.count || 0;
+      const totalConversations = chatsSent + chatsReceived;
+      const alreadyWrote = (diaryRes.count || 0) > 0;
+
+      // Skip if they already wrote a diary entry today
+      if (alreadyWrote) continue;
+
+      let body: string;
+      if (totalConversations > 5) {
+        body = `Active day! You had ${totalConversations} messages today. Capture what stood out before it fades.`;
+      } else if (totalConversations > 0) {
+        body = `You connected with people today. A quick reflection helps those moments stick.`;
+      } else {
+        body = `Even quiet days are worth a note. What was on your mind today?`;
+      }
+
+      notifyUserAsync(user_id, tenantId, 'daily_diary_reminder', {
+        title: 'Evening Reflection',
+        body,
+        data: {
+          url: '/diary',
+          conversations_today: String(totalConversations),
+        },
+      }, supa);
+      dispatched++;
+    } catch (err: any) {
+      console.error(`[DiaryReminder] Error for user ${user_id}:`, err.message);
+      notifyUserAsync(user_id, tenantId, 'daily_diary_reminder', {
+        title: 'Diary Reminder',
+        body: 'Take a moment to reflect on your day.',
+        data: { url: '/diary' },
+      }, supa);
+      dispatched++;
+    }
   }
 
-  console.log(`[Scheduled] daily_diary_reminder → ${dispatched} users`);
+  console.log(`[Scheduled] daily_diary_reminder → ${dispatched} users (personalized)`);
   return res.status(200).json({ ok: true, dispatched });
 });
 
 // =============================================================================
 // POST /weekly-digest — Sunday 6 PM UTC
+// AP-0502: Weekly Community Digest with real activity
+//
+// Summarizes: new connections, group activity, events attended, matches acted on
 // =============================================================================
 router.post('/weekly-digest', async (req: Request, res: Response) => {
   const tenantId = getTenantId(req);
@@ -108,17 +286,76 @@ router.post('/weekly-digest', async (req: Request, res: Response) => {
 
   const users = await getActiveUsers(supa, tenantId);
   let dispatched = 0;
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
   for (const { user_id } of users) {
-    notifyUserAsync(user_id, tenantId, 'weekly_community_digest', {
-      title: 'Weekly Community Digest',
-      body: 'See what happened in your community this week.',
-      data: { url: '/community' },
-    }, supa);
-    dispatched++;
+    try {
+      const [matchesAcceptedRes, eventsAttendedRes, msgsRes, newMembersRes] = await Promise.all([
+        // Matches accepted this week
+        supa.from('matches_daily')
+          .select('id', { count: 'exact', head: true })
+          .eq('tenant_id', tenantId)
+          .eq('user_id', user_id)
+          .eq('state', 'accepted')
+          .gte('state_changed_at', weekAgo),
+        // Events attended this week (past meetups with attendance)
+        supa.from('community_meetup_attendance')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user_id)
+          .eq('status', 'attended')
+          .gte('created_at', weekAgo),
+        // Messages exchanged this week
+        supa.from('chat_messages')
+          .select('id', { count: 'exact', head: true })
+          .eq('tenant_id', tenantId)
+          .eq('sender_id', user_id)
+          .gte('created_at', weekAgo),
+        // New community members this week (platform-wide, for community feel)
+        supa.from('user_tenants')
+          .select('user_id', { count: 'exact', head: true })
+          .eq('tenant_id', tenantId)
+          .gte('created_at', weekAgo),
+      ]);
+
+      const accepted = matchesAcceptedRes.count || 0;
+      const attended = eventsAttendedRes.count || 0;
+      const msgsSent = msgsRes.count || 0;
+      const newMembers = newMembersRes.count || 0;
+
+      const highlights: string[] = [];
+      if (accepted > 0) highlights.push(`${accepted} new connection${accepted > 1 ? 's' : ''}`);
+      if (attended > 0) highlights.push(`${attended} event${attended > 1 ? 's' : ''} attended`);
+      if (msgsSent > 0) highlights.push(`${msgsSent} message${msgsSent > 1 ? 's' : ''} sent`);
+      if (newMembers > 0) highlights.push(`${newMembers} new member${newMembers > 1 ? 's' : ''} joined`);
+
+      const body = highlights.length > 0
+        ? `This week: ${highlights.join(' · ')}`
+        : 'Your community is growing. Explore what\'s new this week.';
+
+      notifyUserAsync(user_id, tenantId, 'weekly_community_digest', {
+        title: 'Your Week on Vitana',
+        body,
+        data: {
+          url: '/community',
+          connections: String(accepted),
+          events_attended: String(attended),
+          messages_sent: String(msgsSent),
+          new_members: String(newMembers),
+        },
+      }, supa);
+      dispatched++;
+    } catch (err: any) {
+      console.error(`[WeeklyDigest] Error for user ${user_id}:`, err.message);
+      notifyUserAsync(user_id, tenantId, 'weekly_community_digest', {
+        title: 'Weekly Community Digest',
+        body: 'See what happened in your community this week.',
+        data: { url: '/community' },
+      }, supa);
+      dispatched++;
+    }
   }
 
-  console.log(`[Scheduled] weekly_community_digest → ${dispatched} users`);
+  console.log(`[Scheduled] weekly_community_digest → ${dispatched} users (personalized)`);
   return res.status(200).json({ ok: true, dispatched });
 });
 
@@ -150,6 +387,9 @@ router.post('/weekly-summary', async (req: Request, res: Response) => {
 
 // =============================================================================
 // POST /weekly-reflection — Friday 8 PM UTC
+// AP-0506: Weekly Reflection with Connection Insights
+//
+// Shows: diary entries this week, connection growth, Vitana Index trend
 // =============================================================================
 router.post('/weekly-reflection', async (req: Request, res: Response) => {
   const tenantId = getTenantId(req);
@@ -160,17 +400,98 @@ router.post('/weekly-reflection', async (req: Request, res: Response) => {
 
   const users = await getActiveUsers(supa, tenantId);
   let dispatched = 0;
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
 
   for (const { user_id } of users) {
-    notifyUserAsync(user_id, tenantId, 'weekly_reflection_prompt', {
-      title: 'Weekly Reflection',
-      body: 'Take a few minutes to reflect on your week and set intentions.',
-      data: { url: '/diary' },
-    }, supa);
-    dispatched++;
+    try {
+      const [diaryRes, connectionsRes, healthThisWeekRes, healthLastWeekRes] = await Promise.all([
+        // Diary entries this week
+        supa.from('memory_diary_entries')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user_id)
+          .eq('tenant_id', tenantId)
+          .gte('created_at', weekAgo),
+        // New connections this week
+        supa.from('relationship_edges')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user_id)
+          .eq('tenant_id', tenantId)
+          .eq('relationship_type', 'friend')
+          .gte('created_at', weekAgo),
+        // Vitana Index this week (latest)
+        supa.from('vitana_index_scores')
+          .select('score_total')
+          .eq('tenant_id', tenantId)
+          .eq('user_id', user_id)
+          .gte('date', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10))
+          .order('date', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        // Vitana Index last week (for trend)
+        supa.from('vitana_index_scores')
+          .select('score_total')
+          .eq('tenant_id', tenantId)
+          .eq('user_id', user_id)
+          .gte('date', new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10))
+          .lt('date', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10))
+          .order('date', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ]);
+
+      const diaryCount = diaryRes.count || 0;
+      const newConnections = connectionsRes.count || 0;
+      const scoreNow = healthThisWeekRes.data?.score_total || null;
+      const scorePrev = healthLastWeekRes.data?.score_total || null;
+
+      const insights: string[] = [];
+
+      if (diaryCount > 0) {
+        insights.push(`${diaryCount} diary entr${diaryCount > 1 ? 'ies' : 'y'} this week`);
+      }
+      if (newConnections > 0) {
+        insights.push(`${newConnections} new connection${newConnections > 1 ? 's' : ''}`);
+      }
+      if (scoreNow !== null && scorePrev !== null) {
+        const diff = scoreNow - scorePrev;
+        if (diff > 0) insights.push(`Vitana Index up ${diff} points`);
+        else if (diff < 0) insights.push(`Vitana Index down ${Math.abs(diff)} points`);
+        else insights.push(`Vitana Index steady at ${scoreNow}`);
+      } else if (scoreNow !== null) {
+        insights.push(`Vitana Index: ${scoreNow}`);
+      }
+
+      let body: string;
+      if (insights.length > 0) {
+        body = insights.join(' · ') + '. What intentions will you set for next week?';
+      } else {
+        body = 'Take a few minutes to look back on your week and set intentions for the next one.';
+      }
+
+      notifyUserAsync(user_id, tenantId, 'weekly_reflection_prompt', {
+        title: 'Weekly Reflection',
+        body,
+        data: {
+          url: '/diary',
+          diary_count: String(diaryCount),
+          new_connections: String(newConnections),
+          vitana_score: String(scoreNow || 0),
+        },
+      }, supa);
+      dispatched++;
+    } catch (err: any) {
+      console.error(`[WeeklyReflection] Error for user ${user_id}:`, err.message);
+      notifyUserAsync(user_id, tenantId, 'weekly_reflection_prompt', {
+        title: 'Weekly Reflection',
+        body: 'Take a few minutes to reflect on your week and set intentions.',
+        data: { url: '/diary' },
+      }, supa);
+      dispatched++;
+    }
   }
 
-  console.log(`[Scheduled] weekly_reflection_prompt → ${dispatched} users`);
+  console.log(`[Scheduled] weekly_reflection_prompt → ${dispatched} users (personalized)`);
   return res.status(200).json({ ok: true, dispatched });
 });
 
