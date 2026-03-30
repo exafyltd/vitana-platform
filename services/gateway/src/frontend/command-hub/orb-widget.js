@@ -1222,12 +1222,18 @@
     _updateUI();
   }
 
-  // Refresh auth token from localStorage (user may have logged in/out since init)
+  // Refresh auth token from localStorage — ALWAYS re-read on every _show().
+  // User may have logged in, logged out, or switched accounts since last session.
+  // Only skip if init() explicitly passed authToken (tracked by _tokenSetByInit).
+  var _tokenSetByInit = false;
+
   function _refreshToken() {
-    if (_cfg.token) return; // Already set by init() — don't override
+    if (_tokenSetByInit) return; // Explicit init() token — don't override
     try {
+      // 1. Command Hub custom key
       var t = localStorage.getItem('vitana.authToken');
       if (t) { _cfg.token = t; return; }
+      // 2. Supabase native key (Lovable)
       var sbKey = Object.keys(localStorage).find(function (k) {
         return k.startsWith('sb-') && k.endsWith('-auth-token');
       });
@@ -1235,8 +1241,11 @@
         var sbData = localStorage.getItem(sbKey);
         if (sbData) {
           try { _cfg.token = JSON.parse(sbData).access_token || ''; } catch (_) { _cfg.token = sbData; }
+          return;
         }
       }
+      // No token found — anonymous session
+      _cfg.token = '';
     } catch (e) { /* ignore */ }
   }
 
@@ -1416,8 +1425,11 @@
       opts = opts || {};
       if (opts.gatewayUrl) _cfg.gw = opts.gatewayUrl.replace(/\/$/, '');
       // authToken: explicit value overrides auto-detect. Passing '' clears it (anonymous).
-      // Not passing it at all preserves the auto-detected token.
-      if (opts.authToken !== undefined) _cfg.token = opts.authToken || '';
+      // Not passing it at all preserves auto-detection (refreshed on every _show).
+      if (opts.authToken !== undefined) {
+        _cfg.token = opts.authToken || '';
+        _tokenSetByInit = true; // Don't auto-refresh — caller manages the token
+      }
       if (opts.lang) _cfg.lang = opts.lang;
       if (opts.showFab !== undefined) _cfg.showFab = !!opts.showFab;
       if (typeof opts.onClose === 'function') _cfg.onClose = opts.onClose;
