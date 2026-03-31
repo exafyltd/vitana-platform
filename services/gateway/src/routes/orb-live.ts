@@ -6303,11 +6303,6 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     return res.status(403).json({ ok: false, error: 'Origin not allowed' });
   }
 
-  // VTID-ORBC: Resolve identity (JWT or dev-sandbox fallback)
-  // Allow anonymous sessions for lovable/external frontends — identity is used for
-  // memory scoping but is not required to start a live session.
-  const orbIdentity = await resolveOrbIdentity(req);
-
   const body = req.body as LiveSessionStartRequest;
   const clientRequestedLang = body.lang; // may be undefined if client didn't specify
   const voiceStyle = body.voice_style || 'friendly, calm, empathetic';
@@ -6324,30 +6319,22 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
   let contextBootstrapLatencyMs: number | undefined;
   let contextBootstrapSkippedReason: string | undefined;
 
-  // JWT identity takes priority so each user builds their own memory.
-  // VTID-ANON: If no JWT identity, this is an anonymous session — regardless of environment.
-  // Previously checked !isDevSandbox() which was always false on Cloud Run (ENVIRONMENT=dev),
-  // so anonymous users got DEV_IDENTITY → loaded other users' memory → "Hello Jovana!"
-  const hasRealIdentity = !!(orbIdentity && orbIdentity.tenant_id && orbIdentity.user_id);
-  const isAnonymousSession = !hasRealIdentity;
-  const bootstrapIdentity: SupabaseIdentity | null =
-    hasRealIdentity
-      ? orbIdentity
-      : isDevSandbox()
-        ? {
-            user_id: DEV_IDENTITY.USER_ID,
-            tenant_id: DEV_IDENTITY.TENANT_ID,
-            role: DEV_IDENTITY.ACTIVE_ROLE,
-            email: 'dev-sandbox@vitana.local',
-            exafy_admin: false,
-            aud: 'authenticated',
-            exp: null,
-            iat: null,
-          }
-        : null;
+  // VTID-ANON: Anonymous = no verified JWT on the request.
+  // req.identity is set by optionalAuth middleware ONLY when a valid JWT is present.
+  // DEV_IDENTITY (from resolveOrbIdentity) is NOT a real user — it must NOT be
+  // treated as authenticated. Previously DEV_IDENTITY had real user_id/tenant_id
+  // which passed the hasRealIdentity check → loaded Jovana's memory for everyone.
+  const hasJwtIdentity = !!(req.identity && req.identity.user_id);
+  const isAnonymousSession = !hasJwtIdentity;
+
+  // Resolve full identity (JWT verified → real user, or DEV_IDENTITY fallback for API calls)
+  const orbIdentity = await resolveOrbIdentity(req);
+  // Only use as bootstrapIdentity for memory/context if user has a REAL JWT
+  const bootstrapIdentity: SupabaseIdentity | null = hasJwtIdentity ? orbIdentity : null;
 
   // VTID-CONTEXT: Build client context (IP geo, device, time) — for all sessions
   const clientContext = await buildClientContext(req);
+  console.log(`[VTID-ANON] Session ${sessionId}: hasJwtIdentity=${hasJwtIdentity}, isAnonymous=${isAnonymousSession}, req.identity.user_id=${req.identity?.user_id || 'none'}, orbIdentity.user_id=${orbIdentity?.user_id || 'none'}, bootstrapIdentity=${bootstrapIdentity ? bootstrapIdentity.user_id.substring(0, 8) : 'null'}`);
   console.log(`[VTID-CONTEXT] Client context: city=${clientContext.city || 'unknown'}, country=${clientContext.country || 'unknown'}, time=${clientContext.localTime || 'unknown'}, device=${clientContext.device || 'unknown'}, anonymous=${isAnonymousSession}`);
 
   // Resolve language priority: stored preference > client request > Accept-Language > 'en'
@@ -6446,7 +6433,9 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     // VTID-ECHO-COOLDOWN: No cooldown at session start
     turnCompleteAt: 0,
     // VTID-ORBC: JWT identity for per-user memory; DEV_IDENTITY only as fallback
-    identity: bootstrapIdentity || orbIdentity || undefined,
+    // VTID-ANON: Only attach identity if user has a real JWT.
+    // DEV_IDENTITY must NOT be attached — it would enable tools/memory for anonymous sessions.
+    identity: hasJwtIdentity ? orbIdentity || undefined : undefined,
     // Conversation summary from previous session for greeting context
     conversationSummary,
     // VTID-01225-ROLE: Application-level role (community/admin/developer)
