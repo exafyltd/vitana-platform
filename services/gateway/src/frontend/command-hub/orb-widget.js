@@ -37,12 +37,10 @@
   })();
 
   // Auto-detect auth token from localStorage (read-only, never writes/deletes)
+  // Priority: Supabase native key (managed by auth SDK) > vitana.authToken (legacy)
   var _autoToken = (function () {
     try {
-      // 1. Command Hub custom key (primary)
-      var t = localStorage.getItem('vitana.authToken');
-      if (t) return t;
-      // 2. Supabase native key (Lovable community app)
+      // 1. Supabase native key (Lovable — always reflects current logged-in user)
       var sbKey = Object.keys(localStorage).find(function (k) {
         return k.startsWith('sb-') && k.endsWith('-auth-token');
       });
@@ -51,12 +49,15 @@
         if (sbData) {
           try {
             var parsed = JSON.parse(sbData);
-            return parsed.access_token || '';
+            return parsed.access_token || parsed.token || '';
           } catch (_) {
-            return sbData; // might be raw token
+            return sbData;
           }
         }
       }
+      // 2. Command Hub custom key (fallback)
+      var t = localStorage.getItem('vitana.authToken');
+      if (t) return t;
     } catch (e) { /* localStorage may be blocked */ }
     return '';
   })();
@@ -1230,23 +1231,48 @@
   function _refreshToken() {
     if (_tokenSetByInit) return; // Explicit init() token — don't override
     try {
-      // 1. Command Hub custom key
-      var t = localStorage.getItem('vitana.authToken');
-      if (t) { _cfg.token = t; return; }
-      // 2. Supabase native key (Lovable)
+      // Priority: Supabase native key FIRST (managed by auth SDK, always current).
+      // vitana.authToken is legacy Command Hub key — may be stale from a different user.
+
+      // 1. Supabase native key (Lovable community app)
       var sbKey = Object.keys(localStorage).find(function (k) {
         return k.startsWith('sb-') && k.endsWith('-auth-token');
       });
       if (sbKey) {
         var sbData = localStorage.getItem(sbKey);
         if (sbData) {
-          try { _cfg.token = JSON.parse(sbData).access_token || ''; } catch (_) { _cfg.token = sbData; }
-          return;
+          try {
+            var parsed = JSON.parse(sbData);
+            // Supabase v2 stores { access_token, refresh_token, user, ... }
+            var token = parsed.access_token || parsed.token || '';
+            if (token) {
+              _cfg.token = token;
+              console.log('[VTOrb] Auth from Supabase key: ' + sbKey + ', user=' + (parsed.user?.id || 'unknown').substring(0, 8));
+              return;
+            }
+          } catch (_) {
+            // Not JSON — might be raw token
+            _cfg.token = sbData;
+            console.log('[VTOrb] Auth from Supabase key (raw): ' + sbKey);
+            return;
+          }
         }
       }
+
+      // 2. Command Hub custom key (fallback — only if no Supabase key found)
+      var t = localStorage.getItem('vitana.authToken');
+      if (t) {
+        _cfg.token = t;
+        console.log('[VTOrb] Auth from vitana.authToken (Command Hub fallback)');
+        return;
+      }
+
       // No token found — anonymous session
       _cfg.token = '';
-    } catch (e) { /* ignore */ }
+      console.log('[VTOrb] No auth token found — anonymous session');
+    } catch (e) {
+      console.warn('[VTOrb] Token refresh error:', e);
+    }
   }
 
   function _show() {
