@@ -1450,12 +1450,19 @@
     init: function (opts) {
       opts = opts || {};
       if (opts.gatewayUrl) _cfg.gw = opts.gatewayUrl.replace(/\/$/, '');
-      // authToken: explicit value overrides auto-detect. Passing '' clears it (anonymous).
-      // Not passing it at all preserves auto-detection (refreshed on every _show).
-      if (opts.authToken !== undefined) {
+
+      // VTID-AUTH-FIX: Once init() is called, the CALLER owns auth.
+      // Auto-detection is disabled. If authToken is not passed, the session
+      // is anonymous. This prevents stale localStorage tokens from leaking
+      // a previous user's identity (the "Hello Jovana" bug).
+      _tokenSetByInit = true;
+      if (opts.authToken !== undefined && opts.authToken !== null) {
         _cfg.token = opts.authToken || '';
-        _tokenSetByInit = true; // Don't auto-refresh — caller manages the token
+      } else {
+        // No authToken passed → anonymous. Clear any auto-detected token.
+        _cfg.token = '';
       }
+
       if (opts.lang) _cfg.lang = opts.lang;
       if (opts.showFab !== undefined) _cfg.showFab = !!opts.showFab;
       if (typeof opts.onClose === 'function') _cfg.onClose = opts.onClose;
@@ -1465,7 +1472,15 @@
       _injectStyles();
       _renderOverlay();
       if (_cfg.showFab) _renderFab();
-      console.log('[VTOrb] Initialized — gateway: ' + _cfg.gw + ', lang: ' + _cfg.lang + ', showFab: ' + _cfg.showFab);
+      console.log('[VTOrb] Initialized — gateway: ' + _cfg.gw + ', lang: ' + _cfg.lang + ', showFab: ' + _cfg.showFab + ', hasToken: ' + !!_cfg.token + ', tokenSetByInit: ' + _tokenSetByInit);
+    },
+
+    // Update auth token after login/logout — call this when auth state changes.
+    // This is the ONLY way to change auth after init() was called.
+    setAuth: function (token) {
+      _cfg.token = token || '';
+      _tokenSetByInit = true;
+      console.log('[VTOrb] setAuth: hasToken=' + !!_cfg.token);
     },
 
     show: _show,
@@ -1475,12 +1490,8 @@
       if (_s.overlayVisible) _hide(); else _show();
     },
 
-    setAuth: function (token) {
-      _cfg.token = token || '';
-    },
-
     setLang: function (lang) {
-      _cfg.lang = lang || 'en-US';
+      _cfg.lang = lang || 'en';
     },
 
     destroy: function () {
