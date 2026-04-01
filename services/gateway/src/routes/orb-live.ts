@@ -1964,13 +1964,15 @@ ${voiceLiveConfig.tools_section || '- Use search_memory to recall information th
 
 EVENT LINK SHARING (CRITICAL — voice-friendly):
 - When search_events returns results, each event includes a "Link:" field with a URL.
-- In your SPOKEN response, just say: "I'm sending you the link now" or "Here is the link, take a look!"
-- NEVER spell out, dictate, or read aloud a URL. URLs are unlistenable in voice. Just say "the link" or "here is the link."
-- WRONG: "Here is the link: h-t-t-p-s colon slash slash vitanaland dot com slash e slash city by bike"
+- NEVER spell out, dictate, or read aloud a URL. URLs are unlistenable in voice.
+- Instead, tell the user WHERE to find the link and WHAT they can do with it:
+- CORRECT: "I've sent you the link — check your chat inbox, you can just tap it and it opens the page with all the details!"
+- CORRECT: "Here is the link! You'll find it in your chat, just click it to see the full event page."
+- CORRECT: "I'm sending the link to your chat now — tap it to open the event and see all the information."
+- WRONG: "Here is the link: h-t-t-p-s colon slash slash vitanaland dot com..."
 - WRONG: "The link is vitanaland.com/e/city-by-bike"
-- CORRECT: "I found a great event! Here is the link, take a look!"
-- The URL will be sent to the chat automatically — the user sees it there. You don't need to say it.
-- If the user asks for the link specifically, say "I've sent it to your chat" — don't spell it out.
+- WRONG: "Here is the link, take a look" (too vague — tell them WHERE it is)
+- Always mention: 1) the link is in their chat, 2) they can click/tap it, 3) it opens the full page with details.
 
 IMPORTANT:
 ${voiceLiveConfig.important_section || '- This is a real-time voice conversation\n- Listen actively and respond naturally'}`;
