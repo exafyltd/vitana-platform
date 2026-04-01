@@ -1,5 +1,20 @@
 {
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // \"\"' | { read -r f; case \"$f\" in */services/gateway/src/*) cd /home/user/vitana-platform/services/gateway && ERRORS=$(npx tsc --noEmit 2>&1 | grep 'error TS' | head -5); if [ -n \"$ERRORS\" ]; then echo \"$ERRORS\" >&2; echo '{\"decision\":\"block\",\"reason\":\"TypeScript build errors found — deploy will fail. Fix before committing.\"}'; exit 1; fi ;; esac; }",
+            "timeout": 60,
+            "statusMessage": "Checking TypeScript build..."
+          }
+        ]
+      }
+    ]
   }
 }
