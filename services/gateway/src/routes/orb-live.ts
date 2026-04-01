@@ -8154,6 +8154,8 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     consecutiveModelTurns: 0,
     // VTID-TOOLGUARD: Track consecutive tool calls for loop prevention
     consecutiveToolCalls: 0,
+    // VTID-ANON: WS sessions with no JWT are anonymous
+    isAnonymous: !identity?.user_id,
   };
 
   // VTID-SESSION-LIMIT: Terminate existing sessions for this user (WS path)
