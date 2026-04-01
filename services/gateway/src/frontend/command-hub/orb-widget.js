@@ -17,6 +17,9 @@
 (function (window) {
   'use strict';
 
+  var _WIDGET_VERSION = '2026-03-30-v2';
+  console.log('[VTOrb] Widget version: ' + _WIDGET_VERSION);
+
   // Prevent double-load
   if (window.VitanaOrb && window.VitanaOrb._loaded) return;
 
@@ -71,6 +74,8 @@
       return (navigator.language || navigator.userLanguage || 'en').split('-')[0];
     } catch (e) { return 'en'; }
   })();
+
+  console.log('[VTOrb] Auto-detect: token=' + (_autoToken ? 'YES(' + _autoToken.substring(0, 20) + '...)' : 'NONE') + ', lang=' + _autoLang + ', gw=' + _autoGw);
 
   var _cfg = {
     gw: _autoGw,       // Gateway URL — auto-detected, overridden by init()
@@ -487,6 +492,7 @@
     try {
       var headers = { 'Content-Type': 'application/json' };
       if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
+      console.log('[VTOrb] _sessionStart: hasToken=' + !!_cfg.token + ', tokenSetByInit=' + _tokenSetByInit + ', tokenPreview=' + (_cfg.token ? _cfg.token.substring(0, 20) + '...' : 'NONE'));
 
       var resp = await fetch(_cfg.gw + '/api/v1/orb/live/session/start', {
         method: 'POST',
