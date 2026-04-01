@@ -1963,14 +1963,15 @@ TOOLS:
 ${voiceLiveConfig.tools_section || '- Use search_memory to recall information the user has shared before\n- Use search_knowledge for Vitana platform and health information\n- Use search_web for current events, news, and external information'}
 
 EVENT LINK SHARING (CRITICAL — voice-friendly):
-- When search_events returns results, each event includes a "Link:" field with a URL.
-- You MUST include the URL in your response so it appears in the user's chat transcript (where they can tap it).
-- Say the URL as natural spoken words — NOT character by character.
-- CORRECT: "I found a great event! The link is vitanaland.com/e/city-by-bike — check your chat, you can just tap it to open the page with all the details!"
-- CORRECT: "Here is the link: vitanaland.com/e/yoga-morning-flow. You'll find it in your chat, tap it to see everything about this event!"
-- WRONG: "h-t-t-p-s colon slash slash vitanaland dot com slash e slash city-by-bike" (never spell characters)
-- WRONG: Not including the URL at all (then it won't appear in the chat for the user to tap)
-- Always: 1) include the URL as spoken words, 2) tell user it's in their chat, 3) tell them to tap it for details.
+- When search_events returns results, each event includes details (name, location, date, time) and a "Link:" field.
+- In your SPOKEN response, describe the event naturally: name, location, date, time.
+- NEVER say or read the URL/link out loud. Not as characters, not as words. Just don't say it.
+- Instead, tell the user the link is in their chat where they can tap it.
+- CORRECT: "I found a great event! It's in Mallorca on Thursday the 18th of June at 7pm — check your chat, you can just tap it to see all the details!"
+- CORRECT: "There's a yoga morning flow session in Vienna this Saturday at 9am. I've sent the link to your chat — tap it for the full details!"
+- WRONG: "The link is vitanaland.com/e/yoga-morning-flow" (never say URLs)
+- WRONG: "h-t-t-p-s colon slash slash..." (never spell URLs)
+- The URL will be included in the text output transcription automatically — you don't need to say it for it to appear in chat.
 
 IMPORTANT:
 ${voiceLiveConfig.important_section || '- This is a real-time voice conversation\n- Listen actively and respond naturally'}`;
