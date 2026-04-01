@@ -6350,17 +6350,25 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
   console.log(`[VTID-ANON] Session ${sessionId}: hasJwtIdentity=${hasJwtIdentity}, isAnonymous=${isAnonymousSession}, req.identity.user_id=${req.identity?.user_id || 'none'}, orbIdentity.user_id=${orbIdentity?.user_id || 'none'}, bootstrapIdentity=${bootstrapIdentity ? bootstrapIdentity.user_id.substring(0, 8) : 'null'}`);
   console.log(`[VTID-CONTEXT] Client context: city=${clientContext.city || 'unknown'}, country=${clientContext.country || 'unknown'}, time=${clientContext.localTime || 'unknown'}, device=${clientContext.device || 'unknown'}, anonymous=${isAnonymousSession}`);
 
-  // Resolve language priority: stored preference > client request > Accept-Language > 'en'
-  // Stored preference (from user settings) is the strongest signal — it represents
-  // an explicit user choice. Client-requested lang (from browser navigator.language)
-  // is a weaker signal — it's the OS/browser default, not necessarily the user's choice.
+  // Resolve language priority:
+  // 1. Client-requested lang (from vitana.lang localStorage = user's LATEST UI selection)
+  // 2. Stored preference (from memory_facts = previous session's choice, used as fallback)
+  // 3. Accept-Language header (browser default)
+  // 4. 'en' (ultimate fallback)
+  //
+  // Client request MUST win over stored preference because the user may have just
+  // changed their language in the UI. Previously stored pref overrode the client
+  // request, creating a self-reinforcing loop that ignored language changes.
   let lang = normalizeLang(clientRequestedLang || 'en');
-  if (bootstrapIdentity?.user_id && bootstrapIdentity?.tenant_id) {
+  if (!clientRequestedLang && bootstrapIdentity?.user_id && bootstrapIdentity?.tenant_id) {
+    // No client preference — fall back to stored preference from previous session
     const storedLang = await getStoredLanguagePreference(bootstrapIdentity.tenant_id, bootstrapIdentity.user_id);
     if (storedLang) {
       lang = storedLang;
-      console.log(`[LANG-PREF] Using stored language preference: ${lang} for user=${bootstrapIdentity.user_id.substring(0, 8)}... (client sent: ${clientRequestedLang || 'none'})`);
+      console.log(`[LANG-PREF] No client lang — using stored preference: ${lang} for user=${bootstrapIdentity.user_id.substring(0, 8)}...`);
     }
+  } else if (clientRequestedLang) {
+    console.log(`[LANG-PREF] Using client-requested language: ${lang} (user's UI selection)`);
   }
   // For anonymous sessions: use Accept-Language header if client didn't specify
   if (isAnonymousSession && !clientRequestedLang && clientContext.lang) {
