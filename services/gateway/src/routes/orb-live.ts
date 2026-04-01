@@ -2704,6 +2704,26 @@ async function connectToLiveAPI(
                 const toolElapsed = Date.now() - toolStartTime;
                 console.log(`[VTID-01224] Tool ${toolName} completed in ${toolElapsed}ms, success=${result.success}, resultLen=${result.result.length}`);
 
+                // VTID-LINK: Extract URLs from tool results and send to client separately.
+                // Vitana won't say URLs in voice, so we push them to chat via SSE/WS.
+                if (result.success && result.result) {
+                  const urlRegex = /https?:\/\/[^\s"',)}\]]+/g;
+                  const urls = result.result.match(urlRegex);
+                  if (urls && urls.length > 0) {
+                    const uniqueUrls = [...new Set(urls)];
+                    for (const url of uniqueUrls) {
+                      const linkMsg = { type: 'link', url, tool: toolName };
+                      if (session.sseResponse) {
+                        try { session.sseResponse.write(`data: ${JSON.stringify(linkMsg)}\n\n`); } catch (_e) { /* SSE closed */ }
+                      }
+                      if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+                        try { sendWsMessage(session.clientWs, linkMsg); } catch (_e) { /* WS closed */ }
+                      }
+                    }
+                    console.log(`[VTID-LINK] Sent ${uniqueUrls.length} link(s) to client from ${toolName}: ${uniqueUrls.join(', ')}`);
+                  }
+                }
+
                 // Send response back to Live API
                 const sent = sendFunctionResponseToLiveAPI(ws, callId, toolName, result);
                 if (!sent) {

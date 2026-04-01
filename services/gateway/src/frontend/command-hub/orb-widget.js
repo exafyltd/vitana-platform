@@ -808,6 +808,17 @@
         _sessionStop();
         break;
 
+      case 'link':
+        // Server extracted a URL from tool results — push to transcript so it
+        // appears in chat as a tappable link. Vitana doesn't say URLs in voice.
+        if (msg.url) {
+          _s._transcriptHistory.push({ role: 'assistant', text: msg.url });
+          // Notify parent app if it has a link handler
+          if (_cfg.onLink) try { _cfg.onLink(msg.url, msg.tool); } catch (e) { /* ignore */ }
+          console.log('[VTOrb] Link received: ' + msg.url);
+        }
+        break;
+
       case 'heartbeat':
         // VTID-HEARTBEAT-FIX: Server data heartbeat — watchdog already reset
         // by _resetWatchdog() in onmessage handler. Nothing else needed.
