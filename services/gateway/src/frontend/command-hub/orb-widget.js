@@ -1479,13 +1479,17 @@
       // VTID-AUTH-FIX: Once init() is called, the CALLER owns auth.
       // Auto-detection is disabled. If authToken is not passed, the session
       // is anonymous. This prevents stale localStorage tokens from leaking
-      // a previous user's identity (the "Hello Jovana" bug).
+      // a previous user's identity (the "Hello Jovana/Dragan" bug).
       _tokenSetByInit = true;
       if (opts.authToken !== undefined && opts.authToken !== null) {
         _cfg.token = opts.authToken || '';
+        _cfg.forceAnonymous = false;
       } else {
         // No authToken passed → anonymous. Clear any auto-detected token.
+        // Also lock anonymous mode — setAuth() calls will be ignored until
+        // init() is called again with an explicit authToken.
         _cfg.token = '';
+        _cfg.forceAnonymous = true;
       }
 
       if (opts.lang) _cfg.lang = opts.lang;
@@ -1493,16 +1497,22 @@
       if (typeof opts.onClose === 'function') _cfg.onClose = opts.onClose;
       if (typeof opts.onSessionStart === 'function') _cfg.onSessionStart = opts.onSessionStart;
       if (typeof opts.onSessionEnd === 'function') _cfg.onSessionEnd = opts.onSessionEnd;
+      if (typeof opts.onLink === 'function') _cfg.onLink = opts.onLink;
 
       _injectStyles();
       _renderOverlay();
       if (_cfg.showFab) _renderFab();
-      console.log('[VTOrb] Initialized — gateway: ' + _cfg.gw + ', lang: ' + _cfg.lang + ', showFab: ' + _cfg.showFab + ', hasToken: ' + !!_cfg.token + ', tokenSetByInit: ' + _tokenSetByInit);
+      console.log('[VTOrb] Initialized — gateway: ' + _cfg.gw + ', lang: ' + _cfg.lang + ', showFab: ' + _cfg.showFab + ', hasToken: ' + !!_cfg.token + ', forceAnonymous: ' + _cfg.forceAnonymous);
     },
 
     // Update auth token after login/logout — call this when auth state changes.
-    // This is the ONLY way to change auth after init() was called.
+    // Ignored if init() was called without authToken (forceAnonymous mode).
+    // To switch from anonymous to authenticated, call init() again with authToken.
     setAuth: function (token) {
+      if (_cfg.forceAnonymous) {
+        console.log('[VTOrb] setAuth ignored — forceAnonymous mode. Call init({ authToken }) to authenticate.');
+        return;
+      }
       _cfg.token = token || '';
       _tokenSetByInit = true;
       console.log('[VTOrb] setAuth: hasToken=' + !!_cfg.token);
