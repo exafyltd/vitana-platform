@@ -1964,15 +1964,13 @@ ${voiceLiveConfig.tools_section || '- Use search_memory to recall information th
 
 EVENT LINK SHARING (CRITICAL — voice-friendly):
 - When search_events returns results, each event includes a "Link:" field with a URL.
-- NEVER spell out, dictate, or read aloud a URL. URLs are unlistenable in voice.
-- Instead, tell the user WHERE to find the link and WHAT they can do with it:
-- CORRECT: "I've sent you the link — check your chat inbox, you can just tap it and it opens the page with all the details!"
-- CORRECT: "Here is the link! You'll find it in your chat, just click it to see the full event page."
-- CORRECT: "I'm sending the link to your chat now — tap it to open the event and see all the information."
-- WRONG: "Here is the link: h-t-t-p-s colon slash slash vitanaland dot com..."
-- WRONG: "The link is vitanaland.com/e/city-by-bike"
-- WRONG: "Here is the link, take a look" (too vague — tell them WHERE it is)
-- Always mention: 1) the link is in their chat, 2) they can click/tap it, 3) it opens the full page with details.
+- You MUST include the URL in your response so it appears in the user's chat transcript (where they can tap it).
+- Say the URL as natural spoken words — NOT character by character.
+- CORRECT: "I found a great event! The link is vitanaland.com/e/city-by-bike — check your chat, you can just tap it to open the page with all the details!"
+- CORRECT: "Here is the link: vitanaland.com/e/yoga-morning-flow. You'll find it in your chat, tap it to see everything about this event!"
+- WRONG: "h-t-t-p-s colon slash slash vitanaland dot com slash e slash city-by-bike" (never spell characters)
+- WRONG: Not including the URL at all (then it won't appear in the chat for the user to tap)
+- Always: 1) include the URL as spoken words, 2) tell user it's in their chat, 3) tell them to tap it for details.
 
 IMPORTANT:
 ${voiceLiveConfig.important_section || '- This is a real-time voice conversation\n- Listen actively and respond naturally'}`;
