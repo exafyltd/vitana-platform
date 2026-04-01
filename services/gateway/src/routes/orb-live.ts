@@ -6325,6 +6325,7 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
 
   const body = req.body as LiveSessionStartRequest;
   const clientRequestedLang = body.lang; // may be undefined if client didn't specify
+  console.log(`[LANG-PREF] Client requested lang: '${clientRequestedLang || 'NONE'}' (from POST body.lang)`);
   const voiceStyle = body.voice_style || 'friendly, calm, empathetic';
   const responseModalities = body.response_modalities || ['audio', 'text'];
   const conversationSummary = body.conversation_summary || undefined;

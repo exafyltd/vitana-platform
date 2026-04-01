@@ -492,7 +492,15 @@
     try {
       var headers = { 'Content-Type': 'application/json' };
       if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
-      console.log('[VTOrb] _sessionStart: hasToken=' + !!_cfg.token + ', tokenSetByInit=' + _tokenSetByInit + ', tokenPreview=' + (_cfg.token ? _cfg.token.substring(0, 20) + '...' : 'NONE'));
+
+      // Final language refresh — read vitana.lang right before sending.
+      // Covers edge case where language was changed after _show() but before session start.
+      try {
+        var freshLang = localStorage.getItem('vitana.lang');
+        if (freshLang) _cfg.lang = freshLang.split('-')[0];
+      } catch (e) { /* ignore */ }
+
+      console.log('[VTOrb] _sessionStart: hasToken=' + !!_cfg.token + ', lang=' + _cfg.lang + ', tokenSetByInit=' + _tokenSetByInit);
 
       var resp = await fetch(_cfg.gw + '/api/v1/orb/live/session/start', {
         method: 'POST',
