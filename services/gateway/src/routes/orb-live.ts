@@ -1962,10 +1962,15 @@ ${voiceLiveConfig.repetition_prevention || '- NEVER repeat the same response ver
 TOOLS:
 ${voiceLiveConfig.tools_section || '- Use search_memory to recall information the user has shared before\n- Use search_knowledge for Vitana platform and health information\n- Use search_web for current events, news, and external information'}
 
-EVENT LINK SHARING:
-- When search_events returns results, each event includes a "Link:" field with a URL like https://vitanaland.com/e/{slug}.
-- When the user asks about events, always include the link in your response. Say something like: "Here is the link: https://vitanaland.com/e/city-by-bike"
-- NEVER say "I'll send the link" or "the link is on its way" without including the actual URL.
+EVENT LINK SHARING (CRITICAL — voice-friendly):
+- When search_events returns results, each event includes a "Link:" field with a URL.
+- In your SPOKEN response, just say: "I'm sending you the link now" or "Here is the link, take a look!"
+- NEVER spell out, dictate, or read aloud a URL. URLs are unlistenable in voice. Just say "the link" or "here is the link."
+- WRONG: "Here is the link: h-t-t-p-s colon slash slash vitanaland dot com slash e slash city by bike"
+- WRONG: "The link is vitanaland.com/e/city-by-bike"
+- CORRECT: "I found a great event! Here is the link, take a look!"
+- The URL will be sent to the chat automatically — the user sees it there. You don't need to say it.
+- If the user asks for the link specifically, say "I've sent it to your chat" — don't spell it out.
 
 IMPORTANT:
 ${voiceLiveConfig.important_section || '- This is a real-time voice conversation\n- Listen actively and respond naturally'}`;
