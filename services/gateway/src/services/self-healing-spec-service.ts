@@ -497,19 +497,20 @@ async function storeSpec(
     Prefer: 'return=minimal',
   };
 
-  const specPayload = {
+  // oasis_specs schema: id, vtid, version, title, spec_markdown, spec_hash, status, created_by, created_at
+  const specPayload: Record<string, unknown> = {
     vtid,
     version: 1,
+    title: `SELF-HEAL: ${vtid}`,
     spec_markdown: specMarkdown,
     spec_hash: specHash,
     status: 'validated',
-    source: 'self-healing',
-    quality_score: qualityScore,
+    created_by: 'self-healing',
   };
 
   const storeRes = await fetch(`${supabaseUrl}/rest/v1/oasis_specs`, {
     method: 'POST',
-    headers,
+    headers: { ...headers, Prefer: 'resolution=merge-duplicates,return=minimal' },
     body: JSON.stringify(specPayload),
   });
 
