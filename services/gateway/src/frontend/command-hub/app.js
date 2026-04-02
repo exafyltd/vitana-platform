@@ -33350,7 +33350,7 @@ function renderSelfHealingView() {
     var statusBar = document.createElement('div');
     statusBar.style.cssText = 'background:var(--bg-secondary,#1e1e2e);border:1px solid var(--border-color,#333);border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;gap:24px;align-items:center;';
     var activeTasks = state.selfHealing.active || [];
-    var pendingApproval = activeTasks.filter(function(t) { return t.spec_status === 'pending_approval'; });
+    var pendingApproval = activeTasks.filter(function(t) { return t.spec_status === 'validated'; });
     var inProgress = activeTasks.filter(function(t) { return t.status === 'in_progress' || t.status === 'pending'; });
 
     var autonomyNames = ['OBSERVE ONLY', 'DIAGNOSE ONLY', 'SPEC & WAIT', 'AUTO-FIX SIMPLE', 'FULL AUTO'];
@@ -33428,7 +33428,7 @@ function renderSelfHealingView() {
             var actions = document.createElement('div');
             actions.style.cssText = 'display:flex;gap:6px;margin-top:8px;';
 
-            if (task.spec_status === 'pending_approval') {
+            if (task.spec_status === 'validated') {
                 var approveBtn = document.createElement('button');
                 approveBtn.textContent = '✅ APPROVE';
                 approveBtn.style.cssText = 'background:#16a34a;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px;';

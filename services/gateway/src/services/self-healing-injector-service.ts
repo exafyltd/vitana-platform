@@ -71,7 +71,7 @@ export async function injectIntoAutopilotPipeline(
           layer: 'INFRA',
           module: mapServiceToModule(diagnosis.service_name),
           status: 'allocated',  // must stay 'allocated' for autopilot event loop to pick up
-          spec_status: autoApproved ? 'validated' : 'pending_approval',
+          spec_status: autoApproved ? 'approved' : 'validated',  // approved = auto-exec, validated = awaiting human
           assigned_to: 'autopilot',
           metadata: {
             source: 'self-healing',
