@@ -612,6 +612,8 @@ interface GeminiLiveSession {
   transcriptTurns: Array<{ role: 'user' | 'assistant'; text: string; timestamp: string }>;
   // VTID-01225: Buffer for accumulating output transcription chunks until turn completes
   outputTranscriptBuffer: string;
+  // VTID-LINK-INJECT: URLs from search_events tool results, injected into output transcript at turn_complete
+  pendingEventLinks: string[];
   // Conversation summary from previous session for greeting context
   conversationSummary?: string;
   // Voice init: greeting lifecycle tracking
@@ -2330,6 +2332,7 @@ async function connectToLiveAPI(
             session.isModelSpeaking = false;
             // Clear output transcript buffer on interruption (incomplete response)
             session.outputTranscriptBuffer = '';
+            session.pendingEventLinks = [];
             // Notify SSE client
             if (session.sseResponse) {
               session.sseResponse.write(`data: ${JSON.stringify({ type: 'interrupted' })}\n\n`);
@@ -2415,6 +2418,25 @@ async function connectToLiveAPI(
               }
             }
             session.inputTranscriptBuffer = '';
+
+            // VTID-LINK-INJECT: Append pending event links to output transcript
+            // The AI is instructed not to say URLs aloud, so we inject them into the text transcript
+            // so they appear in the user's chat as clickable links.
+            if (session.pendingEventLinks.length > 0) {
+              const uniqueLinks = [...new Set(session.pendingEventLinks)];
+              session.outputTranscriptBuffer += '\n' + uniqueLinks.join('\n');
+              console.log(`[VTID-LINK-INJECT] Injected ${uniqueLinks.length} event link(s) into output transcript`);
+              // Send the links as output_transcript SSE events so they appear in chat
+              for (const link of uniqueLinks) {
+                if (session.sseResponse) {
+                  try { session.sseResponse.write(`data: ${JSON.stringify({ type: 'output_transcript', text: '\n' + link })}\n\n`); } catch (_e) { /* SSE closed */ }
+                }
+                if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+                  try { sendWsMessage(session.clientWs, { type: 'output_transcript', text: '\n' + link }); } catch (_e) { /* WS closed */ }
+                }
+              }
+              session.pendingEventLinks = [];
+            }
 
             // VTID-01225: Write accumulated assistant transcript to memory_items and transcriptTurns
             // Skip memory write for the greeting turn (server-injected prompt, not real user interaction)
@@ -2729,6 +2751,8 @@ async function connectToLiveAPI(
                       }
                     }
                     console.log(`[VTID-LINK] Sent ${uniqueUrls.length} link(s) to client from ${toolName}: ${uniqueUrls.join(', ')}`);
+                    // VTID-LINK-INJECT: Store URLs for injection into output transcript at turn_complete
+                    session.pendingEventLinks.push(...uniqueUrls);
                   }
                 }
 
@@ -6482,6 +6506,7 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
     // VTID-01225: Transcript accumulation for Cognee extraction
     transcriptTurns: [],
     outputTranscriptBuffer: '',
+    pendingEventLinks: [],
     // VTID-01225-THROTTLE: Buffer for user input transcription (written once per turn)
     inputTranscriptBuffer: '',
     // VTID-VOICE-INIT: Echo prevention — not speaking at session start
@@ -8185,6 +8210,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     // VTID-01225: Transcript accumulation for Cognee extraction
     transcriptTurns: [],
     outputTranscriptBuffer: '',
+    pendingEventLinks: [],
     // VTID-01225-THROTTLE: Buffer for user input transcription (written once per turn)
     inputTranscriptBuffer: '',
     // VTID-VOICE-INIT: Echo prevention — not speaking at session start
