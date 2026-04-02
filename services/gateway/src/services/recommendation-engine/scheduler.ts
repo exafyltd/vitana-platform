@@ -7,7 +7,7 @@
  * - On PR merge: Changed files analysis (triggered via webhook)
  */
 
-import { generateRecommendations, SourceType } from './recommendation-generator';
+import { generateRecommendations, generatePersonalRecommendations, SourceType } from './recommendation-generator';
 import { emitOasisEvent } from '../oasis-event-service';
 
 const LOG_PREFIX = '[VTID-01185:Scheduler]';
@@ -22,16 +22,21 @@ export interface SchedulerConfig {
   oasisIntervalMs: number;      // Default: 6 hours
   codebaseHour: number;         // Default: 2 (2 AM UTC)
   codebaseMinute: number;       // Default: 0
+  communityHour: number;        // Default: 7 (7 AM UTC) — daily community user regeneration
+  communityMinute: number;      // Default: 0
 }
 
 export interface SchedulerState {
   isRunning: boolean;
   lastOasisRun?: Date;
   lastCodebaseRun?: Date;
+  lastCommunityRun?: Date;
   nextOasisRun?: Date;
   nextCodebaseRun?: Date;
+  nextCommunityRun?: Date;
   oasisIntervalId?: NodeJS.Timeout;
   codebaseIntervalId?: NodeJS.Timeout;
+  communityIntervalId?: NodeJS.Timeout;
 }
 
 // =============================================================================
@@ -44,6 +49,8 @@ const DEFAULT_CONFIG: SchedulerConfig = {
   oasisIntervalMs: 6 * 60 * 60 * 1000, // 6 hours
   codebaseHour: 2,
   codebaseMinute: 0,
+  communityHour: 7,
+  communityMinute: 0,
 };
 
 // =============================================================================
@@ -160,6 +167,125 @@ async function runFullCodebaseScan(basePath: string): Promise<void> {
     console.log(`${LOG_PREFIX} Daily scan complete: ${result.generated} recommendations`);
   } catch (error) {
     console.error(`${LOG_PREFIX} Daily scan error:`, error);
+  }
+}
+
+// =============================================================================
+// Community User Daily Regeneration
+// =============================================================================
+
+async function runCommunityUserRegeneration(): Promise<void> {
+  console.log(`${LOG_PREFIX} Running daily community user recommendation regeneration...`);
+
+  try {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+    if (!supabaseUrl || !supabaseKey) {
+      console.warn(`${LOG_PREFIX} Community regen skipped: missing Supabase credentials`);
+      return;
+    }
+
+    // Find community users who have 0 'new' recommendations
+    // Query: all users with community recs, grouped, where count of status='new' is 0
+    const usersResp = await fetch(
+      `${supabaseUrl}/rest/v1/rpc/get_community_users_needing_recs`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({}),
+      }
+    );
+
+    let userIds: string[] = [];
+    if (usersResp.ok) {
+      const rows = await usersResp.json() as any[];
+      userIds = rows.map((r: any) => r.user_id).filter(Boolean);
+    }
+
+    // Fallback: if RPC doesn't exist, query directly for users with community recs
+    if (userIds.length === 0) {
+      const fallbackResp = await fetch(
+        `${supabaseUrl}/rest/v1/autopilot_recommendations?source_type=eq.community&select=user_id&order=user_id`,
+        {
+          headers: {
+            apikey: supabaseKey,
+            Authorization: `Bearer ${supabaseKey}`,
+            Prefer: 'return=representation',
+          },
+        }
+      );
+      if (fallbackResp.ok) {
+        const allRows = await fallbackResp.json() as any[];
+        const uniqueUsers = new Set(allRows.map((r: any) => r.user_id).filter(Boolean));
+        // For each user, check if they have any 'new' recs
+        for (const uid of uniqueUsers) {
+          const checkResp = await fetch(
+            `${supabaseUrl}/rest/v1/autopilot_recommendations?user_id=eq.${uid}&status=eq.new&source_type=eq.community&select=id&limit=1`,
+            { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }
+          );
+          if (checkResp.ok) {
+            const rows = await checkResp.json() as any[];
+            if (rows.length === 0) {
+              userIds.push(uid);
+            }
+          }
+        }
+      }
+    }
+
+    if (userIds.length === 0) {
+      console.log(`${LOG_PREFIX} All community users have active recommendations — skipping`);
+      state.lastCommunityRun = new Date();
+      return;
+    }
+
+    console.log(`${LOG_PREFIX} Found ${userIds.length} community users needing fresh recommendations`);
+
+    let totalGenerated = 0;
+    for (const userId of userIds) {
+      try {
+        // Get tenant for this user
+        const tenantResp = await fetch(
+          `${supabaseUrl}/rest/v1/user_tenants?user_id=eq.${userId}&is_primary=eq.true&select=tenant_id&limit=1`,
+          { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }
+        );
+        let tenantId = '';
+        if (tenantResp.ok) {
+          const tenantRows = await tenantResp.json() as any[];
+          tenantId = tenantRows[0]?.tenant_id || '';
+        }
+
+        const result = await generatePersonalRecommendations(userId, tenantId, {
+          trigger_type: 'scheduled',
+        });
+        totalGenerated += result?.generated || 0;
+      } catch (err) {
+        console.warn(`${LOG_PREFIX} Failed to regenerate for user ${userId.slice(0, 8)}: ${err}`);
+      }
+    }
+
+    state.lastCommunityRun = new Date();
+
+    await emitOasisEvent({
+      vtid: 'VTID-01185',
+      type: 'autopilot.recommendation.community.completed' as any,
+      source: 'recommendation-scheduler',
+      status: 'success',
+      message: `Community regeneration complete: ${totalGenerated} recommendations for ${userIds.length} users`,
+      payload: {
+        schedule_type: 'community_daily',
+        users_processed: userIds.length,
+        total_generated: totalGenerated,
+      },
+    });
+
+    console.log(`${LOG_PREFIX} Community regeneration complete: ${totalGenerated} recs for ${userIds.length} users`);
+  } catch (error) {
+    console.error(`${LOG_PREFIX} Community regeneration error:`, error);
   }
 }
 
@@ -342,9 +468,28 @@ export function startScheduler(config: Partial<SchedulerConfig> = {}): void {
 
   scheduleNextCodebaseScan();
 
+  // Schedule daily community user regeneration
+  const scheduleNextCommunityRun = () => {
+    const nextRun = getNextDailyRunTime(fullConfig.communityHour, fullConfig.communityMinute);
+    state.nextCommunityRun = nextRun;
+
+    const msUntilRun = getMillisecondsUntil(nextRun);
+    console.log(
+      `${LOG_PREFIX} Next community regeneration scheduled for ${nextRun.toISOString()} (in ${Math.round(msUntilRun / 1000 / 60)} minutes)`
+    );
+
+    state.communityIntervalId = setTimeout(() => {
+      runCommunityUserRegeneration();
+      scheduleNextCommunityRun();
+    }, msUntilRun);
+  };
+
+  scheduleNextCommunityRun();
+
   console.log(`${LOG_PREFIX} Scheduler started`);
   console.log(`${LOG_PREFIX} - OASIS analysis: every ${fullConfig.oasisIntervalMs / 1000 / 60 / 60}h`);
   console.log(`${LOG_PREFIX} - Daily scan: ${fullConfig.codebaseHour}:${String(fullConfig.codebaseMinute).padStart(2, '0')} UTC`);
+  console.log(`${LOG_PREFIX} - Community regen: ${fullConfig.communityHour}:${String(fullConfig.communityMinute).padStart(2, '0')} UTC`);
 }
 
 export function stopScheduler(): void {
@@ -365,9 +510,15 @@ export function stopScheduler(): void {
     state.codebaseIntervalId = undefined;
   }
 
+  if (state.communityIntervalId) {
+    clearTimeout(state.communityIntervalId);
+    state.communityIntervalId = undefined;
+  }
+
   state.isRunning = false;
   state.nextOasisRun = undefined;
   state.nextCodebaseRun = undefined;
+  state.nextCommunityRun = undefined;
 
   console.log(`${LOG_PREFIX} Scheduler stopped`);
 }
@@ -376,15 +527,19 @@ export function getSchedulerStatus(): {
   isRunning: boolean;
   lastOasisRun?: string;
   lastCodebaseRun?: string;
+  lastCommunityRun?: string;
   nextOasisRun?: string;
   nextCodebaseRun?: string;
+  nextCommunityRun?: string;
 } {
   return {
     isRunning: state.isRunning,
     lastOasisRun: state.lastOasisRun?.toISOString(),
     lastCodebaseRun: state.lastCodebaseRun?.toISOString(),
+    lastCommunityRun: state.lastCommunityRun?.toISOString(),
     nextOasisRun: state.nextOasisRun?.toISOString(),
     nextCodebaseRun: state.nextCodebaseRun?.toISOString(),
+    nextCommunityRun: state.nextCommunityRun?.toISOString(),
   };
 }
 
