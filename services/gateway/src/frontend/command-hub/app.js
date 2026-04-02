@@ -5157,8 +5157,40 @@ function renderHeader() {
             }));
             if (data.ok) {
                 state.autopilotRecommendations = data.recommendations || [];
-                // Sync badge count with actual list to avoid mismatch
                 state.autopilotRecommendationsCount = state.autopilotRecommendations.length;
+
+                // Auto-replenishment: if community role has 0 new recommendations,
+                // trigger generation of fresh personalized recommendations
+                if (state.autopilotRecommendations.length === 0 &&
+                    state.meContext?.active_role === 'community' &&
+                    state.meContext?.user_id &&
+                    !state._autopilotReplenishAttempted) {
+                    console.log('[VTID-01180] Zero recommendations for community user — triggering auto-replenishment');
+                    state._autopilotReplenishAttempted = true;
+                    try {
+                        var genResp = await fetch('/api/v1/autopilot/recommendations/generate-personal', {
+                            method: 'POST',
+                            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                            body: JSON.stringify({})
+                        });
+                        var genData = await genResp.json();
+                        console.log('[VTID-01180] Auto-replenishment result:', JSON.stringify(genData));
+                        if (genData.ok && genData.generated > 0) {
+                            // Re-fetch to show the new recommendations
+                            var refetchResp = await fetch('/api/v1/autopilot/recommendations?status=new&limit=20', {
+                                headers: buildContextHeaders({})
+                            });
+                            var refetchData = await refetchResp.json();
+                            if (refetchData.ok) {
+                                state.autopilotRecommendations = refetchData.recommendations || [];
+                                state.autopilotRecommendationsCount = state.autopilotRecommendations.length;
+                                console.log('[VTID-01180] After replenishment:', state.autopilotRecommendations.length, 'recommendations');
+                            }
+                        }
+                    } catch (genErr) {
+                        console.warn('[VTID-01180] Auto-replenishment failed:', genErr.message);
+                    }
+                }
             } else {
                 state.autopilotRecommendationsError = data.error || 'Unknown error';
             }

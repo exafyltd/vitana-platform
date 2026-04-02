@@ -743,6 +743,30 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
 
       console.log(`${LOG_PREFIX} Community activation: ${rec.source_ref} → ${action.action_type}:${action.target || 'none'}`);
 
+      // Auto-replenishment: check if user has any remaining 'new' recs.
+      // If this was the last one, trigger generation of fresh recommendations.
+      let replenished = 0;
+      if (userId) {
+        try {
+          const remainingResp = await fetch(
+            `${supabaseUrl}/rest/v1/autopilot_recommendations?user_id=eq.${userId}&status=eq.new&select=id&limit=1`,
+            { headers: { apikey: svcKey!, Authorization: `Bearer ${svcKey}` } }
+          );
+          const remainingRows = remainingResp.ok ? await remainingResp.json() as any[] : [];
+          if (remainingRows.length === 0) {
+            console.log(`${LOG_PREFIX} Last community rec activated for user ${userId.slice(0, 8)} — triggering auto-replenishment`);
+            const tenantId = req.get('X-Vitana-Tenant') || '';
+            const authToken = req.get('Authorization')?.replace('Bearer ', '') || '';
+            const { generatePersonalRecommendations: genPersonal } = await import('../services/recommendation-engine');
+            const genResult = await genPersonal(userId, tenantId, { trigger_type: 'auto_replenish' });
+            replenished = genResult?.generated || 0;
+            console.log(`${LOG_PREFIX} Auto-replenishment generated ${replenished} new recommendations`);
+          }
+        } catch (replenishErr: any) {
+          console.warn(`${LOG_PREFIX} Auto-replenishment failed (non-fatal): ${replenishErr.message}`);
+        }
+      }
+
       return res.status(200).json({
         ok: true,
         recommendation_id: id,
@@ -752,6 +776,7 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
         action_type: action.action_type,
         target: action.target || null,
         completion_message: action.completion_message,
+        replenished,
         vtid: 'VTID-01180',
         timestamp: new Date().toISOString(),
       });
