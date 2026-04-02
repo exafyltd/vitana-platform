@@ -612,8 +612,8 @@ interface GeminiLiveSession {
   transcriptTurns: Array<{ role: 'user' | 'assistant'; text: string; timestamp: string }>;
   // VTID-01225: Buffer for accumulating output transcription chunks until turn completes
   outputTranscriptBuffer: string;
-  // VTID-LINK-INJECT: URLs from search_events tool results, injected into output transcript at turn_complete
-  pendingEventLinks: string[];
+  // VTID-LINK-INJECT: Event title+URL pairs from search_events tool results, injected into output transcript at turn_complete
+  pendingEventLinks: { title: string; url: string }[];
   // Conversation summary from previous session for greeting context
   conversationSummary?: string;
   // Voice init: greeting lifecycle tracking
@@ -2435,18 +2435,52 @@ async function connectToLiveAPI(
             // VTID-LINK-INJECT: Append pending event links to output transcript
             // The AI is instructed not to say URLs aloud, so we inject them into the text transcript
             // so they appear in the user's chat as clickable links.
+            // Only inject links for events the AI actually referenced in its spoken response.
             if (session.pendingEventLinks.length > 0) {
-              const uniqueLinks = [...new Set(session.pendingEventLinks)];
-              session.outputTranscriptBuffer += '\n' + uniqueLinks.join('\n');
-              console.log(`[VTID-LINK-INJECT] Injected ${uniqueLinks.length} event link(s) into output transcript`);
-              // Send the links as output_transcript SSE events so they appear in chat
-              for (const link of uniqueLinks) {
-                if (session.sseResponse) {
-                  try { session.sseResponse.write(`data: ${JSON.stringify({ type: 'output_transcript', text: '\n' + link })}\n\n`); } catch (_e) { /* SSE closed */ }
-                }
-                if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
-                  try { sendWsMessage(session.clientWs, { type: 'output_transcript', text: '\n' + link }); } catch (_e) { /* WS closed */ }
-                }
+              // Deduplicate by URL
+              const seen = new Set<string>();
+              const allLinks = session.pendingEventLinks.filter(p => {
+                if (seen.has(p.url)) return false;
+                seen.add(p.url);
+                return true;
+              });
+
+              // Filter: only include events the AI actually mentioned by checking title words
+              // against the spoken transcript. If AI mentioned none (edge case), include all.
+              const spokenText = session.outputTranscriptBuffer.toLowerCase();
+              const mentionedLinks = allLinks.filter(p => {
+                if (!p.title) return true; // no title = fallback URL, always include
+                // Check if significant words from the title appear in the spoken response
+                const words = p.title.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+                return words.some(w => spokenText.includes(w));
+              });
+              const linksToInject = mentionedLinks.length > 0 ? mentionedLinks : allLinks;
+
+              // Format as a numbered list with titles
+              let formattedBlock: string;
+              if (linksToInject.length === 1) {
+                // Single link: just title + URL
+                const p = linksToInject[0];
+                formattedBlock = p.title
+                  ? `\n\n${p.title}\n${p.url}`
+                  : `\n\n${p.url}`;
+              } else {
+                // Multiple links: numbered list
+                const listItems = linksToInject.map((p, i) =>
+                  p.title ? `${i + 1}. ${p.title}\n   ${p.url}` : `${i + 1}. ${p.url}`
+                );
+                formattedBlock = `\n\n${listItems.join('\n\n')}`;
+              }
+
+              session.outputTranscriptBuffer += formattedBlock;
+              console.log(`[VTID-LINK-INJECT] Injected ${linksToInject.length}/${allLinks.length} event link(s) into output transcript`);
+
+              // Send the formatted block as a single output_transcript SSE event
+              if (session.sseResponse) {
+                try { session.sseResponse.write(`data: ${JSON.stringify({ type: 'output_transcript', text: formattedBlock })}\n\n`); } catch (_e) { /* SSE closed */ }
+              }
+              if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+                try { sendWsMessage(session.clientWs, { type: 'output_transcript', text: formattedBlock }); } catch (_e) { /* WS closed */ }
               }
               session.pendingEventLinks = [];
             }
@@ -2752,14 +2786,36 @@ async function connectToLiveAPI(
                 const toolElapsed = Date.now() - toolStartTime;
                 console.log(`[VTID-01224] Tool ${toolName} completed in ${toolElapsed}ms, success=${result.success}, resultLen=${result.result.length}`);
 
-                // VTID-LINK: Extract URLs from tool results and send to client separately.
+                // VTID-LINK: Extract title+URL pairs from tool results and send to client.
                 // Vitana won't say URLs in voice, so we push them to chat via SSE/WS.
+                // Tool results are formatted as "Title | Date | Location | ... | Link: URL"
                 if (result.success && result.result) {
-                  const urlRegex = /https?:\/\/[^\s"',)}\]]+/g;
-                  const urls = result.result.match(urlRegex);
-                  if (urls && urls.length > 0) {
-                    const uniqueUrls = [...new Set(urls)];
-                    for (const url of uniqueUrls) {
+                  const linkPairs: { title: string; url: string }[] = [];
+                  const lines = result.result.split('\n');
+                  for (const line of lines) {
+                    const linkMatch = line.match(/\| Link: (https?:\/\/[^\s|]+)/);
+                    if (linkMatch) {
+                      const url = linkMatch[1];
+                      const title = line.split('|')[0].trim();
+                      if (url && title && !linkPairs.some(p => p.url === url)) {
+                        linkPairs.push({ title, url });
+                      }
+                    }
+                  }
+                  // Fallback: extract any remaining URLs not captured by the structured format
+                  if (linkPairs.length === 0) {
+                    const urlRegex = /https?:\/\/[^\s"',)}\]]+/g;
+                    const urls = result.result.match(urlRegex);
+                    if (urls) {
+                      for (const url of [...new Set(urls)]) {
+                        if (!linkPairs.some(p => p.url === url)) {
+                          linkPairs.push({ title: '', url });
+                        }
+                      }
+                    }
+                  }
+                  if (linkPairs.length > 0) {
+                    for (const { url } of linkPairs) {
                       const linkMsg = { type: 'link', url, tool: toolName };
                       if (session.sseResponse) {
                         try { session.sseResponse.write(`data: ${JSON.stringify(linkMsg)}\n\n`); } catch (_e) { /* SSE closed */ }
@@ -2768,9 +2824,9 @@ async function connectToLiveAPI(
                         try { sendWsMessage(session.clientWs, linkMsg); } catch (_e) { /* WS closed */ }
                       }
                     }
-                    console.log(`[VTID-LINK] Sent ${uniqueUrls.length} link(s) to client from ${toolName}: ${uniqueUrls.join(', ')}`);
-                    // VTID-LINK-INJECT: Store URLs for injection into output transcript at turn_complete
-                    session.pendingEventLinks.push(...uniqueUrls);
+                    console.log(`[VTID-LINK] Sent ${linkPairs.length} link(s) to client from ${toolName}: ${linkPairs.map(p => p.url).join(', ')}`);
+                    // VTID-LINK-INJECT: Store title+URL pairs for injection into output transcript at turn_complete
+                    session.pendingEventLinks.push(...linkPairs);
                   }
                 }
 
