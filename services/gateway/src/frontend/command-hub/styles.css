@@ -2931,6 +2931,8 @@ body {
 
 .cicd-health-tooltip__details {
   padding: 0.75rem 1rem;
+  max-height: 60vh;
+  overflow-y: auto;
 }
 
 .cicd-health-tooltip__row {
@@ -2990,6 +2992,144 @@ body {
   font-size: 0.7rem;
   color: var(--color-text-secondary);
   text-align: right;
+}
+
+/* --- Service Health Popup (modal overlay with grid) --- */
+
+.health-popup-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: health-popup-fade 0.15s ease-out;
+}
+
+@keyframes health-popup-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.health-popup {
+  background: var(--color-sidebar-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  min-width: 900px;
+  max-width: 96vw;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.health-popup__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.health-popup__title {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.health-popup__status--healthy {
+  color: #10b981;
+}
+
+.health-popup__status--error {
+  color: #ef4444;
+}
+
+.health-popup__close {
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: 1.4rem;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.health-popup__close:hover {
+  color: var(--color-text-primary);
+}
+
+.health-popup__grid {
+  display: grid;
+  grid-template-columns: repeat(15, 1fr);
+  gap: 4px;
+  padding: 1rem 1.25rem;
+  overflow-y: auto;
+}
+
+.health-popup__cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 0.6rem;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: default;
+  min-width: 0;
+}
+
+.health-popup__cell:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.health-popup__cell--bad {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+.health-popup__cell--bad:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+.health-popup__cell .health-dot {
+  flex-shrink: 0;
+}
+
+.health-popup__cell-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.health-popup__loading {
+  padding: 2rem;
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+
+.health-popup__footer {
+  padding: 0.5rem 1.25rem;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+  text-align: right;
+}
+
+/* Responsive: below 900px, reduce columns */
+@media (max-width: 900px) {
+  .health-popup__grid {
+    grid-template-columns: repeat(8, 1fr);
+  }
+  .health-popup {
+    min-width: auto;
+    width: 95vw;
+  }
 }
 
 /* --- VTID-0401: Governance Rules Catalog --- */

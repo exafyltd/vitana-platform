@@ -4834,6 +4834,9 @@ function renderApp() {
     var savedScrollPositions = captureAllScrollPositions();
 
     root.innerHTML = '';
+    // Clean up health popup backdrop (lives on document.body, outside root)
+    var _oldBackdrop = document.querySelector('.health-popup-backdrop');
+    if (_oldBackdrop) _oldBackdrop.remove();
 
     const container = document.createElement('div');
     container.className = 'app-container';
@@ -5326,103 +5329,74 @@ function renderHeader() {
     };
     cicdHealthIndicator.appendChild(statusPill);
 
-    // CI/CD Health Tooltip/Dropdown (restored from pre-0010)
+    // Service Health Popup (modal overlay with grid)
     if (state.cicdHealthTooltipOpen) {
-        const tooltip = document.createElement('div');
-        tooltip.className = 'cicd-health-tooltip';
+        var backdrop = document.createElement('div');
+        backdrop.className = 'health-popup-backdrop';
+        backdrop.onclick = function () {
+            state.cicdHealthTooltipOpen = false;
+            renderApp();
+        };
 
-        // Header
-        const tooltipHeader = document.createElement('div');
-        tooltipHeader.className = 'cicd-health-tooltip__header';
-        if (capsFailing > 0) {
-            tooltipHeader.innerHTML = '<span class="cicd-health-tooltip__status cicd-health-tooltip__status--error">Service Health (' + capsHealthy + '/' + capsTotal + ')</span>';
-        } else if (capsTotal > 0) {
-            tooltipHeader.innerHTML = '<span class="cicd-health-tooltip__status cicd-health-tooltip__status--healthy">Service Health (' + capsHealthy + '/' + capsTotal + ')</span>';
-        } else {
-            tooltipHeader.innerHTML = '<span class="cicd-health-tooltip__status">Service Health</span>';
-        }
-        tooltip.appendChild(tooltipHeader);
+        var popup = document.createElement('div');
+        popup.className = 'health-popup';
+        popup.onclick = function (e) { e.stopPropagation(); };
 
-        // Service list
+        // Header row
+        var popupHeader = document.createElement('div');
+        popupHeader.className = 'health-popup__header';
+        var statusClass = capsFailing > 0 ? 'health-popup__status--error' : 'health-popup__status--healthy';
+        popupHeader.innerHTML =
+            '<span class="health-popup__title ' + statusClass + '">Service Health (' + capsHealthy + '/' + capsTotal + ')</span>' +
+            '<button class="health-popup__close">&times;</button>';
+        popupHeader.querySelector('.health-popup__close').onclick = function () {
+            state.cicdHealthTooltipOpen = false;
+            renderApp();
+        };
+        popup.appendChild(popupHeader);
+
+        // Grid of services
         if (state.serviceHealth.items.length > 0) {
-            const details = document.createElement('div');
-            details.className = 'cicd-health-tooltip__details';
+            var grid = document.createElement('div');
+            grid.className = 'health-popup__grid';
 
-            for (var shi = 0; shi < state.serviceHealth.items.length; shi++) {
-                var svc = state.serviceHealth.items[shi];
-                var svcRow = document.createElement('div');
-                svcRow.className = 'cicd-health-tooltip__row';
-                svcRow.innerHTML = '<span class="cicd-health-tooltip__label">' + svc.name + ':</span>' +
-                    '<span class="cicd-health-tooltip__value cicd-health-tooltip__value--' + (svc.healthy ? 'yes' : 'no') + '">' +
-                    (svc.healthy ? 'OK' : svc.status) +
-                    (svc.latency_ms >= 0 ? ' (' + svc.latency_ms + 'ms)' : '') +
-                    '</span>';
-                details.appendChild(svcRow);
+            // Sort: failed first, then alphabetical
+            var sortedItems = state.serviceHealth.items.slice().sort(function (a, b) {
+                if (a.healthy !== b.healthy) return a.healthy ? 1 : -1;
+                return a.name.localeCompare(b.name);
+            });
+
+            for (var shi = 0; shi < sortedItems.length; shi++) {
+                var svc = sortedItems[shi];
+                var dot = 'green';
+                if (!svc.healthy && (svc.status === 'degraded' || svc.status === 'warning')) dot = 'yellow';
+                if (!svc.healthy && (svc.status === 'down' || svc.status === 'error' || svc.status === 'unhealthy')) dot = 'red';
+                if (!svc.healthy && dot === 'green') dot = 'red';
+
+                var cell = document.createElement('div');
+                cell.className = 'health-popup__cell' + (svc.healthy ? '' : ' health-popup__cell--bad');
+                cell.title = svc.name + ': ' + (svc.healthy ? 'OK' : svc.status) + (svc.latency_ms >= 0 ? ' (' + svc.latency_ms + 'ms)' : '');
+                cell.innerHTML =
+                    '<span class="health-dot health-dot-' + dot + '"></span>' +
+                    '<span class="health-popup__cell-name">' + svc.name + '</span>';
+                grid.appendChild(cell);
             }
-
-            // CI/CD Capabilities detail (collapsible)
-            if (state.cicdHealth && state.cicdHealth.capabilities) {
-                var capToggle = document.createElement('div');
-                capToggle.className = 'cicd-health-tooltip__caps-header';
-                capToggle.style.cssText = 'cursor:pointer;margin-top:8px;';
-                capToggle.textContent = '\u25B8 CI/CD Capabilities';
-                var capList = document.createElement('div');
-                capList.style.display = 'none';
-                var caps = state.cicdHealth.capabilities;
-                for (var ck in caps) {
-                    if (caps.hasOwnProperty(ck)) {
-                        var cr = document.createElement('div');
-                        cr.className = 'cicd-health-tooltip__row';
-                        var cl = ck.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
-                        cr.innerHTML = '<span class="cicd-health-tooltip__label">' + cl + ':</span>' +
-                            '<span class="cicd-health-tooltip__value cicd-health-tooltip__value--' + (caps[ck] ? 'yes' : 'no') + '">' +
-                            (caps[ck] ? 'Yes' : 'No') + '</span>';
-                        capList.appendChild(cr);
-                    }
-                }
-                capToggle.onclick = function (e) {
-                    e.stopPropagation();
-                    if (capList.style.display === 'none') {
-                        capList.style.display = 'block';
-                        capToggle.textContent = '\u25BE CI/CD Capabilities';
-                    } else {
-                        capList.style.display = 'none';
-                        capToggle.textContent = '\u25B8 CI/CD Capabilities';
-                    }
-                };
-                details.appendChild(capToggle);
-                details.appendChild(capList);
-            }
-
-            tooltip.appendChild(details);
+            popup.appendChild(grid);
         } else {
-            const loadingDetails = document.createElement('div');
-            loadingDetails.className = 'cicd-health-tooltip__loading';
-            loadingDetails.textContent = 'Loading...';
-            tooltip.appendChild(loadingDetails);
+            var loading = document.createElement('div');
+            loading.className = 'health-popup__loading';
+            loading.textContent = 'Loading...';
+            popup.appendChild(loading);
         }
 
-        // Last updated timestamp
-        const footer = document.createElement('div');
-        footer.className = 'cicd-health-tooltip__footer';
+        // Footer
+        var footer = document.createElement('div');
+        footer.className = 'health-popup__footer';
         footer.textContent = 'Updated: ' + new Date().toLocaleTimeString();
-        tooltip.appendChild(footer);
+        popup.appendChild(footer);
 
-        cicdHealthIndicator.appendChild(tooltip);
-
-        // Click-outside handler for CI/CD tooltip
-        setTimeout(() => {
-            const closeTooltip = (e) => {
-                const tooltipEl = document.querySelector('.cicd-health-tooltip');
-                const pillEl = document.querySelector('.header-pill--live, .header-pill--offline');
-                if (tooltipEl && !tooltipEl.contains(e.target) && pillEl && !pillEl.contains(e.target)) {
-                    state.cicdHealthTooltipOpen = false;
-                    document.removeEventListener('click', closeTooltip);
-                    renderApp();
-                }
-            };
-            document.addEventListener('click', closeTooltip);
-        }, 0);
+        backdrop.appendChild(popup);
+        document.body.appendChild(backdrop);
     }
 
     right.appendChild(cicdHealthIndicator);
@@ -23823,21 +23797,67 @@ async function fetchServiceHealth(silentRefresh) {
     state.serviceHealth.loading = true;
 
     var healthEndpoints = [
-        { name: 'Gateway',           url: '/health' },
-        { name: 'CI/CD',             url: '/api/v1/cicd/health' },
-        { name: 'Operator',          url: '/api/v1/operator/health' },
-        { name: 'Autopilot',         url: '/api/v1/autopilot/health' },
-        { name: 'Assistant',         url: '/api/v1/assistant/health' },
-        { name: 'ORB Live',          url: '/api/v1/orb/health' },
-        { name: 'Conversation',      url: '/api/v1/conversation/health' },
-        { name: 'Community',         url: '/api/v1/community/health' },
-        { name: 'Automations',       url: '/api/v1/automations/health' },
-        { name: 'Execute Runner',    url: '/api/v1/execute/health' },
-        { name: 'Scheduler',         url: '/api/v1/scheduler/health' },
-        { name: 'Memory',            url: '/api/v1/memory/health' },
-        { name: 'Auth',              url: '/api/v1/auth/health' },
-        { name: 'Recommendations',   url: '/api/v1/autopilot/recommendations/health' },
-        { name: 'Diary',             url: '/api/v1/diary/health' }
+        // Core infrastructure
+        { name: 'Gateway',              url: '/health' },
+        { name: 'Gateway Alive',        url: '/alive' },
+        { name: 'Auth',                 url: '/api/v1/auth/health' },
+        { name: 'CI/CD',                url: '/api/v1/cicd/health' },
+        { name: 'Execute Runner',       url: '/api/v1/execute/health' },
+        { name: 'Operator',             url: '/api/v1/operator/health' },
+        { name: 'Operator Deploys',     url: '/api/v1/operator/deployments/health' },
+        { name: 'Telemetry',            url: '/api/v1/telemetry/health' },
+        { name: 'Events',               url: '/events/health' },
+        { name: 'Command Hub UI',       url: '/command-hub/health' },
+        // AI & Assistant
+        { name: 'Assistant',            url: '/api/v1/assistant/health' },
+        { name: 'Knowledge Hub',        url: '/api/v1/assistant/knowledge/health' },
+        { name: 'ORB Live',             url: '/api/v1/orb/health' },
+        { name: 'Voice Lab',            url: '/api/v1/voice-lab/health' },
+        { name: 'Conversation',         url: '/api/v1/conversation/health' },
+        { name: 'Conversation Tools',   url: '/api/v1/conversation/tool-health' },
+        // Autopilot
+        { name: 'Autopilot',            url: '/api/v1/autopilot/health' },
+        { name: 'Autopilot Pipeline',   url: '/api/v1/autopilot/pipeline/health' },
+        { name: 'Autopilot Prompts',    url: '/api/v1/autopilot/prompts/health' },
+        { name: 'Recommendations',      url: '/api/v1/autopilot/recommendations/health' },
+        // Automation & Scheduling
+        { name: 'Automations',          url: '/api/v1/automations/health' },
+        { name: 'Rec. Inbox',           url: '/api/v1/recommendations/health' },
+        { name: 'Memory',               url: '/api/v1/memory/health' },
+        { name: 'Semantic Memory',      url: '/api/v1/memory/semantic/health' },
+        { name: 'Diary',                url: '/api/v1/diary/health' },
+        { name: 'Health Capacity',      url: '/api/v1/capacity/health' },
+        { name: 'Scheduler',            url: '/api/v1/scheduler/health' },
+        { name: 'Sched. Notifs',        url: '/api/v1/scheduled-notifications/health' },
+        { name: 'Email Intake',         url: '/api/v1/intake/email/health' },
+        // Community & Social
+        { name: 'Community',            url: '/api/v1/community/health' },
+        { name: 'Relationships',        url: '/api/v1/relationships/health' },
+        { name: 'Matchmaking',          url: '/api/v1/match/health' },
+        { name: 'Personalization',      url: '/api/v1/personalization/health' },
+        { name: 'Live Rooms',           url: '/api/v1/live/health' },
+        { name: 'Social Context',       url: '/api/v1/social/health' },
+        { name: 'Social Connect',       url: '/api/v1/social-accounts/health' },
+        { name: 'Social Alignment',     url: '/api/v1/alignment/health' },
+        { name: 'Topics',               url: '/api/v1/topics/health' },
+        // Domain & Context
+        { name: 'Domain Routing',       url: '/api/v1/routing/health' },
+        { name: 'Locations',            url: '/api/v1/locations/health' },
+        { name: 'Offers',               url: '/api/v1/offers/health' },
+        { name: 'Feedback',             url: '/api/v1/feedback/health' },
+        { name: 'Voice Feedback',       url: '/api/v1/voice-feedback/health' },
+        { name: 'Situational',          url: '/api/v1/situational/health' },
+        { name: 'Availability',         url: '/api/v1/availability/health' },
+        { name: 'Env. Mobility',        url: '/api/v1/context/mobility/health' },
+        { name: 'User Preferences',     url: '/api/v1/user-preferences/health' },
+        { name: 'Taste Alignment',      url: '/api/v1/taste-alignment/health' },
+        { name: 'Overload Detection',   url: '/api/v1/overload/health' },
+        { name: 'Risk Mitigation',      url: '/api/v1/mitigation/health' },
+        { name: 'Opportunities',        url: '/api/v1/opportunities/health' },
+        // Visual & VTID
+        { name: 'Visual Interactive',   url: '/api/v1/visual/health' },
+        { name: 'VTID Terminalize',     url: '/api/v1/oasis/vtid/terminalize/health' },
+        { name: 'VTID',                 url: '/api/v1/vtid/health' }
     ];
 
     try {
@@ -26057,23 +26077,15 @@ async function fetchOverviewDashboard() {
     if (useSharedHealth) {
         healthCheckPromise = Promise.resolve({ status: 'fulfilled', value: state.serviceHealth.items.map(function (s) { return { status: 'fulfilled', value: s }; }) });
     } else {
-        var healthEndpoints = [
-            { name: 'Gateway',           url: '/health' },
-            { name: 'CI/CD',             url: '/api/v1/cicd/health' },
-            { name: 'Operator',          url: '/api/v1/operator/health' },
-            { name: 'Autopilot',         url: '/api/v1/autopilot/health' },
-            { name: 'Assistant',         url: '/api/v1/assistant/health' },
-            { name: 'ORB Live',          url: '/api/v1/orb/health' },
-            { name: 'Conversation',      url: '/api/v1/conversation/health' },
-            { name: 'Community',         url: '/api/v1/community/health' },
-            { name: 'Automations',       url: '/api/v1/automations/health' },
-            { name: 'Execute Runner',    url: '/api/v1/execute/health' },
-            { name: 'Scheduler',         url: '/api/v1/scheduler/health' },
-            { name: 'Memory',            url: '/api/v1/memory/health' },
-            { name: 'Auth',              url: '/api/v1/auth/health' },
-            { name: 'Recommendations',   url: '/api/v1/autopilot/recommendations/health' },
-            { name: 'Diary',             url: '/api/v1/diary/health' }
-        ];
+        var healthEndpoints = state.serviceHealth.items.length > 0
+            ? state.serviceHealth.items.map(function (s) { return { name: s.name, url: s.url }; })
+            : [
+                { name: 'Gateway', url: '/health' },
+                { name: 'CI/CD',   url: '/api/v1/cicd/health' },
+                { name: 'Operator', url: '/api/v1/operator/health' },
+                { name: 'Autopilot', url: '/api/v1/autopilot/health' },
+                { name: 'Assistant', url: '/api/v1/assistant/health' }
+            ];
         healthCheckPromise = Promise.allSettled(healthEndpoints.map(function (ep) {
             var start = Date.now();
             return fetch(ep.url)
@@ -26640,10 +26652,11 @@ function renderOverviewSystemView() {
             healthPanel.appendChild(failSection);
         }
 
-        // 4x4 health grid — 16 cells (15 services + 1 empty)
+        // Dynamic health grid — rows computed from service count
         var HEALTH_COLS = 4;
+        var HEALTH_ROWS = Math.ceil(sortedHealth.length / HEALTH_COLS);
         var healthHTML = '<table style="width:100%;table-layout:fixed;border-collapse:separate;border-spacing:4px;">';
-        for (var hri = 0; hri < 4; hri++) {
+        for (var hri = 0; hri < HEALTH_ROWS; hri++) {
             healthHTML += '<tr>';
             for (var hci = 0; hci < HEALTH_COLS; hci++) {
                 var hidx = hri * HEALTH_COLS + hci;
