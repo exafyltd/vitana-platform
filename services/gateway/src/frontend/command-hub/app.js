@@ -5346,22 +5346,22 @@ function renderHeader() {
         modal.onclick = function (e) { e.stopPropagation(); };
 
         // Header
-        var header = document.createElement('div');
-        header.className = 'modal-header';
-        header.style.cssText = 'display:flex; justify-content:space-between; align-items:center;';
+        var hmHeader = document.createElement('div');
+        hmHeader.className = 'modal-header';
+        hmHeader.style.cssText = 'display:flex; justify-content:space-between; align-items:center;';
         var titleColor = capsFailing > 0 ? '#ef4444' : '#10b981';
-        header.innerHTML =
+        hmHeader.innerHTML =
             '<span style="color:' + titleColor + '">Service Health (' + capsHealthy + '/' + capsTotal + ')</span>' +
             '<button class="drawer-close-btn" style="position:static;">&times;</button>';
-        header.querySelector('.drawer-close-btn').onclick = function () {
+        hmHeader.querySelector('.drawer-close-btn').onclick = function () {
             state.cicdHealthTooltipOpen = false;
             renderApp();
         };
-        modal.appendChild(header);
+        modal.appendChild(hmHeader);
 
         // Body with grid
-        var body = document.createElement('div');
-        body.className = 'modal-body';
+        var hmBody = document.createElement('div');
+        hmBody.className = 'modal-body';
 
         if (state.serviceHealth.items.length > 0) {
             var grid = document.createElement('div');
@@ -5388,11 +5388,11 @@ function renderHeader() {
                     '<span class="health-grid__cell-name">' + svc.name + '</span>';
                 grid.appendChild(cell);
             }
-            body.appendChild(grid);
+            hmBody.appendChild(grid);
         } else {
-            body.innerHTML = '<div style="text-align:center; color:var(--color-text-secondary);">Loading...</div>';
+            hmBody.innerHTML = '<div style="text-align:center; color:var(--color-text-secondary);">Loading...</div>';
         }
-        modal.appendChild(body);
+        modal.appendChild(hmBody);
 
         // Footer
         var modalFooter = document.createElement('div');
