@@ -132,8 +132,33 @@
     _inputTranscriptBuffer: '',
     _outputTranscriptBuffer: '',
     _transcriptHistory: [],  // Array of { role: 'user'|'assistant', text: string }
-    _reconnectCount: 0       // Track reconnection attempts
+    _reconnectCount: 0,      // Track reconnection attempts
+    _isOffline: false         // VTID-OFFLINE: Track network offline state
   };
+
+  // VTID-OFFLINE: Instant offline/online detection via browser events
+  window.addEventListener('offline', function () {
+    console.warn('[VTOrb] Browser went offline');
+    _s._isOffline = true;
+    if (_s.active || _s.overlayVisible) {
+      _stopWatchdog();
+      _setOrbState('offline');
+      _setStatus(_cfg.lang.startsWith('de') ? 'Du bist offline. Bitte prüfe deine Internetverbindung.' : 'You seem to be offline. Please check your internet connection.');
+      _playErrorTone();
+    }
+  });
+
+  window.addEventListener('online', function () {
+    console.log('[VTOrb] Browser back online');
+    _s._isOffline = false;
+    if (_s.active || _s.overlayVisible) {
+      _setStatus(_cfg.lang.startsWith('de') ? 'Wieder online — Verbindung wird wiederhergestellt...' : 'Back online — reconnecting...');
+      _setOrbState('connecting');
+      // Reset reconnect count so we get fresh attempts after coming back online
+      _s._reconnectCount = 0;
+      _attemptReconnect();
+    }
+  });
 
   var _root = null; // Widget DOM root
   var _fab = null;  // FAB button element
@@ -808,6 +833,16 @@
         _sessionStop();
         break;
 
+      case 'session_limit_reached':
+        // VTID-ANON-NUDGE: Anonymous session hit turn limit — show registration prompt
+        console.log('[VTOrb] Session limit reached — prompting registration');
+        _setStatus(_cfg.lang.startsWith('de')
+          ? 'Registriere dich kostenlos, um das Gespräch fortzusetzen!'
+          : 'Register for free to continue the conversation!');
+        _setOrbState('paused');
+        setTimeout(_sessionStop, 8000);
+        break;
+
       case 'link':
         // Server extracted a URL from tool results — push to transcript so it
         // appears in chat as a tappable link. Vitana doesn't say URLs in voice.
@@ -1140,7 +1175,8 @@
     speaking:   { inner: 'rgba(245,158,11,0.5)',  iOp: 0.6, outer: 'rgba(245,158,11,0.3)', oOp: 0.4 },
     listening:  { inner: 'rgba(59,130,246,0.5)',   iOp: 0.5, outer: 'rgba(59,130,246,0.3)', oOp: 0.4 },
     paused:     { inner: 'rgba(107,114,128,0.3)',  iOp: 0.3 },
-    error:      { inner: 'rgba(239,68,68,0.4)',    iOp: 0.5 }
+    error:      { inner: 'rgba(239,68,68,0.4)',    iOp: 0.5 },
+    offline:    { inner: 'rgba(107,114,128,0.3)',  iOp: 0.3 }  // VTID-OFFLINE: Grey dimmed aura
   };
 
   function _setOrbState(state) {
@@ -1167,14 +1203,14 @@
     }
 
     // Keep CSS class toggle as enhancement (animations if CSS loads)
-    var states = ['listening', 'thinking', 'speaking', 'paused', 'connecting', 'error'];
+    var states = ['listening', 'thinking', 'speaking', 'paused', 'connecting', 'error', 'offline'];
     states.forEach(function (s) { shell.classList.remove('vtorb-st-' + s); });
     shell.classList.add('vtorb-st-' + state);
 
     // Update sphere appearance for muted state
     var orb = shell.querySelector('.vtorb-large');
     if (orb) {
-      if (state === 'paused') {
+      if (state === 'paused' || state === 'offline') {
         orb.style.opacity = '0.6';
         orb.style.filter = 'grayscale(40%)';
       } else {
@@ -1349,6 +1385,14 @@
   var RECONNECT_DELAYS = [2000, 4000, 8000]; // Exponential backoff
 
   async function _attemptReconnect() {
+    // VTID-OFFLINE: Don't try reconnecting if browser is offline — wait for 'online' event
+    if (_s._isOffline) {
+      console.log('[VTOrb] Skipping reconnect — browser is offline. Will retry when online.');
+      _setOrbState('offline');
+      _setStatus(_cfg.lang.startsWith('de') ? 'Du bist offline. Bitte prüfe deine Internetverbindung.' : 'You seem to be offline. Please check your internet connection.');
+      return;
+    }
+
     if (_s._reconnectCount >= MAX_WIDGET_RECONNECTS) {
       console.warn('[VTOrb] Max reconnection attempts reached');
       _setStatus(_cfg.lang.startsWith('de') ? 'Verbindung verloren. Bitte erneut starten.' : 'Connection lost. Please restart.');

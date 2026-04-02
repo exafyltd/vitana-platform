@@ -2010,7 +2010,7 @@ ${trimmedHistory}
  * No memory, no tools, no personal data. Focused on welcoming first-time users,
  * explaining Vitana, and guiding toward signup.
  */
-function buildAnonymousSystemInstruction(lang: string, voiceStyle: string, ctx?: ClientContext): string {
+function buildAnonymousSystemInstruction(lang: string, voiceStyle: string, ctx?: ClientContext, conversationHistory?: string, isReconnect?: boolean): string {
   const languageNames: Record<string, string> = {
     'en': 'English', 'de': 'German', 'fr': 'French', 'es': 'Spanish',
     'ar': 'Arabic', 'zh': 'Chinese', 'ru': 'Russian', 'sr': 'Serbian'
@@ -2064,7 +2064,18 @@ FIRST-TIME VISITORS DON'T GIVE INSTRUCTIONS — they explore. Lead the conversat
 - You have NO memory of previous conversations
 - You CANNOT search memory, events, or personal data
 ${contextHints}
+${isReconnect && conversationHistory ? `
+=== SESSION RECONNECTION — DO NOT GREET AGAIN ===
+This is a RECONNECTION after a brief interruption. The visitor was already talking to you. Do NOT start over. Do NOT say "Hello" or introduce yourself again. Do NOT deliver the introductory speech.
 
+CONVERSATION SO FAR (before the interruption):
+${conversationHistory}
+
+Your FIRST message after reconnection must be something like:
+"I'm back! Sorry about that brief interruption. We were just talking about [topic from conversation above]. Where were we?"
+
+Then continue the conversation naturally from where it left off. NEVER repeat the introductory speech.
+` : `
 === FIRST MESSAGE (READ THIS SPEECH VERBATIM — DO NOT SHORTEN, SKIP, OR SUMMARIZE) ===
 CRITICAL RULES:
 - Your first message MUST be the COMPLETE speech below — speak ALL of it before stopping.
@@ -2090,6 +2101,7 @@ So tell me — what excites you most? Is it dance, fitness, nutrition, meeting l
 """
 
 IMPORTANT: The speech above is your MINIMUM first message. You may add warmth and personality, but you must NOT remove or skip any of the sections. Every paragraph above must be spoken.
+`}
 
 === AFTER THE USER RESPONDS ===
 - Based on their answer, go deeper into that specific topic
@@ -2229,7 +2241,16 @@ async function connectToLiveAPI(
               // VTID-ANON: Use anonymous instruction for unauthenticated sessions.
               // VTID-CONTEXT: Include client context (location, time, device) for all sessions.
               text: session.isAnonymous
-                ? buildAnonymousSystemInstruction(session.lang, session.voiceStyle || 'friendly, calm, empathetic', session.clientContext)
+                ? buildAnonymousSystemInstruction(
+                    session.lang,
+                    session.voiceStyle || 'friendly, calm, empathetic',
+                    session.clientContext,
+                    // VTID-ANON-RECONNECT: Pass conversation history for reconnection continuity
+                    session.transcriptTurns.length > 0
+                      ? session.transcriptTurns.slice(-10).map(t => `${t.role === 'user' ? 'User' : 'Vitana'}: ${t.text}`).join('\n')
+                      : undefined,
+                    ((session as any)._reconnectCount || 0) > 0
+                  )
                 : buildLiveSystemInstruction(
                     session.lang,
                     session.voiceStyle || 'friendly, calm, empathetic',
@@ -2369,6 +2390,42 @@ async function connectToLiveAPI(
             session.consecutiveModelTurns++;
             const isGreetingTurn = session.greetingSent && session.turn_count === (session.greetingTurnIndex ?? 0) + 1;
             console.log(`[VTID-01219] Turn complete for session ${session.sessionId} (turn ${session.turn_count}, isGreeting=${isGreetingTurn}, consecutiveModelTurns=${session.consecutiveModelTurns})`);
+
+            // VTID-ANON-NUDGE: Escalating signup nudges for anonymous sessions
+            if (session.isAnonymous && !isGreetingTurn && ws.readyState === WebSocket.OPEN) {
+              const tc = session.turn_count;
+              let nudgePrompt: string | null = null;
+
+              if (tc === 4) {
+                nudgePrompt = '[SYSTEM INSTRUCTION UPDATE — weave this into your NEXT response naturally]: Mention that as a registered member, you (Vitana) would remember this conversation and provide personalized guidance. Say something like: "By the way, if you join the Maxina Community, I will remember everything we talk about and can give you personalized recommendations. And it is completely free!"';
+                console.log(`[VTID-ANON-NUDGE] Soft nudge injected at turn ${tc} for session ${session.sessionId}`);
+              } else if (tc === 6) {
+                nudgePrompt = '[SYSTEM INSTRUCTION UPDATE — make this a clear invitation in your NEXT response]: Warmly invite them to join now. Say something like: "I am really enjoying our conversation! To keep this going and for me to truly become your personal health companion, all you need to do is join the Maxina Community — it is free and takes just a moment. You can register right here on vitanaland.com!"';
+                console.log(`[VTID-ANON-NUDGE] Firm nudge injected at turn ${tc} for session ${session.sessionId}`);
+              } else if (tc === 8) {
+                nudgePrompt = '[SYSTEM INSTRUCTION UPDATE — CRITICAL — this is your FINAL message to this visitor]: This is your last response in this session. Deliver a warm, memorable closing. Say something like: "It has been wonderful talking with you! I would love to continue being your companion, but to do that I need you to join the Maxina Community. It is completely free, and once you register, I will remember everything — your goals, your preferences, our conversations. Just click the register button right here on vitanaland.com. I truly hope to see you inside the community — I will be waiting for you!" Then say goodbye warmly.';
+                console.log(`[VTID-ANON-NUDGE] Hard cutoff nudge injected at turn ${tc} for session ${session.sessionId}`);
+              } else if (tc > 8) {
+                // Hard cutoff — send session end
+                console.log(`[VTID-ANON-NUDGE] Session cutoff at turn ${tc} for session ${session.sessionId}`);
+                if (session.sseResponse) {
+                  session.sseResponse.write(`data: ${JSON.stringify({ type: 'session_limit_reached', message: 'Please register to continue the conversation.' })}\n\n`);
+                }
+              }
+
+              if (nudgePrompt) {
+                try {
+                  ws.send(JSON.stringify({
+                    client_content: {
+                      turns: [{ role: 'user', parts: [{ text: nudgePrompt }] }],
+                      turn_complete: true
+                    }
+                  }));
+                } catch (e) {
+                  console.warn(`[VTID-ANON-NUDGE] Failed to inject nudge: ${(e as Error).message}`);
+                }
+              }
+            }
 
             // VTID-LOOPGUARD: If the model has responded too many times without user input,
             // pause the silence keepalive so Vertex's idle timeout stops the loop naturally.
