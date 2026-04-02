@@ -17,6 +17,8 @@ jobs:
       - run: pip install requests
       - env:
           WEBHOOK_URL: ${{ secrets.VITANA_CHAT_WEBHOOK }}
+          SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+          GATEWAY_URL: https://gateway-q74ibpv6ia-uc.a.run.app
         run: python3 scripts/ci/collect-status.py
       - run: |
           git config user.name "Vitana Automation"

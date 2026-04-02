@@ -39,6 +39,12 @@ export class GChatNotifierService {
     'workflow.success',
     'workflow.failure',
     'pr.merged',
+    // Self-healing events
+    'self-healing.task.injected',
+    'self-healing.verification.success',
+    'self-healing.blast_radius.detected',
+    'self-healing.rollback.requested',
+    'self-healing.kill_switch.activated',
   ]);
 
   constructor(webhookUrl: string) {

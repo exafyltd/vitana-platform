@@ -2606,6 +2606,7 @@ const NAVIGATION_CONFIG = [
         "tabs": [
             { "key": "services", "path": "/command-hub/infrastructure/services/" },
             { "key": "health", "path": "/command-hub/infrastructure/health/" },
+            { "key": "self-healing", "path": "/command-hub/infrastructure/self-healing/" },
             { "key": "deployments", "path": "/command-hub/infrastructure/deployments/" },
             { "key": "logs", "path": "/command-hub/infrastructure/logs/" },
             { "key": "config", "path": "/command-hub/infrastructure/config/" }
@@ -3498,6 +3499,7 @@ const state = {
     infraDeployments: { items: [], loading: false, error: null, fetched: false, pagination: { offset: 0, limit: 50, hasMore: true } },
     infraLogs: { items: [], loading: false, error: null, fetched: false, pagination: { offset: 0, limit: 50, hasMore: true } },
     infraConfig: { data: null, loading: false, error: null, fetched: false },
+    selfHealing: { config: null, active: [], history: [], loading: false, error: null, fetched: false },
 
     // Security module
     securityPolicies: { items: [], loading: false, error: null, fetched: false, pagination: { offset: 0, limit: 50, hasMore: true } },
@@ -4834,8 +4836,8 @@ function renderApp() {
     var savedScrollPositions = captureAllScrollPositions();
 
     root.innerHTML = '';
-    // Clean up health popup backdrop (lives on document.body, outside root)
-    var _oldBackdrop = document.querySelector('.health-popup-backdrop');
+    // Clean up health modal overlay (lives on document.body, outside root)
+    var _oldBackdrop = document.querySelector('.health-modal-overlay');
     if (_oldBackdrop) _oldBackdrop.remove();
 
     const container = document.createElement('div');
@@ -5329,36 +5331,41 @@ function renderHeader() {
     };
     cicdHealthIndicator.appendChild(statusPill);
 
-    // Service Health Popup (modal overlay with grid)
+    // Service Health Modal (reuses .modal-overlay + .modal pattern)
     if (state.cicdHealthTooltipOpen) {
-        var backdrop = document.createElement('div');
-        backdrop.className = 'health-popup-backdrop';
-        backdrop.onclick = function () {
+        var overlay = document.createElement('div');
+        overlay.className = 'modal-overlay health-modal-overlay';
+        overlay.onclick = function () {
             state.cicdHealthTooltipOpen = false;
             renderApp();
         };
 
-        var popup = document.createElement('div');
-        popup.className = 'health-popup';
-        popup.onclick = function (e) { e.stopPropagation(); };
+        var modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.style.cssText = 'max-width: 1200px; width: 95%;';
+        modal.onclick = function (e) { e.stopPropagation(); };
 
-        // Header row
-        var popupHeader = document.createElement('div');
-        popupHeader.className = 'health-popup__header';
-        var statusClass = capsFailing > 0 ? 'health-popup__status--error' : 'health-popup__status--healthy';
-        popupHeader.innerHTML =
-            '<span class="health-popup__title ' + statusClass + '">Service Health (' + capsHealthy + '/' + capsTotal + ')</span>' +
-            '<button class="health-popup__close">&times;</button>';
-        popupHeader.querySelector('.health-popup__close').onclick = function () {
+        // Header
+        var header = document.createElement('div');
+        header.className = 'modal-header';
+        header.style.cssText = 'display:flex; justify-content:space-between; align-items:center;';
+        var titleColor = capsFailing > 0 ? '#ef4444' : '#10b981';
+        header.innerHTML =
+            '<span style="color:' + titleColor + '">Service Health (' + capsHealthy + '/' + capsTotal + ')</span>' +
+            '<button class="drawer-close-btn" style="position:static;">&times;</button>';
+        header.querySelector('.drawer-close-btn').onclick = function () {
             state.cicdHealthTooltipOpen = false;
             renderApp();
         };
-        popup.appendChild(popupHeader);
+        modal.appendChild(header);
 
-        // Grid of services
+        // Body with grid
+        var body = document.createElement('div');
+        body.className = 'modal-body';
+
         if (state.serviceHealth.items.length > 0) {
             var grid = document.createElement('div');
-            grid.className = 'health-popup__grid';
+            grid.className = 'health-grid';
 
             // Sort: failed first, then alphabetical
             var sortedItems = state.serviceHealth.items.slice().sort(function (a, b) {
@@ -5374,29 +5381,28 @@ function renderHeader() {
                 if (!svc.healthy && dot === 'green') dot = 'red';
 
                 var cell = document.createElement('div');
-                cell.className = 'health-popup__cell' + (svc.healthy ? '' : ' health-popup__cell--bad');
+                cell.className = 'health-grid__cell' + (svc.healthy ? '' : ' health-grid__cell--bad');
                 cell.title = svc.name + ': ' + (svc.healthy ? 'OK' : svc.status) + (svc.latency_ms >= 0 ? ' (' + svc.latency_ms + 'ms)' : '');
                 cell.innerHTML =
                     '<span class="health-dot health-dot-' + dot + '"></span>' +
-                    '<span class="health-popup__cell-name">' + svc.name + '</span>';
+                    '<span class="health-grid__cell-name">' + svc.name + '</span>';
                 grid.appendChild(cell);
             }
-            popup.appendChild(grid);
+            body.appendChild(grid);
         } else {
-            var loading = document.createElement('div');
-            loading.className = 'health-popup__loading';
-            loading.textContent = 'Loading...';
-            popup.appendChild(loading);
+            body.innerHTML = '<div style="text-align:center; color:var(--color-text-secondary);">Loading...</div>';
         }
+        modal.appendChild(body);
 
         // Footer
-        var footer = document.createElement('div');
-        footer.className = 'health-popup__footer';
-        footer.textContent = 'Updated: ' + new Date().toLocaleTimeString();
-        popup.appendChild(footer);
+        var modalFooter = document.createElement('div');
+        modalFooter.className = 'modal-footer';
+        modalFooter.style.cssText = 'justify-content:flex-end; font-size:0.75rem; color:var(--color-text-secondary);';
+        modalFooter.textContent = 'Updated: ' + new Date().toLocaleTimeString();
+        modal.appendChild(modalFooter);
 
-        backdrop.appendChild(popup);
-        document.body.appendChild(backdrop);
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
     }
 
     right.appendChild(cicdHealthIndicator);
@@ -5783,6 +5789,8 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderInfraServicesView());
     } else if (moduleKey === 'infrastructure' && tab === 'health') {
         container.appendChild(renderInfraHealthView());
+    } else if (moduleKey === 'infrastructure' && tab === 'self-healing') {
+        container.appendChild(renderSelfHealingView());
     } else if (moduleKey === 'infrastructure' && tab === 'deployments') {
         container.appendChild(renderInfraDeploymentsView());
     } else if (moduleKey === 'infrastructure' && tab === 'logs') {
@@ -33241,6 +33249,310 @@ function fetchSecurityPolicies() {
         renderApp();
     });
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Self-Healing Dashboard
+// ═══════════════════════════════════════════════════════════════════
+
+function fetchSelfHealingData() {
+    state.selfHealing.loading = true;
+    state.selfHealing.error = null;
+    renderApp();
+
+    Promise.all([
+        fetch('/api/v1/self-healing/config').then(function(r) { return r.json(); }),
+        fetch('/api/v1/self-healing/active').then(function(r) { return r.json(); }),
+        fetch('/api/v1/self-healing/history?limit=20').then(function(r) { return r.json(); })
+    ]).then(function(results) {
+        state.selfHealing.config = results[0];
+        state.selfHealing.active = (results[1] && results[1].tasks) || [];
+        state.selfHealing.history = (results[2] && results[2].items) || [];
+        state.selfHealing.loading = false;
+        state.selfHealing.fetched = true;
+        renderApp();
+    }).catch(function(err) {
+        state.selfHealing.error = err.message;
+        state.selfHealing.loading = false;
+        renderApp();
+    });
+}
+
+function renderSelfHealingView() {
+    var container = document.createElement('div');
+    container.className = 'self-healing-container';
+
+    // Auto-fetch
+    if (!state.selfHealing.fetched && !state.selfHealing.loading) {
+        fetchSelfHealingData();
+    }
+
+    // ── HEADER with Kill Switch ──
+    var header = document.createElement('div');
+    header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
+    var titleDiv = document.createElement('div');
+    var h2 = document.createElement('h2');
+    h2.textContent = 'Self-Healing System';
+    h2.style.cssText = 'margin:0 0 4px 0;';
+    titleDiv.appendChild(h2);
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = 'Autonomous detection, diagnosis, fix, and verification of failing services.';
+    subtitle.style.cssText = 'margin:0;opacity:0.7;font-size:13px;';
+    titleDiv.appendChild(subtitle);
+    header.appendChild(titleDiv);
+
+    // Kill switch button
+    var cfg = state.selfHealing.config;
+    var isEnabled = cfg && cfg.enabled !== false;
+    var killBtn = document.createElement('button');
+    killBtn.textContent = isEnabled ? '🔴 KILL SWITCH' : '🟢 RE-ENABLE';
+    killBtn.style.cssText = isEnabled
+        ? 'background:#dc2626;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;'
+        : 'background:#16a34a;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;';
+    killBtn.onclick = function() {
+        var action = isEnabled ? 'activate' : 'deactivate';
+        if (isEnabled && !confirm('This will PAUSE all active self-healing tasks. Continue?')) return;
+        killBtn.disabled = true;
+        killBtn.textContent = 'Processing...';
+        fetch('/api/v1/self-healing/kill-switch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: action, operator: 'command-hub' })
+        }).then(function(r) { return r.json(); }).then(function() {
+            state.selfHealing.fetched = false;
+            fetchSelfHealingData();
+        }).catch(function(err) {
+            killBtn.disabled = false;
+            killBtn.textContent = isEnabled ? '🔴 KILL SWITCH' : '🟢 RE-ENABLE';
+            showToast('Kill switch error: ' + err.message, 'error');
+        });
+    };
+    header.appendChild(killBtn);
+    container.appendChild(header);
+
+    if (state.selfHealing.loading) {
+        var loadingDiv = document.createElement('div');
+        loadingDiv.className = 'placeholder-content';
+        loadingDiv.textContent = 'Loading self-healing data...';
+        container.appendChild(loadingDiv);
+        return container;
+    }
+
+    if (state.selfHealing.error) {
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'error-message';
+        errorDiv.textContent = 'Error: ' + state.selfHealing.error;
+        container.appendChild(errorDiv);
+        return container;
+    }
+
+    // ── ZONE 1: Status Bar ──
+    var statusBar = document.createElement('div');
+    statusBar.style.cssText = 'background:var(--bg-secondary,#1e1e2e);border:1px solid var(--border-color,#333);border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;gap:24px;align-items:center;';
+    var activeTasks = state.selfHealing.active || [];
+    var pendingApproval = activeTasks.filter(function(t) { return t.spec_status === 'pending_approval'; });
+    var inProgress = activeTasks.filter(function(t) { return t.status === 'in_progress' || t.status === 'pending'; });
+
+    var autonomyNames = ['OBSERVE ONLY', 'DIAGNOSE ONLY', 'SPEC & WAIT', 'AUTO-FIX SIMPLE', 'FULL AUTO'];
+    var autonomyLevel = (cfg && cfg.autonomy_level !== undefined) ? cfg.autonomy_level : 3;
+
+    statusBar.innerHTML =
+        '<div style="font-size:13px;"><strong>Status:</strong> ' + (isEnabled ? '<span style="color:#4ade80;">ACTIVE</span>' : '<span style="color:#f87171;">DISABLED</span>') + '</div>' +
+        '<div style="font-size:13px;"><strong>Mode:</strong> ' + (autonomyNames[autonomyLevel] || 'UNKNOWN') + '</div>' +
+        '<div style="font-size:13px;"><strong>Active Repairs:</strong> ' + inProgress.length + '</div>' +
+        '<div style="font-size:13px;"><strong>Awaiting Approval:</strong> ' + pendingApproval.length + '</div>';
+
+    // Autonomy level selector
+    var levelSelect = document.createElement('select');
+    levelSelect.style.cssText = 'margin-left:auto;background:var(--bg-primary,#111);color:var(--text-primary,#eee);border:1px solid var(--border-color,#444);border-radius:4px;padding:4px 8px;font-size:12px;';
+    autonomyNames.forEach(function(name, i) {
+        var opt = document.createElement('option');
+        opt.value = i;
+        opt.textContent = 'Level ' + i + ': ' + name;
+        if (i === autonomyLevel) opt.selected = true;
+        levelSelect.appendChild(opt);
+    });
+    levelSelect.onchange = function() {
+        fetch('/api/v1/self-healing/config', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ autonomy_level: parseInt(levelSelect.value), operator: 'command-hub' })
+        }).then(function() {
+            state.selfHealing.fetched = false;
+            fetchSelfHealingData();
+        });
+    };
+    statusBar.appendChild(levelSelect);
+    container.appendChild(statusBar);
+
+    // ── ZONE 2: Active Repairs ──
+    if (activeTasks.length > 0) {
+        var activeSection = document.createElement('div');
+        activeSection.style.cssText = 'margin-bottom:16px;';
+        var activeH3 = document.createElement('h3');
+        activeH3.textContent = 'Active Repairs';
+        activeH3.style.cssText = 'margin:0 0 8px 0;font-size:14px;';
+        activeSection.appendChild(activeH3);
+
+        activeTasks.forEach(function(task) {
+            var card = document.createElement('div');
+            card.style.cssText = 'background:var(--bg-secondary,#1e1e2e);border:1px solid var(--border-color,#333);border-radius:8px;padding:12px;margin-bottom:8px;';
+
+            var meta = task.metadata || {};
+            var stages = ['DIAGNOSE', 'SPEC', 'INJECT', 'EXECUTE', 'VERIFY'];
+            var currentStage = 2; // default: injected
+            if (task.status === 'allocated') currentStage = 0;
+            if (task.spec_status === 'validated' && task.status === 'pending') currentStage = 2;
+            if (task.status === 'in_progress') currentStage = 3;
+            if (task.status === 'completed') currentStage = 4;
+
+            // Pipeline visualization
+            var pipeline = '<div style="display:flex;gap:4px;margin-bottom:8px;">';
+            stages.forEach(function(stage, i) {
+                var color = i < currentStage ? '#4ade80' : (i === currentStage ? '#facc15' : '#555');
+                var icon = i < currentStage ? '✅' : (i === currentStage ? '⏳' : '─');
+                pipeline += '<div style="flex:1;text-align:center;padding:4px;border-radius:4px;background:' + color + '22;border:1px solid ' + color + ';font-size:11px;">' + icon + ' ' + stage + '</div>';
+                if (i < stages.length - 1) pipeline += '<div style="align-self:center;color:#555;">→</div>';
+            });
+            pipeline += '</div>';
+
+            card.innerHTML = pipeline +
+                '<div style="font-size:13px;font-weight:600;margin-bottom:4px;">' + task.vtid + ': ' + (task.title || '').replace('SELF-HEAL: ', '') + '</div>' +
+                '<div style="font-size:12px;opacity:0.7;margin-bottom:4px;">' +
+                    'Class: ' + (meta.failure_class || '?') +
+                    ' | Confidence: ' + ((meta.confidence || 0) * 100).toFixed(0) + '%' +
+                    ' | Endpoint: ' + (meta.endpoint || '?') +
+                '</div>';
+
+            // Action buttons
+            var actions = document.createElement('div');
+            actions.style.cssText = 'display:flex;gap:6px;margin-top:8px;';
+
+            if (task.spec_status === 'pending_approval') {
+                var approveBtn = document.createElement('button');
+                approveBtn.textContent = '✅ APPROVE';
+                approveBtn.style.cssText = 'background:#16a34a;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px;';
+                approveBtn.onclick = function() {
+                    fetch('/api/v1/specs/approve', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ vtid: task.vtid })
+                    }).then(function() {
+                        state.selfHealing.fetched = false;
+                        fetchSelfHealingData();
+                        showToast('Spec approved for ' + task.vtid, 'success');
+                    });
+                };
+                actions.appendChild(approveBtn);
+
+                var rejectBtn = document.createElement('button');
+                rejectBtn.textContent = '❌ REJECT';
+                rejectBtn.style.cssText = 'background:#dc2626;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px;';
+                rejectBtn.onclick = function() {
+                    fetch('/api/v1/self-healing/rollback/' + task.vtid, { method: 'POST' }).then(function() {
+                        state.selfHealing.fetched = false;
+                        fetchSelfHealingData();
+                        showToast('Rejected ' + task.vtid, 'info');
+                    });
+                };
+                actions.appendChild(rejectBtn);
+            }
+
+            var rollbackBtn = document.createElement('button');
+            rollbackBtn.textContent = '↩ ROLLBACK';
+            rollbackBtn.style.cssText = 'background:#9333ea;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px;';
+            rollbackBtn.onclick = function() {
+                if (!confirm('Rollback ' + task.vtid + '?')) return;
+                fetch('/api/v1/self-healing/rollback/' + task.vtid, { method: 'POST' }).then(function() {
+                    state.selfHealing.fetched = false;
+                    fetchSelfHealingData();
+                    showToast('Rollback requested for ' + task.vtid, 'warning');
+                });
+            };
+            actions.appendChild(rollbackBtn);
+
+            card.appendChild(actions);
+            activeSection.appendChild(card);
+        });
+
+        container.appendChild(activeSection);
+    }
+
+    // ── ZONE 3: History Table ──
+    var historyH3 = document.createElement('h3');
+    historyH3.textContent = 'Self-Healing History';
+    historyH3.style.cssText = 'margin:16px 0 8px 0;font-size:14px;';
+    container.appendChild(historyH3);
+
+    var historyItems = state.selfHealing.history || [];
+    if (historyItems.length === 0) {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.style.cssText = 'padding:24px;text-align:center;opacity:0.5;font-size:13px;';
+        emptyDiv.textContent = 'No self-healing history yet. The system will create entries when health failures are detected.';
+        container.appendChild(emptyDiv);
+    } else {
+        var table = document.createElement('table');
+        table.style.cssText = 'width:100%;border-collapse:collapse;font-size:12px;';
+
+        var thead = '<thead><tr style="border-bottom:1px solid var(--border-color,#333);">';
+        ['VTID', 'Endpoint', 'Class', 'Conf', 'Result', 'Blast', 'Time'].forEach(function(col) {
+            thead += '<th style="padding:6px 8px;text-align:left;font-weight:600;font-size:11px;opacity:0.7;">' + col + '</th>';
+        });
+        thead += '</tr></thead>';
+        table.innerHTML = thead;
+
+        var tbody = document.createElement('tbody');
+        historyItems.forEach(function(item) {
+            var tr = document.createElement('tr');
+            tr.style.cssText = 'border-bottom:1px solid var(--border-color,#222);';
+
+            var outcomeIcons = {
+                fixed: '✅', failed: '❌', rolled_back: '❌↩', escalated: '🚨↑',
+                pending: '⏳', skipped: '⏭', paused: '⏸'
+            };
+            var outcomeIcon = outcomeIcons[item.outcome] || '?';
+
+            var blastColors = { none: '#4ade80', contained: '#facc15', critical: '#f87171' };
+            var blastColor = blastColors[item.blast_radius] || '#888';
+
+            var elapsed = '';
+            if (item.resolved_at && item.created_at) {
+                var ms = new Date(item.resolved_at) - new Date(item.created_at);
+                elapsed = Math.round(ms / 60000) + 'min';
+            } else {
+                elapsed = '—';
+            }
+
+            tr.innerHTML =
+                '<td style="padding:6px 8px;font-family:monospace;">' + (item.vtid || '—') + '</td>' +
+                '<td style="padding:6px 8px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + (item.endpoint || '') + '">' + (item.endpoint || '—') + '</td>' +
+                '<td style="padding:6px 8px;">' + (item.failure_class || '—') + '</td>' +
+                '<td style="padding:6px 8px;">' + ((item.confidence * 100).toFixed(0)) + '%</td>' +
+                '<td style="padding:6px 8px;">' + outcomeIcon + '</td>' +
+                '<td style="padding:6px 8px;color:' + blastColor + ';">' + (item.blast_radius || 'none') + '</td>' +
+                '<td style="padding:6px 8px;">' + elapsed + '</td>';
+            tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        container.appendChild(table);
+    }
+
+    // Refresh button
+    var refreshBtn = document.createElement('button');
+    refreshBtn.textContent = '↻ Refresh';
+    refreshBtn.style.cssText = 'margin-top:12px;background:var(--bg-secondary,#1e1e2e);color:var(--text-primary,#eee);border:1px solid var(--border-color,#444);padding:6px 14px;border-radius:4px;cursor:pointer;font-size:12px;';
+    refreshBtn.onclick = function() {
+        state.selfHealing.fetched = false;
+        fetchSelfHealingData();
+    };
+    container.appendChild(refreshBtn);
+
+    return container;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Security Module Views
+// ═══════════════════════════════════════════════════════════════════
 
 function renderSecurityPoliciesView() {
     var container = document.createElement('div');

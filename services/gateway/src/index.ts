@@ -225,6 +225,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const voiceFeedbackRouter = require('./routes/voice-feedback').default;
   // VTID-01250: Autopilot Automations Engine — AP-XXXX registry, executor, wallet, sharing
   const automationsRouter = require('./routes/automations').default;
+  // Self-Healing System — Autonomous detection, diagnosis, fix, and verification pipeline
+  const selfHealingRouter = require('./routes/self-healing').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -561,6 +563,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01250: Autopilot Automations Engine — AP-XXXX registry, executor, wallet, sharing
   mountRouterSync(app, '/api/v1/automations', automationsRouter, { owner: 'automations' });
+
+  // Self-Healing System — Autonomous detection, diagnosis, fix, and verification
+  mountRouterSync(app, '/api/v1/self-healing', selfHealingRouter, { owner: 'self-healing' });
 
   // VTID-01097: Diary Templates - guided diary templates for memory quality
   mountRouterSync(app, '/api/v1/diary', diaryRouter, { owner: 'diary' });

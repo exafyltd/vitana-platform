@@ -91,18 +91,35 @@ SERVICES = {
 
 
 def check_service(name, path):
-    """Check a single service health endpoint. Returns (name, status, http_code)."""
+    """Check a single service health endpoint. Returns dict with full details."""
     url = f'{GATEWAY_URL}{path}'
     try:
         r = requests.get(url, timeout=8)
-        if r.ok:
-            return (name, '✅ Live', r.status_code)
-        else:
-            return (name, '❌ Down', r.status_code)
+        result = {
+            'name': name,
+            'endpoint': path,
+            'display': '✅ Live' if r.ok else '❌ Down',
+            'status': 'live' if r.ok else 'down',
+            'http_status': r.status_code,
+            'response_body': r.text[:500] if not r.ok else '',
+            'response_time_ms': int(r.elapsed.total_seconds() * 1000),
+            'error_message': None,
+        }
+        return result
     except requests.exceptions.Timeout:
-        return (name, '⏱️ Timeout', 0)
-    except Exception:
-        return (name, '❌ Error', 0)
+        return {
+            'name': name, 'endpoint': path,
+            'display': '⏱️ Timeout', 'status': 'timeout',
+            'http_status': None, 'response_body': '',
+            'response_time_ms': 8000, 'error_message': 'Connection timed out after 8s',
+        }
+    except Exception as e:
+        return {
+            'name': name, 'endpoint': path,
+            'display': '❌ Error', 'status': 'down',
+            'http_status': None, 'response_body': '',
+            'response_time_ms': 0, 'error_message': str(e),
+        }
 
 
 # ── Check all services in parallel ──
@@ -114,17 +131,17 @@ with ThreadPoolExecutor(max_workers=15) as pool:
 
 # Sort by original order
 order = list(SERVICES.keys())
-results.sort(key=lambda r: order.index(r[0]))
+results.sort(key=lambda r: order.index(r['name']))
 
-live_count = sum(1 for r in results if '✅' in r[1])
+live_count = sum(1 for r in results if r['status'] == 'live')
 total = len(results)
-down_services = [r[0] for r in results if '✅' not in r[1]]
+down_services = [r['name'] for r in results if r['status'] != 'live']
 
 # ── Write docs/STATUS.md ──
 now = datetime.utcnow().isoformat() + 'Z'
 rows = ['| Service | Status | HTTP |', '|---------|--------|------|']
-for name, status, code in results:
-    rows.append(f'| {name} | {status} | {code or "—"} |')
+for r in results:
+    rows.append(f'| {r["name"]} | {r["display"]} | {r["http_status"] or "—"} |')
 
 md = f"""# Vitana Platform — Live Status
 
@@ -148,7 +165,6 @@ print(f'Updated docs/STATUS.md — {live_count}/{total} live')
 # ── Post to Google Chat ──
 webhook = os.getenv('WEBHOOK_URL', '')
 if webhook:
-    # Build a rich message with summary + any down services
     summary = f'*Vitana: {live_count}/{total} live*'
     if down_services:
         down_list = ', '.join(down_services[:10])
@@ -163,3 +179,43 @@ if webhook:
         print('Posted to Chat')
     except Exception as e:
         print(f'Chat error: {e}')
+
+# ── POST structured failure data to Gateway self-healing endpoint ──
+service_token = os.getenv('SERVICE_TOKEN', '')
+if down_services and service_token:
+    report = {
+        'timestamp': now,
+        'total': total,
+        'live': live_count,
+        'services': [
+            {
+                'name': r['name'],
+                'endpoint': r['endpoint'],
+                'status': r['status'],
+                'http_status': r['http_status'],
+                'response_body': r['response_body'],
+                'response_time_ms': r['response_time_ms'],
+                'error_message': r['error_message'],
+            }
+            for r in results  # send ALL services so Gateway has the full picture
+        ]
+    }
+    try:
+        heal_resp = requests.post(
+            f'{GATEWAY_URL}/api/v1/self-healing/report',
+            json=report,
+            headers={
+                'Authorization': f'Bearer {service_token}',
+                'Content-Type': 'application/json',
+            },
+            timeout=30,
+        )
+        if heal_resp.ok:
+            data = heal_resp.json()
+            print(f'Self-healing: {data.get("vtids_created", 0)} tasks created, {data.get("skipped", 0)} skipped')
+        else:
+            print(f'Self-healing POST failed: {heal_resp.status_code} {heal_resp.text[:200]}')
+    except Exception as e:
+        print(f'Self-healing POST error: {e}')
+elif down_services and not service_token:
+    print('Self-healing: SERVICE_TOKEN not set, skipping structured report')

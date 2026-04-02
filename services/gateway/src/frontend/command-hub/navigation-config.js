@@ -117,6 +117,7 @@ export const NAVIGATION_CONFIG = [
     tabs: [
       { key: 'services', label: 'Services' },
       { key: 'health', label: 'Health' },
+      { key: 'self-healing', label: 'Self-Healing' },
       { key: 'deployments', label: 'Deployments' },
       { key: 'logs', label: 'Logs' },
       { key: 'config', label: 'Config' }

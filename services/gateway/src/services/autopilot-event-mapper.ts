@@ -149,6 +149,26 @@ export const EVENT_MAPPING_RULES: EventMappingRule[] = [
     description: 'VTID-01185: Recommendation activated - auto-dispatch to worker',
   },
   // -------------------------------------------------------------------------
+  // SELF-HEALING: Auto-approved spec → IN_PROGRESS (dispatch to worker)
+  // -------------------------------------------------------------------------
+  // When self-healing injects a task with auto_approved=true, the event loop
+  // picks it up and dispatches to the worker orchestrator.
+  {
+    eventTypes: [
+      'self-healing.task.injected',             // Self-healing pipeline injected task
+      'autopilot.task.spec.created',            // Also fires on spec creation (shared trigger)
+    ],
+    fromStates: ['allocated'],
+    toState: 'in_progress',
+    triggerAction: 'dispatch',
+    condition: (event) => {
+      const meta = event.metadata || event.meta || {};
+      // Only auto-dispatch if the task was auto-approved by self-healing
+      return meta.auto_approved === true && meta.source === 'self-healing';
+    },
+    description: 'Self-healing: auto-approved fix spec - dispatch to worker',
+  },
+  // -------------------------------------------------------------------------
   // ALLOCATION/SCHEDULED → IN_PROGRESS (VTID-01194: Execution Trigger)
   // -------------------------------------------------------------------------
   // VTID-01194: The execution_approved event is the canonical trigger

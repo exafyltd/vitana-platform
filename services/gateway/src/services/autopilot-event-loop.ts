@@ -343,6 +343,17 @@ async function performTransition(
     case 'deploying':
       const deployMeta = event.metadata || event.meta || {};
       await markDeploying(vtid, deployMeta.workflow_url as string);
+      // Self-healing: capture pre-fix health snapshot before deploy goes live
+      try {
+        const vtidInfo = await fetchVtidFromLedger(vtid);
+        if (vtidInfo && (vtidInfo as any).metadata?.source === 'self-healing') {
+          const { captureHealthSnapshot } = require('./self-healing-snapshot-service');
+          console.log(`${LOG_PREFIX} Self-healing VTID ${vtid} deploying — capturing pre-fix snapshot`);
+          await captureHealthSnapshot(vtid, 'pre_fix');
+        }
+      } catch (snapErr) {
+        console.warn(`${LOG_PREFIX} Pre-fix snapshot failed for ${vtid}: ${snapErr}`);
+      }
       break;
     case 'verifying':
       await markVerifying(vtid);
@@ -661,6 +672,28 @@ async function triggerMerge(vtid: string, event: OasisEvent): Promise<ActionResu
 async function triggerVerify(vtid: string, event: OasisEvent): Promise<ActionResult> {
   const gatewayUrl = process.env.GATEWAY_URL || 'http://localhost:8080';
   try {
+    // Self-healing VTIDs: run blast radius check in addition to standard verification
+    const vtidData = await fetchVtidFromLedger(vtid);
+    const isSelfHealing = vtidData && (vtidData as any).metadata?.source === 'self-healing';
+
+    if (isSelfHealing) {
+      // Self-healing: trigger blast radius verification via self-healing endpoint
+      console.log(`[autopilot-event-loop] Self-healing VTID ${vtid} — triggering blast radius verification`);
+      try {
+        const healResp = await fetch(`${gatewayUrl}/api/v1/self-healing/verify/${vtid}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const healResult = await healResp.json() as { ok?: boolean; result?: { action?: string; blast_radius?: string } };
+        if (healResult.result?.action === 'rollback') {
+          return { ok: false, error: `Blast radius detected — auto-rollback initiated (${healResult.result.blast_radius})` };
+        }
+      } catch (healErr) {
+        console.warn(`[autopilot-event-loop] Self-healing verification error for ${vtid}: ${healErr}`);
+        // Continue with standard verification even if self-healing check fails
+      }
+    }
+
     const response = await fetch(`${gatewayUrl}/api/v1/autopilot/controller/runs/${vtid}/verify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -707,7 +740,7 @@ async function fetchVtidFromLedger(vtid: string): Promise<{
 
   try {
     const response = await fetch(
-      `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}&select=title,summary,layer`,
+      `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}&select=title,summary,layer,metadata`,
       {
         headers: {
           'apikey': supabaseKey,

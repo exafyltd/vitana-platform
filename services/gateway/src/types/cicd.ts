@@ -516,7 +516,25 @@ export type CicdEventType =
   | 'match.proactive.sent'
   | 'match.proactive.skipped'
   | 'match.proactive.error'
-  | 'match.proactive.batch.completed';
+  | 'match.proactive.batch.completed'
+  // Self-Healing System Events
+  | 'self-healing.report.received'
+  | 'self-healing.diagnosis.started'
+  | 'self-healing.diagnosis.completed'
+  | 'self-healing.spec.generated'
+  | 'self-healing.task.injected'
+  | 'self-healing.task.skipped'
+  | 'self-healing.snapshot.pre_fix'
+  | 'self-healing.snapshot.post_fix'
+  | 'self-healing.verification.success'
+  | 'self-healing.blast_radius.detected'
+  | 'self-healing.verification.escalate'
+  | 'self-healing.rollback.started'
+  | 'self-healing.rollback.requested'
+  | 'self-healing.rollback.completed'
+  | 'self-healing.kill_switch.activated'
+  | 'self-healing.kill_switch.deactivated'
+  | 'autopilot.task.spec.created';
 
 export interface CicdOasisEvent {
   vtid: string;
