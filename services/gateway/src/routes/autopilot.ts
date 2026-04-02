@@ -1043,19 +1043,42 @@ router.post('/loop/cursor/reset', async (req: Request, res: Response) => {
  */
 router.get('/health', async (_req: Request, res: Response) => {
   const controllerStatus = getAutopilotStatus();
-  let loopStatus;
+  let loopStatus: { ok?: boolean; is_running: boolean; execution_armed?: boolean; error?: string; [key: string]: unknown };
   try {
     loopStatus = await getEventLoopStatus();
   } catch {
-    loopStatus = { is_running: false, error: 'Failed to get loop status' };
+    loopStatus = { ok: false, is_running: false, execution_armed: false, error: 'Failed to get loop status' };
   }
 
-  return res.status(200).json({
-    ok: true,
+  // Determine real health: autopilot is only healthy when the event loop is running
+  const loopRunning = loopStatus.is_running === true;
+  const loopOk = loopStatus.ok !== false;
+  const hasErrors = !!loopStatus.error;
+
+  let status: string;
+  let ok: boolean;
+  if (!loopOk || hasErrors) {
+    status = 'error';
+    ok = false;
+  } else if (!loopRunning) {
+    status = 'degraded';
+    ok = false;
+  } else {
+    status = 'healthy';
+    ok = true;
+  }
+
+  const httpStatus = ok ? 200 : 200; // Always 200 so the panel can read the JSON body
+
+  return res.status(httpStatus).json({
+    ok,
     service: 'autopilot-api',
     timestamp: new Date().toISOString(),
-    status: 'healthy',
+    status,
     vtid: 'VTID-01178',
+    reason: !ok
+      ? (!loopRunning ? 'Event loop is not running — autopilot is inactive' : loopStatus.error || 'Unknown error')
+      : undefined,
     capabilities: {
       task_extraction: true,
       planner_handoff: true,
@@ -1064,13 +1087,11 @@ router.get('/health', async (_req: Request, res: Response) => {
       validator_skeleton: true,
       worker_core_engine: true,
       validator_core_engine: true,
-      // VTID-01178: Controller capabilities
       autopilot_controller: true,
       spec_snapshotting: true,
       validator_hard_gate: true,
       post_deploy_verification: true,
       acceptance_assertions: true,
-      // VTID-01179: Event loop capabilities
       event_loop: true,
       autonomous_state_machine: true,
       crash_safe_recovery: true,
