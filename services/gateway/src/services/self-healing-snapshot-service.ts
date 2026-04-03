@@ -235,6 +235,15 @@ export async function verifyFixWithBlastRadiusCheck(
       actor_role: 'system',
       surface: 'system',
     });
+
+    await notifyGChat(
+      `✅ *Self-Healing SUCCESS*\n` +
+      `VTID: \`${vtid}\`\n` +
+      `Target: \`${targetEndpoint}\` is now *healthy*\n` +
+      `Health: ${preFixSnapshot.healthy}/${preFixSnapshot.total} → ${postFixSnapshot.healthy}/${postFixSnapshot.total} (+${netHealthDelta})\n` +
+      `Blast radius: none — no other endpoints affected\n` +
+      `Fix is *live in production*`
+    );
   } else if (newlyBroken.length > 0) {
     action = 'rollback';
     blastRadius = newlyBroken.length >= 3 ? 'critical' : 'contained';
@@ -315,7 +324,7 @@ export async function verifyFixWithBlastRadiusCheck(
             Prefer: 'return=minimal',
           },
           body: JSON.stringify({
-            outcome: action,
+            outcome: action === 'keep' ? 'fixed' : action === 'rollback' ? 'rolled_back' : 'escalated',
             blast_radius: blastRadius,
             newly_broken: newlyBroken,
             net_health_delta: netHealthDelta,
