@@ -2406,10 +2406,15 @@ async function connectToLiveAPI(
                 nudgePrompt = '[SYSTEM INSTRUCTION UPDATE — CRITICAL — this is your FINAL message to this visitor]: This is your last response in this session. Deliver a warm, memorable closing. Say something like: "It has been wonderful talking with you! I would love to continue being your companion, but to do that I need you to join the Maxina Community. It is completely free, and once you register, I will remember everything — your goals, your preferences, our conversations. Just click the register button right here on vitanaland.com. I truly hope to see you inside the community — I will be waiting for you!" Then say goodbye warmly.';
                 console.log(`[VTID-ANON-NUDGE] Hard cutoff nudge injected at turn ${tc} for session ${session.sessionId}`);
               } else if (tc > 8) {
-                // Hard cutoff — send session end
+                // Hard cutoff — notify client. Input is already blocked by the gates
+                // in /stream/send, handleWsAudioMessage, and handleWsTextMessage.
                 console.log(`[VTID-ANON-NUDGE] Session cutoff at turn ${tc} for session ${session.sessionId}`);
+                const limitMsg = JSON.stringify({ type: 'session_limit_reached', message: 'Please register to continue the conversation.' });
                 if (session.sseResponse) {
-                  session.sseResponse.write(`data: ${JSON.stringify({ type: 'session_limit_reached', message: 'Please register to continue the conversation.' })}\n\n`);
+                  session.sseResponse.write(`data: ${limitMsg}\n\n`);
+                }
+                if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
+                  try { sendWsMessage((session as any).clientWs, JSON.parse(limitMsg)); } catch (_e) { /* ignore */ }
                 }
               }
 
@@ -4817,7 +4822,7 @@ router.post('/chat', optionalAuth, async (req: AuthenticatedRequest, res: Respon
 
     // VTID-01270A: Set thread identity for community/events tools in text chat path
     if (identity.tenant_id && identity.user_id) {
-      setThreadIdentity(threadId, { tenant_id: identity.tenant_id, user_id: identity.user_id });
+      setThreadIdentity(threadId, { tenant_id: identity.tenant_id, user_id: identity.user_id, role: identity.active_role || undefined });
     }
 
     // VTID-01118: Get state engine and increment turn count
@@ -7237,6 +7242,12 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
 
   session.lastActivity = new Date();
 
+  // VTID-ANON-NUDGE: Block all input after turn limit — Vitana's final message (turn 8)
+  // has already been delivered. Silently drop audio/text so no partial response starts.
+  if (session.isAnonymous && session.turn_count > 8) {
+    return res.json({ ok: true });
+  }
+
   try {
     if (body.type === 'audio') {
       // VTID-VOICE-INIT: Echo prevention gate (SSE path) — same as WebSocket path
@@ -7343,6 +7354,11 @@ router.post('/live/stream/send', optionalAuth, async (req: AuthenticatedRequest,
     } else if ((body as any).type === 'text' && (body as any).text) {
       // Handle text message - forward to Live API as client_content
       const textContent = (body as any).text as string;
+
+      // VTID-ANON-NUDGE: Block text input after turn limit (SSE text path)
+      if (session.isAnonymous && session.turn_count > 8) {
+        return res.json({ ok: true });
+      }
 
       // If this is a client-side greeting request and server already sent one, skip it
       if (session.greetingSent && textContent.toLowerCase().includes('greet')) {
@@ -8573,6 +8589,11 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
 
   if (!liveSession) return;
 
+  // VTID-ANON-NUDGE: Block all input after turn limit (WebSocket path)
+  if (liveSession.isAnonymous && liveSession.turn_count > 8) {
+    return;
+  }
+
   if (!message.data_b64) {
     sendWsMessage(clientWs, { type: 'error', message: 'Missing data_b64 in audio message' });
     return;
@@ -8692,6 +8713,11 @@ function handleWsVideoMessage(clientSession: WsClientSession, message: WsClientM
 function handleWsTextMessage(clientSession: WsClientSession, message: WsClientMessage): void {
   const { sessionId, clientWs, liveSession } = clientSession;
   if (!liveSession) return;
+
+  // VTID-ANON-NUDGE: Block all input after turn limit (WebSocket text path)
+  if (liveSession.isAnonymous && liveSession.turn_count > 8) {
+    return;
+  }
 
   const text = message.text;
   if (!text) {
