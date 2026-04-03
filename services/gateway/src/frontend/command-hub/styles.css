@@ -2998,36 +2998,47 @@ body {
 
 .health-grid {
   display: grid;
-  grid-template-columns: repeat(20, 1fr);
-  gap: 6px;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
 }
 
 .health-grid__cell {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 8px 10px;
+  gap: 6px;
+  padding: 10px 12px;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.04);
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   color: var(--color-text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  cursor: default;
+  cursor: pointer;
   min-width: 0;
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s;
 }
 
 .health-grid__cell:hover {
   background: rgba(255, 255, 255, 0.08);
+  border-color: var(--color-border);
+}
+
+.health-grid__cell--selected {
+  border-color: var(--color-accent, #3b82f6);
+  background: rgba(59, 130, 246, 0.08);
 }
 
 .health-grid__cell--bad {
-  background: rgba(239, 68, 68, 0.12);
+  background: rgba(239, 68, 68, 0.1);
   color: #ef4444;
 }
 
 .health-grid__cell--bad:hover {
-  background: rgba(239, 68, 68, 0.2);
+  background: rgba(239, 68, 68, 0.18);
+}
+
+.health-grid__cell--bad.health-grid__cell--selected {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.15);
 }
 
 .health-grid__cell .health-dot {
@@ -3035,13 +3046,86 @@ body {
 }
 
 .health-grid__cell-name {
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-@media (max-width: 900px) {
+.health-grid__cell-latency {
+  font-size: 0.65rem;
+  color: var(--color-text-secondary);
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+/* Detail panel shown below grid when a cell is clicked */
+.health-detail {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.health-detail__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1rem;
+  margin-bottom: 8px;
+}
+
+.health-detail__status--ok {
+  color: #10b981;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.health-detail__status--bad {
+  color: #ef4444;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.health-detail__latency {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+.health-detail__url {
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+  font-family: monospace;
+  margin-bottom: 8px;
+}
+
+.health-detail__reason {
+  font-size: 0.85rem;
+  color: #f59e0b;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  background: rgba(245, 158, 11, 0.08);
+  border-radius: 6px;
+}
+
+.health-detail__json {
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+  background: rgba(0, 0, 0, 0.3);
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  max-height: 200px;
+  overflow-y: auto;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 700px) {
   .health-grid {
-    grid-template-columns: repeat(10, 1fr);
+    grid-template-columns: repeat(3, 1fr);
   }
 }
 

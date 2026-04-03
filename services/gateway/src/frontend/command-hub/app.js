@@ -2802,6 +2802,14 @@ const state = {
     pendingTitleVtid: null, // VTID awaiting title input from user
     pendingTitleRetryCount: 0, // Number of retry prompts sent
 
+    // VTID-DEV-ASSIST: Developer Assistant State
+    isDevAssistantOpen: false,
+    devAssistantMessages: [],
+    devAssistantInputValue: '',
+    devAssistantSending: false,
+    devAssistantThreadId: null,
+    devAssistantHistory: [],
+
     // Operator Ticker State
     tickerEvents: [],
 
@@ -4879,6 +4887,9 @@ function renderApp() {
     if (state.isHeartbeatOpen) root.appendChild(renderHeartbeatOverlay());
     if (state.isOperatorOpen) root.appendChild(renderOperatorOverlay());
 
+    // VTID-DEV-ASSIST: Developer Assistant Overlay
+    if (state.isDevAssistantOpen) root.appendChild(renderDevAssistantOverlay());
+
     // Publish Modal (VTID-0517)
     if (state.showPublishModal) root.appendChild(renderPublishModal());
 
@@ -5227,6 +5238,24 @@ function renderHeader() {
     };
     left.appendChild(operatorBtn);
 
+    // 2b. VITANA Developer Assistant pill (VTID-DEV-ASSIST)
+    const vitanaBtn = document.createElement('button');
+    vitanaBtn.className = 'header-pill header-pill--neutral';
+    vitanaBtn.textContent = 'VITANA';
+    vitanaBtn.style.background = 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)';
+    vitanaBtn.style.color = '#fff';
+    vitanaBtn.style.fontWeight = '700';
+    vitanaBtn.onclick = () => {
+        state.isDevAssistantOpen = true;
+        renderApp();
+        // Auto-focus input after render
+        requestAnimationFrame(() => {
+            var input = document.querySelector('.dev-assistant-textarea');
+            if (input) input.focus();
+        });
+    };
+    left.appendChild(vitanaBtn);
+
     // 3. History icon button (⏱) - neutral color
     const versionBtn = document.createElement('button');
     versionBtn.className = 'header-icon-button';
@@ -5342,7 +5371,7 @@ function renderHeader() {
 
         var modal = document.createElement('div');
         modal.className = 'modal';
-        modal.style.cssText = 'max-width: 1200px; width: 95%;';
+        modal.style.cssText = 'max-width: 900px; width: 90%; max-height: 85vh;';
         modal.onclick = function (e) { e.stopPropagation(); };
 
         // Header
@@ -5363,6 +5392,11 @@ function renderHeader() {
         var hmBody = document.createElement('div');
         hmBody.className = 'modal-body';
 
+        // Detail panel (hidden by default, shown when a cell is clicked)
+        var hmDetail = document.createElement('div');
+        hmDetail.className = 'health-detail';
+        hmDetail.style.display = 'none';
+
         if (state.serviceHealth.items.length > 0) {
             var grid = document.createElement('div');
             grid.className = 'health-grid';
@@ -5374,21 +5408,58 @@ function renderHeader() {
             });
 
             for (var shi = 0; shi < sortedItems.length; shi++) {
-                var svc = sortedItems[shi];
-                var dot = 'green';
-                if (!svc.healthy && (svc.status === 'degraded' || svc.status === 'warning')) dot = 'yellow';
-                if (!svc.healthy && (svc.status === 'down' || svc.status === 'error' || svc.status === 'unhealthy')) dot = 'red';
-                if (!svc.healthy && dot === 'green') dot = 'red';
+                (function (svc) {
+                    var dot = 'green';
+                    if (!svc.healthy && (svc.status === 'degraded' || svc.status === 'warning')) dot = 'yellow';
+                    if (!svc.healthy && (svc.status === 'down' || svc.status === 'error' || svc.status === 'unhealthy')) dot = 'red';
+                    if (!svc.healthy && dot === 'green') dot = 'red';
 
-                var cell = document.createElement('div');
-                cell.className = 'health-grid__cell' + (svc.healthy ? '' : ' health-grid__cell--bad');
-                cell.title = svc.name + ': ' + (svc.healthy ? 'OK' : svc.status) + (svc.latency_ms >= 0 ? ' (' + svc.latency_ms + 'ms)' : '');
-                cell.innerHTML =
-                    '<span class="health-dot health-dot-' + dot + '"></span>' +
-                    '<span class="health-grid__cell-name">' + svc.name + '</span>';
-                grid.appendChild(cell);
+                    var cell = document.createElement('div');
+                    cell.className = 'health-grid__cell' + (svc.healthy ? '' : ' health-grid__cell--bad');
+                    cell.title = svc.name + ': ' + (svc.healthy ? 'OK' : svc.status) + (svc.latency_ms >= 0 ? ' (' + svc.latency_ms + 'ms)' : '');
+                    cell.innerHTML =
+                        '<span class="health-dot health-dot-' + dot + '"></span>' +
+                        '<span class="health-grid__cell-name">' + svc.name + '</span>' +
+                        '<span class="health-grid__cell-latency">' + (svc.latency_ms >= 0 ? svc.latency_ms + 'ms' : '') + '</span>';
+                    cell.onclick = function () {
+                        // Show detail panel for this service
+                        var detailHTML = '<div class="health-detail__header">' +
+                            '<span class="health-dot health-dot-' + dot + '"></span>' +
+                            '<strong>' + svc.name + '</strong>' +
+                            '<span class="health-detail__status health-detail__status--' + (svc.healthy ? 'ok' : 'bad') + '">' +
+                            (svc.healthy ? 'OK' : svc.status.toUpperCase()) + '</span>' +
+                            (svc.latency_ms >= 0 ? '<span class="health-detail__latency">' + svc.latency_ms + 'ms</span>' : '') +
+                            '</div>';
+                        if (svc.url) {
+                            detailHTML += '<div class="health-detail__url">' + svc.url + '</div>';
+                        }
+                        if (svc.details) {
+                            // Show reason if present
+                            if (svc.details.reason) {
+                                detailHTML += '<div class="health-detail__reason">' + svc.details.reason + '</div>';
+                            }
+                            // Show error if present
+                            if (svc.details.error) {
+                                detailHTML += '<div class="health-detail__reason" style="color:#ef4444;">Error: ' + svc.details.error + '</div>';
+                            }
+                            // Show full JSON response
+                            detailHTML += '<pre class="health-detail__json">' +
+                                JSON.stringify(svc.details, null, 2).replace(/</g, '&lt;') + '</pre>';
+                        } else {
+                            detailHTML += '<div class="health-detail__reason">No detail data available.</div>';
+                        }
+                        hmDetail.innerHTML = detailHTML;
+                        hmDetail.style.display = 'block';
+                        // Highlight selected cell
+                        var allCells = grid.querySelectorAll('.health-grid__cell');
+                        for (var ci = 0; ci < allCells.length; ci++) allCells[ci].classList.remove('health-grid__cell--selected');
+                        cell.classList.add('health-grid__cell--selected');
+                    };
+                    grid.appendChild(cell);
+                })(sortedItems[shi]);
             }
             hmBody.appendChild(grid);
+            hmBody.appendChild(hmDetail);
         } else {
             hmBody.innerHTML = '<div style="text-align:center; color:var(--color-text-secondary);">Loading...</div>';
         }
@@ -21485,6 +21556,285 @@ async function sendChatMessage() {
     }
 }
 
+// =============================================================================
+// VTID-DEV-ASSIST: Developer Assistant Overlay & Chat
+// =============================================================================
+
+function renderDevAssistantOverlay() {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'overlay-backdrop';
+    backdrop.onclick = (e) => {
+        if (e.target === backdrop) {
+            state.isDevAssistantOpen = false;
+            renderApp();
+        }
+    };
+
+    const panel = document.createElement('div');
+    panel.className = 'overlay-panel operator-overlay';
+    panel.style.borderTop = '3px solid #6366f1';
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'overlay-header';
+
+    const titleBlock = document.createElement('div');
+    const title = document.createElement('div');
+    title.className = 'overlay-title';
+    title.textContent = 'Vitana Developer Assistant';
+    title.style.color = '#6366f1';
+    titleBlock.appendChild(title);
+
+    const subtitle = document.createElement('div');
+    subtitle.className = 'overlay-subtitle';
+    subtitle.textContent = 'Full Command Hub access via chat';
+    titleBlock.appendChild(subtitle);
+
+    header.appendChild(titleBlock);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'overlay-close';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.onclick = () => {
+        state.isDevAssistantOpen = false;
+        renderApp();
+    };
+    header.appendChild(closeBtn);
+
+    panel.appendChild(header);
+
+    // Chat content
+    const chatContainer = document.createElement('div');
+    chatContainer.className = 'chat-container';
+    chatContainer.style.flex = '1';
+    chatContainer.style.display = 'flex';
+    chatContainer.style.flexDirection = 'column';
+
+    // Messages area
+    const messages = document.createElement('div');
+    messages.className = 'chat-messages dev-assistant-messages';
+
+    if (state.devAssistantMessages.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'chat-empty-state';
+        empty.innerHTML = '<div style="font-size:1.5em;margin-bottom:8px;">Vitana</div>' +
+            '<div style="opacity:0.7;font-size:0.9em;">Your AI developer assistant. Ask me to:</div>' +
+            '<ul style="text-align:left;opacity:0.6;font-size:0.85em;margin:8px 0;padding-left:20px;">' +
+            '<li>List tasks, check status, create new tasks</li>' +
+            '<li>Generate, validate, and approve specs</li>' +
+            '<li>Create PRs, merge, deploy services</li>' +
+            '<li>Check approvals, OASIS events, CI/CD health</li>' +
+            '</ul>';
+        messages.appendChild(empty);
+    } else {
+        state.devAssistantMessages.forEach(function(msg) {
+            var isSent = msg.type === 'user';
+            var isError = msg.isError;
+
+            var bubble = document.createElement('div');
+            var bubbleClasses = 'message-bubble';
+            if (isSent) {
+                bubbleClasses += ' message-sent';
+            } else {
+                bubbleClasses += ' message-reply';
+            }
+            if (isError) {
+                bubbleClasses += ' message-error';
+            }
+            bubble.className = bubbleClasses;
+
+            // Render markdown-like content for assistant messages
+            if (!isSent && msg.content) {
+                // Simple markdown: bold, code blocks, lists
+                var html = msg.content
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/`([^`]+)`/g, '<code style="background:#1e1e2e;padding:1px 4px;border-radius:3px;font-size:0.9em;">$1</code>')
+                    .replace(/\n/g, '<br>');
+                bubble.innerHTML = html;
+            } else {
+                bubble.textContent = msg.content || msg.text;
+            }
+            messages.appendChild(bubble);
+
+            // Tool results indicator
+            if (msg.toolResults && msg.toolResults.length > 0) {
+                var toolBadge = document.createElement('div');
+                toolBadge.style.cssText = 'font-size:0.75em;opacity:0.5;margin:2px 0 4px 0;';
+                toolBadge.textContent = msg.toolResults.length + ' tool(s) executed';
+                messages.appendChild(toolBadge);
+            }
+
+            var time = document.createElement('div');
+            time.className = 'timestamp';
+            if (isSent) time.style.alignSelf = 'flex-end';
+            time.textContent = msg.timestamp;
+            messages.appendChild(time);
+        });
+    }
+
+    chatContainer.appendChild(messages);
+
+    // Input area
+    var inputContainer = document.createElement('div');
+    inputContainer.className = 'chat-input-container';
+
+    var textarea = document.createElement('textarea');
+    textarea.className = 'chat-textarea dev-assistant-textarea';
+    textarea.placeholder = 'Ask Vitana anything... (e.g., "list my tasks", "deploy gateway")';
+    textarea.rows = 2;
+    textarea.value = state.devAssistantInputValue;
+    textarea.oninput = function(e) {
+        state.devAssistantInputValue = e.target.value;
+    };
+    textarea.onkeydown = function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            if (state.devAssistantInputValue.trim() && !state.devAssistantSending) {
+                sendDevAssistantMessage();
+            }
+        }
+    };
+
+    var sendBtn = document.createElement('button');
+    sendBtn.className = 'chat-send-btn';
+    sendBtn.textContent = state.devAssistantSending ? 'Sending...' : 'Send';
+    sendBtn.disabled = state.devAssistantSending;
+    sendBtn.style.background = '#6366f1';
+    sendBtn.onclick = function() {
+        if (state.devAssistantInputValue.trim() && !state.devAssistantSending) {
+            sendDevAssistantMessage();
+        }
+    };
+
+    inputContainer.appendChild(textarea);
+    inputContainer.appendChild(sendBtn);
+    chatContainer.appendChild(inputContainer);
+
+    panel.appendChild(chatContainer);
+    backdrop.appendChild(panel);
+    return backdrop;
+}
+
+async function sendDevAssistantMessage() {
+    if (state.devAssistantSending) return;
+
+    var now = new Date();
+    var timestamp = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    var messageText = state.devAssistantInputValue.trim();
+    if (!messageText) return;
+
+    // Add user message to UI
+    state.devAssistantMessages.push({
+        type: 'user',
+        content: messageText,
+        timestamp: timestamp
+    });
+
+    // Track history
+    state.devAssistantHistory.push({
+        role: 'user',
+        content: messageText,
+        ts: now.getTime()
+    });
+
+    state.devAssistantInputValue = '';
+    state.devAssistantSending = true;
+    renderApp();
+
+    // Scroll to bottom
+    requestAnimationFrame(function() {
+        var mc = document.querySelector('.dev-assistant-messages');
+        if (mc) mc.scrollTop = mc.scrollHeight;
+    });
+
+    try {
+        // Use the unified conversation API with developer_assistant channel
+        var meCtx = state.meContext || {};
+        var reqBody = {
+            channel: 'developer_assistant',
+            tenant_id: meCtx.tenant_id || '00000000-0000-0000-0000-000000000000',
+            user_id: meCtx.user_id || '00000000-0000-0000-0000-000000000000',
+            role: meCtx.active_role || 'developer',
+            message: {
+                type: 'text',
+                text: messageText
+            },
+            ui_context: {
+                surface: 'developer_assistant',
+                screen: state.activeModule + '/' + state.activeScreen,
+                selection: state.selectedVtid || undefined
+            }
+        };
+
+        // Include thread_id for conversation continuity
+        if (state.devAssistantThreadId) {
+            reqBody.thread_id = state.devAssistantThreadId;
+        }
+
+        console.log('[DEV-ASSIST] Sending message:', messageText);
+
+        var response = await fetch('/api/v1/conversation/turn', {
+            method: 'POST',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify(reqBody)
+        });
+
+        if (!response.ok) {
+            var errText = await response.text();
+            throw new Error('Request failed (' + response.status + '): ' + errText.substring(0, 200));
+        }
+
+        var result = await response.json();
+        console.log('[DEV-ASSIST] Response:', result);
+
+        // Save thread_id for continuity
+        if (result.session_state && result.session_state.thread_id) {
+            state.devAssistantThreadId = result.session_state.thread_id;
+        }
+
+        var replyContent = result.reply || 'No response received.';
+
+        // Track assistant history
+        state.devAssistantHistory.push({
+            role: 'assistant',
+            content: replyContent,
+            ts: Date.now()
+        });
+
+        state.devAssistantMessages.push({
+            type: 'assistant',
+            content: replyContent,
+            timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+            toolResults: result.tool_calls || [],
+            meta: result.meta
+        });
+
+    } catch (error) {
+        console.error('[DEV-ASSIST] Error:', error);
+        state.devAssistantMessages.push({
+            type: 'assistant',
+            content: 'Error: ' + error.message,
+            timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+            isError: true
+        });
+    } finally {
+        state.devAssistantSending = false;
+        renderApp();
+
+        // Scroll to bottom and refocus
+        requestAnimationFrame(function() {
+            var mc = document.querySelector('.dev-assistant-messages');
+            if (mc) mc.scrollTop = mc.scrollHeight;
+            var ta = document.querySelector('.dev-assistant-textarea');
+            if (ta && document.activeElement !== ta) ta.focus();
+        });
+    }
+}
+
+// =============================================================================
+// End VTID-DEV-ASSIST
+// =============================================================================
+
 function renderOperatorTicker() {
     const container = document.createElement('div');
     container.className = 'ticker-container';
@@ -31969,6 +32319,25 @@ document.addEventListener('DOMContentLoaded', async () => {
             fetchPermittedRoles()
         ]);
         console.log('[VTID-01046] Auth boot complete');
+
+        // Access control: Command Hub requires developer/admin/infra/staff role
+        var allowedRoles = ['developer', 'admin', 'infra', 'staff'];
+        var userRole = state.meContext?.active_role || '';
+        var isExafyAdmin = state.isSuperAdmin || state.meContext?.is_exafy_admin === true;
+        if (!isExafyAdmin && !allowedRoles.includes(userRole)) {
+            console.warn('[Command Hub] Access denied — role=' + userRole);
+            document.getElementById('app').innerHTML =
+                '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;color:#fff;text-align:center;padding:2rem;">' +
+                '<h1 style="font-size:2rem;margin-bottom:1rem;">403 — Access Denied</h1>' +
+                '<p style="color:#aaa;max-width:400px;">Command Hub requires Developer or Admin access.<br>Your current role: <strong>' + (userRole || 'none') + '</strong></p>' +
+                '<p style="color:#666;margin-top:2rem;">Contact your administrator to request access.</p>' +
+                '</div>';
+            return;
+        }
+
+        // Command Hub always operates in Developer context
+        state.viewRole = 'Developer';
+        localStorage.setItem('vitana.viewRole', 'Developer');
 
         // Final UI refresh after auth data is in
         renderApp();
