@@ -1,18 +1,42 @@
 # Vitana Platform - Claude Code Deployment Guide
 
+## Multi-Repo Setup
+
+This project spans TWO repositories. Both must be available in every Claude Code session:
+
+- **`exafyltd/vitana-platform`** — Backend, Gateway, Command Hub, CI/CD pipelines
+- **`exafyltd/vitana-v1`** — Frontend community app (React/Vite SPA, formerly Lovable)
+
+### Claude Code Web Task Configuration
+When creating tasks in Claude Code Web (claude.ai/code), ALWAYS select BOTH repositories:
+1. `exafyltd/vitana-platform`
+2. `exafyltd/vitana-v1`
+
+### Filesystem Layout
+```
+/home/user/vitana-platform/   ← Backend (this repo)
+/home/user/vitana-v1/         ← Frontend (clone if not present)
+```
+
+If `/home/user/vitana-v1` doesn't exist, clone it:
+```bash
+cd /home/user && git clone https://github.com/exafyltd/vitana-v1.git
+```
+
 ## Architecture Overview
 
 - **Backend (Gateway):** Cloud Run service `gateway` in `us-central1`, project `lovable-vitana-vers1`
-  - Source: `services/gateway/`
+  - Source: `vitana-platform/services/gateway/`
   - URL: `https://gateway-q74ibpv6ia-uc.a.run.app`
   - Deploys via: `.github/workflows/EXEC-DEPLOY.yml` (governed, with VTID tracking)
   - Auto-deploys on push to `main` via `.github/workflows/AUTO-DEPLOY.yml`
 
-- **Frontend (Community App):** Previously hosted on Lovable (`vitana-lovable-vers1.lovable.app`)
-  - Source: `apps/web/` (migrated from Lovable editor)
-  - Supabase project: `inmkhvwdcuyhnxkgfvsb` (Lovable Supabase)
+- **Frontend (Community App):** React/Vite SPA in `exafyltd/vitana-v1`
+  - Repo: `exafyltd/vitana-v1` (filesystem: `/home/user/vitana-v1/`)
+  - Hosted: `vitana-lovable-vers1.lovable.app` (auto-deploys on push to `main`)
+  - Supabase project: `inmkhvwdcuyhnxkgfvsb`
   - Auth: Dual JWT — Platform + Lovable Supabase secrets
-  - CORS: Configured in `services/gateway/src/middleware/cors.ts`
+  - CORS: Configured in `vitana-platform/services/gateway/src/middleware/cors.ts`
 
 - **Platform Supabase:** Secrets in GCP Secret Manager (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE`)
 - **Lovable Supabase:** `https://inmkhvwdcuyhnxkgfvsb.supabase.co` (env: `LOVABLE_SUPABASE_URL`)
@@ -29,14 +53,21 @@
 6. EXEC-DEPLOY: VTID check → Governance → `gcloud run deploy gateway` → Health check → Smoke tests
 7. If no VTID in commit, uses `BOOTSTRAP-AUTO-{sha}` fallback
 
-### Frontend (Community App)
+### Frontend (Community App — vitana-v1)
 
-1. Source lives in `apps/web/` (React/Vite SPA)
-2. Build: `cd apps/web && npm run build` (outputs to `dist/`)
-3. Deploy: Add `web` service to EXEC-DEPLOY.yml, deploy to Cloud Run as `vitana-web`
-4. Dockerfile: nginx serving the built SPA with `try_files` for SPA routing
-5. Update `FRONTEND_URL` env var on gateway to point to new frontend URL
-6. Update CORS in `services/gateway/src/middleware/cors.ts` with new frontend domain
+1. Source: `/home/user/vitana-v1/` (or clone from `exafyltd/vitana-v1`)
+2. Make changes, commit, push to `main`
+3. Auto-deploys to `vitana-lovable-vers1.lovable.app` on push to `main`
+4. For feature work: create branch, PR, merge to `main`
+
+### Full-Stack Changes (both repos)
+
+When a change spans backend + frontend:
+1. Make backend changes in `vitana-platform/services/gateway/`
+2. Make frontend changes in `vitana-v1/src/`
+3. Deploy backend first (merge to `vitana-platform` main)
+4. Deploy frontend second (merge to `vitana-v1` main)
+5. Verify both are live before testing
 
 ### Environment Variables (Gateway)
 
@@ -73,6 +104,11 @@ Key env vars set during deploy (see EXEC-DEPLOY.yml):
 - Alt: `https://gateway-86804897789.us-central1.run.app`
 - Canonical (in code): `https://gateway-q74ibpv6ia-uc.a.run.app`
 
-## Lovable Migration Status
+## Frontend Repo: vitana-v1
 
-Lovable frontend is being replaced. All future frontend development happens in `apps/web/` and deploys via Claude Code + EXEC-DEPLOY pipeline. No more Lovable editor.
+- **Repo:** `exafyltd/vitana-v1` (must be added to Claude Code Web task scope)
+- **Stack:** React, Vite, TypeScript, Tailwind, Supabase Auth
+- **Hosting:** Auto-deploys on push to `main` (Lovable CDN at `*.lovable.app`)
+- **Supabase:** `https://inmkhvwdcuyhnxkgfvsb.supabase.co`
+- **All frontend changes happen in this repo** — no more Lovable web editor
+- **Claude Code is the ONLY deployment tool** for both backend and frontend
