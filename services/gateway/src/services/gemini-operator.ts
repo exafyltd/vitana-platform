@@ -58,10 +58,10 @@ const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 
 // VTID-01270A: Thread-to-identity map for community/events tools
 // Populated by ORB chat handlers before calling processWithGemini
-const threadIdentityMap = new Map<string, { tenant_id: string; user_id: string }>();
+const threadIdentityMap = new Map<string, { tenant_id: string; user_id: string; role?: string }>();
 
 /** VTID-01270A: Set identity context for a thread (call before processWithGemini) */
-export function setThreadIdentity(threadId: string, identity: { tenant_id: string; user_id: string }): void {
+export function setThreadIdentity(threadId: string, identity: { tenant_id: string; user_id: string; role?: string }): void {
   threadIdentityMap.set(threadId, identity);
   // Auto-cleanup after 30 minutes
   setTimeout(() => threadIdentityMap.delete(threadId), 30 * 60 * 1000);
