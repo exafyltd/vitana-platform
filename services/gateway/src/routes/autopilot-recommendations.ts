@@ -337,8 +337,11 @@ router.get('/', async (req: Request, res: Response) => {
       // Auto-generate: if community user still has 0 recommendations, generate them inline.
       // This handles first-time users (race condition with fire-and-forget in auth.ts),
       // existing users who never had recs generated, and day30+ users after old recs expired.
-      if (recommendations.length === 0 && role === 'community' && userId) {
-        console.log(`${LOG_PREFIX} No recommendations found for community user ${userId.slice(0, 8)}, auto-generating...`);
+      // Also triggers when ALL returned recs are activated/completed (none are 'new') —
+      // this is the case for the Lovable app which fetches status=new,activated.
+      const hasNewRecs = recommendations.some((r: any) => r.status === 'new');
+      if (!hasNewRecs && role === 'community' && userId) {
+        console.log(`${LOG_PREFIX} No NEW recommendations for community user ${userId.slice(0, 8)} (total=${recommendations.length}, all activated/completed), auto-generating...`);
         try {
           const supabaseUrl = process.env.SUPABASE_URL;
           const svcKey = process.env.SUPABASE_SERVICE_ROLE;
@@ -353,8 +356,8 @@ router.get('/', async (req: Request, res: Response) => {
               .maybeSingle();
             const tenantId = tenantRow?.tenant_id || process.env.DEFAULT_TENANT_ID;
             if (tenantId) {
-              const genResult = await generatePersonalRecommendations(userId, tenantId, { trigger_type: 'manual' });
-              console.log(`${LOG_PREFIX} Auto-generation result: generated=${genResult.generated}, dupes=${genResult.duplicates_skipped}`);
+              const genResult = await generatePersonalRecommendations(userId, tenantId, { trigger_type: 'auto_replenish' });
+              console.log(`${LOG_PREFIX} Auto-replenishment result: generated=${genResult.generated}, dupes=${genResult.duplicates_skipped}`);
               // Re-fetch after generation
               if (genResult.generated > 0) {
                 const freshResult = await queryRecommendationsByRole(role, userId, statuses, fetchLimit, offset);
